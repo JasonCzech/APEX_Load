@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -251,6 +252,84 @@ func TestTrustedHeaderAuthRejectsUnknownServiceAccountAPIKey(t *testing.T) {
 
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("unknown service account GET status = %d, want %d body=%s", resp.Code, http.StatusUnauthorized, resp.Body.String())
+	}
+}
+
+func TestTrustedHeaderHumanUsersRequireActiveLocalRecordAndLocalRoles(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	if err := store.SaveUser(&storage.User{
+		ID:        "seed-user",
+		Subject:   "seed",
+		Active:    true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveUser seed returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	missingReq := httptest.NewRequest(http.MethodGet, "/api/v1/system/inventory", nil)
+	missingReq.Header.Set("X-Auth-Request-User", "alice")
+	missingReq.Header.Set("X-APEXLoad-Roles", RoleSystemAdmin)
+	missingResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(missingResp, missingReq)
+	if missingResp.Code != http.StatusUnauthorized {
+		t.Fatalf("missing local user status = %d, want %d body=%s", missingResp.Code, http.StatusUnauthorized, missingResp.Body.String())
+	}
+
+	if err := store.SaveUser(&storage.User{
+		ID:        "user-alice",
+		Subject:   "alice",
+		Active:    true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveUser alice returned error: %v", err)
+	}
+	noLocalRoleReq := httptest.NewRequest(http.MethodGet, "/api/v1/system/inventory", nil)
+	noLocalRoleReq.Header.Set("X-Auth-Request-User", "alice")
+	noLocalRoleReq.Header.Set("X-APEXLoad-Roles", RoleSystemAdmin)
+	noLocalRoleResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(noLocalRoleResp, noLocalRoleReq)
+	if noLocalRoleResp.Code != http.StatusForbidden {
+		t.Fatalf("no local roles status = %d, want %d body=%s", noLocalRoleResp.Code, http.StatusForbidden, noLocalRoleResp.Body.String())
+	}
+
+	if err := store.SaveUserRoleBinding(&storage.UserRoleBinding{
+		ID:        "alice-viewer",
+		UserID:    "user-alice",
+		ScopeType: "global",
+		Role:      RoleViewer,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveUserRoleBinding returned error: %v", err)
+	}
+	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/system/inventory", nil)
+	viewerReq.Header.Set("X-Auth-Request-User", "alice")
+	viewerResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerResp, viewerReq)
+	if viewerResp.Code != http.StatusOK {
+		t.Fatalf("local viewer status = %d, want %d body=%s", viewerResp.Code, http.StatusOK, viewerResp.Body.String())
+	}
+
+	if err := store.UpdateUserActive("user-alice", false, now.Add(time.Minute)); err != nil {
+		t.Fatalf("UpdateUserActive returned error: %v", err)
+	}
+	disabledReq := httptest.NewRequest(http.MethodGet, "/api/v1/system/inventory", nil)
+	disabledReq.Header.Set("X-Auth-Request-User", "alice")
+	disabledResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(disabledResp, disabledReq)
+	if disabledResp.Code != http.StatusUnauthorized {
+		t.Fatalf("disabled local user status = %d, want %d body=%s", disabledResp.Code, http.StatusUnauthorized, disabledResp.Body.String())
 	}
 }
 
@@ -1202,6 +1281,60 @@ func TestTrustedHeaderAuthProjectRoleGuardsImportPreviewEndpoints(t *testing.T) 
 	server.mux.ServeHTTP(editorSampleResp, editorSampleReq)
 	if editorSampleResp.Code == http.StatusForbidden || editorSampleResp.Code == http.StatusUnauthorized {
 		t.Fatalf("sample import editor status = %d, want auth to pass body=%s", editorSampleResp.Code, editorSampleResp.Body.String())
+	}
+}
+
+func TestTrustedHeaderAuthReadsLoadRunnerMultipartProjectID(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+	projectID := uuid.New().String()
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	if err := writer.WriteField("project_id", projectID); err != nil {
+		t.Fatalf("WriteField returned error: %v", err)
+	}
+	part, err := writer.CreateFormFile("file", "script.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	if _, err := part.Write([]byte("zip")); err != nil {
+		t.Fatalf("part.Write returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-Auth-Request-User", "editor-user")
+	req.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code == http.StatusForbidden || resp.Code == http.StatusUnauthorized || resp.Code == http.StatusBadRequest {
+		t.Fatalf("loadrunner multipart editor status = %d, want auth to pass body=%s", resp.Code, resp.Body.String())
+	}
+
+	missingProjectBody := &bytes.Buffer{}
+	missingWriter := multipart.NewWriter(missingProjectBody)
+	missingPart, err := missingWriter.CreateFormFile("file", "script.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile without project returned error: %v", err)
+	}
+	if _, err := missingPart.Write([]byte("zip")); err != nil {
+		t.Fatalf("missingPart.Write returned error: %v", err)
+	}
+	if err := missingWriter.Close(); err != nil {
+		t.Fatalf("missingWriter.Close returned error: %v", err)
+	}
+	missingReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", missingProjectBody)
+	missingReq.Header.Set("Content-Type", missingWriter.FormDataContentType())
+	missingReq.Header.Set("X-Auth-Request-User", "editor-user")
+	missingReq.Header.Set("X-APEXLoad-Project-Roles", storage.DefaultProjectID+"="+RoleEditor)
+	missingResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(missingResp, missingReq)
+	if missingResp.Code != http.StatusBadRequest {
+		t.Fatalf("loadrunner multipart missing project status = %d, want %d body=%s", missingResp.Code, http.StatusBadRequest, missingResp.Body.String())
 	}
 }
 

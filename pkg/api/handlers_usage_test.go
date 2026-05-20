@@ -85,8 +85,61 @@ func TestHandleGetUsageAccountingSummarizesProjectProtocolRegionAndArchives(t *t
 	if regionBucket.RunCount != 1 || regionBucket.VUserSeconds != 1800 {
 		t.Fatalf("region bucket = %#v, want us-east run usage", regionBucket)
 	}
+	userBucket := findUsageBucket(t, payload.ByUser, "unattributed")
+	if userBucket.RunCount != 1 || userBucket.VUserSeconds != 1800 {
+		t.Fatalf("user bucket = %#v, want unattributed run usage", userBucket)
+	}
 	if len(payload.ByProject) != 0 {
 		t.Fatalf("by_project = %#v, want omitted when project_id is filtered", payload.ByProject)
+	}
+}
+
+func TestHandleGetUsageAccountingBucketsAttributedRunsByUser(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.mu.Lock()
+	server.runner.tests["test-a"] = &ManagedTest{
+		ID:                   "test-a",
+		Name:                 "Checkout",
+		Status:               "COMPLETE",
+		ProjectID:            "project-a",
+		TotalVUsers:          10,
+		Duration:             time.Minute,
+		Groups:               []TestGroup{{Name: "buyers", Protocol: "http", VUsers: 10}},
+		CreatedBySubject:     "alice",
+		CreatedByDisplayName: "Alice Admin",
+		StartedBySubject:     "alice",
+		StartedByDisplayName: "Alice Admin",
+	}
+	server.runner.tests["test-b"] = &ManagedTest{
+		ID:               "test-b",
+		Name:             "Search",
+		Status:           "FAILED",
+		ProjectID:        "project-a",
+		TotalVUsers:      5,
+		Duration:         30 * time.Second,
+		Groups:           []TestGroup{{Name: "search", Protocol: "http", VUsers: 5}},
+		CreatedBySubject: "bob",
+	}
+	server.runner.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/usage?project_id=project-a", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload UsageAccountingResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	aliceBucket := findUsageBucket(t, payload.ByUser, "alice")
+	if aliceBucket.RunCount != 1 || aliceBucket.VUserSeconds != 600 {
+		t.Fatalf("alice bucket = %#v, want one attributed run", aliceBucket)
+	}
+	bobBucket := findUsageBucket(t, payload.ByUser, "bob")
+	if bobBucket.RunCount != 1 || bobBucket.VUserSeconds != 150 {
+		t.Fatalf("bob bucket = %#v, want one created run", bobBucket)
 	}
 }
 
@@ -135,8 +188,8 @@ func TestHandleExportUsageAccountingEmitsCSV(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read csv: %v", err)
 	}
-	if len(rows) != 5 {
-		t.Fatalf("rows = %#v, want header plus totals, two protocols, and region", rows)
+	if len(rows) != 6 {
+		t.Fatalf("rows = %#v, want header plus totals, two protocols, region, and user", rows)
 	}
 	header := []string{"generated_at", "project_id", "scope", "key", "run_count", "group_count", "total_vusers", "duration_seconds", "vuser_seconds", "archive_bytes", "status_counts"}
 	if strings.Join(rows[0], "|") != strings.Join(header, "|") {
@@ -146,6 +199,7 @@ func TestHandleExportUsageAccountingEmitsCSV(t *testing.T) {
 	assertUsageCSVRow(t, rows, "protocol", "grpc", "1", "1", "5", "120", "600", "COMPLETE=1")
 	assertUsageCSVRow(t, rows, "protocol", "http", "1", "1", "10", "120", "1200", "COMPLETE=1")
 	assertUsageCSVRow(t, rows, "region", "us-east", "1", "0", "15", "120", "1800", "COMPLETE=1")
+	assertUsageCSVRow(t, rows, "user", "unattributed", "1", "0", "15", "120", "1800", "COMPLETE=1")
 }
 
 func TestHandleUsageAccountingSnapshotsCapturesAndListsPersistedSnapshots(t *testing.T) {

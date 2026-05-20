@@ -14,13 +14,21 @@ func (s *Server) recordAuditEvent(r *http.Request, action string, status string,
 		return
 	}
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	normalizedProjectID := normalizeProjectID(projectID)
+	domainID := ""
+	if normalizedProjectID != "" && normalizedProjectID != storage.DefaultProjectID {
+		if project, err := s.store.GetProject(normalizedProjectID); err == nil && project != nil {
+			domainID = normalizeDomainID(project.DomainID)
+		}
+	}
 	_ = s.store.SaveAuditEvent(&storage.AuditEvent{
 		ID:               uuid.New().String(),
 		Action:           action,
 		ActorType:        actorType,
 		ActorSubject:     actorSubject,
 		ActorDisplayName: actorDisplayName,
-		ProjectID:        normalizeProjectID(projectID),
+		ProjectID:        normalizedProjectID,
+		DomainID:         domainID,
 		ResourceType:     resourceType,
 		ResourceID:       strings.TrimSpace(resourceID),
 		Status:           strings.TrimSpace(status),

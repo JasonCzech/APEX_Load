@@ -119,12 +119,51 @@ type Store interface {
 	UpdateServiceAccountLastUsed(id string, lastUsedAt time.Time) error
 	UpdateServiceAccountActive(id string, active bool, updatedAt time.Time) error
 	DeleteServiceAccount(id string) error
+	SaveUser(user *User) error
+	GetUser(id string) (*User, error)
+	GetUserBySubject(subject string) (*User, error)
+	ListUsers(filter UserFilter) ([]*User, error)
+	UpdateUserActive(id string, active bool, updatedAt time.Time) error
+	DeleteUser(id string) error
+	SaveUserRoleBinding(binding *UserRoleBinding) error
+	DeleteUserRoleBinding(id string) error
+	ListUserRoleBindings(userID string) ([]*UserRoleBinding, error)
 	SaveAuditEvent(event *AuditEvent) error
 	ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, error)
 	SaveUsageAccountingSnapshot(snapshot *UsageAccountingSnapshot) error
 	ListUsageAccountingSnapshots(projectID string, limit int, offset int) ([]*UsageAccountingSnapshot, error)
 
 	Close() error
+}
+
+type UserFilter struct {
+	Query  string
+	Active *bool
+	Limit  int
+	Offset int
+}
+
+type User struct {
+	ID          string             `json:"id"`
+	Subject     string             `json:"subject"`
+	Email       string             `json:"email,omitempty"`
+	DisplayName string             `json:"display_name,omitempty"`
+	Active      bool               `json:"active"`
+	Bindings    []*UserRoleBinding `json:"bindings,omitempty"`
+	CreatedAt   time.Time          `json:"created_at"`
+	UpdatedAt   time.Time          `json:"updated_at"`
+	LastSeenAt  *time.Time         `json:"last_seen_at,omitempty"`
+	DisabledAt  *time.Time         `json:"disabled_at,omitempty"`
+}
+
+type UserRoleBinding struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	ScopeType string    `json:"scope_type"`
+	ScopeID   string    `json:"scope_id,omitempty"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type ServiceAccount struct {
@@ -148,14 +187,18 @@ type ServiceAccount struct {
 }
 
 type AuditEventFilter struct {
-	Limit        int
-	Offset       int
-	Action       string
-	ActorType    string
-	ProjectID    string
-	ResourceType string
-	ResourceID   string
-	Status       string
+	Limit         int
+	Offset        int
+	Action        string
+	ActorType     string
+	ActorSubject  string
+	ProjectID     string
+	DomainID      string
+	ResourceType  string
+	ResourceID    string
+	Status        string
+	CreatedAfter  *time.Time
+	CreatedBefore *time.Time
 }
 
 type AuditEvent struct {
@@ -165,6 +208,7 @@ type AuditEvent struct {
 	ActorSubject     string         `json:"actor_subject"`
 	ActorDisplayName string         `json:"actor_display_name,omitempty"`
 	ProjectID        string         `json:"project_id,omitempty"`
+	DomainID         string         `json:"domain_id,omitempty"`
 	ResourceType     string         `json:"resource_type,omitempty"`
 	ResourceID       string         `json:"resource_id,omitempty"`
 	Status           string         `json:"status"`
@@ -492,28 +536,32 @@ type RunArchiveRecord struct {
 
 // TestRecord represents a persisted test run.
 type TestRecord struct {
-	ID               string     `json:"id"`
-	Name             string     `json:"name"`
-	Status           string     `json:"status"`
-	ApplicationID    string     `json:"application_id,omitempty"`
-	ReleaseID        string     `json:"release_id,omitempty"`
-	ScenarioID       string     `json:"scenario_id,omitempty"`
-	ProjectID        string     `json:"project_id,omitempty"`
-	FolderID         *string    `json:"folder_id,omitempty"`
-	ScenarioMode     string     `json:"scenario_mode,omitempty"`
-	ScriptShakeout   bool       `json:"script_shakeout,omitempty"`
-	ResourceBaseline bool       `json:"resource_baseline,omitempty"`
-	StartDelay       string     `json:"start_delay,omitempty"`
-	Assignment       any        `json:"assignment,omitempty"` // JSON blob
-	TotalVUsers      int        `json:"total_vusers"`
-	Duration         int64      `json:"duration_ns"`
-	StartTime        time.Time  `json:"start_time"`
-	PendingSince     *time.Time `json:"pending_since,omitempty"`
-	BaselinePinned   bool       `json:"baseline_pinned,omitempty"`
-	BaselinePinnedAt *time.Time `json:"baseline_pinned_at,omitempty"`
-	EndTime          *time.Time `json:"end_time,omitempty"`
-	Error            string     `json:"error,omitempty"`
-	Groups           any        `json:"groups"`                     // JSON blob
-	RuntimeSettings  any        `json:"runtime_settings,omitempty"` // JSON blob
-	GoalConfig       any        `json:"goal_config,omitempty"`      // JSON blob
+	ID                   string     `json:"id"`
+	Name                 string     `json:"name"`
+	Status               string     `json:"status"`
+	ApplicationID        string     `json:"application_id,omitempty"`
+	ReleaseID            string     `json:"release_id,omitempty"`
+	ScenarioID           string     `json:"scenario_id,omitempty"`
+	ProjectID            string     `json:"project_id,omitempty"`
+	FolderID             *string    `json:"folder_id,omitempty"`
+	ScenarioMode         string     `json:"scenario_mode,omitempty"`
+	ScriptShakeout       bool       `json:"script_shakeout,omitempty"`
+	ResourceBaseline     bool       `json:"resource_baseline,omitempty"`
+	StartDelay           string     `json:"start_delay,omitempty"`
+	Assignment           any        `json:"assignment,omitempty"` // JSON blob
+	TotalVUsers          int        `json:"total_vusers"`
+	Duration             int64      `json:"duration_ns"`
+	StartTime            time.Time  `json:"start_time"`
+	PendingSince         *time.Time `json:"pending_since,omitempty"`
+	BaselinePinned       bool       `json:"baseline_pinned,omitempty"`
+	BaselinePinnedAt     *time.Time `json:"baseline_pinned_at,omitempty"`
+	EndTime              *time.Time `json:"end_time,omitempty"`
+	Error                string     `json:"error,omitempty"`
+	CreatedBySubject     string     `json:"created_by_subject,omitempty"`
+	CreatedByDisplayName string     `json:"created_by_display_name,omitempty"`
+	StartedBySubject     string     `json:"started_by_subject,omitempty"`
+	StartedByDisplayName string     `json:"started_by_display_name,omitempty"`
+	Groups               any        `json:"groups"`                     // JSON blob
+	RuntimeSettings      any        `json:"runtime_settings,omitempty"` // JSON blob
+	GoalConfig           any        `json:"goal_config,omitempty"`      // JSON blob
 }

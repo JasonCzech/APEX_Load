@@ -18,6 +18,7 @@ import (
 )
 
 type AuthUserSummary struct {
+	ID              string              `json:"id,omitempty"`
 	Subject         string              `json:"subject"`
 	DisplayName     string              `json:"display_name,omitempty"`
 	Email           string              `json:"email,omitempty"`
@@ -157,6 +158,32 @@ type AuthAuditEventListResponse struct {
 	Offset int                   `json:"offset"`
 }
 
+type AuthUserRequest struct {
+	Subject     string `json:"subject"`
+	Email       string `json:"email,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+	Active      *bool  `json:"active,omitempty"`
+}
+
+type AuthUserBindingRequest struct {
+	ScopeType string `json:"scope_type"`
+	ScopeID   string `json:"scope_id,omitempty"`
+	Role      string `json:"role"`
+}
+
+type AuthUserListResponse struct {
+	Users []*storage.User `json:"users"`
+	Count int             `json:"count"`
+}
+
+type AuthUserActivityResponse struct {
+	Events []*storage.AuditEvent   `json:"events"`
+	Usage  UsageAccountingResponse `json:"usage"`
+	Count  int                     `json:"count"`
+	Limit  int                     `json:"limit"`
+	Offset int                     `json:"offset"`
+}
+
 var authRoleCatalog = []AuthRoleDefinition{
 	{
 		ID:          RoleSystemAdmin,
@@ -288,6 +315,8 @@ var authAccessMatrix = []AuthAccessResource{
 		Operations: []AuthAccessOperation{
 			{ID: "view_auth_diagnostics", Label: "View auth diagnostics", GlobalRoles: []string{RoleSystemAdmin}},
 			{ID: "view_audit", Label: "View audit events", GlobalRoles: []string{RoleSystemAdmin}},
+			{ID: "view_user_activity", Label: "View user activity and usage attribution", GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, DomainRoles: []string{RoleProjectAdmin}, RepositoryRoles: []string{RoleProjectAdmin}},
+			{ID: "manage_users", Label: "Onboard users and manage delegated role bindings", GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, DomainRoles: []string{RoleProjectAdmin}, RepositoryRoles: []string{RoleProjectAdmin}},
 			{ID: "manage_service_accounts", Label: "Create, disable, rotate, and delete service-account API keys", GlobalRoles: []string{RoleSystemAdmin}},
 		},
 	},
@@ -523,6 +552,387 @@ func (s *Server) handleGetAuthEffectiveAccess(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, response)
 }
 
+func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	if !s.currentRequestCanManageUsers(r) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	filter := storage.UserFilter{Query: strings.TrimSpace(r.URL.Query().Get("q")), Limit: queryInt(r, "limit", 100), Offset: queryInt(r, "offset", 0)}
+	if raw := strings.TrimSpace(r.URL.Query().Get("active")); raw != "" {
+		active := raw == "true" || raw == "1"
+		filter.Active = &active
+	}
+	users, err := s.store.ListUsers(filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, AuthUserListResponse{Users: users, Count: len(users)})
+}
+
+func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
+	var req AuthUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	subject := strings.TrimSpace(req.Subject)
+	if subject == "" {
+		writeError(w, http.StatusBadRequest, "subject is required")
+		return
+	}
+	if !s.currentRequestCanManageUsers(r) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	now := time.Now().UTC()
+	active := true
+	if req.Active != nil {
+		active = *req.Active
+	}
+	user := &storage.User{ID: uuid.New().String(), Subject: subject, Email: strings.TrimSpace(req.Email), DisplayName: strings.TrimSpace(req.DisplayName), Active: active, CreatedAt: now, UpdatedAt: now}
+	if !active {
+		user.DisabledAt = &now
+	}
+	if err := s.store.SaveUser(user); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.recordAuditEvent(r, "auth.user.create", "success", "user", user.ID, "", map[string]any{"subject": user.Subject})
+	writeJSON(w, http.StatusCreated, user)
+}
+
+func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
+	if !s.currentRequestCanManageUsers(r) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	user, ok := s.loadUserForRequest(w, r)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, user)
+}
+
+func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.loadUserForRequest(w, r)
+	if !ok {
+		return
+	}
+	if !s.currentRequestCanManageUsers(r) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	var req AuthUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if strings.TrimSpace(req.Subject) != "" {
+		user.Subject = strings.TrimSpace(req.Subject)
+	}
+	user.Email = strings.TrimSpace(req.Email)
+	user.DisplayName = strings.TrimSpace(req.DisplayName)
+	user.UpdatedAt = time.Now().UTC()
+	if req.Active != nil {
+		user.Active = *req.Active
+		if !user.Active {
+			now := user.UpdatedAt
+			user.DisabledAt = &now
+		} else {
+			user.DisabledAt = nil
+		}
+	}
+	if err := s.store.SaveUser(user); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.recordAuditEvent(r, "auth.user.update", "success", "user", user.ID, "", map[string]any{"subject": user.Subject})
+	writeJSON(w, http.StatusOK, user)
+}
+
+func (s *Server) handleCreateUserBinding(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.loadUserForRequest(w, r)
+	if !ok {
+		return
+	}
+	var req AuthUserBindingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	binding := normalizeUserBindingRequest(user.ID, req)
+	if binding.Role == "" || binding.ScopeType == "" {
+		writeError(w, http.StatusBadRequest, "scope_type and role are required")
+		return
+	}
+	if !s.canManageUserBinding(r, binding) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	now := time.Now().UTC()
+	binding.ID = uuid.New().String()
+	binding.CreatedAt = now
+	binding.UpdatedAt = now
+	if err := s.store.SaveUserRoleBinding(binding); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.recordAuditEvent(r, "auth.user.binding.create", "success", "user", user.ID, projectIDForBinding(binding), map[string]any{"subject": user.Subject, "scope_type": binding.ScopeType, "scope_id": binding.ScopeID, "role": binding.Role})
+	writeJSON(w, http.StatusCreated, binding)
+}
+
+func (s *Server) handleDeleteUserBinding(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.loadUserForRequest(w, r)
+	if !ok {
+		return
+	}
+	bindingID := strings.TrimSpace(r.PathValue("binding_id"))
+	var binding *storage.UserRoleBinding
+	for _, candidate := range user.Bindings {
+		if candidate.ID == bindingID {
+			binding = candidate
+			break
+		}
+	}
+	if binding == nil {
+		writeError(w, http.StatusNotFound, "binding not found")
+		return
+	}
+	if !s.canManageUserBinding(r, binding) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	if err := s.store.DeleteUserRoleBinding(bindingID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.recordAuditEvent(r, "auth.user.binding.delete", "success", "user", user.ID, projectIDForBinding(binding), map[string]any{"subject": user.Subject, "scope_type": binding.ScopeType, "scope_id": binding.ScopeID, "role": binding.Role})
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": bindingID})
+}
+
+func (s *Server) handleDisableUser(w http.ResponseWriter, r *http.Request) {
+	s.setUserActive(w, r, false)
+}
+
+func (s *Server) handleEnableUser(w http.ResponseWriter, r *http.Request) {
+	s.setUserActive(w, r, true)
+}
+
+func (s *Server) setUserActive(w http.ResponseWriter, r *http.Request, active bool) {
+	user, ok := s.loadUserForRequest(w, r)
+	if !ok {
+		return
+	}
+	if !s.currentRequestCanManageUsers(r) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	updatedAt := time.Now().UTC()
+	if err := s.store.UpdateUserActive(user.ID, active, updatedAt); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	user.Active = active
+	user.UpdatedAt = updatedAt
+	if !active {
+		user.DisabledAt = &updatedAt
+	} else {
+		user.DisabledAt = nil
+	}
+	action := "auth.user.enable"
+	if !active {
+		action = "auth.user.disable"
+	}
+	s.recordAuditEvent(r, action, "success", "user", user.ID, "", map[string]any{"subject": user.Subject})
+	writeJSON(w, http.StatusOK, user)
+}
+
+func (s *Server) loadUserForRequest(w http.ResponseWriter, r *http.Request) (*storage.User, bool) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return nil, false
+	}
+	user, err := s.store.GetUser(strings.TrimSpace(r.PathValue("id")))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "user not found")
+		return nil, false
+	}
+	return user, true
+}
+
+func queryInt(r *http.Request, key string, fallback int) int {
+	value := fallback
+	if raw := strings.TrimSpace(r.URL.Query().Get(key)); raw != "" {
+		if _, err := fmt.Sscanf(raw, "%d", &value); err != nil {
+			return fallback
+		}
+	}
+	return value
+}
+
+func normalizeUserBindingRequest(userID string, req AuthUserBindingRequest) *storage.UserRoleBinding {
+	scopeType := strings.TrimSpace(req.ScopeType)
+	scopeID := strings.TrimSpace(req.ScopeID)
+	role := strings.ToLower(strings.TrimSpace(req.Role))
+	switch scopeType {
+	case "global":
+		scopeID = ""
+	case "project":
+		scopeID = normalizeProjectID(scopeID)
+	case "domain":
+		scopeID = normalizeDomainID(scopeID)
+	case "application_repository":
+		// keep explicit repository id
+	default:
+		scopeType = ""
+	}
+	return &storage.UserRoleBinding{UserID: userID, ScopeType: scopeType, ScopeID: scopeID, Role: role}
+}
+
+func (s *Server) currentRequestCanManageUsers(r *http.Request) bool {
+	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+		return true
+	}
+	return currentUserCanManageUsers(r, s.store)
+}
+
+func (s *Server) canManageUserBinding(r *http.Request, binding *storage.UserRoleBinding) bool {
+	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+		return true
+	}
+	return canManageBinding(r, s.store, binding)
+}
+
+func currentUserCanManageUsers(r *http.Request, store storage.Store) bool {
+	user, ok := AuthenticatedUserFromContext(r.Context())
+	if !ok || user == nil {
+		return false
+	}
+	if user.hasGlobalRole(RoleSystemAdmin, RoleProjectAdmin) {
+		return true
+	}
+	return hasAnyScopedProjectAdmin(user, store)
+}
+
+func canManageBinding(r *http.Request, store storage.Store, binding *storage.UserRoleBinding) bool {
+	user, ok := AuthenticatedUserFromContext(r.Context())
+	if !ok || user == nil || binding == nil {
+		return false
+	}
+	if user.hasGlobalRole(RoleSystemAdmin) {
+		return true
+	}
+	if binding.Role == RoleSystemAdmin || binding.ScopeType == "global" {
+		return false
+	}
+	if user.hasGlobalRole(RoleProjectAdmin) {
+		return true
+	}
+	switch binding.ScopeType {
+	case "project":
+		if user.hasProjectRole(binding.ScopeID, RoleProjectAdmin) {
+			return true
+		}
+		if store != nil {
+			if project, err := store.GetProject(binding.ScopeID); err == nil && project != nil {
+				return user.hasDomainRole(project.DomainID, RoleProjectAdmin)
+			}
+		}
+		return false
+	case "domain":
+		return user.hasDomainRole(binding.ScopeID, RoleProjectAdmin)
+	case "application_repository":
+		return user.hasRepositoryRole(binding.ScopeID, RoleProjectAdmin)
+	}
+	return false
+}
+
+func hasAnyScopedProjectAdmin(user *AuthenticatedUser, store storage.Store) bool {
+	for _, roles := range user.ProjectRoles {
+		if _, ok := roles[RoleProjectAdmin]; ok {
+			return true
+		}
+	}
+	for _, roles := range user.DomainRoles {
+		if _, ok := roles[RoleProjectAdmin]; ok {
+			return true
+		}
+	}
+	for _, roles := range user.RepositoryRoles {
+		if _, ok := roles[RoleProjectAdmin]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func projectIDForBinding(binding *storage.UserRoleBinding) string {
+	if binding != nil && binding.ScopeType == "project" {
+		return binding.ScopeID
+	}
+	return ""
+}
+
+func (s *Server) handleGetUserActivity(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	if !s.currentRequestCanManageUsers(r) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	filter, ok := parseAuditEventFilter(w, r, 50)
+	if !ok {
+		return
+	}
+	events, err := s.store.ListAuditEvents(filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	usage := s.usageAccounting(strings.TrimSpace(r.URL.Query().Get("project_id")))
+	if filter.ActorSubject != "" {
+		usage = usageAccountingForActor(filter.ActorSubject, usage, s.runner.ListTests())
+	}
+	writeJSON(w, http.StatusOK, AuthUserActivityResponse{Events: events, Usage: usage, Count: len(events), Limit: filter.Limit, Offset: filter.Offset})
+}
+
+func (s *Server) handleExportUserActivity(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	if !s.currentRequestCanManageUsers(r) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	filter, ok := parseAuditEventFilter(w, r, 1000)
+	if !ok {
+		return
+	}
+	events, err := s.store.ListAuditEvents(filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="apexload-user-activity.csv"`)
+	writer := csv.NewWriter(w)
+	if err := writer.Write([]string{"id", "created_at", "action", "status", "actor_type", "actor_subject", "actor_display_name", "domain_id", "project_id", "resource_type", "resource_id"}); err != nil {
+		return
+	}
+	for _, event := range events {
+		_ = writer.Write([]string{event.ID, event.CreatedAt.UTC().Format(time.RFC3339), event.Action, event.Status, event.ActorType, event.ActorSubject, event.ActorDisplayName, event.DomainID, event.ProjectID, event.ResourceType, event.ResourceID})
+	}
+	writer.Flush()
+}
+
 func (s *Server) handleListServiceAccounts(w http.ResponseWriter, _ *http.Request) {
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
@@ -683,7 +1093,7 @@ func (s *Server) handleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="apexload-audit-events.csv"`)
 	writer := csv.NewWriter(w)
-	if err := writer.Write([]string{"id", "created_at", "action", "status", "actor_type", "actor_subject", "actor_display_name", "project_id", "resource_type", "resource_id", "details_json"}); err != nil {
+	if err := writer.Write([]string{"id", "created_at", "action", "status", "actor_type", "actor_subject", "actor_display_name", "domain_id", "project_id", "resource_type", "resource_id", "details_json"}); err != nil {
 		return
 	}
 	for _, event := range events {
@@ -701,6 +1111,7 @@ func (s *Server) handleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 			event.ActorType,
 			event.ActorSubject,
 			event.ActorDisplayName,
+			event.DomainID,
 			event.ProjectID,
 			event.ResourceType,
 			event.ResourceID,
@@ -728,16 +1139,40 @@ func parseAuditEventFilter(w http.ResponseWriter, r *http.Request, defaultLimit 
 			return storage.AuditEventFilter{}, false
 		}
 	}
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	if projectID != "" {
+		projectID = normalizeProjectID(projectID)
+	}
+	domainID := strings.TrimSpace(r.URL.Query().Get("domain_id"))
+	if domainID != "" {
+		domainID = normalizeDomainID(domainID)
+	}
 	return storage.AuditEventFilter{
-		Limit:        limit,
-		Offset:       offset,
-		Action:       strings.TrimSpace(r.URL.Query().Get("action")),
-		ActorType:    strings.TrimSpace(r.URL.Query().Get("actor_type")),
-		ProjectID:    normalizeProjectID(strings.TrimSpace(r.URL.Query().Get("project_id"))),
-		ResourceType: strings.TrimSpace(r.URL.Query().Get("resource_type")),
-		ResourceID:   strings.TrimSpace(r.URL.Query().Get("resource_id")),
-		Status:       strings.TrimSpace(r.URL.Query().Get("status")),
+		Limit:         limit,
+		Offset:        offset,
+		Action:        strings.TrimSpace(r.URL.Query().Get("action")),
+		ActorType:     strings.TrimSpace(r.URL.Query().Get("actor_type")),
+		ActorSubject:  strings.TrimSpace(r.URL.Query().Get("actor_subject")),
+		ProjectID:     projectID,
+		DomainID:      domainID,
+		ResourceType:  strings.TrimSpace(r.URL.Query().Get("resource_type")),
+		ResourceID:    strings.TrimSpace(r.URL.Query().Get("resource_id")),
+		Status:        strings.TrimSpace(r.URL.Query().Get("status")),
+		CreatedAfter:  parseOptionalQueryTime(r.URL.Query().Get("created_after")),
+		CreatedBefore: parseOptionalQueryTime(r.URL.Query().Get("created_before")),
 	}, true
+}
+
+func parseOptionalQueryTime(value string) *time.Time {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	parsed, err := time.Parse(time.RFC3339, trimmed)
+	if err != nil {
+		return nil
+	}
+	return &parsed
 }
 
 func buildServiceAccount(req AuthServiceAccountRequest) (*storage.ServiceAccount, string, error) {
@@ -1010,6 +1445,7 @@ func authUserSummary(user *AuthenticatedUser) *AuthUserSummary {
 	}
 
 	return &AuthUserSummary{
+		ID:              user.ID,
 		Subject:         user.Subject,
 		DisplayName:     user.DisplayName,
 		Email:           user.Email,

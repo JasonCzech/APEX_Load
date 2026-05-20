@@ -525,6 +525,75 @@
   text-transform: uppercase;
 }
 
+.access-tab-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.access-tab {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 800;
+  padding: 9px 13px;
+}
+
+.access-tab.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.access-page .btn {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+  padding: 9px 13px;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+.access-page .btn-primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.access-page .btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.access-page .btn-secondary {
+  background: var(--bg-secondary);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.access-page .btn-secondary:hover:not(:disabled),
+.access-page .btn-ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.access-page .btn-ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+
+.access-page .btn-sm {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.access-page .btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .access-permission-badge.healthy,
 .access-status-badge.healthy {
   border-color: var(--success-border);
@@ -687,6 +756,7 @@
 }
 
 .access-form-grid input,
+.access-form-grid select,
 .access-project-role-row select {
   background: var(--bg-primary);
   border: 1px solid var(--border);
@@ -699,9 +769,19 @@
 }
 
 .access-form-grid input:focus,
+.access-form-grid select:focus,
 .access-project-role-row select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.access-search-grid {
+  grid-template-columns: 1fr;
+}
+
+.access-divider {
+  border-top: 1px solid var(--border-subtle, var(--border));
+  margin: 2px 0;
 }
 
 .access-control-section {
@@ -816,6 +896,52 @@
   gap: 10px;
 }
 
+.access-user-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 8px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  text-align: left;
+}
+
+.access-user-card.active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.access-user-card span:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.access-user-card strong,
+.access-binding-row strong,
+.access-activity-row strong,
+.access-usage-row strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-user-card small,
+.access-binding-row span,
+.access-activity-row span,
+.access-activity-row small,
+.access-usage-row span,
+.access-usage-row small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .access-account-card {
   background: var(--bg-secondary);
   border: 1px solid var(--border-subtle, var(--border));
@@ -878,6 +1004,39 @@
 .access-empty-state strong {
   color: var(--text-primary);
   font-size: 14px;
+}
+
+.access-binding-list,
+.access-activity-list,
+.access-usage-list {
+  display: grid;
+  gap: 9px;
+}
+
+.access-binding-row,
+.access-activity-row,
+.access-usage-row {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 11px;
+}
+
+.access-binding-row > div,
+.access-activity-row > div,
+.access-usage-row > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.access-activity-row > div:last-child {
+  align-items: end;
+  justify-items: end;
 }
 
 .access-modal-overlay {

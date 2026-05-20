@@ -10,9 +10,15 @@ import {
   DashboardAuditEventFilter,
   DashboardCreateServiceAccountRequest,
   DashboardCreateServiceAccountResponse,
+  DashboardCreateUserBindingRequest,
+  DashboardCreateUserRequest,
   DashboardServiceAccountListResponse,
   DashboardSystemSettings,
   DashboardUpdateServiceAccountRequest,
+  DashboardUpdateUserRequest,
+  DashboardUser,
+  DashboardUserActivityResponse,
+  DashboardUserListResponse,
   APMIntegrationProfilesResponse,
   BrowserBenchmarkEvidenceResponse,
   ExternalResultImportsResponse,
@@ -79,6 +85,26 @@ export function useSystemApi() {
     [],
   )
   const deleteAuthServiceAccount = useCallback((id: string) => request<{ deleted: string }>(`/auth/service-accounts/${encodeURIComponent(id)}`, { method: 'DELETE' }), [])
+  const listAuthUsers = useCallback((filter: { q?: string; active?: string; limit?: number; offset?: number } = {}) => request<DashboardUserListResponse>(`/auth/users${buildQuery({ limit: 100, ...filter })}`), [])
+  const createAuthUser = useCallback(
+    (payload: DashboardCreateUserRequest) => request<DashboardUser>('/auth/users', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+  const updateAuthUser = useCallback(
+    (id: string, payload: DashboardUpdateUserRequest) => request<DashboardUser>(`/auth/users/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+    [],
+  )
+  const enableAuthUser = useCallback((id: string) => request<DashboardUser>(`/auth/users/${encodeURIComponent(id)}/enable`, { method: 'POST' }), [])
+  const disableAuthUser = useCallback((id: string) => request<DashboardUser>(`/auth/users/${encodeURIComponent(id)}/disable`, { method: 'POST' }), [])
+  const createAuthUserBinding = useCallback(
+    (id: string, payload: DashboardCreateUserBindingRequest) => request(`/auth/users/${encodeURIComponent(id)}/bindings`, { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+  const deleteAuthUserBinding = useCallback((id: string, bindingId: string) => request<{ deleted: string }>(`/auth/users/${encodeURIComponent(id)}/bindings/${encodeURIComponent(bindingId)}`, { method: 'DELETE' }), [])
+  const getAuthUserActivity = useCallback((filter: DashboardAuditEventFilter = {}) => {
+    return request<DashboardUserActivityResponse>(`/auth/user-activity${buildQuery({ limit: 50, ...filter })}`)
+  }, [])
+  const downloadAuthUserActivity = useCallback((filter: DashboardAuditEventFilter = {}) => fetchBlob(`/auth/user-activity/export${buildQuery({ limit: 1000, ...filter })}`), [])
   const listAuthAuditEvents = useCallback((filter: DashboardAuditEventFilter = {}) => {
     return request<DashboardAuditEventListResponse>(`/auth/audit-events${buildQuery({ limit: 20, ...filter })}`)
   }, [])
@@ -133,6 +159,15 @@ export function useSystemApi() {
       updateAuthServiceAccount,
       rotateAuthServiceAccount,
       deleteAuthServiceAccount,
+      listAuthUsers,
+      createAuthUser,
+      updateAuthUser,
+      enableAuthUser,
+      disableAuthUser,
+      createAuthUserBinding,
+      deleteAuthUserBinding,
+      getAuthUserActivity,
+      downloadAuthUserActivity,
       listAuthAuditEvents,
       downloadAuthAuditEvents,
       getHealth,
@@ -158,6 +193,6 @@ export function useSystemApi() {
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getSystemInventory, getSystemReadiness, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, getFleetCapacity, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getSystemInventory, getSystemReadiness, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, getFleetCapacity, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
   )
 }

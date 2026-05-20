@@ -74,6 +74,29 @@ func TestHandleGetAuthStatusReturnsDevUserPreview(t *testing.T) {
 	}
 }
 
+func TestHandleGetAuthStatusDevUserPreviewWithoutProjectDoesNotGrantDefaultEditor(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	req.Header.Set(devViewHeader, devViewModeUser)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload AuthStatusResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal auth status: %v", err)
+	}
+	if payload.User == nil {
+		t.Fatalf("expected synthetic dev user, got %#v", payload)
+	}
+	if len(payload.User.ProjectRoles) != 0 {
+		t.Fatalf("project roles = %#v, want none without %s", payload.User.ProjectRoles, devProjectIDHeader)
+	}
+}
+
 func TestHandleGetAuthStatusIgnoresDevPreviewOutsideDevMode(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableTrustedHeaderAuth(t, server)
@@ -337,8 +360,8 @@ func TestHandleGetAuthAccessMatrixReturnsResourcePolicies(t *testing.T) {
 	if identityAndAudit.ID != "identity_and_audit" {
 		t.Fatalf("last resource = %#v, want identity_and_audit", identityAndAudit)
 	}
-	if len(identityAndAudit.Operations) != 3 || identityAndAudit.Operations[0].ID != "view_auth_diagnostics" {
-		t.Fatalf("identity and audit operations = %#v, want diagnostics + audit + service account operations", identityAndAudit.Operations)
+	if len(identityAndAudit.Operations) != 5 || identityAndAudit.Operations[0].ID != "view_auth_diagnostics" || identityAndAudit.Operations[2].ID != "view_user_activity" || identityAndAudit.Operations[3].ID != "manage_users" {
+		t.Fatalf("identity and audit operations = %#v, want diagnostics, audit, user, activity, and service account operations", identityAndAudit.Operations)
 	}
 }
 
@@ -631,11 +654,97 @@ func TestHandleGetAuditEventsReturnsRecordedSystemSettingsChange(t *testing.T) {
 	if len(csvRows) < 2 {
 		t.Fatalf("audit export rows = %#v, want header plus event", csvRows)
 	}
-	if csvRows[0][0] != "id" || csvRows[0][2] != "action" || csvRows[0][10] != "details_json" {
+	if csvRows[0][0] != "id" || csvRows[0][2] != "action" || csvRows[0][11] != "details_json" {
 		t.Fatalf("audit export header = %#v", csvRows[0])
 	}
 	if csvRows[1][2] != "system.settings.update" || csvRows[1][4] != "dev_mode" {
 		t.Fatalf("audit export event row = %#v", csvRows[1])
+	}
+}
+
+func TestAuthUserAdminLifecycleAndActivity(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	createBody := bytes.NewBufferString(`{"subject":"oidc|alice","email":"alice@example.com","display_name":"Alice Admin"}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/users", createBody)
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create user status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created storage.User
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created user: %v", err)
+	}
+	if created.ID == "" || created.Subject != "oidc|alice" || !created.Active {
+		t.Fatalf("created user = %#v, want active alice", created)
+	}
+
+	bindingReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/users/"+created.ID+"/bindings", bytes.NewBufferString(`{"scope_type":"project","scope_id":"project-a","role":"project_admin"}`))
+	bindingResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(bindingResp, bindingReq)
+	if bindingResp.Code != http.StatusCreated {
+		t.Fatalf("create binding status = %d, want %d body=%s", bindingResp.Code, http.StatusCreated, bindingResp.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/users?q=alice", nil)
+	listResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list users status = %d, want %d body=%s", listResp.Code, http.StatusOK, listResp.Body.String())
+	}
+	var users AuthUserListResponse
+	if err := json.Unmarshal(listResp.Body.Bytes(), &users); err != nil {
+		t.Fatalf("unmarshal users: %v", err)
+	}
+	if users.Count != 1 || len(users.Users[0].Bindings) != 1 || users.Users[0].Bindings[0].ScopeID != "project-a" {
+		t.Fatalf("users = %#v, want alice with project binding", users)
+	}
+
+	disableReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/users/"+created.ID+"/disable", nil)
+	disableResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(disableResp, disableReq)
+	if disableResp.Code != http.StatusOK {
+		t.Fatalf("disable user status = %d, want %d body=%s", disableResp.Code, http.StatusOK, disableResp.Body.String())
+	}
+	enableReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/users/"+created.ID+"/enable", nil)
+	enableResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(enableResp, enableReq)
+	if enableResp.Code != http.StatusOK {
+		t.Fatalf("enable user status = %d, want %d body=%s", enableResp.Code, http.StatusOK, enableResp.Body.String())
+	}
+
+	activityReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/user-activity?actor_subject=dev-mode&action=auth.user.binding.create&project_id=project-a", nil)
+	activityResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(activityResp, activityReq)
+	if activityResp.Code != http.StatusOK {
+		t.Fatalf("activity status = %d, want %d body=%s", activityResp.Code, http.StatusOK, activityResp.Body.String())
+	}
+	var activity AuthUserActivityResponse
+	if err := json.Unmarshal(activityResp.Body.Bytes(), &activity); err != nil {
+		t.Fatalf("unmarshal activity: %v", err)
+	}
+	if activity.Count != 1 || activity.Events[0].Action != "auth.user.binding.create" {
+		t.Fatalf("activity = %#v, want binding create event", activity)
+	}
+
+	exportReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/user-activity/export?actor_subject=dev-mode&limit=10", nil)
+	exportResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(exportResp, exportReq)
+	if exportResp.Code != http.StatusOK {
+		t.Fatalf("activity export status = %d, want %d body=%s", exportResp.Code, http.StatusOK, exportResp.Body.String())
+	}
+	rows, err := csv.NewReader(strings.NewReader(exportResp.Body.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("read activity export csv: %v", err)
+	}
+	if len(rows) < 2 || rows[0][5] != "actor_subject" || rows[1][5] != "dev-mode" {
+		t.Fatalf("activity export rows = %#v, want dev-mode actor", rows)
 	}
 }
 

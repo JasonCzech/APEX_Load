@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -381,6 +382,27 @@ func (s *metricsStoreSpy) UpdateServiceAccountActive(id string, active bool, upd
 	return nil
 }
 func (s *metricsStoreSpy) DeleteServiceAccount(id string) error { return nil }
+func (s *metricsStoreSpy) SaveUser(user *storage.User) error    { return nil }
+func (s *metricsStoreSpy) GetUser(id string) (*storage.User, error) {
+	return nil, sql.ErrNoRows
+}
+func (s *metricsStoreSpy) GetUserBySubject(subject string) (*storage.User, error) {
+	return nil, sql.ErrNoRows
+}
+func (s *metricsStoreSpy) ListUsers(filter storage.UserFilter) ([]*storage.User, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) UpdateUserActive(id string, active bool, updatedAt time.Time) error {
+	return nil
+}
+func (s *metricsStoreSpy) DeleteUser(id string) error { return nil }
+func (s *metricsStoreSpy) SaveUserRoleBinding(binding *storage.UserRoleBinding) error {
+	return nil
+}
+func (s *metricsStoreSpy) DeleteUserRoleBinding(id string) error { return nil }
+func (s *metricsStoreSpy) ListUserRoleBindings(userID string) ([]*storage.UserRoleBinding, error) {
+	return nil, nil
+}
 func (s *metricsStoreSpy) SaveAuditEvent(event *storage.AuditEvent) error {
 	if event != nil {
 		clone := *event

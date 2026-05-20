@@ -24,35 +24,98 @@ curl http://localhost:8080/api/v1/system/readiness
 APEX Load supports three auth modes:
 
 - `dev`: local development bypass. Do not use for shared environments.
-- `trusted_headers`: an upstream gateway authenticates the user and forwards trusted identity and role headers.
+- `trusted_headers`: an upstream gateway authenticates the user and forwards trusted identity headers.
 - `oidc`: APEX Load handles OIDC login, callback, signed session, and logout.
+
+For human users, OIDC or trusted headers prove identity, but APEX Load access is controlled by local user records and local role bindings. After bootstrap, an upstream-authenticated human principal must have an active local user whose `subject` matches the authenticated subject. Human effective roles come from `UserRoleBinding` rows, not from upstream role headers. Service accounts keep their existing key-based behavior.
 
 Service-account automation can authenticate with either header:
 
 ```bash
 Authorization: Bearer <api-key>
-X-APEX Load-API-Key: <api-key>
+X-APEXLoad-API-Key: <api-key>
 ```
 
 Service-account requests must satisfy both RBAC role checks and token scopes. For example, a service account with `system_admin` still needs a compatible scope such as `settings:manage` before it can update system settings.
 
 The MCP server under `mcp/` also uses service-account authentication by default. Configure `APEXLOAD_API_KEY` or `APEXLOAD_BEARER_TOKEN` for AI-agent and CI/CD automation rather than relying on local dev preview headers.
 
-Dashboard operators with service-account management permission can generate, rotate, disable, and delete scoped API keys from **Access & API Keys**. APEX Load returns created or rotated keys once and then retains only the hash.
+Dashboard operators with access management permission can onboard users, assign scoped roles, review user activity, and manage scoped API keys from **Access**. APEX Load returns created or rotated service-account keys once and then retains only the hash.
 
 Useful auth endpoints:
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/v1/auth/me` | Current auth mode, user, roles, and session metadata. |
-| `GET` | `/api/v1/auth/effective-access?project_id=<id>` | Operations the current principal can perform. |
+| `GET` | `/api/v1/auth/me` | Current auth mode, local user status, locally resolved roles, and session metadata. |
+| `GET` | `/api/v1/auth/effective-access?project_id=<id>` | Operations allowed for the current principal from local user bindings or service-account roles. |
 | `GET` | `/api/v1/auth/access-matrix` | Full role-to-operation catalog. |
 | `GET` | `/api/v1/auth/diagnostics` | OIDC/trusted-header readiness diagnostics. |
+| `GET` | `/api/v1/auth/users` | Search local human users. |
+| `POST` | `/api/v1/auth/users` | Onboard a human user subject. |
+| `GET` | `/api/v1/auth/users/{id}` | Get one local user and role bindings. |
+| `PATCH` | `/api/v1/auth/users/{id}` | Update local user metadata or active state. |
+| `POST` | `/api/v1/auth/users/{id}/bindings` | Grant a global, domain, project, or repository role binding. |
+| `DELETE` | `/api/v1/auth/users/{id}/bindings/{binding_id}` | Remove one local role binding. |
+| `POST` | `/api/v1/auth/users/{id}/disable` | Disable a local user while preserving audit history. |
+| `POST` | `/api/v1/auth/users/{id}/enable` | Re-enable a local user. |
+| `GET` | `/api/v1/auth/user-activity` | Audit events plus attributed usage filtered by user, timeframe, domain, project, action, or status. |
+| `GET` | `/api/v1/auth/user-activity/export` | Export user activity as CSV. |
 | `GET` | `/api/v1/auth/service-accounts` | List service accounts. |
 | `POST` | `/api/v1/auth/service-accounts` | Create a service account and return its one-time API key. |
 | `POST` | `/api/v1/auth/service-accounts/{id}/rotate` | Rotate a service-account API key. |
 | `GET` | `/api/v1/auth/audit-events` | Query audit events. |
 | `GET` | `/api/v1/auth/audit-events/export` | Export audit events as CSV. |
+
+### Human User Administration
+
+Create a local user record for the subject emitted by OIDC or the trusted-header gateway:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/users \
+  -H "Authorization: Bearer $APEXLOAD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": "oidc|00u123",
+    "email": "maya@example.com",
+    "display_name": "Maya Chen",
+    "active": true
+  }'
+```
+
+Assign roles with explicit scopes. Omit `scope_id` for `global`; provide a domain, project, or application repository id for narrower scopes.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/users/usr_123/bindings \
+  -H "Authorization: Bearer $APEXLOAD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scope_type": "project",
+    "scope_id": "project-1",
+    "role": "project_admin"
+  }'
+```
+
+Supported roles remain `viewer`, `editor`, `project_admin`, and `system_admin`. Delegated administration is scoped: system admins can manage all users and bindings; domain project admins can manage domain and child-project bindings inside their domain; project admins can manage bindings for their project only. Delegated admins cannot grant `system_admin` or create bindings broader than their own scope.
+
+Disable users instead of deleting them:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/users/usr_123/disable \
+  -H "Authorization: Bearer $APEXLOAD_API_KEY"
+```
+
+Disabling preserves user records, role history, and audit events. Re-enable with `POST /api/v1/auth/users/{id}/enable`.
+
+### User Activity And Audit Filters
+
+User activity combines audit events with per-user run usage attribution for newly attributed runs. Older runs without attribution are reported under an `unattributed` usage bucket.
+
+```bash
+curl "http://localhost:8080/api/v1/auth/user-activity?actor_subject=oidc%7C00u123&created_after=2026-05-01T00:00:00Z&domain_id=default&project_id=project-1" \
+  -H "Authorization: Bearer $APEXLOAD_API_KEY"
+```
+
+`/api/v1/auth/user-activity` and `/api/v1/auth/audit-events` support `actor_subject`, `created_after`, `created_before`, `domain_id`, `project_id`, `action`, `actor_type`, `resource_type`, `resource_id`, `status`, `limit`, and `offset`. Use the matching `/export` endpoints for CSV output.
 
 ## Request Conventions
 
@@ -81,8 +144,8 @@ Common status codes:
 In local `dev` auth mode, the dashboard can simulate Admin or project editor User views. API clients can use the same preview headers for local checks:
 
 ```text
-X-APEX Load-Dev-View: admin|user
-X-APEX Load-Dev-Project-ID: <project-id>
+X-APEXLoad-Dev-View: admin|user
+X-APEXLoad-Dev-Project-ID: <project-id>
 ```
 
 These headers are honored only when the controller auth mode is `dev`. They are ignored in `trusted_headers` and `oidc` modes.
@@ -223,7 +286,32 @@ Messages are JSON and include a `type` field such as `metrics_update`, `test_cre
 
 Some reporting endpoints accept `format` or `profile` query parameters where implemented, for example `format=html|json|csv|jsonl|parquet` and `profile=executive|engineer|audit`.
 
+Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array when run attribution exists. Each bucket follows the same usage bucket shape used by project and protocol summaries; historical runs without attribution are grouped as `unattributed`.
+
 ## Endpoint Catalogue
+
+### Auth, Access, And Activity
+
+| Method | Path |
+| --- | --- |
+| `GET` | `/api/v1/auth/me` |
+| `GET` | `/api/v1/auth/effective-access` |
+| `GET` | `/api/v1/auth/access-matrix` |
+| `GET` | `/api/v1/auth/roles` |
+| `GET` | `/api/v1/auth/diagnostics` |
+| `GET` / `POST` | `/api/v1/auth/users` |
+| `GET` / `PATCH` | `/api/v1/auth/users/{id}` |
+| `POST` | `/api/v1/auth/users/{id}/bindings` |
+| `DELETE` | `/api/v1/auth/users/{id}/bindings/{binding_id}` |
+| `POST` | `/api/v1/auth/users/{id}/disable` |
+| `POST` | `/api/v1/auth/users/{id}/enable` |
+| `GET` | `/api/v1/auth/user-activity` |
+| `GET` | `/api/v1/auth/user-activity/export` |
+| `GET` / `POST` | `/api/v1/auth/service-accounts` |
+| `PATCH` / `DELETE` | `/api/v1/auth/service-accounts/{id}` |
+| `POST` | `/api/v1/auth/service-accounts/{id}/rotate` |
+| `GET` | `/api/v1/auth/audit-events` |
+| `GET` | `/api/v1/auth/audit-events/export` |
 
 ### Domain, Repository, Project, And Release Scope
 
@@ -331,7 +419,9 @@ Some reporting endpoints accept `format` or `profile` query parameters where imp
 ## Operational Tips
 
 - Prefer service accounts for CI/CD and external automations.
+- Onboard local users before enabling production OIDC or trusted-header access for a team.
 - Use `GET /api/v1/auth/effective-access` before enabling UI or pipeline actions for a principal.
+- Use user activity filters when investigating changes across timeframe, domain, project, action, or status.
 - Validate scripts and load models before creating or running tests.
 - Scope list calls with `project_id`, `application_id`, and `release_id` to keep automation deterministic.
 - Archive run evidence after release gates and export audit events for governance changes.

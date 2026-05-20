@@ -456,6 +456,132 @@ func TestSQLiteStoreServiceAccountsAndAuditEvents(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreUsersRoleBindingsAndAuditFilters(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	user := &User{
+		ID:          "user-1",
+		Subject:     "oidc|alice",
+		Email:       "alice@example.com",
+		DisplayName: "Alice Admin",
+		Active:      true,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := store.SaveUser(user); err != nil {
+		t.Fatalf("SaveUser returned error: %v", err)
+	}
+	if err := store.SaveUserRoleBinding(&UserRoleBinding{
+		ID:        "binding-1",
+		UserID:    user.ID,
+		ScopeType: "project",
+		ScopeID:   "project-a",
+		Role:      "project_admin",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveUserRoleBinding returned error: %v", err)
+	}
+	if err := store.SaveUserRoleBinding(&UserRoleBinding{
+		ID:        "binding-duplicate",
+		UserID:    user.ID,
+		ScopeType: "project",
+		ScopeID:   "project-a",
+		Role:      "project_admin",
+		CreatedAt: now,
+		UpdatedAt: now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveUserRoleBinding duplicate returned error: %v", err)
+	}
+
+	roundTrip, err := store.GetUserBySubject("oidc|alice")
+	if err != nil {
+		t.Fatalf("GetUserBySubject returned error: %v", err)
+	}
+	if roundTrip.Email != user.Email || len(roundTrip.Bindings) != 1 || roundTrip.Bindings[0].Role != "project_admin" {
+		t.Fatalf("round-trip user = %#v, want one project_admin binding", roundTrip)
+	}
+
+	filtered, err := store.ListUsers(UserFilter{Query: "alice", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListUsers returned error: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].ID != user.ID {
+		t.Fatalf("filtered users = %#v, want alice", filtered)
+	}
+
+	disabledAt := now.Add(2 * time.Minute)
+	if err := store.UpdateUserActive(user.ID, false, disabledAt); err != nil {
+		t.Fatalf("UpdateUserActive disable returned error: %v", err)
+	}
+	active := false
+	inactiveUsers, err := store.ListUsers(UserFilter{Active: &active, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListUsers inactive returned error: %v", err)
+	}
+	if len(inactiveUsers) != 1 || inactiveUsers[0].DisabledAt == nil {
+		t.Fatalf("inactive users = %#v, want disabled alice", inactiveUsers)
+	}
+	if err := store.UpdateUserActive(user.ID, true, disabledAt.Add(time.Minute)); err != nil {
+		t.Fatalf("UpdateUserActive enable returned error: %v", err)
+	}
+	enabled, err := store.GetUser(user.ID)
+	if err != nil {
+		t.Fatalf("GetUser enabled returned error: %v", err)
+	}
+	if !enabled.Active || enabled.DisabledAt != nil {
+		t.Fatalf("enabled user = %#v, want active without disabled_at", enabled)
+	}
+
+	if err := store.SaveAuditEvent(&AuditEvent{
+		ID:           "audit-user-1",
+		Action:       "auth.user.create",
+		ActorType:    "user",
+		ActorSubject: "oidc|alice",
+		DomainID:     "domain-a",
+		ProjectID:    "project-a",
+		ResourceType: "user",
+		ResourceID:   user.ID,
+		Status:       "success",
+		CreatedAt:    now,
+	}); err != nil {
+		t.Fatalf("SaveAuditEvent user create returned error: %v", err)
+	}
+	if err := store.SaveAuditEvent(&AuditEvent{
+		ID:           "audit-user-2",
+		Action:       "auth.user.disable",
+		ActorType:    "user",
+		ActorSubject: "oidc|bob",
+		DomainID:     "domain-b",
+		ProjectID:    "project-b",
+		ResourceType: "user",
+		ResourceID:   "user-2",
+		Status:       "success",
+		CreatedAt:    now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("SaveAuditEvent user disable returned error: %v", err)
+	}
+
+	createdBefore := now.Add(time.Minute)
+	events, err := store.ListAuditEvents(AuditEventFilter{
+		ActorSubject:  "oidc|alice",
+		DomainID:      "domain-a",
+		CreatedBefore: &createdBefore,
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("ListAuditEvents user filters returned error: %v", err)
+	}
+	if len(events) != 1 || events[0].ID != "audit-user-1" || events[0].DomainID != "domain-a" {
+		t.Fatalf("filtered audit events = %#v, want audit-user-1", events)
+	}
+}
+
 func TestSQLiteStorePersistsPendingSince(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

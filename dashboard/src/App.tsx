@@ -119,6 +119,9 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const { connectionState } = useWebSocket({ onMessage: handleWSMessage, projectId: activeProject?.id })
   const { applications, releases, activeApplication, activeRelease, setActiveApplication, setActiveRelease, createAndSelectApplication, createAndSelectRelease } = useApplication()
   const canManageServiceAccounts = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_service_accounts')
+  const canManageUsers = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_users')
+  const canViewUserActivity = isEffectiveOperationAllowed(effectiveAccessResources, 'view_user_activity')
+  const canUseAccessWorkspace = canManageServiceAccounts || canManageUsers || canViewUserActivity
   const canManageRepositoryProjects = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_repository_projects')
   const canManageRepositoryReleases = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_repository_releases')
   const canManageRepository = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_application_repository')
@@ -235,10 +238,10 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   }, [isDevUserPreview])
 
   useEffect(() => {
-    if (view.page === 'access' && !canManageServiceAccounts) {
+    if (view.page === 'access' && !canUseAccessWorkspace) {
       setView({ page: 'dashboard' })
     }
-  }, [canManageServiceAccounts, view.page])
+  }, [canUseAccessWorkspace, view.page])
 
   return (
     <div className="app-layout">
@@ -261,7 +264,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
         onApplicationChange={setActiveApplication}
         onReleaseChange={setActiveRelease}
         onCreateApplication={createAndSelectApplication}
-        showAccess={canManageServiceAccounts}
+        showAccess={canUseAccessWorkspace}
       />
       <main className="main-content">
         <div className="main-topbar" aria-label="Dashboard controls">
@@ -317,7 +320,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             />
           )}
           {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} />}
-          {view.page === 'docs' && <ApiGuidePage onNavigate={handleNavigate} />}
+          {view.page === 'docs' && <ApiGuidePage onNavigate={handleNavigate} effectiveAccessResources={effectiveAccessResources} />}
           {view.page === 'repository' && (
             <ApplicationRepositoryPage
               domains={domains}
@@ -337,7 +340,11 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
           {view.page === 'access' && (
             <AccessPage
               projects={projects}
+              domains={domains}
+              activeDomain={activeDomain}
               activeProject={activeProject}
+              canManageUsers={canManageUsers}
+              canViewUserActivity={canViewUserActivity}
               canManageServiceAccounts={canManageServiceAccounts}
             />
           )}

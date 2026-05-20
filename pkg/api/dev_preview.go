@@ -33,10 +33,9 @@ func devPreviewUserForRequest(r *http.Request, mode string) *AuthenticatedUser {
 	if mode != devViewModeUser {
 		return nil
 	}
-	projectID := normalizeProjectID(strings.TrimSpace(r.Header.Get(devProjectIDHeader)))
 	projectRoles := make(map[string]map[string]struct{})
-	if projectID != "" {
-		projectRoles[projectID] = map[string]struct{}{RoleEditor: {}}
+	if rawProjectID := strings.TrimSpace(r.Header.Get(devProjectIDHeader)); rawProjectID != "" {
+		projectRoles[normalizeProjectID(rawProjectID)] = map[string]struct{}{RoleEditor: {}}
 	}
 	domainRoles := map[string]map[string]struct{}{
 		storage.DefaultDomainID: {RoleEditor: {}},

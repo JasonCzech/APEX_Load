@@ -152,6 +152,10 @@ type ManagedTest struct {
 	BaselinePinnedAt      *time.Time                   `json:"baseline_pinned_at,omitempty"`
 	StartedAt             *time.Time                   `json:"started_at,omitempty"`
 	EndedAt               *time.Time                   `json:"ended_at,omitempty"`
+	CreatedBySubject      string                       `json:"created_by_subject,omitempty"`
+	CreatedByDisplayName  string                       `json:"created_by_display_name,omitempty"`
+	StartedBySubject      string                       `json:"started_by_subject,omitempty"`
+	StartedByDisplayName  string                       `json:"started_by_display_name,omitempty"`
 	LiveMetrics           *LiveMetrics                 `json:"live_metrics,omitempty"`
 	History               []*LiveMetrics               `json:"history,omitempty"`
 	ComparisonBaseline    *RunComparisonBaseline       `json:"comparison_baseline,omitempty"`
@@ -816,30 +820,34 @@ func (tr *TestRunner) loadStoredTests() {
 
 func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 	managedTest := &ManagedTest{
-		ID:               record.ID,
-		Name:             record.Name,
-		Status:           record.Status,
-		ApplicationID:    record.ApplicationID,
-		ReleaseID:        record.ReleaseID,
-		ScenarioID:       record.ScenarioID,
-		ProjectID:        record.ProjectID,
-		FolderID:         record.FolderID,
-		Groups:           decodeStoredGroups(record.Groups),
-		Assignment:       decodeStoredGeneratorAssignment(record.Assignment),
-		ScenarioMode:     normalizeScenarioMode(record.ScenarioMode),
-		ScriptShakeout:   record.ScriptShakeout,
-		ResourceBaseline: record.ResourceBaseline,
-		StartDelay:       record.StartDelay,
-		GoalConfig:       decodeStoredGoalConfig(record.GoalConfig),
-		RuntimeSettings:  decodeStoredRuntimeSettings(record.RuntimeSettings),
-		TotalVUsers:      record.TotalVUsers,
-		Duration:         time.Duration(record.Duration),
-		DurationStr:      time.Duration(record.Duration).String(),
-		CreatedAt:        record.StartTime,
-		PendingSince:     record.PendingSince,
-		BaselinePinned:   record.BaselinePinned,
-		BaselinePinnedAt: record.BaselinePinnedAt,
-		Error:            record.Error,
+		ID:                   record.ID,
+		Name:                 record.Name,
+		Status:               record.Status,
+		ApplicationID:        record.ApplicationID,
+		ReleaseID:            record.ReleaseID,
+		ScenarioID:           record.ScenarioID,
+		ProjectID:            record.ProjectID,
+		FolderID:             record.FolderID,
+		Groups:               decodeStoredGroups(record.Groups),
+		Assignment:           decodeStoredGeneratorAssignment(record.Assignment),
+		ScenarioMode:         normalizeScenarioMode(record.ScenarioMode),
+		ScriptShakeout:       record.ScriptShakeout,
+		ResourceBaseline:     record.ResourceBaseline,
+		StartDelay:           record.StartDelay,
+		GoalConfig:           decodeStoredGoalConfig(record.GoalConfig),
+		RuntimeSettings:      decodeStoredRuntimeSettings(record.RuntimeSettings),
+		TotalVUsers:          record.TotalVUsers,
+		Duration:             time.Duration(record.Duration),
+		DurationStr:          time.Duration(record.Duration).String(),
+		CreatedAt:            record.StartTime,
+		PendingSince:         record.PendingSince,
+		BaselinePinned:       record.BaselinePinned,
+		BaselinePinnedAt:     record.BaselinePinnedAt,
+		CreatedBySubject:     record.CreatedBySubject,
+		CreatedByDisplayName: record.CreatedByDisplayName,
+		StartedBySubject:     record.StartedBySubject,
+		StartedByDisplayName: record.StartedByDisplayName,
+		Error:                record.Error,
 	}
 	if record.EndTime != nil {
 		managedTest.EndedAt = record.EndTime
@@ -3359,28 +3367,32 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		return nil
 	}
 	return &storage.TestRecord{
-		ID:               test.ID,
-		Name:             test.Name,
-		Status:           test.Status,
-		ApplicationID:    test.ApplicationID,
-		ReleaseID:        test.ReleaseID,
-		ScenarioID:       test.ScenarioID,
-		ProjectID:        normalizeProjectID(test.ProjectID),
-		FolderID:         test.FolderID,
-		ScenarioMode:     test.ScenarioMode,
-		ScriptShakeout:   test.ScriptShakeout,
-		ResourceBaseline: test.ResourceBaseline,
-		StartDelay:       test.StartDelay,
-		Assignment:       test.Assignment,
-		TotalVUsers:      test.TotalVUsers,
-		Duration:         int64(test.Duration),
-		StartTime:        test.CreatedAt,
-		PendingSince:     test.PendingSince,
-		BaselinePinned:   test.BaselinePinned,
-		BaselinePinnedAt: test.BaselinePinnedAt,
-		Groups:           test.Groups,
-		GoalConfig:       test.GoalConfig,
-		RuntimeSettings:  test.RuntimeSettings,
+		ID:                   test.ID,
+		Name:                 test.Name,
+		Status:               test.Status,
+		ApplicationID:        test.ApplicationID,
+		ReleaseID:            test.ReleaseID,
+		ScenarioID:           test.ScenarioID,
+		ProjectID:            normalizeProjectID(test.ProjectID),
+		FolderID:             test.FolderID,
+		ScenarioMode:         test.ScenarioMode,
+		ScriptShakeout:       test.ScriptShakeout,
+		ResourceBaseline:     test.ResourceBaseline,
+		StartDelay:           test.StartDelay,
+		Assignment:           test.Assignment,
+		TotalVUsers:          test.TotalVUsers,
+		Duration:             int64(test.Duration),
+		StartTime:            test.CreatedAt,
+		PendingSince:         test.PendingSince,
+		BaselinePinned:       test.BaselinePinned,
+		BaselinePinnedAt:     test.BaselinePinnedAt,
+		CreatedBySubject:     test.CreatedBySubject,
+		CreatedByDisplayName: test.CreatedByDisplayName,
+		StartedBySubject:     test.StartedBySubject,
+		StartedByDisplayName: test.StartedByDisplayName,
+		Groups:               test.Groups,
+		GoalConfig:           test.GoalConfig,
+		RuntimeSettings:      test.RuntimeSettings,
 	}
 }
 
@@ -3402,6 +3414,30 @@ func (tr *TestRunner) saveManagedTestRecord(test *ManagedTest) {
 	if tr.testStore != nil {
 		tr.testStore.SaveTest(buildManagedTestRecord(test))
 	}
+}
+
+func (tr *TestRunner) AttributeTestCreated(id string, subject string, displayName string) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	test, ok := tr.tests[id]
+	if !ok {
+		return
+	}
+	test.CreatedBySubject = strings.TrimSpace(subject)
+	test.CreatedByDisplayName = strings.TrimSpace(displayName)
+	tr.saveManagedTestRecord(test)
+}
+
+func (tr *TestRunner) AttributeTestStarted(id string, subject string, displayName string) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	test, ok := tr.tests[id]
+	if !ok {
+		return
+	}
+	test.StartedBySubject = strings.TrimSpace(subject)
+	test.StartedByDisplayName = strings.TrimSpace(displayName)
+	tr.saveManagedTestRecord(test)
 }
 
 func (tr *TestRunner) deleteStoredTest(id string) {

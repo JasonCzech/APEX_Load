@@ -22,6 +22,7 @@ type UsageAccountingResponse struct {
 	ByProject   []UsageAccountingBucket `json:"by_project,omitempty"`
 	ByProtocol  []UsageAccountingBucket `json:"by_protocol,omitempty"`
 	ByRegion    []UsageAccountingBucket `json:"by_region,omitempty"`
+	ByUser      []UsageAccountingBucket `json:"by_user,omitempty"`
 	Notes       []string                `json:"notes,omitempty"`
 }
 
@@ -209,6 +210,7 @@ func usageAccountingFromTests(projectID string, tests []*ManagedTest) UsageAccou
 	byProject := map[string]*UsageAccountingBucket{}
 	byProtocol := map[string]*UsageAccountingBucket{}
 	byRegion := map[string]*UsageAccountingBucket{}
+	byUser := map[string]*UsageAccountingBucket{}
 	totals := &UsageAccountingBucket{}
 
 	for _, test := range tests {
@@ -226,6 +228,7 @@ func usageAccountingFromTests(projectID string, tests []*ManagedTest) UsageAccou
 
 		addRunUsage(totals, int64(test.TotalVUsers), durationSeconds, vuserSeconds, archiveBytes, status)
 		addRunUsage(usageBucket(byProject, testProjectID), int64(test.TotalVUsers), durationSeconds, vuserSeconds, archiveBytes, status)
+		addRunUsage(usageBucket(byUser, usageActorKey(test)), int64(test.TotalVUsers), durationSeconds, vuserSeconds, archiveBytes, status)
 
 		seenProtocols := map[string]struct{}{}
 		for _, group := range test.Groups {
@@ -252,6 +255,7 @@ func usageAccountingFromTests(projectID string, tests []*ManagedTest) UsageAccou
 		ByProject:   usageSortedBuckets(byProject),
 		ByProtocol:  usageSortedBuckets(byProtocol),
 		ByRegion:    usageSortedBuckets(byRegion),
+		ByUser:      usageSortedBuckets(byUser),
 		Notes: []string{
 			"Usage is derived from persisted and in-memory run metadata.",
 			"Region allocation uses requested assignment metadata; exact generator placement accounting will be refined with the formal fleet model.",
@@ -261,6 +265,36 @@ func usageAccountingFromTests(projectID string, tests []*ManagedTest) UsageAccou
 		response.ByProject = nil
 	}
 	return response
+}
+
+func usageAccountingForActor(actorSubject string, base UsageAccountingResponse, tests []*ManagedTest) UsageAccountingResponse {
+	projectID := base.ProjectID
+	filtered := []*ManagedTest{}
+	for _, test := range tests {
+		if test == nil {
+			continue
+		}
+		if projectID != "" && normalizeProjectID(test.ProjectID) != projectID {
+			continue
+		}
+		if usageActorKey(test) == actorSubject {
+			filtered = append(filtered, test)
+		}
+	}
+	return usageAccountingFromTests(projectID, filtered)
+}
+
+func usageActorKey(test *ManagedTest) string {
+	if test == nil {
+		return "unattributed"
+	}
+	if strings.TrimSpace(test.StartedBySubject) != "" {
+		return strings.TrimSpace(test.StartedBySubject)
+	}
+	if strings.TrimSpace(test.CreatedBySubject) != "" {
+		return strings.TrimSpace(test.CreatedBySubject)
+	}
+	return "unattributed"
 }
 
 func usageAccountingCSVRows(usage UsageAccountingResponse) [][]string {
@@ -274,6 +308,9 @@ func usageAccountingCSVRows(usage UsageAccountingResponse) [][]string {
 	}
 	for _, bucket := range usage.ByRegion {
 		rows = append(rows, usageAccountingCSVRow(generatedAt, usage.ProjectID, "region", bucket.Key, bucket))
+	}
+	for _, bucket := range usage.ByUser {
+		rows = append(rows, usageAccountingCSVRow(generatedAt, usage.ProjectID, "user", bucket.Key, bucket))
 	}
 	return rows
 }

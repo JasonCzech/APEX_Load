@@ -33,6 +33,7 @@ type authUserContextKey struct{}
 type authServiceAccountContextKey struct{}
 
 type AuthenticatedUser struct {
+	ID              string
 	Subject         string
 	DisplayName     string
 	Email           string
@@ -50,13 +51,14 @@ type AuthenticatedServiceAccount struct {
 }
 
 type accessRequirement struct {
-	GlobalRoles      []string
-	ProjectRoles     []string
-	ProjectLookup    func(*http.Request, storage.Store) (string, int, string)
-	DomainRoles      []string
-	DomainLookup     func(*http.Request, storage.Store) (string, int, string)
-	RepositoryRoles  []string
-	RepositoryLookup func(*http.Request, storage.Store) (string, int, string)
+	AuthenticatedOnly bool
+	GlobalRoles       []string
+	ProjectRoles      []string
+	ProjectLookup     func(*http.Request, storage.Store) (string, int, string)
+	DomainRoles       []string
+	DomainLookup      func(*http.Request, storage.Store) (string, int, string)
+	RepositoryRoles   []string
+	RepositoryLookup  func(*http.Request, storage.Store) (string, int, string)
 }
 
 type requestProjectLookup func(*http.Request) (string, int, string)
@@ -248,6 +250,14 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 		return true
 	}
 
+	if requirement.AuthenticatedOnly {
+		if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
+			writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
+			return false
+		}
+		return true
+	}
+
 	if requirement.ProjectLookup != nil {
 		projectID, status, msg := requirement.ProjectLookup(r, store)
 		if status != 0 {
@@ -329,13 +339,90 @@ func resolveRequestAuth(r *http.Request, settings AuthSettings, store storage.St
 		if err != nil {
 			return authResolution{}, err
 		}
-		return authResolution{User: user}, nil
+		localUser, err := applyLocalUserBindings(user, store)
+		if err != nil {
+			return authResolution{}, err
+		}
+		return authResolution{User: localUser}, nil
 	}
 	user, err := authenticatedUserFromHeaders(r, settings)
 	if err != nil {
 		return authResolution{}, err
 	}
-	return authResolution{User: user}, nil
+	localUser, err := applyLocalUserBindings(user, store)
+	if err != nil {
+		return authResolution{}, err
+	}
+	return authResolution{User: localUser}, nil
+}
+
+func applyLocalUserBindings(upstream *AuthenticatedUser, store storage.Store) (*AuthenticatedUser, error) {
+	if upstream == nil {
+		return nil, fmt.Errorf("authentication required")
+	}
+	if store == nil {
+		return upstream, nil
+	}
+	local, err := store.GetUserBySubject(upstream.Subject)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			users, listErr := store.ListUsers(storage.UserFilter{Limit: 1})
+			if listErr == nil && len(users) == 0 {
+				return upstream, nil
+			}
+			return nil, fmt.Errorf("user is not onboarded")
+		}
+		return nil, fmt.Errorf("user access lookup failed")
+	}
+	if local == nil || !local.Active {
+		return nil, fmt.Errorf("user is disabled")
+	}
+	now := time.Now().UTC()
+	local.LastSeenAt = &now
+	local.DisplayName = firstNonEmpty(upstream.DisplayName, local.DisplayName)
+	local.Email = firstNonEmpty(upstream.Email, local.Email)
+	local.UpdatedAt = now
+	_ = store.SaveUser(local)
+	user := &AuthenticatedUser{
+		ID:              local.ID,
+		Subject:         local.Subject,
+		DisplayName:     firstNonEmpty(local.DisplayName, upstream.DisplayName),
+		Email:           firstNonEmpty(local.Email, upstream.Email),
+		GlobalRoles:     make(map[string]struct{}),
+		ProjectRoles:    make(map[string]map[string]struct{}),
+		DomainRoles:     make(map[string]map[string]struct{}),
+		RepositoryRoles: make(map[string]map[string]struct{}),
+	}
+	for _, binding := range local.Bindings {
+		if binding == nil {
+			continue
+		}
+		role := strings.ToLower(strings.TrimSpace(binding.Role))
+		if role == "" {
+			continue
+		}
+		switch strings.TrimSpace(binding.ScopeType) {
+		case "global":
+			user.GlobalRoles[role] = struct{}{}
+		case "project":
+			addScopedUserRole(user.ProjectRoles, normalizeProjectID(binding.ScopeID), role)
+		case "domain":
+			addScopedUserRole(user.DomainRoles, normalizeDomainID(binding.ScopeID), role)
+		case "application_repository":
+			addScopedUserRole(user.RepositoryRoles, strings.TrimSpace(binding.ScopeID), role)
+		}
+	}
+	return user, nil
+}
+
+func addScopedUserRole(scoped map[string]map[string]struct{}, scopeID string, role string) {
+	if scopeID == "" || role == "" {
+		return
+	}
+	if scoped[scopeID] == nil {
+		scoped[scopeID] = map[string]struct{}{}
+	}
+	scoped[scopeID][role] = struct{}{}
 }
 
 func authenticatedUserFromAPIKey(r *http.Request, store storage.Store) (*AuthenticatedServiceAccount, *AuthenticatedUser, bool, error) {
@@ -410,6 +497,12 @@ func requiredServiceAccountScope(r *http.Request) string {
 	method := r.Method
 	if strings.HasPrefix(path, "/api/v1/auth/service-accounts") {
 		return "service_accounts:manage"
+	}
+	if strings.HasPrefix(path, "/api/v1/auth/users") {
+		return "service_accounts:manage"
+	}
+	if strings.HasPrefix(path, "/api/v1/auth/user-activity") {
+		return "audit:read"
 	}
 	if strings.HasPrefix(path, "/api/v1/auth/audit-events") {
 		return "audit:read"
@@ -675,6 +768,18 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}
 	}
 
+	if path == "/api/v1/auth/users" {
+		if method == http.MethodGet || method == http.MethodPost {
+			return accessRequirement{AuthenticatedOnly: true}, true
+		}
+	}
+
+	if path == "/api/v1/auth/user-activity" || path == "/api/v1/auth/user-activity/export" {
+		if method == http.MethodGet {
+			return accessRequirement{AuthenticatedOnly: true}, true
+		}
+	}
+
 	if path == "/api/v1/schedules/health" && method == http.MethodGet {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
@@ -689,6 +794,13 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 
 	if strings.HasPrefix(path, "/api/v1/auth/service-accounts/") && method == http.MethodDelete {
 		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
+	}
+
+	if strings.HasPrefix(path, "/api/v1/auth/users/") {
+		switch method {
+		case http.MethodGet, http.MethodPatch, http.MethodPost, http.MethodDelete:
+			return accessRequirement{AuthenticatedOnly: true}, true
+		}
 	}
 
 	if path == "/api/v1/auth/audit-events" && method == http.MethodGet {
@@ -1878,12 +1990,12 @@ func resolveBrowserReplaySessionProjectID(manager *BrowserReplayManager) request
 }
 
 func resolveImportProjectIDFromForm(r *http.Request, _ storage.Store) (string, int, string) {
-	if projectID := normalizeProjectID(r.URL.Query().Get("project_id")); projectID != "" {
-		return projectID, 0, ""
+	if projectID := strings.TrimSpace(r.URL.Query().Get("project_id")); projectID != "" {
+		return normalizeProjectID(projectID), 0, ""
 	}
 	if err := r.ParseMultipartForm(50 << 20); err == nil {
-		if projectID := normalizeProjectID(r.FormValue("project_id")); projectID != "" {
-			return projectID, 0, ""
+		if projectID := strings.TrimSpace(r.FormValue("project_id")); projectID != "" {
+			return normalizeProjectID(projectID), 0, ""
 		}
 	}
 	return "", http.StatusBadRequest, "project_id is required for project-scoped import access"
@@ -1896,16 +2008,15 @@ func resolveImportProjectIDFromJSON(r *http.Request, _ storage.Store) (string, i
 	if err := decodeRequestBody(r, &req); err != nil {
 		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
 	}
-	projectID := normalizeProjectID(req.ProjectID)
-	if projectID == "" {
+	if strings.TrimSpace(req.ProjectID) == "" {
 		return "", http.StatusBadRequest, "project_id is required for project-scoped import access"
 	}
-	return projectID, 0, ""
+	return normalizeProjectID(req.ProjectID), 0, ""
 }
 
 func resolveImportProjectIDFromJSONOrForm(r *http.Request, store storage.Store) (string, int, string) {
-	if projectID := normalizeProjectID(r.URL.Query().Get("project_id")); projectID != "" {
-		return projectID, 0, ""
+	if projectID := strings.TrimSpace(r.URL.Query().Get("project_id")); projectID != "" {
+		return normalizeProjectID(projectID), 0, ""
 	}
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "multipart/form-data") {

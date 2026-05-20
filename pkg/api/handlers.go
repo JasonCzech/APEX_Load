@@ -27,6 +27,12 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	if actorType == "user" || actorType == "service_account" {
+		test.CreatedBySubject = actorSubject
+		test.CreatedByDisplayName = actorDisplayName
+		s.runner.AttributeTestCreated(test.ID, actorSubject, actorDisplayName)
+	}
 	s.recordAuditEvent(r, "test.create", "success", "test", test.ID, test.ProjectID, map[string]any{"name": test.Name, "status": test.Status})
 
 	writeJSON(w, http.StatusCreated, test)
@@ -118,6 +124,10 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	if actorType == "user" || actorType == "service_account" {
+		s.runner.AttributeTestStarted(id, actorSubject, actorDisplayName)
 	}
 	test, ok := s.runner.GetTest(id)
 	if !ok {

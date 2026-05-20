@@ -1808,6 +1808,7 @@ export interface UsageAccountingResponse {
   by_project?: UsageAccountingBucket[]
   by_protocol?: UsageAccountingBucket[]
   by_region?: UsageAccountingBucket[]
+  by_user?: UsageAccountingBucket[]
   notes?: string[]
 }
 
@@ -1902,6 +1903,7 @@ export interface DashboardNotificationsSettings {
 }
 
 export interface DashboardAuthenticatedUser {
+  id?: string
   subject: string
   display_name?: string
   email?: string
@@ -2029,6 +2031,66 @@ export interface DashboardServiceAccountListResponse {
   count: number
 }
 
+export type DashboardUserRoleScopeType = 'global' | 'domain' | 'project' | 'application_repository'
+
+export interface DashboardUserRoleBinding {
+  id: string
+  user_id: string
+  scope_type: DashboardUserRoleScopeType
+  scope_id?: string
+  role: string
+  created_at: string
+  updated_at: string
+}
+
+export interface DashboardUser {
+  id: string
+  subject: string
+  email?: string
+  display_name?: string
+  active: boolean
+  created_at: string
+  updated_at: string
+  last_seen_at?: string
+  disabled_at?: string
+  bindings?: DashboardUserRoleBinding[]
+}
+
+export interface DashboardUserListResponse {
+  users: DashboardUser[]
+  count: number
+}
+
+export interface DashboardCreateUserRequest {
+  subject: string
+  email?: string
+  display_name?: string
+  active?: boolean
+}
+
+export interface DashboardUpdateUserRequest {
+  subject?: string
+  email?: string
+  display_name?: string
+  active?: boolean
+}
+
+export interface DashboardCreateUserBindingRequest {
+  scope_type: DashboardUserRoleScopeType
+  scope_id?: string
+  role: string
+}
+
+export type DashboardUserUsageBucket = UsageAccountingBucket
+
+export interface DashboardUserActivityResponse {
+  events: DashboardAuditEvent[]
+  usage: UsageAccountingResponse
+  count: number
+  limit?: number
+  offset?: number
+}
+
 export interface DashboardCreateServiceAccountRequest {
   name: string
   description?: string
@@ -2056,6 +2118,7 @@ export interface DashboardAuditEvent {
   actor_type: string
   actor_subject: string
   actor_display_name?: string
+  domain_id?: string
   project_id?: string
   resource_type: string
   resource_id?: string
@@ -2076,10 +2139,14 @@ export interface DashboardAuditEventFilter {
   offset?: number
   action?: string
   actor_type?: string
+  actor_subject?: string
+  domain_id?: string
   project_id?: string
   resource_type?: string
   resource_id?: string
   status?: string
+  created_after?: string
+  created_before?: string
 }
 
 export interface ArchivePruneCandidate {

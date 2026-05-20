@@ -599,6 +599,10 @@ func (s *SQLiteStore) init() error {
 			baseline_pinned_at DATETIME,
 			end_time DATETIME,
 			error TEXT,
+			created_by_subject TEXT,
+			created_by_display_name TEXT,
+			started_by_subject TEXT,
+			started_by_display_name TEXT,
 			groups_json TEXT,
 			goal_config_json TEXT
 		)`,
@@ -676,6 +680,28 @@ func (s *SQLiteStore) init() error {
 			key_rotated_at DATETIME,
 			rotation_interval_days INTEGER
 		)`,
+		`CREATE TABLE IF NOT EXISTS users (
+			id TEXT PRIMARY KEY,
+			subject TEXT NOT NULL UNIQUE,
+			email TEXT,
+			display_name TEXT,
+			active INTEGER NOT NULL DEFAULT 1,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			last_seen_at DATETIME,
+			disabled_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS user_role_bindings (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			scope_type TEXT NOT NULL,
+			scope_id TEXT,
+			role TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			UNIQUE(user_id, scope_type, scope_id, role),
+			FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+		)`,
 		`CREATE TABLE IF NOT EXISTS audit_events (
 			id TEXT PRIMARY KEY,
 			action TEXT NOT NULL,
@@ -683,6 +709,7 @@ func (s *SQLiteStore) init() error {
 			actor_subject TEXT NOT NULL,
 			actor_display_name TEXT,
 			project_id TEXT,
+			domain_id TEXT,
 			resource_type TEXT,
 			resource_id TEXT,
 			status TEXT NOT NULL,
@@ -816,6 +843,11 @@ func (s *SQLiteStore) init() error {
 		{`ALTER TABLE service_accounts ADD COLUMN scopes_json TEXT`, "service_accounts.scopes_json"},
 		{`ALTER TABLE service_accounts ADD COLUMN domain_roles_json TEXT`, "service_accounts.domain_roles_json"},
 		{`ALTER TABLE service_accounts ADD COLUMN repository_roles_json TEXT`, "service_accounts.repository_roles_json"},
+		{`ALTER TABLE audit_events ADD COLUMN domain_id TEXT`, "audit_events.domain_id"},
+		{`ALTER TABLE tests ADD COLUMN created_by_subject TEXT`, "tests.created_by_subject"},
+		{`ALTER TABLE tests ADD COLUMN created_by_display_name TEXT`, "tests.created_by_display_name"},
+		{`ALTER TABLE tests ADD COLUMN started_by_subject TEXT`, "tests.started_by_subject"},
+		{`ALTER TABLE tests ADD COLUMN started_by_display_name TEXT`, "tests.started_by_display_name"},
 		{`ALTER TABLE scenario_scripts ADD COLUMN stages_json TEXT`, "scenario_scripts.stages_json"},
 		{`ALTER TABLE scenario_schedules ADD COLUMN project_id TEXT`, "scenario_schedules.project_id"},
 		{`ALTER TABLE scenario_schedules ADD COLUMN owner_subject TEXT`, "scenario_schedules.owner_subject"},
@@ -2662,8 +2694,8 @@ func (s *SQLiteStore) SaveTest(test *TestRecord) error {
 	runtimeSettingsJSON, _ := json.Marshal(test.RuntimeSettings)
 	goalConfigJSON, _ := json.Marshal(test.GoalConfig)
 
-	query := `INSERT INTO tests (id, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, total_vusers, duration_ns, start_time, pending_since, baseline_pinned, baseline_pinned_at, end_time, error, groups_json, runtime_settings_json, goal_config_json)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	query := `INSERT INTO tests (id, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, total_vusers, duration_ns, start_time, pending_since, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, groups_json, runtime_settings_json, goal_config_json)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(id) DO UPDATE SET
 			  name=excluded.name, status=excluded.status, application_id=excluded.application_id, release_id=excluded.release_id, scenario_id=excluded.scenario_id,
 			  project_id=excluded.project_id, folder_id=excluded.folder_id,
@@ -2671,10 +2703,11 @@ func (s *SQLiteStore) SaveTest(test *TestRecord) error {
 			  resource_baseline_enabled=excluded.resource_baseline_enabled, assignment_json=excluded.assignment_json, total_vusers=excluded.total_vusers,
 			  duration_ns=excluded.duration_ns, start_time=excluded.start_time, pending_since=excluded.pending_since,
 			  baseline_pinned=excluded.baseline_pinned, baseline_pinned_at=excluded.baseline_pinned_at, end_time=excluded.end_time,
-			  error=excluded.error, groups_json=excluded.groups_json,
+			  error=excluded.error, created_by_subject=excluded.created_by_subject, created_by_display_name=excluded.created_by_display_name,
+			  started_by_subject=excluded.started_by_subject, started_by_display_name=excluded.started_by_display_name, groups_json=excluded.groups_json,
 			  runtime_settings_json=excluded.runtime_settings_json, goal_config_json=excluded.goal_config_json`
 
-	_, err := s.db.Exec(query, test.ID, test.Name, test.Status, test.ApplicationID, test.ReleaseID, test.ScenarioID, test.ProjectID, test.FolderID, test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, string(assignmentJSON), test.TotalVUsers, test.Duration, test.StartTime, test.PendingSince, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON))
+	_, err := s.db.Exec(query, test.ID, test.Name, test.Status, test.ApplicationID, test.ReleaseID, test.ScenarioID, test.ProjectID, test.FolderID, test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, string(assignmentJSON), test.TotalVUsers, test.Duration, test.StartTime, test.PendingSince, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON))
 	return err
 }
 
@@ -2682,8 +2715,8 @@ func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
 	var test TestRecord
 	var groupsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON string
 
-	query := `SELECT id, name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, pending_since, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests WHERE id = ?`
-	err := s.db.QueryRow(query, id).Scan(&test.ID, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON)
+	query := testSelectColumns() + ` FROM tests WHERE id = ?`
+	err := s.db.QueryRow(query, id).Scan(&test.ID, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -2701,9 +2734,13 @@ func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
 	return &test, nil
 }
 
+func testSelectColumns() string {
+	return `SELECT id, name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, pending_since, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '')`
+}
+
 func (s *SQLiteStore) ListTests(projectID string, folderID *string) ([]*TestRecord, error) {
 	args := []any{}
-	query := `SELECT id, name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, pending_since, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests`
+	query := testSelectColumns() + ` FROM tests`
 	var filters []string
 	if projectID != "" {
 		filters = append(filters, `project_id = ?`)
@@ -2731,7 +2768,7 @@ func (s *SQLiteStore) ListTests(projectID string, folderID *string) ([]*TestReco
 	for rows.Next() {
 		var test TestRecord
 		var groupsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON string
-		if err := rows.Scan(&test.ID, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
+		if err := rows.Scan(&test.ID, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(groupsJSON), &test.Groups)
@@ -2751,7 +2788,7 @@ func (s *SQLiteStore) ListTests(projectID string, folderID *string) ([]*TestReco
 
 func (s *SQLiteStore) ListTestsByContext(applicationID string, releaseID string, scenarioID string) ([]*TestRecord, error) {
 	args := []any{}
-	query := `SELECT id, name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, pending_since, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests`
+	query := testSelectColumns() + ` FROM tests`
 	var filters []string
 	if applicationID != "" {
 		filters = append(filters, `application_id = ?`)
@@ -2778,7 +2815,7 @@ func (s *SQLiteStore) ListTestsByContext(applicationID string, releaseID string,
 	for rows.Next() {
 		var test TestRecord
 		var groupsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON string
-		if err := rows.Scan(&test.ID, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
+		if err := rows.Scan(&test.ID, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(groupsJSON), &test.Groups)
@@ -3543,6 +3580,181 @@ func (s *SQLiteStore) DeleteServiceAccount(id string) error {
 	return err
 }
 
+func (s *SQLiteStore) SaveUser(user *User) error {
+	if user == nil {
+		return fmt.Errorf("user is required")
+	}
+	user.Subject = strings.TrimSpace(user.Subject)
+	if user.Subject == "" {
+		return fmt.Errorf("user subject is required")
+	}
+	_, err := s.db.Exec(`INSERT INTO users (id, subject, email, display_name, active, created_at, updated_at, last_seen_at, disabled_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			subject=excluded.subject,
+			email=excluded.email,
+			display_name=excluded.display_name,
+			active=excluded.active,
+			updated_at=excluded.updated_at,
+			last_seen_at=excluded.last_seen_at,
+			disabled_at=excluded.disabled_at`,
+		user.ID,
+		user.Subject,
+		user.Email,
+		user.DisplayName,
+		s.boolValue(user.Active),
+		user.CreatedAt,
+		user.UpdatedAt,
+		user.LastSeenAt,
+		user.DisabledAt,
+	)
+	return err
+}
+
+func (s *SQLiteStore) GetUser(id string) (*User, error) {
+	return s.getUserByQuery(userSelectColumns()+` FROM users WHERE id = ?`, id)
+}
+
+func (s *SQLiteStore) GetUserBySubject(subject string) (*User, error) {
+	return s.getUserByQuery(userSelectColumns()+` FROM users WHERE subject = ?`, strings.TrimSpace(subject))
+}
+
+func (s *SQLiteStore) ListUsers(filter UserFilter) ([]*User, error) {
+	if filter.Limit <= 0 {
+		filter.Limit = 100
+	}
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	query := strings.Builder{}
+	query.WriteString(userSelectColumns() + ` FROM users WHERE 1 = 1`)
+	args := []any{}
+	if q := strings.TrimSpace(filter.Query); q != "" {
+		query.WriteString(` AND (subject LIKE ? OR email LIKE ? OR display_name LIKE ?)`)
+		like := "%" + q + "%"
+		args = append(args, like, like, like)
+	}
+	if filter.Active != nil {
+		query.WriteString(` AND active = ?`)
+		args = append(args, s.boolValue(*filter.Active))
+	}
+	query.WriteString(` ORDER BY updated_at DESC LIMIT ? OFFSET ?`)
+	args = append(args, filter.Limit, filter.Offset)
+	rows, err := s.db.Query(query.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	users := []*User{}
+	for rows.Next() {
+		user, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		bindings, err := s.ListUserRoleBindings(user.ID)
+		if err != nil {
+			return nil, err
+		}
+		user.Bindings = bindings
+		users = append(users, user)
+	}
+	return users, rows.Err()
+}
+
+func (s *SQLiteStore) UpdateUserActive(id string, active bool, updatedAt time.Time) error {
+	var disabledAt any
+	if !active {
+		disabledAt = updatedAt
+	}
+	_, err := s.db.Exec(`UPDATE users SET active = ?, updated_at = ?, disabled_at = ? WHERE id = ?`, s.boolValue(active), updatedAt, disabledAt, id)
+	return err
+}
+
+func (s *SQLiteStore) DeleteUser(id string) error {
+	_, err := s.db.Exec(`DELETE FROM users WHERE id = ?`, id)
+	return err
+}
+
+func (s *SQLiteStore) SaveUserRoleBinding(binding *UserRoleBinding) error {
+	if binding == nil {
+		return fmt.Errorf("user role binding is required")
+	}
+	_, err := s.db.Exec(`INSERT INTO user_role_bindings (id, user_id, scope_type, scope_id, role, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(user_id, scope_type, scope_id, role) DO UPDATE SET
+			updated_at=excluded.updated_at`,
+		binding.ID,
+		binding.UserID,
+		binding.ScopeType,
+		binding.ScopeID,
+		binding.Role,
+		binding.CreatedAt,
+		binding.UpdatedAt,
+	)
+	return err
+}
+
+func (s *SQLiteStore) DeleteUserRoleBinding(id string) error {
+	_, err := s.db.Exec(`DELETE FROM user_role_bindings WHERE id = ?`, id)
+	return err
+}
+
+func (s *SQLiteStore) ListUserRoleBindings(userID string) ([]*UserRoleBinding, error) {
+	rows, err := s.db.Query(`SELECT id, user_id, scope_type, COALESCE(scope_id, ''), role, created_at, updated_at FROM user_role_bindings WHERE user_id = ? ORDER BY scope_type, scope_id, role`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	bindings := []*UserRoleBinding{}
+	for rows.Next() {
+		var binding UserRoleBinding
+		if err := rows.Scan(&binding.ID, &binding.UserID, &binding.ScopeType, &binding.ScopeID, &binding.Role, &binding.CreatedAt, &binding.UpdatedAt); err != nil {
+			return nil, err
+		}
+		bindings = append(bindings, &binding)
+	}
+	return bindings, rows.Err()
+}
+
+func userSelectColumns() string {
+	return `SELECT id, subject, COALESCE(email, ''), COALESCE(display_name, ''), active, created_at, updated_at, last_seen_at, disabled_at`
+}
+
+type userScanner interface {
+	Scan(dest ...any) error
+}
+
+func (s *SQLiteStore) getUserByQuery(query string, args ...any) (*User, error) {
+	user, err := scanUser(s.db.QueryRow(query, args...))
+	if err != nil {
+		return nil, err
+	}
+	bindings, err := s.ListUserRoleBindings(user.ID)
+	if err != nil {
+		return nil, err
+	}
+	user.Bindings = bindings
+	return user, nil
+}
+
+func scanUser(scanner userScanner) (*User, error) {
+	var user User
+	var active any
+	var lastSeenAt sql.NullTime
+	var disabledAt sql.NullTime
+	if err := scanner.Scan(&user.ID, &user.Subject, &user.Email, &user.DisplayName, &active, &user.CreatedAt, &user.UpdatedAt, &lastSeenAt, &disabledAt); err != nil {
+		return nil, err
+	}
+	user.Active = sqlBool(active)
+	if lastSeenAt.Valid {
+		user.LastSeenAt = &lastSeenAt.Time
+	}
+	if disabledAt.Valid {
+		user.DisabledAt = &disabledAt.Time
+	}
+	return &user, nil
+}
+
 func (s *SQLiteStore) SaveAuditEvent(event *AuditEvent) error {
 	if event == nil {
 		return fmt.Errorf("audit event is required")
@@ -3551,14 +3763,15 @@ func (s *SQLiteStore) SaveAuditEvent(event *AuditEvent) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO audit_events (id, action, actor_type, actor_subject, actor_display_name, project_id, resource_type, resource_id, status, details_json, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err = s.db.Exec(`INSERT INTO audit_events (id, action, actor_type, actor_subject, actor_display_name, project_id, domain_id, resource_type, resource_id, status, details_json, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		event.ID,
 		event.Action,
 		event.ActorType,
 		event.ActorSubject,
 		event.ActorDisplayName,
 		event.ProjectID,
+		event.DomainID,
 		event.ResourceType,
 		event.ResourceID,
 		event.Status,
@@ -3576,7 +3789,7 @@ func (s *SQLiteStore) ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, e
 		filter.Offset = 0
 	}
 	query := strings.Builder{}
-	query.WriteString(`SELECT id, action, actor_type, actor_subject, actor_display_name, project_id, resource_type, resource_id, status, details_json, created_at FROM audit_events WHERE 1 = 1`)
+	query.WriteString(`SELECT id, action, actor_type, actor_subject, actor_display_name, COALESCE(project_id, ''), COALESCE(domain_id, ''), resource_type, resource_id, status, details_json, created_at FROM audit_events WHERE 1 = 1`)
 	args := make([]any, 0, 8)
 	appendFilter := func(column string, value string) {
 		trimmed := strings.TrimSpace(value)
@@ -3588,10 +3801,20 @@ func (s *SQLiteStore) ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, e
 	}
 	appendFilter("action", filter.Action)
 	appendFilter("actor_type", filter.ActorType)
+	appendFilter("actor_subject", filter.ActorSubject)
 	appendFilter("project_id", filter.ProjectID)
+	appendFilter("domain_id", filter.DomainID)
 	appendFilter("resource_type", filter.ResourceType)
 	appendFilter("resource_id", filter.ResourceID)
 	appendFilter("status", filter.Status)
+	if filter.CreatedAfter != nil {
+		query.WriteString(` AND created_at >= ?`)
+		args = append(args, *filter.CreatedAfter)
+	}
+	if filter.CreatedBefore != nil {
+		query.WriteString(` AND created_at <= ?`)
+		args = append(args, *filter.CreatedBefore)
+	}
 	query.WriteString(` ORDER BY created_at DESC LIMIT ? OFFSET ?`)
 	args = append(args, filter.Limit, filter.Offset)
 	rows, err := s.db.Query(query.String(), args...)
@@ -3603,7 +3826,7 @@ func (s *SQLiteStore) ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, e
 	for rows.Next() {
 		var event AuditEvent
 		var detailsJSON string
-		if err := rows.Scan(&event.ID, &event.Action, &event.ActorType, &event.ActorSubject, &event.ActorDisplayName, &event.ProjectID, &event.ResourceType, &event.ResourceID, &event.Status, &detailsJSON, &event.CreatedAt); err != nil {
+		if err := rows.Scan(&event.ID, &event.Action, &event.ActorType, &event.ActorSubject, &event.ActorDisplayName, &event.ProjectID, &event.DomainID, &event.ResourceType, &event.ResourceID, &event.Status, &detailsJSON, &event.CreatedAt); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(detailsJSON), &event.Details); err != nil && strings.TrimSpace(detailsJSON) != "" {
