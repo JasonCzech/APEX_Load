@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -26,6 +27,8 @@ type Server struct {
 	browserReplay *BrowserReplayManager
 	recorder      *recorder.Recorder
 	store         storage.Store
+	cache         CacheBackend
+	controllerID  string
 	authoringMu   sync.Mutex
 	authoring     map[string]*storage.AuthoringSession
 	c4Mu          sync.Mutex
@@ -33,6 +36,8 @@ type Server struct {
 	resultImports map[string]*storage.ExternalResultImport
 	mux           *http.ServeMux
 	usageCancel   context.CancelFunc
+	fanoutCancel  context.CancelFunc
+	fanoutSub     FanoutSubscription
 }
 
 // ServerConfig configures API server startup behavior and integrations.
@@ -42,6 +47,7 @@ type ServerConfig struct {
 	MaxConcurrent    int
 	AllowedOrigins   []string
 	Store            storage.Store
+	Cache            CacheBackend
 	GeneratorTargets []string
 	GeneratorTimeout time.Duration
 }
@@ -56,7 +62,16 @@ func NewServer(cfg ServerConfig) *Server {
 	}
 
 	hub := NewHub()
+	cache := cfg.Cache
+	if cache == nil {
+		cache = configuredCacheBackend()
+	}
+	controllerID := controllerInstanceID()
+	if cache.Info().Backend == cacheBackendRedis {
+		hub.SetFanout(cache, controllerID, cache.Info().FanoutChannel)
+	}
 	runner := NewTestRunner(cfg.MaxConcurrent, hub, cfg.Store)
+	runner.setLiveStateStore(cache)
 	if len(cfg.GeneratorTargets) > 0 {
 		backend := newDistributedExecutionBackend(cfg.GeneratorTargets, cfg.GeneratorTimeout, nil)
 		backend.ApplyGeneratorDrainStates(loadGeneratorDrainStates(cfg.Store))
@@ -71,6 +86,8 @@ func NewServer(cfg ServerConfig) *Server {
 		browserReplay: NewBrowserReplayManager(hub),
 		recorder:      rec,
 		store:         cfg.Store,
+		cache:         cache,
+		controllerID:  controllerID,
 		authoring:     make(map[string]*storage.AuthoringSession),
 		slaWaivers:    make(map[string][]*storage.ReleaseSLAWaiver),
 		resultImports: make(map[string]*storage.ExternalResultImport),
@@ -93,10 +110,11 @@ func NewServer(cfg ServerConfig) *Server {
 func (s *Server) routes(allowedOrigins []string) {
 	cors := corsMiddleware(allowedOrigins)
 	log := loggingMiddleware
-	auth := authMiddleware(func() AuthSettings { return s.runner.GetSystemSettings().Auth }, s.store)
+	auth := authMiddleware(func() AuthSettings { return s.runner.GetSystemSettings().Auth }, s.store, s.cache)
 	recorderViewAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
+		s.cache,
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveRecorderListProjectID,
@@ -104,6 +122,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	recorderCreateAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
+		s.cache,
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveRecorderCreateProjectID,
@@ -111,6 +130,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	recorderSessionViewAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
+		s.cache,
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveRecorderSessionProjectID(s.recorder),
@@ -118,6 +138,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	recorderSessionEditAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
+		s.cache,
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveRecorderSessionProjectID(s.recorder),
@@ -125,6 +146,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	browserReplaySessionViewAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
+		s.cache,
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveBrowserReplaySessionProjectID(s.browserReplay),
@@ -132,6 +154,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	browserReplaySessionEditAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
+		s.cache,
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveBrowserReplaySessionProjectID(s.browserReplay),
@@ -396,6 +419,7 @@ func (s *Server) routes(allowedOrigins []string) {
 func (s *Server) Start() error {
 	// Start websocket broadcast loop before serving HTTP requests.
 	go s.hub.Run()
+	s.startCacheFanout()
 
 	if err := s.recorder.StartProxy(); err != nil {
 		return fmt.Errorf("starting recording proxy: %w", err)
@@ -415,9 +439,55 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.usageCancel()
 		s.usageCancel = nil
 	}
+	if s.fanoutCancel != nil {
+		s.fanoutCancel()
+		s.fanoutCancel = nil
+	}
+	if s.fanoutSub != nil {
+		_ = s.fanoutSub.Close()
+		s.fanoutSub = nil
+	}
 	s.hub.Stop()
 	s.recorder.StopProxy()
+	if s.cache != nil {
+		_ = s.cache.Close()
+	}
 	return s.httpServer.Shutdown(ctx)
+}
+
+func (s *Server) startCacheFanout() {
+	if s == nil || s.cache == nil || s.hub == nil {
+		return
+	}
+	info := s.cache.Info()
+	if info.Backend != cacheBackendRedis {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	sub, err := s.cache.Subscribe(ctx, info.FanoutChannel)
+	if err != nil {
+		cancel()
+		slog.Warn("redis fanout subscription unavailable", "err", err)
+		return
+	}
+	s.fanoutCancel = cancel
+	s.fanoutSub = sub
+	go func() {
+		for payload := range sub.Messages() {
+			var envelope websocketFanoutEnvelope
+			if err := json.Unmarshal(payload, &envelope); err != nil {
+				slog.Warn("dropping malformed cache fanout envelope", "err", err)
+				continue
+			}
+			if envelope.Origin == "" || envelope.Origin == s.controllerID {
+				continue
+			}
+			if len(envelope.Payload) == 0 {
+				continue
+			}
+			s.hub.broadcastLocal(envelope.Payload)
+		}
+	}()
 }
 
 func (s *Server) startUsageAccountingSnapshotCadence() {

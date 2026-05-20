@@ -5,7 +5,7 @@ metadata:
 type: Opaque
 stringData:
   STORMRUNNER_DATABASE_URL: postgres://stormrunner:change-me@postgresql.stormrunner.svc:5432/stormrunner?sslmode=require
-  STORMRUNNER_REDIS_URL: redis://redis.stormrunner.svc:6379/0
+  STORMRUNNER_REDIS_URL: redis://stormrunner-redis.stormrunner.svc:6379/0
   STORMRUNNER_PROMETHEUS_REMOTE_WRITE_URL: https://mimir.example.com/api/v1/push
   STORMRUNNER_PROMETHEUS_TENANT_ID: stormrunner
 ---
@@ -22,5 +22,10 @@ data:
   STORMRUNNER_ARCHIVE_BUCKET: stormrunner-archives
   STORMRUNNER_ARCHIVE_PREFIX: production/run-evidence
   STORMRUNNER_ARCHIVE_REGION: us-east-1
-  STORMRUNNER_CACHE_BACKEND: memory
+  STORMRUNNER_CACHE_BACKEND: redis
+  STORMRUNNER_REDIS_KEY_PREFIX: stormrunner:prod
+  STORMRUNNER_REDIS_TIMEOUT: 2s
+  STORMRUNNER_REDIS_FANOUT_CHANNEL: telemetry:fanout
+  STORMRUNNER_API_KEY_RATE_LIMIT_PER_MINUTE: "600"
+  STORMRUNNER_IDEMPOTENCY_KEY_TTL: 15m
   STORMRUNNER_METRICS_RETENTION_BACKEND: prometheus_remote_write

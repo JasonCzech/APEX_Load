@@ -48,6 +48,10 @@ func TestHandleSystemReadinessReturnsReadyForConfiguredLocalController(t *testin
 	if archive.Details["archive_backend"] != archiveBackendFilesystem {
 		t.Fatalf("archive backend = %#v, want filesystem", archive.Details["archive_backend"])
 	}
+	cache := assertReadinessCheck(t, payload, "cache_backend", readinessStatusReady)
+	if cache.Details["cache_backend"] != cacheBackendMemory {
+		t.Fatalf("cache backend = %#v, want memory", cache.Details["cache_backend"])
+	}
 	assertReadinessCheck(t, payload, "generator_rpc", readinessStatusReady)
 	assertReadinessCheck(t, payload, "telemetry_fanout", readinessStatusReady)
 	assertReadinessCheck(t, payload, "auth_mode", readinessStatusReady)
@@ -107,6 +111,41 @@ func TestHandleSystemReadinessReturnsNotReadyWhenDistributedGeneratorsUnreachabl
 		t.Fatalf("unmarshal payload: %v", err)
 	}
 	assertReadinessCheck(t, payload, "generator_rpc", readinessStatusNotReady)
+}
+
+func TestHandleSystemReadinessReturnsNotReadyWhenRedisConfiguredButUnavailable(t *testing.T) {
+	t.Setenv("STORMRUNNER_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("STORMRUNNER_CACHE_BACKEND", "redis")
+	t.Setenv("STORMRUNNER_REDIS_URL", "redis://127.0.0.1:1/0")
+	t.Setenv("STORMRUNNER_REDIS_TIMEOUT", "10ms")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080", Store: store})
+	settings := server.runner.GetSystemSettings()
+	settings.Auth.Mode = authModeTrustedHeaders
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/readiness", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusServiceUnavailable, resp.Body.String())
+	}
+	var payload SystemReadinessResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	cache := assertReadinessCheck(t, payload, "cache_backend", readinessStatusNotReady)
+	if cache.Details["cache_backend"] != cacheBackendRedis {
+		t.Fatalf("cache backend = %#v, want redis", cache.Details["cache_backend"])
+	}
 }
 
 func assertReadinessCheck(t *testing.T, payload SystemReadinessResponse, name string, status string) SystemReadinessCheck {

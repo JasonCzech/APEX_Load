@@ -113,6 +113,86 @@ func TestTrustedHeaderAuthAllowsServiceAccountAPIKeyForSystemSettings(t *testing
 	}
 }
 
+func TestTrustedHeaderAuthRateLimitsServiceAccountAPIKeys(t *testing.T) {
+	t.Setenv("STORMRUNNER_API_KEY_RATE_LIMIT_PER_MINUTE", "1")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	key := "stormrunner-rate-limited-service-account-key"
+	sum := sha256.Sum256([]byte(key))
+	now := time.Now()
+	if err := store.SaveServiceAccount(&storage.ServiceAccount{
+		ID:          "svc-rate-limited",
+		Name:        "Rate Limited Automation",
+		KeyHash:     fmt.Sprintf("%x", sum[:]),
+		Active:      true,
+		GlobalRoles: []string{RoleSystemAdmin},
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("SaveServiceAccount returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	first := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
+	first.Header.Set("X-Stormrunner-API-Key", key)
+	firstResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(firstResp, first)
+	if firstResp.Code != http.StatusOK {
+		t.Fatalf("first service account GET status = %d, want %d body=%s", firstResp.Code, http.StatusOK, firstResp.Body.String())
+	}
+	if firstResp.Header().Get("X-RateLimit-Remaining") != "0" {
+		t.Fatalf("remaining header = %q, want 0", firstResp.Header().Get("X-RateLimit-Remaining"))
+	}
+
+	second := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
+	second.Header.Set("X-Stormrunner-API-Key", key)
+	secondResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(secondResp, second)
+	if secondResp.Code != http.StatusTooManyRequests {
+		t.Fatalf("second service account GET status = %d, want %d body=%s", secondResp.Code, http.StatusTooManyRequests, secondResp.Body.String())
+	}
+}
+
+func TestTrustedHeaderAuthReservesIdempotencyKeysForMutations(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	first := httptest.NewRequest(http.MethodPost, "/api/v1/system/usage/snapshots", nil)
+	first.Header.Set("X-Auth-Request-User", "alice")
+	first.Header.Set("X-Stormrunner-Roles", RoleSystemAdmin)
+	first.Header.Set("Idempotency-Key", "capture-usage-now")
+	firstResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(firstResp, first)
+	if firstResp.Code != http.StatusCreated {
+		t.Fatalf("first snapshot status = %d, want %d body=%s", firstResp.Code, http.StatusCreated, firstResp.Body.String())
+	}
+
+	second := httptest.NewRequest(http.MethodPost, "/api/v1/system/usage/snapshots", nil)
+	second.Header.Set("X-Auth-Request-User", "alice")
+	second.Header.Set("X-Stormrunner-Roles", RoleSystemAdmin)
+	second.Header.Set("Idempotency-Key", "capture-usage-now")
+	secondResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(secondResp, second)
+	if secondResp.Code != http.StatusConflict {
+		t.Fatalf("duplicate snapshot status = %d, want %d body=%s", secondResp.Code, http.StatusConflict, secondResp.Body.String())
+	}
+	if !strings.Contains(secondResp.Body.String(), "duplicate idempotency key") {
+		t.Fatalf("duplicate body = %s, want idempotency message", secondResp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthRejectsServiceAccountWithoutRouteScope(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {

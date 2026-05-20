@@ -59,6 +59,9 @@ func TestHandleGetSystemInventoryReturnsControllerAndGenerators(t *testing.T) {
 	if payload.DataPlatform.ArchiveBackend != archiveBackendFilesystem {
 		t.Fatalf("archive backend = %q, want filesystem", payload.DataPlatform.ArchiveBackend)
 	}
+	if payload.DataPlatform.CacheBackend != cacheBackendMemory {
+		t.Fatalf("cache backend = %q, want memory", payload.DataPlatform.CacheBackend)
+	}
 	if len(payload.Generators) != 1 {
 		t.Fatalf("generator count = %d, want 1", len(payload.Generators))
 	}

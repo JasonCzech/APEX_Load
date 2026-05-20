@@ -44,6 +44,7 @@ func (s *Server) systemReadiness(ctx context.Context) SystemReadinessResponse {
 	checks := []SystemReadinessCheck{
 		s.metadataStoreReadiness(),
 		s.archiveWriterReadiness(),
+		s.cacheBackendReadiness(ctx),
 		s.generatorRPCReadiness(ctx),
 		s.telemetryFanoutReadiness(),
 		s.authModeReadiness(),
@@ -54,6 +55,41 @@ func (s *Server) systemReadiness(ctx context.Context) SystemReadinessResponse {
 		Status:      aggregateReadinessStatus(checks),
 		GeneratedAt: time.Now().UTC(),
 		Checks:      checks,
+	}
+}
+
+func (s *Server) cacheBackendReadiness(ctx context.Context) SystemReadinessCheck {
+	if s == nil || s.cache == nil {
+		return SystemReadinessCheck{
+			Name:    "cache_backend",
+			Status:  readinessStatusNotReady,
+			Message: "cache backend is not configured",
+		}
+	}
+	info := s.cache.Info()
+	probeCtx, cancel := context.WithTimeout(ctx, defaultCacheProbeTimeout)
+	defer cancel()
+	if err := s.cache.Ping(probeCtx); err != nil {
+		status := readinessStatusDegraded
+		if info.Backend == cacheBackendRedis {
+			status = readinessStatusNotReady
+		}
+		return SystemReadinessCheck{
+			Name:    "cache_backend",
+			Status:  status,
+			Message: fmt.Sprintf("cache backend probe failed: %v", err),
+			Details: cacheReadinessDetails(info),
+		}
+	}
+	message := "in-memory cache backend is ready"
+	if info.Backend == cacheBackendRedis {
+		message = "redis cache backend is reachable"
+	}
+	return SystemReadinessCheck{
+		Name:    "cache_backend",
+		Status:  readinessStatusReady,
+		Message: message,
+		Details: cacheReadinessDetails(info),
 	}
 }
 

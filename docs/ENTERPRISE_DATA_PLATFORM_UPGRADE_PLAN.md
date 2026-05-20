@@ -68,6 +68,8 @@ Status: implemented for Prometheus ServiceMonitor and remote-write deployment ex
 
 ### Phase 4: Redis/Valkey Live State And Coordination
 
+Status: implemented for backend selection, memory and Redis/Valkey cache implementations, active run snapshots, generator inventory snapshots, idempotency-key reservations, service-account API-key rate limiting, websocket fanout publishing/subscription, readiness degradation, and inventory metadata.
+
 - Add cache backend selection:
   - `STORMRUNNER_CACHE_BACKEND=memory|redis`, default `memory`.
   - `STORMRUNNER_REDIS_URL` is required for Redis mode.
@@ -81,6 +83,8 @@ Status: implemented for Prometheus ServiceMonitor and remote-write deployment ex
 - Add readiness checks for Redis mode and degrade gracefully to `not_ready` when Redis is configured but unavailable.
 
 ### Phase 5: HA Deployment And Operations
+
+Status: implemented for HA controller and Redis/Valkey deployment examples, production data-platform config, expanded readiness checks, backup/restore runbook, Redis loss recovery expectations, metrics retention boundaries, and SQLite-to-PostgreSQL migration guidance.
 
 - Add Kubernetes manifests or Helm-ready overlays for:
   - PostgreSQL connection secrets.
@@ -118,6 +122,10 @@ STORMRUNNER_CACHE_BACKEND=memory|redis
 STORMRUNNER_REDIS_URL=redis://...
 STORMRUNNER_REDIS_KEY_PREFIX=stormrunner
 STORMRUNNER_REDIS_TLS=false
+STORMRUNNER_REDIS_TIMEOUT=2s
+STORMRUNNER_REDIS_FANOUT_CHANNEL=telemetry:fanout
+STORMRUNNER_API_KEY_RATE_LIMIT_PER_MINUTE=600
+STORMRUNNER_IDEMPOTENCY_KEY_TTL=15m
 ```
 
 API behavior:

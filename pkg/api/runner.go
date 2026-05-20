@@ -116,6 +116,7 @@ type TestRunner struct {
 	archiveStore  archivePersistence
 	settingsStore settingsPersistence
 	usageStore    usageSnapshotPersistence
+	liveState     LiveStateStore
 	execution     testExecutionBackend
 	notifier      *notificationDispatcher
 	notifications atomic.Value
@@ -655,6 +656,12 @@ func (tr *TestRunner) setExecutionBackend(backend testExecutionBackend) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	tr.execution = backend
+}
+
+func (tr *TestRunner) setLiveStateStore(store LiveStateStore) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.liveState = store
 }
 
 func (tr *TestRunner) getExecutionBackend() testExecutionBackend {
@@ -4851,8 +4858,10 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	if diagnostic != nil {
 		publishDiagnostic = shouldPublishTelemetryDiagnostic(&test.telemetryDiagnostic, diagnosticSignature, now)
 	}
+	snapshot := buildRunLiveStateSnapshotLocked(test, now)
 	tr.mu.Unlock()
 
+	tr.cacheRunSnapshot(snapshot)
 	tr.saveLiveMetricsHistory(test.ID, live.Timestamp, live)
 	artifacts.recordLiveMetrics(test, live)
 
@@ -4875,6 +4884,42 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 		})
 	}
 	tr.broadcastTelemetryHealthTransition(test, previousTelemetryRunHealth, telemetryRunHealth, now)
+}
+
+func buildRunLiveStateSnapshotLocked(test *ManagedTest, updatedAt time.Time) RunLiveStateSnapshot {
+	if test == nil {
+		return RunLiveStateSnapshot{UpdatedAt: updatedAt}
+	}
+	return RunLiveStateSnapshot{
+		TestID:        test.ID,
+		TestName:      test.Name,
+		ProjectID:     normalizeProjectID(test.ProjectID),
+		Status:        test.Status,
+		UpdatedAt:     updatedAt.UTC(),
+		StartedAt:     test.StartedAt,
+		EndedAt:       test.EndedAt,
+		LiveMetrics:   test.LiveMetrics,
+		HistoryPoints: len(test.History),
+	}
+}
+
+func (tr *TestRunner) cacheRunSnapshot(snapshot RunLiveStateSnapshot) {
+	if tr == nil || strings.TrimSpace(snapshot.TestID) == "" {
+		return
+	}
+	tr.mu.RLock()
+	store := tr.liveState
+	tr.mu.RUnlock()
+	if store == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), defaultCacheWriteTimeout)
+		defer cancel()
+		if err := store.SetRunSnapshot(ctx, snapshot, defaultRunSnapshotTTL); err != nil {
+			slog.Warn("failed to cache live run snapshot", "test_id", snapshot.TestID, "err", err)
+		}
+	}()
 }
 
 func (tr *TestRunner) broadcastTelemetryHealthTransition(test *ManagedTest, previous *TelemetryRunHealth, current *TelemetryRunHealth, now time.Time) {

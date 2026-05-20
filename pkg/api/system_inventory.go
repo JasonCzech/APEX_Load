@@ -53,6 +53,8 @@ type DataPlatformInventory struct {
 	ArchiveBackend   string `json:"archive_backend"`
 	ArchiveURIPrefix string `json:"archive_uri_prefix,omitempty"`
 	CacheBackend     string `json:"cache_backend"`
+	CacheKeyPrefix   string `json:"cache_key_prefix,omitempty"`
+	CacheFanout      string `json:"cache_fanout,omitempty"`
 	MetricsRetention string `json:"metrics_retention"`
 }
 
@@ -61,9 +63,9 @@ func (s *Server) handleGetSystemInventory(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) systemInventory(ctx context.Context) SystemInventoryResponse {
-	controllerID := "controller"
-	if hostname, err := os.Hostname(); err == nil && hostname != "" {
-		controllerID = hostname
+	controllerID := s.controllerID
+	if controllerID == "" {
+		controllerID = controllerInstanceID()
 	}
 
 	executionMode := "local"
@@ -75,6 +77,7 @@ func (s *Server) systemInventory(ctx context.Context) SystemInventoryResponse {
 	for i := range entries {
 		entries[i] = normalizeGeneratorInventoryEntry(entries[i])
 	}
+	s.cacheGeneratorInventory(ctx, entries)
 
 	return SystemInventoryResponse{
 		ExecutionMode: executionMode,
@@ -90,18 +93,47 @@ func (s *Server) systemInventory(ctx context.Context) SystemInventoryResponse {
 	}
 }
 
+func controllerInstanceID() string {
+	if hostname, err := os.Hostname(); err == nil && hostname != "" {
+		return hostname
+	}
+	return "controller"
+}
+
 func (s *Server) dataPlatformInventory() DataPlatformInventory {
 	metadataStore := "unknown"
 	if provider, ok := s.store.(storage.BackendInfoProvider); ok {
 		metadataStore = provider.BackendInfo().Type
 	}
 	archiveBackend := currentArchiveBackend()
+	cacheBackend := "memory"
+	cacheKeyPrefix := ""
+	cacheFanout := ""
+	if s != nil && s.cache != nil {
+		info := s.cache.Info()
+		cacheBackend = info.Backend
+		cacheKeyPrefix = info.KeyPrefix
+		cacheFanout = info.FanoutChannel
+	}
 	return DataPlatformInventory{
 		MetadataStore:    metadataStore,
 		ArchiveBackend:   archiveBackend.Backend,
 		ArchiveURIPrefix: archiveBackend.URIPrefix,
-		CacheBackend:     "memory",
+		CacheBackend:     cacheBackend,
+		CacheKeyPrefix:   cacheKeyPrefix,
+		CacheFanout:      cacheFanout,
 		MetricsRetention: configuredMetricsRetention(),
+	}
+}
+
+func (s *Server) cacheGeneratorInventory(ctx context.Context, generators []GeneratorInventoryEntry) {
+	if s == nil || s.cache == nil {
+		return
+	}
+	writeCtx, cancel := context.WithTimeout(ctx, defaultCacheWriteTimeout)
+	defer cancel()
+	if err := s.cache.SetGeneratorInventory(writeCtx, generators, defaultGeneratorSnapshotTTL); err != nil {
+		return
 	}
 }
 

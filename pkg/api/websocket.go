@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -26,6 +27,10 @@ type Hub struct {
 	done              chan struct{}
 	droppedBroadcasts atomic.Int64
 	droppedClientMsgs atomic.Int64
+	fanoutMu          sync.RWMutex
+	fanout            FanoutBus
+	fanoutChannel     string
+	fanoutOrigin      string
 }
 
 type HubStats struct {
@@ -42,6 +47,12 @@ type Client struct {
 	projectID string // empty = all projects, set = specific project
 }
 
+type websocketFanoutEnvelope struct {
+	Origin  string          `json:"origin"`
+	SentAt  time.Time       `json:"sent_at"`
+	Payload json.RawMessage `json:"payload"`
+}
+
 func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*Client]bool),
@@ -50,6 +61,17 @@ func NewHub() *Hub {
 		unregister: make(chan *Client),
 		done:       make(chan struct{}),
 	}
+}
+
+func (h *Hub) SetFanout(bus FanoutBus, origin string, channel string) {
+	if h == nil {
+		return
+	}
+	h.fanoutMu.Lock()
+	defer h.fanoutMu.Unlock()
+	h.fanout = bus
+	h.fanoutOrigin = origin
+	h.fanoutChannel = channel
 }
 
 func (h *Hub) Run() {
@@ -110,11 +132,43 @@ func (h *Hub) Stop() {
 }
 
 func (h *Hub) Broadcast(msg []byte) {
+	h.broadcastLocal(msg)
+	h.publishFanout(msg)
+}
+
+func (h *Hub) broadcastLocal(msg []byte) {
 	select {
 	case h.broadcast <- msg:
 	default:
 		h.droppedBroadcasts.Add(1)
 	}
+}
+
+func (h *Hub) publishFanout(msg []byte) {
+	h.fanoutMu.RLock()
+	bus := h.fanout
+	channel := h.fanoutChannel
+	origin := h.fanoutOrigin
+	h.fanoutMu.RUnlock()
+	if bus == nil || channel == "" || origin == "" || len(msg) == 0 {
+		return
+	}
+	payload, err := json.Marshal(websocketFanoutEnvelope{
+		Origin:  origin,
+		SentAt:  time.Now().UTC(),
+		Payload: append([]byte(nil), msg...),
+	})
+	if err != nil {
+		slog.Warn("failed to marshal websocket fanout envelope", "err", err)
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), defaultCacheWriteTimeout)
+		defer cancel()
+		if err := bus.Publish(ctx, channel, payload); err != nil {
+			slog.Warn("failed to publish websocket fanout envelope", "err", err)
+		}
+	}()
 }
 
 func (h *Hub) BroadcastJSON(v any) {

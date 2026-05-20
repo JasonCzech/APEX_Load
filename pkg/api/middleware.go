@@ -13,6 +13,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -59,12 +61,17 @@ type accessRequirement struct {
 
 type requestProjectLookup func(*http.Request) (string, int, string)
 
+type requestCoordinationStore interface {
+	RateLimitStore
+	IdempotencyStore
+}
+
 type authResolution struct {
 	User           *AuthenticatedUser
 	ServiceAccount *AuthenticatedServiceAccount
 }
 
-func authMiddleware(settings func() AuthSettings, store storage.Store) func(http.Handler) http.Handler {
+func authMiddleware(settings func() AuthSettings, store storage.Store, coordination requestCoordinationStore) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodOptions || !strings.HasPrefix(r.URL.Path, "/api/v1/") {
@@ -95,14 +102,20 @@ func authMiddleware(settings func() AuthSettings, store storage.Store) func(http
 				writeError(w, http.StatusUnauthorized, err.Error())
 				return
 			}
+			if !enforceServiceAccountRateLimit(w, r, coordination, resolution.ServiceAccount) {
+				return
+			}
 			if authorizeAccessRequirement(w, r, store, resolution, requirement) {
+				if !enforceIdempotencyKey(w, r, coordination, resolution) {
+					return
+				}
 				next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
 			}
 		})
 	}
 }
 
-func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Store, globalRoles []string, projectRoles []string, projectLookup requestProjectLookup) func(http.Handler) http.Handler {
+func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Store, coordination requestCoordinationStore, globalRoles []string, projectRoles []string, projectLookup requestProjectLookup) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			current := normalizeAuthSettings(settings())
@@ -131,11 +144,93 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Sto
 				writeError(w, http.StatusUnauthorized, err.Error())
 				return
 			}
+			if !enforceServiceAccountRateLimit(w, r, coordination, resolution.ServiceAccount) {
+				return
+			}
 			if authorizeAccessRequirement(w, r, store, resolution, requirement) {
+				if !enforceIdempotencyKey(w, r, coordination, resolution) {
+					return
+				}
 				next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
 			}
 		})
 	}
+}
+
+func enforceServiceAccountRateLimit(w http.ResponseWriter, r *http.Request, store RateLimitStore, account *AuthenticatedServiceAccount) bool {
+	if store == nil || account == nil {
+		return true
+	}
+	limit := configuredAPIKeyRateLimitPerMinute()
+	if limit <= 0 {
+		return true
+	}
+	allowed, remaining, err := store.AllowRateLimit(r.Context(), "service-account:"+account.ID, limit, time.Minute)
+	if err != nil {
+		slog.Warn("service account rate-limit check failed", "service_account_id", account.ID, "err", err)
+		writeError(w, http.StatusServiceUnavailable, "service account rate-limit store unavailable")
+		return false
+	}
+	w.Header().Set("X-RateLimit-Limit", strconv.Itoa(limit))
+	w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
+	if !allowed {
+		writeError(w, http.StatusTooManyRequests, "service account rate limit exceeded")
+		return false
+	}
+	return true
+}
+
+func enforceIdempotencyKey(w http.ResponseWriter, r *http.Request, store IdempotencyStore, resolution authResolution) bool {
+	if store == nil || !isMutatingMethod(r.Method) {
+		return true
+	}
+	rawKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if rawKey == "" {
+		return true
+	}
+	actor := "anonymous"
+	if resolution.ServiceAccount != nil {
+		actor = "service-account:" + resolution.ServiceAccount.ID
+	} else if resolution.User != nil && strings.TrimSpace(resolution.User.Subject) != "" {
+		actor = "user:" + strings.TrimSpace(resolution.User.Subject)
+	}
+	scope := strings.Join([]string{actor, r.Method, r.URL.Path, rawKey}, "|")
+	reserved, err := store.ReserveIdempotencyKey(r.Context(), scope, configuredIdempotencyKeyTTL())
+	if err != nil {
+		slog.Warn("idempotency-key reservation failed", "actor", actor, "path", r.URL.Path, "err", err)
+		writeError(w, http.StatusServiceUnavailable, "idempotency store unavailable")
+		return false
+	}
+	if !reserved {
+		writeError(w, http.StatusConflict, "duplicate idempotency key")
+		return false
+	}
+	return true
+}
+
+func isMutatingMethod(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+func configuredIdempotencyKeyTTL() time.Duration {
+	return firstConfiguredDuration(15*time.Minute, "STORMRUNNER_IDEMPOTENCY_KEY_TTL", "STORMRUNNER_IDEMPOTENCY_KEY_TTL_SECONDS")
+}
+
+func configuredAPIKeyRateLimitPerMinute() int {
+	raw := strings.TrimSpace(os.Getenv("STORMRUNNER_API_KEY_RATE_LIMIT_PER_MINUTE"))
+	if raw == "" {
+		return 0
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit < 0 {
+		return 0
+	}
+	return limit
 }
 
 func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store storage.Store, resolution authResolution, requirement accessRequirement) bool {
