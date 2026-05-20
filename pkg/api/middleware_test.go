@@ -238,7 +238,7 @@ func TestDevUserPreviewEnforcesSystemSettingsRBAC(t *testing.T) {
 	}
 }
 
-func TestDevUserPreviewDeniesProtectedCreateRoutes(t *testing.T) {
+func TestDevUserPreviewAllowsEditorWorkflowsButDeniesSystemAdminRoutes(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
@@ -256,8 +256,8 @@ func TestDevUserPreviewDeniesProtectedCreateRoutes(t *testing.T) {
 	userReq.Header.Set(devViewHeader, devViewModeUser)
 	userResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(userResp, userReq)
-	if userResp.Code != http.StatusForbidden {
-		t.Fatalf("dev user preview project create status = %d, want %d body=%s", userResp.Code, http.StatusForbidden, userResp.Body.String())
+	if userResp.Code != http.StatusCreated {
+		t.Fatalf("dev user preview project create status = %d, want %d body=%s", userResp.Code, http.StatusCreated, userResp.Body.String())
 	}
 
 	adminReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{"name":"Preview Project"}`))
@@ -375,6 +375,38 @@ func TestTrustedHeaderAuthProjectRoleGuardsProjectEndpoints(t *testing.T) {
 	}
 	if got, err := store.GetProject(project.ID); err != nil || got.Name != "Renamed" {
 		t.Fatalf("project rename failed, got=%v err=%v", got, err)
+	}
+}
+
+func TestTrustedHeaderRepositoryRoleAllowsRepositoryProjectAndReleaseCreation(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	createProject := httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{"name":"Repository Managed Project"}`))
+	createProject.Header.Set("X-Auth-Request-User", "repo-manager")
+	createProject.Header.Set("X-Stormrunner-Application-Repository-Roles", storage.DefaultApplicationRepositoryID+"="+RoleEditor)
+	projectResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(projectResp, createProject)
+	if projectResp.Code != http.StatusCreated {
+		t.Fatalf("repository role project create status = %d, want %d body=%s", projectResp.Code, http.StatusCreated, projectResp.Body.String())
+	}
+	var project storage.Project
+	if err := json.Unmarshal(projectResp.Body.Bytes(), &project); err != nil {
+		t.Fatalf("unmarshal project: %v", err)
+	}
+
+	createRelease := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+project.ID+"/releases", strings.NewReader(`{"name":"2026.05"}`))
+	createRelease.Header.Set("X-Auth-Request-User", "repo-manager")
+	createRelease.Header.Set("X-Stormrunner-Application-Repository-Roles", storage.DefaultApplicationRepositoryID+"="+RoleEditor)
+	releaseResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(releaseResp, createRelease)
+	if releaseResp.Code != http.StatusCreated {
+		t.Fatalf("repository role release create status = %d, want %d body=%s", releaseResp.Code, http.StatusCreated, releaseResp.Body.String())
 	}
 }
 

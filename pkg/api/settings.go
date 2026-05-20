@@ -88,23 +88,27 @@ type ArchiveRetentionPolicy struct {
 }
 
 type AuthSettings struct {
-	Mode                string   `json:"mode"`
-	ProviderName        string   `json:"provider_name,omitempty"`
-	LoginURL            string   `json:"login_url,omitempty"`
-	LogoutURL           string   `json:"logout_url,omitempty"`
-	IssuerURL           string   `json:"issuer_url,omitempty"`
-	ClientID            string   `json:"client_id,omitempty"`
-	ClientSecretEnvVar  string   `json:"client_secret_env_var,omitempty"`
-	RedirectURL         string   `json:"redirect_url,omitempty"`
-	Scopes              []string `json:"scopes,omitempty"`
-	RolesClaim          string   `json:"roles_claim,omitempty"`
-	ProjectRolesClaim   string   `json:"project_roles_claim,omitempty"`
-	SessionSecretEnvVar string   `json:"session_secret_env_var,omitempty"`
-	UserHeader          string   `json:"user_header,omitempty"`
-	NameHeader          string   `json:"name_header,omitempty"`
-	EmailHeader         string   `json:"email_header,omitempty"`
-	RolesHeader         string   `json:"roles_header,omitempty"`
-	ProjectRolesHeader  string   `json:"project_roles_header,omitempty"`
+	Mode                  string   `json:"mode"`
+	ProviderName          string   `json:"provider_name,omitempty"`
+	LoginURL              string   `json:"login_url,omitempty"`
+	LogoutURL             string   `json:"logout_url,omitempty"`
+	IssuerURL             string   `json:"issuer_url,omitempty"`
+	ClientID              string   `json:"client_id,omitempty"`
+	ClientSecretEnvVar    string   `json:"client_secret_env_var,omitempty"`
+	RedirectURL           string   `json:"redirect_url,omitempty"`
+	Scopes                []string `json:"scopes,omitempty"`
+	RolesClaim            string   `json:"roles_claim,omitempty"`
+	ProjectRolesClaim     string   `json:"project_roles_claim,omitempty"`
+	DomainRolesClaim      string   `json:"domain_roles_claim,omitempty"`
+	RepositoryRolesClaim  string   `json:"application_repository_roles_claim,omitempty"`
+	SessionSecretEnvVar   string   `json:"session_secret_env_var,omitempty"`
+	UserHeader            string   `json:"user_header,omitempty"`
+	NameHeader            string   `json:"name_header,omitempty"`
+	EmailHeader           string   `json:"email_header,omitempty"`
+	RolesHeader           string   `json:"roles_header,omitempty"`
+	ProjectRolesHeader    string   `json:"project_roles_header,omitempty"`
+	DomainRolesHeader     string   `json:"domain_roles_header,omitempty"`
+	RepositoryRolesHeader string   `json:"application_repository_roles_header,omitempty"`
 }
 
 const (
@@ -118,16 +122,20 @@ const (
 
 func defaultAuthSettings() AuthSettings {
 	return AuthSettings{
-		Mode:                authModeDev,
-		Scopes:              []string{"openid", "profile", "email"},
-		RolesClaim:          "roles",
-		ProjectRolesClaim:   "project_roles",
-		SessionSecretEnvVar: "STORMRUNNER_AUTH_SESSION_SECRET",
-		UserHeader:          "X-Auth-Request-User",
-		NameHeader:          "X-Auth-Request-Name",
-		EmailHeader:         "X-Auth-Request-Email",
-		RolesHeader:         "X-Stormrunner-Roles",
-		ProjectRolesHeader:  "X-Stormrunner-Project-Roles",
+		Mode:                  authModeDev,
+		Scopes:                []string{"openid", "profile", "email"},
+		RolesClaim:            "roles",
+		ProjectRolesClaim:     "project_roles",
+		DomainRolesClaim:      "domain_roles",
+		RepositoryRolesClaim:  "application_repository_roles",
+		SessionSecretEnvVar:   "STORMRUNNER_AUTH_SESSION_SECRET",
+		UserHeader:            "X-Auth-Request-User",
+		NameHeader:            "X-Auth-Request-Name",
+		EmailHeader:           "X-Auth-Request-Email",
+		RolesHeader:           "X-Stormrunner-Roles",
+		ProjectRolesHeader:    "X-Stormrunner-Project-Roles",
+		DomainRolesHeader:     "X-Stormrunner-Domain-Roles",
+		RepositoryRolesHeader: "X-Stormrunner-Application-Repository-Roles",
 	}
 }
 
@@ -144,6 +152,8 @@ func normalizeAuthSettings(in AuthSettings) AuthSettings {
 	out.RedirectURL = strings.TrimSpace(out.RedirectURL)
 	out.RolesClaim = strings.TrimSpace(out.RolesClaim)
 	out.ProjectRolesClaim = strings.TrimSpace(out.ProjectRolesClaim)
+	out.DomainRolesClaim = strings.TrimSpace(out.DomainRolesClaim)
+	out.RepositoryRolesClaim = strings.TrimSpace(out.RepositoryRolesClaim)
 	out.SessionSecretEnvVar = strings.TrimSpace(out.SessionSecretEnvVar)
 	out.Scopes = normalizeAuthScopes(out.Scopes)
 	if isAuthBypassMode(out.Mode) {
@@ -157,6 +167,12 @@ func normalizeAuthSettings(in AuthSettings) AuthSettings {
 	}
 	if out.ProjectRolesClaim == "" {
 		out.ProjectRolesClaim = defaults.ProjectRolesClaim
+	}
+	if out.DomainRolesClaim == "" {
+		out.DomainRolesClaim = defaults.DomainRolesClaim
+	}
+	if out.RepositoryRolesClaim == "" {
+		out.RepositoryRolesClaim = defaults.RepositoryRolesClaim
 	}
 	if out.SessionSecretEnvVar == "" {
 		out.SessionSecretEnvVar = defaults.SessionSecretEnvVar
@@ -175,6 +191,12 @@ func normalizeAuthSettings(in AuthSettings) AuthSettings {
 	}
 	if out.ProjectRolesHeader == "" {
 		out.ProjectRolesHeader = defaults.ProjectRolesHeader
+	}
+	if out.DomainRolesHeader == "" {
+		out.DomainRolesHeader = defaults.DomainRolesHeader
+	}
+	if out.RepositoryRolesHeader == "" {
+		out.RepositoryRolesHeader = defaults.RepositoryRolesHeader
 	}
 	return out
 }

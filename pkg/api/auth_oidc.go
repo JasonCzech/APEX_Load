@@ -32,13 +32,15 @@ const (
 )
 
 type oidcSessionToken struct {
-	Subject      string              `json:"sub"`
-	DisplayName  string              `json:"name,omitempty"`
-	Email        string              `json:"email,omitempty"`
-	GlobalRoles  []string            `json:"global_roles,omitempty"`
-	ProjectRoles map[string][]string `json:"project_roles,omitempty"`
-	ExpiresAt    time.Time           `json:"exp"`
-	IssuedAt     time.Time           `json:"iat"`
+	Subject         string              `json:"sub"`
+	DisplayName     string              `json:"name,omitempty"`
+	Email           string              `json:"email,omitempty"`
+	GlobalRoles     []string            `json:"global_roles,omitempty"`
+	ProjectRoles    map[string][]string `json:"project_roles,omitempty"`
+	DomainRoles     map[string][]string `json:"domain_roles,omitempty"`
+	RepositoryRoles map[string][]string `json:"application_repository_roles,omitempty"`
+	ExpiresAt       time.Time           `json:"exp"`
+	IssuedAt        time.Time           `json:"iat"`
 }
 
 type oidcStateToken struct {
@@ -97,11 +99,13 @@ func resolveOIDCSession(r *http.Request, settings AuthSettings) oidcSessionResol
 		return oidcSessionResolution{Session: session, Status: "expired"}
 	}
 	return oidcSessionResolution{Status: "active", Session: session, User: &AuthenticatedUser{
-		Subject:      session.Subject,
-		DisplayName:  session.DisplayName,
-		Email:        session.Email,
-		GlobalRoles:  sliceToRoleSet(session.GlobalRoles),
-		ProjectRoles: mapToProjectRoleSet(session.ProjectRoles),
+		Subject:         session.Subject,
+		DisplayName:     session.DisplayName,
+		Email:           session.Email,
+		GlobalRoles:     sliceToRoleSet(session.GlobalRoles),
+		ProjectRoles:    mapToProjectRoleSet(session.ProjectRoles),
+		DomainRoles:     mapToDomainRoleSet(session.DomainRoles),
+		RepositoryRoles: mapToRepositoryRoleSet(session.RepositoryRoles),
 	}}
 }
 
@@ -320,6 +324,8 @@ func authenticatedUserFromOIDCClaims(claims map[string]any, expiry time.Time, se
 	}
 	globalRoles := normalizeRoleList(anyToStringSlice(claims[settings.RolesClaim]))
 	projectRoles := normalizeProjectRoleClaims(claims[settings.ProjectRolesClaim])
+	domainRoles := normalizeScopedRoleClaims(claims[settings.DomainRolesClaim], normalizeDomainID)
+	repositoryRoles := normalizeScopedRoleClaims(claims[settings.RepositoryRolesClaim], strings.TrimSpace)
 	if expiry.IsZero() {
 		expiry = time.Now().UTC().Add(oidcSessionTTL)
 	}
@@ -328,20 +334,24 @@ func authenticatedUserFromOIDCClaims(claims map[string]any, expiry time.Time, se
 		expiry = maxExpiry
 	}
 	session := oidcSessionToken{
-		Subject:      subject,
-		DisplayName:  strings.TrimSpace(stringClaim(claims["name"])),
-		Email:        strings.TrimSpace(stringClaim(claims["email"])),
-		GlobalRoles:  globalRoles,
-		ProjectRoles: projectRoles,
-		IssuedAt:     time.Now().UTC(),
-		ExpiresAt:    expiry,
+		Subject:         subject,
+		DisplayName:     strings.TrimSpace(stringClaim(claims["name"])),
+		Email:           strings.TrimSpace(stringClaim(claims["email"])),
+		GlobalRoles:     globalRoles,
+		ProjectRoles:    projectRoles,
+		DomainRoles:     domainRoles,
+		RepositoryRoles: repositoryRoles,
+		IssuedAt:        time.Now().UTC(),
+		ExpiresAt:       expiry,
 	}
 	return &AuthenticatedUser{
-		Subject:      session.Subject,
-		DisplayName:  session.DisplayName,
-		Email:        session.Email,
-		GlobalRoles:  sliceToRoleSet(session.GlobalRoles),
-		ProjectRoles: mapToProjectRoleSet(session.ProjectRoles),
+		Subject:         session.Subject,
+		DisplayName:     session.DisplayName,
+		Email:           session.Email,
+		GlobalRoles:     sliceToRoleSet(session.GlobalRoles),
+		ProjectRoles:    mapToProjectRoleSet(session.ProjectRoles),
+		DomainRoles:     mapToDomainRoleSet(session.DomainRoles),
+		RepositoryRoles: mapToRepositoryRoleSet(session.RepositoryRoles),
 	}, session, nil
 }
 
@@ -481,17 +491,29 @@ func sliceToRoleSet(roles []string) map[string]struct{} {
 }
 
 func mapToProjectRoleSet(projectRoles map[string][]string) map[string]map[string]struct{} {
-	out := make(map[string]map[string]struct{}, len(projectRoles))
-	for projectID, roles := range projectRoles {
-		normalizedProjectID := normalizeProjectID(projectID)
-		if normalizedProjectID == "" {
+	return mapToScopedRoleSet(projectRoles, normalizeProjectID)
+}
+
+func mapToDomainRoleSet(domainRoles map[string][]string) map[string]map[string]struct{} {
+	return mapToScopedRoleSet(domainRoles, normalizeDomainID)
+}
+
+func mapToRepositoryRoleSet(repositoryRoles map[string][]string) map[string]map[string]struct{} {
+	return mapToScopedRoleSet(repositoryRoles, strings.TrimSpace)
+}
+
+func mapToScopedRoleSet(scopedRoles map[string][]string, normalizeScope func(string) string) map[string]map[string]struct{} {
+	out := make(map[string]map[string]struct{}, len(scopedRoles))
+	for scopeID, roles := range scopedRoles {
+		normalizedScopeID := normalizeScope(scopeID)
+		if normalizedScopeID == "" {
 			continue
 		}
 		roleSet := sliceToRoleSet(roles)
 		if len(roleSet) == 0 {
 			continue
 		}
-		out[normalizedProjectID] = roleSet
+		out[normalizedScopeID] = roleSet
 	}
 	return out
 }
@@ -526,22 +548,26 @@ func normalizeRoleList(roles []string) []string {
 }
 
 func normalizeProjectRoleClaims(value any) map[string][]string {
+	return normalizeScopedRoleClaims(value, normalizeProjectID)
+}
+
+func normalizeScopedRoleClaims(value any, normalizeScope func(string) string) map[string][]string {
 	out := make(map[string][]string)
 	switch typed := value.(type) {
 	case string:
-		return projectRoleSetToList(parseProjectRolesHeader(typed))
+		return projectRoleSetToList(parseScopedRolesHeader(typed, normalizeScope))
 	case map[string]any:
-		for projectID, rawRoles := range typed {
+		for scopeID, rawRoles := range typed {
 			roles := normalizeRoleList(anyToStringSlice(rawRoles))
 			if len(roles) > 0 {
-				out[normalizeProjectID(projectID)] = roles
+				out[normalizeScope(scopeID)] = roles
 			}
 		}
 	case map[string][]string:
-		for projectID, roles := range typed {
+		for scopeID, roles := range typed {
 			normalized := normalizeRoleList(roles)
 			if len(normalized) > 0 {
-				out[normalizeProjectID(projectID)] = normalized
+				out[normalizeScope(scopeID)] = normalized
 			}
 		}
 	}

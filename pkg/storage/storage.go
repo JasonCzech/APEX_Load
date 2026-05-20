@@ -8,11 +8,26 @@ import (
 )
 
 const DefaultProjectID = "unassigned"
+const DefaultDomainID = "default"
+const DefaultApplicationRepositoryID = "default-application-repository"
+const DefaultRepositoryCategoryID = "uncategorized"
 const LegacyApplicationID = "legacy"
 const LegacyReleaseID = "legacy-imported"
 
 // Store defines the interface for persisting Stormrunner data.
 type Store interface {
+	// Domains and application repository hierarchy
+	SaveDomain(domain *Domain) error
+	GetDomain(id string) (*Domain, error)
+	ListDomains() ([]*Domain, error)
+	DeleteDomain(id string) error
+	SaveApplicationRepository(repository *ApplicationRepository) error
+	GetApplicationRepository(domainID string) (*ApplicationRepository, error)
+	SaveRepositoryCategory(category *RepositoryCategory) error
+	GetRepositoryCategory(id string) (*RepositoryCategory, error)
+	ListRepositoryCategories(domainID string) ([]*RepositoryCategory, error)
+	DeleteRepositoryCategory(id string) error
+
 	// Applications and releases
 	SaveApplication(application *Application) error
 	GetApplication(id string) (*Application, error)
@@ -21,6 +36,7 @@ type Store interface {
 	SaveRelease(release *Release) error
 	GetRelease(id string) (*Release, error)
 	ListReleases(applicationID string, includeArchived bool) ([]*Release, error)
+	ListReleasesByProject(projectID string, includeArchived bool) ([]*Release, error)
 	ArchiveRelease(id string) error
 	DeleteRelease(id string) error
 
@@ -119,6 +135,8 @@ type ServiceAccount struct {
 	Active               bool                `json:"active"`
 	GlobalRoles          []string            `json:"global_roles,omitempty"`
 	ProjectRoles         map[string][]string `json:"project_roles,omitempty"`
+	DomainRoles          map[string][]string `json:"domain_roles,omitempty"`
+	RepositoryRoles      map[string][]string `json:"application_repository_roles,omitempty"`
 	Scopes               []string            `json:"scopes,omitempty"`
 	CreatedAt            time.Time           `json:"created_at"`
 	UpdatedAt            time.Time           `json:"updated_at"`
@@ -212,6 +230,34 @@ type AuthoringSession struct {
 	LastAccessedAt       time.Time      `json:"last_accessed_at"`
 }
 
+type Domain struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type ApplicationRepository struct {
+	ID          string    `json:"id"`
+	DomainID    string    `json:"domain_id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type RepositoryCategory struct {
+	ID           string    `json:"id"`
+	DomainID     string    `json:"domain_id"`
+	RepositoryID string    `json:"repository_id"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description,omitempty"`
+	SortOrder    int       `json:"sort_order,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
 type Application struct {
 	ID        string    `json:"id"`
 	ProjectID string    `json:"project_id,omitempty"`
@@ -223,6 +269,7 @@ type Application struct {
 type Release struct {
 	ID            string     `json:"id"`
 	ApplicationID string     `json:"application_id"`
+	ProjectID     string     `json:"project_id,omitempty"`
 	Name          string     `json:"name"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
@@ -403,11 +450,13 @@ type ScenarioDataPoolBinding struct {
 }
 
 type Project struct {
-	ID        string          `json:"id"`
-	Name      string          `json:"name"`
-	Settings  ProjectSettings `json:"settings,omitempty"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
+	ID         string          `json:"id"`
+	DomainID   string          `json:"domain_id,omitempty"`
+	CategoryID string          `json:"category_id,omitempty"`
+	Name       string          `json:"name"`
+	Settings   ProjectSettings `json:"settings,omitempty"`
+	CreatedAt  time.Time       `json:"created_at"`
+	UpdatedAt  time.Time       `json:"updated_at"`
 }
 
 type ProjectSettings struct {

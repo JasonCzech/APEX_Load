@@ -95,6 +95,28 @@ func (s *metricsStoreSpy) MoveTest(id string, folderID *string) error { return n
 func (s *metricsStoreSpy) ListTestsByContext(applicationID string, releaseID string, scenarioID string) ([]*storage.TestRecord, error) {
 	return s.listedTests, nil
 }
+func (s *metricsStoreSpy) SaveDomain(domain *storage.Domain) error { return nil }
+func (s *metricsStoreSpy) GetDomain(id string) (*storage.Domain, error) {
+	return &storage.Domain{ID: id, Name: id}, nil
+}
+func (s *metricsStoreSpy) ListDomains() ([]*storage.Domain, error) { return nil, nil }
+func (s *metricsStoreSpy) DeleteDomain(id string) error            { return nil }
+func (s *metricsStoreSpy) SaveApplicationRepository(repository *storage.ApplicationRepository) error {
+	return nil
+}
+func (s *metricsStoreSpy) GetApplicationRepository(domainID string) (*storage.ApplicationRepository, error) {
+	return &storage.ApplicationRepository{ID: storage.DefaultApplicationRepositoryID, DomainID: domainID, Name: "Application Repository"}, nil
+}
+func (s *metricsStoreSpy) SaveRepositoryCategory(category *storage.RepositoryCategory) error {
+	return nil
+}
+func (s *metricsStoreSpy) GetRepositoryCategory(id string) (*storage.RepositoryCategory, error) {
+	return &storage.RepositoryCategory{ID: id, DomainID: storage.DefaultDomainID, RepositoryID: storage.DefaultApplicationRepositoryID, Name: id}, nil
+}
+func (s *metricsStoreSpy) ListRepositoryCategories(domainID string) ([]*storage.RepositoryCategory, error) {
+	return []*storage.RepositoryCategory{{ID: storage.DefaultRepositoryCategoryID, DomainID: domainID, RepositoryID: storage.DefaultApplicationRepositoryID, Name: "Uncategorized"}}, nil
+}
+func (s *metricsStoreSpy) DeleteRepositoryCategory(id string) error               { return nil }
 func (s *metricsStoreSpy) SaveApplication(application *storage.Application) error { return nil }
 func (s *metricsStoreSpy) GetApplication(id string) (*storage.Application, error) {
 	return nil, nil
@@ -113,6 +135,9 @@ func (s *metricsStoreSpy) GetRelease(id string) (*storage.Release, error) {
 	return &storage.Release{ID: id, ApplicationID: storage.LegacyApplicationID, Name: id}, nil
 }
 func (s *metricsStoreSpy) ListReleases(applicationID string, includeArchived bool) ([]*storage.Release, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListReleasesByProject(projectID string, includeArchived bool) ([]*storage.Release, error) {
 	return nil, nil
 }
 func (s *metricsStoreSpy) ArchiveRelease(id string) error { return nil }

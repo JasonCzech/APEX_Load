@@ -99,6 +99,35 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 
 func (s *SQLiteStore) init() error {
 	queries := []string{
+		`CREATE TABLE IF NOT EXISTS domains (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS application_repositories (
+			id TEXT PRIMARY KEY,
+			domain_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			UNIQUE(domain_id),
+			FOREIGN KEY(domain_id) REFERENCES domains(id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS repository_categories (
+			id TEXT PRIMARY KEY,
+			domain_id TEXT NOT NULL,
+			repository_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			sort_order INTEGER DEFAULT 0,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			FOREIGN KEY(domain_id) REFERENCES domains(id),
+			FOREIGN KEY(repository_id) REFERENCES application_repositories(id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS applications (
 			id TEXT PRIMARY KEY,
 			project_id TEXT REFERENCES projects(id),
@@ -109,6 +138,7 @@ func (s *SQLiteStore) init() error {
 		`CREATE TABLE IF NOT EXISTS releases (
 			id TEXT PRIMARY KEY,
 			application_id TEXT NOT NULL,
+			project_id TEXT REFERENCES projects(id),
 			name TEXT NOT NULL,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
@@ -267,6 +297,8 @@ func (s *SQLiteStore) init() error {
 		)`,
 		`CREATE TABLE IF NOT EXISTS projects (
 			id TEXT PRIMARY KEY,
+			domain_id TEXT REFERENCES domains(id),
+			category_id TEXT REFERENCES repository_categories(id),
 			name TEXT NOT NULL,
 			settings_json TEXT,
 			created_at DATETIME NOT NULL,
@@ -386,6 +418,8 @@ func (s *SQLiteStore) init() error {
 			active INTEGER NOT NULL DEFAULT 1,
 			global_roles_json TEXT,
 			project_roles_json TEXT,
+			domain_roles_json TEXT,
+			repository_roles_json TEXT,
 			scopes_json TEXT,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
@@ -499,7 +533,10 @@ func (s *SQLiteStore) init() error {
 		name  string
 	}{
 		{`ALTER TABLE projects ADD COLUMN settings_json TEXT`, "projects.settings_json"},
+		{`ALTER TABLE projects ADD COLUMN domain_id TEXT REFERENCES domains(id)`, "projects.domain_id"},
+		{`ALTER TABLE projects ADD COLUMN category_id TEXT REFERENCES repository_categories(id)`, "projects.category_id"},
 		{`ALTER TABLE applications ADD COLUMN project_id TEXT REFERENCES projects(id)`, "applications.project_id"},
+		{`ALTER TABLE releases ADD COLUMN project_id TEXT REFERENCES projects(id)`, "releases.project_id"},
 		{`ALTER TABLE scripts ADD COLUMN project_id TEXT REFERENCES projects(id)`, "scripts.project_id"},
 		{`ALTER TABLE scripts ADD COLUMN folder_id TEXT REFERENCES folders(id)`, "scripts.folder_id"},
 		{`ALTER TABLE tests ADD COLUMN project_id TEXT REFERENCES projects(id)`, "tests.project_id"},
@@ -526,6 +563,8 @@ func (s *SQLiteStore) init() error {
 		{`ALTER TABLE service_accounts ADD COLUMN key_rotated_at DATETIME`, "service_accounts.key_rotated_at"},
 		{`ALTER TABLE service_accounts ADD COLUMN rotation_interval_days INTEGER`, "service_accounts.rotation_interval_days"},
 		{`ALTER TABLE service_accounts ADD COLUMN scopes_json TEXT`, "service_accounts.scopes_json"},
+		{`ALTER TABLE service_accounts ADD COLUMN domain_roles_json TEXT`, "service_accounts.domain_roles_json"},
+		{`ALTER TABLE service_accounts ADD COLUMN repository_roles_json TEXT`, "service_accounts.repository_roles_json"},
 		{`ALTER TABLE scenario_scripts ADD COLUMN stages_json TEXT`, "scenario_scripts.stages_json"},
 		{`ALTER TABLE scenario_schedules ADD COLUMN project_id TEXT`, "scenario_schedules.project_id"},
 		{`ALTER TABLE scenario_schedules ADD COLUMN owner_subject TEXT`, "scenario_schedules.owner_subject"},
@@ -553,6 +592,9 @@ func (s *SQLiteStore) init() error {
 		return fmt.Errorf("failed to backfill run_archives.schema_version: %w", err)
 	}
 
+	if err := s.ensureDefaultDomainHierarchy(); err != nil {
+		return err
+	}
 	if err := s.ensureDefaultProject(); err != nil {
 		return err
 	}
@@ -563,10 +605,30 @@ func isDuplicateColumnErr(err error) bool {
 	return strings.Contains(err.Error(), "duplicate column name")
 }
 
+func (s *SQLiteStore) ensureDefaultDomainHierarchy() error {
+	now := time.Now()
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO domains (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, DefaultDomainID, "Default Domain", "Default migrated Stormrunner domain.", now, now); err != nil {
+		return fmt.Errorf("failed to create default domain: %w", err)
+	}
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO application_repositories (id, domain_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, DefaultApplicationRepositoryID, DefaultDomainID, "Application Repository", "Default migrated application repository.", now, now); err != nil {
+		return fmt.Errorf("failed to create default application repository: %w", err)
+	}
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO repository_categories (id, domain_id, repository_id, name, description, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, DefaultRepositoryCategoryID, DefaultDomainID, DefaultApplicationRepositoryID, "Uncategorized", "Default category for migrated projects.", 0, now, now); err != nil {
+		return fmt.Errorf("failed to create default repository category: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) ensureDefaultProject() error {
 	now := time.Now()
-	if _, err := s.db.Exec(`INSERT OR IGNORE INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)`, DefaultProjectID, "Unassigned", now, now); err != nil {
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO projects (id, domain_id, category_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, DefaultProjectID, DefaultDomainID, DefaultRepositoryCategoryID, "Unassigned", now, now); err != nil {
 		return fmt.Errorf("failed to create default project: %w", err)
+	}
+	if _, err := s.db.Exec(`UPDATE projects SET domain_id = ? WHERE domain_id IS NULL OR domain_id = ''`, DefaultDomainID); err != nil {
+		return fmt.Errorf("failed to backfill project domain ids: %w", err)
+	}
+	if _, err := s.db.Exec(`UPDATE projects SET category_id = ? WHERE category_id IS NULL OR category_id = ''`, DefaultRepositoryCategoryID); err != nil {
+		return fmt.Errorf("failed to backfill project category ids: %w", err)
 	}
 	if _, err := s.db.Exec(`UPDATE scripts SET project_id = ? WHERE project_id IS NULL OR project_id = ''`, DefaultProjectID); err != nil {
 		return fmt.Errorf("failed to backfill script project ids: %w", err)
@@ -588,6 +650,27 @@ func normalizeProjectID(projectID string) string {
 		return DefaultProjectID
 	}
 	return projectID
+}
+
+func normalizeDomainID(domainID string) string {
+	if domainID == "" {
+		return DefaultDomainID
+	}
+	return domainID
+}
+
+func normalizeRepositoryID(repositoryID string) string {
+	if repositoryID == "" {
+		return DefaultApplicationRepositoryID
+	}
+	return repositoryID
+}
+
+func normalizeRepositoryCategoryID(categoryID string) string {
+	if categoryID == "" {
+		return DefaultRepositoryCategoryID
+	}
+	return categoryID
 }
 
 func normalizeApplicationID(applicationID string) string {
@@ -617,8 +700,11 @@ func (s *SQLiteStore) ensureLegacyApplication() error {
 	if _, err := s.db.Exec(`INSERT OR IGNORE INTO applications (id, project_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, LegacyApplicationID, DefaultProjectID, "Legacy", now, now); err != nil {
 		return fmt.Errorf("failed to create legacy application: %w", err)
 	}
-	if _, err := s.db.Exec(`INSERT OR IGNORE INTO releases (id, application_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, LegacyReleaseID, LegacyApplicationID, "Imported Legacy", now, now); err != nil {
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO releases (id, application_id, project_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, LegacyReleaseID, LegacyApplicationID, DefaultProjectID, "Imported Legacy", now, now); err != nil {
 		return fmt.Errorf("failed to create legacy release: %w", err)
+	}
+	if _, err := s.db.Exec(`UPDATE releases SET project_id = COALESCE((SELECT project_id FROM applications WHERE applications.id = releases.application_id), ?) WHERE project_id IS NULL OR project_id = ''`, DefaultProjectID); err != nil {
+		return fmt.Errorf("failed to backfill release project ids: %w", err)
 	}
 	if _, err := s.db.Exec(`UPDATE tests SET application_id = ? WHERE application_id IS NULL OR application_id = ''`, LegacyApplicationID); err != nil {
 		return fmt.Errorf("failed to backfill test application ids: %w", err)
@@ -731,6 +817,181 @@ func validateFolderCategory(category string) error {
 	}
 }
 
+func (s *SQLiteStore) SaveDomain(domain *Domain) error {
+	if domain == nil {
+		return errors.New("domain is required")
+	}
+	if strings.TrimSpace(domain.ID) == "" {
+		return errors.New("domain id is required")
+	}
+	if strings.TrimSpace(domain.Name) == "" {
+		return errors.New("domain name is required")
+	}
+	if domain.CreatedAt.IsZero() {
+		domain.CreatedAt = time.Now()
+	}
+	domain.UpdatedAt = time.Now()
+	_, err := s.db.Exec(`INSERT INTO domains (id, name, description, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, updated_at=excluded.updated_at`,
+		domain.ID, strings.TrimSpace(domain.Name), strings.TrimSpace(domain.Description), domain.CreatedAt, domain.UpdatedAt)
+	return err
+}
+
+func (s *SQLiteStore) GetDomain(id string) (*Domain, error) {
+	var domain Domain
+	err := s.db.QueryRow(`SELECT id, name, COALESCE(description, ''), created_at, updated_at FROM domains WHERE id = ?`, normalizeDomainID(id)).Scan(
+		&domain.ID, &domain.Name, &domain.Description, &domain.CreatedAt, &domain.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &domain, nil
+}
+
+func (s *SQLiteStore) ListDomains() ([]*Domain, error) {
+	rows, err := s.db.Query(`SELECT id, name, COALESCE(description, ''), created_at, updated_at FROM domains ORDER BY name ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var domains []*Domain
+	for rows.Next() {
+		var domain Domain
+		if err := rows.Scan(&domain.ID, &domain.Name, &domain.Description, &domain.CreatedAt, &domain.UpdatedAt); err != nil {
+			return nil, err
+		}
+		domains = append(domains, &domain)
+	}
+	return domains, rows.Err()
+}
+
+func (s *SQLiteStore) DeleteDomain(id string) error {
+	id = normalizeDomainID(id)
+	if id == DefaultDomainID {
+		return errors.New("default domain cannot be deleted")
+	}
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM projects WHERE domain_id = ?`, id).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return errors.New("domain has projects")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM repository_categories WHERE domain_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM application_repositories WHERE domain_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM domains WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *SQLiteStore) SaveApplicationRepository(repository *ApplicationRepository) error {
+	if repository == nil {
+		return errors.New("application repository is required")
+	}
+	if strings.TrimSpace(repository.ID) == "" {
+		return errors.New("application repository id is required")
+	}
+	repository.DomainID = normalizeDomainID(repository.DomainID)
+	if strings.TrimSpace(repository.Name) == "" {
+		return errors.New("application repository name is required")
+	}
+	if repository.CreatedAt.IsZero() {
+		repository.CreatedAt = time.Now()
+	}
+	repository.UpdatedAt = time.Now()
+	_, err := s.db.Exec(`INSERT INTO application_repositories (id, domain_id, name, description, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET domain_id=excluded.domain_id, name=excluded.name, description=excluded.description, updated_at=excluded.updated_at`,
+		repository.ID, repository.DomainID, strings.TrimSpace(repository.Name), strings.TrimSpace(repository.Description), repository.CreatedAt, repository.UpdatedAt)
+	return err
+}
+
+func (s *SQLiteStore) GetApplicationRepository(domainID string) (*ApplicationRepository, error) {
+	var repository ApplicationRepository
+	err := s.db.QueryRow(`SELECT id, domain_id, name, COALESCE(description, ''), created_at, updated_at FROM application_repositories WHERE domain_id = ?`, normalizeDomainID(domainID)).Scan(
+		&repository.ID, &repository.DomainID, &repository.Name, &repository.Description, &repository.CreatedAt, &repository.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &repository, nil
+}
+
+func (s *SQLiteStore) SaveRepositoryCategory(category *RepositoryCategory) error {
+	if category == nil {
+		return errors.New("repository category is required")
+	}
+	if strings.TrimSpace(category.ID) == "" {
+		return errors.New("repository category id is required")
+	}
+	category.DomainID = normalizeDomainID(category.DomainID)
+	category.RepositoryID = normalizeRepositoryID(category.RepositoryID)
+	if strings.TrimSpace(category.Name) == "" {
+		return errors.New("repository category name is required")
+	}
+	if category.CreatedAt.IsZero() {
+		category.CreatedAt = time.Now()
+	}
+	category.UpdatedAt = time.Now()
+	_, err := s.db.Exec(`INSERT INTO repository_categories (id, domain_id, repository_id, name, description, sort_order, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET domain_id=excluded.domain_id, repository_id=excluded.repository_id, name=excluded.name, description=excluded.description, sort_order=excluded.sort_order, updated_at=excluded.updated_at`,
+		category.ID, category.DomainID, category.RepositoryID, strings.TrimSpace(category.Name), strings.TrimSpace(category.Description), category.SortOrder, category.CreatedAt, category.UpdatedAt)
+	return err
+}
+
+func (s *SQLiteStore) GetRepositoryCategory(id string) (*RepositoryCategory, error) {
+	var category RepositoryCategory
+	err := s.db.QueryRow(`SELECT id, domain_id, repository_id, name, COALESCE(description, ''), COALESCE(sort_order, 0), created_at, updated_at FROM repository_categories WHERE id = ?`, normalizeRepositoryCategoryID(id)).Scan(
+		&category.ID, &category.DomainID, &category.RepositoryID, &category.Name, &category.Description, &category.SortOrder, &category.CreatedAt, &category.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &category, nil
+}
+
+func (s *SQLiteStore) ListRepositoryCategories(domainID string) ([]*RepositoryCategory, error) {
+	rows, err := s.db.Query(`SELECT id, domain_id, repository_id, name, COALESCE(description, ''), COALESCE(sort_order, 0), created_at, updated_at FROM repository_categories WHERE domain_id = ? ORDER BY sort_order ASC, name ASC`, normalizeDomainID(domainID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var categories []*RepositoryCategory
+	for rows.Next() {
+		var category RepositoryCategory
+		if err := rows.Scan(&category.ID, &category.DomainID, &category.RepositoryID, &category.Name, &category.Description, &category.SortOrder, &category.CreatedAt, &category.UpdatedAt); err != nil {
+			return nil, err
+		}
+		categories = append(categories, &category)
+	}
+	return categories, rows.Err()
+}
+
+func (s *SQLiteStore) DeleteRepositoryCategory(id string) error {
+	id = normalizeRepositoryCategoryID(id)
+	if id == DefaultRepositoryCategoryID {
+		return errors.New("default repository category cannot be deleted")
+	}
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM projects WHERE category_id = ?`, id).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return errors.New("repository category has projects")
+	}
+	_, err := s.db.Exec(`DELETE FROM repository_categories WHERE id = ?`, id)
+	return err
+}
+
 func (s *SQLiteStore) SaveApplication(application *Application) error {
 	if application.ID == "" {
 		return errors.New("application id is required")
@@ -809,6 +1070,12 @@ func (s *SQLiteStore) SaveRelease(release *Release) error {
 		return errors.New("release id is required")
 	}
 	release.ApplicationID = normalizeApplicationID(release.ApplicationID)
+	if strings.TrimSpace(release.ProjectID) == "" {
+		if application, err := s.GetApplication(release.ApplicationID); err == nil && application != nil {
+			release.ProjectID = application.ProjectID
+		}
+	}
+	release.ProjectID = normalizeProjectID(release.ProjectID)
 	if strings.TrimSpace(release.Name) == "" {
 		return errors.New("release name is required")
 	}
@@ -816,26 +1083,27 @@ func (s *SQLiteStore) SaveRelease(release *Release) error {
 		release.CreatedAt = time.Now()
 	}
 	release.UpdatedAt = time.Now()
-	_, err := s.db.Exec(`INSERT INTO releases (id, application_id, name, created_at, updated_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET application_id=excluded.application_id, name=excluded.name, updated_at=excluded.updated_at, archived_at=excluded.archived_at`,
-		release.ID, release.ApplicationID, release.Name, release.CreatedAt, release.UpdatedAt, release.ArchivedAt)
+	_, err := s.db.Exec(`INSERT INTO releases (id, application_id, project_id, name, created_at, updated_at, archived_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET application_id=excluded.application_id, project_id=excluded.project_id, name=excluded.name, updated_at=excluded.updated_at, archived_at=excluded.archived_at`,
+		release.ID, release.ApplicationID, release.ProjectID, release.Name, release.CreatedAt, release.UpdatedAt, release.ArchivedAt)
 	return err
 }
 
 func (s *SQLiteStore) GetRelease(id string) (*Release, error) {
 	var release Release
-	err := s.db.QueryRow(`SELECT id, application_id, name, created_at, updated_at, archived_at FROM releases WHERE id = ?`, id).Scan(
-		&release.ID, &release.ApplicationID, &release.Name, &release.CreatedAt, &release.UpdatedAt, &release.ArchivedAt)
+	err := s.db.QueryRow(`SELECT id, application_id, COALESCE(project_id, ''), name, created_at, updated_at, archived_at FROM releases WHERE id = ?`, id).Scan(
+		&release.ID, &release.ApplicationID, &release.ProjectID, &release.Name, &release.CreatedAt, &release.UpdatedAt, &release.ArchivedAt)
 	if err != nil {
 		return nil, err
 	}
+	release.ProjectID = normalizeProjectID(release.ProjectID)
 	return &release, nil
 }
 
 func (s *SQLiteStore) ListReleases(applicationID string, includeArchived bool) ([]*Release, error) {
 	args := []any{}
-	query := `SELECT id, application_id, name, created_at, updated_at, archived_at FROM releases`
+	query := `SELECT id, application_id, COALESCE(project_id, ''), name, created_at, updated_at, archived_at FROM releases`
 	filters := []string{}
 	if applicationID != "" {
 		filters = append(filters, `application_id = ?`)
@@ -856,9 +1124,34 @@ func (s *SQLiteStore) ListReleases(applicationID string, includeArchived bool) (
 	var releases []*Release
 	for rows.Next() {
 		var release Release
-		if err := rows.Scan(&release.ID, &release.ApplicationID, &release.Name, &release.CreatedAt, &release.UpdatedAt, &release.ArchivedAt); err != nil {
+		if err := rows.Scan(&release.ID, &release.ApplicationID, &release.ProjectID, &release.Name, &release.CreatedAt, &release.UpdatedAt, &release.ArchivedAt); err != nil {
 			return nil, err
 		}
+		release.ProjectID = normalizeProjectID(release.ProjectID)
+		releases = append(releases, &release)
+	}
+	return releases, rows.Err()
+}
+
+func (s *SQLiteStore) ListReleasesByProject(projectID string, includeArchived bool) ([]*Release, error) {
+	args := []any{normalizeProjectID(projectID)}
+	query := `SELECT id, application_id, COALESCE(project_id, ''), name, created_at, updated_at, archived_at FROM releases WHERE project_id = ?`
+	if !includeArchived {
+		query += ` AND archived_at IS NULL`
+	}
+	query += ` ORDER BY created_at DESC, name ASC`
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var releases []*Release
+	for rows.Next() {
+		var release Release
+		if err := rows.Scan(&release.ID, &release.ApplicationID, &release.ProjectID, &release.Name, &release.CreatedAt, &release.UpdatedAt, &release.ArchivedAt); err != nil {
+			return nil, err
+		}
+		release.ProjectID = normalizeProjectID(release.ProjectID)
 		releases = append(releases, &release)
 	}
 	return releases, rows.Err()
@@ -1670,6 +1963,8 @@ func (s *SQLiteStore) SaveProject(project *Project) error {
 	if strings.TrimSpace(project.Name) == "" {
 		return errors.New("project name is required")
 	}
+	project.DomainID = normalizeDomainID(project.DomainID)
+	project.CategoryID = normalizeRepositoryCategoryID(project.CategoryID)
 	if project.CreatedAt.IsZero() {
 		project.CreatedAt = time.Now()
 	}
@@ -1678,21 +1973,23 @@ func (s *SQLiteStore) SaveProject(project *Project) error {
 	if err != nil {
 		return fmt.Errorf("marshal project settings: %w", err)
 	}
-	_, err = s.db.Exec(`INSERT INTO projects (id, name, settings_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name, settings_json=excluded.settings_json, updated_at=excluded.updated_at`,
-		project.ID, project.Name, string(settingsJSON), project.CreatedAt, project.UpdatedAt)
+	_, err = s.db.Exec(`INSERT INTO projects (id, domain_id, category_id, name, settings_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET domain_id=excluded.domain_id, category_id=excluded.category_id, name=excluded.name, settings_json=excluded.settings_json, updated_at=excluded.updated_at`,
+		project.ID, project.DomainID, project.CategoryID, project.Name, string(settingsJSON), project.CreatedAt, project.UpdatedAt)
 	return err
 }
 
 func (s *SQLiteStore) GetProject(id string) (*Project, error) {
 	var project Project
 	var settingsJSON string
-	err := s.db.QueryRow(`SELECT id, name, COALESCE(settings_json, ''), created_at, updated_at FROM projects WHERE id = ?`, id).Scan(
-		&project.ID, &project.Name, &settingsJSON, &project.CreatedAt, &project.UpdatedAt)
+	err := s.db.QueryRow(`SELECT id, COALESCE(domain_id, ''), COALESCE(category_id, ''), name, COALESCE(settings_json, ''), created_at, updated_at FROM projects WHERE id = ?`, id).Scan(
+		&project.ID, &project.DomainID, &project.CategoryID, &project.Name, &settingsJSON, &project.CreatedAt, &project.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
+	project.DomainID = normalizeDomainID(project.DomainID)
+	project.CategoryID = normalizeRepositoryCategoryID(project.CategoryID)
 	if settingsJSON != "" && settingsJSON != "null" {
 		if err := json.Unmarshal([]byte(settingsJSON), &project.Settings); err != nil {
 			return nil, fmt.Errorf("unmarshal project settings: %w", err)
@@ -1702,7 +1999,7 @@ func (s *SQLiteStore) GetProject(id string) (*Project, error) {
 }
 
 func (s *SQLiteStore) ListProjects() ([]*Project, error) {
-	rows, err := s.db.Query(`SELECT id, name, COALESCE(settings_json, ''), created_at, updated_at FROM projects ORDER BY name ASC`)
+	rows, err := s.db.Query(`SELECT id, COALESCE(domain_id, ''), COALESCE(category_id, ''), name, COALESCE(settings_json, ''), created_at, updated_at FROM projects ORDER BY name ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -1711,9 +2008,11 @@ func (s *SQLiteStore) ListProjects() ([]*Project, error) {
 	for rows.Next() {
 		var project Project
 		var settingsJSON string
-		if err := rows.Scan(&project.ID, &project.Name, &settingsJSON, &project.CreatedAt, &project.UpdatedAt); err != nil {
+		if err := rows.Scan(&project.ID, &project.DomainID, &project.CategoryID, &project.Name, &settingsJSON, &project.CreatedAt, &project.UpdatedAt); err != nil {
 			return nil, err
 		}
+		project.DomainID = normalizeDomainID(project.DomainID)
+		project.CategoryID = normalizeRepositoryCategoryID(project.CategoryID)
 		if settingsJSON != "" && settingsJSON != "null" {
 			if err := json.Unmarshal([]byte(settingsJSON), &project.Settings); err != nil {
 				return nil, fmt.Errorf("unmarshal project settings: %w", err)
@@ -2751,12 +3050,20 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 	if err != nil {
 		return err
 	}
+	domainRolesJSON, err := json.Marshal(account.DomainRoles)
+	if err != nil {
+		return err
+	}
+	repositoryRolesJSON, err := json.Marshal(account.RepositoryRoles)
+	if err != nil {
+		return err
+	}
 	scopesJSON, err := json.Marshal(account.Scopes)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO service_accounts (id, name, description, key_hash, active, global_roles_json, project_roles_json, scopes_json, created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err = s.db.Exec(`INSERT INTO service_accounts (id, name, description, key_hash, active, global_roles_json, project_roles_json, domain_roles_json, repository_roles_json, scopes_json, created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name,
 			description=excluded.description,
@@ -2764,6 +3071,8 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 			active=excluded.active,
 			global_roles_json=excluded.global_roles_json,
 			project_roles_json=excluded.project_roles_json,
+			domain_roles_json=excluded.domain_roles_json,
+			repository_roles_json=excluded.repository_roles_json,
 			scopes_json=excluded.scopes_json,
 			updated_at=excluded.updated_at,
 			last_used_at=excluded.last_used_at,
@@ -2777,6 +3086,8 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 		boolToSQLite(account.Active),
 		string(globalRolesJSON),
 		string(projectRolesJSON),
+		string(domainRolesJSON),
+		string(repositoryRolesJSON),
 		string(scopesJSON),
 		account.CreatedAt,
 		account.UpdatedAt,
@@ -2797,7 +3108,7 @@ func (s *SQLiteStore) GetServiceAccountByKeyHash(keyHash string) (*ServiceAccoun
 }
 
 func serviceAccountSelectColumns() string {
-	return `SELECT id, name, description, key_hash, active, global_roles_json, project_roles_json, COALESCE(scopes_json, ''), created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days`
+	return `SELECT id, name, description, key_hash, active, global_roles_json, project_roles_json, COALESCE(domain_roles_json, ''), COALESCE(repository_roles_json, ''), COALESCE(scopes_json, ''), created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days`
 }
 
 func (s *SQLiteStore) getServiceAccountByQuery(query string, args ...any) (*ServiceAccount, error) {
@@ -2805,6 +3116,8 @@ func (s *SQLiteStore) getServiceAccountByQuery(query string, args ...any) (*Serv
 	var active int
 	var globalRolesJSON string
 	var projectRolesJSON string
+	var domainRolesJSON string
+	var repositoryRolesJSON string
 	var scopesJSON string
 	var lastUsedAt sql.NullTime
 	var expiresAt sql.NullTime
@@ -2818,6 +3131,8 @@ func (s *SQLiteStore) getServiceAccountByQuery(query string, args ...any) (*Serv
 		&active,
 		&globalRolesJSON,
 		&projectRolesJSON,
+		&domainRolesJSON,
+		&repositoryRolesJSON,
 		&scopesJSON,
 		&account.CreatedAt,
 		&account.UpdatedAt,
@@ -2848,11 +3163,23 @@ func (s *SQLiteStore) getServiceAccountByQuery(query string, args ...any) (*Serv
 	if err := json.Unmarshal([]byte(projectRolesJSON), &account.ProjectRoles); err != nil && strings.TrimSpace(projectRolesJSON) != "" {
 		return nil, err
 	}
+	if err := json.Unmarshal([]byte(domainRolesJSON), &account.DomainRoles); err != nil && strings.TrimSpace(domainRolesJSON) != "" {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(repositoryRolesJSON), &account.RepositoryRoles); err != nil && strings.TrimSpace(repositoryRolesJSON) != "" {
+		return nil, err
+	}
 	if err := json.Unmarshal([]byte(scopesJSON), &account.Scopes); err != nil && strings.TrimSpace(scopesJSON) != "" {
 		return nil, err
 	}
 	if account.ProjectRoles == nil {
 		account.ProjectRoles = map[string][]string{}
+	}
+	if account.DomainRoles == nil {
+		account.DomainRoles = map[string][]string{}
+	}
+	if account.RepositoryRoles == nil {
+		account.RepositoryRoles = map[string][]string{}
 	}
 	populateServiceAccountDerivedFields(&account)
 	return &account, nil
@@ -2870,12 +3197,14 @@ func (s *SQLiteStore) ListServiceAccounts() ([]*ServiceAccount, error) {
 		var active int
 		var globalRolesJSON string
 		var projectRolesJSON string
+		var domainRolesJSON string
+		var repositoryRolesJSON string
 		var scopesJSON string
 		var lastUsedAt sql.NullTime
 		var expiresAt sql.NullTime
 		var keyRotatedAt sql.NullTime
 		var rotationIntervalDays sql.NullInt64
-		if err := rows.Scan(&account.ID, &account.Name, &account.Description, &account.KeyHash, &active, &globalRolesJSON, &projectRolesJSON, &scopesJSON, &account.CreatedAt, &account.UpdatedAt, &lastUsedAt, &expiresAt, &keyRotatedAt, &rotationIntervalDays); err != nil {
+		if err := rows.Scan(&account.ID, &account.Name, &account.Description, &account.KeyHash, &active, &globalRolesJSON, &projectRolesJSON, &domainRolesJSON, &repositoryRolesJSON, &scopesJSON, &account.CreatedAt, &account.UpdatedAt, &lastUsedAt, &expiresAt, &keyRotatedAt, &rotationIntervalDays); err != nil {
 			return nil, err
 		}
 		account.Active = active != 0
@@ -2897,11 +3226,23 @@ func (s *SQLiteStore) ListServiceAccounts() ([]*ServiceAccount, error) {
 		if err := json.Unmarshal([]byte(projectRolesJSON), &account.ProjectRoles); err != nil && strings.TrimSpace(projectRolesJSON) != "" {
 			return nil, err
 		}
+		if err := json.Unmarshal([]byte(domainRolesJSON), &account.DomainRoles); err != nil && strings.TrimSpace(domainRolesJSON) != "" {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(repositoryRolesJSON), &account.RepositoryRoles); err != nil && strings.TrimSpace(repositoryRolesJSON) != "" {
+			return nil, err
+		}
 		if err := json.Unmarshal([]byte(scopesJSON), &account.Scopes); err != nil && strings.TrimSpace(scopesJSON) != "" {
 			return nil, err
 		}
 		if account.ProjectRoles == nil {
 			account.ProjectRoles = map[string][]string{}
+		}
+		if account.DomainRoles == nil {
+			account.DomainRoles = map[string][]string{}
+		}
+		if account.RepositoryRoles == nil {
+			account.RepositoryRoles = map[string][]string{}
 		}
 		populateServiceAccountDerivedFields(&account)
 		accounts = append(accounts, &account)

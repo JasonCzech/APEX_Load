@@ -9,6 +9,8 @@ type DeleteEntityResponse = {
 
 type ProjectRequest = {
   name: string
+  domain_id?: string
+  category_id?: string
   settings?: ProjectSettings
 }
 
@@ -22,7 +24,7 @@ function query(params: Record<string, string | undefined>) {
 }
 
 export function useProjectApi() {
-  const listProjects = useCallback(() => request<{ projects: Project[]; count: number }>('/projects'), [])
+  const listProjects = useCallback((filters?: { domain_id?: string; category_id?: string }) => request<{ projects: Project[]; count: number }>(`/projects${query(filters || {})}`), [])
 
   const createProject = useCallback(
     (data: ProjectRequest) => request<Project>('/projects', { method: 'POST', body: JSON.stringify(data) }),

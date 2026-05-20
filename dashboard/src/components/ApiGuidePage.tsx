@@ -22,10 +22,13 @@ const authRows = [
 
 const endpointGroups = [
   {
-    title: 'Projects, Applications, Releases',
+    title: 'Domain, Repository, Projects, Releases',
     endpoints: [
+      'GET /api/v1/domains',
+      'GET /api/v1/domains/{id}/application-repository/categories',
       'GET /api/v1/projects',
       'POST /api/v1/projects',
+      'GET /api/v1/projects/{id}/releases',
       'GET /api/v1/applications?project_id=<id>',
       'POST /api/v1/applications/{id}/releases',
       'GET /api/v1/releases/{id}/trend/export',

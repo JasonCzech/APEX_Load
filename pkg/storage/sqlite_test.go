@@ -209,6 +209,84 @@ func TestSQLiteStoreProjectsFoldersAndFiltering(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreDomainRepositoryHierarchyAndProjectReleases(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	domains, err := store.ListDomains()
+	if err != nil {
+		t.Fatalf("ListDomains returned error: %v", err)
+	}
+	if len(domains) != 1 || domains[0].ID != DefaultDomainID {
+		t.Fatalf("default domains = %#v, want default domain", domains)
+	}
+	repository, err := store.GetApplicationRepository(DefaultDomainID)
+	if err != nil {
+		t.Fatalf("GetApplicationRepository returned error: %v", err)
+	}
+	if repository.ID != DefaultApplicationRepositoryID {
+		t.Fatalf("default repository = %#v, want %s", repository, DefaultApplicationRepositoryID)
+	}
+	categories, err := store.ListRepositoryCategories(DefaultDomainID)
+	if err != nil {
+		t.Fatalf("ListRepositoryCategories returned error: %v", err)
+	}
+	if len(categories) != 1 || categories[0].ID != DefaultRepositoryCategoryID {
+		t.Fatalf("default categories = %#v, want uncategorized", categories)
+	}
+
+	project, err := store.GetProject(DefaultProjectID)
+	if err != nil {
+		t.Fatalf("GetProject default returned error: %v", err)
+	}
+	if project.DomainID != DefaultDomainID || project.CategoryID != DefaultRepositoryCategoryID {
+		t.Fatalf("default project placement = %#v", project)
+	}
+	legacyRelease, err := store.GetRelease(LegacyReleaseID)
+	if err != nil {
+		t.Fatalf("GetRelease legacy returned error: %v", err)
+	}
+	if legacyRelease.ProjectID != DefaultProjectID {
+		t.Fatalf("legacy release project_id = %q, want default project", legacyRelease.ProjectID)
+	}
+
+	now := time.Now()
+	domain := &Domain{ID: "domain-payments", Name: "Payments Domain", CreatedAt: now}
+	if err := store.SaveDomain(domain); err != nil {
+		t.Fatalf("SaveDomain returned error: %v", err)
+	}
+	repo := &ApplicationRepository{ID: "repo-payments", DomainID: domain.ID, Name: "Payments Repository", CreatedAt: now}
+	if err := store.SaveApplicationRepository(repo); err != nil {
+		t.Fatalf("SaveApplicationRepository returned error: %v", err)
+	}
+	category := &RepositoryCategory{ID: "category-core", DomainID: domain.ID, RepositoryID: repo.ID, Name: "Core", SortOrder: 1, CreatedAt: now}
+	if err := store.SaveRepositoryCategory(category); err != nil {
+		t.Fatalf("SaveRepositoryCategory returned error: %v", err)
+	}
+	project = &Project{ID: "project-payments", DomainID: domain.ID, CategoryID: category.ID, Name: "Payments", CreatedAt: now}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	app := &Application{ID: "app-payments", ProjectID: project.ID, Name: "Payments App", CreatedAt: now}
+	if err := store.SaveApplication(app); err != nil {
+		t.Fatalf("SaveApplication returned error: %v", err)
+	}
+	release := &Release{ID: "release-payments", ApplicationID: app.ID, Name: "2026.05", CreatedAt: now}
+	if err := store.SaveRelease(release); err != nil {
+		t.Fatalf("SaveRelease returned error: %v", err)
+	}
+	releases, err := store.ListReleasesByProject(project.ID, false)
+	if err != nil {
+		t.Fatalf("ListReleasesByProject returned error: %v", err)
+	}
+	if len(releases) != 1 || releases[0].ProjectID != project.ID {
+		t.Fatalf("project releases = %#v, want release scoped to project", releases)
+	}
+}
+
 func TestSQLiteStoreServiceAccountsAndAuditEvents(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {

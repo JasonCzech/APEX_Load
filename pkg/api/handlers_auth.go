@@ -18,11 +18,13 @@ import (
 )
 
 type AuthUserSummary struct {
-	Subject      string              `json:"subject"`
-	DisplayName  string              `json:"display_name,omitempty"`
-	Email        string              `json:"email,omitempty"`
-	GlobalRoles  []string            `json:"global_roles,omitempty"`
-	ProjectRoles map[string][]string `json:"project_roles,omitempty"`
+	Subject         string              `json:"subject"`
+	DisplayName     string              `json:"display_name,omitempty"`
+	Email           string              `json:"email,omitempty"`
+	GlobalRoles     []string            `json:"global_roles,omitempty"`
+	ProjectRoles    map[string][]string `json:"project_roles,omitempty"`
+	DomainRoles     map[string][]string `json:"domain_roles,omitempty"`
+	RepositoryRoles map[string][]string `json:"application_repository_roles,omitempty"`
 }
 
 type AuthStatusResponse struct {
@@ -77,10 +79,12 @@ type AuthRoleCatalogResponse struct {
 }
 
 type AuthAccessOperation struct {
-	ID           string   `json:"id"`
-	Label        string   `json:"label"`
-	GlobalRoles  []string `json:"global_roles,omitempty"`
-	ProjectRoles []string `json:"project_roles,omitempty"`
+	ID              string   `json:"id"`
+	Label           string   `json:"label"`
+	GlobalRoles     []string `json:"global_roles,omitempty"`
+	ProjectRoles    []string `json:"project_roles,omitempty"`
+	DomainRoles     []string `json:"domain_roles,omitempty"`
+	RepositoryRoles []string `json:"application_repository_roles,omitempty"`
 }
 
 type AuthAccessResource struct {
@@ -113,6 +117,8 @@ type AuthEffectiveAccessResponse struct {
 	Enabled       bool                          `json:"enabled"`
 	Authenticated bool                          `json:"authenticated"`
 	ProjectID     string                        `json:"project_id,omitempty"`
+	DomainID      string                        `json:"domain_id,omitempty"`
+	RepositoryID  string                        `json:"application_repository_id,omitempty"`
 	Resources     []AuthEffectiveAccessResource `json:"resources"`
 	DevViewMode   string                        `json:"dev_view_mode,omitempty"`
 	Simulated     bool                          `json:"simulated,omitempty"`
@@ -123,6 +129,8 @@ type AuthServiceAccountRequest struct {
 	Description          string              `json:"description,omitempty"`
 	GlobalRoles          []string            `json:"global_roles,omitempty"`
 	ProjectRoles         map[string][]string `json:"project_roles,omitempty"`
+	DomainRoles          map[string][]string `json:"domain_roles,omitempty"`
+	RepositoryRoles      map[string][]string `json:"application_repository_roles,omitempty"`
 	Scopes               []string            `json:"scopes,omitempty"`
 	ExpiresAt            string              `json:"expires_at,omitempty"`
 	RotationIntervalDays int                 `json:"rotation_interval_days,omitempty"`
@@ -207,9 +215,22 @@ var authAccessMatrix = []AuthAccessResource{
 		},
 	},
 	{
+		ID:          "domains_and_application_repository",
+		Name:        "Domains and Application Repository",
+		Description: "Domain tenancy, repository categories, project creation, and project-scoped release organization.",
+		Operations: []AuthAccessOperation{
+			{ID: "view_domains", Label: "View assigned domains", GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, DomainRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}},
+			{ID: "manage_domains", Label: "Create, update, and delete domains", GlobalRoles: []string{RoleSystemAdmin}},
+			{ID: "view_application_repository", Label: "View application repository categories, projects, and releases", GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, DomainRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}, RepositoryRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}},
+			{ID: "manage_application_repository", Label: "Update repository metadata and categories", GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, DomainRoles: []string{RoleProjectAdmin}, RepositoryRoles: []string{RoleProjectAdmin}},
+			{ID: "manage_repository_projects", Label: "Create and organize projects in the repository", GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, DomainRoles: []string{RoleEditor, RoleProjectAdmin}, RepositoryRoles: []string{RoleEditor, RoleProjectAdmin}},
+			{ID: "manage_repository_releases", Label: "Create and organize releases under repository projects", GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, DomainRoles: []string{RoleEditor, RoleProjectAdmin}, RepositoryRoles: []string{RoleEditor, RoleProjectAdmin}},
+		},
+	},
+	{
 		ID:          "projects_and_folders",
 		Name:        "Projects and Folders",
-		Description: "Project catalog, governance defaults, and result-folder organization.",
+		Description: "Project governance defaults and result-folder organization.",
 		Operations: []AuthAccessOperation{
 			{ID: "view_projects", Label: "View projects and project details", GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}},
 			{ID: "manage_projects", Label: "Create, update, delete projects and folders", GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}},
@@ -465,9 +486,13 @@ func (s *Server) handleGetAuthAccessMatrix(w http.ResponseWriter, _ *http.Reques
 func (s *Server) handleGetAuthEffectiveAccess(w http.ResponseWriter, r *http.Request) {
 	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
 	projectID := normalizeProjectID(strings.TrimSpace(r.URL.Query().Get("project_id")))
+	domainID := normalizeDomainID(strings.TrimSpace(r.URL.Query().Get("domain_id")))
+	repositoryID := strings.TrimSpace(r.URL.Query().Get("application_repository_id"))
 	response := AuthEffectiveAccessResponse{
-		Enabled:   !isAuthBypassMode(settings.Mode),
-		ProjectID: projectID,
+		Enabled:      !isAuthBypassMode(settings.Mode),
+		ProjectID:    projectID,
+		DomainID:     domainID,
+		RepositoryID: repositoryID,
 	}
 
 	if isAuthBypassMode(settings.Mode) {
@@ -476,7 +501,7 @@ func (s *Server) handleGetAuthEffectiveAccess(w http.ResponseWriter, r *http.Req
 			response.Simulated = true
 			if user := devPreviewUserForRequest(r, mode); user != nil {
 				response.Authenticated = true
-				response.Resources = buildUserEffectiveAccess(authAccessMatrix, user, projectID)
+				response.Resources = buildUserEffectiveAccess(authAccessMatrix, user, projectID, domainID, repositoryID)
 				writeJSON(w, http.StatusOK, response)
 				return
 			}
@@ -494,7 +519,7 @@ func (s *Server) handleGetAuthEffectiveAccess(w http.ResponseWriter, r *http.Req
 	}
 
 	response.Authenticated = true
-	response.Resources = buildUserEffectiveAccess(authAccessMatrix, resolution.User, projectID)
+	response.Resources = buildUserEffectiveAccess(authAccessMatrix, resolution.User, projectID, domainID, repositoryID)
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -720,7 +745,7 @@ func buildServiceAccount(req AuthServiceAccountRequest) (*storage.ServiceAccount
 	if name == "" {
 		return nil, "", fmt.Errorf("service account name is required")
 	}
-	globalRoles, projectRoles, err := normalizeServiceAccountRoles(req.GlobalRoles, req.ProjectRoles)
+	globalRoles, projectRoles, domainRoles, repositoryRoles, err := normalizeServiceAccountRoles(req.GlobalRoles, req.ProjectRoles, req.DomainRoles, req.RepositoryRoles)
 	if err != nil {
 		return nil, "", err
 	}
@@ -760,6 +785,8 @@ func buildServiceAccount(req AuthServiceAccountRequest) (*storage.ServiceAccount
 		Active:               true,
 		GlobalRoles:          globalRoles,
 		ProjectRoles:         projectRoles,
+		DomainRoles:          domainRoles,
+		RepositoryRoles:      repositoryRoles,
 		Scopes:               scopes,
 		CreatedAt:            now,
 		UpdatedAt:            now,
@@ -814,7 +841,7 @@ func normalizeServiceAccountScopes(scopes []string) ([]string, error) {
 	return out, nil
 }
 
-func normalizeServiceAccountRoles(globalRoles []string, projectRoles map[string][]string) ([]string, map[string][]string, error) {
+func normalizeServiceAccountRoles(globalRoles []string, projectRoles map[string][]string, domainRoles map[string][]string, repositoryRoles map[string][]string) ([]string, map[string][]string, map[string][]string, map[string][]string, error) {
 	allowed := map[string]struct{}{
 		RoleSystemAdmin:  {},
 		RoleProjectAdmin: {},
@@ -842,23 +869,38 @@ func normalizeServiceAccountRoles(globalRoles []string, projectRoles map[string]
 	}
 	normalizedGlobal, err := normalizeRoles(globalRoles)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, nil, err
 	}
-	normalizedProjects := make(map[string][]string)
-	for projectID, roles := range projectRoles {
-		normalizedProjectID := normalizeProjectID(projectID)
-		if normalizedProjectID == "" {
-			continue
+	normalizeScopedRoles := func(input map[string][]string, normalizeScope func(string) string) (map[string][]string, error) {
+		normalized := make(map[string][]string)
+		for scopeID, roles := range input {
+			normalizedScopeID := normalizeScope(scopeID)
+			if normalizedScopeID == "" {
+				continue
+			}
+			normalizedRoleList, err := normalizeRoles(roles)
+			if err != nil {
+				return nil, err
+			}
+			if len(normalizedRoleList) > 0 {
+				normalized[normalizedScopeID] = normalizedRoleList
+			}
 		}
-		normalizedRoleList, err := normalizeRoles(roles)
-		if err != nil {
-			return nil, nil, err
-		}
-		if len(normalizedRoleList) > 0 {
-			normalizedProjects[normalizedProjectID] = normalizedRoleList
-		}
+		return normalized, nil
 	}
-	return normalizedGlobal, normalizedProjects, nil
+	normalizedProjects, err := normalizeScopedRoles(projectRoles, normalizeProjectID)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	normalizedDomains, err := normalizeScopedRoles(domainRoles, normalizeDomainID)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	normalizedRepositories, err := normalizeScopedRoles(repositoryRoles, strings.TrimSpace)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return normalizedGlobal, normalizedProjects, normalizedDomains, normalizedRepositories, nil
 }
 
 func generateAPIKey() (string, error) {
@@ -912,7 +954,7 @@ func buildDeniedEffectiveAccess(resources []AuthAccessResource) []AuthEffectiveA
 	return out
 }
 
-func buildUserEffectiveAccess(resources []AuthAccessResource, user *AuthenticatedUser, projectID string) []AuthEffectiveAccessResource {
+func buildUserEffectiveAccess(resources []AuthAccessResource, user *AuthenticatedUser, projectID string, domainID string, repositoryID string) []AuthEffectiveAccessResource {
 	out := make([]AuthEffectiveAccessResource, 0, len(resources))
 	for _, resource := range resources {
 		entry := AuthEffectiveAccessResource{
@@ -930,6 +972,12 @@ func buildUserEffectiveAccess(resources []AuthAccessResource, user *Authenticate
 			} else if projectID != "" && len(operation.ProjectRoles) > 0 && user.hasProjectRole(projectID, operation.ProjectRoles...) {
 				allowed = true
 				grantSource = "project"
+			} else if domainID != "" && len(operation.DomainRoles) > 0 && user.hasDomainRole(domainID, operation.DomainRoles...) {
+				allowed = true
+				grantSource = "domain"
+			} else if repositoryID != "" && len(operation.RepositoryRoles) > 0 && user.hasRepositoryRole(repositoryID, operation.RepositoryRoles...) {
+				allowed = true
+				grantSource = "application_repository"
 			}
 			entry.Operations = append(entry.Operations, AuthEffectiveAccessOperation{
 				ID:          operation.ID,
@@ -952,13 +1000,23 @@ func authUserSummary(user *AuthenticatedUser) *AuthUserSummary {
 	for projectID, roles := range user.ProjectRoles {
 		projectRoles[projectID] = sortedRoles(roles)
 	}
+	domainRoles := make(map[string][]string, len(user.DomainRoles))
+	for domainID, roles := range user.DomainRoles {
+		domainRoles[domainID] = sortedRoles(roles)
+	}
+	repositoryRoles := make(map[string][]string, len(user.RepositoryRoles))
+	for repositoryID, roles := range user.RepositoryRoles {
+		repositoryRoles[repositoryID] = sortedRoles(roles)
+	}
 
 	return &AuthUserSummary{
-		Subject:      user.Subject,
-		DisplayName:  user.DisplayName,
-		Email:        user.Email,
-		GlobalRoles:  sortedRoles(user.GlobalRoles),
-		ProjectRoles: projectRoles,
+		Subject:         user.Subject,
+		DisplayName:     user.DisplayName,
+		Email:           user.Email,
+		GlobalRoles:     sortedRoles(user.GlobalRoles),
+		ProjectRoles:    projectRoles,
+		DomainRoles:     domainRoles,
+		RepositoryRoles: repositoryRoles,
 	}
 }
 

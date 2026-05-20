@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -9,6 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )
+
+var errApplicationProjectMismatch = errors.New("application does not belong to project")
 
 func (s *Server) handleCreateApplication(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
@@ -126,7 +129,8 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name string `json:"name"`
+		Name      string `json:"name"`
+		ProjectID string `json:"project_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
@@ -136,14 +140,16 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "release name is required")
 		return
 	}
-	release := &storage.Release{ID: uuid.New().String(), ApplicationID: r.PathValue("id"), Name: strings.TrimSpace(req.Name), CreatedAt: time.Now()}
+	projectID := normalizeProjectID(req.ProjectID)
+	if strings.TrimSpace(req.ProjectID) == "" {
+		if application, err := s.store.GetApplication(r.PathValue("id")); err == nil && application != nil {
+			projectID = application.ProjectID
+		}
+	}
+	release := &storage.Release{ID: uuid.New().String(), ApplicationID: r.PathValue("id"), ProjectID: projectID, Name: strings.TrimSpace(req.Name), CreatedAt: time.Now()}
 	if err := s.store.SaveRelease(release); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
-	}
-	projectID := ""
-	if application, err := s.store.GetApplication(release.ApplicationID); err == nil && application != nil {
-		projectID = application.ProjectID
 	}
 	s.recordAuditEvent(r, "release.create", "success", "release", release.ID, projectID, map[string]any{"name": release.Name, "application_id": release.ApplicationID})
 	writeJSON(w, http.StatusCreated, release)
@@ -161,6 +167,91 @@ func (s *Server) handleListReleases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"releases": releases, "count": len(releases)})
+}
+
+func (s *Server) handleCreateProjectRelease(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	projectID := normalizeProjectID(r.PathValue("id"))
+	if _, err := s.store.GetProject(projectID); err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	var req struct {
+		Name          string `json:"name"`
+		ApplicationID string `json:"application_id,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		writeError(w, http.StatusBadRequest, "release name is required")
+		return
+	}
+	applicationID, err := s.resolveReleaseApplicationID(projectID, strings.TrimSpace(req.ApplicationID))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	release := &storage.Release{ID: uuid.New().String(), ApplicationID: applicationID, ProjectID: projectID, Name: strings.TrimSpace(req.Name), CreatedAt: time.Now()}
+	if err := s.store.SaveRelease(release); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.recordAuditEvent(r, "release.create", "success", "release", release.ID, projectID, map[string]any{"name": release.Name, "application_id": release.ApplicationID, "project_scoped": true})
+	writeJSON(w, http.StatusCreated, release)
+}
+
+func (s *Server) handleListProjectReleases(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"releases": []*storage.Release{}, "count": 0})
+		return
+	}
+	projectID := normalizeProjectID(r.PathValue("id"))
+	includeArchived := strings.EqualFold(r.URL.Query().Get("include_archived"), "true")
+	releases, err := s.store.ListReleasesByProject(projectID, includeArchived)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"releases": releases, "count": len(releases)})
+}
+
+func (s *Server) resolveReleaseApplicationID(projectID string, requestedApplicationID string) (string, error) {
+	if requestedApplicationID != "" {
+		application, err := s.store.GetApplication(requestedApplicationID)
+		if err != nil {
+			return "", err
+		}
+		if normalizeProjectID(application.ProjectID) != normalizeProjectID(projectID) {
+			return "", errApplicationProjectMismatch
+		}
+		return application.ID, nil
+	}
+	applications, err := s.store.ListApplications()
+	if err != nil {
+		return "", err
+	}
+	for _, application := range applications {
+		if normalizeProjectID(application.ProjectID) == normalizeProjectID(projectID) {
+			return application.ID, nil
+		}
+	}
+	now := time.Now()
+	application := &storage.Application{
+		ID:        uuid.New().String(),
+		ProjectID: projectID,
+		Name:      "Application Repository",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := s.store.SaveApplication(application); err != nil {
+		return "", err
+	}
+	return application.ID, nil
 }
 
 func (s *Server) handleGetRelease(w http.ResponseWriter, r *http.Request) {
@@ -200,10 +291,7 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	projectID := ""
-	if application, err := s.store.GetApplication(release.ApplicationID); err == nil && application != nil {
-		projectID = application.ProjectID
-	}
+	projectID := normalizeProjectID(release.ProjectID)
 	s.recordAuditEvent(r, "release.update", "success", "release", release.ID, projectID, map[string]any{"name": release.Name, "application_id": release.ApplicationID})
 	writeJSON(w, http.StatusOK, release)
 }
@@ -220,9 +308,7 @@ func (s *Server) handleDeleteRelease(w http.ResponseWriter, r *http.Request) {
 	if release, err := s.store.GetRelease(id); err == nil && release != nil {
 		name = release.Name
 		applicationID = release.ApplicationID
-		if application, err := s.store.GetApplication(release.ApplicationID); err == nil && application != nil {
-			projectID = application.ProjectID
-		}
+		projectID = normalizeProjectID(release.ProjectID)
 	}
 	if err := s.store.DeleteRelease(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -247,10 +333,7 @@ func (s *Server) handleArchiveRelease(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "release not found")
 		return
 	}
-	projectID := ""
-	if application, err := s.store.GetApplication(release.ApplicationID); err == nil && application != nil {
-		projectID = application.ProjectID
-	}
+	projectID := normalizeProjectID(release.ProjectID)
 	s.recordAuditEvent(r, "release.archive", "success", "release", release.ID, projectID, map[string]any{"name": release.Name, "application_id": release.ApplicationID})
 	writeJSON(w, http.StatusOK, release)
 }

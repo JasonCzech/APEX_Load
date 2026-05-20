@@ -38,7 +38,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     })
   }, [api])
 
-  const createAndSelectProject = useCallback(async (project: { name: string; settings?: import('../types').ProjectSettings } | string) => {
+  const createAndSelectProject = useCallback(async (project: { name: string; domain_id?: string; category_id?: string; settings?: import('../types').ProjectSettings } | string) => {
     const payload = typeof project === 'string' ? { name: project } : project
     const created = await api.createProject(payload)
     setProjects(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)))

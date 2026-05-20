@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { useDashboardTheme } from './hooks/useDashboardTheme'
 import { useWebSocket } from './hooks/useWebSocket'
 import { ApplicationProvider } from './hooks/ApplicationProvider'
@@ -13,6 +13,7 @@ import { ProjectProvider } from './hooks/ProjectProvider'
 import { useProject } from './hooks/useProject'
 import { DevViewProvider, useDevView } from './hooks/DevViewProvider'
 import { useSystemApi } from './hooks/api/useSystemApi'
+import { useRepositoryApi } from './hooks/api/useRepositoryApi'
 import './App.css'
 import './components/Pages.css'
 
@@ -23,6 +24,7 @@ const ResultsPage = lazy(() => import('./components/ResultsPage'))
 const NewTestPage = lazy(() => import('./components/NewTestPage'))
 const MonitoringPage = lazy(() => import('./components/MonitoringPage'))
 const ApiGuidePage = lazy(() => import('./components/ApiGuidePage'))
+const ApplicationRepositoryPage = lazy(() => import('./components/ApplicationRepositoryPage'))
 const AccessPage = lazy(() => import('./components/AccessPage'))
 const SettingsPage = lazy(() => import('./components/SettingsPage'))
 
@@ -39,10 +41,15 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const { theme, setTheme } = useDashboardTheme()
   const { mode: devViewMode } = useDevView()
   const { getAuthEffectiveAccess } = useSystemApi()
+  const repositoryApi = useRepositoryApi()
   const isDevUserPreview = authStatus?.mode === 'dev' && devViewMode === 'user'
   const scriptMode = view.page === 'scripts' && 'mode' in view ? view.mode : undefined
   const scriptEditId = view.page === 'scripts' && 'scriptId' in view ? view.scriptId : undefined
   const [effectiveAccessResources, setEffectiveAccessResources] = useState<import('./types').DashboardAuthEffectiveAccessResource[]>([])
+  const [domains, setDomains] = useState<import('./types').Domain[]>([])
+  const [activeDomain, setActiveDomainState] = useState<import('./types').Domain | null>(null)
+  const [applicationRepository, setApplicationRepository] = useState<import('./types').ApplicationRepository | null>(null)
+  const [repositoryCategories, setRepositoryCategories] = useState<import('./types').RepositoryCategory[]>([])
 
   const handleWSMessage = useCallback((msg: WSMessage) => {
     if (msg.type === 'metrics_update' && msg.data && msg.test_id && msg.timestamp) {
@@ -103,10 +110,17 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     }
   }, [])
 
-  const { projects, activeProject, setActiveProject, createAndSelectProject } = useProject()
+  const { projects, activeProject, setActiveProject, createAndSelectProject, refreshProjects } = useProject()
+  const domainProjects = useMemo(() => {
+    const domainID = activeDomain?.id || 'default'
+    return projects.filter(project => (project.domain_id || 'default') === domainID)
+  }, [activeDomain?.id, projects])
   const { connectionState } = useWebSocket({ onMessage: handleWSMessage, projectId: activeProject?.id })
   const { applications, releases, activeApplication, activeRelease, setActiveApplication, setActiveRelease, createAndSelectApplication, createAndSelectRelease } = useApplication()
   const canManageServiceAccounts = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_service_accounts')
+  const canManageRepositoryProjects = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_repository_projects')
+  const canManageRepositoryReleases = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_repository_releases')
+  const canManageRepository = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_application_repository')
 
   const navigateToTest = (id: string) => setView({ page: 'test', testId: id })
   const activePage = view.page === 'test' ? 'tests' : view.page
@@ -117,11 +131,80 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     setView({ page })
   }
 
+  const setActiveDomain = useCallback((domain: import('./types').Domain) => {
+    setActiveDomainState(domain)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('stormrunner.activeDomainId', domain.id)
+    }
+  }, [])
+
+  const refreshRepository = useCallback(async () => {
+    if (!activeDomain?.id) {
+      setApplicationRepository(null)
+      setRepositoryCategories([])
+      return
+    }
+    const [repo, categoryResponse] = await Promise.all([
+      repositoryApi.getApplicationRepository(activeDomain.id),
+      repositoryApi.listRepositoryCategories(activeDomain.id),
+    ])
+    setApplicationRepository(repo)
+    setRepositoryCategories(categoryResponse.categories || [])
+  }, [activeDomain?.id, repositoryApi])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadDomains = async () => {
+      try {
+        const response = await repositoryApi.listDomains()
+        if (cancelled) return
+        const next = response.domains || []
+        setDomains(next)
+        const storedId = typeof window !== 'undefined' ? window.localStorage.getItem('stormrunner.activeDomainId') : ''
+        setActiveDomainState(prev => next.find(domain => domain.id === storedId) || next.find(domain => domain.id === prev?.id) || next[0] || null)
+      } catch {
+        if (!cancelled) {
+          const fallback: import('./types').Domain = {
+            id: 'default',
+            name: 'Default Domain',
+            created_at: new Date(0).toISOString(),
+            updated_at: new Date(0).toISOString(),
+          }
+          setDomains([fallback])
+          setActiveDomainState(fallback)
+        }
+      }
+    }
+    loadDomains()
+    return () => {
+      cancelled = true
+    }
+  }, [repositoryApi])
+
+  useEffect(() => {
+    refreshRepository().catch(() => {
+      setApplicationRepository(null)
+      setRepositoryCategories([])
+    })
+  }, [refreshRepository])
+
+  useEffect(() => {
+    if (!activeDomain || domainProjects.length === 0) {
+      return
+    }
+    if (!activeProject || (activeProject.domain_id || 'default') !== activeDomain.id) {
+      setActiveProject(domainProjects[0])
+    }
+  }, [activeDomain, activeProject, domainProjects, setActiveProject])
+
   useEffect(() => {
     let cancelled = false
     const loadEffectiveAccess = async () => {
       try {
-        const response = await getAuthEffectiveAccess(activeProject?.id)
+        const response = await getAuthEffectiveAccess(activeProject?.id, {
+          domain_id: activeDomain?.id,
+          application_repository_id: applicationRepository?.id,
+        })
         if (!cancelled) {
           setEffectiveAccessResources(response.resources || [])
         }
@@ -136,7 +219,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     return () => {
       cancelled = true
     }
-  }, [activeProject?.id, authStatus?.mode, devViewMode, getAuthEffectiveAccess])
+  }, [activeProject?.id, activeDomain?.id, applicationRepository?.id, authStatus?.mode, devViewMode, getAuthEffectiveAccess])
 
   useEffect(() => {
     if (!isDevUserPreview) {
@@ -163,10 +246,13 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
         onNavigate={handleNavigate}
         connectionState={connectionState}
         authStatus={authStatus}
-        projects={projects}
+        projects={domainProjects}
         activeProject={activeProject}
         onProjectChange={setActiveProject}
         onCreateProject={createAndSelectProject}
+        domains={domains}
+        activeDomain={activeDomain}
+        onDomainChange={setActiveDomain}
         applications={applications}
         releases={releases}
         activeApplication={activeApplication}
@@ -224,6 +310,22 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
           )}
           {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} />}
           {view.page === 'docs' && <ApiGuidePage onNavigate={handleNavigate} />}
+          {view.page === 'repository' && (
+            <ApplicationRepositoryPage
+              domains={domains}
+              activeDomain={activeDomain}
+              applicationRepository={applicationRepository}
+              categories={repositoryCategories}
+              projects={projects}
+              canManageRepository={canManageRepository}
+              canManageProjects={canManageRepositoryProjects}
+              canManageReleases={canManageRepositoryReleases}
+              onDomainChange={setActiveDomain}
+              onRepositoryRefresh={refreshRepository}
+              onProjectsRefresh={refreshProjects}
+              onProjectCreated={createAndSelectProject}
+            />
+          )}
           {view.page === 'access' && (
             <AccessPage
               projects={projects}

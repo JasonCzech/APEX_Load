@@ -2,11 +2,11 @@ import { useState } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useAuthApi } from '../hooks/api/useAuthApi'
 import { useDevView } from '../hooks/DevViewProvider'
-import { Application, DashboardAuthStatus, Project, Release } from '../types'
+import { Application, DashboardAuthStatus, Domain, Project, Release } from '../types'
 import ProjectModal from './ProjectModal'
 import './Sidebar.css'
 
-export type NavPage = 'dashboard' | 'tests' | 'new-test' | 'scripts' | 'results' | 'monitoring' | 'docs' | 'access' | 'settings'
+export type NavPage = 'dashboard' | 'repository' | 'tests' | 'new-test' | 'scripts' | 'results' | 'monitoring' | 'docs' | 'access' | 'settings'
 
 interface Props {
   active: NavPage
@@ -17,6 +17,9 @@ interface Props {
   activeProject?: Project | null
   onProjectChange?: (project: Project) => void
   onCreateProject?: (name: string) => Promise<Project>
+  domains?: Domain[]
+  activeDomain?: Domain | null
+  onDomainChange?: (domain: Domain) => void
   applications?: Application[]
   releases?: Release[]
   activeApplication?: Application | null
@@ -37,6 +40,16 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element; requiresAccess
         <rect x="14" y="3" width="7" height="7" rx="1" />
         <rect x="3" y="14" width="7" height="7" rx="1" />
         <rect x="14" y="14" width="7" height="7" rx="1" />
+      </svg>
+    ),
+  },
+  {
+    id: 'repository',
+    label: 'Repository',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 7h7l2 2h9v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+        <path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2" />
       </svg>
     ),
   },
@@ -139,6 +152,9 @@ export default function Sidebar({
   activeProject,
   onProjectChange,
   onCreateProject,
+  domains = [],
+  activeDomain,
+  onDomainChange,
   applications = [],
   releases = [],
   activeApplication,
@@ -149,6 +165,7 @@ export default function Sidebar({
   showAccess = false,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false)
+  const [domainOpen, setDomainOpen] = useState(false)
   const [projectOpen, setProjectOpen] = useState(false)
   const [applicationOpen, setApplicationOpen] = useState(false)
   const [showProjectModal, setShowProjectModal] = useState(false)
@@ -219,6 +236,49 @@ export default function Sidebar({
       <div className="sidebar-project">
         <button
           className="project-selector"
+          onClick={() => setDomainOpen(!domainOpen)}
+          title={collapsed ? activeDomain?.name || 'Domain' : undefined}
+        >
+          <span className="project-icon">◇</span>
+          {!collapsed && (
+            <>
+              <span className="project-name">{activeDomain?.name || 'Domain'}</span>
+              <span className="project-chevron">⌄</span>
+            </>
+          )}
+        </button>
+        {domainOpen && !collapsed && (
+          <div className="project-menu">
+            <div className="project-menu-list">
+              {domains.map(domain => (
+                <button
+                  key={domain.id}
+                  className={`project-menu-item ${activeDomain?.id === domain.id ? 'active' : ''}`}
+                  onClick={() => {
+                    onDomainChange?.(domain)
+                    setDomainOpen(false)
+                  }}
+                >
+                  {domain.name}
+                </button>
+              ))}
+            </div>
+            <button
+              className="project-menu-action muted"
+              onClick={() => {
+                setDomainOpen(false)
+                onNavigate('repository')
+              }}
+            >
+              Open Repository
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="sidebar-project">
+        <button
+          className="project-selector"
           onClick={() => setProjectOpen(!projectOpen)}
           title={collapsed ? activeProject?.name || 'Project' : undefined}
         >
@@ -246,19 +306,15 @@ export default function Sidebar({
                 </button>
               ))}
             </div>
-            {!isDevUserPreview && <button className="project-menu-action" onClick={() => setShowProjectModal(true)}>+ New Project</button>}
             {!isDevUserPreview && (
               <button
                 className="project-menu-action muted"
                 onClick={() => {
-                  if (typeof window !== 'undefined') {
-                    window.localStorage.setItem('stormrunner.settings.focusSection', 'projects')
-                  }
                   setProjectOpen(false)
-                  onNavigate('settings')
+                  onNavigate('repository')
                 }}
               >
-                Manage Projects
+                Open Repository
               </button>
             )}
           </div>
@@ -311,19 +367,15 @@ export default function Sidebar({
                 ))}
               </div>
             )}
-            <button className="project-menu-action" onClick={() => setShowApplicationModal(true)}>+ New Application</button>
             {!isDevUserPreview && (
               <button
                 className="project-menu-action muted"
                 onClick={() => {
-                  if (typeof window !== 'undefined') {
-                    window.localStorage.setItem('stormrunner.settings.focusSection', 'applications')
-                  }
                   setApplicationOpen(false)
-                  onNavigate('settings')
+                  onNavigate('repository')
                 }}
               >
-                Manage Applications
+                Open Repository
               </button>
             )}
           </div>

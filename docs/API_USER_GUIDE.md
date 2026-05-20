@@ -90,17 +90,23 @@ These headers are honored only when the controller auth mode is `dev`. They are 
 
 ## Core Workflows
 
-### 1. Discover Projects And Scope
+### 1. Discover Domain, Repository, Project, And Release Scope
 
 ```bash
 curl -H "Authorization: Bearer $STORMRUNNER_API_KEY" \
-  http://localhost:8080/api/v1/projects
+  http://localhost:8080/api/v1/domains
 
 curl -H "Authorization: Bearer $STORMRUNNER_API_KEY" \
-  "http://localhost:8080/api/v1/applications?project_id=project-1"
+  http://localhost:8080/api/v1/domains/default/application-repository/categories
+
+curl -H "Authorization: Bearer $STORMRUNNER_API_KEY" \
+  "http://localhost:8080/api/v1/projects?domain_id=default&category_id=uncategorized"
+
+curl -H "Authorization: Bearer $STORMRUNNER_API_KEY" \
+  "http://localhost:8080/api/v1/projects/project-1/releases"
 ```
 
-Use project, application, and release ids as filters when listing scripts, scenarios, tests, and results.
+Stormrunner now organizes work as `Domain > Application Repository > Category > Project > Release`. Projects remain the execution and governance boundary, and the older application-scoped endpoints continue to work as compatibility aliases for clients that still organize releases by application.
 
 ### 2. Create Or Import A Script
 
@@ -219,12 +225,18 @@ Some reporting endpoints accept `format` or `profile` query parameters where imp
 
 ## Endpoint Catalogue
 
-### Project, Application, And Release Scope
+### Domain, Repository, Project, And Release Scope
 
 | Method | Path |
 | --- | --- |
+| `GET` / `POST` | `/api/v1/domains` |
+| `GET` / `PUT` / `DELETE` | `/api/v1/domains/{id}` |
+| `GET` / `PUT` | `/api/v1/domains/{id}/application-repository` |
+| `GET` / `POST` | `/api/v1/domains/{id}/application-repository/categories` |
+| `PUT` / `DELETE` | `/api/v1/application-repository/categories/{id}` |
 | `GET` / `POST` | `/api/v1/projects` |
 | `GET` / `PUT` / `DELETE` | `/api/v1/projects/{id}` |
+| `GET` / `POST` | `/api/v1/projects/{id}/releases` |
 | `GET` / `POST` | `/api/v1/projects/{pid}/folders` |
 | `PUT` / `DELETE` | `/api/v1/folders/{id}` |
 | `GET` / `POST` | `/api/v1/applications` |

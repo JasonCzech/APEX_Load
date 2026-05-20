@@ -4,14 +4,17 @@ This document defines Stormrunner's project-first governance model for enterpris
 
 ## Ownership Model
 
-Stormrunner uses projects as the first-class tenant boundary. A project owns authoring assets, execution assets, schedules, data pools, live controls, archives, and retention policy. Global administrators manage platform settings and cross-project visibility.
+Stormrunner uses a repository hierarchy for discovery and delegated creation: `Domain > Application Repository > Category > Project > Release`. Projects remain the first-class execution and governance boundary. A project owns authoring assets, execution assets, schedules, data pools, live controls, archives, and retention policy. Administrators grant domain and application-repository roles so delegated users can create categories, projects, and releases without receiving system-wide administration.
 
 | Resource | Owner scope | Project behavior | Audit scope | Retention behavior |
 | --- | --- | --- | --- | --- |
-| Project | Global catalog | Root tenant boundary | Global | Retained until deleted by project/system admin |
+| Domain | Global catalog | Tenant/discovery layer above repositories | Global | Retained until empty and deleted by system admin |
+| Application Repository | Domain | One repository workspace per domain | Domain/repository | Retained while categories/projects exist |
+| Repository category | Application Repository | Groups projects by product area or portfolio slice | Domain/repository | Retained while projects reference it |
+| Project | Repository category | Execution and governance boundary | Project/domain | Retained until deleted by project/system admin |
 | Folder | Project | Organizes scripts and runs | Project | Deleted with project or explicit folder deletion |
-| Application | Project | Groups releases and run history | Project | Retained while releases/results reference it |
-| Release | Application/project | Governance context for scenario runs | Project | Archived before deletion when history exists |
+| Application | Project compatibility alias | Legacy grouping for application-scoped release clients | Project | Retained while releases/results reference it |
+| Release | Project, with application compatibility alias | Governance context for scenario runs | Project | Archived before deletion when history exists |
 | Script | Project/folder | Reusable DSL asset | Project | Retained while referenced by scenarios/results |
 | Scenario | Derived from scripts/project | Reusable execution definition | Project | Retained with schedule and result references |
 | Scenario schedule | Scenario/project | Recurring run intent | Project | Deleted or disabled explicitly |
@@ -21,7 +24,7 @@ Stormrunner uses projects as the first-class tenant boundary. A project owns aut
 | Service account | Global identity, optional project roles | Can be limited to project roles/scopes | Global | Rotated, disabled, or deleted by system admin |
 | Audit event | Global or project | Carries project ID when resource-scoped | Global/project | Retained by audit retention policy |
 
-Legacy or imported resources without a known tenant normalize to the `unassigned` project. This keeps old evidence visible while making ownership gaps explicit.
+Legacy or imported resources without a known tenant normalize to the `default` domain, the default application repository, the `uncategorized` category, and the `unassigned` project. This keeps old evidence visible while making ownership gaps explicit.
 
 ## Teams Decision
 

@@ -325,8 +325,13 @@ func TestHandleGetAuthAccessMatrixReturnsResourcePolicies(t *testing.T) {
 	if payload.Resources[0].Operations[1].GlobalRoles[0] != RoleSystemAdmin {
 		t.Fatalf("manage system roles = %#v, want system admin", payload.Resources[0].Operations[1].GlobalRoles)
 	}
-	if payload.Resources[1].Operations[1].ProjectRoles[0] != RoleProjectAdmin {
-		t.Fatalf("project governance roles = %#v, want project admin project scope", payload.Resources[1].Operations[1].ProjectRoles)
+	projectsResource := findAuthAccessResource(payload.Resources, "projects_and_folders")
+	if projectsResource == nil || projectsResource.Operations[1].ProjectRoles[0] != RoleProjectAdmin {
+		t.Fatalf("project governance resource = %#v, want project admin project scope", projectsResource)
+	}
+	repositoryResource := findAuthAccessResource(payload.Resources, "domains_and_application_repository")
+	if repositoryResource == nil || repositoryResource.Operations[0].ID != "view_domains" || repositoryResource.Operations[4].ID != "manage_repository_projects" {
+		t.Fatalf("repository resource = %#v, want domain and repository operations", repositoryResource)
 	}
 	identityAndAudit := payload.Resources[len(payload.Resources)-1]
 	if identityAndAudit.ID != "identity_and_audit" {
@@ -335,6 +340,15 @@ func TestHandleGetAuthAccessMatrixReturnsResourcePolicies(t *testing.T) {
 	if len(identityAndAudit.Operations) != 3 || identityAndAudit.Operations[0].ID != "view_auth_diagnostics" {
 		t.Fatalf("identity and audit operations = %#v, want diagnostics + audit + service account operations", identityAndAudit.Operations)
 	}
+}
+
+func findAuthAccessResource(resources []AuthAccessResource, id string) *AuthAccessResource {
+	for i := range resources {
+		if resources[i].ID == id {
+			return &resources[i]
+		}
+	}
+	return nil
 }
 
 func TestHandleGetAuthEffectiveAccessReturnsOpenAccessWhenDevModeBypassesAuth(t *testing.T) {

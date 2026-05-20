@@ -31,11 +31,13 @@ type authUserContextKey struct{}
 type authServiceAccountContextKey struct{}
 
 type AuthenticatedUser struct {
-	Subject      string
-	DisplayName  string
-	Email        string
-	GlobalRoles  map[string]struct{}
-	ProjectRoles map[string]map[string]struct{}
+	Subject         string
+	DisplayName     string
+	Email           string
+	GlobalRoles     map[string]struct{}
+	ProjectRoles    map[string]map[string]struct{}
+	DomainRoles     map[string]map[string]struct{}
+	RepositoryRoles map[string]map[string]struct{}
 }
 
 type AuthenticatedServiceAccount struct {
@@ -46,9 +48,13 @@ type AuthenticatedServiceAccount struct {
 }
 
 type accessRequirement struct {
-	GlobalRoles   []string
-	ProjectRoles  []string
-	ProjectLookup func(*http.Request, storage.Store) (string, int, string)
+	GlobalRoles      []string
+	ProjectRoles     []string
+	ProjectLookup    func(*http.Request, storage.Store) (string, int, string)
+	DomainRoles      []string
+	DomainLookup     func(*http.Request, storage.Store) (string, int, string)
+	RepositoryRoles  []string
+	RepositoryLookup func(*http.Request, storage.Store) (string, int, string)
 }
 
 type requestProjectLookup func(*http.Request) (string, int, string)
@@ -154,6 +160,36 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 			return false
 		}
 		if user.hasProjectRole(projectID, requirement.ProjectRoles...) {
+			if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
+				writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
+				return false
+			}
+			return true
+		}
+	}
+
+	if requirement.DomainLookup != nil {
+		domainID, status, msg := requirement.DomainLookup(r, store)
+		if status != 0 {
+			writeError(w, status, msg)
+			return false
+		}
+		if user.hasDomainRole(domainID, requirement.DomainRoles...) {
+			if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
+				writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
+				return false
+			}
+			return true
+		}
+	}
+
+	if requirement.RepositoryLookup != nil {
+		repositoryID, status, msg := requirement.RepositoryLookup(r, store)
+		if status != 0 {
+			writeError(w, status, msg)
+			return false
+		}
+		if user.hasRepositoryRole(repositoryID, requirement.RepositoryRoles...) {
 			if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
 				writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
 				return false
@@ -341,10 +377,12 @@ func normalizeAuthenticatedServiceAccountScopes(scopes []string) []string {
 
 func authenticatedUserFromServiceAccount(account *storage.ServiceAccount) *AuthenticatedUser {
 	user := &AuthenticatedUser{
-		Subject:      "service-account:" + account.ID,
-		DisplayName:  account.Name,
-		GlobalRoles:  make(map[string]struct{}),
-		ProjectRoles: make(map[string]map[string]struct{}),
+		Subject:         "service-account:" + account.ID,
+		DisplayName:     account.Name,
+		GlobalRoles:     make(map[string]struct{}),
+		ProjectRoles:    make(map[string]map[string]struct{}),
+		DomainRoles:     make(map[string]map[string]struct{}),
+		RepositoryRoles: make(map[string]map[string]struct{}),
 	}
 	for _, role := range account.GlobalRoles {
 		trimmed := strings.ToLower(strings.TrimSpace(role))
@@ -368,6 +406,26 @@ func authenticatedUserFromServiceAccount(account *storage.ServiceAccount) *Authe
 			user.ProjectRoles[normalizedProjectID] = roleSet
 		}
 	}
+	for domainID, roles := range account.DomainRoles {
+		normalizedDomainID := normalizeDomainID(domainID)
+		if normalizedDomainID == "" {
+			continue
+		}
+		roleSet := rolesToSet(roles)
+		if len(roleSet) > 0 {
+			user.DomainRoles[normalizedDomainID] = roleSet
+		}
+	}
+	for repositoryID, roles := range account.RepositoryRoles {
+		normalizedRepositoryID := strings.TrimSpace(repositoryID)
+		if normalizedRepositoryID == "" {
+			continue
+		}
+		roleSet := rolesToSet(roles)
+		if len(roleSet) > 0 {
+			user.RepositoryRoles[normalizedRepositoryID] = roleSet
+		}
+	}
 	return user
 }
 
@@ -378,11 +436,13 @@ func authenticatedUserFromHeaders(r *http.Request, settings AuthSettings) (*Auth
 	}
 
 	return &AuthenticatedUser{
-		Subject:      subject,
-		DisplayName:  strings.TrimSpace(r.Header.Get(settings.NameHeader)),
-		Email:        strings.TrimSpace(r.Header.Get(settings.EmailHeader)),
-		GlobalRoles:  parseRoleHeader(r.Header.Get(settings.RolesHeader)),
-		ProjectRoles: parseProjectRolesHeader(r.Header.Get(settings.ProjectRolesHeader)),
+		Subject:         subject,
+		DisplayName:     strings.TrimSpace(r.Header.Get(settings.NameHeader)),
+		Email:           strings.TrimSpace(r.Header.Get(settings.EmailHeader)),
+		GlobalRoles:     parseRoleHeader(r.Header.Get(settings.RolesHeader)),
+		ProjectRoles:    parseScopedRolesHeader(r.Header.Get(settings.ProjectRolesHeader), normalizeProjectID),
+		DomainRoles:     parseScopedRolesHeader(r.Header.Get(settings.DomainRolesHeader), normalizeDomainID),
+		RepositoryRoles: parseScopedRolesHeader(r.Header.Get(settings.RepositoryRolesHeader), strings.TrimSpace),
 	}, nil
 }
 
@@ -411,6 +471,38 @@ func (u *AuthenticatedUser) hasProjectRole(projectID string, roles ...string) bo
 	return false
 }
 
+func (u *AuthenticatedUser) hasDomainRole(domainID string, roles ...string) bool {
+	if domainID == "" {
+		return false
+	}
+	domainRoles, ok := u.DomainRoles[normalizeDomainID(domainID)]
+	if !ok {
+		return false
+	}
+	for _, role := range roles {
+		if _, ok := domainRoles[role]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (u *AuthenticatedUser) hasRepositoryRole(repositoryID string, roles ...string) bool {
+	if strings.TrimSpace(repositoryID) == "" {
+		return false
+	}
+	repositoryRoles, ok := u.RepositoryRoles[strings.TrimSpace(repositoryID)]
+	if !ok {
+		return false
+	}
+	for _, role := range roles {
+		if _, ok := repositoryRoles[role]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func parseRoleHeader(value string) map[string]struct{} {
 	roles := make(map[string]struct{})
 	for _, token := range strings.FieldsFunc(value, func(r rune) bool {
@@ -431,6 +523,10 @@ func parseRoleHeader(value string) map[string]struct{} {
 }
 
 func parseProjectRolesHeader(value string) map[string]map[string]struct{} {
+	return parseScopedRolesHeader(value, normalizeProjectID)
+}
+
+func parseScopedRolesHeader(value string, normalizeScope func(string) string) map[string]map[string]struct{} {
 	out := make(map[string]map[string]struct{})
 	for _, assignment := range strings.Split(value, ";") {
 		assignment = strings.TrimSpace(assignment)
@@ -444,14 +540,25 @@ func parseProjectRolesHeader(value string) map[string]map[string]struct{} {
 		if len(parts) != 2 {
 			continue
 		}
-		projectID := normalizeProjectID(strings.TrimSpace(parts[0]))
+		scopeID := normalizeScope(strings.TrimSpace(parts[0]))
 		roles := parseRoleHeader(parts[1])
-		if projectID == "" || len(roles) == 0 {
+		if scopeID == "" || len(roles) == 0 {
 			continue
 		}
-		out[projectID] = roles
+		out[scopeID] = roles
 	}
 	return out
+}
+
+func rolesToSet(roles []string) map[string]struct{} {
+	roleSet := make(map[string]struct{})
+	for _, role := range roles {
+		trimmed := strings.ToLower(strings.TrimSpace(role))
+		if trimmed != "" {
+			roleSet[trimmed] = struct{}{}
+		}
+	}
+	return roleSet
 }
 
 func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
@@ -585,18 +692,104 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}, true
 	}
 
+	if path == "/api/v1/domains" {
+		switch method {
+		case http.MethodGet:
+			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+		case http.MethodPost:
+			return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
+		}
+	}
+
+	if strings.HasPrefix(path, "/api/v1/domains/") {
+		if strings.HasSuffix(path, "/application-repository/categories") {
+			switch method {
+			case http.MethodGet:
+				return accessRequirement{
+					GlobalRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+					DomainRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+					DomainLookup: resolveDomainIDFromPath,
+				}, true
+			case http.MethodPost:
+				return accessRequirement{
+					GlobalRoles:      []string{RoleProjectAdmin, RoleSystemAdmin},
+					DomainRoles:      []string{RoleEditor, RoleProjectAdmin},
+					DomainLookup:     resolveDomainIDFromPath,
+					RepositoryRoles:  []string{RoleEditor, RoleProjectAdmin},
+					RepositoryLookup: resolveRepositoryIDFromDomainPath,
+				}, true
+			}
+		}
+		if strings.HasSuffix(path, "/application-repository") {
+			switch method {
+			case http.MethodGet:
+				return accessRequirement{
+					GlobalRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+					DomainRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+					DomainLookup: resolveDomainIDFromPath,
+				}, true
+			case http.MethodPut:
+				return accessRequirement{
+					GlobalRoles:      []string{RoleProjectAdmin, RoleSystemAdmin},
+					DomainRoles:      []string{RoleProjectAdmin},
+					DomainLookup:     resolveDomainIDFromPath,
+					RepositoryRoles:  []string{RoleProjectAdmin},
+					RepositoryLookup: resolveRepositoryIDFromDomainPath,
+				}, true
+			}
+		}
+		switch method {
+		case http.MethodGet:
+			return accessRequirement{
+				GlobalRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				DomainRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+				DomainLookup: resolveDomainIDFromPath,
+			}, true
+		case http.MethodPut, http.MethodDelete:
+			return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
+		}
+	}
+
+	if strings.HasPrefix(path, "/api/v1/application-repository/categories/") {
+		switch method {
+		case http.MethodPut, http.MethodDelete:
+			return accessRequirement{
+				GlobalRoles:      []string{RoleProjectAdmin, RoleSystemAdmin},
+				DomainRoles:      []string{RoleProjectAdmin},
+				DomainLookup:     resolveCategoryDomainID,
+				RepositoryRoles:  []string{RoleProjectAdmin},
+				RepositoryLookup: resolveCategoryRepositoryID,
+			}, true
+		}
+	}
+
 	if path == "/api/v1/projects" {
 		switch method {
 		case http.MethodGet:
 			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 		case http.MethodPost:
-			return accessRequirement{GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}}, true
+			return accessRequirement{
+				GlobalRoles:      []string{RoleProjectAdmin, RoleSystemAdmin},
+				DomainRoles:      []string{RoleEditor, RoleProjectAdmin},
+				DomainLookup:     resolveProjectCreateDomainID,
+				RepositoryRoles:  []string{RoleEditor, RoleProjectAdmin},
+				RepositoryLookup: resolveProjectCreateRepositoryID,
+			}, true
 		}
 	}
 
 	if strings.HasPrefix(path, "/api/v1/projects/") {
 		switch method {
 		case http.MethodGet:
+			if strings.HasSuffix(path, "/releases") {
+				return accessRequirement{
+					GlobalRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+					ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+					ProjectLookup: func(r *http.Request, _ storage.Store) (string, int, string) {
+						return normalizeProjectID(r.PathValue("id")), 0, ""
+					},
+				}, true
+			}
 			if strings.HasSuffix(path, "/folders") {
 				return accessRequirement{
 					GlobalRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -622,6 +815,19 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 				},
 			}, true
 		case http.MethodPost:
+			if strings.HasSuffix(path, "/releases") {
+				return accessRequirement{
+					GlobalRoles:      []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+					ProjectRoles:     []string{RoleEditor, RoleProjectAdmin},
+					DomainRoles:      []string{RoleEditor, RoleProjectAdmin},
+					RepositoryRoles:  []string{RoleEditor, RoleProjectAdmin},
+					DomainLookup:     resolveProjectDomainIDFromPath,
+					RepositoryLookup: resolveProjectRepositoryIDFromPath,
+					ProjectLookup: func(r *http.Request, _ storage.Store) (string, int, string) {
+						return normalizeProjectID(r.PathValue("id")), 0, ""
+					},
+				}, true
+			}
 			if strings.HasSuffix(path, "/folders") {
 				return accessRequirement{
 					GlobalRoles:  []string{RoleProjectAdmin, RoleSystemAdmin},
@@ -1040,6 +1246,121 @@ func resolveProjectIDFromQuery(r *http.Request, _ storage.Store) (string, int, s
 	return normalizeProjectID(projectID), 0, ""
 }
 
+func resolveDomainIDFromPath(r *http.Request, _ storage.Store) (string, int, string) {
+	return normalizeDomainID(r.PathValue("id")), 0, ""
+}
+
+func resolveRepositoryIDFromDomainPath(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "repository storage is not configured"
+	}
+	repository, err := store.GetApplicationRepository(normalizeDomainID(r.PathValue("id")))
+	if err != nil {
+		return "", http.StatusNotFound, "application repository not found"
+	}
+	return strings.TrimSpace(repository.ID), 0, ""
+}
+
+func resolveCategoryDomainID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "repository category storage is not configured"
+	}
+	category, err := store.GetRepositoryCategory(r.PathValue("id"))
+	if err != nil {
+		return "", http.StatusNotFound, "category not found"
+	}
+	return normalizeDomainID(category.DomainID), 0, ""
+}
+
+func resolveCategoryRepositoryID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "repository category storage is not configured"
+	}
+	category, err := store.GetRepositoryCategory(r.PathValue("id"))
+	if err != nil {
+		return "", http.StatusNotFound, "category not found"
+	}
+	return strings.TrimSpace(category.RepositoryID), 0, ""
+}
+
+func resolveProjectCreateDomainID(r *http.Request, store storage.Store) (string, int, string) {
+	var req struct {
+		DomainID   string `json:"domain_id"`
+		CategoryID string `json:"category_id"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil && err != io.EOF {
+		return "", http.StatusBadRequest, "invalid request body"
+	}
+	if strings.TrimSpace(req.DomainID) != "" {
+		return normalizeDomainID(req.DomainID), 0, ""
+	}
+	if strings.TrimSpace(req.CategoryID) != "" && store != nil {
+		category, err := store.GetRepositoryCategory(req.CategoryID)
+		if err != nil {
+			return "", http.StatusNotFound, "category not found"
+		}
+		return normalizeDomainID(category.DomainID), 0, ""
+	}
+	return storage.DefaultDomainID, 0, ""
+}
+
+func resolveProjectCreateRepositoryID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "repository storage is not configured"
+	}
+	var req struct {
+		DomainID   string `json:"domain_id"`
+		CategoryID string `json:"category_id"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil && err != io.EOF {
+		return "", http.StatusBadRequest, "invalid request body"
+	}
+	if strings.TrimSpace(req.CategoryID) != "" {
+		category, err := store.GetRepositoryCategory(req.CategoryID)
+		if err != nil {
+			return "", http.StatusNotFound, "category not found"
+		}
+		return strings.TrimSpace(category.RepositoryID), 0, ""
+	}
+	repository, err := store.GetApplicationRepository(normalizeDomainID(req.DomainID))
+	if err != nil {
+		return "", http.StatusNotFound, "application repository not found"
+	}
+	return strings.TrimSpace(repository.ID), 0, ""
+}
+
+func resolveProjectDomainIDFromPath(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "project storage is not configured"
+	}
+	project, err := store.GetProject(r.PathValue("id"))
+	if err != nil {
+		return "", http.StatusNotFound, "project not found"
+	}
+	return normalizeDomainID(project.DomainID), 0, ""
+}
+
+func resolveProjectRepositoryIDFromPath(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "project storage is not configured"
+	}
+	project, err := store.GetProject(r.PathValue("id"))
+	if err != nil {
+		return "", http.StatusNotFound, "project not found"
+	}
+	if strings.TrimSpace(project.CategoryID) != "" {
+		category, err := store.GetRepositoryCategory(project.CategoryID)
+		if err == nil && category != nil {
+			return strings.TrimSpace(category.RepositoryID), 0, ""
+		}
+	}
+	repository, err := store.GetApplicationRepository(normalizeDomainID(project.DomainID))
+	if err != nil {
+		return "", http.StatusNotFound, "application repository not found"
+	}
+	return strings.TrimSpace(repository.ID), 0, ""
+}
+
 func resolveApplicationListProjectID(r *http.Request, _ storage.Store) (string, int, string) {
 	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
 	if projectID == "" {
@@ -1076,6 +1397,9 @@ func resolveReleaseProjectID(r *http.Request, store storage.Store) (string, int,
 	release, err := store.GetRelease(r.PathValue("id"))
 	if err != nil {
 		return "", http.StatusNotFound, "release not found"
+	}
+	if strings.TrimSpace(release.ProjectID) != "" {
+		return normalizeProjectID(release.ProjectID), 0, ""
 	}
 	application, err := store.GetApplication(release.ApplicationID)
 	if err != nil {

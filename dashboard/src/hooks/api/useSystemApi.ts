@@ -54,7 +54,14 @@ async function fetchBlob(path: string): Promise<Blob> {
 }
 
 export function useSystemApi() {
-  const getAuthEffectiveAccess = useCallback((projectId?: string) => request<DashboardAuthEffectiveAccess>(`/auth/effective-access${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`), [])
+  const getAuthEffectiveAccess = useCallback((projectId?: string, scope?: { domain_id?: string; application_repository_id?: string }) => {
+    const q = new URLSearchParams()
+    if (projectId) q.set('project_id', projectId)
+    if (scope?.domain_id) q.set('domain_id', scope.domain_id)
+    if (scope?.application_repository_id) q.set('application_repository_id', scope.application_repository_id)
+    const query = q.toString()
+    return request<DashboardAuthEffectiveAccess>(`/auth/effective-access${query ? `?${query}` : ''}`)
+  }, [])
 	const getAuthAccessMatrix = useCallback(() => request<DashboardAuthAccessMatrix>('/auth/access-matrix'), [])
   const getAuthDiagnostics = useCallback(() => request<DashboardAuthDiagnostics>('/auth/diagnostics'), [])
   const getAuthRoleCatalog = useCallback(() => request<DashboardAuthRoleCatalog>('/auth/roles'), [])

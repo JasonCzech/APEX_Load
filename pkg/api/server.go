@@ -138,6 +138,18 @@ func (s *Server) routes(allowedOrigins []string) {
 	)
 
 	// Test lifecycle and archive endpoints.
+	s.mux.Handle("POST /api/v1/domains", cors(log(auth(http.HandlerFunc(s.handleCreateDomain)))))
+	s.mux.Handle("GET /api/v1/domains", cors(log(auth(http.HandlerFunc(s.handleListDomains)))))
+	s.mux.Handle("GET /api/v1/domains/{id}", cors(log(auth(http.HandlerFunc(s.handleGetDomain)))))
+	s.mux.Handle("PUT /api/v1/domains/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateDomain)))))
+	s.mux.Handle("DELETE /api/v1/domains/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteDomain)))))
+	s.mux.Handle("GET /api/v1/domains/{id}/application-repository", cors(log(auth(http.HandlerFunc(s.handleGetApplicationRepository)))))
+	s.mux.Handle("PUT /api/v1/domains/{id}/application-repository", cors(log(auth(http.HandlerFunc(s.handleUpdateApplicationRepository)))))
+	s.mux.Handle("GET /api/v1/domains/{id}/application-repository/categories", cors(log(auth(http.HandlerFunc(s.handleListRepositoryCategories)))))
+	s.mux.Handle("POST /api/v1/domains/{id}/application-repository/categories", cors(log(auth(http.HandlerFunc(s.handleCreateRepositoryCategory)))))
+	s.mux.Handle("PUT /api/v1/application-repository/categories/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateRepositoryCategory)))))
+	s.mux.Handle("DELETE /api/v1/application-repository/categories/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteRepositoryCategory)))))
+
 	s.mux.Handle("POST /api/v1/applications", cors(log(auth(http.HandlerFunc(s.handleCreateApplication)))))
 	s.mux.Handle("GET /api/v1/applications", cors(log(auth(http.HandlerFunc(s.handleListApplications)))))
 	s.mux.Handle("GET /api/v1/applications/{id}", cors(log(auth(http.HandlerFunc(s.handleGetApplication)))))
@@ -158,6 +170,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/projects/{id}", cors(log(auth(http.HandlerFunc(s.handleGetProject)))))
 	s.mux.Handle("PUT /api/v1/projects/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateProject)))))
 	s.mux.Handle("DELETE /api/v1/projects/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteProject)))))
+	s.mux.Handle("POST /api/v1/projects/{id}/releases", cors(log(auth(http.HandlerFunc(s.handleCreateProjectRelease)))))
+	s.mux.Handle("GET /api/v1/projects/{id}/releases", cors(log(auth(http.HandlerFunc(s.handleListProjectReleases)))))
 	s.mux.Handle("POST /api/v1/projects/{pid}/folders", cors(log(auth(http.HandlerFunc(s.handleCreateFolder)))))
 	s.mux.Handle("GET /api/v1/projects/{pid}/folders", cors(log(auth(http.HandlerFunc(s.handleListFolders)))))
 	s.mux.Handle("PUT /api/v1/folders/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateFolder)))))

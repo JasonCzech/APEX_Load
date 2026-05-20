@@ -39,8 +39,38 @@ export interface AssignmentRecommendation {
 
 export interface Project {
   id: string
+  domain_id?: string
+  category_id?: string
   name: string
   settings?: ProjectSettings
+  created_at: string
+  updated_at: string
+}
+
+export interface Domain {
+  id: string
+  name: string
+  description?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ApplicationRepository {
+  id: string
+  domain_id: string
+  name: string
+  description?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface RepositoryCategory {
+  id: string
+  domain_id: string
+  repository_id: string
+  name: string
+  description?: string
+  sort_order?: number
   created_at: string
   updated_at: string
 }
@@ -68,6 +98,7 @@ export interface Application {
 export interface Release {
   id: string
   application_id: string
+  project_id?: string
   name: string
   created_at: string
   updated_at: string
@@ -1843,12 +1874,16 @@ export interface DashboardAuthSettings {
   scopes?: string[]
   roles_claim?: string
   project_roles_claim?: string
+  domain_roles_claim?: string
+  application_repository_roles_claim?: string
   session_secret_env_var?: string
   user_header: string
   name_header: string
   email_header: string
   roles_header: string
   project_roles_header: string
+  domain_roles_header?: string
+  application_repository_roles_header?: string
 }
 
 export interface DashboardNotificationWebhook {
@@ -1872,6 +1907,8 @@ export interface DashboardAuthenticatedUser {
   email?: string
   global_roles?: string[]
   project_roles?: Record<string, string[]>
+  domain_roles?: Record<string, string[]>
+  application_repository_roles?: Record<string, string[]>
   scopes?: string[]
 }
 
@@ -1927,6 +1964,8 @@ export interface DashboardAuthAccessOperation {
   label: string
   global_roles?: string[]
   project_roles?: string[]
+  domain_roles?: string[]
+  application_repository_roles?: string[]
 }
 
 export interface DashboardAuthAccessResource {
@@ -1959,6 +1998,8 @@ export interface DashboardAuthEffectiveAccess {
   enabled: boolean
   authenticated: boolean
   project_id?: string
+  domain_id?: string
+  application_repository_id?: string
   resources: DashboardAuthEffectiveAccessResource[]
   dev_view_mode?: 'admin' | 'user'
   simulated?: boolean
@@ -1971,6 +2012,8 @@ export interface DashboardServiceAccount {
   active: boolean
   global_roles?: string[]
   project_roles?: Record<string, string[]>
+  domain_roles?: Record<string, string[]>
+  application_repository_roles?: Record<string, string[]>
   scopes?: string[]
   last_used_at?: string
   expires_at?: string
@@ -1991,6 +2034,8 @@ export interface DashboardCreateServiceAccountRequest {
   description?: string
   global_roles?: string[]
   project_roles?: Record<string, string[]>
+  domain_roles?: Record<string, string[]>
+  application_repository_roles?: Record<string, string[]>
   scopes?: string[]
   expires_at?: string
   rotation_interval_days?: number

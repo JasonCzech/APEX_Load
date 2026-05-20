@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"strings"
+
+	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
 const (
@@ -36,6 +38,12 @@ func devPreviewUserForRequest(r *http.Request, mode string) *AuthenticatedUser {
 	if projectID != "" {
 		projectRoles[projectID] = map[string]struct{}{RoleEditor: {}}
 	}
+	domainRoles := map[string]map[string]struct{}{
+		storage.DefaultDomainID: {RoleEditor: {}},
+	}
+	repositoryRoles := map[string]map[string]struct{}{
+		storage.DefaultApplicationRepositoryID: {RoleEditor: {}},
+	}
 	return &AuthenticatedUser{
 		Subject:     "dev-user",
 		DisplayName: "Dev User Preview",
@@ -43,7 +51,9 @@ func devPreviewUserForRequest(r *http.Request, mode string) *AuthenticatedUser {
 		GlobalRoles: map[string]struct{}{
 			RoleViewer: {},
 		},
-		ProjectRoles: projectRoles,
+		ProjectRoles:    projectRoles,
+		DomainRoles:     domainRoles,
+		RepositoryRoles: repositoryRoles,
 	}
 }
 
