@@ -155,8 +155,8 @@ describe('SettingsPage', () => {
         user_header: 'X-Auth-Request-User',
         name_header: 'X-Auth-Request-Name',
         email_header: 'X-Auth-Request-Email',
-        roles_header: 'X-APEX Load-Roles',
-        project_roles_header: 'X-APEX Load-Project-Roles',
+        roles_header: 'X-APEXLoad-Roles',
+        project_roles_header: 'X-APEXLoad-Project-Roles',
       },
     })
     apiMock.getAuthRoleCatalog.mockResolvedValue({
@@ -758,8 +758,8 @@ describe('SettingsPage', () => {
         user_header: 'X-Auth-Request-User',
         name_header: 'X-Auth-Request-Name',
         email_header: 'X-Auth-Request-Email',
-        roles_header: 'X-APEX Load-Roles',
-        project_roles_header: 'X-APEX Load-Project-Roles',
+        roles_header: 'X-APEXLoad-Roles',
+        project_roles_header: 'X-APEXLoad-Project-Roles',
       },
     })
 
@@ -1006,8 +1006,8 @@ describe('SettingsPage', () => {
         login_url: '',
         logout_url: '',
         user_header: 'X-Auth-Request-User',
-        roles_header: 'X-APEX Load-Roles',
-        project_roles_header: 'X-APEX Load-Project-Roles',
+        roles_header: 'X-APEXLoad-Roles',
+        project_roles_header: 'X-APEXLoad-Project-Roles',
       }),
     }))
     expect(generalSection.textContent).toContain('Microsoft Entra ID Troubleshooting')
@@ -1351,8 +1351,8 @@ describe('SettingsPage', () => {
         user_header: 'X-Auth-Request-User',
         name_header: 'X-Auth-Request-Name',
         email_header: 'X-Auth-Request-Email',
-        roles_header: 'X-APEX Load-Roles',
-        project_roles_header: 'X-APEX Load-Project-Roles',
+        roles_header: 'X-APEXLoad-Roles',
+        project_roles_header: 'X-APEXLoad-Project-Roles',
       },
     })
     apiMock.getAuthDiagnostics.mockResolvedValueOnce({
@@ -1364,7 +1364,7 @@ describe('SettingsPage', () => {
       summary: 'Auth mode is ready with 1 advisory check(s) still worth reviewing.',
       checks: [
         { id: 'subject_header', label: 'Subject Header', status: 'pass', summary: 'Configured', detail: 'X-Auth-Request-User' },
-        { id: 'role_headers', label: 'Role Header Mapping', status: 'pass', summary: 'Configured', detail: 'X-APEX Load-Roles | X-APEX Load-Project-Roles' },
+        { id: 'role_headers', label: 'Role Header Mapping', status: 'pass', summary: 'Configured', detail: 'X-APEXLoad-Roles | X-APEXLoad-Project-Roles' },
         { id: 'current_request_identity', label: 'Current Request Identity', status: 'pass', summary: 'Trusted headers authenticated the current request.', detail: 'alice-admin' },
       ],
     })
@@ -1426,7 +1426,7 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Required Subject Header')
     expect(generalSection.textContent).toContain('X-Auth-Request-User')
     expect(generalSection.textContent).toContain('Global Role Mapping')
-    expect(generalSection.textContent).toContain('X-APEX Load-Roles')
+    expect(generalSection.textContent).toContain('X-APEXLoad-Roles')
     expect(generalSection.textContent).toContain('Microsoft Entra ID Troubleshooting')
     expect(generalSection.textContent).toContain('Headers detected')
     expect(generalSection.textContent).toContain('Auth Diagnostics')
@@ -1473,8 +1473,8 @@ describe('SettingsPage', () => {
         user_header: 'X-Auth-Request-User',
         name_header: 'X-Auth-Request-Name',
         email_header: 'X-Auth-Request-Email',
-        roles_header: 'X-APEX Load-Roles',
-        project_roles_header: 'X-APEX Load-Project-Roles',
+        roles_header: 'X-APEXLoad-Roles',
+        project_roles_header: 'X-APEXLoad-Project-Roles',
       },
     })
     apiMock.getAuthDiagnostics.mockResolvedValueOnce({
@@ -1679,7 +1679,7 @@ describe('SettingsPage', () => {
 
     const authInputs = Array.from(generalSection.querySelectorAll('input')).filter(input => {
       const element = input as HTMLInputElement
-      return element.placeholder === 'X-APEX Load-Roles' || element.placeholder === 'X-APEX Load-Project-Roles'
+      return element.placeholder === 'X-APEXLoad-Roles' || element.placeholder === 'X-APEXLoad-Project-Roles'
     }) as HTMLInputElement[]
     expect(authInputs).toHaveLength(2)
     if (authInputs.length !== 2) return

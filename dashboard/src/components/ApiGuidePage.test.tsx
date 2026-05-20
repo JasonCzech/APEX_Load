@@ -41,7 +41,7 @@ describe('ApiGuidePage', () => {
     expect(container.textContent).toContain('confirm=true')
     expect(container.textContent).toContain('API Keys')
     expect(container.textContent).toContain('Access & API Keys')
-    expect(container.textContent).toContain('X-APEX Load-Dev-View')
+    expect(container.textContent).toContain('X-APEXLoad-Dev-View')
     expect(container.textContent).toContain('project editor User behavior')
 
     const repositoryLink = container.querySelector('a[href*="API_USER_GUIDE.md"]')

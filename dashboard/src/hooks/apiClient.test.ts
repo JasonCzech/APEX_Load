@@ -64,8 +64,8 @@ describe('dev preview API headers', () => {
 
     expect(readStoredDevViewMode()).toBe('admin')
     expect(buildDevPreviewHeaders()).toEqual({
-      'X-APEX Load-Dev-View': 'admin',
-      'X-APEX Load-Dev-Project-ID': 'project-1',
+      'X-APEXLoad-Dev-View': 'admin',
+      'X-APEXLoad-Dev-Project-ID': 'project-1',
     })
   })
 
@@ -73,7 +73,7 @@ describe('dev preview API headers', () => {
     writeStoredDevViewMode('user')
 
     expect(window.localStorage.getItem(DEV_VIEW_STORAGE_KEY)).toBe('user')
-    expect(buildDevPreviewHeaders()['X-APEX Load-Dev-View']).toBe('user')
+    expect(buildDevPreviewHeaders()['X-APEXLoad-Dev-View']).toBe('user')
   })
 
   it('attaches preview headers to FormData and blob-style fetches without forcing JSON content type', async () => {
@@ -89,8 +89,8 @@ describe('dev preview API headers', () => {
     const init = fetchMock.mock.calls[0][1] as RequestInit
     const headers = init.headers as Headers
     expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/scripts/import/loadrunner')
-    expect(headers.get('X-APEX Load-Dev-View')).toBe('user')
-    expect(headers.get('X-APEX Load-Dev-Project-ID')).toBe('project-2')
+    expect(headers.get('X-APEXLoad-Dev-View')).toBe('user')
+    expect(headers.get('X-APEXLoad-Dev-Project-ID')).toBe('project-2')
     expect(headers.has('Content-Type')).toBe(false)
   })
 
@@ -104,7 +104,7 @@ describe('dev preview API headers', () => {
 
     const init = fetchMock.mock.calls[0][1] as RequestInit
     const headers = init.headers as Headers
-    expect(headers.get('X-APEX Load-Dev-View')).toBe('admin')
+    expect(headers.get('X-APEXLoad-Dev-View')).toBe('admin')
     expect(headers.get('Content-Type')).toBe('application/json')
   })
 })

@@ -65,8 +65,8 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
     user_header: 'X-Auth-Request-User',
     name_header: 'X-Auth-Request-Name',
     email_header: 'X-Auth-Request-Email',
-    roles_header: 'X-APEX Load-Roles',
-    project_roles_header: 'X-APEX Load-Project-Roles',
+    roles_header: 'X-APEXLoad-Roles',
+    project_roles_header: 'X-APEXLoad-Project-Roles',
   },
 }
 
@@ -2314,7 +2314,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                       className="settings-input cell-mono"
                       value={settings.auth.roles_header}
                       onChange={(e) => updateAuth('roles_header', e.target.value)}
-                      placeholder="X-APEX Load-Roles"
+                      placeholder="X-APEXLoad-Roles"
                     />
                   </div>
                   <div className="setting-row">
@@ -2326,7 +2326,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                       className="settings-input cell-mono"
                       value={settings.auth.project_roles_header}
                       onChange={(e) => updateAuth('project_roles_header', e.target.value)}
-                      placeholder="X-APEX Load-Project-Roles"
+                      placeholder="X-APEXLoad-Project-Roles"
                     />
                   </div>
                   <div className="settings-subsection">

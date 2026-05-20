@@ -189,7 +189,7 @@ export default function ApiGuidePage({ onNavigate }: ApiGuidePageProps) {
       <section className="page-section">
         <div className="api-guide-section-header">
           <h3>Authentication</h3>
-          <p>Service accounts can use `Authorization: Bearer &lt;api-key&gt;` or `X-APEX Load-API-Key`; RBAC roles and token scopes are both enforced.</p>
+          <p>Service accounts can use `Authorization: Bearer &lt;api-key&gt;` or `X-APEXLoad-API-Key`; RBAC roles and token scopes are both enforced.</p>
         </div>
         <div className="api-guide-table-card">
           <table>
@@ -245,7 +245,7 @@ export default function ApiGuidePage({ onNavigate }: ApiGuidePageProps) {
 
       <section className="api-guide-callout">
         <h3>Dev Preview Headers</h3>
-        <p>In local dev auth mode only, API clients may send <code>X-APEX Load-Dev-View: admin|user</code> and <code>X-APEX Load-Dev-Project-ID: &lt;project-id&gt;</code> to simulate dashboard Admin or project editor User behavior. Production auth modes ignore these headers.</p>
+        <p>In local dev auth mode only, API clients may send <code>X-APEXLoad-Dev-View: admin|user</code> and <code>X-APEXLoad-Dev-Project-ID: &lt;project-id&gt;</code> to simulate dashboard Admin or project editor User behavior. Production auth modes ignore these headers.</p>
       </section>
     </div>
   )
