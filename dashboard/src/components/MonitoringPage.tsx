@@ -125,8 +125,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [isCompetitiveParityModalOpen, setIsCompetitiveParityModalOpen] = useState(false)
   const [customizing, setCustomizing] = useState(false)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
-  const [cardOrder, setCardOrder] = useState<string[]>(() => readStringArray('stormrunner.monitoring.cardOrder'))
-  const [hiddenCardIds, setHiddenCardIds] = useState<string[]>(() => readStringArray('stormrunner.monitoring.hiddenCards'))
+  const [cardOrder, setCardOrder] = useState<string[]>(() => readStringArray('apexload.monitoring.cardOrder'))
+  const [hiddenCardIds, setHiddenCardIds] = useState<string[]>(() => readStringArray('apexload.monitoring.hiddenCards'))
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const websocketValueClass = connectionState === 'connected' ? 'text-success' : connectionState === 'disconnected' ? 'text-danger' : ''
   const websocketLabel = connectionState === 'connected' ? 'Connected' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
@@ -1068,12 +1068,12 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    window.localStorage.setItem('stormrunner.monitoring.cardOrder', JSON.stringify(cardOrder))
+    window.localStorage.setItem('apexload.monitoring.cardOrder', JSON.stringify(cardOrder))
   }, [cardOrder])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    window.localStorage.setItem('stormrunner.monitoring.hiddenCards', JSON.stringify(hiddenCardIds))
+    window.localStorage.setItem('apexload.monitoring.hiddenCards', JSON.stringify(hiddenCardIds))
   }, [hiddenCardIds])
 
   const orderedCards = useMemo(() => {

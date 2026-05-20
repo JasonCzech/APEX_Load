@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 export type DashboardTheme = 'dark' | 'light'
 
-const THEME_STORAGE_KEY = 'stormrunner.theme'
+const THEME_STORAGE_KEY = 'apexload.theme'
 
 function readStoredTheme(): DashboardTheme {
   if (typeof window === 'undefined') {

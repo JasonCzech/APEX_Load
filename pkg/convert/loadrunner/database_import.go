@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 var sqlStatementPattern = regexp.MustCompile(`(?is)\b(select|insert\s+into|update|delete\s+from|create\s+table|drop\s+table|alter\s+table|exec(?:ute)?|call|begin|commit|rollback)\b[\s\S]*`)
@@ -18,7 +18,7 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 			Name:          firstNonEmpty(opts.ScriptName, "Converted_LR_Database_Script"),
 			Version:       "1.0.0",
 			Protocol:      "database",
-			GeneratedBy:   "stormrunner-loadrunner-converter",
+			GeneratedBy:   "apexload-loadrunner-converter",
 			GeneratedFrom: "loadrunner",
 			Config: dsl.ScriptConfig{
 				Database: dsl.DatabaseConfig{
@@ -188,7 +188,7 @@ func sourceFunctionMetadata(fn ParsedFunction) map[string]any {
 
 func markDetectedReviewOnly(detected DetectedProtocol, warning string) DetectedProtocol {
 	detected.ImportMode = ImportModeReviewOnly
-	detected.StormrunnerProtocol = ""
+	detected.APEXLoadProtocol = ""
 	if warning != "" {
 		detected.Warnings = append(detected.Warnings, warning)
 	}

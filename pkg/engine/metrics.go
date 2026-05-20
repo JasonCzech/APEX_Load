@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type MetricsCollector struct {

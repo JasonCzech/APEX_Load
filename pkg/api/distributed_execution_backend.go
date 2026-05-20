@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
-	"github.com/jasonczech/stormrunner/pkg/engine"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/storage"
 	grpcCodes "google.golang.org/grpc/codes"
 	grpcStatus "google.golang.org/grpc/status"
 )

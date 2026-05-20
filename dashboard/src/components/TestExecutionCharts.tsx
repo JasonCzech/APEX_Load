@@ -127,8 +127,8 @@ export default function TestExecutionCharts({
 }: Props) {
   const [customizingCharts, setCustomizingCharts] = useState(false)
   const [draggedChartId, setDraggedChartId] = useState<string | null>(null)
-  const [chartOrder, setChartOrder] = useState<string[]>(() => readStoredArray('stormrunner.execution.chartOrder'))
-  const [hiddenChartIds, setHiddenChartIds] = useState<string[]>(() => readStoredArray('stormrunner.execution.hiddenCharts'))
+  const [chartOrder, setChartOrder] = useState<string[]>(() => readStoredArray('apexload.execution.chartOrder'))
+  const [hiddenChartIds, setHiddenChartIds] = useState<string[]>(() => readStoredArray('apexload.execution.hiddenCharts'))
 
   useEffect(() => {
     const knownIds = chartConfigs.map(chart => chart.id)
@@ -141,12 +141,12 @@ export default function TestExecutionCharts({
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    window.localStorage.setItem('stormrunner.execution.chartOrder', JSON.stringify(chartOrder))
+    window.localStorage.setItem('apexload.execution.chartOrder', JSON.stringify(chartOrder))
   }, [chartOrder])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    window.localStorage.setItem('stormrunner.execution.hiddenCharts', JSON.stringify(hiddenChartIds))
+    window.localStorage.setItem('apexload.execution.hiddenCharts', JSON.stringify(hiddenChartIds))
   }, [hiddenChartIds])
 
   const orderedCharts = useMemo(() => {

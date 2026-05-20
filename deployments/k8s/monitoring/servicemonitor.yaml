@@ -1,18 +1,18 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: stormrunner-controller
+  name: apexload-controller
   labels:
-    app.kubernetes.io/name: stormrunner-controller
+    app.kubernetes.io/name: apexload-controller
     app.kubernetes.io/component: monitoring
 spec:
   selector:
     matchLabels:
-      app.kubernetes.io/name: stormrunner-controller
+      app.kubernetes.io/name: apexload-controller
       app.kubernetes.io/component: controller
   namespaceSelector:
     matchNames:
-      - stormrunner-local
+      - apexload-local
   endpoints:
     - port: http
       path: /metrics

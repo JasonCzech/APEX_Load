@@ -72,7 +72,7 @@ func TestLookupStepScope(t *testing.T) {
 		if !tt.wantOK {
 			continue
 		}
-		if scope.DisplayName != tt.wantName || scope.Status != tt.wantStatus || scope.StormrunnerShape != tt.wantType {
+		if scope.DisplayName != tt.wantName || scope.Status != tt.wantStatus || scope.APEXLoadShape != tt.wantType {
 			t.Fatalf("LookupStepScope(%q) = %#v, want name=%q status=%q type=%q", tt.stepName, scope, tt.wantName, tt.wantStatus, tt.wantType)
 		}
 	}
@@ -122,7 +122,7 @@ func TestWeb2ProfileCapabilityScopes(t *testing.T) {
 		if scope.Status != status {
 			t.Fatalf("Web2ProfileCapabilityScopes[%q].Status = %q, want %q", name, scope.Status, status)
 		}
-		if scope.StormrunnerShape == "" || len(scope.RequiredEvidence) == 0 {
+		if scope.APEXLoadShape == "" || len(scope.RequiredEvidence) == 0 {
 			t.Fatalf("Web2ProfileCapabilityScopes[%q] = %#v, want shape and evidence", name, scope)
 		}
 	}

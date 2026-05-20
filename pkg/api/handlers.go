@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/convert/loadrunner"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	browserprotocol "github.com/jasonczech/stormrunner/pkg/protocol/browser"
+	"github.com/jasonczech/apexload/pkg/convert/loadrunner"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 )
 
 func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
@@ -537,54 +537,54 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	var body strings.Builder
-	body.WriteString("# HELP stormrunner_up Whether the Stormrunner controller is healthy.\n")
-	body.WriteString("# TYPE stormrunner_up gauge\n")
-	body.WriteString("stormrunner_up 1\n")
-	body.WriteString("# HELP stormrunner_websocket_clients Number of connected websocket clients.\n")
-	body.WriteString("# TYPE stormrunner_websocket_clients gauge\n")
-	fmt.Fprintf(&body, "stormrunner_websocket_clients %d\n", s.hub.ClientCount())
-	body.WriteString("# HELP stormrunner_test_count Number of tracked tests in memory.\n")
-	body.WriteString("# TYPE stormrunner_test_count gauge\n")
-	fmt.Fprintf(&body, "stormrunner_test_count %d\n", len(tests))
-	body.WriteString("# HELP stormrunner_tests_by_status Number of tracked tests by status.\n")
-	body.WriteString("# TYPE stormrunner_tests_by_status gauge\n")
+	body.WriteString("# HELP apexload_up Whether the APEX Load controller is healthy.\n")
+	body.WriteString("# TYPE apexload_up gauge\n")
+	body.WriteString("apexload_up 1\n")
+	body.WriteString("# HELP apexload_websocket_clients Number of connected websocket clients.\n")
+	body.WriteString("# TYPE apexload_websocket_clients gauge\n")
+	fmt.Fprintf(&body, "apexload_websocket_clients %d\n", s.hub.ClientCount())
+	body.WriteString("# HELP apexload_test_count Number of tracked tests in memory.\n")
+	body.WriteString("# TYPE apexload_test_count gauge\n")
+	fmt.Fprintf(&body, "apexload_test_count %d\n", len(tests))
+	body.WriteString("# HELP apexload_tests_by_status Number of tracked tests by status.\n")
+	body.WriteString("# TYPE apexload_tests_by_status gauge\n")
 	for status, count := range statusCounts {
-		fmt.Fprintf(&body, "stormrunner_tests_by_status{status=%q} %d\n", status, count)
+		fmt.Fprintf(&body, "apexload_tests_by_status{status=%q} %d\n", status, count)
 	}
-	body.WriteString("# HELP stormrunner_scaling_vusers VUsers by autoscaling demand state.\n")
-	body.WriteString("# TYPE stormrunner_scaling_vusers gauge\n")
-	fmt.Fprintf(&body, "stormrunner_scaling_vusers{state=%q} %d\n", "queued", scalingStats.QueuedVUsers)
-	fmt.Fprintf(&body, "stormrunner_scaling_vusers{state=%q} %d\n", "active", scalingStats.ActiveVUsers)
-	body.WriteString("# HELP stormrunner_scaling_tests Tests by autoscaling demand state.\n")
-	body.WriteString("# TYPE stormrunner_scaling_tests gauge\n")
-	fmt.Fprintf(&body, "stormrunner_scaling_tests{state=%q} %d\n", "queued", scalingStats.QueuedTests)
-	fmt.Fprintf(&body, "stormrunner_scaling_tests{state=%q} %d\n", "active", scalingStats.ActiveTests)
-	body.WriteString("# HELP stormrunner_scaling_protocol_vusers VUsers by autoscaling demand state and protocol.\n")
-	body.WriteString("# TYPE stormrunner_scaling_protocol_vusers gauge\n")
+	body.WriteString("# HELP apexload_scaling_vusers VUsers by autoscaling demand state.\n")
+	body.WriteString("# TYPE apexload_scaling_vusers gauge\n")
+	fmt.Fprintf(&body, "apexload_scaling_vusers{state=%q} %d\n", "queued", scalingStats.QueuedVUsers)
+	fmt.Fprintf(&body, "apexload_scaling_vusers{state=%q} %d\n", "active", scalingStats.ActiveVUsers)
+	body.WriteString("# HELP apexload_scaling_tests Tests by autoscaling demand state.\n")
+	body.WriteString("# TYPE apexload_scaling_tests gauge\n")
+	fmt.Fprintf(&body, "apexload_scaling_tests{state=%q} %d\n", "queued", scalingStats.QueuedTests)
+	fmt.Fprintf(&body, "apexload_scaling_tests{state=%q} %d\n", "active", scalingStats.ActiveTests)
+	body.WriteString("# HELP apexload_scaling_protocol_vusers VUsers by autoscaling demand state and protocol.\n")
+	body.WriteString("# TYPE apexload_scaling_protocol_vusers gauge\n")
 	writeScalingProtocolVUsers(&body, "queued", scalingStats.QueuedProtocolVUsers)
 	writeScalingProtocolVUsers(&body, "active", scalingStats.ActiveProtocolVUsers)
-	body.WriteString("# HELP stormrunner_capacity_available_generators Available generators from capacity planning.\n")
-	body.WriteString("# TYPE stormrunner_capacity_available_generators gauge\n")
-	fmt.Fprintf(&body, "stormrunner_capacity_available_generators{scope=%q} %d\n", "configured", availability.ConfiguredAvailableGenerators)
-	fmt.Fprintf(&body, "stormrunner_capacity_available_generators{scope=%q} %d\n", "effective", availability.EffectiveAvailableGenerators)
-	fmt.Fprintf(&body, "stormrunner_capacity_available_generators{scope=%q} %d\n", "reserved", availability.ReservedGenerators)
-	fmt.Fprintf(&body, "stormrunner_capacity_available_generators{scope=%q} %d\n", "shared", availability.SharedAvailableGenerators)
+	body.WriteString("# HELP apexload_capacity_available_generators Available generators from capacity planning.\n")
+	body.WriteString("# TYPE apexload_capacity_available_generators gauge\n")
+	fmt.Fprintf(&body, "apexload_capacity_available_generators{scope=%q} %d\n", "configured", availability.ConfiguredAvailableGenerators)
+	fmt.Fprintf(&body, "apexload_capacity_available_generators{scope=%q} %d\n", "effective", availability.EffectiveAvailableGenerators)
+	fmt.Fprintf(&body, "apexload_capacity_available_generators{scope=%q} %d\n", "reserved", availability.ReservedGenerators)
+	fmt.Fprintf(&body, "apexload_capacity_available_generators{scope=%q} %d\n", "shared", availability.SharedAvailableGenerators)
 	if availability.LiveAvailableGenerators != nil {
-		fmt.Fprintf(&body, "stormrunner_capacity_available_generators{scope=%q} %d\n", "live", *availability.LiveAvailableGenerators)
+		fmt.Fprintf(&body, "apexload_capacity_available_generators{scope=%q} %d\n", "live", *availability.LiveAvailableGenerators)
 	}
 	if len(regionStats) > 0 {
-		body.WriteString("# HELP stormrunner_generator_region_count Number of configured generator inventory entries by region.\n")
-		body.WriteString("# TYPE stormrunner_generator_region_count gauge\n")
-		body.WriteString("# HELP stormrunner_generator_region_available_capacity Available VUser capacity reported by generators by region.\n")
-		body.WriteString("# TYPE stormrunner_generator_region_available_capacity gauge\n")
-		body.WriteString("# HELP stormrunner_generator_region_active_vusers Active VUsers reported by generators by region.\n")
-		body.WriteString("# TYPE stormrunner_generator_region_active_vusers gauge\n")
-		body.WriteString("# HELP stormrunner_generator_capacity_state_count Number of generators by region and capacity state.\n")
-		body.WriteString("# TYPE stormrunner_generator_capacity_state_count gauge\n")
-		body.WriteString("# HELP stormrunner_generator_drain_state_count Number of generators by region and drain state.\n")
-		body.WriteString("# TYPE stormrunner_generator_drain_state_count gauge\n")
-		body.WriteString("# HELP stormrunner_generator_compatibility_state_count Number of generators by region and compatibility state.\n")
-		body.WriteString("# TYPE stormrunner_generator_compatibility_state_count gauge\n")
+		body.WriteString("# HELP apexload_generator_region_count Number of configured generator inventory entries by region.\n")
+		body.WriteString("# TYPE apexload_generator_region_count gauge\n")
+		body.WriteString("# HELP apexload_generator_region_available_capacity Available VUser capacity reported by generators by region.\n")
+		body.WriteString("# TYPE apexload_generator_region_available_capacity gauge\n")
+		body.WriteString("# HELP apexload_generator_region_active_vusers Active VUsers reported by generators by region.\n")
+		body.WriteString("# TYPE apexload_generator_region_active_vusers gauge\n")
+		body.WriteString("# HELP apexload_generator_capacity_state_count Number of generators by region and capacity state.\n")
+		body.WriteString("# TYPE apexload_generator_capacity_state_count gauge\n")
+		body.WriteString("# HELP apexload_generator_drain_state_count Number of generators by region and drain state.\n")
+		body.WriteString("# TYPE apexload_generator_drain_state_count gauge\n")
+		body.WriteString("# HELP apexload_generator_compatibility_state_count Number of generators by region and compatibility state.\n")
+		body.WriteString("# TYPE apexload_generator_compatibility_state_count gauge\n")
 		regions := make([]string, 0, len(regionStats))
 		for region := range regionStats {
 			regions = append(regions, region)
@@ -592,20 +592,20 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 		sort.Strings(regions)
 		for _, region := range regions {
 			stats := regionStats[region]
-			fmt.Fprintf(&body, "stormrunner_generator_region_count{region=%q} %d\n", region, stats.Count)
-			fmt.Fprintf(&body, "stormrunner_generator_region_available_capacity{region=%q} %d\n", region, stats.AvailableCapacity)
-			fmt.Fprintf(&body, "stormrunner_generator_region_active_vusers{region=%q} %d\n", region, stats.ActiveVUsers)
-			writeLabeledCounts(&body, "stormrunner_generator_capacity_state_count", "region", region, "state", stats.CapacityStates)
-			writeLabeledCounts(&body, "stormrunner_generator_drain_state_count", "region", region, "state", stats.DrainStates)
-			writeLabeledCounts(&body, "stormrunner_generator_compatibility_state_count", "region", region, "state", stats.CompatibilityStates)
+			fmt.Fprintf(&body, "apexload_generator_region_count{region=%q} %d\n", region, stats.Count)
+			fmt.Fprintf(&body, "apexload_generator_region_available_capacity{region=%q} %d\n", region, stats.AvailableCapacity)
+			fmt.Fprintf(&body, "apexload_generator_region_active_vusers{region=%q} %d\n", region, stats.ActiveVUsers)
+			writeLabeledCounts(&body, "apexload_generator_capacity_state_count", "region", region, "state", stats.CapacityStates)
+			writeLabeledCounts(&body, "apexload_generator_drain_state_count", "region", region, "state", stats.DrainStates)
+			writeLabeledCounts(&body, "apexload_generator_compatibility_state_count", "region", region, "state", stats.CompatibilityStates)
 		}
 	}
-	body.WriteString("# HELP stormrunner_max_concurrent_tests Configured maximum concurrent tests.\n")
-	body.WriteString("# TYPE stormrunner_max_concurrent_tests gauge\n")
-	fmt.Fprintf(&body, "stormrunner_max_concurrent_tests %d\n", settings.General.MaxConcurrentTests)
-	body.WriteString("# HELP stormrunner_metrics_interval_seconds Configured metrics publish interval in seconds.\n")
-	body.WriteString("# TYPE stormrunner_metrics_interval_seconds gauge\n")
-	fmt.Fprintf(&body, "stormrunner_metrics_interval_seconds %d\n", settings.General.MetricsIntervalSeconds)
+	body.WriteString("# HELP apexload_max_concurrent_tests Configured maximum concurrent tests.\n")
+	body.WriteString("# TYPE apexload_max_concurrent_tests gauge\n")
+	fmt.Fprintf(&body, "apexload_max_concurrent_tests %d\n", settings.General.MaxConcurrentTests)
+	body.WriteString("# HELP apexload_metrics_interval_seconds Configured metrics publish interval in seconds.\n")
+	body.WriteString("# TYPE apexload_metrics_interval_seconds gauge\n")
+	fmt.Fprintf(&body, "apexload_metrics_interval_seconds %d\n", settings.General.MetricsIntervalSeconds)
 	_, _ = w.Write([]byte(body.String()))
 }
 
@@ -663,7 +663,7 @@ func writeScalingProtocolVUsers(body *strings.Builder, state string, protocolVUs
 	}
 	sort.Strings(protocols)
 	for _, protocol := range protocols {
-		fmt.Fprintf(body, "stormrunner_scaling_protocol_vusers{state=%q,protocol=%q} %d\n", state, protocol, protocolVUsers[protocol])
+		fmt.Fprintf(body, "apexload_scaling_protocol_vusers{state=%q,protocol=%q} %d\n", state, protocol, protocolVUsers[protocol])
 	}
 }
 
@@ -835,7 +835,7 @@ func hasStreamingCompatibilityOnlySettings(script *dsl.Script) bool {
 }
 
 func streamingCompatibilityWarning(script *dsl.Script) string {
-	message := "LoadRunner-style streaming and media runtime settings are preserved for migration parity, but Stormrunner does not execute media playback semantics yet."
+	message := "LoadRunner-style streaming and media runtime settings are preserved for migration parity, but APEX Load does not execute media playback semantics yet."
 	if script == nil {
 		return message
 	}

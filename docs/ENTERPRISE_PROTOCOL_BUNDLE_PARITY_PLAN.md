@@ -2,7 +2,7 @@
 
 ## Summary
 
-This plan extends Stormrunner toward parity with additional LoadRunner Enterprise protocol-bundle coverage:
+This plan extends APEX Load toward parity with additional LoadRunner Enterprise protocol-bundle coverage:
 
 - Database Protocol Bundle
 - Network Protocol Bundle
@@ -12,11 +12,11 @@ This plan extends Stormrunner toward parity with additional LoadRunner Enterpris
 
 The plan intentionally separates three kinds of parity:
 
-1. Native Stormrunner protocol execution on Linux generator pods.
-2. Review/import/template parity where Stormrunner can ingest and govern assets but not execute them natively yet.
+1. Native APEX Load protocol execution on Linux generator pods.
+2. Review/import/template parity where APEX Load can ingest and govern assets but not execute them natively yet.
 3. Native desktop or proprietary runtime parity that requires Windows or vendor-client runner pools.
 
-This matters because Stormrunner's current architecture is strongest for HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, browser canaries, and import-driven Web/API workflows. Some requested LoadRunner protocols are low-level socket, database-client, desktop GUI, or vendor-proprietary runtimes and should not be forced into the existing high-density Linux generator path without explicit runner boundaries.
+This matters because APEX Load's current architecture is strongest for HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, browser canaries, and import-driven Web/API workflows. Some requested LoadRunner protocols are low-level socket, database-client, desktop GUI, or vendor-proprietary runtimes and should not be forced into the existing high-density Linux generator path without explicit runner boundaries.
 
 ## Source Baseline
 
@@ -36,11 +36,11 @@ The 2025 license-bundles overview lists these requested bundle members:
 | Templates | C Vuser, C++ .NET, C# .NET, Java Vuser, VB .NET |
 | SAP | SAP GUI, SAP-Web, SMP |
 
-The 2023 license-bundles flyer lists Database as ODBC and Oracle-2 Tier. Because OpenText bundle composition is price-list and version dependent, Stormrunner should store the source document and validation date with every externally claimed support matrix row.
+The 2023 license-bundles flyer lists Database as ODBC and Oracle-2 Tier. Because OpenText bundle composition is price-list and version dependent, APEX Load should store the source document and validation date with every externally claimed support matrix row.
 
-## Current Stormrunner Baseline
+## Current APEX Load Baseline
 
-| Area | Current Stormrunner posture | Gap against requested bundles |
+| Area | Current APEX Load posture | Gap against requested bundles |
 | --- | --- | --- |
 | HTTP/Web, SOAP, Java-over-HTTP | Executable | Useful foundation for Oracle-Web, Siebel-Web, SAP-Web, DevWeb/JMeter/Gatling imports |
 | WebSocket, gRPC, JMS | Executable | Not directly part of these bundles, but validates pluggable protocol architecture |
@@ -84,7 +84,7 @@ Status as of 2026-05-19:
 
 | Importance | Work | Reason |
 | --- | --- | --- |
-| P0 | Bundle registry, entitlement model, support matrix, import classification | Prevents vague parity claims and gives operators a reliable map of what Stormrunner can run, review, or defer |
+| P0 | Bundle registry, entitlement model, support matrix, import classification | Prevents vague parity claims and gives operators a reliable map of what APEX Load can run, review, or defer |
 | P0 | Network subset MVP: DNS, FTP, SMTP, POP3, IMAP, LDAP | Mostly standards-based and feasible in Go; broad enterprise usefulness |
 | P0 | Database MVP: SQL/ODBC-style execution model plus Oracle strategy | High enterprise value; unlocks direct DB service tests and migration of common database scripts |
 | P0 | SAP GUI foundation entitlement and runner architecture | SAP GUI is business-critical and operationally different from HTTP/browser canaries |
@@ -129,7 +129,7 @@ OpenText bundle target: ODBC and Oracle-2 Tier.
 
 ### Recommended Parity Position
 
-Stormrunner should implement a first-class `database` protocol with two execution paths:
+APEX Load should implement a first-class `database` protocol with two execution paths:
 
 - Standards-oriented SQL runner for DSN/JDBC/ODBC-like SQL workflows.
 - Oracle client runner for Oracle-2 Tier, isolated behind a generator-local client bridge because Oracle client libraries and deployment prerequisites are not equivalent to pure Go HTTP execution.
@@ -168,7 +168,7 @@ OpenText bundle target: DNS, FTP, IMAP, LDAP, MAPI, POP3, SMTP, Tuxedo, Windows 
 
 Implement standards-based protocols natively first, then gate proprietary/binary protocols behind feasibility and external-runner design.
 
-| Protocol | Recommended Stormrunner posture |
+| Protocol | Recommended APEX Load posture |
 | --- | --- |
 | DNS | Native Go runtime |
 | FTP | Native Go runtime with upload/download/list/delete actions |
@@ -202,7 +202,7 @@ OpenText bundle target: DevWeb, JMeter, Gatling, Oracle NCA, Oracle-Web, Siebel-
 
 ### Recommended Parity Position
 
-Stormrunner already has generic HTTP, DevWeb, JMeter, Gatling, and Web/API foundations. The parity gap is packaged-app fidelity: Oracle-Web/Siebel-Web correlation knowledge, Oracle NCA client/protocol handling, and scenario templates.
+APEX Load already has generic HTTP, DevWeb, JMeter, Gatling, and Web/API foundations. The parity gap is packaged-app fidelity: Oracle-Web/Siebel-Web correlation knowledge, Oracle NCA client/protocol handling, and scenario templates.
 
 ### Work Items
 
@@ -219,7 +219,7 @@ Stormrunner already has generic HTTP, DevWeb, JMeter, Gatling, and Web/API found
 Implemented OEB1 endpoint coverage:
 
 - `GET /api/v1/scripts/import/oracle-ebusiness/support-matrix` exposes Oracle E-Business support rows, correlation-pack status, scenario templates, and the Oracle NCA execution boundary.
-- `POST /api/v1/scripts/import/oracle-ebusiness/review` accepts source text, files, or a Stormrunner script and returns package classification, Oracle-Web/Siebel-Web/NCA token findings, data-source fit findings, repair suggestions, required evidence, and next actions.
+- `POST /api/v1/scripts/import/oracle-ebusiness/review` accepts source text, files, or a APEX Load script and returns package classification, Oracle-Web/Siebel-Web/NCA token findings, data-source fit findings, repair suggestions, required evidence, and next actions.
 - The LoadRunner/VuGen ZIP importer now routes Oracle-Web and Siebel-Web archives to executable HTTP drafts while attaching protocol review artifacts and Oracle E-Business correlation review sections. Oracle NCA imports remain external-runner/review artifacts.
 
 ## Workstream TPL1: Templates Protocol Bundle
@@ -259,11 +259,11 @@ Template VUsers should run as sidecar or external worker containers with a narro
 
 ## Workstream SAP1: Foundation Entitlement For SAP GUI
 
-OpenText lists SAP GUI under SAP protocol coverage and the SAP solutions data sheet highlights SAPGUI, SAP WebGUI, Web Dynpro, SAP Fiori/SAPUI5, IDoc, RFC, and OData coverage. For Stormrunner, this workstream defines a Foundation Entitlement that unlocks SAP GUI governance and a low-density SAP GUI runner lane.
+OpenText lists SAP GUI under SAP protocol coverage and the SAP solutions data sheet highlights SAPGUI, SAP WebGUI, Web Dynpro, SAP Fiori/SAPUI5, IDoc, RFC, and OData coverage. For APEX Load, this workstream defines a Foundation Entitlement that unlocks SAP GUI governance and a low-density SAP GUI runner lane.
 
 ### Recommended Parity Position
 
-SAP GUI is not a browser protocol and should not run on Linux HTTP generators. Stormrunner should provide:
+SAP GUI is not a browser protocol and should not run on Linux HTTP generators. APEX Load should provide:
 
 - Project-level SAP GUI entitlement.
 - Windows SAP GUI runner pool.
@@ -313,7 +313,7 @@ SAP GUI is not a browser protocol and should not run on Linux HTTP generators. S
 
 ## Acceptance Criteria
 
-Stormrunner should not mark a requested bundle as complete until:
+APEX Load should not mark a requested bundle as complete until:
 
 - The support matrix identifies every OpenText-listed protocol in the bundle.
 - Each protocol has one of: executable, review-only, external-runner required, deferred, or out-of-scope.

@@ -4,7 +4,7 @@ import { Project } from '../types'
 import { useProjectApi } from './api/useProjectApi'
 import { ProjectContext } from './projectContext'
 
-const STORAGE_KEY = 'stormrunner.activeProjectId'
+const STORAGE_KEY = 'apexload.activeProjectId'
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
   const api = useProjectApi()

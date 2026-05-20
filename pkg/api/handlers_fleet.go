@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const generatorDrainStatesStoreKey = "generator_drain_states"

@@ -1,14 +1,14 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: stormrunner-generator
+  name: apexload-generator
   labels:
-    app.kubernetes.io/name: stormrunner-generator
+    app.kubernetes.io/name: apexload-generator
     app.kubernetes.io/component: generator
 spec:
   clusterIP: None
   selector:
-    app.kubernetes.io/name: stormrunner-generator
+    app.kubernetes.io/name: apexload-generator
   ports:
     - name: grpc
       port: 9090

@@ -24,14 +24,14 @@ interface Props {
 const copy = {
   devweb: {
     title: 'Import DevWeb Script',
-    subtitle: 'Upload a DevWeb .js file or ZIP archive and convert common WebRequest, WebSocket, and gRPC invoke calls into Stormrunner DSL.',
+    subtitle: 'Upload a DevWeb .js file or ZIP archive and convert common WebRequest, WebSocket, and gRPC invoke calls into APEX Load DSL.',
     accept: '.js,.zip,application/javascript,text/javascript,application/zip',
     drop: 'Drop a DevWeb .js or .zip file here',
     button: 'Convert DevWeb Script',
   },
   har: {
     title: 'Import HAR',
-    subtitle: 'Upload a Chrome DevTools HAR file and convert recorded HTTP entries into a reviewable Stormrunner HTTP script.',
+    subtitle: 'Upload a Chrome DevTools HAR file and convert recorded HTTP entries into a reviewable APEX Load HTTP script.',
     accept: '.har,application/json',
     drop: 'Drop a .har file here',
     button: 'Convert HAR',

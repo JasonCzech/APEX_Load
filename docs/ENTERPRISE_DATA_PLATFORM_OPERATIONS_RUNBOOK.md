@@ -1,6 +1,6 @@
 # Enterprise Data Platform Operations Runbook
 
-This runbook covers the production data platform split used by HA Stormrunner deployments:
+This runbook covers the production data platform split used by HA APEX Load deployments:
 
 - PostgreSQL is the authoritative metadata store.
 - Redis or Valkey is ephemeral live state, idempotency, rate-limit, and websocket fanout coordination.
@@ -38,12 +38,12 @@ PostgreSQL is the only source of truth for scheduler leases and schedule occurre
 
 ## Object Archive Recovery
 
-Run archives are immutable evidence. Configure bucket/container versioning and lifecycle rules outside Stormrunner:
+Run archives are immutable evidence. Configure bucket/container versioning and lifecycle rules outside APEX Load:
 
 - Keep `manifest.json`, transaction CSV/JSONL, resource samples, summaries, reports, browser evidence, and Parquet artifacts under the same run prefix.
-- Use retention apply events from Stormrunner as the audit trail for prune/delete decisions.
+- Use retention apply events from APEX Load as the audit trail for prune/delete decisions.
 - For accidental object deletion, restore the complete run prefix before serving archive downloads.
-- If only local staging data is lost, Stormrunner can materialize missing local files from object storage when archive metadata includes object URIs.
+- If only local staging data is lost, APEX Load can materialize missing local files from object storage when archive metadata includes object URIs.
 
 ## Redis Or Valkey Loss
 
@@ -67,7 +67,7 @@ For HA production, run Redis/Valkey as a managed service or use a replicated ope
 
 ## Metrics Retention
 
-Stormrunner exposes compact runtime metrics and writes typed summaries to SQL/archive evidence. Long-term high-cardinality operational analysis belongs in the Prometheus-compatible backend.
+APEX Load exposes compact runtime metrics and writes typed summaries to SQL/archive evidence. Long-term high-cardinality operational analysis belongs in the Prometheus-compatible backend.
 
 Recommended retention boundaries:
 

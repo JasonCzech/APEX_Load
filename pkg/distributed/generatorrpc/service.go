@@ -12,11 +12,11 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/jasonczech/stormrunner/api/proto"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/engine"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -120,7 +120,7 @@ func WithExecution() ServiceOption {
 
 func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Service {
 	if generatorID == "" {
-		generatorID = "stormrunner-generator"
+		generatorID = "apexload-generator"
 	}
 	if maxVUsers <= 0 {
 		maxVUsers = 10000

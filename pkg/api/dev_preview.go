@@ -4,12 +4,12 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const (
-	devViewHeader      = "X-Stormrunner-Dev-View"
-	devProjectIDHeader = "X-Stormrunner-Dev-Project-ID"
+	devViewHeader      = "X-APEXLoad-Dev-View"
+	devProjectIDHeader = "X-APEXLoad-Dev-Project-ID"
 
 	devViewModeAdmin = "admin"
 	devViewModeUser  = "user"
@@ -47,7 +47,7 @@ func devPreviewUserForRequest(r *http.Request, mode string) *AuthenticatedUser {
 	return &AuthenticatedUser{
 		Subject:     "dev-user",
 		DisplayName: "Dev User Preview",
-		Email:       "dev-user@stormrunner.local",
+		Email:       "dev-user@apexload.local",
 		GlobalRoles: map[string]struct{}{
 			RoleViewer: {},
 		},

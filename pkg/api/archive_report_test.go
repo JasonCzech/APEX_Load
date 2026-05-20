@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestBuildRunArchiveReportClustersErrorPatterns(t *testing.T) {
@@ -343,7 +343,7 @@ func TestBuildRunArchiveReportFlagsUnsupportedManifestSchema(t *testing.T) {
 	archiveDir := t.TempDir()
 	manifestPath := filepath.Join(archiveDir, "manifest.json")
 	manifest := RunArchiveManifest{
-		SchemaVersion:         "stormrunner.archive.v999",
+		SchemaVersion:         "apexload.archive.v999",
 		TestID:                "test-schema-old",
 		TestName:              "Unsupported Schema Run",
 		TransactionsFile:      "transactions.jsonl",
@@ -449,7 +449,7 @@ func TestBuildRunArchiveReportIncludesChangeAttribution(t *testing.T) {
 				LogLevel:   "debug",
 				BaseURL:    "https://checkout.example.test",
 			},
-			ControllerEnv: map[string]string{"STORMRUNNER_ENVIRONMENT": "perf-lab"},
+			ControllerEnv: map[string]string{"APEXLOAD_ENVIRONMENT": "perf-lab"},
 			GeneratorInventory: []GeneratorInventoryEntry{
 				{Target: "generator-a", Version: "0.2.0"},
 				{Target: "generator-b", Version: "0.2.0"},
@@ -736,7 +736,7 @@ func TestBuildRunArchiveReportIncludesTelemetryHealthEvidence(t *testing.T) {
 }
 
 func TestRunArchiveWriterPersistsThroughputGapSummary(t *testing.T) {
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	writer, err := newRunArchiveWriter(&ManagedTest{ID: "test-throughput-persist", Name: "Open Persist"}, RunArchiveProvenance{})
 	if err != nil {
 		t.Fatalf("newRunArchiveWriter returned error: %v", err)

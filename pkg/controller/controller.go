@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type Controller struct {

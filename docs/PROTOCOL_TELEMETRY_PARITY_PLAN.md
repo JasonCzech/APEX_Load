@@ -1,7 +1,7 @@
 # Protocol Telemetry Parity Plan
 
 ## Objective
-Bring every Stormrunner protocol to the same three-layer telemetry depth that [MOBILE_UX_PLATFORM_STRATEGY.md](MOBILE_UX_PLATFORM_STRATEGY.md) establishes for the browser protocol. Each protocol should produce a complete performance story — not just "did it succeed?" but "why was it slow, where did time go, and how does it compare to baseline?"
+Bring every APEX Load protocol to the same three-layer telemetry depth that [MOBILE_UX_PLATFORM_STRATEGY.md](MOBILE_UX_PLATFORM_STRATEGY.md) establishes for the browser protocol. Each protocol should produce a complete performance story — not just "did it succeed?" but "why was it slow, where did time go, and how does it compare to baseline?"
 
 ## The Parity Model
 

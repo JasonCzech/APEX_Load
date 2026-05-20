@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 var errApplicationProjectMismatch = errors.New("application does not belong to project")

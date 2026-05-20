@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type ImportRequest struct {
@@ -97,8 +97,8 @@ var sensitiveHeaders = map[string]bool{
 }
 
 const (
-	rawHTTPRequestDelimiter  = "\n\n### STORMRUNNER REQUEST ###\n\n"
-	rawHTTPResponseDelimiter = "\n\n### STORMRUNNER RESPONSE ###\n\n"
+	rawHTTPRequestDelimiter  = "\n\n### APEXLOAD REQUEST ###\n\n"
+	rawHTTPResponseDelimiter = "\n\n### APEXLOAD RESPONSE ###\n\n"
 )
 
 func Convert(req ImportRequest) (*ConvertResult, error) {

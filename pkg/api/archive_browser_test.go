@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {

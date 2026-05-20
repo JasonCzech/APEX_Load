@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestWebAPISampleScriptsValidate(t *testing.T) {

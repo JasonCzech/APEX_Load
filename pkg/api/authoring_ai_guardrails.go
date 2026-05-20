@@ -3,7 +3,7 @@ package api
 import (
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type AIGuardrailReport struct {

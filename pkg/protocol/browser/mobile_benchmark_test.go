@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
-const mobileBrowserBenchmarkEnv = "STORMRUNNER_BROWSER_BENCHMARKS"
+const mobileBrowserBenchmarkEnv = "APEXLOAD_BROWSER_BENCHMARKS"
 
 type mobileBrowserBenchmarkProfile struct {
 	name        string

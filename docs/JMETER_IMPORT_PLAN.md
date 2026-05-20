@@ -1,14 +1,14 @@
 # Add JMeter Script Import as a First-Class Migration Path
 
 ## Summary
-Introduce a JMeter import workflow that allows users to upload `.jmx` test plans and convert them into Stormrunner reusable assets.
+Introduce a JMeter import workflow that allows users to upload `.jmx` test plans and convert them into APEX Load reusable assets.
 
 The first release should focus on HTTP-oriented JMeter plans and produce:
-- Reusable Stormrunner scripts
+- Reusable APEX Load scripts
 - Optional scenario drafts derived from JMeter thread groups
 - A structured import report with warnings, unsupported constructs, and assumptions
 
-This should sit alongside the existing LoadRunner import path and position Stormrunner as a realistic migration target for teams with existing JMeter assets.
+This should sit alongside the existing LoadRunner import path and position APEX Load as a realistic migration target for teams with existing JMeter assets.
 
 ## Current Status
 - `POST /api/v1/scripts/import/jmeter` is implemented for preview conversion.
@@ -17,8 +17,8 @@ This should sit alongside the existing LoadRunner import path and position Storm
 - `GET /api/v1/scripts/import/jmeter/support-matrix` is implemented and used by the dashboard.
 - The Scripts page now exposes an `Import JMeter` entry with both `Validate Only` and `Convert JMeter Plan` actions.
 - Generated scripts now include JMeter import provenance metadata: original file name, import timestamp, warning count, and unsupported count.
-- Sampler-level regex, JSONPath, JMESPath, CSS/JQuery, XPath, and XPath2 post-processors are mapped to Stormrunner action extractors when they fit the DSL directly, including header-scoped regex extraction for HTTP responses, XPath fragment output, and XPath2 custom namespace bindings.
-- Sampler-level boundary extractors are mapped to Stormrunner action extractors for supported HTTP response scopes, including response body and response headers.
+- Sampler-level regex, JSONPath, JMESPath, CSS/JQuery, XPath, and XPath2 post-processors are mapped to APEX Load action extractors when they fit the DSL directly, including header-scoped regex extraction for HTTP responses, XPath fragment output, and XPath2 custom namespace bindings.
+- Sampler-level boundary extractors are mapped to APEX Load action extractors for supported HTTP response scopes, including response body and response headers.
 - The import review now surfaces captured variables from generated action extractors instead of leaving them buried in raw JSON preview.
 - The support matrix now exposes inline category details on the import screen instead of only showing summary-card previews.
 - The dashboard now has component-level Vitest coverage for the JMeter import screen, including inline coverage details and validation review rendering.
@@ -30,7 +30,7 @@ This should sit alongside the existing LoadRunner import path and position Storm
 
 ## Goals
 - Reduce onboarding friction for existing performance teams.
-- Convert a practical subset of JMeter plans into usable Stormrunner artifacts.
+- Convert a practical subset of JMeter plans into usable APEX Load artifacts.
 - Make unsupported constructs explicit through warnings rather than silent failure.
 - Preserve parameterization and thread-group intent where possible.
 - Keep the first version narrow and reliable rather than broad and misleading.
@@ -87,7 +87,7 @@ Add a new import path under Scripts:
 3. Chooses import mode:
    - Scripts Only
    - Scripts + Scenario Draft
-4. Stormrunner parses and converts the plan
+4. APEX Load parses and converts the plan
 5. UI shows an Import Review screen:
    - scripts/groups created
    - variables and data sources found
@@ -98,18 +98,18 @@ Add a new import path under Scripts:
 
 ## Conversion Model
 
-### JMeter to Stormrunner Script Mapping
-- JMeter HTTP samplers map to Stormrunner HTTP request actions
+### JMeter to APEX Load Script Mapping
+- JMeter HTTP samplers map to APEX Load HTTP request actions
 - Header Manager maps to request headers
 - Cookie Manager maps to cookie/session behavior
-- CSV Data Set Config maps to Stormrunner data sources
-- User Defined Variables maps to Stormrunner variables/templates
+- CSV Data Set Config maps to APEX Load data sources
+- User Defined Variables maps to APEX Load variables/templates
 - Assertions map to response validations where possible
 - Extractors map to DSL extraction blocks when supported
 
 ### Thread Groups
 Thread groups should become one of:
-- separate reusable Stormrunner scripts, or
+- separate reusable APEX Load scripts, or
 - grouped scenario draft entries with:
   - name
   - VUsers
@@ -121,7 +121,7 @@ Recommended first implementation:
 - Optionally create a scenario draft that uses those scripts as grouped workload components
 
 ### Variable Handling
-Map JMeter `${variable}` references into Stormrunner-compatible variable expressions.
+Map JMeter `${variable}` references into APEX Load-compatible variable expressions.
 
 Examples:
 - request URL parameters
@@ -196,7 +196,7 @@ Create internal structs for:
 
 ### 3. Converter Layer
 Map normalized JMeter model into:
-- Stormrunner DSL script model
+- APEX Load DSL script model
 - scenario draft model
 - import report model
 

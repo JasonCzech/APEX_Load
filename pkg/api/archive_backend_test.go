@@ -7,7 +7,7 @@ import (
 
 func TestCurrentArchiveBackendDefaultsToFilesystem(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", root)
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
 
 	backend := currentArchiveBackend()
 	if backend.Backend != archiveBackendFilesystem {
@@ -23,10 +23,10 @@ func TestCurrentArchiveBackendDefaultsToFilesystem(t *testing.T) {
 
 func TestCurrentArchiveBackendBuildsObjectURIAndStagingRoot(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", root)
-	t.Setenv("STORMRUNNER_ARCHIVE_BACKEND", "s3")
-	t.Setenv("STORMRUNNER_ARCHIVE_BUCKET", "stormrunner-archives")
-	t.Setenv("STORMRUNNER_ARCHIVE_PREFIX", "/prod/evidence/")
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", "s3")
+	t.Setenv("APEXLOAD_ARCHIVE_BUCKET", "apexload-archives")
+	t.Setenv("APEXLOAD_ARCHIVE_PREFIX", "/prod/evidence/")
 
 	backend := currentArchiveBackend()
 	if backend.Backend != archiveBackendS3 {
@@ -36,16 +36,16 @@ func TestCurrentArchiveBackendBuildsObjectURIAndStagingRoot(t *testing.T) {
 	if backend.LocalRoot != wantRoot {
 		t.Fatalf("local root = %q, want %q", backend.LocalRoot, wantRoot)
 	}
-	if got := backend.runURI("run-1"); got != "s3://stormrunner-archives/prod/evidence/run-1" {
+	if got := backend.runURI("run-1"); got != "s3://apexload-archives/prod/evidence/run-1" {
 		t.Fatalf("run uri = %q", got)
 	}
-	if got := backend.manifestURI("run-1"); got != "s3://stormrunner-archives/prod/evidence/run-1/manifest.json" {
+	if got := backend.manifestURI("run-1"); got != "s3://apexload-archives/prod/evidence/run-1/manifest.json" {
 		t.Fatalf("manifest uri = %q", got)
 	}
 }
 
 func TestCurrentArchiveBackendValidatesRequiredObjectTarget(t *testing.T) {
-	t.Setenv("STORMRUNNER_ARCHIVE_BACKEND", "gcs")
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", "gcs")
 
 	backend := currentArchiveBackend()
 	if err := backend.validate(); err == nil {

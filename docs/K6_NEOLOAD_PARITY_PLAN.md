@@ -2,16 +2,16 @@
 
 ## Objective
 
-Close Stormrunner's most important competitive gaps against Grafana k6 and Tricentis NeoLoad without copying either product screen-for-screen.
+Close APEX Load's most important competitive gaps against Grafana k6 and Tricentis NeoLoad without copying either product screen-for-screen.
 
 This plan complements:
 
 - `docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md` for LoadRunner migration parity
-- `docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md` for Stormrunner's shared-platform hardening
+- `docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md` for APEX Load's shared-platform hardening
 - `docs/PLATFORM_GAP_IMPLEMENTATION_PLAN.md` for general enterprise harness gaps
 - `docs/MOBILE_BROWSER_EMULATION_PLAN.md` and `docs/BROWSER_CLIENT_METRICS_PLAN.md` for browser/client UX telemetry
 
-The goal is not to become "k6 with a dashboard" or "NeoLoad with Kubernetes." The target is a credible enterprise alternative with Stormrunner's own strengths: Kubernetes-native execution, high-density Go VUsers, open telemetry, strong import paths, governed scheduling, and first-class evidence archives.
+The goal is not to become "k6 with a dashboard" or "NeoLoad with Kubernetes." The target is a credible enterprise alternative with APEX Load's own strengths: Kubernetes-native execution, high-density Go VUsers, open telemetry, strong import paths, governed scheduling, and first-class evidence archives.
 
 ## External Competitive Baseline
 
@@ -24,9 +24,9 @@ Primary references used for this plan:
 - Tricentis NeoLoad overview: https://docs.tricentis.com/neoload-2025.3/en-us/content/get_started/about_tricentis_neoload.htm
 - Tricentis NeoLoad system requirements for specialized protocols: https://docs.tricentis.com/neoload-latest/en-us/content/get_started/system_requirements.htm
 
-## Current Stormrunner Position
+## Current APEX Load Position
 
-Stormrunner is already credible in several areas:
+APEX Load is already credible in several areas:
 
 - Controller API, dashboard, CLI, REST APIs, WebSocket live metrics, and archive/report endpoints
 - Local and distributed generator execution with regional placement and capacity guidance
@@ -39,30 +39,30 @@ Stormrunner is already credible in several areas:
 
 The remaining gap is product maturity: competitive polish, ecosystem depth, packaged integrations, operator evidence, and specialized enterprise coverage.
 
-## Where Stormrunner Comes Up Short
+## Where APEX Load Comes Up Short
 
-| Gap | k6 Advantage | NeoLoad Advantage | Stormrunner Shortfall |
+| Gap | k6 Advantage | NeoLoad Advantage | APEX Load Shortfall |
 | --- | --- | --- | --- |
-| Managed execution | Grafana Cloud k6 owns scaling, distributed zones, metric storage, and frontend operations | NeoLoad has established controller/load-generator deployment patterns | Stormrunner is self-hosted first; operators own control-plane operations, HA, and evidence publication |
-| Script-as-code ecosystem | k6 JavaScript API, local/cloud portability, extensions, checks, thresholds, and broad community examples | Supports enterprise tester workflows more than developer scripting | Stormrunner's JSON DSL is controlled and importable, but less familiar and less extensible than k6 JS |
-| Graphical test builder maturity | k6 Test Builder covers scenarios, requests, checks, variables, groups, load zones, and thresholds | NeoLoad Designer/recording workflows are mature and enterprise-oriented | Stormrunner authoring is improving but still needs a calmer, guided, source-agnostic workflow |
-| Browser testing maturity | k6 browser API is Playwright-inspired and documented around Chromium/device usage | NeoLoad RealBrowser is commercially established | Stormrunner browser VUsers are positioned as diagnostic canaries; density and fidelity need more evidence |
-| Specialized enterprise protocols | k6 relies on extensions and code-level flows | NeoLoad covers specialized enterprise surfaces such as RealBrowser, Citrix, and SAP GUI | Stormrunner has strong HTTP/JMS/SOAP/API coverage but does not yet match NeoLoad's legacy enterprise breadth |
-| Observability and root-cause | k6 pairs naturally with Grafana observability | NeoLoad packages APM, infrastructure monitoring, SLA validation, and augmented analysis | Stormrunner has OTel, Prometheus, archives, trends, and diagnostics, but less packaged root-cause guidance |
-| Marketplace and integrations | k6 has extensions, outputs, Grafana ecosystem, and common CI patterns | NeoLoad has CI/CD, APM, Tosca, APIs, and enterprise SDLC integrations | Stormrunner needs more official connectors, examples, templates, and supported integration contracts |
-| Benchmark confidence | k6 and NeoLoad have market-proven operating envelopes | NeoLoad has established enterprise deployment history | Stormrunner has runbooks and advisory envelopes, but fewer published, repeatable benchmark artifacts |
-| Enterprise UX polish | k6 Cloud is focused and developer-friendly | NeoLoad is designed for performance engineering teams | Stormrunner still has rough edges in navigation, authoring, report interpretation, and operator workflows |
+| Managed execution | Grafana Cloud k6 owns scaling, distributed zones, metric storage, and frontend operations | NeoLoad has established controller/load-generator deployment patterns | APEX Load is self-hosted first; operators own control-plane operations, HA, and evidence publication |
+| Script-as-code ecosystem | k6 JavaScript API, local/cloud portability, extensions, checks, thresholds, and broad community examples | Supports enterprise tester workflows more than developer scripting | APEX Load's JSON DSL is controlled and importable, but less familiar and less extensible than k6 JS |
+| Graphical test builder maturity | k6 Test Builder covers scenarios, requests, checks, variables, groups, load zones, and thresholds | NeoLoad Designer/recording workflows are mature and enterprise-oriented | APEX Load authoring is improving but still needs a calmer, guided, source-agnostic workflow |
+| Browser testing maturity | k6 browser API is Playwright-inspired and documented around Chromium/device usage | NeoLoad RealBrowser is commercially established | APEX Load browser VUsers are positioned as diagnostic canaries; density and fidelity need more evidence |
+| Specialized enterprise protocols | k6 relies on extensions and code-level flows | NeoLoad covers specialized enterprise surfaces such as RealBrowser, Citrix, and SAP GUI | APEX Load has strong HTTP/JMS/SOAP/API coverage but does not yet match NeoLoad's legacy enterprise breadth |
+| Observability and root-cause | k6 pairs naturally with Grafana observability | NeoLoad packages APM, infrastructure monitoring, SLA validation, and augmented analysis | APEX Load has OTel, Prometheus, archives, trends, and diagnostics, but less packaged root-cause guidance |
+| Marketplace and integrations | k6 has extensions, outputs, Grafana ecosystem, and common CI patterns | NeoLoad has CI/CD, APM, Tosca, APIs, and enterprise SDLC integrations | APEX Load needs more official connectors, examples, templates, and supported integration contracts |
+| Benchmark confidence | k6 and NeoLoad have market-proven operating envelopes | NeoLoad has established enterprise deployment history | APEX Load has runbooks and advisory envelopes, but fewer published, repeatable benchmark artifacts |
+| Enterprise UX polish | k6 Cloud is focused and developer-friendly | NeoLoad is designed for performance engineering teams | APEX Load still has rough edges in navigation, authoring, report interpretation, and operator workflows |
 
 ## Positioning Decision
 
-Stormrunner should compete as:
+APEX Load should compete as:
 
 1. A Kubernetes-native enterprise performance testing platform.
 2. A self-hosted alternative for teams that want control-plane ownership, open telemetry, and auditable archives.
 3. A migration target for LoadRunner/JMeter/DevWeb/HAR assets.
 4. A hybrid load model: high-density protocol VUsers plus low-concurrency browser/client UX canaries.
 
-Stormrunner should not claim:
+APEX Load should not claim:
 
 - High-density browser load parity until benchmark evidence supports it.
 - Full NeoLoad Citrix/SAP GUI parity unless those protocols become explicit customer-funded work.
@@ -72,12 +72,12 @@ Stormrunner should not claim:
 
 ### Phase C1: Competitive Evidence And Support Matrix
 
-**Goal:** Make Stormrunner's current competitive position machine-readable and release-reviewable.
+**Goal:** Make APEX Load's current competitive position machine-readable and release-reviewable.
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
 | C1.1 | Add a `competitive_parity` section to `/api/v1/system/parity-status` covering k6 and NeoLoad dimensions | P0 | Complete for backend contract |
-| C1.2 | Publish a docs-owned support matrix for k6, NeoLoad, LoadRunner, JMeter, DevWeb, HAR, and native Stormrunner flows | P0 | Complete |
+| C1.2 | Publish a docs-owned support matrix for k6, NeoLoad, LoadRunner, JMeter, DevWeb, HAR, and native APEX Load flows | P0 | Complete |
 | C1.3 | Add dashboard operator view for competitive support status, evidence level, and known limitations | P1 | Complete for Monitoring card |
 | C1.4 | Link every parity claim to code, tests, docs, or explicit external evidence requirements | P1 | Complete for current competitive dimensions |
 
@@ -92,7 +92,7 @@ Implementation notes:
 - `GET /api/v1/system/parity-status` now includes `competitive_parity`, a machine-readable list of k6 and NeoLoad competitive dimensions with status, competitors, summary, evidence pointers, remaining work, product decision, and evidence level.
 - The first backend contract deliberately marks browser load and specialized enterprise protocols as bounded or gap areas rather than treating them as supported claims.
 - The Monitoring dashboard now renders a Competitive Parity card with gap, partial, external-evidence, known-limitation, competitor, and per-dimension evidence-level details.
-- `docs/COMPETITIVE_SUPPORT_MATRIX.md` is now the docs-owned source of truth for source/import flows, protocol/runtime support, load modeling, operations, monitoring, reporting, and evidence claim rules across k6, NeoLoad, LoadRunner, JMeter, DevWeb, HAR, and native Stormrunner flows.
+- `docs/COMPETITIVE_SUPPORT_MATRIX.md` is now the docs-owned source of truth for source/import flows, protocol/runtime support, load modeling, operations, monitoring, reporting, and evidence claim rules across k6, NeoLoad, LoadRunner, JMeter, DevWeb, HAR, and native APEX Load flows.
 - The API test suite now verifies that each `competitive_parity` dimension is documented in the matrix and carries evidence level, decision, and remaining-work fields.
 
 ### Phase C2: k6-Aligned Developer Experience
@@ -101,17 +101,17 @@ Implementation notes:
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
-| C2.1 | Add `stormctl script validate --format json` and `stormctl script explain` for local authoring feedback | P0 | Not started |
+| C2.1 | Add `apexctl script validate --format json` and `apexctl script explain` for local authoring feedback | P0 | Not started |
 | C2.2 | Add first-class checks/threshold authoring in the script and scenario editors, mapped to existing goal/SLA contracts | P0 | Partial via goal/SLA backend |
-| C2.3 | Add k6 result import so teams can centralize k6 JSON summaries and trend them in Stormrunner reports | P1 | Complete via C4 external result ingestion API and dashboard import evidence |
-| C2.4 | Add k6-to-Stormrunner conversion MVP for HTTP scripts: requests, groups, checks, thresholds, sleep, and basic env vars | P1 | Not started |
-| C2.5 | Add Stormrunner-to-k6 export for simple HTTP smoke tests to help developer teams adopt gradually | P2 | Not started |
+| C2.3 | Add k6 result import so teams can centralize k6 JSON summaries and trend them in APEX Load reports | P1 | Complete via C4 external result ingestion API and dashboard import evidence |
+| C2.4 | Add k6-to-APEX Load conversion MVP for HTTP scripts: requests, groups, checks, thresholds, sleep, and basic env vars | P1 | Not started |
+| C2.5 | Add APEX Load-to-k6 export for simple HTTP smoke tests to help developer teams adopt gradually | P2 | Not started |
 | C2.6 | Add official examples for API smoke, staged ramp, arrival-rate, threshold-gated CI, and browser canary patterns | P0 | Partial via templates |
 
 Acceptance criteria:
 
-- Developers can author and validate Stormrunner scripts locally without opening the dashboard.
-- k6 teams can import historical k6 output into Stormrunner trends.
+- Developers can author and validate APEX Load scripts locally without opening the dashboard.
+- k6 teams can import historical k6 output into APEX Load trends.
 - A constrained k6 HTTP subset can be converted with clear unsupported warnings.
 
 ### Phase C3: Managed Scale And Load-Zone Experience
@@ -131,7 +131,7 @@ Acceptance criteria:
 
 - A user can select zones before running, see capacity fit, and understand placement decisions.
 - Operators can prove what each generator class supports and how many VUsers are safe.
-- Stormrunner has a repeatable reference deployment that feels packaged, not assembled by hand.
+- APEX Load has a repeatable reference deployment that feels packaged, not assembled by hand.
 
 ### Phase C4: NeoLoad-Grade Analysis And Integrations
 
@@ -149,8 +149,8 @@ Acceptance criteria:
 Acceptance criteria:
 
 - Reports answer "what regressed, where, and why" without requiring manual archive spelunking.
-- APM/infrastructure data appears alongside Stormrunner measurements in live and archived views.
-- Release governance can use Stormrunner as the system of record for performance readiness.
+- APM/infrastructure data appears alongside APEX Load measurements in live and archived views.
+- Release governance can use APEX Load as the system of record for performance readiness.
 
 ### Phase C5: Authoring UX And Recording Parity
 
@@ -167,7 +167,7 @@ Acceptance criteria:
 
 Acceptance criteria:
 
-- A new user can create a realistic test without knowing Stormrunner's DSL first.
+- A new user can create a realistic test without knowing APEX Load's DSL first.
 - Advanced controls are discoverable but do not dominate the first screen.
 - Imported/generated/recorded scripts all use the same validation, replay, repair, and approval model.
 
@@ -185,18 +185,18 @@ Acceptance criteria:
 
 Acceptance criteria:
 
-- Stormrunner does not silently appear weaker because of ambiguous unsupported enterprise protocols.
+- APEX Load does not silently appear weaker because of ambiguous unsupported enterprise protocols.
 - Specialized protocol work is gated by real user demand and architecture fit.
 - Where native support is not planned, docs provide integration or coexistence guidance.
 
 ### Phase C7: Competitive Packaging, Samples, And Trust
 
-**Goal:** Make Stormrunner feel credible before a prospect reads the code.
+**Goal:** Make APEX Load feel credible before a prospect reads the code.
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
 | C7.1 | Publish canonical sample projects: e-commerce HTTP, browser canary, JMS order flow, SOAP service, gRPC, WebSocket, and mixed workload | P0 | Partial |
-| C7.2 | Add one-page "Stormrunner vs k6 vs NeoLoad" matrix with honest support/evidence levels | P0 | Not started |
+| C7.2 | Add one-page "APEX Load vs k6 vs NeoLoad" matrix with honest support/evidence levels | P0 | Not started |
 | C7.3 | Add release notes that include benchmark deltas, support-matrix changes, and known limitations | P1 | Not started |
 | C7.4 | Add operator demo scripts that seed projects, scripts, scenarios, schedules, and sample archives | P1 | Not started |
 | C7.5 | Add dashboard onboarding checklist with deployment readiness, first script, first scenario, first report, and first CI gate | P1 | Not started |
@@ -253,12 +253,12 @@ Rationale:
 - Full k6 JavaScript runtime compatibility.
 - Native SAP GUI or Citrix execution.
 - High-density browser VUser claims.
-- A hosted Stormrunner SaaS control plane.
+- A hosted APEX Load SaaS control plane.
 - Replacing Grafana, Datadog, Dynatrace, or other observability systems.
 
 ## Definition Of Competitive Parity
 
-Stormrunner reaches practical competitive parity when:
+APEX Load reaches practical competitive parity when:
 
 1. Developer teams can adopt it as easily as they can adopt k6 for API and CI smoke workloads.
 2. Performance engineers can author, record, migrate, repair, replay, schedule, and report tests without falling into raw JSON for common workflows.

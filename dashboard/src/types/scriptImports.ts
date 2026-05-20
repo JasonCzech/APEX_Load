@@ -52,7 +52,7 @@ export interface ScriptImportResult<
 
 export interface DetectedLoadRunnerProtocol {
   canonical_loadrunner_protocol: string
-  stormrunner_protocol?: string
+  apexload_protocol?: string
   bundle?: string
   import_mode: 'executable' | 'review_only' | 'external_runner_required' | 'unsupported' | string
   confidence: 'high' | 'medium' | 'low' | string
@@ -112,7 +112,7 @@ export interface LoadRunnerProtocolSupportEntry {
   display_name?: string
   status?: string
   execution_posture?: string
-  stormrunner_runtime?: string
+  apexload_runtime?: string
   import_mode?: string
   runner_class?: string
   runner_requirement?: string

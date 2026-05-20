@@ -3,7 +3,7 @@ package engine
 import (
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func buildProtoConfig(script *dsl.Script) map[string]any {

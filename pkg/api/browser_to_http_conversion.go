@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/convert/har"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
-const browserToHTTPSchemaVersion = "stormrunner.browser_to_http_preview.v1"
+const browserToHTTPSchemaVersion = "apexload.browser_to_http_preview.v1"
 
 type BrowserToHTTPPreviewRequest struct {
 	Name                string                  `json:"name,omitempty"`
@@ -120,7 +120,7 @@ func (s *Server) handlePreviewBrowserToHTTP(w http.ResponseWriter, r *http.Reque
 	}
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(firstNonEmpty(req.ProjectID, sourceScriptProjectID(req.SourceBrowserScript)))
-		result.Script.GeneratedBy = "stormrunner-browser-to-http-converter"
+		result.Script.GeneratedBy = "apexload-browser-to-http-converter"
 		result.Script.GeneratedFrom = "browser_replay"
 		attachBrowserToHTTPMetadata(result.Script, req, len(entries))
 	}
@@ -235,7 +235,7 @@ func browserNetworkEntriesToHAR(entries []protocol.NetworkEntry) ([]byte, error)
 		"log": map[string]any{
 			"version": "1.2",
 			"creator": map[string]any{
-				"name":    "stormrunner-browser-to-http",
+				"name":    "apexload-browser-to-http",
 				"version": "1.0.0",
 			},
 			"entries": harEntries,

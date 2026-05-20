@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestApplicationReleaseAndScenarioHandlers(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestApplicationReleaseAndScenarioHandlers(t *testing.T) {
 }
 
 func TestScenarioCreateRejectsIncompatibleBrowserRuntimeOverride(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestScenarioCreateRejectsIncompatibleBrowserRuntimeOverride(t *testing.T) {
 }
 
 func TestArchiveReleaseRequiresNoAssociatedResults(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}

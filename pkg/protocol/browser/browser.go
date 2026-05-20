@@ -20,7 +20,7 @@ import (
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/cdproto/systeminfo"
 	"github.com/chromedp/chromedp"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/shirou/gopsutil/v3/process"
 	playwright "github.com/playwright-community/playwright-go"
 )
@@ -1205,7 +1205,7 @@ func (b *Browser) capturePageMetrics(ctx context.Context, metrics *protocol.Clie
 		const eventEntries = performance.getEntriesByType('event');
 		const inp = eventEntries.reduce((max, entry) => Math.max(max, entry.duration || entry.processingEnd || 0), 0);
 		const longTasks = performance.getEntriesByType('longtask');
-		const observerMetrics = window.__stormrunnerMetrics || {};
+		const observerMetrics = window.__apexloadMetrics || {};
 		const blocking = resources.filter((entry) => entry.renderBlockingStatus === 'blocking');
 		return {
 			fcp_ms: fcp ? fcp.startTime : 0,
@@ -1239,10 +1239,10 @@ func (b *Browser) capturePageMetrics(ctx context.Context, metrics *protocol.Clie
 }
 
 const browserMetricsBootstrapScript = `(() => {
-	if (window.__stormrunnerMetrics) {
+	if (window.__apexloadMetrics) {
 		return;
 	}
-	window.__stormrunnerMetrics = {
+	window.__apexloadMetrics = {
 		lcp: 0,
 		cls: 0,
 		inp: 0,
@@ -1251,7 +1251,7 @@ const browserMetricsBootstrapScript = `(() => {
 	try {
 		new PerformanceObserver((list) => {
 			for (const entry of list.getEntries()) {
-				window.__stormrunnerMetrics.lcp = entry.startTime || window.__stormrunnerMetrics.lcp;
+				window.__apexloadMetrics.lcp = entry.startTime || window.__apexloadMetrics.lcp;
 			}
 		}).observe({ type: 'largest-contentful-paint', buffered: true });
 	} catch (e) {}
@@ -1259,22 +1259,22 @@ const browserMetricsBootstrapScript = `(() => {
 		new PerformanceObserver((list) => {
 			for (const entry of list.getEntries()) {
 				if (!entry.hadRecentInput) {
-					window.__stormrunnerMetrics.cls += entry.value || 0;
+					window.__apexloadMetrics.cls += entry.value || 0;
 				}
 			}
 		}).observe({ type: 'layout-shift', buffered: true });
 	} catch (e) {}
 	try {
 		new PerformanceObserver((list) => {
-			window.__stormrunnerMetrics.longTaskCount += list.getEntries().length;
+			window.__apexloadMetrics.longTaskCount += list.getEntries().length;
 		}).observe({ type: 'longtask', buffered: true });
 	} catch (e) {}
 	try {
 		new PerformanceObserver((list) => {
 			for (const entry of list.getEntries()) {
 				const duration = entry.duration || entry.processingEnd || 0;
-				if (duration > window.__stormrunnerMetrics.inp) {
-					window.__stormrunnerMetrics.inp = duration;
+				if (duration > window.__apexloadMetrics.inp) {
+					window.__apexloadMetrics.inp = duration;
 				}
 			}
 		}).observe({ type: 'event', buffered: true, durationThreshold: 16 });

@@ -98,7 +98,7 @@ func (envSecretResolver) Resolve(name string) (string, bool) {
 		return value, true
 	}
 	normalized := strings.NewReplacer(".", "_", "-", "_").Replace(strings.ToUpper(name))
-	value, ok := os.LookupEnv("STORMRUNNER_SECRET_" + normalized)
+	value, ok := os.LookupEnv("APEXLOAD_SECRET_" + normalized)
 	return value, ok
 }
 
@@ -114,18 +114,18 @@ type azureKeyVaultSecretResponse struct {
 }
 
 func newAzureKeyVaultSecretResolverFromEnv() SecretResolver {
-	baseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("STORMRUNNER_AZURE_KEY_VAULT_URL")), "/")
+	baseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("APEXLOAD_AZURE_KEY_VAULT_URL")), "/")
 	if baseURL == "" {
 		return nil
 	}
-	token := strings.TrimSpace(os.Getenv("STORMRUNNER_AZURE_KEY_VAULT_TOKEN"))
+	token := strings.TrimSpace(os.Getenv("APEXLOAD_AZURE_KEY_VAULT_TOKEN"))
 	if token == "" {
 		token = strings.TrimSpace(os.Getenv("AZURE_KEY_VAULT_TOKEN"))
 	}
 	if token == "" {
 		return nil
 	}
-	apiVersion := strings.TrimSpace(os.Getenv("STORMRUNNER_AZURE_KEY_VAULT_API_VERSION"))
+	apiVersion := strings.TrimSpace(os.Getenv("APEXLOAD_AZURE_KEY_VAULT_API_VERSION"))
 	if apiVersion == "" {
 		apiVersion = "7.4"
 	}

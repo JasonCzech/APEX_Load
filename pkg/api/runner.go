@@ -19,10 +19,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/engine"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type scriptPersistence interface {
@@ -3832,8 +3832,8 @@ func buildLiveDependencyMap(dependencies map[string]*TxMetrics) *LiveDependencyM
 	}
 	sort.Strings(targets)
 	nodes := []LiveDependencyNode{{
-		ID:     "stormrunner",
-		Label:  "Stormrunner VUsers",
+		ID:     "apexload",
+		Label:  "APEX Load VUsers",
 		Kind:   "source",
 		Status: "healthy",
 	}}
@@ -3855,7 +3855,7 @@ func buildLiveDependencyMap(dependencies map[string]*TxMetrics) *LiveDependencyM
 			P95Ms:          tx.P95Ms,
 		})
 		edges = append(edges, LiveDependencyEdge{
-			Source:         "stormrunner",
+			Source:         "apexload",
 			Target:         nodeID,
 			DependencyType: firstNonEmpty(tx.DependencyType, "unknown"),
 			Transactions:   tx.Count,

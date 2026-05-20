@@ -156,9 +156,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const [archiveReports, setArchiveReports] = useState<Record<string, RunArchiveReport | null>>({})
   const [customizingCards, setCustomizingCards] = useState(false)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
-  const [activeCardOrder, setActiveCardOrder] = useState<string[]>(() => loadJson<string[]>('stormrunner.dashboard.activeCardOrder', []))
+  const [activeCardOrder, setActiveCardOrder] = useState<string[]>(() => loadJson<string[]>('apexload.dashboard.activeCardOrder', []))
   const [activeCardSettings, setActiveCardSettings] = useState<Record<string, GraphCardSettings>>(() =>
-    loadJson<Record<string, GraphCardSettings>>('stormrunner.dashboard.activeCardSettings', {}),
+    loadJson<Record<string, GraphCardSettings>>('apexload.dashboard.activeCardSettings', {}),
   )
 
   useEffect(() => {
@@ -239,12 +239,12 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    window.localStorage.setItem('stormrunner.dashboard.activeCardOrder', JSON.stringify(activeCardOrder))
+    window.localStorage.setItem('apexload.dashboard.activeCardOrder', JSON.stringify(activeCardOrder))
   }, [activeCardOrder])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    window.localStorage.setItem('stormrunner.dashboard.activeCardSettings', JSON.stringify(activeCardSettings))
+    window.localStorage.setItem('apexload.dashboard.activeCardSettings', JSON.stringify(activeCardSettings))
   }, [activeCardSettings])
 
   const orderedActiveTests = useMemo(() => {

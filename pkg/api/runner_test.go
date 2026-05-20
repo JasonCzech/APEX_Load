@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/engine"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type metricsStoreSpy struct {
@@ -1295,7 +1295,7 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 		t.Fatalf("dependency node metrics = %#v", dependencyNode)
 	}
 	dependencyEdge := live.DependencyMap.Edges[0]
-	if dependencyEdge.Source != "stormrunner" || dependencyEdge.Target != dependencyNode.ID || dependencyEdge.P95Ms != 330 {
+	if dependencyEdge.Source != "apexload" || dependencyEdge.Target != dependencyNode.ID || dependencyEdge.P95Ms != 330 {
 		t.Fatalf("dependency edge = %#v, want source-to-dependency edge", dependencyEdge)
 	}
 
@@ -1860,7 +1860,7 @@ func TestPublishLiveMetricsDispatchesTelemetryBreachNotifications(t *testing.T) 
 	select {
 	case payload := <-received:
 		text, _ := payload["text"].(string)
-		if !strings.Contains(text, "Stormrunner Telemetry Breached") || !strings.Contains(text, "Telemetry Breach") {
+		if !strings.Contains(text, "APEX Load Telemetry Breached") || !strings.Contains(text, "Telemetry Breach") {
 			t.Fatalf("payload text = %#v", payload["text"])
 		}
 	case <-time.After(2 * time.Second):
@@ -3847,7 +3847,7 @@ func TestGetTestRefreshesCapacityAdvisoryUsingLiveAvailability(t *testing.T) {
 		t.Fatalf("UpdateSystemSettings returned error: %v", err)
 	}
 
-	t.Setenv("STORMRUNNER_LIVE_AVAILABLE_GENERATORS", "5")
+	t.Setenv("APEXLOAD_LIVE_AVAILABLE_GENERATORS", "5")
 	test, err := runner.CreateTest(CreateTestRequest{
 		Name:     "Refresh Advisory Scenario",
 		Duration: "30s",
@@ -3861,7 +3861,7 @@ func TestGetTestRefreshesCapacityAdvisoryUsingLiveAvailability(t *testing.T) {
 		t.Fatalf("initial available generators = %#v, want 5", test.CapacityAdvisory)
 	}
 
-	t.Setenv("STORMRUNNER_LIVE_AVAILABLE_GENERATORS", "1")
+	t.Setenv("APEXLOAD_LIVE_AVAILABLE_GENERATORS", "1")
 	refreshed, ok := runner.GetTest(test.ID)
 	if !ok {
 		t.Fatalf("expected test %s", test.ID)
@@ -3879,11 +3879,11 @@ func TestGetTestRefreshesCapacityAdvisoryUsingLiveAvailability(t *testing.T) {
 
 func TestRunTestCreatesArchiveBundle(t *testing.T) {
 	archiveDir := t.TempDir()
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
-	t.Setenv("STORMRUNNER_SAMPLE_FLAG", "enabled")
-	t.Setenv("STORMRUNNER_SECRET_TOKEN", "hidden")
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)
+	t.Setenv("APEXLOAD_SAMPLE_FLAG", "enabled")
+	t.Setenv("APEXLOAD_SECRET_TOKEN", "hidden")
 
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -3956,10 +3956,10 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 	if manifest.Provenance.ExecutionSettings.General.MetricsIntervalSeconds != 1 {
 		t.Fatalf("manifest execution settings = %#v, want metrics interval 1", manifest.Provenance.ExecutionSettings)
 	}
-	if manifest.Provenance.ControllerEnv["STORMRUNNER_SAMPLE_FLAG"] != "enabled" {
-		t.Fatalf("manifest controller env = %#v, want STORMRUNNER_SAMPLE_FLAG", manifest.Provenance.ControllerEnv)
+	if manifest.Provenance.ControllerEnv["APEXLOAD_SAMPLE_FLAG"] != "enabled" {
+		t.Fatalf("manifest controller env = %#v, want APEXLOAD_SAMPLE_FLAG", manifest.Provenance.ControllerEnv)
 	}
-	if _, found := manifest.Provenance.ControllerEnv["STORMRUNNER_SECRET_TOKEN"]; found {
+	if _, found := manifest.Provenance.ControllerEnv["APEXLOAD_SECRET_TOKEN"]; found {
 		t.Fatalf("expected secret-like env vars to be excluded, got %#v", manifest.Provenance.ControllerEnv)
 	}
 	if manifest.Provenance.Groups[0].ScriptID != "script-archive" {
@@ -3974,8 +3974,8 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 }
 
 func TestBuildRunArchiveProvenanceCapturesExecutionSnapshots(t *testing.T) {
-	t.Setenv("STORMRUNNER_SAMPLE_FLAG", "enabled")
-	t.Setenv("STORMRUNNER_API_TOKEN", "hidden")
+	t.Setenv("APEXLOAD_SAMPLE_FLAG", "enabled")
+	t.Setenv("APEXLOAD_API_TOKEN", "hidden")
 
 	runner := NewTestRunner(2, NewHub(), nil)
 	settings := runner.GetSystemSettings()
@@ -4019,19 +4019,19 @@ func TestBuildRunArchiveProvenanceCapturesExecutionSnapshots(t *testing.T) {
 	if len(provenance.Groups) != 1 || provenance.Groups[0].RunLogicGoals == nil || provenance.Groups[0].RunLogicGoals.GlobalIterations != 4 || provenance.Groups[0].RunLogicGoals.MaxTransactions != 40 {
 		t.Fatalf("provenance groups = %#v, want run logic goal snapshot", provenance.Groups)
 	}
-	if provenance.ControllerEnv["STORMRUNNER_SAMPLE_FLAG"] != "enabled" {
-		t.Fatalf("controller env = %#v, want STORMRUNNER_SAMPLE_FLAG", provenance.ControllerEnv)
+	if provenance.ControllerEnv["APEXLOAD_SAMPLE_FLAG"] != "enabled" {
+		t.Fatalf("controller env = %#v, want APEXLOAD_SAMPLE_FLAG", provenance.ControllerEnv)
 	}
-	if _, found := provenance.ControllerEnv["STORMRUNNER_API_TOKEN"]; found {
+	if _, found := provenance.ControllerEnv["APEXLOAD_API_TOKEN"]; found {
 		t.Fatalf("expected secret-like env vars to be filtered, got %#v", provenance.ControllerEnv)
 	}
 }
 
 func TestRunTestIncludesConfiguredStartDelay(t *testing.T) {
 	archiveDir := t.TempDir()
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)
 
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -4858,9 +4858,9 @@ func TestScenarioScheduleMaintenanceWindowBlocksMaterialization(t *testing.T) {
 
 func TestDeleteTestRemovesArchiveBundle(t *testing.T) {
 	archiveDir := t.TempDir()
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)
 
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -4919,9 +4919,9 @@ func TestDeleteTestRemovesArchiveBundle(t *testing.T) {
 
 func TestDeleteTestRejectsPausedRuns(t *testing.T) {
 	archiveDir := t.TempDir()
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)
 
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}

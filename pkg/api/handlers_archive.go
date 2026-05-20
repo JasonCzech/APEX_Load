@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func (s *Server) handleGetRunArchiveManifest(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +137,7 @@ func (s *Server) handleGetRunArchiveTransactions(w http.ResponseWriter, r *http.
 	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "csv") {
 		testID := r.PathValue("id")
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", "attachment; filename=\"stormrunner-archive-transactions-"+testID+".csv\"")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-transactions-"+testID+".csv\"")
 		if err := writeArchiveTransactionsCSV(items, w); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to write archive transactions csv: "+err.Error())
 		}
@@ -175,7 +175,7 @@ func (s *Server) handleGetRunArchiveResources(w http.ResponseWriter, r *http.Req
 	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "csv") {
 		testID := r.PathValue("id")
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", "attachment; filename=\"stormrunner-archive-resources-"+testID+".csv\"")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-resources-"+testID+".csv\"")
 		if err := writeArchiveResourcesCSV(items, w); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to write archive resources csv: "+err.Error())
 		}
@@ -207,7 +207,7 @@ func (s *Server) handleGetRunArchiveSummaries(w http.ResponseWriter, r *http.Req
 	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "csv") {
 		testID := r.PathValue("id")
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", "attachment; filename=\"stormrunner-archive-summaries-"+testID+".csv\"")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-summaries-"+testID+".csv\"")
 		if err := writeArchiveSummariesCSV(items, w); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to write archive summaries csv: "+err.Error())
 		}
@@ -235,7 +235,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "csv") {
 		testID := r.PathValue("id")
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", "attachment; filename=\"stormrunner-archive-report-"+testID+".csv\"")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+testID+".csv\"")
 		if err := writeRunArchiveReportCSVWithProfile(report, w, r.URL.Query().Get("profile")); err != nil {
 			if strings.Contains(err.Error(), "unknown report profile") {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -296,7 +296,7 @@ func (s *Server) handleGetRunArchiveComparison(w http.ResponseWriter, r *http.Re
 		return
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", "attachment; filename=\"stormrunner-archive-comparison-"+currentID+"-"+baselineID+".csv\"")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-comparison-"+currentID+"-"+baselineID+".csv\"")
 	if err := writeArchiveComparisonCSV(w, breakdown,
 		archiveComparisonRun{ID: baselineID, Name: baselineName, Report: baselineReport},
 		archiveComparisonRun{ID: currentID, Name: currentName, Report: currentReport},

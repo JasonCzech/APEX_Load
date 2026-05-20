@@ -8,7 +8,7 @@ import (
 )
 
 func TestHandleHealthCheckReturnsCapacityAvailabilitySnapshot(t *testing.T) {
-	t.Setenv("STORMRUNNER_LIVE_AVAILABLE_GENERATORS", "3")
+	t.Setenv("APEXLOAD_LIVE_AVAILABLE_GENERATORS", "3")
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 
 	settings := server.runner.GetSystemSettings()

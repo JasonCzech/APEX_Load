@@ -1,7 +1,7 @@
 # Enterprise Platform Parity Execution Plan
 
 ## Objective
-Bring Stormrunner from a strong LoadRunner migration target to a mature enterprise performance testing platform across seven platform areas:
+Bring APEX Load from a strong LoadRunner migration target to a mature enterprise performance testing platform across seven platform areas:
 
 - Platform architecture
 - Scale-out model
@@ -15,7 +15,7 @@ This plan extends the completed `docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md`. That
 
 ## Positioning
 
-Stormrunner should not mimic LoadRunner Enterprise screen-for-screen. The target is practical enterprise parity:
+APEX Load should not mimic LoadRunner Enterprise screen-for-screen. The target is practical enterprise parity:
 
 - Kubernetes-native controller and generator topology instead of Windows controller/host assumptions.
 - Go goroutine VUsers for high-density protocol load, plus browser canaries for rendered UX diagnostics.
@@ -24,7 +24,7 @@ Stormrunner should not mimic LoadRunner Enterprise screen-for-screen. The target
 
 ## Current Baseline
 
-Stormrunner already has substantial platform foundations:
+APEX Load already has substantial platform foundations:
 
 - Controller API, dashboard, scenario runs, recurring schedules, and persisted metadata.
 - Distributed generator RPC, regional placement, generator inventory, and capacity advisory surfaces.
@@ -61,7 +61,7 @@ The remaining parity work is not a single missing subsystem. It is about tighten
 ## Workstream P1: Platform Architecture
 
 ### Desired Outcome
-Stormrunner has a clear enterprise architecture: stateless API/controller replicas where possible, explicit persistence ownership, resilient generator registration, tenant boundaries, and operator-friendly deployment contracts.
+APEX Load has a clear enterprise architecture: stateless API/controller replicas where possible, explicit persistence ownership, resilient generator registration, tenant boundaries, and operator-friendly deployment contracts.
 
 ### Epic P1.1: Control Plane Topology
 
@@ -98,7 +98,7 @@ Acceptance criteria:
 ## Workstream P2: Scale-Out Model
 
 ### Desired Outcome
-Stormrunner can scale out predictably across generator pools and regions while making capacity, placement, and saturation visible before and during tests.
+APEX Load can scale out predictably across generator pools and regions while making capacity, placement, and saturation visible before and during tests.
 
 ### Epic P2.1: Generator Fleet Management
 
@@ -169,7 +169,7 @@ Acceptance criteria:
 ## Workstream P4: Load Modeling
 
 ### Desired Outcome
-Stormrunner supports the workload models enterprise performance engineers expect: closed VUser, open arrival-rate, staged ramps, goal-oriented runs, rendezvous spikes, iteration limits, mixed protocol groups, and capacity-aware validation.
+APEX Load supports the workload models enterprise performance engineers expect: closed VUser, open arrival-rate, staged ramps, goal-oriented runs, rendezvous spikes, iteration limits, mixed protocol groups, and capacity-aware validation.
 
 ### Epic P4.1: Workload Shape Library
 
@@ -225,7 +225,7 @@ Acceptance criteria:
 | P5.8 | Add monitor presets for run operator, performance engineer, platform admin, and release approver views | M | P5.5 | Complete - graph customization now includes role presets for run operator, performance engineer, platform admin, and release approver views with persisted chart order/visibility. |
 
 Acceptance criteria:
-- Active-run dashboards answer "is the test healthy?", "is the system under test healthy?", and "is Stormrunner healthy?" separately.
+- Active-run dashboards answer "is the test healthy?", "is the system under test healthy?", and "is APEX Load healthy?" separately.
 - Capacity and telemetry problems are distinguishable from application failures.
 
 ## Workstream P6: Historical Reporting

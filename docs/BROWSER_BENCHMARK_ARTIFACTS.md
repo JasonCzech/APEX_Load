@@ -9,7 +9,7 @@ The machine-readable version is exposed at:
 
 ## Claim Policy
 
-Browser VUsers are diagnostic canaries paired with high-density protocol load. They provide screenshots, DOM summaries, console/network evidence, and Core Web Vitals. They are not Stormrunner's HTTP-density load generator.
+Browser VUsers are diagnostic canaries paired with high-density protocol load. They provide screenshots, DOM summaries, console/network evidence, and Core Web Vitals. They are not APEX Load's HTTP-density load generator.
 
 The default browser envelope remains:
 
@@ -76,7 +76,7 @@ go test ./pkg/protocol/browser
 Release or dependency-upgrade validation runs the opt-in benchmark suite:
 
 ```bash
-STORMRUNNER_BROWSER_BENCHMARKS=1 go test ./pkg/protocol/browser \
+APEXLOAD_BROWSER_BENCHMARKS=1 go test ./pkg/protocol/browser \
   -run '^$' \
   -bench 'BenchmarkBrowser(InitWithDeviceProfile|TouchOrClickActionLatency|RSSPerChromiumDeviceProfile)' \
   -benchmem \
@@ -90,7 +90,7 @@ The benchmark code lives in `pkg/protocol/browser/mobile_benchmark_test.go`.
 
 For each release candidate or browser dependency upgrade:
 
-1. Record CPU, memory, OS, container limits, browser versions, Playwright WebKit version, and Stormrunner commit SHA.
+1. Record CPU, memory, OS, container limits, browser versions, Playwright WebKit version, and APEX Load commit SHA.
 2. Run the full benchmark command on a quiet host that matches the release generator image.
 3. Attach raw benchmark output to the release evidence record.
 4. Keep the default canary envelope unless all three profile classes meet the acceptance targets.

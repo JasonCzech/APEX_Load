@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestReleaseTrendExportReturnsArchivedRunCSV(t *testing.T) {

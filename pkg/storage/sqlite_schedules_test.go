@@ -7,7 +7,7 @@ import (
 )
 
 func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 }
 
 func TestSQLiteStoreAcquiresSchedulerLease(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}

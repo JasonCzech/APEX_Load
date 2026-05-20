@@ -55,7 +55,7 @@ func TestTrustedHeaderAuthRequiresViewerForProtocolBundleSupportMatrix(t *testin
 
 	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/protocol-bundles/support-matrix", nil)
 	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerReq.Header.Set("X-Stormrunner-Roles", RoleViewer)
+	viewerReq.Header.Set("X-APEXLoad-Roles", RoleViewer)
 	viewerResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerResp, viewerReq)
 	if viewerResp.Code != http.StatusOK {

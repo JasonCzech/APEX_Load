@@ -2,7 +2,7 @@
 
 ## Objective
 
-Bring Stormrunner to practical parity with the modern OpenText LoadRunner Enterprise / OpenText Enterprise Performance Engineering surface in five focused areas:
+Bring APEX Load to practical parity with the modern OpenText LoadRunner Enterprise / OpenText Enterprise Performance Engineering surface in five focused areas:
 
 - Web/API execution
 - Script authoring UX
@@ -11,7 +11,7 @@ Bring Stormrunner to practical parity with the modern OpenText LoadRunner Enterp
 - AI-assisted workflows
 - VuGen Web 2.0 / TruClient 2.0 Web scripting profile support
 
-This plan extends the completed `docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md`. That earlier plan closed the planned migration-facing scope for browser testing, script authoring, runtime settings, and Auth/RBAC. This follow-on plan is narrower and more product-facing: it targets the remaining gaps that matter when an evaluator compares Stormrunner against the current LoadRunner Enterprise family for modern web, API, browser, and AI-assisted testing.
+This plan extends the completed `docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md`. That earlier plan closed the planned migration-facing scope for browser testing, script authoring, runtime settings, and Auth/RBAC. This follow-on plan is narrower and more product-facing: it targets the remaining gaps that matter when an evaluator compares APEX Load against the current LoadRunner Enterprise family for modern web, API, browser, and AI-assisted testing.
 
 ## External Baseline
 
@@ -31,9 +31,9 @@ Primary public references:
 - LoadRunner 26.1 supported protocols: https://admhelp.microfocus.com/documents/lre/Supported_Protocols/26.1/LR_Protocols.htm
 - VuGen 26.1 what's new: https://admhelp.microfocus.com/vugen/en/latest/help/WebHelp/Content/WelcomeContent/c_WhatsNew.htm
 
-## Current Stormrunner Baseline
+## Current APEX Load Baseline
 
-Stormrunner already has strong footing:
+APEX Load already has strong footing:
 
 - HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, browser, and JMS execution paths.
 - Code-owned Web/API support matrix with benchmark envelopes, protocol diagnostics, and sample-project references.
@@ -62,12 +62,12 @@ Major remaining gaps:
 | --- | --- | --- |
 | P0 | Demo-critical parity | Required for a buyer/evaluator to create, run, validate, and explain a realistic web/API/browser test without falling back to repo knowledge. |
 | P1 | Enterprise confidence | Required for migration trust, operator readiness, and repeatable release evidence. |
-| P2 | Competitive differentiation | Makes Stormrunner feel modern and credible beyond basic parity, especially against AI-assisted and designer-led workflows. |
+| P2 | Competitive differentiation | Makes APEX Load feel modern and credible beyond basic parity, especially against AI-assisted and designer-led workflows. |
 | P3 | Demand-gated scope | Valuable only when customer-backed demand justifies the engineering and support cost. |
 
 ## Feature Parity Matrix
 
-| Category | Stormrunner State | LoadRunner Enterprise Baseline | Priority | Parity Gap |
+| Category | APEX Load State | LoadRunner Enterprise Baseline | Priority | Parity Gap |
 | --- | --- | --- | --- | --- |
 | Web/API execution | Strong modern execution for HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS partial, browser canaries, Web/API support matrix, OpenAPI/WSDL import foundations, and sample pack | Very broad web/API plus legacy protocol family, VuGen, DevWeb, Web Services, Java, database, SAP, Citrix, RDP, Oracle and more | P0/P1 | Add archived benchmark/report evidence and clarify non-goals for legacy protocols. |
 | Script authoring UX | Guided workflow lanes, templates, reusable components, import review, validation/replay/repair/approval | VuGen, DevWeb, TruClient/TruClient 2.0, web client script creation, AI-assisted scripting | P0 | Improve component insertion, visual flow assembly, OpenAPI/WSDL guided create flows, and one-click repair loops. |
@@ -90,7 +90,7 @@ Major remaining gaps:
 
 ### Goal
 
-Make Stormrunner feel first-class for modern Web/API execution, not merely capable at the protocol layer.
+Make APEX Load feel first-class for modern Web/API execution, not merely capable at the protocol layer.
 
 ### Work Items
 
@@ -116,7 +116,7 @@ Make Stormrunner feel first-class for modern Web/API execution, not merely capab
 
 ### Goal
 
-Close the usability gap with VuGen, DevWeb, TruClient, and designer-style workflows for Stormrunner-supported protocol families.
+Close the usability gap with VuGen, DevWeb, TruClient, and designer-style workflows for APEX Load-supported protocol families.
 
 ### Work Items
 
@@ -142,7 +142,7 @@ Close the usability gap with VuGen, DevWeb, TruClient, and designer-style workfl
 
 ### Goal
 
-Move from "Web HTTP/HTML RTS parity is complete for the planned scope" to a broader runtime-setting parity program across Stormrunner's supported modern protocols.
+Move from "Web HTTP/HTML RTS parity is complete for the planned scope" to a broader runtime-setting parity program across APEX Load's supported modern protocols.
 
 ### Work Items
 
@@ -168,7 +168,7 @@ Move from "Web HTTP/HTML RTS parity is complete for the planned scope" to a broa
 
 ### Goal
 
-Strengthen Stormrunner's browser story as a trustworthy diagnostic canary workflow while staying honest about high-density browser load.
+Strengthen APEX Load's browser story as a trustworthy diagnostic canary workflow while staying honest about high-density browser load.
 
 ### Work Items
 
@@ -220,7 +220,7 @@ Move beyond AI guardrails into auditable AI assistance for generation, repair, e
 
 ### Goal
 
-Add full practical support for VuGen's browser-driven Web 2.0 scripting profile: import TruClient 2.0 - Web archives and create equivalent Stormrunner browser-profile scripts without conflating that scope with legacy native desktop automation or high-density browser-load claims.
+Add full practical support for VuGen's browser-driven Web 2.0 scripting profile: import TruClient 2.0 - Web archives and create equivalent APEX Load browser-profile scripts without conflating that scope with legacy native desktop automation or high-density browser-load claims.
 
 Detailed plan: `docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md`.
 
@@ -230,7 +230,7 @@ Detailed plan: `docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md`.
 | --- | --- | --- | --- |
 | W6.1 | Publish a code-owned TruClient 2.0 Web support matrix and fixture contract | P0 | Planned |
 | W6.2 | Extend LoadRunner ZIP import detection and parser for TruClient 2.0 - Web metadata, steps, object descriptors, parameters, transactions, and runtime files | P0 | Planned |
-| W6.3 | Add a Stormrunner `vugen_web2` browser authoring profile that preserves VuGen metadata while mapping executable steps to browser DSL | P0 | Planned |
+| W6.3 | Add a APEX Load `vugen_web2` browser authoring profile that preserves VuGen metadata while mapping executable steps to browser DSL | P0 | Planned |
 | W6.4 | Map P0 Web 2.0 steps: navigate, click, fill, select, wait, verify, transactions, think time, and screenshots | P0 | Planned |
 | W6.5 | Add object identification model, selector confidence scoring, and guided selector/wait repair | P0 | Planned |
 | W6.6 | Add Create Script profile UX for Web 2.0 scripts with step outline, object descriptor editor, parameters, runtime settings, replay evidence, and approval gates | P0 | Planned |
@@ -241,9 +241,9 @@ Detailed plan: `docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md`.
 ### Acceptance Criteria
 
 - TruClient 2.0 Web archives import through the existing LoadRunner acquisition path without being rejected as legacy desktop TruClient.
-- Core Web 2.0 steps replay in Stormrunner browser runtime with preserved transactions, parameters, waits, assertions, and screenshots.
+- Core Web 2.0 steps replay in APEX Load browser runtime with preserved transactions, parameters, waits, assertions, and screenshots.
 - Unsupported proprietary constructs become review sections and repair suggestions.
-- Users can create a new Stormrunner Web 2.0 browser script from the dashboard without writing JSON first.
+- Users can create a new APEX Load Web 2.0 browser script from the dashboard without writing JSON first.
 - Browser-to-HTTP conversion is available as an explicit review workflow for density use cases.
 - High-density browser-load claims remain benchmark-gated and separate from scripting-profile parity.
 
@@ -281,7 +281,7 @@ Outcome: LoadRunner/JMeter/HAR/DevWeb/browser imports are reviewable, repairable
 - W1.4
 - W4.1, W4.2, W4.5, W4.6
 
-Outcome: Stormrunner can claim browser canary support with reproducible evidence and explicitly bounded density claims.
+Outcome: APEX Load can claim browser canary support with reproducible evidence and explicitly bounded density claims.
 
 ### Milestone 4: AI-Assisted Authoring And Analysis
 
@@ -296,7 +296,7 @@ Outcome: AI assistance becomes a governed workflow for draft generation, repair,
 - W6.5, W6.6
 - W6.7, W6.8, W6.9
 
-Outcome: Stormrunner can import and create TruClient 2.0 Web-style browser scripts, replay them with migration evidence, and optionally derive HTTP protocol-load scripts.
+Outcome: APEX Load can import and create TruClient 2.0 Web-style browser scripts, replay them with migration evidence, and optionally derive HTTP protocol-load scripts.
 
 ## Out Of Scope Unless Demand-Gated
 
@@ -320,7 +320,7 @@ Outcome: Stormrunner can import and create TruClient 2.0 Web-style browser scrip
 
 This plan is complete when:
 
-- Stormrunner can create, run, report, and explain modern Web/API/browser canary tests from guided UI flows without requiring DSL-first knowledge.
+- APEX Load can create, run, report, and explain modern Web/API/browser canary tests from guided UI flows without requiring DSL-first knowledge.
 - Runtime settings parity is visible and enforceable across supported protocols, not just import review.
 - Browser testing has reproducible benchmark evidence and clear claim boundaries.
 - AI assistance is useful, auditable, and policy-controlled.

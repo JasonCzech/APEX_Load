@@ -11,13 +11,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/convert/devweb"
-	"github.com/jasonczech/stormrunner/pkg/convert/har"
-	"github.com/jasonczech/stormrunner/pkg/convert/jmeter"
-	"github.com/jasonczech/stormrunner/pkg/convert/loadrunner"
-	"github.com/jasonczech/stormrunner/pkg/convert/sample"
-	"github.com/jasonczech/stormrunner/pkg/convert/trueclient"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/convert/devweb"
+	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/convert/jmeter"
+	"github.com/jasonczech/apexload/pkg/convert/loadrunner"
+	"github.com/jasonczech/apexload/pkg/convert/sample"
+	"github.com/jasonczech/apexload/pkg/convert/trueclient"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type jmeterImportRequest struct {
@@ -547,7 +547,7 @@ func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, un
 
 	for _, element := range unsupportedElements {
 		normalized := strings.ToLower(element)
-		description := "Review the preserved source construct and replace it with equivalent Stormrunner DSL behavior before relying on this script."
+		description := "Review the preserved source construct and replace it with equivalent APEX Load DSL behavior before relying on this script."
 		action := "Open the generated script in the visual editor, inspect preserved metadata, and either remove the unsupported construct or model it with supported actions."
 		if strings.Contains(normalized, "evaluate javascript") {
 			description = "This TruClient JavaScript statement could not be decomposed into a supported browser action."
@@ -581,7 +581,7 @@ func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, un
 			Category:    "protocol",
 			Severity:    "blocker",
 			Title:       "Resolve protocol import gate",
-			Description: fmt.Sprintf("%s was classified as %s and is not ready to save as an executable Stormrunner script.", firstNonEmpty(result.DetectedProtocol.DisplayName, result.DetectedProtocol.CanonicalLoadRunnerProtocol), result.DetectedProtocol.ImportMode),
+			Description: fmt.Sprintf("%s was classified as %s and is not ready to save as an executable APEX Load script.", firstNonEmpty(result.DetectedProtocol.DisplayName, result.DetectedProtocol.CanonicalLoadRunnerProtocol), result.DetectedProtocol.ImportMode),
 			Action:      "Save the review artifact, collect the required protocol evidence, and rerun import after the protocol is confirmed or a runner bridge is available.",
 		})
 	}
@@ -592,8 +592,8 @@ func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, un
 			Category:    "runtime",
 			Severity:    "info",
 			Title:       "Review preserved runtime settings",
-			Description: "The source archive included LoadRunner runtime metadata that may not all execute natively in Stormrunner yet.",
-			Action:      "Compare the preserved runtime file and project settings against the generated Stormrunner config before promoting the script.",
+			Description: "The source archive included LoadRunner runtime metadata that may not all execute natively in APEX Load yet.",
+			Action:      "Compare the preserved runtime file and project settings against the generated APEX Load config before promoting the script.",
 		})
 	}
 
@@ -603,8 +603,8 @@ func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, un
 			Category:    "runtime",
 			Severity:    "blocker",
 			Title:       "Resolve blocking runtime settings before promotion",
-			Description: "The selected migration block policy matched imported runtime settings that are not fully executable in Stormrunner yet.",
-			Action:      "Review the blocking runtime settings, adjust the generated Stormrunner config where possible, or relax the migration block policy before saving the script.",
+			Description: "The selected migration block policy matched imported runtime settings that are not fully executable in APEX Load yet.",
+			Action:      "Review the blocking runtime settings, adjust the generated APEX Load config where possible, or relax the migration block policy before saving the script.",
 		})
 	}
 
@@ -696,7 +696,7 @@ func trueClientWeb2ReviewSections(summary loadRunnerImportSummary) []scriptImpor
 	sourceType := firstNonEmpty(summary.SourceScriptType, inspection.ScriptType)
 	sourceProfile := summary.SourceProfile
 	if sourceProfile == "" && inspection.ScriptTypeScope != nil {
-		sourceProfile = inspection.ScriptTypeScope.StormrunnerShape
+		sourceProfile = inspection.ScriptTypeScope.APEXLoadShape
 	}
 	items := []string{
 		fmt.Sprintf("Source script type: %s", firstNonEmpty(sourceType, "TruClient archive")),
@@ -1082,8 +1082,8 @@ func buildLoadRunnerImportReviewSections(warnings []string, result *loadrunner.C
 			"Import mode: " + string(result.DetectedProtocol.ImportMode),
 			"Confidence: " + string(result.DetectedProtocol.Confidence),
 		}
-		if result.DetectedProtocol.StormrunnerProtocol != "" {
-			items = append(items, "Stormrunner protocol: "+result.DetectedProtocol.StormrunnerProtocol)
+		if result.DetectedProtocol.APEXLoadProtocol != "" {
+			items = append(items, "APEX Load protocol: "+result.DetectedProtocol.APEXLoadProtocol)
 		}
 		if result.DetectedProtocol.Bundle != "" {
 			items = append(items, "Bundle: "+result.DetectedProtocol.Bundle)
@@ -1142,7 +1142,7 @@ func buildLoadRunnerImportReviewSections(warnings []string, result *loadrunner.C
 			Key:      "unsupported_elements",
 			Title:    "Unsupported LoadRunner Elements",
 			Severity: "blocker",
-			Summary:  "These source constructs were preserved for review but were not converted into executable Stormrunner actions.",
+			Summary:  "These source constructs were preserved for review but were not converted into executable APEX Load actions.",
 			Items:    unsupportedElements,
 		})
 	}
@@ -1451,7 +1451,7 @@ func runtimeSettingsParitySeverity(entries []loadrunner.RuntimeSettingParityEntr
 
 func runtimeSettingsParitySummary(counts map[string]int) string {
 	if len(counts) == 0 {
-		return "Imported runtime settings were classified against Stormrunner's code-owned LoadRunner RTS matrix."
+		return "Imported runtime settings were classified against APEX Load's code-owned LoadRunner RTS matrix."
 	}
 	parts := make([]string, 0, 5)
 	for _, status := range []string{
@@ -1467,9 +1467,9 @@ func runtimeSettingsParitySummary(counts map[string]int) string {
 		parts = append(parts, fmt.Sprintf("%d %s", counts[status], strings.ReplaceAll(status, "_", "-")))
 	}
 	if len(parts) == 0 {
-		return "Imported runtime settings were classified against Stormrunner's code-owned LoadRunner RTS matrix."
+		return "Imported runtime settings were classified against APEX Load's code-owned LoadRunner RTS matrix."
 	}
-	return "Imported runtime settings were classified against Stormrunner's code-owned LoadRunner RTS matrix: " + strings.Join(parts, ", ") + "."
+	return "Imported runtime settings were classified against APEX Load's code-owned LoadRunner RTS matrix: " + strings.Join(parts, ", ") + "."
 }
 
 func runtimeSettingsParityItems(entries []loadrunner.RuntimeSettingParityEntry) []string {

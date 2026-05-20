@@ -182,7 +182,7 @@ func inspectDefaultXML(name string, content string, descriptors []ObjectDescript
 			inventory.Unsupported[action]++
 			stepInspection := inspectStep(step, ScopeOutOfScope, "", descriptors)
 			steps = append(steps, stepInspection)
-			fragments = append(fragments, sourceFragment(stepInspection, "Unsupported TruClient step action is not mapped to a Stormrunner browser action."))
+			fragments = append(fragments, sourceFragment(stepInspection, "Unsupported TruClient step action is not mapped to a APEX Load browser action."))
 			continue
 		}
 		switch scope.Status {

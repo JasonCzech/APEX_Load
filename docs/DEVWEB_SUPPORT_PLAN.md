@@ -1,9 +1,9 @@
 # Implementation Plan: DevWeb Protocol Support
 
 ## Objective
-Enable Stormrunner to execute and import DevWeb-equivalent workloads — HTTP/2, WebSocket, and gRPC — using Go-native protocol implementations that maintain the 10k VUser/pod performance target.
+Enable APEX Load to execute and import DevWeb-equivalent workloads — HTTP/2, WebSocket, and gRPC — using Go-native protocol implementations that maintain the 10k VUser/pod performance target.
 
-DevWeb is OpenText's JavaScript-based protocol-level HTTP testing engine. Stormrunner's existing `pkg/protocol/http` already covers DevWeb's core HTTP capabilities. This plan addresses the three remaining gaps: **WebSocket protocol support**, **gRPC protocol support**, and **DevWeb script import**.
+DevWeb is OpenText's JavaScript-based protocol-level HTTP testing engine. APEX Load's existing `pkg/protocol/http` already covers DevWeb's core HTTP capabilities. This plan addresses the three remaining gaps: **WebSocket protocol support**, **gRPC protocol support**, and **DevWeb script import**.
 
 ## Relationship To Other Plans
 - **Protocol Extension** (`docs/PROTOCOL_EXTENSION_PLAN.md`): SOAP and Java-over-HTTP are separate protocol tracks. WebSocket and gRPC are additive, lightweight protocols that follow the same registration pattern.
@@ -13,7 +13,7 @@ DevWeb is OpenText's JavaScript-based protocol-level HTTP testing engine. Stormr
 ## Current Baseline
 
 ### Already Covered By Existing HTTP Protocol
-| DevWeb Capability | Stormrunner Status | Location |
+| DevWeb Capability | APEX Load Status | Location |
 |:---|:---|:---|
 | HTTP/1.1 requests | ✅ Implemented | `pkg/protocol/http` |
 | HTTP/2 support | ✅ Implemented | `ForceAttemptHTTP2` in `http/config.go` |
@@ -200,7 +200,7 @@ Add `WebSocket WebSocketConfig` field to `ScriptConfig`.
 ## 2. gRPC Protocol
 
 ### Architecture
-gRPC runs over HTTP/2 with Protocol Buffer serialization. The Stormrunner implementation uses Go's native gRPC client library. For maximum flexibility without requiring `.proto` compilation at runtime, the protocol supports both **dynamic reflection** and **raw byte payloads**.
+gRPC runs over HTTP/2 with Protocol Buffer serialization. The APEX Load implementation uses Go's native gRPC client library. For maximum flexibility without requiring `.proto` compilation at runtime, the protocol supports both **dynamic reflection** and **raw byte payloads**.
 
 ### Protocol Registration
 ```go
@@ -314,7 +314,7 @@ Add `GRPC GRPCConfig` field to `ScriptConfig`.
 ## 3. DevWeb Script Import
 
 ### Strategy
-DevWeb scripts are JavaScript files using the `load.*` SDK. The converter parses JS source to extract `load.WebRequest`, `load.WebSocket`, and `load.GrpcClient` calls, then emits the appropriate Stormrunner DSL script.
+DevWeb scripts are JavaScript files using the `load.*` SDK. The converter parses JS source to extract `load.WebRequest`, `load.WebSocket`, and `load.GrpcClient` calls, then emits the appropriate APEX Load DSL script.
 
 ### Package Location
 `pkg/convert/devweb/`
@@ -346,7 +346,7 @@ func ParseDevWebScript(filename, content string) (*ParsedScript, error) {
 
 ### SDK Call Mapping
 
-| DevWeb SDK Call | Stormrunner DSL | Protocol |
+| DevWeb SDK Call | APEX Load DSL | Protocol |
 |:---|:---|:---|
 | `new load.WebRequest({...}).send()` | HTTP action (GET/POST/etc.) | `http` |
 | `new load.WebSocket(url)` | `ws_connect` | `websocket` |

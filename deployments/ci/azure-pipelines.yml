@@ -4,7 +4,7 @@ trigger:
     - main
 
 variables:
-  stormrunnerUrl: $(STORMRUNNER_URL) 
+  apexloadUrl: $(APEXLOAD_URL) 
   testScript: 'tests/performance/primary-flow.json'
   vusers: 50
   duration: '5m'
@@ -19,17 +19,17 @@ steps:
   displayName: 'Install Go'
 
 - script: |
-    go build -o bin/stormctl ./cmd/stormctl
-  displayName: 'Build stormctl'
+    go build -o bin/apexctl ./cmd/apexctl
+  displayName: 'Build apexctl'
 
 - script: |
-    ./bin/stormctl run \
-      --api "$(stormrunnerUrl)" \
+    ./bin/apexctl run \
+      --api "$(apexloadUrl)" \
       --script "$(testScript)" \
       --vusers $(vusers) \
       --duration $(duration) \
       --format json > results.json
-  displayName: 'Run Stormrunner Load Test'
+  displayName: 'Run APEX Load Load Test'
 
 - task: PublishPipelineArtifact@1
   condition: always()

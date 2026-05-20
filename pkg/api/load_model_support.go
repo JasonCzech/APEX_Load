@@ -7,7 +7,7 @@ type LoadModelSupportEntry struct {
 	Name             string   `json:"name"`
 	Category         string   `json:"category"`
 	Status           string   `json:"status"`
-	StormrunnerShape string   `json:"stormrunner_shape"`
+	APEXLoadShape string   `json:"apexload_shape"`
 	Fields           []string `json:"fields"`
 	Notes            string   `json:"notes"`
 }
@@ -74,7 +74,7 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 			Name:             "Closed VUser",
 			Category:         "vuser",
 			Status:           "executed",
-			StormrunnerShape: "Scenario groups with fixed VUsers and duration.",
+			APEXLoadShape: "Scenario groups with fixed VUsers and duration.",
 			Fields:           []string{"groups[].vusers", "duration", "groups[].ramp_up", "groups[].ramp_down"},
 			Notes:            "Primary execution model; each VUser loops until duration or iteration limits stop the group.",
 		},
@@ -83,7 +83,7 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 			Name:             "Open Arrival Rate",
 			Category:         "throughput",
 			Status:           "executed",
-			StormrunnerShape: "Open workload runtime using target throughput controls.",
+			APEXLoadShape: "Open workload runtime using target throughput controls.",
 			Fields:           []string{"config.run_logic.workload_model=open", "config.pacing.tps", "goal_config.target_average_tps"},
 			Notes:            "Runtime emits target TPS, throughput gap, and miss flags for observability.",
 		},
@@ -92,7 +92,7 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 			Name:             "Stepped Ramp",
 			Category:         "ramp",
 			Status:           "executed",
-			StormrunnerShape: "First-class staged segments with ramp-up, hold, ramp-down, target VUsers, and target TPS.",
+			APEXLoadShape: "First-class staged segments with ramp-up, hold, ramp-down, target VUsers, and target TPS.",
 			Fields:           []string{"groups[].stages[].type", "groups[].stages[].duration", "groups[].stages[].target_vusers", "groups[].stages[].target_tps"},
 			Notes:            "Stage lists round-trip through API/storage, derive compatible runtime ramps, and appear in archive load-model goal evidence.",
 		},
@@ -101,7 +101,7 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 			Name:             "Rendezvous Spike",
 			Category:         "spike",
 			Status:           "executed",
-			StormrunnerShape: "Use a rendezvous action to synchronize VUsers before the target transaction.",
+			APEXLoadShape: "Use a rendezvous action to synchronize VUsers before the target transaction.",
 			Fields:           []string{"actions[].type=rendezvous", "actions[].params.count", "actions[].params.timeout_ms"},
 			Notes:            "Supports named synchronization points inside the script action stream.",
 		},
@@ -110,7 +110,7 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 			Name:             "Soak",
 			Category:         "duration",
 			Status:           "executed",
-			StormrunnerShape: "Closed or open workload with long duration and steady ramp.",
+			APEXLoadShape: "Closed or open workload with long duration and steady ramp.",
 			Fields:           []string{"duration", "groups[].vusers", "config.pacing"},
 			Notes:            "Archive/report completeness scoring is tracked separately in P6.",
 		},
@@ -119,7 +119,7 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 			Name:             "Stress",
 			Category:         "capacity",
 			Status:           "executed",
-			StormrunnerShape: "High VUser or TPS targets with capacity advisory, staged escalation, goal control, and archived completion evidence.",
+			APEXLoadShape: "High VUser or TPS targets with capacity advisory, staged escalation, goal control, and archived completion evidence.",
 			Fields:           []string{"groups[].vusers", "groups[].stages", "goal_config.max_vusers", "capacity_advisory", "overview.goal_completion"},
 			Notes:            "Stress workloads can be authored through templates or staged groups and are validated before save/run against current capacity envelopes.",
 		},
@@ -128,7 +128,7 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 			Name:             "Goal-Based",
 			Category:         "adaptive",
 			Status:           "executed",
-			StormrunnerShape: "Goal controller adjusts VUsers within configured guardrails.",
+			APEXLoadShape: "Goal controller adjusts VUsers within configured guardrails.",
 			Fields:           []string{"scenario_mode=goal_oriented", "goal_config.target_average_tps", "goal_config.min_vusers", "goal_config.max_vusers"},
 			Notes:            "Supports scale-up/down and stop-on-SLA/error guardrails.",
 		},
@@ -137,7 +137,7 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 			Name:             "Mixed Protocol Groups",
 			Category:         "composition",
 			Status:           "executed",
-			StormrunnerShape: "Scenario groups can reference different script protocols.",
+			APEXLoadShape: "Scenario groups can reference different script protocols.",
 			Fields:           []string{"groups[].script_id", "groups[].vusers", "capacity_advisory.protocol_densities"},
 			Notes:            "Capacity advice already accounts for protocol-specific density envelopes.",
 		},

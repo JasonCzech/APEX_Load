@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"gopkg.in/yaml.v3"
 )
 
@@ -169,7 +169,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			Name:          sanitizeName(scriptName),
 			Version:       "1.0.0",
 			Protocol:      "http",
-			GeneratedBy:   "stormrunner-openapi-converter",
+			GeneratedBy:   "apexload-openapi-converter",
 			GeneratedFrom: "openapi",
 			CreatedAt:     time.Now(),
 			Config: dsl.ScriptConfig{

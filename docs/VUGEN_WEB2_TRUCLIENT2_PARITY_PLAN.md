@@ -2,7 +2,7 @@
 
 ## Objective
 
-Add first-class Stormrunner support for OpenText VuGen's browser-driven Web 2.0 scripting profile, represented by **TruClient 2.0 - Web** in the current LoadRunner/VuGen family. The goal is practical parity for import, authoring, replay, repair, and optional protocol-load conversion while preserving Stormrunner's current claim boundary: browser VUsers are diagnostic canaries unless benchmark evidence proves broader density.
+Add first-class APEX Load support for OpenText VuGen's browser-driven Web 2.0 scripting profile, represented by **TruClient 2.0 - Web** in the current LoadRunner/VuGen family. The goal is practical parity for import, authoring, replay, repair, and optional protocol-load conversion while preserving APEX Load's current claim boundary: browser VUsers are diagnostic canaries unless benchmark evidence proves broader density.
 
 This is a new planned scope beyond the completed TruClient Mobile Web MVP. It does not reopen native desktop UI automation as a goal.
 
@@ -17,9 +17,9 @@ Primary references:
 - Convert TruClient to Web HTTP/HTML: https://admhelp.microfocus.com/vugen/en/26.1/help/WebHelp/Content/TruClient/_tc_t_convertTruClientToWebScript.htm
 - Web protocols overview: https://admhelp.microfocus.com/vugen/en/25.1-25.3/help/WebHelp/Content/VuGen/c_web_protocols_overview.htm
 
-## Current Stormrunner Baseline
+## Current APEX Load Baseline
 
-Stormrunner already has:
+APEX Load already has:
 
 - LoadRunner Web HTTP/HTML ZIP import, runtime settings classification, validation, replay, and support-matrix review.
 - TruClient Mobile Web and TruClient 2.0 Mobile Web import MVP for common browser/mobile actions.
@@ -30,21 +30,21 @@ Stormrunner already has:
 Remaining gap:
 
 - Desktop browser **TruClient 2.0 - Web / VuGen Web 2.0** archives are not a first-class import target.
-- Stormrunner does not yet expose a named Web 2.0 browser script creation profile with object descriptors, step outline, parameterization, transaction UX, and conversion-to-protocol-load workflow.
+- APEX Load does not yet expose a named Web 2.0 browser script creation profile with object descriptors, step outline, parameterization, transaction UX, and conversion-to-protocol-load workflow.
 
 ## Scope Decision
 
 | Area | Decision |
 | --- | --- |
 | TruClient 2.0 - Web import | In scope |
-| New Stormrunner Web 2.0 browser authoring profile | In scope |
+| New APEX Load Web 2.0 browser authoring profile | In scope |
 | Browser replay/debug evidence for imported and newly authored scripts | In scope |
 | Optional browser-to-HTTP conversion for protocol-load density | In scope |
 | Legacy desktop/native application automation | Out of scope |
 | High-density real-browser load claims | Evidence-gated non-claim |
 | Byte-for-byte VuGen proprietary project compatibility | Out of scope; preserve metadata and provide practical conversion |
 
-## Proposed Stormrunner Shape
+## Proposed APEX Load Shape
 
 Add a named script profile:
 
@@ -55,7 +55,7 @@ Add a named script profile:
     "import": {
       "source": "vugen_truclient2_web",
       "preserved": {
-        "stormrunner_profile": "vugen_web2",
+        "apexload_profile": "vugen_web2",
         "source_script_type": "TruClient 2.0 - Web"
       }
     }
@@ -106,7 +106,7 @@ Acceptance:
 
 ## Workstream V2.3: Step Mapping
 
-| Step Family | Stormrunner Mapping | Priority |
+| Step Family | APEX Load Mapping | Priority |
 | --- | --- | --- |
 | Navigate / page transition | `browser_navigate` | P0 |
 | Click / double-click / submit | `browser_click` plus action metadata | P0 |
@@ -124,7 +124,7 @@ Acceptance:
 
 Acceptance:
 
-- P0 steps replay in Stormrunner browser runtime.
+- P0 steps replay in APEX Load browser runtime.
 - P1 steps either replay or show guided review with repair suggestions.
 - Transactions and verification evidence survive import.
 
@@ -147,7 +147,7 @@ Acceptance:
 
 Implementation note: Archive inspection now parses object repositories into descriptor records with CSS, XPath, text, role, common HTML attributes, ordinal, regex, frame context, and window context. Step inspection merges repository candidates with step-level candidates, ranks candidates by confidence, preserves parameter/snapshot references, and emits replay diagnostics for object-not-found risk, ambiguous ordinal matching, frame/window context, regex selectors, and timing/low-confidence risk. The dashboard Object Descriptors dialog surfaces context diagnostics and lets users apply alternate selector candidates as guided repairs before replay approval.
 
-## Workstream V2.5: Stormrunner Creation UX
+## Workstream V2.5: APEX Load Creation UX
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
@@ -169,7 +169,7 @@ Implementation note: The authoring capabilities endpoint now exposes `trueclient
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
-| V2.6.1 | Map TruClient 2.0 browser/runtime settings into Stormrunner browser config, web runtime config, log config, think time, pacing, proxy, and capture settings | P0 | Complete |
+| V2.6.1 | Map TruClient 2.0 browser/runtime settings into APEX Load browser config, web runtime config, log config, think time, pacing, proxy, and capture settings | P0 | Complete |
 | V2.6.2 | Extend runtime settings support matrix with `vugen_web2` profile entries and status classification | P0 | Complete |
 | V2.6.3 | Add browser replay timeline labels that preserve original TruClient step IDs and transaction groups | P1 | Complete |
 | V2.6.4 | Archive screenshots, DOM, console, network, Core Web Vitals, and object-match diagnostics for imported Web 2.0 scripts | P1 | Complete |
@@ -187,7 +187,7 @@ Acceptance:
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
 | V2.7.1 | Add "Generate protocol-load script" action from Web 2.0 browser profile | P1 | Complete |
-| V2.7.2 | Capture replay network flow as HAR-like evidence and convert to Stormrunner HTTP DSL | P1 | Complete |
+| V2.7.2 | Capture replay network flow as HAR-like evidence and convert to APEX Load HTTP DSL | P1 | Complete |
 | V2.7.3 | Detect dynamic values, candidate correlations, parameter sources, auth headers, cookies, and request body variables | P1 | Complete |
 | V2.7.4 | Produce side-by-side browser script and generated HTTP script review with correlation/data-source repair suggestions | P1 | Complete |
 | V2.7.5 | Add scenario template for "browser canary plus generated protocol load" | P1 | Complete |
@@ -231,19 +231,19 @@ Acceptance:
 
 | Milestone | Scope | Outcome |
 | --- | --- | --- |
-| V2-M1 | Support matrix, fixture contract, script-type detection | Stormrunner can identify TruClient 2.0 Web archives and explain support. |
+| V2-M1 | Support matrix, fixture contract, script-type detection | APEX Load can identify TruClient 2.0 Web archives and explain support. |
 | V2-M2 | Parser/import P0 steps, metadata, review sections | Representative archives import into browser-profile drafts. |
 | V2-M3 | Replay/debug evidence and runtime settings | Imported drafts can be replayed and diagnosed with migration evidence. |
-| V2-M4 | Creation UX and authoring profile | Users can create new Stormrunner Web 2.0-style scripts. |
+| V2-M4 | Creation UX and authoring profile | Users can create new APEX Load Web 2.0-style scripts. |
 | V2-M5 | Browser-to-HTTP conversion and scenario template | Users can pair browser canaries with generated protocol load. |
 | V2-M6 | Parity gate, docs, dashboard polish | Web 2.0 parity is visible in status, docs, and operator workflows. |
 
 ## Definition Of Done
 
 - TruClient 2.0 Web archives import through the LoadRunner acquisition path with explicit source/profile metadata.
-- P0 Web 2.0 steps replay in Stormrunner browser runtime.
+- P0 Web 2.0 steps replay in APEX Load browser runtime.
 - Object descriptor issues are scored and repairable.
-- New Web 2.0 scripts can be created in Stormrunner's authoring UX.
+- New Web 2.0 scripts can be created in APEX Load's authoring UX.
 - Conversion to HTTP load scripts is available as an explicit review workflow.
 - Runtime settings, replay evidence, and migration readiness are exportable.
 - High-density browser load remains evidence-gated and separate from Web 2.0 scripting parity.

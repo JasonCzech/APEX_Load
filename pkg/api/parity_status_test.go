@@ -175,7 +175,7 @@ func TestCompetitiveSupportMatrixDocumentsParityStatusClaims(t *testing.T) {
 		"JMeter",
 		"DevWeb",
 		"HAR",
-		"Native Stormrunner JSON DSL",
+		"Native APEX Load JSON DSL",
 		"Browser feature support and browser density claims are separate",
 	} {
 		if !strings.Contains(content, required) {

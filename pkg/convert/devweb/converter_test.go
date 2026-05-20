@@ -75,7 +75,7 @@ func TestConvertGRPCDevWebScript(t *testing.T) {
 	result, err := Convert(ImportRequest{
 		Content: `
 load.action("Cache Script", async function() {
-  client.invoke("stormrunner.v1.GeneratorControl", "DistributeScript", { scriptId: "script-1", contentHash: "hash-1" });
+  client.invoke("apexload.v1.GeneratorControl", "DistributeScript", { scriptId: "script-1", contentHash: "hash-1" });
 });`,
 	})
 	if err != nil {
@@ -88,7 +88,7 @@ load.action("Cache Script", async function() {
 		t.Fatal("grpc use_reflection should be enabled")
 	}
 	action := result.Script.Actions[0]
-	if action.Type != "grpc_unary" || action.Target != "stormrunner.v1.GeneratorControl/DistributeScript" {
+	if action.Type != "grpc_unary" || action.Target != "apexload.v1.GeneratorControl/DistributeScript" {
 		t.Fatalf("action = %#v", action)
 	}
 	if action.Body != `{ "scriptId": "script-1", "contentHash": "hash-1" }` {

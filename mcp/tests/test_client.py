@@ -3,23 +3,23 @@ import json
 import httpx
 import pytest
 
-from stormrunner_mcp.client import StormrunnerClient, StormrunnerClientConfig, normalize_query
+from apexload_mcp.client import APEX LoadClient, APEX LoadClientConfig, normalize_query
 
 
 def test_auth_headers_prefer_service_account_api_key():
-    client = StormrunnerClient(StormrunnerClientConfig(api_key="api-key", bearer_token="bearer"))
+    client = APEX LoadClient(APEX LoadClientConfig(api_key="api-key", bearer_token="bearer"))
 
-    assert client.auth_headers == {"X-Stormrunner-API-Key": "api-key"}
+    assert client.auth_headers == {"X-APEX Load-API-Key": "api-key"}
 
 
 def test_auth_headers_use_bearer_when_no_api_key():
-    client = StormrunnerClient(StormrunnerClientConfig(bearer_token="token"))
+    client = APEX LoadClient(APEX LoadClientConfig(bearer_token="token"))
 
     assert client.auth_headers == {"Authorization": "Bearer token"}
 
 
 def test_url_joining_query_encoding_and_metrics_origin():
-    client = StormrunnerClient(StormrunnerClientConfig(base_url="http://storm.test/root/api/v1"))
+    client = APEX LoadClient(APEX LoadClientConfig(base_url="http://storm.test/root/api/v1"))
 
     assert client.url_for("/scripts", {"project_id": "a b", "status": ["ready", "blocked"]}) == (
         "http://storm.test/root/api/v1/scripts?project_id=a+b&status=ready&status=blocked"
@@ -31,11 +31,11 @@ def test_url_joining_query_encoding_and_metrics_origin():
 @pytest.mark.asyncio
 async def test_json_response_shape():
     async def handler(request: httpx.Request) -> httpx.Response:
-        assert request.headers["x-stormrunner-api-key"] == "api-key"
+        assert request.headers["x-apexload-api-key"] == "api-key"
         return httpx.Response(200, json={"status": "healthy"})
 
-    client = StormrunnerClient(
-        StormrunnerClientConfig(base_url="http://storm.test/api/v1", api_key="api-key"),
+    client = APEX LoadClient(
+        APEX LoadClientConfig(base_url="http://storm.test/api/v1", api_key="api-key"),
         transport=httpx.MockTransport(handler),
     )
 
@@ -49,8 +49,8 @@ async def test_non_json_download_metadata():
     async def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content="id,name\n1,Run\n", headers={"Content-Type": "text/csv"})
 
-    client = StormrunnerClient(
-        StormrunnerClientConfig(base_url="http://storm.test/api/v1"),
+    client = APEX LoadClient(
+        APEX LoadClientConfig(base_url="http://storm.test/api/v1"),
         transport=httpx.MockTransport(handler),
     )
 
@@ -67,8 +67,8 @@ async def test_api_error_is_normalized():
     async def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(403, json={"error": "forbidden", "code": "rbac_denied"})
 
-    client = StormrunnerClient(
-        StormrunnerClientConfig(base_url="http://storm.test/api/v1"),
+    client = APEX LoadClient(
+        APEX LoadClientConfig(base_url="http://storm.test/api/v1"),
         transport=httpx.MockTransport(handler),
     )
 
@@ -85,8 +85,8 @@ async def test_transport_error_is_normalized():
     async def handler(_request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("controller down")
 
-    client = StormrunnerClient(
-        StormrunnerClientConfig(base_url="http://storm.test/api/v1"),
+    client = APEX LoadClient(
+        APEX LoadClientConfig(base_url="http://storm.test/api/v1"),
         transport=httpx.MockTransport(handler),
     )
 

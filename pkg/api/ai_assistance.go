@@ -12,18 +12,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const (
-	aiAuthoringContractSchemaVersion = "stormrunner.ai_authoring_contract.v1"
-	aiPolicySchemaVersion            = "stormrunner.ai_policy.v1"
-	aiDraftSchemaVersion             = "stormrunner.ai_draft.v1"
-	aiRepairSchemaVersion            = "stormrunner.ai_repair.v1"
-	aiExplainSchemaVersion           = "stormrunner.ai_explain.v1"
-	aiRootCauseSchemaVersion         = "stormrunner.ai_root_cause.v1"
-	aiReviewQueueSchemaVersion       = "stormrunner.ai_review_queue.v1"
+	aiAuthoringContractSchemaVersion = "apexload.ai_authoring_contract.v1"
+	aiPolicySchemaVersion            = "apexload.ai_policy.v1"
+	aiDraftSchemaVersion             = "apexload.ai_draft.v1"
+	aiRepairSchemaVersion            = "apexload.ai_repair.v1"
+	aiExplainSchemaVersion           = "apexload.ai_explain.v1"
+	aiRootCauseSchemaVersion         = "apexload.ai_root_cause.v1"
+	aiReviewQueueSchemaVersion       = "apexload.ai_review_queue.v1"
 	defaultAIProvider                = "deterministic-local"
 	mockedAIProvider                 = "mocked-provider"
 )
@@ -306,24 +306,24 @@ func (s *Server) handleAIPolicy(w http.ResponseWriter, r *http.Request) {
 
 func buildAIPolicyResponse(projectID string, now time.Time) AIPolicyResponse {
 	allowed := aiAllowedProvidersFromEnv()
-	redaction := strings.TrimSpace(os.Getenv("STORMRUNNER_AI_REDACTION_POSTURE"))
+	redaction := strings.TrimSpace(os.Getenv("APEXLOAD_AI_REDACTION_POSTURE"))
 	if redaction == "" {
 		redaction = "standard-redaction"
 	}
 	retentionDays := 30
-	if raw := strings.TrimSpace(os.Getenv("STORMRUNNER_AI_ARTIFACT_RETENTION_DAYS")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv("APEXLOAD_AI_ARTIFACT_RETENTION_DAYS")); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
 			retentionDays = parsed
 		}
 	}
 	disabledProjects := aiDisabledProjectsFromEnv()
-	enabled := !envBoolDisabled("STORMRUNNER_AI_ENABLED")
+	enabled := !envBoolDisabled("APEXLOAD_AI_ENABLED")
 	status := "enabled"
 	override := (*AIProjectPolicyOverride)(nil)
 	if projectID != "" && stringSliceContainsFold(disabledProjects, projectID) {
 		enabled = false
 		status = "disabled_for_project"
-		override = &AIProjectPolicyOverride{ProjectID: projectID, Enabled: false, Reason: "project is listed in STORMRUNNER_AI_DISABLED_PROJECTS"}
+		override = &AIProjectPolicyOverride{ProjectID: projectID, Enabled: false, Reason: "project is listed in APEXLOAD_AI_DISABLED_PROJECTS"}
 	}
 	if !enabled && status == "enabled" {
 		status = "disabled"
@@ -624,7 +624,7 @@ func (s *Server) buildAIDraftScript(req AIDraftRequest, provider string, project
 		Version:       "1.0.0",
 		Protocol:      "http",
 		ProjectID:     projectID,
-		GeneratedBy:   "stormrunner-ai-" + provider,
+		GeneratedBy:   "apexload-ai-" + provider,
 		GeneratedFrom: "ai_generated",
 		Config: dsl.ScriptConfig{
 			BaseURL: baseURL,
@@ -862,7 +862,7 @@ func attachAIProvenance(script *dsl.Script, provider string, sourceType string, 
 	if script == nil {
 		return
 	}
-	script.GeneratedBy = "stormrunner-ai-" + normalizeAIProvider(provider)
+	script.GeneratedBy = "apexload-ai-" + normalizeAIProvider(provider)
 	script.GeneratedFrom = "ai_generated"
 	if script.Metadata == nil {
 		script.Metadata = &dsl.ScriptMetadata{}
@@ -1096,7 +1096,7 @@ func (s *Server) buildAIExplainResponse(req AIExplainRequest, provider string, p
 	default:
 		return response, fmt.Errorf("unsupported target_type %q", req.TargetType)
 	}
-	response.Limitations = []string{"Explanation is grounded in local Stormrunner scripts, scenarios, runtime support matrices, or archived reports only."}
+	response.Limitations = []string{"Explanation is grounded in local APEX Load scripts, scenarios, runtime support matrices, or archived reports only."}
 	return response, nil
 }
 
@@ -1151,7 +1151,7 @@ func explainStoredScenario(scenario *StoredScenario) (string, []AIExplainSection
 func explainRuntimeSettings() (string, []AIExplainSection, []AICitation, []string) {
 	support := buildRuntimeSettingsSupportResponse(time.Now().UTC())
 	counts := support.StatusCounts
-	return "Stormrunner classifies runtime settings with a code-owned matrix across supported protocols.", []AIExplainSection{
+	return "APEX Load classifies runtime settings with a code-owned matrix across supported protocols.", []AIExplainSection{
 		{Title: "Coverage", Status: "ready", Summary: fmt.Sprintf("%d runtime setting entries across %d protocol family value(s).", len(support.SupportMatrix), len(support.Protocols)), Evidence: []string{"/api/v1/runtime-settings/support-matrix"}},
 		{Title: "Risk", Status: "needs_review", Summary: fmt.Sprintf("%d blocked, %d partial, %d compatibility-only entries.", counts["blocked"], counts["partial"], counts["compatibility_only"]), Evidence: []string{"runtime_settings.status_counts"}},
 	}, []AICitation{{Label: "Runtime settings support", Path: "/api/v1/runtime-settings/support-matrix"}}, []string{"Review compatibility-only entries before claiming execution parity."}
@@ -1257,7 +1257,7 @@ func normalizeAITargetType(targetType string) string {
 }
 
 func aiAllowedProvidersFromEnv() []string {
-	raw := strings.TrimSpace(os.Getenv("STORMRUNNER_AI_ALLOWED_PROVIDERS"))
+	raw := strings.TrimSpace(os.Getenv("APEXLOAD_AI_ALLOWED_PROVIDERS"))
 	if raw == "" {
 		return []string{defaultAIProvider, mockedAIProvider}
 	}
@@ -1276,7 +1276,7 @@ func aiAllowedProvidersFromEnv() []string {
 }
 
 func aiDisabledProjectsFromEnv() []string {
-	raw := strings.TrimSpace(os.Getenv("STORMRUNNER_AI_DISABLED_PROJECTS"))
+	raw := strings.TrimSpace(os.Getenv("APEXLOAD_AI_DISABLED_PROJECTS"))
 	if raw == "" {
 		return nil
 	}

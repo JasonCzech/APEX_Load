@@ -2,7 +2,7 @@
 
 ## Summary
 
-Upgrade Stormrunner's production data platform from the current local-first SQLite/filesystem/in-memory model to an enterprise-ready split:
+Upgrade APEX Load's production data platform from the current local-first SQLite/filesystem/in-memory model to an enterprise-ready split:
 
 - PostgreSQL for authoritative control-plane metadata, governance, audit, scheduling, and run summaries.
 - Prometheus remote-write plus long-term metrics storage for operational time-series.
@@ -18,7 +18,7 @@ SQLite and filesystem archives remain the default for local development and sing
 | Domains, repositories, projects, scripts, scenarios, schedules, RBAC, settings, service accounts, audit events | PostgreSQL | SQLite | PostgreSQL is the production system of record. |
 | Queued/terminal run metadata and interval summaries | PostgreSQL | SQLite | Keep typed summaries queryable; do not store every raw transaction in SQL. |
 | Live run state, websocket fanout support, idempotency keys, rate limits, short-lived API caches | Redis/Valkey | In-memory fallback | Redis is not authoritative durable state. |
-| High-cardinality operational metrics | Prometheus remote-write to Mimir, Thanos, or managed Prometheus | Local Prometheus scrape or `/metrics` only | Stormrunner continues exposing `/metrics`; the metrics backend owns retention. |
+| High-cardinality operational metrics | Prometheus remote-write to Mimir, Thanos, or managed Prometheus | Local Prometheus scrape or `/metrics` only | APEX Load continues exposing `/metrics`; the metrics backend owns retention. |
 | Full-fidelity run evidence | Object storage | Filesystem archive directory | Archives remain immutable and schema-versioned. |
 | SQL-native trend analytics | Optional TimescaleDB extension on PostgreSQL | SQLite summaries | Add only after PostgreSQL is in place and dashboard trend needs justify it. |
 
@@ -29,10 +29,10 @@ SQLite and filesystem archives remain the default for local development and sing
 Status: implemented for backend selection, pgx-backed PostgreSQL initialization, shared SQL dialect translation, readiness/inventory metadata, and storage factory tests. Integration against a live PostgreSQL instance is gated by deployment credentials.
 
 - Add storage backend selection:
-  - `STORMRUNNER_STORE=sqlite|postgres`, default `sqlite`.
-  - `STORMRUNNER_DB` remains the SQLite path.
-  - `STORMRUNNER_DATABASE_URL` is required for `postgres`.
-  - `STORMRUNNER_DATABASE_MAX_OPEN_CONNS`, `STORMRUNNER_DATABASE_MAX_IDLE_CONNS`, and `STORMRUNNER_DATABASE_CONN_MAX_LIFETIME` tune pooling.
+  - `APEXLOAD_STORE=sqlite|postgres`, default `sqlite`.
+  - `APEXLOAD_DB` remains the SQLite path.
+  - `APEXLOAD_DATABASE_URL` is required for `postgres`.
+  - `APEXLOAD_DATABASE_MAX_OPEN_CONNS`, `APEXLOAD_DATABASE_MAX_IDLE_CONNS`, and `APEXLOAD_DATABASE_CONN_MAX_LIFETIME` tune pooling.
 - Implement a PostgreSQL-backed `storage.Store` using `database/sql` with pgx's stdlib driver.
 - Keep the existing `storage.Store` interface as the compatibility contract; add methods only when a data-access pattern cannot be represented safely.
 - Create PostgreSQL migrations matching the current SQLite schema, including the new domain/application repository hierarchy, scheduler leases, occurrences, approvals, service account roles, usage snapshots, typed interval summaries, and run archive metadata.
@@ -45,8 +45,8 @@ Status: implemented for archive backend selection, object URI metadata, object-b
 
 - Introduce an archive storage abstraction with filesystem and object-store implementations.
 - Add configuration:
-  - `STORMRUNNER_ARCHIVE_BACKEND=filesystem|s3|azure_blob|gcs`, default `filesystem`.
-  - Keep `STORMRUNNER_ARCHIVE_DIR` for filesystem mode.
+  - `APEXLOAD_ARCHIVE_BACKEND=filesystem|s3|azure_blob|gcs`, default `filesystem`.
+  - Keep `APEXLOAD_ARCHIVE_DIR` for filesystem mode.
   - Add provider-specific bucket/container, prefix, region/account, endpoint, and credentials-by-environment configuration.
 - Store archive metadata in PostgreSQL/SQLite while writing archive content to object storage.
 - Preserve current archive paths as compatibility locators, but normalize new records to provider URI fields such as `s3://bucket/prefix/run-id/manifest.json` or `azblob://container/prefix/run-id/manifest.json`.
@@ -57,7 +57,7 @@ Status: implemented for archive backend selection, object URI metadata, object-b
 
 Status: implemented for Prometheus ServiceMonitor and remote-write deployment examples, inventory retention metadata, readiness-visible archive/metadata configuration, and operator documentation.
 
-- Keep Stormrunner's hot-path telemetry model: compact WebSocket summaries, typed interval summaries, full-fidelity archives.
+- Keep APEX Load's hot-path telemetry model: compact WebSocket summaries, typed interval summaries, full-fidelity archives.
 - Add production deployment artifacts for Prometheus scraping and remote-write:
   - Prometheus scrape config or ServiceMonitor.
   - Remote-write examples for Grafana Mimir, Thanos Receive, and managed Prometheus-compatible endpoints.
@@ -71,9 +71,9 @@ Status: implemented for Prometheus ServiceMonitor and remote-write deployment ex
 Status: implemented for backend selection, memory and Redis/Valkey cache implementations, active run snapshots, generator inventory snapshots, idempotency-key reservations, service-account API-key rate limiting, websocket fanout publishing/subscription, readiness degradation, and inventory metadata.
 
 - Add cache backend selection:
-  - `STORMRUNNER_CACHE_BACKEND=memory|redis`, default `memory`.
-  - `STORMRUNNER_REDIS_URL` is required for Redis mode.
-  - `STORMRUNNER_REDIS_KEY_PREFIX`, `STORMRUNNER_REDIS_TLS`, and timeout settings support shared enterprise clusters.
+  - `APEXLOAD_CACHE_BACKEND=memory|redis`, default `memory`.
+  - `APEXLOAD_REDIS_URL` is required for Redis mode.
+  - `APEXLOAD_REDIS_KEY_PREFIX`, `APEXLOAD_REDIS_TLS`, and timeout settings support shared enterprise clusters.
 - Add small interfaces instead of leaking Redis across handlers:
   - `LiveStateStore` for active run snapshots, generator inventory snapshots, and short TTL dashboard summaries.
   - `IdempotencyStore` for guarded mutating API requests and import/run replay protection.
@@ -105,27 +105,27 @@ Status: implemented for HA controller and Redis/Valkey deployment examples, prod
 New environment variables:
 
 ```text
-STORMRUNNER_STORE=sqlite|postgres
-STORMRUNNER_DATABASE_URL=postgres://...
-STORMRUNNER_DATABASE_MAX_OPEN_CONNS=25
-STORMRUNNER_DATABASE_MAX_IDLE_CONNS=10
-STORMRUNNER_DATABASE_CONN_MAX_LIFETIME=30m
+APEXLOAD_STORE=sqlite|postgres
+APEXLOAD_DATABASE_URL=postgres://...
+APEXLOAD_DATABASE_MAX_OPEN_CONNS=25
+APEXLOAD_DATABASE_MAX_IDLE_CONNS=10
+APEXLOAD_DATABASE_CONN_MAX_LIFETIME=30m
 
-STORMRUNNER_ARCHIVE_BACKEND=filesystem|s3|azure_blob|gcs
-STORMRUNNER_ARCHIVE_BUCKET=
-STORMRUNNER_ARCHIVE_CONTAINER=
-STORMRUNNER_ARCHIVE_PREFIX=stormrunner/archives
-STORMRUNNER_ARCHIVE_REGION=
-STORMRUNNER_ARCHIVE_ENDPOINT=
+APEXLOAD_ARCHIVE_BACKEND=filesystem|s3|azure_blob|gcs
+APEXLOAD_ARCHIVE_BUCKET=
+APEXLOAD_ARCHIVE_CONTAINER=
+APEXLOAD_ARCHIVE_PREFIX=apexload/archives
+APEXLOAD_ARCHIVE_REGION=
+APEXLOAD_ARCHIVE_ENDPOINT=
 
-STORMRUNNER_CACHE_BACKEND=memory|redis
-STORMRUNNER_REDIS_URL=redis://...
-STORMRUNNER_REDIS_KEY_PREFIX=stormrunner
-STORMRUNNER_REDIS_TLS=false
-STORMRUNNER_REDIS_TIMEOUT=2s
-STORMRUNNER_REDIS_FANOUT_CHANNEL=telemetry:fanout
-STORMRUNNER_API_KEY_RATE_LIMIT_PER_MINUTE=600
-STORMRUNNER_IDEMPOTENCY_KEY_TTL=15m
+APEXLOAD_CACHE_BACKEND=memory|redis
+APEXLOAD_REDIS_URL=redis://...
+APEXLOAD_REDIS_KEY_PREFIX=apexload
+APEXLOAD_REDIS_TLS=false
+APEXLOAD_REDIS_TIMEOUT=2s
+APEXLOAD_REDIS_FANOUT_CHANNEL=telemetry:fanout
+APEXLOAD_API_KEY_RATE_LIMIT_PER_MINUTE=600
+APEXLOAD_IDEMPOTENCY_KEY_TTL=15m
 ```
 
 API behavior:
@@ -160,7 +160,7 @@ API behavior:
 - SQLite remains supported for local development and evaluation.
 - PostgreSQL is mandatory for shared enterprise production deployments.
 - Redis/Valkey is optional for single-controller deployments but required for multi-controller live-state coordination.
-- Prometheus-compatible long-term storage is preferred over a custom Stormrunner time-series database.
+- Prometheus-compatible long-term storage is preferred over a custom APEX Load time-series database.
 - TimescaleDB is optional and should not block PostgreSQL adoption.
 - Full-fidelity raw transaction evidence belongs in object storage archives, not PostgreSQL.
 - Object storage is the production archive target; local PVC archives remain for development and small single-node installs.

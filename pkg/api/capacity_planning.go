@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	browserprotocol "github.com/jasonczech/stormrunner/pkg/protocol/browser"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 )
 
 type CapacityResourceEstimate struct {
@@ -230,7 +230,7 @@ func resolveCapacityAvailability(settings SystemSettings) CapacityAvailabilitySn
 		return applyGlobalCapacityReservationSummary(settings, snapshot)
 	}
 
-	rawLive := strings.TrimSpace(os.Getenv("STORMRUNNER_LIVE_AVAILABLE_GENERATORS"))
+	rawLive := strings.TrimSpace(os.Getenv("APEXLOAD_LIVE_AVAILABLE_GENERATORS"))
 	if rawLive == "" {
 		snapshot.Warnings = append(snapshot.Warnings, "Live generator availability is enabled but no runtime snapshot was provided; using configured generator inventory.")
 		return applyGlobalCapacityReservationSummary(settings, snapshot)
@@ -532,7 +532,7 @@ func protocolDensityEnvelope(protocol string) ProtocolDensityEnvelope {
 func protocolDensityEnvelopeWithBenchmark(envelope ProtocolDensityEnvelope, profile string) ProtocolDensityEnvelope {
 	envelope.BenchmarkProfile = profile
 	envelope.BenchmarkEvidence = "docs/ENTERPRISE_AUTOSCALING_SIGNALS.md#protocol-density-envelopes"
-	envelope.CalibrationSource = "stormrunner_benchmark_catalog"
+	envelope.CalibrationSource = "apexload_benchmark_catalog"
 	envelope.CalibratedAt = "2026-05-18"
 	return envelope
 }

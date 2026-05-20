@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestPlanArchiveRetentionPruneAppliesSpecificPolicies(t *testing.T) {
@@ -79,7 +79,7 @@ func TestPlanArchiveRetentionPruneHonorsDisabledSetting(t *testing.T) {
 }
 
 func TestArchiveRetentionPlanAndApplyHandlersPruneExpiredArchives(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}

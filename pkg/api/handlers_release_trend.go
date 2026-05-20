@@ -21,7 +21,7 @@ func (s *Server) handleGetReleaseTrendExport(w http.ResponseWriter, r *http.Requ
 		runs = append(runs, releaseTrendRun{Test: test, Report: report})
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", "attachment; filename=\"stormrunner-release-trend-"+releaseID+".csv\"")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-release-trend-"+releaseID+".csv\"")
 	if err := writeReleaseTrendCSV(w, runs); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to write release trend csv: "+err.Error())
 	}

@@ -1,10 +1,10 @@
 # Enterprise Governance Model
 
-This document defines Stormrunner's project-first governance model for enterprise parity. It supports P1.6 through P1.9 in `docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md`.
+This document defines APEX Load's project-first governance model for enterprise parity. It supports P1.6 through P1.9 in `docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md`.
 
 ## Ownership Model
 
-Stormrunner uses a repository hierarchy for discovery and delegated creation: `Domain > Application Repository > Category > Project > Release`. Projects remain the first-class execution and governance boundary. A project owns authoring assets, execution assets, schedules, data pools, live controls, archives, and retention policy. Administrators grant domain and application-repository roles so delegated users can create categories, projects, and releases without receiving system-wide administration.
+APEX Load uses a repository hierarchy for discovery and delegated creation: `Domain > Application Repository > Category > Project > Release`. Projects remain the first-class execution and governance boundary. A project owns authoring assets, execution assets, schedules, data pools, live controls, archives, and retention policy. Administrators grant domain and application-repository roles so delegated users can create categories, projects, and releases without receiving system-wide administration.
 
 | Resource | Owner scope | Project behavior | Audit scope | Retention behavior |
 | --- | --- | --- | --- | --- |
@@ -28,7 +28,7 @@ Legacy or imported resources without a known tenant normalize to the `default` d
 
 ## Teams Decision
 
-Stormrunner does not need first-class teams before project-level quotas and chargeback. Existing identity integration can map IdP groups into global roles or project roles, while projects remain the stable resource boundary.
+APEX Load does not need first-class teams before project-level quotas and chargeback. Existing identity integration can map IdP groups into global roles or project roles, while projects remain the stable resource boundary.
 
 Add first-class teams only when at least one of these becomes necessary:
 

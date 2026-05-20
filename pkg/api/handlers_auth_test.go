@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestHandleGetAuthStatusReturnsDevByDefault(t *testing.T) {
@@ -148,8 +148,8 @@ func TestHandleGetAuthStatusReturnsTrustedHeaderIdentity(t *testing.T) {
 	req.Header.Set("X-Auth-Request-User", "alice")
 	req.Header.Set("X-Auth-Request-Name", "Alice Admin")
 	req.Header.Set("X-Auth-Request-Email", "alice@example.com")
-	req.Header.Set("X-Stormrunner-Roles", RoleSystemAdmin+","+RoleViewer)
-	req.Header.Set("X-Stormrunner-Project-Roles", "project-a="+RoleEditor+"|"+RoleViewer+";project-b="+RoleProjectAdmin)
+	req.Header.Set("X-APEXLoad-Roles", RoleSystemAdmin+","+RoleViewer)
+	req.Header.Set("X-APEXLoad-Project-Roles", "project-a="+RoleEditor+"|"+RoleViewer+";project-b="+RoleProjectAdmin)
 	resp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(resp, req)
@@ -196,7 +196,7 @@ func TestHandleGetAuthDiagnosticsReturnsTrustedHeaderReadiness(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
 	req.Header.Set("X-Auth-Request-User", "alice")
-	req.Header.Set("X-Stormrunner-Roles", RoleSystemAdmin)
+	req.Header.Set("X-APEXLoad-Roles", RoleSystemAdmin)
 	resp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(resp, req)
@@ -232,17 +232,17 @@ func TestHandleGetAuthDiagnosticsFailsOIDCReadinessWhenSecretsMissing(t *testing
 	settings.Auth.Mode = authModeOIDC
 	settings.Auth.ProviderName = "Example OIDC"
 	settings.Auth.IssuerURL = "https://login.example.test/tenant/v2.0"
-	settings.Auth.ClientID = "stormrunner-dashboard"
-	settings.Auth.ClientSecretEnvVar = "STORMRUNNER_OIDC_CLIENT_SECRET"
-	settings.Auth.RedirectURL = "https://stormrunner.example.test/api/v1/auth/callback"
-	settings.Auth.SessionSecretEnvVar = "STORMRUNNER_AUTH_SESSION_SECRET"
+	settings.Auth.ClientID = "apexload-dashboard"
+	settings.Auth.ClientSecretEnvVar = "APEXLOAD_OIDC_CLIENT_SECRET"
+	settings.Auth.RedirectURL = "https://apexload.example.test/api/v1/auth/callback"
+	settings.Auth.SessionSecretEnvVar = "APEXLOAD_AUTH_SESSION_SECRET"
 	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
 		t.Fatalf("UpdateSystemSettings returned error: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
 	req.Header.Set("X-Auth-Request-User", "sysadmin")
-	req.Header.Set("X-Stormrunner-Roles", RoleSystemAdmin)
+	req.Header.Set("X-APEXLoad-Roles", RoleSystemAdmin)
 	resp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(resp, req)
@@ -419,7 +419,7 @@ func TestHandleGetAuthEffectiveAccessEvaluatesProjectRoles(t *testing.T) {
 	enableTrustedHeaderAuth(t, server)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/effective-access?project_id=project-a", nil)
 	req.Header.Set("X-Auth-Request-User", "editor-user")
-	req.Header.Set("X-Stormrunner-Project-Roles", "project-a="+RoleEditor)
+	req.Header.Set("X-APEXLoad-Project-Roles", "project-a="+RoleEditor)
 	resp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(resp, req)
@@ -459,7 +459,7 @@ func TestHandleGetAuthEffectiveAccessEvaluatesProjectRoles(t *testing.T) {
 }
 
 func TestHandleServiceAccountCRUD(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -561,7 +561,7 @@ func TestHandleServiceAccountCRUD(t *testing.T) {
 }
 
 func TestHandleGetAuditEventsReturnsRecordedSystemSettingsChange(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -621,7 +621,7 @@ func TestHandleGetAuditEventsReturnsRecordedSystemSettingsChange(t *testing.T) {
 	if got := exportResp.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/csv") {
 		t.Fatalf("audit export content type = %q, want text/csv", got)
 	}
-	if got := exportResp.Header().Get("Content-Disposition"); !strings.Contains(got, "stormrunner-audit-events.csv") {
+	if got := exportResp.Header().Get("Content-Disposition"); !strings.Contains(got, "apexload-audit-events.csv") {
 		t.Fatalf("audit export disposition = %q, want filename", got)
 	}
 	csvRows, err := csv.NewReader(strings.NewReader(exportResp.Body.String())).ReadAll()

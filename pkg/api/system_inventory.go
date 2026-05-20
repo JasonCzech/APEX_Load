@@ -6,8 +6,8 @@ import (
 	"os"
 	"sort"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type SystemInventoryResponse struct {

@@ -1,6 +1,6 @@
-# Stormrunner MCP Server
+# APEX Load MCP Server
 
-The Stormrunner MCP server lets AI agents operate the Stormrunner REST API through the Model Context Protocol. It is an automation and control-plane bridge only; load generators and test execution never depend on this Python process.
+The APEX Load MCP server lets AI agents operate the APEX Load REST API through the Model Context Protocol. It is an automation and control-plane bridge only; load generators and test execution never depend on this Python process.
 
 ## Capabilities
 
@@ -16,18 +16,18 @@ The server exposes structured tools for the documented API surface:
 
 Stable resources are also available:
 
-- `stormrunner://api-guide`
-- `stormrunner://auth/access-matrix`
-- `stormrunner://system/parity-status`
-- `stormrunner://runtime-settings/support-matrix`
-- `stormrunner://protocol-bundles/support-matrix`
+- `apexload://api-guide`
+- `apexload://auth/access-matrix`
+- `apexload://system/parity-status`
+- `apexload://runtime-settings/support-matrix`
+- `apexload://protocol-bundles/support-matrix`
 
 ## Installation
 
 Use Python 3.10 or newer.
 
 ```bash
-cd /path/to/Project_Stormrunner/mcp
+cd /path/to/Project_APEX Load/mcp
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -39,17 +39,17 @@ Service-account authentication is the recommended mode for agents and CI/CD auto
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `STORMRUNNER_URL` | `http://localhost:8080/api/v1` | Controller API base URL. |
-| `STORMRUNNER_API_KEY` | empty | Preferred service-account key header. |
-| `STORMRUNNER_BEARER_TOKEN` | empty | Alternate bearer token if no API key is set. |
-| `STORMRUNNER_PROJECT_ID` | empty | Optional default project scope for list/read tools. |
-| `STORMRUNNER_TIMEOUT_SECONDS` | `30` | HTTP request timeout. |
+| `APEXLOAD_URL` | `http://localhost:8080/api/v1` | Controller API base URL. |
+| `APEXLOAD_API_KEY` | empty | Preferred service-account key header. |
+| `APEXLOAD_BEARER_TOKEN` | empty | Alternate bearer token if no API key is set. |
+| `APEXLOAD_PROJECT_ID` | empty | Optional default project scope for list/read tools. |
+| `APEXLOAD_TIMEOUT_SECONDS` | `30` | HTTP request timeout. |
 
-When both `STORMRUNNER_API_KEY` and `STORMRUNNER_BEARER_TOKEN` are set, the API key is used.
+When both `APEXLOAD_API_KEY` and `APEXLOAD_BEARER_TOKEN` are set, the API key is used.
 
 ## Safety Model
 
-Stormrunner RBAC remains the source of authorization truth. The MCP server adds an agent-facing guardrail before requests reach the API:
+APEX Load RBAC remains the source of authorization truth. The MCP server adds an agent-facing guardrail before requests reach the API:
 
 - Mutating tools require `confirm: true`.
 - Destructive/admin tools require both `confirm: true` and a non-empty `reason`.
@@ -69,13 +69,13 @@ Errors use the same top-level shape with `ok:false`, normalized `error.code`, `e
 ```json
 {
   "mcpServers": {
-    "stormrunner": {
+    "apexload": {
       "command": "python3",
-      "args": ["/path/to/Project_Stormrunner/mcp/server.py"],
+      "args": ["/path/to/Project_APEX Load/mcp/server.py"],
       "env": {
-        "STORMRUNNER_URL": "http://localhost:8080/api/v1",
-        "STORMRUNNER_API_KEY": "srk_...",
-        "STORMRUNNER_PROJECT_ID": "project-id"
+        "APEXLOAD_URL": "http://localhost:8080/api/v1",
+        "APEXLOAD_API_KEY": "srk_...",
+        "APEXLOAD_PROJECT_ID": "project-id"
       }
     }
   }
@@ -85,8 +85,8 @@ Errors use the same top-level shape with `ok:false`, normalized `error.code`, `e
 ## Running Manually
 
 ```bash
-cd /path/to/Project_Stormrunner/mcp
-STORMRUNNER_URL=http://localhost:8080/api/v1 python3 server.py
+cd /path/to/Project_APEX Load/mcp
+APEXLOAD_URL=http://localhost:8080/api/v1 python3 server.py
 ```
 
 ## Testing
@@ -100,9 +100,9 @@ python3 -m pytest mcp
 Run live integration smoke tests against a controller:
 
 ```bash
-STORMRUNNER_MCP_INTEGRATION=1 \
-STORMRUNNER_URL=http://localhost:8080/api/v1 \
+APEXLOAD_MCP_INTEGRATION=1 \
+APEXLOAD_URL=http://localhost:8080/api/v1 \
 python3 -m pytest mcp/tests/test_integration_smoke.py
 ```
 
-Integration tests are intentionally read/validate-only and are skipped unless `STORMRUNNER_MCP_INTEGRATION=1` is set.
+Integration tests are intentionally read/validate-only and are skipped unless `APEXLOAD_MCP_INTEGRATION=1` is set.

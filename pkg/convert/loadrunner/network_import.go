@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 var hostPortPattern = regexp.MustCompile(`(?i)([a-z0-9][a-z0-9.-]*|\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})`)
@@ -28,7 +28,7 @@ func ConvertNetwork(actions []*ParsedAction, opts ConvertOptions, detected Detec
 			Name:          firstNonEmpty(opts.ScriptName, "Converted_LR_Network_Script"),
 			Version:       "1.0.0",
 			Protocol:      "network",
-			GeneratedBy:   "stormrunner-loadrunner-converter",
+			GeneratedBy:   "apexload-loadrunner-converter",
 			GeneratedFrom: "loadrunner",
 			Config: dsl.ScriptConfig{
 				Network: dsl.NetworkConfig{

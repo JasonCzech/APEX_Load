@@ -6,7 +6,7 @@ from .tools import register_endpoint_tools, register_resources
 
 
 def create_mcp_server() -> FastMCP:
-    server = FastMCP("Stormrunner")
+    server = FastMCP("APEX Load")
     register_endpoint_tools(server)
     register_resources(server)
     return server

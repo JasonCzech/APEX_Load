@@ -21,8 +21,8 @@ func (s stubInventoryBackend) SystemInventory(ctx context.Context) []GeneratorIn
 func TestHandleGetSystemInventoryReturnsControllerAndGenerators(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	server.runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{{
-		Target:            "stormrunner-generator-0.stormrunner-generator:9090",
-		GeneratorID:       "stormrunner-generator-0",
+		Target:            "apexload-generator-0.apexload-generator:9090",
+		GeneratorID:       "apexload-generator-0",
 		Region:            "us-east",
 		Status:            "connected",
 		AvailableCapacity: 9600,
@@ -65,8 +65,8 @@ func TestHandleGetSystemInventoryReturnsControllerAndGenerators(t *testing.T) {
 	if len(payload.Generators) != 1 {
 		t.Fatalf("generator count = %d, want 1", len(payload.Generators))
 	}
-	if payload.Generators[0].GeneratorID != "stormrunner-generator-0" {
-		t.Fatalf("generator_id = %q, want stormrunner-generator-0", payload.Generators[0].GeneratorID)
+	if payload.Generators[0].GeneratorID != "apexload-generator-0" {
+		t.Fatalf("generator_id = %q, want apexload-generator-0", payload.Generators[0].GeneratorID)
 	}
 	if payload.Generators[0].Region != "us-east" {
 		t.Fatalf("region = %q, want us-east", payload.Generators[0].Region)

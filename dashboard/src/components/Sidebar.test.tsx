@@ -297,7 +297,7 @@ describe('Sidebar', () => {
       userButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(window.localStorage.getItem('stormrunner.devViewMode')).toBe('user')
+    expect(window.localStorage.getItem('apexload.devViewMode')).toBe('user')
     expect(container.textContent).toContain('Editor preview')
     expect(container.textContent).toContain('New Test')
     expect(container.textContent).toContain('API Guide')

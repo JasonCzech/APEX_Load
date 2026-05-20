@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/recorder"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/recorder"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 //go:embed static
@@ -394,7 +394,7 @@ func (s *Server) routes(allowedOrigins []string) {
 				return
 			}
 			w.Header().Set("Content-Type", "text/html")
-			w.Write([]byte("<!DOCTYPE html><html><body><h1>Stormrunner</h1><p>Dashboard not built. Run: cd dashboard && npm run build</p></body></html>"))
+			w.Write([]byte("<!DOCTYPE html><html><body><h1>APEX Load</h1><p>Dashboard not built. Run: cd dashboard && npm run build</p></body></html>"))
 		}))
 	} else {
 		fileServer := http.FileServer(http.FS(staticSub))
@@ -426,7 +426,7 @@ func (s *Server) Start() error {
 	}
 	s.startUsageAccountingSnapshotCadence()
 
-	slog.Info("stormrunner API server starting", "addr", s.httpServer.Addr)
+	slog.Info("apexload API server starting", "addr", s.httpServer.Addr)
 	if err := s.httpServer.ListenAndServe(); err != http.ErrServerClosed {
 		return err
 	}

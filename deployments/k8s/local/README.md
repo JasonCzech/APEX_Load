@@ -16,12 +16,12 @@ It deploys:
 
 ## What gets created
 
-- Namespace: `stormrunner-local`
-- Controller Service: `stormrunner-controller`
-- Controller Deployment: `stormrunner-controller`
-- Generator headless Service: `stormrunner-generator`
-- Generator StatefulSet: `stormrunner-generator`
-- Controller PVC: `stormrunner-controller-data`
+- Namespace: `apexload-local`
+- Controller Service: `apexload-controller`
+- Controller Deployment: `apexload-controller`
+- Generator headless Service: `apexload-generator`
+- Generator StatefulSet: `apexload-generator`
+- Controller PVC: `apexload-controller-data`
 
 ## Prerequisites
 
@@ -52,8 +52,8 @@ make docker-generator
 If you prefer to be explicit:
 
 ```bash
-docker build --build-arg BINARY=controller -t stormrunner-controller:0.1.0 -f Dockerfile .
-docker build --build-arg BINARY=generator -t stormrunner-generator:0.1.0 -f Dockerfile .
+docker build --build-arg BINARY=controller -t apexload-controller:0.1.0 -f Dockerfile .
+docker build --build-arg BINARY=generator -t apexload-generator:0.1.0 -f Dockerfile .
 ```
 
 The manifests use `imagePullPolicy: Never`, so Kubernetes expects these tags to exist locally.
@@ -82,11 +82,11 @@ See [AI_PROVIDER_SETUP.md](../AI_PROVIDER_SETUP.md) for the same commands in a s
 For Grok/xAI scripts:
 
 ```bash
-kubectl -n stormrunner-local create secret generic stormrunner-xai-secrets \
+kubectl -n apexload-local create secret generic apexload-xai-secrets \
 	--from-literal=XAI_API_KEY=REPLACE_WITH_XAI_API_KEY \
 	--dry-run=client -o yaml | kubectl apply -f -
 
-kubectl -n stormrunner-local create configmap stormrunner-xai-settings \
+kubectl -n apexload-local create configmap apexload-xai-settings \
 	--from-literal=XAI_MODEL=grok-4.3 \
 	--dry-run=client -o yaml | kubectl apply -f -
 ```
@@ -94,11 +94,11 @@ kubectl -n stormrunner-local create configmap stormrunner-xai-settings \
 For OpenAI scripts:
 
 ```bash
-kubectl -n stormrunner-local create secret generic stormrunner-openai-secrets \
+kubectl -n apexload-local create secret generic apexload-openai-secrets \
 	--from-literal=OPENAI_API_KEY=REPLACE_WITH_OPENAI_API_KEY \
 	--dry-run=client -o yaml | kubectl apply -f -
 
-kubectl -n stormrunner-local create configmap stormrunner-openai-settings \
+kubectl -n apexload-local create configmap apexload-openai-settings \
 	--from-literal=OPENAI_MODEL=REPLACE_WITH_OPENAI_MODEL \
 	--dry-run=client -o yaml | kubectl apply -f -
 ```
@@ -106,36 +106,36 @@ kubectl -n stormrunner-local create configmap stormrunner-openai-settings \
 After creating or updating either resource, restart the controller so it picks up the new values:
 
 ```bash
-kubectl -n stormrunner-local rollout restart deployment/stormrunner-controller
-kubectl -n stormrunner-local rollout status deployment/stormrunner-controller
+kubectl -n apexload-local rollout restart deployment/apexload-controller
+kubectl -n apexload-local rollout status deployment/apexload-controller
 ```
 
 ## 3. Wait for the pods to become ready
 
 ```bash
 make k8s-local-status
-kubectl -n stormrunner-local rollout status deployment/stormrunner-controller
-kubectl -n stormrunner-local rollout status statefulset/stormrunner-generator
+kubectl -n apexload-local rollout status deployment/apexload-controller
+kubectl -n apexload-local rollout status statefulset/apexload-generator
 ```
 
 You should end up with:
 
-- `stormrunner-controller-...` ready
-- `stormrunner-generator-0` ready
-- `stormrunner-generator-1` ready
+- `apexload-controller-...` ready
+- `apexload-generator-0` ready
+- `apexload-generator-1` ready
 
 ## 4. Check the controller and generator logs
 
 Controller logs:
 
 ```bash
-kubectl -n stormrunner-local logs deployment/stormrunner-controller
+kubectl -n apexload-local logs deployment/apexload-controller
 ```
 
 Generator logs:
 
 ```bash
-kubectl -n stormrunner-local logs statefulset/stormrunner-generator
+kubectl -n apexload-local logs statefulset/apexload-generator
 ```
 
 In the controller logs, look for distributed execution being enabled with two generator targets.
@@ -145,7 +145,7 @@ In the controller logs, look for distributed execution being enabled with two ge
 Port-forward the controller service:
 
 ```bash
-kubectl -n stormrunner-local port-forward service/stormrunner-controller 8080:8080
+kubectl -n apexload-local port-forward service/apexload-controller 8080:8080
 ```
 
 Then open:
@@ -158,7 +158,7 @@ Then open:
 After the dashboard is up, run the reusable smoke test helper from a second terminal:
 
 ```bash
-kubectl -n stormrunner-local port-forward service/stormrunner-controller 18080:8080
+kubectl -n apexload-local port-forward service/apexload-controller 18080:8080
 make k8s-smoke-test
 ```
 
@@ -167,8 +167,8 @@ By default the smoke test uses `examples/k8s-distributed-smoke.json`, which is a
 If you want a quick health-only check first:
 
 ```bash
-kubectl -n stormrunner-local get svc
-kubectl -n stormrunner-local get endpoints
+kubectl -n apexload-local get svc
+kubectl -n apexload-local get endpoints
 ```
 
 ## 7. Rebuild after code changes
@@ -178,8 +178,8 @@ When the controller or generator code changes:
 ```bash
 make docker-controller
 make docker-generator
-kubectl -n stormrunner-local rollout restart deployment/stormrunner-controller
-kubectl -n stormrunner-local rollout restart statefulset/stormrunner-generator
+kubectl -n apexload-local rollout restart deployment/apexload-controller
+kubectl -n apexload-local rollout restart statefulset/apexload-generator
 ```
 
 ## 8. Clean up
@@ -191,13 +191,13 @@ make k8s-local-delete
 If you also want to remove the PVC and any stored controller data:
 
 ```bash
-kubectl -n stormrunner-local delete pvc stormrunner-controller-data
+kubectl -n apexload-local delete pvc apexload-controller-data
 ```
 
 ## Notes for beginners
 
 - The controller is a Deployment because you only want one controller pod for now.
-- The generators use a StatefulSet so they get stable names: `stormrunner-generator-0` and `stormrunner-generator-1`.
+- The generators use a StatefulSet so they get stable names: `apexload-generator-0` and `apexload-generator-1`.
 - The controller connects to those two generator pods directly over gRPC on port `9090`.
 - The controller keeps its SQLite database and archives on the PVC so a controller pod restart does not wipe everything.
 - `port-forward` is the simplest way to access the dashboard locally. You do not need ingress for this first setup.

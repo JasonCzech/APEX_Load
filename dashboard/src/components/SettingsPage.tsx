@@ -56,17 +56,17 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
     logout_url: '',
     issuer_url: '',
     client_id: '',
-    client_secret_env_var: 'STORMRUNNER_OIDC_CLIENT_SECRET',
+    client_secret_env_var: 'APEXLOAD_OIDC_CLIENT_SECRET',
     redirect_url: '',
     scopes: ['openid', 'profile', 'email'],
     roles_claim: 'roles',
     project_roles_claim: 'project_roles',
-    session_secret_env_var: 'STORMRUNNER_AUTH_SESSION_SECRET',
+    session_secret_env_var: 'APEXLOAD_AUTH_SESSION_SECRET',
     user_header: 'X-Auth-Request-User',
     name_header: 'X-Auth-Request-Name',
     email_header: 'X-Auth-Request-Email',
-    roles_header: 'X-Stormrunner-Roles',
-    project_roles_header: 'X-Stormrunner-Project-Roles',
+    roles_header: 'X-APEX Load-Roles',
+    project_roles_header: 'X-APEX Load-Project-Roles',
   },
 }
 
@@ -94,10 +94,10 @@ const OIDC_PROVIDER_PRESETS = [
     scopes: ['openid', 'profile', 'email'],
     roles_claim: 'roles',
     project_roles_claim: 'project_roles',
-    client_secret_env_var: 'STORMRUNNER_OIDC_CLIENT_SECRET',
-    session_secret_env_var: 'STORMRUNNER_AUTH_SESSION_SECRET',
+    client_secret_env_var: 'APEXLOAD_OIDC_CLIENT_SECRET',
+    session_secret_env_var: 'APEXLOAD_AUTH_SESSION_SECRET',
     logout_url: '/',
-    description: 'Uses Entra application roles or shaped group claims for Stormrunner RBAC.',
+    description: 'Uses Entra application roles or shaped group claims for APEX Load RBAC.',
   },
   {
     id: 'generic',
@@ -106,8 +106,8 @@ const OIDC_PROVIDER_PRESETS = [
     scopes: ['openid', 'profile', 'email'],
     roles_claim: 'roles',
     project_roles_claim: 'project_roles',
-    client_secret_env_var: 'STORMRUNNER_OIDC_CLIENT_SECRET',
-    session_secret_env_var: 'STORMRUNNER_AUTH_SESSION_SECRET',
+    client_secret_env_var: 'APEXLOAD_OIDC_CLIENT_SECRET',
+    session_secret_env_var: 'APEXLOAD_AUTH_SESSION_SECRET',
     logout_url: '/',
     description: 'Keeps the standard OIDC scope and claim contract for any compliant issuer.',
   },
@@ -784,9 +784,9 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
   const [confirmingResetAll, setConfirmingResetAll] = useState(false)
   const [customizingSections, setCustomizingSections] = useState(false)
   const [draggedSectionId, setDraggedSectionId] = useState<SettingsSectionId | null>(null)
-  const [sectionOrder, setSectionOrder] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('stormrunner.settings.sectionOrder'))
-  const [hiddenSectionIds, setHiddenSectionIds] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('stormrunner.settings.hiddenSections'))
-  const [collapsedSectionIds, setCollapsedSectionIds] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('stormrunner.settings.collapsedSections'))
+  const [sectionOrder, setSectionOrder] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('apexload.settings.sectionOrder'))
+  const [hiddenSectionIds, setHiddenSectionIds] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('apexload.settings.hiddenSections'))
+  const [collapsedSectionIds, setCollapsedSectionIds] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('apexload.settings.collapsedSections'))
   const [managedReleases, setManagedReleases] = useState(releases)
   const [newApplicationName, setNewApplicationName] = useState('')
   const [applicationActionError, setApplicationActionError] = useState('')
@@ -1137,9 +1137,9 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const targetSection = window.localStorage.getItem('stormrunner.settings.focusSection') as SettingsSectionId | null
+    const targetSection = window.localStorage.getItem('apexload.settings.focusSection') as SettingsSectionId | null
     if (!targetSection) return
-    window.localStorage.removeItem('stormrunner.settings.focusSection')
+    window.localStorage.removeItem('apexload.settings.focusSection')
     window.setTimeout(() => {
       document.getElementById(`settings-section-${targetSection}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }, 150)
@@ -1198,17 +1198,17 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    window.localStorage.setItem('stormrunner.settings.sectionOrder', JSON.stringify(sectionOrder))
+    window.localStorage.setItem('apexload.settings.sectionOrder', JSON.stringify(sectionOrder))
   }, [sectionOrder])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    window.localStorage.setItem('stormrunner.settings.hiddenSections', JSON.stringify(hiddenSectionIds))
+    window.localStorage.setItem('apexload.settings.hiddenSections', JSON.stringify(hiddenSectionIds))
   }, [hiddenSectionIds])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    window.localStorage.setItem('stormrunner.settings.collapsedSections', JSON.stringify(collapsedSectionIds))
+    window.localStorage.setItem('apexload.settings.collapsedSections', JSON.stringify(collapsedSectionIds))
   }, [collapsedSectionIds])
 
   const loadDataPools = async (preferredId?: string) => {
@@ -1412,7 +1412,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
     try {
       const blob = await api.downloadUsageAccounting(activeProject?.id)
       const date = new Date().toISOString().slice(0, 10)
-      downloadBlob(blob, `stormrunner-usage-accounting-${date}.csv`)
+      downloadBlob(blob, `apexload-usage-accounting-${date}.csv`)
       setUsageActionMessage('Usage accounting export downloaded.')
       setUsageActionError('')
     } catch (error: unknown) {
@@ -1459,7 +1459,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
         status: auditStatusFilter.trim() || undefined,
       })
       const date = new Date().toISOString().slice(0, 10)
-      downloadBlob(blob, `stormrunner-audit-events-${date}.csv`)
+      downloadBlob(blob, `apexload-audit-events-${date}.csv`)
       setAuditActionMessage('Audit export downloaded.')
       setAuditActionError('')
     } catch (error: unknown) {
@@ -2201,7 +2201,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
               <div className="setting-row">
                 <div className="setting-info">
                   <span className="setting-label">Access Control Mode <span className="settings-restart-badge">Restart required</span></span>
-                  <span className="setting-desc">Dev Bypass keeps local development open by default. Trusted Headers expects an authenticating reverse proxy to inject user and role headers before requests reach Stormrunner. Changes to auth mode take effect after restarting the controller.</span>
+                  <span className="setting-desc">Dev Bypass keeps local development open by default. Trusted Headers expects an authenticating reverse proxy to inject user and role headers before requests reach APEX Load. Changes to auth mode take effect after restarting the controller.</span>
                 </div>
                 <select
                   className="settings-input"
@@ -2218,7 +2218,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                   <div className="settings-manager-summary">
                     <div>
                       <span className="setting-label">Development Bypass</span>
-                      <span className="setting-desc">Local development bypass is active. Stormrunner allows dashboard and API access without upstream identity, while still recording audit events and supporting service-account API keys for automation flows.</span>
+                      <span className="setting-desc">Local development bypass is active. APEX Load allows dashboard and API access without upstream identity, while still recording audit events and supporting service-account API keys for automation flows.</span>
                     </div>
                     <strong>{formatAuthStatusSummary(authStatus)}</strong>
                   </div>
@@ -2254,7 +2254,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                       className="settings-input cell-mono"
                       value={settings.auth.login_url || ''}
                       onChange={(e) => updateAuth('login_url', e.target.value)}
-                      placeholder="https://login.example.com/stormrunner/start"
+                      placeholder="https://login.example.com/apexload/start"
                     />
                   </div>
                   <div className="setting-row">
@@ -2314,7 +2314,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                       className="settings-input cell-mono"
                       value={settings.auth.roles_header}
                       onChange={(e) => updateAuth('roles_header', e.target.value)}
-                      placeholder="X-Stormrunner-Roles"
+                      placeholder="X-APEX Load-Roles"
                     />
                   </div>
                   <div className="setting-row">
@@ -2326,14 +2326,14 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                       className="settings-input cell-mono"
                       value={settings.auth.project_roles_header}
                       onChange={(e) => updateAuth('project_roles_header', e.target.value)}
-                      placeholder="X-Stormrunner-Project-Roles"
+                      placeholder="X-APEX Load-Project-Roles"
                     />
                   </div>
                   <div className="settings-subsection">
                     <div className="settings-manager-summary">
                       <div>
                         <span className="setting-label">Microsoft Entra ID Gateway Contract</span>
-                        <span className="setting-desc">Use your Entra-backed ingress or reverse proxy to translate identity claims into the headers Stormrunner evaluates for RBAC.</span>
+                        <span className="setting-desc">Use your Entra-backed ingress or reverse proxy to translate identity claims into the headers APEX Load evaluates for RBAC.</span>
                       </div>
                       <strong>{settings.auth.provider_name?.trim() || 'Microsoft Entra ID'}</strong>
                     </div>
@@ -2354,7 +2354,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                     <div className="setting-row">
                       <div className="setting-info">
                         <span className="setting-label">Global Role Mapping</span>
-                        <span className="setting-desc">Map Entra groups or app roles into Stormrunner roles such as viewer, editor, project_admin, and system_admin.</span>
+                        <span className="setting-desc">Map Entra groups or app roles into APEX Load roles such as viewer, editor, project_admin, and system_admin.</span>
                       </div>
                       <span className="settings-value-display cell-mono">{formatHeaderContractValue(settings.auth.roles_header, 'No global role header')}</span>
                     </div>
@@ -2370,7 +2370,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                     <div className="settings-manager-summary">
                       <div>
                         <span className="setting-label">Current Session Access</span>
-                        <span className="setting-desc">Shows the identity and role assignments from the trusted headers reaching Stormrunner right now. User lifecycle remains managed by Microsoft Entra ID or another upstream OIDC or SAML gateway.</span>
+                        <span className="setting-desc">Shows the identity and role assignments from the trusted headers reaching APEX Load right now. User lifecycle remains managed by Microsoft Entra ID or another upstream OIDC or SAML gateway.</span>
                       </div>
                       <strong>{formatAuthStatusSummary(authStatus)}</strong>
                     </div>
@@ -2416,7 +2416,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                       <div className="setting-row">
                         <div className="setting-info">
                           <span className="setting-label">Session Status</span>
-                          <span className="setting-desc">Open the dashboard through the authenticating proxy so Stormrunner receives identity and role headers.</span>
+                          <span className="setting-desc">Open the dashboard through the authenticating proxy so APEX Load receives identity and role headers.</span>
                         </div>
                         <span className="settings-value-display">No authenticated user detected</span>
                       </div>
@@ -2426,7 +2426,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                     <div className="settings-manager-summary">
                       <div>
                         <span className="setting-label">Microsoft Entra ID Troubleshooting</span>
-                        <span className="setting-desc">Use this checklist when Stormrunner is configured for trusted headers but the current request is missing an authenticated identity.</span>
+                        <span className="setting-desc">Use this checklist when APEX Load is configured for trusted headers but the current request is missing an authenticated identity.</span>
                       </div>
                       <strong>{authStatus?.authenticated ? 'Headers detected' : 'Check gateway mapping'}</strong>
                     </div>
@@ -2447,14 +2447,14 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                     <div className="setting-row">
                       <div className="setting-info">
                         <span className="setting-label">Role Header Check</span>
-                        <span className="setting-desc">Forward either the global roles header or the project roles header so Stormrunner can evaluate RBAC.</span>
+                        <span className="setting-desc">Forward either the global roles header or the project roles header so APEX Load can evaluate RBAC.</span>
                       </div>
                       <span className="settings-value-display cell-mono">{formatHeaderContractValue(settings.auth.roles_header, 'No global role header')} | {formatHeaderContractValue(settings.auth.project_roles_header, 'No project role header')}</span>
                     </div>
                     <div className="setting-row">
                       <div className="setting-info">
                         <span className="setting-label">Gateway UX</span>
-                        <span className="setting-desc">Provider label and login URL should point operators back to the correct Microsoft Entra ID entry point when Stormrunner blocks unauthenticated access.</span>
+                        <span className="setting-desc">Provider label and login URL should point operators back to the correct Microsoft Entra ID entry point when APEX Load blocks unauthenticated access.</span>
                       </div>
                       <span className="settings-value-display">{settings.auth.provider_name?.trim() || 'Microsoft Entra ID'}{settings.auth.login_url?.trim() ? ` | ${settings.auth.login_url.trim()}` : ''}</span>
                     </div>
@@ -2510,7 +2510,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                       className="settings-input cell-mono"
                       value={settings.auth.client_id || ''}
                       onChange={(e) => updateAuth('client_id', e.target.value)}
-                      placeholder="stormrunner-dashboard"
+                      placeholder="apexload-dashboard"
                     />
                   </div>
                   <div className="setting-row">
@@ -2522,7 +2522,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                       className="settings-input cell-mono"
                       value={settings.auth.client_secret_env_var || ''}
                       onChange={(e) => updateAuth('client_secret_env_var', e.target.value)}
-                      placeholder="STORMRUNNER_OIDC_CLIENT_SECRET"
+                      placeholder="APEXLOAD_OIDC_CLIENT_SECRET"
                     />
                   </div>
                   <div className="setting-row">
@@ -2534,7 +2534,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                       className="settings-input cell-mono"
                       value={settings.auth.redirect_url || ''}
                       onChange={(e) => updateAuth('redirect_url', e.target.value)}
-                      placeholder="https://stormrunner.example.com/api/v1/auth/callback"
+                      placeholder="https://apexload.example.com/api/v1/auth/callback"
                     />
                   </div>
                   <div className="setting-row">
@@ -2576,19 +2576,19 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                   <div className="setting-row">
                     <div className="setting-info">
                       <span className="setting-label">Session Secret Env Var</span>
-                      <span className="setting-desc">Environment variable name read by the controller to sign the Stormrunner auth session cookie.</span>
+                      <span className="setting-desc">Environment variable name read by the controller to sign the APEX Load auth session cookie.</span>
                     </div>
                     <input
                       className="settings-input cell-mono"
                       value={settings.auth.session_secret_env_var || ''}
                       onChange={(e) => updateAuth('session_secret_env_var', e.target.value)}
-                      placeholder="STORMRUNNER_AUTH_SESSION_SECRET"
+                      placeholder="APEXLOAD_AUTH_SESSION_SECRET"
                     />
                   </div>
                   <div className="setting-row">
                     <div className="setting-info">
                       <span className="setting-label">Post-Logout Redirect URL</span>
-                      <span className="setting-desc">Optional absolute URL or absolute path used after Stormrunner clears its local OIDC session.</span>
+                      <span className="setting-desc">Optional absolute URL or absolute path used after APEX Load clears its local OIDC session.</span>
                     </div>
                     <input
                       className="settings-input cell-mono"
@@ -2601,7 +2601,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                     <div className="settings-manager-summary">
                       <div>
                         <span className="setting-label">Native OIDC Session Flow</span>
-                        <span className="setting-desc">Stormrunner redirects the dashboard through the identity provider, exchanges the authorization code, and then serves its own signed session cookie for API access.</span>
+                        <span className="setting-desc">APEX Load redirects the dashboard through the identity provider, exchanges the authorization code, and then serves its own signed session cookie for API access.</span>
                       </div>
                       <strong>{settings.auth.provider_name?.trim() || 'OIDC Provider'}</strong>
                     </div>
@@ -2622,7 +2622,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                     <div className="setting-row">
                       <div className="setting-info">
                         <span className="setting-label">Claim Mapping</span>
-                        <span className="setting-desc">Stormrunner maps token claims back onto the same RBAC role catalog used by service accounts and project governance.</span>
+                        <span className="setting-desc">APEX Load maps token claims back onto the same RBAC role catalog used by service accounts and project governance.</span>
                       </div>
                       <span className="settings-value-display cell-mono">{settings.auth.roles_claim?.trim() || 'roles'} | {settings.auth.project_roles_claim?.trim() || 'project_roles'}</span>
                     </div>
@@ -2673,7 +2673,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                     <div className="setting-row">
                       <div className="setting-info">
                         <span className="setting-label">Diagnostics Status</span>
-                        <span className="setting-desc">Stormrunner could not load the auth diagnostics payload for this session.</span>
+                        <span className="setting-desc">APEX Load could not load the auth diagnostics payload for this session.</span>
                       </div>
                       <span className="settings-value-display">Unavailable</span>
                     </div>
@@ -2755,7 +2755,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                       <div className="settings-manager-summary">
                         <div>
                           <span className="setting-label">Built-In Role Reference</span>
-                          <span className="setting-desc">Stormrunner applies these roles through the request RBAC matrix regardless of whether identity arrives from trusted headers or a native OIDC session.</span>
+                          <span className="setting-desc">APEX Load applies these roles through the request RBAC matrix regardless of whether identity arrives from trusted headers or a native OIDC session.</span>
                         </div>
                         <strong>{authRoles.length} roles</strong>
                       </div>

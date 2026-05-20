@@ -1,7 +1,7 @@
 # Script Authoring Consolidation Roadmap
 
 ## Objective
-Consolidate Stormrunner's script-building system around shared contracts and lifecycle behavior without collapsing distinct user entry points into one monolithic UI.
+Consolidate APEX Load's script-building system around shared contracts and lifecycle behavior without collapsing distinct user entry points into one monolithic UI.
 
 The goal is to keep the current acquisition paths that matter:
 

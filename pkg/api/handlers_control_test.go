@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func newRunningControlTestServer(t *testing.T) (*Server, *ManagedTest) {
@@ -58,7 +58,7 @@ func newRunningControlTestServer(t *testing.T) (*Server, *ManagedTest) {
 
 func newRunningControlAuditServer(t *testing.T) (*Server, *ManagedTest, *storage.SQLiteStore) {
 	t.Helper()
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -343,7 +343,7 @@ func TestHandleMoveScaleAdjustAndDeleteTestWriteAuditEvents(t *testing.T) {
 }
 
 func TestHandlePinAndUnpinComparisonBaselineWriteAuditEvents(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}

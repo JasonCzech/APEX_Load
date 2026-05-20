@@ -218,7 +218,7 @@ describe('ScriptEditor', () => {
       },
     })
     apiMock.previewBrowserToHTTP.mockResolvedValue({
-      schema_version: 'stormrunner.browser_to_http_preview.v1',
+      schema_version: 'apexload.browser_to_http_preview.v1',
       generated_at: '2026-05-14T20:00:02Z',
       replay_session_id: 'browser-replay-1',
       generated_script: {
@@ -1736,7 +1736,7 @@ describe('ScriptEditor', () => {
     const [content, filename] = downloadTextFileMock.mock.calls[0]
     expect(filename).toBe('checkout-flow-browser-replay-1-browser-replay.json')
     const parsed = JSON.parse(content)
-    expect(parsed.schema_version).toBe('stormrunner.browser_replay_export.v1')
+    expect(parsed.schema_version).toBe('apexload.browser_replay_export.v1')
     expect(parsed.replay_session_id).toBe('browser-replay-1')
     expect(parsed.script).toMatchObject({
       name: 'Checkout Flow',
@@ -1865,7 +1865,7 @@ describe('ScriptEditor', () => {
     expect(entries.has('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/screenshot.png')).toBe(true)
 
     const manifest = JSON.parse(zipDecoder.decode(entries.get('checkout-flow-browser-replay-1-browser-replay/manifest.json')))
-    expect(manifest.schema_version).toBe('stormrunner.browser_replay_bundle.v1')
+    expect(manifest.schema_version).toBe('apexload.browser_replay_bundle.v1')
     expect(manifest.event_count).toBe(1)
 
     const eventJson = JSON.parse(zipDecoder.decode(entries.get('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/event.json')))

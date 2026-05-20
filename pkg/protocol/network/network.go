@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/go-ldap/ldap/v3"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func init() {
@@ -332,7 +332,7 @@ func (n *Network) runFTP(ctx context.Context, action *protocol.Action) (*operati
 	}
 	lines = append(lines, greeting)
 	username := firstNonEmpty(actionParamString(action.Params, "username"), n.username, "anonymous")
-	password := firstNonEmpty(actionParamString(action.Params, "password"), n.password, "stormrunner@example.invalid")
+	password := firstNonEmpty(actionParamString(action.Params, "password"), n.password, "apexload@example.invalid")
 	if username != "" {
 		lines = append(lines, n.commandResponse(tp, "USER "+username))
 		if password != "" {
@@ -377,7 +377,7 @@ func (n *Network) runSMTP(ctx context.Context, action *protocol.Action) (*operat
 	} else {
 		return nil, err
 	}
-	hostname := firstNonEmpty(actionParamString(action.Params, "helo"), "stormrunner.local")
+	hostname := firstNonEmpty(actionParamString(action.Params, "helo"), "apexload.local")
 	lines = append(lines, smtpCommandResponse(tp, "EHLO "+hostname, 250))
 	if n.username != "" || actionParamString(action.Params, "username") != "" {
 		username := firstNonEmpty(actionParamString(action.Params, "username"), n.username)
@@ -925,7 +925,7 @@ func smtpMessage(from string, to []string, action *protocol.Action) string {
 		body = action.Value
 	}
 	if body == "" {
-		body = "stormrunner smtp probe"
+		body = "apexload smtp probe"
 	}
 	headers := map[string]string{
 		"From": from,

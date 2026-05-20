@@ -1,15 +1,15 @@
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: stormrunner-generator
+  name: apexload-generator
   labels:
-    app.kubernetes.io/name: stormrunner-generator
+    app.kubernetes.io/name: apexload-generator
     app.kubernetes.io/component: generator
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: StatefulSet
-    name: stormrunner-generator
+    name: apexload-generator
   minReplicaCount: 2
   maxReplicaCount: 50
   pollingInterval: 15
@@ -38,21 +38,21 @@ spec:
     - type: prometheus
       metadata:
         serverAddress: http://prometheus-operated.monitoring.svc:9090
-        metricName: stormrunner_queued_vusers
-        query: sum(stormrunner_scaling_vusers{state="queued"})
+        metricName: apexload_queued_vusers
+        query: sum(apexload_scaling_vusers{state="queued"})
         threshold: "5000"
         activationThreshold: "1"
     - type: prometheus
       metadata:
         serverAddress: http://prometheus-operated.monitoring.svc:9090
-        metricName: stormrunner_queued_browser_vusers
-        query: sum(stormrunner_scaling_protocol_vusers{state="queued",protocol="browser"})
+        metricName: apexload_queued_browser_vusers
+        query: sum(apexload_scaling_protocol_vusers{state="queued",protocol="browser"})
         threshold: "20"
         activationThreshold: "1"
     - type: prometheus
       metadata:
         serverAddress: http://prometheus-operated.monitoring.svc:9090
-        metricName: stormrunner_saturated_generators
-        query: sum(stormrunner_generator_capacity_state_count{state="saturated"})
+        metricName: apexload_saturated_generators
+        query: sum(apexload_generator_capacity_state_count{state="saturated"})
         threshold: "1"
         activationThreshold: "1"

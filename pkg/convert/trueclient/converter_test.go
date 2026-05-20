@@ -5,7 +5,7 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestConvertArchiveParsesUTF16DefaultXML(t *testing.T) {
@@ -60,7 +60,7 @@ func TestConvertArchiveMapsQuerySelectorValueAssignment(t *testing.T) {
 <truScript>
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
-    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'Stormrunner QA'&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'APEX Load QA'&quot;}}" />
   </step>
 </truScript>`),
 	}, ConvertOptions{ScriptName: "Profile Flow"})
@@ -70,7 +70,7 @@ func TestConvertArchiveMapsQuerySelectorValueAssignment(t *testing.T) {
 	if len(result.Script.Actions) != 2 {
 		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
 	}
-	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "Stormrunner QA" {
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "APEX Load QA" {
 		t.Fatalf("action = %#v, want browser fill for #displayName", action)
 	}
 	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
@@ -160,7 +160,7 @@ func TestConvertArchiveMapsQuerySelectorAllJavaScript(t *testing.T) {
 <truScript>
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
-    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelectorAll('input.display-name')[0].value = 'Stormrunner QA';\ndocument.querySelectorAll('button.save')[0].click()&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelectorAll('input.display-name')[0].value = 'APEX Load QA';\ndocument.querySelectorAll('button.save')[0].click()&quot;}}" />
   </step>
 </truScript>`),
 	}, ConvertOptions{ScriptName: "Query Selector All Flow"})
@@ -170,7 +170,7 @@ func TestConvertArchiveMapsQuerySelectorAllJavaScript(t *testing.T) {
 	if len(result.Script.Actions) != 3 {
 		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
 	}
-	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "input.display-name" || action.Value != "Stormrunner QA" {
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "input.display-name" || action.Value != "APEX Load QA" {
 		t.Fatalf("action[1] = %#v, want browser fill for first querySelectorAll match", action)
 	}
 	if action := result.Script.Actions[2]; action.Type != "browser_click" || action.Selector != "button.save" {
@@ -190,7 +190,7 @@ func TestConvertArchiveMapsCollectionItemJavaScript(t *testing.T) {
 <truScript>
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
-    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.getElementsByName('displayName').item(0).value = 'Stormrunner QA';\ndocument.querySelectorAll('button.save').item(0).click()&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.getElementsByName('displayName').item(0).value = 'APEX Load QA';\ndocument.querySelectorAll('button.save').item(0).click()&quot;}}" />
   </step>
 </truScript>`),
 	}, ConvertOptions{ScriptName: "Collection Item Flow"})
@@ -200,7 +200,7 @@ func TestConvertArchiveMapsCollectionItemJavaScript(t *testing.T) {
 	if len(result.Script.Actions) != 3 {
 		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
 	}
-	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != `[name="displayName"]` || action.Value != "Stormrunner QA" {
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != `[name="displayName"]` || action.Value != "APEX Load QA" {
 		t.Fatalf("action[1] = %#v, want browser fill for first named item", action)
 	}
 	if action := result.Script.Actions[2]; action.Type != "browser_click" || action.Selector != "button.save" {
@@ -223,7 +223,7 @@ func TestConvertArchiveMapsGetElementByIdJavaScript(t *testing.T) {
 <truScript>
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/login\&quot;&quot;}}" />
-    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.getElementById('username').value = 'stormrunner';\ndocument.getElementById('submit').click()&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.getElementById('username').value = 'apexload';\ndocument.getElementById('submit').click()&quot;}}" />
   </step>
 </truScript>`),
 	}, ConvertOptions{ScriptName: "Element ID JavaScript"})
@@ -233,7 +233,7 @@ func TestConvertArchiveMapsGetElementByIdJavaScript(t *testing.T) {
 	if len(result.Script.Actions) != 3 {
 		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
 	}
-	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#username" || action.Value != "stormrunner" {
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#username" || action.Value != "apexload" {
 		t.Fatalf("action[1] = %#v, want browser fill for #username", action)
 	}
 	if action := result.Script.Actions[2]; action.Type != "browser_click" || action.Selector != "#submit" {
@@ -256,7 +256,7 @@ func TestConvertArchiveMapsGetElementsByNameJavaScript(t *testing.T) {
 <truScript>
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/search\&quot;&quot;}}" />
-    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.getElementsByName('q')[0].value = 'stormrunner';\ndocument.getElementsByName('submitSearch')[0].click()&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.getElementsByName('q')[0].value = 'apexload';\ndocument.getElementsByName('submitSearch')[0].click()&quot;}}" />
   </step>
 </truScript>`),
 	}, ConvertOptions{ScriptName: "Element Name JavaScript"})
@@ -266,7 +266,7 @@ func TestConvertArchiveMapsGetElementsByNameJavaScript(t *testing.T) {
 	if len(result.Script.Actions) != 3 {
 		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
 	}
-	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != `[name="q"]` || action.Value != "stormrunner" {
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != `[name="q"]` || action.Value != "apexload" {
 		t.Fatalf("action[1] = %#v, want browser fill for name q", action)
 	}
 	if action := result.Script.Actions[2]; action.Type != "browser_click" || action.Selector != `[name="submitSearch"]` {
@@ -289,7 +289,7 @@ func TestConvertArchiveMapsFormElementJavaScript(t *testing.T) {
 <truScript>
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/login\&quot;&quot;}}" />
-    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.forms['login'].elements['username'].value = 'stormrunner';\ndocument.forms[0].elements['submit'].click()&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.forms['login'].elements['username'].value = 'apexload';\ndocument.forms[0].elements['submit'].click()&quot;}}" />
   </step>
 </truScript>`),
 	}, ConvertOptions{ScriptName: "Form Element JavaScript"})
@@ -299,7 +299,7 @@ func TestConvertArchiveMapsFormElementJavaScript(t *testing.T) {
 	if len(result.Script.Actions) != 3 {
 		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
 	}
-	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != `[name="username"]` || action.Value != "stormrunner" {
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != `[name="username"]` || action.Value != "apexload" {
 		t.Fatalf("action[1] = %#v, want browser fill for username form element", action)
 	}
 	if action := result.Script.Actions[2]; action.Type != "browser_click" || action.Selector != `[name="submit"]` {
@@ -319,7 +319,7 @@ func TestConvertArchiveMapsGetElementsByClassNameJavaScript(t *testing.T) {
 <truScript>
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/search\&quot;&quot;}}" />
-    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.getElementsByClassName('search-field primary')[0].value = 'stormrunner';\ndocument.getElementsByClassName('search-submit')[0].click()&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.getElementsByClassName('search-field primary')[0].value = 'apexload';\ndocument.getElementsByClassName('search-submit')[0].click()&quot;}}" />
   </step>
 </truScript>`),
 	}, ConvertOptions{ScriptName: "Element Class JavaScript"})
@@ -329,7 +329,7 @@ func TestConvertArchiveMapsGetElementsByClassNameJavaScript(t *testing.T) {
 	if len(result.Script.Actions) != 3 {
 		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
 	}
-	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != ".search-field.primary" || action.Value != "stormrunner" {
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != ".search-field.primary" || action.Value != "apexload" {
 		t.Fatalf("action[1] = %#v, want browser fill for class search field", action)
 	}
 	if action := result.Script.Actions[2]; action.Type != "browser_click" || action.Selector != ".search-submit" {
@@ -352,7 +352,7 @@ func TestConvertArchiveMapsGetElementsByTagNameJavaScript(t *testing.T) {
 <truScript>
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/search\&quot;&quot;}}" />
-    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.getElementsByTagName('input')[0].value = 'stormrunner';\ndocument.getElementsByTagName('button')[0].click()&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.getElementsByTagName('input')[0].value = 'apexload';\ndocument.getElementsByTagName('button')[0].click()&quot;}}" />
   </step>
 </truScript>`),
 	}, ConvertOptions{ScriptName: "Element Tag JavaScript"})
@@ -362,7 +362,7 @@ func TestConvertArchiveMapsGetElementsByTagNameJavaScript(t *testing.T) {
 	if len(result.Script.Actions) != 3 {
 		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
 	}
-	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "input" || action.Value != "stormrunner" {
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "input" || action.Value != "apexload" {
 		t.Fatalf("action[1] = %#v, want browser fill for first input tag", action)
 	}
 	if action := result.Script.Actions[2]; action.Type != "browser_click" || action.Selector != "button" {
@@ -501,7 +501,7 @@ func TestConvertArchiveMapsDirectClickAndTypeSteps(t *testing.T) {
 <truScript>
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/login\&quot;&quot;}}" />
-    <step type="testObject" action="Set / Type" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#username\&quot;&quot;},&quot;Value&quot;:{&quot;value&quot;:&quot;\&quot;stormrunner\&quot;&quot;}}" />
+    <step type="testObject" action="Set / Type" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#username\&quot;&quot;},&quot;Value&quot;:{&quot;value&quot;:&quot;\&quot;apexload\&quot;&quot;}}" />
     <step type="testObject" action="Click" index="3" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#submit\&quot;&quot;}}" />
   </step>
 </truScript>`),
@@ -512,7 +512,7 @@ func TestConvertArchiveMapsDirectClickAndTypeSteps(t *testing.T) {
 	if len(result.Script.Actions) != 3 {
 		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
 	}
-	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#username" || action.Value != "stormrunner" {
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#username" || action.Value != "apexload" {
 		t.Fatalf("action = %#v, want browser fill for #username", action)
 	}
 	if action := result.Script.Actions[2]; action.Type != "browser_click" || action.Selector != "#submit" {
@@ -594,7 +594,7 @@ func TestConvertArchiveMapsWaitAndPreservesTransactions(t *testing.T) {
   <step type="block" action="action" actionName="Action">
     <step type="util" action="Start Transaction" index="1" arguments="{&quot;Transaction Name&quot;:{&quot;value&quot;:&quot;\&quot;Login\&quot;&quot;}}" />
     <step type="testObject" action="Navigate" index="2" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/login\&quot;&quot;}}" />
-    <step type="testObject" action="Set / Type" index="3" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#username\&quot;&quot;},&quot;Value&quot;:{&quot;value&quot;:&quot;\&quot;stormrunner\&quot;&quot;}}" />
+    <step type="testObject" action="Set / Type" index="3" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#username\&quot;&quot;},&quot;Value&quot;:{&quot;value&quot;:&quot;\&quot;apexload\&quot;&quot;}}" />
     <step type="util" action="Wait" index="4" arguments="{&quot;Duration&quot;:{&quot;value&quot;:&quot;500&quot;}}" />
     <step type="testObject" action="Click" index="5" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#submit\&quot;&quot;}}" />
     <step type="util" action="End Transaction" index="6" arguments="{&quot;Transaction Name&quot;:{&quot;value&quot;:&quot;\&quot;Login\&quot;&quot;}}" />
@@ -636,7 +636,7 @@ func TestConvertArchiveMapsVerifyToPreviousActionAssertions(t *testing.T) {
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/login\&quot;&quot;}}" />
     <step type="util" action="Verify" index="2" arguments="{&quot;Title&quot;:{&quot;value&quot;:&quot;\&quot;Login Page\&quot;&quot;}}" />
     <step type="testObject" action="Click" index="3" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#submit\&quot;&quot;}}" />
-    <step type="util" action="Verify" index="4" arguments="{&quot;Text&quot;:{&quot;value&quot;:&quot;\&quot;Saved stormrunner\&quot;&quot;}}" />
+    <step type="util" action="Verify" index="4" arguments="{&quot;Text&quot;:{&quot;value&quot;:&quot;\&quot;Saved apexload\&quot;&quot;}}" />
   </step>
 </truScript>`),
 	}, ConvertOptions{ScriptName: "Verify Flow"})
@@ -649,8 +649,8 @@ func TestConvertArchiveMapsVerifyToPreviousActionAssertions(t *testing.T) {
 	if assertions := result.Script.Actions[0].Assertions; len(assertions) != 1 || assertions[0].Type != "page_title" || assertions[0].Value != "Login Page" {
 		t.Fatalf("action[0].assertions = %#v, want page_title Login Page", assertions)
 	}
-	if assertions := result.Script.Actions[1].Assertions; len(assertions) != 1 || assertions[0].Type != "body_contains" || assertions[0].Value != "Saved stormrunner" {
-		t.Fatalf("action[1].assertions = %#v, want body_contains Saved stormrunner", assertions)
+	if assertions := result.Script.Actions[1].Assertions; len(assertions) != 1 || assertions[0].Type != "body_contains" || assertions[0].Value != "Saved apexload" {
+		t.Fatalf("action[1].assertions = %#v, want body_contains Saved apexload", assertions)
 	}
 	if result.Stats.TotalSteps != 4 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
 		t.Fatalf("stats = %#v, want total=4 converted=2 skipped=0", result.Stats)
@@ -696,7 +696,7 @@ func TestConvertArchiveMapsEvaluateJavaScriptScrollToSwipe(t *testing.T) {
 <truScript>
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
-    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'Stormrunner QA';\nwindow.scrollTo(0, 400)&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'APEX Load QA';\nwindow.scrollTo(0, 400)&quot;}}" />
   </step>
 </truScript>`),
 	}, ConvertOptions{ScriptName: "Mixed Evaluate JavaScript"})
@@ -706,7 +706,7 @@ func TestConvertArchiveMapsEvaluateJavaScriptScrollToSwipe(t *testing.T) {
 	if len(result.Script.Actions) != 3 {
 		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
 	}
-	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "Stormrunner QA" {
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "APEX Load QA" {
 		t.Fatalf("action = %#v, want browser_fill for #displayName", action)
 	}
 	scroll := result.Script.Actions[2]
@@ -757,14 +757,14 @@ func TestConvertEvaluateJavaScriptMapsScrollDirection(t *testing.T) {
 }
 
 func TestSplitJavaScriptStatementsPreservesURLStringLiterals(t *testing.T) {
-	statements := splitJavaScriptStatements("window.location.href = 'https://m.example.com/cart'; // redirect to cart\n$('#q').val('stormrunner')")
+	statements := splitJavaScriptStatements("window.location.href = 'https://m.example.com/cart'; // redirect to cart\n$('#q').val('apexload')")
 	if len(statements) != 2 {
 		t.Fatalf("statements = %#v, want 2 statements", statements)
 	}
 	if statements[0] != "window.location.href = 'https://m.example.com/cart'" {
 		t.Fatalf("first statement = %q, want full URL assignment", statements[0])
 	}
-	if statements[1] != "$('#q').val('stormrunner')" {
+	if statements[1] != "$('#q').val('apexload')" {
 		t.Fatalf("second statement = %q, want jQuery value call", statements[1])
 	}
 }

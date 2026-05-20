@@ -1,7 +1,7 @@
 # Local Kubernetes Deployment for Docker Desktop kind Mode
 
 This guide is for Docker Desktop Kubernetes running in `kind` mode.
-It uses a local registry so the cluster's node containerd instances can pull the Stormrunner images.
+It uses a local registry so the cluster's node containerd instances can pull the APEX Load images.
 
 It deploys:
 
@@ -17,8 +17,8 @@ The fix is to:
 
 1. Start a local Docker registry.
 2. Tell each Docker Desktop Kubernetes node how to resolve `localhost:5001`.
-3. Push the Stormrunner images into that registry.
-4. Deploy Kubernetes manifests that reference `localhost:5001/stormrunner-...` images.
+3. Push the APEX Load images into that registry.
+4. Deploy Kubernetes manifests that reference `localhost:5001/apexload-...` images.
 
 ## Prerequisites
 
@@ -74,11 +74,11 @@ See [AI_PROVIDER_SETUP.md](../AI_PROVIDER_SETUP.md) for the same commands in a s
 For Grok/xAI scripts:
 
 ```bash
-kubectl -n stormrunner-local create secret generic stormrunner-xai-secrets \
+kubectl -n apexload-local create secret generic apexload-xai-secrets \
 	--from-literal=XAI_API_KEY=REPLACE_WITH_XAI_API_KEY \
 	--dry-run=client -o yaml | kubectl apply -f -
 
-kubectl -n stormrunner-local create configmap stormrunner-xai-settings \
+kubectl -n apexload-local create configmap apexload-xai-settings \
 	--from-literal=XAI_MODEL=grok-4.3 \
 	--dry-run=client -o yaml | kubectl apply -f -
 ```
@@ -86,11 +86,11 @@ kubectl -n stormrunner-local create configmap stormrunner-xai-settings \
 For OpenAI scripts:
 
 ```bash
-kubectl -n stormrunner-local create secret generic stormrunner-openai-secrets \
+kubectl -n apexload-local create secret generic apexload-openai-secrets \
 	--from-literal=OPENAI_API_KEY=REPLACE_WITH_OPENAI_API_KEY \
 	--dry-run=client -o yaml | kubectl apply -f -
 
-kubectl -n stormrunner-local create configmap stormrunner-openai-settings \
+kubectl -n apexload-local create configmap apexload-openai-settings \
 	--from-literal=OPENAI_MODEL=REPLACE_WITH_OPENAI_MODEL \
 	--dry-run=client -o yaml | kubectl apply -f -
 ```
@@ -98,28 +98,28 @@ kubectl -n stormrunner-local create configmap stormrunner-openai-settings \
 After creating or updating either resource, restart the controller so it picks up the new values:
 
 ```bash
-kubectl -n stormrunner-local rollout restart deployment/stormrunner-controller
-kubectl -n stormrunner-local rollout status deployment/stormrunner-controller
+kubectl -n apexload-local rollout restart deployment/apexload-controller
+kubectl -n apexload-local rollout status deployment/apexload-controller
 ```
 
 ## 5. Wait for the pods to become ready
 
 ```bash
 make k8s-kind-status
-kubectl -n stormrunner-local rollout status deployment/stormrunner-controller
-kubectl -n stormrunner-local rollout status statefulset/stormrunner-generator
+kubectl -n apexload-local rollout status deployment/apexload-controller
+kubectl -n apexload-local rollout status statefulset/apexload-generator
 ```
 
 You should end up with:
 
-- `stormrunner-controller-...` ready
-- `stormrunner-generator-0` ready
-- `stormrunner-generator-1` ready
+- `apexload-controller-...` ready
+- `apexload-generator-0` ready
+- `apexload-generator-1` ready
 
 ## 6. Open the dashboard locally
 
 ```bash
-kubectl -n stormrunner-local port-forward service/stormrunner-controller 8080:8080
+kubectl -n apexload-local port-forward service/apexload-controller 8080:8080
 ```
 
 Then open:
@@ -143,8 +143,8 @@ The smoke helper uploads `examples/k8s-distributed-smoke.json`, creates a two-gr
 make docker-controller
 make docker-generator
 make k8s-kind-push-images
-kubectl -n stormrunner-local rollout restart deployment/stormrunner-controller
-kubectl -n stormrunner-local rollout restart statefulset/stormrunner-generator
+kubectl -n apexload-local rollout restart deployment/apexload-controller
+kubectl -n apexload-local rollout restart statefulset/apexload-generator
 ```
 
 ## 9. Clean up
@@ -156,12 +156,12 @@ make k8s-kind-delete
 If you also want to remove the controller PVC:
 
 ```bash
-kubectl -n stormrunner-local delete pvc stormrunner-controller-data
+kubectl -n apexload-local delete pvc apexload-controller-data
 ```
 
 ## Notes for beginners
 
 - `localhost:5001` in the Kubernetes image names does not mean the pod pulls from itself. The node containerd runtime is configured to reroute that address to the local registry container.
-- The controller still connects to `stormrunner-generator-0` and `stormrunner-generator-1` over the headless Service on port `9090`.
+- The controller still connects to `apexload-generator-0` and `apexload-generator-1` over the headless Service on port `9090`.
 - The controller PVC keeps the SQLite database and archives across controller pod restarts.
 - If you later switch Docker Desktop Kubernetes to `kubeadm` mode, use `deployments/k8s/local` instead of this guide.

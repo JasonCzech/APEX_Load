@@ -6,7 +6,7 @@ This document tracks Workstream P4's shared workload-shape contract.
 
 `GET /api/v1/scenarios/load-models/support-matrix` returns the code-owned load-model support matrix. The dashboard scenario authoring flow renders the same matrix so authors can see supported workload shapes, field mappings, status, and caveats before saving:
 
-- `support_matrix`: supported workload shapes with stable IDs, categories, status, Stormrunner shape, fields, and notes
+- `support_matrix`: supported workload shapes with stable IDs, categories, status, APEX Load shape, fields, and notes
 - `status_counts`: count of entries by status
 - `notes`: status semantics for operator and dashboard display
 
@@ -69,7 +69,7 @@ Status values:
 
 The first backend matrix covers:
 
-| Shape | Current status | Current Stormrunner shape |
+| Shape | Current status | Current APEX Load shape |
 | --- | --- | --- |
 | Closed VUser | Executed | Scenario groups with fixed VUsers, duration, ramp-up, and ramp-down. |
 | Open arrival-rate | Executed | Open workload runtime with TPS targets and throughput-gap telemetry. |

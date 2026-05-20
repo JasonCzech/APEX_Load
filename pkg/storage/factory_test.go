@@ -7,7 +7,7 @@ import (
 )
 
 func TestNewConfiguredStoreDefaultsToSQLite(t *testing.T) {
-	store, err := NewConfiguredStore(StoreConfig{SQLitePath: filepath.Join(t.TempDir(), "stormrunner.db")})
+	store, err := NewConfiguredStore(StoreConfig{SQLitePath: filepath.Join(t.TempDir(), "apexload.db")})
 	if err != nil {
 		t.Fatalf("NewConfiguredStore returned error: %v", err)
 	}

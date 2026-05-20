@@ -2038,7 +2038,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
     const replaySessionId = activeReplaySessionId || browserReplaySession?.id
     const payload = {
-      schema_version: 'stormrunner.browser_replay_export.v1',
+      schema_version: 'apexload.browser_replay_export.v1',
       exported_at: new Date().toISOString(),
       replay_session_id: replaySessionId,
       script: {
@@ -2070,7 +2070,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     const replaySessionId = activeReplaySessionId || browserReplaySession?.id
     const exportedAt = new Date().toISOString()
     const exportPayload = {
-      schema_version: 'stormrunner.browser_replay_export.v1',
+      schema_version: 'apexload.browser_replay_export.v1',
       exported_at: exportedAt,
       replay_session_id: replaySessionId,
       script: {
@@ -2099,7 +2099,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       {
         name: `${bundleBase}/manifest.json`,
         content: JSON.stringify({
-          schema_version: 'stormrunner.browser_replay_bundle.v1',
+          schema_version: 'apexload.browser_replay_bundle.v1',
           exported_at: exportedAt,
           replay_session_id: replaySessionId,
           group_name: replayReport.group,
@@ -3384,7 +3384,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
               {(
                 <div className="panel-body" style={{ padding: '0 20px 20px' }}>
-                  <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 14 }}>This script retains source-specific import metadata that Stormrunner uses during review but does not edit directly.</p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 14 }}>This script retains source-specific import metadata that APEX Load uses during review but does not edit directly.</p>
                   <div className="import-metadata-grid">
                     <div className="import-metadata-card">
                       <span>Source Script</span>
@@ -3460,7 +3460,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   {importSummary.runtimeSettingsParity.length > 0 && (
                     <div className="import-correlation-section">
                       <h4>Runtime Settings Parity</h4>
-                      <p>These imported LoadRunner runtime settings were classified against Stormrunner&apos;s code-owned support matrix.</p>
+                      <p>These imported LoadRunner runtime settings were classified against APEX Load&apos;s code-owned support matrix.</p>
                       <div className="import-correlation-list">
                         {importSummary.runtimeSettingsParity.map((entry) => (
                           <div key={entry.id} className="import-correlation-card">
@@ -3529,7 +3529,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   {importSummary.parameterFileSections.length > 0 && (
                     <div className="import-correlation-section">
                       <h4>Parameter File Mappings</h4>
-                      <p>These preserved LoadRunner parameter definitions show how the converter mapped file-backed data into Stormrunner data sources.</p>
+                      <p>These preserved LoadRunner parameter definitions show how the converter mapped file-backed data into APEX Load data sources.</p>
                       <div className="import-correlation-list">
                         {importedParameterFileMappings.map(({ section, sourceName }) => (
                           <div key={`${section.file}:${section.name}`} className="import-correlation-card">
@@ -4069,7 +4069,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               <input value={script.config.jms?.broker_url || ''} placeholder="tcps://broker.example.com:55443"
                                 onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', broker_url: e.target.value })} /></label>
                             <label><span>Client ID</span>
-                              <input value={script.config.jms?.client_id || ''} placeholder="stormrunner-{{fn.uuid()}}"
+                              <input value={script.config.jms?.client_id || ''} placeholder="apexload-{{fn.uuid()}}"
                                 onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', client_id: e.target.value })} /></label>
                             <label><span>Message VPN</span>
                               <input value={script.config.jms?.message_vpn || ''} placeholder="default"
@@ -4563,7 +4563,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   {openSections['web_runtime'] && (
                     <div className="section-body">
                       <div className="cell-muted" style={{ marginBottom: 12 }}>
-                        These settings are captured in the draft now so Web HTTP/HTML scripts can mirror VuGen RTS coverage even where full Stormrunner execution support is still rolling out.
+                        These settings are captured in the draft now so Web HTTP/HTML scripts can mirror VuGen RTS coverage even where full APEX Load execution support is still rolling out.
                       </div>
                       <div className="settings-sub-group">
                         <h5>Additional Attributes</h5>
@@ -4701,7 +4701,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       <div className="settings-sub-group">
                         <h5>Streaming</h5>
                         <div className="cell-muted" style={{ marginBottom: 12 }}>
-                          Streaming settings are compatibility-only today. Stormrunner preserves and imports these values, but does not execute media playback buffering or adaptive bitrate behavior yet.
+                          Streaming settings are compatibility-only today. APEX Load preserves and imports these values, but does not execute media playback buffering or adaptive bitrate behavior yet.
                         </div>
                         <div className="form-grid">
                           <label>

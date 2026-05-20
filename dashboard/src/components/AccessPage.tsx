@@ -505,7 +505,7 @@ export default function AccessPage({ projects, activeProject, canManageServiceAc
             <div className="access-panel-header">
               <div>
                 <h3>Runtime Secrets Guidance</h3>
-                <p>Stormrunner does not store plaintext runtime secrets in this dashboard phase.</p>
+                <p>APEX Load does not store plaintext runtime secrets in this dashboard phase.</p>
               </div>
             </div>
             <div className="access-guidance-list">
@@ -519,7 +519,7 @@ export default function AccessPage({ projects, activeProject, canManageServiceAc
               </div>
               <div>
                 <strong>Keep API keys scoped</strong>
-                <span>Service-account keys are for Stormrunner control-plane automation, not application-under-test credentials.</span>
+                <span>Service-account keys are for APEX Load control-plane automation, not application-under-test credentials.</span>
               </div>
             </div>
           </section>
@@ -609,7 +609,7 @@ function IssuedKeyModal({
   onClose: () => void
 }) {
   const curlExample = `curl -H "Authorization: Bearer ${issuedKey.key}" http://localhost:8080/api/v1/projects`
-  const mcpExample = `STORMRUNNER_URL=http://localhost:8080/api/v1\nSTORMRUNNER_API_KEY=${issuedKey.key}\npython3 mcp/server.py`
+  const mcpExample = `APEXLOAD_URL=http://localhost:8080/api/v1\nAPEXLOAD_API_KEY=${issuedKey.key}\npython3 mcp/server.py`
 
   return (
     <div className="access-modal-overlay" role="presentation">
@@ -617,7 +617,7 @@ function IssuedKeyModal({
         <div className="access-modal-header">
           <div>
             <h3>{issuedKey.mode === 'created' ? 'API Key Created' : 'API Key Rotated'}</h3>
-            <p>Copy this key now. Stormrunner stores only a hash after this dialog closes.</p>
+            <p>Copy this key now. APEX Load stores only a hash after this dialog closes.</p>
           </div>
           <button className="btn btn-ghost btn-sm" type="button" onClick={onClose}>Close</button>
         </div>

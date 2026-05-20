@@ -13,7 +13,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	_ "modernc.org/sqlite"
 )
 
@@ -52,9 +52,9 @@ type storeTx struct {
 }
 
 const (
-	intervalSummarySchemaVersionV1 = "stormrunner.interval-summary.v1"
-	intervalSummarySchemaVersion   = "stormrunner.interval-summary.v3"
-	archiveRecordSchemaVersion     = "stormrunner.archive.v1"
+	intervalSummarySchemaVersionV1 = "apexload.interval-summary.v1"
+	intervalSummarySchemaVersion   = "apexload.interval-summary.v3"
+	archiveRecordSchemaVersion     = "apexload.archive.v1"
 )
 
 type BrowserMetricsSummaryRecord struct {
@@ -859,7 +859,7 @@ func isDuplicateColumnErr(err error) bool {
 
 func (s *SQLiteStore) ensureDefaultDomainHierarchy() error {
 	now := time.Now()
-	if _, err := s.db.Exec(`INSERT OR IGNORE INTO domains (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, DefaultDomainID, "Default Domain", "Default migrated Stormrunner domain.", now, now); err != nil {
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO domains (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, DefaultDomainID, "Default Domain", "Default migrated APEX Load domain.", now, now); err != nil {
 		return fmt.Errorf("failed to create default domain: %w", err)
 	}
 	if _, err := s.db.Exec(`INSERT OR IGNORE INTO application_repositories (id, domain_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, DefaultApplicationRepositoryID, DefaultDomainID, "Application Repository", "Default migrated application repository.", now, now); err != nil {

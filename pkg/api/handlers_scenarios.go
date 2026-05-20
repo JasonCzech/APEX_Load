@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {

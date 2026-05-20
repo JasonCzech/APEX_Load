@@ -153,12 +153,12 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Name:        "Developer Script-As-Code Experience",
 			Status:      "partial",
 			Competitors: []string{"k6"},
-			Summary:     "Stormrunner has CLI execution, JSON DSL validation, AI explain output, CI templates, and importable scripts, but it is not yet as familiar or portable as k6's JavaScript-first local/cloud workflow.",
+			Summary:     "APEX Load has CLI execution, JSON DSL validation, AI explain output, CI templates, and importable scripts, but it is not yet as familiar or portable as k6's JavaScript-first local/cloud workflow.",
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
 				"README.md#build--run",
 				"docs/K6_NEOLOAD_PARITY_PLAN.md#phase-c2-k6-aligned-developer-experience",
-				".github/actions/stormrunner-run/action.yml",
+				".github/actions/apexload-run/action.yml",
 			},
 			Remaining: []string{
 				"Add JSON validation mode, k6 result ingestion, and constrained k6 HTTP conversion/export.",
@@ -171,7 +171,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Name:        "Managed Scale And Load Zones",
 			Status:      "partial",
 			Competitors: []string{"k6", "NeoLoad"},
-			Summary:     "Stormrunner exposes regional generator inventory, capacity APIs, placement rejection visibility, and autoscaling guidance, but still needs named load-zone packaging and published benchmark evidence.",
+			Summary:     "APEX Load exposes regional generator inventory, capacity APIs, placement rejection visibility, and autoscaling guidance, but still needs named load-zone packaging and published benchmark evidence.",
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
 				"/api/v1/system/inventory",
@@ -191,7 +191,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Name:        "Authoring, Recording, And Guided Repair",
 			Status:      "partial",
 			Competitors: []string{"k6", "NeoLoad"},
-			Summary:     "Stormrunner supports script imports, templates, validation, replay evidence, authoring sessions, and guided repair contracts; the remaining gap is workflow polish versus k6 Test Builder and NeoLoad Designer.",
+			Summary:     "APEX Load supports script imports, templates, validation, replay evidence, authoring sessions, and guided repair contracts; the remaining gap is workflow polish versus k6 Test Builder and NeoLoad Designer.",
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
 				"/api/v1/scripts/import/loadrunner",
@@ -211,7 +211,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Name:        "Browser Testing And Client UX Evidence",
 			Status:      "partial",
 			Competitors: []string{"k6", "NeoLoad"},
-			Summary:     "Stormrunner has browser replay, mobile web profile guidance, client metrics, and archive evidence, while deliberately treating browser VUsers as diagnostic canaries until benchmark data supports broader claims.",
+			Summary:     "APEX Load has browser replay, mobile web profile guidance, client metrics, and archive evidence, while deliberately treating browser VUsers as diagnostic canaries until benchmark data supports broader claims.",
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
 				"/api/v1/scripts/browser-replay/sessions",
@@ -231,7 +231,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Name:        "Analysis, APM, And Root-Cause Integrations",
 			Status:      "partial",
 			Competitors: []string{"k6", "NeoLoad"},
-			Summary:     "Stormrunner has OpenTelemetry, Prometheus export, archives, comparison reports, release trends, AI-assisted archive root-cause summaries, and trace correlation primitives, but still needs deeper packaged APM profile workflows.",
+			Summary:     "APEX Load has OpenTelemetry, Prometheus export, archives, comparison reports, release trends, AI-assisted archive root-cause summaries, and trace correlation primitives, but still needs deeper packaged APM profile workflows.",
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
 				"/metrics",
@@ -252,7 +252,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Name:        "Specialized Enterprise Protocol Breadth",
 			Status:      "gap",
 			Competitors: []string{"NeoLoad"},
-			Summary:     "Stormrunner covers HTTP/API, SOAP, Java-over-HTTP, JMS, WebSocket, gRPC, HAR, JMeter, DevWeb, and LoadRunner migration paths, but native SAP GUI, Citrix, Oracle Forms, and desktop UI protocols remain demand-gated non-goals.",
+			Summary:     "APEX Load covers HTTP/API, SOAP, Java-over-HTTP, JMS, WebSocket, gRPC, HAR, JMeter, DevWeb, and LoadRunner migration paths, but native SAP GUI, Citrix, Oracle Forms, and desktop UI protocols remain demand-gated non-goals.",
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
 				"docs/K6_NEOLOAD_PARITY_PLAN.md#phase-c6-specialized-enterprise-protocol-decisions",
@@ -270,7 +270,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Name:        "Packaging, Samples, And Trust",
 			Status:      "partial",
 			Competitors: []string{"k6", "NeoLoad"},
-			Summary:     "Stormrunner has docs, CI templates, dashboard workflows, and several sample/import paths, but evaluators still need canonical demos, a public support matrix, and release notes that connect claims to benchmark artifacts.",
+			Summary:     "APEX Load has docs, CI templates, dashboard workflows, and several sample/import paths, but evaluators still need canonical demos, a public support matrix, and release notes that connect claims to benchmark artifacts.",
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
 				"README.md#quick-start",
@@ -278,7 +278,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 				"docs/LOADRUNNER_RTS_REFERENCE.md",
 			},
 			Remaining: []string{
-				"Publish canonical sample projects, one-command demo seeding, and an honest Stormrunner versus k6 versus NeoLoad matrix.",
+				"Publish canonical sample projects, one-command demo seeding, and an honest APEX Load versus k6 versus NeoLoad matrix.",
 			},
 			Decision:      "evidence_gate",
 			EvidenceLevel: "docs",

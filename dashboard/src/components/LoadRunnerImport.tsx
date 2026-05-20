@@ -34,14 +34,14 @@ function buildReviewArtifactDraft(
   projectId?: string,
   requestedName?: string,
 ): ScriptDefinition {
-  const protocol = detectedProtocol?.stormrunner_protocol || detectedProtocol?.canonical_loadrunner_protocol || 'review'
+  const protocol = detectedProtocol?.apexload_protocol || detectedProtocol?.canonical_loadrunner_protocol || 'review'
   const name = requestedName?.trim() || artifact.title || detectedProtocol?.display_name || 'LoadRunner Protocol Review'
   return {
     name,
     version: '1.0.0',
     protocol,
     project_id: projectId,
-    generated_by: 'stormrunner-loadrunner-import',
+    generated_by: 'apexload-loadrunner-import',
     generated_from: 'loadrunner',
     config: { base_url: '' },
     actions: [],
@@ -738,7 +738,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       <div className="lr-import-header">
         <div>
           <h2>Import LoadRunner Script</h2>
-          <p className="lr-subtitle">Upload a LoadRunner/VuGen ZIP archive. Stormrunner detects the VuGen protocol, routes executable HTTP, SOAP, browser, database, and network imports, and preserves review artifacts for protocols that still require evidence or external runners.</p>
+          <p className="lr-subtitle">Upload a LoadRunner/VuGen ZIP archive. APEX Load detects the VuGen protocol, routes executable HTTP, SOAP, browser, database, and network imports, and preserves review artifacts for protocols that still require evidence or external runners.</p>
         </div>
         {onClose && <button className="btn btn-ghost" onClick={onClose}>✕</button>}
       </div>
@@ -918,8 +918,8 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
               <small>{detectedProtocol.source_type ? `.usr Type=${detectedProtocol.source_type}` : 'Content-derived'}</small>
             </div>
             <div className="lr-preserved-card">
-              <span className="lr-preserved-label">Stormrunner Route</span>
-              <strong>{detectedProtocol.stormrunner_protocol || 'Review artifact'}</strong>
+              <span className="lr-preserved-label">APEX Load Route</span>
+              <strong>{detectedProtocol.apexload_protocol || 'Review artifact'}</strong>
               <small>{detectedProtocol.bundle || 'No bundle mapped'}</small>
             </div>
             <div className="lr-preserved-card">
@@ -971,7 +971,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
           <div className="lr-result-header">
             <div>
               <h3>{reviewMode === 'validation' ? 'Validation Review' : 'Import Review Artifact'}</h3>
-              <p className="lr-subtitle">This archive was classified without creating an executable Stormrunner script.</p>
+              <p className="lr-subtitle">This archive was classified without creating an executable APEX Load script.</p>
             </div>
             <button className="btn btn-primary" onClick={handleSaveReviewArtifact} disabled={reviewArtifactSaving}>
               {reviewArtifactSaving ? <><span className="spinner" /> Saving Review Artifact...</> : 'Save Review Artifact'}
@@ -1182,7 +1182,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
               <div className="lr-preserved">
                 <div className="lr-preserved-header">
                   <h4>Preserved LoadRunner Settings</h4>
-                  <span>These values will be saved with the Stormrunner script.</span>
+                  <span>These values will be saved with the APEX Load script.</span>
                 </div>
 
                 <div className="lr-preserved-grid">

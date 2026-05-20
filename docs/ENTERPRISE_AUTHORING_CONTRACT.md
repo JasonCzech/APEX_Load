@@ -49,7 +49,7 @@ Web/API source acquisition also uses the shared import review envelope:
 | `POST /api/v1/scripts/import/wsdl` | Convert WSDL into a SOAP draft with operation discovery, SOAPAction preservation, namespace mapping, sample envelopes, and payload-review sections. |
 | `GET /api/v1/scripts/import/devweb/support-matrix` | Publish construct-by-construct DevWeb import support and review requirements. |
 
-VuGen Web 2.0 / TruClient 2.0 Web is now tracked as a planned browser-profile authoring source in `docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md`. It will use the LoadRunner acquisition path, preserve TruClient 2.0 Web metadata, map executable browser steps to Stormrunner browser DSL, and add profile-specific replay, repair, runtime, and optional browser-to-HTTP conversion review.
+VuGen Web 2.0 / TruClient 2.0 Web is now tracked as a planned browser-profile authoring source in `docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md`. It will use the LoadRunner acquisition path, preserve TruClient 2.0 Web metadata, map executable browser steps to APEX Load browser DSL, and add profile-specific replay, repair, runtime, and optional browser-to-HTTP conversion review.
 
 AI-assisted authoring now has a dedicated governed workflow envelope:
 

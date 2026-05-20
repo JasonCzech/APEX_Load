@@ -4,7 +4,7 @@
 
 ### Authentication
 
-Currently, Stormrunner uses project-based scoping without user authentication. APIs are protected by project ID.
+Currently, APEX Load uses project-based scoping without user authentication. APIs are protected by project ID.
 
 ### Tests
 
@@ -47,7 +47,7 @@ Content-Type: application/json
 **Assignment modes:**
 - `auto`: controller chooses from all configured generators.
 - `specific_hosts`: request includes `selected_targets` with explicit hostnames.
-- `region_weighted`: request includes `region_weights` and the controller distributes groups across generators tagged with `STORMRUNNER_GENERATORS=host:9090|region=<name>`.
+- `region_weighted`: request includes `region_weights` and the controller distributes groups across generators tagged with `APEXLOAD_GENERATORS=host:9090|region=<name>`.
 
 **Response:**
 ```json
@@ -313,7 +313,7 @@ WS /api/v1/tests/test-789/stream
 
 ## Browser and Mobile DSL
 
-Stormrunner keeps mobile emulation under the `browser` protocol rather than introducing a separate mobile protocol. Use browser config to apply named device presets, touch behavior, orientation, and client-side UX telemetry.
+APEX Load keeps mobile emulation under the `browser` protocol rather than introducing a separate mobile protocol. Use browser config to apply named device presets, touch behavior, orientation, and client-side UX telemetry.
 
 ### Browser Config
 
@@ -349,7 +349,7 @@ Supported browser config keys:
 
 ### Supported Browser Actions
 
-Stormrunner validates and executes these browser action types:
+APEX Load validates and executes these browser action types:
 - `browser_navigate`
 - `browser_click`
 - `browser_fill`
@@ -585,9 +585,9 @@ Content-Type: multipart/form-data
 [file: loadrunner_project.zip]
 ```
 
-Converts a LoadRunner project archive into Stormrunner JSON DSL. The importer supports C-based web request archives and the TruClient Mobile Web MVP path for browser scripts. Legacy desktop-style `TruClient` archives are reported as out of scope with explicit guidance.
+Converts a LoadRunner project archive into APEX Load JSON DSL. The importer supports C-based web request archives and the TruClient Mobile Web MVP path for browser scripts. Legacy desktop-style `TruClient` archives are reported as out of scope with explicit guidance.
 
-For `TruClientMobileWeb` archives, Stormrunner reads the `.usr` file plus UTF-16 `default.xml`, maps common navigate, click, fill, select, wait, transaction, conservative verify assertions, and simple JavaScript-derived fill/click steps into browser DSL actions, and carries supported mobile browser runtime settings into `config.browser`.
+For `TruClientMobileWeb` archives, APEX Load reads the `.usr` file plus UTF-16 `default.xml`, maps common navigate, click, fill, select, wait, transaction, conservative verify assertions, and simple JavaScript-derived fill/click steps into browser DSL actions, and carries supported mobile browser runtime settings into `config.browser`.
 
 Import responses include a shared `review_sections` array. Each section has a stable `key`, `title`, `severity`, `summary`, and `items` list so clients can render warnings, unsupported elements, preserved metadata, and browser import assumptions consistently.
 
@@ -885,7 +885,7 @@ Emits JSON messages for all test events:
     "follow_redirects": true,
     "ssl_verify": true,
     "headers": {
-      "User-Agent": "Stormrunner/1.0",
+      "User-Agent": "APEX Load/1.0",
       "Accept": "application/json"
     }
   }
@@ -938,7 +938,7 @@ Emits JSON messages for all test events:
 - `config.browser.user_agent`: Override browser user agent string
 - `config.browser.capture_screenshots`: Screenshot capture policy, for example `per_action`
 - `config.browser.cache_enabled`: Enable browser cache when `true`
-- `config.browser.cache_content_urls`: When `false`, Stormrunner forces content-bearing browser requests to revalidate instead of using cached content responses
+- `config.browser.cache_content_urls`: When `false`, APEX Load forces content-bearing browser requests to revalidate instead of using cached content responses
 - `config.browser.check_newer_versions`: Force browser cache revalidation with `Cache-Control: no-cache` / `Pragma: no-cache`
 - `config.browser.new_user_per_iteration`: Reset the browser protocol between iterations when `true`
 - `config.browser.download_resources`: `all`, `none`, or `recorded` (`recorded` executes in browser replay when preserved recorded-resource metadata is available)
@@ -962,7 +962,7 @@ Emits JSON messages for all test events:
 
 ### Web HTTP/HTML RTS Support
 
-| Surface | Stormrunner field(s) | Current support |
+| Surface | APEX Load field(s) | Current support |
 | --- | --- | --- |
 | Browser cache toggle | `config.browser.cache_enabled` | Executed in browser runtime |
 | Cache content URLs | `config.browser.cache_content_urls` | Executed in browser runtime |

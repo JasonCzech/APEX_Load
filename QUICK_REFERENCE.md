@@ -9,18 +9,18 @@
 go run ./cmd/controller
 
 # Start with custom port
-STORMRUNNER_ADDR=:9000 go run ./cmd/controller
+APEXLOAD_ADDR=:9000 go run ./cmd/controller
 
 # Start controller in distributed mode
-STORMRUNNER_GENERATORS=127.0.0.1:9090,127.0.0.1:9091 \
-STORMRUNNER_GENERATOR_TIMEOUT=10s \
+APEXLOAD_GENERATORS=127.0.0.1:9090,127.0.0.1:9091 \
+APEXLOAD_GENERATOR_TIMEOUT=10s \
 go run ./cmd/controller
 
 # Start generator
 go run ./cmd/generator
 
 # Run test locally (no controller needed)
-go run ./cmd/stormctl run --script test.json --vusers 50 --duration 2m
+go run ./cmd/apexctl run --script test.json --vusers 50 --duration 2m
 ```
 
 ### Building
@@ -62,17 +62,17 @@ go test -run TestMetricsCollection ./pkg/engine
 
 ```bash
 # Query scripts
-sqlite3 stormrunner.db "SELECT id, name FROM scripts;"
+sqlite3 apexload.db "SELECT id, name FROM scripts;"
 
 # Query tests
-sqlite3 stormrunner.db "SELECT id, name, status FROM tests;"
+sqlite3 apexload.db "SELECT id, name, status FROM tests;"
 
 # Reset database
-rm stormrunner.db
+rm apexload.db
 # Restart controller to recreate
 
 # Backup database
-cp stormrunner.db stormrunner.db.backup
+cp apexload.db apexload.db.backup
 ```
 
 ---
@@ -341,10 +341,10 @@ Chromium browser runs with `config.browser.client_metrics` enabled also report b
 
 ## CLI Flags
 
-### stormctl run
+### apexctl run
 
 ```bash
-go run ./cmd/stormctl run \
+go run ./cmd/apexctl run \
   --script path/to/script.json \
   --vusers 100 \
   --duration 5m \
@@ -391,8 +391,8 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `STORMRUNNER_ADDR` | `:8080` | HTTP server bind address |
-| `STORMRUNNER_DB` | `stormrunner.db` | SQLite database path |
+| `APEXLOAD_ADDR` | `:8080` | HTTP server bind address |
+| `APEXLOAD_DB` | `apexload.db` | SQLite database path |
 | `LOG_LEVEL` | `info` | Logging level (debug, info, warn, error) |
 
 ---
@@ -401,7 +401,7 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 
 | File | Purpose |
 |------|---------|
-| `stormrunner.db` | SQLite database (auto-created) |
+| `apexload.db` | SQLite database (auto-created) |
 | `coverage.html` | Test coverage report (after `make test-cover`) |
 | `pkg/api/static/` | Embedded dashboard assets |
 | `dashboard/dist/` | Built frontend (before embedding) |
@@ -444,7 +444,7 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 
 ```
 "listen tcp :8080: bind: address already in use"
-→ Change port: STORMRUNNER_ADDR=:9000 go run ./cmd/controller
+→ Change port: APEXLOAD_ADDR=:9000 go run ./cmd/controller
 
 "Error opening database: database is locked"
 → Close other processes: pkill -f "cmd/controller"

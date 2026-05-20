@@ -26,7 +26,7 @@ func GetSupportMatrix() []SupportMatrixEntry {
 			Status:          "supported",
 			ExecutionStatus: "executable",
 			Fields:          []string{"url", "method", "headers", "body", "bodyText"},
-			Notes:           "Converted into Stormrunner HTTP request actions with header/body preservation.",
+			Notes:           "Converted into APEX Load HTTP request actions with header/body preservation.",
 		},
 		{
 			ID:              "devweb-think-time",
@@ -63,7 +63,7 @@ func GetSupportMatrix() []SupportMatrixEntry {
 			Status:          "supported",
 			ExecutionStatus: "executable",
 			Fields:          []string{"name", "body"},
-			Notes:           "Action names are used as stable prefixes for generated Stormrunner action names.",
+			Notes:           "Action names are used as stable prefixes for generated APEX Load action names.",
 		},
 		{
 			ID:              "devweb-dynamic-javascript",
@@ -81,7 +81,7 @@ func GetSupportMatrix() []SupportMatrixEntry {
 			Status:          "partial",
 			ExecutionStatus: "review_required",
 			ReviewRequired:  true,
-			Notes:           "Generated scripts should use Stormrunner correlation preview/apply flows to verify extracted values before approval.",
+			Notes:           "Generated scripts should use APEX Load correlation preview/apply flows to verify extracted values before approval.",
 		},
 	}
 }

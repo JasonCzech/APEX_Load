@@ -1,4 +1,4 @@
-from stormrunner_mcp.server import main
+from apexload_mcp.server import main
 
 
 if __name__ == "__main__":

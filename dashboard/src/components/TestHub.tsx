@@ -912,7 +912,7 @@ function TestHub({ onSelectTest }: Props) {
             <div className="scenario-assignment-header">
               <div>
                 <h4>Workload Shape Support</h4>
-                <p>Code-owned support matrix for enterprise workload models and the Stormrunner fields that implement them.</p>
+                <p>Code-owned support matrix for enterprise workload models and the APEX Load fields that implement them.</p>
               </div>
             </div>
             {loadModelSupportMatrix.length > 0 ? (
@@ -926,7 +926,7 @@ function TestHub({ onSelectTest }: Props) {
                       </div>
                       <span className={`scenario-load-status ${getLoadModelStatusClass(entry.status)}`}>{formatLoadModelDimension(entry.status)}</span>
                     </div>
-                    <p>{entry.stormrunner_shape}</p>
+                    <p>{entry.apexload_shape}</p>
                     <div className="scenario-support-fields">
                       {entry.fields.map(field => <code key={field}>{field}</code>)}
                     </div>

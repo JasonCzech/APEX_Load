@@ -1,70 +1,70 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: stormrunner-controller
+  name: apexload-controller
   labels:
-    app.kubernetes.io/name: stormrunner-controller
+    app.kubernetes.io/name: apexload-controller
     app.kubernetes.io/component: controller
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: stormrunner-controller
+      app.kubernetes.io/name: apexload-controller
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: stormrunner-controller
+        app.kubernetes.io/name: apexload-controller
         app.kubernetes.io/component: controller
     spec:
       containers:
         - name: controller
-          image: stormrunner-controller:0.1.0
+          image: apexload-controller:0.1.0
           imagePullPolicy: Never
           ports:
             - name: http
               containerPort: 8080
           env:
-            - name: STORMRUNNER_ADDR
+            - name: APEXLOAD_ADDR
               value: ":8080"
-            - name: STORMRUNNER_DB
-              value: /var/lib/stormrunner/stormrunner.db
-            - name: STORMRUNNER_STORE
+            - name: APEXLOAD_DB
+              value: /var/lib/apexload/apexload.db
+            - name: APEXLOAD_STORE
               value: sqlite
-            - name: STORMRUNNER_ARCHIVE_DIR
-              value: /var/lib/stormrunner/archives
-            - name: STORMRUNNER_ARCHIVE_BACKEND
+            - name: APEXLOAD_ARCHIVE_DIR
+              value: /var/lib/apexload/archives
+            - name: APEXLOAD_ARCHIVE_BACKEND
               value: filesystem
-            - name: STORMRUNNER_GENERATOR_TIMEOUT
+            - name: APEXLOAD_GENERATOR_TIMEOUT
               value: 10s
-            - name: STORMRUNNER_GENERATORS
-              value: stormrunner-generator-0.stormrunner-generator:9090,stormrunner-generator-1.stormrunner-generator:9090
+            - name: APEXLOAD_GENERATORS
+              value: apexload-generator-0.apexload-generator:9090,apexload-generator-1.apexload-generator:9090
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: stormrunner-openai-secrets
+                  name: apexload-openai-secrets
                   key: OPENAI_API_KEY
                   optional: true
             - name: OPENAI_MODEL
               valueFrom:
                 configMapKeyRef:
-                  name: stormrunner-openai-settings
+                  name: apexload-openai-settings
                   key: OPENAI_MODEL
                   optional: true
             - name: XAI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: stormrunner-xai-secrets
+                  name: apexload-xai-secrets
                   key: XAI_API_KEY
                   optional: true
             - name: XAI_MODEL
               valueFrom:
                 configMapKeyRef:
-                  name: stormrunner-xai-settings
+                  name: apexload-xai-settings
                   key: XAI_MODEL
                   optional: true
           volumeMounts:
             - name: controller-data
-              mountPath: /var/lib/stormrunner
+              mountPath: /var/lib/apexload
           readinessProbe:
             httpGet:
               path: /api/v1/system/health
@@ -87,4 +87,4 @@ spec:
       volumes:
         - name: controller-data
           persistentVolumeClaim:
-            claimName: stormrunner-controller-data
+            claimName: apexload-controller-data

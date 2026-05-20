@@ -1,4 +1,4 @@
-module github.com/jasonczech/stormrunner
+module github.com/jasonczech/apexload
 
 go 1.26
 

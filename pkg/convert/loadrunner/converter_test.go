@@ -10,8 +10,8 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	"github.com/jasonczech/stormrunner/pkg/convert/trueclient"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/convert/trueclient"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 const sampleActionC = `
@@ -1343,7 +1343,7 @@ RuntimeSettings=default.cfg
 <truScript>
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
-    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'Stormrunner QA'&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'APEX Load QA'&quot;}}" />
   </step>
 </truScript>`))
 	addFile("default.cfg", `[Browser Emulation]
@@ -1361,7 +1361,7 @@ TouchMode=1
 	if len(result.Script.Actions) != 2 {
 		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
 	}
-	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "Stormrunner QA" {
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "APEX Load QA" {
 		t.Fatalf("action = %#v, want browser fill for #displayName", action)
 	}
 	if result.Stats.TotalFunctions != 2 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
@@ -1501,7 +1501,7 @@ RuntimeSettings=default.cfg
 <truScript>
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/login\&quot;&quot;}}" />
-    <step type="testObject" action="Set / Type" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#username\&quot;&quot;},&quot;Value&quot;:{&quot;value&quot;:&quot;\&quot;stormrunner\&quot;&quot;}}" />
+    <step type="testObject" action="Set / Type" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#username\&quot;&quot;},&quot;Value&quot;:{&quot;value&quot;:&quot;\&quot;apexload\&quot;&quot;}}" />
     <step type="testObject" action="Click" index="3" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#submit\&quot;&quot;}}" />
   </step>
 </truScript>`))
@@ -1520,7 +1520,7 @@ TouchMode=1
 	if len(result.Script.Actions) != 3 {
 		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
 	}
-	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#username" || action.Value != "stormrunner" {
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#username" || action.Value != "apexload" {
 		t.Fatalf("action = %#v, want browser fill for #username", action)
 	}
 	if action := result.Script.Actions[2]; action.Type != "browser_click" || action.Selector != "#submit" {
@@ -1663,7 +1663,7 @@ RuntimeSettings=default.cfg
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/login\&quot;&quot;}}" />
     <step type="util" action="Verify" index="2" arguments="{&quot;Title&quot;:{&quot;value&quot;:&quot;\&quot;Login Page\&quot;&quot;}}" />
     <step type="testObject" action="Click" index="3" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#submit\&quot;&quot;}}" />
-    <step type="util" action="Verify" index="4" arguments="{&quot;Text&quot;:{&quot;value&quot;:&quot;\&quot;Saved stormrunner\&quot;&quot;}}" />
+    <step type="util" action="Verify" index="4" arguments="{&quot;Text&quot;:{&quot;value&quot;:&quot;\&quot;Saved apexload\&quot;&quot;}}" />
   </step>
 </truScript>`))
 	addFile("default.cfg", `[Browser Emulation]
@@ -1684,8 +1684,8 @@ TouchMode=1
 	if assertions := result.Script.Actions[0].Assertions; len(assertions) != 1 || assertions[0].Type != "page_title" || assertions[0].Value != "Login Page" {
 		t.Fatalf("action[0].assertions = %#v, want page_title Login Page", assertions)
 	}
-	if assertions := result.Script.Actions[1].Assertions; len(assertions) != 1 || assertions[0].Type != "body_contains" || assertions[0].Value != "Saved stormrunner" {
-		t.Fatalf("action[1].assertions = %#v, want body_contains Saved stormrunner", assertions)
+	if assertions := result.Script.Actions[1].Assertions; len(assertions) != 1 || assertions[0].Type != "body_contains" || assertions[0].Value != "Saved apexload" {
+		t.Fatalf("action[1].assertions = %#v, want body_contains Saved apexload", assertions)
 	}
 	if result.Stats.TotalFunctions != 4 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
 		t.Fatalf("stats = %#v, want total=4 converted=2 skipped=0", result.Stats)
@@ -1716,7 +1716,7 @@ RuntimeSettings=default.cfg
 <truScript>
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
-    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'Stormrunner QA';\nwindow.scrollTo(0, 400)&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'APEX Load QA';\nwindow.scrollTo(0, 400)&quot;}}" />
   </step>
 </truScript>`))
 	addFile("default.cfg", `[Browser Emulation]
@@ -1734,7 +1734,7 @@ TouchMode=1
 	if len(result.Script.Actions) != 3 {
 		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
 	}
-	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "Stormrunner QA" {
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "APEX Load QA" {
 		t.Fatalf("action = %#v, want browser fill for #displayName", action)
 	}
 	if action := result.Script.Actions[2]; action.Type != "browser_swipe" || action.Selector != "body" || action.Params["direction"] != "up" || action.Params["distance"] != 400 {

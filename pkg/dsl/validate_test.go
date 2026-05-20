@@ -478,16 +478,16 @@ func TestValidateScriptIssues_GRPCValidation(t *testing.T) {
 		}, {
 			Name:   "bad target",
 			Type:   "grpc_unary",
-			Target: "stormrunner.v1.GeneratorControl",
+			Target: "apexload.v1.GeneratorControl",
 		}, {
 			Name:   "bad timeout",
 			Type:   "grpc_unary",
-			Target: "stormrunner.v1.GeneratorControl/DistributeScript",
+			Target: "apexload.v1.GeneratorControl/DistributeScript",
 			Params: map[string]any{"timeout_ms": -1},
 		}, {
 			Name:   "streaming",
 			Type:   "grpc_server_stream",
-			Target: "stormrunner.v1.GeneratorControl/StreamMetrics",
+			Target: "apexload.v1.GeneratorControl/StreamMetrics",
 			Params: map[string]any{"max_messages": -1},
 		}, {
 			Name: "unsupported",
@@ -525,13 +525,13 @@ func TestValidateScriptIssues_GRPCValidationAllowsUnaryReflection(t *testing.T) 
 		Actions: []Action{{
 			Name:   "cache",
 			Type:   "grpc_unary",
-			Target: "stormrunner.v1.GeneratorControl/DistributeScript",
+			Target: "apexload.v1.GeneratorControl/DistributeScript",
 			Body:   `{"scriptId":"script-1"}`,
 			Params: map[string]any{"timeout_ms": 1000},
 		}, {
 			Name:   "heartbeat",
 			Type:   "grpc_bidi_stream",
-			Target: "stormrunner.v1.GeneratorControl/Heartbeat",
+			Target: "apexload.v1.GeneratorControl/Heartbeat",
 			Params: map[string]any{"max_messages": 1, "messages": []any{map[string]any{"generatorId": "gen-1"}}},
 		}},
 	}
@@ -593,7 +593,7 @@ func TestValidateScriptIssues_BrowserValidationAllowsSupportedFields(t *testing.
 				Name:   "fill",
 				Type:   "browser_fill",
 				Target: "#query",
-				Value:  "stormrunner",
+				Value:  "apexload",
 			},
 			{
 				Name:   "select",

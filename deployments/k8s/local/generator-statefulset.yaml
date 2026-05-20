@@ -1,26 +1,26 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: stormrunner-generator
+  name: apexload-generator
   labels:
-    app.kubernetes.io/name: stormrunner-generator
+    app.kubernetes.io/name: apexload-generator
     app.kubernetes.io/component: generator
 spec:
-  serviceName: stormrunner-generator
+  serviceName: apexload-generator
   replicas: 2
   selector:
     matchLabels:
-      app.kubernetes.io/name: stormrunner-generator
+      app.kubernetes.io/name: apexload-generator
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: stormrunner-generator
+        app.kubernetes.io/name: apexload-generator
         app.kubernetes.io/component: generator
     spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: generator
-          image: stormrunner-generator:0.1.0
+          image: apexload-generator:0.1.0
           imagePullPolicy: Never
           ports:
             - name: grpc

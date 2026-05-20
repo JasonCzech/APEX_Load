@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type UsageAccountingResponse struct {
@@ -135,7 +135,7 @@ func (s *Server) handleExportUsageAccounting(w http.ResponseWriter, r *http.Requ
 	}
 	usage := s.usageAccounting(projectID)
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="stormrunner-usage-accounting.csv"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="apexload-usage-accounting.csv"`)
 
 	writer := csv.NewWriter(w)
 	_ = writer.Write([]string{

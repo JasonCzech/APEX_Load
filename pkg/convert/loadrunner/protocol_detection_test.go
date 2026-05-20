@@ -36,7 +36,7 @@ func TestDetectProtocolFromUSRType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			detected := DetectProtocol(nil, &ProjectConfig{ScriptType: tt.scriptType}, nil)
-			if detected.CanonicalLoadRunnerProtocol != tt.canonical || detected.StormrunnerProtocol != tt.storm || detected.ImportMode != tt.mode {
+			if detected.CanonicalLoadRunnerProtocol != tt.canonical || detected.APEXLoadProtocol != tt.storm || detected.ImportMode != tt.mode {
 				t.Fatalf("detected = %#v, want canonical=%s storm=%s mode=%s", detected, tt.canonical, tt.storm, tt.mode)
 			}
 		})
@@ -72,7 +72,7 @@ func TestDetectProtocolKeepsMixedSOAPAndHTTPExecutableHTTP(t *testing.T) {
     web_url("Home", "URL=https://example.test/", LAST);
 }`)
 	detected := DetectProtocol(nil, &ProjectConfig{ScriptType: "Web HTTP/HTML"}, []*ParsedAction{parsed})
-	if detected.ImportMode != ImportModeExecutable || detected.StormrunnerProtocol != "http" {
+	if detected.ImportMode != ImportModeExecutable || detected.APEXLoadProtocol != "http" {
 		t.Fatalf("detected = %#v, want executable HTTP for mixed SOAP/HTTP", detected)
 	}
 	if len(detected.Warnings) == 0 {

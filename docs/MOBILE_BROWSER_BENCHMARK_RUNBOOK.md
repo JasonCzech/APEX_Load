@@ -12,11 +12,11 @@ The benchmark suite covers:
 - touch or click action latency against a local HTML fixture
 - Chromium browser-process RSS per device profile when `browser.client_metrics` is enabled
 
-WebKit profiles are included for launch and action-latency coverage. RSS attribution is currently Chromium-only because Stormrunner collects browser-process metrics through CDP process information.
+WebKit profiles are included for launch and action-latency coverage. RSS attribution is currently Chromium-only because APEX Load collects browser-process metrics through CDP process information.
 
 ## Prerequisites
 
-- Record the host shape: CPU model, core count, memory, OS, container limits, Chrome/Chromium version, Playwright version, and Stormrunner commit SHA.
+- Record the host shape: CPU model, core count, memory, OS, container limits, Chrome/Chromium version, Playwright version, and APEX Load commit SHA.
 - Install Chromium/Chrome for `chromedp`.
 - Install Playwright WebKit assets if WebKit-backed device profiles are part of the evidence run.
 - Run on an otherwise quiet host. Browser benchmarks are sensitive to CPU contention, thermal throttling, and background browser processes.
@@ -32,7 +32,7 @@ go test ./pkg/protocol/browser
 Full benchmark run:
 
 ```bash
-STORMRUNNER_BROWSER_BENCHMARKS=1 go test ./pkg/protocol/browser \
+APEXLOAD_BROWSER_BENCHMARKS=1 go test ./pkg/protocol/browser \
   -run '^$' \
   -bench 'BenchmarkBrowser(InitWithDeviceProfile|TouchOrClickActionLatency|RSSPerChromiumDeviceProfile)' \
   -benchmem \

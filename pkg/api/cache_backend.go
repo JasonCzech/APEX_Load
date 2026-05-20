@@ -21,7 +21,7 @@ const (
 	cacheBackendMemory = "memory"
 	cacheBackendRedis  = "redis"
 
-	defaultRedisKeyPrefix       = "stormrunner"
+	defaultRedisKeyPrefix       = "apexload"
 	defaultCacheProbeTimeout    = 2 * time.Second
 	defaultCacheWriteTimeout    = 500 * time.Millisecond
 	defaultRunSnapshotTTL       = 10 * time.Minute
@@ -131,7 +131,7 @@ func newCacheBackend(cfg cacheRuntimeConfig) (CacheBackend, error) {
 		return newMemoryCacheBackend(cfg), nil
 	case cacheBackendRedis:
 		if strings.TrimSpace(cfg.RedisURL) == "" {
-			return nil, fmt.Errorf("cache backend redis requires STORMRUNNER_REDIS_URL")
+			return nil, fmt.Errorf("cache backend redis requires APEXLOAD_REDIS_URL")
 		}
 		return newRedisCacheBackend(cfg)
 	default:
@@ -140,24 +140,24 @@ func newCacheBackend(cfg cacheRuntimeConfig) (CacheBackend, error) {
 }
 
 func cacheRuntimeConfigFromEnv() cacheRuntimeConfig {
-	backend := strings.ToLower(strings.TrimSpace(os.Getenv("STORMRUNNER_CACHE_BACKEND")))
+	backend := strings.ToLower(strings.TrimSpace(os.Getenv("APEXLOAD_CACHE_BACKEND")))
 	if backend == "" {
 		backend = cacheBackendMemory
 	}
 	timeout := firstConfiguredDuration(defaultCacheProbeTimeout,
-		"STORMRUNNER_REDIS_TIMEOUT",
-		"STORMRUNNER_REDIS_TIMEOUT_SECONDS",
+		"APEXLOAD_REDIS_TIMEOUT",
+		"APEXLOAD_REDIS_TIMEOUT_SECONDS",
 	)
 	cfg := cacheRuntimeConfig{
 		Backend:       backend,
-		RedisURL:      strings.TrimSpace(os.Getenv("STORMRUNNER_REDIS_URL")),
-		KeyPrefix:     cleanCacheKeyPart(firstNonEmpty(os.Getenv("STORMRUNNER_REDIS_KEY_PREFIX"), defaultRedisKeyPrefix)),
-		TLSEnabled:    envBool("STORMRUNNER_REDIS_TLS"),
+		RedisURL:      strings.TrimSpace(os.Getenv("APEXLOAD_REDIS_URL")),
+		KeyPrefix:     cleanCacheKeyPart(firstNonEmpty(os.Getenv("APEXLOAD_REDIS_KEY_PREFIX"), defaultRedisKeyPrefix)),
+		TLSEnabled:    envBool("APEXLOAD_REDIS_TLS"),
 		Timeout:       timeout,
-		DialTimeout:   firstConfiguredDuration(timeout, "STORMRUNNER_REDIS_DIAL_TIMEOUT", "STORMRUNNER_REDIS_DIAL_TIMEOUT_SECONDS"),
-		ReadTimeout:   firstConfiguredDuration(timeout, "STORMRUNNER_REDIS_READ_TIMEOUT", "STORMRUNNER_REDIS_READ_TIMEOUT_SECONDS"),
-		WriteTimeout:  firstConfiguredDuration(timeout, "STORMRUNNER_REDIS_WRITE_TIMEOUT", "STORMRUNNER_REDIS_WRITE_TIMEOUT_SECONDS"),
-		FanoutChannel: cleanCacheKeyPart(firstNonEmpty(os.Getenv("STORMRUNNER_REDIS_FANOUT_CHANNEL"), defaultFanoutChannel)),
+		DialTimeout:   firstConfiguredDuration(timeout, "APEXLOAD_REDIS_DIAL_TIMEOUT", "APEXLOAD_REDIS_DIAL_TIMEOUT_SECONDS"),
+		ReadTimeout:   firstConfiguredDuration(timeout, "APEXLOAD_REDIS_READ_TIMEOUT", "APEXLOAD_REDIS_READ_TIMEOUT_SECONDS"),
+		WriteTimeout:  firstConfiguredDuration(timeout, "APEXLOAD_REDIS_WRITE_TIMEOUT", "APEXLOAD_REDIS_WRITE_TIMEOUT_SECONDS"),
+		FanoutChannel: cleanCacheKeyPart(firstNonEmpty(os.Getenv("APEXLOAD_REDIS_FANOUT_CHANNEL"), defaultFanoutChannel)),
 	}
 	if cfg.KeyPrefix == "" {
 		cfg.KeyPrefix = defaultRedisKeyPrefix
@@ -466,7 +466,7 @@ type redisCacheBackend struct {
 func newRedisCacheBackend(cfg cacheRuntimeConfig) (*redisCacheBackend, error) {
 	options, err := redis.ParseURL(cfg.RedisURL)
 	if err != nil {
-		return nil, fmt.Errorf("parse STORMRUNNER_REDIS_URL: %w", err)
+		return nil, fmt.Errorf("parse APEXLOAD_REDIS_URL: %w", err)
 	}
 	if cfg.TLSEnabled && options.TLSConfig == nil {
 		options.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}

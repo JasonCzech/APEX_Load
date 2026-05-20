@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/recorder"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/recorder"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const (
@@ -218,11 +218,11 @@ func isMutatingMethod(method string) bool {
 }
 
 func configuredIdempotencyKeyTTL() time.Duration {
-	return firstConfiguredDuration(15*time.Minute, "STORMRUNNER_IDEMPOTENCY_KEY_TTL", "STORMRUNNER_IDEMPOTENCY_KEY_TTL_SECONDS")
+	return firstConfiguredDuration(15*time.Minute, "APEXLOAD_IDEMPOTENCY_KEY_TTL", "APEXLOAD_IDEMPOTENCY_KEY_TTL_SECONDS")
 }
 
 func configuredAPIKeyRateLimitPerMinute() int {
-	raw := strings.TrimSpace(os.Getenv("STORMRUNNER_API_KEY_RATE_LIMIT_PER_MINUTE"))
+	raw := strings.TrimSpace(os.Getenv("APEXLOAD_API_KEY_RATE_LIMIT_PER_MINUTE"))
 	if raw == "" {
 		return 0
 	}
@@ -362,7 +362,7 @@ func authenticatedUserFromAPIKey(r *http.Request, store storage.Store) (*Authent
 }
 
 func extractAPIKey(r *http.Request) string {
-	key := strings.TrimSpace(r.Header.Get("X-Stormrunner-API-Key"))
+	key := strings.TrimSpace(r.Header.Get("X-APEXLoad-API-Key"))
 	if key != "" {
 		return key
 	}

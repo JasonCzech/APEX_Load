@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	oidcSessionCookieName = "stormrunner_auth_session"
-	oidcStateCookieName   = "stormrunner_auth_state"
+	oidcSessionCookieName = "apexload_auth_session"
+	oidcStateCookieName   = "apexload_auth_state"
 	oidcSessionTTL        = 12 * time.Hour
 	oidcStateTTL          = 10 * time.Minute
 	oidcLogoutCSRFPath    = "/api/v1/auth/logout"
@@ -431,7 +431,7 @@ func validateOIDCLogoutCSRFToken(r *http.Request, user *AuthenticatedUser, setti
 	if err != nil {
 		return err
 	}
-	tokenValue := strings.TrimSpace(r.Header.Get("X-Stormrunner-CSRF-Token"))
+	tokenValue := strings.TrimSpace(r.Header.Get("X-APEXLoad-CSRF-Token"))
 	if tokenValue == "" {
 		return fmt.Errorf("missing csrf token")
 	}

@@ -1,12 +1,12 @@
 # Runtime Telemetry SLA Plan
 
 ## Objective
-Harden Stormrunner's runtime telemetry so the platform can meet the documented target of under 2 seconds from collection to dashboard display while also improving the quality of data retained for post-run analysis.
+Harden APEX Load's runtime telemetry so the platform can meet the documented target of under 2 seconds from collection to dashboard display while also improving the quality of data retained for post-run analysis.
 
 The key design rule is that not all captured data should travel through the same path. Summary metrics belong in the hot path. Diagnostic samples belong in a bounded near-real-time path. Full-fidelity records belong in durable archive storage.
 
 ## Current Runtime Data
-Stormrunner already captures a solid synthetic-load baseline:
+APEX Load already captures a solid synthetic-load baseline:
 
 - Transaction timings, bytes, status, success, and error details
 - HTTP timing phases such as DNS, connect, TLS, and TTFB
@@ -111,7 +111,7 @@ The ninth implementation slice now turns those measured stages into configurable
 
 The tenth implementation slice now adds run-level telemetry health transitions:
 
-- Active runs carry a `telemetry_health` summary and every live metrics payload carries `telemetry_status` so operators can separate application failures from Stormrunner monitoring health.
+- Active runs carry a `telemetry_health` summary and every live metrics payload carries `telemetry_status` so operators can separate application failures from APEX Load monitoring health.
 - Telemetry warnings enter `degraded` first and transition to `breached` only when they remain active for the sustained breach window; data-loss conditions such as collector drops still breach immediately.
 - Recovery clears the breach timer and emits a healthy transition through the existing diagnostic sampling path.
 

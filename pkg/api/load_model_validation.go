@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type LoadModelValidationReport struct {

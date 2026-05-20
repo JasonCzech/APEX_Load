@@ -16,7 +16,7 @@ JsonMap = dict[str, Any]
 
 
 @dataclass(frozen=True)
-class StormrunnerClientConfig:
+class APEX LoadClientConfig:
     base_url: str = DEFAULT_API_URL
     api_key: str = ""
     bearer_token: str = ""
@@ -24,17 +24,17 @@ class StormrunnerClientConfig:
     timeout_seconds: float = 30.0
 
     @classmethod
-    def from_env(cls) -> "StormrunnerClientConfig":
-        timeout_raw = os.environ.get("STORMRUNNER_TIMEOUT_SECONDS", "30").strip()
+    def from_env(cls) -> "APEX LoadClientConfig":
+        timeout_raw = os.environ.get("APEXLOAD_TIMEOUT_SECONDS", "30").strip()
         try:
             timeout_seconds = float(timeout_raw)
         except ValueError:
             timeout_seconds = 30.0
         return cls(
-            base_url=os.environ.get("STORMRUNNER_URL", DEFAULT_API_URL).strip() or DEFAULT_API_URL,
-            api_key=os.environ.get("STORMRUNNER_API_KEY", "").strip(),
-            bearer_token=os.environ.get("STORMRUNNER_BEARER_TOKEN", "").strip(),
-            default_project_id=os.environ.get("STORMRUNNER_PROJECT_ID", "").strip(),
+            base_url=os.environ.get("APEXLOAD_URL", DEFAULT_API_URL).strip() or DEFAULT_API_URL,
+            api_key=os.environ.get("APEXLOAD_API_KEY", "").strip(),
+            bearer_token=os.environ.get("APEXLOAD_BEARER_TOKEN", "").strip(),
+            default_project_id=os.environ.get("APEXLOAD_PROJECT_ID", "").strip(),
             timeout_seconds=timeout_seconds,
         )
 
@@ -74,20 +74,20 @@ def normalize_query(query: JsonMap | None) -> list[tuple[str, str]]:
     return pairs
 
 
-class StormrunnerClient:
+class APEX LoadClient:
     def __init__(
         self,
-        config: StormrunnerClientConfig | None = None,
+        config: APEX LoadClientConfig | None = None,
         *,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        self.config = config or StormrunnerClientConfig.from_env()
+        self.config = config or APEX LoadClientConfig.from_env()
         self._transport = transport
 
     @property
     def auth_headers(self) -> dict[str, str]:
         if self.config.api_key:
-            return {"X-Stormrunner-API-Key": self.config.api_key}
+            return {"X-APEX Load-API-Key": self.config.api_key}
         if self.config.bearer_token:
             return {"Authorization": f"Bearer {self.config.bearer_token}"}
         return {}
@@ -182,7 +182,7 @@ class StormrunnerClient:
         }
 
     def _api_error(self, response: httpx.Response, parsed: Any, path: str) -> JsonMap:
-        message = response.reason_phrase or "Stormrunner API request failed"
+        message = response.reason_phrase or "APEX Load API request failed"
         code = "api_error"
         if isinstance(parsed, dict):
             message = str(parsed.get("error") or parsed.get("message") or message)
@@ -203,15 +203,15 @@ class StormrunnerClient:
                 "code": "transport_error",
                 "message": str(exc),
                 "path": path,
-                "remediation": "Check STORMRUNNER_URL, network reachability, and controller health.",
+                "remediation": "Check APEXLOAD_URL, network reachability, and controller health.",
             },
         }
 
     def _remediation_for_status(self, status_code: int) -> str:
         if status_code in (401, 403):
-            return "Check service-account credentials, token scopes, and Stormrunner RBAC roles."
+            return "Check service-account credentials, token scopes, and APEX Load RBAC roles."
         if status_code == 404:
-            return "Check the endpoint path and referenced Stormrunner resource id."
+            return "Check the endpoint path and referenced APEX Load resource id."
         if status_code == 409:
             return "Resolve the reported scheduling, governance, or resource conflict and retry."
         if status_code == 400:

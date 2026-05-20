@@ -1,7 +1,7 @@
 # Gap Analysis: First-Class Performance Testing Harness
 
 ## What This Document Is
-A comprehensive audit of Stormrunner against the capabilities that define a production-grade, enterprise performance testing platform. Each gap is assessed for impact, effort, and priority. Items already built or planned in existing docs are marked accordingly.
+A comprehensive audit of APEX Load against the capabilities that define a production-grade, enterprise performance testing platform. Each gap is assessed for impact, effort, and priority. Items already built or planned in existing docs are marked accordingly.
 
 ## Audit Methodology
 Compared against the combined feature sets of LoadRunner Enterprise, Gatling Enterprise, k6 Cloud, NeoLoad, and Locust — filtered to capabilities that genuinely matter for an enterprise-grade harness (not checkbox features).
@@ -18,7 +18,7 @@ Compared against the combined feature sets of LoadRunner Enterprise, Gatling Ent
 | Multi-protocol support (HTTP, SOAP, Java HTTP, JMS, Browser) | `pkg/protocol/` |
 | JSON DSL scripting | `pkg/dsl/` |
 | Real-time dashboard with WebSocket streaming | `dashboard/`, `pkg/api/websocket.go` |
-| CLI test execution | `cmd/stormctl/` |
+| CLI test execution | `cmd/apexctl/` |
 | REST API for test management | `pkg/api/handlers.go` |
 | Script import (LoadRunner, JMeter) | `pkg/convert/` |
 | Distributed multi-generator execution | `pkg/api/distributed_execution_backend.go` |
@@ -65,15 +65,15 @@ These are the capabilities missing from both the codebase and all existing plans
 No performance testing platform is first-class without CI/CD integration. Teams need to run performance tests as automated gates in their deployment pipelines.
 
 **What's needed:**
-- **Exit codes from stormctl** — non-zero exit on SLA breach so CI pipelines fail the build
-- **Machine-readable output** — `--format json` flag on stormctl for pipeline parsing
+- **Exit codes from apexctl** — non-zero exit on SLA breach so CI pipelines fail the build
+- **Machine-readable output** — `--format json` flag on apexctl for pipeline parsing
 - **JUnit / test-summary output** — optional pipeline-friendly XML or summary JSON for native CI test reporting
 - **GitHub Actions workflow template** — reusable action that runs a test, waits for completion, checks SLA
 - **Azure DevOps pipeline task** — same for ADO (primary enterprise target per AKS deployment)
-- **CLI wait / inspect flow** — `stormctl` subcommands that block on run completion and emit final SLA status cleanly
+- **CLI wait / inspect flow** — `apexctl` subcommands that block on run completion and emit final SLA status cleanly
 - **API polling endpoint** — `GET /api/v1/tests/{id}/status` with SLA pass/fail summary for pipeline checks
 
-**Why it matters:** Without this, Stormrunner is a manual tool. With it, every PR gets a performance gate.
+**Why it matters:** Without this, APEX Load is a manual tool. With it, every PR gets a performance gate.
 
 ---
 
@@ -124,7 +124,7 @@ When tests complete or SLA breaches occur, stakeholders need to know immediately
 ## Gap 5: Correlation Intelligence
 **Impact: Medium-High** | **Effort: 5-7 days**
 
-LoadRunner's biggest competitive advantage is auto-correlation. Stormrunner has extractors but no intelligence around them.
+LoadRunner's biggest competitive advantage is auto-correlation. APEX Load has extractors but no intelligence around them.
 
 **What's needed:**
 - **Auto-correlation detection** — during recording or HAR import, identify dynamic values that change between requests (session IDs, CSRF tokens, viewstate)
@@ -175,7 +175,7 @@ The most powerful analysis comes from correlating load test metrics with applica
 **What's needed:**
 - **OpenTelemetry trace propagation** — inject `traceparent` headers into test requests so APM tools (Dynatrace, Datadog, New Relic) can link load test traffic to server-side traces
 - **Trace ID in results** — store trace/span IDs alongside transaction results for cross-reference
-- **Prometheus metrics export** — expose Stormrunner controller metrics in Prometheus format for Grafana dashboards
+- **Prometheus metrics export** — expose APEX Load controller metrics in Prometheus format for Grafana dashboards
 - **Dynatrace event injection** — push test start/stop events to Dynatrace for timeline correlation
 - **External metrics import** — pull target system metrics (CPU, memory, queue depth) during test execution
 
@@ -189,15 +189,15 @@ The most powerful analysis comes from correlating load test metrics with applica
 Enterprise deployments need access control.
 
 **What's needed:**
-- **Authentication** — Microsoft Entra ID-backed SSO via the trusted-header gateway pattern, with Stormrunner enforcing RBAC from forwarded identity and role headers
+- **Authentication** — Microsoft Entra ID-backed SSO via the trusted-header gateway pattern, with APEX Load enforcing RBAC from forwarded identity and role headers
 - **Role-based access** — Admin, Editor, Viewer roles at project level
 - **Audit log** — who created/started/stopped which test
 - **API key management** — service account keys for CI/CD pipelines
 - **Team/project isolation** — teams only see their projects and results
 
-**Current direction:** Stormrunner now defaults local environments to an explicit `dev` bypass mode while keeping production aligned to Microsoft Entra ID-backed trusted-header auth. Service-account API keys, audit-event persistence, and dashboard visibility for both governance surfaces are now in place, leaving upstream identity lifecycle and broader team isolation as the remaining enterprise-auth expansion areas.
+**Current direction:** APEX Load now defaults local environments to an explicit `dev` bypass mode while keeping production aligned to Microsoft Entra ID-backed trusted-header auth. Service-account API keys, audit-event persistence, and dashboard visibility for both governance surfaces are now in place, leaving upstream identity lifecycle and broader team isolation as the remaining enterprise-auth expansion areas.
 
-**Why it matters:** Once Stormrunner is shared across teams, this becomes a rollout blocker rather than a late-stage enhancement.
+**Why it matters:** Once APEX Load is shared across teams, this becomes a rollout blocker rather than a late-stage enhancement.
 
 ---
 
@@ -378,7 +378,7 @@ In CI/CD environments, PRs are often deployed to ephemeral namespaces where host
 ## Recommended Delivery Waves
 
 ### Wave 1: Enterprise Foundation
-**Target:** Make Stormrunner safe and useful in automated delivery.
+**Target:** Make APEX Load safe and useful in automated delivery.
 
 - CI/CD integration
 - Report generation
@@ -396,7 +396,7 @@ In CI/CD environments, PRs are often deployed to ephemeral namespaces where host
 **Why second:** Once CI/CD initiates tests, the engine must test them properly (avoiding coordinated omission) and ensure resulting data does not violate enterprise PII/PHI standards.
 
 ### Wave 3: Shared Platform Readiness
-**Target:** Turn Stormrunner from a powerful tool into a governable shared service.
+**Target:** Turn APEX Load from a powerful tool into a governable shared service.
 
 - User management and RBAC
 - Multi-tenant governance and capacity controls
@@ -417,7 +417,7 @@ In CI/CD environments, PRs are often deployed to ephemeral namespaces where host
 **Why fourth:** These capabilities increase script realism, reduce maintenance toil, and improve analyst productivity, but they depend on the platform foundation already being reliable and governable.
 
 ### Wave 5: Ecosystem and Advanced Modeling
-**Target:** Expand Stormrunner into broader observability and globally distributed testing use cases.
+**Target:** Expand APEX Load into broader observability and globally distributed testing use cases.
 
 - APM / observability correlation
 - Iteration and rendezvous control
@@ -430,7 +430,7 @@ In CI/CD environments, PRs are often deployed to ephemeral namespaces where host
 
 ## What's Already Strong
 
-Before adding anything, it's worth recognizing that Stormrunner already has capabilities that many competitors lack:
+Before adding anything, it's worth recognizing that APEX Load already has capabilities that many competitors lack:
 
 - **Goroutine-per-VUser model** — fundamentally more efficient than thread-based or process-based engines
 - **Distributed execution with live aggregation** — the 1,362-line distributed backend is production-grade

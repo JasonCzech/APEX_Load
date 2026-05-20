@@ -1731,7 +1731,7 @@ var File_api_proto_generator_proto protoreflect.FileDescriptor
 
 const file_api_proto_generator_proto_rawDesc = "" +
 	"\n" +
-	"\x19api/proto/generator.proto\x12\x0estormrunner.v1\"\xd9\x03\n" +
+	"\x19api/proto/generator.proto\x12\vapexload.v1\"\xd3\x03\n" +
 	"\x0eWorkAssignment\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x1d\n" +
 	"\n" +
@@ -1741,10 +1741,10 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0escript_content\x18\x03 \x01(\fR\rscriptContent\x12\x1f\n" +
 	"\vvuser_count\x18\x04 \x01(\x05R\n" +
 	"vuserCount\x12&\n" +
-	"\x0framp_up_seconds\x18\x05 \x01(\x05R\rrampUpSeconds\x12Q\n" +
-	"\venvironment\x18\x06 \x03(\v2/.stormrunner.v1.WorkAssignment.EnvironmentEntryR\venvironment\x127\n" +
+	"\x0framp_up_seconds\x18\x05 \x01(\x05R\rrampUpSeconds\x12N\n" +
+	"\venvironment\x18\x06 \x03(\v2,.apexload.v1.WorkAssignment.EnvironmentEntryR\venvironment\x124\n" +
 	"\n" +
-	"data_files\x18\a \x03(\v2\x18.stormrunner.v1.DataFileR\tdataFiles\x1a>\n" +
+	"data_files\x18\a \x03(\v2\x15.apexload.v1.DataFileR\tdataFiles\x1a>\n" +
 	"\x10EnvironmentEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"8\n" +
@@ -1775,17 +1775,17 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\bgraceful\x18\x02 \x01(\bR\bgraceful\"T\n" +
 	"\aStopAck\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x12%\n" +
-	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xbf\x03\n" +
+	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xb3\x03\n" +
 	"\fMetricsBatch\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12!\n" +
 	"\fgenerator_id\x18\x02 \x01(\tR\vgeneratorId\x12*\n" +
-	"\x11timestamp_unix_ms\x18\x03 \x01(\x03R\x0ftimestampUnixMs\x12E\n" +
-	"\ftransactions\x18\x04 \x03(\v2!.stormrunner.v1.TransactionMetricR\ftransactions\x124\n" +
-	"\x05stats\x18\x05 \x01(\v2\x1e.stormrunner.v1.GeneratorStatsR\x05stats\x123\n" +
-	"\x06groups\x18\x06 \x03(\v2\x1b.stormrunner.v1.GroupMetricR\x06groups\x12'\n" +
+	"\x11timestamp_unix_ms\x18\x03 \x01(\x03R\x0ftimestampUnixMs\x12B\n" +
+	"\ftransactions\x18\x04 \x03(\v2\x1e.apexload.v1.TransactionMetricR\ftransactions\x121\n" +
+	"\x05stats\x18\x05 \x01(\v2\x1b.apexload.v1.GeneratorStatsR\x05stats\x120\n" +
+	"\x06groups\x18\x06 \x03(\v2\x18.apexload.v1.GroupMetricR\x06groups\x12'\n" +
 	"\x0flifecycle_state\x18\a \x01(\tR\x0elifecycleState\x12'\n" +
-	"\x0flifecycle_error\x18\b \x01(\tR\x0elifecycleError\x12C\n" +
-	"\ttelemetry\x18\t \x01(\v2%.stormrunner.v1.MetricsBatchTelemetryR\ttelemetry\"\xc6\x01\n" +
+	"\x0flifecycle_error\x18\b \x01(\tR\x0elifecycleError\x12@\n" +
+	"\ttelemetry\x18\t \x01(\v2\".apexload.v1.MetricsBatchTelemetryR\ttelemetry\"\xc6\x01\n" +
 	"\x15MetricsBatchTelemetry\x12'\n" +
 	"\x0fdropped_results\x18\x01 \x01(\x03R\x0edroppedResults\x12/\n" +
 	"\x14collected_at_unix_ms\x18\x02 \x01(\x03R\x11collectedAtUnixMs\x12/\n" +
@@ -1809,7 +1809,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	" \x01(\x05R\fmessagesSent\x12+\n" +
 	"\x11messages_received\x18\v \x01(\x05R\x10messagesReceived\x121\n" +
 	"\x15messages_sent_per_sec\x18\f \x01(\x01R\x12messagesSentPerSec\x129\n" +
-	"\x19messages_received_per_sec\x18\r \x01(\x01R\x16messagesReceivedPerSec\"\xf1\x04\n" +
+	"\x19messages_received_per_sec\x18\r \x01(\x01R\x16messagesReceivedPerSec\"\xee\x04\n" +
 	"\x11TransactionMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12+\n" +
 	"\x12start_time_unix_ms\x18\x02 \x01(\x03R\x0fstartTimeUnixMs\x12\x1f\n" +
@@ -1830,32 +1830,32 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\rerror_message\x18\f \x01(\tR\ferrorMessage\x12%\n" +
 	"\x0ecorrelation_id\x18\r \x01(\tR\rcorrelationId\x12'\n" +
 	"\x0fdependency_type\x18\x0e \x01(\tR\x0edependencyType\x12+\n" +
-	"\x11dependency_target\x18\x0f \x01(\tR\x10dependencyTarget\x12J\n" +
-	"\x10server_telemetry\x18\x10 \x01(\v2\x1f.stormrunner.v1.ServerTelemetryR\x0fserverTelemetry\x12%\n" +
+	"\x11dependency_target\x18\x0f \x01(\tR\x10dependencyTarget\x12G\n" +
+	"\x10server_telemetry\x18\x10 \x01(\v2\x1c.apexload.v1.ServerTelemetryR\x0fserverTelemetry\x12%\n" +
 	"\x0esoap_operation\x18\x11 \x01(\tR\rsoapOperation\"\xa2\x01\n" +
 	"\x0eGeneratorStats\x12#\n" +
 	"\ractive_vusers\x18\x01 \x01(\x05R\factiveVusers\x12\x1f\n" +
 	"\vcpu_percent\x18\x02 \x01(\x01R\n" +
 	"cpuPercent\x12!\n" +
 	"\fmemory_bytes\x18\x03 \x01(\x03R\vmemoryBytes\x12'\n" +
-	"\x0fgoroutine_count\x18\x04 \x01(\x05R\x0egoroutineCount\"\xbd\x01\n" +
-	"\rControlSignal\x129\n" +
-	"\x06adjust\x18\x01 \x01(\v2\x1f.stormrunner.v1.VUserAdjustmentH\x00R\x06adjust\x121\n" +
-	"\x04stop\x18\x02 \x01(\v2\x1b.stormrunner.v1.StopRequestH\x00R\x04stop\x124\n" +
-	"\x05pause\x18\x03 \x01(\v2\x1c.stormrunner.v1.PauseRequestH\x00R\x05pauseB\b\n" +
+	"\x0fgoroutine_count\x18\x04 \x01(\x05R\x0egoroutineCount\"\xb4\x01\n" +
+	"\rControlSignal\x126\n" +
+	"\x06adjust\x18\x01 \x01(\v2\x1c.apexload.v1.VUserAdjustmentH\x00R\x06adjust\x12.\n" +
+	"\x04stop\x18\x02 \x01(\v2\x18.apexload.v1.StopRequestH\x00R\x04stop\x121\n" +
+	"\x05pause\x18\x03 \x01(\v2\x19.apexload.v1.PauseRequestH\x00R\x05pauseB\b\n" +
 	"\x06signal\"=\n" +
 	"\fPauseRequest\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x14\n" +
-	"\x05pause\x18\x02 \x01(\bR\x05pause\"\x94\x01\n" +
+	"\x05pause\x18\x02 \x01(\bR\x05pause\"\x91\x01\n" +
 	"\rHeartbeatPing\x12!\n" +
 	"\fgenerator_id\x18\x01 \x01(\tR\vgeneratorId\x12*\n" +
-	"\x11timestamp_unix_ms\x18\x02 \x01(\x03R\x0ftimestampUnixMs\x124\n" +
-	"\x05stats\x18\x03 \x01(\v2\x1e.stormrunner.v1.GeneratorStatsR\x05stats\"\xdc\x03\n" +
+	"\x11timestamp_unix_ms\x18\x02 \x01(\x03R\x0ftimestampUnixMs\x121\n" +
+	"\x05stats\x18\x03 \x01(\v2\x1b.apexload.v1.GeneratorStatsR\x05stats\"\xd9\x03\n" +
 	"\rHeartbeatPong\x12!\n" +
 	"\fgenerator_id\x18\x03 \x01(\tR\vgeneratorId\x12*\n" +
 	"\x11timestamp_unix_ms\x18\x01 \x01(\x03R\x0ftimestampUnixMs\x12&\n" +
-	"\x0factive_test_ids\x18\x02 \x03(\tR\ractiveTestIds\x124\n" +
-	"\x05stats\x18\x04 \x01(\v2\x1e.stormrunner.v1.GeneratorStatsR\x05stats\x12-\n" +
+	"\x0factive_test_ids\x18\x02 \x03(\tR\ractiveTestIds\x121\n" +
+	"\x05stats\x18\x04 \x01(\v2\x1b.apexload.v1.GeneratorStatsR\x05stats\x12-\n" +
 	"\x12available_capacity\x18\x05 \x01(\x05R\x11availableCapacity\x12&\n" +
 	"\x0fcpu_limit_cores\x18\x06 \x01(\x01R\rcpuLimitCores\x12,\n" +
 	"\x12memory_limit_bytes\x18\a \x01(\x03R\x10memoryLimitBytes\x12\x1d\n" +
@@ -1877,17 +1877,17 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"?\n" +
 	"\x0fArchiveArtifact\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
-	"\acontent\x18\x02 \x01(\fR\acontent2\x92\x05\n" +
-	"\x10GeneratorControl\x12K\n" +
+	"\acontent\x18\x02 \x01(\fR\acontent2\xe2\x04\n" +
+	"\x10GeneratorControl\x12E\n" +
 	"\n" +
-	"AssignWork\x12\x1e.stormrunner.v1.WorkAssignment\x1a\x1d.stormrunner.v1.AssignmentAck\x12N\n" +
-	"\fAdjustVUsers\x12\x1f.stormrunner.v1.VUserAdjustment\x1a\x1d.stormrunner.v1.AdjustmentAck\x12Q\n" +
-	"\x0eAdjustDuration\x12\".stormrunner.v1.DurationAdjustment\x1a\x1b.stormrunner.v1.DurationAck\x12@\n" +
-	"\bStopTest\x12\x1b.stormrunner.v1.StopRequest\x1a\x17.stormrunner.v1.StopAck\x12P\n" +
-	"\rStreamMetrics\x12\x1d.stormrunner.v1.ControlSignal\x1a\x1c.stormrunner.v1.MetricsBatch(\x010\x01\x12M\n" +
-	"\tHeartbeat\x12\x1d.stormrunner.v1.HeartbeatPing\x1a\x1d.stormrunner.v1.HeartbeatPong(\x010\x01\x12L\n" +
-	"\x10DistributeScript\x12\x1d.stormrunner.v1.ScriptPayload\x1a\x19.stormrunner.v1.ScriptAck\x12]\n" +
-	"\x12GetArchiveArtifact\x12&.stormrunner.v1.ArchiveArtifactRequest\x1a\x1f.stormrunner.v1.ArchiveArtifactB-Z+github.com/jasonczech/stormrunner/api/protob\x06proto3"
+	"AssignWork\x12\x1b.apexload.v1.WorkAssignment\x1a\x1a.apexload.v1.AssignmentAck\x12H\n" +
+	"\fAdjustVUsers\x12\x1c.apexload.v1.VUserAdjustment\x1a\x1a.apexload.v1.AdjustmentAck\x12K\n" +
+	"\x0eAdjustDuration\x12\x1f.apexload.v1.DurationAdjustment\x1a\x18.apexload.v1.DurationAck\x12:\n" +
+	"\bStopTest\x12\x18.apexload.v1.StopRequest\x1a\x14.apexload.v1.StopAck\x12J\n" +
+	"\rStreamMetrics\x12\x1a.apexload.v1.ControlSignal\x1a\x19.apexload.v1.MetricsBatch(\x010\x01\x12G\n" +
+	"\tHeartbeat\x12\x1a.apexload.v1.HeartbeatPing\x1a\x1a.apexload.v1.HeartbeatPong(\x010\x01\x12F\n" +
+	"\x10DistributeScript\x12\x1a.apexload.v1.ScriptPayload\x1a\x16.apexload.v1.ScriptAck\x12W\n" +
+	"\x12GetArchiveArtifact\x12#.apexload.v1.ArchiveArtifactRequest\x1a\x1c.apexload.v1.ArchiveArtifactB*Z(github.com/jasonczech/apexload/api/protob\x06proto3"
 
 var (
 	file_api_proto_generator_proto_rawDescOnce sync.Once
@@ -1903,60 +1903,60 @@ func file_api_proto_generator_proto_rawDescGZIP() []byte {
 
 var file_api_proto_generator_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_api_proto_generator_proto_goTypes = []any{
-	(*WorkAssignment)(nil),         // 0: stormrunner.v1.WorkAssignment
-	(*DataFile)(nil),               // 1: stormrunner.v1.DataFile
-	(*AssignmentAck)(nil),          // 2: stormrunner.v1.AssignmentAck
-	(*VUserAdjustment)(nil),        // 3: stormrunner.v1.VUserAdjustment
-	(*AdjustmentAck)(nil),          // 4: stormrunner.v1.AdjustmentAck
-	(*DurationAdjustment)(nil),     // 5: stormrunner.v1.DurationAdjustment
-	(*DurationAck)(nil),            // 6: stormrunner.v1.DurationAck
-	(*StopRequest)(nil),            // 7: stormrunner.v1.StopRequest
-	(*StopAck)(nil),                // 8: stormrunner.v1.StopAck
-	(*MetricsBatch)(nil),           // 9: stormrunner.v1.MetricsBatch
-	(*MetricsBatchTelemetry)(nil),  // 10: stormrunner.v1.MetricsBatchTelemetry
-	(*GroupMetric)(nil),            // 11: stormrunner.v1.GroupMetric
-	(*ServerTelemetry)(nil),        // 12: stormrunner.v1.ServerTelemetry
-	(*TransactionMetric)(nil),      // 13: stormrunner.v1.TransactionMetric
-	(*GeneratorStats)(nil),         // 14: stormrunner.v1.GeneratorStats
-	(*ControlSignal)(nil),          // 15: stormrunner.v1.ControlSignal
-	(*PauseRequest)(nil),           // 16: stormrunner.v1.PauseRequest
-	(*HeartbeatPing)(nil),          // 17: stormrunner.v1.HeartbeatPing
-	(*HeartbeatPong)(nil),          // 18: stormrunner.v1.HeartbeatPong
-	(*ScriptPayload)(nil),          // 19: stormrunner.v1.ScriptPayload
-	(*ScriptAck)(nil),              // 20: stormrunner.v1.ScriptAck
-	(*ArchiveArtifactRequest)(nil), // 21: stormrunner.v1.ArchiveArtifactRequest
-	(*ArchiveArtifact)(nil),        // 22: stormrunner.v1.ArchiveArtifact
-	nil,                            // 23: stormrunner.v1.WorkAssignment.EnvironmentEntry
+	(*WorkAssignment)(nil),         // 0: apexload.v1.WorkAssignment
+	(*DataFile)(nil),               // 1: apexload.v1.DataFile
+	(*AssignmentAck)(nil),          // 2: apexload.v1.AssignmentAck
+	(*VUserAdjustment)(nil),        // 3: apexload.v1.VUserAdjustment
+	(*AdjustmentAck)(nil),          // 4: apexload.v1.AdjustmentAck
+	(*DurationAdjustment)(nil),     // 5: apexload.v1.DurationAdjustment
+	(*DurationAck)(nil),            // 6: apexload.v1.DurationAck
+	(*StopRequest)(nil),            // 7: apexload.v1.StopRequest
+	(*StopAck)(nil),                // 8: apexload.v1.StopAck
+	(*MetricsBatch)(nil),           // 9: apexload.v1.MetricsBatch
+	(*MetricsBatchTelemetry)(nil),  // 10: apexload.v1.MetricsBatchTelemetry
+	(*GroupMetric)(nil),            // 11: apexload.v1.GroupMetric
+	(*ServerTelemetry)(nil),        // 12: apexload.v1.ServerTelemetry
+	(*TransactionMetric)(nil),      // 13: apexload.v1.TransactionMetric
+	(*GeneratorStats)(nil),         // 14: apexload.v1.GeneratorStats
+	(*ControlSignal)(nil),          // 15: apexload.v1.ControlSignal
+	(*PauseRequest)(nil),           // 16: apexload.v1.PauseRequest
+	(*HeartbeatPing)(nil),          // 17: apexload.v1.HeartbeatPing
+	(*HeartbeatPong)(nil),          // 18: apexload.v1.HeartbeatPong
+	(*ScriptPayload)(nil),          // 19: apexload.v1.ScriptPayload
+	(*ScriptAck)(nil),              // 20: apexload.v1.ScriptAck
+	(*ArchiveArtifactRequest)(nil), // 21: apexload.v1.ArchiveArtifactRequest
+	(*ArchiveArtifact)(nil),        // 22: apexload.v1.ArchiveArtifact
+	nil,                            // 23: apexload.v1.WorkAssignment.EnvironmentEntry
 }
 var file_api_proto_generator_proto_depIdxs = []int32{
-	23, // 0: stormrunner.v1.WorkAssignment.environment:type_name -> stormrunner.v1.WorkAssignment.EnvironmentEntry
-	1,  // 1: stormrunner.v1.WorkAssignment.data_files:type_name -> stormrunner.v1.DataFile
-	13, // 2: stormrunner.v1.MetricsBatch.transactions:type_name -> stormrunner.v1.TransactionMetric
-	14, // 3: stormrunner.v1.MetricsBatch.stats:type_name -> stormrunner.v1.GeneratorStats
-	11, // 4: stormrunner.v1.MetricsBatch.groups:type_name -> stormrunner.v1.GroupMetric
-	10, // 5: stormrunner.v1.MetricsBatch.telemetry:type_name -> stormrunner.v1.MetricsBatchTelemetry
-	12, // 6: stormrunner.v1.TransactionMetric.server_telemetry:type_name -> stormrunner.v1.ServerTelemetry
-	3,  // 7: stormrunner.v1.ControlSignal.adjust:type_name -> stormrunner.v1.VUserAdjustment
-	7,  // 8: stormrunner.v1.ControlSignal.stop:type_name -> stormrunner.v1.StopRequest
-	16, // 9: stormrunner.v1.ControlSignal.pause:type_name -> stormrunner.v1.PauseRequest
-	14, // 10: stormrunner.v1.HeartbeatPing.stats:type_name -> stormrunner.v1.GeneratorStats
-	14, // 11: stormrunner.v1.HeartbeatPong.stats:type_name -> stormrunner.v1.GeneratorStats
-	0,  // 12: stormrunner.v1.GeneratorControl.AssignWork:input_type -> stormrunner.v1.WorkAssignment
-	3,  // 13: stormrunner.v1.GeneratorControl.AdjustVUsers:input_type -> stormrunner.v1.VUserAdjustment
-	5,  // 14: stormrunner.v1.GeneratorControl.AdjustDuration:input_type -> stormrunner.v1.DurationAdjustment
-	7,  // 15: stormrunner.v1.GeneratorControl.StopTest:input_type -> stormrunner.v1.StopRequest
-	15, // 16: stormrunner.v1.GeneratorControl.StreamMetrics:input_type -> stormrunner.v1.ControlSignal
-	17, // 17: stormrunner.v1.GeneratorControl.Heartbeat:input_type -> stormrunner.v1.HeartbeatPing
-	19, // 18: stormrunner.v1.GeneratorControl.DistributeScript:input_type -> stormrunner.v1.ScriptPayload
-	21, // 19: stormrunner.v1.GeneratorControl.GetArchiveArtifact:input_type -> stormrunner.v1.ArchiveArtifactRequest
-	2,  // 20: stormrunner.v1.GeneratorControl.AssignWork:output_type -> stormrunner.v1.AssignmentAck
-	4,  // 21: stormrunner.v1.GeneratorControl.AdjustVUsers:output_type -> stormrunner.v1.AdjustmentAck
-	6,  // 22: stormrunner.v1.GeneratorControl.AdjustDuration:output_type -> stormrunner.v1.DurationAck
-	8,  // 23: stormrunner.v1.GeneratorControl.StopTest:output_type -> stormrunner.v1.StopAck
-	9,  // 24: stormrunner.v1.GeneratorControl.StreamMetrics:output_type -> stormrunner.v1.MetricsBatch
-	18, // 25: stormrunner.v1.GeneratorControl.Heartbeat:output_type -> stormrunner.v1.HeartbeatPong
-	20, // 26: stormrunner.v1.GeneratorControl.DistributeScript:output_type -> stormrunner.v1.ScriptAck
-	22, // 27: stormrunner.v1.GeneratorControl.GetArchiveArtifact:output_type -> stormrunner.v1.ArchiveArtifact
+	23, // 0: apexload.v1.WorkAssignment.environment:type_name -> apexload.v1.WorkAssignment.EnvironmentEntry
+	1,  // 1: apexload.v1.WorkAssignment.data_files:type_name -> apexload.v1.DataFile
+	13, // 2: apexload.v1.MetricsBatch.transactions:type_name -> apexload.v1.TransactionMetric
+	14, // 3: apexload.v1.MetricsBatch.stats:type_name -> apexload.v1.GeneratorStats
+	11, // 4: apexload.v1.MetricsBatch.groups:type_name -> apexload.v1.GroupMetric
+	10, // 5: apexload.v1.MetricsBatch.telemetry:type_name -> apexload.v1.MetricsBatchTelemetry
+	12, // 6: apexload.v1.TransactionMetric.server_telemetry:type_name -> apexload.v1.ServerTelemetry
+	3,  // 7: apexload.v1.ControlSignal.adjust:type_name -> apexload.v1.VUserAdjustment
+	7,  // 8: apexload.v1.ControlSignal.stop:type_name -> apexload.v1.StopRequest
+	16, // 9: apexload.v1.ControlSignal.pause:type_name -> apexload.v1.PauseRequest
+	14, // 10: apexload.v1.HeartbeatPing.stats:type_name -> apexload.v1.GeneratorStats
+	14, // 11: apexload.v1.HeartbeatPong.stats:type_name -> apexload.v1.GeneratorStats
+	0,  // 12: apexload.v1.GeneratorControl.AssignWork:input_type -> apexload.v1.WorkAssignment
+	3,  // 13: apexload.v1.GeneratorControl.AdjustVUsers:input_type -> apexload.v1.VUserAdjustment
+	5,  // 14: apexload.v1.GeneratorControl.AdjustDuration:input_type -> apexload.v1.DurationAdjustment
+	7,  // 15: apexload.v1.GeneratorControl.StopTest:input_type -> apexload.v1.StopRequest
+	15, // 16: apexload.v1.GeneratorControl.StreamMetrics:input_type -> apexload.v1.ControlSignal
+	17, // 17: apexload.v1.GeneratorControl.Heartbeat:input_type -> apexload.v1.HeartbeatPing
+	19, // 18: apexload.v1.GeneratorControl.DistributeScript:input_type -> apexload.v1.ScriptPayload
+	21, // 19: apexload.v1.GeneratorControl.GetArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
+	2,  // 20: apexload.v1.GeneratorControl.AssignWork:output_type -> apexload.v1.AssignmentAck
+	4,  // 21: apexload.v1.GeneratorControl.AdjustVUsers:output_type -> apexload.v1.AdjustmentAck
+	6,  // 22: apexload.v1.GeneratorControl.AdjustDuration:output_type -> apexload.v1.DurationAck
+	8,  // 23: apexload.v1.GeneratorControl.StopTest:output_type -> apexload.v1.StopAck
+	9,  // 24: apexload.v1.GeneratorControl.StreamMetrics:output_type -> apexload.v1.MetricsBatch
+	18, // 25: apexload.v1.GeneratorControl.Heartbeat:output_type -> apexload.v1.HeartbeatPong
+	20, // 26: apexload.v1.GeneratorControl.DistributeScript:output_type -> apexload.v1.ScriptAck
+	22, // 27: apexload.v1.GeneratorControl.GetArchiveArtifact:output_type -> apexload.v1.ArchiveArtifact
 	20, // [20:28] is the sub-list for method output_type
 	12, // [12:20] is the sub-list for method input_type
 	12, // [12:12] is the sub-list for extension type_name

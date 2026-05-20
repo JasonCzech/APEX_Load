@@ -22,7 +22,7 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: process.env.STORMRUNNER_API_PROXY || 'http://localhost:8080',
+        target: process.env.APEXLOAD_API_PROXY || 'http://localhost:8080',
         ws: true,
       },
     },

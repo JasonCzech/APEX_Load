@@ -1,9 +1,9 @@
 const DEFAULT_LOCAL_API_ORIGIN = 'http://127.0.0.1:8080'
-export const DEV_VIEW_STORAGE_KEY = 'stormrunner.devViewMode'
-export const DEV_VIEW_MODE_CHANGED_EVENT = 'stormrunner:dev-view-mode-changed'
-const ACTIVE_PROJECT_STORAGE_KEY = 'stormrunner.activeProjectId'
-const DEV_VIEW_HEADER = 'X-Stormrunner-Dev-View'
-const DEV_PROJECT_HEADER = 'X-Stormrunner-Dev-Project-ID'
+export const DEV_VIEW_STORAGE_KEY = 'apexload.devViewMode'
+export const DEV_VIEW_MODE_CHANGED_EVENT = 'apexload:dev-view-mode-changed'
+const ACTIVE_PROJECT_STORAGE_KEY = 'apexload.activeProjectId'
+const DEV_VIEW_HEADER = 'X-APEX Load-Dev-View'
+const DEV_PROJECT_HEADER = 'X-APEX Load-Dev-Project-ID'
 
 export type DevViewMode = 'admin' | 'user'
 

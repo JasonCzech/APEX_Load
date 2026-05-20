@@ -9,24 +9,24 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/api"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/browser"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/database"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/grpc"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/java_http"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/jms"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/network"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/soap"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/websocket"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/api"
+	_ "github.com/jasonczech/apexload/pkg/protocol/browser"
+	_ "github.com/jasonczech/apexload/pkg/protocol/database"
+	_ "github.com/jasonczech/apexload/pkg/protocol/grpc"
+	_ "github.com/jasonczech/apexload/pkg/protocol/http"
+	_ "github.com/jasonczech/apexload/pkg/protocol/java_http"
+	_ "github.com/jasonczech/apexload/pkg/protocol/jms"
+	_ "github.com/jasonczech/apexload/pkg/protocol/network"
+	_ "github.com/jasonczech/apexload/pkg/protocol/soap"
+	_ "github.com/jasonczech/apexload/pkg/protocol/websocket"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	// Controller HTTP bind address (for API + embedded dashboard).
-	addr := os.Getenv("STORMRUNNER_ADDR")
+	addr := os.Getenv("APEXLOAD_ADDR")
 	if addr == "" {
 		addr = ":8080"
 	}
@@ -38,8 +38,8 @@ func main() {
 	}
 	defer store.Close()
 
-	generatorTargets := parseGeneratorTargets(os.Getenv("STORMRUNNER_GENERATORS"))
-	generatorTimeout := parseGeneratorTimeout(os.Getenv("STORMRUNNER_GENERATOR_TIMEOUT"))
+	generatorTargets := parseGeneratorTargets(os.Getenv("APEXLOAD_GENERATORS"))
+	generatorTimeout := parseGeneratorTimeout(os.Getenv("APEXLOAD_GENERATOR_TIMEOUT"))
 	if len(generatorTargets) > 0 {
 		slog.Info("distributed execution enabled", "generators", generatorTargets, "timeout", generatorTimeout)
 	}
@@ -104,7 +104,7 @@ func parseGeneratorTimeout(raw string) time.Duration {
 	}
 	duration, err := time.ParseDuration(raw)
 	if err != nil || duration <= 0 {
-		slog.Warn("invalid STORMRUNNER_GENERATOR_TIMEOUT, falling back to default", "value", raw)
+		slog.Warn("invalid APEXLOAD_GENERATOR_TIMEOUT, falling back to default", "value", raw)
 		return 10 * time.Second
 	}
 	return duration

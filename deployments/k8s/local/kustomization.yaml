@@ -1,6 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: stormrunner-local
+namespace: apexload-local
 resources:
   - namespace.yaml
   - controller-pvc.yaml
@@ -11,5 +11,5 @@ resources:
   - generator-keda-scaledobject.yaml
 labels:
   - pairs:
-      app.kubernetes.io/part-of: stormrunner
+      app.kubernetes.io/part-of: apexload
       app.kubernetes.io/managed-by: kustomize

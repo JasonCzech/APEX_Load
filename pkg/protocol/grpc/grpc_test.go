@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	pb "github.com/jasonczech/stormrunner/api/proto"
-	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	googlegrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/protobuf/proto"
@@ -30,7 +30,7 @@ func TestGRPCUnaryWithReflection(t *testing.T) {
 		"grpc_use_reflection":    true,
 		"grpc_timeout_ms":        float64(1000),
 		"grpc_max_recv_msg_size": float64(1 << 20),
-		"grpc_metadata":          map[string]string{"x-suite": "stormrunner"},
+		"grpc_metadata":          map[string]string{"x-suite": "apexload"},
 	})
 	if err != nil {
 		t.Fatalf("Init: %v", err)
@@ -40,7 +40,7 @@ func TestGRPCUnaryWithReflection(t *testing.T) {
 	result, err := client.Execute(context.Background(), &protocol.Action{
 		Name:   "cache script",
 		Type:   "grpc_unary",
-		Target: "stormrunner.v1.GeneratorControl/DistributeScript",
+		Target: "apexload.v1.GeneratorControl/DistributeScript",
 		Body:   []byte(`{"scriptId":"script-1","content":"e30=","contentHash":"hash-1"}`),
 		Headers: map[string]string{
 			"x-action": "cache",
@@ -106,7 +106,7 @@ func TestGRPCUnaryWithDescriptorFile(t *testing.T) {
 	result, err := client.Execute(context.Background(), &protocol.Action{
 		Name:   "cache script",
 		Type:   "grpc_unary",
-		Target: "stormrunner.v1.GeneratorControl/DistributeScript",
+		Target: "apexload.v1.GeneratorControl/DistributeScript",
 		Body:   []byte(`{"scriptId":"script-2","content":"e30=","contentHash":"hash-2"}`),
 	})
 	if err != nil {
@@ -139,7 +139,7 @@ func TestGRPCBidiStreamWithReflection(t *testing.T) {
 	result, err := client.Execute(context.Background(), &protocol.Action{
 		Name:   "heartbeat",
 		Type:   "grpc_bidi_stream",
-		Target: "stormrunner.v1.GeneratorControl/Heartbeat",
+		Target: "apexload.v1.GeneratorControl/Heartbeat",
 		Params: map[string]any{
 			"max_messages": float64(1),
 			"messages": []any{
@@ -188,7 +188,7 @@ func TestGRPCFailurePopulatesSnapshot(t *testing.T) {
 	result, err := client.Execute(context.Background(), &protocol.Action{
 		Name:            "cache script",
 		Type:            "grpc_unary",
-		Target:          "stormrunner.v1.GeneratorControl/DistributeScript",
+		Target:          "apexload.v1.GeneratorControl/DistributeScript",
 		Body:            []byte(`{"scriptId":"script-3","content":"e30=","contentHash":"secret-hash"}`),
 		RedactedBody:    []byte(`{"scriptId":"script-3","content":"[REDACTED]","contentHash":"[REDACTED]"}`),
 		Headers:         map[string]string{"authorization": "Bearer secret"},
@@ -210,7 +210,7 @@ func TestGRPCFailurePopulatesSnapshot(t *testing.T) {
 	if result.Snapshot.RequestMethod != "grpc_unary" {
 		t.Fatalf("Snapshot.RequestMethod = %q, want grpc_unary", result.Snapshot.RequestMethod)
 	}
-	if !strings.Contains(result.Snapshot.RequestURL, "stormrunner.v1.GeneratorControl/DistributeScript") {
+	if !strings.Contains(result.Snapshot.RequestURL, "apexload.v1.GeneratorControl/DistributeScript") {
 		t.Fatalf("Snapshot.RequestURL = %q, want full method", result.Snapshot.RequestURL)
 	}
 	if strings.Contains(result.Snapshot.RequestBody, "secret-hash") || !strings.Contains(result.Snapshot.RequestBody, "[REDACTED]") {
@@ -229,7 +229,7 @@ func TestGRPCUnaryRequiresServiceMethodTarget(t *testing.T) {
 	result, err := client.Execute(context.Background(), &protocol.Action{
 		Name:   "bad",
 		Type:   "grpc_unary",
-		Target: "stormrunner.v1.GeneratorControl",
+		Target: "apexload.v1.GeneratorControl",
 	})
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
@@ -262,7 +262,7 @@ func BenchmarkGRPCUnaryDescriptorSet(b *testing.B) {
 	action := &protocol.Action{
 		Name:   "cache script",
 		Type:   "grpc_unary",
-		Target: "stormrunner.v1.GeneratorControl/DistributeScript",
+		Target: "apexload.v1.GeneratorControl/DistributeScript",
 		Body:   []byte(`{"scriptId":"bench-script","content":"e30=","contentHash":"bench-hash"}`),
 	}
 

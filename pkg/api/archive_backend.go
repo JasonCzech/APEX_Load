@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 	"gocloud.dev/blob"
 	_ "gocloud.dev/blob/azureblob"
 	_ "gocloud.dev/blob/fileblob"
@@ -36,30 +36,30 @@ type archiveBackendRuntime struct {
 }
 
 func currentArchiveBackend() archiveBackendRuntime {
-	backend := strings.TrimSpace(strings.ToLower(os.Getenv("STORMRUNNER_ARCHIVE_BACKEND")))
+	backend := strings.TrimSpace(strings.ToLower(os.Getenv("APEXLOAD_ARCHIVE_BACKEND")))
 	if backend == "" {
 		backend = archiveBackendFilesystem
 	}
 	filesystemRoot := resolveFilesystemArchiveRoot()
-	prefix := cleanArchivePrefix(os.Getenv("STORMRUNNER_ARCHIVE_PREFIX"))
+	prefix := cleanArchivePrefix(os.Getenv("APEXLOAD_ARCHIVE_PREFIX"))
 	runtime := archiveBackendRuntime{
 		Backend:   backend,
 		LocalRoot: filesystemRoot,
 		Prefix:    prefix,
-		Region:    strings.TrimSpace(os.Getenv("STORMRUNNER_ARCHIVE_REGION")),
-		Endpoint:  strings.TrimSpace(os.Getenv("STORMRUNNER_ARCHIVE_ENDPOINT")),
+		Region:    strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_REGION")),
+		Endpoint:  strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_ENDPOINT")),
 	}
 	switch backend {
 	case archiveBackendS3:
-		runtime.Bucket = strings.TrimSpace(os.Getenv("STORMRUNNER_ARCHIVE_BUCKET"))
+		runtime.Bucket = strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_BUCKET"))
 		runtime.LocalRoot = objectArchiveStagingRoot(filesystemRoot, backend)
 		runtime.URIPrefix = joinArchiveURI("s3://"+runtime.Bucket, prefix)
 	case archiveBackendAzureBlob:
-		runtime.Container = firstNonEmpty(strings.TrimSpace(os.Getenv("STORMRUNNER_ARCHIVE_CONTAINER")), strings.TrimSpace(os.Getenv("STORMRUNNER_ARCHIVE_BUCKET")))
+		runtime.Container = firstNonEmpty(strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_CONTAINER")), strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_BUCKET")))
 		runtime.LocalRoot = objectArchiveStagingRoot(filesystemRoot, backend)
 		runtime.URIPrefix = joinArchiveURI("azblob://"+runtime.Container, prefix)
 	case archiveBackendGCS:
-		runtime.Bucket = strings.TrimSpace(os.Getenv("STORMRUNNER_ARCHIVE_BUCKET"))
+		runtime.Bucket = strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_BUCKET"))
 		runtime.LocalRoot = objectArchiveStagingRoot(filesystemRoot, backend)
 		runtime.URIPrefix = joinArchiveURI("gs://"+runtime.Bucket, prefix)
 	default:
@@ -73,14 +73,14 @@ func resolveArchiveRoot() string {
 }
 
 func resolveFilesystemArchiveRoot() string {
-	if dir := os.Getenv("STORMRUNNER_ARCHIVE_DIR"); strings.TrimSpace(dir) != "" {
+	if dir := os.Getenv("APEXLOAD_ARCHIVE_DIR"); strings.TrimSpace(dir) != "" {
 		return dir
 	}
 	return filepath.Join("artifacts", "archives")
 }
 
 func objectArchiveStagingRoot(filesystemRoot string, backend string) string {
-	if dir := strings.TrimSpace(os.Getenv("STORMRUNNER_ARCHIVE_STAGING_DIR")); dir != "" {
+	if dir := strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_STAGING_DIR")); dir != "" {
 		return dir
 	}
 	return filepath.Join(filesystemRoot, "_object_staging", backend)
@@ -89,7 +89,7 @@ func objectArchiveStagingRoot(filesystemRoot string, backend string) string {
 func cleanArchivePrefix(prefix string) string {
 	prefix = strings.Trim(strings.TrimSpace(prefix), "/")
 	if prefix == "" {
-		return "stormrunner/archives"
+		return "apexload/archives"
 	}
 	return prefix
 }
@@ -265,11 +265,11 @@ func (b archiveBackendRuntime) validate() error {
 		return nil
 	case archiveBackendS3, archiveBackendGCS:
 		if strings.TrimSpace(b.Bucket) == "" {
-			return fmt.Errorf("archive backend %s requires STORMRUNNER_ARCHIVE_BUCKET", b.Backend)
+			return fmt.Errorf("archive backend %s requires APEXLOAD_ARCHIVE_BUCKET", b.Backend)
 		}
 	case archiveBackendAzureBlob:
 		if strings.TrimSpace(b.Container) == "" {
-			return fmt.Errorf("archive backend azure_blob requires STORMRUNNER_ARCHIVE_CONTAINER")
+			return fmt.Errorf("archive backend azure_blob requires APEXLOAD_ARCHIVE_CONTAINER")
 		}
 	default:
 		return fmt.Errorf("unsupported archive backend %q", b.Backend)
@@ -295,10 +295,10 @@ func (b archiveBackendRuntime) readinessDetails() map[string]any {
 }
 
 func configuredMetricsRetention() string {
-	if value := strings.TrimSpace(os.Getenv("STORMRUNNER_METRICS_RETENTION_BACKEND")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("APEXLOAD_METRICS_RETENTION_BACKEND")); value != "" {
 		return value
 	}
-	if strings.TrimSpace(os.Getenv("STORMRUNNER_PROMETHEUS_REMOTE_WRITE_URL")) != "" {
+	if strings.TrimSpace(os.Getenv("APEXLOAD_PROMETHEUS_REMOTE_WRITE_URL")) != "" {
 		return "prometheus_remote_write"
 	}
 	return "local_scrape"

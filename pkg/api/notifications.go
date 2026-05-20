@@ -162,7 +162,7 @@ func buildNotificationPayloadForWebhook(webhook NotificationWebhookSettings, eve
 }
 
 func buildSlackNotificationPayload(event NotificationEvent) map[string]any {
-	title := fmt.Sprintf("Stormrunner %s", humanizeNotificationEvent(event.Type))
+	title := fmt.Sprintf("APEX Load %s", humanizeNotificationEvent(event.Type))
 	return map[string]any{
 		"text": fmt.Sprintf("%s: %s (%s)", title, event.TestName, event.Status),
 		"blocks": []map[string]any{
@@ -209,7 +209,7 @@ func notificationSlackFields(event NotificationEvent) []map[string]any {
 }
 
 func buildTeamsNotificationPayload(event NotificationEvent) map[string]any {
-	title := fmt.Sprintf("Stormrunner %s", humanizeNotificationEvent(event.Type))
+	title := fmt.Sprintf("APEX Load %s", humanizeNotificationEvent(event.Type))
 	return map[string]any{
 		"type": "message",
 		"attachments": []map[string]any{{
@@ -258,26 +258,26 @@ func buildDynatraceNotificationPayload(webhook NotificationWebhookSettings, even
 	}
 	payload := map[string]any{
 		"eventType": eventType,
-		"title":     fmt.Sprintf("Stormrunner %s: %s", humanizeNotificationEvent(event.Type), event.TestName),
+		"title":     fmt.Sprintf("APEX Load %s: %s", humanizeNotificationEvent(event.Type), event.TestName),
 		"startTime": event.Timestamp.UTC().UnixMilli(),
 		"properties": map[string]string{
-			"Tool":                   "Stormrunner",
-			"stormrunner.event_type": event.Type,
-			"stormrunner.project_id": fallbackNotificationValue(event.ProjectID),
-			"stormrunner.status":     event.Status,
-			"stormrunner.test_id":    event.TestID,
-			"stormrunner.test_name":  event.TestName,
+			"Tool":                   "APEX Load",
+			"apexload.event_type": event.Type,
+			"apexload.project_id": fallbackNotificationValue(event.ProjectID),
+			"apexload.status":     event.Status,
+			"apexload.test_id":    event.TestID,
+			"apexload.test_name":  event.TestName,
 		},
 	}
 	properties := payload["properties"].(map[string]string)
 	if strings.TrimSpace(event.Severity) != "" {
-		properties["stormrunner.severity"] = event.Severity
+		properties["apexload.severity"] = event.Severity
 	}
 	if strings.TrimSpace(event.Summary) != "" {
-		properties["stormrunner.summary"] = event.Summary
+		properties["apexload.summary"] = event.Summary
 	}
 	if len(event.Conditions) > 0 {
-		properties["stormrunner.conditions"] = strings.Join(event.Conditions, ",")
+		properties["apexload.conditions"] = strings.Join(event.Conditions, ",")
 	}
 	if selector := strings.TrimSpace(webhook.EntitySelector); selector != "" {
 		payload["entitySelector"] = selector

@@ -2,7 +2,7 @@
   "name": "GRPC_Inventory",
   "version": "1.0.0",
   "protocol": "grpc",
-  "generated_by": "stormrunner-sample-pack",
+  "generated_by": "apexload-sample-pack",
   "generated_from": "web-api-sample",
   "config": {
     "base_url": "inventory.example.test:443",

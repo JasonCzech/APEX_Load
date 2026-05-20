@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func init() {

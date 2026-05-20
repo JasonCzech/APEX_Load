@@ -124,7 +124,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
       const res = await apiFetch(url)
       if (!res.ok) throw new Error('Failed to download CA certificate')
       const blob = await res.blob()
-      const filename = format === 'pem' ? 'stormrunner-ca.pem' : 'stormrunner-ca.crt'
+      const filename = format === 'pem' ? 'apexload-ca.pem' : 'apexload-ca.crt'
       downloadBlob(blob, filename)
     } catch (e: any) {
       showFeedback(e.message || 'Failed to download CA certificate', 'error')
@@ -378,7 +378,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
               <div className="rec-step-content">
                 <div className="rec-step-title">Download &amp; Install CA Certificate</div>
                 <div className="rec-step-desc">
-                  Install the Stormrunner CA certificate so the proxy can intercept HTTPS traffic.
+                  Install the APEX Load CA certificate so the proxy can intercept HTTPS traffic.
                 </div>
                 <div className="rec-step-note">
                   The recorder now reuses the same CA across controller restarts. Trust it once, then only re-download if you delete the CA files or change the recorder CA directory.
@@ -390,7 +390,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
                     </div>
                   )}
                   <div className="rec-step-note-troubleshoot">
-                    If the browser still says the connection is not secure, remove older Stormrunner CA entries, trust this CA for SSL/TLS, and restart the browser. Firefox may require explicit import or system-root trust to be enabled.
+                    If the browser still says the connection is not secure, remove older APEX Load CA entries, trust this CA for SSL/TLS, and restart the browser. Firefox may require explicit import or system-root trust to be enabled.
                   </div>
                 </div>
                 <div className="rec-download-row">
@@ -407,7 +407,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
                   </button>
                 </div>
                 <div className="rec-os-instructions">
-                  <div><span className="rec-os-label">macOS:</span> Double-click the .crt file &rarr; Keychain Access opens &rarr; Find &ldquo;Stormrunner Recording Proxy CA&rdquo; &rarr; Double-click &rarr; Trust &rarr; Always Trust</div>
+                  <div><span className="rec-os-label">macOS:</span> Double-click the .crt file &rarr; Keychain Access opens &rarr; Find &ldquo;APEX Load Recording Proxy CA&rdquo; &rarr; Double-click &rarr; Trust &rarr; Always Trust</div>
                   <div><span className="rec-os-label">Windows:</span> Double-click .crt &rarr; Install Certificate &rarr; Local Machine &rarr; Place in &ldquo;Trusted Root Certification Authorities&rdquo;</div>
                   <div><span className="rec-os-label">Firefox:</span> Download PEM format &rarr; Settings &rarr; Privacy &amp; Security &rarr; Certificates &rarr; View &rarr; Import &rarr; Check &ldquo;Trust for websites&rdquo;</div>
                 </div>

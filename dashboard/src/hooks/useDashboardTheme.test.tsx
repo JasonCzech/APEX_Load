@@ -48,11 +48,11 @@ describe('useDashboardTheme', () => {
     expect(container.querySelector('[data-testid="theme"]')?.textContent).toBe('dark')
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(document.documentElement.style.colorScheme).toBe('dark')
-    expect(window.localStorage.getItem('stormrunner.theme')).toBe('dark')
+    expect(window.localStorage.getItem('apexload.theme')).toBe('dark')
   })
 
   it('loads and persists light mode changes', async () => {
-    window.localStorage.setItem('stormrunner.theme', 'light')
+    window.localStorage.setItem('apexload.theme', 'light')
 
     await act(async () => {
       root.render(<ThemeHarness />)
@@ -67,7 +67,7 @@ describe('useDashboardTheme', () => {
     })
 
     expect(container.querySelector('[data-testid="theme"]')?.textContent).toBe('dark')
-    expect(window.localStorage.getItem('stormrunner.theme')).toBe('dark')
+    expect(window.localStorage.getItem('apexload.theme')).toBe('dark')
     expect(document.documentElement.dataset.theme).toBe('dark')
   })
 })

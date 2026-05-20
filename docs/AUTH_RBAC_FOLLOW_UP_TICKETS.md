@@ -9,7 +9,7 @@ This document records the Workstream 4 Auth/RBAC follow-up decisions made after 
 - audit coverage for service-account lifecycle changes plus OIDC login, logout, and representative callback failure events
 - filtered audit CSV export for operator evidence packs and incident review
 
-The original follow-up backlog has been resolved for the planned parity phase. The durable product decisions are: trusted headers remain the recommended default when an upstream gateway owns sign-in, native OIDC is the direct-auth option, human identity lifecycle stays upstream-owned, native SAML is handled through trusted-header gateways, and Stormrunner owns service-account principals for automation.
+The original follow-up backlog has been resolved for the planned parity phase. The durable product decisions are: trusted headers remain the recommended default when an upstream gateway owns sign-in, native OIDC is the direct-auth option, human identity lifecycle stays upstream-owned, native SAML is handled through trusted-header gateways, and APEX Load owns service-account principals for automation.
 
 ## Audit Snapshot
 
@@ -22,7 +22,7 @@ The original follow-up backlog has been resolved for the planned parity phase. T
 ## Ticket 1: Harden OIDC Logout and Session CSRF Boundaries
 
 - Priority: High
-- Problem: Native OIDC logout currently clears the Stormrunner session through `GET /api/v1/auth/logout`. The route is simple and functional, but it is still easier to trigger accidentally or cross-site than an explicit authenticated state-changing POST flow.
+- Problem: Native OIDC logout currently clears the APEX Load session through `GET /api/v1/auth/logout`. The route is simple and functional, but it is still easier to trigger accidentally or cross-site than an explicit authenticated state-changing POST flow.
 - Scope:
   - Change logout from GET to POST for interactive session termination.
   - Add CSRF protection for logout and any future session-mutating auth routes.
@@ -31,14 +31,14 @@ The original follow-up backlog has been resolved for the planned parity phase. T
 - Acceptance Criteria:
   - Logout requires an explicit non-idempotent request.
   - Requests missing the CSRF proof fail cleanly.
-  - Dashboard sign-out still clears the local Stormrunner session and then redirects to the configured post-logout destination.
+  - Dashboard sign-out still clears the local APEX Load session and then redirects to the configured post-logout destination.
   - Regression tests cover success and rejection paths.
 - Status: Implemented for logout. Future session-mutating auth endpoints should reuse the same CSRF posture rather than reintroducing link-triggered state changes.
 
 ## Ticket 2: Expand OIDC Runtime Health and Misconfiguration Diagnostics
 
 - Priority: High
-- Problem: Stormrunner exposes auth diagnostics for trusted-header and native OIDC readiness. Future operator experience can improve with provider-specific runtime and post-login troubleshooting if pilot deployments reveal repeated IdP-specific failure patterns.
+- Problem: APEX Load exposes auth diagnostics for trusted-header and native OIDC readiness. Future operator experience can improve with provider-specific runtime and post-login troubleshooting if pilot deployments reveal repeated IdP-specific failure patterns.
 - Scope:
   - Build on the existing diagnostics surface that already checks environment-variable presence, URL validity, trusted-header mappings, issuer discovery reachability, and current request/session status without exposing secrets.
   - Add deeper post-login diagnostics for callback/session/cookie failures.
@@ -55,14 +55,14 @@ The original follow-up backlog has been resolved for the planned parity phase. T
 ## Ticket 3: Decide and Implement Long-Term Role-Binding Ownership
 
 - Priority: High
-- Problem: Stormrunner now supports role claims from trusted headers, service accounts, and OIDC tokens, but it still does not own a first-class user/group binding model. That keeps RBAC dependent on upstream claim shaping.
+- Problem: APEX Load now supports role claims from trusted headers, service accounts, and OIDC tokens, but it still does not own a first-class user/group binding model. That keeps RBAC dependent on upstream claim shaping.
 - Decision Required:
   - Option A: Keep user and group lifecycle upstream-owned and document claim contracts as the intended final architecture.
-  - Option B: Add Stormrunner-owned user/group-to-role bindings with persistence and admin workflows.
+  - Option B: Add APEX Load-owned user/group-to-role bindings with persistence and admin workflows.
 - Scope if Option A is chosen:
   - Document the supported claim contract and examples for Entra ID or other IdPs.
   - Add validation or diagnostics for required claims.
-  - Treat Stormrunner as a policy consumer, not an identity source.
+  - Treat APEX Load as a policy consumer, not an identity source.
 - Scope if Option B is chosen:
   - Add persisted user/group/role binding tables.
   - Add admin APIs and dashboard workflows for mapping identities to RBAC roles.
@@ -71,7 +71,7 @@ The original follow-up backlog has been resolved for the planned parity phase. T
   - The product has an explicit, documented ownership model for RBAC identity data.
   - If local bindings are implemented, they are persisted, auditable, and test-covered.
   - If upstream ownership is retained, the supported claim contract is documented and validated.
-- Decision: Option A. Stormrunner remains a policy consumer for human users. User and group lifecycle stays upstream-owned through trusted-header gateways or native OIDC claim shaping, while Stormrunner owns service-account principals for automation. The supported claim contract is `roles` for global roles and `project_roles` for project-scoped role mappings unless configured otherwise in system settings.
+- Decision: Option A. APEX Load remains a policy consumer for human users. User and group lifecycle stays upstream-owned through trusted-header gateways or native OIDC claim shaping, while APEX Load owns service-account principals for automation. The supported claim contract is `roles` for global roles and `project_roles` for project-scoped role mappings unless configured otherwise in system settings.
 - Status: Implemented as an explicit product decision. Native user/group binding tables and admin workflows are intentionally deferred until there is a concrete enterprise requirement that upstream IdP claim shaping cannot satisfy.
 
 ## Ticket 4: Add OIDC Session Refresh and Expiry UX
@@ -79,20 +79,20 @@ The original follow-up backlog has been resolved for the planned parity phase. T
 - Priority: Medium
 - Problem: The current native OIDC session is intentionally simple. It signs a local session cookie from the verified ID token, but it does not support refresh tokens, silent renewal, or proactive expiry UX.
 - Scope:
-  - Decide whether Stormrunner should support refresh-token-backed session renewal.
+  - Decide whether APEX Load should support refresh-token-backed session renewal.
   - If refresh tokens remain out of scope, add clearer expiry handling and reauthentication prompts.
   - Surface imminent session expiry in the dashboard so users do not hit sudden 401s during active work.
 - Acceptance Criteria:
   - Expired sessions fail predictably and guide the user back into sign-in.
   - Operators understand whether the platform supports renewal or requires explicit reauthentication.
   - Tests cover expired-session behavior and the chosen renewal strategy.
-- Decision: Refresh-token-backed silent renewal is out of scope for the current control plane. Stormrunner signs a bounded local session from the verified ID token and requires explicit reauthentication after expiry.
+- Decision: Refresh-token-backed silent renewal is out of scope for the current control plane. APEX Load signs a bounded local session from the verified ID token and requires explicit reauthentication after expiry.
 - Status: Implemented for explicit expiry reporting and dashboard warning UX. `/api/v1/auth/me` reports `session_status`, `session_expires_at`, and `session_ttl_seconds` for native OIDC sessions, and the dashboard shows imminent-expiry guidance.
 
 ## Ticket 5: Evaluate Native SAML Support vs. Explicit Non-Goal
 
 - Priority: Medium
-- Problem: The original gap plan grouped OIDC and SAML together. Stormrunner now has native OIDC, but SAML remains unimplemented.
+- Problem: The original gap plan grouped OIDC and SAML together. APEX Load now has native OIDC, but SAML remains unimplemented.
 - Scope:
   - Decide whether SAML becomes a first-class runtime mode.
   - If not, document trusted-header gateway integration as the supported path for SAML-backed enterprises.
@@ -100,7 +100,7 @@ The original follow-up backlog has been resolved for the planned parity phase. T
 - Acceptance Criteria:
   - The roadmap explicitly says whether SAML is supported natively, indirectly through gateway integration, or intentionally out of scope.
   - The plan no longer implies parity without a product decision.
-- Decision: Native SAML is not a first-class Stormrunner runtime mode for this parity phase. Enterprises that require SAML should terminate SAML at an upstream gateway and forward identity through the supported trusted-header contract.
+- Decision: Native SAML is not a first-class APEX Load runtime mode for this parity phase. Enterprises that require SAML should terminate SAML at an upstream gateway and forward identity through the supported trusted-header contract.
 - Status: Implemented as a roadmap decision; no SAML ACS, metadata, certificate, or native logout endpoints are planned in Workstream 4.
 
 ## Ticket 6: Expand Auth-Audit Coverage for Session Lifecycle and Failures

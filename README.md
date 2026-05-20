@@ -1,13 +1,13 @@
-# Project Stormrunner
+# Project APEX Load
 
-Kubernetes-native performance testing platform replacing LoadRunner Enterprise. Stormrunner is a Go-based load testing platform with an agentic script generation engine, real-time React dashboard, and OpenTelemetry telemetry pipeline.
+Kubernetes-native performance testing platform replacing LoadRunner Enterprise. APEX Load is a Go-based load testing platform with an agentic script generation engine, real-time React dashboard, and OpenTelemetry telemetry pipeline.
 
 ## What This Is
 
-Stormrunner provides **three primary surfaces**:
+APEX Load provides **three primary surfaces**:
 
 - **Controller API + Dashboard**: Web UI for authoring, scheduling, and monitoring tests with real-time WebSocket-fed metrics
-- **CLI (`stormctl`)**: Local script execution for testing during development or in CI/CD pipelines
+- **CLI (`apexctl`)**: Local script execution for testing during development or in CI/CD pipelines
 - **Load Generator**: Kubernetes-native pods (StatefulSet) running goroutine-based virtual users, scalable 1–50 pods with ~10k VUsers/pod
 
 The project is organized to support both direct local runs and controller-managed distributed execution across multiple pods.
@@ -17,8 +17,8 @@ The project is organized to support both direct local runs and controller-manage
 The current controller can run in either local or distributed mode without changing the HTTP or dashboard surface.
 
 - Local mode: no generator targets configured; the controller executes tests in-process.
-- Distributed mode: set `STORMRUNNER_GENERATORS=host1:9090,host2:9090,...`; the controller distributes groups across configured generators, aggregates their metrics into one live test view, and stages merged run archives back into the controller archive directory.
-- Region-tagged generators: append `|region=<name>` to a configured generator target, for example `STORMRUNNER_GENERATORS=us-east-1.example:9090|region=us-east,eu-west-1.example:9090|region=eu-west`.
+- Distributed mode: set `APEXLOAD_GENERATORS=host1:9090,host2:9090,...`; the controller distributes groups across configured generators, aggregates their metrics into one live test view, and stages merged run archives back into the controller archive directory.
+- Region-tagged generators: append `|region=<name>` to a configured generator target, for example `APEXLOAD_GENERATORS=us-east-1.example:9090|region=us-east,eu-west-1.example:9090|region=eu-west`.
 - Region-weighted placement: test and scenario requests can set `assignment.mode` to `region_weighted` with an `assignment.region_weights` map such as `{ "us-east": 2, "eu-west": 1 }`; the controller applies those weights when placing groups across tagged generators while still preferring healthy capacity.
 - Runtime controls: distributed runs support stop, pause, resume, duration adjustment, and per-group VUser scaling through the same `/api/v1/tests/...` endpoints used for local runs.
 - Archive behavior: generators produce manifest, JSONL, and parquet artifacts locally; the controller downloads and merges those artifacts so the existing archive/report endpoints continue to work unchanged.
@@ -37,7 +37,7 @@ The current controller can run in either local or distributed mode without chang
 | Component | Purpose |
 |-----------|---------|
 | `cmd/controller` | HTTP API server + embedded React dashboard |
-| `cmd/stormctl` | CLI for direct script execution (no controller needed) |
+| `cmd/apexctl` | CLI for direct script execution (no controller needed) |
 | `cmd/generator` | Distributed load generator (Kubernetes StatefulSet pod) |
 | `pkg/engine` | VUser goroutine engine, pacing, metrics, lifecycle |
 | `pkg/protocol` | Protocol interface; HTTP, SOAP, Java-over-HTTP, JMS implementations |
@@ -58,8 +58,8 @@ The current controller can run in either local or distributed mode without chang
 - **[docs/ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md](docs/ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md)** — Implementation plan for PostgreSQL, object archives, Prometheus long-term metrics, and Redis/Valkey enterprise data services
 - **[docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md](docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md)** — Epic backlog and delivery plan to close practical parity gaps with LoadRunner in browser testing, script authoring UX, runtime settings, and auth/RBAC
 - **[docs/LOADRUNNER_PROTOCOL_IMPORT_ROUTING.md](docs/LOADRUNNER_PROTOCOL_IMPORT_ROUTING.md)** — Protocol-aware LoadRunner/VuGen ZIP import routing, executable/review modes, and review-artifact API contract
-- **[docs/K6_NEOLOAD_PARITY_PLAN.md](docs/K6_NEOLOAD_PARITY_PLAN.md)** — Competitive parity plan for closing Stormrunner gaps against Grafana k6 and Tricentis NeoLoad
-- **[docs/COMPETITIVE_SUPPORT_MATRIX.md](docs/COMPETITIVE_SUPPORT_MATRIX.md)** — Evidence-backed support matrix for k6, NeoLoad, LoadRunner, JMeter, DevWeb, HAR, and native Stormrunner flows
+- **[docs/K6_NEOLOAD_PARITY_PLAN.md](docs/K6_NEOLOAD_PARITY_PLAN.md)** — Competitive parity plan for closing APEX Load gaps against Grafana k6 and Tricentis NeoLoad
+- **[docs/COMPETITIVE_SUPPORT_MATRIX.md](docs/COMPETITIVE_SUPPORT_MATRIX.md)** — Evidence-backed support matrix for k6, NeoLoad, LoadRunner, JMeter, DevWeb, HAR, and native APEX Load flows
 - **[docs/MOBILE_BROWSER_EMULATION_PLAN.md](docs/MOBILE_BROWSER_EMULATION_PLAN.md)** — Current browser engine and device profile support matrix plus conservative mobile-browser benchmark guidance
 - **[docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md](docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md)** — Self-hosted auth/RBAC operations, break-glass recovery, service-account handling, and audit export guidance
 - **[AGENTS.md](AGENTS.md)** — High-level platform overview, tech stack, release phases
@@ -82,8 +82,8 @@ By default the controller listens on `:8080`.
 To enable distributed execution, point the controller at one or more generators:
 
 ```bash
-STORMRUNNER_GENERATORS=127.0.0.1:9090,127.0.0.1:9091 \
-STORMRUNNER_GENERATOR_TIMEOUT=10s \
+APEXLOAD_GENERATORS=127.0.0.1:9090,127.0.0.1:9091 \
+APEXLOAD_GENERATOR_TIMEOUT=10s \
 go run ./cmd/controller
 ```
 
@@ -140,17 +140,17 @@ npm run dev
 
 Controller runtime configuration:
 
-- `STORMRUNNER_ADDR`: HTTP bind address (default `:8080`)
-- `STORMRUNNER_STORE`: metadata store backend: `sqlite` or `postgres` (default `sqlite`)
-- `STORMRUNNER_DB`: SQLite DB path (default `stormrunner.db`)
-- `STORMRUNNER_DATABASE_URL`: PostgreSQL connection URL when `STORMRUNNER_STORE=postgres`
-- `STORMRUNNER_DATABASE_MAX_OPEN_CONNS`, `STORMRUNNER_DATABASE_MAX_IDLE_CONNS`, `STORMRUNNER_DATABASE_CONN_MAX_LIFETIME`: production PostgreSQL pool tuning
-- `STORMRUNNER_GENERATORS`: comma-separated generator gRPC targets; when set, the controller uses the distributed backend
-- `STORMRUNNER_GENERATOR_TIMEOUT`: timeout for controller-to-generator RPCs (default `10s`)
-- `STORMRUNNER_ARCHIVE_BACKEND`: archive backend: `filesystem`, `s3`, `azure_blob`, or `gcs` (default `filesystem`)
-- `STORMRUNNER_ARCHIVE_DIR`: archive root for local runs and staged remote archives (default `artifacts/archives`)
-- `STORMRUNNER_ARCHIVE_BUCKET`, `STORMRUNNER_ARCHIVE_CONTAINER`, `STORMRUNNER_ARCHIVE_PREFIX`, `STORMRUNNER_ARCHIVE_REGION`, `STORMRUNNER_ARCHIVE_ENDPOINT`: object archive target metadata for enterprise deployments
-- `STORMRUNNER_PROMETHEUS_REMOTE_WRITE_URL`: optional Prometheus-compatible long-term metrics retention endpoint
+- `APEXLOAD_ADDR`: HTTP bind address (default `:8080`)
+- `APEXLOAD_STORE`: metadata store backend: `sqlite` or `postgres` (default `sqlite`)
+- `APEXLOAD_DB`: SQLite DB path (default `apexload.db`)
+- `APEXLOAD_DATABASE_URL`: PostgreSQL connection URL when `APEXLOAD_STORE=postgres`
+- `APEXLOAD_DATABASE_MAX_OPEN_CONNS`, `APEXLOAD_DATABASE_MAX_IDLE_CONNS`, `APEXLOAD_DATABASE_CONN_MAX_LIFETIME`: production PostgreSQL pool tuning
+- `APEXLOAD_GENERATORS`: comma-separated generator gRPC targets; when set, the controller uses the distributed backend
+- `APEXLOAD_GENERATOR_TIMEOUT`: timeout for controller-to-generator RPCs (default `10s`)
+- `APEXLOAD_ARCHIVE_BACKEND`: archive backend: `filesystem`, `s3`, `azure_blob`, or `gcs` (default `filesystem`)
+- `APEXLOAD_ARCHIVE_DIR`: archive root for local runs and staged remote archives (default `artifacts/archives`)
+- `APEXLOAD_ARCHIVE_BUCKET`, `APEXLOAD_ARCHIVE_CONTAINER`, `APEXLOAD_ARCHIVE_PREFIX`, `APEXLOAD_ARCHIVE_REGION`, `APEXLOAD_ARCHIVE_ENDPOINT`: object archive target metadata for enterprise deployments
+- `APEXLOAD_PROMETHEUS_REMOTE_WRITE_URL`: optional Prometheus-compatible long-term metrics retention endpoint
 
 ## Build and Test
 
@@ -159,7 +159,7 @@ Controller runtime configuration:
 Use Make targets from repo root:
 
 ```bash
-make build       # builds generator/controller/stormctl into ./bin
+make build       # builds generator/controller/apexctl into ./bin
 make test        # runs Go tests with race detector
 make test-cover  # race + coverage report (coverage.out / coverage.html)
 make lint        # runs golangci-lint (if installed)
@@ -191,12 +191,12 @@ go test -bench=BenchmarkEngine ./pkg/engine -benchmem
 
 ## CLI Usage
 
-### stormctl — Local script execution
+### apexctl — Local script execution
 
 Run a DSL script without the controller:
 
 ```bash
-go run ./cmd/stormctl run \
+go run ./cmd/apexctl run \
   --script path/to/script.json \
   --vusers 50 \
   --duration 2m \
@@ -215,11 +215,11 @@ go run ./cmd/stormctl run \
 - `--api` — Execute through the controller API instead of locally
 - `--env, -env` — Runtime environment substitution for `{{env.KEY}}` placeholders
 - `--base-url` — Override the script base URL at run time
-- `--p95-latency-ms`, `--max-error-pct`, `--max-avg-server-processing-ms`, `--max-avg-transfer-ms`, `--max-error-count` — CI/CD guardrails that make `stormctl` exit non-zero when breached
+- `--p95-latency-ms`, `--max-error-pct`, `--max-avg-server-processing-ms`, `--max-avg-transfer-ms`, `--max-error-count` — CI/CD guardrails that make `apexctl` exit non-zero when breached
 
 **JSON pipeline example:**
 ```bash
-go run ./cmd/stormctl run \
+go run ./cmd/apexctl run \
   --api http://localhost:8080 \
   --script path/to/script.json \
   --format json \
@@ -319,7 +319,7 @@ PATCH  /api/v1/system/generators/drain  — Cordon, drain, or reactivate a gener
 ```
 
 **CI/CD Templates:**
-- GitHub composite action: `.github/actions/stormrunner-run/action.yml`
+- GitHub composite action: `.github/actions/apexload-run/action.yml`
 - Azure Pipelines template: `azure-pipelines-task.yml`
 
 See [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) for complete endpoint documentation.
@@ -371,7 +371,7 @@ Scripts are JSON with these sections:
 
 **Features:**
 - **Template variables**: `{{env.VAR}}`, `{{data.source.column}}`, `{{param.name}}`, `{{var.name}}`, `{{fn.uuid()}}`
-- **Scenario-native guardrails**: Optional top-level `goal_config` thresholds are honored by `stormctl run`, with explicit CLI guardrail flags taking precedence when both are present
+- **Scenario-native guardrails**: Optional top-level `goal_config` thresholds are honored by `apexctl run`, with explicit CLI guardrail flags taking precedence when both are present
 - **Named parameters**: random number, date/time, timestamp, counter, file/list, UUID, and random string generators with `once`, `each_iteration`, and `each_occurrence` update modes
 - **Protocol surfaces**: `http`, `soap`, `java_http`, `browser`, and `jms-solace` authoring paths in the dashboard
 - **Extractors**: Pull values from responses for use in subsequent requests
@@ -390,7 +390,7 @@ See [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) for complete DSL syntax
 ```
 cmd/
   controller/         # Main API server + dashboard
-  stormctl/          # CLI tool
+  apexctl/          # CLI tool
   generator/         # Distributed load generator
 
 pkg/
@@ -463,7 +463,7 @@ make test-cover
 ## Project Status
 
 - ✅ Controller + dashboard fully functional
-- ✅ Local engine (stormctl) working
+- ✅ Local engine (apexctl) working
 - ✅ HTTP protocol family complete (HTTP, SOAP, Java-over-HTTP MVP)
 - ✅ DSL parser and templating
 - ✅ Real-time metrics and WebSocket streaming

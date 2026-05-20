@@ -37,11 +37,11 @@ describe('ApiGuidePage', () => {
     expect(container.textContent).toContain('/api/v1/scenarios/validate-load-model')
     expect(container.textContent).toContain('MCP Server')
     expect(container.textContent).toContain('python3 mcp/server.py')
-    expect(container.textContent).toContain('stormrunner://api-guide')
+    expect(container.textContent).toContain('apexload://api-guide')
     expect(container.textContent).toContain('confirm=true')
     expect(container.textContent).toContain('API Keys')
     expect(container.textContent).toContain('Access & API Keys')
-    expect(container.textContent).toContain('X-Stormrunner-Dev-View')
+    expect(container.textContent).toContain('X-APEX Load-Dev-View')
     expect(container.textContent).toContain('project editor User behavior')
 
     const repositoryLink = container.querySelector('a[href*="API_USER_GUIDE.md"]')

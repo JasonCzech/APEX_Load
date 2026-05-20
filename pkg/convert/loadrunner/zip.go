@@ -9,12 +9,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/convert/trueclient"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/convert/trueclient"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 // ConvertZip processes a ZIP archive containing a LoadRunner script folder
-// and returns the converted Stormrunner DSL script.
+// and returns the converted APEX Load DSL script.
 func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	reader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
 	if err != nil {
@@ -92,13 +92,13 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 				return newLoadRunnerReviewResult(detected, files, nil, map[string]any{
 					"trueclient_archive_inspection": inspection,
 					"source_script_type":            scope.DisplayName,
-					"source_profile":                scope.StormrunnerShape,
+					"source_profile":                scope.APEXLoadShape,
 				}), nil
 			default:
 				detected := DetectProtocol(files, projectConfig, nil)
 				return newLoadRunnerReviewResult(detected, files, nil, map[string]any{
 					"source_script_type": scope.DisplayName,
-					"source_profile":     scope.StormrunnerShape,
+					"source_profile":     scope.APEXLoadShape,
 					"scope_status":       string(scope.Status),
 				}), nil
 			}
@@ -234,13 +234,13 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	var result *ConvertResult
 	var convertErr error
 	switch {
-	case detected.ImportMode != ImportModeExecutable && detected.StormrunnerProtocol == "":
+	case detected.ImportMode != ImportModeExecutable && detected.APEXLoadProtocol == "":
 		return newLoadRunnerReviewResult(detected, files, parsedActions, map[string]any{"reason": "protocol_review_required"}), nil
-	case detected.StormrunnerProtocol == "database":
+	case detected.APEXLoadProtocol == "database":
 		result, convertErr = ConvertDatabase(parsedActions, opts, detected)
-	case detected.StormrunnerProtocol == "network":
+	case detected.APEXLoadProtocol == "network":
 		result, convertErr = ConvertNetwork(parsedActions, opts, detected)
-	case detected.StormrunnerProtocol == "http" || detected.StormrunnerProtocol == "soap":
+	case detected.APEXLoadProtocol == "http" || detected.APEXLoadProtocol == "soap":
 		result, convertErr = Convert(parsedActions, opts)
 		if result != nil {
 			result.DetectedProtocol = &detected
@@ -306,7 +306,7 @@ func newLoadRunnerReviewResult(detected DetectedProtocol, files map[string]strin
 	}
 	result.Stats.Skipped = len(result.Stats.UnsupportedFuncs)
 	if detected.ImportMode == ImportModeReviewOnly || detected.ImportMode == ImportModeExternalRunnerRequired || detected.ImportMode == ImportModeUnsupported {
-		result.Warnings = append(result.Warnings, "Import was classified as "+string(detected.ImportMode)+"; no executable Stormrunner script was generated.")
+		result.Warnings = append(result.Warnings, "Import was classified as "+string(detected.ImportMode)+"; no executable APEX Load script was generated.")
 	}
 	result.Warnings = uniqueSortedStrings(result.Warnings)
 	return result
@@ -466,7 +466,7 @@ func attachLoadRunnerMetadata(script *dsl.Script, result *ConvertResult, project
 		preserved["trueclient_archive_inspection"] = trueClientInspection
 		if trueClientInspection.ScriptTypeScope != nil {
 			preserved["source_script_type"] = trueClientInspection.ScriptTypeScope.DisplayName
-			preserved["source_profile"] = trueClientInspection.ScriptTypeScope.StormrunnerShape
+			preserved["source_profile"] = trueClientInspection.ScriptTypeScope.APEXLoadShape
 		}
 	}
 	if len(preserved) == 0 {

@@ -15,14 +15,14 @@ import (
 
 	"github.com/go-jose/go-jose/v3"
 	"github.com/go-jose/go-jose/v3/jwt"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestHandleGetAuthStatusReturnsOIDCLoginAndLogoutURLs(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
 	defer provider.Close()
-	t.Setenv("STORMRUNNER_OIDC_CLIENT_SECRET", "test-client-secret")
-	t.Setenv("STORMRUNNER_AUTH_SESSION_SECRET", "test-session-secret")
+	t.Setenv("APEXLOAD_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", "test-session-secret")
 
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableOIDCAuth(t, server, provider.Issuer)
@@ -62,15 +62,15 @@ func TestHandleGetAuthStatusReturnsOIDCLoginAndLogoutURLs(t *testing.T) {
 func TestHandleGetAuthDiagnosticsReturnsHealthyOIDCReadiness(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
 	defer provider.Close()
-	t.Setenv("STORMRUNNER_OIDC_CLIENT_SECRET", "test-client-secret")
-	t.Setenv("STORMRUNNER_AUTH_SESSION_SECRET", "0123456789abcdef0123456789abcdef")
+	t.Setenv("APEXLOAD_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", "0123456789abcdef0123456789abcdef")
 
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableOIDCAuth(t, server, provider.Issuer)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
 	req.Header.Set("X-Auth-Request-User", "alice")
-	req.Header.Set("X-Stormrunner-Roles", RoleSystemAdmin)
+	req.Header.Set("X-APEXLoad-Roles", RoleSystemAdmin)
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, req)
 
@@ -96,10 +96,10 @@ func TestHandleGetAuthDiagnosticsReturnsHealthyOIDCReadiness(t *testing.T) {
 func TestOIDCLoginCallbackCreatesSessionAndAuthorizesProtectedRoutes(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
 	defer provider.Close()
-	t.Setenv("STORMRUNNER_OIDC_CLIENT_SECRET", "test-client-secret")
-	t.Setenv("STORMRUNNER_AUTH_SESSION_SECRET", "test-session-secret")
+	t.Setenv("APEXLOAD_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", "test-session-secret")
 
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestOIDCLoginCallbackCreatesSessionAndAuthorizesProtectedRoutes(t *testing.
 
 	logoutReq := httptest.NewRequest(http.MethodPost, oidcLogoutPath, nil)
 	logoutReq.AddCookie(sessionCookie)
-	logoutReq.Header.Set("X-Stormrunner-CSRF-Token", statusPayload.LogoutCSRF)
+	logoutReq.Header.Set("X-APEXLoad-CSRF-Token", statusPayload.LogoutCSRF)
 	logoutResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(logoutResp, logoutReq)
 	if logoutResp.Code != http.StatusOK {
@@ -220,8 +220,8 @@ func TestOIDCLoginCallbackCreatesSessionAndAuthorizesProtectedRoutes(t *testing.
 func TestOIDCLogoutRejectsMissingCSRFToken(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
 	defer provider.Close()
-	t.Setenv("STORMRUNNER_OIDC_CLIENT_SECRET", "test-client-secret")
-	t.Setenv("STORMRUNNER_AUTH_SESSION_SECRET", "test-session-secret")
+	t.Setenv("APEXLOAD_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", "test-session-secret")
 
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableOIDCAuth(t, server, provider.Issuer)
@@ -241,8 +241,8 @@ func TestOIDCLogoutRejectsMissingCSRFToken(t *testing.T) {
 func TestHandleGetAuthStatusReportsExpiredOIDCSession(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
 	defer provider.Close()
-	t.Setenv("STORMRUNNER_OIDC_CLIENT_SECRET", "test-client-secret")
-	t.Setenv("STORMRUNNER_AUTH_SESSION_SECRET", "test-session-secret")
+	t.Setenv("APEXLOAD_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", "test-session-secret")
 
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableOIDCAuth(t, server, provider.Issuer)
@@ -274,10 +274,10 @@ func TestHandleGetAuthStatusReportsExpiredOIDCSession(t *testing.T) {
 func TestOIDCCallbackFailureIsAuditedWithoutSensitiveMaterial(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
 	defer provider.Close()
-	t.Setenv("STORMRUNNER_OIDC_CLIENT_SECRET", "test-client-secret")
-	t.Setenv("STORMRUNNER_AUTH_SESSION_SECRET", "test-session-secret")
+	t.Setenv("APEXLOAD_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", "test-session-secret")
 
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -320,8 +320,8 @@ func TestOIDCCallbackFailureIsAuditedWithoutSensitiveMaterial(t *testing.T) {
 func TestHandleGetAuthAccessMatrixReturnsRBACVersionWhenOIDCEnabled(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
 	defer provider.Close()
-	t.Setenv("STORMRUNNER_OIDC_CLIENT_SECRET", "test-client-secret")
-	t.Setenv("STORMRUNNER_AUTH_SESSION_SECRET", "test-session-secret")
+	t.Setenv("APEXLOAD_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", "test-session-secret")
 
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableOIDCAuth(t, server, provider.Issuer)
@@ -348,10 +348,10 @@ func enableOIDCAuth(t *testing.T, server *Server, issuerURL string) {
 	settings.Auth.Mode = authModeOIDC
 	settings.Auth.ProviderName = "Test OIDC"
 	settings.Auth.IssuerURL = issuerURL
-	settings.Auth.ClientID = "stormrunner-dashboard"
-	settings.Auth.ClientSecretEnvVar = "STORMRUNNER_OIDC_CLIENT_SECRET"
-	settings.Auth.RedirectURL = "http://stormrunner.example.test/api/v1/auth/callback"
-	settings.Auth.SessionSecretEnvVar = "STORMRUNNER_AUTH_SESSION_SECRET"
+	settings.Auth.ClientID = "apexload-dashboard"
+	settings.Auth.ClientSecretEnvVar = "APEXLOAD_OIDC_CLIENT_SECRET"
+	settings.Auth.RedirectURL = "http://apexload.example.test/api/v1/auth/callback"
+	settings.Auth.SessionSecretEnvVar = "APEXLOAD_AUTH_SESSION_SECRET"
 	settings.Auth.Scopes = []string{"openid", "profile", "email"}
 	settings.Auth.RolesClaim = "roles"
 	settings.Auth.ProjectRolesClaim = "project_roles"
@@ -465,7 +465,7 @@ func (p *fakeOIDCProvider) signIDToken(nonce string) (string, error) {
 	return jwt.Signed(signer).Claims(jwt.Claims{
 		Issuer:   p.Issuer,
 		Subject:  "alice",
-		Audience: jwt.Audience{"stormrunner-dashboard"},
+		Audience: jwt.Audience{"apexload-dashboard"},
 		IssuedAt: jwt.NewNumericDate(now),
 		Expiry:   jwt.NewNumericDate(now.Add(time.Hour)),
 	}).Claims(map[string]any{

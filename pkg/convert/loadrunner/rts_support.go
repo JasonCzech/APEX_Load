@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type RuntimeSettingStatus string
@@ -77,7 +77,7 @@ var loadRunnerRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Concept: "Timeouts, redirects, and connection reuse",
 			Fields:  []string{"config.http.connect_timeout_ms", "config.http.request_timeout_ms", "config.http.max_redirects", "config.http.keep_alive", "config.http.max_conns_per_host"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "Stormrunner maps core Web HTTP/HTML transport runtime settings into the HTTP runtime.",
+			Notes:   "APEX Load maps core Web HTTP/HTML transport runtime settings into the HTTP runtime.",
 		},
 		matchers: []runtimeSettingMatcher{
 			matcher([]string{"HTTP", "Internet Protocol", "Preferences", "Internet Protocol Preferences"}, []string{"ConnectTimeout", "ReceiveTimeout", "StepDownloadTimeout", "HTTPVersion", "KeepAlive", "MaxConnectionsPerHost", "MaxConnections", "MaxConnectionsPerHostHTTP", "MaxRedirections"}),
@@ -116,7 +116,7 @@ var loadRunnerRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Concept: "TLS or SSL version",
 			Fields:  []string{"config.http.tls.min_version"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "Stormrunner maps the configured SSL or TLS floor onto the HTTP client TLS settings.",
+			Notes:   "APEX Load maps the configured SSL or TLS floor onto the HTTP client TLS settings.",
 		},
 		matchers: []runtimeSettingMatcher{
 			matcher([]string{"SSL", "Security"}, []string{"SSLVersion", "TLSVersion"}),
@@ -129,7 +129,7 @@ var loadRunnerRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Concept: "Basic authentication credentials",
 			Fields:  []string{"config.http.auth"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "Imported username and password values map into Stormrunner basic auth configuration.",
+			Notes:   "Imported username and password values map into APEX Load basic auth configuration.",
 		},
 		matchers: []runtimeSettingMatcher{
 			matcher([]string{"Authentication"}, []string{"UserName", "Username", "Password"}),
@@ -208,7 +208,7 @@ var loadRunnerRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Concept: "Log level, error-only, and extended logging options",
 			Fields:  []string{"config.log"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "Stormrunner executes imported log level, error-only, parameter-substitution, data-returned, and advanced-trace controls for its supported trace envelope.",
+			Notes:   "APEX Load executes imported log level, error-only, parameter-substitution, data-returned, and advanced-trace controls for its supported trace envelope.",
 		},
 		matchers: []runtimeSettingMatcher{matcher([]string{"Log", "Logging"}, []string{"Level", "LogLevel", "OnErrorOnly", "LogOnErrorOnly", "ExtendedOptions", "ExtendedLogOptions", "ParameterSubstitution", "DataReturned", "AdvancedTrace"})},
 	},
@@ -405,13 +405,13 @@ var loadRunnerRTSSupportMatrixNotes = []string{
 	"download_resources = recorded is executed for import/recording flows that preserve recorded-resource URL metadata; manually authored scripts should supply equivalent metadata before selecting that mode.",
 	"Streaming and media playback settings remain compatibility-only and do not execute browser media semantics.",
 	"DFE parity is complete for the supported HTTP response transform envelope: base64, gzip, JSON/XML, URL, and HTML transforms plus conservative base64/gzip auto-detection.",
-	"Extended logging parity is complete for Stormrunner's trace envelope: log level, error-only logging, parameter substitution, returned data, and advanced trace metadata.",
+	"Extended logging parity is complete for APEX Load's trace envelope: log level, error-only logging, parameter substitution, returned data, and advanced trace metadata.",
 }
 
 var loadRunnerRTSSupportMatrixExamples = []RuntimeSettingSupportExample{
 	{
 		Title:    "Extended Web HTTP/HTML runtime import",
-		Coverage: "Parses transport, proxy, pacing, think time, logging, browser emulation, download filters, content checks, network shaping, streaming, and DFE settings into Stormrunner config.",
+		Coverage: "Parses transport, proxy, pacing, think time, logging, browser emulation, download filters, content checks, network shaping, streaming, and DFE settings into APEX Load config.",
 		Test:     "pkg/convert/loadrunner/converter_test.go::TestParseRuntimeCfgToScriptConfigMapsExtendedRuntimeSettings",
 	},
 	{

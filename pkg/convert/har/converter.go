@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/convert/sample"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/convert/sample"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type ConvertOptions struct {
@@ -43,7 +43,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		return nil, err
 	}
 	if result.Script != nil {
-		result.Script.GeneratedBy = "stormrunner-har-converter"
+		result.Script.GeneratedBy = "apexload-har-converter"
 		result.Script.GeneratedFrom = "har"
 		if opts.DefaultThinkTimeMs > 0 && result.Script.Config.ThinkTime.MeanMs == 0 {
 			result.Script.Config.ThinkTime.Type = "fixed"

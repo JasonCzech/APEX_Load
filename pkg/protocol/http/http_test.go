@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func initHTTP(t *testing.T, config map[string]any) *HTTP {
@@ -120,13 +120,13 @@ func TestHTTP_Init_InsecureSkipVerify(t *testing.T) {
 
 func TestHTTP_Init_DefaultHeaders(t *testing.T) {
 	h := initHTTP(t, map[string]any{
-		"user_agent":      "StormRunner/1.0",
+		"user_agent":      "APEXLoad/1.0",
 		"accept_encoding": "gzip",
 		"accept_language": "en-US",
 		"default_headers": map[string]string{"X-Custom": "value"},
 	})
 
-	if h.defaultHeaders["User-Agent"] != "StormRunner/1.0" {
+	if h.defaultHeaders["User-Agent"] != "APEXLoad/1.0" {
 		t.Errorf("User-Agent = %q", h.defaultHeaders["User-Agent"])
 	}
 	if h.defaultHeaders["Accept-Encoding"] != "gzip" {
@@ -601,8 +601,8 @@ func TestHTTP_Execute_HeadersApplied(t *testing.T) {
 		if r.Header.Get("X-Custom") != "test-value" {
 			t.Errorf("X-Custom = %q, want %q", r.Header.Get("X-Custom"), "test-value")
 		}
-		if r.Header.Get("User-Agent") != "StormRunner/1.0" {
-			t.Errorf("User-Agent = %q, want %q", r.Header.Get("User-Agent"), "StormRunner/1.0")
+		if r.Header.Get("User-Agent") != "APEXLoad/1.0" {
+			t.Errorf("User-Agent = %q, want %q", r.Header.Get("User-Agent"), "APEXLoad/1.0")
 		}
 		w.Write([]byte("ok"))
 	}))
@@ -610,7 +610,7 @@ func TestHTTP_Execute_HeadersApplied(t *testing.T) {
 
 	h := initHTTP(t, map[string]any{
 		"base_url":   ts.URL,
-		"user_agent": "StormRunner/1.0",
+		"user_agent": "APEXLoad/1.0",
 	})
 
 	h.Execute(context.Background(), &protocol.Action{

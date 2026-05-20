@@ -10,7 +10,7 @@ require_cmd() {
 
 require_cmd docker
 
-for image in stormrunner-controller:0.1.0 stormrunner-generator:0.1.0; do
+for image in apexload-controller:0.1.0 apexload-generator:0.1.0; do
   if ! docker image inspect "$image" >/dev/null 2>&1; then
     echo "Missing local image: $image" >&2
     echo "Build it first with make docker-controller and make docker-generator" >&2
@@ -19,8 +19,8 @@ for image in stormrunner-controller:0.1.0 stormrunner-generator:0.1.0; do
 done
 
 for image in controller generator; do
-  docker tag "stormrunner-${image}:0.1.0" "localhost:5001/stormrunner-${image}:0.1.0"
-  docker push "localhost:5001/stormrunner-${image}:0.1.0"
+  docker tag "apexload-${image}:0.1.0" "localhost:5001/apexload-${image}:0.1.0"
+  docker push "localhost:5001/apexload-${image}:0.1.0"
 done
 
-echo "Pushed Stormrunner images to localhost:5001 for the Docker Desktop kind cluster."
+echo "Pushed APEX Load images to localhost:5001 for the Docker Desktop kind cluster."

@@ -135,7 +135,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const setActiveDomain = useCallback((domain: import('./types').Domain) => {
     setActiveDomainState(domain)
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem('stormrunner.activeDomainId', domain.id)
+      window.localStorage.setItem('apexload.activeDomainId', domain.id)
     }
   }, [])
 
@@ -161,7 +161,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
         if (cancelled) return
         const next = response.domains || []
         setDomains(next)
-        const storedId = typeof window !== 'undefined' ? window.localStorage.getItem('stormrunner.activeDomainId') : ''
+        const storedId = typeof window !== 'undefined' ? window.localStorage.getItem('apexload.activeDomainId') : ''
         setActiveDomainState(prev => next.find(domain => domain.id === storedId) || next.find(domain => domain.id === prev?.id) || next[0] || null)
       } catch {
         if (!cancelled) {
@@ -266,7 +266,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       <main className="main-content">
         <div className="main-topbar" aria-label="Dashboard controls">
           <div className="main-topbar-context">
-            <span className="topbar-domain">{activeDomain?.name || 'Stormrunner'}</span>
+            <span className="topbar-domain">{activeDomain?.name || 'APEX Load'}</span>
             <span className="topbar-project">{activeProject?.name || 'No project selected'}</span>
           </div>
           <ThemeToggle theme={theme} onThemeChange={setTheme} />

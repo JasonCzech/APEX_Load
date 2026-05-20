@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func TestDatabaseProtocolExecutesQueryAndAssertions(t *testing.T) {
@@ -57,7 +57,7 @@ func TestDatabaseProtocolTransactionsAndRollback(t *testing.T) {
 	db := &Database{}
 	if err := db.Init(context.Background(), map[string]any{
 		"database_driver":         "sqlite",
-		"database_dsn":            "file:stormrunner_tx_test?mode=memory&cache=shared",
+		"database_dsn":            "file:apexload_tx_test?mode=memory&cache=shared",
 		"database_max_open_conns": float64(1),
 	}); err != nil {
 		t.Fatalf("init database: %v", err)

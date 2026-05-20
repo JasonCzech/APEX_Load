@@ -2,7 +2,7 @@
 bin/
 controller
 generator
-stormctl
+apexctl
 *.exe
 *.exe~
 *.dll

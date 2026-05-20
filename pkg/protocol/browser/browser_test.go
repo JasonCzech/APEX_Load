@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/network"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func TestBrowserProtocolRegistered(t *testing.T) {
@@ -236,7 +236,7 @@ func TestBrowserProtocolExecuteBrowserActions(t *testing.T) {
 		Name:     "Fill name",
 		Type:     "browser_fill",
 		Selector: "#name",
-		Value:    "stormrunner",
+		Value:    "apexload",
 	})
 	if err != nil {
 		t.Fatalf("fill returned error: %v", err)
@@ -265,7 +265,7 @@ func TestBrowserProtocolExecuteBrowserActions(t *testing.T) {
 		Type: "browser_wait",
 		WaitFor: &protocol.WaitCondition{
 			Type:      "text",
-			Value:     "Saved stormrunner",
+			Value:     "Saved apexload",
 			TimeoutMs: 3000,
 		},
 	})
@@ -293,7 +293,7 @@ func TestBrowserProtocolExecuteBrowserActions(t *testing.T) {
 	if screenshot.ScreenshotBase64 == "" {
 		t.Fatal("ScreenshotBase64 = empty, want captured screenshot")
 	}
-	if !strings.Contains(screenshot.HTML, "Saved stormrunner") {
+	if !strings.Contains(screenshot.HTML, "Saved apexload") {
 		t.Fatalf("HTML did not contain saved marker: %q", screenshot.HTML)
 	}
 	if screenshot.DOMSummary == nil || screenshot.DOMSummary.Title != "Browser Test" {
@@ -353,7 +353,7 @@ func TestBrowserProtocolEvaluatesAssertions(t *testing.T) {
 		Name:     "Fill name",
 		Type:     "browser_fill",
 		Selector: "#name",
-		Value:    "stormrunner",
+		Value:    "apexload",
 	})
 	if err != nil {
 		t.Fatalf("fill returned error: %v", err)
@@ -367,7 +367,7 @@ func TestBrowserProtocolEvaluatesAssertions(t *testing.T) {
 		Type:     "browser_click",
 		Selector: "#submit",
 		Assertions: []protocol.Assertion{
-			{Type: "body_contains", Value: "Saved stormrunner"},
+			{Type: "body_contains", Value: "Saved apexload"},
 			{Type: "body_not_contains", Value: "Error"},
 			{Type: "response_time_ms", Max: 5000},
 		},
@@ -378,8 +378,8 @@ func TestBrowserProtocolEvaluatesAssertions(t *testing.T) {
 	if !click.Success {
 		t.Fatalf("click failed: %s", click.ErrorMessage)
 	}
-	if !strings.Contains(click.HTML, "Saved stormrunner") {
-		t.Fatalf("HTML = %q, want Saved stormrunner", click.HTML)
+	if !strings.Contains(click.HTML, "Saved apexload") {
+		t.Fatalf("HTML = %q, want Saved apexload", click.HTML)
 	}
 
 	failed, err := b.Execute(context.Background(), &protocol.Action{
@@ -400,7 +400,7 @@ func TestBrowserProtocolEvaluatesAssertions(t *testing.T) {
 	if failed.Snapshot == nil {
 		t.Fatal("Snapshot = nil, want populated snapshot on browser assertion failure")
 	}
-	if !strings.Contains(failed.Snapshot.HTML, "Saved stormrunner") {
+	if !strings.Contains(failed.Snapshot.HTML, "Saved apexload") {
 		t.Fatalf("Snapshot.HTML = %q, want saved page HTML", failed.Snapshot.HTML)
 	}
 }
@@ -529,7 +529,7 @@ func TestBrowserProtocolExecuteWebKitActions(t *testing.T) {
 		Name:     "Fill name",
 		Type:     "browser_fill",
 		Selector: "#name",
-		Value:    "stormrunner",
+		Value:    "apexload",
 	})
 	if err != nil {
 		t.Fatalf("fill returned error: %v", err)
@@ -555,7 +555,7 @@ func TestBrowserProtocolExecuteWebKitActions(t *testing.T) {
 		Type: "browser_wait",
 		WaitFor: &protocol.WaitCondition{
 			Type:      "text",
-			Value:     "Saved stormrunner",
+			Value:     "Saved apexload",
 			TimeoutMs: 3000,
 		},
 	})
@@ -1053,7 +1053,7 @@ func TestBrowserProtocolCacheDisabledReloadsCacheableAssets(t *testing.T) {
 			atomic.AddInt32(&assetHits, 1)
 			w.Header().Set("Cache-Control", "public, max-age=3600")
 			w.Header().Set("Content-Type", "application/javascript")
-			_, _ = w.Write([]byte(`window.__stormrunnerAssetLoaded = (window.__stormrunnerAssetLoaded || 0) + 1;`))
+			_, _ = w.Write([]byte(`window.__apexloadAssetLoaded = (window.__apexloadAssetLoaded || 0) + 1;`))
 		default:
 			w.Header().Set("Content-Type", "text/html")
 			_, _ = w.Write([]byte(`<!doctype html>
@@ -1406,7 +1406,7 @@ func TestBrowserProtocolCheckNewerVersionsRevalidatesCachedAssets(t *testing.T) 
 				w.WriteHeader(http.StatusNotModified)
 				return
 			}
-			_, _ = w.Write([]byte(`window.__stormrunnerRevalidated = (window.__stormrunnerRevalidated || 0) + 1;`))
+			_, _ = w.Write([]byte(`window.__apexloadRevalidated = (window.__apexloadRevalidated || 0) + 1;`))
 		default:
 			w.Header().Set("Content-Type", "text/html")
 			_, _ = w.Write([]byte(`<!doctype html>

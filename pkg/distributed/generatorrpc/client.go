@@ -3,7 +3,7 @@ package generatorrpc
 import (
 	"context"
 
-	pb "github.com/jasonczech/stormrunner/api/proto"
+	pb "github.com/jasonczech/apexload/api/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )

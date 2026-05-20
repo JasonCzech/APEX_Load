@@ -155,8 +155,8 @@ describe('SettingsPage', () => {
         user_header: 'X-Auth-Request-User',
         name_header: 'X-Auth-Request-Name',
         email_header: 'X-Auth-Request-Email',
-        roles_header: 'X-Stormrunner-Roles',
-        project_roles_header: 'X-Stormrunner-Project-Roles',
+        roles_header: 'X-APEX Load-Roles',
+        project_roles_header: 'X-APEX Load-Project-Roles',
       },
     })
     apiMock.getAuthRoleCatalog.mockResolvedValue({
@@ -211,7 +211,7 @@ describe('SettingsPage', () => {
           id: 'development_bypass',
           label: 'Development Bypass',
           status: 'info',
-          summary: 'Stormrunner is running with local auth bypass enabled.',
+          summary: 'APEX Load is running with local auth bypass enabled.',
           detail: 'All requests are allowed locally until you switch to Trusted Headers or Native OIDC.',
         },
       ],
@@ -317,8 +317,8 @@ describe('SettingsPage', () => {
       },
       generators: [
         {
-          target: 'stormrunner-generator-0.stormrunner-generator:9090',
-          generator_id: 'stormrunner-generator-0',
+          target: 'apexload-generator-0.apexload-generator:9090',
+          generator_id: 'apexload-generator-0',
           status: 'connected',
           available_capacity: 9600,
           active_vusers: 400,
@@ -330,8 +330,8 @@ describe('SettingsPage', () => {
 	          max_vusers: 10000,
         },
         {
-          target: 'stormrunner-generator-1.stormrunner-generator:9090',
-          generator_id: 'stormrunner-generator-1',
+          target: 'apexload-generator-1.apexload-generator:9090',
+          generator_id: 'apexload-generator-1',
           status: 'connected',
           available_capacity: 7500,
           active_vusers: 500,
@@ -357,7 +357,7 @@ describe('SettingsPage', () => {
           name: 'archive_writer',
           status: 'ready',
           message: 'archive root is writable',
-          details: { archive_root: '/tmp/stormrunner-archives' },
+          details: { archive_root: '/tmp/apexload-archives' },
         },
         {
           name: 'generator_rpc',
@@ -623,7 +623,7 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     expect(apiMock.downloadUsageAccounting).toHaveBeenCalledWith('project-1')
-    expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), expect.stringMatching(/^stormrunner-usage-accounting-\d{4}-\d{2}-\d{2}\.csv$/))
+    expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), expect.stringMatching(/^apexload-usage-accounting-\d{4}-\d{2}-\d{2}\.csv$/))
   })
 
   it('surfaces production readiness checks and refreshes the backend payload', async () => {
@@ -758,8 +758,8 @@ describe('SettingsPage', () => {
         user_header: 'X-Auth-Request-User',
         name_header: 'X-Auth-Request-Name',
         email_header: 'X-Auth-Request-Email',
-        roles_header: 'X-Stormrunner-Roles',
-        project_roles_header: 'X-Stormrunner-Project-Roles',
+        roles_header: 'X-APEX Load-Roles',
+        project_roles_header: 'X-APEX Load-Project-Roles',
       },
     })
 
@@ -1006,8 +1006,8 @@ describe('SettingsPage', () => {
         login_url: '',
         logout_url: '',
         user_header: 'X-Auth-Request-User',
-        roles_header: 'X-Stormrunner-Roles',
-        project_roles_header: 'X-Stormrunner-Project-Roles',
+        roles_header: 'X-APEX Load-Roles',
+        project_roles_header: 'X-APEX Load-Project-Roles',
       }),
     }))
     expect(generalSection.textContent).toContain('Microsoft Entra ID Troubleshooting')
@@ -1098,8 +1098,8 @@ describe('SettingsPage', () => {
     if (!issuerInput || !clientIDInput || !redirectURLInput) return
 
     await setFieldValue(issuerInput, 'https://login.example.test/tenant/v2.0')
-    await setFieldValue(clientIDInput, 'stormrunner-dashboard')
-    await setFieldValue(redirectURLInput, 'https://stormrunner.example.test/api/v1/auth/callback')
+    await setFieldValue(clientIDInput, 'apexload-dashboard')
+    await setFieldValue(redirectURLInput, 'https://apexload.example.test/api/v1/auth/callback')
 
     const saveButton = findButton('Save Changes')
     expect(saveButton).toBeDefined()
@@ -1115,13 +1115,13 @@ describe('SettingsPage', () => {
       auth: expect.objectContaining({
         mode: 'oidc',
         issuer_url: 'https://login.example.test/tenant/v2.0',
-        client_id: 'stormrunner-dashboard',
-        client_secret_env_var: 'STORMRUNNER_OIDC_CLIENT_SECRET',
-        redirect_url: 'https://stormrunner.example.test/api/v1/auth/callback',
+        client_id: 'apexload-dashboard',
+        client_secret_env_var: 'APEXLOAD_OIDC_CLIENT_SECRET',
+        redirect_url: 'https://apexload.example.test/api/v1/auth/callback',
         scopes: ['openid', 'profile', 'email'],
         roles_claim: 'roles',
         project_roles_claim: 'project_roles',
-        session_secret_env_var: 'STORMRUNNER_AUTH_SESSION_SECRET',
+        session_secret_env_var: 'APEXLOAD_AUTH_SESSION_SECRET',
       }),
     }))
     expect(generalSection.textContent).toContain('Native OIDC Session Flow')
@@ -1155,7 +1155,7 @@ describe('SettingsPage', () => {
 
     await setFieldValue(issuerInput, 'https://idp.example.test/tenant')
     await setFieldValue(clientIDInput, 'existing-client')
-    await setFieldValue(redirectURLInput, 'https://stormrunner.example.test/api/v1/auth/callback')
+    await setFieldValue(redirectURLInput, 'https://apexload.example.test/api/v1/auth/callback')
 
     const entraPresetButton = findButton('Microsoft Entra ID OIDC')
     expect(entraPresetButton).toBeDefined()
@@ -1178,7 +1178,7 @@ describe('SettingsPage', () => {
     expect(logoutInput?.value).toBe('/')
     expect(issuerInput.value).toBe('https://idp.example.test/tenant')
     expect(clientIDInput.value).toBe('existing-client')
-    expect(redirectURLInput.value).toBe('https://stormrunner.example.test/api/v1/auth/callback')
+    expect(redirectURLInput.value).toBe('https://apexload.example.test/api/v1/auth/callback')
     expect(generalSection.textContent).toContain('Issuer URL, client ID, and redirect URL stay deployment-specific.')
   })
 
@@ -1317,7 +1317,7 @@ describe('SettingsPage', () => {
       actor_type: 'dev_mode',
       status: 'success',
     }))
-    expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), expect.stringMatching(/^stormrunner-audit-events-\d{4}-\d{2}-\d{2}\.csv$/))
+    expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), expect.stringMatching(/^apexload-audit-events-\d{4}-\d{2}-\d{2}\.csv$/))
     expect(generalSection.textContent).toContain('Audit export downloaded.')
   })
 
@@ -1351,8 +1351,8 @@ describe('SettingsPage', () => {
         user_header: 'X-Auth-Request-User',
         name_header: 'X-Auth-Request-Name',
         email_header: 'X-Auth-Request-Email',
-        roles_header: 'X-Stormrunner-Roles',
-        project_roles_header: 'X-Stormrunner-Project-Roles',
+        roles_header: 'X-APEX Load-Roles',
+        project_roles_header: 'X-APEX Load-Project-Roles',
       },
     })
     apiMock.getAuthDiagnostics.mockResolvedValueOnce({
@@ -1364,7 +1364,7 @@ describe('SettingsPage', () => {
       summary: 'Auth mode is ready with 1 advisory check(s) still worth reviewing.',
       checks: [
         { id: 'subject_header', label: 'Subject Header', status: 'pass', summary: 'Configured', detail: 'X-Auth-Request-User' },
-        { id: 'role_headers', label: 'Role Header Mapping', status: 'pass', summary: 'Configured', detail: 'X-Stormrunner-Roles | X-Stormrunner-Project-Roles' },
+        { id: 'role_headers', label: 'Role Header Mapping', status: 'pass', summary: 'Configured', detail: 'X-APEX Load-Roles | X-APEX Load-Project-Roles' },
         { id: 'current_request_identity', label: 'Current Request Identity', status: 'pass', summary: 'Trusted headers authenticated the current request.', detail: 'alice-admin' },
       ],
     })
@@ -1426,7 +1426,7 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Required Subject Header')
     expect(generalSection.textContent).toContain('X-Auth-Request-User')
     expect(generalSection.textContent).toContain('Global Role Mapping')
-    expect(generalSection.textContent).toContain('X-Stormrunner-Roles')
+    expect(generalSection.textContent).toContain('X-APEX Load-Roles')
     expect(generalSection.textContent).toContain('Microsoft Entra ID Troubleshooting')
     expect(generalSection.textContent).toContain('Headers detected')
     expect(generalSection.textContent).toContain('Auth Diagnostics')
@@ -1461,20 +1461,20 @@ describe('SettingsPage', () => {
         mode: 'oidc',
         provider_name: 'Example OIDC',
         issuer_url: 'https://login.example.test/tenant/v2.0',
-        client_id: 'stormrunner-dashboard',
-        client_secret_env_var: 'STORMRUNNER_OIDC_CLIENT_SECRET',
-        redirect_url: 'https://stormrunner.example.test/api/v1/auth/callback',
+        client_id: 'apexload-dashboard',
+        client_secret_env_var: 'APEXLOAD_OIDC_CLIENT_SECRET',
+        redirect_url: 'https://apexload.example.test/api/v1/auth/callback',
         scopes: ['openid', 'profile', 'email'],
         roles_claim: 'roles',
         project_roles_claim: 'project_roles',
-        session_secret_env_var: 'STORMRUNNER_AUTH_SESSION_SECRET',
+        session_secret_env_var: 'APEXLOAD_AUTH_SESSION_SECRET',
         logout_url: '/',
         login_url: '',
         user_header: 'X-Auth-Request-User',
         name_header: 'X-Auth-Request-Name',
         email_header: 'X-Auth-Request-Email',
-        roles_header: 'X-Stormrunner-Roles',
-        project_roles_header: 'X-Stormrunner-Project-Roles',
+        roles_header: 'X-APEX Load-Roles',
+        project_roles_header: 'X-APEX Load-Project-Roles',
       },
     })
     apiMock.getAuthDiagnostics.mockResolvedValueOnce({
@@ -1485,8 +1485,8 @@ describe('SettingsPage', () => {
       ready: false,
       summary: 'Auth mode is not ready yet. Resolve 2 failing check(s) before relying on this configuration.',
       checks: [
-        { id: 'client_secret_env', label: 'Client Secret Environment Variable', status: 'fail', summary: 'Environment variable is not set on the controller.', detail: 'STORMRUNNER_OIDC_CLIENT_SECRET' },
-        { id: 'issuer_discovery', label: 'OIDC Discovery', status: 'fail', summary: 'Stormrunner could not reach the issuer discovery document.', detail: 'dial tcp: lookup login.example.test: no such host' },
+        { id: 'client_secret_env', label: 'Client Secret Environment Variable', status: 'fail', summary: 'Environment variable is not set on the controller.', detail: 'APEXLOAD_OIDC_CLIENT_SECRET' },
+        { id: 'issuer_discovery', label: 'OIDC Discovery', status: 'fail', summary: 'APEX Load could not reach the issuer discovery document.', detail: 'dial tcp: lookup login.example.test: no such host' },
       ],
     })
 
@@ -1505,7 +1505,7 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Needs attention')
     expect(generalSection.textContent).toContain('Auth mode is not ready yet. Resolve 2 failing check(s) before relying on this configuration.')
     expect(generalSection.textContent).toContain('Client Secret Environment Variable')
-    expect(generalSection.textContent).toContain('Action Required | STORMRUNNER_OIDC_CLIENT_SECRET')
+    expect(generalSection.textContent).toContain('Action Required | APEXLOAD_OIDC_CLIENT_SECRET')
     expect(generalSection.textContent).toContain('OIDC Discovery')
   })
 
@@ -1679,7 +1679,7 @@ describe('SettingsPage', () => {
 
     const authInputs = Array.from(generalSection.querySelectorAll('input')).filter(input => {
       const element = input as HTMLInputElement
-      return element.placeholder === 'X-Stormrunner-Roles' || element.placeholder === 'X-Stormrunner-Project-Roles'
+      return element.placeholder === 'X-APEX Load-Roles' || element.placeholder === 'X-APEX Load-Project-Roles'
     }) as HTMLInputElement[]
     expect(authInputs).toHaveLength(2)
     if (authInputs.length !== 2) return

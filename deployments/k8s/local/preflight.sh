@@ -41,14 +41,14 @@ if [ "$mode" != "kubeadm" ]; then
   exit 1
 fi
 
-if ! docker image inspect stormrunner-controller:0.1.0 >/dev/null 2>&1; then
-  echo "Missing local image stormrunner-controller:0.1.0" >&2
+if ! docker image inspect apexload-controller:0.1.0 >/dev/null 2>&1; then
+  echo "Missing local image apexload-controller:0.1.0" >&2
   echo "Run: make docker-controller" >&2
   exit 1
 fi
 
-if ! docker image inspect stormrunner-generator:0.1.0 >/dev/null 2>&1; then
-  echo "Missing local image stormrunner-generator:0.1.0" >&2
+if ! docker image inspect apexload-generator:0.1.0 >/dev/null 2>&1; then
+  echo "Missing local image apexload-generator:0.1.0" >&2
   echo "Run: make docker-generator" >&2
   exit 1
 fi

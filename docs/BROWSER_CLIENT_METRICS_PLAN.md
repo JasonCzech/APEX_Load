@@ -1,7 +1,7 @@
 # Browser Client Metrics Plan
 
 ## Objective
-Add a browser-client metrics capability that serves as Stormrunner's practical equivalent to LoadRunner TrueClient for web applications. The current implementation already covers the browser-side timing and artifact portion of that goal; the remaining gap is mainly browser-process sampling, benchmark publication, and some comparison UX.
+Add a browser-client metrics capability that serves as APEX Load's practical equivalent to LoadRunner TrueClient for web applications. The current implementation already covers the browser-side timing and artifact portion of that goal; the remaining gap is mainly browser-process sampling, benchmark publication, and some comparison UX.
 
 This is intentionally not a full TrueClient clone. The current architecture is well suited for browser-side synthetic UX telemetry, but not for native desktop UI automation parity.
 
@@ -110,8 +110,8 @@ Remaining in this phase:
 Status: implementation complete, evidence pending.
 
 - Benchmark browser density and overhead with client metrics disabled and enabled.
-- Document this as a low-concurrency diagnostic mode, not a replacement for Stormrunner's high-scale HTTP engine.
-- Use `STORMRUNNER_BROWSER_BENCHMARKS=1 go test ./pkg/protocol/browser -run '^$' -bench 'BenchmarkBrowser' -benchmem -count 5` to collect launch, action-latency, and Chromium RSS evidence before publishing higher density claims.
+- Document this as a low-concurrency diagnostic mode, not a replacement for APEX Load's high-scale HTTP engine.
+- Use `APEXLOAD_BROWSER_BENCHMARKS=1 go test ./pkg/protocol/browser -run '^$' -bench 'BenchmarkBrowser' -benchmem -count 5` to collect launch, action-latency, and Chromium RSS evidence before publishing higher density claims.
 
 ## Tradeoffs And Challenges
 
@@ -128,12 +128,12 @@ Status: implementation complete, evidence pending.
 ## Alternatives
 
 ### Hybrid Model
-Run Stormrunner HTTP or JMS load at scale and a small number of browser canaries with client metrics in parallel.
+Run APEX Load HTTP or JMS load at scale and a small number of browser canaries with client metrics in parallel.
 
 This is the recommended operational model for most teams because it combines backend pressure with user-experience visibility.
 
 ### Application Instrumentation
-Add browser-side telemetry through OpenTelemetry or RUM-style instrumentation and correlate it with Stormrunner test runs.
+Add browser-side telemetry through OpenTelemetry or RUM-style instrumentation and correlate it with APEX Load test runs.
 
 This scales better, but it depends on application changes and is not a self-contained synthetic browser capability.
 
@@ -145,4 +145,4 @@ This can increase capability, but it introduces a second execution model and mor
 ## Recommendation
 Pursue a browser-client metrics mode first, using the existing browser protocol as the implementation seam.
 
-This keeps the work aligned with Stormrunner's current architecture, reuses existing browser replay and telemetry surfaces, and creates a practical browser-side client metrics feature without promising unsupported desktop automation scope.
+This keeps the work aligned with APEX Load's current architecture, reuses existing browser replay and telemetry surfaces, and creates a practical browser-side client metrics feature without promising unsupported desktop automation scope.

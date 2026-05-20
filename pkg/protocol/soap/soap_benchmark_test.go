@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
-	httpproto "github.com/jasonczech/stormrunner/pkg/protocol/http"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	httpproto "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 func BenchmarkSOAPExecuteComparison(b *testing.B) {

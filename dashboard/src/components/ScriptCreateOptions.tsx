@@ -276,7 +276,7 @@ export default function ScriptCreateOptions({
             <button className="script-create-option primary" onClick={onOpenLoadRunnerImport}>
               <span className="script-create-type-badge import">LR</span>
               <h3>Import LoadRunner</h3>
-              <p>Convert a LoadRunner ZIP into a Stormrunner script and keep unsupported functions visible for cleanup.</p>
+              <p>Convert a LoadRunner ZIP into a APEX Load script and keep unsupported functions visible for cleanup.</p>
             </button>
             <button className="script-create-option" type="button" disabled title="Use Import LoadRunner today for SOAP-style LoadRunner request assets.">
               <span className="script-create-type-badge import">SOAP</span>

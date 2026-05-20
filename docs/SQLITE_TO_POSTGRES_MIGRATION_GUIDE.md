@@ -1,6 +1,6 @@
 # SQLite To PostgreSQL Migration Guide
 
-Stormrunner supports SQLite for local development and PostgreSQL for shared enterprise deployments. Use this guide when promoting an existing SQLite-backed controller to PostgreSQL.
+APEX Load supports SQLite for local development and PostgreSQL for shared enterprise deployments. Use this guide when promoting an existing SQLite-backed controller to PostgreSQL.
 
 ## Preconditions
 
@@ -15,8 +15,8 @@ Stormrunner supports SQLite for local development and PostgreSQL for shared ente
 Create a consistent SQLite export:
 
 ```bash
-sqlite3 "$STORMRUNNER_DB" ".backup stormrunner-migration.sqlite"
-sqlite3 stormrunner-migration.sqlite ".dump" > stormrunner-migration.sql
+sqlite3 "$APEXLOAD_DB" ".backup apexload-migration.sqlite"
+sqlite3 apexload-migration.sqlite ".dump" > apexload-migration.sql
 ```
 
 For large databases, prefer a small migration utility that copies table-by-table with typed inserts instead of replaying raw SQLite DDL. The SQL dialects differ; the important artifact is the data, not the SQLite schema syntax.
@@ -24,11 +24,11 @@ For large databases, prefer a small migration utility that copies table-by-table
 ## Import Strategy
 
 1. Start with an empty PostgreSQL database.
-2. Run the Stormrunner controller once with:
+2. Run the APEX Load controller once with:
 
 ```bash
-STORMRUNNER_STORE=postgres
-STORMRUNNER_DATABASE_URL=postgres://stormrunner:***@postgresql:5432/stormrunner?sslmode=require
+APEXLOAD_STORE=postgres
+APEXLOAD_DATABASE_URL=postgres://apexload:***@postgresql:5432/apexload?sslmode=require
 ```
 
 3. Stop the controller after schema initialization succeeds.
@@ -73,8 +73,8 @@ After import, compare source and target counts for:
 Then call:
 
 ```bash
-curl -fsS "$STORMRUNNER_URL/api/v1/system/readiness"
-curl -fsS "$STORMRUNNER_URL/api/v1/system/inventory"
+curl -fsS "$APEXLOAD_URL/api/v1/system/readiness"
+curl -fsS "$APEXLOAD_URL/api/v1/system/inventory"
 ```
 
 Expected production values include `metadata_store=postgres`, a reachable archive backend, and `cache_backend=redis` for HA.

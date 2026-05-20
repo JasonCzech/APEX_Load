@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	browserprotocol "github.com/jasonczech/stormrunner/pkg/protocol/browser"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 )
 
 // ValidateScriptIssues returns all validation issues for a script definition.

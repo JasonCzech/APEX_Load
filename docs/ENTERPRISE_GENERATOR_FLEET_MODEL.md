@@ -40,7 +40,7 @@ Operators can update generator placement state with `PATCH /api/v1/system/genera
 
 ```json
 {
-  "target": "stormrunner-generator-0.stormrunner-generator:9090",
+  "target": "apexload-generator-0.apexload-generator:9090",
   "drain_state": "cordoned"
 }
 ```
@@ -55,10 +55,10 @@ Drain state persists through controller restarts in the metadata store. Operator
 
 ## Version And Protocol Compatibility
 
-Reachable generators negotiate version and protocol capability through the heartbeat stream. The controller prefers those live values for inventory, placement, and compatibility decisions. Controller generator targets can still declare fallback version and protocol compatibility in `STORMRUNNER_GENERATORS` for bootstrap and legacy generators:
+Reachable generators negotiate version and protocol capability through the heartbeat stream. The controller prefers those live values for inventory, placement, and compatibility decisions. Controller generator targets can still declare fallback version and protocol compatibility in `APEXLOAD_GENERATORS` for bootstrap and legacy generators:
 
 ```text
-stormrunner-generator-0.stormrunner-generator:9090|region=us-east|version=0.1.0|protocols=http,grpc,websocket
+apexload-generator-0.apexload-generator:9090|region=us-east|version=0.1.0|protocols=http,grpc,websocket
 ```
 
 Placement enforces the effective capability set before work is assigned:
@@ -73,11 +73,11 @@ The inventory response exposes `compatibility_state` and `compatibility_issues` 
 
 Prometheus exposes fleet rollups for dashboarding and alerts:
 
-- `stormrunner_generator_capacity_state_count{region,state}`
-- `stormrunner_generator_drain_state_count{region,state}`
-- `stormrunner_generator_compatibility_state_count{region,state}`
-- `stormrunner_generator_region_available_capacity{region}`
-- `stormrunner_generator_region_active_vusers{region}`
+- `apexload_generator_capacity_state_count{region,state}`
+- `apexload_generator_drain_state_count{region,state}`
+- `apexload_generator_compatibility_state_count{region,state}`
+- `apexload_generator_region_available_capacity{region}`
+- `apexload_generator_region_active_vusers{region}`
 
 Placement rejection messages now include compatibility causes when no target can run a group, including unsupported protocol and incompatible negotiated or declared generator version.
 

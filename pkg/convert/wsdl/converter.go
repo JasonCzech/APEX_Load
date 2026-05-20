@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type ImportRequest struct {
@@ -127,7 +127,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			Name:          scriptName,
 			Version:       "1.0.0",
 			Protocol:      "soap",
-			GeneratedBy:   "stormrunner-wsdl-converter",
+			GeneratedBy:   "apexload-wsdl-converter",
 			GeneratedFrom: "wsdl",
 			CreatedAt:     time.Now(),
 			Config: dsl.ScriptConfig{

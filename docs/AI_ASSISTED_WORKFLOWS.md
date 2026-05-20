@@ -1,6 +1,6 @@
 # AI-Assisted Workflows
 
-Stormrunner's AI workflow is governed, deterministic by default, and authoring-session first. AI can generate drafts, suggest repairs, explain artifacts, and summarize archived run evidence, but it cannot silently save or promote a reusable script.
+APEX Load's AI workflow is governed, deterministic by default, and authoring-session first. AI can generate drafts, suggest repairs, explain artifacts, and summarize archived run evidence, but it cannot silently save or promote a reusable script.
 
 ## Contract
 
@@ -19,11 +19,11 @@ Environment controls:
 
 | Setting | Purpose | Default |
 | --- | --- | --- |
-| `STORMRUNNER_AI_ENABLED` | Set to `false`, `0`, `off`, `no`, or `disabled` to disable AI assistance globally. | enabled |
-| `STORMRUNNER_AI_DISABLED_PROJECTS` | Comma-separated project IDs where AI assistance is disabled. | none |
-| `STORMRUNNER_AI_ALLOWED_PROVIDERS` | Comma-separated provider allow-list. | `deterministic-local,mocked-provider` |
-| `STORMRUNNER_AI_REDACTION_POSTURE` | Label surfaced in policy and workflow responses. | `standard-redaction` |
-| `STORMRUNNER_AI_ARTIFACT_RETENTION_DAYS` | Retention label for AI draft/review evidence. | `30` |
+| `APEXLOAD_AI_ENABLED` | Set to `false`, `0`, `off`, `no`, or `disabled` to disable AI assistance globally. | enabled |
+| `APEXLOAD_AI_DISABLED_PROJECTS` | Comma-separated project IDs where AI assistance is disabled. | none |
+| `APEXLOAD_AI_ALLOWED_PROVIDERS` | Comma-separated provider allow-list. | `deterministic-local,mocked-provider` |
+| `APEXLOAD_AI_REDACTION_POSTURE` | Label surfaced in policy and workflow responses. | `standard-redaction` |
+| `APEXLOAD_AI_ARTIFACT_RETENTION_DAYS` | Retention label for AI draft/review evidence. | `30` |
 
 The built-in `deterministic-local` provider is the production-safe local contract implementation. `mocked-provider` exists for golden fixtures and provider contract tests.
 

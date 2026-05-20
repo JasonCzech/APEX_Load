@@ -442,7 +442,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
           <p className="sample-import-subtitle">
             {isJavaHttpPreset
               ? 'Create a Java-over-HTTP draft from raw HTTP or cURL samples that already preserve base64-encoded serialized Java payloads.'
-              : 'Create a Stormrunner script from raw HTTP, curl, REST JSON, or HAR data, then layer in runtime details before saving.'}
+              : 'Create a APEX Load script from raw HTTP, curl, REST JSON, or HAR data, then layer in runtime details before saving.'}
           </p>
         </div>
         {onClose && <button className="btn btn-ghost" onClick={onClose}>✕</button>}
@@ -596,7 +596,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
           </label>
           <label className="sample-import-field">
             <span>User Agent</span>
-            <input value={options.user_agent} onChange={e => updateOption('user_agent', e.target.value)} placeholder="Stormrunner Sample Import" />
+            <input value={options.user_agent} onChange={e => updateOption('user_agent', e.target.value)} placeholder="APEX Load Sample Import" />
           </label>
           <label className="sample-import-field">
             <span>Max Retries</span>

@@ -18,7 +18,7 @@ func TestBuildSlackNotificationPayload(t *testing.T) {
 		Timestamp: time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC),
 	}
 	payload := buildSlackNotificationPayload(event)
-	if payload["text"] != "Stormrunner Test Failed: Checkout Smoke (FAILED)" {
+	if payload["text"] != "APEX Load Test Failed: Checkout Smoke (FAILED)" {
 		t.Fatalf("slack text = %#v", payload["text"])
 	}
 	blocks, ok := payload["blocks"].([]map[string]any)
@@ -63,7 +63,7 @@ func TestBuildDynatraceNotificationPayload(t *testing.T) {
 	if payload["eventType"] != "CUSTOM_INFO" {
 		t.Fatalf("dynatrace eventType = %#v, want CUSTOM_INFO", payload["eventType"])
 	}
-	if payload["title"] != "Stormrunner Test Started: Checkout Smoke" {
+	if payload["title"] != "APEX Load Test Started: Checkout Smoke" {
 		t.Fatalf("dynatrace title = %#v", payload["title"])
 	}
 	if payload["startTime"] != event.Timestamp.UnixMilli() {
@@ -79,8 +79,8 @@ func TestBuildDynatraceNotificationPayload(t *testing.T) {
 	if !ok {
 		t.Fatalf("dynatrace properties = %#v, want string map", payload["properties"])
 	}
-	if properties["Tool"] != "Stormrunner" || properties["stormrunner.test_id"] != "test-123" || properties["stormrunner.status"] != "RUNNING" {
-		t.Fatalf("dynatrace properties = %#v, want Stormrunner test metadata", properties)
+	if properties["Tool"] != "APEX Load" || properties["apexload.test_id"] != "test-123" || properties["apexload.status"] != "RUNNING" {
+		t.Fatalf("dynatrace properties = %#v, want APEX Load test metadata", properties)
 	}
 }
 
@@ -122,11 +122,11 @@ func TestBuildTelemetryNotificationPayloadIncludesDiagnosticContext(t *testing.T
 		t.Fatalf("dynatrace event type = %#v, want ERROR_EVENT", dynatrace["eventType"])
 	}
 	properties := dynatrace["properties"].(map[string]string)
-	if properties["stormrunner.severity"] != "danger" || properties["stormrunner.summary"] != event.Summary {
+	if properties["apexload.severity"] != "danger" || properties["apexload.summary"] != event.Summary {
 		t.Fatalf("dynatrace diagnostic properties = %#v", properties)
 	}
-	if properties["stormrunner.conditions"] != "collector_drops,websocket_drops" {
-		t.Fatalf("dynatrace conditions = %#v", properties["stormrunner.conditions"])
+	if properties["apexload.conditions"] != "collector_drops,websocket_drops" {
+		t.Fatalf("dynatrace conditions = %#v", properties["apexload.conditions"])
 	}
 }
 
@@ -135,7 +135,7 @@ func TestValidateNotificationsAllowsTelemetryEvents(t *testing.T) {
 		Webhooks: []NotificationWebhookSettings{{
 			Name:    "Telemetry Alerts",
 			Enabled: true,
-			URL:     "https://hooks.example.test/stormrunner",
+			URL:     "https://hooks.example.test/apexload",
 			Format:  notificationFormatSlack,
 			Events:  []string{"telemetry_degraded", "telemetry_breached", "telemetry_recovered"},
 		}},
@@ -185,7 +185,7 @@ func TestBroadcastEventDispatchesConfiguredNotificationWebhook(t *testing.T) {
 
 	select {
 	case payload := <-received:
-		if payload["text"] != "Stormrunner Test Started: Checkout Smoke (RUNNING)" {
+		if payload["text"] != "APEX Load Test Started: Checkout Smoke (RUNNING)" {
 			t.Fatalf("payload text = %#v", payload["text"])
 		}
 	case <-time.After(2 * time.Second):

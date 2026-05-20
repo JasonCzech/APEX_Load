@@ -82,7 +82,7 @@ Complex XSD payload generation remains scaffolded for review. Authors must confi
 | `client.invoke(service, method, payload)` | Partial; requires gRPC schema/metadata review |
 | `load.action(name, fn)` | Supported as action-name grouping |
 | Dynamic JavaScript runtime behavior | Review-only |
-| Custom correlation helpers | Partial; use Stormrunner guided correlation repair before approval |
+| Custom correlation helpers | Partial; use APEX Load guided correlation repair before approval |
 
 ## Benchmark Envelopes
 

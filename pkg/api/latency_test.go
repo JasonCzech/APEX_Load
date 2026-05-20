@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestMeasureEndpointLatency(t *testing.T) {

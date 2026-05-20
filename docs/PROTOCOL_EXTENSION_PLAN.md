@@ -1,14 +1,14 @@
 # Implementation Plan: Advanced Protocol Support
 
 ## Objective
-Add first-class **SOAP** and targeted **Java-over-HTTP** support to Stormrunner without weakening the current execution model:
+Add first-class **SOAP** and targeted **Java-over-HTTP** support to APEX Load without weakening the current execution model:
 
 - The Go load generator remains the runtime owner for protocol execution.
 - Authoring-time tooling in Python and the dashboard improves script generation and editing, but is not required in the request hot path.
 - New protocol features extend the current HTTP foundation where possible instead of duplicating it.
 
 ## Current Baseline
-Stormrunner already has pieces this plan can build on:
+APEX Load already has pieces this plan can build on:
 
 - HTTP is a registered protocol implementation and already owns request execution, extractor execution, and assertions.
 - XPath extraction already exists in `pkg/protocol/http/extract.go`, including namespace-aware expressions and XML/HTML fallback behavior.
@@ -24,7 +24,7 @@ The SOAP runtime is no longer just planned work. The following Phase 1 items are
 - Registered `pkg/protocol/soap` execution on top of the existing HTTP transport.
 - SOAP 1.1 and SOAP 1.2 request defaults, `SOAPAction` handling, and generated-envelope shaping with namespace support.
 - WS-Security UsernameToken and Timestamp header generation, including nonce and created support.
-- SOAP Fault detection that maps fault envelopes into Stormrunner result semantics, preserves the raw response body for reporting, and now populates error snapshots for `snapshot_on_error` flows even when the transport status remains HTTP 200.
+- SOAP Fault detection that maps fault envelopes into APEX Load result semantics, preserves the raw response body for reporting, and now populates error snapshots for `snapshot_on_error` flows even when the transport status remains HTTP 200.
 - Unit coverage for DSL parsing, validation, engine config propagation, envelope shaping, WS-Security headers, and SOAP 1.1/1.2 fault handling.
 - A focused benchmark that compares plain HTTP execution with SOAP-generated envelope execution against the same local server path.
 
@@ -74,7 +74,7 @@ SOAP should be treated as an HTTP-backed protocol profile implemented in `pkg/pr
     - Handles namespace declarations deterministically.
     - Supports templated values in body content without hiding the raw XML from advanced users.
 - **SOAP Fault Interpreter**
-    - Detects SOAP Fault responses and maps them into Stormrunner result semantics.
+    - Detects SOAP Fault responses and maps them into APEX Load result semantics.
     - Exposes fault code and fault string for assertions and reporting.
 
 ### WS-Security Strategy
@@ -254,7 +254,7 @@ The following items should be locked before implementation expands beyond the fi
 5. Choose the Java helper packaging model only after the codec target is known.
 
 ## Summary
-This plan keeps protocol execution aligned with Stormrunner's current architecture:
+This plan keeps protocol execution aligned with APEX Load's current architecture:
 
 - SOAP extends the existing HTTP-centered runtime rather than replacing it.
 - Existing XPath support is reused instead of re-planned.

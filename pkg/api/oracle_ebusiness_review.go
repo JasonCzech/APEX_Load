@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type oracleEBusinessReviewRequest struct {
@@ -401,7 +401,7 @@ func oracleEBusinessFindings(packageName string, candidates []oracleEBusinessCor
 			ID:       "oracle_nca_review_only",
 			Severity: "error",
 			Category: "execution",
-			Summary:  "Oracle NCA is review-only in Stormrunner.",
+			Summary:  "Oracle NCA is review-only in APEX Load.",
 			Detail:   "NCA requires an Oracle Forms/client runner and cannot be promoted to the native Linux HTTP generator path.",
 			Evidence: []string{"nca_boundary", "support_matrix:oeb-oracle-nca"},
 		})

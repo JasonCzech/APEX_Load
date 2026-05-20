@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestAIAuthoringContractAndPolicyEndpoints(t *testing.T) {
@@ -112,7 +112,7 @@ func TestAIDraftGenerationCreatesBlockedReviewQueueSession(t *testing.T) {
 }
 
 func TestAIPolicyCanDisableProjectDraftGeneration(t *testing.T) {
-	t.Setenv("STORMRUNNER_AI_DISABLED_PROJECTS", "project-disabled")
+	t.Setenv("APEXLOAD_AI_DISABLED_PROJECTS", "project-disabled")
 	server := NewServer(ServerConfig{})
 
 	policyReq := httptest.NewRequest(http.MethodGet, "/api/v1/ai/policy?project_id=project-disabled", nil)
@@ -167,7 +167,7 @@ func TestAIEndpointsHonorProjectScopedRBAC(t *testing.T) {
 	viewerReq := httptest.NewRequest(http.MethodPost, "/api/v1/ai/drafts", bytes.NewReader(body))
 	viewerReq.Header.Set("Content-Type", "application/json")
 	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerReq.Header.Set("X-Stormrunner-Project-Roles", "project-rbac="+RoleViewer)
+	viewerReq.Header.Set("X-APEXLoad-Project-Roles", "project-rbac="+RoleViewer)
 	viewerResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerResp, viewerReq)
 	if viewerResp.Code != http.StatusForbidden {
@@ -177,7 +177,7 @@ func TestAIEndpointsHonorProjectScopedRBAC(t *testing.T) {
 	editorReq := httptest.NewRequest(http.MethodPost, "/api/v1/ai/drafts", bytes.NewReader(body))
 	editorReq.Header.Set("Content-Type", "application/json")
 	editorReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorReq.Header.Set("X-Stormrunner-Project-Roles", "project-rbac="+RoleEditor)
+	editorReq.Header.Set("X-APEXLoad-Project-Roles", "project-rbac="+RoleEditor)
 	editorResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorResp, editorReq)
 	if editorResp.Code != http.StatusCreated {
@@ -186,7 +186,7 @@ func TestAIEndpointsHonorProjectScopedRBAC(t *testing.T) {
 
 	queueReq := httptest.NewRequest(http.MethodGet, "/api/v1/ai/review-queue?project_id=project-rbac", nil)
 	queueReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	queueReq.Header.Set("X-Stormrunner-Project-Roles", "project-rbac="+RoleViewer)
+	queueReq.Header.Set("X-APEXLoad-Project-Roles", "project-rbac="+RoleViewer)
 	queueResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(queueResp, queueReq)
 	if queueResp.Code != http.StatusOK {

@@ -1,6 +1,6 @@
-# Stormrunner API User Guide
+# APEX Load API User Guide
 
-This guide is for engineers and operators who want to automate Stormrunner from CI/CD, external release systems, or integration scripts. It focuses on the public REST and WebSocket API served by the controller.
+This guide is for engineers and operators who want to automate APEX Load from CI/CD, external release systems, or integration scripts. It focuses on the public REST and WebSocket API served by the controller.
 
 ## Base URL
 
@@ -21,24 +21,24 @@ curl http://localhost:8080/api/v1/system/readiness
 
 ## Authentication
 
-Stormrunner supports three auth modes:
+APEX Load supports three auth modes:
 
 - `dev`: local development bypass. Do not use for shared environments.
 - `trusted_headers`: an upstream gateway authenticates the user and forwards trusted identity and role headers.
-- `oidc`: Stormrunner handles OIDC login, callback, signed session, and logout.
+- `oidc`: APEX Load handles OIDC login, callback, signed session, and logout.
 
 Service-account automation can authenticate with either header:
 
 ```bash
 Authorization: Bearer <api-key>
-X-Stormrunner-API-Key: <api-key>
+X-APEX Load-API-Key: <api-key>
 ```
 
 Service-account requests must satisfy both RBAC role checks and token scopes. For example, a service account with `system_admin` still needs a compatible scope such as `settings:manage` before it can update system settings.
 
-The MCP server under `mcp/` also uses service-account authentication by default. Configure `STORMRUNNER_API_KEY` or `STORMRUNNER_BEARER_TOKEN` for AI-agent and CI/CD automation rather than relying on local dev preview headers.
+The MCP server under `mcp/` also uses service-account authentication by default. Configure `APEXLOAD_API_KEY` or `APEXLOAD_BEARER_TOKEN` for AI-agent and CI/CD automation rather than relying on local dev preview headers.
 
-Dashboard operators with service-account management permission can generate, rotate, disable, and delete scoped API keys from **Access & API Keys**. Stormrunner returns created or rotated keys once and then retains only the hash.
+Dashboard operators with service-account management permission can generate, rotate, disable, and delete scoped API keys from **Access & API Keys**. APEX Load returns created or rotated keys once and then retains only the hash.
 
 Useful auth endpoints:
 
@@ -81,8 +81,8 @@ Common status codes:
 In local `dev` auth mode, the dashboard can simulate Admin or project editor User views. API clients can use the same preview headers for local checks:
 
 ```text
-X-Stormrunner-Dev-View: admin|user
-X-Stormrunner-Dev-Project-ID: <project-id>
+X-APEX Load-Dev-View: admin|user
+X-APEX Load-Dev-Project-ID: <project-id>
 ```
 
 These headers are honored only when the controller auth mode is `dev`. They are ignored in `trusted_headers` and `oidc` modes.
@@ -93,20 +93,20 @@ These headers are honored only when the controller auth mode is `dev`. They are 
 ### 1. Discover Domain, Repository, Project, And Release Scope
 
 ```bash
-curl -H "Authorization: Bearer $STORMRUNNER_API_KEY" \
+curl -H "Authorization: Bearer $APEXLOAD_API_KEY" \
   http://localhost:8080/api/v1/domains
 
-curl -H "Authorization: Bearer $STORMRUNNER_API_KEY" \
+curl -H "Authorization: Bearer $APEXLOAD_API_KEY" \
   http://localhost:8080/api/v1/domains/default/application-repository/categories
 
-curl -H "Authorization: Bearer $STORMRUNNER_API_KEY" \
+curl -H "Authorization: Bearer $APEXLOAD_API_KEY" \
   "http://localhost:8080/api/v1/projects?domain_id=default&category_id=uncategorized"
 
-curl -H "Authorization: Bearer $STORMRUNNER_API_KEY" \
+curl -H "Authorization: Bearer $APEXLOAD_API_KEY" \
   "http://localhost:8080/api/v1/projects/project-1/releases"
 ```
 
-Stormrunner now organizes work as `Domain > Application Repository > Category > Project > Release`. Projects remain the execution and governance boundary, and the older application-scoped endpoints continue to work as compatibility aliases for clients that still organize releases by application.
+APEX Load now organizes work as `Domain > Application Repository > Category > Project > Release`. Projects remain the execution and governance boundary, and the older application-scoped endpoints continue to work as compatibility aliases for clients that still organize releases by application.
 
 ### 2. Create Or Import A Script
 
@@ -114,7 +114,7 @@ Create a JSON DSL script:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/scripts \
-  -H "Authorization: Bearer $STORMRUNNER_API_KEY" \
+  -H "Authorization: Bearer $APEXLOAD_API_KEY" \
   -H "Content-Type: application/json" \
   -d @script.json
 ```
@@ -123,7 +123,7 @@ Validate or replay before saving:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/scripts/validate \
-  -H "Authorization: Bearer $STORMRUNNER_API_KEY" \
+  -H "Authorization: Bearer $APEXLOAD_API_KEY" \
   -H "Content-Type: application/json" \
   -d @script.json
 ```
@@ -148,12 +148,12 @@ Scenarios combine scripts, load model, runtime settings, data pools, release con
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/scenarios \
-  -H "Authorization: Bearer $STORMRUNNER_API_KEY" \
+  -H "Authorization: Bearer $APEXLOAD_API_KEY" \
   -H "Content-Type: application/json" \
   -d @scenario.json
 
 curl -X POST http://localhost:8080/api/v1/scenarios/validate-load-model \
-  -H "Authorization: Bearer $STORMRUNNER_API_KEY" \
+  -H "Authorization: Bearer $APEXLOAD_API_KEY" \
   -H "Content-Type: application/json" \
   -d @scenario.json
 ```
@@ -178,7 +178,7 @@ Create a run directly:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/tests \
-  -H "Authorization: Bearer $STORMRUNNER_API_KEY" \
+  -H "Authorization: Bearer $APEXLOAD_API_KEY" \
   -H "Content-Type: application/json" \
   -d @test-run.json
 ```

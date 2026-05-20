@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	_ "modernc.org/sqlite"
 )
 

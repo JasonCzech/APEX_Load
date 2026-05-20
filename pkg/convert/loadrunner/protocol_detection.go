@@ -27,7 +27,7 @@ const (
 
 type DetectedProtocol struct {
 	CanonicalLoadRunnerProtocol string              `json:"canonical_loadrunner_protocol"`
-	StormrunnerProtocol         string              `json:"stormrunner_protocol,omitempty"`
+	APEXLoadProtocol         string              `json:"apexload_protocol,omitempty"`
 	Bundle                      string              `json:"bundle,omitempty"`
 	ImportMode                  ImportMode          `json:"import_mode"`
 	Confidence                  DetectionConfidence `json:"confidence"`
@@ -56,7 +56,7 @@ type ReviewArtifact struct {
 type protocolProfile struct {
 	Canonical        string
 	DisplayName      string
-	Stormrunner      string
+	APEXLoad      string
 	Bundle           string
 	Mode             ImportMode
 	Evidence         []string
@@ -158,7 +158,7 @@ func DetectProtocol(files map[string]string, projectConfig *ProjectConfig, actio
 
 	detected := DetectedProtocol{
 		CanonicalLoadRunnerProtocol: selected.Canonical,
-		StormrunnerProtocol:         selected.Stormrunner,
+		APEXLoadProtocol:         selected.APEXLoad,
 		Bundle:                      selected.Bundle,
 		ImportMode:                  selected.Mode,
 		Confidence:                  confidence,
@@ -173,7 +173,7 @@ func DetectProtocol(files map[string]string, projectConfig *ProjectConfig, actio
 
 	if len(conflicts) > 0 && !isHarmlessSOAPConflict(selected, contentProfile) {
 		detected.ImportMode = ImportModeReviewOnly
-		detected.StormrunnerProtocol = ""
+		detected.APEXLoadProtocol = ""
 		detected.Warnings = append(detected.Warnings, "Metadata and content disagree; import is gated as review-only until an operator confirms the correct protocol.")
 		detected.RequiredEvidence = appendUnique(detected.RequiredEvidence, "Operator-confirmed VuGen protocol profile", "Replay or runtime evidence for the selected protocol")
 	}
@@ -323,11 +323,11 @@ func reviewArtifactSummary(detected DetectedProtocol) string {
 	}
 	switch detected.ImportMode {
 	case ImportModeExternalRunnerRequired:
-		return "This protocol requires an external runner before Stormrunner can execute it natively."
+		return "This protocol requires an external runner before APEX Load can execute it natively."
 	case ImportModeUnsupported:
-		return "Stormrunner can classify this LoadRunner archive, but no executable converter is available."
+		return "APEX Load can classify this LoadRunner archive, but no executable converter is available."
 	default:
-		return "Stormrunner preserved this archive as a review-only import artifact."
+		return "APEX Load preserved this archive as a review-only import artifact."
 	}
 }
 
@@ -337,7 +337,7 @@ func reviewArtifactNextActions(detected DetectedProtocol) []string {
 	case ImportModeExternalRunnerRequired:
 		actions = append(actions, "Attach external runner approval or bridge evidence before promotion.")
 	case ImportModeUnsupported:
-		actions = append(actions, "Confirm whether this protocol should be deferred or mapped to a supported Stormrunner runtime.")
+		actions = append(actions, "Confirm whether this protocol should be deferred or mapped to a supported APEX Load runtime.")
 	case ImportModeReviewOnly:
 		actions = append(actions, "Resolve protocol conflicts or required evidence before saving as an executable script.")
 	}
@@ -368,7 +368,7 @@ func compatibleProfiles(a, b protocolProfile) bool {
 	if (a.Canonical == "oracle_web" || a.Canonical == "siebel_web" || a.Canonical == "sap_web") && b.Canonical == "web_http_html" {
 		return true
 	}
-	if a.Stormrunner != "" && a.Stormrunner == b.Stormrunner && a.Mode == b.Mode {
+	if a.APEXLoad != "" && a.APEXLoad == b.APEXLoad && a.Mode == b.Mode {
 		return true
 	}
 	return false
@@ -489,7 +489,7 @@ func webHTTPProfile() protocolProfile {
 	return protocolProfile{
 		Canonical:        "web_http_html",
 		DisplayName:      "Web HTTP/HTML",
-		Stormrunner:      "http",
+		APEXLoad:      "http",
 		Bundle:           "Foundation Entitlement",
 		Mode:             ImportModeExecutable,
 		HarmlessWithSOAP: true,
@@ -500,7 +500,7 @@ func soapProfile() protocolProfile {
 	return protocolProfile{
 		Canonical:   "soap",
 		DisplayName: "Web Services/SOAP",
-		Stormrunner: "soap",
+		APEXLoad: "soap",
 		Bundle:      "Foundation Entitlement",
 		Mode:        ImportModeExecutable,
 	}
@@ -510,7 +510,7 @@ func trueClientMobileProfile() protocolProfile {
 	return protocolProfile{
 		Canonical:   "truclient_mobile_web",
 		DisplayName: "TruClient Mobile Web",
-		Stormrunner: "browser",
+		APEXLoad: "browser",
 		Bundle:      "Foundation Entitlement",
 		Mode:        ImportModeExecutable,
 		Evidence:    []string{"Browser replay evidence before promotion"},
@@ -521,7 +521,7 @@ func trueClientWeb2Profile() protocolProfile {
 	return protocolProfile{
 		Canonical:   "truclient2_web",
 		DisplayName: "TruClient 2.0 Web",
-		Stormrunner: "browser",
+		APEXLoad: "browser",
 		Bundle:      "Foundation Entitlement",
 		Mode:        ImportModeReviewOnly,
 		Evidence:    []string{"Selector review", "Browser replay evidence", "Runtime settings parity review"},
@@ -532,7 +532,7 @@ func databaseProfile() protocolProfile {
 	return protocolProfile{
 		Canonical:   "database",
 		DisplayName: "Database/ODBC",
-		Stormrunner: "database",
+		APEXLoad: "database",
 		Bundle:      "LoadRunner Enterprise Database Protocol Bundle",
 		Mode:        ImportModeExecutable,
 		Evidence:    []string{"DSN or connection string", "SQL bind data review"},
@@ -546,7 +546,7 @@ func networkProfile(canonical, display string) protocolProfile {
 	return protocolProfile{
 		Canonical:   canonical,
 		DisplayName: display,
-		Stormrunner: "network",
+		APEXLoad: "network",
 		Bundle:      "LoadRunner Enterprise Network Protocol Bundle",
 		Mode:        ImportModeExecutable,
 		Evidence:    []string{"Endpoint and credential review"},
@@ -557,7 +557,7 @@ func oebWebProfile(canonical, display string) protocolProfile {
 	return protocolProfile{
 		Canonical:   canonical,
 		DisplayName: display,
-		Stormrunner: "http",
+		APEXLoad: "http",
 		Bundle:      "Oracle Enterprise Business Protocol Bundle",
 		Mode:        ImportModeExecutable,
 		Evidence:    []string{"Oracle E-Business correlation review", "Replay validation evidence"},
@@ -593,7 +593,7 @@ func templateProfile(canonical, display string) protocolProfile {
 		DisplayName: display,
 		Bundle:      "LoadRunner Enterprise Templates Protocol Bundle",
 		Mode:        ImportModeReviewOnly,
-		Evidence:    []string{"Template implementation review", "Mapping to supported Stormrunner DSL actions"},
-		Runner:      "Template VUser imports require manual mapping to executable Stormrunner actions.",
+		Evidence:    []string{"Template implementation review", "Mapping to supported APEX Load DSL actions"},
+		Runner:      "Template VUser imports require manual mapping to executable APEX Load actions.",
 	}
 }

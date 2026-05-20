@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
-	httpproto "github.com/jasonczech/stormrunner/pkg/protocol/http"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	httpproto "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 const supportedCodec = "java_serialized_object_base64"

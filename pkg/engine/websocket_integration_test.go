@@ -8,8 +8,8 @@ import (
 	"time"
 
 	gorillawebsocket "github.com/gorilla/websocket"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/websocket"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	_ "github.com/jasonczech/apexload/pkg/protocol/websocket"
 )
 
 func TestEngineRunsWebSocketScriptThroughProtocol(t *testing.T) {

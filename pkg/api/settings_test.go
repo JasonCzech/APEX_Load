@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestSystemSettingsAPIAndPersistence(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 		Auth: AuthSettings{
 			Mode:               authModeTrustedHeaders,
 			ProviderName:       "Microsoft Entra ID",
-			LoginURL:           "https://login.example.test/stormrunner/start",
+			LoginURL:           "https://login.example.test/apexload/start",
 			LogoutURL:          "/logout",
 			UserHeader:         "X-Test-User",
 			NameHeader:         "X-Test-Name",
@@ -227,7 +227,7 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if updated.Auth.ProviderName != "Microsoft Entra ID" {
 		t.Fatalf("provider name = %q, want Microsoft Entra ID", updated.Auth.ProviderName)
 	}
-	if updated.Auth.LoginURL != "https://login.example.test/stormrunner/start" {
+	if updated.Auth.LoginURL != "https://login.example.test/apexload/start" {
 		t.Fatalf("login url = %q, want configured login url", updated.Auth.LoginURL)
 	}
 	if updated.Auth.LogoutURL != "/logout" {
@@ -257,7 +257,7 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if persisted.Auth.ProjectRolesHeader != "X-Test-Project-Roles" {
 		t.Fatalf("persisted project roles header = %q, want X-Test-Project-Roles", persisted.Auth.ProjectRolesHeader)
 	}
-	if persisted.Auth.LoginURL != "https://login.example.test/stormrunner/start" {
+	if persisted.Auth.LoginURL != "https://login.example.test/apexload/start" {
 		t.Fatalf("persisted login url = %q, want configured login url", persisted.Auth.LoginURL)
 	}
 }
@@ -611,10 +611,10 @@ func TestSystemSettingsValidationRejectsInvalidAuthSettings(t *testing.T) {
 		Auth: AuthSettings{
 			Mode:                authModeOIDC,
 			IssuerURL:           "https://login.example.test",
-			ClientID:            "stormrunner-dashboard",
-			ClientSecretEnvVar:  "STORMRUNNER_OIDC_CLIENT_SECRET",
-			RedirectURL:         "https://stormrunner.example.test/api/v1/auth/callback",
-			SessionSecretEnvVar: "STORMRUNNER_AUTH_SESSION_SECRET",
+			ClientID:            "apexload-dashboard",
+			ClientSecretEnvVar:  "APEXLOAD_OIDC_CLIENT_SECRET",
+			RedirectURL:         "https://apexload.example.test/api/v1/auth/callback",
+			SessionSecretEnvVar: "APEXLOAD_AUTH_SESSION_SECRET",
 			Scopes:              []string{"openid", "profile", "email"},
 		},
 	})
@@ -645,8 +645,8 @@ func TestSystemSettingsValidationRejectsInvalidAuthSettings(t *testing.T) {
 		Auth: AuthSettings{
 			Mode:        authModeOIDC,
 			IssuerURL:   "https://login.example.test",
-			ClientID:    "stormrunner-dashboard",
-			RedirectURL: "https://stormrunner.example.test/api/v1/auth/callback",
+			ClientID:    "apexload-dashboard",
+			RedirectURL: "https://apexload.example.test/api/v1/auth/callback",
 		},
 	})
 	if err == nil {
@@ -705,14 +705,14 @@ func TestNormalizeLoadedSystemSettingsBackfillsCapacityPlanningDefaults(t *testi
 	if normalized.Auth.Mode != authModeDev {
 		t.Fatalf("normalized auth mode = %q, want %q", normalized.Auth.Mode, authModeDev)
 	}
-	if normalized.Auth.RolesHeader != "X-Stormrunner-Roles" {
-		t.Fatalf("normalized roles header = %q, want X-Stormrunner-Roles", normalized.Auth.RolesHeader)
+	if normalized.Auth.RolesHeader != "X-APEXLoad-Roles" {
+		t.Fatalf("normalized roles header = %q, want X-APEXLoad-Roles", normalized.Auth.RolesHeader)
 	}
 	if len(normalized.Auth.Scopes) != 3 || normalized.Auth.Scopes[0] != "openid" {
 		t.Fatalf("normalized auth scopes = %#v, want default oidc scopes", normalized.Auth.Scopes)
 	}
-	if normalized.Auth.SessionSecretEnvVar != "STORMRUNNER_AUTH_SESSION_SECRET" {
-		t.Fatalf("normalized session secret env var = %q, want STORMRUNNER_AUTH_SESSION_SECRET", normalized.Auth.SessionSecretEnvVar)
+	if normalized.Auth.SessionSecretEnvVar != "APEXLOAD_AUTH_SESSION_SECRET" {
+		t.Fatalf("normalized session secret env var = %q, want APEXLOAD_AUTH_SESSION_SECRET", normalized.Auth.SessionSecretEnvVar)
 	}
 
 	normalizedAlias := normalizeLoadedSystemSettings(SystemSettings{

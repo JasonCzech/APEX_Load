@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type iterationResetProtocol struct {
@@ -81,11 +81,11 @@ func TestVUser_Interpolate(t *testing.T) {
 }
 
 func TestVUser_Interpolate_EnvAndFn(t *testing.T) {
-	t.Setenv("STORMRUNNER_TEST_ENV", "env-value")
-	t.Setenv("STORMRUNNER_SECRET_DB_PASSWORD", "super-secret")
+	t.Setenv("APEXLOAD_TEST_ENV", "env-value")
+	t.Setenv("APEXLOAD_SECRET_DB_PASSWORD", "super-secret")
 	vu := &VUser{Variables: map[string]string{}}
 
-	if got := vu.interpolate("{{env.STORMRUNNER_TEST_ENV}}"); got != "env-value" {
+	if got := vu.interpolate("{{env.APEXLOAD_TEST_ENV}}"); got != "env-value" {
 		t.Fatalf("env interpolation = %q, want %q", got, "env-value")
 	}
 
@@ -95,7 +95,7 @@ func TestVUser_Interpolate_EnvAndFn(t *testing.T) {
 		t.Fatalf("fn.uuid() interpolation returned non-uuid value: %q", gotUUID)
 	}
 
-	if got := vu.interpolate("{{env.STORMRUNNER_MISSING_ENV}}"); got != "{{env.STORMRUNNER_MISSING_ENV}}" {
+	if got := vu.interpolate("{{env.APEXLOAD_MISSING_ENV}}"); got != "{{env.APEXLOAD_MISSING_ENV}}" {
 		t.Fatalf("missing env should remain unchanged, got %q", got)
 	}
 
@@ -148,7 +148,7 @@ func TestVUser_MergeExtractions(t *testing.T) {
 }
 
 func TestVUser_ResolveAction(t *testing.T) {
-	t.Setenv("STORMRUNNER_ACTION_ENV", "env-action")
+	t.Setenv("APEXLOAD_ACTION_ENV", "env-action")
 
 	vu := &VUser{
 		Variables: map[string]string{
@@ -163,13 +163,13 @@ func TestVUser_ResolveAction(t *testing.T) {
 		Method:   "GET",
 		Target:   "{{var.base}}/users/1",
 		Selector: "#{{data.users.username}}",
-		Value:    "{{env.STORMRUNNER_ACTION_ENV}}",
+		Value:    "{{env.APEXLOAD_ACTION_ENV}}",
 		Headers:  map[string]string{"Accept": "application/json"},
 		Body:     `{"key": "{{var.base}}"}`,
 		Params: map[string]any{
 			"user": "{{data.users.username}}",
 			"auth": map[string]any{
-				"token": "{{env.STORMRUNNER_ACTION_ENV}}",
+				"token": "{{env.APEXLOAD_ACTION_ENV}}",
 			},
 			"labels": []any{"{{var.base}}", 123},
 		},
@@ -374,8 +374,8 @@ func TestVUser_HandleSnapshot(t *testing.T) {
 }
 
 func TestVUser_Run_LogsExtendedOptions(t *testing.T) {
-	t.Setenv("STORMRUNNER_LOG_HOST", "api.example.test")
-	t.Setenv("STORMRUNNER_LOG_TOKEN", "abc123")
+	t.Setenv("APEXLOAD_LOG_HOST", "api.example.test")
+	t.Setenv("APEXLOAD_LOG_TOKEN", "abc123")
 
 	protoStub := &loggingProtocol{result: &protocol.Result{
 		Success:          true,
@@ -413,8 +413,8 @@ func TestVUser_Run_LogsExtendedOptions(t *testing.T) {
 				Name:   "Checkout",
 				Type:   "request",
 				Method: "POST",
-				Target: "https://{{env.STORMRUNNER_LOG_HOST}}/checkout",
-				Body:   "token={{env.STORMRUNNER_LOG_TOKEN}}",
+				Target: "https://{{env.APEXLOAD_LOG_HOST}}/checkout",
+				Body:   "token={{env.APEXLOAD_LOG_TOKEN}}",
 			}},
 		},
 		Metrics: NewMetricsCollector(16),
@@ -440,7 +440,7 @@ func TestVUser_Run_LogsExtendedOptions(t *testing.T) {
 }
 
 func TestVUser_Run_RedactsSecretValuesFromLogs(t *testing.T) {
-	t.Setenv("STORMRUNNER_SECRET_LOG_TOKEN", "super-secret")
+	t.Setenv("APEXLOAD_SECRET_LOG_TOKEN", "super-secret")
 
 	protoStub := &loggingProtocol{result: &protocol.Result{
 		Success:       true,

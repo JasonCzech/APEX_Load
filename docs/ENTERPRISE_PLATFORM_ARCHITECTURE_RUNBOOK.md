@@ -1,6 +1,6 @@
 # Enterprise Platform Architecture Runbook
 
-This runbook defines the production reference architecture for Stormrunner as a shared enterprise performance testing platform. It supports Workstream P1 in `docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md`.
+This runbook defines the production reference architecture for APEX Load as a shared enterprise performance testing platform. It supports Workstream P1 in `docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md`.
 
 ## Reference Architecture
 
@@ -33,7 +33,7 @@ Generators are replaceable workers. The controller and metadata store own intent
 
 ## HA Controller Behavior
 
-Stormrunner can run multiple controller API replicas for read-heavy and user-facing traffic only when all replicas share the same metadata and archive stores. Background loops must be single-active before multi-replica production:
+APEX Load can run multiple controller API replicas for read-heavy and user-facing traffic only when all replicas share the same metadata and archive stores. Background loops must be single-active before multi-replica production:
 
 - Scenario schedule materialization
 - Queued-run reconciliation

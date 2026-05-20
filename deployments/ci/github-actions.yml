@@ -1,4 +1,4 @@
-name: Stormrunner Performance Test
+name: APEX Load Performance Test
 
 on:
   deployment_status:
@@ -27,15 +27,15 @@ jobs:
       with:
         go-version-file: go.mod
 
-    - name: Pre-build stormctl (if needed)
-      run: go build -o bin/stormctl ./cmd/stormctl
+    - name: Pre-build apexctl (if needed)
+      run: go build -o bin/apexctl ./cmd/apexctl
 
-    - name: Run Stormrunner Load Test
+    - name: Run APEX Load Load Test
       env:
-        STORMRUNNER_URL: ${{ secrets.STORMRUNNER_URL }}
+        APEXLOAD_URL: ${{ secrets.APEXLOAD_URL }}
       run: |
-        ./bin/stormctl run \
-          --api "$STORMRUNNER_URL" \
+        ./bin/apexctl run \
+          --api "$APEXLOAD_URL" \
           --script tests/performance/primary-flow.json \
           --vusers ${{ github.event.inputs.vusers || 50 }} \
           --duration ${{ github.event.inputs.duration || '5m' }} \
@@ -45,5 +45,5 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v3
       with:
-        name: stormrunner-results
+        name: apexload-results
         path: results.json

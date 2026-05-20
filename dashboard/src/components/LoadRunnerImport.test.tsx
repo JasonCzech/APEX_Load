@@ -56,7 +56,7 @@ describe('LoadRunnerImport', () => {
       tested_examples: [
         {
           title: 'Extended Web HTTP/HTML runtime import',
-          coverage: 'Parses transport, pacing, logging, browser emulation, and DFE settings into Stormrunner config.',
+          coverage: 'Parses transport, pacing, logging, browser emulation, and DFE settings into APEX Load config.',
           test: 'pkg/convert/loadrunner/converter_test.go::TestParseRuntimeCfgToScriptConfigMapsExtendedRuntimeSettings',
         },
       ],
@@ -162,7 +162,7 @@ describe('LoadRunnerImport', () => {
           key: 'unsupported_elements',
           title: 'Unsupported LoadRunner Elements',
           severity: 'blocker',
-          summary: 'These source constructs were preserved for review but were not converted into executable Stormrunner actions.',
+          summary: 'These source constructs were preserved for review but were not converted into executable APEX Load actions.',
           items: ['web_set_max_html_param_len'],
         },
         {
@@ -188,8 +188,8 @@ describe('LoadRunnerImport', () => {
           category: 'runtime',
           severity: 'info',
           title: 'Review preserved runtime settings',
-          description: 'The source archive included LoadRunner runtime metadata that may not all execute natively in Stormrunner yet.',
-          action: 'Compare the preserved runtime file and project settings against the generated Stormrunner config before promoting the script.',
+          description: 'The source archive included LoadRunner runtime metadata that may not all execute natively in APEX Load yet.',
+          action: 'Compare the preserved runtime file and project settings against the generated APEX Load config before promoting the script.',
         },
       ],
       summary: {
@@ -228,7 +228,7 @@ describe('LoadRunnerImport', () => {
           key: 'unsupported_elements',
           title: 'Unsupported LoadRunner Elements',
           severity: 'blocker',
-          summary: 'These source constructs were preserved for review but were not converted into executable Stormrunner actions.',
+          summary: 'These source constructs were preserved for review but were not converted into executable APEX Load actions.',
           items: ['web_set_max_html_param_len'],
         },
       ],
@@ -449,7 +449,7 @@ describe('LoadRunnerImport', () => {
         required_evidence: ['External runner bridge approval'],
         next_actions: ['Attach external runner approval.'],
       },
-      warnings: ['Import was classified as external_runner_required; no executable Stormrunner script was generated.'],
+      warnings: ['Import was classified as external_runner_required; no executable APEX Load script was generated.'],
       unsupported_elements: [],
       assumptions: [],
       review_sections: [

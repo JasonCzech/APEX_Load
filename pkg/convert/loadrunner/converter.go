@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	browserprotocol "github.com/jasonczech/stormrunner/pkg/protocol/browser"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 )
 
-// ConvertResult holds the output of a LoadRunner to Stormrunner DSL conversion.
+// ConvertResult holds the output of a LoadRunner to APEX Load DSL conversion.
 type ConvertResult struct {
 	Script                       *dsl.Script       `json:"script"`
 	Warnings                     []string          `json:"warnings,omitempty"`
@@ -47,14 +47,14 @@ type ConvertOptions struct {
 	RuntimeSettings *dsl.ScriptConfig // Broader runtime settings mapped from default.cfg
 }
 
-// Convert transforms parsed LoadRunner action files into a Stormrunner DSL Script.
+// Convert transforms parsed LoadRunner action files into a APEX Load DSL Script.
 func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, error) {
 	result := &ConvertResult{
 		Warnings: make([]string, 0),
 		Script: &dsl.Script{
 			Version:       "1.0.0",
 			Protocol:      "http",
-			GeneratedBy:   "stormrunner-loadrunner-converter",
+			GeneratedBy:   "apexload-loadrunner-converter",
 			GeneratedFrom: "loadrunner",
 			Config:        dsl.ScriptConfig{},
 			Actions:       make([]dsl.Action, 0),
@@ -703,7 +703,7 @@ func sanitizeName(name string) string {
 	return result
 }
 
-// convertParamReferences converts LoadRunner {ParamName} to Stormrunner {{var.ParamName}}.
+// convertParamReferences converts LoadRunner {ParamName} to APEX Load {{var.ParamName}}.
 func convertParamReferences(s string) string {
 	// Match {ParamName} but not {{already.converted}}
 	re := regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_]*)\}`)
@@ -1071,7 +1071,7 @@ func resolveImportedBrowserProfile(profile string) (string, string) {
 	return normalized, device.BrowserFamily
 }
 
-// ToHTTPConfig converts parsed VuGen runtime settings into a Stormrunner HTTPConfig.
+// ToHTTPConfig converts parsed VuGen runtime settings into a APEX Load HTTPConfig.
 func (rc *RuntimeConfig) ToHTTPConfig() *dsl.HTTPConfig {
 	cfg := &dsl.HTTPConfig{}
 

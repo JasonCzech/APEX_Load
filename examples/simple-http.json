@@ -28,7 +28,7 @@
           "Content-Type": "application/json",
           "Accept": "application/json"
         },
-        "body": "{\"test\": \"stormrunner\", \"timestamp\": \"{{fn.timestamp()}}\"}",
+        "body": "{\"test\": \"apexload\", \"timestamp\": \"{{fn.timestamp()}}\"}",
         "extractors": [
           { "name": "origin", "source": "body", "type": "jsonpath", "expression": "$.origin" }
         ],

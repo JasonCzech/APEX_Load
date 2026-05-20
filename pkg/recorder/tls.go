@@ -51,8 +51,8 @@ func (r *Recorder) generateCA() error {
 	template := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
-			CommonName:   "Stormrunner Recording Proxy CA",
-			Organization: []string{"Stormrunner"},
+			CommonName:   "APEX Load Recording Proxy CA",
+			Organization: []string{"APEX Load"},
 		},
 		NotBefore:             time.Now().Add(-1 * time.Hour),
 		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
@@ -205,13 +205,13 @@ func (r *Recorder) HandleCACert(w http.ResponseWriter, req *http.Request) {
 
 	if req.URL.Query().Get("format") == "pem" {
 		w.Header().Set("Content-Type", "application/x-pem-file")
-		w.Header().Set("Content-Disposition", `attachment; filename="stormrunner-ca.pem"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="apexload-ca.pem"`)
 		w.Write(r.caCertPEM)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/x-x509-ca-cert")
-	w.Header().Set("Content-Disposition", `attachment; filename="stormrunner-ca.crt"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="apexload-ca.crt"`)
 	w.Write(r.caCert.Raw)
 }
 

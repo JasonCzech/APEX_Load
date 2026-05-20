@@ -1,20 +1,20 @@
 # Enterprise Autoscaling Signals
 
-This document defines the first HPA/KEDA signal contract for Stormrunner scale-out workstream P2.2.
+This document defines the first HPA/KEDA signal contract for APEX Load scale-out workstream P2.2.
 
 ## Metrics
 
-Stormrunner exposes these Prometheus metrics for generator autoscaling:
+APEX Load exposes these Prometheus metrics for generator autoscaling:
 
 | Metric | Labels | Purpose |
 | --- | --- | --- |
-| `stormrunner_scaling_vusers` | `state=queued|active` | Primary demand signal for pending generator capacity and currently allocated VUsers. |
-| `stormrunner_scaling_tests` | `state=queued|active` | Run concurrency signal for controller/generator scheduling pressure. |
-| `stormrunner_scaling_protocol_vusers` | `state`, `protocol` | Protocol mix signal for density-aware pools. |
-| `stormrunner_generator_capacity_state_count` | `region`, `state` | Saturation signal for available, constrained, saturated, unknown, and unavailable generator capacity. |
-| `stormrunner_generator_region_available_capacity` | `region` | Regional headroom signal. |
-| `stormrunner_generator_region_active_vusers` | `region` | Regional allocation signal. |
-| `stormrunner_capacity_available_generators` | `scope=configured|effective|live|reserved|shared` | Controller capacity-planning envelope, including reserved and shared generator pools. |
+| `apexload_scaling_vusers` | `state=queued|active` | Primary demand signal for pending generator capacity and currently allocated VUsers. |
+| `apexload_scaling_tests` | `state=queued|active` | Run concurrency signal for controller/generator scheduling pressure. |
+| `apexload_scaling_protocol_vusers` | `state`, `protocol` | Protocol mix signal for density-aware pools. |
+| `apexload_generator_capacity_state_count` | `region`, `state` | Saturation signal for available, constrained, saturated, unknown, and unavailable generator capacity. |
+| `apexload_generator_region_available_capacity` | `region` | Regional headroom signal. |
+| `apexload_generator_region_active_vusers` | `region` | Regional allocation signal. |
+| `apexload_capacity_available_generators` | `scope=configured|effective|live|reserved|shared` | Controller capacity-planning envelope, including reserved and shared generator pools. |
 
 `queued` includes tests in `QUEUED` and `PENDING`. `active` includes `INITIALIZING`, `RUNNING`, and `PAUSED`, because paused tests may still reserve execution capacity.
 
@@ -22,7 +22,7 @@ Stormrunner exposes these Prometheus metrics for generator autoscaling:
 
 Recommended autoscaling policy:
 
-1. Scale out when `stormrunner_scaling_vusers{state="queued"}` remains above zero for multiple scrape intervals.
+1. Scale out when `apexload_scaling_vusers{state="queued"}` remains above zero for multiple scrape intervals.
 2. Scale out faster when queued VUsers are concentrated in protocols with lower density, especially browser canaries.
 3. Hold or scale out when active VUsers approach regional available capacity.
 4. Avoid scaling on `unavailable` generators alone; use it as an alert and replacement signal.
@@ -33,23 +33,23 @@ For KEDA, scrape the controller `/metrics` endpoint into Prometheus and use the 
 Example trigger query:
 
 ```promql
-sum(stormrunner_scaling_vusers{state="queued"})
+sum(apexload_scaling_vusers{state="queued"})
 ```
 
 Example regional trigger query:
 
 ```promql
-sum by (region) (stormrunner_generator_region_active_vusers)
+sum by (region) (apexload_generator_region_active_vusers)
 ```
 
 ## Cluster Artifacts
 
-`deployments/k8s/local/generator-keda-scaledobject.yaml` defines a KEDA `ScaledObject` for `stormrunner-generator`:
+`deployments/k8s/local/generator-keda-scaledobject.yaml` defines a KEDA `ScaledObject` for `apexload-generator`:
 
 - `minReplicaCount: 2` and `maxReplicaCount: 50`, matching the enterprise scale-out envelope.
-- Queued VUsers trigger: `sum(stormrunner_scaling_vusers{state="queued"})`.
-- Browser canary trigger: `sum(stormrunner_scaling_protocol_vusers{state="queued",protocol="browser"})`.
-- Saturation trigger: `sum(stormrunner_generator_capacity_state_count{state="saturated"})`.
+- Queued VUsers trigger: `sum(apexload_scaling_vusers{state="queued"})`.
+- Browser canary trigger: `sum(apexload_scaling_protocol_vusers{state="queued",protocol="browser"})`.
+- Saturation trigger: `sum(apexload_generator_capacity_state_count{state="saturated"})`.
 - Conservative scale-down stabilization so active or recently queued demand does not collapse the generator pool too quickly.
 
 The default Prometheus endpoint is `http://prometheus-operated.monitoring.svc:9090`; production overlays should replace it when Prometheus uses a different service name or namespace.

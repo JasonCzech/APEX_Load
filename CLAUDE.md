@@ -1,4 +1,4 @@
-# Stormrunner — Enterprise Performance Testing Platform
+# APEX Load — Enterprise Performance Testing Platform
 
 ## What This Is
 Kubernetes-native performance testing platform replacing LoadRunner Enterprise.
@@ -15,14 +15,14 @@ script generation engine in Python, React dashboard, and OpenTelemetry telemetry
 - **Deployment**: AKS with CRDs, K8s operator, Helm charts, Terraform IaC.
 
 ## Module Path
-`github.com/jasonczech/stormrunner`
+`github.com/jasonczech/apexload`
 
 ## Project Structure
 ```
 cmd/
   generator/     — Load generator binary (deployed as StatefulSet pods)
   controller/    — Test controller + API server binary (Deployment, 2 replicas)
-  stormctl/      — CLI tool for running/managing tests
+  apexctl/      — CLI tool for running/managing tests
 pkg/
   protocol/      — Protocol plugin interface + registry
   protocol/http/ — HTTP/1.1 + HTTP/2 protocol implementation
@@ -59,7 +59,7 @@ JSON-based. Template variables: `{{env.KEY}}`, `{{data.source.col}}`, `{{var.nam
 Sections: config, data_sources, init, actions, teardown.
 
 ## REST API
-The controller binary serves a REST API on `:8080` (configurable via `STORMRUNNER_ADDR`).
+The controller binary serves a REST API on `:8080` (configurable via `APEXLOAD_ADDR`).
 
 ```
 POST   /api/v1/tests                 — Create and queue a test
@@ -102,13 +102,13 @@ requirement — not optional. When adding or modifying code:
 # Build all binaries
 go build ./cmd/generator
 go build ./cmd/controller
-go build ./cmd/stormctl
+go build ./cmd/apexctl
 
 # Run controller with API server + dashboard
 ./bin/controller    # serves on :8080
 
 # Run a test via CLI (direct, no controller)
-./stormctl run --script order-flow.json --vusers 100 --duration 5m
+./apexctl run --script order-flow.json --vusers 100 --duration 5m
 
 # Dashboard dev server (proxies /api to :8080)
 cd dashboard && npm install && npm run dev   # http://localhost:3000

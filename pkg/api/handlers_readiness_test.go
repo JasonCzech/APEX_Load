@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestHandleSystemReadinessReturnsReadyForConfiguredLocalController(t *testing.T) {
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", t.TempDir())
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestHandleSystemReadinessReturnsReadyForConfiguredLocalController(t *testin
 }
 
 func TestHandleSystemReadinessReturnsNotReadyWithoutMetadataStore(t *testing.T) {
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/readiness", nil)
@@ -80,8 +80,8 @@ func TestHandleSystemReadinessReturnsNotReadyWithoutMetadataStore(t *testing.T) 
 }
 
 func TestHandleSystemReadinessReturnsNotReadyWhenDistributedGeneratorsUnreachable(t *testing.T) {
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", t.TempDir())
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -114,11 +114,11 @@ func TestHandleSystemReadinessReturnsNotReadyWhenDistributedGeneratorsUnreachabl
 }
 
 func TestHandleSystemReadinessReturnsNotReadyWhenRedisConfiguredButUnavailable(t *testing.T) {
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", t.TempDir())
-	t.Setenv("STORMRUNNER_CACHE_BACKEND", "redis")
-	t.Setenv("STORMRUNNER_REDIS_URL", "redis://127.0.0.1:1/0")
-	t.Setenv("STORMRUNNER_REDIS_TIMEOUT", "10ms")
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_CACHE_BACKEND", "redis")
+	t.Setenv("APEXLOAD_REDIS_URL", "redis://127.0.0.1:1/0")
+	t.Setenv("APEXLOAD_REDIS_TIMEOUT", "10ms")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	gorillawebsocket "github.com/gorilla/websocket"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func TestWebSocketExecuteConnectSendReceiveClose(t *testing.T) {
@@ -22,7 +22,7 @@ func TestWebSocketExecuteConnectSendReceiveClose(t *testing.T) {
 		"websocket_read_timeout_ms":  float64(1000),
 		"websocket_write_timeout_ms": float64(1000),
 		"websocket_max_message_size": float64(4096),
-		"default_headers":            map[string]string{"X-Test": "stormrunner"},
+		"default_headers":            map[string]string{"X-Test": "apexload"},
 		"auth_type":                  "bearer",
 		"auth_token":                 "runtime-token",
 	}); err != nil {
@@ -49,7 +49,7 @@ func TestWebSocketExecuteConnectSendReceiveClose(t *testing.T) {
 	send, err := ws.Execute(context.Background(), &protocol.Action{
 		Name: "send",
 		Type: "ws_send",
-		Body: []byte(`hello stormrunner token=abc123`),
+		Body: []byte(`hello apexload token=abc123`),
 	})
 	if err != nil {
 		t.Fatalf("send Execute returned error: %v", err)
@@ -57,7 +57,7 @@ func TestWebSocketExecuteConnectSendReceiveClose(t *testing.T) {
 	if !send.Success {
 		t.Fatalf("send failed: %s", send.ErrorMessage)
 	}
-	if send.BytesSent != int64(len(`hello stormrunner token=abc123`)) {
+	if send.BytesSent != int64(len(`hello apexload token=abc123`)) {
 		t.Fatalf("BytesSent = %d", send.BytesSent)
 	}
 	if send.ServerTelemetry == nil || send.ServerTelemetry.MessagesSent != 1 {
@@ -67,7 +67,7 @@ func TestWebSocketExecuteConnectSendReceiveClose(t *testing.T) {
 	receive, err := ws.Execute(context.Background(), &protocol.Action{
 		Name:   "receive",
 		Type:   "ws_receive",
-		Params: map[string]any{"timeout_ms": float64(1000), "match": "stormrunner"},
+		Params: map[string]any{"timeout_ms": float64(1000), "match": "apexload"},
 		Extractors: []protocol.Extractor{{
 			Name:       "token",
 			Source:     "body",
@@ -85,7 +85,7 @@ func TestWebSocketExecuteConnectSendReceiveClose(t *testing.T) {
 	if !receive.Success {
 		t.Fatalf("receive failed: %s", receive.ErrorMessage)
 	}
-	if receive.ResponseBody != `hello stormrunner token=abc123` {
+	if receive.ResponseBody != `hello apexload token=abc123` {
 		t.Fatalf("ResponseBody = %q", receive.ResponseBody)
 	}
 	if receive.Extractions["token"] != "abc123" {
@@ -116,7 +116,7 @@ func TestWebSocketSubprotocolOriginAndPing(t *testing.T) {
 	if err := ws.Init(context.Background(), map[string]any{
 		"base_url":                   server.URL,
 		"websocket_subprotocol":      "graphql-ws",
-		"websocket_origin":           "https://stormrunner.example",
+		"websocket_origin":           "https://apexload.example",
 		"websocket_compression":      true,
 		"websocket_write_timeout_ms": 1000,
 	}); err != nil {
@@ -330,7 +330,7 @@ func newEchoServer(t testing.TB, subprotocol string) *httptest.Server {
 			if r.Header.Get("Origin") == "" {
 				return true
 			}
-			return r.Header.Get("Origin") == "https://stormrunner.example"
+			return r.Header.Get("Origin") == "https://apexload.example"
 		},
 	}
 	if subprotocol != "" {
@@ -342,7 +342,7 @@ func newEchoServer(t testing.TB, subprotocol string) *httptest.Server {
 			http.NotFound(w, r)
 			return
 		}
-		if r.Header.Get("X-Test") != "" && r.Header.Get("X-Test") != "stormrunner" {
+		if r.Header.Get("X-Test") != "" && r.Header.Get("X-Test") != "apexload" {
 			t.Errorf("X-Test header = %q", r.Header.Get("X-Test"))
 		}
 		if r.Header.Get("Authorization") != "" && r.Header.Get("Authorization") != "Bearer runtime-token" {

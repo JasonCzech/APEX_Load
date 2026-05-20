@@ -1,9 +1,9 @@
-name: Stormrunner SLA Gate
-description: Build and run stormctl with optional SLA guardrails for CI/CD pipelines.
+name: APEX Load SLA Gate
+description: Build and run apexctl with optional SLA guardrails for CI/CD pipelines.
 
 inputs:
   script:
-    description: Path to the Stormrunner DSL script.
+    description: Path to the APEX Load DSL script.
     required: true
   vusers:
     description: Number of virtual users.
@@ -52,8 +52,8 @@ inputs:
 
 outputs:
   json:
-    description: JSON result returned by stormctl.
-    value: ${{ steps.stormrunner.outputs.json }}
+    description: JSON result returned by apexctl.
+    value: ${{ steps.apexload.outputs.json }}
 
 runs:
   using: composite
@@ -63,13 +63,13 @@ runs:
       with:
         go-version-file: go.mod
 
-    - name: Run stormctl
-      id: stormrunner
+    - name: Run apexctl
+      id: apexload
       shell: bash
       run: |
         set -euo pipefail
 
-        cmd=(go run ./cmd/stormctl run \
+        cmd=(go run ./cmd/apexctl run \
           --script "${{ inputs.script }}" \
           --vusers "${{ inputs.vusers }}" \
           --duration "${{ inputs.duration }}" \

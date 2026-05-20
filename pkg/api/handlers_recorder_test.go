@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jasonczech/stormrunner/pkg/recorder"
+	"github.com/jasonczech/apexload/pkg/recorder"
 )
 
 func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {

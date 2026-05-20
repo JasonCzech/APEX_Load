@@ -1,8 +1,8 @@
 package api
 
 import (
-	"github.com/jasonczech/stormrunner/pkg/convert/loadrunner"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/convert/loadrunner"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type AuthoringCapabilityResponse struct {
@@ -217,7 +217,7 @@ func authoringCapabilityResponse() AuthoringCapabilityResponse {
 				ApprovalGateCandidate: true,
 			},
 			HealthInputs: []string{"web2_profile_summary", "object_identification", "browser_replay_readiness", "runtime_parity", "http_conversion_readiness"},
-			Notes:        []string{"Canonical Stormrunner profile for TruClient 2.0 - Web imports and browser-to-HTTP conversion review."},
+			Notes:        []string{"Canonical APEX Load profile for TruClient 2.0 - Web imports and browser-to-HTTP conversion review."},
 		},
 		{
 			Source:      "jmeter",

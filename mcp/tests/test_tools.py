@@ -4,8 +4,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from stormrunner_mcp.client import StormrunnerClient, StormrunnerClientConfig
-from stormrunner_mcp.tools import ENDPOINT_TOOLS, EndpointTool, local_api_guide_text, run_endpoint_tool, run_file_import_tool
+from apexload_mcp.client import APEX LoadClient, APEX LoadClientConfig
+from apexload_mcp.tools import ENDPOINT_TOOLS, EndpointTool, local_api_guide_text, run_endpoint_tool, run_file_import_tool
 
 
 def tool(name: str) -> EndpointTool:
@@ -48,8 +48,8 @@ async def test_endpoint_tool_applies_path_params_and_default_project():
         requests.append(request)
         return httpx.Response(200, json={"ok": True})
 
-    client = StormrunnerClient(
-        StormrunnerClientConfig(base_url="http://storm.test/api/v1", default_project_id="project-1"),
+    client = APEX LoadClient(
+        APEX LoadClientConfig(base_url="http://storm.test/api/v1", default_project_id="project-1"),
         transport=httpx.MockTransport(handler),
     )
 
@@ -75,8 +75,8 @@ async def test_representative_domain_tools_call_expected_routes():
         seen.append((request.method, request.url.path))
         return httpx.Response(200, json={"path": request.url.path})
 
-    client = StormrunnerClient(
-        StormrunnerClientConfig(base_url="http://storm.test/api/v1"),
+    client = APEX LoadClient(
+        APEX LoadClientConfig(base_url="http://storm.test/api/v1"),
         transport=httpx.MockTransport(handler),
     )
 
@@ -132,8 +132,8 @@ async def test_file_import_posts_accessible_file(tmp_path: Path):
         assert b'name="project_id"' in body
         return httpx.Response(200, json={"imported": True})
 
-    client = StormrunnerClient(
-        StormrunnerClientConfig(base_url="http://storm.test/api/v1", default_project_id="project-1"),
+    client = APEX LoadClient(
+        APEX LoadClientConfig(base_url="http://storm.test/api/v1", default_project_id="project-1"),
         transport=httpx.MockTransport(handler),
     )
 
@@ -146,5 +146,5 @@ async def test_file_import_posts_accessible_file(tmp_path: Path):
 def test_api_guide_resource_uses_repo_documentation():
     text = local_api_guide_text()
 
-    assert "Stormrunner API User Guide" in text
+    assert "APEX Load API User Guide" in text
     assert "MCP" in text or "Service-account" in text

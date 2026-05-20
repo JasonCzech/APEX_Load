@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/recorder"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/recorder"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestAccessRequirementCoversAuthGovernanceRoutes(t *testing.T) {
@@ -77,13 +77,13 @@ func TestTrustedHeaderAuthRequiresIdentityForSystemSettings(t *testing.T) {
 }
 
 func TestTrustedHeaderAuthAllowsServiceAccountAPIKeyForSystemSettings(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
 
-	key := "stormrunner-service-account-key"
+	key := "apexload-service-account-key"
 	sum := sha256.Sum256([]byte(key))
 	now := time.Now()
 	if err := store.SaveServiceAccount(&storage.ServiceAccount{
@@ -103,7 +103,7 @@ func TestTrustedHeaderAuthAllowsServiceAccountAPIKeyForSystemSettings(t *testing
 	enableTrustedHeaderAuth(t, server)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
-	req.Header.Set("X-Stormrunner-API-Key", key)
+	req.Header.Set("X-APEXLoad-API-Key", key)
 	resp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(resp, req)
@@ -114,14 +114,14 @@ func TestTrustedHeaderAuthAllowsServiceAccountAPIKeyForSystemSettings(t *testing
 }
 
 func TestTrustedHeaderAuthRateLimitsServiceAccountAPIKeys(t *testing.T) {
-	t.Setenv("STORMRUNNER_API_KEY_RATE_LIMIT_PER_MINUTE", "1")
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	t.Setenv("APEXLOAD_API_KEY_RATE_LIMIT_PER_MINUTE", "1")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
 
-	key := "stormrunner-rate-limited-service-account-key"
+	key := "apexload-rate-limited-service-account-key"
 	sum := sha256.Sum256([]byte(key))
 	now := time.Now()
 	if err := store.SaveServiceAccount(&storage.ServiceAccount{
@@ -140,7 +140,7 @@ func TestTrustedHeaderAuthRateLimitsServiceAccountAPIKeys(t *testing.T) {
 	enableTrustedHeaderAuth(t, server)
 
 	first := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
-	first.Header.Set("X-Stormrunner-API-Key", key)
+	first.Header.Set("X-APEXLoad-API-Key", key)
 	firstResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(firstResp, first)
 	if firstResp.Code != http.StatusOK {
@@ -151,7 +151,7 @@ func TestTrustedHeaderAuthRateLimitsServiceAccountAPIKeys(t *testing.T) {
 	}
 
 	second := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
-	second.Header.Set("X-Stormrunner-API-Key", key)
+	second.Header.Set("X-APEXLoad-API-Key", key)
 	secondResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(secondResp, second)
 	if secondResp.Code != http.StatusTooManyRequests {
@@ -160,7 +160,7 @@ func TestTrustedHeaderAuthRateLimitsServiceAccountAPIKeys(t *testing.T) {
 }
 
 func TestTrustedHeaderAuthReservesIdempotencyKeysForMutations(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestTrustedHeaderAuthReservesIdempotencyKeysForMutations(t *testing.T) {
 
 	first := httptest.NewRequest(http.MethodPost, "/api/v1/system/usage/snapshots", nil)
 	first.Header.Set("X-Auth-Request-User", "alice")
-	first.Header.Set("X-Stormrunner-Roles", RoleSystemAdmin)
+	first.Header.Set("X-APEXLoad-Roles", RoleSystemAdmin)
 	first.Header.Set("Idempotency-Key", "capture-usage-now")
 	firstResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(firstResp, first)
@@ -181,7 +181,7 @@ func TestTrustedHeaderAuthReservesIdempotencyKeysForMutations(t *testing.T) {
 
 	second := httptest.NewRequest(http.MethodPost, "/api/v1/system/usage/snapshots", nil)
 	second.Header.Set("X-Auth-Request-User", "alice")
-	second.Header.Set("X-Stormrunner-Roles", RoleSystemAdmin)
+	second.Header.Set("X-APEXLoad-Roles", RoleSystemAdmin)
 	second.Header.Set("Idempotency-Key", "capture-usage-now")
 	secondResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(secondResp, second)
@@ -194,13 +194,13 @@ func TestTrustedHeaderAuthReservesIdempotencyKeysForMutations(t *testing.T) {
 }
 
 func TestTrustedHeaderAuthRejectsServiceAccountWithoutRouteScope(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
 
-	key := "stormrunner-limited-service-account-key"
+	key := "apexload-limited-service-account-key"
 	sum := sha256.Sum256([]byte(key))
 	now := time.Now()
 	if err := store.SaveServiceAccount(&storage.ServiceAccount{
@@ -220,7 +220,7 @@ func TestTrustedHeaderAuthRejectsServiceAccountWithoutRouteScope(t *testing.T) {
 	enableTrustedHeaderAuth(t, server)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
-	req.Header.Set("X-Stormrunner-API-Key", key)
+	req.Header.Set("X-APEXLoad-API-Key", key)
 	resp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(resp, req)
@@ -234,7 +234,7 @@ func TestTrustedHeaderAuthRejectsServiceAccountWithoutRouteScope(t *testing.T) {
 }
 
 func TestTrustedHeaderAuthRejectsUnknownServiceAccountAPIKey(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestTrustedHeaderAuthRejectsUnknownServiceAccountAPIKey(t *testing.T) {
 	enableTrustedHeaderAuth(t, server)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
-	req.Header.Set("X-Stormrunner-API-Key", "missing-key")
+	req.Header.Set("X-APEXLoad-API-Key", "missing-key")
 	resp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(resp, req)
@@ -264,7 +264,7 @@ func TestTrustedHeaderAuthSystemSettingsRequireSystemAdmin(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
 	req.Header.Set("X-Auth-Request-User", "alice")
-	req.Header.Set("X-Stormrunner-Roles", RoleViewer)
+	req.Header.Set("X-APEXLoad-Roles", RoleViewer)
 	resp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(resp, req)
@@ -275,7 +275,7 @@ func TestTrustedHeaderAuthSystemSettingsRequireSystemAdmin(t *testing.T) {
 
 	req2 := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
 	req2.Header.Set("X-Auth-Request-User", "root")
-	req2.Header.Set("X-Stormrunner-Roles", RoleSystemAdmin)
+	req2.Header.Set("X-APEXLoad-Roles", RoleSystemAdmin)
 	resp2 := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(resp2, req2)
@@ -319,7 +319,7 @@ func TestDevUserPreviewEnforcesSystemSettingsRBAC(t *testing.T) {
 }
 
 func TestDevUserPreviewAllowsEditorWorkflowsButDeniesSystemAdminRoutes(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -395,7 +395,7 @@ func TestTrustedHeaderAuthAllowsViewerToReadSystemInventory(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/inventory", nil)
 	req.Header.Set("X-Auth-Request-User", "viewer-user")
-	req.Header.Set("X-Stormrunner-Roles", RoleViewer)
+	req.Header.Set("X-APEXLoad-Roles", RoleViewer)
 	resp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(resp, req)
@@ -406,7 +406,7 @@ func TestTrustedHeaderAuthAllowsViewerToReadSystemInventory(t *testing.T) {
 }
 
 func TestTrustedHeaderAuthProjectRoleGuardsProjectEndpoints(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -422,7 +422,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsProjectEndpoints(t *testing.T) {
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+project.ID, nil)
 	getReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	getReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	getReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	getResp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(getResp, getReq)
@@ -434,7 +434,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsProjectEndpoints(t *testing.T) {
 	updateBody := []byte(`{"name":"Renamed"}`)
 	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/projects/"+project.ID, bytes.NewReader(updateBody))
 	putReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	putReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	putReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	putResp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(putResp, putReq)
@@ -445,7 +445,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsProjectEndpoints(t *testing.T) {
 
 	adminReq := httptest.NewRequest(http.MethodPut, "/api/v1/projects/"+project.ID, bytes.NewReader(updateBody))
 	adminReq.Header.Set("X-Auth-Request-User", "project-admin")
-	adminReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleProjectAdmin)
+	adminReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleProjectAdmin)
 	adminResp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(adminResp, adminReq)
@@ -459,7 +459,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsProjectEndpoints(t *testing.T) {
 }
 
 func TestTrustedHeaderRepositoryRoleAllowsRepositoryProjectAndReleaseCreation(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -469,7 +469,7 @@ func TestTrustedHeaderRepositoryRoleAllowsRepositoryProjectAndReleaseCreation(t 
 
 	createProject := httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{"name":"Repository Managed Project"}`))
 	createProject.Header.Set("X-Auth-Request-User", "repo-manager")
-	createProject.Header.Set("X-Stormrunner-Application-Repository-Roles", storage.DefaultApplicationRepositoryID+"="+RoleEditor)
+	createProject.Header.Set("X-APEXLoad-Application-Repository-Roles", storage.DefaultApplicationRepositoryID+"="+RoleEditor)
 	projectResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(projectResp, createProject)
 	if projectResp.Code != http.StatusCreated {
@@ -482,7 +482,7 @@ func TestTrustedHeaderRepositoryRoleAllowsRepositoryProjectAndReleaseCreation(t 
 
 	createRelease := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+project.ID+"/releases", strings.NewReader(`{"name":"2026.05"}`))
 	createRelease.Header.Set("X-Auth-Request-User", "repo-manager")
-	createRelease.Header.Set("X-Stormrunner-Application-Repository-Roles", storage.DefaultApplicationRepositoryID+"="+RoleEditor)
+	createRelease.Header.Set("X-APEXLoad-Application-Repository-Roles", storage.DefaultApplicationRepositoryID+"="+RoleEditor)
 	releaseResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(releaseResp, createRelease)
 	if releaseResp.Code != http.StatusCreated {
@@ -491,7 +491,7 @@ func TestTrustedHeaderRepositoryRoleAllowsRepositoryProjectAndReleaseCreation(t 
 }
 
 func TestTrustedHeaderAuthProjectRoleGuardsTestStreamEndpoint(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -518,7 +518,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsTestStreamEndpoint(t *testing.T) {
 
 	forbiddenReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRecord.ID+"/stream", nil)
 	forbiddenReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	forbiddenReq.Header.Set("X-Stormrunner-Project-Roles", uuid.New().String()+"="+RoleViewer)
+	forbiddenReq.Header.Set("X-APEXLoad-Project-Roles", uuid.New().String()+"="+RoleViewer)
 	forbiddenResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(forbiddenResp, forbiddenReq)
 	if forbiddenResp.Code != http.StatusForbidden {
@@ -527,7 +527,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsTestStreamEndpoint(t *testing.T) {
 
 	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRecord.ID+"/stream", nil)
 	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	viewerReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	viewerResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerResp, viewerReq)
 	if viewerResp.Code == http.StatusUnauthorized || viewerResp.Code == http.StatusForbidden {
@@ -539,7 +539,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsTestStreamEndpoint(t *testing.T) {
 }
 
 func TestTrustedHeaderAuthScopesGlobalWebSocketToProjectRoles(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -562,7 +562,7 @@ func TestTrustedHeaderAuthScopesGlobalWebSocketToProjectRoles(t *testing.T) {
 
 	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/ws", nil)
 	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	viewerReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	viewerResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerResp, viewerReq)
 	if viewerResp.Code != http.StatusForbidden {
@@ -571,7 +571,7 @@ func TestTrustedHeaderAuthScopesGlobalWebSocketToProjectRoles(t *testing.T) {
 
 	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/ws?project_id="+project.ID, nil)
 	filteredReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	filteredReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	filteredReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	filteredResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(filteredResp, filteredReq)
 	if filteredResp.Code != http.StatusBadRequest {
@@ -580,7 +580,7 @@ func TestTrustedHeaderAuthScopesGlobalWebSocketToProjectRoles(t *testing.T) {
 }
 
 func TestTrustedHeaderAuthScopesApplicationListAndCreateToProjectRoles(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -599,7 +599,7 @@ func TestTrustedHeaderAuthScopesApplicationListAndCreateToProjectRoles(t *testin
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/applications", nil)
 	listReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	listReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	listReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	listResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(listResp, listReq)
 	if listResp.Code != http.StatusForbidden {
@@ -608,7 +608,7 @@ func TestTrustedHeaderAuthScopesApplicationListAndCreateToProjectRoles(t *testin
 
 	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/applications?project_id="+project.ID, nil)
 	filteredReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	filteredReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	filteredReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	filteredResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(filteredResp, filteredReq)
 	if filteredResp.Code != http.StatusOK {
@@ -619,7 +619,7 @@ func TestTrustedHeaderAuthScopesApplicationListAndCreateToProjectRoles(t *testin
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(createBody))
 	createReq.Header.Set("Content-Type", "application/json")
 	createReq.Header.Set("X-Auth-Request-User", "editor-user")
-	createReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	createReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleEditor)
 	createResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(createResp, createReq)
 	if createResp.Code != http.StatusCreated {
@@ -635,7 +635,7 @@ func TestTrustedHeaderAuthScopesApplicationListAndCreateToProjectRoles(t *testin
 }
 
 func TestTrustedHeaderAuthProjectRoleGuardsApplicationAndReleaseEndpoints(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -659,7 +659,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsApplicationAndReleaseEndpoints(t *tes
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/applications/"+application.ID, nil)
 	getReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	getReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	getReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	getResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(getResp, getReq)
 	if getResp.Code != http.StatusOK {
@@ -669,7 +669,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsApplicationAndReleaseEndpoints(t *tes
 	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+application.ID, bytes.NewReader([]byte(`{"name":"Renamed"}`)))
 	updateReq.Header.Set("Content-Type", "application/json")
 	updateReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	updateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	updateReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	updateResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(updateResp, updateReq)
 	if updateResp.Code != http.StatusForbidden {
@@ -678,7 +678,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsApplicationAndReleaseEndpoints(t *tes
 
 	releasesReq := httptest.NewRequest(http.MethodGet, "/api/v1/applications/"+application.ID+"/releases", nil)
 	releasesReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	releasesReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	releasesReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	releasesResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(releasesResp, releasesReq)
 	if releasesResp.Code != http.StatusOK {
@@ -687,7 +687,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsApplicationAndReleaseEndpoints(t *tes
 
 	archiveReq := httptest.NewRequest(http.MethodPost, "/api/v1/releases/"+release.ID+"/archive", nil)
 	archiveReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	archiveReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	archiveReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	archiveResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(archiveResp, archiveReq)
 	if archiveResp.Code != http.StatusForbidden {
@@ -697,7 +697,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsApplicationAndReleaseEndpoints(t *tes
 	createReleaseReq := httptest.NewRequest(http.MethodPost, "/api/v1/applications/"+application.ID+"/releases", bytes.NewReader([]byte(`{"name":"2026.06"}`)))
 	createReleaseReq.Header.Set("Content-Type", "application/json")
 	createReleaseReq.Header.Set("X-Auth-Request-User", "editor-user")
-	createReleaseReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	createReleaseReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleEditor)
 	createReleaseResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(createReleaseResp, createReleaseReq)
 	if createReleaseResp.Code != http.StatusCreated {
@@ -706,7 +706,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsApplicationAndReleaseEndpoints(t *tes
 }
 
 func TestTrustedHeaderAuthScopesTestListByContextToProjectRoles(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -733,7 +733,7 @@ func TestTrustedHeaderAuthScopesTestListByContextToProjectRoles(t *testing.T) {
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests?application_id="+application.ID+"&release_id="+release.ID, nil)
 	listReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	listReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	listReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	listResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(listResp, listReq)
 	if listResp.Code != http.StatusOK {
@@ -755,7 +755,7 @@ func TestTrustedHeaderAuthScopesTestListByContextToProjectRoles(t *testing.T) {
 
 	inconsistentReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests?application_id="+application.ID+"&release_id="+foreignRelease.ID, nil)
 	inconsistentReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	inconsistentReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	inconsistentReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	inconsistentResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(inconsistentResp, inconsistentReq)
 	if inconsistentResp.Code != http.StatusBadRequest {
@@ -764,7 +764,7 @@ func TestTrustedHeaderAuthScopesTestListByContextToProjectRoles(t *testing.T) {
 }
 
 func TestTrustedHeaderAuthResolvesFolderProjectForMutations(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -785,7 +785,7 @@ func TestTrustedHeaderAuthResolvesFolderProjectForMutations(t *testing.T) {
 	body := []byte(`{"name":"Archived Results"}`)
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/folders/"+folder.ID, bytes.NewReader(body))
 	req.Header.Set("X-Auth-Request-User", "project-admin")
-	req.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleProjectAdmin)
+	req.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleProjectAdmin)
 	resp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(resp, req)
@@ -803,7 +803,7 @@ func TestTrustedHeaderAuthResolvesFolderProjectForMutations(t *testing.T) {
 }
 
 func TestTrustedHeaderAuthScopesProjectFolderListToProjectRoles(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -830,7 +830,7 @@ func TestTrustedHeaderAuthScopesProjectFolderListToProjectRoles(t *testing.T) {
 
 	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+project.ID+"/folders", nil)
 	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	viewerReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	viewerResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerResp, viewerReq)
 	if viewerResp.Code != http.StatusOK {
@@ -839,7 +839,7 @@ func TestTrustedHeaderAuthScopesProjectFolderListToProjectRoles(t *testing.T) {
 }
 
 func TestTrustedHeaderAuthProjectRoleGuardsStoredScriptEndpoints(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -867,7 +867,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsStoredScriptEndpoints(t *testing.T) {
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+script.ID, nil)
 	getReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	getReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	getReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	getResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(getResp, getReq)
 	if getResp.Code != http.StatusOK {
@@ -876,7 +876,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsStoredScriptEndpoints(t *testing.T) {
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/scripts/"+script.ID, nil)
 	deleteReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	deleteReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	deleteReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	deleteResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(deleteResp, deleteReq)
 	if deleteResp.Code != http.StatusForbidden {
@@ -885,7 +885,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsStoredScriptEndpoints(t *testing.T) {
 
 	editorDeleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/scripts/"+script.ID, nil)
 	editorDeleteReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorDeleteReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	editorDeleteReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleEditor)
 	editorDeleteResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorDeleteResp, editorDeleteReq)
 	if editorDeleteResp.Code != http.StatusOK {
@@ -897,7 +897,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsStoredScriptEndpoints(t *testing.T) {
 }
 
 func TestTrustedHeaderAuthScopesScriptListAndCreateToProjectRoles(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -925,7 +925,7 @@ func TestTrustedHeaderAuthScopesScriptListAndCreateToProjectRoles(t *testing.T) 
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts", nil)
 	listReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	listReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	listReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	listResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(listResp, listReq)
 	if listResp.Code != http.StatusForbidden {
@@ -934,7 +934,7 @@ func TestTrustedHeaderAuthScopesScriptListAndCreateToProjectRoles(t *testing.T) 
 
 	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts?project_id="+project.ID, nil)
 	filteredReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	filteredReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	filteredReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	filteredResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(filteredResp, filteredReq)
 	if filteredResp.Code != http.StatusOK {
@@ -945,7 +945,7 @@ func TestTrustedHeaderAuthScopesScriptListAndCreateToProjectRoles(t *testing.T) 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", bytes.NewReader(body))
 	createReq.Header.Set("Content-Type", "application/json")
 	createReq.Header.Set("X-Auth-Request-User", "editor-user")
-	createReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	createReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleEditor)
 	createResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(createResp, createReq)
 	if createResp.Code != http.StatusCreated {
@@ -962,7 +962,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsDraftScriptExecution(t *testing.T) {
 	viewerReplayReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/replay", bytes.NewReader(replayBody))
 	viewerReplayReq.Header.Set("Content-Type", "application/json")
 	viewerReplayReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerReplayReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerReplayReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	viewerReplayResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerReplayResp, viewerReplayReq)
 	if viewerReplayResp.Code != http.StatusForbidden {
@@ -972,7 +972,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsDraftScriptExecution(t *testing.T) {
 	editorReplayReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/replay", bytes.NewReader(replayBody))
 	editorReplayReq.Header.Set("Content-Type", "application/json")
 	editorReplayReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorReplayReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorReplayReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
 	editorReplayResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorReplayResp, editorReplayReq)
 	if editorReplayResp.Code == http.StatusForbidden || editorReplayResp.Code == http.StatusUnauthorized {
@@ -983,7 +983,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsDraftScriptExecution(t *testing.T) {
 	viewerBrowserReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", bytes.NewReader(browserBody))
 	viewerBrowserReq.Header.Set("Content-Type", "application/json")
 	viewerBrowserReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerBrowserReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerBrowserReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	viewerBrowserResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerBrowserResp, viewerBrowserReq)
 	if viewerBrowserResp.Code != http.StatusForbidden {
@@ -993,7 +993,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsDraftScriptExecution(t *testing.T) {
 	editorBrowserReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", bytes.NewReader(browserBody))
 	editorBrowserReq.Header.Set("Content-Type", "application/json")
 	editorBrowserReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorBrowserReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorBrowserReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
 	editorBrowserResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorBrowserResp, editorBrowserReq)
 	if editorBrowserResp.Code == http.StatusForbidden || editorBrowserResp.Code == http.StatusUnauthorized {
@@ -1010,7 +1010,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsJMeterImportSave(t *testing.T) {
 	viewerReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter/save", bytes.NewReader(body))
 	viewerReq.Header.Set("Content-Type", "application/json")
 	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	viewerResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerResp, viewerReq)
 	if viewerResp.Code != http.StatusForbidden {
@@ -1020,7 +1020,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsJMeterImportSave(t *testing.T) {
 	editorReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter/save", bytes.NewReader(body))
 	editorReq.Header.Set("Content-Type", "application/json")
 	editorReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
 	editorResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorResp, editorReq)
 	if editorResp.Code != http.StatusCreated {
@@ -1041,7 +1041,7 @@ func TestTrustedHeaderAuthRequiresViewerForJMeterSupportMatrix(t *testing.T) {
 
 	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/jmeter/support-matrix", nil)
 	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerReq.Header.Set("X-Stormrunner-Roles", RoleViewer)
+	viewerReq.Header.Set("X-APEXLoad-Roles", RoleViewer)
 	viewerResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerResp, viewerReq)
 	if viewerResp.Code != http.StatusOK {
@@ -1062,7 +1062,7 @@ func TestTrustedHeaderAuthRequiresViewerForLoadRunnerSupportMatrix(t *testing.T)
 
 	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/loadrunner/support-matrix", nil)
 	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerReq.Header.Set("X-Stormrunner-Roles", RoleViewer)
+	viewerReq.Header.Set("X-APEXLoad-Roles", RoleViewer)
 	viewerResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerResp, viewerReq)
 	if viewerResp.Code != http.StatusOK {
@@ -1087,7 +1087,7 @@ func TestTrustedHeaderAuthRequiresViewerForWebAPISupportMatrices(t *testing.T) {
 
 		viewerReq := httptest.NewRequest(http.MethodGet, path, nil)
 		viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
-		viewerReq.Header.Set("X-Stormrunner-Roles", RoleViewer)
+		viewerReq.Header.Set("X-APEXLoad-Roles", RoleViewer)
 		viewerResp := httptest.NewRecorder()
 		server.mux.ServeHTTP(viewerResp, viewerReq)
 		if viewerResp.Code != http.StatusOK {
@@ -1111,7 +1111,7 @@ func TestTrustedHeaderAuthGuardsOpenAPIImport(t *testing.T) {
 	viewerReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/openapi", bytes.NewReader(body))
 	viewerReq.Header.Set("Content-Type", "application/json")
 	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	viewerResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerResp, viewerReq)
 	if viewerResp.Code != http.StatusForbidden {
@@ -1121,7 +1121,7 @@ func TestTrustedHeaderAuthGuardsOpenAPIImport(t *testing.T) {
 	editorReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/openapi", bytes.NewReader(body))
 	editorReq.Header.Set("Content-Type", "application/json")
 	editorReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorReq.Header.Set("X-Stormrunner-Roles", RoleEditor)
+	editorReq.Header.Set("X-APEXLoad-Roles", RoleEditor)
 	editorResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorResp, editorReq)
 	if editorResp.Code != http.StatusOK {
@@ -1142,7 +1142,7 @@ func TestTrustedHeaderAuthRequiresSystemAdminForAuthDiagnostics(t *testing.T) {
 
 	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
 	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerReq.Header.Set("X-Stormrunner-Roles", RoleViewer)
+	viewerReq.Header.Set("X-APEXLoad-Roles", RoleViewer)
 	viewerResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerResp, viewerReq)
 	if viewerResp.Code != http.StatusForbidden {
@@ -1151,7 +1151,7 @@ func TestTrustedHeaderAuthRequiresSystemAdminForAuthDiagnostics(t *testing.T) {
 
 	adminReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
 	adminReq.Header.Set("X-Auth-Request-User", "admin-user")
-	adminReq.Header.Set("X-Stormrunner-Roles", RoleSystemAdmin)
+	adminReq.Header.Set("X-APEXLoad-Roles", RoleSystemAdmin)
 	adminResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(adminResp, adminReq)
 	if adminResp.Code != http.StatusOK {
@@ -1167,7 +1167,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsImportPreviewEndpoints(t *testing.T) 
 	viewerLoadRunnerReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner?project_id="+projectID, bytes.NewReader([]byte("zip")))
 	viewerLoadRunnerReq.Header.Set("Content-Type", "application/zip")
 	viewerLoadRunnerReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerLoadRunnerReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerLoadRunnerReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	viewerLoadRunnerResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerLoadRunnerResp, viewerLoadRunnerReq)
 	if viewerLoadRunnerResp.Code != http.StatusForbidden {
@@ -1177,7 +1177,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsImportPreviewEndpoints(t *testing.T) 
 	editorLoadRunnerReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner?project_id="+projectID, bytes.NewReader([]byte("zip")))
 	editorLoadRunnerReq.Header.Set("Content-Type", "application/zip")
 	editorLoadRunnerReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorLoadRunnerReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorLoadRunnerReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
 	editorLoadRunnerResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorLoadRunnerResp, editorLoadRunnerReq)
 	if editorLoadRunnerResp.Code == http.StatusForbidden || editorLoadRunnerResp.Code == http.StatusUnauthorized {
@@ -1187,7 +1187,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsImportPreviewEndpoints(t *testing.T) 
 	viewerSampleReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample", bytes.NewReader([]byte(`{"project_id":"`+projectID+`","format":"raw_http","content":"GET / HTTP/1.1\nHost: example.com\n\n"}`)))
 	viewerSampleReq.Header.Set("Content-Type", "application/json")
 	viewerSampleReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerSampleReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerSampleReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	viewerSampleResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerSampleResp, viewerSampleReq)
 	if viewerSampleResp.Code != http.StatusForbidden {
@@ -1197,7 +1197,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsImportPreviewEndpoints(t *testing.T) 
 	editorSampleReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample", bytes.NewReader([]byte(`{"project_id":"`+projectID+`","format":"raw_http","content":"GET / HTTP/1.1\nHost: example.com\n\n"}`)))
 	editorSampleReq.Header.Set("Content-Type", "application/json")
 	editorSampleReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorSampleReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorSampleReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
 	editorSampleResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorSampleResp, editorSampleReq)
 	if editorSampleResp.Code == http.StatusForbidden || editorSampleResp.Code == http.StatusUnauthorized {
@@ -1216,7 +1216,7 @@ func TestTrustedHeaderAuthScopesRecorderListAndStartToProjectRoles(t *testing.T)
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder", nil)
 	listReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	listReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	listReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	listResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(listResp, listReq)
 	if listResp.Code != http.StatusForbidden {
@@ -1225,7 +1225,7 @@ func TestTrustedHeaderAuthScopesRecorderListAndStartToProjectRoles(t *testing.T)
 
 	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder?project_id="+projectID, nil)
 	filteredReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	filteredReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	filteredReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	filteredResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(filteredResp, filteredReq)
 	if filteredResp.Code != http.StatusOK {
@@ -1234,7 +1234,7 @@ func TestTrustedHeaderAuthScopesRecorderListAndStartToProjectRoles(t *testing.T)
 
 	statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status", nil)
 	statusReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	statusReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	statusReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	statusResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(statusResp, statusReq)
 	if statusResp.Code != http.StatusForbidden {
@@ -1243,7 +1243,7 @@ func TestTrustedHeaderAuthScopesRecorderListAndStartToProjectRoles(t *testing.T)
 
 	filteredStatusReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status?project_id="+projectID, nil)
 	filteredStatusReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	filteredStatusReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	filteredStatusReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	filteredStatusResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(filteredStatusResp, filteredStatusReq)
 	if filteredStatusResp.Code != http.StatusOK {
@@ -1254,7 +1254,7 @@ func TestTrustedHeaderAuthScopesRecorderListAndStartToProjectRoles(t *testing.T)
 	viewerStartReq := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewReader(body))
 	viewerStartReq.Header.Set("Content-Type", "application/json")
 	viewerStartReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerStartReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerStartReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	viewerStartResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerStartResp, viewerStartReq)
 	if viewerStartResp.Code != http.StatusForbidden {
@@ -1264,7 +1264,7 @@ func TestTrustedHeaderAuthScopesRecorderListAndStartToProjectRoles(t *testing.T)
 	editorStartReq := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewReader(body))
 	editorStartReq.Header.Set("Content-Type", "application/json")
 	editorStartReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorStartReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorStartReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
 	editorStartResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorStartResp, editorStartReq)
 	if editorStartResp.Code != http.StatusConflict {
@@ -1286,7 +1286,7 @@ func TestTrustedHeaderAuthScopesRecorderCACertToProjectRoles(t *testing.T) {
 
 	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/ca.pem", nil)
 	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	viewerResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerResp, viewerReq)
 	if viewerResp.Code != http.StatusForbidden {
@@ -1295,7 +1295,7 @@ func TestTrustedHeaderAuthScopesRecorderCACertToProjectRoles(t *testing.T) {
 
 	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/ca.pem?project_id="+projectID, nil)
 	filteredReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	filteredReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	filteredReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	filteredResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(filteredResp, filteredReq)
 	if filteredResp.Code != http.StatusOK {
@@ -1321,7 +1321,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsRecorderSessionEndpoints(t *testing.T
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-1", nil)
 	getReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	getReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	getReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	getResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(getResp, getReq)
 	if getResp.Code != http.StatusOK {
@@ -1331,7 +1331,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsRecorderSessionEndpoints(t *testing.T
 	previewReq := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/rec-1/convert/preview", bytes.NewReader([]byte(`{"name":"Checkout Preview"}`)))
 	previewReq.Header.Set("Content-Type", "application/json")
 	previewReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	previewReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	previewReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	previewResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(previewResp, previewReq)
 	if previewResp.Code != http.StatusForbidden {
@@ -1341,7 +1341,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsRecorderSessionEndpoints(t *testing.T
 	editorPreviewReq := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/rec-1/convert/preview", bytes.NewReader([]byte(`{"name":"Checkout Preview"}`)))
 	editorPreviewReq.Header.Set("Content-Type", "application/json")
 	editorPreviewReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorPreviewReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorPreviewReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
 	editorPreviewResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorPreviewResp, editorPreviewReq)
 	if editorPreviewResp.Code != http.StatusOK {
@@ -1350,7 +1350,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsRecorderSessionEndpoints(t *testing.T
 
 	stopReq := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/rec-1/stop", nil)
 	stopReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	stopReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	stopReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	stopResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(stopResp, stopReq)
 	if stopResp.Code != http.StatusForbidden {
@@ -1359,7 +1359,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsRecorderSessionEndpoints(t *testing.T
 
 	editorStopReq := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/rec-1/stop", nil)
 	editorStopReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorStopReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorStopReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
 	editorStopResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorStopResp, editorStopReq)
 	if editorStopResp.Code != http.StatusOK {
@@ -1375,7 +1375,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsBrowserReplaySessionEndpoints(t *test
 	startReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", bytes.NewReader(pauseBody))
 	startReq.Header.Set("Content-Type", "application/json")
 	startReq.Header.Set("X-Auth-Request-User", "editor-user")
-	startReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	startReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
 	startResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(startResp, startReq)
 	if startResp.Code != http.StatusOK {
@@ -1394,7 +1394,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsBrowserReplaySessionEndpoints(t *test
 
 	viewerGetReq := httptest.NewRequest(http.MethodGet, "/api/v1/browser-replay/sessions/"+startPayload.ReplaySessionID, nil)
 	viewerGetReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerGetReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerGetReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	viewerGetResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerGetResp, viewerGetReq)
 	if viewerGetResp.Code != http.StatusOK {
@@ -1403,7 +1403,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsBrowserReplaySessionEndpoints(t *test
 
 	viewerResumeReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+startPayload.ReplaySessionID+"/resume", nil)
 	viewerResumeReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerResumeReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerResumeReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
 	viewerResumeResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerResumeResp, viewerResumeReq)
 	if viewerResumeResp.Code != http.StatusForbidden {
@@ -1412,7 +1412,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsBrowserReplaySessionEndpoints(t *test
 
 	editorResumeReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+startPayload.ReplaySessionID+"/resume", nil)
 	editorResumeReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorResumeReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorResumeReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
 	editorResumeResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorResumeResp, editorResumeReq)
 	if editorResumeResp.Code != http.StatusOK {
@@ -1421,7 +1421,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsBrowserReplaySessionEndpoints(t *test
 
 	editorPauseReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+startPayload.ReplaySessionID+"/pause", nil)
 	editorPauseReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorPauseReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorPauseReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
 	editorPauseResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorPauseResp, editorPauseReq)
 	if editorPauseResp.Code != http.StatusOK {
@@ -1430,7 +1430,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsBrowserReplaySessionEndpoints(t *test
 
 	editorStopReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+startPayload.ReplaySessionID+"/stop", nil)
 	editorStopReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorStopReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorStopReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
 	editorStopResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorStopResp, editorStopReq)
 	if editorStopResp.Code != http.StatusOK {
@@ -1439,7 +1439,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsBrowserReplaySessionEndpoints(t *test
 }
 
 func TestTrustedHeaderAuthScopesDataPoolListAndCreateToProjectRoles(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -1458,7 +1458,7 @@ func TestTrustedHeaderAuthScopesDataPoolListAndCreateToProjectRoles(t *testing.T
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/data-pools", nil)
 	listReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	listReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	listReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	listResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(listResp, listReq)
 	if listResp.Code != http.StatusForbidden {
@@ -1467,7 +1467,7 @@ func TestTrustedHeaderAuthScopesDataPoolListAndCreateToProjectRoles(t *testing.T
 
 	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/data-pools?project_id="+project.ID, nil)
 	filteredReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	filteredReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	filteredReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	filteredResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(filteredResp, filteredReq)
 	if filteredResp.Code != http.StatusOK {
@@ -1478,7 +1478,7 @@ func TestTrustedHeaderAuthScopesDataPoolListAndCreateToProjectRoles(t *testing.T
 	viewerCreateReq := httptest.NewRequest(http.MethodPost, "/api/v1/data-pools", bytes.NewReader(createBody))
 	viewerCreateReq.Header.Set("Content-Type", "application/json")
 	viewerCreateReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerCreateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	viewerCreateReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	viewerCreateResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerCreateResp, viewerCreateReq)
 	if viewerCreateResp.Code != http.StatusForbidden {
@@ -1488,7 +1488,7 @@ func TestTrustedHeaderAuthScopesDataPoolListAndCreateToProjectRoles(t *testing.T
 	editorCreateReq := httptest.NewRequest(http.MethodPost, "/api/v1/data-pools", bytes.NewReader(createBody))
 	editorCreateReq.Header.Set("Content-Type", "application/json")
 	editorCreateReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorCreateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	editorCreateReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleEditor)
 	editorCreateResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorCreateResp, editorCreateReq)
 	if editorCreateResp.Code != http.StatusCreated {
@@ -1497,7 +1497,7 @@ func TestTrustedHeaderAuthScopesDataPoolListAndCreateToProjectRoles(t *testing.T
 }
 
 func TestTrustedHeaderAuthProjectRoleGuardsDataPoolEndpoints(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -1520,7 +1520,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsDataPoolEndpoints(t *testing.T) {
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/data-pools/"+pool.ID, nil)
 	getReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	getReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	getReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	getResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(getResp, getReq)
 	if getResp.Code != http.StatusOK {
@@ -1529,7 +1529,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsDataPoolEndpoints(t *testing.T) {
 
 	rowsReq := httptest.NewRequest(http.MethodGet, "/api/v1/data-pools/"+pool.ID+"/rows", nil)
 	rowsReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	rowsReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	rowsReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	rowsResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(rowsResp, rowsReq)
 	if rowsResp.Code != http.StatusOK {
@@ -1539,7 +1539,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsDataPoolEndpoints(t *testing.T) {
 	viewerRowCreateReq := httptest.NewRequest(http.MethodPost, "/api/v1/data-pools/"+pool.ID+"/rows", bytes.NewReader([]byte(`{"data":{"customer_id":"C-101"}}`)))
 	viewerRowCreateReq.Header.Set("Content-Type", "application/json")
 	viewerRowCreateReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerRowCreateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	viewerRowCreateReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	viewerRowCreateResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerRowCreateResp, viewerRowCreateReq)
 	if viewerRowCreateResp.Code != http.StatusForbidden {
@@ -1549,7 +1549,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsDataPoolEndpoints(t *testing.T) {
 	editorUpdateReq := httptest.NewRequest(http.MethodPut, "/api/v1/data-pools/"+pool.ID, bytes.NewReader([]byte(`{"name":"Customers Updated"}`)))
 	editorUpdateReq.Header.Set("Content-Type", "application/json")
 	editorUpdateReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorUpdateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	editorUpdateReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleEditor)
 	editorUpdateResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorUpdateResp, editorUpdateReq)
 	if editorUpdateResp.Code != http.StatusOK {
@@ -1559,7 +1559,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsDataPoolEndpoints(t *testing.T) {
 	editorRowCreateReq := httptest.NewRequest(http.MethodPost, "/api/v1/data-pools/"+pool.ID+"/rows", bytes.NewReader([]byte(`{"data":{"customer_id":"C-101"}}`)))
 	editorRowCreateReq.Header.Set("Content-Type", "application/json")
 	editorRowCreateReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorRowCreateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	editorRowCreateReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleEditor)
 	editorRowCreateResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorRowCreateResp, editorRowCreateReq)
 	if editorRowCreateResp.Code != http.StatusCreated {
@@ -1568,7 +1568,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsDataPoolEndpoints(t *testing.T) {
 
 	editorDeleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/data-pools/"+pool.ID, nil)
 	editorDeleteReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorDeleteReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	editorDeleteReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleEditor)
 	editorDeleteResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorDeleteResp, editorDeleteReq)
 	if editorDeleteResp.Code != http.StatusOK {
@@ -1577,7 +1577,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsDataPoolEndpoints(t *testing.T) {
 }
 
 func TestTrustedHeaderAuthProjectRoleGuardsStoredTestEndpoints(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -1601,7 +1601,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsStoredTestEndpoints(t *testing.T) {
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRecord.ID, nil)
 	getReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	getReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	getReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	getResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(getResp, getReq)
 	if getResp.Code != http.StatusOK {
@@ -1612,7 +1612,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsStoredTestEndpoints(t *testing.T) {
 	viewerMoveReq := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testRecord.ID+"/move", bytes.NewReader(moveBody))
 	viewerMoveReq.Header.Set("Content-Type", "application/json")
 	viewerMoveReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerMoveReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	viewerMoveReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	viewerMoveResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerMoveResp, viewerMoveReq)
 	if viewerMoveResp.Code != http.StatusForbidden {
@@ -1622,7 +1622,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsStoredTestEndpoints(t *testing.T) {
 	editorMoveReq := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testRecord.ID+"/move", bytes.NewReader(moveBody))
 	editorMoveReq.Header.Set("Content-Type", "application/json")
 	editorMoveReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorMoveReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	editorMoveReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleEditor)
 	editorMoveResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorMoveResp, editorMoveReq)
 	if editorMoveResp.Code != http.StatusOK {
@@ -1631,7 +1631,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsStoredTestEndpoints(t *testing.T) {
 }
 
 func TestTrustedHeaderAuthScopesTestListAndCreateToProjectRoles(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -1663,7 +1663,7 @@ func TestTrustedHeaderAuthScopesTestListAndCreateToProjectRoles(t *testing.T) {
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests", nil)
 	listReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	listReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	listReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	listResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(listResp, listReq)
 	if listResp.Code != http.StatusForbidden {
@@ -1672,7 +1672,7 @@ func TestTrustedHeaderAuthScopesTestListAndCreateToProjectRoles(t *testing.T) {
 
 	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests?project_id="+project.ID, nil)
 	filteredReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	filteredReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	filteredReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	filteredResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(filteredResp, filteredReq)
 	if filteredResp.Code != http.StatusOK {
@@ -1683,7 +1683,7 @@ func TestTrustedHeaderAuthScopesTestListAndCreateToProjectRoles(t *testing.T) {
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/tests", bytes.NewReader(createBody))
 	createReq.Header.Set("Content-Type", "application/json")
 	createReq.Header.Set("X-Auth-Request-User", "editor-user")
-	createReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	createReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleEditor)
 	createResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(createResp, createReq)
 	if createResp.Code != http.StatusCreated {
@@ -1693,7 +1693,7 @@ func TestTrustedHeaderAuthScopesTestListAndCreateToProjectRoles(t *testing.T) {
 	estimateReq := httptest.NewRequest(http.MethodPost, "/api/v1/tests/estimate", bytes.NewReader(createBody))
 	estimateReq.Header.Set("Content-Type", "application/json")
 	estimateReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	estimateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	estimateReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	estimateResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(estimateResp, estimateReq)
 	if estimateResp.Code != http.StatusForbidden {
@@ -1702,7 +1702,7 @@ func TestTrustedHeaderAuthScopesTestListAndCreateToProjectRoles(t *testing.T) {
 }
 
 func TestTrustedHeaderAuthProjectRoleGuardsScenarioEndpoints(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -1734,7 +1734,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsScenarioEndpoints(t *testing.T) {
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/"+scenario.ID, nil)
 	getReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	getReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	getReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	getResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(getResp, getReq)
 	if getResp.Code != http.StatusOK {
@@ -1744,7 +1744,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsScenarioEndpoints(t *testing.T) {
 	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/scenarios/"+scenario.ID, bytes.NewReader([]byte(`{"name":"Smoke","duration":"1m","groups":[{"script_id":"`+script.ID+`","vusers":5}]}`)))
 	updateReq.Header.Set("Content-Type", "application/json")
 	updateReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	updateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	updateReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	updateResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(updateResp, updateReq)
 	if updateResp.Code != http.StatusForbidden {
@@ -1753,7 +1753,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsScenarioEndpoints(t *testing.T) {
 
 	dataPoolsReq := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/"+scenario.ID+"/data-pools", nil)
 	dataPoolsReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	dataPoolsReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	dataPoolsReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	dataPoolsResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(dataPoolsResp, dataPoolsReq)
 	if dataPoolsResp.Code != http.StatusOK {
@@ -1762,7 +1762,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsScenarioEndpoints(t *testing.T) {
 
 	resultsReq := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/"+scenario.ID+"/results", nil)
 	resultsReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	resultsReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	resultsReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	resultsResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resultsResp, resultsReq)
 	if resultsResp.Code != http.StatusOK {
@@ -1773,7 +1773,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsScenarioEndpoints(t *testing.T) {
 	viewerScheduleReq := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/"+scenario.ID+"/schedules", bytes.NewReader(scheduleBody))
 	viewerScheduleReq.Header.Set("Content-Type", "application/json")
 	viewerScheduleReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerScheduleReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	viewerScheduleReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	viewerScheduleResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerScheduleResp, viewerScheduleReq)
 	if viewerScheduleResp.Code != http.StatusForbidden {
@@ -1783,7 +1783,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsScenarioEndpoints(t *testing.T) {
 	editorScheduleReq := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/"+scenario.ID+"/schedules", bytes.NewReader(scheduleBody))
 	editorScheduleReq.Header.Set("Content-Type", "application/json")
 	editorScheduleReq.Header.Set("X-Auth-Request-User", "editor-user")
-	editorScheduleReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	editorScheduleReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleEditor)
 	editorScheduleResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorScheduleResp, editorScheduleReq)
 	if editorScheduleResp.Code != http.StatusCreated {
@@ -1793,7 +1793,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsScenarioEndpoints(t *testing.T) {
 	adminUpdateReq := httptest.NewRequest(http.MethodPut, "/api/v1/scenarios/"+scenario.ID, bytes.NewReader([]byte(`{"name":"Smoke Renamed","duration":"1m","groups":[{"script_id":"`+script.ID+`","vusers":5}]}`)))
 	adminUpdateReq.Header.Set("Content-Type", "application/json")
 	adminUpdateReq.Header.Set("X-Auth-Request-User", "editor-user")
-	adminUpdateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	adminUpdateReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleEditor)
 	adminUpdateResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(adminUpdateResp, adminUpdateReq)
 	if adminUpdateResp.Code != http.StatusOK {
@@ -1802,7 +1802,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsScenarioEndpoints(t *testing.T) {
 }
 
 func TestTrustedHeaderAuthScopesScenarioListAndCreateToProjectRoles(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -1834,7 +1834,7 @@ func TestTrustedHeaderAuthScopesScenarioListAndCreateToProjectRoles(t *testing.T
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios", nil)
 	listReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	listReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	listReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	listResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(listResp, listReq)
 	if listResp.Code != http.StatusForbidden {
@@ -1843,7 +1843,7 @@ func TestTrustedHeaderAuthScopesScenarioListAndCreateToProjectRoles(t *testing.T
 
 	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios?project_id="+project.ID, nil)
 	filteredReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	filteredReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	filteredReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
 	filteredResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(filteredResp, filteredReq)
 	if filteredResp.Code != http.StatusOK {
@@ -1854,7 +1854,7 @@ func TestTrustedHeaderAuthScopesScenarioListAndCreateToProjectRoles(t *testing.T
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios", bytes.NewReader(createBody))
 	createReq.Header.Set("Content-Type", "application/json")
 	createReq.Header.Set("X-Auth-Request-User", "editor-user")
-	createReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	createReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleEditor)
 	createResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(createResp, createReq)
 	if createResp.Code != http.StatusCreated {
@@ -1863,7 +1863,7 @@ func TestTrustedHeaderAuthScopesScenarioListAndCreateToProjectRoles(t *testing.T
 }
 
 func TestTrustedHeaderAuthRejectsCrossProjectTestMoves(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -1893,7 +1893,7 @@ func TestTrustedHeaderAuthRejectsCrossProjectTestMoves(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testRecord.ID+"/move", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Auth-Request-User", "editor-user")
-	req.Header.Set("X-Stormrunner-Project-Roles", projectOne.ID+"="+RoleEditor)
+	req.Header.Set("X-APEXLoad-Project-Roles", projectOne.ID+"="+RoleEditor)
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, req)
 	if resp.Code != http.StatusBadRequest {

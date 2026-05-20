@@ -101,7 +101,7 @@ func ExportHAR(session *Session, includeExcluded bool) ([]byte, error) {
 		Log: harLog{
 			Version: "1.2",
 			Creator: harCreator{
-				Name:    "Stormrunner Recorder",
+				Name:    "APEX Load Recorder",
 				Version: "1.0",
 			},
 			Pages: []harPage{

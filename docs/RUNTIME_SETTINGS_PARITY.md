@@ -1,6 +1,6 @@
 # Runtime Settings Parity
 
-This is the W3 evidence record for runtime settings parity across Stormrunner's current Web/API, browser, and migration workflows.
+This is the W3 evidence record for runtime settings parity across APEX Load's current Web/API, browser, and migration workflows.
 
 ## API Contract
 
@@ -16,9 +16,9 @@ This is the W3 evidence record for runtime settings parity across Stormrunner's 
 
 | Status | Meaning |
 | --- | --- |
-| `executed` | Stormrunner executes this setting in the named runtime path. |
-| `partial` | Stormrunner executes a defined subset and preserves or warns on the rest. |
-| `compatibility_only` | Stormrunner preserves the setting for migration/reporting, but does not execute its semantics. |
+| `executed` | APEX Load executes this setting in the named runtime path. |
+| `partial` | APEX Load executes a defined subset and preserves or warns on the rest. |
+| `compatibility_only` | APEX Load preserves the setting for migration/reporting, but does not execute its semantics. |
 | `non_applicable` | The setting has no equivalent meaning for the protocol/runtime scope. |
 | `blocked` | The setting prevents save/run until repaired or changed. |
 | `planned` | The setting is future work and must not be claimed as executable. |
@@ -38,7 +38,7 @@ The support endpoint publishes six reusable profiles:
 
 ## Streaming And Media Decision
 
-Streaming/media runtime settings remain `compatibility_only`. Stormrunner preserves imported playback mode, buffer, bitrate, and bandwidth-estimation settings so reviewers can compare migration inputs, but it does not claim native media playback semantics. A future implementation requires a funded runtime design, protocol fixtures, and benchmark evidence before the status can change.
+Streaming/media runtime settings remain `compatibility_only`. APEX Load preserves imported playback mode, buffer, bitrate, and bandwidth-estimation settings so reviewers can compare migration inputs, but it does not claim native media playback semantics. A future implementation requires a funded runtime design, protocol fixtures, and benchmark evidence before the status can change.
 
 ## Evidence
 

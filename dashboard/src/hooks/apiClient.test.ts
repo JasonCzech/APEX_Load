@@ -44,8 +44,8 @@ describe('resolveApiOrigin', () => {
   it('uses the serving origin for embedded controller dashboard assets', () => {
     expect(resolveApiOrigin(
       {},
-      { protocol: 'http:', hostname: 'stormrunner.example.test', port: '', origin: 'https://stormrunner.example.test' },
-    )).toBe('https://stormrunner.example.test')
+      { protocol: 'http:', hostname: 'apexload.example.test', port: '', origin: 'https://apexload.example.test' },
+    )).toBe('https://apexload.example.test')
   })
 })
 
@@ -60,12 +60,12 @@ describe('dev preview API headers', () => {
   })
 
   it('defaults to admin mode and includes the active project id when present', () => {
-    window.localStorage.setItem('stormrunner.activeProjectId', 'project-1')
+    window.localStorage.setItem('apexload.activeProjectId', 'project-1')
 
     expect(readStoredDevViewMode()).toBe('admin')
     expect(buildDevPreviewHeaders()).toEqual({
-      'X-Stormrunner-Dev-View': 'admin',
-      'X-Stormrunner-Dev-Project-ID': 'project-1',
+      'X-APEX Load-Dev-View': 'admin',
+      'X-APEX Load-Dev-Project-ID': 'project-1',
     })
   })
 
@@ -73,7 +73,7 @@ describe('dev preview API headers', () => {
     writeStoredDevViewMode('user')
 
     expect(window.localStorage.getItem(DEV_VIEW_STORAGE_KEY)).toBe('user')
-    expect(buildDevPreviewHeaders()['X-Stormrunner-Dev-View']).toBe('user')
+    expect(buildDevPreviewHeaders()['X-APEX Load-Dev-View']).toBe('user')
   })
 
   it('attaches preview headers to FormData and blob-style fetches without forcing JSON content type', async () => {
@@ -82,15 +82,15 @@ describe('dev preview API headers', () => {
       headers: { 'Content-Type': 'application/json' },
     }))
     writeStoredDevViewMode('user')
-    window.localStorage.setItem('stormrunner.activeProjectId', 'project-2')
+    window.localStorage.setItem('apexload.activeProjectId', 'project-2')
 
     await apiFetch('/scripts/import/loadrunner', { method: 'POST', body: new FormData() })
 
     const init = fetchMock.mock.calls[0][1] as RequestInit
     const headers = init.headers as Headers
     expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/scripts/import/loadrunner')
-    expect(headers.get('X-Stormrunner-Dev-View')).toBe('user')
-    expect(headers.get('X-Stormrunner-Dev-Project-ID')).toBe('project-2')
+    expect(headers.get('X-APEX Load-Dev-View')).toBe('user')
+    expect(headers.get('X-APEX Load-Dev-Project-ID')).toBe('project-2')
     expect(headers.has('Content-Type')).toBe(false)
   })
 
@@ -104,7 +104,7 @@ describe('dev preview API headers', () => {
 
     const init = fetchMock.mock.calls[0][1] as RequestInit
     const headers = init.headers as Headers
-    expect(headers.get('X-Stormrunner-Dev-View')).toBe('admin')
+    expect(headers.get('X-APEX Load-Dev-View')).toBe('admin')
     expect(headers.get('Content-Type')).toBe('application/json')
   })
 })

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestC4ProfileCatalogEndpoints(t *testing.T) {
@@ -116,7 +116,7 @@ func TestRunArchiveRootCauseSummarizesSLAAndTelemetryFindings(t *testing.T) {
 }
 
 func TestReleaseSLAGovernancePersistsWaiversAndAuditEvents(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestReleaseSLAGovernancePersistsWaiversAndAuditEvents(t *testing.T) {
 }
 
 func TestExternalResultImportPersistsK6Summary(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}

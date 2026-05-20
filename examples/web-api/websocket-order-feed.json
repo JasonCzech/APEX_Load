@@ -2,7 +2,7 @@
   "name": "WebSocket_Order_Feed",
   "version": "1.0.0",
   "protocol": "websocket",
-  "generated_by": "stormrunner-sample-pack",
+  "generated_by": "apexload-sample-pack",
   "generated_from": "web-api-sample",
   "config": {
     "base_url": "wss://stream.example.test",

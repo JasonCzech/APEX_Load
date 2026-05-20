@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 func TestSQLiteStoreSaveScriptPreservesMetadata(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestSQLiteStoreSaveScriptPreservesMetadata(t *testing.T) {
 }
 
 func TestSQLiteStoreAuthoringSessionsRoundTrip(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestSQLiteStoreAuthoringSessionsRoundTrip(t *testing.T) {
 }
 
 func TestSQLiteStoreProjectsFoldersAndFiltering(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestSQLiteStoreProjectsFoldersAndFiltering(t *testing.T) {
 }
 
 func TestSQLiteStoreDomainRepositoryHierarchyAndProjectReleases(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -288,13 +288,13 @@ func TestSQLiteStoreDomainRepositoryHierarchyAndProjectReleases(t *testing.T) {
 }
 
 func TestSQLiteStoreServiceAccountsAndAuditEvents(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
 
-	sum := sha256.Sum256([]byte("stormrunner-key"))
+	sum := sha256.Sum256([]byte("apexload-key"))
 	now := time.Now().UTC().Truncate(time.Second)
 	expiresAt := now.Add(24 * time.Hour)
 	keyRotatedAt := now.Add(-24 * time.Hour)
@@ -356,7 +356,7 @@ func TestSQLiteStoreServiceAccountsAndAuditEvents(t *testing.T) {
 		t.Fatalf("service account list = %#v, want one account", accounts)
 	}
 
-	rotatedSum := sha256.Sum256([]byte("stormrunner-key-rotated"))
+	rotatedSum := sha256.Sum256([]byte("apexload-key-rotated"))
 	if err := store.RotateServiceAccountKey(account.ID, fmt.Sprintf("%x", rotatedSum[:]), now.Add(time.Minute)); err != nil {
 		t.Fatalf("RotateServiceAccountKey returned error: %v", err)
 	}
@@ -457,7 +457,7 @@ func TestSQLiteStoreServiceAccountsAndAuditEvents(t *testing.T) {
 }
 
 func TestSQLiteStorePersistsPendingSince(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -494,7 +494,7 @@ func TestSQLiteStorePersistsPendingSince(t *testing.T) {
 }
 
 func TestSQLiteStorePersistsBaselinePin(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -532,7 +532,7 @@ func TestSQLiteStorePersistsBaselinePin(t *testing.T) {
 }
 
 func TestSQLiteStoreBackfillsDefaultProject(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "stormrunner.db")
+	path := filepath.Join(t.TempDir(), "apexload.db")
 	store, err := NewSQLiteStore(path)
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
@@ -587,7 +587,7 @@ func TestSQLiteStoreBackfillsDefaultProject(t *testing.T) {
 }
 
 func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -680,7 +680,7 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 }
 
 func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -802,7 +802,7 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 }
 
 func TestSQLiteStoreMigratesTelemetrySchemaVersionsForExistingRows(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "stormrunner.db")
+	dbPath := filepath.Join(t.TempDir(), "apexload.db")
 	rawDB, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		t.Fatalf("sql.Open returned error: %v", err)
@@ -879,7 +879,7 @@ func TestSQLiteStoreMigratesTelemetrySchemaVersionsForExistingRows(t *testing.T)
 }
 
 func TestSQLiteStoreSharedDataPoolsAndScenarioBindings(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -971,7 +971,7 @@ func TestSQLiteStoreSharedDataPoolsAndScenarioBindings(t *testing.T) {
 }
 
 func TestSQLiteStoreUsageAccountingSnapshots(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}

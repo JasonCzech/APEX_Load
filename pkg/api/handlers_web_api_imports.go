@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/convert/devweb"
-	"github.com/jasonczech/stormrunner/pkg/convert/openapi"
-	"github.com/jasonczech/stormrunner/pkg/convert/wsdl"
+	"github.com/jasonczech/apexload/pkg/convert/devweb"
+	"github.com/jasonczech/apexload/pkg/convert/openapi"
+	"github.com/jasonczech/apexload/pkg/convert/wsdl"
 )
 
 type openAPIImportRequest struct {

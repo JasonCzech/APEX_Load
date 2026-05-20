@@ -629,7 +629,7 @@ describe('MonitoringPage', () => {
     apiMock.getSystemInventory.mockResolvedValue({
       execution_mode: 'distributed',
       controller: {
-        id: 'stormrunner-controller-0',
+        id: 'apexload-controller-0',
         status: 'healthy',
         address: ':8080',
         version: 'dev',
@@ -637,8 +637,8 @@ describe('MonitoringPage', () => {
       },
       generators: [
         {
-          target: 'stormrunner-generator-0.stormrunner-generator:9090',
-          generator_id: 'stormrunner-generator-0',
+          target: 'apexload-generator-0.apexload-generator:9090',
+          generator_id: 'apexload-generator-0',
           status: 'connected',
           available_capacity: 9600,
           active_vusers: 400,
@@ -656,7 +656,7 @@ describe('MonitoringPage', () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
 
-    expect(container.textContent).toContain('stormrunner-controller-0')
+    expect(container.textContent).toContain('apexload-controller-0')
   expect(container.textContent).toContain('healthy')
   expect(container.textContent).toContain('1/1 connected')
     expect(container.textContent).toContain('Generators')
@@ -682,7 +682,7 @@ describe('MonitoringPage', () => {
     })
 
     expect(container.textContent).toContain('Generator Inventory')
-    expect(container.textContent).toContain('stormrunner-generator-0')
+    expect(container.textContent).toContain('apexload-generator-0')
     expect(container.textContent).toContain('connected')
     expect(container.textContent).toContain('96 MB')
     expect(container.textContent).toContain('22.5%')
@@ -706,7 +706,7 @@ describe('MonitoringPage', () => {
     apiMock.getSystemInventory.mockResolvedValue({
       execution_mode: 'distributed',
       controller: {
-        id: 'stormrunner-controller-0',
+        id: 'apexload-controller-0',
         status: 'healthy',
         address: ':8080',
         version: '0.1.0',

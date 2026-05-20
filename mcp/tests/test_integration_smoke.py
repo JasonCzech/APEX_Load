@@ -3,12 +3,12 @@ import os
 
 import pytest
 
-from stormrunner_mcp.tools import ENDPOINT_TOOLS, run_endpoint_tool
+from apexload_mcp.tools import ENDPOINT_TOOLS, run_endpoint_tool
 
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("STORMRUNNER_MCP_INTEGRATION") != "1",
-    reason="set STORMRUNNER_MCP_INTEGRATION=1 to run against a live controller",
+    os.environ.get("APEXLOAD_MCP_INTEGRATION") != "1",
+    reason="set APEXLOAD_MCP_INTEGRATION=1 to run against a live controller",
 )
 
 

@@ -1,31 +1,31 @@
 apiVersion: v1
 kind: Secret
 metadata:
-  name: stormrunner-data-platform
+  name: apexload-data-platform
 type: Opaque
 stringData:
-  STORMRUNNER_DATABASE_URL: postgres://stormrunner:change-me@postgresql.stormrunner.svc:5432/stormrunner?sslmode=require
-  STORMRUNNER_REDIS_URL: redis://stormrunner-redis.stormrunner.svc:6379/0
-  STORMRUNNER_PROMETHEUS_REMOTE_WRITE_URL: https://mimir.example.com/api/v1/push
-  STORMRUNNER_PROMETHEUS_TENANT_ID: stormrunner
+  APEXLOAD_DATABASE_URL: postgres://apexload:change-me@postgresql.apexload.svc:5432/apexload?sslmode=require
+  APEXLOAD_REDIS_URL: redis://apexload-redis.apexload.svc:6379/0
+  APEXLOAD_PROMETHEUS_REMOTE_WRITE_URL: https://mimir.example.com/api/v1/push
+  APEXLOAD_PROMETHEUS_TENANT_ID: apexload
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: stormrunner-data-platform
+  name: apexload-data-platform
 data:
-  STORMRUNNER_STORE: postgres
-  STORMRUNNER_DATABASE_MAX_OPEN_CONNS: "25"
-  STORMRUNNER_DATABASE_MAX_IDLE_CONNS: "10"
-  STORMRUNNER_DATABASE_CONN_MAX_LIFETIME: 30m
-  STORMRUNNER_ARCHIVE_BACKEND: s3
-  STORMRUNNER_ARCHIVE_BUCKET: stormrunner-archives
-  STORMRUNNER_ARCHIVE_PREFIX: production/run-evidence
-  STORMRUNNER_ARCHIVE_REGION: us-east-1
-  STORMRUNNER_CACHE_BACKEND: redis
-  STORMRUNNER_REDIS_KEY_PREFIX: stormrunner:prod
-  STORMRUNNER_REDIS_TIMEOUT: 2s
-  STORMRUNNER_REDIS_FANOUT_CHANNEL: telemetry:fanout
-  STORMRUNNER_API_KEY_RATE_LIMIT_PER_MINUTE: "600"
-  STORMRUNNER_IDEMPOTENCY_KEY_TTL: 15m
-  STORMRUNNER_METRICS_RETENTION_BACKEND: prometheus_remote_write
+  APEXLOAD_STORE: postgres
+  APEXLOAD_DATABASE_MAX_OPEN_CONNS: "25"
+  APEXLOAD_DATABASE_MAX_IDLE_CONNS: "10"
+  APEXLOAD_DATABASE_CONN_MAX_LIFETIME: 30m
+  APEXLOAD_ARCHIVE_BACKEND: s3
+  APEXLOAD_ARCHIVE_BUCKET: apexload-archives
+  APEXLOAD_ARCHIVE_PREFIX: production/run-evidence
+  APEXLOAD_ARCHIVE_REGION: us-east-1
+  APEXLOAD_CACHE_BACKEND: redis
+  APEXLOAD_REDIS_KEY_PREFIX: apexload:prod
+  APEXLOAD_REDIS_TIMEOUT: 2s
+  APEXLOAD_REDIS_FANOUT_CHANNEL: telemetry:fanout
+  APEXLOAD_API_KEY_RATE_LIMIT_PER_MINUTE: "600"
+  APEXLOAD_IDEMPOTENCY_KEY_TTL: 15m
+  APEXLOAD_METRICS_RETENTION_BACKEND: prometheus_remote_write

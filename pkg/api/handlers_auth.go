@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type AuthUserSummary struct {
@@ -389,7 +389,7 @@ func buildAuthDiagnosticsResponse(r *http.Request, settings AuthSettings, store 
 	switch settings.Mode {
 	case authModeTrustedHeaders:
 		response.Checks = append(response.Checks,
-			buildTrustedHeaderConfiguredCheck("subject_header", "Subject Header", settings.UserHeader != "", settings.UserHeader, "Stormrunner needs a subject header to resolve the authenticated user."),
+			buildTrustedHeaderConfiguredCheck("subject_header", "Subject Header", settings.UserHeader != "", settings.UserHeader, "APEX Load needs a subject header to resolve the authenticated user."),
 			buildTrustedHeaderConfiguredCheck("role_headers", "Role Header Mapping", settings.RolesHeader != "" || settings.ProjectRolesHeader != "", strings.TrimSpace(settings.RolesHeader)+" | "+strings.TrimSpace(settings.ProjectRolesHeader), "Configure at least one global or project role header so RBAC can grant access."),
 			buildOptionalOperatorCheck("provider_label", "Provider Label", settings.ProviderName, "Add a provider label so the sign-in gate points operators at the right upstream gateway."),
 			buildOptionalOperatorCheck("login_url", "Login Entry Point", settings.LoginURL, "Set an upstream login URL so blocked users have a clear path back into the authenticating gateway."),
@@ -407,7 +407,7 @@ func buildAuthDiagnosticsResponse(r *http.Request, settings AuthSettings, store 
 				ID:      "current_request_identity",
 				Label:   "Current Request Identity",
 				Status:  "warn",
-				Summary: "No authenticated identity reached Stormrunner on the current request.",
+				Summary: "No authenticated identity reached APEX Load on the current request.",
 				Detail:  "Open the dashboard through the authenticating gateway and verify the configured subject and role headers are forwarded.",
 			})
 		}
@@ -427,7 +427,7 @@ func buildAuthDiagnosticsResponse(r *http.Request, settings AuthSettings, store 
 				ID:      "current_session",
 				Label:   "Current Session",
 				Status:  "pass",
-				Summary: "Stormrunner has an active signed OIDC session for the current request.",
+				Summary: "APEX Load has an active signed OIDC session for the current request.",
 				Detail:  sessionResolution.User.Subject,
 			})
 		} else if sessionResolution.Status == "expired" {
@@ -435,7 +435,7 @@ func buildAuthDiagnosticsResponse(r *http.Request, settings AuthSettings, store 
 				ID:      "current_session",
 				Label:   "Current Session",
 				Status:  "warn",
-				Summary: "The local Stormrunner OIDC session has expired.",
+				Summary: "The local APEX Load OIDC session has expired.",
 				Detail:  "Sign in again through the native OIDC flow.",
 			})
 		} else if sessionResolution.Status == "invalid" {
@@ -443,7 +443,7 @@ func buildAuthDiagnosticsResponse(r *http.Request, settings AuthSettings, store 
 				ID:      "current_session",
 				Label:   "Current Session",
 				Status:  "warn",
-				Summary: "Stormrunner could not verify the local OIDC session cookie.",
+				Summary: "APEX Load could not verify the local OIDC session cookie.",
 				Detail:  "Clear the browser session cookie and sign in again.",
 			})
 		} else {
@@ -451,7 +451,7 @@ func buildAuthDiagnosticsResponse(r *http.Request, settings AuthSettings, store 
 				ID:      "current_session",
 				Label:   "Current Session",
 				Status:  "warn",
-				Summary: "No active Stormrunner OIDC session is present on the current request.",
+				Summary: "No active APEX Load OIDC session is present on the current request.",
 				Detail:  "Use the native OIDC login flow after the issuer, redirect URL, and secret environment variables are configured.",
 			})
 		}
@@ -461,7 +461,7 @@ func buildAuthDiagnosticsResponse(r *http.Request, settings AuthSettings, store 
 				ID:      "development_bypass",
 				Label:   "Development Bypass",
 				Status:  "info",
-				Summary: "Stormrunner is running with local auth bypass enabled.",
+				Summary: "APEX Load is running with local auth bypass enabled.",
 				Detail:  "All requests are allowed locally until you switch to Trusted Headers or Native OIDC.",
 			},
 		)
@@ -681,7 +681,7 @@ func (s *Server) handleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="stormrunner-audit-events.csv"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="apexload-audit-events.csv"`)
 	writer := csv.NewWriter(w)
 	if err := writer.Write([]string{"id", "created_at", "action", "status", "actor_type", "actor_subject", "actor_display_name", "project_id", "resource_type", "resource_id", "details_json"}); err != nil {
 		return
@@ -1165,7 +1165,7 @@ func buildOIDCDiscoveryCheck(ctx context.Context, settings AuthSettings) AuthDia
 			ID:      "issuer_discovery",
 			Label:   "OIDC Discovery",
 			Status:  "fail",
-			Summary: "Stormrunner could not reach the issuer discovery document.",
+			Summary: "APEX Load could not reach the issuer discovery document.",
 			Detail:  err.Error(),
 		}
 	}

@@ -1,14 +1,14 @@
 # Implementation Plan: Platform Gap Analysis
 
 ## Objective
-Execute the gap analysis (`docs/PLATFORM_GAP_ANALYSIS.md`) through a structured, phased approach to elevate Stormrunner from a powerful execution engine to a first-class enterprise performance testing platform.
+Execute the gap analysis (`docs/PLATFORM_GAP_ANALYSIS.md`) through a structured, phased approach to elevate APEX Load from a powerful execution engine to a first-class enterprise performance testing platform.
 
 ## Execution Strategy
 The 19 gaps are organized into five sequential delivery waves. Each wave targets a specific enterprise challenge and unlocks a new tier of platform maturity.
 
-- **Wave 1: Enterprise Foundation (Weeks 1-4)** — Targets DevOps engineers. Makes Stormrunner a fully automated, headless, and secure pipeline gate.
+- **Wave 1: Enterprise Foundation (Weeks 1-4)** — Targets DevOps engineers. Makes APEX Load a fully automated, headless, and secure pipeline gate.
 - **Wave 2: Cloud-Native Engine & Compliance (Weeks 5-7)** — Targets backend accuracy and regulatory compliance.
-- **Wave 3: Shared Platform Readiness (Weeks 8-12)** — Targets Enterprise Architects. Turns Stormrunner into a governable shared service with controls and provenance.
+- **Wave 3: Shared Platform Readiness (Weeks 8-12)** — Targets Enterprise Architects. Turns APEX Load into a governable shared service with controls and provenance.
 - **Wave 4: Script Quality and Analysis Depth (Weeks 13-16)** — Targets Performance Engineers. Reduces the time spent authoring scripts and debugging failed runs.
 - **Wave 5: Ecosystem and Advanced Modeling (Weeks 17-21)** — Targets global deployment and edge-case modeling.
 
@@ -19,7 +19,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 
 ### 1.1 CI/CD Integration (P0)
 **Effort:** 5-8 days
-- **CLI Enhancements:** Update `cmd/stormctl` to parse SLA thresholds from the scenario. Implement non-zero exit codes when SLAs are breached or the test fails. Add `--format json` for machine-readable stdout.
+- **CLI Enhancements:** Update `cmd/apexctl` to parse SLA thresholds from the scenario. Implement non-zero exit codes when SLAs are breached or the test fails. Add `--format json` for machine-readable stdout.
 - **API Endpoints:** Create `GET /api/v1/tests/{id}/sla-status` to return a summarized boolean evaluation of all SLAs.
 - **Pipeline Templates:** Create reusable GitHub Actions (`action.yml`) and Azure DevOps tasks (`azure-pipelines-task.yml`).
 - **Progress:** Implemented via script-level `goal_config` thresholds, explicit CLI guardrail overrides, machine-readable JSON output, non-zero exit codes on failures or SLA breaches, `GET /api/v1/tests/{id}/sla-status`, and reusable GitHub Actions / Azure Pipelines YAML templates.
@@ -40,9 +40,9 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 
 ### 1.4 Ephemeral Environment Target Resolution (P1)
 **Effort:** 3-5 days
-- **Dynamic Targeting:** Support runtime variables passed via `stormctl` (e.g., `-env target_namespace=pr-123`).
+- **Dynamic Targeting:** Support runtime variables passed via `apexctl` (e.g., `-env target_namespace=pr-123`).
 - **Base URL Overrides:** Enable overriding the base URL of a scenario at runtime without modifying the JSON DSL.
-- **Progress:** Implemented via `stormctl` runtime `--env` and `--base-url` overrides plus controller-side runtime overrides that compile ephemeral targets without mutating the stored DSL.
+- **Progress:** Implemented via `apexctl` runtime `--env` and `--base-url` overrides plus controller-side runtime overrides that compile ephemeral targets without mutating the stored DSL.
 
 ---
 
@@ -64,7 +64,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 ---
 
 ## Wave 3: Shared Platform Readiness (Weeks 8-12)
-**Goal:** Make Stormrunner a governable, multi-tenant service.
+**Goal:** Make APEX Load a governable, multi-tenant service.
 
 ### Implemented Status
 - **3.2 Multi-Tenant Governance & Capacity Controls:** Project-level concurrent-test and VUser quotas are enforced, quota-blocked runs enter a persisted pending queue, startup/quota reconciliation promotes eligible work, and queue metadata is exposed in the API and dashboard.
@@ -75,19 +75,19 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 ### 3.1 User Management & RBAC (P1)
 **Effort:** 8-12 days
 - **Auth Middleware:** Implement OIDC/SAML integration in `pkg/api/middleware.go`.
-- **Production Assumption:** Stormrunner now supports both Microsoft Entra ID-backed `trusted_headers` deployments and native `oidc` login/session handling. The recommended production default remains `trusted_headers` when an upstream identity gateway already owns sign-in, while native `oidc` is the direct-auth option for self-hosted operators who want Stormrunner to terminate the browser login flow itself.
+- **Production Assumption:** APEX Load now supports both Microsoft Entra ID-backed `trusted_headers` deployments and native `oidc` login/session handling. The recommended production default remains `trusted_headers` when an upstream identity gateway already owns sign-in, while native `oidc` is the direct-auth option for self-hosted operators who want APEX Load to terminate the browser login flow itself.
 - **Role Model:** Define System Admin, Project Admin, Editor, and Viewer roles.
 - **Dashboard UI:** Add Login screen and User Management panels.
 - **Progress:** Implemented for the planned Workstream 4 scope via trusted-header auth middleware, native OIDC login/callback/session/logout handling, the full System Admin / Project Admin / Editor / Viewer role model, request-scoped RBAC enforcement, `GET /api/v1/auth/me`, `GET /api/v1/auth/roles`, `GET /api/v1/auth/access-matrix`, `GET /api/v1/auth/effective-access`, configurable upstream provider/login metadata in system settings, the dashboard auth gate with actionable sign-in links, sidebar identity visibility with sign-out affordance, and settings panels that show the current forwarded identity, the trusted-header contract, built-in role reference, backend-owned route access matrix, active-project effective permissions, service-account governance, audit evidence, auth diagnostics, and OIDC provider presets.
-- **Completion Scope:** Local development defaults to an explicit `dev` bypass mode; production can run behind Microsoft Entra ID-backed trusted headers or native `oidc`; Stormrunner persists hashed service-account API keys, token scopes, expiration, rotation metadata, last-use evidence, and audit events. The platform exposes service-account CRUD and rotation APIs, filtered audit JSON/CSV export, auth diagnostics, CSRF-protected native OIDC logout, safe OIDC callback-failure auditing, explicit local-session expiry UX, backend-owned access matrices, and route-level RBAC coverage for sensitive project, scenario, settings, script, service-account, audit, and system routes.
-- **Identity Lifecycle Decision:** Native `saml` is intentionally out of scope for this wave; SAML-backed enterprises should use an upstream gateway and the trusted-header contract. Stormrunner remains an upstream-claim policy consumer for human user/group lifecycle while owning service-account principals for automation, so first-class user/group binding tables, SCIM, and directory sync are future enterprise-directory options rather than Workstream 4 blockers.
+- **Completion Scope:** Local development defaults to an explicit `dev` bypass mode; production can run behind Microsoft Entra ID-backed trusted headers or native `oidc`; APEX Load persists hashed service-account API keys, token scopes, expiration, rotation metadata, last-use evidence, and audit events. The platform exposes service-account CRUD and rotation APIs, filtered audit JSON/CSV export, auth diagnostics, CSRF-protected native OIDC logout, safe OIDC callback-failure auditing, explicit local-session expiry UX, backend-owned access matrices, and route-level RBAC coverage for sensitive project, scenario, settings, script, service-account, audit, and system routes.
+- **Identity Lifecycle Decision:** Native `saml` is intentionally out of scope for this wave; SAML-backed enterprises should use an upstream gateway and the trusted-header contract. APEX Load remains an upstream-claim policy consumer for human user/group lifecycle while owning service-account principals for automation, so first-class user/group binding tables, SCIM, and directory sync are future enterprise-directory options rather than Workstream 4 blockers.
 - **Future Hardening:** Keep RBAC route coverage and audit coverage aligned as new API endpoints are added, and add provider-specific OIDC troubleshooting guidance only if pilot deployments reveal recurring IdP-specific callback failure patterns.
 
 ### 3.2 Multi-Tenant Governance & Capacity Controls (P1)
 **Effort:** 6-9 days
 - **Quotas:** Implement concurrent execution limits and VUser caps per project/team.
 - **Queueing System:** If a team exceeds capacity, place the test in a pending queue rather than failing immediately.
-- **Status:** Implemented at project scope. Stormrunner currently enforces project-level quotas and a persisted pending queue, but it does not yet model a separate first-class team entity with independent quota policy.
+- **Status:** Implemented at project scope. APEX Load currently enforces project-level quotas and a persisted pending queue, but it does not yet model a separate first-class team entity with independent quota policy.
 
 ### 3.3 Alerting & Notifications (P1)
 **Effort:** 3-4 days
@@ -143,7 +143,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 **Goal:** Connect to the observability ecosystem and support edge-case loads.
 
 ### Implemented Status
-- **5.1 APM / Observability Correlation:** Stormrunner now injects W3C `traceparent` headers into HTTP and SOAP test requests, preserves caller-supplied trace headers, archives extracted trace/span IDs in JSONL and Parquet transaction results, supports archive filtering by `trace_id`, emits Dynatrace Events API v2 lifecycle annotations through notification webhooks, imports configured Prometheus-format target metrics into live/archive resource snapshots, and exposes a Prometheus-compatible `/metrics` endpoint with health, websocket, in-memory test counts, test status breakdowns, capacity-planning gauges, and per-region generator inventory gauges.
+- **5.1 APM / Observability Correlation:** APEX Load now injects W3C `traceparent` headers into HTTP and SOAP test requests, preserves caller-supplied trace headers, archives extracted trace/span IDs in JSONL and Parquet transaction results, supports archive filtering by `trace_id`, emits Dynatrace Events API v2 lifecycle annotations through notification webhooks, imports configured Prometheus-format target metrics into live/archive resource snapshots, and exposes a Prometheus-compatible `/metrics` endpoint with health, websocket, in-memory test counts, test status breakdowns, capacity-planning gauges, and per-region generator inventory gauges.
 - **5.2 Iteration & Rendezvous Control:** Fixed-iteration execution is supported through `run_logic.iterations`, and scripts can now use a `rendezvous` action to synchronize VUsers at a specific point before proceeding.
 
 ### 5.1 APM / Observability Correlation (P2)
@@ -167,7 +167,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 ### 5.4 Multi-Region Distribution (P3)
 **Effort:** 8-12 days
 - **Generator Tags:** Deploy generators with region tags and distribute load dynamically based on region weighting.
-- **Status:** Implemented. Distributed generators can now be tagged inline through `STORMRUNNER_GENERATORS=host:9090|region=<name>`, inventory responses expose each generator region, test/scenario assignment supports `mode: "region_weighted"` with `region_weights` for capacity-aware group placement across tagged regions, and Prometheus export now reports generator count, available capacity, and active VUsers by region for Grafana/APM dashboards.
+- **Status:** Implemented. Distributed generators can now be tagged inline through `APEXLOAD_GENERATORS=host:9090|region=<name>`, inventory responses expose each generator region, test/scenario assignment supports `mode: "region_weighted"` with `region_weights` for capacity-aware group placement across tagged regions, and Prometheus export now reports generator count, available capacity, and active VUsers by region for Grafana/APM dashboards.
 
 ---
 
@@ -178,15 +178,15 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 2. **Alerts (3.3)** and **Schedules (3.4)** require the Controller to be running 24/7, shifting it from an ephemeral tool to a persistent control plane service.
 
 ### Risk Mitigations
-- **Database Migrations:** Stormrunner currently uses in-process SQLite schema evolution and backfill logic in the storage layer rather than an external migration tool. If the platform keeps evolving the shared control-plane schema, keep adding regression coverage for legacy database upgrades and decide whether that in-process approach remains sufficient before introducing user/group persistence.
+- **Database Migrations:** APEX Load currently uses in-process SQLite schema evolution and backfill logic in the storage layer rather than an external migration tool. If the platform keeps evolving the shared control-plane schema, keep adding regression coverage for legacy database upgrades and decide whether that in-process approach remains sufficient before introducing user/group persistence.
 - **LLM Hallucinations in Correlation:** The correlation assistant (Phase 2.1) must always present suggestions for user approval, never auto-mutating the script without consent.
 - **Prometheus Cardinality:** When exporting metrics to Prometheus (Phase 5.1), aggregate by transaction name and status, not by individual VUser, to avoid cardinality explosions in downstream observability tooling.
 
 ### Validation Snapshot (May 2026)
 - Sample validation against the codebase confirms the implementation claims for Wave 3.2-3.5, Wave 4.1-4.4, and Wave 5.1-5.4 are represented in controller/runtime/dashboard code paths.
-- The material 3.1 identity decision is now explicit: Stormrunner supports trusted-header gateway auth, native OIDC, RBAC claim mapping, service-account principals, auth diagnostics, session expiry UX, and auth audit coverage; human user/group lifecycle remains upstream-owned rather than persisted in Stormrunner.
+- The material 3.1 identity decision is now explicit: APEX Load supports trusted-header gateway auth, native OIDC, RBAC claim mapping, service-account principals, auth diagnostics, session expiry UX, and auth audit coverage; human user/group lifecycle remains upstream-owned rather than persisted in APEX Load.
 - The only notable scope caveat outside 3.1 is that quota enforcement is project-scoped today; the plan's original "project/team" wording assumes a team construct that is not yet modeled in the platform.
 
 ## Next Steps
 1. Keep the plan aligned with implementation status as governance/auth features evolve so stale early-phase next steps do not reappear as misleading backlog items.
-2. Revisit native SAML or Stormrunner-owned user/group bindings only if a real deployment cannot satisfy its requirements through upstream gateway auth or OIDC claim shaping.
+2. Revisit native SAML or APEX Load-owned user/group bindings only if a real deployment cannot satisfy its requirements through upstream gateway auth or OIDC claim shaping.

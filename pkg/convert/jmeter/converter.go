@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type ConvertOptions struct {
@@ -130,7 +130,7 @@ func GetSupportMatrix() SupportMatrix {
 			"Scenario drafts derived from thread groups",
 			"Timer behavior approximated as fixed think time when necessary",
 			"SOAP-shaped HTTP Request samplers are promoted to the SOAP protocol when an imported thread group is entirely SOAP-oriented",
-			"XPath2 Extractor mapped into Stormrunner XPath when queries fit the shared runtime, including fragment output and custom namespace bindings",
+			"XPath2 Extractor mapped into APEX Load XPath when queries fit the shared runtime, including fragment output and custom namespace bindings",
 		},
 		Unsupported: []string{
 			"JSR223 / BeanShell / Groovy scripting",
@@ -142,7 +142,7 @@ func GetSupportMatrix() SupportMatrix {
 			"Distributed engine/controller orchestration settings",
 		},
 		Notes: []string{
-			"Phase 1 targets HTTP-oriented JMX plans and can promote SOAP-shaped HTTP samplers into native Stormrunner SOAP scripts.",
+			"Phase 1 targets HTTP-oriented JMX plans and can promote SOAP-shaped HTTP samplers into native APEX Load SOAP scripts.",
 			"Unsupported constructs are reported in the import review instead of being silently ignored.",
 		},
 	}
@@ -651,9 +651,9 @@ func parseHTMLExtractor(node *xmlNode) dsl.Extractor {
 	}
 }
 
-const xpathFragmentExpressionPrefix = "__stormrunner_xpath_fragment__:"
+const xpathFragmentExpressionPrefix = "__apexload_xpath_fragment__:"
 
-const xpathExpressionConfigPrefix = "__stormrunner_xpath_config__:"
+const xpathExpressionConfigPrefix = "__apexload_xpath_config__:"
 
 type xpathExpressionConfig struct {
 	Expression string            `json:"expression"`

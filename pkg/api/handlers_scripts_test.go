@@ -14,8 +14,8 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const sampleLoadRunnerActionC = `
@@ -997,7 +997,7 @@ func TestHandleValidateLoadRunnerImportIncludesDetectedProtocol(t *testing.T) {
 		} `json:"script"`
 		DetectedProtocol struct {
 			Canonical string `json:"canonical_loadrunner_protocol"`
-			Storm     string `json:"stormrunner_protocol"`
+			Storm     string `json:"apexload_protocol"`
 			Mode      string `json:"import_mode"`
 		} `json:"detected_protocol"`
 		Summary struct {
@@ -1337,7 +1337,7 @@ RuntimeSettings=default.cfg
 <truScript>
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
-    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'Stormrunner QA'&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'APEX Load QA'&quot;}}" />
   </step>
 </truScript>`))
 	addFile("default.cfg", `[Browser Emulation]
@@ -1374,7 +1374,7 @@ TouchMode=1
 	if len(result.Script.Actions) != 2 {
 		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
 	}
-	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "Stormrunner QA" {
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "APEX Load QA" {
 		t.Fatalf("action = %#v, want browser_fill for #displayName", action)
 	}
 	if len(result.Warnings) != 0 {
@@ -1557,7 +1557,7 @@ RuntimeSettings=default.cfg
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/login\&quot;&quot;}}" />
     <step type="util" action="Verify" index="2" arguments="{&quot;Title&quot;:{&quot;value&quot;:&quot;\&quot;Login Page\&quot;&quot;}}" />
     <step type="testObject" action="Click" index="3" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#submit\&quot;&quot;}}" />
-    <step type="util" action="Verify" index="4" arguments="{&quot;Text&quot;:{&quot;value&quot;:&quot;\&quot;Saved stormrunner\&quot;&quot;}}" />
+    <step type="util" action="Verify" index="4" arguments="{&quot;Text&quot;:{&quot;value&quot;:&quot;\&quot;Saved apexload\&quot;&quot;}}" />
   </step>
 </truScript>`))
 	addFile("default.cfg", `[Browser Emulation]
@@ -1599,8 +1599,8 @@ TouchMode=1
 	if assertions := result.Script.Actions[0].Assertions; len(assertions) != 1 || assertions[0].Type != "page_title" || assertions[0].Value != "Login Page" {
 		t.Fatalf("action[0].assertions = %#v, want page_title Login Page", assertions)
 	}
-	if assertions := result.Script.Actions[1].Assertions; len(assertions) != 1 || assertions[0].Type != "body_contains" || assertions[0].Value != "Saved stormrunner" {
-		t.Fatalf("action[1].assertions = %#v, want body_contains Saved stormrunner", assertions)
+	if assertions := result.Script.Actions[1].Assertions; len(assertions) != 1 || assertions[0].Type != "body_contains" || assertions[0].Value != "Saved apexload" {
+		t.Fatalf("action[1].assertions = %#v, want body_contains Saved apexload", assertions)
 	}
 	if len(result.Warnings) != 0 {
 		t.Fatalf("warnings = %#v, want none", result.Warnings)
@@ -1712,7 +1712,7 @@ RuntimeSettings=default.cfg
 <truScript>
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
-    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'Stormrunner QA';\nwindow.scrollTo(0, 400)&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'APEX Load QA';\nwindow.scrollTo(0, 400)&quot;}}" />
   </step>
 </truScript>`))
 	addFile("default.cfg", `[Browser Emulation]
@@ -2397,7 +2397,7 @@ func TestDraftValidationReturnsAIGuardrails(t *testing.T) {
 }
 
 func TestAuthoringSessionLifecyclePersistsDraftReviewState(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -2482,7 +2482,7 @@ func TestAuthoringSessionLifecyclePersistsDraftReviewState(t *testing.T) {
 }
 
 func TestApproveAuthoringSessionPromotesDraftToScriptLibrary(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -2661,7 +2661,7 @@ func TestPreviewAuthoringCorrelationReturnsDiffWithoutPersisting(t *testing.T) {
 }
 
 func TestApplyAuthoringCorrelationPersistsDraftAndReviewState(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}

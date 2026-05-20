@@ -101,7 +101,7 @@ func TestRedisCacheBackendStoresLiveStateAndFanout(t *testing.T) {
 	cache, err := newCacheBackend(cacheRuntimeConfig{
 		Backend:       cacheBackendRedis,
 		RedisURL:      "redis://" + server.Addr() + "/0",
-		KeyPrefix:     "stormrunner-test",
+		KeyPrefix:     "apexload-test",
 		Timeout:       time.Second,
 		DialTimeout:   time.Second,
 		ReadTimeout:   time.Second,
@@ -148,8 +148,8 @@ func TestRedisCacheBackendStoresLiveStateAndFanout(t *testing.T) {
 }
 
 func TestConfiguredCacheBackendReturnsUnavailableRedisWhenURLMissing(t *testing.T) {
-	t.Setenv("STORMRUNNER_CACHE_BACKEND", "redis")
-	t.Setenv("STORMRUNNER_REDIS_URL", "")
+	t.Setenv("APEXLOAD_CACHE_BACKEND", "redis")
+	t.Setenv("APEXLOAD_REDIS_URL", "")
 
 	cache := configuredCacheBackend()
 	info := cache.Info()

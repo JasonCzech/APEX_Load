@@ -2206,7 +2206,7 @@ export interface LoadModelSupportEntry {
   name: string
   category: string
   status: 'executed' | 'partial' | 'planned' | string
-  stormrunner_shape: string
+  apexload_shape: string
   fields: string[]
   notes: string
 }

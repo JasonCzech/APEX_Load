@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jasonczech/stormrunner/pkg/convert/loadrunner"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/convert/loadrunner"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestScriptValidationParityAcrossCurrentEndpoints(t *testing.T) {

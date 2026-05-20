@@ -13,13 +13,13 @@ import (
 	"github.com/antchfx/htmlquery"
 	"github.com/antchfx/xmlquery"
 	"github.com/antchfx/xpath"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jmespath/go-jmespath"
 )
 
-const xpathFragmentExpressionPrefix = "__stormrunner_xpath_fragment__:"
+const xpathFragmentExpressionPrefix = "__apexload_xpath_fragment__:"
 
-const xpathExpressionConfigPrefix = "__stormrunner_xpath_config__:"
+const xpathExpressionConfigPrefix = "__apexload_xpath_config__:"
 
 type xpathExpressionConfig struct {
 	Expression string            `json:"expression"`

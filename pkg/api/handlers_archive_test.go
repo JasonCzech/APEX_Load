@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/engine"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type archiveRedactionProtocol struct{}
@@ -47,9 +47,9 @@ func (p *archiveRedactionProtocol) HealthCheck(_ context.Context) error { return
 
 func TestArchiveQueryEndpoints(t *testing.T) {
 	archiveDir := t.TempDir()
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)
 
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -519,9 +519,9 @@ func archiveReportCSVHasRow(rows [][]string, section string, key string, metric 
 
 func TestArchiveTransactionsApplyConfiguredRedactionRules(t *testing.T) {
 	archiveDir := t.TempDir()
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)
 
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}

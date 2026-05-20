@@ -43,16 +43,16 @@ describe('TestExecutionArchive', () => {
   }
 
   const archiveReport: RunArchiveReport = {
-    schema_version: 'stormrunner.archive_report.v1',
+    schema_version: 'apexload.archive_report.v1',
     compatibility: {
       status: 'compatible',
-      report_schema_version: 'stormrunner.archive_report.v1',
-      manifest_schema_version: 'stormrunner.archive.v1',
-      supported_manifest_schemas: ['stormrunner.archive.v1'],
+      report_schema_version: 'apexload.archive_report.v1',
+      manifest_schema_version: 'apexload.archive.v1',
+      supported_manifest_schemas: ['apexload.archive.v1'],
       outputs: [
-        { format: 'json', artifact: 'archive/report', schema_version: 'stormrunner.archive_report.v1', status: 'compatible' },
-        { format: 'standalone_html', artifact: 'report', schema_version: 'stormrunner.archive_report.v1', status: 'compatible' },
-        { format: 'transactions_parquet', artifact: 'transactions.parquet', schema_version: 'stormrunner.archive.v1', status: 'missing' },
+        { format: 'json', artifact: 'archive/report', schema_version: 'apexload.archive_report.v1', status: 'compatible' },
+        { format: 'standalone_html', artifact: 'report', schema_version: 'apexload.archive_report.v1', status: 'compatible' },
+        { format: 'transactions_parquet', artifact: 'transactions.parquet', schema_version: 'apexload.archive.v1', status: 'missing' },
         { format: 'csv', status: 'unsupported', reason: 'CSV archive exports are not registered for this report schema yet.' },
       ],
     },
@@ -127,7 +127,7 @@ describe('TestExecutionArchive', () => {
         },
         groups: [{ name: 'buyers', script_id: 'script-1', script_name: 'Checkout', protocol: 'soap', vusers: 1, initialization: 'at_once' }],
         controller_env: {
-          STORMRUNNER_SAMPLE_FLAG: 'enabled',
+          APEXLOAD_SAMPLE_FLAG: 'enabled',
         },
         generator_inventory: [{ target: 'generator-1', status: 'healthy', available_capacity: 50 }],
       },
@@ -388,7 +388,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('92% · needs review')
     expect(container.textContent).toContain('telemetry gaps')
     expect(container.textContent).toContain('Schema Compatibility')
-    expect(container.textContent).toContain('stormrunner.archive_report.v1')
+    expect(container.textContent).toContain('apexload.archive_report.v1')
     expect(container.textContent).toContain('standalone html')
     expect(container.textContent).toContain('Evidence Tiers')
     expect(container.textContent).toContain('Summary')
@@ -419,7 +419,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Browser Runtime')
     expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
     expect(container.textContent).toContain('Pinned')
-    expect(container.textContent).toContain('STORMRUNNER_SAMPLE_FLAG=enabled')
+    expect(container.textContent).toContain('APEXLOAD_SAMPLE_FLAG=enabled')
     expect(container.textContent).toContain('generator-1 · healthy · 50 available')
     expect(container.textContent).toContain('Browser Metrics')
     expect(container.textContent).toContain('UX Intelligence')

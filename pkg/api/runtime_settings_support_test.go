@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestRuntimeSettingsSupportMatrixEndpointCoversW3ProtocolsAndPresets(t *testing.T) {
@@ -204,7 +204,7 @@ func TestTrustedHeaderAuthRequiresViewerForRuntimeSettingsSupportMatrix(t *testi
 
 	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/runtime-settings/support-matrix", nil)
 	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
-	viewerReq.Header.Set("X-Stormrunner-Roles", RoleViewer)
+	viewerReq.Header.Set("X-APEXLoad-Roles", RoleViewer)
 	viewerResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerResp, viewerReq)
 	if viewerResp.Code != http.StatusOK {

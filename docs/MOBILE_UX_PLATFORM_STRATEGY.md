@@ -1,7 +1,7 @@
 # Strategic Plan: Mobile UX Performance Platform
 
 ## Vision
-Position Stormrunner as a **synthetic digital experience platform** — capable of emulating any modern mobile device (iOS, iPadOS, Android) with high fidelity and measuring the complete client-side user experience with the depth and precision of tools like Quantum Metric, but from a controlled, repeatable performance testing context.
+Position APEX Load as a **synthetic digital experience platform** — capable of emulating any modern mobile device (iOS, iPadOS, Android) with high fidelity and measuring the complete client-side user experience with the depth and precision of tools like Quantum Metric, but from a controlled, repeatable performance testing context.
 
 This plan is the strategic umbrella that aligns the existing `MOBILE_BROWSER_EMULATION_PLAN.md` and `BROWSER_CLIENT_METRICS_PLAN.md` under one long-term trajectory. Both plans remain valid as tactical implementation guides — this document ensures they converge toward the same product goal rather than diverging into disconnected features.
 
@@ -22,7 +22,7 @@ This plan is the strategic umbrella that aligns the existing `MOBILE_BROWSER_EMU
 ## Why This Matters
 Traditional performance testing measures server response time. Modern web applications spend 40-70% of perceived latency in **client-side rendering, JavaScript execution, and layout computation**. A user on an iPhone SE over 4G experiences a fundamentally different application than a user on a desktop with fiber — even when the server response is identical.
 
-Quantum Metric and similar RUM platforms capture this reality from production traffic. Stormrunner's opportunity is to capture it **before production**, under controlled load, across every target device and network profile.
+Quantum Metric and similar RUM platforms capture this reality from production traffic. APEX Load's opportunity is to capture it **before production**, under controlled load, across every target device and network profile.
 
 ## Architectural North Star
 
@@ -108,7 +108,7 @@ type DeviceProfile struct {
 This is the single most important decision. If device profiles only carry visual parameters, performance measurement will always be disconnected from device simulation.
 
 ### 2. Client Metrics Must Be Per-Action, Not Per-Page
-Quantum Metric measures at session granularity. Stormrunner measures at action granularity (each `browser_navigate`, `browser_click`, etc.). The client metrics architecture must attach timing data to each action result, not just to full page loads.
+Quantum Metric measures at session granularity. APEX Load measures at action granularity (each `browser_navigate`, `browser_click`, etc.). The client metrics architecture must attach timing data to each action result, not just to full page loads.
 
 Extend `protocol.Result` with an optional client metrics struct:
 

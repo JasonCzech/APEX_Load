@@ -6,7 +6,7 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 // applyThinkTime sleeps for a computed think time duration, respecting

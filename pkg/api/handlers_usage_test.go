@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestHandleGetUsageAccountingSummarizesProjectProtocolRegionAndArchives(t *testing.T) {
@@ -127,7 +127,7 @@ func TestHandleExportUsageAccountingEmitsCSV(t *testing.T) {
 	if got := resp.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/csv") {
 		t.Fatalf("content type = %q, want text/csv", got)
 	}
-	if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "stormrunner-usage-accounting.csv") {
+	if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "apexload-usage-accounting.csv") {
 		t.Fatalf("content disposition = %q, want usage filename", got)
 	}
 
@@ -149,7 +149,7 @@ func TestHandleExportUsageAccountingEmitsCSV(t *testing.T) {
 }
 
 func TestHandleUsageAccountingSnapshotsCapturesAndListsPersistedSnapshots(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}

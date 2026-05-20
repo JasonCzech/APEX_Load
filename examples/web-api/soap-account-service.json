@@ -2,7 +2,7 @@
   "name": "SOAP_Account_Service",
   "version": "1.0.0",
   "protocol": "soap",
-  "generated_by": "stormrunner-sample-pack",
+  "generated_by": "apexload-sample-pack",
   "generated_from": "web-api-sample",
   "config": {
     "base_url": "https://soap.example.test/account",

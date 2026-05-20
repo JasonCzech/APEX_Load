@@ -74,7 +74,7 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Stormrunner Report - {{.Report.Manifest.TestName}}</title>
+  <title>APEX Load Report - {{.Report.Manifest.TestName}}</title>
   <style>
     :root {
       color-scheme: light;
@@ -254,7 +254,7 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
 <body>
   <main>
     <section class="hero">
-      <p class="eyebrow">Stormrunner standalone report</p>
+      <p class="eyebrow">APEX Load standalone report</p>
       <h1>{{.Report.Manifest.TestName}}</h1>
       <p class="subhead">{{.Profile.Label}} profile generated from the archived run bundle for test {{.Report.Manifest.TestID}}. {{.Profile.Description}}</p>
       <div class="meta">

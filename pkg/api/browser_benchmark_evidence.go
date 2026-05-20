@@ -75,7 +75,7 @@ func (s *Server) handleGetBrowserBenchmarkEvidence(w http.ResponseWriter, r *htt
 }
 
 func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceResponse {
-	const benchmarkCommand = "STORMRUNNER_BROWSER_BENCHMARKS=1 go test ./pkg/protocol/browser -run '^$' -bench 'BenchmarkBrowser(InitWithDeviceProfile|TouchOrClickActionLatency|RSSPerChromiumDeviceProfile)' -benchmem -count 5 -timeout 30m"
+	const benchmarkCommand = "APEXLOAD_BROWSER_BENCHMARKS=1 go test ./pkg/protocol/browser -run '^$' -bench 'BenchmarkBrowser(InitWithDeviceProfile|TouchOrClickActionLatency|RSSPerChromiumDeviceProfile)' -benchmem -count 5 -timeout 30m"
 	compileCommand := "go test ./pkg/protocol/browser"
 	hardware := BrowserBenchmarkHardware{
 		ID:          "generator-canary-4vcpu-8gb",

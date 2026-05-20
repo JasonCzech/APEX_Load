@@ -25,22 +25,22 @@ type BackendInfoProvider interface {
 }
 
 func StoreConfigFromEnv() StoreConfig {
-	backend := strings.TrimSpace(strings.ToLower(os.Getenv("STORMRUNNER_STORE")))
+	backend := strings.TrimSpace(strings.ToLower(os.Getenv("APEXLOAD_STORE")))
 	if backend == "" {
 		backend = StoreBackendSQLite
 	}
-	sqlitePath := strings.TrimSpace(os.Getenv("STORMRUNNER_DB"))
+	sqlitePath := strings.TrimSpace(os.Getenv("APEXLOAD_DB"))
 	if sqlitePath == "" {
-		sqlitePath = "stormrunner.db"
+		sqlitePath = "apexload.db"
 	}
 	return StoreConfig{
 		Backend:     backend,
 		SQLitePath:  sqlitePath,
-		DatabaseURL: strings.TrimSpace(os.Getenv("STORMRUNNER_DATABASE_URL")),
+		DatabaseURL: strings.TrimSpace(os.Getenv("APEXLOAD_DATABASE_URL")),
 		Connections: StoreConnectionOptions{
-			MaxOpenConns:    envInt("STORMRUNNER_DATABASE_MAX_OPEN_CONNS"),
-			MaxIdleConns:    envInt("STORMRUNNER_DATABASE_MAX_IDLE_CONNS"),
-			ConnMaxLifetime: envDuration("STORMRUNNER_DATABASE_CONN_MAX_LIFETIME"),
+			MaxOpenConns:    envInt("APEXLOAD_DATABASE_MAX_OPEN_CONNS"),
+			MaxIdleConns:    envInt("APEXLOAD_DATABASE_MAX_IDLE_CONNS"),
+			ConnMaxLifetime: envDuration("APEXLOAD_DATABASE_CONN_MAX_LIFETIME"),
 		},
 	}
 }
@@ -50,13 +50,13 @@ func NewConfiguredStore(config StoreConfig) (Store, error) {
 	case "", StoreBackendSQLite:
 		path := strings.TrimSpace(config.SQLitePath)
 		if path == "" {
-			path = "stormrunner.db"
+			path = "apexload.db"
 		}
 		return NewSQLiteStore(path)
 	case StoreBackendPostgres, "postgresql":
 		return NewPostgresStore(config.DatabaseURL, config.Connections)
 	default:
-		return nil, fmt.Errorf("unsupported stormrunner store backend %q", config.Backend)
+		return nil, fmt.Errorf("unsupported apexload store backend %q", config.Backend)
 	}
 }
 

@@ -89,7 +89,7 @@ func TestOracleEBusinessReviewEndpointAndRBAC(t *testing.T) {
 	viewerReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/oracle-ebusiness/review", bytes.NewReader(body))
 	viewerReq.Header.Set("Content-Type", "application/json")
 	viewerReq.Header.Set("X-Auth-Request-User", "viewer")
-	viewerReq.Header.Set("X-Stormrunner-Project-Roles", "project-oeb="+RoleViewer)
+	viewerReq.Header.Set("X-APEXLoad-Project-Roles", "project-oeb="+RoleViewer)
 	viewerResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(viewerResp, viewerReq)
 	if viewerResp.Code != http.StatusForbidden {
@@ -99,7 +99,7 @@ func TestOracleEBusinessReviewEndpointAndRBAC(t *testing.T) {
 	editorReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/oracle-ebusiness/review", bytes.NewReader(body))
 	editorReq.Header.Set("Content-Type", "application/json")
 	editorReq.Header.Set("X-Auth-Request-User", "editor")
-	editorReq.Header.Set("X-Stormrunner-Roles", RoleEditor)
+	editorReq.Header.Set("X-APEXLoad-Roles", RoleEditor)
 	editorResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorResp, editorReq)
 	if editorResp.Code != http.StatusOK {

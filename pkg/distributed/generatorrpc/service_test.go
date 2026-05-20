@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/jasonczech/stormrunner/api/proto"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
+	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	_ "github.com/jasonczech/apexload/pkg/protocol/http"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
@@ -602,7 +602,7 @@ func TestServiceWithExecutionRunsAssignedScript(t *testing.T) {
 func TestServiceWithExecutionExposesArchiveArtifacts(t *testing.T) {
 	const bufSize = 1024 * 1024
 
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))

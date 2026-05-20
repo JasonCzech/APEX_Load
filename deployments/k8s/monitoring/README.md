@@ -1,8 +1,8 @@
-# Stormrunner Enterprise Monitoring
+# APEX Load Enterprise Monitoring
 
 These manifests are production-oriented examples for Phase 3 of the enterprise data platform upgrade.
 
-Stormrunner keeps exposing `/metrics` from the controller. Prometheus scrapes that endpoint for live operational metrics, then remote-writes to the enterprise retention backend:
+APEX Load keeps exposing `/metrics` from the controller. Prometheus scrapes that endpoint for live operational metrics, then remote-writes to the enterprise retention backend:
 
 - Grafana Mimir
 - Thanos Receive
@@ -29,4 +29,4 @@ The controller metrics endpoint should preserve bounded labels suitable for rete
 - `generator_region`
 - `generator_id`
 
-High-cardinality raw transaction details stay in Stormrunner archive bundles instead of Prometheus.
+High-cardinality raw transaction details stay in APEX Load archive bundles instead of Prometheus.

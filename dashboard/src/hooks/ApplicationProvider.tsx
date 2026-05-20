@@ -5,8 +5,8 @@ import { useApplicationApi } from './api/useApplicationApi'
 import { useProject } from './useProject'
 import { ApplicationContext } from './applicationContext'
 
-const STORAGE_KEY = 'stormrunner.activeApplicationId'
-const RELEASE_STORAGE_KEY = 'stormrunner.activeReleaseId'
+const STORAGE_KEY = 'apexload.activeApplicationId'
+const RELEASE_STORAGE_KEY = 'apexload.activeReleaseId'
 
 export function ApplicationProvider({ children }: { children: ReactNode }) {
   const api = useApplicationApi()

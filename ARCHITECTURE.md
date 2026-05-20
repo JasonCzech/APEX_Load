@@ -1,6 +1,6 @@
-# Stormrunner Architecture
+# APEX Load Architecture
 
-Stormrunner is a Kubernetes-native performance testing platform with a Go control plane, goroutine-based load generators, a React dashboard, a JSON DSL script model, and enterprise data services for shared production deployments. The platform is designed to replace practical LoadRunner Enterprise workflows while keeping local development simple.
+APEX Load is a Kubernetes-native performance testing platform with a Go control plane, goroutine-based load generators, a React dashboard, a JSON DSL script model, and enterprise data services for shared production deployments. The platform is designed to replace practical LoadRunner Enterprise workflows while keeping local development simple.
 
 This document reflects the current application architecture. Related operational plans and runbooks live under `docs/`.
 
@@ -9,7 +9,7 @@ This document reflects the current application architecture. Related operational
 ```text
 Users and automation
   |
-  |  Browser UI, REST, WebSocket, stormctl, MCP tools
+  |  Browser UI, REST, WebSocket, apexctl, MCP tools
   v
 Controller API
   |
@@ -36,7 +36,7 @@ Controller API
 | --- | --- | --- |
 | Controller API | `cmd/controller`, `pkg/api` | REST API, WebSocket streams, dashboard hosting, scheduling, orchestration, governance, reporting, readiness, inventory |
 | Dashboard | `dashboard/` | React SPA for administration, repository management, authoring, scenario assembly, monitoring, reports, API guide, access/API keys |
-| CLI | `cmd/stormctl` | Local script execution and controller-backed CI/CD runs |
+| CLI | `cmd/apexctl` | Local script execution and controller-backed CI/CD runs |
 | Generator | `cmd/generator`, `pkg/distributed/generatorrpc` | Remote worker that executes assigned groups and streams metrics/artifacts to the controller |
 | MCP server | `mcp/` | FastMCP bridge for agents and automation against the documented REST API |
 
@@ -44,7 +44,7 @@ The controller embeds the built dashboard from `pkg/api/static`. During dashboar
 
 ## Domain Model
 
-Stormrunner's governance hierarchy is:
+APEX Load's governance hierarchy is:
 
 ```text
 Domain
@@ -72,7 +72,7 @@ Administrators grant access at the domain and application repository levels. Pro
 | Full run evidence | Filesystem archive root | S3, Azure Blob, or GCS | Immutable manifests, JSONL, CSV, Parquet, browser evidence, reports |
 | Long-term operations metrics | Local scrape | Prometheus remote-write target | High-cardinality raw transaction evidence stays in archives |
 
-Configuration entry points include `STORMRUNNER_STORE`, `STORMRUNNER_DATABASE_URL`, `STORMRUNNER_ARCHIVE_BACKEND`, `STORMRUNNER_CACHE_BACKEND`, `STORMRUNNER_REDIS_URL`, and Prometheus remote-write settings.
+Configuration entry points include `APEXLOAD_STORE`, `APEXLOAD_DATABASE_URL`, `APEXLOAD_ARCHIVE_BACKEND`, `APEXLOAD_CACHE_BACKEND`, `APEXLOAD_REDIS_URL`, and Prometheus remote-write settings.
 
 ## Controller Internals
 
@@ -107,11 +107,11 @@ HTTP server
 
 ### Local Mode
 
-If `STORMRUNNER_GENERATORS` is not configured, the controller runs tests in-process through the same engine used by `stormctl`. This is the default for development and small diagnostic runs.
+If `APEXLOAD_GENERATORS` is not configured, the controller runs tests in-process through the same engine used by `apexctl`. This is the default for development and small diagnostic runs.
 
 ### Distributed Mode
 
-If `STORMRUNNER_GENERATORS` is configured, the controller uses the distributed backend:
+If `APEXLOAD_GENERATORS` is configured, the controller uses the distributed backend:
 
 1. The controller validates the run, load model, capacity, data fit, and placement constraints.
 2. Groups are assigned to generator targets, with support for drain/cordon state and region-weighted placement.
@@ -156,9 +156,9 @@ Protocols implement the compiled-in `pkg/protocol.Protocol` interface and are re
 - database and network protocol import/runtime paths where supported
 - browser replay and browser canary diagnostics
 
-Script inputs can be created directly in the dashboard, through REST, through `stormctl`, or by import. Import surfaces include LoadRunner/VuGen ZIP, JMeter, DevWeb, HAR, OpenAPI/Swagger, WSDL, raw HTTP, cURL, REST JSON, and sample packs.
+Script inputs can be created directly in the dashboard, through REST, through `apexctl`, or by import. Import surfaces include LoadRunner/VuGen ZIP, JMeter, DevWeb, HAR, OpenAPI/Swagger, WSDL, raw HTTP, cURL, REST JSON, and sample packs.
 
-The LoadRunner importer is protocol-aware. It classifies known VuGen protocol families, returns confidence/signals/conflicts, routes executable protocols to native Stormrunner targets, and creates review artifacts for external-runner or unsupported protocols instead of pretending they are executable.
+The LoadRunner importer is protocol-aware. It classifies known VuGen protocol families, returns confidence/signals/conflicts, routes executable protocols to native APEX Load targets, and creates review artifacts for external-runner or unsupported protocols instead of pretending they are executable.
 
 ## Authoring, Replay, And AI Assistance
 
@@ -196,7 +196,7 @@ Usage accounting snapshots, archive retention planning/apply events, release tre
 
 ## Auth, RBAC, And Automation
 
-Stormrunner supports:
+APEX Load supports:
 
 - dev mode for local bypass plus dashboard Admin/User preview toggle
 - trusted-header mode for upstream identity gateways
@@ -244,7 +244,7 @@ Protocol-specific density envelopes and benchmark evidence are tracked in the su
 | API endpoint | `pkg/api/server.go`, matching handler/test file |
 | Dashboard page or workflow | `dashboard/src/` |
 | Storage schema/contract | `pkg/storage` |
-| MCP tool coverage | `mcp/stormrunner_mcp/` |
+| MCP tool coverage | `mcp/apexload_mcp/` |
 | Deployment shape | `deployments/k8s/` |
 
 New features should include tests alongside the changed package and documentation updates for changed public behavior.

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type ImportRequest struct {
@@ -96,7 +96,7 @@ func convertSource(name string, content string, opts ConvertOptions) (*ConvertRe
 		Script: &dsl.Script{
 			Name:          sanitizeName(name),
 			Version:       "1.0.0",
-			GeneratedBy:   "stormrunner-devweb-converter",
+			GeneratedBy:   "apexload-devweb-converter",
 			GeneratedFrom: "devweb",
 			CreatedAt:     time.Now(),
 			Config: dsl.ScriptConfig{

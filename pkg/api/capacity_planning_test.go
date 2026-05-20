@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestEstimateCapacityAdvisoryAppliesHeadroomAndAvailability(t *testing.T) {
@@ -268,7 +268,7 @@ func TestEstimateCapacityAdvisoryUsesProtocolDensityEnvelopes(t *testing.T) {
 	if density.Protocol != "jms" || density.MaxVUsersPerGenerator != 3000 || density.VUsers != 5000 {
 		t.Fatalf("density = %#v, want JMS 5000 VUsers at 3000 VUsers/generator", density)
 	}
-	if density.BenchmarkProfile != "jms_3k_session_send_4vcpu_8gb" || density.BenchmarkEvidence == "" || density.CalibrationSource != "stormrunner_benchmark_catalog" || density.CalibratedAt == "" {
+	if density.BenchmarkProfile != "jms_3k_session_send_4vcpu_8gb" || density.BenchmarkEvidence == "" || density.CalibrationSource != "apexload_benchmark_catalog" || density.CalibratedAt == "" {
 		t.Fatalf("density benchmark evidence = %#v, want calibrated JMS profile evidence", density)
 	}
 	if advisory.DimensionRecommendations.VUsers != 3 {
@@ -502,7 +502,7 @@ func TestEstimateDraftCapacityIncludesRegionWeightedRecommendation(t *testing.T)
 }
 
 func TestEstimateCapacityAdvisoryUsesLiveAvailabilitySnapshot(t *testing.T) {
-	t.Setenv("STORMRUNNER_LIVE_AVAILABLE_GENERATORS", "3")
+	t.Setenv("APEXLOAD_LIVE_AVAILABLE_GENERATORS", "3")
 	settings := defaultSystemSettings(4)
 	settings.CapacityPlanning.Availability.Source = capacityAvailabilityConfiguredPlusLive
 	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 5

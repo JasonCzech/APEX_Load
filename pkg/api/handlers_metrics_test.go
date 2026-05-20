@@ -9,7 +9,7 @@ import (
 )
 
 func TestHandlePrometheusMetricsExportsControllerState(t *testing.T) {
-	t.Setenv("STORMRUNNER_LIVE_AVAILABLE_GENERATORS", "3")
+	t.Setenv("APEXLOAD_LIVE_AVAILABLE_GENERATORS", "3")
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	settings := server.runner.GetSystemSettings()
 	settings.General.MaxConcurrentTests = 7
@@ -39,28 +39,28 @@ func TestHandlePrometheusMetricsExportsControllerState(t *testing.T) {
 	}
 	body := resp.Body.String()
 	checks := []string{
-		"stormrunner_up 1",
-		"stormrunner_websocket_clients 0",
-		"stormrunner_test_count 5",
-		"stormrunner_tests_by_status{status=\"COMPLETE\"} 1",
-		"stormrunner_tests_by_status{status=\"RUNNING\"} 1",
-		"stormrunner_tests_by_status{status=\"PENDING\"} 1",
-		"stormrunner_tests_by_status{status=\"QUEUED\"} 1",
-		"stormrunner_tests_by_status{status=\"FAILED\"} 1",
-		"stormrunner_scaling_vusers{state=\"queued\"} 13",
-		"stormrunner_scaling_vusers{state=\"active\"} 12",
-		"stormrunner_scaling_tests{state=\"queued\"} 2",
-		"stormrunner_scaling_tests{state=\"active\"} 1",
-		"stormrunner_scaling_protocol_vusers{state=\"queued\",protocol=\"grpc\"} 8",
-		"stormrunner_scaling_protocol_vusers{state=\"queued\",protocol=\"http\"} 5",
-		"stormrunner_scaling_protocol_vusers{state=\"active\",protocol=\"http\"} 12",
-		"stormrunner_capacity_available_generators{scope=\"configured\"} 5",
-		"stormrunner_capacity_available_generators{scope=\"effective\"} 3",
-		"stormrunner_capacity_available_generators{scope=\"reserved\"} 1",
-		"stormrunner_capacity_available_generators{scope=\"shared\"} 2",
-		"stormrunner_capacity_available_generators{scope=\"live\"} 3",
-		"stormrunner_max_concurrent_tests 7",
-		"stormrunner_metrics_interval_seconds 3",
+		"apexload_up 1",
+		"apexload_websocket_clients 0",
+		"apexload_test_count 5",
+		"apexload_tests_by_status{status=\"COMPLETE\"} 1",
+		"apexload_tests_by_status{status=\"RUNNING\"} 1",
+		"apexload_tests_by_status{status=\"PENDING\"} 1",
+		"apexload_tests_by_status{status=\"QUEUED\"} 1",
+		"apexload_tests_by_status{status=\"FAILED\"} 1",
+		"apexload_scaling_vusers{state=\"queued\"} 13",
+		"apexload_scaling_vusers{state=\"active\"} 12",
+		"apexload_scaling_tests{state=\"queued\"} 2",
+		"apexload_scaling_tests{state=\"active\"} 1",
+		"apexload_scaling_protocol_vusers{state=\"queued\",protocol=\"grpc\"} 8",
+		"apexload_scaling_protocol_vusers{state=\"queued\",protocol=\"http\"} 5",
+		"apexload_scaling_protocol_vusers{state=\"active\",protocol=\"http\"} 12",
+		"apexload_capacity_available_generators{scope=\"configured\"} 5",
+		"apexload_capacity_available_generators{scope=\"effective\"} 3",
+		"apexload_capacity_available_generators{scope=\"reserved\"} 1",
+		"apexload_capacity_available_generators{scope=\"shared\"} 2",
+		"apexload_capacity_available_generators{scope=\"live\"} 3",
+		"apexload_max_concurrent_tests 7",
+		"apexload_metrics_interval_seconds 3",
 	}
 	for _, check := range checks {
 		if !strings.Contains(body, check) {
@@ -115,19 +115,19 @@ func TestHandlePrometheusMetricsExportsGeneratorRegionStats(t *testing.T) {
 	}
 	body := resp.Body.String()
 	checks := []string{
-		"stormrunner_generator_region_count{region=\"us-east\"} 2",
-		"stormrunner_generator_region_available_capacity{region=\"us-east\"} 16000",
-		"stormrunner_generator_region_active_vusers{region=\"us-east\"} 4000",
-		"stormrunner_generator_region_count{region=\"unassigned\"} 1",
-		"stormrunner_generator_region_available_capacity{region=\"unassigned\"} 5000",
-		"stormrunner_generator_region_active_vusers{region=\"unassigned\"} 0",
-		"stormrunner_generator_capacity_state_count{region=\"us-east\",state=\"available\"} 1",
-		"stormrunner_generator_capacity_state_count{region=\"us-east\",state=\"constrained\"} 1",
-		"stormrunner_generator_capacity_state_count{region=\"unassigned\",state=\"saturated\"} 1",
-		"stormrunner_generator_drain_state_count{region=\"us-east\",state=\"active\"} 1",
-		"stormrunner_generator_drain_state_count{region=\"us-east\",state=\"cordoned\"} 1",
-		"stormrunner_generator_compatibility_state_count{region=\"us-east\",state=\"compatible\"} 2",
-		"stormrunner_generator_compatibility_state_count{region=\"unassigned\",state=\"incompatible\"} 1",
+		"apexload_generator_region_count{region=\"us-east\"} 2",
+		"apexload_generator_region_available_capacity{region=\"us-east\"} 16000",
+		"apexload_generator_region_active_vusers{region=\"us-east\"} 4000",
+		"apexload_generator_region_count{region=\"unassigned\"} 1",
+		"apexload_generator_region_available_capacity{region=\"unassigned\"} 5000",
+		"apexload_generator_region_active_vusers{region=\"unassigned\"} 0",
+		"apexload_generator_capacity_state_count{region=\"us-east\",state=\"available\"} 1",
+		"apexload_generator_capacity_state_count{region=\"us-east\",state=\"constrained\"} 1",
+		"apexload_generator_capacity_state_count{region=\"unassigned\",state=\"saturated\"} 1",
+		"apexload_generator_drain_state_count{region=\"us-east\",state=\"active\"} 1",
+		"apexload_generator_drain_state_count{region=\"us-east\",state=\"cordoned\"} 1",
+		"apexload_generator_compatibility_state_count{region=\"us-east\",state=\"compatible\"} 2",
+		"apexload_generator_compatibility_state_count{region=\"unassigned\",state=\"incompatible\"} 1",
 	}
 	for _, check := range checks {
 		if !strings.Contains(body, check) {

@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jmespath/go-jmespath"
 	googlegrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

@@ -230,7 +230,7 @@ export default function Sidebar({
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" className="brand-icon">
           <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="var(--accent)" />
         </svg>
-        {!collapsed && <span className="brand-name">Stormrunner</span>}
+        {!collapsed && <span className="brand-name">APEX Load</span>}
       </div>
 
       <div className="sidebar-project">

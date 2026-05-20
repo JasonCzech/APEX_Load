@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .client import JsonMap, StormrunnerClient, apply_path_params, guarded_response, json_text
+from .client import JsonMap, APEX LoadClient, apply_path_params, guarded_response, json_text
 
 
 @dataclass(frozen=True)
@@ -18,8 +18,8 @@ class EndpointTool:
     default_project: bool = False
 
 
-READ = "Read-only Stormrunner API call."
-WRITE = "Mutates Stormrunner state; requires confirm=true."
+READ = "Read-only APEX Load API call."
+WRITE = "Mutates APEX Load state; requires confirm=true."
 DESTRUCTIVE = "Destructive or admin action; requires confirm=true and reason."
 
 
@@ -233,7 +233,7 @@ VALIDATE_IMPORTERS = {
 }
 
 
-def with_default_project(client: StormrunnerClient, query: JsonMap | None, enabled: bool) -> JsonMap | None:
+def with_default_project(client: APEX LoadClient, query: JsonMap | None, enabled: bool) -> JsonMap | None:
     merged = dict(query or {})
     if enabled and client.config.default_project_id and not merged.get("project_id"):
         merged["project_id"] = client.config.default_project_id
@@ -248,18 +248,18 @@ async def run_endpoint_tool(
     payload: Any | None = None,
     confirm: bool = False,
     reason: str = "",
-    client: StormrunnerClient | None = None,
+    client: APEX LoadClient | None = None,
 ) -> str:
     if spec.name == "script_authoring_correlation_preview" and isinstance(payload, dict) and payload.get("apply") and not confirm:
         return json_text(guarded_response("Applying an authoring correlation repair changes the review session and requires confirm=true."))
     if spec.mutating and not confirm:
-        return json_text(guarded_response(f"{spec.name} changes Stormrunner state and requires confirm=true."))
+        return json_text(guarded_response(f"{spec.name} changes APEX Load state and requires confirm=true."))
     if spec.destructive and not reason.strip():
         return json_text(guarded_response(f"{spec.name} requires a reason for auditability.", code="reason_required", remediation="Pass reason with a concise business justification."))
     resolved_path, error = apply_path_params(spec.path, path_params)
     if error is not None or resolved_path is None:
         return json_text(error or guarded_response("Unable to resolve path parameters."))
-    active_client = client or StormrunnerClient()
+    active_client = client or APEX LoadClient()
     response = await active_client.request(
         spec.method,
         resolved_path,
@@ -276,7 +276,7 @@ async def run_file_import_tool(
     options: JsonMap | None = None,
     validate_only: bool = False,
     confirm: bool = False,
-    client: StormrunnerClient | None = None,
+    client: APEX LoadClient | None = None,
 ) -> str:
     normalized = importer.strip().lower()
     endpoints = VALIDATE_IMPORTERS if validate_only else FILE_IMPORTERS
@@ -285,7 +285,7 @@ async def run_file_import_tool(
         return json_text(guarded_response(f"Unsupported importer {importer!r}.", code="unsupported_importer", remediation=f"Use one of: {', '.join(sorted(endpoints))}."))
     if not validate_only and not confirm:
         return json_text(guarded_response("Importing a file can create scripts or review artifacts and requires confirm=true."))
-    active_client = client or StormrunnerClient()
+    active_client = client or APEX LoadClient()
     fields = dict(options or {})
     if active_client.config.default_project_id and not fields.get("project_id"):
         fields["project_id"] = active_client.config.default_project_id
@@ -324,7 +324,7 @@ def register_endpoint_tools(mcp: Any) -> None:
         options: dict[str, Any] | None = None,
         confirm: bool = False,
     ) -> str:
-        """Import a LoadRunner, JMeter, DevWeb, HAR, OpenAPI, or WSDL file. Mutates Stormrunner and requires confirm=true."""
+        """Import a LoadRunner, JMeter, DevWeb, HAR, OpenAPI, or WSDL file. Mutates APEX Load and requires confirm=true."""
         return await run_file_import_tool(importer, file_path, options=options, confirm=confirm)
 
     async def script_validate_import_file(
@@ -344,26 +344,26 @@ def local_api_guide_text() -> str:
     guide = repo_root / "docs" / "API_USER_GUIDE.md"
     if guide.exists():
         return guide.read_text(encoding="utf-8")
-    return "Stormrunner API guide is not available from this MCP server checkout."
+    return "APEX Load API guide is not available from this MCP server checkout."
 
 
 def register_resources(mcp: Any) -> None:
-    @mcp.resource("stormrunner://api-guide", name="Stormrunner API Guide", mime_type="text/markdown")
+    @mcp.resource("apexload://api-guide", name="APEX Load API Guide", mime_type="text/markdown")
     async def api_guide() -> str:
         return local_api_guide_text()
 
-    @mcp.resource("stormrunner://auth/access-matrix", name="Stormrunner Auth Access Matrix", mime_type="application/json")
+    @mcp.resource("apexload://auth/access-matrix", name="APEX Load Auth Access Matrix", mime_type="application/json")
     async def auth_access_matrix() -> str:
-        return json_text(await StormrunnerClient().request("GET", "/auth/access-matrix"))
+        return json_text(await APEX LoadClient().request("GET", "/auth/access-matrix"))
 
-    @mcp.resource("stormrunner://system/parity-status", name="Stormrunner Parity Status", mime_type="application/json")
+    @mcp.resource("apexload://system/parity-status", name="APEX Load Parity Status", mime_type="application/json")
     async def parity_status() -> str:
-        return json_text(await StormrunnerClient().request("GET", "/system/parity-status"))
+        return json_text(await APEX LoadClient().request("GET", "/system/parity-status"))
 
-    @mcp.resource("stormrunner://runtime-settings/support-matrix", name="Stormrunner Runtime Settings Support", mime_type="application/json")
+    @mcp.resource("apexload://runtime-settings/support-matrix", name="APEX Load Runtime Settings Support", mime_type="application/json")
     async def runtime_settings_support() -> str:
-        return json_text(await StormrunnerClient().request("GET", "/runtime-settings/support-matrix"))
+        return json_text(await APEX LoadClient().request("GET", "/runtime-settings/support-matrix"))
 
-    @mcp.resource("stormrunner://protocol-bundles/support-matrix", name="Stormrunner Protocol Bundle Support", mime_type="application/json")
+    @mcp.resource("apexload://protocol-bundles/support-matrix", name="APEX Load Protocol Bundle Support", mime_type="application/json")
     async def protocol_bundle_support() -> str:
-        return json_text(await StormrunnerClient().request("GET", "/protocol-bundles/support-matrix"))
+        return json_text(await APEX LoadClient().request("GET", "/protocol-bundles/support-matrix"))

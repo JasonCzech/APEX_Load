@@ -297,7 +297,7 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
           <p className="server-telemetry-subtitle">Runtime dependency topology built from live transaction metadata, protocol classification, latency, and errors.</p>
           <div className="dependency-map">
             <div className="dependency-map-source">
-              <span className="dependency-map-node-title">{dependencySource?.label || 'Stormrunner VUsers'}</span>
+              <span className="dependency-map-node-title">{dependencySource?.label || 'APEX Load VUsers'}</span>
               <span className="dependency-map-node-meta">{dependencyMap.edges.length} downstream links</span>
             </div>
             <div className="dependency-map-nodes">

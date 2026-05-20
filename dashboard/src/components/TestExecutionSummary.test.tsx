@@ -326,7 +326,7 @@ describe('TestExecutionSummary', () => {
 						},
 						dependency_map: {
 							nodes: [
-								{ id: 'stormrunner', label: 'Stormrunner VUsers', kind: 'source', status: 'healthy' },
+								{ id: 'apexload', label: 'APEX Load VUsers', kind: 'source', status: 'healthy' },
 								{
 									id: 'dependency:storefront.example.test',
 									label: 'storefront.example.test',
@@ -351,8 +351,8 @@ describe('TestExecutionSummary', () => {
 								},
 							],
 							edges: [
-								{ source: 'stormrunner', target: 'dependency:storefront.example.test', dependency_type: 'http', transactions: 12, errors: 0, error_pct: 0, p95_ms: 172 },
-								{ source: 'stormrunner', target: 'dependency:api.example.test', dependency_type: 'http', transactions: 8, errors: 1, error_pct: 12.5, p95_ms: 134 },
+								{ source: 'apexload', target: 'dependency:storefront.example.test', dependency_type: 'http', transactions: 12, errors: 0, error_pct: 0, p95_ms: 172 },
+								{ source: 'apexload', target: 'dependency:api.example.test', dependency_type: 'http', transactions: 8, errors: 1, error_pct: 12.5, p95_ms: 134 },
 							],
 						},
 						error_patterns: [
@@ -388,7 +388,7 @@ describe('TestExecutionSummary', () => {
 		expect(container.textContent).toContain('buyers')
 		expect(container.textContent).toContain('Snapshot query: /api/v1/tests/test-1/archive/transactions?success=false')
 		expect(container.textContent).toContain('Live Dependency Map')
-		expect(container.textContent).toContain('Stormrunner VUsers')
+		expect(container.textContent).toContain('APEX Load VUsers')
 		expect(container.textContent).toContain('2 downstream links')
 		expect(container.textContent).toContain('Warning')
 		expect(container.textContent).toContain('12 tx')

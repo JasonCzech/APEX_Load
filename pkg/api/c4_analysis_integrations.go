@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-const rootCauseSchemaVersion = "stormrunner.root_cause.v1"
+const rootCauseSchemaVersion = "apexload.root_cause.v1"
 
 type releaseSLAWaiverPersistence interface {
 	SaveReleaseSLAWaiver(waiver *storage.ReleaseSLAWaiver) error
@@ -238,7 +238,7 @@ func buildAPMIntegrationProfiles(settings SystemSettings) []APMIntegrationProfil
 			CorrelationFields: baseFields,
 			RequiredSettings:  []string{"external metrics or OpenTelemetry collector route"},
 			Evidence:          []string{"pkg/api/external_metrics.go", "pkg/api/archive.go"},
-			SetupActions:      []string{"Route Stormrunner OpenTelemetry signals through a Datadog-enabled collector.", "Map Datadog trace IDs into archived transaction trace fields."},
+			SetupActions:      []string{"Route APEX Load OpenTelemetry signals through a Datadog-enabled collector.", "Map Datadog trace IDs into archived transaction trace fields."},
 		},
 		{
 			ID:                "newrelic",
@@ -249,7 +249,7 @@ func buildAPMIntegrationProfiles(settings SystemSettings) []APMIntegrationProfil
 			CorrelationFields: baseFields,
 			RequiredSettings:  []string{"external metrics or OpenTelemetry collector route"},
 			Evidence:          []string{"pkg/api/external_metrics.go", "pkg/api/archive.go"},
-			SetupActions:      []string{"Route Stormrunner OpenTelemetry signals through a New Relic-enabled collector.", "Map span and transaction attributes into New Relic entities."},
+			SetupActions:      []string{"Route APEX Load OpenTelemetry signals through a New Relic-enabled collector.", "Map span and transaction attributes into New Relic entities."},
 		},
 		{
 			ID:                "appdynamics",
@@ -260,7 +260,7 @@ func buildAPMIntegrationProfiles(settings SystemSettings) []APMIntegrationProfil
 			CorrelationFields: baseFields,
 			RequiredSettings:  []string{"external metrics or OpenTelemetry collector route"},
 			Evidence:          []string{"pkg/api/external_metrics.go", "pkg/api/archive.go"},
-			SetupActions:      []string{"Route Stormrunner OpenTelemetry signals through an AppDynamics-capable collector.", "Map dependency target names to AppDynamics application nodes."},
+			SetupActions:      []string{"Route APEX Load OpenTelemetry signals through an AppDynamics-capable collector.", "Map dependency target names to AppDynamics application nodes."},
 		},
 	}
 	return profiles

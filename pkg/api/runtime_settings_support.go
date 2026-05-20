@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/convert/loadrunner"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/convert/loadrunner"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-const runtimeSettingsSupportSchemaVersion = "stormrunner.runtime_settings_support.v1"
-const runtimeSettingsReportSchemaVersion = "stormrunner.runtime_settings_report.v1"
+const runtimeSettingsSupportSchemaVersion = "apexload.runtime_settings_support.v1"
+const runtimeSettingsReportSchemaVersion = "apexload.runtime_settings_report.v1"
 
 type RuntimeSettingsSupportResponse struct {
 	SchemaVersion    string                         `json:"schema_version"`
@@ -111,7 +111,7 @@ func buildRuntimeSettingsSupportResponse(now time.Time) RuntimeSettingsSupportRe
 				ID:        "streaming-media-runtime",
 				Decision:  "compatibility_only",
 				Status:    "decided",
-				Rationale: "Stormrunner preserves LoadRunner-style streaming and media playback settings for migration review, but does not claim native media playback runtime semantics until a funded implementation and benchmark evidence exist.",
+				Rationale: "APEX Load preserves LoadRunner-style streaming and media playback settings for migration review, but does not claim native media playback runtime semantics until a funded implementation and benchmark evidence exist.",
 				Evidence:  []string{"docs/LOADRUNNER_RTS_REFERENCE.md", "docs/RUNTIME_SETTINGS_PARITY.md", "/api/v1/runtime-settings/support-matrix"},
 			},
 		},
@@ -134,7 +134,7 @@ func runtimeSettingsSupportMatrix() []RuntimeSettingsSupportEntry {
 			Concept:             entry.Concept,
 			Fields:              cloneStringSlice(entry.Fields),
 			Status:              string(entry.Status),
-			ExecutionScope:      "imported Web HTTP/HTML and TruClient Mobile Web runtime settings mapped into Stormrunner DSL/runtime fields",
+			ExecutionScope:      "imported Web HTTP/HTML and TruClient Mobile Web runtime settings mapped into APEX Load DSL/runtime fields",
 			ImportSources:       []string{"LoadRunner Web HTTP/HTML", "TruClient Mobile Web"},
 			Evidence:            []string{"pkg/convert/loadrunner/rts_support.go", "docs/LOADRUNNER_RTS_REFERENCE.md"},
 			RecommendedWorkflow: "Import, validate runtime parity, replay, then approve or export the RTS report.",
@@ -164,7 +164,7 @@ func vugenWeb2RuntimeSupportEntries() []RuntimeSettingsSupportEntry {
 			Concept:             entry.Concept,
 			Fields:              cloneStringSlice(entry.Fields),
 			Status:              string(entry.Status),
-			ExecutionScope:      "TruClient 2.0 - Web browser-profile runtime settings mapped into Stormrunner browser, web runtime, logging, pacing, think-time, proxy, and capture config where executable.",
+			ExecutionScope:      "TruClient 2.0 - Web browser-profile runtime settings mapped into APEX Load browser, web runtime, logging, pacing, think-time, proxy, and capture config where executable.",
 			ImportSources:       []string{"TruClient 2.0 - Web", "VuGen Web 2.0"},
 			Evidence:            []string{"pkg/convert/loadrunner/converter_test.go::TestConvertZipProducesReviewDraftForTruClientWeb2Archive", "docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md"},
 			RecommendedWorkflow: "Import through LoadRunner ZIP acquisition, inspect the Web 2.0 review sections, run browser replay, then use the runtime report before promotion.",
@@ -339,9 +339,9 @@ func nativeRuntimeSupportEntries() []RuntimeSettingsSupportEntry {
 
 func runtimeSettingsStatusVocabulary() []RuntimeSettingsStatusVocab {
 	return []RuntimeSettingsStatusVocab{
-		{Status: "executed", Meaning: "Stormrunner executes this setting in the runtime path named by the entry."},
-		{Status: "partial", Meaning: "Stormrunner executes a defined subset and preserves or warns on the rest."},
-		{Status: "compatibility_only", Meaning: "Stormrunner preserves the setting for migration/reporting but does not execute its runtime semantics."},
+		{Status: "executed", Meaning: "APEX Load executes this setting in the runtime path named by the entry."},
+		{Status: "partial", Meaning: "APEX Load executes a defined subset and preserves or warns on the rest."},
+		{Status: "compatibility_only", Meaning: "APEX Load preserves the setting for migration/reporting but does not execute its runtime semantics."},
 		{Status: "non_applicable", Meaning: "The setting has no equivalent meaning for the protocol/runtime scope."},
 		{Status: "blocked", Meaning: "The setting prevents save/run until repaired or explicitly changed."},
 		{Status: "planned", Meaning: "The setting is documented as future work and must not be claimed as executable."},

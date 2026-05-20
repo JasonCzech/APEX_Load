@@ -44,7 +44,7 @@ steps:
   - bash: |
       set -euo pipefail
 
-      cmd=(go run ./cmd/stormctl run \
+      cmd=(go run ./cmd/apexctl run \
         --script '${{ parameters.script }}' \
         --vusers '${{ parameters.vusers }}' \
         --duration '${{ parameters.duration }}' \
@@ -81,6 +81,6 @@ steps:
 
       result="$(${cmd[@]})"
       echo "$result"
-      echo "##vso[task.setvariable variable=stormrunner.resultJson;isOutput=true]$result"
-    displayName: Run Stormrunner SLA gate
-    name: stormrunner
+      echo "##vso[task.setvariable variable=apexload.resultJson;isOutput=true]$result"
+    displayName: Run APEX Load SLA gate
+    name: apexload

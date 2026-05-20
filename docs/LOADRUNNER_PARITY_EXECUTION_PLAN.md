@@ -1,7 +1,7 @@
 # LoadRunner Parity Execution Plan
 
 ## Objective
-Bring Stormrunner to practical parity with OpenText LoadRunner Enterprise in four target areas:
+Bring APEX Load to practical parity with OpenText LoadRunner Enterprise in four target areas:
 
 - Browser Testing
 - Script Authoring UX
@@ -18,7 +18,7 @@ Status: Complete for the planned LoadRunner parity scope across Browser Testing,
 - Browser testing parity for web applications, including replay, diagnostics, mobile web emulation, and migration from LoadRunner browser assets where feasible
 - Script-authoring lifecycle parity across import, editing, validation, replay, and save flows
 - Runtime-settings parity for the highest-value Web HTTP/HTML migration surfaces first, with visibility into partial and preserved-only settings
-- Enterprise-ready authentication, RBAC, service-account, and audit behavior for a shared Stormrunner control plane
+- Enterprise-ready authentication, RBAC, service-account, and audit behavior for a shared APEX Load control plane
 
 ### Explicitly Out Of Scope
 - Native Windows desktop UI automation parity with legacy TruClient desktop-style expectations
@@ -27,7 +27,7 @@ Status: Complete for the planned LoadRunner parity scope across Browser Testing,
 
 ## Current Baseline In The Repo
 
-Stormrunner already has meaningful footing in each target area:
+APEX Load already has meaningful footing in each target area:
 
 - Browser testing plans and partial implementation exist in `docs/BROWSER_CLIENT_METRICS_PLAN.md` and `docs/MOBILE_BROWSER_EMULATION_PLAN.md`
 - Script-authoring consolidation is active in `docs/SCRIPT_AUTHORING_CONSOLIDATION_ROADMAP.md`
@@ -77,7 +77,7 @@ These are implementation sizes, not calendar commitments.
 ## Workstream 1: Browser Testing
 
 ### Desired Outcome
-Stormrunner becomes a strong practical alternative to LoadRunner TruClient for browser-based web testing, with a clearer and more modern workflow, while staying explicit about non-goals around native desktop automation.
+APEX Load becomes a strong practical alternative to LoadRunner TruClient for browser-based web testing, with a clearer and more modern workflow, while staying explicit about non-goals around native desktop automation.
 
 Status: Complete for the planned W1 scope. WebKit browser-process attribution remains constrained by stable Playwright process visibility, and native desktop TruClient automation remains out of scope by design.
 
@@ -128,7 +128,7 @@ Acceptance criteria:
 - The project has a documented support envelope for mobile-browser use
 
 ### Epic B3: LoadRunner Browser Migration
-Goal: reduce the work required to move browser-centric LoadRunner assets into Stormrunner.
+Goal: reduce the work required to move browser-centric LoadRunner assets into APEX Load.
 
 | ID | Story | Size | Dependencies | Status |
 | --- | --- | --- | --- | --- |
@@ -245,7 +245,7 @@ Acceptance criteria:
 ## Workstream 3: Runtime Settings Parity
 
 ### Desired Outcome
-Stormrunner should tell users exactly which imported LoadRunner runtime settings are executed, preserved only, non-applicable, or blocked, and it should close the highest-value execution gaps first.
+APEX Load should tell users exactly which imported LoadRunner runtime settings are executed, preserved only, non-applicable, or blocked, and it should close the highest-value execution gaps first.
 
 Status: Complete for the planned W3 scope. The code-owned support matrix no longer has partial entries for the planned Web HTTP/HTML RTS surface; remaining non-executed areas are intentionally compatibility-only or non-applicable and are documented in the public RTS reference.
 
@@ -265,7 +265,7 @@ Acceptance criteria:
 - Teams can block runs or saves on unsupported critical settings
 
 Recent progress:
-- Stormrunner now owns a code-backed LoadRunner RTS support matrix with tested examples and import-envelope parity summaries.
+- APEX Load now owns a code-backed LoadRunner RTS support matrix with tested examples and import-envelope parity summaries.
 - Draft and stored script validation now return `runtime_settings_parity`, `runtime_settings_status_counts`, and `migration_readiness` so validation, import review, and replay surfaces share one machine-readable runtime classification contract.
 - The shared script editor now refreshes imported runtime parity metadata from validation results, keeping migration-readiness cards aligned with current draft runtime settings instead of stale import-time snapshots.
 
@@ -282,7 +282,7 @@ Goal: close the runtime behaviors most likely to break real migrations.
 
 Acceptance criteria:
 - Common migrated Web HTTP/HTML settings execute consistently
-- Compatibility-only support is explicit where execution is intentionally not part of Stormrunner's runtime model
+- Compatibility-only support is explicit where execution is intentionally not part of APEX Load's runtime model
 - High-value imported scripts do not silently degrade at runtime
 
 Recent progress:
@@ -325,9 +325,9 @@ Recent progress:
 ## Workstream 4: Auth / RBAC
 
 ### Desired Outcome
-Stormrunner becomes safe to operate as a shared enterprise platform with clear identity modes, least-privilege access, service-account support, and auditable control-plane actions.
+APEX Load becomes safe to operate as a shared enterprise platform with clear identity modes, least-privilege access, service-account support, and auditable control-plane actions.
 
-Status: Complete for the planned W4 scope. Human identity lifecycle is intentionally upstream-owned for this phase; Stormrunner owns service-account principals, RBAC enforcement, diagnostics, and audit evidence.
+Status: Complete for the planned W4 scope. Human identity lifecycle is intentionally upstream-owned for this phase; APEX Load owns service-account principals, RBAC enforcement, diagnostics, and audit evidence.
 
 ### Epic G1: Auth Architecture Decision And Mode Completion
 Goal: remove ambiguity around trusted headers versus native OIDC.
@@ -398,13 +398,13 @@ Progress:
 - G3.5 is implemented for the planned hardening scope: native OIDC logout is a CSRF-protected `POST`, `/auth/me` reports session expiry metadata, the dashboard warns on imminent local-session expiry, and representative OIDC callback failures are audited without persisting authorization codes, raw tokens, client secrets, or signed cookie material.
 
 ### Epic G4: Directory And Lifecycle Extensions
-Goal: resolve the identity-lifecycle ownership question between Stormrunner's current platform auth and a mature enterprise identity model.
+Goal: resolve the identity-lifecycle ownership question between APEX Load's current platform auth and a mature enterprise identity model.
 
 | ID | Story | Size | Dependencies | Status |
 | --- | --- | --- | --- | --- |
-| G4.1 | Decide whether user/group persistence stays upstream-owned or becomes Stormrunner-owned | M | G1.1 | Complete |
+| G4.1 | Decide whether user/group persistence stays upstream-owned or becomes APEX Load-owned | M | G1.1 | Complete |
 | G4.2 | If upstream-owned, add clearer group/role mapping documentation and diagnostics | M | G4.1 | Complete |
-| G4.3 | If Stormrunner-owned, design user/group persistence and assignment APIs | XL | G4.1 | Closed: not pursued for this phase |
+| G4.3 | If APEX Load-owned, design user/group persistence and assignment APIs | XL | G4.1 | Closed: not pursued for this phase |
 | G4.4 | Evaluate SCIM or directory-sync compatibility for future enterprise rollout | M | G4.1 | Closed: future evaluation |
 
 Acceptance criteria:
@@ -412,16 +412,16 @@ Acceptance criteria:
 - Operators understand where identity lifecycle lives
 
 Progress:
-- G4.1 is resolved as upstream-owned for this parity phase. Stormrunner consumes human identity, group, and role claims from trusted-header gateways or native OIDC tokens and owns only service-account principals for automation.
+- G4.1 is resolved as upstream-owned for this parity phase. APEX Load consumes human identity, group, and role claims from trusted-header gateways or native OIDC tokens and owns only service-account principals for automation.
 - G4.2 is documented in `docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md` with the trusted-header contract, OIDC claim defaults, project-role assignment format, and diagnostics paths operators should use when claims are missing.
-- G4.3 is intentionally not pursued while the upstream-owned decision holds; Stormrunner-owned user/group persistence remains a future option only if real deployments cannot satisfy requirements through IdP or gateway claim shaping.
+- G4.3 is intentionally not pursued while the upstream-owned decision holds; APEX Load-owned user/group persistence remains a future option only if real deployments cannot satisfy requirements through IdP or gateway claim shaping.
 - G4.4 is deferred to a future enterprise-directory evaluation. SCIM or directory sync is not required for the current upstream-owned model.
 
 ### Auth / RBAC Completion Ledger
 - G1 auth modes: complete through explicit `dev`, `trusted_headers`, and native `oidc` modes, provider presets, diagnostics, CSRF-protected logout, session-expiry reporting, and break-glass operator guidance.
 - G2 RBAC enforcement: complete through route audits, backend-owned access matrix publishing, effective-access dashboard gating, delegated project-admin UX, project isolation tests, and service-account scope regressions.
 - G3 governance hardening: complete through service-account expiration/rotation/last-use visibility, filtered audit feeds and CSV export, scoped API keys, runbook coverage, and safe OIDC failure auditing.
-- G4 identity lifecycle: complete by decision. Human users and groups remain upstream-owned through gateway/OIDC claims for this phase; Stormrunner-owned user/group persistence, SCIM, and directory sync are future enterprise-directory options rather than W4 blockers.
+- G4 identity lifecycle: complete by decision. Human users and groups remain upstream-owned through gateway/OIDC claims for this phase; APEX Load-owned user/group persistence, SCIM, and directory sync are future enterprise-directory options rather than W4 blockers.
 
 ### Auth / RBAC Workstream Notes
 - Existing seams: `pkg/api/middleware.go`, `pkg/api/auth_oidc.go`, settings UI, service-account and audit handlers

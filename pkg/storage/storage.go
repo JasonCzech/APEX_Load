@@ -3,8 +3,8 @@ package storage
 import (
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 const DefaultProjectID = "unassigned"
@@ -14,7 +14,7 @@ const DefaultRepositoryCategoryID = "uncategorized"
 const LegacyApplicationID = "legacy"
 const LegacyReleaseID = "legacy-imported"
 
-// Store defines the interface for persisting Stormrunner data.
+// Store defines the interface for persisting APEX Load data.
 type Store interface {
 	// Domains and application repository hierarchy
 	SaveDomain(domain *Domain) error

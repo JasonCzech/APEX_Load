@@ -1,22 +1,22 @@
 # LoadRunner Web HTTP/HTML RTS Mapping
 
-This document maps the Web HTTP/HTML runtime settings surfaced in Stormrunner to their current support status. The goal is to make imported and manually authored RTS values visible, preserve compatibility where possible, and make execution gaps explicit.
+This document maps the Web HTTP/HTML runtime settings surfaced in APEX Load to their current support status. The goal is to make imported and manually authored RTS values visible, preserve compatibility where possible, and make execution gaps explicit.
 
 The code-owned source of truth for the LoadRunner Web HTTP/HTML matrix lives in `pkg/convert/loadrunner/rts_support.go` and is published through `GET /api/v1/scripts/import/loadrunner/support-matrix`. The broader cross-protocol W3 matrix is published through `GET /api/v1/runtime-settings/support-matrix` and documented in `docs/RUNTIME_SETTINGS_PARITY.md`. The dashboard LoadRunner import flow renders the same entries, tested examples, and caveats before conversion.
 
-The planned Web HTTP/HTML RTS parity scope is complete. Settings that Stormrunner can execute in its supported runtime envelope are classified as `Executed`; settings that are intentionally preserved for migration review but do not have Stormrunner runtime semantics remain `Compatibility-only`.
+The planned Web HTTP/HTML RTS parity scope is complete. Settings that APEX Load can execute in its supported runtime envelope are classified as `Executed`; settings that are intentionally preserved for migration review but do not have APEX Load runtime semantics remain `Compatibility-only`.
 
 ## Status Legend
 
-- `Executed`: Stormrunner enforces the setting at runtime today.
-- `Partial`: Stormrunner executes part of the setting surface, but not the full LoadRunner behavior.
-- `Compatibility-only`: Stormrunner preserves and edits the setting, but does not execute its full runtime semantics yet.
-- `Non-applicable`: The LoadRunner concept does not map cleanly to Stormrunner's architecture.
+- `Executed`: APEX Load enforces the setting at runtime today.
+- `Partial`: APEX Load executes part of the setting surface, but not the full LoadRunner behavior.
+- `Compatibility-only`: APEX Load preserves and edits the setting, but does not execute its full runtime semantics yet.
+- `Non-applicable`: The LoadRunner concept does not map cleanly to APEX Load's architecture.
 - `Blocked`: The setting is modeled, but execution depends on missing metadata or infrastructure.
 
 ## Mapping
 
-| RTS area | LoadRunner concept | Stormrunner field(s) | Status | Notes |
+| RTS area | LoadRunner concept | APEX Load field(s) | Status | Notes |
 | --- | --- | --- | --- | --- |
 | Run Logic | Iterations | `config.run_logic.iterations` | Executed | Applied by the engine iteration loop. |
 | Run Logic | Auto-transactions | `config.run_logic.auto_transactions` | Executed | Supports per-action and per-iteration wrapping. |
@@ -24,7 +24,7 @@ The planned Web HTTP/HTML RTS parity scope is complete. Settings that Stormrunne
 | Run Logic | Action sequence | `config.run_logic.action_sequence` | Executed | Preserved and enforced by the engine action ordering. |
 | Pacing | Delay mode and bounds | `config.pacing.*` | Executed | Fixed, random delay, and related pacing fields execute in the engine. |
 | Think Time | Ignore, multiplier, limit | `config.think_time.*` | Executed | Applied in the engine after action execution. |
-| Logging | Log level, error-only, extended options | `config.log.*` | Executed | Executes imported log level, error-only, parameter-substitution, data-returned, and advanced-trace controls within Stormrunner's supported trace envelope. |
+| Logging | Log level, error-only, extended options | `config.log.*` | Executed | Executes imported log level, error-only, parameter-substitution, data-returned, and advanced-trace controls within APEX Load's supported trace envelope. |
 | Misc | Continue on error | `config.error_handling.continue_on_error` | Executed | Supported through runtime error handling paths. |
 | Misc | Snapshot on error | `config.error_handling.snapshot_on_error` | Executed | HTTP, browser, SOAP, Java-over-HTTP, WebSocket, and gRPC failure paths populate snapshots where request/response artifacts exist. |
 | Browser Emulation | Cache enabled | `config.browser.cache_enabled` | Executed | Browser runtime toggles Chrome cache usage. |
@@ -41,20 +41,20 @@ The planned Web HTTP/HTML RTS parity scope is complete. Settings that Stormrunne
 | Download Filters | Allow list / block list hosts | `config.web_runtime.download_filters.*` | Executed | Browser runtime enforces host-based asset filtering. |
 | Content Check | Global required/forbidden text checks | `config.web_runtime.content_checks[]` | Executed | HTTP runtime enforces checks against main-document responses. |
 | Network Speed Simulation | Preset and custom bandwidth/latency | `config.web_runtime.network_simulation.*` | Executed | Browser runtime maps settings onto DevTools network throttling. |
-| Streaming | Adaptive vs fixed mode | `config.web_runtime.streaming.mode` | Compatibility-only | Stored and imported, but Stormrunner does not execute media playback semantics; validation warnings include preserved values for review. |
+| Streaming | Adaptive vs fixed mode | `config.web_runtime.streaming.mode` | Compatibility-only | Stored and imported, but APEX Load does not execute media playback semantics; validation warnings include preserved values for review. |
 | Streaming | Buffer size | `config.web_runtime.streaming.buffer_size_seconds` | Compatibility-only | Preserved for parity only and surfaced in streaming compatibility warnings. |
 | Streaming | Fixed bitrate | `config.web_runtime.streaming.fixed_bitrate_kbps` | Compatibility-only | Preserved for parity only and surfaced in streaming compatibility warnings. |
 | Streaming | Bandwidth estimation | `config.web_runtime.streaming.bandwidth_estimation` | Compatibility-only | Preserved for parity only and surfaced in streaming compatibility warnings. |
 | Data Formatting | Auto-detect DFEs | `config.web_runtime.data_formatting.auto_detect` | Executed | HTTP runtime auto-detects the supported DFE envelope: obvious base64 text and gzip-compressed text payloads before extraction and assertions. |
 | Data Formatting | DFE transform chain | `config.web_runtime.data_formatting.chain[]` | Executed | HTTP runtime executes the supported DFE chain: `base64`, `gzip`, `json_to_xml`, `xml_to_json`, `url_decode`, `url_encode`, `html_unescape`, and `html_escape`. |
-| Replay engine mode | WinInet / process-vs-thread runtime concepts | N/A | Non-applicable | Stormrunner uses Go HTTP/browser runtimes and goroutine VUsers instead of WinInet or Windows process/thread replay modes. |
+| Replay engine mode | WinInet / process-vs-thread runtime concepts | N/A | Non-applicable | APEX Load uses Go HTTP/browser runtimes and goroutine VUsers instead of WinInet or Windows process/thread replay modes. |
 
 ## Intentional Caveats
 
 - `download_resources = recorded` depends on recorded-resource URL metadata. Browser replay enforces it for import/recording flows that capture those URLs; manually authored scripts should provide equivalent metadata before selecting that mode.
 - Streaming/media playback semantics are intentionally compatibility-only for now.
-- Browser/runtime-wide DFE parity is intentionally bounded to Stormrunner's supported HTTP response transform chain.
-- Logging parity is intentionally scoped to Stormrunner's trace envelope rather than byte-for-byte VuGen log formatting.
+- Browser/runtime-wide DFE parity is intentionally bounded to APEX Load's supported HTTP response transform chain.
+- Logging parity is intentionally scoped to APEX Load's trace envelope rather than byte-for-byte VuGen log formatting.
 
 ## Tested examples
 

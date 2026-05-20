@@ -12,7 +12,7 @@
       "http": {
         "connect_timeout_ms": 30000,
         "request_timeout_ms": 120000,
-        "user_agent": "Stormrunner-OpenAI-Responses-Example/1.0"
+        "user_agent": "APEX Load-OpenAI-Responses-Example/1.0"
       }
     },
     "parameters": [

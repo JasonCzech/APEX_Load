@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/stormrunner/pkg/recorder"
+	"github.com/jasonczech/apexload/pkg/recorder"
 )
 
 func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
@@ -238,7 +238,7 @@ func (s *Server) handleRecorderCACert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-pem-file")
-	w.Header().Set("Content-Disposition", `attachment; filename="stormrunner-ca.pem"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="apexload-ca.pem"`)
 	w.Write(certPEM)
 }
 

@@ -128,14 +128,14 @@ func defaultAuthSettings() AuthSettings {
 		ProjectRolesClaim:     "project_roles",
 		DomainRolesClaim:      "domain_roles",
 		RepositoryRolesClaim:  "application_repository_roles",
-		SessionSecretEnvVar:   "STORMRUNNER_AUTH_SESSION_SECRET",
+		SessionSecretEnvVar:   "APEXLOAD_AUTH_SESSION_SECRET",
 		UserHeader:            "X-Auth-Request-User",
 		NameHeader:            "X-Auth-Request-Name",
 		EmailHeader:           "X-Auth-Request-Email",
-		RolesHeader:           "X-Stormrunner-Roles",
-		ProjectRolesHeader:    "X-Stormrunner-Project-Roles",
-		DomainRolesHeader:     "X-Stormrunner-Domain-Roles",
-		RepositoryRolesHeader: "X-Stormrunner-Application-Repository-Roles",
+		RolesHeader:           "X-APEXLoad-Roles",
+		ProjectRolesHeader:    "X-APEXLoad-Project-Roles",
+		DomainRolesHeader:     "X-APEXLoad-Domain-Roles",
+		RepositoryRolesHeader: "X-APEXLoad-Application-Repository-Roles",
 	}
 }
 

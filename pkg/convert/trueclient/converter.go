@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type ConvertOptions struct {
@@ -80,7 +80,7 @@ var (
 	reSimpleHTMLTagToken    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*$`)
 )
 
-// ConvertArchive converts a TruClient Mobile Web archive into a Stormrunner browser script.
+// ConvertArchive converts a TruClient Mobile Web archive into a APEX Load browser script.
 // The current MVP maps common browser steps and preserves unsupported steps as warnings.
 func ConvertArchive(files map[string]string, opts ConvertOptions) (*ConvertResult, error) {
 	xmlName, xmlContent, ok := findDefaultXML(files)
@@ -100,7 +100,7 @@ func ConvertArchive(files map[string]string, opts ConvertOptions) (*ConvertResul
 			Name:          opts.ScriptName,
 			Version:       "1.0.0",
 			Protocol:      "browser",
-			GeneratedBy:   "stormrunner-truclient-converter",
+			GeneratedBy:   "apexload-truclient-converter",
 			GeneratedFrom: "loadrunner",
 			Config:        dsl.ScriptConfig{},
 			Actions:       make([]dsl.Action, 0),

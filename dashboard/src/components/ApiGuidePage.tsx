@@ -1,15 +1,15 @@
 const quickStartCommands = [
   'curl http://localhost:8080/api/v1/system/health',
-  'curl -H "Authorization: Bearer $STORMRUNNER_API_KEY" http://localhost:8080/api/v1/projects',
-  'curl -X POST -H "Authorization: Bearer $STORMRUNNER_API_KEY" -H "Content-Type: application/json" -d @script.json http://localhost:8080/api/v1/scripts',
+  'curl -H "Authorization: Bearer $APEXLOAD_API_KEY" http://localhost:8080/api/v1/projects',
+  'curl -X POST -H "Authorization: Bearer $APEXLOAD_API_KEY" -H "Content-Type: application/json" -d @script.json http://localhost:8080/api/v1/scripts',
 ]
 
 const mcpResources = [
-  'stormrunner://api-guide',
-  'stormrunner://auth/access-matrix',
-  'stormrunner://system/parity-status',
-  'stormrunner://runtime-settings/support-matrix',
-  'stormrunner://protocol-bundles/support-matrix',
+  'apexload://api-guide',
+  'apexload://auth/access-matrix',
+  'apexload://system/parity-status',
+  'apexload://runtime-settings/support-matrix',
+  'apexload://protocol-bundles/support-matrix',
 ]
 
 const authRows = [
@@ -110,9 +110,9 @@ export default function ApiGuidePage({ onNavigate }: ApiGuidePageProps) {
       <div className="page-header">
         <div>
           <h2>API Guide</h2>
-          <p className="page-subtitle">REST and WebSocket reference for automating Stormrunner from CI/CD, integrations, and operator tooling.</p>
+          <p className="page-subtitle">REST and WebSocket reference for automating APEX Load from CI/CD, integrations, and operator tooling.</p>
         </div>
-        <a className="btn btn-secondary btn-sm" href="https://github.com/jasonczech/stormrunner/blob/main/docs/API_USER_GUIDE.md" target="_blank" rel="noreferrer">
+        <a className="btn btn-secondary btn-sm" href="https://github.com/jasonczech/apexload/blob/main/docs/API_USER_GUIDE.md" target="_blank" rel="noreferrer">
           Repository Guide
         </a>
       </div>
@@ -134,13 +134,13 @@ export default function ApiGuidePage({ onNavigate }: ApiGuidePageProps) {
       <section className="page-section api-guide-mcp-section">
         <div className="api-guide-section-header">
           <h3>MCP Server</h3>
-          <p>Run the Stormrunner MCP bridge for agent-driven automation. It uses service-account auth and adds confirmation guardrails before mutating API calls.</p>
+          <p>Run the APEX Load MCP bridge for agent-driven automation. It uses service-account auth and adds confirmation guardrails before mutating API calls.</p>
         </div>
         <div className="api-guide-mcp-grid">
           <article className="api-guide-mcp-card">
             <h4>Start The Server</h4>
-            <pre><code>{'STORMRUNNER_URL=http://localhost:8080/api/v1 \\\nSTORMRUNNER_API_KEY=srk_... \\\npython3 mcp/server.py'}</code></pre>
-            <a href="https://github.com/jasonczech/stormrunner/blob/main/mcp/README.md" target="_blank" rel="noreferrer">MCP setup guide</a>
+            <pre><code>{'APEXLOAD_URL=http://localhost:8080/api/v1 \\\nAPEXLOAD_API_KEY=srk_... \\\npython3 mcp/server.py'}</code></pre>
+            <a href="https://github.com/jasonczech/apexload/blob/main/mcp/README.md" target="_blank" rel="noreferrer">MCP setup guide</a>
           </article>
           <article className="api-guide-mcp-card">
             <h4>Tool Coverage</h4>
@@ -189,7 +189,7 @@ export default function ApiGuidePage({ onNavigate }: ApiGuidePageProps) {
       <section className="page-section">
         <div className="api-guide-section-header">
           <h3>Authentication</h3>
-          <p>Service accounts can use `Authorization: Bearer &lt;api-key&gt;` or `X-Stormrunner-API-Key`; RBAC roles and token scopes are both enforced.</p>
+          <p>Service accounts can use `Authorization: Bearer &lt;api-key&gt;` or `X-APEX Load-API-Key`; RBAC roles and token scopes are both enforced.</p>
         </div>
         <div className="api-guide-table-card">
           <table>
@@ -245,7 +245,7 @@ export default function ApiGuidePage({ onNavigate }: ApiGuidePageProps) {
 
       <section className="api-guide-callout">
         <h3>Dev Preview Headers</h3>
-        <p>In local dev auth mode only, API clients may send <code>X-Stormrunner-Dev-View: admin|user</code> and <code>X-Stormrunner-Dev-Project-ID: &lt;project-id&gt;</code> to simulate dashboard Admin or project editor User behavior. Production auth modes ignore these headers.</p>
+        <p>In local dev auth mode only, API clients may send <code>X-APEX Load-Dev-View: admin|user</code> and <code>X-APEX Load-Dev-Project-ID: &lt;project-id&gt;</code> to simulate dashboard Admin or project editor User behavior. Production auth modes ignore these headers.</p>
       </section>
     </div>
   )

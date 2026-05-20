@@ -133,7 +133,7 @@ func NewWithCAFiles(proxyAddr, caCertPath, caKeyPath string) *Recorder {
 }
 
 func defaultCAFiles() (string, string) {
-	baseDir := os.Getenv("STORMRUNNER_RECORDER_CA_DIR")
+	baseDir := os.Getenv("APEXLOAD_RECORDER_CA_DIR")
 	if strings.TrimSpace(baseDir) == "" {
 		baseDir = defaultRecorderCADir
 	}

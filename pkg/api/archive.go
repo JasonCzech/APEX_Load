@@ -16,14 +16,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/engine"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-const archiveSchemaVersion = "stormrunner.archive.v1"
-const runArchiveReportSchemaVersion = "stormrunner.archive_report.v1"
-const browserDiagnosticsSchemaVersion = "stormrunner.browser_diagnostics.v1"
+const archiveSchemaVersion = "apexload.archive.v1"
+const runArchiveReportSchemaVersion = "apexload.archive_report.v1"
+const browserDiagnosticsSchemaVersion = "apexload.browser_diagnostics.v1"
 
 type RunArchiveManifest struct {
 	SchemaVersion                string               `json:"schema_version"`
@@ -580,11 +580,11 @@ func cloneGeneratorInventoryEntries(entries []GeneratorInventoryEntry) []Generat
 	return cloned
 }
 
-func captureStormrunnerEnv() map[string]string {
+func captureAPEXLoadEnv() map[string]string {
 	env := make(map[string]string)
 	for _, entry := range os.Environ() {
 		key, value, ok := strings.Cut(entry, "=")
-		if !ok || !strings.HasPrefix(key, "STORMRUNNER_") {
+		if !ok || !strings.HasPrefix(key, "APEXLOAD_") {
 			continue
 		}
 		upper := strings.ToUpper(key)
@@ -1358,7 +1358,7 @@ func buildRunArchiveChangeAttribution(manifest *RunArchiveManifest) RunArchiveCh
 	return RunArchiveChangeAttribution{
 		ScriptRevisions:       scriptRevisions,
 		ScenarioRevision:      strings.TrimSpace(provenance.ScenarioID),
-		Environment:           archiveFirstNonEmpty(provenance.ControllerEnv["STORMRUNNER_ENVIRONMENT"], provenance.ControllerEnv["STORMRUNNER_ENV"], provenance.ProjectID),
+		Environment:           archiveFirstNonEmpty(provenance.ControllerEnv["APEXLOAD_ENVIRONMENT"], provenance.ControllerEnv["APEXLOAD_ENV"], provenance.ProjectID),
 		GeneratorVersions:     generatorVersions,
 		DataRevision:          dataRevisionFromGroups(provenance.Groups),
 		RuntimeOverrides:      provenance.RuntimeSettings != nil,

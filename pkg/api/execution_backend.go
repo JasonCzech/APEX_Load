@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/engine"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type testExecutionBackend interface {
@@ -119,7 +119,7 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	provenance.Groups = cloneArchiveTestGroups(test.Groups)
 	provenance.BaselinePinned = test.BaselinePinned
 	provenance.BaselinePinnedAt = test.BaselinePinnedAt
-	provenance.ControllerEnv = captureStormrunnerEnv()
+	provenance.ControllerEnv = captureAPEXLoadEnv()
 	if tr == nil {
 		return provenance
 	}

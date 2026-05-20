@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestBuildProtoConfig_BaseURL(t *testing.T) {
@@ -569,7 +569,7 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 				CheckNewerVersions: &checkNewerVersions,
 				DownloadResources:  "recorded",
 				SlowMoMs:           125,
-				UserAgent:          "StormrunnerBrowser/0.1",
+				UserAgent:          "APEXLoadBrowser/0.1",
 				DeviceProfile:      "iphone_se",
 				TouchMode:          &touchMode,
 				Orientation:        "portrait",
@@ -695,7 +695,7 @@ func TestBuildProtoConfig_JMS(t *testing.T) {
 				MessageVPN:      "perf-vpn",
 				Username:        "app",
 				Password:        "secret",
-				ClientID:        "stormrunner-vu",
+				ClientID:        "apexload-vu",
 				Destination:     "orders.in",
 				DestinationType: "queue",
 				ReplyTo:         "orders.reply",

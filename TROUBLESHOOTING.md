@@ -8,7 +8,7 @@
 **Symptom:** Browser shows blank page or 404 when visiting `http://localhost:8080`
 
 **Solutions:**
-1. Verify controller is running: Check terminal for `stormrunner API server starting` message
+1. Verify controller is running: Check terminal for `apexload API server starting` message
 2. Check port conflict: `lsof -i :8080` (should show the Go process)
 3. Clear browser cache: Hard refresh (Ctrl+Shift+R or Cmd+Shift+R)
 4. Check browser console: Open DevTools (F12) → Console tab for JavaScript errors
@@ -54,7 +54,7 @@ npm run build
 
 2. Verify database has data:
    ```bash
-   sqlite3 stormrunner.db "SELECT count(*) FROM scripts;"
+   sqlite3 apexload.db "SELECT count(*) FROM scripts;"
    ```
 
 3. Check for JavaScript errors in console (F12)
@@ -76,7 +76,7 @@ lsof -i :8080
 kill -9 <PID>
 
 # Or specify different port
-STORMRUNNER_ADDR=:9000 go run ./cmd/controller
+APEXLOAD_ADDR=:9000 go run ./cmd/controller
 ```
 
 #### Database connection error
@@ -85,8 +85,8 @@ STORMRUNNER_ADDR=:9000 go run ./cmd/controller
 **Solutions:**
 1. Check database file exists and is writable:
    ```bash
-   ls -la stormrunner.db
-   chmod 644 stormrunner.db
+   ls -la apexload.db
+   chmod 644 apexload.db
    ```
 
 2. If locked, close other connections:
@@ -97,7 +97,7 @@ STORMRUNNER_ADDR=:9000 go run ./cmd/controller
 
 3. Reset database (WARNING: deletes all data):
    ```bash
-   rm stormrunner.db
+   rm apexload.db
    # Restart controller to create new empty DB
    ```
 
@@ -208,19 +208,19 @@ STORMRUNNER_ADDR=:9000 go run ./cmd/controller
 
 ---
 
-### CLI (stormctl) Issues
+### CLI (apexctl) Issues
 
-#### stormctl command not found
-**Symptom:** `stormctl: command not found`
+#### apexctl command not found
+**Symptom:** `apexctl: command not found`
 
 **Solutions:**
 ```bash
 # Use go run instead
-go run ./cmd/stormctl run --script test.json --vusers 10
+go run ./cmd/apexctl run --script test.json --vusers 10
 
 # Or build first
-go build -o stormctl ./cmd/stormctl
-./stormctl run --script test.json --vusers 10
+go build -o apexctl ./cmd/apexctl
+./apexctl run --script test.json --vusers 10
 ```
 
 #### Script validation fails in CLI
@@ -240,7 +240,7 @@ go build -o stormctl ./cmd/stormctl
 
 3. Run with verbose output:
    ```bash
-   go run ./cmd/stormctl run --script test.json --vusers 1 -verbose
+   go run ./cmd/apexctl run --script test.json --vusers 1 -verbose
    ```
 
 #### Test completes but shows 0 transactions
@@ -396,7 +396,7 @@ slog.Debug("action executed", "action", action.Name, "latency_ms", latency.Milli
 
 ```bash
 # Connect to SQLite
-sqlite3 stormrunner.db
+sqlite3 apexload.db
 
 # List tables
 .tables

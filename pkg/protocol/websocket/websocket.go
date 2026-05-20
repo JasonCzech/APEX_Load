@@ -13,7 +13,7 @@ import (
 	"time"
 
 	gorillawebsocket "github.com/gorilla/websocket"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jmespath/go-jmespath"
 )
 

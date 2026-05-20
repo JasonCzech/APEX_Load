@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 // RunScriptShakeout executes one init-and-action pass for a single script instance.

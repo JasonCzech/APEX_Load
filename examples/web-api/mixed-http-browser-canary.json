@@ -19,7 +19,7 @@
         "name": "Checkout_Browser_Canary",
         "version": "1.0.0",
         "protocol": "browser",
-        "generated_by": "stormrunner-sample-pack",
+        "generated_by": "apexload-sample-pack",
         "generated_from": "web-api-sample",
         "config": {
           "base_url": "https://shop.example.test",

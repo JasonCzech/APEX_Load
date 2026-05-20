@@ -174,7 +174,7 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
         <div>
           <h2>Import JMeter Test Plan</h2>
           <p className="lr-subtitle">
-            Upload a <code>.jmx</code> plan and convert HTTP thread groups into Stormrunner reusable scripts. The importer preserves variables, CSV data sources, headers, timers, and review notes where possible.
+            Upload a <code>.jmx</code> plan and convert HTTP thread groups into APEX Load reusable scripts. The importer preserves variables, CSV data sources, headers, timers, and review notes where possible.
           </p>
         </div>
         {onClose && <button className="btn btn-ghost" onClick={onClose}>x</button>}
