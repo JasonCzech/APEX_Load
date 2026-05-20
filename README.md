@@ -55,6 +55,7 @@ The current controller can run in either local or distributed mode without chang
 - **[API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md)** — Complete REST API reference, DSL syntax guide, example scripts, template variables
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — Common issues, debugging techniques, solutions
 - **[docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md](docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md)** — Platform parity roadmap for architecture, scale-out, authoring, load modeling, monitoring, reporting, and scheduling
+- **[docs/ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md](docs/ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md)** — Implementation plan for PostgreSQL, object archives, Prometheus long-term metrics, and Redis/Valkey enterprise data services
 - **[docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md](docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md)** — Epic backlog and delivery plan to close practical parity gaps with LoadRunner in browser testing, script authoring UX, runtime settings, and auth/RBAC
 - **[docs/LOADRUNNER_PROTOCOL_IMPORT_ROUTING.md](docs/LOADRUNNER_PROTOCOL_IMPORT_ROUTING.md)** — Protocol-aware LoadRunner/VuGen ZIP import routing, executable/review modes, and review-artifact API contract
 - **[docs/K6_NEOLOAD_PARITY_PLAN.md](docs/K6_NEOLOAD_PARITY_PLAN.md)** — Competitive parity plan for closing Stormrunner gaps against Grafana k6 and Tricentis NeoLoad
