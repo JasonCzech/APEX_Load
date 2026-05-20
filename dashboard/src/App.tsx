@@ -12,6 +12,7 @@ import { useAuthStatus } from './hooks/useAuthStatus'
 import { ProjectProvider } from './hooks/ProjectProvider'
 import { useProject } from './hooks/useProject'
 import { DevViewProvider, useDevView } from './hooks/DevViewProvider'
+import { useSystemApi } from './hooks/api/useSystemApi'
 import './App.css'
 import './components/Pages.css'
 
@@ -22,6 +23,7 @@ const ResultsPage = lazy(() => import('./components/ResultsPage'))
 const NewTestPage = lazy(() => import('./components/NewTestPage'))
 const MonitoringPage = lazy(() => import('./components/MonitoringPage'))
 const ApiGuidePage = lazy(() => import('./components/ApiGuidePage'))
+const AccessPage = lazy(() => import('./components/AccessPage'))
 const SettingsPage = lazy(() => import('./components/SettingsPage'))
 
 type View =
@@ -36,9 +38,11 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const [telemetryDiagnostics, setTelemetryDiagnostics] = useState<TelemetryDiagnosticEntry[]>([])
   const { theme, setTheme } = useDashboardTheme()
   const { mode: devViewMode } = useDevView()
+  const { getAuthEffectiveAccess } = useSystemApi()
   const isDevUserPreview = authStatus?.mode === 'dev' && devViewMode === 'user'
   const scriptMode = view.page === 'scripts' && 'mode' in view ? view.mode : undefined
   const scriptEditId = view.page === 'scripts' && 'scriptId' in view ? view.scriptId : undefined
+  const [effectiveAccessResources, setEffectiveAccessResources] = useState<import('./types').DashboardAuthEffectiveAccessResource[]>([])
 
   const handleWSMessage = useCallback((msg: WSMessage) => {
     if (msg.type === 'metrics_update' && msg.data && msg.test_id && msg.timestamp) {
@@ -102,6 +106,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const { projects, activeProject, setActiveProject, createAndSelectProject } = useProject()
   const { connectionState } = useWebSocket({ onMessage: handleWSMessage, projectId: activeProject?.id })
   const { applications, releases, activeApplication, activeRelease, setActiveApplication, setActiveRelease, createAndSelectApplication, createAndSelectRelease } = useApplication()
+  const canManageServiceAccounts = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_service_accounts')
 
   const navigateToTest = (id: string) => setView({ page: 'test', testId: id })
   const activePage = view.page === 'test' ? 'tests' : view.page
@@ -111,6 +116,27 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const handleNavigate = (page: NavPage) => {
     setView({ page })
   }
+
+  useEffect(() => {
+    let cancelled = false
+    const loadEffectiveAccess = async () => {
+      try {
+        const response = await getAuthEffectiveAccess(activeProject?.id)
+        if (!cancelled) {
+          setEffectiveAccessResources(response.resources || [])
+        }
+      } catch {
+        if (!cancelled) {
+          setEffectiveAccessResources([])
+        }
+      }
+    }
+
+    loadEffectiveAccess()
+    return () => {
+      cancelled = true
+    }
+  }, [activeProject?.id, authStatus?.mode, devViewMode, getAuthEffectiveAccess])
 
   useEffect(() => {
     if (!isDevUserPreview) {
@@ -123,6 +149,12 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       return current
     })
   }, [isDevUserPreview])
+
+  useEffect(() => {
+    if (view.page === 'access' && !canManageServiceAccounts) {
+      setView({ page: 'dashboard' })
+    }
+  }, [canManageServiceAccounts, view.page])
 
   return (
     <div className="app-layout">
@@ -142,6 +174,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
         onApplicationChange={setActiveApplication}
         onReleaseChange={setActiveRelease}
         onCreateApplication={createAndSelectApplication}
+        showAccess={canManageServiceAccounts}
       />
       <main className="main-content">
         <Suspense fallback={<div className="page">Loading page...</div>}>
@@ -190,12 +223,29 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             />
           )}
           {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} />}
-          {view.page === 'docs' && <ApiGuidePage />}
-          {view.page === 'settings' && <SettingsPage theme={theme} onThemeChange={setTheme} authStatus={authStatus} />}
+          {view.page === 'docs' && <ApiGuidePage onNavigate={handleNavigate} />}
+          {view.page === 'access' && (
+            <AccessPage
+              projects={projects}
+              activeProject={activeProject}
+              canManageServiceAccounts={canManageServiceAccounts}
+            />
+          )}
+          {view.page === 'settings' && <SettingsPage theme={theme} onThemeChange={setTheme} authStatus={authStatus} onNavigate={handleNavigate} />}
         </Suspense>
       </main>
     </div>
   )
+}
+
+function isEffectiveOperationAllowed(resources: import('./types').DashboardAuthEffectiveAccessResource[], operationID: string): boolean {
+  for (const resource of resources) {
+    const operation = resource.operations.find(item => item.id === operationID)
+    if (operation) {
+      return operation.allowed
+    }
+  }
+  return false
 }
 
 export default function App() {

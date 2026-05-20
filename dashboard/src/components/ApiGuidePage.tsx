@@ -97,7 +97,11 @@ const statusRows = [
   ['409', 'Conflict, such as a schedule or governance conflict.'],
 ]
 
-export default function ApiGuidePage() {
+type ApiGuidePageProps = {
+  onNavigate?: (page: 'access') => void
+}
+
+export default function ApiGuidePage({ onNavigate }: ApiGuidePageProps) {
   return (
     <div className="page api-guide-page">
       <div className="page-header">
@@ -153,6 +157,18 @@ export default function ApiGuidePage() {
             </ul>
           </article>
         </div>
+      </section>
+
+      <section className="api-guide-callout api-guide-key-callout">
+        <div>
+          <h3>API Keys</h3>
+          <p>Generate service-account keys from Access & API Keys for MCP, CI/CD, reporting exports, and controlled external automation. Keys are returned once, then only hashed server-side.</p>
+        </div>
+        {onNavigate && (
+          <button className="btn btn-secondary btn-sm" type="button" onClick={() => onNavigate('access')}>
+            Open Access & API Keys
+          </button>
+        )}
       </section>
 
       <section className="page-section">

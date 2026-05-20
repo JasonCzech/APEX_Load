@@ -425,43 +425,6 @@ function validateAuthURL(label: string, value: string | undefined, allowAbsolute
   return null
 }
 
-function parseRoleInput(value: string): string[] {
-  return value
-    .split(/[|,]/)
-    .map(token => token.trim())
-    .filter(Boolean)
-}
-
-function parseServiceAccountProjectRoles(value: string): Record<string, string[]> {
-  return value.split(';').reduce<Record<string, string[]>>((accumulator, assignment) => {
-    const [projectID, rawRoles] = assignment.split('=')
-    const normalizedProjectID = projectID?.trim()
-    if (!normalizedProjectID || !rawRoles) {
-      return accumulator
-    }
-    const roles = rawRoles
-      .split(/[|,]/)
-      .map(token => token.trim())
-      .filter(Boolean)
-    if (roles.length > 0) {
-      accumulator[normalizedProjectID] = roles
-    }
-    return accumulator
-  }, {})
-}
-
-function parseOptionalFutureDate(value: string): string | undefined {
-  const trimmed = value.trim()
-  if (!trimmed) return undefined
-  const parsed = new Date(trimmed)
-  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString()
-}
-
-function parsePositiveInteger(value: string, fallback: number): number {
-  const parsed = Number(value)
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
-}
-
 function formatAuditActor(event: DashboardAuditEvent): string {
   return event.actor_display_name || event.actor_subject || event.actor_type
 }
@@ -781,9 +744,10 @@ interface SettingsPageProps {
   theme: DashboardTheme
   onThemeChange: (theme: DashboardTheme) => void
   authStatus?: DashboardAuthStatus
+  onNavigate?: (page: 'access') => void
 }
 
-export default function SettingsPage({ theme, onThemeChange, authStatus }: SettingsPageProps) {
+export default function SettingsPage({ theme, onThemeChange, authStatus, onNavigate }: SettingsPageProps) {
   const api = useApi()
   const applicationApi = useApplicationApi()
   const projectApi = useProjectApi()
@@ -808,18 +772,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const [authRoles, setAuthRoles] = useState<DashboardAuthRoleDefinition[]>([])
   const [serviceAccounts, setServiceAccounts] = useState<DashboardServiceAccount[]>([])
   const [auditEvents, setAuditEvents] = useState<DashboardAuditEvent[]>([])
-  const [serviceAccountName, setServiceAccountName] = useState('')
-  const [serviceAccountDescription, setServiceAccountDescription] = useState('')
-  const [serviceAccountGlobalRoles, setServiceAccountGlobalRoles] = useState('viewer')
-  const [serviceAccountProjectRoles, setServiceAccountProjectRoles] = useState('')
-  const [serviceAccountScopes, setServiceAccountScopes] = useState('automation:*')
-  const [serviceAccountExpiresAt, setServiceAccountExpiresAt] = useState('')
-  const [serviceAccountRotationDays, setServiceAccountRotationDays] = useState('90')
-  const [serviceAccountActionMessage, setServiceAccountActionMessage] = useState('')
-  const [serviceAccountActionError, setServiceAccountActionError] = useState('')
   const [auditActionMessage, setAuditActionMessage] = useState('')
   const [auditActionError, setAuditActionError] = useState('')
-  const [issuedServiceAccountKey, setIssuedServiceAccountKey] = useState('')
   const [auditActionFilter, setAuditActionFilter] = useState('')
   const [auditActorTypeFilter, setAuditActorTypeFilter] = useState('')
   const [auditStatusFilter, setAuditStatusFilter] = useState('')
@@ -1491,21 +1445,6 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
     setRequestError('')
   }
 
-  const loadServiceAccounts = async () => {
-    const response = await api.listAuthServiceAccounts()
-    setServiceAccounts(response.service_accounts || [])
-  }
-
-  const loadAuditEvents = async () => {
-    const response = await api.listAuthAuditEvents({
-      limit: 20,
-      action: auditActionFilter.trim() || undefined,
-      actor_type: auditActorTypeFilter.trim() || undefined,
-      status: auditStatusFilter.trim() || undefined,
-    })
-    setAuditEvents(response.events || [])
-  }
-
   const exportAuditEvents = async () => {
     if (!canViewAudit) {
       setAuditActionError('Current session cannot export audit events.')
@@ -1526,88 +1465,6 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
     } catch (error: unknown) {
       setAuditActionError(getErrorMessage(error, 'Unable to export audit events'))
       setAuditActionMessage('')
-    }
-  }
-
-  const createServiceAccount = async () => {
-    if (!canManageServiceAccounts) {
-      setServiceAccountActionError('Current session cannot manage service accounts.')
-      setServiceAccountActionMessage('')
-      return
-    }
-    if (!serviceAccountName.trim()) {
-      setServiceAccountActionError('Service account name is required.')
-      setServiceAccountActionMessage('')
-      return
-    }
-    setServiceAccountActionError('')
-    setServiceAccountActionMessage('')
-    try {
-      const response = await api.createAuthServiceAccount({
-        name: serviceAccountName.trim(),
-        description: serviceAccountDescription.trim() || undefined,
-        global_roles: parseRoleInput(serviceAccountGlobalRoles),
-        project_roles: parseServiceAccountProjectRoles(serviceAccountProjectRoles),
-        scopes: parseRoleInput(serviceAccountScopes),
-        expires_at: parseOptionalFutureDate(serviceAccountExpiresAt),
-        rotation_interval_days: parsePositiveInteger(serviceAccountRotationDays, 90),
-      })
-      setIssuedServiceAccountKey(response.api_key)
-      setServiceAccountActionMessage(`Created service account ${response.service_account.name}. Copy the issued API key now; it is only returned once.`)
-      setServiceAccountName('')
-      setServiceAccountDescription('')
-      setServiceAccountGlobalRoles('viewer')
-      setServiceAccountProjectRoles('')
-      setServiceAccountScopes('automation:*')
-      setServiceAccountExpiresAt('')
-      setServiceAccountRotationDays('90')
-      await Promise.all([loadServiceAccounts(), loadAuditEvents()])
-    } catch (error: unknown) {
-      setServiceAccountActionError(getErrorMessage(error, 'Unable to create service account'))
-      setIssuedServiceAccountKey('')
-    }
-  }
-
-  const deleteServiceAccount = async (account: DashboardServiceAccount) => {
-    if (!canManageServiceAccounts) return
-    setServiceAccountActionError('')
-    setServiceAccountActionMessage('')
-    try {
-      await api.deleteAuthServiceAccount(account.id)
-      setIssuedServiceAccountKey('')
-      setServiceAccountActionMessage(`Deleted service account ${account.name}.`)
-      await Promise.all([loadServiceAccounts(), loadAuditEvents()])
-    } catch (error: unknown) {
-      setServiceAccountActionError(getErrorMessage(error, 'Unable to delete service account'))
-    }
-  }
-
-  const setServiceAccountActive = async (account: DashboardServiceAccount, active: boolean) => {
-    if (!canManageServiceAccounts) return
-    setServiceAccountActionError('')
-    setServiceAccountActionMessage('')
-    try {
-      await api.updateAuthServiceAccount(account.id, { active })
-      setIssuedServiceAccountKey('')
-      setServiceAccountActionMessage(`${active ? 'Enabled' : 'Disabled'} service account ${account.name}.`)
-      await Promise.all([loadServiceAccounts(), loadAuditEvents()])
-    } catch (error: unknown) {
-      setServiceAccountActionError(getErrorMessage(error, `Unable to ${active ? 'enable' : 'disable'} service account`))
-    }
-  }
-
-  const rotateServiceAccount = async (account: DashboardServiceAccount) => {
-    if (!canManageServiceAccounts) return
-    setServiceAccountActionError('')
-    setServiceAccountActionMessage('')
-    try {
-      const response = await api.rotateAuthServiceAccount(account.id)
-      setIssuedServiceAccountKey(response.api_key)
-      setServiceAccountActionMessage(`Rotated API key for ${account.name}. Copy the issued API key now; it is only returned once.`)
-      await Promise.all([loadServiceAccounts(), loadAuditEvents()])
-    } catch (error: unknown) {
-      setServiceAccountActionError(getErrorMessage(error, 'Unable to rotate service account key'))
-      setIssuedServiceAccountKey('')
     }
   }
 
@@ -2824,117 +2681,28 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                 </div>
               )}
               <div className="settings-subsection">
-                    <div className="settings-manager-summary">
-                      <div>
-                        <span className="setting-label">Service Account API Keys</span>
-                        <span className="setting-desc">Create automation principals for CLI jobs, CI workflows, or external controllers. Outside dev mode, API keys are evaluated before interactive session or header auth and inherit the same RBAC model.</span>
-                      </div>
-                      <strong>{serviceAccounts.length}</strong>
-                    </div>
-                    <div className="setting-row">
-                      <div className="setting-info">
-                        <span className="setting-label">Service Account Name</span>
-                        <span className="setting-desc">Friendly label shown in audit history and API-key attribution.</span>
-                      </div>
-                      <input className="settings-input" value={serviceAccountName} onChange={(e) => setServiceAccountName(e.target.value)} placeholder="Nightly CI" />
-                    </div>
-                    <div className="setting-row">
-                      <div className="setting-info">
-                        <span className="setting-label">Description</span>
-                        <span className="setting-desc">Optional context for operators.</span>
-                      </div>
-                      <input className="settings-input" value={serviceAccountDescription} onChange={(e) => setServiceAccountDescription(e.target.value)} placeholder="Runs nightly smoke coverage" />
-                    </div>
-                    <div className="setting-row">
-                      <div className="setting-info">
-                        <span className="setting-label">Global Roles</span>
-                        <span className="setting-desc">Comma or pipe-delimited roles such as viewer, editor, project_admin, or system_admin.</span>
-                      </div>
-                      <input className="settings-input cell-mono" value={serviceAccountGlobalRoles} onChange={(e) => setServiceAccountGlobalRoles(e.target.value)} placeholder="viewer,editor" />
-                    </div>
-                    <div className="setting-row">
-                      <div className="setting-info">
-                        <span className="setting-label">Project Roles</span>
-                        <span className="setting-desc">Optional project assignments in the form project-id=viewer|editor;other-project=project_admin.</span>
-                      </div>
-                      <input className="settings-input cell-mono" value={serviceAccountProjectRoles} onChange={(e) => setServiceAccountProjectRoles(e.target.value)} placeholder="checkout=editor;governance=viewer" />
-                    </div>
-                    <div className="setting-row">
-                      <div className="setting-info">
-                        <span className="setting-label">Token Scopes</span>
-                        <span className="setting-desc">Comma or pipe-delimited API key scopes. Use automation:* for full automation, or narrow to read, tests:run, scripts:write, results:read, system:read, settings:manage, service_accounts:manage, audit:read.</span>
-                      </div>
-                      <input className="settings-input cell-mono" value={serviceAccountScopes} onChange={(e) => setServiceAccountScopes(e.target.value)} placeholder="automation:*" />
-                    </div>
-                    <div className="setting-row">
-                      <div className="setting-info">
-                        <span className="setting-label">Expires At</span>
-                        <span className="setting-desc">Optional service-account expiration. Expired API keys are rejected even if the account remains enabled.</span>
-                      </div>
-                      <input className="settings-input cell-mono" type="datetime-local" value={serviceAccountExpiresAt} onChange={(e) => setServiceAccountExpiresAt(e.target.value)} />
-                    </div>
-                    <div className="setting-row">
-                      <div className="setting-info">
-                        <span className="setting-label">Rotation Interval (days)</span>
-                        <span className="setting-desc">Policy interval used to show when the current API key is due for rotation.</span>
-                      </div>
-                      <input className="settings-input settings-input-number" type="number" min={1} step={1} value={serviceAccountRotationDays} onChange={(e) => setServiceAccountRotationDays(e.target.value)} />
-                    </div>
-                    <div className="setting-row">
-                      <div className="setting-info">
-                        <span className="setting-label">Provisioning</span>
-                        <span className="setting-desc">Stormrunner returns the generated API key exactly once. Store it in your secret manager after creation.</span>
-                      </div>
-                      <div className="settings-inline-actions">
-                        <button className="btn btn-secondary" type="button" onClick={createServiceAccount} disabled={!serviceAccountName.trim() || !canManageServiceAccounts}>
-                          Create Service Account
-                        </button>
-                      </div>
-                    </div>
-                    {serviceAccountActionError && <p className="settings-error">{serviceAccountActionError}</p>}
-                    {serviceAccountActionMessage && <p className="settings-notice">{serviceAccountActionMessage}</p>}
-                    {issuedServiceAccountKey && (
-                      <div className="setting-row">
-                        <div className="setting-info">
-                          <span className="setting-label">Issued API Key</span>
-                          <span className="setting-desc">Copy this now. Only the hash is retained by the controller.</span>
-                        </div>
-                        <span className="settings-value-display cell-mono">{issuedServiceAccountKey}</span>
-                      </div>
-                    )}
-                    {serviceAccounts.length > 0 ? serviceAccounts.map((account) => (
-                      <div className="setting-row" key={account.id}>
-                        <div className="setting-info">
-                          <span className="setting-label">{account.name} {account.active ? '(Active)' : '(Disabled)'}</span>
-                          <span className="setting-desc">{account.description || 'No description provided.'}</span>
-                          <span className="setting-desc">Global roles: {formatAuthRoleList(account.global_roles)}</span>
-                          <span className="setting-desc">Project roles: {formatProjectRoleAssignments(account.project_roles)}</span>
-                          <span className="setting-desc">Token scopes: {formatAuthRoleList(account.scopes)}</span>
-                          <span className="setting-desc">Created: {formatAuditTimestamp(account.created_at)}{account.last_used_at ? ` | Last used: ${formatAuditTimestamp(account.last_used_at)}` : ''}</span>
-                          <span className="setting-desc">Expires: {account.expires_at ? formatAuditTimestamp(account.expires_at) : 'No expiration'} | Key rotated: {formatAuditTimestamp(account.key_rotated_at || account.created_at)}</span>
-                          <span className="setting-desc">Rotation policy: every {account.rotation_interval_days || 90} days{account.rotation_due_at ? ` | Due: ${formatAuditTimestamp(account.rotation_due_at)}` : ''}</span>
-                        </div>
-                        <div className="settings-inline-actions">
-                          <button className="btn btn-secondary" type="button" onClick={() => rotateServiceAccount(account)} disabled={!canManageServiceAccounts}>
-                            Rotate Key
-                          </button>
-                          <button className="btn btn-secondary" type="button" onClick={() => setServiceAccountActive(account, !account.active)} disabled={!canManageServiceAccounts}>
-                            {account.active ? 'Disable' : 'Enable'}
-                          </button>
-                          <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => deleteServiceAccount(account)} disabled={!canManageServiceAccounts}>
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    )) : (
-                      <div className="setting-row">
-                        <div className="setting-info">
-                          <span className="setting-label">No service accounts yet</span>
-                          <span className="setting-desc">Create an automation principal when you need scoped API access for CI or external control loops.</span>
-                        </div>
-                      </div>
-                    )}
+                <div className="settings-manager-summary">
+                  <div>
+                    <span className="setting-label">Service Account API Keys</span>
+                    <span className="setting-desc">Generate, rotate, disable, and delete scoped API keys from Access & API Keys. Settings keeps the auth mode, role contract, and audit evidence here.</span>
                   </div>
+                  <strong>{serviceAccounts.length}</strong>
+                </div>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label">Provisioning Workspace</span>
+                    <span className="setting-desc">Use the dedicated Access page for CI, MCP, reporting, script import, and system automation key generation.</span>
+                  </div>
+                  <div className="settings-inline-actions">
+                    <button className="btn btn-secondary" type="button" onClick={() => onNavigate?.('access')} disabled={!canManageServiceAccounts || !onNavigate}>
+                      Open Access & API Keys
+                    </button>
+                  </div>
+                </div>
+                {!canManageServiceAccounts && (
+                  <p className="settings-notice">Current session can view auth settings but cannot manage service-account API keys.</p>
+                )}
+              </div>
                   <div className="settings-subsection">
                     <div className="settings-manager-summary">
                       <div>

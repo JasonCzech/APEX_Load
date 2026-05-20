@@ -218,6 +218,48 @@ describe('Sidebar', () => {
     expect(onNavigate).toHaveBeenCalledWith('docs')
   })
 
+  it('shows Access navigation only when service-account management is allowed', async () => {
+    const onNavigate = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={onNavigate}
+          connectionState="connected"
+          showAccess
+        />,
+      )
+    })
+
+    const accessButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Access'))
+    expect(accessButton).toBeDefined()
+    if (!accessButton) {
+      return
+    }
+
+    await act(async () => {
+      accessButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onNavigate).toHaveBeenCalledWith('access')
+  })
+
+  it('hides Access navigation when service-account management is denied', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          showAccess={false}
+        />,
+      )
+    })
+
+    expect(container.textContent).not.toContain('Access')
+  })
+
   it('renders a dev-only Admin/User toggle that persists editor preview and hides admin navigation', async () => {
     const onNavigate = vi.fn()
 

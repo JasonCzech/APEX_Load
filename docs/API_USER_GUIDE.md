@@ -38,6 +38,8 @@ Service-account requests must satisfy both RBAC role checks and token scopes. Fo
 
 The MCP server under `mcp/` also uses service-account authentication by default. Configure `STORMRUNNER_API_KEY` or `STORMRUNNER_BEARER_TOKEN` for AI-agent and CI/CD automation rather than relying on local dev preview headers.
 
+Dashboard operators with service-account management permission can generate, rotate, disable, and delete scoped API keys from **Access & API Keys**. Stormrunner returns created or rotated keys once and then retains only the hash.
+
 Useful auth endpoints:
 
 | Method | Path | Purpose |

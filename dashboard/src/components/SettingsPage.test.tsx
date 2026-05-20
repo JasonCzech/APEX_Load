@@ -1016,7 +1016,7 @@ describe('SettingsPage', () => {
     expect(container.textContent).toContain('Settings saved.')
   })
 
-  it('disables settings, service-account, and audit actions when effective RBAC denies them', async () => {
+  it('disables settings, access handoff, and audit actions when effective RBAC denies them', async () => {
     apiMock.getAuthEffectiveAccess.mockResolvedValue({
       enabled: true,
       authenticated: true,
@@ -1064,15 +1064,9 @@ describe('SettingsPage', () => {
     expect(resetButton?.disabled).toBe(true)
     expect(container.textContent).toContain('Current session can view settings but cannot save global configuration changes.')
 
-    const serviceAccountNameInput = findSettingInput(generalSection, 'Service Account Name')
-    expect(serviceAccountNameInput).toBeTruthy()
-    if (!serviceAccountNameInput) return
-    await setFieldValue(serviceAccountNameInput, 'Restricted CI')
-
-    expect(findButton('Create Service Account')?.disabled).toBe(true)
-    expect(findButton('Rotate Key')?.disabled).toBe(true)
-    expect(findButton('Disable')?.disabled).toBe(true)
-    expect(findButton('Delete')?.disabled).toBe(true)
+    expect(generalSection.textContent).toContain('Access & API Keys')
+    expect(generalSection.textContent).toContain('Current session can view auth settings but cannot manage service-account API keys.')
+    expect(findButton('Open Access & API Keys')?.disabled).toBe(true)
     expect(findButton('Export CSV')?.disabled).toBe(true)
   })
 
@@ -1188,7 +1182,7 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Issuer URL, client ID, and redirect URL stay deployment-specific.')
   })
 
-  it('shows dev-mode auth admin panels and provisions service accounts', async () => {
+  it('shows dev-mode auth admin panels and links service-account management to Access', async () => {
     apiMock.listAuthServiceAccounts
       .mockResolvedValueOnce({
         service_accounts: [
@@ -1264,8 +1258,9 @@ describe('SettingsPage', () => {
         count: 1,
       })
 
+    const onNavigate = vi.fn()
     await act(async () => {
-      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} authStatus={{ enabled: false, mode: 'dev', authenticated: false }} />)
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} authStatus={{ enabled: false, mode: 'dev', authenticated: false }} onNavigate={onNavigate} />)
     })
 
     await flushPromises()
@@ -1276,60 +1271,21 @@ describe('SettingsPage', () => {
 
     expect(generalSection.textContent).toContain('Development Bypass')
     expect(generalSection.textContent).toContain('Service Account API Keys')
+    expect(generalSection.textContent).toContain('Generate, rotate, disable, and delete scoped API keys from Access & API Keys.')
     expect(generalSection.textContent).toContain('Recent Audit Events')
-    expect(generalSection.textContent).toContain('Nightly CI')
     expect(generalSection.textContent).toContain('system.settings.update')
 
-    const nameInput = Array.from(generalSection.querySelectorAll('input')).find(input => (input as HTMLInputElement).placeholder === 'Nightly CI') as HTMLInputElement | undefined
-    expect(nameInput).toBeDefined()
-    if (!nameInput) return
-    await setFieldValue(nameInput, 'Release Automation')
-
-    const descriptionInput = Array.from(generalSection.querySelectorAll('input')).find(input => (input as HTMLInputElement).placeholder === 'Runs nightly smoke coverage') as HTMLInputElement | undefined
-    expect(descriptionInput).toBeDefined()
-    if (!descriptionInput) return
-    await setFieldValue(descriptionInput, 'Runs release checks')
-
-    const createButton = findButton('Create Service Account')
-    expect(createButton).toBeDefined()
-    if (!createButton) return
+    const openAccessButton = findButton('Open Access & API Keys')
+    expect(openAccessButton).toBeDefined()
+    if (!openAccessButton) return
 
     await act(async () => {
-      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      openAccessButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    await flushPromises()
-
-    expect(apiMock.createAuthServiceAccount).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Release Automation',
-      description: 'Runs release checks',
-      global_roles: ['viewer'],
-      scopes: ['automation:*'],
-      rotation_interval_days: 90,
-    }))
-    expect(generalSection.textContent).toContain('Copy the issued API key now')
-    expect(generalSection.textContent).toContain('srk_test_key')
-    expect(generalSection.textContent).toContain('Rotation policy')
-    expect(generalSection.textContent).toContain('Token scopes')
-
-    const rotateButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Rotate Key') as HTMLButtonElement | undefined
-    expect(rotateButton).toBeDefined()
-    if (!rotateButton) return
-    await act(async () => {
-      rotateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flushPromises()
-    expect(apiMock.rotateAuthServiceAccount).toHaveBeenCalledWith('svc-1')
-    expect(generalSection.textContent).toContain('srk_rotated_key')
-
-    const disableButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Disable') as HTMLButtonElement | undefined
-    expect(disableButton).toBeDefined()
-    if (!disableButton) return
-    await act(async () => {
-      disableButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flushPromises()
-    expect(apiMock.updateAuthServiceAccount).toHaveBeenCalledWith('svc-1', { active: false })
+    expect(onNavigate).toHaveBeenCalledWith('access')
+    expect(apiMock.createAuthServiceAccount).not.toHaveBeenCalled()
+    expect(apiMock.rotateAuthServiceAccount).not.toHaveBeenCalled()
 
     const auditFilterInputs = Array.from(generalSection.querySelectorAll('input')).filter(input => {
       const element = input as HTMLInputElement

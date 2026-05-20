@@ -6,7 +6,7 @@ import { Application, DashboardAuthStatus, Project, Release } from '../types'
 import ProjectModal from './ProjectModal'
 import './Sidebar.css'
 
-export type NavPage = 'dashboard' | 'tests' | 'new-test' | 'scripts' | 'results' | 'monitoring' | 'docs' | 'settings'
+export type NavPage = 'dashboard' | 'tests' | 'new-test' | 'scripts' | 'results' | 'monitoring' | 'docs' | 'access' | 'settings'
 
 interface Props {
   active: NavPage
@@ -24,9 +24,10 @@ interface Props {
   onApplicationChange?: (application: Application) => void
   onReleaseChange?: (release: Release) => void
   onCreateApplication?: (name: string) => Promise<Application>
+  showAccess?: boolean
 }
 
-const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element }[] = [
+const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element; requiresAccess?: boolean }[] = [
   {
     id: 'dashboard',
     label: 'Dashboard',
@@ -105,6 +106,18 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element }[] = [
     ),
   },
   {
+    id: 'access',
+    label: 'Access',
+    requiresAccess: true,
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78z" />
+        <path d="M14.5 9.5L21 3" />
+        <path d="M17 6l2 2" />
+      </svg>
+    ),
+  },
+  {
     id: 'settings',
     label: 'Settings',
     icon: (
@@ -133,6 +146,7 @@ export default function Sidebar({
   onApplicationChange,
   onReleaseChange,
   onCreateApplication,
+  showAccess = false,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const [projectOpen, setProjectOpen] = useState(false)
@@ -145,9 +159,15 @@ export default function Sidebar({
   const { mode: devViewMode, setMode: setDevViewMode } = useDevView()
   const isDevDashboard = authStatus?.mode === 'dev'
   const isDevUserPreview = isDevDashboard && devViewMode === 'user'
-  const visibleNavItems = isDevUserPreview
-    ? NAV_ITEMS.filter(item => item.id !== 'settings')
-    : NAV_ITEMS
+  const visibleNavItems = NAV_ITEMS.filter(item => {
+    if (item.requiresAccess && !showAccess) {
+      return false
+    }
+    if (isDevUserPreview && item.id === 'settings') {
+      return false
+    }
+    return true
+  })
   const connectionClass = connectionState === 'connected' ? 'connected' : connectionState === 'connecting' ? 'connecting' : 'disconnected'
   const connectionLabel = connectionState === 'connected' ? 'Live' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
   const identityName = formatIdentityName(authStatus)

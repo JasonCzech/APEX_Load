@@ -2,7 +2,7 @@
 
 import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ApiGuidePage from './ApiGuidePage'
 
@@ -39,6 +39,8 @@ describe('ApiGuidePage', () => {
     expect(container.textContent).toContain('python3 mcp/server.py')
     expect(container.textContent).toContain('stormrunner://api-guide')
     expect(container.textContent).toContain('confirm=true')
+    expect(container.textContent).toContain('API Keys')
+    expect(container.textContent).toContain('Access & API Keys')
     expect(container.textContent).toContain('X-Stormrunner-Dev-View')
     expect(container.textContent).toContain('project editor User behavior')
 
@@ -46,5 +48,22 @@ describe('ApiGuidePage', () => {
     expect(repositoryLink?.textContent).toContain('Repository Guide')
     const mcpLink = container.querySelector('a[href*="mcp/README.md"]')
     expect(mcpLink?.textContent).toContain('MCP setup guide')
+  })
+
+  it('links API key guidance to the Access page when dashboard navigation is available', async () => {
+    const onNavigate = vi.fn()
+    await act(async () => {
+      root.render(<ApiGuidePage onNavigate={onNavigate} />)
+    })
+
+    const accessButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Access & API Keys'))
+    expect(accessButton).toBeDefined()
+    if (!accessButton) return
+
+    await act(async () => {
+      accessButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onNavigate).toHaveBeenCalledWith('access')
   })
 })

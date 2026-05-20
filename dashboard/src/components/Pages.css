@@ -491,6 +491,465 @@
   line-height: 1.35;
 }
 
+.api-guide-key-callout {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.api-guide-key-callout p {
+  max-width: 760px;
+}
+
+.access-page {
+  gap: 22px;
+}
+
+.access-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.access-permission-badge,
+.access-status-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 5px 9px;
+  text-transform: uppercase;
+}
+
+.access-permission-badge.healthy,
+.access-status-badge.healthy {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.12);
+  color: #86efac;
+}
+
+.access-permission-badge.danger,
+.access-status-badge.danger {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.access-status-badge.warning {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+}
+
+.access-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.access-summary-grid div {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 13px 14px;
+  min-width: 0;
+}
+
+.access-summary-grid span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+}
+
+.access-summary-grid strong {
+  color: var(--text-primary);
+  font-size: 22px;
+}
+
+.access-layout {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.2fr) minmax(360px, 0.8fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.access-side-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.access-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.access-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.access-panel-header h3,
+.access-account-card h4,
+.access-control-section h4,
+.access-issued-modal h3,
+.access-issued-modal h4 {
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.access-panel-header h3 {
+  font-size: 16px;
+}
+
+.access-panel-header p,
+.access-control-section p,
+.access-account-card p,
+.access-muted,
+.access-empty-state span,
+.access-guidance-list span,
+.access-issued-modal p {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 4px 0 0;
+}
+
+.access-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.access-preset-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 112px;
+  padding: 11px;
+  text-align: left;
+}
+
+.access-preset-card strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.access-preset-card span {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.access-preset-card.active {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.access-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.access-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.access-form-grid label span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.access-form-grid input,
+.access-project-role-row select {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  min-width: 0;
+  outline: none;
+  padding: 10px 11px;
+}
+
+.access-form-grid input:focus,
+.access-project-role-row select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 163, 255, 0.1);
+}
+
+.access-control-section {
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 8px;
+  padding: 13px;
+  display: grid;
+  gap: 12px;
+}
+
+.access-control-section h4 {
+  font-size: 13px;
+}
+
+.access-chip-row,
+.access-badge-row,
+.access-account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.access-chip {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 10px;
+}
+
+.access-chip.active {
+  background: rgba(0, 163, 255, 0.14);
+  border-color: rgba(0, 163, 255, 0.45);
+  color: var(--accent);
+}
+
+.access-project-role-list {
+  display: grid;
+  gap: 8px;
+}
+
+.access-project-role-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.35fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.access-project-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-primary);
+  font-size: 13px;
+  min-width: 0;
+}
+
+.access-project-checkbox span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-alert {
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.1);
+  border-radius: 8px;
+  color: #86efac;
+  font-size: 13px;
+  padding: 10px 12px;
+}
+
+.access-alert.error {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.access-form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.access-guidance-list {
+  display: grid;
+  gap: 10px;
+}
+
+.access-guidance-list div {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 8px;
+  padding: 11px;
+}
+
+.access-guidance-list strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+.access-guidance-list code {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.access-account-list {
+  display: grid;
+  gap: 10px;
+}
+
+.access-account-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.access-account-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.access-account-card h4 {
+  font-size: 14px;
+}
+
+.access-account-meta {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.access-account-meta div {
+  display: grid;
+  grid-template-columns: 105px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.access-account-meta dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.access-account-meta dd {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.access-danger-action {
+  color: var(--danger);
+}
+
+.access-empty-state {
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 18px;
+  display: grid;
+  gap: 5px;
+}
+
+.access-empty-state strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.access-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 220;
+  padding: 20px;
+  backdrop-filter: blur(4px);
+}
+
+.access-issued-modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  display: grid;
+  gap: 16px;
+  max-height: 88vh;
+  max-width: 760px;
+  overflow: auto;
+  padding: 22px;
+  width: min(760px, 96vw);
+}
+
+.access-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.access-issued-key-box {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+}
+
+.access-issued-key-box span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.access-issued-key-box code,
+.access-issued-examples code {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.access-issued-examples {
+  display: grid;
+  gap: 12px;
+}
+
+.access-issued-examples pre {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 8px;
+  margin: 8px 0 0;
+  overflow-x: auto;
+  padding: 11px;
+}
+
 .results-compare-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -3333,11 +3792,23 @@
 
   .api-guide-hero,
   .api-guide-mcp-grid,
-  .api-guide-endpoint-grid {
+  .api-guide-endpoint-grid,
+  .access-layout,
+  .access-preset-grid {
     grid-template-columns: 1fr;
   }
 
+  .access-summary-grid,
+  .access-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .api-guide-section-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .api-guide-key-callout {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -3362,6 +3833,14 @@
   }
 
   .settings-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .access-summary-grid,
+  .access-form-grid,
+  .access-project-role-row,
+  .access-account-header,
+  .access-issued-key-box {
     grid-template-columns: 1fr;
   }
 
