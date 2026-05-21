@@ -1237,7 +1237,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}, true
 	}
 
-	if (path == "/api/v1/scripts/import/devweb" || path == "/api/v1/scripts/import/har" || path == "/api/v1/scripts/import/openapi" || path == "/api/v1/scripts/import/wsdl") && method == http.MethodPost {
+	if (path == "/api/v1/scripts/import/devweb" || path == "/api/v1/scripts/import/har" || path == "/api/v1/scripts/import/openapi" || path == "/api/v1/scripts/import/postman" || path == "/api/v1/scripts/import/wsdl") && method == http.MethodPost {
 		return accessRequirement{
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},

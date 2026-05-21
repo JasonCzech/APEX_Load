@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { type AuthoringComponent, type AuthoringTemplate } from '../types'
+import { useEffect, useMemo, useState } from 'react'
+import { type AuthoringComponent, type AuthoringTemplate, type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 
@@ -19,7 +19,63 @@ interface Props {
   onOpenDevWebImport: () => void
   onOpenHARImport: () => void
   onOpenOpenAPIImport: () => void
+  onOpenPostmanImport: () => void
   onOpenWSDLImport: () => void
+  scripts?: StoredScript[]
+  onStartExistingScript?: (script: StoredScript) => void
+}
+
+type ExistingScriptSortKey = 'name' | 'protocol' | 'health' | 'usage' | 'last_run'
+type ExistingScriptSortDirection = 'asc' | 'desc'
+
+function formatScriptStatus(status?: string) {
+  return status ? status.replace(/_/g, ' ') : 'not scored'
+}
+
+function formatShortDate(value?: string) {
+  if (!value) return 'Never'
+  const timestamp = Date.parse(value)
+  if (Number.isNaN(timestamp)) return 'Never'
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(timestamp))
+}
+
+function getScriptReleaseNames(script: StoredScript) {
+  const releases = [
+    ...(script.associated_releases || []),
+    ...(script.scenario_run_releases || []),
+  ]
+  return Array.from(new Set(releases.map(release => release.name).filter(Boolean)))
+}
+
+function getExistingScriptSearchText(script: StoredScript) {
+  return [
+    script.name,
+    script.protocol,
+    script.version,
+    script.authoring_health?.status,
+    script.authoring_health?.score,
+    script.scenario_count,
+    formatShortDate(script.last_run_at),
+    ...getScriptReleaseNames(script),
+  ].filter(value => value !== undefined && value !== null).join(' ').toLowerCase()
+}
+
+function compareExistingScripts(a: StoredScript, b: StoredScript, key: ExistingScriptSortKey) {
+  if (key === 'usage') {
+    return (a.scenario_count || 0) - (b.scenario_count || 0)
+  }
+  if (key === 'last_run') {
+    const aTime = Date.parse(a.last_run_at || a.created_at || '')
+    const bTime = Date.parse(b.last_run_at || b.created_at || '')
+    return (Number.isNaN(aTime) ? 0 : aTime) - (Number.isNaN(bTime) ? 0 : bTime)
+  }
+  if (key === 'health') {
+    return `${a.authoring_health?.status || 'not_scored'} ${a.authoring_health?.score ?? -1}`.localeCompare(`${b.authoring_health?.status || 'not_scored'} ${b.authoring_health?.score ?? -1}`)
+  }
+  if (key === 'protocol') {
+    return (a.protocol || '').localeCompare(b.protocol || '')
+  }
+  return a.name.localeCompare(b.name)
 }
 
 export default function ScriptCreateOptions({
@@ -38,12 +94,62 @@ export default function ScriptCreateOptions({
   onOpenDevWebImport,
   onOpenHARImport,
   onOpenOpenAPIImport,
+  onOpenPostmanImport,
   onOpenWSDLImport,
+  scripts = [],
+  onStartExistingScript,
 }: Props) {
   const api = useApi()
   const [templates, setTemplates] = useState<AuthoringTemplate[]>([])
   const [components, setComponents] = useState<AuthoringComponent[]>([])
-  const [workflow, setWorkflow] = useState<'templates' | 'manual' | 'source' | 'record' | 'import'>('templates')
+  const [workflow, setWorkflow] = useState<'existing' | 'templates' | 'manual' | 'source' | 'record' | 'import'>('existing')
+  const [existingScriptQuery, setExistingScriptQuery] = useState('')
+  const [existingScriptProtocol, setExistingScriptProtocol] = useState('all')
+  const [existingScriptHealth, setExistingScriptHealth] = useState('all')
+  const [existingScriptSort, setExistingScriptSort] = useState<{ key: ExistingScriptSortKey; direction: ExistingScriptSortDirection }>({ key: 'name', direction: 'asc' })
+
+  const existingScriptProtocols = useMemo(() => {
+    return Array.from(new Set(scripts.map(script => script.protocol).filter(Boolean))).sort((a, b) => a.localeCompare(b))
+  }, [scripts])
+
+  const existingScriptHealthStatuses = useMemo(() => {
+    return Array.from(new Set(scripts.map(script => script.authoring_health?.status || 'not_scored'))).sort((a, b) => a.localeCompare(b))
+  }, [scripts])
+
+  const visibleExistingScripts = useMemo(() => {
+    const query = existingScriptQuery.trim().toLowerCase()
+    return scripts
+      .filter(script => existingScriptProtocol === 'all' || script.protocol === existingScriptProtocol)
+      .filter(script => existingScriptHealth === 'all' || (script.authoring_health?.status || 'not_scored') === existingScriptHealth)
+      .filter(script => !query || getExistingScriptSearchText(script).includes(query))
+      .slice()
+      .sort((a, b) => {
+        const result = compareExistingScripts(a, b, existingScriptSort.key)
+        const adjusted = existingScriptSort.direction === 'asc' ? result : -result
+        return adjusted || a.name.localeCompare(b.name)
+      })
+  }, [existingScriptHealth, existingScriptProtocol, existingScriptQuery, existingScriptSort, scripts])
+
+  const requestExistingScriptSort = (key: ExistingScriptSortKey) => {
+    setExistingScriptSort(prev => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
+      }
+      return { key, direction: key === 'usage' || key === 'last_run' ? 'desc' : 'asc' }
+    })
+  }
+
+  const renderExistingSortLabel = (key: ExistingScriptSortKey, label: string) => {
+    if (existingScriptSort.key !== key) return `${label} ↕`
+    return `${label} ${existingScriptSort.direction === 'asc' ? '↑' : '↓'}`
+  }
+
+  const resetExistingScriptFilters = () => {
+    setExistingScriptQuery('')
+    setExistingScriptProtocol('all')
+    setExistingScriptHealth('all')
+    setExistingScriptSort({ key: 'name', direction: 'asc' })
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -75,44 +181,135 @@ export default function ScriptCreateOptions({
           <h2>Create Script</h2>
           <p className="page-subtitle">Start from a template, build manually, record a browser flow, or import an existing asset.</p>
         </div>
-        <button className="btn btn-secondary" onClick={onBack}>Back to Library</button>
+        <button className="btn btn-secondary" onClick={onBack}>Script Library ({scripts.length})</button>
       </div>
 
       <div className="script-workflow-picker" aria-label="Script creation workflows">
-        <button type="button" className={`script-workflow-card ${workflow === 'templates' ? 'active' : ''}`} onClick={() => setWorkflow('templates')}>
+        <button type="button" className={`script-workflow-card ${workflow === 'existing' ? 'active' : ''}`} onClick={() => setWorkflow('existing')}>
           <span>1</span>
+          <strong>Model Existing</strong>
+          <small>Clone a saved script into a new editable draft.</small>
+        </button>
+        <button type="button" className={`script-workflow-card ${workflow === 'templates' ? 'active' : ''}`} onClick={() => setWorkflow('templates')}>
+          <span>2</span>
           <strong>Use Template</strong>
           <small>Fastest path for common protocols and smoke tests.</small>
         </button>
         <button type="button" className={`script-workflow-card ${workflow === 'manual' ? 'active' : ''}`} onClick={() => setWorkflow('manual')}>
-          <span>2</span>
+          <span>3</span>
           <strong>Build Manually</strong>
           <small>Create API, SOAP, Java-over-HTTP, browser, or JMS scripts.</small>
         </button>
         <button type="button" className={`script-workflow-card ${workflow === 'record' ? 'active' : ''}`} onClick={() => setWorkflow('record')}>
-          <span>3</span>
+          <span>4</span>
           <strong>Record Browser</strong>
           <small>Capture a user journey and review it before save.</small>
         </button>
         <button type="button" className={`script-workflow-card ${workflow === 'source' ? 'active' : ''}`} onClick={() => setWorkflow('source')}>
-          <span>4</span>
+          <span>5</span>
           <strong>Start From Source</strong>
-          <small>Generate drafts from OpenAPI, WSDL, HAR, DevWeb, or samples.</small>
+          <small>Generate drafts from OpenAPI, Postman, WSDL, HAR, DevWeb, or samples.</small>
         </button>
         <button type="button" className={`script-workflow-card ${workflow === 'import' ? 'active' : ''}`} onClick={() => setWorkflow('import')}>
-          <span>5</span>
+          <span>6</span>
           <strong>Import Existing</strong>
-          <small>Bring forward LoadRunner, JMeter, DevWeb, HAR, or Java samples.</small>
+          <small>Bring forward LoadRunner, JMeter, Postman, DevWeb, HAR, or Java samples.</small>
         </button>
-      </div>
-
-      <div className="script-quick-actions" aria-label="Common script creation actions">
-        <button type="button" className="btn btn-primary" onClick={onStartApiScript}>API Visual Editor</button>
-        <button type="button" className="btn btn-secondary" onClick={onOpenRecorder}>Browser Recorder</button>
-        <button type="button" className="btn btn-secondary" onClick={onOpenLoadRunnerImport}>Import LoadRunner</button>
       </div>
 
       <div className="script-create-lanes compact">
+        {workflow === 'existing' && (
+          <section className="script-create-lane api full">
+            <div className="script-create-lane-header">
+              <span className="script-create-kicker">Script library</span>
+              <h3>Model From Existing Script</h3>
+              <p>Choose a saved script to open a new editable copy. The original script remains unchanged until you save the draft.</p>
+            </div>
+            <div className="script-create-existing-toolbar">
+              <label>
+                <span>Search scripts</span>
+                <input
+                  type="search"
+                  aria-label="Search existing scripts"
+                  value={existingScriptQuery}
+                  onChange={event => setExistingScriptQuery(event.target.value)}
+                  placeholder="Find by script, protocol, release, health, or version..."
+                />
+              </label>
+              <label>
+                <span>Protocol</span>
+                <select aria-label="Filter existing scripts by protocol" value={existingScriptProtocol} onChange={event => setExistingScriptProtocol(event.target.value)}>
+                  <option value="all">All protocols</option>
+                  {existingScriptProtocols.map(protocol => (
+                    <option key={protocol} value={protocol}>{protocol.toUpperCase()}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Health</span>
+                <select aria-label="Filter existing scripts by health" value={existingScriptHealth} onChange={event => setExistingScriptHealth(event.target.value)}>
+                  <option value="all">All health</option>
+                  {existingScriptHealthStatuses.map(status => (
+                    <option key={status} value={status}>{formatScriptStatus(status)}</option>
+                  ))}
+                </select>
+              </label>
+              <button type="button" className="script-create-existing-reset" onClick={resetExistingScriptFilters}>Reset</button>
+            </div>
+            <div className="script-create-existing-summary">
+              {visibleExistingScripts.length} of {scripts.length} script{scripts.length === 1 ? '' : 's'}
+            </div>
+            {scripts.length > 0 ? (
+              <div className="script-create-existing-table-wrap">
+                <table className="script-create-existing-table">
+                  <thead>
+                    <tr>
+                      <th><button type="button" onClick={() => requestExistingScriptSort('name')}>{renderExistingSortLabel('name', 'Script')}</button></th>
+                      <th><button type="button" onClick={() => requestExistingScriptSort('protocol')}>{renderExistingSortLabel('protocol', 'Protocol')}</button></th>
+                      <th><button type="button" onClick={() => requestExistingScriptSort('health')}>{renderExistingSortLabel('health', 'Health')}</button></th>
+                      <th><button type="button" onClick={() => requestExistingScriptSort('usage')}>{renderExistingSortLabel('usage', 'Usage')}</button></th>
+                      <th>Releases</th>
+                      <th><button type="button" onClick={() => requestExistingScriptSort('last_run')}>{renderExistingSortLabel('last_run', 'Last Run')}</button></th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleExistingScripts.map(script => {
+                      const releaseNames = getScriptReleaseNames(script)
+                      return (
+                        <tr key={script.id}>
+                          <td>
+                            <button type="button" className="script-create-existing-name" onClick={() => onStartExistingScript?.(script)}>
+                              {script.name}
+                            </button>
+                            <span className="script-create-existing-meta">v{script.version || '—'}</span>
+                          </td>
+                          <td><span className="script-create-type-badge inline">{script.protocol.toUpperCase()}</span></td>
+                          <td>
+                            <span className={`script-create-health-pill ${script.authoring_health?.status || 'not_scored'}`}>{formatScriptStatus(script.authoring_health?.status)}</span>
+                            <span className="script-create-existing-meta">{script.authoring_health?.score ?? '—'} score</span>
+                          </td>
+                          <td>{script.scenario_count || 0} scenario{script.scenario_count === 1 ? '' : 's'}</td>
+                          <td>{releaseNames.length > 0 ? releaseNames.join(', ') : 'No releases'}</td>
+                          <td>{formatShortDate(script.last_run_at)}</td>
+                          <td>
+                            <button type="button" className="script-create-existing-action" onClick={() => onStartExistingScript?.(script)}>Model</button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                {visibleExistingScripts.length === 0 && (
+                  <div className="script-create-empty">No saved scripts match these filters.</div>
+                )}
+              </div>
+            ) : (
+              <div className="script-create-empty">No saved scripts are available to model from yet.</div>
+            )}
+          </section>
+        )}
+
         {workflow === 'templates' && (
           <section className="script-create-lane api full">
             <div className="script-create-lane-header">
@@ -241,6 +438,11 @@ export default function ScriptCreateOptions({
               <h3>OpenAPI / Swagger</h3>
               <p>Generate grouped REST request flows with detected auth schemes, examples, variables, and candidate data pools.</p>
             </button>
+            <button className="script-create-option primary" onClick={onOpenPostmanImport}>
+              <span className="script-create-type-badge">PM</span>
+              <h3>Postman Collection</h3>
+              <p>Convert collection folders, requests, variables, and auth placeholders into a reviewable HTTP script.</p>
+            </button>
             <button className="script-create-option primary" onClick={onOpenWSDLImport}>
               <span className="script-create-type-badge">WSDL</span>
               <h3>WSDL / SOAP</h3>
@@ -270,7 +472,7 @@ export default function ScriptCreateOptions({
           <div className="script-create-lane-header">
             <span className="script-create-kicker">Migration</span>
             <h3>Import Existing</h3>
-            <p>Bring existing LoadRunner and JMeter assets forward while preserving source metadata and conversion notes for review.</p>
+            <p>Bring existing LoadRunner, JMeter, Postman, and related assets forward while preserving source metadata and conversion notes for review.</p>
           </div>
           <div className="script-create-grid">
             <button className="script-create-option primary" onClick={onOpenLoadRunnerImport}>
@@ -311,6 +513,11 @@ export default function ScriptCreateOptions({
               <span className="script-create-type-badge import">OAS</span>
               <h3>Import OpenAPI</h3>
               <p>Convert OpenAPI or Swagger contracts into a REST script draft with generated review sections.</p>
+            </button>
+            <button className="script-create-option" onClick={onOpenPostmanImport}>
+              <span className="script-create-type-badge import">PM</span>
+              <h3>Import Postman</h3>
+              <p>Convert a Postman collection into HTTP actions with request variables preserved as APEX parameters.</p>
             </button>
             <button className="script-create-option" onClick={onOpenWSDLImport}>
               <span className="script-create-type-badge import">WSDL</span>

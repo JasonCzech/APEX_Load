@@ -44,6 +44,7 @@ type TestListResponse = {
 
 type StartTestOptions = {
   override_capacity_shortfall?: boolean
+  override_script_shakeout_failure?: boolean
 }
 
 type TestCreateGroupEntry = {

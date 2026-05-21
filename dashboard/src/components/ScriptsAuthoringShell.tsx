@@ -9,12 +9,14 @@ interface Props {
   authoringState: AuthoringState
   projectId?: string
   activeProject?: Project | null
+  scripts?: StoredScript[]
   createOptionActions: ScriptsCreateOptionActions
   onSaved: (script: StoredScript) => void
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
   onImported: (result: ImportedSaveResult) => void
   onEditDraft: NonNullable<ComponentProps<typeof ScriptsAuthoringSurface>['onEditDraft']>
+  onStartExistingScript?: (script: StoredScript) => void
   canManageScripts?: boolean
   children: ReactNode
 }
@@ -23,12 +25,14 @@ export default function ScriptsAuthoringShell({
   authoringState,
   projectId,
   activeProject,
+  scripts = [],
   createOptionActions,
   onSaved,
   onOpenLibrary,
   onOpenCreateOptions,
   onImported,
   onEditDraft,
+  onStartExistingScript,
   canManageScripts = true,
   children,
 }: Props) {
@@ -54,7 +58,10 @@ export default function ScriptsAuthoringShell({
         onOpenDevWebImport={createOptionActions.openDevWebImport}
         onOpenHARImport={createOptionActions.openHARImport}
         onOpenOpenAPIImport={createOptionActions.openOpenAPIImport}
+        onOpenPostmanImport={createOptionActions.openPostmanImport}
         onOpenWSDLImport={createOptionActions.openWSDLImport}
+        scripts={scripts}
+        onStartExistingScript={onStartExistingScript}
       />
     )
   }

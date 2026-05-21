@@ -201,6 +201,7 @@ Import endpoints:
 | `POST` | `/api/v1/scripts/import/jmeter` | Import a JMeter test plan. |
 | `POST` | `/api/v1/scripts/import/har` | Import a HAR archive. |
 | `POST` | `/api/v1/scripts/import/openapi` | Generate HTTP/API drafts from OpenAPI or Swagger. |
+| `POST` | `/api/v1/scripts/import/postman` | Generate HTTP/API drafts from a Postman collection JSON file. |
 | `POST` | `/api/v1/scripts/import/wsdl` | Generate SOAP drafts from WSDL. |
 | `POST` | `/api/v1/scripts/import/devweb` | Import DevWeb-style assets. |
 | `POST` | `/api/v1/scripts/import/sample` | Import raw HTTP, cURL, REST sample requests. |
@@ -229,8 +230,8 @@ Useful scenario endpoints:
 | `GET` | `/api/v1/scenarios/{id}` | Get one scenario. |
 | `PUT` | `/api/v1/scenarios/{id}` | Update a scenario. |
 | `DELETE` | `/api/v1/scenarios/{id}` | Delete a scenario. |
-| `GET` | `/api/v1/scenarios/load-models/support-matrix` | Supported load model features. |
-| `GET` | `/api/v1/scenarios/load-models/templates` | Starter load model templates. |
+| `GET` | `/api/v1/scenarios/load-models/support-matrix` | Supported load model features, including chaos-resilience workloads. |
+| `GET` | `/api/v1/scenarios/load-models/templates` | Starter load model templates, including `chaos-resilience-shakeout`. |
 | `GET` | `/api/v1/scenarios/{id}/runtime-settings/report` | Runtime settings compatibility report. |
 | `GET` | `/api/v1/scenarios/{id}/data-pools` | Scenario data-pool bindings. |
 | `PUT` | `/api/v1/scenarios/{id}/data-pools` | Update scenario data-pool bindings. |
@@ -263,6 +264,8 @@ Control endpoints:
 
 When a gradual VUser change is in progress, `GET /api/v1/tests/{id}` includes `vuser_ramps` keyed by group name. Each ramp reports `start_vusers`, `target_vusers`, `started_at`, `ramp_duration`, and `ramp_duration_seconds` so clients can project the active ramp until it finishes.
 
+If a run has `script_shakeout: true`, `POST /api/v1/tests/{id}/start` first executes a one-pass canary/shakeout for each script group. A clean shakeout starts the full run automatically. A failing shakeout returns HTTP `409` with `code: "script_shakeout_failed"`, `status: "shakeout_review"`, a `script_shakeout` evidence report, and `override_available` / `cancel_available` flags. To continue anyway, repeat the start call with `{"override_script_shakeout_failure": true}`; to cancel, call `POST /api/v1/tests/{id}/abort`.
+
 ### 5. Stream Live Events
 
 Use the global WebSocket for dashboard-style updates:
@@ -271,7 +274,7 @@ Use the global WebSocket for dashboard-style updates:
 ws://<controller-host>:8080/api/v1/ws
 ```
 
-Messages are JSON and include a `type` field such as `metrics_update`, `test_created`, `test_started`, `test_complete`, `test_failed`, `test_paused`, `test_resumed`, `vusers_ramp_started`, `vusers_changed`, `duration_changed`, and `latency_update`.
+Messages are JSON and include a `type` field such as `metrics_update`, `test_created`, `test_started`, `test_complete`, `test_failed`, `test_paused`, `test_resumed`, `script_shakeout_started`, `script_shakeout_passed`, `script_shakeout_failed`, `vusers_ramp_started`, `vusers_changed`, `duration_changed`, and `latency_update`.
 
 ### 6. Download Reports And Archives
 

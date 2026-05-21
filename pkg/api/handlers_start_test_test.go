@@ -117,6 +117,69 @@ func TestHandleStartTestAllowsOverridePayload(t *testing.T) {
 	}
 }
 
+func TestHandleStartTestReturnsScriptShakeoutReviewPayload(t *testing.T) {
+	store := &metricsStoreSpy{}
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.StoreScript(&dsl.Script{
+		ID:       "script-api-shakeout-bad",
+		Name:     "API Shakeout Broken Script",
+		Protocol: "definitely-not-supported",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "Broken", Type: "request", Target: "/"}},
+	})
+
+	testRun, err := server.runner.CreateTest(CreateTestRequest{
+		Name:           "API Shakeout Gate",
+		Duration:       "30s",
+		ScriptShakeout: true,
+		ScriptID:       "script-api-shakeout-bad",
+		VUsers:         1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+testRun.ID+"/start", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusConflict, resp.Body.String())
+	}
+	var payload struct {
+		Error             string                `json:"error"`
+		Code              string                `json:"code"`
+		Status            string                `json:"status"`
+		ScriptShakeout    *ScriptShakeoutReport `json:"script_shakeout"`
+		OverrideAvailable bool                  `json:"override_available"`
+		CancelAvailable   bool                  `json:"cancel_available"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.Code != "script_shakeout_failed" || payload.Status != "shakeout_review" {
+		t.Fatalf("payload = %#v, want shakeout review conflict", payload)
+	}
+	if payload.ScriptShakeout == nil || payload.ScriptShakeout.Passed || len(payload.ScriptShakeout.Results) != 1 {
+		t.Fatalf("script_shakeout = %#v, want failing report", payload.ScriptShakeout)
+	}
+	if !payload.OverrideAvailable || !payload.CancelAvailable {
+		t.Fatalf("payload = %#v, want continue and cancel options", payload)
+	}
+	blocked, ok := server.runner.GetTest(testRun.ID)
+	if !ok || blocked.Status != "SHAKEOUT_REVIEW" {
+		t.Fatalf("test = %#v, want SHAKEOUT_REVIEW", blocked)
+	}
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "test.script_shakeout.review", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(events) != 1 || events[0].Status != "blocked" || events[0].ResourceID != testRun.ID {
+		t.Fatalf("audit events = %#v, want blocked shakeout review audit", events)
+	}
+}
+
 func TestHandleStartTestReturnsPendingWhenProjectQuotaReached(t *testing.T) {
 	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
 		"project-1": {

@@ -98,9 +98,12 @@ describe('TestExecutionScenarioPreview', () => {
             }],
           } as never}
           startCapacityConflict={null}
+          startShakeoutConflict={null}
           startFeedback=""
           onDismissStartConflict={vi.fn()}
           onConfirmStartAnyway={vi.fn()}
+          onContinueAfterShakeoutFailure={vi.fn()}
+          onCancelShakeoutRun={vi.fn()}
           queuedScenarioPreview={{
             points: [{ second: 0, group0: 10, total: 10 }],
             totalVUsers: 10,
@@ -227,9 +230,12 @@ describe('TestExecutionScenarioPreview', () => {
             }],
           } as never}
           startCapacityConflict={null}
+          startShakeoutConflict={null}
           startFeedback=""
           onDismissStartConflict={vi.fn()}
           onConfirmStartAnyway={vi.fn()}
+          onContinueAfterShakeoutFailure={vi.fn()}
+          onCancelShakeoutRun={vi.fn()}
           queuedScenarioPreview={{
             points: [],
             totalVUsers: 10,
@@ -254,5 +260,84 @@ describe('TestExecutionScenarioPreview', () => {
     expect(container.textContent).toContain('Queue position #2')
     expect(container.textContent).toContain('waiting for project test slot')
     expect(container.textContent).toContain('Waiting since')
+  })
+
+  it('shows script shakeout evidence and routes continue or cancel actions', async () => {
+    const onContinueAfterShakeoutFailure = vi.fn()
+    const onCancelShakeoutRun = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <TestExecutionScenarioPreview
+          test={{
+            id: 'test-shakeout',
+            name: 'Shakeout Scenario',
+            status: 'SHAKEOUT_REVIEW',
+            script_shakeout: true,
+            total_vusers: 10,
+            duration: '5m',
+            created_at: '2026-05-12T20:00:00Z',
+            error: 'Script shakeout failed',
+            groups: [{
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'http',
+              vusers: 10,
+            }],
+          } as never}
+          startCapacityConflict={null}
+          startShakeoutConflict={{
+            passed: false,
+            summary: 'Script shakeout failed; full load test has not started.',
+            results: [{
+              group_name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              status: 'failed',
+              error: 'request Login returned 500',
+            }],
+          }}
+          startFeedback="Review the evidence before continuing."
+          onDismissStartConflict={vi.fn()}
+          onConfirmStartAnyway={vi.fn()}
+          onContinueAfterShakeoutFailure={onContinueAfterShakeoutFailure}
+          onCancelShakeoutRun={onCancelShakeoutRun}
+          queuedScenarioPreview={{
+            points: [],
+            totalVUsers: 10,
+            totalSeconds: 300,
+            steadySeconds: 300,
+            startDelaySeconds: 0,
+            preBaselineSeconds: 0,
+            postBaselineSeconds: 0,
+          }}
+          queuedScenarioRows={[]}
+          scriptDetailsLoading={false}
+          scriptDetailsError=""
+          expandedScenarioScript={null}
+          onExpandedScenarioScriptChange={vi.fn()}
+          onEditScript={vi.fn()}
+          groupColors={['#0a84ff']}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Script shakeout needs review')
+    expect(container.textContent).toContain('Checkout · Checkout Script')
+    expect(container.textContent).toContain('request Login returned 500')
+
+    const cancelButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Cancel Run'))
+    const continueButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Continue Full Load'))
+    expect(cancelButton).toBeDefined()
+    expect(continueButton).toBeDefined()
+
+    await act(async () => {
+      cancelButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      continueButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onCancelShakeoutRun).toHaveBeenCalledTimes(1)
+    expect(onContinueAfterShakeoutFailure).toHaveBeenCalledTimes(1)
   })
 })

@@ -9,8 +9,10 @@ interface Props {
   activeApplication: Application | null
   activeRelease: Release | null
   releases: Release[]
+  initialScenarioId?: string
   onSelectTest: (id: string) => void
   onCreateRelease: (name: string) => Promise<Release | null>
+  onOpenScenarioBuilder?: () => void
 }
 
 type ScheduleDraft = {
@@ -218,12 +220,12 @@ function isEffectiveOperationAllowed(resources: DashboardAuthEffectiveAccessReso
   return true
 }
 
-export default function NewTestPage({ activeApplication, activeRelease, releases, onSelectTest, onCreateRelease }: Props) {
+export default function NewTestPage({ activeApplication, activeRelease, releases, initialScenarioId, onSelectTest, onCreateRelease, onOpenScenarioBuilder }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [pageMode, setPageMode] = useState<'launch' | 'schedules'>('launch')
   const [scenarios, setScenarios] = useState<StoredScenario[]>([])
-  const [scenarioId, setScenarioId] = useState('')
+  const [scenarioId, setScenarioId] = useState(initialScenarioId || '')
   const [releaseId, setReleaseId] = useState(activeRelease?.id || '')
   const [schedules, setSchedules] = useState<ScenarioSchedule[]>([])
   const [scheduleLoading, setScheduleLoading] = useState(false)
@@ -250,13 +252,22 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       const res = await api.listScenarios(activeProject?.id)
       const next = res.scenarios || []
       setScenarios(next)
-      setScenarioId(prev => (next.some(item => item.id === prev) ? prev : next[0]?.id || ''))
+      setScenarioId(prev => {
+        if (next.some(item => item.id === prev)) return prev
+        if (initialScenarioId && next.some(item => item.id === initialScenarioId)) return initialScenarioId
+        return next[0]?.id || ''
+      })
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Unable to load scenarios'))
     }
-  }, [activeProject?.id, api])
+  }, [activeProject?.id, api, initialScenarioId])
 
   useEffect(() => { refresh() }, [refresh])
+  useEffect(() => {
+    if (!initialScenarioId) return
+    setScenarioId(prev => prev === initialScenarioId ? prev : initialScenarioId)
+    setRunName('')
+  }, [initialScenarioId])
   useEffect(() => { setReleaseId(activeRelease?.id || releases[0]?.id || '') }, [activeRelease?.id, releases])
   useEffect(() => {
     let cancelled = false
@@ -963,10 +974,19 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
           <section className="new-test-step">
             <div className="new-test-step-header">
               <span className={`new-test-step-index${step2Complete ? ' complete' : ''}`}>{step2Complete ? '✓' : '2'}</span>
-              <div>
+              <div className="new-test-step-header-content">
                 <h3>Scenario</h3>
                 <p>Choose the reusable workload definition to execute.</p>
               </div>
+              {onOpenScenarioBuilder && (
+                <button
+                  type="button"
+                  className="new-test-builder-button new-test-step-header-link"
+                  onClick={onOpenScenarioBuilder}
+                >
+                  Open Scenario Builder
+                </button>
+              )}
             </div>
             <div className="settings-group">
               <div className="new-test-scenario-picker">

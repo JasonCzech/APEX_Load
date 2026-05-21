@@ -262,12 +262,6 @@ func (b *distributedExecutionBackend) allowedTargetsForTest(test *ManagedTest) (
 }
 
 func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
-	if test.ScriptShakeout {
-		if err := tr.runScriptShakeout(test); err != nil {
-			tr.failTestBeforeRun(test, err.Error())
-			return
-		}
-	}
 	assignment, err := normalizeGeneratorAssignmentSettings(test.Assignment)
 	if err != nil {
 		tr.failTestBeforeRun(test, err.Error())

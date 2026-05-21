@@ -63,8 +63,8 @@ describe('chartStateForMonitorPreset', () => {
       [],
     )
 
-    expect(chartMetricKeys(chart, ['Checkout'], [])).toEqual(['p50', 'p90', 'p99', 'Checkout_avgMs'])
-    expect(csv).toBe('time,p50,p90,p99,Checkout_avgMs\n10:00:00,80,100,130,92')
+    expect(chartMetricKeys(chart, ['Checkout'], [])).toEqual(['avgMs', 'Checkout_avgMs', 'p50', 'p90', 'p99'])
+    expect(csv).toBe('time,avgMs,Checkout_avgMs,p50,p90,p99\n10:00:00,100,92,80,100,130')
   })
 
   it('can include active VUsers when exporting a graph with the overlay enabled', () => {
@@ -91,6 +91,19 @@ describe('chartStateForMonitorPreset', () => {
       { key: 'Checkout_tps', label: 'Checkout', color: '#00a3ff' },
       { key: 'Search_tps', label: 'Search', color: '#ffaa00' },
       { key: 'vusers', label: 'Active VUsers', color: 'var(--chart-1)' },
+    ])
+  })
+
+  it('builds response time rows with total and per-group series first', () => {
+    const chart: ChartConfig = { id: 'latency', title: 'Response Time (ms)', type: 'line-latency' }
+
+    expect(chartMetricRows(chart, ['Checkout', 'Search'], [], ['#00a3ff', '#ffaa00'])).toEqual([
+      { key: 'avgMs', label: 'Total', color: 'var(--text-muted)', unit: 'ms' },
+      { key: 'Checkout_avgMs', label: 'Checkout', color: '#00a3ff', unit: 'ms' },
+      { key: 'Search_avgMs', label: 'Search', color: '#ffaa00', unit: 'ms' },
+      { key: 'p50', label: 'P50', color: 'var(--chart-5)', unit: 'ms' },
+      { key: 'p90', label: 'P90', color: 'var(--chart-3)', unit: 'ms' },
+      { key: 'p99', label: 'P99', color: 'var(--chart-4)', unit: 'ms' },
     ])
   })
 

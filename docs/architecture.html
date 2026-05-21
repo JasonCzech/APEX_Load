@@ -1,0 +1,1243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>APEX Load — Technical Architecture</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #181b24;
+    --surface2: #1e222e;
+    --border: #2a2f3e;
+    --text: #e2e4e9;
+    --text-dim: #8b8f9a;
+    --accent: #6c8cff;
+    --accent-glow: rgba(108,140,255,0.25);
+    --green: #4ade80;
+    --orange: #f59e0b;
+    --red: #f87171;
+    --teal: #2dd4bf;
+    --purple: #a78bfa;
+    --pink: #f472b6;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow-x: hidden;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header h1 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .header h1 span { color: var(--accent); }
+  .header-meta { font-size: 0.8rem; color: var(--text-dim); }
+
+  /* Layout */
+  .layout {
+    display: flex;
+    min-height: calc(100vh - 65px);
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 320px;
+    min-width: 320px;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    overflow-y: auto;
+    transition: transform 0.3s;
+  }
+  .sidebar-section { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .sidebar-section h3 {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+  .layer-list { list-style: none; }
+  .layer-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background 0.15s;
+    margin-bottom: 2px;
+  }
+  .layer-item:hover { background: var(--surface2); }
+  .layer-item.active { background: var(--accent-glow); color: var(--accent); }
+  .layer-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Detail panel in sidebar */
+  .detail-panel {
+    padding: 20px;
+    animation: fadeIn 0.2s;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .detail-panel h2 {
+    font-size: 1.1rem;
+    margin-bottom: 4px;
+  }
+  .detail-panel .detail-subtitle {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-bottom: 14px;
+  }
+  .detail-panel .detail-body {
+    font-size: 0.85rem;
+    line-height: 1.65;
+    color: var(--text);
+  }
+  .detail-panel .detail-body p { margin-bottom: 10px; }
+  .detail-panel .detail-body code {
+    background: var(--surface2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    color: var(--teal);
+  }
+  .detail-connections {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .detail-connections h4 {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .conn-list { list-style: none; }
+  .conn-list li {
+    font-size: 0.8rem;
+    padding: 4px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .conn-arrow {
+    color: var(--accent);
+    font-size: 0.7rem;
+  }
+  .detail-files {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .detail-files h4 {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .file-list { list-style: none; }
+  .file-list li {
+    font-size: 0.78rem;
+    padding: 3px 0;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    color: var(--teal);
+  }
+
+  /* Main canvas */
+  .canvas {
+    flex: 1;
+    position: relative;
+    overflow: auto;
+    padding: 40px;
+  }
+  .canvas-inner {
+    position: relative;
+    min-width: 1000px;
+    min-height: 880px;
+    margin: 0 auto;
+  }
+
+  /* Nodes */
+  .node {
+    position: absolute;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+    z-index: 10;
+    user-select: none;
+  }
+  .node:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 20px var(--accent-glow);
+    transform: translateY(-2px);
+  }
+  .node.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 24px var(--accent-glow), inset 0 0 16px rgba(108,140,255,0.06);
+  }
+  .node-icon {
+    font-size: 1.5rem;
+    margin-bottom: 6px;
+  }
+  .node-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+  .node-sub {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .node-badge {
+    display: inline-block;
+    font-size: 0.6rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-top: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* Layer groups */
+  .layer-group {
+    position: absolute;
+    border: 1px dashed;
+    border-radius: 14px;
+    opacity: 0.35;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .layer-label {
+    position: absolute;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-weight: 600;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  /* SVG connections */
+  .connections-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .conn-line {
+    stroke: var(--border);
+    stroke-width: 1.5;
+    fill: none;
+    transition: stroke 0.3s, stroke-width 0.3s;
+  }
+  .conn-line.highlighted {
+    stroke: var(--accent);
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 4px var(--accent-glow));
+  }
+  .conn-line.grpc { stroke-dasharray: 6 4; }
+  .conn-line.ws { stroke-dasharray: 3 3; }
+
+  /* Animated data flow dots */
+  .flow-dot {
+    r: 3;
+    fill: var(--accent);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .flow-dot.active {
+    opacity: 1;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    gap: 20px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .legend-line {
+    width: 24px;
+    height: 2px;
+  }
+  .legend-line.solid { background: var(--text-dim); }
+  .legend-line.dashed { background: repeating-linear-gradient(90deg, var(--text-dim) 0 6px, transparent 6px 10px); }
+  .legend-line.dotted { background: repeating-linear-gradient(90deg, var(--text-dim) 0 3px, transparent 3px 6px); }
+
+  /* Performance targets callout */
+  .perf-targets {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    font-size: 0.75rem;
+    z-index: 20;
+    max-width: 260px;
+  }
+  .perf-targets h4 {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .perf-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+  }
+  .perf-label { color: var(--text-dim); }
+  .perf-value { font-weight: 600; color: var(--green); font-family: 'JetBrains Mono', monospace; }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .sidebar { display: none; }
+  }
+
+  /* Tooltip */
+  .tooltip {
+    position: fixed;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 0.78rem;
+    pointer-events: none;
+    z-index: 200;
+    opacity: 0;
+    transition: opacity 0.15s;
+    max-width: 240px;
+  }
+  .tooltip.visible { opacity: 1; }
+
+  /* View toggles */
+  .view-toggles {
+    display: flex;
+    gap: 6px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .view-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 5px 14px;
+    border-radius: 5px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .view-btn:hover { border-color: var(--accent); color: var(--text); }
+  .view-btn.active { background: var(--accent-glow); border-color: var(--accent); color: var(--accent); }
+
+  /* Search */
+  .search-box {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .search-box input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--text);
+    font-size: 0.8rem;
+    outline: none;
+  }
+  .search-box input:focus { border-color: var(--accent); }
+  .search-box input::placeholder { color: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>APEX</span> Load — Technical Architecture</h1>
+  <div class="header-meta">Kubernetes-native Performance Testing Platform &middot; Go + React + gRPC</div>
+</div>
+
+<div class="layout">
+  <div class="sidebar" id="sidebar">
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="Search components..." />
+    </div>
+    <div class="view-toggles">
+      <button class="view-btn active" data-view="all">All</button>
+      <button class="view-btn" data-view="data">Data Flow</button>
+      <button class="view-btn" data-view="runtime">Runtime</button>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Architecture Layers</h3>
+      <ul class="layer-list" id="layerList">
+        <li class="layer-item" data-layer="client" style="--dot-color: #6c8cff">
+          <span class="layer-dot" style="background: #6c8cff"></span> Client Layer
+        </li>
+        <li class="layer-item" data-layer="api" style="--dot-color: #4ade80">
+          <span class="layer-dot" style="background: #4ade80"></span> API / Control Plane
+        </li>
+        <li class="layer-item" data-layer="engine" style="--dot-color: #f59e0b">
+          <span class="layer-dot" style="background: #f59e0b"></span> Execution Engine
+        </li>
+        <li class="layer-item" data-layer="protocol" style="--dot-color: #a78bfa">
+          <span class="layer-dot" style="background: #a78bfa"></span> Protocol Plugins
+        </li>
+        <li class="layer-item" data-layer="storage" style="--dot-color: #2dd4bf">
+          <span class="layer-dot" style="background: #2dd4bf"></span> Storage & Telemetry
+        </li>
+        <li class="layer-item" data-layer="convert" style="--dot-color: #f472b6">
+          <span class="layer-dot" style="background: #f472b6"></span> Script Converters
+        </li>
+      </ul>
+    </div>
+
+    <div id="detailContainer" class="sidebar-section">
+      <div class="detail-panel">
+        <h2>Select a Component</h2>
+        <div class="detail-body">
+          <p>Click on any node in the diagram to see detailed information about that component, its connections, and source files.</p>
+          <p>Use the layer list above to highlight specific layers, or search to find components by name.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="canvas" id="canvas">
+    <div class="canvas-inner" id="canvasInner">
+      <svg class="connections-svg" id="connectionsSvg">
+        <defs>
+          <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="var(--border)" />
+          </marker>
+          <marker id="arrowhead-hl" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="var(--accent)" />
+          </marker>
+        </defs>
+      </svg>
+
+      <!-- Layer backgrounds -->
+      <div class="layer-group" style="left:20px;top:10px;width:960px;height:130px;border-color:#6c8cff" data-layer="client"></div>
+      <div class="layer-label" style="left:30px;top:18px;color:#6c8cff">Client Layer</div>
+
+      <div class="layer-group" style="left:20px;top:160px;width:960px;height:170px;border-color:#4ade80" data-layer="api"></div>
+      <div class="layer-label" style="left:30px;top:168px;color:#4ade80">API / Control Plane</div>
+
+      <div class="layer-group" style="left:20px;top:350px;width:620px;height:170px;border-color:#f59e0b" data-layer="engine"></div>
+      <div class="layer-label" style="left:30px;top:358px;color:#f59e0b">Execution Engine</div>
+
+      <div class="layer-group" style="left:20px;top:540px;width:960px;height:120px;border-color:#a78bfa" data-layer="protocol"></div>
+      <div class="layer-label" style="left:30px;top:548px;color:#a78bfa">Protocol Plugins</div>
+
+      <div class="layer-group" style="left:660px;top:350px;width:320px;height:170px;border-color:#2dd4bf" data-layer="storage"></div>
+      <div class="layer-label" style="left:670px;top:358px;color:#2dd4bf">Storage & Telemetry</div>
+
+      <div class="layer-group" style="left:20px;top:680px;width:960px;height:120px;border-color:#f472b6" data-layer="convert"></div>
+      <div class="layer-label" style="left:30px;top:688px;color:#f472b6">Script Import / Conversion</div>
+
+      <!-- CLIENT LAYER -->
+      <div class="node" id="dashboard" data-layer="client" style="left:40px;top:42px;min-width:155px">
+        <div class="node-icon">&#9672;</div>
+        <div class="node-title">Dashboard</div>
+        <div class="node-sub">React 18 + TypeScript + Recharts</div>
+        <div class="node-badge" style="background:rgba(108,140,255,0.15);color:#6c8cff">SPA</div>
+      </div>
+
+      <div class="node" id="apexctl" data-layer="client" style="left:260px;top:42px;min-width:130px">
+        <div class="node-icon">&#9654;</div>
+        <div class="node-title">apexctl</div>
+        <div class="node-sub">CLI Tool</div>
+        <div class="node-badge" style="background:rgba(108,140,255,0.15);color:#6c8cff">Go Binary</div>
+      </div>
+
+      <div class="node" id="websocket" data-layer="client" style="left:450px;top:42px;min-width:155px">
+        <div class="node-icon">&#8644;</div>
+        <div class="node-title">WebSocket Client</div>
+        <div class="node-sub">Real-time metric streams</div>
+        <div class="node-badge" style="background:rgba(108,140,255,0.15);color:#6c8cff">Bidirectional</div>
+      </div>
+
+      <div class="node" id="agentic" data-layer="client" style="left:680px;top:42px;min-width:160px">
+        <div class="node-icon">&#10036;</div>
+        <div class="node-title">Agentic Script Engine</div>
+        <div class="node-sub">Python + Azure OpenAI</div>
+        <div class="node-badge" style="background:rgba(168,85,247,0.15);color:#c084fc">LLM-Powered</div>
+      </div>
+
+      <!-- API / CONTROL PLANE LAYER -->
+      <div class="node" id="restapi" data-layer="api" style="left:40px;top:195px;min-width:200px">
+        <div class="node-icon">&#9881;</div>
+        <div class="node-title">REST API Server</div>
+        <div class="node-sub">:8080 &middot; Chi Router &middot; OIDC Auth</div>
+        <div class="node-badge" style="background:rgba(74,222,128,0.15);color:#4ade80">Control Plane</div>
+      </div>
+
+      <div class="node" id="wshub" data-layer="api" style="left:310px;top:195px;min-width:170px">
+        <div class="node-icon">&#8634;</div>
+        <div class="node-title">WebSocket Hub</div>
+        <div class="node-sub">Fan-out to all subscribers</div>
+        <div class="node-badge" style="background:rgba(74,222,128,0.15);color:#4ade80">Pub/Sub</div>
+      </div>
+
+      <div class="node" id="testrunner" data-layer="api" style="left:545px;top:195px;min-width:170px">
+        <div class="node-icon">&#9654;</div>
+        <div class="node-title">Test Runner</div>
+        <div class="node-sub">Orchestrates test lifecycle</div>
+        <div class="node-badge" style="background:rgba(74,222,128,0.15);color:#4ade80">Core</div>
+      </div>
+
+      <div class="node" id="scheduler" data-layer="api" style="left:780px;top:195px;min-width:160px">
+        <div class="node-icon">&#128339;</div>
+        <div class="node-title">Scheduler</div>
+        <div class="node-sub">Cron + scenario schedules</div>
+        <div class="node-badge" style="background:rgba(74,222,128,0.15);color:#4ade80">Lease-based</div>
+      </div>
+
+      <!-- ENGINE LAYER -->
+      <div class="node" id="engine" data-layer="engine" style="left:40px;top:385px;min-width:165px">
+        <div class="node-icon">&#9889;</div>
+        <div class="node-title">VUser Engine</div>
+        <div class="node-sub">1 goroutine = 1 VUser</div>
+        <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">~2-4 KB stack</div>
+      </div>
+
+      <div class="node" id="metrics" data-layer="engine" style="left:260px;top:385px;min-width:175px">
+        <div class="node-icon">&#128200;</div>
+        <div class="node-title">Metrics Collector</div>
+        <div class="node-sub">Buffered channels (cap 10k)</div>
+        <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">Zero-Lock</div>
+      </div>
+
+      <div class="node" id="tdigest" data-layer="engine" style="left:490px;top:385px;min-width:145px">
+        <div class="node-icon">&#9733;</div>
+        <div class="node-title">T-Digest</div>
+        <div class="node-sub">Streaming percentiles</div>
+        <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">p50/p95/p99</div>
+      </div>
+
+      <!-- STORAGE LAYER -->
+      <div class="node" id="sqlite" data-layer="storage" style="left:680px;top:385px;min-width:130px">
+        <div class="node-icon">&#128451;</div>
+        <div class="node-title">SQLite / PostgreSQL</div>
+        <div class="node-sub">Scripts, tests, metadata</div>
+        <div class="node-badge" style="background:rgba(45,212,191,0.15);color:#2dd4bf">Persistence</div>
+      </div>
+
+      <div class="node" id="otel" data-layer="storage" style="left:860px;top:385px;min-width:100px">
+        <div class="node-icon">&#128225;</div>
+        <div class="node-title">OpenTelemetry</div>
+        <div class="node-sub">Prometheus / Dynatrace</div>
+        <div class="node-badge" style="background:rgba(45,212,191,0.15);color:#2dd4bf">Export</div>
+      </div>
+
+      <!-- PROTOCOL LAYER -->
+      <div class="node" id="proto-http" data-layer="protocol" style="left:40px;top:570px;min-width:90px">
+        <div class="node-icon">&#127760;</div>
+        <div class="node-title">HTTP</div>
+        <div class="node-sub">HTTP/1.1 + HTTP/2</div>
+      </div>
+
+      <div class="node" id="proto-ws" data-layer="protocol" style="left:160px;top:570px;min-width:85px">
+        <div class="node-icon">&#8644;</div>
+        <div class="node-title">WebSocket</div>
+        <div class="node-sub">WS protocol</div>
+      </div>
+
+      <div class="node" id="proto-grpc" data-layer="protocol" style="left:275px;top:570px;min-width:75px">
+        <div class="node-icon">&#9741;</div>
+        <div class="node-title">gRPC</div>
+        <div class="node-sub">Protobuf</div>
+      </div>
+
+      <div class="node" id="proto-browser" data-layer="protocol" style="left:380px;top:570px;min-width:85px">
+        <div class="node-icon">&#128187;</div>
+        <div class="node-title">Browser</div>
+        <div class="node-sub">Headless CDP</div>
+      </div>
+
+      <div class="node" id="proto-soap" data-layer="protocol" style="left:495px;top:570px;min-width:75px">
+        <div class="node-icon">&#128230;</div>
+        <div class="node-title">SOAP</div>
+        <div class="node-sub">XML/WSDL</div>
+      </div>
+
+      <div class="node" id="proto-jms" data-layer="protocol" style="left:600px;top:570px;min-width:75px">
+        <div class="node-icon">&#128233;</div>
+        <div class="node-title">JMS</div>
+        <div class="node-sub">Solace / IBM MQ</div>
+      </div>
+
+      <div class="node" id="proto-db" data-layer="protocol" style="left:710px;top:570px;min-width:85px">
+        <div class="node-icon">&#128450;</div>
+        <div class="node-title">Database</div>
+        <div class="node-sub">SQL drivers</div>
+      </div>
+
+      <div class="node" id="proto-net" data-layer="protocol" style="left:830px;top:570px;min-width:85px">
+        <div class="node-icon">&#128268;</div>
+        <div class="node-title">Network</div>
+        <div class="node-sub">TCP/UDP raw</div>
+      </div>
+
+      <!-- CONVERTER LAYER -->
+      <div class="node" id="conv-lr" data-layer="convert" style="left:40px;top:710px;min-width:120px">
+        <div class="node-icon">&#128257;</div>
+        <div class="node-title">LoadRunner</div>
+        <div class="node-sub">C parser &rarr; DSL</div>
+      </div>
+
+      <div class="node" id="conv-har" data-layer="convert" style="left:195px;top:710px;min-width:95px">
+        <div class="node-icon">&#128196;</div>
+        <div class="node-title">HAR</div>
+        <div class="node-sub">HTTP Archive</div>
+      </div>
+
+      <div class="node" id="conv-jmeter" data-layer="convert" style="left:325px;top:710px;min-width:95px">
+        <div class="node-icon">&#9874;</div>
+        <div class="node-title">JMeter</div>
+        <div class="node-sub">JMX import</div>
+      </div>
+
+      <div class="node" id="conv-openapi" data-layer="convert" style="left:455px;top:710px;min-width:100px">
+        <div class="node-icon">&#128220;</div>
+        <div class="node-title">OpenAPI</div>
+        <div class="node-sub">Swagger spec</div>
+      </div>
+
+      <div class="node" id="conv-wsdl" data-layer="convert" style="left:590px;top:710px;min-width:95px">
+        <div class="node-icon">&#128195;</div>
+        <div class="node-title">WSDL</div>
+        <div class="node-sub">SOAP services</div>
+      </div>
+
+      <div class="node" id="conv-sample" data-layer="convert" style="left:720px;top:710px;min-width:100px">
+        <div class="node-icon">&#128203;</div>
+        <div class="node-title">Sample Scripts</div>
+        <div class="node-sub">Built-in templates</div>
+      </div>
+
+      <div class="node" id="dslparser" data-layer="convert" style="left:860px;top:710px;min-width:100px">
+        <div class="node-icon">&#128218;</div>
+        <div class="node-title">DSL Parser</div>
+        <div class="node-sub">JSON DSL &rarr; Script</div>
+        <div class="node-badge" style="background:rgba(244,114,182,0.15);color:#f472b6">Core</div>
+      </div>
+
+      <!-- Performance targets -->
+      <div class="perf-targets">
+        <h4>Performance Targets</h4>
+        <div class="perf-row"><span class="perf-label">Harness overhead</span><span class="perf-value">&lt; 50 &micro;s</span></div>
+        <div class="perf-row"><span class="perf-label">VUsers/pod (HTTP)</span><span class="perf-value">10,000</span></div>
+        <div class="perf-row"><span class="perf-label">Metrics latency</span><span class="perf-value">&lt; 2 sec</span></div>
+        <div class="perf-row"><span class="perf-label">Ramp-up rate</span><span class="perf-value">500 VU/s/pod</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-line solid"></div> REST / HTTP</div>
+  <div class="legend-item"><div class="legend-line dashed"></div> gRPC stream</div>
+  <div class="legend-item"><div class="legend-line dotted"></div> WebSocket</div>
+  <div class="legend-item"><span style="color:var(--accent)">&#8226;</span> Click a node for details</div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+const COMPONENTS = {
+  dashboard: {
+    title: 'Dashboard',
+    subtitle: 'React 18 SPA',
+    layer: 'client',
+    body: `<p>Real-time monitoring SPA built with React 18, TypeScript, and Recharts. Communicates with the API server via REST for CRUD operations and WebSocket for live metric streaming.</p>
+    <p>Key features: test creation wizard, live execution charts with zoom, scenario editor, script library with import tools, results archive with CSV/Parquet export, recording studio.</p>
+    <p>Uses <code>useWebSocket</code> hook for auto-reconnecting WS connections with visibility-aware pausing. Metrics flow: WS message &rarr; state reducer &rarr; Recharts re-render at ~1s intervals.</p>`,
+    connections: ['REST API Server &mdash; CRUD operations', 'WebSocket Hub &mdash; live metric stream', 'Agentic Engine &mdash; AI-assisted script authoring'],
+    files: ['dashboard/src/components/', 'dashboard/src/hooks/useWebSocket.ts', 'dashboard/src/hooks/useApi.ts', 'dashboard/src/types.ts']
+  },
+  apexctl: {
+    title: 'apexctl',
+    subtitle: 'CLI Tool (Go)',
+    layer: 'client',
+    body: `<p>Command-line interface for running tests directly or against the controller API. Supports both standalone mode (direct engine execution) and remote mode (POST to controller).</p>
+    <p>Features: SLA validation, run overrides (VUsers, duration, ramp-up), JSON output for CI/CD pipelines. Exit codes reflect test pass/fail for pipeline integration.</p>`,
+    connections: ['REST API Server &mdash; remote test execution', 'VUser Engine &mdash; direct standalone mode'],
+    files: ['cmd/apexctl/main.go', 'cmd/apexctl/api_client.go', 'cmd/apexctl/sla.go', 'cmd/apexctl/run_overrides.go']
+  },
+  websocket: {
+    title: 'WebSocket Client',
+    subtitle: 'Real-time Streaming',
+    layer: 'client',
+    body: `<p>Bidirectional WebSocket connection for live test monitoring. Supports two modes:</p>
+    <p><code>/api/v1/tests/{id}/stream</code> &mdash; stream metrics for a single test.<br/>
+    <code>/api/v1/ws</code> &mdash; global stream for all test events (creation, start, complete, fail).</p>
+    <p>Message types: <code>metrics_update</code>, <code>test_created</code>, <code>test_started</code>, <code>test_complete</code>, <code>test_failed</code>, <code>test_stopping</code>. Auto-reconnects with exponential backoff.</p>`,
+    connections: ['WebSocket Hub &mdash; JSON message stream', 'Dashboard &mdash; useWebSocket hook consumer'],
+    files: ['dashboard/src/hooks/useWebSocket.ts', 'pkg/api/websocket.go']
+  },
+  agentic: {
+    title: 'Agentic Script Engine',
+    subtitle: 'Python + Azure OpenAI',
+    layer: 'client',
+    body: `<p>LLM-powered script generation engine (Phase 4). Generates JSON DSL test scripts from multiple input sources:</p>
+    <p>&bull; Jira user stories &rarr; test scenarios<br/>
+    &bull; OpenAPI/Swagger specs &rarr; API test scripts<br/>
+    &bull; HAR recordings &rarr; realistic user flows<br/>
+    &bull; Natural language descriptions &rarr; load profiles</p>
+    <p>Uses Azure OpenAI with guardrails for safe, validated output. Generated scripts pass through the DSL validator before storage.</p>`,
+    connections: ['REST API Server &mdash; script upload endpoint', 'DSL Parser &mdash; output validation'],
+    files: ['pkg/api/ai_assistance.go', 'pkg/api/authoring_ai_guardrails.go', 'pkg/api/authoring_templates.go']
+  },
+  restapi: {
+    title: 'REST API Server',
+    subtitle: 'Control Plane',
+    layer: 'api',
+    body: `<p>Central API server serving on <code>:8080</code>. Built on Chi router with middleware for OIDC auth, audit logging, CORS, and project scoping.</p>
+    <p>Key endpoint groups:</p>
+    <p>&bull; <code>/api/v1/tests/*</code> &mdash; Test CRUD, start, stop, abort<br/>
+    &bull; <code>/api/v1/scripts/*</code> &mdash; Script management, import, validate<br/>
+    &bull; <code>/api/v1/scenarios/*</code> &mdash; Reusable test scenarios + scheduling<br/>
+    &bull; <code>/api/v1/projects/*</code> &mdash; Multi-project isolation<br/>
+    &bull; <code>/api/v1/system/health</code> &mdash; Health + readiness probes</p>
+    <p>Also serves the embedded dashboard SPA from <code>pkg/api/static/</code>.</p>`,
+    connections: ['Test Runner &mdash; delegates test lifecycle', 'WebSocket Hub &mdash; broadcasts events', 'SQLite/PostgreSQL &mdash; persistence', 'Scheduler &mdash; schedule management'],
+    files: ['pkg/api/handlers.go', 'pkg/api/server.go', 'pkg/api/routes.go', 'pkg/api/auth_oidc.go', 'pkg/api/audit.go']
+  },
+  wshub: {
+    title: 'WebSocket Hub',
+    subtitle: 'Event Fan-out',
+    layer: 'api',
+    body: `<p>Manages all active WebSocket connections and fans out events to subscribers. Supports both global subscriptions (all events) and per-test subscriptions (filtered stream).</p>
+    <p>Design: hub goroutine reads from an internal broadcast channel. Each client connection has a dedicated write goroutine with a buffered send channel to prevent slow consumers from blocking the hub.</p>
+    <p>Events originate from the Test Runner whenever test state changes or new metrics arrive (~1s interval during active tests).</p>`,
+    connections: ['Dashboard &mdash; WebSocket clients', 'Test Runner &mdash; event source', 'Metrics Collector &mdash; periodic snapshots'],
+    files: ['pkg/api/websocket.go']
+  },
+  testrunner: {
+    title: 'Test Runner',
+    subtitle: 'Test Lifecycle Orchestrator',
+    layer: 'api',
+    body: `<p>Core orchestration component managing the full test lifecycle: QUEUED &rarr; INITIALIZING &rarr; RUNNING &rarr; RAMPING_DOWN &rarr; COMPLETE (or FAILED/ABORTED).</p>
+    <p>Responsibilities:</p>
+    <p>&bull; Creates and configures engine instances per test<br/>
+    &bull; Distributes VUsers across generator pods (distributed mode)<br/>
+    &bull; Aggregates metrics from all generators via gRPC streams<br/>
+    &bull; Evaluates SLA/goal conditions for auto-stop<br/>
+    &bull; Manages runtime adjustments (VUser scaling, duration changes)<br/>
+    &bull; Persists test records and results to storage</p>`,
+    connections: ['VUser Engine &mdash; local execution', 'Generator Pods &mdash; gRPC distribution', 'WebSocket Hub &mdash; event broadcast', 'SQLite/PostgreSQL &mdash; test persistence'],
+    files: ['pkg/api/runner.go', 'pkg/api/execution_backend.go', 'pkg/api/distributed_execution_backend.go', 'pkg/api/load_model_support.go']
+  },
+  scheduler: {
+    title: 'Scheduler',
+    subtitle: 'Cron-based Test Scheduling',
+    layer: 'api',
+    body: `<p>Lease-based scheduler for recurring and one-time test executions. Uses database-backed distributed locking to ensure only one controller instance owns the scheduler at a time.</p>
+    <p>Features: cron expression schedules, scenario-based scheduling (multiple scripts in one run), approval workflows, occurrence tracking with retry logic.</p>`,
+    connections: ['Test Runner &mdash; triggers scheduled tests', 'SQLite/PostgreSQL &mdash; schedule persistence', 'REST API &mdash; schedule management endpoints'],
+    files: ['pkg/api/scheduler.go', 'pkg/storage/sqlite_schedules_test.go']
+  },
+  engine: {
+    title: 'VUser Engine',
+    subtitle: 'Goroutine-based Load Generator',
+    layer: 'engine',
+    body: `<p>The core execution engine. Each virtual user (VUser) runs as a single goroutine with a ~2-4 KB stack, enabling 10,000+ concurrent users per pod on 4 vCPU / 8 GB.</p>
+    <p>Execution phases: Init (protocol setup + init actions) &rarr; Ramp-up (gradual VUser activation via pacing config) &rarr; Steady-state (actions loop until duration expires) &rarr; Teardown (cleanup actions, graceful shutdown).</p>
+    <p>Key optimizations: <code>sync.Pool</code> for request/response buffer reuse (reduces GC pressure), pacing algorithms (constant, random, percentile-based), rendezvous points for synchronized load spikes.</p>`,
+    connections: ['Metrics Collector &mdash; buffered channel results', 'Protocol Plugins &mdash; Execute() per action', 'DSL Parser &mdash; script interpretation', 'Test Runner &mdash; lifecycle control'],
+    files: ['pkg/engine/engine.go', 'pkg/engine/vuser.go', 'pkg/engine/pacing.go', 'pkg/engine/group.go', 'pkg/engine/rendezvous.go']
+  },
+  metrics: {
+    title: 'Metrics Collector',
+    subtitle: 'Zero-lock Hot Path',
+    layer: 'engine',
+    body: `<p>Collects execution results from all VUsers via buffered channels (capacity 10,000). The zero-lock design ensures the metrics pipeline never blocks the hot execution path.</p>
+    <p>Aggregation: per-action metrics (TPS, latency, errors), per-group metrics, per-dependency-target breakdown, SOAP operation breakdown, network profile breakdown. Browser protocol adds device-level and Web Vitals metrics.</p>
+    <p>Live counters use <code>atomic.Int64</code> for lock-free increments. Periodic snapshots (1s) are pushed to the WebSocket Hub for real-time dashboard updates.</p>`,
+    connections: ['VUser Engine &mdash; result channel input', 'T-Digest &mdash; percentile computation', 'WebSocket Hub &mdash; snapshot broadcast', 'OpenTelemetry &mdash; metric export'],
+    files: ['pkg/engine/metrics.go', 'pkg/engine/sys_metrics.go']
+  },
+  tdigest: {
+    title: 'T-Digest',
+    subtitle: 'Streaming Percentile Engine',
+    layer: 'engine',
+    body: `<p>Implementation of the t-digest algorithm for accurate streaming percentile computation (p50, p90, p95, p99) without storing all data points.</p>
+    <p>Critical for performance testing where millions of latency samples must be summarized in real-time. Memory usage is O(compression factor), typically ~1 KB regardless of sample count.</p>
+    <p>Used by both the Metrics Collector (per-action percentiles) and the distributed aggregation layer (merging percentiles across generator pods).</p>`,
+    connections: ['Metrics Collector &mdash; feeds latency samples', 'Distributed Aggregation &mdash; merge across pods'],
+    files: ['pkg/engine/tdigest.go']
+  },
+  sqlite: {
+    title: 'SQLite / PostgreSQL',
+    subtitle: 'Persistent Storage',
+    layer: 'storage',
+    body: `<p>Pluggable storage backend with a common <code>Store</code> interface. SQLite for single-node/dev mode; PostgreSQL 16 for production multi-replica deployments.</p>
+    <p>Stores: scripts, test records, scenarios, schedules, projects, folders, domains, applications, releases, audit events, data pools, archive metadata.</p>
+    <p>Factory pattern selects backend based on config. Connection pooling and WAL mode (SQLite) for concurrent read/write performance.</p>`,
+    connections: ['REST API Server &mdash; CRUD operations', 'Test Runner &mdash; test record persistence', 'Scheduler &mdash; schedule + lease storage'],
+    files: ['pkg/storage/storage.go', 'pkg/storage/sqlite.go', 'pkg/storage/factory.go']
+  },
+  otel: {
+    title: 'OpenTelemetry',
+    subtitle: 'Vendor-neutral Telemetry',
+    layer: 'storage',
+    body: `<p>OpenTelemetry-native metrics export pipeline. Supports multiple backends simultaneously:</p>
+    <p>&bull; Prometheus (pull-based scraping)<br/>
+    &bull; Dynatrace (push via OTLP)<br/>
+    &bull; ELK Stack (log correlation)<br/>
+    &bull; Custom OTLP endpoints</p>
+    <p>External metrics ingestion: scripts can configure <code>observability.external_metrics</code> to pull server-side metrics (CPU, memory, custom counters) from Prometheus endpoints and overlay them on the dashboard charts.</p>`,
+    connections: ['Metrics Collector &mdash; metric snapshots', 'Prometheus &mdash; scrape endpoint', 'Dynatrace &mdash; OTLP push'],
+    files: ['pkg/engine/metrics.go', 'pkg/api/external_metrics.go']
+  },
+  'proto-http': {
+    title: 'HTTP Protocol',
+    subtitle: 'HTTP/1.1 + HTTP/2',
+    layer: 'protocol',
+    body: `<p>Primary protocol implementation supporting HTTP/1.1 and HTTP/2 with automatic protocol negotiation. Features:</p>
+    <p>&bull; Connection pooling with configurable limits<br/>
+    &bull; TLS with custom CA cert support<br/>
+    &bull; Correlation extraction (regex, JSONPath, XPath, header, cookie, boundary)<br/>
+    &bull; Response assertions (status, body, header, duration)<br/>
+    &bull; Multipart form uploads, chunked encoding<br/>
+    &bull; Request/response body redaction for sensitive data<br/>
+    &bull; Automatic cookie jar management</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Target System &mdash; HTTP requests'],
+    files: ['pkg/protocol/http/']
+  },
+  'proto-ws': {
+    title: 'WebSocket Protocol',
+    subtitle: 'WS Load Testing',
+    layer: 'protocol',
+    body: `<p>WebSocket protocol plugin for testing WebSocket-based services. Supports connect, send message, receive message, and disconnect actions with configurable timeouts and message matching.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Target System &mdash; WS connections'],
+    files: ['pkg/protocol/websocket/']
+  },
+  'proto-grpc': {
+    title: 'gRPC Protocol',
+    subtitle: 'Protobuf-based',
+    layer: 'protocol',
+    body: `<p>gRPC protocol plugin supporting unary RPCs, server streaming, client streaming, and bidirectional streaming. Uses dynamic protobuf reflection for runtime schema loading.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Target System &mdash; gRPC calls'],
+    files: ['pkg/protocol/grpc/']
+  },
+  'proto-browser': {
+    title: 'Browser Protocol',
+    subtitle: 'Headless Chrome via CDP',
+    layer: 'protocol',
+    body: `<p>Real browser protocol using Chrome DevTools Protocol (CDP) for full browser-based load testing. Captures Web Vitals (LCP, FID, CLS, TTFB), network waterfall, and device-specific metrics.</p>
+    <p>Supports multiple device profiles, viewport simulation, and true end-to-end user flow testing including JavaScript rendering.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Headless Chrome &mdash; CDP connection'],
+    files: ['pkg/protocol/browser/']
+  },
+  'proto-soap': {
+    title: 'SOAP Protocol',
+    subtitle: 'XML/WSDL Services',
+    layer: 'protocol',
+    body: `<p>SOAP protocol plugin for testing XML-based web services. Parses WSDL definitions for operation discovery, constructs SOAP envelopes, handles WS-Security headers, and validates fault responses.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'WSDL Converter &mdash; service definition', 'Target System &mdash; SOAP requests'],
+    files: ['pkg/protocol/soap/']
+  },
+  'proto-jms': {
+    title: 'JMS Protocol',
+    subtitle: 'Solace + IBM MQ',
+    layer: 'protocol',
+    body: `<p>JMS messaging protocol with two backend implementations: Solace PubSub+ and IBM MQ. Supports publish, subscribe, request-reply, and queue browsing patterns.</p>
+    <p>Phase 5 feature &mdash; designed for enterprise messaging load testing with durable subscriptions and topic hierarchies.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Message Broker &mdash; JMS connections'],
+    files: ['pkg/protocol/jms/']
+  },
+  'proto-db': {
+    title: 'Database Protocol',
+    subtitle: 'SQL Load Testing',
+    layer: 'protocol',
+    body: `<p>Database protocol for testing SQL query performance under load. Supports parameterized queries, prepared statements, transaction blocks, and connection pool management.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Database &mdash; SQL connections'],
+    files: ['pkg/protocol/database/']
+  },
+  'proto-net': {
+    title: 'Network Protocol',
+    subtitle: 'Raw TCP/UDP',
+    layer: 'protocol',
+    body: `<p>Low-level network protocol for raw TCP and UDP testing. Supports custom payloads, binary protocols, and network-level latency measurement without application protocol overhead.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Target System &mdash; TCP/UDP sockets'],
+    files: ['pkg/protocol/network/']
+  },
+  'conv-lr': {
+    title: 'LoadRunner Converter',
+    subtitle: 'C Parser &rarr; JSON DSL',
+    layer: 'convert',
+    body: `<p>Converts LoadRunner VUser scripts (.zip archives containing C-based web_http scripts) into APEX Load JSON DSL format. Features a Go-based C parser that handles:</p>
+    <p>&bull; <code>web_url()</code>, <code>web_submit_data()</code>, <code>web_custom_request()</code><br/>
+    &bull; Correlation functions (<code>web_reg_save_param</code>)<br/>
+    &bull; Transaction markers (<code>lr_start/end_transaction</code>)<br/>
+    &bull; Think time and pacing directives<br/>
+    &bull; Parameter files and data sources</p>
+    <p>Preserves original runtime settings in metadata for fidelity comparison.</p>`,
+    connections: ['REST API &mdash; /scripts/import/loadrunner', 'DSL Parser &mdash; output validation'],
+    files: ['pkg/convert/loadrunner/']
+  },
+  'conv-har': {
+    title: 'HAR Converter',
+    subtitle: 'HTTP Archive Import',
+    layer: 'convert',
+    body: `<p>Converts HAR (HTTP Archive) files recorded from browser DevTools or the built-in recording proxy into JSON DSL scripts. Preserves request ordering, headers, cookies, and timing data.</p>`,
+    connections: ['Recording Studio &mdash; HAR capture', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/har/', 'pkg/recorder/har.go', 'pkg/recorder/converter.go']
+  },
+  'conv-jmeter': {
+    title: 'JMeter Converter',
+    subtitle: 'JMX Import',
+    layer: 'convert',
+    body: `<p>Parses JMeter .jmx test plans and converts HTTP samplers, thread groups, timers, and assertions into equivalent APEX Load JSON DSL constructs.</p>`,
+    connections: ['REST API &mdash; import endpoint', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/jmeter/']
+  },
+  'conv-openapi': {
+    title: 'OpenAPI Converter',
+    subtitle: 'Swagger/OpenAPI Spec Import',
+    layer: 'convert',
+    body: `<p>Reads OpenAPI 3.x / Swagger 2.x specifications and generates test scripts covering all defined endpoints. Auto-generates request bodies from schema definitions with realistic sample data.</p>`,
+    connections: ['REST API &mdash; import endpoint', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/openapi/']
+  },
+  'conv-wsdl': {
+    title: 'WSDL Converter',
+    subtitle: 'SOAP Service Import',
+    layer: 'convert',
+    body: `<p>Parses WSDL service definitions to generate SOAP protocol test scripts. Discovers operations, builds envelope templates, and maps complex types for request generation.</p>`,
+    connections: ['SOAP Protocol &mdash; service definition', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/wsdl/']
+  },
+  'conv-sample': {
+    title: 'Sample Scripts',
+    subtitle: 'Built-in Templates',
+    layer: 'convert',
+    body: `<p>Library of pre-built script templates for common testing patterns: REST API CRUD, GraphQL queries, WebSocket echo, browser page load, and more. Used for onboarding and quick-start scenarios.</p>`,
+    connections: ['Dashboard &mdash; script creation wizard', 'DSL Parser &mdash; template instantiation'],
+    files: ['pkg/convert/sample/']
+  },
+  dslparser: {
+    title: 'DSL Parser',
+    subtitle: 'JSON DSL Core',
+    layer: 'convert',
+    body: `<p>Parses and validates JSON DSL script definitions into typed Go structs. The DSL is the lingua franca of the platform &mdash; all converters output it, and the engine consumes it.</p>
+    <p>Template variable resolution: <code>{{env.KEY}}</code>, <code>{{data.source.col}}</code>, <code>{{var.name}}</code>, <code>{{fn.uuid()}}</code>.</p>
+    <p>Sections: <code>config</code> (protocol settings), <code>data_sources</code> (CSV/JSON feeds), <code>parameters</code> (runtime params), <code>init</code> (setup actions), <code>actions</code> (main loop), <code>teardown</code> (cleanup).</p>
+    <p>Validation covers: required fields, protocol compatibility, action type validity, correlation reference integrity, data source binding checks.</p>`,
+    connections: ['All Converters &mdash; output target', 'VUser Engine &mdash; script interpretation', 'REST API &mdash; /scripts/validate endpoint'],
+    files: ['pkg/dsl/types.go', 'pkg/dsl/parser.go', 'pkg/dsl/validate.go', 'pkg/dsl/parameters.go']
+  }
+};
+
+const CONNECTIONS = [
+  { from: 'dashboard', to: 'restapi', type: 'solid' },
+  { from: 'dashboard', to: 'wshub', type: 'ws' },
+  { from: 'apexctl', to: 'restapi', type: 'solid' },
+  { from: 'websocket', to: 'wshub', type: 'ws' },
+  { from: 'agentic', to: 'restapi', type: 'solid' },
+  { from: 'restapi', to: 'testrunner', type: 'solid' },
+  { from: 'restapi', to: 'sqlite', type: 'solid' },
+  { from: 'restapi', to: 'scheduler', type: 'solid' },
+  { from: 'wshub', to: 'testrunner', type: 'ws' },
+  { from: 'testrunner', to: 'engine', type: 'solid' },
+  { from: 'testrunner', to: 'sqlite', type: 'solid' },
+  { from: 'scheduler', to: 'testrunner', type: 'solid' },
+  { from: 'engine', to: 'metrics', type: 'solid' },
+  { from: 'metrics', to: 'tdigest', type: 'solid' },
+  { from: 'metrics', to: 'otel', type: 'solid' },
+  { from: 'metrics', to: 'wshub', type: 'ws' },
+  { from: 'engine', to: 'proto-http', type: 'solid' },
+  { from: 'engine', to: 'proto-ws', type: 'solid' },
+  { from: 'engine', to: 'proto-grpc', type: 'grpc' },
+  { from: 'engine', to: 'proto-browser', type: 'solid' },
+  { from: 'engine', to: 'proto-soap', type: 'solid' },
+  { from: 'engine', to: 'proto-jms', type: 'solid' },
+  { from: 'engine', to: 'proto-db', type: 'solid' },
+  { from: 'engine', to: 'proto-net', type: 'solid' },
+  { from: 'conv-lr', to: 'dslparser', type: 'solid' },
+  { from: 'conv-har', to: 'dslparser', type: 'solid' },
+  { from: 'conv-jmeter', to: 'dslparser', type: 'solid' },
+  { from: 'conv-openapi', to: 'dslparser', type: 'solid' },
+  { from: 'conv-wsdl', to: 'dslparser', type: 'solid' },
+  { from: 'conv-sample', to: 'dslparser', type: 'solid' },
+  { from: 'dslparser', to: 'engine', type: 'solid' },
+  { from: 'restapi', to: 'conv-lr', type: 'solid' },
+];
+
+let selectedNode = null;
+let highlightedLayer = null;
+
+function getNodeCenter(id) {
+  const el = document.getElementById(id);
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  const canvas = document.getElementById('canvasInner').getBoundingClientRect();
+  return {
+    x: r.left - canvas.left + r.width / 2,
+    y: r.top - canvas.top + r.height / 2
+  };
+}
+
+function drawConnections() {
+  const svg = document.getElementById('connectionsSvg');
+  svg.querySelectorAll('.conn-path-group').forEach(g => g.remove());
+
+  for (const conn of CONNECTIONS) {
+    const from = getNodeCenter(conn.from);
+    const to = getNodeCenter(conn.to);
+    if (!from || !to) continue;
+
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.classList.add('conn-path-group');
+    g.dataset.from = conn.from;
+    g.dataset.to = conn.to;
+
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const cx1 = from.x + dx * 0.15;
+    const cy1 = from.y + dy * 0.5;
+    const cx2 = to.x - dx * 0.15;
+    const cy2 = to.y - dy * 0.5;
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const d = `M ${from.x} ${from.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${to.x} ${to.y}`;
+    path.setAttribute('d', d);
+    path.classList.add('conn-line');
+    if (conn.type === 'grpc') path.classList.add('grpc');
+    if (conn.type === 'ws') path.classList.add('ws');
+    path.setAttribute('marker-end', 'url(#arrowhead)');
+
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.classList.add('flow-dot');
+    dot.setAttribute('r', '3');
+
+    const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
+    anim.setAttribute('dur', (1.5 + Math.random() * 1.5) + 's');
+    anim.setAttribute('repeatCount', 'indefinite');
+    anim.setAttribute('path', d);
+    dot.appendChild(anim);
+
+    g.appendChild(path);
+    g.appendChild(dot);
+    svg.appendChild(g);
+  }
+}
+
+function highlightConnections(nodeId) {
+  document.querySelectorAll('.conn-path-group').forEach(g => {
+    const path = g.querySelector('.conn-line');
+    const dot = g.querySelector('.flow-dot');
+    if (g.dataset.from === nodeId || g.dataset.to === nodeId) {
+      path.classList.add('highlighted');
+      path.setAttribute('marker-end', 'url(#arrowhead-hl)');
+      dot.classList.add('active');
+    } else {
+      path.classList.remove('highlighted');
+      path.setAttribute('marker-end', 'url(#arrowhead)');
+      dot.classList.remove('active');
+    }
+  });
+}
+
+function clearHighlights() {
+  document.querySelectorAll('.conn-line').forEach(p => {
+    p.classList.remove('highlighted');
+    p.setAttribute('marker-end', 'url(#arrowhead)');
+  });
+  document.querySelectorAll('.flow-dot').forEach(d => d.classList.remove('active'));
+}
+
+function showDetail(id) {
+  const comp = COMPONENTS[id];
+  if (!comp) return;
+
+  selectedNode = id;
+  document.querySelectorAll('.node').forEach(n => n.classList.remove('selected'));
+  document.getElementById(id)?.classList.add('selected');
+
+  highlightConnections(id);
+
+  const connHTML = comp.connections.map(c => `<li><span class="conn-arrow">&#8594;</span> ${c}</li>`).join('');
+  const filesHTML = comp.files.map(f => `<li>${f}</li>`).join('');
+
+  document.getElementById('detailContainer').innerHTML = `
+    <div class="detail-panel">
+      <h2>${comp.title}</h2>
+      <div class="detail-subtitle">${comp.subtitle}</div>
+      <div class="detail-body">${comp.body}</div>
+      <div class="detail-connections">
+        <h4>Connections</h4>
+        <ul class="conn-list">${connHTML}</ul>
+      </div>
+      <div class="detail-files">
+        <h4>Source Files</h4>
+        <ul class="file-list">${filesHTML}</ul>
+      </div>
+    </div>
+  `;
+}
+
+function filterByLayer(layer) {
+  if (highlightedLayer === layer) {
+    highlightedLayer = null;
+    document.querySelectorAll('.node').forEach(n => { n.style.opacity = '1'; n.style.pointerEvents = 'auto'; });
+    document.querySelectorAll('.layer-group').forEach(g => { g.style.opacity = '0.35'; });
+    document.querySelectorAll('.layer-item').forEach(li => li.classList.remove('active'));
+    clearHighlights();
+    return;
+  }
+
+  highlightedLayer = layer;
+  document.querySelectorAll('.layer-item').forEach(li => {
+    li.classList.toggle('active', li.dataset.layer === layer);
+  });
+
+  document.querySelectorAll('.node').forEach(n => {
+    if (n.dataset.layer === layer) {
+      n.style.opacity = '1';
+      n.style.pointerEvents = 'auto';
+    } else {
+      n.style.opacity = '0.2';
+      n.style.pointerEvents = 'none';
+    }
+  });
+
+  document.querySelectorAll('.layer-group').forEach(g => {
+    g.style.opacity = g.dataset.layer === layer ? '0.6' : '0.15';
+  });
+
+  document.querySelectorAll('.conn-path-group').forEach(g => {
+    const fromNode = document.getElementById(g.dataset.from);
+    const toNode = document.getElementById(g.dataset.to);
+    const path = g.querySelector('.conn-line');
+    const dot = g.querySelector('.flow-dot');
+    if ((fromNode?.dataset.layer === layer) || (toNode?.dataset.layer === layer)) {
+      path.classList.add('highlighted');
+      path.setAttribute('marker-end', 'url(#arrowhead-hl)');
+      dot.classList.add('active');
+      g.style.opacity = '1';
+    } else {
+      path.classList.remove('highlighted');
+      path.setAttribute('marker-end', 'url(#arrowhead)');
+      dot.classList.remove('active');
+      g.style.opacity = '0.15';
+    }
+  });
+}
+
+// Event listeners
+document.querySelectorAll('.node').forEach(node => {
+  node.addEventListener('click', () => showDetail(node.id));
+});
+
+document.querySelectorAll('.layer-item').forEach(item => {
+  item.addEventListener('click', () => filterByLayer(item.dataset.layer));
+});
+
+// Search
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  document.querySelectorAll('.node').forEach(node => {
+    const comp = COMPONENTS[node.id];
+    if (!comp) return;
+    const text = (comp.title + ' ' + comp.subtitle + ' ' + comp.body).toLowerCase();
+    if (!q || text.includes(q)) {
+      node.style.opacity = '1';
+      node.style.pointerEvents = 'auto';
+    } else {
+      node.style.opacity = '0.15';
+      node.style.pointerEvents = 'none';
+    }
+  });
+});
+
+// View toggles
+document.querySelectorAll('.view-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const view = btn.dataset.view;
+
+    const dataLayers = ['storage', 'convert'];
+    const runtimeLayers = ['engine', 'protocol'];
+
+    document.querySelectorAll('.node').forEach(n => {
+      if (view === 'all') { n.style.opacity = '1'; n.style.pointerEvents = 'auto'; return; }
+      const layer = n.dataset.layer;
+      if (view === 'data' && (dataLayers.includes(layer) || layer === 'api')) {
+        n.style.opacity = '1'; n.style.pointerEvents = 'auto';
+      } else if (view === 'runtime' && (runtimeLayers.includes(layer) || layer === 'api' || layer === 'client')) {
+        n.style.opacity = '1'; n.style.pointerEvents = 'auto';
+      } else if (view !== 'all') {
+        n.style.opacity = '0.15'; n.style.pointerEvents = 'none';
+      }
+    });
+
+    document.querySelectorAll('.conn-path-group').forEach(g => {
+      if (view === 'all') { g.style.opacity = '1'; return; }
+      const fromNode = document.getElementById(g.dataset.from);
+      const toNode = document.getElementById(g.dataset.to);
+      const fLayer = fromNode?.dataset.layer;
+      const tLayer = toNode?.dataset.layer;
+      const relevant = view === 'data'
+        ? [fLayer, tLayer].some(l => dataLayers.includes(l) || l === 'api')
+        : [fLayer, tLayer].some(l => runtimeLayers.includes(l) || l === 'api' || l === 'client');
+      g.style.opacity = relevant ? '1' : '0.1';
+    });
+  });
+});
+
+// Init
+window.addEventListener('load', () => {
+  drawConnections();
+  window.addEventListener('resize', drawConnections);
+});
+</script>
+</body>
+</html>

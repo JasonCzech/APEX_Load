@@ -205,10 +205,11 @@ export function chartMetricKeys(chart: ChartConfig, groupNames: string[], latenc
       break
     case 'latency':
       keys = [
+        'avgMs',
+        ...groupNames.map(name => `${name}_avgMs`),
         'p50',
         'p90',
         'p99',
-        ...groupNames.map(name => `${name}_avgMs`),
       ]
       break
     case 'io':
@@ -245,10 +246,11 @@ export function chartMetricRows(chart: ChartConfig, groupNames: string[], latenc
       break
     case 'latency':
       rows = [
+        { key: 'avgMs', label: 'Total', color: 'var(--text-muted)', unit: 'ms' },
+        ...groupNames.map((name, index) => ({ key: `${name}_avgMs`, label: name, color: groupColors[index % groupColors.length], unit: 'ms' })),
         { key: 'p50', label: 'P50', color: 'var(--chart-5)', unit: 'ms' },
         { key: 'p90', label: 'P90', color: 'var(--chart-3)', unit: 'ms' },
         { key: 'p99', label: 'P99', color: 'var(--chart-4)', unit: 'ms' },
-        ...groupNames.map((name, index) => ({ key: `${name}_avgMs`, label: `${name} avg`, color: groupColors[index % groupColors.length], unit: 'ms' })),
       ]
       break
     case 'errors':
@@ -956,12 +958,15 @@ export default function TestExecutionCharts({
                 {renderVuserOverlayAxis(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 <Legend verticalAlign="bottom" height={36} />
-                {showMetric('p50') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p50" name="P50" stroke="var(--chart-5)" dot={false} strokeWidth={2} isAnimationActive={false} />}
-                {showMetric('p90') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p90" name="P90" stroke="var(--chart-3)" dot={false} strokeWidth={2} isAnimationActive={false} />}
-                {showMetric('p99') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p99" name="P99" stroke="var(--chart-4)" dot={false} strokeWidth={1.5} strokeDasharray="4 2" isAnimationActive={false} />}
+                {showMetric('avgMs') && (
+                  <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="avgMs" name="Total" stroke="var(--text-muted)" dot={false} strokeWidth={2} strokeDasharray={isMultiGroup ? '4 2' : undefined} isAnimationActive={false} />
+                )}
                 {isMultiGroup && groupNames.map((name, index) => showMetric(`${name}_avgMs`) && (
-                  <Line key={name} yAxisId={metricAxisIdForChart} type="monotone" dataKey={`${name}_avgMs`} name={`${name} avg`} stroke={groupColors[index % groupColors.length]} dot={false} strokeWidth={1.5} strokeDasharray="2 2" isAnimationActive={false} />
+                  <Line key={name} yAxisId={metricAxisIdForChart} type="monotone" dataKey={`${name}_avgMs`} name={name} stroke={groupColors[index % groupColors.length]} dot={false} strokeWidth={2} isAnimationActive={false} />
                 ))}
+                {showMetric('p50') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p50" name="P50" stroke="var(--chart-5)" dot={false} strokeWidth={1.25} strokeDasharray="3 3" isAnimationActive={false} />}
+                {showMetric('p90') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p90" name="P90" stroke="var(--chart-3)" dot={false} strokeWidth={1.25} strokeDasharray="3 3" isAnimationActive={false} />}
+                {showMetric('p99') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p99" name="P99" stroke="var(--chart-4)" dot={false} strokeWidth={1.25} strokeDasharray="4 2" isAnimationActive={false} />}
                 {renderVuserOverlayLine(chart, visibleMetricKeys)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />

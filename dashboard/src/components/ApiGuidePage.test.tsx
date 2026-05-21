@@ -68,6 +68,8 @@ describe('ApiGuidePage', () => {
     expect(container.textContent).toContain('/api/v1/auth/user-activity/export')
     expect(container.textContent).toContain('/api/v1/scripts/import/loadrunner')
     expect(container.textContent).toContain('/api/v1/scenarios/validate-load-model')
+    expect(container.textContent).toContain('/api/v1/scenarios/load-models/templates')
+    expect(container.textContent).toContain('script_shakeout_failed')
     expect(container.textContent).toContain('MCP Server')
     expect(container.textContent).toContain('python3 mcp/server.py')
     expect(container.textContent).toContain('apexload://api-guide')
@@ -77,6 +79,7 @@ describe('ApiGuidePage', () => {
     expect(container.textContent).toContain('Human roles come from local bindings')
     expect(container.textContent).toContain('X-APEXLoad-Dev-View')
     expect(container.textContent).toContain('project editor User behavior')
+    expect(container.textContent).toContain('/api/v1/scripts/import/postman')
 
     const repositoryLink = container.querySelector('a[href*="API_USER_GUIDE.md"]')
     expect(repositoryLink?.textContent).toContain('Repository Guide')

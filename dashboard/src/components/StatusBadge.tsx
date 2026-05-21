@@ -3,6 +3,8 @@ import './StatusBadge.css'
 const STATUS_STYLES: Record<string, string> = {
   QUEUED: 'status-queued',
   PENDING: 'status-queued',
+  SHAKEOUT: 'status-init',
+  SHAKEOUT_REVIEW: 'status-paused',
   INITIALIZING: 'status-init',
   RUNNING: 'status-running',
   STOPPING: 'status-stopping',

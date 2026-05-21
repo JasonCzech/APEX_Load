@@ -65,6 +65,7 @@ const endpointGroups = [
       { method: 'POST', path: '/api/v1/scripts/validate', operations: ['view_scripts'] },
       { method: 'POST', path: '/api/v1/scripts/import/loadrunner', operations: ['manage_scripts'] },
       { method: 'POST', path: '/api/v1/scripts/import/openapi', operations: ['manage_scripts'] },
+      { method: 'POST', path: '/api/v1/scripts/import/postman', operations: ['manage_scripts'] },
       { method: 'GET', path: '/api/v1/scripts/web-api/support-matrix', operations: ['view_scripts'] },
     ],
   },
@@ -75,6 +76,7 @@ const endpointGroups = [
       { method: 'POST', path: '/api/v1/scenarios', operations: ['manage_tests'] },
       { method: 'POST', path: '/api/v1/scenarios/validate-load-model', operations: ['manage_tests'] },
       { method: 'GET', path: '/api/v1/scenarios/load-models/support-matrix', operations: ['view_tests'] },
+      { method: 'GET', path: '/api/v1/scenarios/load-models/templates', operations: ['view_tests'] },
       { method: 'GET', path: '/api/v1/scenarios/{id}/runtime-settings/report', operations: ['view_tests'] },
     ],
   },
@@ -83,7 +85,7 @@ const endpointGroups = [
     endpoints: [
       { method: 'GET', path: '/api/v1/tests', operations: ['view_tests'] },
       { method: 'POST', path: '/api/v1/tests', operations: ['manage_tests'] },
-      { method: 'POST', path: '/api/v1/tests/{id}/start', operations: ['manage_tests'] },
+      { method: 'POST', path: '/api/v1/tests/{id}/start', purpose: 'Start queued runs; script shakeout failures return a reviewable 409 payload.', operations: ['manage_tests'] },
       { method: 'POST', path: '/api/v1/tests/{id}/stop', operations: ['manage_tests'] },
       { method: 'PATCH', path: '/api/v1/tests/{id}/vusers', purpose: 'Run, pause, stop, or ramp a specific VUser group.', operations: ['manage_tests'] },
       { method: 'PATCH', path: '/api/v1/tests/{id}/duration', operations: ['manage_tests'] },
@@ -122,7 +124,7 @@ const statusRows = [
   ['401', 'Authentication required or token invalid.'],
   ['403', 'Authenticated but blocked by RBAC or service-account scope.'],
   ['404', 'Resource not found.'],
-  ['409', 'Conflict, such as a schedule or governance conflict.'],
+  ['409', 'Conflict, such as a schedule conflict, capacity shortfall, or script_shakeout_failed review gate.'],
 ]
 
 type ApiGuidePageProps = {

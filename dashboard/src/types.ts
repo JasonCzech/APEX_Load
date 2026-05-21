@@ -8,6 +8,7 @@ export interface TestGroup {
   vusers: number
   ramp_up?: string
   ramp_down?: string
+  stages?: LoadStageDraft[]
   iterations?: number
   initialization?: 'at_runtime' | 'at_once'
 }
@@ -148,6 +149,22 @@ export interface ScenarioRuntimeSettingsDraft {
 }
 
 export type ScenarioMode = 'vuser_driven' | 'goal_oriented'
+
+export type DurationUnit = 's' | 'm' | 'h'
+
+export interface DurationFieldValue {
+  value: number | ''
+  unit: DurationUnit
+}
+
+export type RampEntryMode = 'simple' | 'stair_step'
+
+export interface StageTimelineValidationResult {
+  status: 'ok' | 'warning' | 'error'
+  totalSeconds: number
+  scenarioDurationSeconds: number
+  message?: string
+}
 
 export interface GoalConfig {
   target_average_tps?: number
@@ -314,6 +331,22 @@ export interface TestSummary {
   // backwards compat
   script_id?: string
   script_name?: string
+}
+
+export interface ScriptShakeoutResult {
+  group_name: string
+  script_id?: string
+  script_name?: string
+  status: 'passed' | 'failed' | string
+  error?: string
+}
+
+export interface ScriptShakeoutReport {
+  passed: boolean
+  summary: string
+  started_at?: string
+  ended_at?: string
+  results: ScriptShakeoutResult[]
 }
 
 export interface VUserRampStatus {
@@ -921,6 +954,8 @@ export interface ScenarioScheduleHealth {
 export type TestStatus =
   | 'QUEUED'
   | 'PENDING'
+  | 'SHAKEOUT'
+  | 'SHAKEOUT_REVIEW'
   | 'INITIALIZING'
   | 'RUNNING'
   | 'STOPPING'
@@ -2254,6 +2289,7 @@ export interface LoadModelTemplateGroup {
   vusers: number
   ramp_up?: string
   ramp_down?: string
+  stages?: LoadStageDraft[]
   iterations?: number
   start_delay?: string
 }
@@ -2274,7 +2310,10 @@ export interface LoadModelTemplate {
   scenario: {
     scenario_mode?: ScenarioMode
     duration: string
+    script_shakeout?: boolean
+    resource_baseline?: boolean
     goal_config?: GoalConfig
+    runtime_settings?: RuntimeSettingsOverride
     groups: LoadModelTemplateGroup[]
   }
   notes?: string[]

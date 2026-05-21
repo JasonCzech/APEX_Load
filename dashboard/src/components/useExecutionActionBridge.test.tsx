@@ -37,8 +37,10 @@ function ActionBridgeHarness({ initialTest }: { initialTest: TestSummary }) {
       <span data-testid="control-feedback">{model.controlFeedback || 'none'}</span>
       <span data-testid="start-feedback">{model.startFeedback || 'none'}</span>
       <span data-testid="conflict">{model.startCapacityConflict ? String(model.startCapacityConflict.available_generators) : 'none'}</span>
+      <span data-testid="shakeout-conflict">{model.startShakeoutConflict?.summary || 'none'}</span>
       <button data-testid="start" onClick={() => void model.onStart()}>start</button>
       <button data-testid="confirm-start" onClick={() => void model.onConfirmStartAnyway()}>confirm</button>
+      <button data-testid="continue-shakeout" onClick={() => void model.onContinueAfterShakeoutFailure()}>continue shakeout</button>
       <button data-testid="stop" onClick={() => void model.onStop()}>stop</button>
       <button data-testid="abort" onClick={() => void model.onAbort()}>abort</button>
       <button data-testid="pause" onClick={() => void model.onPause()}>pause</button>
@@ -87,6 +89,41 @@ describe('useExecutionActionBridge', () => {
     expect(apiMock.startTest).toHaveBeenNthCalledWith(1, 'test-1', undefined)
     expect(apiMock.startTest).toHaveBeenNthCalledWith(2, 'test-1', { override_capacity_shortfall: true })
     expect(readTestId('conflict')).toBe('none')
+  })
+
+  it('surfaces script shakeout evidence and supports explicit continue override', async () => {
+    apiMock.startTest
+      .mockRejectedValueOnce(new ApiError('Script shakeout failed', 409, {
+        code: 'script_shakeout_failed',
+        script_shakeout: {
+          passed: false,
+          summary: 'Script shakeout failed; full load test has not started.',
+          results: [{
+            group_name: 'Checkout',
+            script_id: 'script-1',
+            script_name: 'Checkout Script',
+            status: 'failed',
+            error: 'request Login returned 500',
+          }],
+        },
+      }))
+      .mockResolvedValueOnce(undefined)
+
+    await act(async () => {
+      root.render(<ActionBridgeHarness initialTest={buildQueuedTest()} />)
+    })
+
+    await click('start')
+
+    expect(readTestId('status')).toBe('SHAKEOUT_REVIEW')
+    expect(readTestId('shakeout-conflict')).toBe('Script shakeout failed; full load test has not started.')
+    expect(readTestId('start-feedback')).toBe('Script shakeout failed')
+
+    await click('continue-shakeout')
+
+    expect(apiMock.startTest).toHaveBeenNthCalledWith(1, 'test-1', undefined)
+    expect(apiMock.startTest).toHaveBeenNthCalledWith(2, 'test-1', { override_script_shakeout_failure: true })
+    expect(readTestId('shakeout-conflict')).toBe('none')
   })
 
   it('optimistically updates pause and resume state while publishing shared control feedback', async () => {

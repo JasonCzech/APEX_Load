@@ -236,7 +236,12 @@ describe('ScriptsPage', () => {
 
     expect(apiMock.listScripts).toHaveBeenCalledWith('project-1')
 
-    expect(container.textContent).toContain('Scripts')
+    expect(container.textContent).toContain('Create Script')
+    expect(container.textContent).toContain('Model From Existing Script')
+
+    await clickButton('Script Library')
+
+    expect(container.textContent).toContain('Script Library')
     expect(container.textContent).toContain('Existing Script')
     expect(container.textContent).toContain('Needs Review · 72')
     expect(container.textContent).toContain('1 warnings')
@@ -261,15 +266,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('warnings · warning · 1')
     expect(container.textContent).toContain('Validation warnings need review before promotion.')
 
-    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
-    expect(createButton).toBeDefined()
-    if (!createButton) {
-      return
-    }
-
-    await act(async () => {
-      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    await clickButton('Create Script')
 
     expect(container.textContent).toContain('Create Script')
 
@@ -319,12 +316,45 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('script-id:saved-script-1')
   })
 
+  it('models a new draft from an existing saved script without editing the original', async () => {
+    apiMock.getScript.mockResolvedValueOnce({
+      script: {
+        id: 'script-1',
+        name: 'Existing Script',
+        version: '1.0.0',
+        protocol: 'http',
+        project_id: 'project-1',
+        config: { base_url: 'https://existing.example.com' },
+        actions: [{ name: 'Get Existing', type: 'request', method: 'GET', target: '/existing' }],
+        created_at: '2026-05-12T20:00:00Z',
+        updated_at: '2026-05-12T20:00:00Z',
+      },
+    })
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Model From Existing Script')
+    await clickButton('Existing Script')
+    await flushPromises()
+
+    expect(apiMock.getScript).toHaveBeenCalledWith('script-1')
+    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    expect(container.textContent).toContain('editor:Existing Script (Copy)')
+    expect(container.textContent).toContain('script-id:none')
+  })
+
   it('filters the script library by visible script metadata', async () => {
     await act(async () => {
       root.render(<ScriptsPage />)
     })
 
     await flushPromises()
+
+    await clickButton('Script Library')
 
     const searchInput = container.querySelector('input[type="search"]') as HTMLInputElement | null
     expect(searchInput).not.toBeNull()
@@ -384,6 +414,8 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
+    await clickButton('Script Library')
+
     expect(container.textContent).toContain('Blocked')
     expect(container.textContent).toContain('Runtime Warning')
     expect(container.textContent).toContain('AI Guardrail')
@@ -407,16 +439,6 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
-    expect(createButton).toBeDefined()
-    if (!createButton) {
-      return
-    }
-
-    await act(async () => {
-      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
     await clickButton('Start From Source')
     await clickButton('OpenAPI / Swagger')
 
@@ -434,16 +456,6 @@ describe('ScriptsPage', () => {
     })
 
     await flushPromises()
-
-    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
-    expect(createButton).toBeDefined()
-    if (!createButton) {
-      return
-    }
-
-    await act(async () => {
-      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
 
     await clickButton('Import Existing')
 
@@ -479,16 +491,6 @@ describe('ScriptsPage', () => {
     })
 
     await flushPromises()
-
-    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
-    expect(createButton).toBeDefined()
-    if (!createButton) {
-      return
-    }
-
-    await act(async () => {
-      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
 
     await clickButton('Import Existing')
 
@@ -528,15 +530,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
-    expect(createButton).toBeDefined()
-    if (!createButton) {
-      return
-    }
-
-    await act(async () => {
-      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    await clickButton('Import Existing')
 
     const loadRunnerButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import LoadRunner'))
     expect(loadRunnerButton).toBeDefined()
@@ -575,15 +569,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
-    expect(createButton).toBeDefined()
-    if (!createButton) {
-      return
-    }
-
-    await act(async () => {
-      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    await clickButton('Import Existing')
 
     const loadRunnerButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import LoadRunner'))
     expect(loadRunnerButton).toBeDefined()
@@ -621,16 +607,6 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
-    expect(createButton).toBeDefined()
-    if (!createButton) {
-      return
-    }
-
-    await act(async () => {
-      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
     await clickButton('Import Existing')
 
     const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
@@ -658,6 +634,8 @@ describe('ScriptsPage', () => {
 
     expect(container.querySelector('[data-testid="jmeter-import"]')).toBeNull()
     expect(container.textContent).toContain('Create Script')
+    expect(container.textContent).toContain('Model From Existing Script')
+    await clickButton('Import Existing')
     expect(container.textContent).toContain('Import LoadRunner')
   })
 
@@ -667,16 +645,6 @@ describe('ScriptsPage', () => {
     })
 
     await flushPromises()
-
-    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
-    expect(createButton).toBeDefined()
-    if (!createButton) {
-      return
-    }
-
-    await act(async () => {
-      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
 
     await clickButton('Build Manually')
 
@@ -707,7 +675,7 @@ describe('ScriptsPage', () => {
       closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const createButtonAgain = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
+    const createButtonAgain = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Create Script'))
     expect(createButtonAgain).toBeDefined()
     if (!createButtonAgain) {
       return
@@ -772,17 +740,8 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
-    expect(createButton).toBeDefined()
-    if (!createButton) {
-      return
-    }
-
-    await act(async () => {
-      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
     await flushPromises()
+    await clickButton('Use Template')
 
     expect(apiMock.listAuthoringTemplates).toHaveBeenCalledTimes(1)
     expect(apiMock.listAuthoringComponents).toHaveBeenCalledTimes(1)
@@ -847,6 +806,7 @@ describe('ScriptsPage', () => {
     })
 
     await flushPromises()
+    await clickButton('Script Library')
 
     expect(apiMock.listAuthoringSessions).toHaveBeenCalledWith('project-1')
     expect(container.textContent).toContain('Authoring Sessions')
@@ -932,6 +892,7 @@ describe('ScriptsPage', () => {
     })
 
     await flushPromises()
+    await clickButton('Script Library')
 
     expect(container.textContent).toContain('Generated checkout review')
     expect(container.textContent).toContain('approval blocked')
@@ -995,6 +956,7 @@ describe('ScriptsPage', () => {
     })
 
     await flushPromises()
+    await clickButton('Script Library')
 
     expect(container.textContent).toContain('Guided Correlation Repair')
     expect(container.textContent).toContain('2 actions available')
@@ -1045,16 +1007,6 @@ describe('ScriptsPage', () => {
     })
 
     await flushPromises()
-
-    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
-    expect(createButton).toBeDefined()
-    if (!createButton) {
-      return
-    }
-
-    await act(async () => {
-      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
 
     await clickButton('Import Existing')
 

@@ -122,6 +122,22 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		var shakeoutErr *ScriptShakeoutGateError
+		if errors.As(err, &shakeoutErr) {
+			if test, ok := s.runner.GetTest(id); ok {
+				s.recordAuditEvent(r, "test.script_shakeout.review", "blocked", "test", id, test.ProjectID, map[string]any{"status": test.Status, "error": test.Error, "report": shakeoutErr.Report})
+			}
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error":              shakeoutErr.Error(),
+				"code":               "script_shakeout_failed",
+				"test_id":            id,
+				"status":             "shakeout_review",
+				"script_shakeout":    shakeoutErr.Report,
+				"override_available": true,
+				"cancel_available":   true,
+			})
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

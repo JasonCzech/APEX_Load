@@ -10,6 +10,7 @@ import CreateTestRuntimeOverrides from './CreateTestRuntimeOverrides'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildDefaultScenarioGroup, buildInitialScenarioDraft, scenarioDraftReducer, ScenarioDraftField, ScenarioDraftState } from './scenarioDraftUtils'
 import { buildCreateTestPayload } from './scenarioPayloadUtils'
+import DurationField from './DurationField'
 
 interface Props {
   scripts: StoredScript[]
@@ -341,25 +342,20 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
                   placeholder="Optional — auto-generated if empty"
                 />
               </label>
-              <label>
-                <span>Steady State Duration</span>
-                <input
-                  type="text"
-                  value={duration}
-                  onChange={(e) => updateScenarioField('duration', e.target.value)}
-                  placeholder="e.g. 5m, 1h"
-                  required
-                />
-              </label>
-              <label>
-                <span>Global Start Delay</span>
-                <input
-                  type="text"
-                  value={startDelay}
-                  onChange={(e) => updateScenarioField('startDelay', e.target.value)}
-                  placeholder="Optional, e.g. 30s"
-                />
-              </label>
+              <DurationField
+                label="Steady State Duration"
+                value={duration}
+                required
+                showPresets
+                onChange={(value) => updateScenarioField('duration', value)}
+              />
+              <DurationField
+                label="Global Start Delay"
+                value={startDelay}
+                allowEmpty
+                showPresets
+                onChange={(value) => updateScenarioField('startDelay', value)}
+              />
               <label className="setting-checkbox-row">
                 <span>Pre-Run Script Shakeout</span>
                 <div className="setting-checkbox-control">

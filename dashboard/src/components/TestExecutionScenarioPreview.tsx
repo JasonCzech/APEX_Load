@@ -3,7 +3,7 @@ import {
   Tooltip, ResponsiveContainer, Legend, ReferenceArea,
 } from 'recharts'
 
-import { CapacityAdvisory, TestSummary } from '../types'
+import { CapacityAdvisory, ScriptShakeoutReport, TestSummary } from '../types'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { QueuedScenarioPreview, QueuedScenarioRow, ScenarioScriptDetail } from './testExecutionScenarioModel'
 import { formatTimeCompact } from '../utils/timeUtils'
@@ -11,9 +11,12 @@ import { formatTimeCompact } from '../utils/timeUtils'
 interface Props {
   test: TestSummary
   startCapacityConflict: CapacityAdvisory | null
+  startShakeoutConflict: ScriptShakeoutReport | null
   startFeedback: string
   onDismissStartConflict: () => void
   onConfirmStartAnyway: () => void
+  onContinueAfterShakeoutFailure: () => void
+  onCancelShakeoutRun: () => void
   queuedScenarioPreview: QueuedScenarioPreview
   queuedScenarioRows: QueuedScenarioRow[]
   scriptDetailsLoading: boolean
@@ -139,9 +142,12 @@ function formatGoalNumber(value: number, suffix = ''): string {
 export default function TestExecutionScenarioPreview({
   test,
   startCapacityConflict,
+  startShakeoutConflict,
   startFeedback,
   onDismissStartConflict,
   onConfirmStartAnyway,
+  onContinueAfterShakeoutFailure,
+  onCancelShakeoutRun,
   queuedScenarioPreview,
   queuedScenarioRows,
   scriptDetailsLoading,
@@ -151,13 +157,54 @@ export default function TestExecutionScenarioPreview({
   onEditScript,
   groupColors,
 }: Props) {
-  if (test.status !== 'QUEUED' && test.status !== 'PENDING') {
+  if (test.status !== 'QUEUED' && test.status !== 'PENDING' && test.status !== 'SHAKEOUT' && test.status !== 'SHAKEOUT_REVIEW') {
     return null
   }
   const browserRuntimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
+  const shakeoutReviewRequired = test.status === 'SHAKEOUT_REVIEW' || Boolean(startShakeoutConflict)
+  const shakeoutEvidence = startShakeoutConflict?.results?.filter(result => result.status === 'failed') || []
 
   return (
     <>
+      {test.status === 'SHAKEOUT' && (
+        <div className="scenario-alert-banner scenario-alert-info" role="status">
+          <div>
+            <h3 className="scenario-alert-title">Running script shakeout</h3>
+            <p className="scenario-alert-message">APEX Load is executing a one-pass canary for each script group before the full load starts.</p>
+          </div>
+        </div>
+      )}
+
+      {shakeoutReviewRequired && (
+        <div className="scenario-alert-banner scenario-alert-warning" role="alert">
+          <div>
+            <h3 className="scenario-alert-title">Script shakeout needs review</h3>
+            <p className="scenario-alert-message">{startShakeoutConflict?.summary || test.error || 'Script shakeout returned errors; the full load test has not started.'}</p>
+            {shakeoutEvidence.length > 0 ? (
+              <div className="scenario-alert-evidence">
+                {shakeoutEvidence.map(result => (
+                  <div key={`${result.group_name}-${result.script_id || result.script_name || result.error}`}>
+                    <strong>{result.group_name}{result.script_name ? ` · ${result.script_name}` : ''}</strong>
+                    <span>{result.error || 'Shakeout failed without an error message.'}</span>
+                  </div>
+                ))}
+              </div>
+            ) : test.error ? (
+              <pre className="scenario-alert-evidence-text">{test.error}</pre>
+            ) : null}
+            {startFeedback && <p className="scenario-alert-message secondary">{startFeedback}</p>}
+          </div>
+          <div className="scenario-alert-actions">
+            <button className="btn btn-secondary" onClick={onCancelShakeoutRun}>
+              Cancel Run
+            </button>
+            <button className="btn btn-warning" onClick={onContinueAfterShakeoutFailure}>
+              Continue Full Load
+            </button>
+          </div>
+        </div>
+      )}
+
       {test.status === 'PENDING' && (
         <div className="scenario-alert-banner scenario-alert-info" role="status">
           <div>

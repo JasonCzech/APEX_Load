@@ -3510,7 +3510,7 @@ func TestDistributeTargetVUsersPreservesTotal(t *testing.T) {
 	}
 }
 
-func TestStartTestFailsWhenScriptShakeoutFails(t *testing.T) {
+func TestStartTestPausesForReviewWhenScriptShakeoutFails(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(2, hub, nil)
 	runner.StoreScript(&dsl.Script{
@@ -3533,19 +3533,41 @@ func TestStartTestFailsWhenScriptShakeoutFails(t *testing.T) {
 		t.Fatalf("CreateTest returned error: %v", err)
 	}
 
-	if err := runner.StartTest(test.ID); err != nil {
-		t.Fatalf("StartTest returned error: %v", err)
+	err = runner.StartTest(test.ID)
+	if err == nil {
+		t.Fatal("expected StartTest to return shakeout review gate error")
+	}
+	var shakeoutErr *ScriptShakeoutGateError
+	if !errors.As(err, &shakeoutErr) {
+		t.Fatalf("expected ScriptShakeoutGateError, got %T", err)
+	}
+	if shakeoutErr.Report == nil || shakeoutErr.Report.Passed {
+		t.Fatalf("expected failing shakeout report, got %#v", shakeoutErr.Report)
 	}
 
-	failed := waitForTestStatus(t, runner, test.ID, "FAILED")
-	if failed.Error == "" {
+	blocked, ok := runner.GetTest(test.ID)
+	if !ok {
+		t.Fatalf("expected test %s to remain in runner", test.ID)
+	}
+	if blocked.Status != "SHAKEOUT_REVIEW" {
+		t.Fatalf("test status = %s, want SHAKEOUT_REVIEW", blocked.Status)
+	}
+	if blocked.Error == "" {
 		t.Fatal("expected shakeout failure to populate test error")
 	}
-	if !strings.Contains(strings.ToLower(failed.Error), "shakeout") {
-		t.Fatalf("expected shakeout failure error, got %q", failed.Error)
+	if !strings.Contains(strings.ToLower(blocked.Error), "shakeout") {
+		t.Fatalf("expected shakeout failure error, got %q", blocked.Error)
 	}
-	if failed.StartedAt != nil {
+	if blocked.StartedAt != nil {
 		t.Fatal("expected failed shakeout to halt before the main run starts")
+	}
+
+	if err := runner.StartTestWithOptions(test.ID, StartTestOptions{OverrideScriptShakeoutError: true}); err != nil {
+		t.Fatalf("StartTestWithOptions override returned error: %v", err)
+	}
+	started := waitForStatusAny(t, runner, test.ID, 5*time.Second, "INITIALIZING", "RUNNING", "FAILED")
+	if started.Status == "SHAKEOUT_REVIEW" {
+		t.Fatalf("expected override to leave shakeout review state, got %s", started.Status)
 	}
 }
 

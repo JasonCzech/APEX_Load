@@ -1,4 +1,5 @@
 import { StoredScript, ScenarioDraftGroup, ScenarioMode } from '../types'
+import DurationField from './DurationField'
 
 interface Props {
   scenarioMode: ScenarioMode
@@ -70,24 +71,22 @@ export default function CreateTestGroupsEditor({
                 required
               />
             </label>
-            <label className="narrow">
-              <span>Ramp-up</span>
-              <input
-                type="text"
-                value={group.rampUp}
-                onChange={(event) => onUpdateGroup(idx, { rampUp: event.target.value })}
-                placeholder="e.g. 30s"
-              />
-            </label>
-            <label className="narrow">
-              <span>Ramp-down</span>
-              <input
-                type="text"
-                value={group.rampDown}
-                onChange={(event) => onUpdateGroup(idx, { rampDown: event.target.value })}
-                placeholder="e.g. 30s"
-              />
-            </label>
+            <DurationField
+              className="narrow"
+              label="Ramp-up"
+              value={group.rampUp}
+              allowEmpty
+              compact
+              onChange={(value) => onUpdateGroup(idx, { rampUp: value })}
+            />
+            <DurationField
+              className="narrow"
+              label="Ramp-down"
+              value={group.rampDown}
+              allowEmpty
+              compact
+              onChange={(value) => onUpdateGroup(idx, { rampDown: value })}
+            />
             <label className="narrow">
               <span>Iterations</span>
               <input

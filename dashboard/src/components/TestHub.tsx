@@ -1,33 +1,37 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, ScenarioDataPoolBinding, ScenarioMode, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
+import { formatTimeCompact, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import './TestHub.css'
 import './CreateTestModal.css'
 import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { buildScenarioModelPreview, buildScenarioShapeCatalog, formatModelTimeLabel, ScenarioModelPreview, ScenarioSourceMode, ScenarioWizardStep, validateStageTimeline } from './scenarioWizardUtils'
+import DurationField from './DurationField'
 
 interface Props {
   testStatuses: Record<string, string>
   onSelectTest: (id: string) => void
+  onCreateTestFromScenario?: (scenarioId: string) => void
 }
 
 interface ScenarioFormState {
   name: string
   duration: string
-  script_id: string
-  vusers: number
-  ramp_up: string
-  ramp_down: string
-  stages: LoadStageDraft[]
-  initialization: 'at_runtime' | 'at_once'
+  groups: ScenarioFormGroup[]
   scenario_mode: ScenarioMode
+  script_shakeout: boolean
+  resource_baseline: boolean
   goal_target_average_tps?: number
   goal_min_vusers?: number
   goal_max_vusers?: number
   goal_p95_latency_ms?: number
   goal_max_error_pct?: number
+  continue_on_error: boolean
+  snapshot_on_error: boolean
   browser_device_profile?: string
   browser_orientation?: string
   browser_touch_mode?: '' | 'true' | 'false'
@@ -40,17 +44,48 @@ interface ScenarioFormState {
   data_pool_selection_strategy?: ScenarioDataPoolBinding['selection_strategy']
 }
 
-function emptyScenarioForm(scriptId = ''): ScenarioFormState {
+interface ScenarioFormGroup {
+  name: string
+  script_id: string
+  vusers: number
+  ramp_up: string
+  ramp_down: string
+  stages: LoadStageDraft[]
+  initialization: 'at_runtime' | 'at_once'
+}
+
+const scenarioWizardSteps: Array<{ id: ScenarioWizardStep, label: string }> = [
+  { id: 'start', label: 'Start' },
+  { id: 'source', label: 'Shape / Source' },
+  { id: 'scripts', label: 'Scripts' },
+  { id: 'run', label: 'Run Settings' },
+  { id: 'data', label: 'Data' },
+  { id: 'review', label: 'Review' },
+]
+
+
+function emptyScenarioGroup(scriptId = '', index = 0): ScenarioFormGroup {
   return {
-    name: '',
-    duration: '1m',
+    name: index === 0 ? '' : `Group ${index + 1}`,
     script_id: scriptId,
     vusers: 10,
     ramp_up: '',
     ramp_down: '',
     stages: [],
     initialization: 'at_runtime',
+  }
+}
+
+function emptyScenarioForm(scriptId = ''): ScenarioFormState {
+  return {
+    name: '',
+    duration: '1m',
+    groups: [emptyScenarioGroup(scriptId)],
     scenario_mode: 'vuser_driven',
+    script_shakeout: false,
+    resource_baseline: false,
+    continue_on_error: false,
+    snapshot_on_error: false,
     browser_device_profile: '',
     browser_orientation: '',
     browser_touch_mode: '',
@@ -90,13 +125,69 @@ function normalizeStageForPayload(stage: LoadStageDraft) {
   }
 }
 
-function createDefaultStages(vusers: number, rampUp = '2m', hold = '5m', rampDown = '1m'): LoadStageDraft[] {
+function normalizeGroupForPayload(group: ScenarioFormGroup) {
+  return {
+    name: group.name,
+    scriptId: group.script_id,
+    vusers: maxStageVUsers(group.stages) || Number(group.vusers) || 10,
+    rampUp: group.ramp_up,
+    rampDown: group.ramp_down,
+    stages: group.stages.map(normalizeStageForPayload),
+    initialization: group.initialization,
+  }
+}
+
+function scenarioFormGroupFromStored(group: StoredScenario['scripts'][number], fallbackScriptId: string): ScenarioFormGroup {
+  return {
+    name: group.name || '',
+    script_id: group.script_id || fallbackScriptId,
+    vusers: group.vusers || 10,
+    ramp_up: group.ramp_up || '',
+    ramp_down: group.ramp_down || '',
+    stages: group.stages ? [...group.stages] : [],
+    initialization: group.initialization || 'at_runtime',
+  }
+}
+
+function ensureScenarioGroups(groups: ScenarioFormGroup[], fallbackScriptId: string): ScenarioFormGroup[] {
+  const nextGroups = groups.length > 0 ? groups : [emptyScenarioGroup(fallbackScriptId)]
+  return nextGroups.map((group, index) => ({
+    ...group,
+    name: group.name || (index === 0 ? '' : `Group ${index + 1}`),
+    script_id: group.script_id || fallbackScriptId,
+    vusers: Number(group.vusers) || 10,
+    ramp_up: group.ramp_up || '',
+    ramp_down: group.ramp_down || '',
+    stages: group.stages || [],
+    initialization: group.initialization || 'at_runtime',
+  }))
+}
+
+function createDefaultStages(vusers: number, rampUp = '2m', totalDuration = '5m', rampDown = '1m'): LoadStageDraft[] {
   const target = Number(vusers) || 10
+  const totalSeconds = parseDurationToSeconds(totalDuration) || 300
+  let rampUpSeconds = parseDurationToSeconds(rampUp) || Math.max(1, Math.round(totalSeconds * 0.3))
+  let rampDownSeconds = parseDurationToSeconds(rampDown) || Math.max(1, Math.round(totalSeconds * 0.15))
+  if (rampUpSeconds + rampDownSeconds >= totalSeconds) {
+    rampUpSeconds = Math.max(1, Math.round(totalSeconds * 0.4))
+    rampDownSeconds = Math.max(1, Math.round(totalSeconds * 0.2))
+  }
+  const holdSeconds = Math.max(1, totalSeconds - rampUpSeconds - rampDownSeconds)
   return [
-    { name: 'Warmup', type: 'ramp_up', duration: rampUp || '2m', target_vusers: target },
-    { name: 'Steady', type: 'hold', duration: hold, target_vusers: target },
-    { name: 'Cooldown', type: 'ramp_down', duration: rampDown || '1m', target_vusers: 1 },
+    { name: 'Warmup', type: 'ramp_up', duration: formatTimeCompact(rampUpSeconds), target_vusers: target },
+    { name: 'Steady', type: 'hold', duration: formatTimeCompact(holdSeconds), target_vusers: target },
+    { name: 'Cooldown', type: 'ramp_down', duration: formatTimeCompact(rampDownSeconds), target_vusers: 1 },
   ]
+}
+
+function simpleRampFromStages(group: ScenarioFormGroup): Pick<ScenarioFormGroup, 'ramp_up' | 'ramp_down' | 'vusers'> {
+  const firstRampUp = group.stages.find(stage => stage.type === 'ramp_up')?.duration || group.ramp_up
+  const lastRampDown = [...group.stages].reverse().find(stage => stage.type === 'ramp_down')?.duration || group.ramp_down
+  return {
+    ramp_up: firstRampUp,
+    ramp_down: lastRampDown,
+    vusers: maxStageVUsers(group.stages) || group.vusers,
+  }
 }
 
 function getLoadModelStatusClass(status?: string) {
@@ -107,6 +198,103 @@ function getLoadModelStatusClass(status?: string) {
 
 function formatLoadModelDimension(value: string) {
   return value.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
+}
+
+function WorkloadShapeVisual({ entry }: { entry: LoadModelSupportEntry }) {
+  const title = `${entry.name} workload shape`
+
+  if (entry.id === 'open-arrival-rate') {
+    return (
+      <svg className="scenario-shape-visual" viewBox="0 0 120 62" role="img" aria-label={title}>
+        <path className="scenario-shape-grid" d="M10 48H110M10 34H110M10 20H110" />
+        <path className="scenario-shape-fill" d="M12 46L12 37L24 37L24 46L36 46L36 34L48 34L48 46L60 46L60 31L72 31L72 46L84 46L84 28L96 28L96 46Z" />
+        <path className="scenario-shape-line" d="M12 40L108 28" />
+        {[18, 34, 50, 66, 82, 98].map(x => <circle key={x} className="scenario-shape-marker" cx={x} cy={34 - (x - 18) * 0.12} r="2.8" />)}
+      </svg>
+    )
+  }
+
+  if (entry.id === 'stepped-ramp') {
+    return (
+      <svg className="scenario-shape-visual" viewBox="0 0 120 62" role="img" aria-label={title}>
+        <path className="scenario-shape-grid" d="M10 48H110M10 34H110M10 20H110" />
+        <path className="scenario-shape-fill" d="M12 50H30V40H48V30H66V20H84V38H108V50Z" />
+        <path className="scenario-shape-line" d="M12 50H30V40H48V30H66V20H84V38H108" />
+      </svg>
+    )
+  }
+
+  if (entry.id === 'spike-rendezvous') {
+    return (
+      <svg className="scenario-shape-visual" viewBox="0 0 120 62" role="img" aria-label={title}>
+        <path className="scenario-shape-grid" d="M10 48H110M10 34H110M10 20H110" />
+        <path className="scenario-shape-event" d="M60 14V51" />
+        <path className="scenario-shape-fill" d="M12 50H45L60 16L75 50H108V52H12Z" />
+        <path className="scenario-shape-line" d="M12 50H45L60 16L75 50H108" />
+      </svg>
+    )
+  }
+
+  if (entry.id === 'soak') {
+    return (
+      <svg className="scenario-shape-visual" viewBox="0 0 120 62" role="img" aria-label={title}>
+        <path className="scenario-shape-grid" d="M10 48H110M10 34H110M10 20H110" />
+        <path className="scenario-shape-fill" d="M12 50L28 30H94L108 50V52H12Z" />
+        <path className="scenario-shape-line" d="M12 50L28 30H94L108 50" />
+      </svg>
+    )
+  }
+
+  if (entry.id === 'stress') {
+    return (
+      <svg className="scenario-shape-visual" viewBox="0 0 120 62" role="img" aria-label={title}>
+        <path className="scenario-shape-grid" d="M10 48H110M10 34H110M10 20H110" />
+        <path className="scenario-shape-fill" d="M12 52L28 46L43 39L58 31L72 23L86 18L100 15L108 18V52Z" />
+        <path className="scenario-shape-line" d="M12 52L28 46L43 39L58 31L72 23L86 18L100 15L108 18" />
+      </svg>
+    )
+  }
+
+  if (entry.id === 'goal-based') {
+    return (
+      <svg className="scenario-shape-visual" viewBox="0 0 120 62" role="img" aria-label={title}>
+        <path className="scenario-shape-grid" d="M10 48H110M10 34H110M10 20H110" />
+        <path className="scenario-shape-event" d="M12 24H108M12 43H108" />
+        <path className="scenario-shape-line" d="M12 42C24 20 34 21 45 34S68 48 78 31S96 19 108 27" />
+      </svg>
+    )
+  }
+
+  if (entry.id === 'chaos-resilience') {
+    return (
+      <svg className="scenario-shape-visual" viewBox="0 0 120 62" role="img" aria-label={title}>
+        <path className="scenario-shape-grid" d="M10 48H110M10 34H110M10 20H110" />
+        <path className="scenario-shape-fill" d="M12 50L26 34H48L56 44L66 24L78 39L88 30L108 46V52H12Z" />
+        <path className="scenario-shape-event" d="M55 15V51M78 15V51" />
+        <path className="scenario-shape-line" d="M12 50L26 34H48L56 44L66 24L78 39L88 30L108 46" />
+        <path className="scenario-shape-line-secondary" d="M16 40L34 40L42 30L50 45L62 31L72 45L84 33L104 33" />
+      </svg>
+    )
+  }
+
+  if (entry.id === 'mixed-protocol') {
+    return (
+      <svg className="scenario-shape-visual" viewBox="0 0 120 62" role="img" aria-label={title}>
+        <path className="scenario-shape-grid" d="M10 48H110M10 34H110M10 20H110" />
+        <path className="scenario-shape-fill" d="M12 50L24 38H96L108 50V52H12Z" />
+        <path className="scenario-shape-line" d="M12 50L24 38H96L108 50" />
+        <path className="scenario-shape-line-secondary" d="M12 52L32 44H86L108 52" />
+      </svg>
+    )
+  }
+
+  return (
+    <svg className="scenario-shape-visual" viewBox="0 0 120 62" role="img" aria-label={title}>
+      <path className="scenario-shape-grid" d="M10 48H110M10 34H110M10 20H110" />
+      <path className="scenario-shape-fill" d="M12 50L30 28H92L108 46V52H12Z" />
+      <path className="scenario-shape-line" d="M12 50L30 28H92L108 46" />
+    </svg>
+  )
 }
 
 function browserRuntimeFromForm(form: ScenarioFormState) {
@@ -122,6 +310,43 @@ function browserRuntimeFromForm(form: ScenarioFormState) {
 function booleanSelectValue(value?: boolean): '' | 'true' | 'false' {
   if (value === undefined) return ''
   return value ? 'true' : 'false'
+}
+
+function scenarioFormStateFromStoredScenario(
+  scenario: StoredScenario,
+  fallbackScriptId: string,
+  cloneDraft = false,
+): ScenarioFormState {
+  const groups = [...(scenario.scripts || [])]
+    .sort((left, right) => (left.order ?? 0) - (right.order ?? 0))
+    .map(group => scenarioFormGroupFromStored(group, fallbackScriptId))
+  const firstPool = scenario.data_pools?.[0]
+
+  return {
+    name: cloneDraft ? `${scenario.name} (Copy)` : scenario.name,
+    duration: scenario.duration,
+    groups: ensureScenarioGroups(groups, fallbackScriptId),
+    scenario_mode: scenario.scenario_mode || 'vuser_driven',
+    script_shakeout: Boolean(scenario.script_shakeout),
+    resource_baseline: Boolean(scenario.resource_baseline),
+    goal_target_average_tps: scenario.goal_config?.target_average_tps,
+    goal_min_vusers: scenario.goal_config?.min_vusers,
+    goal_max_vusers: scenario.goal_config?.max_vusers,
+    goal_p95_latency_ms: scenario.goal_config?.p95_latency_ms,
+    goal_max_error_pct: scenario.goal_config?.max_error_pct,
+    continue_on_error: Boolean(scenario.runtime_settings?.error_handling?.continue_on_error),
+    snapshot_on_error: Boolean(scenario.runtime_settings?.error_handling?.snapshot_on_error),
+    browser_device_profile: scenario.runtime_settings?.browser?.device_profile || '',
+    browser_orientation: scenario.runtime_settings?.browser?.orientation || '',
+    browser_touch_mode: booleanSelectValue(scenario.runtime_settings?.browser?.touch_mode),
+    browser_headless: booleanSelectValue(scenario.runtime_settings?.browser?.headless),
+    assignment_mode: scenario.assignment?.mode === 'specific_hosts' ? 'specific_hosts' : 'auto',
+    assignment_targets: scenario.assignment?.selected_targets ? [...scenario.assignment.selected_targets] : [],
+    data_pool_id: firstPool?.pool_id || '',
+    data_pool_alias: firstPool?.alias || '',
+    data_pool_access_mode: firstPool?.access_mode || 'read_only',
+    data_pool_selection_strategy: firstPool?.selection_strategy || 'sequential',
+  }
 }
 
 function getScenarioSortValue(scenario: StoredScenario, field: 'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_at' | 'result_count'): string | number {
@@ -195,6 +420,28 @@ function scenarioSearchText(scenario: StoredScenario) {
   ].filter(Boolean).join(' ').toLowerCase()
 }
 
+function scriptLibrarySearchText(script: StoredScript) {
+  return [
+    script.name,
+    script.protocol,
+    script.version,
+    script.authoring_health?.status,
+    ...(script.associated_releases || []).map(release => release.name),
+    ...(script.scenario_run_releases || []).map(release => release.name),
+  ].filter(Boolean).join(' ').toLowerCase()
+}
+
+function scriptReleaseList(script: StoredScript) {
+  const releases = script.associated_releases || []
+  if (releases.length === 0) return 'No releases yet'
+  return releases.map(release => release.name).join(', ')
+}
+
+function formatScriptScenarioCount(script: StoredScript) {
+  const count = script.scenario_count || 0
+  return `${count} scenario${count === 1 ? '' : 's'}`
+}
+
 function scenarioAssignmentSummary(scenario: StoredScenario) {
   if (scenario.assignment?.mode === 'specific_hosts') {
     const targets = scenario.assignment.selected_targets || []
@@ -218,6 +465,129 @@ function SortIndicator({ active, direction }: { active: boolean, direction: 'asc
   )
 }
 
+function ScenarioModelTooltip({ active, payload, label }: {
+  active?: boolean
+  payload?: Array<{ color?: string, name?: string, value?: number | string }>
+  label?: string | number
+}) {
+  if (!active || !payload || payload.length === 0) return null
+  return (
+    <div className="scenario-model-tooltip">
+      <strong>{formatModelTimeLabel(Number(label) || 0)}</strong>
+      {payload
+        .filter(item => item.value !== undefined && item.value !== null)
+        .map(item => (
+          <span key={`${item.name}-${item.color}`}>
+            <i style={{ background: item.color || 'var(--accent)' }} />
+            {item.name}: {typeof item.value === 'number' ? item.value.toFixed(item.value % 1 === 0 ? 0 : 1) : item.value}
+          </span>
+        ))}
+    </div>
+  )
+}
+
+function ScenarioModelPreviewPanel({
+  model,
+  shapeLabel,
+  dataPoolLabel,
+  validationStatus,
+}: {
+  model: ScenarioModelPreview
+  shapeLabel: string
+  dataPoolLabel: string
+  validationStatus: string
+}) {
+  const groupSeries = model.series.filter(series => series.kind === 'group')
+  const totalSeries = model.series.find(series => series.kind === 'total')
+  const tpsSeries = model.series.find(series => series.kind === 'tps')
+
+  return (
+    <section className="scenario-model-preview-panel">
+      <div className="scenario-model-preview-header">
+        <div>
+          <h4>Model Preview</h4>
+          <p>Planned VUsers over time by script group, calculated from the current wizard draft.</p>
+        </div>
+        <div className="scenario-model-summary">
+          <span><strong>{model.peakVusers}</strong> peak VUsers</span>
+          <span><strong>{formatModelTimeLabel(model.durationSeconds).replace('T+', '')}</strong> duration</span>
+          <span><strong>{groupSeries.length}</strong> groups</span>
+          <span>{shapeLabel}</span>
+          <span>{dataPoolLabel}</span>
+          <span>{validationStatus}</span>
+        </div>
+      </div>
+      <div className="scenario-model-chart">
+        <ResponsiveContainer width="100%" height={340}>
+          <ComposedChart data={model.points} margin={{ top: 16, right: tpsSeries ? 48 : 24, bottom: 10, left: 8 }}>
+            <CartesianGrid stroke="var(--border-subtle, var(--border))" strokeDasharray="3 3" vertical={false} />
+            <XAxis
+              dataKey="elapsedSeconds"
+              tickFormatter={(value) => formatModelTimeLabel(Number(value))}
+              stroke="var(--text-muted)"
+              fontSize={11}
+              tickLine={false}
+              axisLine={false}
+            />
+            <YAxis yAxisId="vusers" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+            {tpsSeries && <YAxis yAxisId="tps" orientation="right" stroke="var(--warning)" fontSize={11} tickLine={false} axisLine={false} />}
+            <Tooltip content={<ScenarioModelTooltip />} />
+            {groupSeries.map(series => (
+              <Area
+                key={series.key}
+                yAxisId="vusers"
+                type="linear"
+                dataKey={series.key}
+                name={series.label}
+                stackId="vusers"
+                stroke={series.color}
+                fill={series.color}
+                fillOpacity={0.16}
+                strokeWidth={2}
+                dot={false}
+                isAnimationActive={false}
+              />
+            ))}
+            {totalSeries && (
+              <Line
+                yAxisId="vusers"
+                type="linear"
+                dataKey={totalSeries.key}
+                name={totalSeries.label}
+                stroke={totalSeries.color}
+                strokeWidth={3}
+                dot={false}
+                isAnimationActive={false}
+              />
+            )}
+            {tpsSeries && (
+              <Line
+                yAxisId="tps"
+                type="linear"
+                dataKey={tpsSeries.key}
+                name={tpsSeries.label}
+                stroke={tpsSeries.color}
+                strokeWidth={2}
+                strokeDasharray="6 5"
+                dot={false}
+                isAnimationActive={false}
+              />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="scenario-model-legend">
+        {model.series.map(series => (
+          <span key={series.key}>
+            <i style={{ background: series.color }} />
+            {series.label}
+          </span>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function isEffectiveOperationAllowed(resources: DashboardAuthEffectiveAccessResource[], operationID: string): boolean {
   for (const resource of resources) {
     const operation = resource.operations.find(item => item.id === operationID)
@@ -228,7 +598,7 @@ function isEffectiveOperationAllowed(resources: DashboardAuthEffectiveAccessReso
   return true
 }
 
-function TestHub({ onSelectTest }: Props) {
+function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [scenarios, setScenarios] = useState<StoredScenario[]>([])
@@ -240,11 +610,16 @@ function TestHub({ onSelectTest }: Props) {
   const [loadModelValidation, setLoadModelValidation] = useState<LoadModelValidationReport | null>(null)
   const [loadModelValidationLoading, setLoadModelValidationLoading] = useState(false)
   const [loadModelValidationError, setLoadModelValidationError] = useState('')
-  const [showForm, setShowForm] = useState(false)
+  const [showForm, setShowForm] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [wizardStep, setWizardStep] = useState<ScenarioWizardStep>('start')
+  const [scenarioSourceMode, setScenarioSourceMode] = useState<ScenarioSourceMode>('shape')
+  const [scenarioCloneQuery, setScenarioCloneQuery] = useState('')
+  const [selectedShapeId, setSelectedShapeId] = useState('')
   const [form, setForm] = useState<ScenarioFormState>(emptyScenarioForm())
   const [error, setError] = useState('')
   const [scenarioQuery, setScenarioQuery] = useState('')
+  const [scriptLibraryQuery, setScriptLibraryQuery] = useState('')
   const [sortField, setSortField] = useState<'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_at' | 'result_count'>('last_run_at')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [expandedScenarioId, setExpandedScenarioId] = useState<string | null>(null)
@@ -257,16 +632,69 @@ function TestHub({ onSelectTest }: Props) {
   const [estimateError, setEstimateError] = useState('')
   const [confirmDeleteScenarioId, setConfirmDeleteScenarioId] = useState<string | null>(null)
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
-  const selectedScript = scripts.find(script => script.id === form.script_id)
-  const showBrowserRuntimeSettings = selectedScript?.protocol === 'browser'
+  const [stageGroupIndex, setStageGroupIndex] = useState(0)
+  const formGroups = useMemo(
+    () => form.groups.length > 0 ? form.groups : [emptyScenarioGroup(scripts[0]?.id || '')],
+    [form.groups, scripts],
+  )
+  const activeStageGroup = formGroups[Math.min(stageGroupIndex, formGroups.length - 1)] || formGroups[0]
+  const activeStageTimeline = useMemo(
+    () => validateStageTimeline(form.duration, activeStageGroup?.stages || []),
+    [activeStageGroup?.stages, form.duration],
+  )
+  const blockingStageTimelineMessage = useMemo(() => {
+    for (let index = 0; index < formGroups.length; index += 1) {
+      const group = formGroups[index]
+      if (!group.stages.length) continue
+      const validation = validateStageTimeline(form.duration, group.stages)
+      if (validation.status === 'error') {
+        return `${group.name || `Group ${index + 1}`}: ${validation.message}`
+      }
+    }
+    return ''
+  }, [form.duration, formGroups])
+  const showBrowserRuntimeSettings = formGroups.some(group => scripts.find(script => script.id === group.script_id)?.protocol === 'browser')
   const canManageTests = useMemo(
     () => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'),
     [effectiveAuthAccessResources],
   )
+  const shapeCatalog = useMemo(
+    () => buildScenarioShapeCatalog(loadModelSupportMatrix, loadModelTemplates),
+    [loadModelSupportMatrix, loadModelTemplates],
+  )
+  const selectedShape = shapeCatalog.find(option => option.id === selectedShapeId)
+  const selectedTemplate = loadModelTemplates.find(template => template.id === selectedLoadModelTemplateId)
+  const scenarioModel = useMemo(
+    () => buildScenarioModelPreview({
+      duration: form.duration,
+      groups: formGroups.map(group => ({
+        name: group.name || scripts.find(script => script.id === group.script_id)?.name || undefined,
+        vusers: Number(group.vusers) || 0,
+        ramp_up: group.ramp_up,
+        ramp_down: group.ramp_down,
+        stages: group.stages,
+      })),
+      goalTargetTps: form.goal_target_average_tps,
+    }),
+    [form.duration, form.goal_target_average_tps, formGroups, scripts],
+  )
+  const filteredCloneScenarios = useMemo(() => {
+    const query = scenarioCloneQuery.trim().toLowerCase()
+    if (!query) return scenarios
+    return scenarios.filter(scenario => scenarioSearchText(scenario).includes(query))
+  }, [scenarioCloneQuery, scenarios])
+  const visibleScriptLibrary = useMemo(() => {
+    const query = scriptLibraryQuery.trim().toLowerCase()
+    const filtered = query
+      ? scripts.filter(script => scriptLibrarySearchText(script).includes(query))
+      : scripts
+    return [...filtered].sort((left, right) => left.name.localeCompare(right.name))
+  }, [scriptLibraryQuery, scripts])
+  const showScenarioLibrary = !showForm || wizardStep === 'start' || wizardStep === 'source'
+  const showScriptLibrary = showForm && wizardStep === 'scripts'
+  const showModelPreview = showForm && wizardStep !== 'start'
 
   const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form) => {
-    const stagedPeak = maxStageVUsers(draftForm.stages)
-    const resolvedVUsers = stagedPeak || Number(draftForm.vusers) || 10
     const dataPoolsPayload = draftForm.data_pool_id ? [{
       pool_id: draftForm.data_pool_id,
       alias: (draftForm.data_pool_alias || dataPools.find(pool => pool.id === draftForm.data_pool_id)?.name || 'data').trim().toLowerCase().replace(/\s+/g, '_'),
@@ -279,20 +707,12 @@ function TestHub({ onSelectTest }: Props) {
       duration: draftForm.duration || '1m',
       startDelay: '',
       scenarioMode: draftForm.scenario_mode,
-      scriptShakeout: false,
-      resourceBaseline: false,
+      scriptShakeout: draftForm.script_shakeout,
+      resourceBaseline: draftForm.resource_baseline,
       assignment: draftForm.assignment_mode === 'specific_hosts'
         ? { mode: 'specific_hosts', selected_targets: draftForm.assignment_targets }
         : { mode: 'auto', selected_targets: [] },
-      groups: [{
-        name: '',
-        scriptId: draftForm.script_id,
-        vusers: resolvedVUsers,
-        rampUp: draftForm.ramp_up,
-        rampDown: draftForm.ramp_down,
-        stages: draftForm.stages.map(normalizeStageForPayload),
-        initialization: draftForm.initialization,
-      }],
+      groups: draftForm.groups.map(normalizeGroupForPayload),
       goalConfig: goalConfigFromForm(draftForm),
       runtimeSettings: {
         iterations: undefined,
@@ -301,8 +721,8 @@ function TestHub({ onSelectTest }: Props) {
         browser: showBrowserRuntimeSettings ? browserRuntimeFromForm(draftForm) : undefined,
         log_level: '',
         auto_transactions: '',
-        continue_on_error: false,
-        snapshot_on_error: false,
+        continue_on_error: draftForm.continue_on_error,
+        snapshot_on_error: draftForm.snapshot_on_error,
       },
       dataPools: dataPoolsPayload,
     })
@@ -326,7 +746,10 @@ function TestHub({ onSelectTest }: Props) {
       setLoadModelSupportMatrix(supportRes.support_matrix || [])
       setForm(prev => ({
         ...prev,
-        script_id: nextScripts.some(script => script.id === prev.script_id) ? prev.script_id : nextScripts[0]?.id || '',
+        groups: ensureScenarioGroups(prev.groups.map(group => ({
+          ...group,
+          script_id: nextScripts.some(script => script.id === group.script_id) ? group.script_id : nextScripts[0]?.id || '',
+        })), nextScripts[0]?.id || ''),
       }))
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Unable to load scenarios'))
@@ -362,7 +785,11 @@ function TestHub({ onSelectTest }: Props) {
   }, [canManageTests])
 
   useEffect(() => {
-    if (!showForm || !form.script_id) {
+    setStageGroupIndex(current => Math.min(current, Math.max(0, form.groups.length - 1)))
+  }, [form.groups.length])
+
+  useEffect(() => {
+    if (!showForm || form.groups.length === 0 || form.groups.some(group => !group.script_id)) {
       setDraftEstimate(null)
       setEstimateLoading(false)
       setEstimateError('')
@@ -382,15 +809,7 @@ function TestHub({ onSelectTest }: Props) {
       scriptShakeout: false,
       resourceBaseline: false,
       assignment: draftPayload.assignment,
-      groups: [{
-        name: '',
-        scriptId: form.script_id,
-        vusers: maxStageVUsers(form.stages) || Number(form.vusers) || 10,
-        rampUp: form.ramp_up,
-        rampDown: form.ramp_down,
-        stages: form.stages.map(normalizeStageForPayload),
-        initialization: form.initialization,
-      }],
+      groups: form.groups.map(normalizeGroupForPayload),
       goalConfig: goalConfigFromForm(form),
       runtimeSettings: {
         iterations: undefined,
@@ -487,7 +906,12 @@ function TestHub({ onSelectTest }: Props) {
     }
     setEditingId(null)
     setForm(emptyScenarioForm(scripts[0]?.id || ''))
+    setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
+    setSelectedShapeId('')
+    setScenarioSourceMode('shape')
+    setScenarioCloneQuery('')
+    setWizardStep('start')
     setLoadModelValidation(null)
     setLoadModelValidationError('')
     setShowForm(true)
@@ -498,36 +922,15 @@ function TestHub({ onSelectTest }: Props) {
       setError('Current session can view scenarios but cannot create or edit them.')
       return
     }
-    const first = scenario.scripts[0]
-    const firstPool = scenario.data_pools?.[0]
+    const fallbackScriptId = scripts[0]?.id || ''
     setEditingId(scenario.id)
-    setForm({
-      name: scenario.name,
-      duration: scenario.duration,
-      script_id: first?.script_id || scripts[0]?.id || '',
-      vusers: first?.vusers || 10,
-      ramp_up: first?.ramp_up || '',
-      ramp_down: first?.ramp_down || '',
-      stages: first?.stages ? [...first.stages] : [],
-      initialization: first?.initialization || 'at_runtime',
-      scenario_mode: scenario.scenario_mode || 'vuser_driven',
-      goal_target_average_tps: scenario.goal_config?.target_average_tps,
-      goal_min_vusers: scenario.goal_config?.min_vusers,
-      goal_max_vusers: scenario.goal_config?.max_vusers,
-      goal_p95_latency_ms: scenario.goal_config?.p95_latency_ms,
-      goal_max_error_pct: scenario.goal_config?.max_error_pct,
-      browser_device_profile: scenario.runtime_settings?.browser?.device_profile || '',
-      browser_orientation: scenario.runtime_settings?.browser?.orientation || '',
-      browser_touch_mode: booleanSelectValue(scenario.runtime_settings?.browser?.touch_mode),
-      browser_headless: booleanSelectValue(scenario.runtime_settings?.browser?.headless),
-      assignment_mode: scenario.assignment?.mode === 'specific_hosts' ? 'specific_hosts' : 'auto',
-      assignment_targets: scenario.assignment?.selected_targets ? [...scenario.assignment.selected_targets] : [],
-      data_pool_id: firstPool?.pool_id || '',
-      data_pool_alias: firstPool?.alias || '',
-      data_pool_access_mode: firstPool?.access_mode || 'read_only',
-      data_pool_selection_strategy: firstPool?.selection_strategy || 'sequential',
-    })
+    setForm(scenarioFormStateFromStoredScenario(scenario, fallbackScriptId))
+    setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
+    setSelectedShapeId('')
+    setScenarioSourceMode('existing')
+    setScenarioCloneQuery('')
+    setWizardStep('scripts')
     setLoadModelValidation(null)
     setLoadModelValidationError('')
     setShowForm(true)
@@ -543,57 +946,170 @@ function TestHub({ onSelectTest }: Props) {
     setForm(prev => ({ ...prev, name: `${scenario.name} (Copy)` }))
   }
 
+  const selectScenarioSourceMode = (mode: ScenarioSourceMode) => {
+    setScenarioSourceMode(mode)
+    setWizardStep('source')
+  }
+
+  const cloneScenarioDraft = (scenario: StoredScenario) => {
+    const fallbackScriptId = scripts[0]?.id || ''
+    setEditingId(null)
+    setForm(scenarioFormStateFromStoredScenario(scenario, fallbackScriptId, true))
+    setStageGroupIndex(0)
+    setSelectedLoadModelTemplateId('')
+    setSelectedShapeId('')
+    setScenarioSourceMode('existing')
+    setLoadModelValidation(null)
+    setLoadModelValidationError('')
+    setWizardStep('scripts')
+  }
+
+  const selectShapeOption = (shapeId: string) => {
+    setSelectedShapeId(shapeId)
+    setSelectedLoadModelTemplateId('')
+    setLoadModelValidation(null)
+    setLoadModelValidationError('')
+    setScenarioSourceMode('shape')
+    setWizardStep('scripts')
+  }
+
   const applyLoadModelTemplate = (templateId: string) => {
     setSelectedLoadModelTemplateId(templateId)
     setLoadModelValidation(null)
     setLoadModelValidationError('')
     const template = loadModelTemplates.find(item => item.id === templateId)
     if (!template) return
-    const firstGroup = template.scenario.groups[0]
+    setSelectedShapeId(template.shape_id)
+    setScenarioSourceMode('shape')
+    setWizardStep('scripts')
     setForm(prev => ({
       ...prev,
       duration: template.scenario.duration || prev.duration,
       scenario_mode: template.scenario.scenario_mode || 'vuser_driven',
-      vusers: firstGroup?.vusers || prev.vusers,
-      ramp_up: firstGroup?.ramp_up || '',
-      ramp_down: firstGroup?.ramp_down || '',
-      stages: [],
+      script_shakeout: template.scenario.script_shakeout ?? prev.script_shakeout,
+      resource_baseline: template.scenario.resource_baseline ?? prev.resource_baseline,
+      groups: ensureScenarioGroups(
+        (template.scenario.groups.length > 0 ? template.scenario.groups : [{ name: '', vusers: 10 }]).map((group, index) => ({
+          name: group.name || prev.groups[index]?.name || (index === 0 ? '' : `Group ${index + 1}`),
+          script_id: prev.groups[index]?.script_id || prev.groups[0]?.script_id || scripts[0]?.id || '',
+          vusers: group.vusers || prev.groups[index]?.vusers || 10,
+          ramp_up: group.ramp_up || '',
+          ramp_down: group.ramp_down || '',
+          stages: group.stages || [],
+          initialization: prev.groups[index]?.initialization || 'at_runtime',
+        })),
+        scripts[0]?.id || '',
+      ),
       goal_target_average_tps: template.scenario.goal_config?.target_average_tps,
       goal_min_vusers: template.scenario.goal_config?.min_vusers,
       goal_max_vusers: template.scenario.goal_config?.max_vusers,
       goal_p95_latency_ms: template.scenario.goal_config?.p95_latency_ms,
       goal_max_error_pct: template.scenario.goal_config?.max_error_pct,
+      continue_on_error: template.scenario.runtime_settings?.error_handling?.continue_on_error ?? prev.continue_on_error,
+      snapshot_on_error: template.scenario.runtime_settings?.error_handling?.snapshot_on_error ?? prev.snapshot_on_error,
     }))
   }
 
-  const enableDefaultStages = () => {
-    const nextStages = createDefaultStages(form.vusers, form.ramp_up || '2m', form.duration || '5m', form.ramp_down || '1m')
-    setForm({ ...form, stages: nextStages, vusers: maxStageVUsers(nextStages), ramp_up: '', ramp_down: '' })
+  const updateScenarioGroup = (index: number, patch: Partial<ScenarioFormGroup>) => {
+    setForm(prev => ({
+      ...prev,
+      groups: ensureScenarioGroups(
+        prev.groups.map((group, groupIndex) => groupIndex === index ? { ...group, ...patch } : group),
+        scripts[0]?.id || '',
+      ),
+    }))
     setLoadModelValidation(null)
   }
 
+  const addScenarioGroup = () => {
+    setForm(prev => {
+      const nextGroups = [...prev.groups, emptyScenarioGroup(scripts[0]?.id || '', prev.groups.length)]
+      return { ...prev, groups: nextGroups }
+    })
+    setStageGroupIndex(form.groups.length)
+    setLoadModelValidation(null)
+  }
+
+  const addScenarioGroupFromScript = (script: StoredScript) => {
+    setForm(prev => {
+      const nextGroups = [
+        ...prev.groups,
+        {
+          ...emptyScenarioGroup(script.id, prev.groups.length),
+          name: script.name,
+          script_id: script.id,
+        },
+      ]
+      return { ...prev, groups: ensureScenarioGroups(nextGroups, scripts[0]?.id || '') }
+    })
+    setStageGroupIndex(form.groups.length)
+    setLoadModelValidation(null)
+  }
+
+  const removeScenarioGroup = (index: number) => {
+    setForm(prev => {
+      const nextGroups = prev.groups.filter((_, groupIndex) => groupIndex !== index)
+      return { ...prev, groups: ensureScenarioGroups(nextGroups, scripts[0]?.id || '') }
+    })
+    setStageGroupIndex(current => Math.max(0, Math.min(current, form.groups.length - 2)))
+    setLoadModelValidation(null)
+  }
+
+  const enableDefaultStages = () => {
+    const nextStages = createDefaultStages(activeStageGroup.vusers, activeStageGroup.ramp_up || '2m', form.duration || '5m', activeStageGroup.ramp_down || '1m')
+    updateScenarioGroup(stageGroupIndex, { stages: nextStages, vusers: maxStageVUsers(nextStages), ramp_up: '', ramp_down: '' })
+    setLoadModelValidation(null)
+  }
+
+  const disableStages = () => {
+    const simpleRamp = simpleRampFromStages(activeStageGroup)
+    updateScenarioGroup(stageGroupIndex, { ...simpleRamp, stages: [] })
+    setLoadModelValidation(null)
+    setLoadModelValidationError('')
+  }
+
   const updateStage = (index: number, patch: Partial<LoadStageDraft>) => {
-    const stages = form.stages.map((stage, stageIndex) => stageIndex === index ? { ...stage, ...patch } : stage)
+    const stages = activeStageGroup.stages.map((stage, stageIndex) => stageIndex === index ? { ...stage, ...patch } : stage)
     const peak = maxStageVUsers(stages)
-    setForm({ ...form, stages, vusers: peak || form.vusers })
+    updateScenarioGroup(stageGroupIndex, { stages, vusers: peak || activeStageGroup.vusers })
     setLoadModelValidation(null)
   }
 
   const addStage = () => {
-    const stages = [...form.stages, { name: `Stage ${form.stages.length + 1}`, type: 'hold' as LoadStageType, duration: '1m', target_vusers: Number(form.vusers) || 10 }]
-    setForm({ ...form, stages, vusers: maxStageVUsers(stages) || form.vusers })
+    const stages = [...activeStageGroup.stages, { name: `Stage ${activeStageGroup.stages.length + 1}`, type: 'hold' as LoadStageType, duration: '1m', target_vusers: Number(activeStageGroup.vusers) || 10 }]
+    updateScenarioGroup(stageGroupIndex, { stages, vusers: maxStageVUsers(stages) || activeStageGroup.vusers })
+    setLoadModelValidation(null)
+  }
+
+  const duplicateStage = (index: number) => {
+    const source = activeStageGroup.stages[index]
+    if (!source) return
+    const stages = [
+      ...activeStageGroup.stages.slice(0, index + 1),
+      { ...source, name: source.name ? `${source.name} Copy` : `Stage ${index + 2}` },
+      ...activeStageGroup.stages.slice(index + 1),
+    ]
+    updateScenarioGroup(stageGroupIndex, { stages, vusers: maxStageVUsers(stages) || activeStageGroup.vusers })
     setLoadModelValidation(null)
   }
 
   const removeStage = (index: number) => {
-    const stages = form.stages.filter((_, stageIndex) => stageIndex !== index)
-    setForm({ ...form, stages, vusers: maxStageVUsers(stages) || form.vusers })
+    const stages = activeStageGroup.stages.filter((_, stageIndex) => stageIndex !== index)
+    updateScenarioGroup(stageGroupIndex, { stages, vusers: maxStageVUsers(stages) || activeStageGroup.vusers })
     setLoadModelValidation(null)
   }
 
   const validateLoadModel = async () => {
-    if (!form.script_id) {
-      setLoadModelValidationError('Select a script before validating the load model.')
+    if (form.groups.length === 0 || form.groups.some(group => !group.script_id)) {
+      setLoadModelValidationError('Select a script for every group before validating the load model.')
+      return
+    }
+    if (!isValidDurationInput(form.duration)) {
+      setLoadModelValidationError('Set a positive scenario duration before validating the load model.')
+      return
+    }
+    if (blockingStageTimelineMessage) {
+      setLoadModelValidationError(blockingStageTimelineMessage)
       return
     }
     setLoadModelValidationLoading(true)
@@ -601,6 +1117,7 @@ function TestHub({ onSelectTest }: Props) {
     try {
       const report = await api.validateScenarioLoadModel(buildScenarioDraftPayload())
       setLoadModelValidation(report)
+      setWizardStep('review')
     } catch (err: unknown) {
       setLoadModelValidation(null)
       setLoadModelValidationError(getErrorMessage(err, 'Unable to validate load model'))
@@ -609,25 +1126,64 @@ function TestHub({ onSelectTest }: Props) {
     }
   }
 
-  const saveScenario = async () => {
+  const persistScenario = async () => {
     if (!canManageTests) {
       setError('Current session can view scenarios but cannot create or edit them.')
-      return
+      return null
     }
-    if (!form.name.trim() || !form.script_id) {
-      setError('Scenario name and script are required.')
-      return
+    if (!form.name.trim() || form.groups.length === 0 || form.groups.some(group => !group.script_id)) {
+      setError('Scenario name and at least one script group are required.')
+      return null
+    }
+    if (!isValidDurationInput(form.duration)) {
+      setError('Scenario duration is required.')
+      return null
+    }
+    if (blockingStageTimelineMessage) {
+      setError(blockingStageTimelineMessage)
+      return null
     }
     const payload = buildScenarioDraftPayload()
     try {
-      if (editingId) await api.updateScenario(editingId, payload)
-      else await api.createScenario(payload)
-      setShowForm(false)
-      setEditingId(null)
-      refresh()
+      const saved = editingId ? await api.updateScenario(editingId, payload) : await api.createScenario(payload)
+      return saved
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Unable to save scenario'))
+      return null
     }
+  }
+
+  const resetScenarioBuilder = () => {
+    setEditingId(null)
+    setForm(emptyScenarioForm(scripts[0]?.id || ''))
+    setStageGroupIndex(0)
+    setSelectedLoadModelTemplateId('')
+    setSelectedShapeId('')
+    setScenarioSourceMode('shape')
+    setScenarioCloneQuery('')
+    setWizardStep('start')
+    setLoadModelValidation(null)
+    setLoadModelValidationError('')
+    setShowForm(true)
+  }
+
+  const saveScenario = async () => {
+    const saved = await persistScenario()
+    if (saved) {
+      resetScenarioBuilder()
+      refresh()
+    }
+  }
+
+  const saveScenarioAndCreateTest = async () => {
+    const saved = await persistScenario()
+    if (!saved?.id) {
+      setError('Scenario was saved, but the response did not include a scenario id.')
+      return
+    }
+    setEditingId(null)
+    onCreateTestFromScenario?.(saved.id)
+    void refresh()
   }
 
   const deleteScenario = async (id: string) => {
@@ -655,6 +1211,463 @@ function TestHub({ onSelectTest }: Props) {
     setForm({ ...form, assignment_mode: 'specific_hosts', assignment_targets: Array.from(current) })
   }
 
+  const currentWizardIndex = scenarioWizardSteps.findIndex(step => step.id === wizardStep)
+  const dataPoolLabel = form.data_pool_id
+    ? dataPools.find(pool => pool.id === form.data_pool_id)?.name || 'Shared data configured'
+    : 'No shared data pool'
+  const shapeLabel = selectedTemplate?.name || selectedShape?.support.name || (scenarioSourceMode === 'existing' ? 'Modeled from scenario' : 'Manual shape')
+  const validationLabel = loadModelValidation ? formatLoadModelDimension(loadModelValidation.status) : 'Not validated'
+  const requiredDraftReady = Boolean(form.name.trim() && isValidDurationInput(form.duration) && formGroups.every(group => group.script_id))
+
+  const renderWizardStep = () => {
+    if (wizardStep === 'start') {
+      return (
+        <section className="scenario-wizard-panel">
+          <div className="scenario-wizard-panel-header">
+            <h4>Start With A Model</h4>
+            <p>Choose whether this scenario should inherit a known workload or start from a supported load shape.</p>
+          </div>
+          <div className="scenario-source-grid">
+            <button type="button" className={`scenario-source-card ${scenarioSourceMode === 'existing' ? 'selected' : ''}`} onClick={() => selectScenarioSourceMode('existing')}>
+              <span>Model from Existing Scenario</span>
+              <strong>Clone Draft</strong>
+              <small>Search the scenario library, copy its scripts, run settings, data pool, and generator defaults, then save as a new scenario.</small>
+            </button>
+            <button type="button" className={`scenario-source-card ${scenarioSourceMode === 'shape' ? 'selected' : ''}`} onClick={() => selectScenarioSourceMode('shape')}>
+              <span>Build from Workload Shape</span>
+              <strong>Unified Catalog</strong>
+              <small>Select a supported workload model and optionally apply one of its starter templates.</small>
+            </button>
+          </div>
+        </section>
+      )
+    }
+
+    if (wizardStep === 'source') {
+      return (
+        <section className="scenario-wizard-panel">
+          <div className="scenario-wizard-panel-header">
+            <div>
+              <h4>{scenarioSourceMode === 'existing' ? 'Choose Scenario To Model' : 'Choose Workload Shape'}</h4>
+              <p>{scenarioSourceMode === 'existing' ? 'The selected scenario becomes an editable copy; the original remains unchanged.' : 'Supported workload models and starter templates are combined into one actionable catalog.'}</p>
+            </div>
+            <div className="scenario-source-toggle">
+              <button type="button" className={`mode-chip ${scenarioSourceMode === 'shape' ? 'active' : ''}`} onClick={() => setScenarioSourceMode('shape')}>Shapes</button>
+              <button type="button" className={`mode-chip ${scenarioSourceMode === 'existing' ? 'active' : ''}`} onClick={() => setScenarioSourceMode('existing')}>Existing</button>
+            </div>
+          </div>
+          {scenarioSourceMode === 'existing' ? (
+            <>
+              <label className="library-search scenario-clone-search">
+                <span>Search existing scenarios</span>
+                <input type="search" value={scenarioCloneQuery} onChange={event => setScenarioCloneQuery(event.target.value)} placeholder="Scenario, script, data pool, release..." />
+              </label>
+              <div className="scenario-clone-list">
+                {filteredCloneScenarios.map(scenario => (
+                  <button key={scenario.id} type="button" className="scenario-clone-card" onClick={() => cloneScenarioDraft(scenario)}>
+                    <div>
+                      <strong>{scenario.name}</strong>
+                      <span>{formatScenarioScripts(scenario)}</span>
+                    </div>
+                    <small>{scenario.duration} · {scenarioAssignmentSummary(scenario).badge} · {formatScenarioDataPools(scenario)}</small>
+                  </button>
+                ))}
+                {filteredCloneScenarios.length === 0 && <p className="scenario-assignment-copy secondary">No scenarios match this source search.</p>}
+              </div>
+            </>
+          ) : (
+            <div className="scenario-shape-catalog-grid">
+              {shapeCatalog.map(option => (
+                <div key={option.id} className={`scenario-shape-catalog-card ${selectedShapeId === option.id ? 'selected' : ''}`}>
+                  <div className="scenario-support-card-header">
+                    <div>
+                      <strong>{option.support.name}</strong>
+                      <span>{option.support.category}</span>
+                    </div>
+                    <span className={`scenario-load-status ${getLoadModelStatusClass(option.support.status)}`}>{formatLoadModelDimension(option.support.status)}</span>
+                  </div>
+                  <p>{option.support.apexload_shape}</p>
+                  <div className="scenario-support-fields">
+                    {option.support.fields.slice(0, 3).map(field => <code key={field}>{field}</code>)}
+                    {option.support.fields.length > 3 && <code>+{option.support.fields.length - 3} fields</code>}
+                  </div>
+                  <WorkloadShapeVisual entry={option.support} />
+                  <div className="scenario-shape-actions">
+                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => selectShapeOption(option.id)}>Use Manual Shape</button>
+                    {option.templates.map(template => (
+                      <button key={template.id} type="button" className={`btn btn-sm ${selectedLoadModelTemplateId === template.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => applyLoadModelTemplate(template.id)}>
+                        {template.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {shapeCatalog.length === 0 && <p className="scenario-assignment-copy secondary">No workload shape catalog is available from this controller.</p>}
+            </div>
+          )}
+        </section>
+      )
+    }
+
+    if (wizardStep === 'scripts') {
+      return (
+        <section className="scenario-wizard-panel">
+          <div className="scenario-wizard-panel-header">
+            <div>
+              <h4>Scripts And Groups</h4>
+              <p>Add each script participating in the scenario and tune its VUsers, ramp, and initialization scope.</p>
+            </div>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={addScenarioGroup}>+ Add Script Group</button>
+          </div>
+          <div className="settings-grid scenario-core-grid">
+            <label className="scenario-field">
+              <span>Scenario Name</span>
+              <input className="settings-input" value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Scenario name" />
+            </label>
+          </div>
+          <div className="scenario-script-group-list scenario-script-group-list-spacious">
+            {formGroups.map((group, index) => (
+              <div key={`${group.script_id || 'script'}-${index}`} className="scenario-script-group-card">
+                <div className="scenario-script-group-title">
+                  <strong>{group.name || `Group ${index + 1}`}</strong>
+                  {formGroups.length > 1 && (
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => removeScenarioGroup(index)}>Remove</button>
+                  )}
+                </div>
+                <div className="settings-grid scenario-group-grid">
+                  <label className="scenario-field">
+                    <span>Group Name</span>
+                    <input className="settings-input" value={group.name} onChange={event => updateScenarioGroup(index, { name: event.target.value })} placeholder={`Group ${index + 1}`} />
+                  </label>
+                  <label className="scenario-field">
+                    <span>Script</span>
+                    <select className="settings-input" value={group.script_id} onChange={event => updateScenarioGroup(index, { script_id: event.target.value })}>
+                      {scripts.map(script => <option key={script.id} value={script.id}>{script.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="scenario-field">
+                    <span>VUsers</span>
+                    <div className="scenario-vuser-field">
+                      <input
+                        className="scenario-vuser-slider"
+                        type="range"
+                        min={1}
+                        max={Math.max(100, Number(group.vusers) * 2 || 100)}
+                        value={group.vusers}
+                        onChange={event => updateScenarioGroup(index, { vusers: Number(event.target.value) })}
+                      />
+                      <input className="settings-input" type="number" min={1} value={group.vusers} onChange={event => updateScenarioGroup(index, { vusers: Number(event.target.value) })} />
+                    </div>
+                  </label>
+                  <DurationField
+                    className="scenario-field"
+                    label="Ramp Up"
+                    value={group.ramp_up}
+                    allowEmpty
+                    compact
+                    onChange={value => updateScenarioGroup(index, { ramp_up: value })}
+                  />
+                  <DurationField
+                    className="scenario-field"
+                    label="Ramp Down"
+                    value={group.ramp_down}
+                    allowEmpty
+                    compact
+                    onChange={value => updateScenarioGroup(index, { ramp_down: value })}
+                  />
+                  <label className="scenario-field">
+                    <span>Initialization Scope</span>
+                    <select className="settings-input" value={group.initialization} onChange={event => updateScenarioGroup(index, { initialization: event.target.value as ScenarioFormGroup['initialization'] })}>
+                      <option value="at_runtime">Init/teardown per VUser</option>
+                      <option value="at_once">Init/teardown once per group</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )
+    }
+
+    if (wizardStep === 'run') {
+      return (
+        <section className="scenario-wizard-panel">
+          <div className="scenario-wizard-panel-header">
+            <h4>Run Settings</h4>
+            <p>Configure duration, mode, goals, stage modeling, browser defaults, and generator assignment.</p>
+          </div>
+          <div className="settings-grid scenario-core-grid">
+            <DurationField
+              className="scenario-field"
+              label="Duration"
+              value={form.duration}
+              required
+              showPresets
+              onChange={value => {
+                setForm({ ...form, duration: value })
+                setLoadModelValidation(null)
+                setLoadModelValidationError('')
+              }}
+            />
+            <label className="scenario-field">
+              <span>Scenario Mode</span>
+              <select className="settings-input" value={form.scenario_mode} onChange={event => setForm({ ...form, scenario_mode: event.target.value as ScenarioMode })}>
+                <option value="vuser_driven">VUser driven</option>
+                <option value="goal_oriented">Goal oriented</option>
+              </select>
+            </label>
+            <label className="scenario-field scenario-stage-group-picker">
+              <span>Configure stages for</span>
+              <select className="settings-input" value={stageGroupIndex} onChange={event => setStageGroupIndex(Number(event.target.value))}>
+                {formGroups.map((group, index) => (
+                  <option key={`${group.script_id || 'group'}-${index}`} value={index}>
+                    {group.name || `Group ${index + 1}`} · {scripts.find(script => script.id === group.script_id)?.name || 'Unassigned script'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="scenario-subpanel">
+            <div className="scenario-assignment-header">
+              <div>
+                <h4>Pre-Run Assurance</h4>
+                <p>Run a one-pass canary/shakeout immediately before full load. Passing starts the run automatically; failures pause with evidence for continue/cancel.</p>
+              </div>
+            </div>
+            <div className="scenario-option-grid">
+              <label className={`scenario-option-card ${form.script_shakeout ? 'selected' : ''}`}>
+                <input type="checkbox" checked={form.script_shakeout} onChange={event => setForm({ ...form, script_shakeout: event.target.checked })} />
+                <div><strong>Script shakeout gate</strong><span>Execute init/actions once for each script group before full load.</span></div>
+              </label>
+              <label className={`scenario-option-card ${form.resource_baseline ? 'selected' : ''}`}>
+                <input type="checkbox" checked={form.resource_baseline} onChange={event => setForm({ ...form, resource_baseline: event.target.checked })} />
+                <div><strong>Resource baseline windows</strong><span>Capture 5m pre/post resource evidence around the run.</span></div>
+              </label>
+              <label className={`scenario-option-card ${form.continue_on_error ? 'selected' : ''}`}>
+                <input type="checkbox" checked={form.continue_on_error} onChange={event => setForm({ ...form, continue_on_error: event.target.checked })} />
+                <div><strong>Continue on action errors</strong><span>Keep collecting resilience evidence after request-level failures.</span></div>
+              </label>
+              <label className={`scenario-option-card ${form.snapshot_on_error ? 'selected' : ''}`}>
+                <input type="checkbox" checked={form.snapshot_on_error} onChange={event => setForm({ ...form, snapshot_on_error: event.target.checked })} />
+                <div><strong>Snapshot on error</strong><span>Preserve request/response context for failed actions.</span></div>
+              </label>
+            </div>
+          </div>
+          {form.scenario_mode === 'goal_oriented' && (
+            <div className="scenario-subpanel">
+              <div className="scenario-assignment-header">
+                <div>
+                  <h4>Goal Controller</h4>
+                  <p>Persist target envelope settings with this scenario draft.</p>
+                </div>
+              </div>
+              <div className="scenario-browser-grid">
+                <label><span>Target average TPS</span><input className="settings-input" type="number" min={0} value={form.goal_target_average_tps || ''} onChange={event => setForm({ ...form, goal_target_average_tps: Number(event.target.value) || undefined })} /></label>
+                <label><span>Min VUsers</span><input className="settings-input" type="number" min={0} value={form.goal_min_vusers || ''} onChange={event => setForm({ ...form, goal_min_vusers: Number(event.target.value) || undefined })} /></label>
+                <label><span>Max VUsers</span><input className="settings-input" type="number" min={0} value={form.goal_max_vusers || ''} onChange={event => setForm({ ...form, goal_max_vusers: Number(event.target.value) || undefined })} /></label>
+                <label><span>P95 latency ms</span><input className="settings-input" type="number" min={0} value={form.goal_p95_latency_ms || ''} onChange={event => setForm({ ...form, goal_p95_latency_ms: Number(event.target.value) || undefined })} /></label>
+                <label><span>Max error %</span><input className="settings-input" type="number" min={0} value={form.goal_max_error_pct || ''} onChange={event => setForm({ ...form, goal_max_error_pct: Number(event.target.value) || undefined })} /></label>
+              </div>
+            </div>
+          )}
+          <div className="scenario-subpanel">
+            <div className="scenario-assignment-header">
+              <div>
+                <h4>Advanced Stair-Step Ramp</h4>
+                <p>Keep simple ramp fields for common runs, or enable explicit stages when each interval needs its own VUser/TPS target.</p>
+              </div>
+              <div className="scenario-stage-actions">
+                {activeStageGroup.stages.length > 0 && (
+                  <button type="button" className="btn btn-secondary" onClick={disableStages}>
+                    Use Simple Ramp
+                  </button>
+                )}
+                <button type="button" className="btn btn-secondary" onClick={activeStageGroup.stages.length > 0 ? addStage : enableDefaultStages}>
+                  {activeStageGroup.stages.length > 0 ? '+ Add Stage' : 'Enable Stages'}
+                </button>
+              </div>
+            </div>
+            {activeStageGroup.stages.length > 0 ? (
+              <div className="scenario-stage-list">
+                <div className="scenario-stage-toolbar">
+                  <span className={`scenario-stage-status ${activeStageTimeline.status}`}>{formatLoadModelDimension(activeStageTimeline.status)}</span>
+                  {activeStageTimeline.message && <span>{activeStageTimeline.message}</span>}
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={enableDefaultStages}>Regenerate From Simple Ramp</button>
+                </div>
+                {activeStageGroup.stages.map((stage, index) => (
+                  <div key={`${stage.name || 'stage'}-${index}`} className="scenario-stage-row">
+                    <input className="settings-input" value={stage.name || ''} onChange={event => updateStage(index, { name: event.target.value })} placeholder="Stage name" />
+                    <select className="settings-input" value={stage.type} onChange={event => updateStage(index, { type: event.target.value as LoadStageType })}>
+                      <option value="ramp_up">Ramp up</option>
+                      <option value="hold">Hold</option>
+                      <option value="ramp_down">Ramp down</option>
+                    </select>
+                    <DurationField
+                      value={stage.duration}
+                      compact
+                      required
+                      showValidation={false}
+                      onChange={value => updateStage(index, { duration: value })}
+                    />
+                    <input className="settings-input" type="number" min={0} value={stage.target_vusers ?? ''} onChange={event => updateStage(index, { target_vusers: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Target VUsers" />
+                    <input className="settings-input" type="number" min={0} value={stage.target_tps ?? ''} onChange={event => updateStage(index, { target_tps: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Target TPS" />
+                    <div className="scenario-stage-row-actions">
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => duplicateStage(index)}>Duplicate</button>
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => removeStage(index)}>Remove</button>
+                    </div>
+                  </div>
+                ))}
+                <p className="scenario-assignment-copy secondary">Peak staged VUsers: {maxStageVUsers(activeStageGroup.stages) || 0}. Validation will reject stages missing duration plus either VUsers or TPS.</p>
+              </div>
+            ) : (
+              <p className="scenario-assignment-copy secondary">Simple ramp is active for this group. Enable advanced stages to define stair-step intervals and per-step VUser/TPS targets.</p>
+            )}
+          </div>
+          {showBrowserRuntimeSettings && (
+            <div className="scenario-subpanel">
+              <div className="scenario-assignment-header">
+                <div>
+                  <h4>Browser Runtime</h4>
+                  <p>Store device defaults with this scenario so queued runs and comparisons carry the same mobile profile.</p>
+                </div>
+              </div>
+              <div className="scenario-browser-grid">
+                <label><span>Device profile</span><select className="settings-input" value={form.browser_device_profile || ''} onChange={event => setForm({ ...form, browser_device_profile: event.target.value })}><option value="">Script default</option><option value="desktop_1080p">desktop_1080p</option><option value="galaxy_s24">galaxy_s24</option><option value="pixel_8">pixel_8</option><option value="ipad_air">ipad_air (WebKit)</option><option value="iphone_15_pro">iphone_15_pro (WebKit)</option><option value="iphone_se">iphone_se (WebKit)</option></select></label>
+                <label><span>Orientation</span><select className="settings-input" value={form.browser_orientation || ''} onChange={event => setForm({ ...form, browser_orientation: event.target.value })}><option value="">Script default</option><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></label>
+                <label><span>Touch mode</span><select className="settings-input" value={form.browser_touch_mode || ''} onChange={event => setForm({ ...form, browser_touch_mode: event.target.value as ScenarioFormState['browser_touch_mode'] })}><option value="">Script default</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label>
+                <label><span>Headless</span><select className="settings-input" value={form.browser_headless || ''} onChange={event => setForm({ ...form, browser_headless: event.target.value as ScenarioFormState['browser_headless'] })}><option value="">Script default</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label>
+              </div>
+            </div>
+          )}
+          <div className="scenario-subpanel">
+            <div className="scenario-assignment-header">
+              <div>
+                <h4>Controller / Generator Assignment</h4>
+                <p>Use scenario size to decide whether the controller should auto-place the run or restrict it to specific generator hostnames.</p>
+              </div>
+              {estimateLoading && <span className="scenario-assignment-status">Estimating...</span>}
+            </div>
+            <div className="scenario-assignment-switcher">
+              <button type="button" className={`mode-chip ${form.assignment_mode === 'auto' ? 'active' : ''}`} onClick={() => setForm({ ...form, assignment_mode: 'auto', assignment_targets: [] })}>Auto Assignment</button>
+              <button type="button" className={`mode-chip ${form.assignment_mode === 'specific_hosts' ? 'active' : ''}`} onClick={() => setForm({ ...form, assignment_mode: 'specific_hosts' })}>Specific Hostnames</button>
+            </div>
+            {draftEstimate?.footprint && (
+              <div className="scenario-assignment-footprint">
+                <div className="scenario-assignment-metric"><span>Footprint</span><strong>{draftEstimate.footprint.total_vusers} VUsers</strong><small>{draftEstimate.footprint.duration}</small></div>
+                <div className="scenario-assignment-metric"><span>Complexity</span><strong>{draftEstimate.footprint.complexity_score.toFixed(2)}</strong><small>derived from current script mix</small></div>
+                <div className="scenario-assignment-metric"><span>Estimated Load</span><strong>{draftEstimate.footprint.estimated_cpu_cores.toFixed(2)} CPU</strong><small>{Math.round(draftEstimate.footprint.estimated_memory_mb)} MB / {Math.round(draftEstimate.footprint.estimated_network_mbps)} Mbps</small></div>
+              </div>
+            )}
+            {assignmentRecommendation?.summary && <p className="scenario-assignment-copy">{assignmentRecommendation.summary}</p>}
+            {form.assignment_mode === 'specific_hosts' ? (
+              availableTargets.length > 0 ? (
+                <div className="scenario-assignment-targets">
+                  {availableTargets.map((target) => {
+                    const checked = form.assignment_targets.includes(target)
+                    const recommended = recommendedTargets.includes(target)
+                    return (
+                      <label key={target} className={`scenario-assignment-target ${checked ? 'selected' : ''}`}>
+                        <input type="checkbox" checked={checked} onChange={(event) => toggleAssignmentTarget(target, event.target.checked)} />
+                        <div><strong>{target}</strong><span>{recommended ? 'Recommended for this scenario footprint' : 'Configured on the controller'}</span></div>
+                      </label>
+                    )
+                  })}
+                </div>
+              ) : <p className="scenario-assignment-copy secondary">No distributed generator hostnames are currently configured on this controller.</p>
+            ) : recommendedTargets.length > 0 ? (
+              <div className="scenario-assignment-chip-row">{recommendedTargets.map(target => <span key={target} className="scenario-assignment-chip">{target}</span>)}</div>
+            ) : <p className="scenario-assignment-copy secondary">Auto-assignment will use the controller&apos;s configured generator inventory when distributed execution is enabled.</p>}
+            {estimateError && <div className="settings-error-inline">{estimateError}</div>}
+            {assignmentRecommendation?.warnings && assignmentRecommendation.warnings.length > 0 && (
+              <div className="scenario-assignment-warnings">{assignmentRecommendation.warnings.map(warning => <p key={warning}>{warning}</p>)}</div>
+            )}
+          </div>
+        </section>
+      )
+    }
+
+    if (wizardStep === 'data') {
+      return (
+        <section className="scenario-wizard-panel">
+          <div className="scenario-wizard-panel-header">
+            <h4>Shared Data Pool</h4>
+            <p>Attach one shared data pool for scripts that need coordinated parameter data.</p>
+          </div>
+          <div className="settings-grid scenario-core-grid">
+            <label className="scenario-field">
+              <span>Shared Data Pool</span>
+              <select className="settings-input" value={form.data_pool_id || ''} onChange={event => setForm({ ...form, data_pool_id: event.target.value })}>
+                <option value="">No shared data pool</option>
+                {dataPools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}
+              </select>
+            </label>
+            <label className="scenario-field">
+              <span>Pool Alias</span>
+              <input className="settings-input" value={form.data_pool_alias || ''} onChange={event => setForm({ ...form, data_pool_alias: event.target.value })} placeholder="Pool alias, e.g. customers" disabled={!form.data_pool_id} />
+            </label>
+            <label className="scenario-field">
+              <span>Access Mode</span>
+              <select className="settings-input" value={form.data_pool_access_mode || 'read_only'} onChange={event => setForm({ ...form, data_pool_access_mode: event.target.value as 'read_only' | 'read_write' | 'consume' })} disabled={!form.data_pool_id}>
+                <option value="read_only">Read only</option>
+                <option value="read_write">Read/write</option>
+                <option value="consume">Consume rows</option>
+              </select>
+            </label>
+            <label className="scenario-field">
+              <span>Selection Strategy</span>
+              <select className="settings-input" value={form.data_pool_selection_strategy || 'sequential'} onChange={event => setForm({ ...form, data_pool_selection_strategy: event.target.value as 'sequential' | 'random' | 'unique' })} disabled={!form.data_pool_id}>
+                <option value="sequential">Sequential rows</option>
+                <option value="random">Random rows</option>
+                <option value="unique">Unique rows</option>
+              </select>
+            </label>
+          </div>
+        </section>
+      )
+    }
+
+    return (
+      <section className="scenario-wizard-panel">
+        <div className="scenario-wizard-panel-header">
+          <div>
+            <h4>Review And Validate</h4>
+            <p>Validate modeled demand, capacity, data fit, and generator placement before saving.</p>
+          </div>
+          <button type="button" className="btn btn-secondary" onClick={validateLoadModel} disabled={loadModelValidationLoading || Boolean(blockingStageTimelineMessage)}>
+            {loadModelValidationLoading ? 'Validating...' : 'Validate Load Model'}
+          </button>
+        </div>
+        <div className="scenario-review-grid">
+          <div className="scenario-review-card"><span>Name</span><strong>{form.name || 'Unnamed scenario'}</strong></div>
+          <div className="scenario-review-card"><span>Shape</span><strong>{shapeLabel}</strong></div>
+          <div className="scenario-review-card"><span>Scripts</span><strong>{formGroups.length} group{formGroups.length === 1 ? '' : 's'}</strong></div>
+          <div className="scenario-review-card"><span>Data</span><strong>{dataPoolLabel}</strong></div>
+          <div className="scenario-review-card"><span>Shakeout</span><strong>{form.script_shakeout ? 'Enabled' : 'Disabled'}</strong></div>
+        </div>
+        {loadModelValidationError && <div className="settings-error-inline">{loadModelValidationError}</div>}
+        {loadModelValidation ? (
+          <div className="scenario-load-validation">
+            <div className={`scenario-load-validation-summary ${getLoadModelStatusClass(loadModelValidation.status)}`}>
+              <strong>{formatLoadModelDimension(loadModelValidation.status)}</strong>
+              <span>{loadModelValidation.total_vusers} VUsers{loadModelValidation.peak_target_tps ? ` · ${loadModelValidation.peak_target_tps} TPS peak` : ''}</span>
+            </div>
+            <div className="scenario-load-validation-items">
+              {loadModelValidation.items.map((item, index) => (
+                <div key={`${item.dimension}-${item.group || 'all'}-${index}`} className="scenario-load-validation-item">
+                  <span className={`scenario-load-status ${getLoadModelStatusClass(item.status)}`}>{formatLoadModelDimension(item.status)}</span>
+                  <div><strong>{formatLoadModelDimension(item.dimension)}{item.group ? ` · ${item.group}` : ''}</strong><p>{item.summary}</p></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="scenario-assignment-copy secondary">Run validation to check demand, capacity, data fit, and generator placement.</p>
+        )}
+      </section>
+    )
+  }
+
   return (
     <div className="page">
       <div className="page-header">
@@ -662,7 +1675,6 @@ function TestHub({ onSelectTest }: Props) {
           <h2>Scenarios</h2>
           <p className="page-subtitle">Reusable scenario definitions linked to scripts, releases, and results.</p>
         </div>
-        {canManageTests && <button className="btn btn-primary" onClick={openCreate}>+ New Scenario</button>}
       </div>
 
       {error && <div className="settings-error-inline">{error}</div>}
@@ -671,424 +1683,143 @@ function TestHub({ onSelectTest }: Props) {
         <div className="page-section scenario-builder">
           <div className="scenario-builder-header">
             <div>
-              <h3 className="section-title">{editingId ? 'Edit Scenario' : 'New Scenario'}</h3>
-              <p className="page-subtitle">Complete the core setup first; open advanced sections only when the workload needs them.</p>
+              <h3 className="section-title">{editingId ? 'Edit Scenario' : 'Scenario Builder Wizard'}</h3>
+              <p className="page-subtitle">Choose a source, compose scripts, tune run settings, attach data, and validate the planned model.</p>
             </div>
             <div className="scenario-builder-progress">
-              <span className={form.name.trim() ? 'ready' : ''}>Basics</span>
-              <span className={form.script_id ? 'ready' : ''}>Script</span>
+              <span className={requiredDraftReady ? 'ready' : ''}>Draft</span>
+              <span className={selectedShapeId || scenarioSourceMode === 'existing' ? 'ready' : ''}>Model</span>
               <span className={loadModelValidation?.status === 'blocked' ? 'blocked' : loadModelValidation ? 'ready' : ''}>Validation</span>
             </div>
           </div>
 
-          <section className="scenario-builder-card">
-            <div className="scenario-builder-card-header">
-              <div>
-                <h4>Basics</h4>
-                <p>Name the reusable workload and choose the primary script group.</p>
-              </div>
-            </div>
-            <div className="settings-grid scenario-core-grid">
-              <label className="scenario-field">
-                <span>Scenario Name</span>
-                <input className="settings-input" value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Scenario name" />
-              </label>
-              <label className="scenario-field">
-                <span>Duration</span>
-                <input className="settings-input" value={form.duration} onChange={event => setForm({ ...form, duration: event.target.value })} placeholder="Duration, e.g. 5m" />
-              </label>
-              <label className="scenario-field">
-                <span>Script</span>
-                <select className="settings-input" value={form.script_id} onChange={event => setForm({ ...form, script_id: event.target.value })}>
-                  {scripts.map(script => <option key={script.id} value={script.id}>{script.name}</option>)}
-                </select>
-              </label>
-              <label className="scenario-field">
-                <span>VUsers</span>
-                <input className="settings-input" type="number" min={1} value={form.vusers} onChange={event => setForm({ ...form, vusers: Number(event.target.value) })} />
-              </label>
-              <label className="scenario-field">
-                <span>Ramp Up</span>
-                <input className="settings-input" value={form.ramp_up} onChange={event => setForm({ ...form, ramp_up: event.target.value })} placeholder="Ramp up, e.g. 2m" />
-              </label>
-              <label className="scenario-field">
-                <span>Ramp Down</span>
-                <input className="settings-input" value={form.ramp_down} onChange={event => setForm({ ...form, ramp_down: event.target.value })} placeholder="Ramp down, e.g. 1m" />
-              </label>
-              <label className="scenario-field">
-                <span>Scenario Mode</span>
-                <select className="settings-input" value={form.scenario_mode} onChange={event => setForm({ ...form, scenario_mode: event.target.value as ScenarioMode })}>
-                  <option value="vuser_driven">VUser driven</option>
-                  <option value="goal_oriented">Goal oriented</option>
-                </select>
-              </label>
-              <label className="scenario-field">
-                <span>Initialization Scope</span>
-                <select className="settings-input" value={form.initialization} onChange={event => setForm({ ...form, initialization: event.target.value as ScenarioFormState['initialization'] })}>
-                  <option value="at_runtime">Init/teardown per VUser</option>
-                  <option value="at_once">Init/teardown once per group</option>
-                </select>
-              </label>
-            </div>
-          </section>
-
-          <details className="scenario-builder-disclosure">
-            <summary>Data Pool Options</summary>
-            <div className="settings-grid scenario-core-grid">
-              <label className="scenario-field">
-                <span>Shared Data Pool</span>
-                <select className="settings-input" value={form.data_pool_id || ''} onChange={event => setForm({ ...form, data_pool_id: event.target.value })}>
-                  <option value="">No shared data pool</option>
-                  {dataPools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}
-                </select>
-              </label>
-              <label className="scenario-field">
-                <span>Pool Alias</span>
-                <input
-                  className="settings-input"
-                  value={form.data_pool_alias || ''}
-                  onChange={event => setForm({ ...form, data_pool_alias: event.target.value })}
-                  placeholder="Pool alias, e.g. customers"
-                  disabled={!form.data_pool_id}
-                />
-              </label>
-              <label className="scenario-field">
-                <span>Access Mode</span>
-                <select
-                  className="settings-input"
-                  value={form.data_pool_access_mode || 'read_only'}
-                  onChange={event => setForm({ ...form, data_pool_access_mode: event.target.value as 'read_only' | 'read_write' | 'consume' })}
-                  disabled={!form.data_pool_id}
-                >
-                  <option value="read_only">Read only</option>
-                  <option value="read_write">Read/write</option>
-                  <option value="consume">Consume rows</option>
-                </select>
-              </label>
-              <label className="scenario-field">
-                <span>Selection Strategy</span>
-                <select
-                  className="settings-input"
-                  value={form.data_pool_selection_strategy || 'sequential'}
-                  onChange={event => setForm({ ...form, data_pool_selection_strategy: event.target.value as 'sequential' | 'random' | 'unique' })}
-                  disabled={!form.data_pool_id}
-                >
-                  <option value="sequential">Sequential rows</option>
-                  <option value="random">Random rows</option>
-                  <option value="unique">Unique rows</option>
-                </select>
-              </label>
-            </div>
-          </details>
-          {form.scenario_mode === 'goal_oriented' && (
-            <div className="scenario-browser-panel">
-              <div className="scenario-assignment-header">
-                <div>
-                  <h4>Goal Controller</h4>
-                  <p>Persist goal-oriented load settings with the scenario draft so validation and execution use the same target envelope.</p>
-                </div>
-              </div>
-              <div className="scenario-browser-grid">
-                <label>
-                  <span>Target average TPS</span>
-                  <input className="settings-input" type="number" min={0} value={form.goal_target_average_tps || ''} onChange={event => setForm({ ...form, goal_target_average_tps: Number(event.target.value) || undefined })} />
-                </label>
-                <label>
-                  <span>Min VUsers</span>
-                  <input className="settings-input" type="number" min={0} value={form.goal_min_vusers || ''} onChange={event => setForm({ ...form, goal_min_vusers: Number(event.target.value) || undefined })} />
-                </label>
-                <label>
-                  <span>Max VUsers</span>
-                  <input className="settings-input" type="number" min={0} value={form.goal_max_vusers || ''} onChange={event => setForm({ ...form, goal_max_vusers: Number(event.target.value) || undefined })} />
-                </label>
-                <label>
-                  <span>P95 latency ms</span>
-                  <input className="settings-input" type="number" min={0} value={form.goal_p95_latency_ms || ''} onChange={event => setForm({ ...form, goal_p95_latency_ms: Number(event.target.value) || undefined })} />
-                </label>
-                <label>
-                  <span>Max error %</span>
-                  <input className="settings-input" type="number" min={0} value={form.goal_max_error_pct || ''} onChange={event => setForm({ ...form, goal_max_error_pct: Number(event.target.value) || undefined })} />
-                </label>
-              </div>
-            </div>
-          )}
-          <div className="scenario-init-panel">
-            <div className="scenario-assignment-header">
-              <div>
-                <h4>Initialization Scope</h4>
-                <p>{form.initialization === 'at_once'
-                  ? 'Script init and teardown run once for this group, useful for shared seed or setup flows.'
-                  : 'Each VUser runs script init and teardown independently, matching the default closed-model behavior.'}</p>
-              </div>
-              <span className="scenario-assignment-status">{form.initialization === 'at_once' ? 'Once per group' : 'Per VUser'}</span>
-            </div>
-          </div>
-          <div className="scenario-stage-panel">
-            <div className="scenario-assignment-header">
-              <div>
-                <h4>Staged Load Segments</h4>
-                <p>Model ramp-up, hold, and ramp-down segments explicitly. When stages are enabled, the peak target VUsers becomes the group VUser count.</p>
-              </div>
-              <button type="button" className="btn btn-secondary" onClick={form.stages.length > 0 ? addStage : enableDefaultStages}>
-                {form.stages.length > 0 ? '+ Add Stage' : 'Enable Stages'}
-              </button>
-            </div>
-            {form.stages.length > 0 ? (
-              <div className="scenario-stage-list">
-                {form.stages.map((stage, index) => (
-                  <div key={`${stage.name || 'stage'}-${index}`} className="scenario-stage-row">
-                    <input className="settings-input" value={stage.name || ''} onChange={event => updateStage(index, { name: event.target.value })} placeholder="Stage name" />
-                    <select className="settings-input" value={stage.type} onChange={event => updateStage(index, { type: event.target.value as LoadStageType })}>
-                      <option value="ramp_up">Ramp up</option>
-                      <option value="hold">Hold</option>
-                      <option value="ramp_down">Ramp down</option>
-                    </select>
-                    <input className="settings-input" value={stage.duration} onChange={event => updateStage(index, { duration: event.target.value })} placeholder="Duration" />
-                    <input className="settings-input" type="number" min={0} value={stage.target_vusers ?? ''} onChange={event => updateStage(index, { target_vusers: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Target VUsers" />
-                    <input className="settings-input" type="number" min={0} value={stage.target_tps ?? ''} onChange={event => updateStage(index, { target_tps: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Target TPS" />
-                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => removeStage(index)}>Remove</button>
-                  </div>
-                ))}
-                <p className="scenario-assignment-copy secondary">Peak staged VUsers: {maxStageVUsers(form.stages) || 0}. Validation will reject stages missing duration plus either VUsers or TPS.</p>
-              </div>
-            ) : (
-              <p className="scenario-assignment-copy secondary">Use simple ramp fields above, or enable stages for stepped ramps and mixed target constraints.</p>
-            )}
-          </div>
-          <div className="scenario-load-model-panel">
-            <div className="scenario-assignment-header">
-              <div>
-                <h4>Workload Shape Templates</h4>
-                <p>Apply a starter shape, then validate modeled demand, capacity, data fit, and generator placement before saving.</p>
-              </div>
-              <button type="button" className="btn btn-secondary" onClick={validateLoadModel} disabled={loadModelValidationLoading}>
-                {loadModelValidationLoading ? 'Validating...' : 'Validate Load Model'}
-              </button>
-            </div>
-            <div className="scenario-template-grid">
-              {loadModelTemplates.map(template => (
-                <button
-                  key={template.id}
-                  type="button"
-                  className={`scenario-template-card ${selectedLoadModelTemplateId === template.id ? 'selected' : ''}`}
-                  onClick={() => applyLoadModelTemplate(template.id)}
-                >
-                  <span>{template.name}</span>
-                  <strong>{template.shape_id}</strong>
-                  <small>{template.description}</small>
-                </button>
-              ))}
-              {loadModelTemplates.length === 0 && <p className="scenario-assignment-copy secondary">No workload templates are available from this controller.</p>}
-            </div>
-            {selectedLoadModelTemplateId && (
-              <p className="scenario-assignment-copy secondary">
-                Applied {loadModelTemplates.find(template => template.id === selectedLoadModelTemplateId)?.name}. Review script assignment and capacity validation before saving.
-              </p>
-            )}
-            {loadModelValidationError && <div className="settings-error-inline">{loadModelValidationError}</div>}
-            {loadModelValidation && (
-              <div className="scenario-load-validation">
-                <div className={`scenario-load-validation-summary ${getLoadModelStatusClass(loadModelValidation.status)}`}>
-                  <strong>{formatLoadModelDimension(loadModelValidation.status)}</strong>
-                  <span>{loadModelValidation.total_vusers} VUsers{loadModelValidation.peak_target_tps ? ` · ${loadModelValidation.peak_target_tps} TPS peak` : ''}</span>
-                </div>
-                <div className="scenario-load-validation-items">
-                  {loadModelValidation.items.map((item, index) => (
-                    <div key={`${item.dimension}-${item.group || 'all'}-${index}`} className="scenario-load-validation-item">
-                      <span className={`scenario-load-status ${getLoadModelStatusClass(item.status)}`}>{formatLoadModelDimension(item.status)}</span>
-                      <div>
-                        <strong>{formatLoadModelDimension(item.dimension)}{item.group ? ` · ${item.group}` : ''}</strong>
-                        <p>{item.summary}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          <details className="scenario-builder-disclosure">
-            <summary>Workload Shape Support</summary>
-          <div className="scenario-support-panel compact">
-            <div className="scenario-assignment-header">
-              <div>
-                <h4>Workload Shape Support</h4>
-                <p>Code-owned support matrix for enterprise workload models and the APEX Load fields that implement them.</p>
-              </div>
-            </div>
-            {loadModelSupportMatrix.length > 0 ? (
-              <div className="scenario-support-grid">
-                {loadModelSupportMatrix.map(entry => (
-                  <div key={entry.id} className="scenario-support-card">
-                    <div className="scenario-support-card-header">
-                      <div>
-                        <strong>{entry.name}</strong>
-                        <span>{entry.category}</span>
-                      </div>
-                      <span className={`scenario-load-status ${getLoadModelStatusClass(entry.status)}`}>{formatLoadModelDimension(entry.status)}</span>
-                    </div>
-                    <p>{entry.apexload_shape}</p>
-                    <div className="scenario-support-fields">
-                      {entry.fields.map(field => <code key={field}>{field}</code>)}
-                    </div>
-                    <small>{entry.notes}</small>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="scenario-assignment-copy secondary">No workload support matrix is available from this controller.</p>
-            )}
-          </div>
-          </details>
-          {showBrowserRuntimeSettings && (
-            <div className="scenario-browser-panel">
-              <div className="scenario-assignment-header">
-                <div>
-                  <h4>Browser Runtime</h4>
-                  <p>Store device defaults with this scenario so queued runs and comparisons carry the same mobile profile.</p>
-                </div>
-              </div>
-              <div className="scenario-browser-grid">
-                <label>
-                  <span>Device profile</span>
-                  <select className="settings-input" value={form.browser_device_profile || ''} onChange={event => setForm({ ...form, browser_device_profile: event.target.value })}>
-                    <option value="">Script default</option>
-                    <option value="desktop_1080p">desktop_1080p</option>
-                    <option value="galaxy_s24">galaxy_s24</option>
-                    <option value="pixel_8">pixel_8</option>
-                    <option value="ipad_air">ipad_air (WebKit)</option>
-                    <option value="iphone_15_pro">iphone_15_pro (WebKit)</option>
-                    <option value="iphone_se">iphone_se (WebKit)</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Orientation</span>
-                  <select className="settings-input" value={form.browser_orientation || ''} onChange={event => setForm({ ...form, browser_orientation: event.target.value })}>
-                    <option value="">Script default</option>
-                    <option value="portrait">Portrait</option>
-                    <option value="landscape">Landscape</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Touch mode</span>
-                  <select className="settings-input" value={form.browser_touch_mode || ''} onChange={event => setForm({ ...form, browser_touch_mode: event.target.value as ScenarioFormState['browser_touch_mode'] })}>
-                    <option value="">Script default</option>
-                    <option value="true">Enabled</option>
-                    <option value="false">Disabled</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Headless</span>
-                  <select className="settings-input" value={form.browser_headless || ''} onChange={event => setForm({ ...form, browser_headless: event.target.value as ScenarioFormState['browser_headless'] })}>
-                    <option value="">Script default</option>
-                    <option value="true">Enabled</option>
-                    <option value="false">Disabled</option>
-                  </select>
-                </label>
-              </div>
-            </div>
-          )}
-          <div className="scenario-assignment-panel">
-            <div className="scenario-assignment-header">
-              <div>
-                <h4>Controller / Generator Assignment</h4>
-                <p>Use scenario size to decide whether the controller should auto-place the run or restrict it to specific generator hostnames.</p>
-              </div>
-              {estimateLoading && <span className="scenario-assignment-status">Estimating...</span>}
-            </div>
-
-            <div className="scenario-assignment-switcher">
+          <div className="scenario-wizard-stepper" aria-label="Scenario builder steps">
+            {scenarioWizardSteps.map((step, index) => (
               <button
+                key={step.id}
                 type="button"
-                className={`mode-chip ${form.assignment_mode === 'auto' ? 'active' : ''}`}
-                onClick={() => setForm({ ...form, assignment_mode: 'auto', assignment_targets: [] })}
+                className={`scenario-wizard-step ${wizardStep === step.id ? 'active' : ''} ${index < currentWizardIndex ? 'complete' : ''}`}
+                onClick={() => setWizardStep(step.id)}
               >
-                Auto Assignment
+                <span>{index + 1}</span>
+                {step.label}
               </button>
-              <button
-                type="button"
-                className={`mode-chip ${form.assignment_mode === 'specific_hosts' ? 'active' : ''}`}
-                onClick={() => setForm({ ...form, assignment_mode: 'specific_hosts' })}
-              >
-                Specific Hostnames
-              </button>
-            </div>
-
-            {draftEstimate?.footprint && (
-              <div className="scenario-assignment-footprint">
-                <div className="scenario-assignment-metric">
-                  <span>Footprint</span>
-                  <strong>{draftEstimate.footprint.total_vusers} VUsers</strong>
-                  <small>{draftEstimate.footprint.duration}</small>
-                </div>
-                <div className="scenario-assignment-metric">
-                  <span>Complexity</span>
-                  <strong>{draftEstimate.footprint.complexity_score.toFixed(2)}</strong>
-                  <small>derived from current script mix</small>
-                </div>
-                <div className="scenario-assignment-metric">
-                  <span>Estimated Load</span>
-                  <strong>{draftEstimate.footprint.estimated_cpu_cores.toFixed(2)} CPU</strong>
-                  <small>{Math.round(draftEstimate.footprint.estimated_memory_mb)} MB / {Math.round(draftEstimate.footprint.estimated_network_mbps)} Mbps</small>
-                </div>
-              </div>
-            )}
-
-            {assignmentRecommendation?.summary && (
-              <p className="scenario-assignment-copy">{assignmentRecommendation.summary}</p>
-            )}
-
-            {form.assignment_mode === 'specific_hosts' ? (
-              availableTargets.length > 0 ? (
-                <>
-                  {form.assignment_targets.length === 0 && (
-                    <p className="scenario-assignment-copy secondary">Select at least one hostname to store an explicit scenario default.</p>
-                  )}
-                  <div className="scenario-assignment-targets">
-                    {availableTargets.map((target) => {
-                      const checked = form.assignment_targets.includes(target)
-                      const recommended = recommendedTargets.includes(target)
-                      return (
-                        <label key={target} className={`scenario-assignment-target ${checked ? 'selected' : ''}`}>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(event) => toggleAssignmentTarget(target, event.target.checked)}
-                          />
-                          <div>
-                            <strong>{target}</strong>
-                            <span>{recommended ? 'Recommended for this scenario footprint' : 'Configured on the controller'}</span>
-                          </div>
-                        </label>
-                      )
-                    })}
-                  </div>
-                </>
-              ) : (
-                <p className="scenario-assignment-copy secondary">No distributed generator hostnames are currently configured on this controller.</p>
-              )
-            ) : recommendedTargets.length > 0 ? (
-              <div className="scenario-assignment-chip-row">
-                {recommendedTargets.map((target) => <span key={target} className="scenario-assignment-chip">{target}</span>)}
-              </div>
-            ) : (
-              <p className="scenario-assignment-copy secondary">Auto-assignment will use the controller&apos;s configured generator inventory when distributed execution is enabled.</p>
-            )}
-
-            {estimateError && <div className="settings-error-inline">{estimateError}</div>}
-            {assignmentRecommendation?.warnings && assignmentRecommendation.warnings.length > 0 && (
-              <div className="scenario-assignment-warnings">
-                {assignmentRecommendation.warnings.map((warning) => <p key={warning}>{warning}</p>)}
-              </div>
-            )}
+            ))}
           </div>
+
+          {renderWizardStep()}
+
+          {showModelPreview && (
+            <ScenarioModelPreviewPanel
+              model={scenarioModel}
+              shapeLabel={shapeLabel}
+              dataPoolLabel={dataPoolLabel}
+              validationStatus={validationLabel}
+            />
+          )}
+
+          {blockingStageTimelineMessage && <div className="settings-error-inline">{blockingStageTimelineMessage}</div>}
+
           <div className="scenario-builder-actions">
-            <button className="btn btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
-            <button className="btn btn-secondary" onClick={validateLoadModel} disabled={loadModelValidationLoading}>{loadModelValidationLoading ? 'Validating...' : 'Validate Load Model'}</button>
-            <button className="btn btn-primary" onClick={saveScenario}>Save Scenario</button>
+            <button className="btn btn-secondary" onClick={openCreate}>Cancel</button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                const nextIndex = Math.max(0, currentWizardIndex - 1)
+                setWizardStep(scenarioWizardSteps[nextIndex].id)
+              }}
+              disabled={currentWizardIndex === 0}
+            >
+              Back
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                const nextIndex = Math.min(scenarioWizardSteps.length - 1, currentWizardIndex + 1)
+                setWizardStep(scenarioWizardSteps[nextIndex].id)
+              }}
+              disabled={currentWizardIndex === scenarioWizardSteps.length - 1}
+            >
+              Next
+            </button>
+            <button className="btn btn-secondary" onClick={validateLoadModel} disabled={loadModelValidationLoading || Boolean(blockingStageTimelineMessage)}>{loadModelValidationLoading ? 'Validating...' : 'Validate Load Model'}</button>
+            {wizardStep === 'review' && onCreateTestFromScenario && (
+              <button className="btn btn-secondary" onClick={saveScenarioAndCreateTest} disabled={Boolean(blockingStageTimelineMessage)}>Save &amp; Create Test Run</button>
+            )}
+            <button className="btn btn-primary" onClick={saveScenario} disabled={Boolean(blockingStageTimelineMessage)}>Save Scenario</button>
+          </div>
+
+        </div>
+      )}
+
+      {showScriptLibrary && (
+        <div className="page-section scenario-existing-script-library">
+          <div className="library-toolbar">
+            <div>
+              <h3 className="section-title">Existing Scripts Library ({scripts.length})</h3>
+              <p className="library-toolbar-subtitle">
+                {scriptLibraryQuery.trim() ? `${visibleScriptLibrary.length} matching script${visibleScriptLibrary.length === 1 ? '' : 's'}` : 'Pick from existing scripts while assembling scenario groups.'}
+              </p>
+            </div>
+            <label className="library-search">
+              <span>Search scripts</span>
+              <input
+                type="search"
+                value={scriptLibraryQuery}
+                onChange={(event) => setScriptLibraryQuery(event.target.value)}
+                placeholder="Find scripts..."
+              />
+            </label>
+          </div>
+          <div className="data-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Script</th>
+                  <th>Protocol</th>
+                  <th>Usage</th>
+                  <th>Last Run</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleScriptLibrary.map(script => (
+                  <tr key={script.id}>
+                    <td className="cell-name">
+                      <div>{script.name}</div>
+                      <div className="scenario-table-assignment-detail">v{script.version || '—'} · Created {formatDate(script.created_at)}</div>
+                    </td>
+                    <td>
+                      <span className="protocol-badge">{script.protocol}</span>
+                    </td>
+                    <td>
+                      <div className="scenario-table-workload">
+                        <strong>{formatScriptScenarioCount(script)}</strong>
+                        <span>{scriptReleaseList(script)}</span>
+                      </div>
+                    </td>
+                    <td className="cell-muted">{formatDate(script.last_run_at)}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <button className="btn btn-sm btn-secondary" type="button" onClick={() => addScenarioGroupFromScript(script)}>
+                        Add Group
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {visibleScriptLibrary.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="cell-muted">
+                      {scriptLibraryQuery.trim() ? 'No scripts match this search.' : 'No existing scripts are available for this project.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
+      {showScenarioLibrary && (
       <div className="page-section">
         <div className="library-toolbar">
           <div>
@@ -1238,6 +1969,7 @@ function TestHub({ onSelectTest }: Props) {
           </table>
         </div>
       </div>
+      )}
 
       {confirmDeleteScenarioId && (
         <div className="modal-overlay" onClick={() => setConfirmDeleteScenarioId(null)}>

@@ -223,6 +223,19 @@ export interface OpenAPIImportStats {
   skipped_operations?: string[]
 }
 
+export interface PostmanImportStats {
+  format: string
+  collection_version?: string
+  folders: number
+  total_requests: number
+  converted_actions: number
+  variables_detected: number
+  auth_schemes?: string[]
+  unsupported_bodies: number
+  assertions: number
+  skipped_items?: string[]
+}
+
 export interface WSDLImportStats {
   format: string
   services: number
@@ -258,6 +271,7 @@ export type SampleImportResult = ScriptImportResult<SampleImportStats, SampleCor
 export type DevWebImportResult = ScriptImportResult<DevWebImportStats, unknown>
 export type HARImportResult = ScriptImportResult<HARImportStats, SampleCorrelation>
 export type OpenAPIImportResult = ScriptImportResult<OpenAPIImportStats, unknown>
+export type PostmanImportResult = ScriptImportResult<PostmanImportStats, unknown>
 export type WSDLImportResult = ScriptImportResult<WSDLImportStats, unknown>
 export type RecorderImportResult = ScriptImportResult<Record<string, unknown>, RecorderCorrelation>
 

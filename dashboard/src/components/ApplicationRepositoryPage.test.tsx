@@ -8,14 +8,32 @@ import ApplicationRepositoryPage from './ApplicationRepositoryPage'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-const apiMock = {
+const repositoryApiMock = {
   listProjectReleases: vi.fn(),
   createRepositoryCategory: vi.fn(),
   createProjectRelease: vi.fn(),
 }
 
 vi.mock('../hooks/api/useRepositoryApi', () => ({
-  useRepositoryApi: () => apiMock,
+  useRepositoryApi: () => repositoryApiMock,
+}))
+
+const scriptApiMock = {
+  listScripts: vi.fn(),
+  listScenarios: vi.fn(),
+  listDataPools: vi.fn(),
+}
+
+vi.mock('../hooks/api/useScriptApi', () => ({
+  useScriptApi: () => scriptApiMock,
+}))
+
+const testApiMock = {
+  listTests: vi.fn(),
+}
+
+vi.mock('../hooks/api/useTestApi', () => ({
+  useTestApi: () => testApiMock,
 }))
 
 const domain = { id: 'domain-1', name: 'Retail', created_at: '', updated_at: '' }
@@ -26,17 +44,28 @@ const project = { id: 'project-1', domain_id: domain.id, category_id: category.i
 async function flushPromises() {
   await act(async () => {
     await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
   })
 }
 
-function findButton(container: HTMLElement, label: string): HTMLButtonElement | undefined {
-  return Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === label) as HTMLButtonElement | undefined
+function findButton(container: HTMLElement, label: string, exact = true): HTMLButtonElement | undefined {
+  return Array.from(container.querySelectorAll('button')).find(button => {
+    const text = button.textContent?.trim() || ''
+    return exact ? text === label : text.includes(label)
+  }) as HTMLButtonElement | undefined
 }
 
 function setInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
   setter?.call(input, value)
   input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+function setSelectValue(select: HTMLSelectElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
+  setter?.call(select, value)
+  select.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
 describe('ApplicationRepositoryPage', () => {
@@ -47,9 +76,61 @@ describe('ApplicationRepositoryPage', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    apiMock.listProjectReleases.mockResolvedValue({ releases: [{ id: 'release-1', application_id: 'app-1', project_id: project.id, name: '2026.05', created_at: '', updated_at: '' }], count: 1 })
-    apiMock.createRepositoryCategory.mockResolvedValue({ id: 'category-2', domain_id: domain.id, repository_id: repository.id, name: 'Search', created_at: '', updated_at: '' })
-    apiMock.createProjectRelease.mockResolvedValue({ id: 'release-2', application_id: 'app-1', project_id: project.id, name: '2026.06', created_at: '', updated_at: '' })
+    repositoryApiMock.listProjectReleases.mockResolvedValue({ releases: [{ id: 'release-1', application_id: 'app-1', project_id: project.id, name: '2026.05', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }], count: 1 })
+    repositoryApiMock.createRepositoryCategory.mockResolvedValue({ id: 'category-2', domain_id: domain.id, repository_id: repository.id, name: 'Search', created_at: '', updated_at: '' })
+    repositoryApiMock.createProjectRelease.mockResolvedValue({ id: 'release-2', application_id: 'app-1', project_id: project.id, name: '2026.06', created_at: '', updated_at: '' })
+    scriptApiMock.listScripts.mockResolvedValue({
+      scripts: [{
+        id: 'script-1',
+        name: 'Checkout Smoke',
+        protocol: 'http',
+        version: '1.0.0',
+        project_id: project.id,
+        created_at: '2026-05-03T00:00:00Z',
+        scenario_count: 1,
+        associated_releases: [{ id: 'release-1', application_id: 'app-1', name: '2026.05' }],
+      }],
+      count: 1,
+    })
+    scriptApiMock.listScenarios.mockResolvedValue({
+      scenarios: [{
+        id: 'scenario-1',
+        name: 'Checkout Peak',
+        duration: '30m',
+        scripts: [{ order: 1, script_id: 'script-1', script_name: 'Checkout Smoke', protocol: 'http', vusers: 10 }],
+        created_at: '2026-05-04T00:00:00Z',
+        updated_at: '2026-05-05T00:00:00Z',
+        script_count: 1,
+        result_count: 1,
+      }],
+      count: 1,
+    })
+    scriptApiMock.listDataPools.mockResolvedValue({
+      data_pools: [{
+        id: 'pool-1',
+        name: 'Checkout Users',
+        project_id: project.id,
+        schema: { username: 'string' },
+        created_at: '2026-05-06T00:00:00Z',
+        updated_at: '2026-05-07T00:00:00Z',
+      }],
+      count: 1,
+    })
+    testApiMock.listTests.mockResolvedValue({
+      tests: [{
+        id: 'test-1',
+        name: 'Checkout Run',
+        status: 'COMPLETE',
+        project_id: project.id,
+        release_id: 'release-1',
+        scenario_id: 'scenario-1',
+        groups: [{ name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Smoke', protocol: 'http', vusers: 10 }],
+        total_vusers: 10,
+        duration: '30m',
+        created_at: '2026-05-08T00:00:00Z',
+      }],
+      count: 1,
+    })
   })
 
   afterEach(() => {
@@ -58,7 +139,8 @@ describe('ApplicationRepositoryPage', () => {
     container.remove()
   })
 
-  it('renders repository hierarchy and creates releases under a project', async () => {
+  it('renders catalog rows, filters by tab and search, and creates releases from Structure', async () => {
+    const onOpenScript = vi.fn()
     await act(async () => {
       root.render(
         <ApplicationRepositoryPage
@@ -74,15 +156,61 @@ describe('ApplicationRepositoryPage', () => {
           onRepositoryRefresh={vi.fn()}
           onProjectsRefresh={vi.fn()}
           onProjectCreated={vi.fn()}
+          onOpenScript={onOpenScript}
         />,
       )
     })
     await flushPromises()
 
     expect(container.textContent).toContain('Application Repository')
-    expect(container.textContent).toContain('Checkout')
+    expect(container.textContent).toContain('Projects')
     expect(container.textContent).toContain('Checkout API')
     expect(container.textContent).toContain('2026.05')
+    expect(container.textContent).toContain('Checkout Smoke')
+    expect(container.textContent).toContain('Checkout Peak')
+    expect(container.textContent).toContain('Checkout Run')
+    expect(container.textContent).toContain('Checkout Users')
+
+    const filterSelects = Array.from(container.querySelectorAll('.repository-filter-row select')) as HTMLSelectElement[]
+    expect(filterSelects.length).toBeGreaterThanOrEqual(5)
+    await act(async () => {
+      setSelectValue(filterSelects[1], 'release-1')
+    })
+    expect(container.textContent).toContain('Checkout Smoke')
+    expect(container.textContent).toContain('Checkout Run')
+    expect(container.textContent).not.toContain('Checkout Users')
+
+    const scriptsTab = findButton(container, 'Scripts', false)
+    await act(async () => {
+      scriptsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('Checkout Smoke')
+    expect(container.textContent).not.toContain('Checkout Peak')
+
+    const editScript = findButton(container, 'Edit')
+    await act(async () => {
+      editScript?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onOpenScript).toHaveBeenCalledWith('script-1')
+
+    const searchInput = container.querySelector('.repository-search input') as HTMLInputElement | null
+    expect(searchInput).toBeDefined()
+    if (!searchInput) return
+    await act(async () => {
+      setInputValue(searchInput, 'missing asset')
+    })
+    expect(container.textContent).toContain('No assets match the current filters.')
+
+    await act(async () => {
+      setSelectValue(filterSelects[4], 'custom')
+    })
+    expect(container.textContent).toContain('Activity From')
+    expect(container.textContent).toContain('Activity To')
+
+    const structureTab = findButton(container, 'Structure', false)
+    await act(async () => {
+      structureTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
 
     const releaseInput = Array.from(container.querySelectorAll('input')).find(input => input.getAttribute('placeholder') === 'New release name') as HTMLInputElement | undefined
     expect(releaseInput).toBeDefined()
@@ -96,7 +224,34 @@ describe('ApplicationRepositoryPage', () => {
       addRelease?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(apiMock.createProjectRelease).toHaveBeenCalledWith(project.id, { name: '2026.06' })
+    expect(repositoryApiMock.createProjectRelease).toHaveBeenCalledWith(project.id, { name: '2026.06' })
     expect(container.textContent).toContain('Release created.')
+  })
+
+  it('shows asset load failures as non-blocking catalog warnings', async () => {
+    scriptApiMock.listScripts.mockRejectedValueOnce(new Error('Forbidden'))
+    await act(async () => {
+      root.render(
+        <ApplicationRepositoryPage
+          domains={[domain]}
+          activeDomain={domain}
+          applicationRepository={repository}
+          categories={[category]}
+          projects={[project]}
+          canManageRepository={false}
+          canManageProjects={false}
+          canManageReleases={false}
+          onDomainChange={vi.fn()}
+          onRepositoryRefresh={vi.fn()}
+          onProjectsRefresh={vi.fn()}
+          onProjectCreated={vi.fn()}
+        />,
+      )
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Scripts: unable to load 1 project (Forbidden)')
+    expect(container.textContent).toContain('Checkout API')
+    expect(container.textContent).toContain('2026.05')
   })
 })

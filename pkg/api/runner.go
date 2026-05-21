@@ -1746,13 +1746,42 @@ type CreateGroupEntry struct {
 }
 
 type StartTestOptions struct {
-	OverrideCapacityShortfall bool `json:"override_capacity_shortfall,omitempty"`
+	OverrideCapacityShortfall   bool `json:"override_capacity_shortfall,omitempty"`
+	OverrideScriptShakeoutError bool `json:"override_script_shakeout_failure,omitempty"`
 }
 
 type CapacityShortfallError struct {
 	TestID   string
 	Advisory *CapacityAdvisory
 	Message  string
+}
+
+type ScriptShakeoutGateError struct {
+	TestID string
+	Report *ScriptShakeoutReport
+}
+
+func (e *ScriptShakeoutGateError) Error() string {
+	if e == nil || e.Report == nil || e.Report.Summary == "" {
+		return "script shakeout failed; full load test has not started"
+	}
+	return e.Report.Summary
+}
+
+type ScriptShakeoutReport struct {
+	Passed    bool                   `json:"passed"`
+	Summary   string                 `json:"summary"`
+	StartedAt time.Time              `json:"started_at"`
+	EndedAt   time.Time              `json:"ended_at"`
+	Results   []ScriptShakeoutResult `json:"results"`
+}
+
+type ScriptShakeoutResult struct {
+	GroupName  string `json:"group_name"`
+	ScriptID   string `json:"script_id,omitempty"`
+	ScriptName string `json:"script_name,omitempty"`
+	Status     string `json:"status"`
+	Error      string `json:"error,omitempty"`
 }
 
 type DraftCapacityEstimate struct {
@@ -3067,6 +3096,28 @@ func (tr *TestRunner) StartTest(id string) error {
 
 func (tr *TestRunner) StartTestWithOptions(id string, opts StartTestOptions) error {
 	tr.mu.Lock()
+	blocked, err := tr.preflightStartBlocksLocked(id, opts)
+	tr.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if blocked {
+		return nil
+	}
+
+	shakeoutTest, err := tr.beginScriptShakeoutIfNeeded(id, opts)
+	if err != nil {
+		return err
+	}
+	if shakeoutTest != nil {
+		report := tr.runScriptShakeoutReport(shakeoutTest)
+		if !report.Passed {
+			return tr.markScriptShakeoutReview(id, report)
+		}
+		tr.markScriptShakeoutPassed(id, report)
+	}
+
+	tr.mu.Lock()
 	test, err := tr.prepareTestStartLocked(id, opts)
 	tr.mu.Unlock()
 	if err != nil {
@@ -3080,13 +3131,106 @@ func (tr *TestRunner) StartTestWithOptions(id string, opts StartTestOptions) err
 	return nil
 }
 
+func (tr *TestRunner) preflightStartBlocksLocked(id string, opts StartTestOptions) (bool, error) {
+	test, ok := tr.tests[id]
+	if !ok {
+		return false, fmt.Errorf("test not found: %s", id)
+	}
+	if test.Status != "QUEUED" && test.Status != "PENDING" && test.Status != "SHAKEOUT_REVIEW" {
+		return false, fmt.Errorf("test is %s, must be QUEUED, PENDING, or SHAKEOUT_REVIEW to start", test.Status)
+	}
+
+	tr.refreshCapacityAdvisoryLocked(test)
+	if err := buildCapacityShortfallStartError(id, test.CapacityAdvisory, opts); err != nil {
+		return false, err
+	}
+	if blocked, reason := tr.evaluateQuotaBlockLocked(test, ""); blocked {
+		now := time.Now()
+		test.Status = "PENDING"
+		if test.PendingSince == nil || test.PendingSince.IsZero() {
+			test.PendingSince = &now
+		}
+		test.PendingReason = reason
+		test.QueuePosition = 0
+		test.Error = ""
+		tr.saveManagedTestRecord(test)
+		tr.broadcastEvent("test_pending", test)
+		return true, nil
+	}
+	return false, nil
+}
+
+func (tr *TestRunner) beginScriptShakeoutIfNeeded(id string, opts StartTestOptions) (*ManagedTest, error) {
+	if opts.OverrideScriptShakeoutError {
+		return nil, nil
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	test, ok := tr.tests[id]
+	if !ok {
+		return nil, fmt.Errorf("test not found: %s", id)
+	}
+	if !test.ScriptShakeout {
+		return nil, nil
+	}
+	if test.Status != "QUEUED" && test.Status != "PENDING" && test.Status != "SHAKEOUT_REVIEW" {
+		return nil, fmt.Errorf("test is %s, must be QUEUED, PENDING, or SHAKEOUT_REVIEW to start", test.Status)
+	}
+
+	test.Status = "SHAKEOUT"
+	test.PendingSince = nil
+	test.PendingReason = ""
+	test.QueuePosition = 0
+	test.Error = ""
+	tr.saveManagedTestRecord(test)
+	tr.broadcastEvent("script_shakeout_started", test)
+
+	return test, nil
+}
+
+func (tr *TestRunner) markScriptShakeoutPassed(id string, _ ScriptShakeoutReport) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	test, ok := tr.tests[id]
+	if !ok {
+		return
+	}
+	if test.Status != "SHAKEOUT" {
+		return
+	}
+	test.Status = "QUEUED"
+	test.Error = ""
+	tr.saveManagedTestRecord(test)
+	tr.broadcastEvent("script_shakeout_passed", test)
+}
+
+func (tr *TestRunner) markScriptShakeoutReview(id string, report ScriptShakeoutReport) error {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	test, ok := tr.tests[id]
+	if !ok {
+		return fmt.Errorf("test not found: %s", id)
+	}
+	if test.Status != "SHAKEOUT" {
+		return fmt.Errorf("test is %s, shakeout review no longer applies", test.Status)
+	}
+	test.Status = "SHAKEOUT_REVIEW"
+	test.Error = formatScriptShakeoutEvidence(report)
+	tr.saveManagedTestRecord(test)
+	tr.broadcastEvent("script_shakeout_failed", test)
+	return &ScriptShakeoutGateError{TestID: id, Report: &report}
+}
+
 func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (*ManagedTest, error) {
 	test, ok := tr.tests[id]
 	if !ok {
 		return nil, fmt.Errorf("test not found: %s", id)
 	}
-	if test.Status != "QUEUED" && test.Status != "PENDING" {
-		return nil, fmt.Errorf("test is %s, must be QUEUED or PENDING to start", test.Status)
+	if test.Status != "QUEUED" && test.Status != "PENDING" && test.Status != "SHAKEOUT_REVIEW" {
+		return nil, fmt.Errorf("test is %s, must be QUEUED, PENDING, or SHAKEOUT_REVIEW to start", test.Status)
 	}
 
 	tr.refreshCapacityAdvisoryLocked(test)
@@ -3546,6 +3690,24 @@ func (tr *TestRunner) StopTest(id string) error {
 	tr.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("test not found: %s", id)
+	}
+	if test.Status == "QUEUED" || test.Status == "PENDING" || test.Status == "SHAKEOUT" || test.Status == "SHAKEOUT_REVIEW" {
+		tr.mu.Lock()
+		if current, ok := tr.tests[id]; ok {
+			now := time.Now().UTC()
+			current.Status = "ABORTED"
+			current.PendingSince = nil
+			current.PendingReason = ""
+			current.QueuePosition = 0
+			current.EndedAt = &now
+			if current.Error == "" {
+				current.Error = "test cancelled before start"
+			}
+			tr.saveManagedTestRecord(current)
+			tr.broadcastEvent("test_aborted", current)
+		}
+		tr.mu.Unlock()
+		return nil
 	}
 	tr.mu.Lock()
 	tr.cancelAllVUserScaleRampsLocked(test)
@@ -5490,6 +5652,31 @@ func (tr *TestRunner) promotePendingTests() {
 			tr.mu.Unlock()
 			return
 		}
+		if pending.ScriptShakeout {
+			pending.Status = "SHAKEOUT"
+			pending.PendingSince = nil
+			pending.PendingReason = ""
+			pending.QueuePosition = 0
+			pending.Error = ""
+			tr.saveManagedTestRecord(pending)
+			tr.broadcastEvent("script_shakeout_started", pending)
+			tr.mu.Unlock()
+
+			report := tr.runScriptShakeoutReport(pending)
+			if !report.Passed {
+				_ = tr.markScriptShakeoutReview(pending.ID, report)
+				tr.recordSystemTestAudit("test.script_shakeout.review", "blocked", pending, map[string]any{"report": report})
+				continue
+			}
+
+			tr.mu.Lock()
+			current, ok := tr.tests[pending.ID]
+			if !ok || current.Status != "SHAKEOUT" {
+				tr.mu.Unlock()
+				continue
+			}
+			pending = current
+		}
 		pending.Status = "INITIALIZING"
 		pending.PendingSince = nil
 		pending.PendingReason = ""
@@ -5564,11 +5751,26 @@ func appendRunError(existing string, prefix string, err error) string {
 	return existing + "; " + message
 }
 
-func (tr *TestRunner) runScriptShakeout(test *ManagedTest) error {
+func (tr *TestRunner) runScriptShakeoutReport(test *ManagedTest) ScriptShakeoutReport {
+	report := ScriptShakeoutReport{
+		Passed:    true,
+		StartedAt: time.Now().UTC(),
+		Results:   make([]ScriptShakeoutResult, 0, len(test.groupSpecs)),
+	}
 	for _, group := range test.groupSpecs {
-		if group.Script == nil {
-			return fmt.Errorf("script shakeout failed for %s: script is missing", group.Name)
+		result := ScriptShakeoutResult{
+			GroupName: group.Name,
+			Status:    "passed",
 		}
+		if group.Script == nil {
+			result.Status = "failed"
+			result.Error = "script is missing"
+			report.Passed = false
+			report.Results = append(report.Results, result)
+			continue
+		}
+		result.ScriptID = group.Script.ID
+		result.ScriptName = group.Script.Name
 
 		shakeoutScript := *group.Script
 		shakeoutScript.Config.RunLogic.Iterations = 1
@@ -5577,11 +5779,38 @@ func (tr *TestRunner) runScriptShakeout(test *ManagedTest) error {
 		err := engine.RunScriptShakeout(ctx, group.Name, &shakeoutScript)
 		cancel()
 		if err != nil {
-			return fmt.Errorf("script shakeout failed for %s: %w", group.Name, err)
+			result.Status = "failed"
+			result.Error = err.Error()
+			report.Passed = false
 		}
+		report.Results = append(report.Results, result)
 	}
 
-	return nil
+	report.EndedAt = time.Now().UTC()
+	if report.Passed {
+		report.Summary = fmt.Sprintf("Script shakeout passed for %d group%s; full load can start.", len(report.Results), pluralSuffix(len(report.Results)))
+	} else {
+		report.Summary = "Script shakeout failed; full load test has not started. Review the evidence and choose Continue or Cancel."
+	}
+	return report
+}
+
+func formatScriptShakeoutEvidence(report ScriptShakeoutReport) string {
+	if report.Passed {
+		return report.Summary
+	}
+	lines := []string{report.Summary}
+	for _, result := range report.Results {
+		if result.Status != "failed" {
+			continue
+		}
+		label := result.GroupName
+		if result.ScriptName != "" {
+			label = fmt.Sprintf("%s (%s)", result.GroupName, result.ScriptName)
+		}
+		lines = append(lines, fmt.Sprintf("- %s: %s", label, result.Error))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts, done chan struct{}) {

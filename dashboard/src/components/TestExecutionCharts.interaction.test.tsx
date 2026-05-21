@@ -219,6 +219,8 @@ describe('TestExecutionCharts context menu', () => {
               p99: 130,
               Checkout_tps: 2,
               Search_tps: 1,
+              Checkout_avgMs: 90,
+              Search_avgMs: 120,
             },
             {
               time: '10:00:01',
@@ -231,6 +233,8 @@ describe('TestExecutionCharts context menu', () => {
               p99: 135,
               Checkout_tps: 4,
               Search_tps: 2,
+              Checkout_avgMs: 95,
+              Search_avgMs: 125,
             },
           ]}
           expandedChart={null}
@@ -256,6 +260,14 @@ describe('TestExecutionCharts context menu', () => {
     expect(tpsChart?.querySelector('path[data-testid="mock-line"][data-key="Search_tps"]')).not.toBeNull()
     expect(tpsChart?.textContent).toContain('Avg')
     expect(tpsChart?.textContent).toContain('Max')
+
+    const responseChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Response Time (ms)'))
+    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-key="avgMs"][data-name="Total"]')).not.toBeNull()
+    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-key="Checkout_avgMs"][data-name="Checkout"]')).not.toBeNull()
+    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-key="Search_avgMs"][data-name="Search"]')).not.toBeNull()
+    expect(responseChart?.textContent).toContain('Total')
+    expect(responseChart?.textContent).toContain('Checkout')
+    expect(responseChart?.textContent).toContain('Search')
 
     const checkoutToggle = Array.from(tpsChart?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ?? [])
       .find(input => input.getAttribute('aria-label') === 'Show Checkout')

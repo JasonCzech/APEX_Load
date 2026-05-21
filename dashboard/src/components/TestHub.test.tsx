@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { act } from 'react'
+import type { ReactNode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -33,9 +34,43 @@ vi.mock('../hooks/useProject', () => ({
   }),
 }))
 
+vi.mock('recharts', () => {
+  const Mock = ({ children }: { children?: ReactNode }) => <g>{children}</g>
+  const MockChart = ({ children }: { children?: ReactNode }) => <svg data-testid="scenario-model-chart">{children}</svg>
+  const MockTooltip = () => <g data-testid="scenario-model-tooltip" />
+  return {
+    Area: ({ dataKey, name }: { dataKey?: string; name?: string }) => <path data-testid="scenario-model-area" data-key={dataKey} data-name={name} />,
+    CartesianGrid: Mock,
+    ComposedChart: MockChart,
+    Line: ({ dataKey, name }: { dataKey?: string; name?: string }) => <path data-testid="scenario-model-line" data-key={dataKey} data-name={name} />,
+    ResponsiveContainer: ({ children }: { children?: ReactNode }) => <div data-testid="scenario-model-responsive">{children}</div>,
+    Tooltip: MockTooltip,
+    XAxis: Mock,
+    YAxis: Mock,
+  }
+})
+
 describe('TestHub', () => {
   let container: HTMLDivElement
   let root: Root
+
+  const clickButton = async (text: string) => {
+    const button = Array.from(container.querySelectorAll('button')).find(item => item.textContent?.includes(text))
+    expect(button).toBeDefined()
+    if (!button) return
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
+  const clickWizardStep = async (text: string) => {
+    const button = Array.from(container.querySelectorAll('.scenario-wizard-step')).find(item => item.textContent?.includes(text))
+    expect(button).toBeDefined()
+    if (!button) return
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
 
   beforeEach(() => {
     container = document.createElement('div')
@@ -66,8 +101,43 @@ describe('TestHub', () => {
           },
           groups: [{ name: 'arrival-rate', vusers: 10, ramp_up: '2m' }],
         },
+      }, {
+        id: 'chaos-resilience-shakeout',
+        name: 'Chaos Resilience With Shakeout Gate',
+        shape_id: 'chaos-resilience',
+        description: 'Staged resilience starter with a pre-run shakeout gate.',
+        scenario: {
+          scenario_mode: 'goal_oriented',
+          duration: '18m',
+          script_shakeout: true,
+          resource_baseline: true,
+          goal_config: {
+            target_average_tps: 15,
+            min_vusers: 5,
+            max_vusers: 75,
+            p95_latency_ms: 1200,
+            max_error_pct: 5,
+          },
+          runtime_settings: {
+            error_handling: {
+              continue_on_error: true,
+              snapshot_on_error: true,
+            },
+          },
+          groups: [{
+            name: 'chaos-steady-state',
+            vusers: 25,
+            ramp_up: '3m',
+            ramp_down: '2m',
+            stages: [
+              { name: 'Baseline', type: 'ramp_up', duration: '3m', target_vusers: 25 },
+              { name: 'Turbulence', type: 'hold', duration: '10m', target_vusers: 25, target_tps: 15 },
+              { name: 'Recovery', type: 'ramp_down', duration: '5m', target_vusers: 5 },
+            ],
+          }],
+        },
       }],
-      count: 1,
+      count: 2,
     })
     apiMock.getLoadModelSupportMatrix.mockResolvedValue({
       support_matrix: [
@@ -81,6 +151,15 @@ describe('TestHub', () => {
           notes: 'Primary execution model.',
         },
         {
+          id: 'open-arrival-rate',
+          name: 'Open Arrival Rate',
+          category: 'throughput',
+          status: 'executed',
+          apexload_shape: 'Open workload runtime using target throughput controls.',
+          fields: ['config.pacing.tps', 'goal_config.target_average_tps'],
+          notes: 'Runtime emits target TPS and throughput miss flags.',
+        },
+        {
           id: 'stepped-ramp',
           name: 'Stepped Ramp',
           category: 'ramp',
@@ -89,8 +168,17 @@ describe('TestHub', () => {
           fields: ['groups[].stages', 'groups[].stages[].target_vusers'],
           notes: 'Dedicated staged segments are available in scenario authoring.',
         },
+        {
+          id: 'chaos-resilience',
+          name: 'Chaos Resilience',
+          category: 'resilience',
+          status: 'executed',
+          apexload_shape: 'Guarded load envelope with pre-run script shakeout and staged recovery.',
+          fields: ['script_shakeout', 'groups[].stages', 'runtime_settings.error_handling.snapshot_on_error'],
+          notes: 'Preserves shakeout evidence before full load.',
+        },
       ],
-      status_counts: { executed: 2 },
+      status_counts: { executed: 4 },
       notes: [],
     })
     apiMock.validateScenarioLoadModel.mockResolvedValue({
@@ -162,28 +250,31 @@ describe('TestHub', () => {
     expect(apiMock.listLoadModelTemplates).toHaveBeenCalled()
     expect(apiMock.getLoadModelSupportMatrix).toHaveBeenCalled()
 
-    const newScenarioButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('New Scenario'))
-    expect(newScenarioButton).toBeDefined()
-    if (!newScenarioButton) return
-
-    await act(async () => {
-      newScenarioButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    await clickWizardStep('Scripts')
 
     const inputs = Array.from(container.querySelectorAll('input'))
     const nameInput = inputs.find(input => input.placeholder === 'Scenario name')
-    const durationInput = inputs.find(input => input.placeholder === 'Duration, e.g. 5m')
     const vusersInput = inputs.find(input => input.getAttribute('type') === 'number')
 
     expect(nameInput).toBeDefined()
-    expect(durationInput).toBeDefined()
     expect(vusersInput).toBeDefined()
-    if (!nameInput || !durationInput || !vusersInput) return
+    if (!nameInput || !vusersInput) return
 
     await act(async () => {
       setInputValue(nameInput, 'Checkout Scenario')
-      setInputValue(durationInput, '5m')
       setInputValue(vusersInput, '25')
+    })
+
+    await clickWizardStep('Run Settings')
+    const durationField = getDurationFieldByLabel(container, 'Duration')
+    const durationInput = durationField?.input
+    const durationUnit = durationField?.select
+    expect(durationInput).toBeDefined()
+    expect(durationUnit).toBeDefined()
+    if (!durationInput || !durationUnit) return
+
+    await act(async () => {
+      setInputValue(durationInput, '5')
     })
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Scenario'))
@@ -287,6 +378,153 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('No runs for this scenario yet.')
   })
 
+  it('clones an existing scenario draft with data pool bindings from the wizard source step', async () => {
+    const onSelectTest = vi.fn()
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      count: 1,
+    })
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [{
+        id: 'scenario-source',
+        name: 'Pinned Checkout',
+        duration: '7m',
+        assignment: { mode: 'auto' },
+        scripts: [{ order: 0, script_id: 'script-1', script_name: 'Checkout Flow', name: 'Checkout', vusers: 20, ramp_up: '1m', initialization: 'at_runtime' }],
+        data_pools: [{ pool_id: 'pool-1', pool_name: 'Customers', alias: 'customers', access_mode: 'consume', selection_strategy: 'unique' }],
+        associated_releases: [],
+        result_count: 0,
+        created_at: '2026-05-12T00:00:00Z',
+        updated_at: '2026-05-12T00:00:00Z',
+        script_count: 1,
+      }],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+
+    await flushPromises()
+
+    await clickButton('Model from Existing Scenario')
+    await clickButton('Pinned Checkout')
+
+    expect(Array.from(container.querySelectorAll('input')).some(input => input.value === 'Pinned Checkout (Copy)')).toBe(true)
+    expect(container.textContent).toContain('20 peak VUsers')
+
+    await clickButton('Save Scenario')
+    await flushPromises()
+
+    expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Pinned Checkout (Copy)',
+      duration: '7m',
+      groups: [expect.objectContaining({
+        name: 'Checkout',
+        script_id: 'script-1',
+        vusers: 20,
+        ramp_up: '1m',
+      })],
+      data_pools: [expect.objectContaining({
+        pool_id: 'pool-1',
+        alias: 'customers',
+        access_mode: 'consume',
+        selection_strategy: 'unique',
+      })],
+    }))
+  })
+
+  it('edits scenarios with multiple script groups without dropping secondary scripts', async () => {
+    const onSelectTest = vi.fn()
+    apiMock.listScripts.mockResolvedValue({
+      scripts: [
+        { id: 'script-1', name: 'Checkout Flow', protocol: 'http', version: '1.0.0', created_at: '2026-05-12T00:00:00Z' },
+        { id: 'script-2', name: 'Payments Flow', protocol: 'http', version: '1.0.0', created_at: '2026-05-12T00:00:00Z' },
+      ],
+      count: 2,
+    })
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [{
+        id: 'scenario-multi',
+        name: 'Checkout Plus Payments',
+        duration: '8m',
+        assignment: { mode: 'auto' },
+        scripts: [
+          { order: 0, script_id: 'script-1', script_name: 'Checkout Flow', name: 'Checkout', vusers: 25, ramp_up: '2m', initialization: 'at_runtime' },
+          { order: 1, script_id: 'script-2', script_name: 'Payments Flow', name: 'Payments', vusers: 5, ramp_up: '1m', initialization: 'at_once' },
+        ],
+        data_pools: [],
+        associated_releases: [],
+        result_count: 0,
+        created_at: '2026-05-12T00:00:00Z',
+        updated_at: '2026-05-12T00:00:00Z',
+        last_run_at: '2026-05-13T00:00:00Z',
+        script_count: 2,
+      }],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+
+    await flushPromises()
+
+    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit')
+    expect(editButton).toBeDefined()
+    if (!editButton) return
+
+    await act(async () => {
+      editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const groupCards = Array.from(container.querySelectorAll('.scenario-script-group-card'))
+    expect(groupCards).toHaveLength(2)
+    expect(groupCards[0].textContent).toContain('Checkout Flow')
+    expect(groupCards[1].textContent).toContain('Payments Flow')
+    const secondGroupInitSelect = Array.from(groupCards[1].querySelectorAll('select')).find(select => select.textContent?.includes('Init/teardown once per group')) as HTMLSelectElement | undefined
+    expect(secondGroupInitSelect?.value).toBe('at_once')
+
+    const secondGroupVUsers = Array.from(groupCards[1].querySelectorAll('input')).find(input => input.type === 'number')
+    expect(secondGroupVUsers).toBeDefined()
+    if (!secondGroupVUsers) return
+
+    await act(async () => {
+      setInputValue(secondGroupVUsers, '15')
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Scenario'))
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.updateScenario).toHaveBeenCalledWith('scenario-multi', expect.objectContaining({
+      name: 'Checkout Plus Payments',
+      duration: '8m',
+      groups: [
+        expect.objectContaining({
+          name: 'Checkout',
+          script_id: 'script-1',
+          vusers: 25,
+          ramp_up: '2m',
+          initialization: 'at_runtime',
+        }),
+        expect.objectContaining({
+          name: 'Payments',
+          script_id: 'script-2',
+          vusers: 15,
+          ramp_up: '1m',
+          initialization: 'at_once',
+        }),
+      ],
+    }))
+  })
+
   it('creates a browser scenario with mobile runtime overrides', async () => {
     const onSelectTest = vi.fn()
     apiMock.listScripts.mockResolvedValue({
@@ -300,32 +538,31 @@ describe('TestHub', () => {
 
     await flushPromises()
 
-    const newScenarioButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('New Scenario'))
-    expect(newScenarioButton).toBeDefined()
-    if (!newScenarioButton) return
+    await clickWizardStep('Scripts')
+    const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
+    expect(nameInput).toBeDefined()
+    if (!nameInput) return
 
     await act(async () => {
-      newScenarioButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      setInputValue(nameInput, 'Mobile Browser Scenario')
     })
+
+    await clickWizardStep('Run Settings')
 
     expect(container.textContent).toContain('Browser Runtime')
 
-    const inputs = Array.from(container.querySelectorAll('input'))
-    const nameInput = inputs.find(input => input.placeholder === 'Scenario name')
     const profileSelect = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.includes('Device profile')) as HTMLSelectElement | undefined
     const orientationSelect = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.includes('Orientation')) as HTMLSelectElement | undefined
     const touchSelect = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.includes('Touch mode')) as HTMLSelectElement | undefined
     const headlessSelect = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.includes('Headless')) as HTMLSelectElement | undefined
 
-    expect(nameInput).toBeDefined()
     expect(profileSelect).toBeDefined()
     expect(orientationSelect).toBeDefined()
     expect(touchSelect).toBeDefined()
     expect(headlessSelect).toBeDefined()
-    if (!nameInput || !profileSelect || !orientationSelect || !touchSelect || !headlessSelect) return
+    if (!profileSelect || !orientationSelect || !touchSelect || !headlessSelect) return
 
     await act(async () => {
-      setInputValue(nameInput, 'Mobile Browser Scenario')
       setSelectValue(profileSelect, 'iphone_se')
       setSelectValue(orientationSelect, 'portrait')
       setSelectValue(touchSelect, 'true')
@@ -353,7 +590,7 @@ describe('TestHub', () => {
         },
       },
     }))
-    expect(apiMock.estimateTest).toHaveBeenLastCalledWith(expect.objectContaining({
+    expect(apiMock.estimateTest).toHaveBeenCalledWith(expect.objectContaining({
       runtime_settings: {
         browser: expect.objectContaining({
           device_profile: 'iphone_se',
@@ -411,15 +648,9 @@ describe('TestHub', () => {
 
     await flushPromises()
 
-    const newScenarioButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('New Scenario'))
-    expect(newScenarioButton).toBeDefined()
-    if (!newScenarioButton) return
+    await clickWizardStep('Shape / Source')
 
-    await act(async () => {
-      newScenarioButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(container.textContent).toContain('Workload Shape Templates')
+    expect(container.textContent).toContain('Choose Workload Shape')
     const templateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open API Arrival Rate'))
     expect(templateButton).toBeDefined()
     if (!templateButton) return
@@ -428,13 +659,19 @@ describe('TestHub', () => {
       templateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const inputs = Array.from(container.querySelectorAll('input'))
-    const durationInput = inputs.find(input => input.placeholder === 'Duration, e.g. 5m')
-    const rampUpInput = inputs.find(input => input.placeholder === 'Ramp up, e.g. 2m')
+    let inputs = Array.from(container.querySelectorAll('input'))
+    const rampUpField = getDurationFieldByLabel(container, 'Ramp Up')
+
+    expect(rampUpField?.input.value).toBe('2')
+    expect(rampUpField?.select.value).toBe('m')
+
+    await clickWizardStep('Run Settings')
+    inputs = Array.from(container.querySelectorAll('input'))
+    const durationField = getDurationFieldByLabel(container, 'Duration')
     const modeSelect = Array.from(container.querySelectorAll('select')).find(select => select.value === 'goal_oriented') as HTMLSelectElement | undefined
 
-    expect(durationInput?.value).toBe('10m')
-    expect(rampUpInput?.value).toBe('2m')
+    expect(durationField?.input.value).toBe('10')
+    expect(durationField?.select.value).toBe('m')
     expect(modeSelect?.value).toBe('goal_oriented')
     expect(container.textContent).toContain('Goal Controller')
 
@@ -467,7 +704,7 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Auto-assignment will use configured generators.')
   })
 
-  it('renders the workload shape support matrix in scenario authoring', async () => {
+  it('applies the chaos resilience template with shakeout and evidence settings', async () => {
     const onSelectTest = vi.fn()
 
     await act(async () => {
@@ -476,21 +713,163 @@ describe('TestHub', () => {
 
     await flushPromises()
 
-    const newScenarioButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('New Scenario'))
-    expect(newScenarioButton).toBeDefined()
-    if (!newScenarioButton) return
+    await clickWizardStep('Shape / Source')
+    await clickButton('Chaos Resilience With Shakeout Gate')
+
+    const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
+    expect(nameInput).toBeDefined()
+    if (!nameInput) return
 
     await act(async () => {
-      newScenarioButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      setInputValue(nameInput, 'Chaos Checkout Scenario')
     })
 
-    expect(container.textContent).toContain('Workload Shape Support')
+    await clickWizardStep('Run Settings')
+
+    expect(getDurationFieldByLabel(container, 'Duration')?.input.value).toBe('18')
+    expect(getDurationFieldByLabel(container, 'Duration')?.select.value).toBe('m')
+    expect(container.textContent).toContain('Pre-Run Assurance')
+    expect(container.textContent).toContain('Script shakeout gate')
+    expect(container.textContent).toContain('Snapshot on error')
+    expect(container.textContent).toContain('Goal Controller')
+
+    await clickButton('Save Scenario')
+    await flushPromises()
+
+    expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Chaos Checkout Scenario',
+      duration: '18m',
+      scenario_mode: 'goal_oriented',
+      script_shakeout: true,
+      resource_baseline: true,
+      goal_config: expect.objectContaining({
+        target_average_tps: 15,
+        max_error_pct: 5,
+      }),
+      runtime_settings: {
+        error_handling: {
+          continue_on_error: true,
+          snapshot_on_error: true,
+        },
+      },
+      groups: [expect.objectContaining({
+        name: 'chaos-steady-state',
+        script_id: 'script-1',
+        vusers: 25,
+        ramp_up: '3m',
+        ramp_down: '2m',
+        stages: [
+          { name: 'Baseline', type: 'ramp_up', duration: '3m', target_vusers: 25 },
+          { name: 'Turbulence', type: 'hold', duration: '10m', target_vusers: 25, target_tps: 15 },
+          { name: 'Recovery', type: 'ramp_down', duration: '5m', target_vusers: 5 },
+        ],
+      })],
+    }))
+  })
+
+  it('renders the unified workload shape catalog in scenario authoring', async () => {
+    const onSelectTest = vi.fn()
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+
+    await flushPromises()
+
+    await clickWizardStep('Shape / Source')
+
+    expect(container.textContent).toContain('Choose Workload Shape')
     expect(container.textContent).toContain('Closed VUser')
     expect(container.textContent).toContain('Executed')
     expect(container.textContent).toContain('groups[].vusers')
     expect(container.textContent).toContain('Stepped Ramp')
     expect(container.textContent).toContain('Executed')
     expect(container.textContent).toContain('groups[].stages[].target_vusers')
+    expect(container.textContent).toContain('Chaos Resilience')
+    expect(container.textContent).toContain('script_shakeout')
+    expect(container.querySelectorAll('.scenario-shape-visual')).toHaveLength(4)
+    expect(container.querySelector('[aria-label="Closed VUser workload shape"]')).toBeTruthy()
+  })
+
+  it('shows scenario and script libraries only on the relevant wizard steps', async () => {
+    const onSelectTest = vi.fn()
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Scenario Builder Wizard')
+    expect(container.textContent).not.toContain('+ New Scenario')
+    expect(container.textContent).not.toContain('Model Preview')
+    expect(container.textContent).toContain('Scenario Library')
+    expect(container.textContent).not.toContain('Existing Scripts Library')
+
+    await clickWizardStep('Shape / Source')
+
+    expect(container.textContent).toContain('Model Preview')
+    expect(container.textContent).toContain('Scenario Library')
+    expect(container.textContent).not.toContain('Existing Scripts Library')
+
+    await clickWizardStep('Scripts')
+
+    expect(container.textContent).not.toContain('Scenario Library')
+    expect(container.textContent).toContain('Existing Scripts Library')
+    expect(container.textContent).toContain('Checkout Flow')
+
+    await clickWizardStep('Run Settings')
+
+    expect(container.textContent).not.toContain('Scenario Library')
+    expect(container.textContent).not.toContain('Existing Scripts Library')
+
+    await clickWizardStep('Data')
+
+    expect(container.textContent).not.toContain('Scenario Library')
+    expect(container.textContent).not.toContain('Existing Scripts Library')
+
+    await clickWizardStep('Review')
+
+    expect(container.textContent).not.toContain('Scenario Library')
+    expect(container.textContent).not.toContain('Existing Scripts Library')
+  })
+
+  it('saves from review and opens a new test run for the saved scenario', async () => {
+    const onSelectTest = vi.fn()
+    const onCreateTestFromScenario = vi.fn()
+    apiMock.createScenario.mockResolvedValueOnce({ id: 'scenario-new-run' })
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} onCreateTestFromScenario={onCreateTestFromScenario} />)
+    })
+
+    await flushPromises()
+
+    await clickWizardStep('Scripts')
+
+    const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
+    expect(nameInput).toBeDefined()
+    if (!nameInput) return
+
+    await act(async () => {
+      setInputValue(nameInput, 'Review Handoff Scenario')
+    })
+
+    await clickWizardStep('Review')
+
+    const saveAndCreateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save & Create Test Run'))
+    expect(saveAndCreateButton).toBeDefined()
+    if (!saveAndCreateButton) return
+
+    await act(async () => {
+      saveAndCreateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Review Handoff Scenario',
+    }))
+    expect(onCreateTestFromScenario).toHaveBeenCalledWith('scenario-new-run')
   })
 
   it('creates a scenario with explicit staged load segments', async () => {
@@ -502,13 +881,7 @@ describe('TestHub', () => {
 
     await flushPromises()
 
-    const newScenarioButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('New Scenario'))
-    expect(newScenarioButton).toBeDefined()
-    if (!newScenarioButton) return
-
-    await act(async () => {
-      newScenarioButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    await clickWizardStep('Scripts')
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
     expect(nameInput).toBeDefined()
@@ -517,6 +890,8 @@ describe('TestHub', () => {
     await act(async () => {
       setInputValue(nameInput, 'Staged Checkout Scenario')
     })
+
+    await clickWizardStep('Run Settings')
 
     const enableStagesButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Enable Stages'))
     expect(enableStagesButton).toBeDefined()
@@ -543,12 +918,58 @@ describe('TestHub', () => {
         script_id: 'script-1',
         vusers: 10,
         stages: [
-          { name: 'Warmup', type: 'ramp_up', duration: '2m', target_vusers: 10 },
-          { name: 'Steady', type: 'hold', duration: '1m', target_vusers: 10 },
-          { name: 'Cooldown', type: 'ramp_down', duration: '1m', target_vusers: 1 },
+          { name: 'Warmup', type: 'ramp_up', duration: '24s', target_vusers: 10 },
+          { name: 'Steady', type: 'hold', duration: '24s', target_vusers: 10 },
+          { name: 'Cooldown', type: 'ramp_down', duration: '12s', target_vusers: 1 },
         ],
       })],
     }))
+  })
+
+  it('blocks saving when stair-step stages exceed scenario duration', async () => {
+    const onSelectTest = vi.fn()
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+
+    await flushPromises()
+
+    await clickWizardStep('Scripts')
+
+    const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
+    expect(nameInput).toBeDefined()
+    if (!nameInput) return
+
+    await act(async () => {
+      setInputValue(nameInput, 'Blocked Stage Scenario')
+    })
+
+    await clickWizardStep('Run Settings')
+    await clickButton('Enable Stages')
+
+    let durationField = getDurationFieldByLabel(container, 'Duration')
+    expect(durationField).not.toBeNull()
+    if (!durationField) return
+
+    const durationInput = durationField.input
+    await act(async () => {
+      setInputValue(durationInput, '30')
+    })
+    await flushPromises()
+
+    durationField = getDurationFieldByLabel(container, 'Duration')
+    expect(durationField).not.toBeNull()
+    if (!durationField) return
+
+    const durationUnitSelect = durationField.select
+    await act(async () => {
+      setSelectValue(durationUnitSelect, 's')
+    })
+
+    expect(container.textContent).toContain('longer than')
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Scenario')) as HTMLButtonElement | undefined
+    expect(saveButton?.disabled).toBe(true)
   })
 
   it('persists once-only init and teardown scope from the scenario form', async () => {
@@ -560,13 +981,7 @@ describe('TestHub', () => {
 
     await flushPromises()
 
-    const newScenarioButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('New Scenario'))
-    expect(newScenarioButton).toBeDefined()
-    if (!newScenarioButton) return
-
-    await act(async () => {
-      newScenarioButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    await clickWizardStep('Scripts')
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
     const initializationSelect = Array.from(container.querySelectorAll('select')).find(select => select.textContent?.includes('Init/teardown once per group')) as HTMLSelectElement | undefined
@@ -579,8 +994,7 @@ describe('TestHub', () => {
       setSelectValue(initializationSelect, 'at_once')
     })
 
-    expect(container.textContent).toContain('Once per group')
-    expect(container.textContent).toContain('Script init and teardown run once for this group')
+    expect(initializationSelect.value).toBe('at_once')
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Scenario'))
     expect(saveButton).toBeDefined()
@@ -664,4 +1078,15 @@ function setSelectValue(select: HTMLSelectElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
   setter?.call(select, value)
   select.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+function getDurationFieldByLabel(container: HTMLElement, label: string) {
+  const field = Array.from(container.querySelectorAll('.duration-field')).find(item => (
+    item.querySelector('.duration-field-label')?.textContent === label
+  ))
+  if (!field) return null
+  return {
+    input: field.querySelector('input') as HTMLInputElement,
+    select: field.querySelector('select') as HTMLSelectElement,
+  }
 }

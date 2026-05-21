@@ -1040,6 +1040,45 @@
   color: var(--text-muted);
 }
 
+.scenario-alert-evidence {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.scenario-alert-evidence div,
+.scenario-alert-evidence-text {
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.scenario-alert-evidence strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.scenario-alert-evidence span {
+  display: block;
+  color: var(--text-muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.scenario-alert-evidence-text {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
 .scenario-alert-actions {
   display: flex;
   gap: 10px;
@@ -2367,13 +2406,16 @@
   background: var(--subtle-fill);
 }
 
-.control-checkbox,
-.vuser-ramp-duration {
+.control-checkbox {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   color: var(--text-secondary);
   font-size: 13px;
+}
+
+.vuser-ramp-duration {
+  width: 150px;
 }
 
 .control-checkbox input {
@@ -2382,20 +2424,15 @@
   accent-color: var(--accent);
 }
 
-.vuser-ramp-duration .duration-input {
-  width: 90px;
-}
-
-.vuser-ramp-duration .duration-input:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 .duration-control-row {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.live-duration-field {
+  width: min(100%, 390px);
 }
 
 .duration-input {

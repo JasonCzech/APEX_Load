@@ -72,10 +72,12 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     controlFeedback,
     showControlFeedback,
     startCapacityConflict,
+    startShakeoutConflict,
     startFeedback,
     onDismissStartConflict,
     onStart,
     onConfirmStartAnyway,
+    onContinueAfterShakeoutFailure,
     onStop,
     onAbort,
     onPause,
@@ -233,9 +235,12 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       <TestExecutionScenarioPreview
         test={test}
         startCapacityConflict={startCapacityConflict}
+        startShakeoutConflict={startShakeoutConflict}
         startFeedback={startFeedback}
         onDismissStartConflict={onDismissStartConflict}
         onConfirmStartAnyway={onConfirmStartAnyway}
+        onContinueAfterShakeoutFailure={onContinueAfterShakeoutFailure}
+        onCancelShakeoutRun={onAbort}
         queuedScenarioPreview={queuedScenarioPreview}
         queuedScenarioRows={queuedScenarioRows}
         scriptDetailsLoading={scriptDetailsLoading}

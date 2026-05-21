@@ -5,6 +5,7 @@ import { useProject } from '../hooks/useProject'
 import AuthoringSessionsPanel from './AuthoringSessionsPanel'
 import ScriptsAuthoringShell from './ScriptsAuthoringShell'
 import ScriptsLibraryTable from './ScriptsLibraryTable'
+import { type ScriptDefinition } from '../types/scripts'
 import { useScriptsLibraryModel } from './useScriptsLibraryModel'
 import { type ImportedSaveResult, type ScriptsAuthoringSubView, useScriptsAuthoringState } from './useScriptsAuthoringState'
 
@@ -88,7 +89,25 @@ function isEffectiveOperationAllowed(resources: DashboardAuthEffectiveAccessReso
   return true
 }
 
-export default function ScriptsPage({ initialMode = 'list', initialEditId, onSelectScenario }: Props) {
+function cloneScriptDraft(source: ScriptDefinition, fallbackName: string, projectId?: string): ScriptDefinition {
+  const cloned = JSON.parse(JSON.stringify(source)) as ScriptDefinition
+  delete cloned.id
+  delete cloned.created_at
+  delete cloned.updated_at
+  delete cloned.folder_id
+  cloned.name = `${(source.name || fallbackName || 'Script').trim()} (Copy)`
+  cloned.version = cloned.version || '1.0.0'
+  cloned.config = cloned.config || { base_url: '' }
+  cloned.actions = cloned.actions || []
+  if (projectId) {
+    cloned.project_id = projectId
+  } else {
+    delete cloned.project_id
+  }
+  return cloned
+}
+
+export default function ScriptsPage({ initialMode = 'create-options', initialEditId, onSelectScenario }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [scripts, setScripts] = useState<StoredScript[]>([])
@@ -229,6 +248,20 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     }
   }, [handleDraftEdit])
 
+  const handleStartExistingScript = useCallback(async (script: StoredScript) => {
+    let source = script.script
+    if (!source) {
+      try {
+        const response = await api.getScript(script.id)
+        source = response.script ?? undefined
+      } catch {
+        source = undefined
+      }
+    }
+    if (!source) return
+    handleDraftEdit(cloneScriptDraft(source, script.name, activeProject?.id))
+  }, [activeProject?.id, api, handleDraftEdit])
+
   const handleApproveAuthoringSession = useCallback(async (session: AuthoringSession) => {
     try {
       const res = await api.approveAuthoringSession(session.id)
@@ -271,21 +304,23 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
       authoringState={authoringState}
       projectId={activeProject?.id}
       activeProject={activeProject}
+      scripts={scripts}
       createOptionActions={createOptionActions}
       onSaved={handleSaved}
       onOpenLibrary={openLibrary}
       onOpenCreateOptions={openCreateOptions}
       onImported={handleImported}
       onEditDraft={handleDraftEdit}
+      onStartExistingScript={handleStartExistingScript}
       canManageScripts={canManageScripts}
     >
       <div className="page">
         <div className="page-header">
           <div>
-            <h2>Scripts</h2>
+            <h2>Script Library</h2>
             <p className="page-subtitle">Reusable scripts. Release associations are inferred from actual test usage.</p>
           </div>
-          {canManageScripts && <button className="btn btn-primary" onClick={openCreateOptions}>+ Create Script</button>}
+          {canManageScripts && <button className="btn btn-primary" onClick={openCreateOptions}>Create Script</button>}
         </div>
 
         <div className="page-section">

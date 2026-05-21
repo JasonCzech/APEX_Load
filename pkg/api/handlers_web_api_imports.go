@@ -9,6 +9,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/devweb"
 	"github.com/jasonczech/apexload/pkg/convert/openapi"
+	"github.com/jasonczech/apexload/pkg/convert/postman"
 	"github.com/jasonczech/apexload/pkg/convert/wsdl"
 )
 
@@ -24,6 +25,13 @@ type wsdlImportRequest struct {
 	ProjectID string
 	Name      string
 	Opts      wsdl.ConvertOptions
+}
+
+type postmanImportRequest struct {
+	Data      []byte
+	ProjectID string
+	Name      string
+	Opts      postman.ConvertOptions
 }
 
 func (s *Server) handleDevWebSupportMatrix(w http.ResponseWriter, r *http.Request) {
@@ -93,6 +101,37 @@ func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
 		Stats:          result.Stats,
 		Summary:        result.Summary,
 		ReviewSections: buildWSDLReviewSections(result),
+	}))
+}
+
+func (s *Server) handleImportPostman(w http.ResponseWriter, r *http.Request) {
+	importReq, ok := readPostmanImportRequest(w, r)
+	if !ok {
+		return
+	}
+	result, err := postman.Convert(postman.ImportRequest{
+		Name:      importReq.Name,
+		ProjectID: importReq.ProjectID,
+		Content:   string(importReq.Data),
+		Options:   importReq.Opts,
+	})
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
+		return
+	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
+	if issues := validateScript(result.Script); len(issues) > 0 {
+		result.Warnings = append(result.Warnings, issues...)
+	}
+	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+		Result:         result,
+		Script:         result.Script,
+		Warnings:       result.Warnings,
+		Stats:          result.Stats,
+		Summary:        result.Summary,
+		ReviewSections: buildPostmanReviewSections(result),
 	}))
 }
 
@@ -222,6 +261,76 @@ func readWSDLImportRequest(w http.ResponseWriter, r *http.Request) (*wsdlImportR
 	}, true
 }
 
+func readPostmanImportRequest(w http.ResponseWriter, r *http.Request) (*postmanImportRequest, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, 20<<20)
+	contentType := r.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/json") {
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+			return nil, false
+		}
+		var req postman.ImportRequest
+		if err := json.Unmarshal(data, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return nil, false
+		}
+		if strings.TrimSpace(req.Content) == "" && strings.Contains(string(data), `"item"`) {
+			return &postmanImportRequest{
+				Data:      data,
+				ProjectID: r.URL.Query().Get("project_id"),
+				Name:      r.URL.Query().Get("name"),
+				Opts: postman.ConvertOptions{
+					BaseURL:    r.URL.Query().Get("base_url"),
+					ScriptName: r.URL.Query().Get("script_name"),
+				},
+			}, true
+		}
+		return &postmanImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
+	}
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		if err := r.ParseMultipartForm(20 << 20); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
+			return nil, false
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "file field is required")
+			return nil, false
+		}
+		defer file.Close()
+		data, err := io.ReadAll(file)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
+			return nil, false
+		}
+		return &postmanImportRequest{
+			Data:      data,
+			ProjectID: r.FormValue("project_id"),
+			Name:      strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename)),
+			Opts: postman.ConvertOptions{
+				BaseURL:    r.FormValue("base_url"),
+				ScriptName: r.FormValue("script_name"),
+			},
+		}, true
+	}
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+		return nil, false
+	}
+	filename := r.URL.Query().Get("filename")
+	return &postmanImportRequest{
+		Data:      data,
+		ProjectID: r.URL.Query().Get("project_id"),
+		Name:      strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
+		Opts: postman.ConvertOptions{
+			BaseURL:    r.URL.Query().Get("base_url"),
+			ScriptName: r.URL.Query().Get("script_name"),
+		},
+	}, true
+}
+
 func buildOpenAPIReviewSections(result *openapi.ConvertResult) []scriptImportReviewSection {
 	if result == nil {
 		return nil
@@ -283,6 +392,40 @@ func buildWSDLReviewSections(result *wsdl.ConvertResult) []scriptImportReviewSec
 			Severity: "info",
 			Summary:  "Target namespace preserved from the WSDL.",
 			Items:    []string{result.Summary.TargetNamespace},
+		})
+	}
+	return sections
+}
+
+func buildPostmanReviewSections(result *postman.ConvertResult) []scriptImportReviewSection {
+	if result == nil {
+		return nil
+	}
+	sections := []scriptImportReviewSection{
+		{
+			Key:      "postman_requests",
+			Title:    "Postman Requests",
+			Severity: "info",
+			Summary:  "Converted Postman requests into HTTP actions for replay review.",
+			Items:    result.Summary.Requests,
+		},
+	}
+	if len(result.Summary.Variables) > 0 {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "postman_variables",
+			Title:    "Collection Variables",
+			Severity: "info",
+			Summary:  "Collection variables were converted into APEX script parameters.",
+			Items:    result.Summary.Variables,
+		})
+	}
+	if len(result.Summary.AuthSchemes) > 0 {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "postman_auth",
+			Title:    "Authentication Review",
+			Severity: "warning",
+			Summary:  "Postman auth settings were detected; review generated placeholders before replay.",
+			Items:    result.Summary.AuthSchemes,
 		})
 	}
 	return sections

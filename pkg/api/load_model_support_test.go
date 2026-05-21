@@ -16,6 +16,7 @@ func TestLoadModelSupportMatrixReconciledToExecutedShapes(t *testing.T) {
 		"soak":              false,
 		"stress":            false,
 		"goal-based":        false,
+		"chaos-resilience":  false,
 		"mixed-protocol":    false,
 	}
 	for _, entry := range matrix {

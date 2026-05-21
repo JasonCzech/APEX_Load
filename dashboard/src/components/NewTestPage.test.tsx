@@ -105,6 +105,89 @@ describe('NewTestPage', () => {
     vi.clearAllMocks()
   })
 
+  it('links from the scenario selection section to the scenario builder', async () => {
+    const openScenarioBuilder = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+          onOpenScenarioBuilder={openScenarioBuilder}
+        />,
+      )
+    })
+
+    await flushPromises()
+
+    const builderLink = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Open Scenario Builder')
+    expect(builderLink).toBeTruthy()
+    expect(builderLink?.className).toContain('new-test-builder-button')
+
+    await act(async () => {
+      builderLink?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(openScenarioBuilder).toHaveBeenCalledTimes(1)
+  })
+
+  it('defaults to the provided scenario when opening from the scenario builder', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Checkout Smoke',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          scripts: [
+            { order: 1, name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Script', protocol: 'http', vusers: 10 },
+          ],
+          script_count: 1,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        },
+        {
+          id: 'scenario-2',
+          name: 'Builder Created Scenario',
+          duration: '20m',
+          scenario_mode: 'goal_oriented',
+          scripts: [
+            { order: 1, name: 'Orders', script_id: 'script-2', script_name: 'Order API', protocol: 'http', vusers: 25 },
+          ],
+          script_count: 1,
+          created_at: '2026-05-13T20:00:00Z',
+          updated_at: '2026-05-13T20:00:00Z',
+          associated_releases: [],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          initialScenarioId="scenario-2"
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Builder Created Scenario')
+    expect(container.textContent).toContain('Goal Oriented')
+    expect(container.textContent).toContain('Order API')
+    const selectedCard = container.querySelector('.new-test-scenario-card.selected')
+    expect(selectedCard?.textContent).toContain('Builder Created Scenario')
+  })
+
   it('renders duplicate release names without duplicate key warnings', async () => {
     await act(async () => {
       root.render(

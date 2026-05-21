@@ -97,6 +97,7 @@ function createActions(overrides: Partial<ScriptsCreateOptionActions> = {}): Scr
     openDevWebImport: vi.fn(),
     openHARImport: vi.fn(),
     openOpenAPIImport: vi.fn(),
+    openPostmanImport: vi.fn(),
     openWSDLImport: vi.fn(),
     ...overrides,
   }
@@ -149,35 +150,144 @@ describe('ScriptsAuthoringShell', () => {
   it('renders create options and delegates launcher actions', async () => {
     const actions = createActions()
     const onOpenLibrary = vi.fn()
+    const onStartExistingScript = vi.fn()
 
     await act(async () => {
       root.render(renderShell({
         authoringState: createState('create-options'),
         createOptionActions: actions,
         onOpenLibrary,
+        onStartExistingScript,
+        scripts: [{
+          id: 'script-1',
+          name: 'Checkout Model',
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-17T00:00:00Z',
+          scenario_count: 2,
+        }],
       }))
     })
 
     expect(container.textContent).toContain('Create Script')
-    expect(container.textContent).toContain('Import LoadRunner')
+    expect(container.textContent).toContain('Model From Existing Script')
+    expect(container.textContent).toContain('Checkout Model')
+
+    await clickButton('Checkout Model')
+    expect(onStartExistingScript).toHaveBeenCalledWith(expect.objectContaining({ id: 'script-1' }))
+
     await clickButton('Start From Source')
     expect(container.textContent).toContain('OpenAPI / Swagger')
+    expect(container.textContent).toContain('Postman Collection')
     expect(container.textContent).toContain('WSDL / SOAP')
 
     await clickButton('OpenAPI / Swagger')
     expect(actions.openOpenAPIImport).toHaveBeenCalled()
 
+    await clickButton('Postman Collection')
+    expect(actions.openPostmanImport).toHaveBeenCalled()
+
     await clickButton('Import Existing')
     expect(container.textContent).toContain('Import DevWeb')
     expect(container.textContent).toContain('Import HAR')
     expect(container.textContent).toContain('Import OpenAPI')
+    expect(container.textContent).toContain('Import Postman')
     expect(container.textContent).toContain('Import WSDL')
 
     await clickButton('Import LoadRunner')
     expect(actions.openLoadRunnerImport).toHaveBeenCalled()
 
-    await clickButton('Back to Library')
+    await clickButton('Script Library')
     expect(onOpenLibrary).toHaveBeenCalled()
+  })
+
+  it('renders model-from-existing scripts as a sortable and filterable table', async () => {
+    const actions = createActions()
+
+    await act(async () => {
+      root.render(renderShell({
+        authoringState: createState('create-options'),
+        createOptionActions: actions,
+        onStartExistingScript: vi.fn(),
+        scripts: [
+          {
+            id: 'script-checkout',
+            name: 'Checkout Model',
+            protocol: 'http',
+            version: '1.0.0',
+            created_at: '2026-05-17T00:00:00Z',
+            scenario_count: 2,
+            associated_releases: [{ id: 'release-1', name: 'PI30', application_id: 'app-1' }],
+            authoring_health: { score: 96, status: 'ready', inputs: [] },
+          },
+          {
+            id: 'script-billing',
+            name: 'Billing Flow',
+            protocol: 'soap',
+            version: '2.1.0',
+            created_at: '2026-05-18T00:00:00Z',
+            scenario_count: 5,
+            associated_releases: [{ id: 'release-2', name: 'PI31', application_id: 'app-1' }],
+            authoring_health: { score: 62, status: 'needs_review', inputs: [] },
+          },
+          {
+            id: 'script-browser',
+            name: 'Browser Journey',
+            protocol: 'web',
+            version: '1.0.0',
+            created_at: '2026-05-19T00:00:00Z',
+            scenario_count: 0,
+            authoring_health: { score: 40, status: 'blocked', inputs: [] },
+          },
+        ],
+      }))
+    })
+
+    expect(container.querySelector('.script-create-existing-table')).not.toBeNull()
+    expect(container.textContent).toContain('3 of 3 scripts')
+    expect(container.textContent).toContain('PI30')
+    expect(container.textContent).toContain('PI31')
+
+    const searchInput = container.querySelector('input[aria-label="Search existing scripts"]') as HTMLInputElement | null
+    expect(searchInput).not.toBeNull()
+    if (!searchInput) return
+
+    await act(async () => {
+      setInputValue(searchInput, 'billing')
+    })
+
+    expect(container.textContent).toContain('1 of 3 scripts')
+    expect(container.textContent).toContain('Billing Flow')
+    expect(container.textContent).not.toContain('Checkout Model')
+
+    await clickButton('Reset')
+
+    const protocolSelect = container.querySelector('select[aria-label="Filter existing scripts by protocol"]') as HTMLSelectElement | null
+    expect(protocolSelect).not.toBeNull()
+    if (!protocolSelect) return
+
+    await act(async () => {
+      setSelectValue(protocolSelect, 'web')
+    })
+
+    expect(container.textContent).toContain('1 of 3 scripts')
+    expect(container.textContent).toContain('Browser Journey')
+    expect(container.textContent).not.toContain('Billing Flow')
+
+    await act(async () => {
+      setSelectValue(protocolSelect, 'all')
+    })
+
+    const usageSort = Array.from(container.querySelectorAll('th button')).find(button => button.textContent?.includes('Usage'))
+    expect(usageSort).toBeDefined()
+    if (!usageSort) return
+
+    await act(async () => {
+      usageSort.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const firstBodyRow = container.querySelector('.script-create-existing-table tbody tr')
+    expect(firstBodyRow?.textContent).toContain('Billing Flow')
   })
 
   it('renders backend starter templates and delegates template drafts', async () => {
@@ -224,6 +334,7 @@ describe('ScriptsAuthoringShell', () => {
     })
 
     await flushPromises()
+    await clickButton('Use Template')
 
     expect(apiMock.listAuthoringTemplates).toHaveBeenCalledTimes(1)
     expect(apiMock.listAuthoringComponents).toHaveBeenCalledTimes(1)
@@ -292,20 +403,24 @@ describe('ScriptsAuthoringShell', () => {
   function renderShell({
     authoringState,
     createOptionActions = createActions(),
+    scripts = [],
     onSaved = vi.fn(),
     onOpenLibrary = vi.fn(),
     onOpenCreateOptions = vi.fn(),
     onImported = vi.fn(),
     onEditDraft = vi.fn(),
+    onStartExistingScript = vi.fn(),
     children = <div />,
   }: {
     authoringState: AuthoringState
     createOptionActions?: ScriptsCreateOptionActions
+    scripts?: StoredScript[]
     onSaved?: (script: StoredScript) => void
     onOpenLibrary?: () => void
     onOpenCreateOptions?: () => void
     onImported?: (result: { scripts: StoredScript[]; scenario?: { name?: string } | null }) => void
     onEditDraft?: (script: ScriptDefinition) => void
+    onStartExistingScript?: (script: StoredScript) => void
     children?: ReactNode
   }) {
     return (
@@ -313,12 +428,14 @@ describe('ScriptsAuthoringShell', () => {
         authoringState={authoringState}
         projectId="project-1"
         activeProject={{ id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }}
+        scripts={scripts}
         createOptionActions={createOptionActions}
         onSaved={onSaved}
         onOpenLibrary={onOpenLibrary}
         onOpenCreateOptions={onOpenCreateOptions}
         onImported={onImported}
         onEditDraft={onEditDraft}
+        onStartExistingScript={onStartExistingScript}
       >
         {children}
       </ScriptsAuthoringShell>
@@ -334,6 +451,18 @@ describe('ScriptsAuthoringShell', () => {
     await act(async () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+  }
+
+  function setInputValue(input: HTMLInputElement, value: string) {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  function setSelectValue(select: HTMLSelectElement, value: string) {
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+    setter?.call(select, value)
+    select.dispatchEvent(new Event('change', { bubbles: true }))
   }
 
   async function flushPromises() {

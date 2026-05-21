@@ -42,12 +42,6 @@ type pausableExecutionBackend interface {
 type localExecutionBackend struct{}
 
 func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
-	if test.ScriptShakeout {
-		if err := tr.runScriptShakeout(test); err != nil {
-			tr.failTestBeforeRun(test, err.Error())
-			return
-		}
-	}
 	artifacts, err := newRunArtifacts(tr, test, tr.saveRunArchiveRecord)
 	if err != nil {
 		tr.failTestBeforeRun(test, fmt.Sprintf("initialize archive writer: %v", err))

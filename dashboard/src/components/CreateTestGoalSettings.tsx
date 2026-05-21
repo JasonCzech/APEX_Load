@@ -1,4 +1,5 @@
 import { GoalConfig } from '../types'
+import DurationField from './DurationField'
 
 interface Props {
   goalConfig: GoalConfig
@@ -102,15 +103,13 @@ export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange 
             placeholder="e.g. 300"
           />
         </label>
-        <label>
-          <span>SLA Breach Window</span>
-          <input
-            type="text"
-            value={goalConfig.sla_breach_window || ''}
-            onChange={(event) => onGoalConfigChange('sla_breach_window', event.target.value)}
-            placeholder="e.g. 30s"
-          />
-        </label>
+        <DurationField
+          label="SLA Breach Window"
+          value={goalConfig.sla_breach_window || ''}
+          allowEmpty
+          compact
+          onChange={(value) => onGoalConfigChange('sla_breach_window', value)}
+        />
         <label className="checkbox-label goal-checkbox-label">
           <input
             type="checkbox"

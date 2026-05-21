@@ -42,7 +42,7 @@ func TestHandleWebAPIExecutionSupportMatrix(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
 	}
-	for _, id := range []string{"http-web", "openapi-authoring", "soap-wsdl", "java-over-http", "websocket", "grpc", "jms-solace", "browser-canaries", "devweb-import"} {
+	for _, id := range []string{"http-web", "openapi-authoring", "postman-authoring", "soap-wsdl", "java-over-http", "websocket", "grpc", "jms-solace", "browser-canaries", "devweb-import"} {
 		if !webAPIMatrixContains(result.SupportMatrix, id) {
 			t.Fatalf("support matrix missing %s", id)
 		}
@@ -192,6 +192,87 @@ func TestHandleImportOpenAPIRawJSONDocument(t *testing.T) {
 	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Name != "listOrders" {
 		t.Fatalf("actions = %+v, want listOrders", result.Script.Actions)
 	}
+}
+
+func TestHandleImportPostman(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name":       "Orders Postman",
+		"project_id": "proj-postman",
+		"content": `{
+  "info": {"name": "Orders Collection", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "variable": [{"key": "baseUrl", "value": "https://api.example.test"}, {"key": "order_id", "value": "42"}],
+  "item": [{
+    "name": "Orders",
+    "item": [{
+      "name": "Get Order",
+      "request": {
+        "method": "GET",
+        "header": [{"key": "X-Request-ID", "value": "{{request_id}}"}],
+        "url": "{{baseUrl}}/orders/{{order_id}}"
+      }
+    }]
+  }]
+}`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/postman", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Script struct {
+			ProjectID  string `json:"project_id"`
+			Protocol   string `json:"protocol"`
+			Parameters []struct {
+				Name string `json:"name"`
+			} `json:"parameters"`
+			Config struct {
+				BaseURL string `json:"base_url"`
+			} `json:"config"`
+			Actions []struct {
+				Name    string            `json:"name"`
+				Target  string            `json:"target"`
+				Headers map[string]string `json:"headers"`
+			} `json:"actions"`
+		} `json:"script"`
+		Stats struct {
+			ConvertedActions int `json:"converted_actions"`
+		} `json:"stats"`
+		ReviewSections []struct {
+			Key      string   `json:"key"`
+			Severity string   `json:"severity"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.ProjectID != "proj-postman" || result.Script.Protocol != "http" || result.Script.Config.BaseURL != "https://api.example.test" {
+		t.Fatalf("script = %+v", result.Script)
+	}
+	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Name != "Orders_Get_Order" || result.Script.Actions[0].Target != "/orders/{{var.order_id}}" {
+		t.Fatalf("actions = %+v", result.Script.Actions)
+	}
+	if result.Script.Actions[0].Headers["X-Request-ID"] != "{{var.request_id}}" {
+		t.Fatalf("headers = %+v", result.Script.Actions[0].Headers)
+	}
+	if len(result.Script.Parameters) != 1 || result.Script.Parameters[0].Name != "order_id" {
+		t.Fatalf("parameters = %+v", result.Script.Parameters)
+	}
+	if result.Stats.ConvertedActions != 1 {
+		t.Fatalf("stats = %+v", result.Stats)
+	}
+	assertReviewSection(t, result.ReviewSections, "postman_requests", "info", "GET /orders/{{var.order_id}}")
+	assertReviewSection(t, result.ReviewSections, "postman_variables", "info", "order_id")
 }
 
 func TestHandleImportWSDL(t *testing.T) {

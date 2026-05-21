@@ -2,7 +2,8 @@ import { Area, AreaChart, CartesianGrid, Legend, Line, ReferenceArea, Responsive
 
 import { TestGroup, TestSummary } from '../types'
 import { LiveControlPreview, VUserGroupAction } from './testExecutionLiveControlModel'
-import { formatTimeLong } from '../utils/timeUtils'
+import { formatTimeLong, isValidDurationInput } from '../utils/timeUtils'
+import DurationField from './DurationField'
 
 interface Props {
   showControls: boolean
@@ -65,7 +66,8 @@ export default function TestExecutionLiveControls({
     const currentVUsers = test.live_metrics?.groups?.[group.name]?.vusers ?? group.vusers
     return currentVUsers > 0 || (test.vuser_ramps?.[group.name]?.target_vusers ?? 0) > 0
   })
-  const rampInputMissing = vuserRampEnabled && vuserRampDuration.trim() === ''
+  const rampInputMissing = vuserRampEnabled && !isValidDurationInput(vuserRampDuration)
+  const durationInputInvalid = !isValidDurationInput(durationInput)
 
   return (
     <div className="live-controls-section">
@@ -172,37 +174,31 @@ export default function TestExecutionLiveControls({
                   />
                   <span>Gradual change</span>
                 </label>
-                <label className="vuser-ramp-duration">
-                  <span>Over</span>
-                  <input
-                    type="text"
-                    className="duration-input"
-                    placeholder="1m"
-                    value={vuserRampDuration}
-                    disabled={!vuserRampEnabled}
-                    onChange={(e) => onVuserRampDurationChange(e.target.value)}
-                  />
-                </label>
+                <DurationField
+                  className="vuser-ramp-duration"
+                  label="Over"
+                  value={vuserRampDuration}
+                  disabled={!vuserRampEnabled}
+                  compact
+                  required={vuserRampEnabled}
+                  showValidation={vuserRampEnabled}
+                  onChange={onVuserRampDurationChange}
+                />
               </div>
 
               <div className="control-group control-group-nested">
                 <h4 className="control-title">Test Duration</h4>
                 <div className="duration-control-row">
                   <span className="control-label">Target</span>
-                  <input
-                    type="text"
-                    className="duration-input"
-                    placeholder="e.g. 10m, 1h30m"
+                  <DurationField
                     value={durationInput}
-                    onChange={(e) => onDurationInputChange(e.target.value)}
+                    required
+                    showPresets
+                    compact
+                    className="live-duration-field"
+                    onChange={onDurationInputChange}
                   />
-                  <div className="duration-quick-btns">
-                    <button className="btn btn-sm btn-secondary" onClick={() => onDurationInputChange('5m')}>5m</button>
-                    <button className="btn btn-sm btn-secondary" onClick={() => onDurationInputChange('10m')}>10m</button>
-                    <button className="btn btn-sm btn-secondary" onClick={() => onDurationInputChange('30m')}>30m</button>
-                    <button className="btn btn-sm btn-secondary" onClick={() => onDurationInputChange('1h')}>1h</button>
-                  </div>
-                  <button className="btn btn-sm btn-accent" onClick={onAdjustDuration}>
+                  <button className="btn btn-sm btn-accent" onClick={onAdjustDuration} disabled={durationInputInvalid}>
                     Apply
                   </button>
                 </div>

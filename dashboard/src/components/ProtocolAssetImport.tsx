@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type StoredScript } from '../types'
-import { type DevWebImportResult, type HARImportResult, type OpenAPIImportResult, type WSDLImportResult } from '../types/scriptImports'
+import { type DevWebImportResult, type HARImportResult, type OpenAPIImportResult, type PostmanImportResult, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
@@ -11,7 +11,7 @@ import { withFallbackPersistedScript } from './importSaveUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
 
-type ImportKind = 'devweb' | 'har' | 'openapi' | 'wsdl'
+type ImportKind = 'devweb' | 'har' | 'openapi' | 'postman' | 'wsdl'
 
 interface Props {
   kind: ImportKind
@@ -43,6 +43,13 @@ const copy = {
     drop: 'Drop an OpenAPI JSON or YAML file here',
     button: 'Convert OpenAPI',
   },
+  postman: {
+    title: 'Import Postman Collection',
+    subtitle: 'Upload a Postman collection JSON file and convert folders, requests, variables, and auth placeholders into an APEX Load HTTP script.',
+    accept: '.postman_collection.json,.json,application/json',
+    drop: 'Drop a Postman collection JSON file here',
+    button: 'Convert Postman Collection',
+  },
   wsdl: {
     title: 'Import WSDL',
     subtitle: 'Upload a WSDL document and generate SOAP request actions with SOAPAction, namespace, payload, and fault review guidance.',
@@ -52,7 +59,7 @@ const copy = {
   },
 } satisfies Record<ImportKind, Record<string, string>>
 
-type ProtocolImportResult = DevWebImportResult | HARImportResult | OpenAPIImportResult | WSDLImportResult
+type ProtocolImportResult = DevWebImportResult | HARImportResult | OpenAPIImportResult | PostmanImportResult | WSDLImportResult
 
 export default function ProtocolAssetImport({ kind, projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
@@ -68,7 +75,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
 
   const handleConvert = async () => {
     if (!file) {
-      setMessageError(`Please upload ${kind === 'devweb' ? 'a DevWeb script' : kind === 'har' ? 'a HAR file' : kind === 'openapi' ? 'an OpenAPI document' : 'a WSDL document'}.`)
+      setMessageError(`Please upload ${kind === 'devweb' ? 'a DevWeb script' : kind === 'har' ? 'a HAR file' : kind === 'openapi' ? 'an OpenAPI document' : kind === 'postman' ? 'a Postman collection' : 'a WSDL document'}.`)
       return
     }
     setMessageError('')
@@ -82,6 +89,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
         if (kind === 'devweb') return api.importDevWeb(file, options)
         if (kind === 'har') return api.importHAR(file, options)
         if (kind === 'openapi') return api.importOpenAPI(file, options)
+        if (kind === 'postman') return api.importPostman(file, options)
         return api.importWSDL(file, { ...options, soap_version: soapVersion })
       }, { clearValue: true })
     } catch (error: unknown) {
@@ -123,7 +131,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
           </label>
           <label className="sample-import-field">
             <span>Script Name</span>
-            <input value={name} onChange={event => setName(event.target.value)} placeholder={kind === 'devweb' ? 'Imported DevWeb Script' : 'Imported HAR Script'} />
+            <input value={name} onChange={event => setName(event.target.value)} placeholder={kind === 'devweb' ? 'Imported DevWeb Script' : kind === 'har' ? 'Imported HAR Script' : kind === 'postman' ? 'Imported Postman Script' : 'Imported API Script'} />
           </label>
           <label className="sample-import-field">
             <span>Base URL Override</span>
@@ -153,7 +161,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
         <div className="sample-import-result">
           <ScriptImportReview
             title="Review Generated Script"
-            subtitle={`${actionCount} action(s) generated from ${kind === 'devweb' ? 'DevWeb source' : kind === 'har' ? 'HAR entries' : kind === 'openapi' ? 'OpenAPI operations' : 'WSDL operations'}.`}
+            subtitle={`${actionCount} action(s) generated from ${kind === 'devweb' ? 'DevWeb source' : kind === 'har' ? 'HAR entries' : kind === 'openapi' ? 'OpenAPI operations' : kind === 'postman' ? 'Postman requests' : 'WSDL operations'}.`}
             script={(result.script || result.scripts?.[0])!}
             warnings={result.warnings}
             saving={saveTask.pending}

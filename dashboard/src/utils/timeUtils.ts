@@ -1,38 +1,74 @@
+export type DurationUnit = 's' | 'm' | 'h'
+
+export interface DurationFieldValue {
+  value: number | ''
+  unit: DurationUnit
+}
+
+const durationTokenPattern = /(\d+(?:\.\d+)?)\s*(ms|h|m|s)/g
+
+function parseDurationTokens(input?: string): { seconds: number, valid: boolean } {
+  const text = String(input || '').trim().toLowerCase()
+  if (!text) return { seconds: 0, valid: false }
+
+  let totalSeconds = 0
+  let hasMatch = false
+  let lastIndex = 0
+  durationTokenPattern.lastIndex = 0
+
+  let match: RegExpExecArray | null
+  while ((match = durationTokenPattern.exec(text)) !== null) {
+    if (text.slice(lastIndex, match.index).trim() !== '') {
+      return { seconds: 0, valid: false }
+    }
+    hasMatch = true
+    const value = Number(match[1])
+    const unit = match[2]
+    if (!Number.isFinite(value) || value < 0) {
+      return { seconds: 0, valid: false }
+    }
+
+    if (unit === 'h') totalSeconds += value * 3600
+    else if (unit === 'm') totalSeconds += value * 60
+    else if (unit === 's') totalSeconds += value
+    else if (unit === 'ms') totalSeconds += value / 1000
+    lastIndex = match.index + match[0].length
+  }
+
+  if (!hasMatch || text.slice(lastIndex).trim() !== '') {
+    return { seconds: 0, valid: false }
+  }
+
+  return { seconds: Math.ceil(totalSeconds), valid: totalSeconds > 0 }
+}
+
 export function parseDurationToSeconds(input?: string): number {
-  if (!input) return 0;
-  
-  // Handles multiple units like "1h 30m" or "90m"
-  const regex = /(\d+)(ms|h|m|s)/g;
-  let totalSeconds = 0;
-  let hasMatch = false;
+  const parsed = parseDurationTokens(input)
+  return parsed.valid ? parsed.seconds : 0
+}
 
-  const matches = input.matchAll(regex);
-  for (const match of matches) {
-    hasMatch = true;
-    const value = parseInt(match[1], 10);
-    const unit = match[2];
+export function isValidDurationInput(input?: string, allowEmpty = false): boolean {
+  if (!String(input || '').trim()) return allowEmpty
+  return parseDurationTokens(input).valid
+}
 
-    if (unit === 'h') totalSeconds += value * 3600;
-    else if (unit === 'm') totalSeconds += value * 60;
-    else if (unit === 's') totalSeconds += value;
-    else if (unit === 'ms') totalSeconds += value / 1000;
+export function serializeDurationFieldValue(value: number | '', unit: DurationUnit): string {
+  if (value === '' || !Number.isFinite(Number(value)) || Number(value) <= 0) return ''
+  return `${Number(value)}${unit}`
+}
+
+export function splitDurationInput(input?: string, fallbackUnit: DurationUnit = 'm'): DurationFieldValue {
+  const seconds = parseDurationToSeconds(input)
+  if (seconds <= 0) {
+    return { value: '', unit: fallbackUnit }
   }
-
-  // Fallback to strict single unit parsing if no multi-matches
-  if (!hasMatch) {
-    const singleMatch = input.trim().match(/^(\d+)(ms|[smh])$/);
-    if (!singleMatch) return 0;
-    
-    const val = parseInt(singleMatch[1] || '0', 10);
-    const u = singleMatch[2] || 's';
-    
-    if (u === 'h') return val * 3600;
-    if (u === 'm') return val * 60;
-    if (u === 's') return val;
-    if (u === 'ms') return Math.ceil(val / 1000);
+  if (seconds % 3600 === 0) {
+    return { value: seconds / 3600, unit: 'h' }
   }
-
-  return Math.ceil(totalSeconds);
+  if (seconds % 60 === 0) {
+    return { value: seconds / 60, unit: 'm' }
+  }
+  return { value: seconds, unit: 's' }
 }
 
 export function formatTimeCompact(seconds: number): string {

@@ -31,6 +31,7 @@ const SettingsPage = lazy(() => import('./components/SettingsPage'))
 
 type View =
   | { page: NavPage }
+  | { page: 'new-test'; scenarioId?: string }
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
   | { page: 'test'; testId: string }
 
@@ -130,6 +131,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const activePage = view.page === 'test' ? 'tests' : view.page
 
   const navigateToScriptEdit = (scriptId: string) => setView({ page: 'scripts', mode: 'edit', scriptId })
+  const navigateToScenarioBuilder = () => setView({ page: 'tests' })
+  const navigateToNewTestForScenario = (scenarioId: string) => setView({ page: 'new-test', scenarioId })
 
   const handleNavigate = (page: NavPage) => {
     setView({ page })
@@ -288,6 +291,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             <TestHub
               testStatuses={testStatuses}
               onSelectTest={navigateToTest}
+              onCreateTestFromScenario={navigateToNewTestForScenario}
             />
           )}
           {view.page === 'new-test' && (
@@ -295,8 +299,10 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               activeApplication={activeApplication}
               activeRelease={activeRelease}
               releases={releases}
+              initialScenarioId={'scenarioId' in view ? view.scenarioId : undefined}
               onSelectTest={navigateToTest}
               onCreateRelease={createAndSelectRelease}
+              onOpenScenarioBuilder={navigateToScenarioBuilder}
             />
           )}
           {view.page === 'test' && (
@@ -335,6 +341,9 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               onRepositoryRefresh={refreshRepository}
               onProjectsRefresh={refreshProjects}
               onProjectCreated={createAndSelectProject}
+              onOpenScript={navigateToScriptEdit}
+              onOpenTest={navigateToTest}
+              onCreateTestFromScenario={navigateToNewTestForScenario}
             />
           )}
           {view.page === 'access' && (

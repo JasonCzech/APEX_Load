@@ -216,6 +216,9 @@ func TestLoadModelSupportMatrixEndpoint(t *testing.T) {
 	if !containsLoadModelSupportEntry(payload.SupportMatrix, "open-arrival-rate", "executed") {
 		t.Fatalf("support_matrix = %#v, want executed open arrival-rate entry", payload.SupportMatrix)
 	}
+	if !containsLoadModelSupportEntry(payload.SupportMatrix, "chaos-resilience", "executed") {
+		t.Fatalf("support_matrix = %#v, want executed chaos-resilience entry", payload.SupportMatrix)
+	}
 }
 
 func TestLoadModelTemplatesEndpointFiltersByShape(t *testing.T) {
@@ -240,6 +243,38 @@ func TestLoadModelTemplatesEndpointFiltersByShape(t *testing.T) {
 	}
 	if payload.Templates[0].Scenario.GoalConfig == nil || payload.Templates[0].Scenario.GoalConfig.TargetAverageTPS == nil {
 		t.Fatalf("scenario = %#v, want throughput goal hints", payload.Templates[0].Scenario)
+	}
+}
+
+func TestLoadModelTemplatesEndpointReturnsChaosShakeoutTemplate(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/load-models/templates?shape_id=chaos-resilience", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload struct {
+		Templates []LoadModelTemplate `json:"templates"`
+		Count     int                 `json:"count"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload.Count != 1 || payload.Templates[0].ShapeID != "chaos-resilience" {
+		t.Fatalf("payload = %#v, want one chaos-resilience template", payload)
+	}
+	template := payload.Templates[0]
+	if !template.Scenario.ScriptShakeout || !template.Scenario.ResourceBaseline {
+		t.Fatalf("scenario = %#v, want shakeout and resource baseline enabled", template.Scenario)
+	}
+	if template.Scenario.RuntimeSettings == nil || template.Scenario.RuntimeSettings.ErrorHandling == nil || !template.Scenario.RuntimeSettings.ErrorHandling.SnapshotOnError {
+		t.Fatalf("runtime_settings = %#v, want snapshot-on-error evidence setting", template.Scenario.RuntimeSettings)
+	}
+	if len(template.Scenario.Groups) != 1 || len(template.Scenario.Groups[0].Stages) != 3 {
+		t.Fatalf("groups = %#v, want staged chaos template", template.Scenario.Groups)
 	}
 }
 

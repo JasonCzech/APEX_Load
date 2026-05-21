@@ -5,7 +5,7 @@ import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { createApiDraft, createJavaHttpDraft, createJmsDraft, createSoapDraft, createWebDraft } from './scriptDraftFactories'
 
-export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample' | 'java-http-import' | 'devweb-import' | 'har-import' | 'openapi-import' | 'wsdl-import'
+export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample' | 'java-http-import' | 'devweb-import' | 'har-import' | 'openapi-import' | 'postman-import' | 'wsdl-import'
 
 export interface DraftEditorFocus {
 	targetAction?: string | null
@@ -49,6 +49,7 @@ export interface ScriptsCreateOptionActions {
   openDevWebImport: () => void
   openHARImport: () => void
   openOpenAPIImport: () => void
+  openPostmanImport: () => void
   openWSDLImport: () => void
 }
 
@@ -146,6 +147,10 @@ export function useScriptsAuthoringState({
 
   const openOpenAPIImport = useCallback(() => {
     setSubview('openapi-import')
+  }, [setSubview])
+
+  const openPostmanImport = useCallback(() => {
+    setSubview('postman-import')
   }, [setSubview])
 
   const openWSDLImport = useCallback(() => {
@@ -251,6 +256,7 @@ export function useScriptsAuthoringState({
       openDevWebImport,
       openHARImport,
       openOpenAPIImport,
+      openPostmanImport,
       openWSDLImport,
     },
   }

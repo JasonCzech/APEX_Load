@@ -51,7 +51,7 @@ func (s *Server) handleWebAPIExecutionSupportMatrix(w http.ResponseWriter, r *ht
 		"sample_projects":     webAPISampleProjects(),
 		"notes": []string{
 			"Browser VUsers remain diagnostic canaries, not HTTP-density load generators.",
-			"Imported OpenAPI, WSDL, DevWeb, JMeter, HAR, and LoadRunner assets are review artifacts until validation and replay evidence are attached.",
+			"Imported OpenAPI, Postman, WSDL, DevWeb, JMeter, HAR, and LoadRunner assets are review artifacts until validation and replay evidence are attached.",
 			"Density envelopes are conservative defaults and should be recalibrated with local generator benchmarks before production capacity reservations.",
 		},
 	})
@@ -66,7 +66,7 @@ func webAPIExecutionSupportMatrix() []webAPIExecutionSupportEntry {
 			Status:              "supported",
 			ExecutionStatus:     "executable",
 			Importance:          "critical",
-			SupportedInputs:     []string{"JSON DSL", "HAR", "curl/raw HTTP samples", "OpenAPI imports", "LoadRunner Web HTTP/HTML imports"},
+			SupportedInputs:     []string{"JSON DSL", "HAR", "curl/raw HTTP samples", "OpenAPI imports", "Postman collections", "LoadRunner Web HTTP/HTML imports"},
 			RuntimeCoverage:     []string{"HTTP/1.1", "HTTP/2", "headers", "cookies", "redirects", "TLS/proxy/auth runtime settings", "content checks", "network shaping"},
 			RemainingGaps:       []string{"HTTP/3 is not a native execution target"},
 			RecommendedWorkflow: "Author or import HTTP scripts, validate runtime settings, replay, then promote to scenarios.",
@@ -82,6 +82,18 @@ func webAPIExecutionSupportMatrix() []webAPIExecutionSupportEntry {
 			RuntimeCoverage:     []string{"operation selection", "path/query parameter data source seeding", "request body templates", "auth hints", "status assertions"},
 			RemainingGaps:       []string{"schema examples still require human test-data review"},
 			RecommendedWorkflow: "Import OpenAPI, review generated data source and auth placeholders, validate, replay, approve.",
+		},
+		{
+			ID:                  "postman-authoring",
+			Category:            "Import/Authoring",
+			Capability:          "Postman collection import",
+			Status:              "supported",
+			ExecutionStatus:     "review_then_executable",
+			Importance:          "high",
+			SupportedInputs:     []string{"Postman v2.1 collection JSON"},
+			RuntimeCoverage:     []string{"nested folders", "requests", "collection variables", "headers", "raw/urlencoded/form-data/graphql bodies", "auth placeholders"},
+			RemainingGaps:       []string{"pre-request and test scripts require manual review before replay"},
+			RecommendedWorkflow: "Import Postman, review variables and auth placeholders, validate, replay, approve.",
 		},
 		{
 			ID:                  "soap-wsdl",
