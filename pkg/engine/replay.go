@@ -17,6 +17,7 @@ type ReplayOptions struct {
 	RedactionRules  []RedactionRule
 	IgnoreThinkTime bool
 	OnProgress      func(ReplayProgressEvent)
+	DebugController ReplayDebugController
 }
 
 type ReplayProgressEvent struct {
@@ -25,6 +26,22 @@ type ReplayProgressEvent struct {
 	EventIndex int
 	Event      *ReplayActionEvent
 	Report     *ReplayReport
+}
+
+type ReplayDebugController interface {
+	BeforeAction(context.Context, ReplayDebugAction) error
+}
+
+type ReplayDebugAction struct {
+	Phase        string `json:"phase"`
+	ActionIndex  int    `json:"action_index"`
+	EventIndex   int    `json:"event_index"`
+	ActionName   string `json:"action_name"`
+	ActionType   string `json:"action_type"`
+	Method       string `json:"method,omitempty"`
+	Target       string `json:"target,omitempty"`
+	Selector     string `json:"selector,omitempty"`
+	SourceStepID string `json:"source_step_id,omitempty"`
 }
 
 const (
@@ -150,11 +167,11 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		Ignore:     script.Config.ThinkTime.Ignore,
 	}
 
-	shouldContinue := runReplayPhase(ctx, vu, script.Init, "init", false, opts.IgnoreThinkTime, globalThinkCfg, report, opts.OnProgress)
+	shouldContinue := runReplayPhase(ctx, vu, script.Init, "init", false, opts.IgnoreThinkTime, globalThinkCfg, report, opts.OnProgress, opts.DebugController)
 	if shouldContinue {
-		shouldContinue = runReplayPhase(ctx, vu, script.Actions, "action", continueOnError, opts.IgnoreThinkTime, globalThinkCfg, report, opts.OnProgress)
+		shouldContinue = runReplayPhase(ctx, vu, script.Actions, "action", continueOnError, opts.IgnoreThinkTime, globalThinkCfg, report, opts.OnProgress, opts.DebugController)
 	}
-	runReplayPhase(context.Background(), vu, script.Teardown, "teardown", true, true, globalThinkCfg, report, opts.OnProgress)
+	runReplayPhase(context.Background(), vu, script.Teardown, "teardown", true, true, globalThinkCfg, report, opts.OnProgress, opts.DebugController)
 
 	report.CompletedAt = time.Now()
 	report.FinalVariables = cloneStringMap(vu.Variables)
@@ -182,8 +199,18 @@ func runReplayPhase(
 	globalThinkCfg protocol.ThinkTimeConfig,
 	report *ReplayReport,
 	onProgress func(ReplayProgressEvent),
+	debugController ReplayDebugController,
 ) bool {
-	for _, action := range actions {
+	for actionIndex, action := range actions {
+		if debugController != nil {
+			if err := debugController.BeforeAction(ctx, replayDebugActionFor(action, phase, actionIndex, len(report.Events))); err != nil {
+				report.Success = false
+				if report.Error == "" {
+					report.Error = err.Error()
+				}
+				return false
+			}
+		}
 		event, shouldContinue := runReplayAction(ctx, vu, action, phase, ignoreThinkTime, globalThinkCfg, report)
 		report.Events = append(report.Events, event)
 		publishReplayProgress(onProgress, ReplayProgressEvent{
@@ -203,6 +230,23 @@ func runReplayPhase(
 		}
 	}
 	return true
+}
+
+func replayDebugActionFor(action dsl.Action, phase string, actionIndex int, eventIndex int) ReplayDebugAction {
+	debugAction := ReplayDebugAction{
+		Phase:       phase,
+		ActionIndex: actionIndex,
+		EventIndex:  eventIndex,
+		ActionName:  action.Name,
+		ActionType:  action.Type,
+		Method:      action.Method,
+		Target:      action.Target,
+		Selector:    action.Selector,
+	}
+	if len(action.Metadata) > 0 {
+		debugAction.SourceStepID = sourceMetadataString(action.Metadata, "source_step_id")
+	}
+	return debugAction
 }
 
 func runReplayAction(

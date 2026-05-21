@@ -1469,6 +1469,7 @@ export interface BrowserReplayStartRequest {
   variables?: Record<string, string>
   start_paused?: boolean
   breakpoints?: number[]
+  log_level?: ScriptDebugLogLevel
   browser?: BrowserConfig
   ignore_think_time?: boolean
   script?: ScriptDefinition
@@ -1483,6 +1484,83 @@ export interface BrowserReplayStartResponse {
 
 export interface BrowserReplaySessionResponse {
   session: BrowserReplaySession
+  warnings?: string[]
+}
+
+export type ScriptDebugLogLevel = 'error' | 'warn' | 'info' | 'debug' | 'trace'
+
+export interface ScriptDebugBreakpoint {
+  phase: 'init' | 'action' | 'teardown' | string
+  action_index: number
+}
+
+export interface ScriptDebugLogEntry {
+  id: string
+  timestamp: string
+  level: ScriptDebugLogLevel
+  category: string
+  message: string
+  raw?: string
+  phase?: string
+  action_index?: number
+  action_name?: string
+}
+
+export interface ScriptDebugAction {
+  phase: string
+  action_index: number
+  event_index: number
+  action_name: string
+  action_type: string
+  method?: string
+  target?: string
+  selector?: string
+  source_step_id?: string
+}
+
+export interface ScriptDebugSession {
+  id: string
+  script_id?: string
+  project_id?: string
+  status: BrowserReplaySession['status']
+  group: string
+  protocol: string
+  log_level: ScriptDebugLogLevel
+  started_at?: string
+  completed_at?: string
+  current_event_index: number
+  current_action?: ScriptDebugAction
+  current_event?: BrowserReplayEvent
+  breakpoints?: ScriptDebugBreakpoint[]
+  events?: BrowserReplayEvent[]
+  logs?: ScriptDebugLogEntry[]
+  raw_output?: string[]
+  report?: BrowserReplayReport
+  error?: string
+}
+
+export interface ScriptDebugStartRequest {
+  group_name?: string
+  replay_session_id?: string
+  variables?: Record<string, string>
+  start_paused?: boolean
+  breakpoints?: ScriptDebugBreakpoint[]
+  log_level?: ScriptDebugLogLevel
+  browser?: BrowserConfig
+  ignore_think_time?: boolean
+  script?: ScriptDefinition
+}
+
+export interface ScriptDebugStartResponse {
+  script_id: string
+  replay_session_id: string
+  debug_session_id: string
+  session: ScriptDebugSession
+  warnings?: string[]
+}
+
+export interface ScriptDebugSessionResponse {
+  session: ScriptDebugSession
   warnings?: string[]
 }
 

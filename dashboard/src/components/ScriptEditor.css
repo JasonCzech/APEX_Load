@@ -728,6 +728,7 @@
 }
 
 .replay-options-grid input,
+.replay-options-grid select,
 .replay-options-grid textarea {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
@@ -746,6 +747,7 @@
 }
 
 .replay-options-grid input:focus,
+.replay-options-grid select:focus,
 .replay-options-grid textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(99,102,241,0.12);
@@ -763,6 +765,103 @@
 
 .replay-panel-subtitle {
   max-width: 760px;
+}
+
+.debug-breakpoint-planner {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.debug-breakpoint-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.debug-breakpoint-header div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.debug-breakpoint-header strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.debug-breakpoint-header span,
+.debug-breakpoint-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.debug-breakpoint-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.debug-breakpoint-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  padding: 9px 10px;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.debug-breakpoint-row:hover,
+.debug-breakpoint-row.active {
+  border-color: rgba(99, 102, 241, 0.5);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.debug-breakpoint-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  border: 1px solid var(--text-muted);
+}
+
+.debug-breakpoint-row.active .debug-breakpoint-dot {
+  border-color: var(--danger);
+  background: var(--danger);
+}
+
+.debug-breakpoint-row span,
+.debug-breakpoint-row small {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.debug-breakpoint-row strong,
+.debug-breakpoint-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.debug-breakpoint-row strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.debug-breakpoint-row small {
+  grid-column: 3;
+  color: var(--text-muted);
+  font-family: 'SF Mono', 'Fira Code', monospace;
 }
 
 .replay-empty-state {
@@ -875,6 +974,85 @@
 .replay-report-error {
   margin: 0;
   color: var(--danger);
+}
+
+.debugger-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+
+.debugger-tabs button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.debugger-tabs button:hover,
+.debugger-tabs button.active {
+  border-color: rgba(99, 102, 241, 0.5);
+  color: var(--text-primary);
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.debug-raw-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  padding: 12px;
+}
+
+.debug-raw-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.debug-raw-toolbar label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.debug-raw-toolbar label > span {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.debug-raw-toolbar input,
+.debug-raw-toolbar select {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 8px 10px;
+  min-height: 36px;
+}
+
+.debug-raw-output {
+  max-height: 420px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #0b1020;
+  color: #dbeafe;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .browser-debugger {
@@ -2553,6 +2731,9 @@
   .replay-live-banner-meta { align-items: flex-start; min-width: 0; }
   .replay-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .replay-options-grid { grid-template-columns: 1fr; }
+  .debug-breakpoint-list { grid-template-columns: 1fr; }
+  .debug-raw-toolbar { align-items: stretch; }
+  .debug-raw-toolbar label { width: 100%; }
   .browser-debugger-layout { grid-template-columns: 1fr; }
   .browser-viewport { border-right: none; border-bottom: 1px solid var(--border); }
 }

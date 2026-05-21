@@ -191,6 +191,46 @@ curl -X POST http://localhost:8080/api/v1/scripts/validate \
   -d @script.json
 ```
 
+Start an interactive debugger session for a draft script:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/scripts/debug/sessions \
+  -H "Authorization: Bearer $APEXLOAD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "script": {
+      "name": "Checkout Debug",
+      "version": "1.0.0",
+      "protocol": "http",
+      "config": { "base_url": "https://example.com" },
+      "actions": [{ "name": "Open", "type": "GET", "method": "GET", "target": "/" }]
+    },
+    "start_paused": true,
+    "log_level": "debug",
+    "breakpoints": [{ "phase": "action", "action_index": 0 }],
+    "ignore_think_time": true
+  }'
+```
+
+Stored scripts use `POST /api/v1/scripts/{id}/debug/sessions` with the same payload minus `script` unless overriding the draft definition. Debugger sessions are protocol-agnostic; browser scripts include screenshots, DOM, console, network, Core Web Vitals, and HTML evidence when captured.
+
+Debugger control endpoints:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/script-debug/sessions/$SESSION_ID/step \
+  -H "Authorization: Bearer $APEXLOAD_API_KEY"
+
+curl -X PATCH http://localhost:8080/api/v1/script-debug/sessions/$SESSION_ID/breakpoints \
+  -H "Authorization: Bearer $APEXLOAD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"breakpoints":[{"phase":"action","action_index":2}]}'
+
+curl "http://localhost:8080/api/v1/script-debug/sessions/$SESSION_ID/export?format=log" \
+  -H "Authorization: Bearer $APEXLOAD_API_KEY"
+```
+
+`view_scripts` can read and export debugger sessions. `manage_scripts` is required to start sessions, pause, resume, step, stop, or update breakpoints. WebSocket messages use `script_debug_*` event types with `debug_session_id`, `replay_session_id`, `session`, and optional `event`, `action`, or `report` fields. Existing `/browser-replay/sessions` endpoints remain available for older clients.
+
 Import endpoints:
 
 | Method | Path | Purpose |
@@ -349,6 +389,7 @@ Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array w
 | `PATCH` | `/api/v1/scripts/{id}/move` |
 | `POST` | `/api/v1/scripts/validate` |
 | `POST` | `/api/v1/scripts/replay` |
+| `POST` | `/api/v1/scripts/debug/sessions` |
 | `POST` | `/api/v1/scripts/browser-replay/sessions` |
 | `POST` | `/api/v1/scripts/browser-to-http/preview` |
 | `GET` | `/api/v1/scripts/authoring/capabilities` |
@@ -360,10 +401,18 @@ Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array w
 | `POST` | `/api/v1/scripts/authoring/sessions/{id}/correlations/preview` |
 | `POST` | `/api/v1/scripts/{id}/validate` |
 | `POST` | `/api/v1/scripts/{id}/replay` |
+| `POST` | `/api/v1/scripts/{id}/debug/sessions` |
 | `POST` | `/api/v1/scripts/{id}/browser-replay/sessions` |
 | `POST` | `/api/v1/scripts/{id}/export` |
 | `GET` | `/api/v1/scripts/{id}/download` |
 | `GET` | `/api/v1/scripts/{id}/runtime-settings/report` |
+| `GET` | `/api/v1/script-debug/sessions/{session_id}` |
+| `POST` | `/api/v1/script-debug/sessions/{session_id}/pause` |
+| `POST` | `/api/v1/script-debug/sessions/{session_id}/resume` |
+| `POST` | `/api/v1/script-debug/sessions/{session_id}/step` |
+| `POST` | `/api/v1/script-debug/sessions/{session_id}/stop` |
+| `PATCH` | `/api/v1/script-debug/sessions/{session_id}/breakpoints` |
+| `GET` | `/api/v1/script-debug/sessions/{session_id}/export?format=json|log` |
 
 ### Data Pools
 

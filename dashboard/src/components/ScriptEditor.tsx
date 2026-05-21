@@ -6,7 +6,10 @@ import {
   BrowserReplayEvent,
   BrowserReplayNetworkEntry,
   BrowserReplayReport,
-  BrowserReplaySession,
+  ScriptDebugBreakpoint,
+  ScriptDebugLogEntry,
+  ScriptDebugLogLevel,
+  ScriptDebugSession,
   BrowserReplaySnapshot,
   type AuthoringComponent,
   StoredScript,
@@ -93,6 +96,7 @@ type ValidationEvidence = Pick<ScriptValidationResponse, 'data_source_fit' | 'ai
 type ReplaySnapshot = BrowserReplaySnapshot
 type ReplayActionEvent = BrowserReplayEvent
 type ReplayReport = BrowserReplayReport
+type DebuggerTab = 'timeline' | 'variables' | 'request' | 'raw' | 'browser'
 
 type BrowserEngineName = 'chromium' | 'webkit'
 
@@ -119,6 +123,7 @@ const AUTHORING_COMPONENT_GROUPS = [
 ] as const
 
 const WEBKIT_INSTALL_ADVISORY = 'WebKit execution requires Playwright WebKit assets installed on the controller host. Run go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install webkit before running browser tests or replay sessions.'
+const DEBUG_LOG_LEVELS: ScriptDebugLogLevel[] = ['error', 'warn', 'info', 'debug', 'trace']
 
 function lookupBrowserDeviceProfile(name?: string) {
   return BROWSER_DEVICE_PROFILES.find(profile => profile.name === name)
@@ -378,12 +383,12 @@ function buildWeb2ObjectDescriptorReview(script: ScriptData, metadata?: ScriptIm
   }
 }
 
-function replayEventsForConversion(replayReport: ReplayReport | null, browserReplaySession?: BrowserReplaySession | null): BrowserReplayEvent[] {
+function replayEventsForConversion(replayReport: ReplayReport | null, browserReplaySession?: ScriptDebugSession | null): BrowserReplayEvent[] {
   if (browserReplaySession?.events?.length) return browserReplaySession.events
   return replayReport?.events || []
 }
 
-function replayNetworkEntriesForConversion(replayReport: ReplayReport | null, browserReplaySession?: BrowserReplaySession | null): BrowserReplayNetworkEntry[] {
+function replayNetworkEntriesForConversion(replayReport: ReplayReport | null, browserReplaySession?: ScriptDebugSession | null): BrowserReplayNetworkEntry[] {
   const entries: BrowserReplayNetworkEntry[] = []
   const seen = new Set<string>()
   replayEventsForConversion(replayReport, browserReplaySession).forEach(event => {
@@ -413,7 +418,7 @@ function replayNetworkEntriesForConversion(replayReport: ReplayReport | null, br
   return entries
 }
 
-function buildBrowserHTTPConversionReview(script: ScriptData, replayReport: ReplayReport | null, browserReplaySession?: BrowserReplaySession | null): BrowserHTTPConversionReview {
+function buildBrowserHTTPConversionReview(script: ScriptData, replayReport: ReplayReport | null, browserReplaySession?: ScriptDebugSession | null): BrowserHTTPConversionReview {
   const browserActionCount = script.actions.filter(action => action.type.startsWith('browser_')).length
   const replayEvents = replayEventsForConversion(replayReport, browserReplaySession)
   const conversionEntries = replayNetworkEntriesForConversion(replayReport, browserReplaySession)
@@ -455,6 +460,7 @@ interface ReplayOptionsState {
   groupName: string
   ignoreThinkTime: boolean
   startPaused: boolean
+  logLevel: ScriptDebugLogLevel
   variablesText: string
 }
 
@@ -470,10 +476,11 @@ interface ReplayActivityItem {
 
 interface ReplayWSMessage extends WSMessage {
   replay_session_id?: string
+  debug_session_id?: string
   event_index?: number
   event?: ReplayActionEvent
   report?: ReplayReport
-  session?: BrowserReplaySession
+  session?: ScriptDebugSession
 }
 
 interface AssistantChangeLogItem {
@@ -546,6 +553,35 @@ function parseKeyValueLines(value: string) {
       if (key) acc[key] = itemValue
       return acc
     }, {})
+}
+
+function debugBreakpointKey(phase: string, actionIndex: number): string {
+  return `${phase}:${actionIndex}`
+}
+
+function normalizeDebugPhase(phase: string): ScriptDebugBreakpoint['phase'] {
+  return phase === 'init' || phase === 'teardown' ? phase : 'action'
+}
+
+function formatDebugPhaseLabel(phase: string): string {
+  return phase.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
+}
+
+function debugLogLevelWeight(level: ScriptDebugLogLevel | 'all'): number {
+  switch (level) {
+    case 'error': return 0
+    case 'warn': return 1
+    case 'info': return 2
+    case 'debug': return 3
+    case 'trace': return 4
+    default: return 5
+  }
+}
+
+function formatDebugLogEntry(entry: ScriptDebugLogEntry): string {
+  const location = entry.phase ? ` ${entry.phase}[${entry.action_index ?? '-'}]` : ''
+  const raw = entry.raw ? `\n${entry.raw}` : ''
+  return `[${formatReplayTime(entry.timestamp)}] ${entry.level.toUpperCase()} ${entry.category}${location} ${entry.message}${raw}`
 }
 
 function formatLineList(values?: string[]) {
@@ -881,6 +917,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [httpConversionPreview, setHttpConversionPreview] = useState<BrowserToHTTPPreviewResponse | null>(null)
   const [httpConversionGenerating, setHttpConversionGenerating] = useState(false)
   const [httpConversionError, setHttpConversionError] = useState('')
+  const [debugBreakpoints, setDebugBreakpoints] = useState<ScriptDebugBreakpoint[]>([])
+  const [debuggerTab, setDebuggerTab] = useState<DebuggerTab>('timeline')
+  const [debugRawLevel, setDebugRawLevel] = useState<ScriptDebugLogLevel | 'all'>('all')
+  const [debugRawSearch, setDebugRawSearch] = useState('')
+  const [debugRawAutoScroll, setDebugRawAutoScroll] = useState(true)
+  const [debugRawClearedAt, setDebugRawClearedAt] = useState(0)
+  const debugRawOutputRef = useRef<HTMLPreElement | null>(null)
   const importedCorrelationFocusTargets = importSummary.correlationSuggestions.map((correlation) => {
     const foundAtActionIndex = findActionIndexByImportedLocation(script.actions, correlation.found_at)
     const foundAtLabel = formatImportedLocationLabel(script.actions, correlation.found_at, foundAtActionIndex)
@@ -1228,7 +1271,141 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   const handleReplaySocketMessage = useCallback((message: WSMessage) => {
     const msg = message as ReplayWSMessage
-    if (!activeReplaySessionId || msg.replay_session_id !== activeReplaySessionId) return
+    if (!activeReplaySessionId || (msg.replay_session_id !== activeReplaySessionId && msg.debug_session_id !== activeReplaySessionId)) return
+
+    if (msg.type === 'script_debug_started' && msg.session) {
+      const session = msg.session
+      setBrowserReplaySession(session)
+      setReplayReport(prev => prev ? {
+        ...prev,
+        group: session.group || prev.group,
+        protocol: session.protocol || prev.protocol,
+        started_at: session.started_at || prev.started_at,
+        final_variables: session.report?.final_variables || prev.final_variables,
+      } : {
+        group: session.group || 'script-debug',
+        protocol: session.protocol || 'http',
+        started_at: session.started_at || new Date().toISOString(),
+        completed_at: '',
+        success: true,
+        events: session.events || [],
+        final_variables: session.report?.final_variables,
+      })
+      setReplayActivity(prev => upsertReplayActivity(prev, {
+        id: 'start',
+        kind: 'start',
+        title: 'Debugger started',
+        detail: `${session.group || 'script debug'} · ${session.log_level || 'info'} logs`,
+        timestamp: session.started_at || new Date().toISOString(),
+      }))
+      setExpandedReplayEvent(null)
+      setExpandedReplayBrowserArtifacts({})
+      return
+    }
+
+    if (msg.type === 'script_debug_action' && msg.session) {
+      const session = msg.session
+      setBrowserReplaySession(session)
+      const currentAction = session.current_action
+      if (currentAction) {
+        setReplayActivity(prev => upsertReplayActivity(prev, {
+          id: `ready-${currentAction.phase}-${currentAction.action_index}`,
+          kind: 'event',
+          title: `Ready: ${currentAction.action_name || 'next action'}`,
+          detail: `${formatDebugPhaseLabel(currentAction.phase)} ${currentAction.action_index + 1}`,
+          timestamp: new Date().toISOString(),
+        }))
+      }
+      return
+    }
+
+    if (msg.type === 'script_debug_event' && msg.event) {
+      const replayEvent = msg.event
+      if (msg.session) setBrowserReplaySession(msg.session)
+      setReplayReport(prev => {
+        if (!prev) return prev
+        const nextEvents = [...prev.events]
+        const index = typeof msg.event_index === 'number' && msg.event_index >= 0 ? msg.event_index : nextEvents.length
+        nextEvents[index] = replayEvent
+        return {
+          ...prev,
+          events: nextEvents,
+          success: prev.success && replayEvent.success,
+          error: prev.error || replayEvent.error_message,
+        }
+      })
+      const replayIndex = typeof msg.event_index === 'number' && msg.event_index >= 0 ? msg.event_index : 0
+      setReplayActivity(prev => upsertReplayActivity(prev, {
+        id: `event-${replayIndex}`,
+        kind: 'event',
+        title: `${replayEvent.action_name || 'Action'} ${replayEvent.success ? 'completed' : 'failed'}`,
+        detail: replayEvent.success
+          ? `${replayEvent.method || replayEvent.action_type} ${replayEvent.target}`
+          : replayEvent.error_message || `${replayEvent.method || replayEvent.action_type} ${replayEvent.target}`,
+        timestamp: replayEvent.completed_at || replayEvent.started_at,
+        success: replayEvent.success,
+        changedVariables: Object.keys(replayEvent.extractions || {}),
+      }))
+      if (typeof msg.event_index === 'number' && msg.event_index >= 0) {
+        setExpandedReplayEvent(msg.event_index)
+      }
+      return
+    }
+
+    if ((msg.type === 'script_debug_paused' || msg.type === 'script_debug_resumed' || msg.type === 'script_debug_breakpoints_updated') && msg.session) {
+      const session = msg.session
+      setBrowserReplaySession(session)
+      if (msg.type === 'script_debug_breakpoints_updated') {
+        setDebugBreakpoints(session.breakpoints || [])
+      }
+      const isPaused = msg.type === 'script_debug_paused'
+      setReplayActivity(prev => upsertReplayActivity(prev, {
+        id: msg.type === 'script_debug_breakpoints_updated' ? 'breakpoints' : isPaused ? 'paused' : 'resumed',
+        kind: 'event',
+        title: msg.type === 'script_debug_breakpoints_updated' ? 'Breakpoints updated' : isPaused ? 'Debugger paused' : 'Debugger resumed',
+        detail: session.current_action
+          ? `${formatDebugPhaseLabel(session.current_action.phase)} ${session.current_action.action_index + 1}: ${session.current_action.action_name || 'next action'}`
+          : session.group || 'script debug',
+        timestamp: new Date().toISOString(),
+      }))
+      return
+    }
+
+    if ((msg.type === 'script_debug_completed' || msg.type === 'script_debug_failed' || msg.type === 'script_debug_stopped') && (msg.report || msg.session)) {
+      if (msg.session) setBrowserReplaySession(msg.session)
+      const report = msg.report || msg.session?.report || null
+      const completedAt = msg.session?.completed_at || report?.completed_at || new Date().toISOString()
+      if (report) {
+        setReplayReport(report)
+      } else {
+        setReplayReport(prev => prev ? {
+          ...prev,
+          completed_at: completedAt,
+          success: msg.type === 'script_debug_completed',
+          error: msg.session?.error || prev.error,
+        } : prev)
+      }
+      const title = msg.type === 'script_debug_completed'
+        ? 'Debugger completed successfully'
+        : msg.type === 'script_debug_stopped'
+          ? 'Debugger stopped'
+          : 'Debugger completed with failures'
+      setReplayActivity(prev => upsertReplayActivity(prev, {
+        id: 'complete',
+        kind: msg.type === 'script_debug_failed' ? 'error' : 'complete',
+        title,
+        detail: report?.error || msg.session?.error,
+        timestamp: completedAt,
+        success: msg.type === 'script_debug_completed' ? true : msg.type === 'script_debug_failed' ? false : undefined,
+      }))
+      if (report) {
+        setExpandedReplayEvent(report.events.length ? report.events.length - 1 : null)
+      }
+      setExpandedReplayBrowserArtifacts({})
+      setActiveReplaySessionId(null)
+      setReplaying(false)
+      return
+    }
 
     if (msg.type === 'browser_replay_started' && msg.session) {
       const session = msg.session
@@ -1922,20 +2099,27 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setSuccess('')
     setWarnings([])
     setOpenSections(prev => ({ ...prev, replay: true }))
+    setDebuggerTab('timeline')
     setReplaying(true)
-    let browserSessionStarted = false
+    let debugSessionStarted = false
     try {
       const currentScript = resolveCurrentScript()
       const variables = parseReplayVariablesText(replayOptions.variablesText)
       const replaySessionId = createReplaySessionId()
-      const payload = buildReplayStartPayload(currentScript, {
+      const payload = {
+        ...buildReplayStartPayload(currentScript, {
         projectId,
         groupName: replayOptions.groupName,
         replaySessionId,
         variables,
         ignoreThinkTime: replayOptions.ignoreThinkTime,
         startPaused: replayOptions.startPaused,
-      })
+        }),
+        group_name: replayOptions.groupName.trim() || `${currentScript.name || 'script'}-debug`,
+        start_paused: replayOptions.startPaused,
+        breakpoints: debugBreakpoints,
+        log_level: replayOptions.logLevel,
+      }
       const replayGroup = payload.group_name || `${currentScript.name || 'script'}-replay`
       setActiveReplaySessionId(replaySessionId)
       setBrowserReplaySession(null)
@@ -1960,48 +2144,41 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       })
       setExpandedReplayEvent(null)
 
-      if (currentScript.protocol === 'browser') {
-        const res = scriptId
-          ? await api.startBrowserReplaySession(scriptId, payload)
-          : await api.startDraftBrowserReplaySession(payload)
-        const replayWarnings = normalizeWarnings(res.warnings)
-        if (jsonMode) setScript(currentScript)
-        if (res.session) {
-          setBrowserReplaySession(res.session)
-          if (res.session.status === 'paused') {
-            setReplayActivity(prev => upsertReplayActivity(prev, {
-              id: 'paused',
-              kind: 'event',
-              title: 'Browser replay paused',
-              detail: res.session.group || 'browser replay',
-              timestamp: new Date().toISOString(),
-            }))
+      const res = scriptId
+        ? await api.startScriptDebugSession(scriptId, payload)
+        : await api.startDraftScriptDebugSession(payload)
+      if (jsonMode) setScript(currentScript)
+      const replayWarnings = normalizeWarnings(res.warnings)
+      if (res.session) {
+        setBrowserReplaySession(res.session)
+        if (res.session.report) {
+          setReplayReport(res.session.report)
+          if (['completed', 'failed', 'stopped'].includes(res.session.status)) {
+            setExpandedReplayEvent(res.session.report.events?.length ? res.session.report.events.length - 1 : null)
           }
         }
-        setActiveReplaySessionId(res.replay_session_id || res.session?.id || replaySessionId)
-        setWarnings(replayWarnings)
-        setSuccess(replayWarnings.length > 0 ? 'Browser replay started with warnings.' : 'Browser replay started.')
-        browserSessionStarted = true
-        return
+        if (res.session.status === 'paused') {
+          setReplayActivity(prev => upsertReplayActivity(prev, {
+            id: 'paused',
+            kind: 'event',
+            title: 'Debugger paused',
+            detail: res.session.current_action
+              ? `${formatDebugPhaseLabel(res.session.current_action.phase)} ${res.session.current_action.action_index + 1}: ${res.session.current_action.action_name || 'next action'}`
+              : res.session.group || 'script debug',
+            timestamp: new Date().toISOString(),
+          }))
+        }
       }
-
-      const res = scriptId
-        ? await api.replayScript(scriptId, payload)
-        : await api.replayDraftScript(payload)
-      if (jsonMode) setScript(currentScript)
-      setReplayReport(res.report)
-      setReplayActivity(prev => upsertReplayActivity(prev, {
-        id: 'complete',
-        kind: 'complete',
-        title: res.report?.success ? 'Replay completed successfully' : 'Replay completed with failures',
-        detail: res.report?.error,
-        timestamp: res.report?.completed_at || new Date().toISOString(),
-        success: res.report?.success,
-      }))
-      setExpandedReplayEvent(res.report?.events?.length ? res.report.events.length - 1 : null)
-      setExpandedReplayBrowserArtifacts({})
-      setActiveReplaySessionId(null)
-      setSuccess(res.report?.success ? 'Replay completed successfully.' : 'Replay completed with failures.')
+      setActiveReplaySessionId(res.debug_session_id || res.replay_session_id || res.session?.id || replaySessionId)
+      if (res.session && ['completed', 'failed', 'stopped'].includes(res.session.status)) {
+        setActiveReplaySessionId(null)
+        setReplaying(false)
+      }
+      setWarnings(replayWarnings)
+      setSuccess(replayWarnings.length > 0
+        ? (currentScript.protocol === 'browser' ? 'Browser replay started with warnings.' : 'Debugger started with warnings.')
+        : (currentScript.protocol === 'browser' ? 'Browser replay started.' : 'Debugger started.'))
+      debugSessionStarted = true
     } catch (e: unknown) {
       const issues = getErrorIssues(e).join(' | ')
       const replayWarnings = normalizeWarnings(getErrorWarnings(e))
@@ -2023,46 +2200,78 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         success: false,
       }))
     } finally {
-      if (!browserSessionStarted) {
+      if (!debugSessionStarted) {
         setReplaying(false)
       }
     }
   }
 
   const handleStopReplay = async () => {
-    if (!isBrowserScript || !activeReplaySessionId) return
+    if (!activeReplaySessionId) return
     try {
-      await api.stopBrowserReplaySession(activeReplaySessionId)
+      await api.stopScriptDebugSession(activeReplaySessionId)
       setError('')
-      setSuccess('Stopping browser replay…')
+      setSuccess('Stopping debugger…')
     } catch (e: unknown) {
-      setError(getErrorMessage(e, 'Failed to stop browser replay'))
+      setError(getErrorMessage(e, 'Failed to stop debugger'))
     }
   }
 
   const handlePauseResumeReplay = async () => {
-    if (!isBrowserScript || !activeReplaySessionId || !browserReplaySession) return
+    if (!activeReplaySessionId || !browserReplaySession) return
     try {
       const isPaused = browserReplaySession.status === 'paused'
       const res = isPaused
-        ? await api.resumeBrowserReplaySession(activeReplaySessionId)
-        : await api.pauseBrowserReplaySession(activeReplaySessionId)
+        ? await api.resumeScriptDebugSession(activeReplaySessionId)
+        : await api.pauseScriptDebugSession(activeReplaySessionId)
       if (res?.session) setBrowserReplaySession(res.session)
       setError('')
-      setSuccess(isPaused ? 'Resuming browser replay…' : 'Pausing browser replay…')
+      setSuccess(isPaused ? 'Resuming debugger…' : 'Pausing debugger…')
     } catch (e: unknown) {
-      setError(getErrorMessage(e, 'Failed to update browser replay state'))
+      setError(getErrorMessage(e, 'Failed to update debugger state'))
+    }
+  }
+
+  const handleStepReplay = async () => {
+    if (!activeReplaySessionId || !browserReplaySession || browserReplaySession.status !== 'paused') return
+    try {
+      const res = await api.stepScriptDebugSession(activeReplaySessionId)
+      if (res?.session) setBrowserReplaySession(res.session)
+      setError('')
+      setSuccess('Stepping debugger…')
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, 'Failed to step debugger'))
+    }
+  }
+
+  const toggleDebugBreakpoint = async (phase: string, actionIndex: number) => {
+    const normalized: ScriptDebugBreakpoint = { phase: normalizeDebugPhase(phase), action_index: actionIndex }
+    const key = debugBreakpointKey(normalized.phase, normalized.action_index)
+    const nextBreakpoints = debugBreakpointKeys.has(key)
+      ? debugBreakpoints.filter(bp => debugBreakpointKey(bp.phase, bp.action_index) !== key)
+      : [...debugBreakpoints, normalized]
+    setDebugBreakpoints(nextBreakpoints)
+    if (!activeReplaySessionId || !browserReplaySession || ['completed', 'failed', 'stopped'].includes(browserReplaySession.status)) {
+      return
+    }
+    try {
+      const res = await api.updateScriptDebugBreakpoints(activeReplaySessionId, nextBreakpoints)
+      if (res?.session) setBrowserReplaySession(res.session)
+      setError('')
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, 'Failed to update debugger breakpoints'))
     }
   }
 
   const handleDownloadBrowserReplayExport = () => {
-    if (!isBrowserScript || !replayReport) return
+    if (!replayReport) return
 
     const replaySessionId = activeReplaySessionId || browserReplaySession?.id
     const payload = {
-      schema_version: 'apexload.browser_replay_export.v1',
+      schema_version: 'apexload.script_debug_export.v1',
       exported_at: new Date().toISOString(),
       replay_session_id: replaySessionId,
+      debug_session_id: replaySessionId,
       script: {
         id: scriptId || undefined,
         name: script.name,
@@ -2073,6 +2282,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         group_name: replayReport.group || replayOptions.groupName || undefined,
         ignore_think_time: replayOptions.ignoreThinkTime,
         start_paused: replayOptions.startPaused,
+        log_level: replayOptions.logLevel,
+        breakpoints: debugBreakpoints,
         variables: replaySeedVariables,
       },
       session: browserReplaySession,
@@ -2080,10 +2291,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }
 
     const scriptBase = sanitizeDownloadName(script.name, 'script')
-    const replayBase = sanitizeDownloadName(replaySessionId || replayReport.group || 'browser-replay', 'browser-replay')
-    downloadTextFile(JSON.stringify(payload, null, 2), `${scriptBase}-${replayBase}-browser-replay.json`)
+    const replayBase = sanitizeDownloadName(replaySessionId || replayReport.group || 'script-debug', 'script-debug')
+    downloadTextFile(JSON.stringify(payload, null, 2), `${scriptBase}-${replayBase}-debug.json`)
     setError('')
-    setSuccess('Exported browser replay session JSON.')
+    setSuccess('Exported debugger session JSON.')
   }
 
   const handleDownloadBrowserReplayBundle = () => {
@@ -2271,7 +2482,28 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const replayVariableDiffs = replayReport
     ? buildReplayVariableDiffs(replaySeedVariables, replayReport.events)
     : []
-  const isReplayPaused = isBrowserScript && browserReplaySession?.status === 'paused'
+  const isReplayPaused = browserReplaySession?.status === 'paused'
+  const scriptPhases = script as ScriptData & { init?: Action[]; teardown?: Action[] }
+  const debugActionRows = [
+    ...(scriptPhases.init || []).map((action: Action, index: number) => ({ phase: 'init', actionIndex: index, action })),
+    ...(script.actions || []).map((action: Action, index: number) => ({ phase: 'action', actionIndex: index, action })),
+    ...(scriptPhases.teardown || []).map((action: Action, index: number) => ({ phase: 'teardown', actionIndex: index, action })),
+  ]
+  const debugBreakpointKeys = new Set(debugBreakpoints.map(bp => debugBreakpointKey(bp.phase, bp.action_index)))
+  const debugRawSearchText = debugRawSearch.trim().toLowerCase()
+  const debugFilteredLogs = (browserReplaySession?.logs || [])
+    .slice(debugRawClearedAt)
+    .filter(entry => debugRawLevel === 'all' || debugLogLevelWeight(entry.level) <= debugLogLevelWeight(debugRawLevel))
+    .filter(entry => {
+      if (!debugRawSearchText) return true
+      return formatDebugLogEntry(entry).toLowerCase().includes(debugRawSearchText)
+    })
+  const debugRawOutputText = debugFilteredLogs.map(formatDebugLogEntry).join('\n\n')
+
+  useEffect(() => {
+    if (!debugRawAutoScroll || !debugRawOutputRef.current) return
+    debugRawOutputRef.current.scrollTop = debugRawOutputRef.current.scrollHeight
+  }, [debugRawAutoScroll, debugRawOutputText])
 
   const addDataSource = () => {
     const nextIndex = (script.data_sources?.length || 0) + 1
@@ -2831,9 +3063,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             <button className="btn btn-ghost" onClick={handleValidateScript} disabled={saving || replaying || validating || !script.name}>
               {validating ? 'Validating…' : (scriptId ? 'Validate Saved Script' : 'Validate Draft')}
             </button>
-            {isBrowserScript && activeReplaySessionId && (
+            {activeReplaySessionId && (
               <button className="btn btn-ghost" onClick={handleStopReplay} disabled={!replaying}>
-                Stop Replay
+                Stop Debugger
               </button>
             )}
             <button className="btn btn-ghost" onClick={handleReplay} disabled={replaying || saving || validating || !script.name || script.actions.length === 0}>
@@ -2949,22 +3181,33 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             <button className="panel-header-toggle" onClick={() => toggleSection('replay')}>
               <div className="panel-title-row">
                 <div>
-                  <h3 className="panel-title">Replay Output {replaying && <span className="replaying-dot" />}</h3>
+                  <h3 className="panel-title">Script Debugger {replaying && <span className="replaying-dot" />}</h3>
                 </div>
               </div>
               <span className="chevron">Close</span>
             </button>
             {(
               <div className="panel-body">
-                <p className="replay-panel-subtitle">{isBrowserScript ? 'Start an asynchronous browser replay session and inspect live events, failures, and final replay state.' : 'Run the current draft once and inspect resolved requests, extractions, failures, and final replay variables.'}</p>
+                <p className="replay-panel-subtitle">Run an interactive debugger session with breakpoints, stepping, variable inspection, raw output, and browser evidence when the script captures it.</p>
                 <div className="replay-options-grid">
                   <label>
-                    <span>Replay Group</span>
+                    <span>Debugger Group</span>
                     <input
                       value={replayOptions.groupName}
                       onChange={e => setReplayOptions(prev => ({ ...prev, groupName: e.target.value }))}
-                      placeholder={`${script.name || 'script'}-replay`}
+                      placeholder={`${script.name || 'script'}-debug`}
                     />
+                  </label>
+                  <label>
+                    <span>Log Level</span>
+                    <select
+                      value={replayOptions.logLevel}
+                      onChange={e => setReplayOptions(prev => ({ ...prev, logLevel: e.target.value as ScriptDebugLogLevel }))}
+                    >
+                      {DEBUG_LOG_LEVELS.map(level => (
+                        <option key={level} value={level}>{level.toUpperCase()}</option>
+                      ))}
+                    </select>
                   </label>
                   <label className="checkbox-label replay-checkbox">
                     <input
@@ -2972,20 +3215,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       checked={replayOptions.ignoreThinkTime}
                       onChange={e => setReplayOptions(prev => ({ ...prev, ignoreThinkTime: e.target.checked }))}
                     />
-                    <span>Ignore think time for replay</span>
+                    <span>Ignore think time</span>
                   </label>
-                  {isBrowserScript && (
-                    <label className="checkbox-label replay-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={replayOptions.startPaused}
-                        onChange={e => setReplayOptions(prev => ({ ...prev, startPaused: e.target.checked }))}
-                      />
-                      <span>Start paused</span>
-                    </label>
-                  )}
+                  <label className="checkbox-label replay-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={replayOptions.startPaused}
+                      onChange={e => setReplayOptions(prev => ({ ...prev, startPaused: e.target.checked }))}
+                    />
+                    <span>Start paused</span>
+                  </label>
                   <label className="full-width replay-variables-field">
-                    <span>Replay Variables JSON</span>
+                    <span>Debugger Variables JSON</span>
                     <textarea
                       value={replayOptions.variablesText}
                       onChange={e => setReplayOptions(prev => ({ ...prev, variablesText: e.target.value }))}
@@ -2993,25 +3234,70 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     />
                   </label>
                 </div>
+                <div className="debug-breakpoint-planner">
+                  <div className="debug-breakpoint-header">
+                    <div>
+                      <strong>Breakpoints</strong>
+                      <span>{debugBreakpoints.length} selected across {debugActionRows.length} executable action{debugActionRows.length === 1 ? '' : 's'}</span>
+                    </div>
+                    {debugBreakpoints.length > 0 && (
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => void (async () => {
+                        setDebugBreakpoints([])
+                        if (activeReplaySessionId && browserReplaySession && !['completed', 'failed', 'stopped'].includes(browserReplaySession.status)) {
+                          const res = await api.updateScriptDebugBreakpoints(activeReplaySessionId, [])
+                          if (res?.session) setBrowserReplaySession(res.session)
+                        }
+                      })()}>
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="debug-breakpoint-list">
+                    {debugActionRows.length === 0 ? (
+                      <div className="debug-breakpoint-empty">Add actions before placing breakpoints.</div>
+                    ) : debugActionRows.map(({ phase, actionIndex, action }) => {
+                      const key = debugBreakpointKey(phase, actionIndex)
+                      const active = debugBreakpointKeys.has(key)
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          className={`debug-breakpoint-row ${active ? 'active' : ''}`}
+                          onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
+                        >
+                          <span className="debug-breakpoint-dot" />
+                          <span>{formatDebugPhaseLabel(phase)} {actionIndex + 1}</span>
+                          <strong>{action.name || 'Unnamed action'}</strong>
+                          <small>{action.method || action.type || 'action'} {action.target || action.selector || ''}</small>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
                 <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-end' }}>
                   {isBrowserScript && replayReport && (
                     <button className="btn btn-sm btn-ghost" onClick={handleDownloadBrowserReplayBundle}>
                       Download Replay ZIP
                     </button>
                   )}
-                  {isBrowserScript && replayReport && (
+                  {replayReport && (
                     <button className="btn btn-sm btn-ghost" onClick={handleDownloadBrowserReplayExport}>
-                      Download Replay JSON
+                      Download Debug JSON
                     </button>
                   )}
-                  {isBrowserScript && activeReplaySessionId && (
+                  {activeReplaySessionId && (
                     <button className="btn btn-sm btn-ghost" onClick={handlePauseResumeReplay} disabled={!replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped'}>
-                      {isReplayPaused ? 'Resume Replay' : 'Pause Replay'}
+                      {isReplayPaused ? 'Continue' : 'Pause'}
                     </button>
                   )}
-                  {isBrowserScript && activeReplaySessionId && (
+                  {activeReplaySessionId && (
+                    <button className="btn btn-sm btn-ghost" onClick={handleStepReplay} disabled={!replaying || !isReplayPaused}>
+                      Step
+                    </button>
+                  )}
+                  {activeReplaySessionId && (
                     <button className="btn btn-sm btn-ghost" onClick={handleStopReplay} disabled={!replaying}>
-                      Stop Replay
+                      Stop
                     </button>
                   )}
                   <button className="btn btn-sm btn-accent" onClick={handleReplay} disabled={replaying || saving || !script.name || script.actions.length === 0}>
@@ -3020,14 +3306,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 </div>
 
                 {!replayReport ? (
-                  <div className="replay-empty-state">{isBrowserScript ? 'No browser replay has been started yet. Use Browser Replay to launch an asynchronous session for the current draft.' : 'No replay has been run yet. Use Replay to execute the current draft once.'}</div>
+                  <div className="replay-empty-state">No debugger session has been started yet. Place optional breakpoints, choose a log level, and start the debugger for the current draft.</div>
                 ) : (
                   <div className="replay-report">
                     <div className={`replay-live-banner ${replaying ? 'running' : replayReport.success ? 'success' : 'error'}`}>
                       <div className="replay-live-banner-main">
-                        <span className="replay-live-badge">{replaying ? 'Streaming live' : 'Replay finished'}</span>
-                        <strong>{replayLatestActivity?.title || 'Replay status available'}</strong>
-                        <span>{replayLatestActivity?.detail || 'Inspect the timeline below for request-by-request execution details.'}</span>
+                        <span className="replay-live-badge">{replaying ? (isReplayPaused ? 'Paused' : 'Streaming live') : 'Debugger finished'}</span>
+                        <strong>{replayLatestActivity?.title || 'Debugger status available'}</strong>
+                        <span>{replayLatestActivity?.detail || 'Inspect the timeline below for action-by-action execution details.'}</span>
                       </div>
                       <div className="replay-live-banner-meta">
                         <span>{replayReport.events.length} / {script.actions.length} actions reported</span>
@@ -3057,7 +3343,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       </div>
                     </div>
                     {replayReport.error && <p className="replay-report-error">{replayReport.error}</p>}
-                    {isBrowserScript && (
+                    <div className="debugger-tabs" role="tablist" aria-label="Debugger panels">
+                      {[
+                        ['timeline', 'Timeline'],
+                        ['variables', 'Variables'],
+                        ['request', 'Request / Response'],
+                        ['raw', 'Raw Output'],
+                        ...(isBrowserScript ? [['browser', 'Browser Evidence']] : []),
+                      ].map(([id, label]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          className={debuggerTab === id ? 'active' : ''}
+                          onClick={() => setDebuggerTab(id as DebuggerTab)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {debuggerTab === 'browser' && isBrowserScript && (
                       <BrowserReplayDebugger
                         sessionId={activeReplaySessionId}
                         session={browserReplaySession}
@@ -3067,7 +3371,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         onSelectEvent={setExpandedReplayEvent}
                       />
                     )}
-                    {replayActivity.length > 0 && (
+                    {debuggerTab === 'timeline' && replayActivity.length > 0 && (
                       <div className="replay-activity-card">
                         <h4>Execution Timeline</h4>
                         <div className="replay-activity-list">
@@ -3093,7 +3397,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         </div>
                       </div>
                     )}
-                    {replayVariableInspector && (
+                    {debuggerTab === 'variables' && replayVariableInspector && (
                       <div className="replay-variables-card">
                         <h4>{replaying ? 'Live Variables' : 'Variable Inspector'}</h4>
                         {Object.keys(replayVariableInspector).length > 0 ? (
@@ -3110,6 +3414,38 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         )}
                       </div>
                     )}
+                    {debuggerTab === 'raw' && (
+                      <div className="debug-raw-panel">
+                        <div className="debug-raw-toolbar">
+                          <label>
+                            <span>Level</span>
+                            <select value={debugRawLevel} onChange={e => setDebugRawLevel(e.target.value as ScriptDebugLogLevel | 'all')}>
+                              <option value="all">All</option>
+                              {DEBUG_LOG_LEVELS.map(level => <option key={level} value={level}>{level.toUpperCase()}+</option>)}
+                            </select>
+                          </label>
+                          <label>
+                            <span>Search</span>
+                            <input value={debugRawSearch} onChange={e => setDebugRawSearch(e.target.value)} placeholder="Filter raw output" />
+                          </label>
+                          <label className="checkbox-label replay-checkbox">
+                            <input type="checkbox" checked={debugRawAutoScroll} onChange={e => setDebugRawAutoScroll(e.target.checked)} />
+                            <span>Auto-scroll</span>
+                          </label>
+                          <button type="button" className="btn btn-sm btn-ghost" onClick={() => void navigator.clipboard?.writeText(debugRawOutputText)}>
+                            Copy
+                          </button>
+                          <button type="button" className="btn btn-sm btn-ghost" onClick={() => downloadTextFile(debugRawOutputText || 'No raw output captured', `${sanitizeDownloadName(script.name, 'script')}-debug.log`)}>
+                            Download
+                          </button>
+                          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setDebugRawClearedAt(browserReplaySession?.logs?.length || 0)}>
+                            Clear View
+                          </button>
+                        </div>
+                        <pre ref={debugRawOutputRef} className="debug-raw-output">{debugRawOutputText || 'No raw output captured yet.'}</pre>
+                      </div>
+                    )}
+                    {(debuggerTab === 'timeline' || debuggerTab === 'request') && (
                     <div className="replay-events-list">
                       {replayReport.events.map((event, index) => {
                         const isOpen = expandedReplayEvent === index
@@ -3383,6 +3719,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         )
                       })}
                     </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -6571,7 +6908,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
   const [expandedReplayBrowserArtifacts, setExpandedReplayBrowserArtifacts] = useState<Record<string, boolean>>({})
   const [copiedReplaySnapshotSection, setCopiedReplaySnapshotSection] = useState<string | null>(null)
   const [activeReplaySessionId, setActiveReplaySessionId] = useState<string | null>(null)
-  const [browserReplaySession, setBrowserReplaySession] = useState<BrowserReplaySession | null>(null)
+  const [browserReplaySession, setBrowserReplaySession] = useState<ScriptDebugSession | null>(null)
   const [replayScreenshotSelection, setReplayScreenshotSelection] = useState<ReplayScreenshotSelection | null>(null)
   const [replayActivity, setReplayActivity] = useState<ReplayActivityItem[]>([])
   const [replaySeedVariables, setReplaySeedVariables] = useState<Record<string, string>>({})
@@ -6580,6 +6917,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     groupName: '',
     ignoreThinkTime: true,
     startPaused: false,
+    logLevel: 'info',
     variablesText: '{\n  \n}',
   })
 

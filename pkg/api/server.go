@@ -25,6 +25,7 @@ type Server struct {
 	runner        *TestRunner
 	scheduler     *scenarioScheduler
 	browserReplay *BrowserReplayManager
+	scriptDebug   *ScriptDebugManager
 	recorder      *recorder.Recorder
 	store         storage.Store
 	cache         CacheBackend
@@ -84,6 +85,7 @@ func NewServer(cfg ServerConfig) *Server {
 		runner:        runner,
 		scheduler:     newScenarioScheduler(runner),
 		browserReplay: NewBrowserReplayManager(hub),
+		scriptDebug:   NewScriptDebugManager(hub),
 		recorder:      rec,
 		store:         cfg.Store,
 		cache:         cache,
@@ -158,6 +160,22 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveBrowserReplaySessionProjectID(s.browserReplay),
+	)
+	scriptDebugSessionViewAuth := projectScopedAuthMiddleware(
+		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		s.store,
+		s.cache,
+		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
+		resolveScriptDebugSessionProjectID(s.scriptDebug),
+	)
+	scriptDebugSessionEditAuth := projectScopedAuthMiddleware(
+		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		s.store,
+		s.cache,
+		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+		[]string{RoleEditor, RoleProjectAdmin},
+		resolveScriptDebugSessionProjectID(s.scriptDebug),
 	)
 
 	// Test lifecycle and archive endpoints.
@@ -274,6 +292,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("PATCH /api/v1/scripts/{id}/move", cors(log(auth(http.HandlerFunc(s.handleMoveScript)))))
 	s.mux.Handle("POST /api/v1/scripts/validate", cors(log(auth(http.HandlerFunc(s.handleValidateDraftScript)))))
 	s.mux.Handle("POST /api/v1/scripts/replay", cors(log(auth(http.HandlerFunc(s.handleReplayDraftScript)))))
+	s.mux.Handle("POST /api/v1/scripts/debug/sessions", cors(log(auth(http.HandlerFunc(s.handleStartScriptDebugDraftScript)))))
 	s.mux.Handle("POST /api/v1/scripts/browser-replay/sessions", cors(log(auth(http.HandlerFunc(s.handleStartBrowserReplayDraftScript)))))
 	s.mux.Handle("POST /api/v1/scripts/browser-to-http/preview", cors(log(auth(http.HandlerFunc(s.handlePreviewBrowserToHTTP)))))
 	s.mux.Handle("GET /api/v1/scripts/authoring/capabilities", cors(log(auth(http.HandlerFunc(s.handleAuthoringCapabilities)))))
@@ -288,6 +307,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/authoring/sessions/{id}/correlations/preview", cors(log(auth(http.HandlerFunc(s.handlePreviewAuthoringCorrelation)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/validate", cors(log(auth(http.HandlerFunc(s.handleValidateScript)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/replay", cors(log(auth(http.HandlerFunc(s.handleReplayScript)))))
+	s.mux.Handle("POST /api/v1/scripts/{id}/debug/sessions", cors(log(auth(http.HandlerFunc(s.handleStartScriptDebugScript)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/browser-replay/sessions", cors(log(auth(http.HandlerFunc(s.handleStartBrowserReplayScript)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/export", cors(log(auth(http.HandlerFunc(s.handleExportScript)))))
 	s.mux.Handle("GET /api/v1/scripts/{id}/download", cors(log(auth(http.HandlerFunc(s.handleDownloadScript)))))
@@ -321,6 +341,13 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/pause", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handlePauseBrowserReplaySession)))))
 	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/resume", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handleResumeBrowserReplaySession)))))
 	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/stop", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handleStopBrowserReplaySession)))))
+	s.mux.Handle("GET /api/v1/script-debug/sessions/{session_id}", cors(log(scriptDebugSessionViewAuth(http.HandlerFunc(s.handleGetScriptDebugSession)))))
+	s.mux.Handle("GET /api/v1/script-debug/sessions/{session_id}/export", cors(log(scriptDebugSessionViewAuth(http.HandlerFunc(s.handleExportScriptDebugSession)))))
+	s.mux.Handle("POST /api/v1/script-debug/sessions/{session_id}/pause", cors(log(scriptDebugSessionEditAuth(http.HandlerFunc(s.handlePauseScriptDebugSession)))))
+	s.mux.Handle("POST /api/v1/script-debug/sessions/{session_id}/resume", cors(log(scriptDebugSessionEditAuth(http.HandlerFunc(s.handleResumeScriptDebugSession)))))
+	s.mux.Handle("POST /api/v1/script-debug/sessions/{session_id}/step", cors(log(scriptDebugSessionEditAuth(http.HandlerFunc(s.handleStepScriptDebugSession)))))
+	s.mux.Handle("POST /api/v1/script-debug/sessions/{session_id}/stop", cors(log(scriptDebugSessionEditAuth(http.HandlerFunc(s.handleStopScriptDebugSession)))))
+	s.mux.Handle("PATCH /api/v1/script-debug/sessions/{session_id}/breakpoints", cors(log(scriptDebugSessionEditAuth(http.HandlerFunc(s.handleUpdateScriptDebugBreakpoints)))))
 
 	// Recording proxy control and artifact retrieval.
 	s.mux.Handle("POST /api/v1/recorder/start", cors(log(recorderCreateAuth(http.HandlerFunc(s.handleStartRecording)))))

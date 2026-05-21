@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -30,6 +31,12 @@ func registerReplayProtocol(t *testing.T, execute func(action *protocol.Action) 
 		return &replayTestProtocol{execute: execute}
 	})
 	return name
+}
+
+type replayDebugControllerFunc func(context.Context, ReplayDebugAction) error
+
+func (f replayDebugControllerFunc) BeforeAction(ctx context.Context, action ReplayDebugAction) error {
+	return f(ctx, action)
 }
 
 func TestReplayScriptRunsAllPhasesAndInterpolatesExtractions(t *testing.T) {
@@ -215,6 +222,52 @@ func TestReplayScriptPublishesProgressEvents(t *testing.T) {
 	}
 	if progress[1].EventIndex != 0 || progress[2].EventIndex != 1 {
 		t.Fatalf("event indexes = %d,%d want 0,1", progress[1].EventIndex, progress[2].EventIndex)
+	}
+}
+
+func TestReplayScriptDebugControllerRunsBeforeAction(t *testing.T) {
+	var executed []string
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		executed = append(executed, action.Name)
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+
+	stopErr := errors.New("debug stop before second")
+	var checkpoints []ReplayDebugAction
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name:     "Debug Script",
+		Protocol: protocolName,
+		Actions: []dsl.Action{
+			{Name: "first", Type: "GET", Target: "/first"},
+			{Name: "second", Type: "GET", Target: "/second"},
+		},
+	}, ReplayOptions{
+		IgnoreThinkTime: true,
+		DebugController: replayDebugControllerFunc(func(_ context.Context, action ReplayDebugAction) error {
+			checkpoints = append(checkpoints, action)
+			if action.ActionName == "second" {
+				if slices.Contains(executed, "second") {
+					t.Fatal("second action executed before debug checkpoint returned")
+				}
+				return stopErr
+			}
+			return nil
+		}),
+	})
+	if err != nil {
+		t.Fatalf("ReplayScript returned error: %v", err)
+	}
+	if report.Success {
+		t.Fatal("report.Success = true, want false after debug stop")
+	}
+	if report.Error != stopErr.Error() {
+		t.Fatalf("report.Error = %q, want %q", report.Error, stopErr.Error())
+	}
+	if !slices.Equal(executed, []string{"first"}) {
+		t.Fatalf("executed actions = %#v, want first only", executed)
+	}
+	if len(checkpoints) != 2 || checkpoints[1].Phase != "action" || checkpoints[1].ActionIndex != 1 || checkpoints[1].EventIndex != 1 {
+		t.Fatalf("debug checkpoints = %#v, want second action checkpoint before event 1", checkpoints)
 	}
 }
 

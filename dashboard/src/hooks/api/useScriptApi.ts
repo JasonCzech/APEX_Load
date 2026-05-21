@@ -10,6 +10,10 @@ import {
   AuthoringCorrelationPreviewResponse,
   AuthoringSession,
   BrowserReplayNetworkEntry,
+  ScriptDebugBreakpoint,
+  ScriptDebugSessionResponse,
+  ScriptDebugStartRequest,
+  ScriptDebugStartResponse,
   GeneratorAssignmentSettings,
   GoalConfig,
   RuntimeSettingsOverride,
@@ -297,6 +301,18 @@ export function useScriptApi() {
     [],
   )
 
+  const startScriptDebugSession = useCallback(
+    (id: string, payload?: ScriptDebugStartRequest) =>
+      request<ScriptDebugStartResponse>(`/scripts/${id}/debug/sessions`, { method: 'POST', body: JSON.stringify(payload || {}) }),
+    [],
+  )
+
+  const startDraftScriptDebugSession = useCallback(
+    (payload: ScriptDebugStartRequest & { script: ScriptDefinition }) =>
+      request<ScriptDebugStartResponse>('/scripts/debug/sessions', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
   const previewBrowserToHTTP = useCallback(
     (payload: BrowserToHTTPPreviewRequest) =>
       request<BrowserToHTTPPreviewResponse>('/scripts/browser-to-http/preview', { method: 'POST', body: JSON.stringify(payload) }),
@@ -320,6 +336,48 @@ export function useScriptApi() {
 
   const resumeBrowserReplaySession = useCallback(
     (sessionId: string) => request<BrowserReplaySessionResponse>(`/browser-replay/sessions/${sessionId}/resume`, { method: 'POST' }),
+    [],
+  )
+
+  const getScriptDebugSession = useCallback(
+    (sessionId: string) => request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}`),
+    [],
+  )
+
+  const stopScriptDebugSession = useCallback(
+    (sessionId: string) => request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/stop`, { method: 'POST' }),
+    [],
+  )
+
+  const pauseScriptDebugSession = useCallback(
+    (sessionId: string) => request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/pause`, { method: 'POST' }),
+    [],
+  )
+
+  const resumeScriptDebugSession = useCallback(
+    (sessionId: string) => request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/resume`, { method: 'POST' }),
+    [],
+  )
+
+  const stepScriptDebugSession = useCallback(
+    (sessionId: string) => request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/step`, { method: 'POST' }),
+    [],
+  )
+
+  const updateScriptDebugBreakpoints = useCallback(
+    (sessionId: string, breakpoints: ScriptDebugBreakpoint[]) =>
+      request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/breakpoints`, { method: 'PATCH', body: JSON.stringify({ breakpoints }) }),
+    [],
+  )
+
+  const exportScriptDebugSession = useCallback(
+    async (sessionId: string, format: 'json' | 'log' = 'json') => {
+      const res = await apiFetch(`/script-debug/sessions/${sessionId}/export?format=${encodeURIComponent(format)}`)
+      if (!res.ok) {
+        throw new Error(res.statusText || 'Failed to export script debugger session')
+      }
+      return format === 'log' ? res.text() : res.blob()
+    },
     [],
   )
 
@@ -642,11 +700,20 @@ export function useScriptApi() {
   		replayDraftScript,
       startBrowserReplaySession,
       startDraftBrowserReplaySession,
+      startScriptDebugSession,
+      startDraftScriptDebugSession,
       previewBrowserToHTTP,
       getBrowserReplaySession,
       stopBrowserReplaySession,
       pauseBrowserReplaySession,
       resumeBrowserReplaySession,
+      getScriptDebugSession,
+      stopScriptDebugSession,
+      pauseScriptDebugSession,
+      resumeScriptDebugSession,
+      stepScriptDebugSession,
+      updateScriptDebugBreakpoints,
+      exportScriptDebugSession,
       exportScript,
       importLoadRunner,
       validateLoadRunnerImport,
@@ -698,11 +765,20 @@ export function useScriptApi() {
   		replayDraftScript,
       startBrowserReplaySession,
       startDraftBrowserReplaySession,
+      startScriptDebugSession,
+      startDraftScriptDebugSession,
       previewBrowserToHTTP,
       getBrowserReplaySession,
       stopBrowserReplaySession,
       pauseBrowserReplaySession,
       resumeBrowserReplaySession,
+      getScriptDebugSession,
+      stopScriptDebugSession,
+      pauseScriptDebugSession,
+      resumeScriptDebugSession,
+      stepScriptDebugSession,
+      updateScriptDebugBreakpoints,
+      exportScriptDebugSession,
       exportScript,
       importLoadRunner,
       validateLoadRunnerImport,

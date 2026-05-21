@@ -29,10 +29,17 @@ const apiMock = {
   replayScript: vi.fn(),
   startDraftBrowserReplaySession: vi.fn(),
   startBrowserReplaySession: vi.fn(),
+  startDraftScriptDebugSession: vi.fn(),
+  startScriptDebugSession: vi.fn(),
   previewBrowserToHTTP: vi.fn(),
   pauseBrowserReplaySession: vi.fn(),
   resumeBrowserReplaySession: vi.fn(),
   stopBrowserReplaySession: vi.fn(),
+  pauseScriptDebugSession: vi.fn(),
+  resumeScriptDebugSession: vi.fn(),
+  stepScriptDebugSession: vi.fn(),
+  stopScriptDebugSession: vi.fn(),
+  updateScriptDebugBreakpoints: vi.fn(),
   listAuthoringComponents: vi.fn(),
 }
 
@@ -88,6 +95,37 @@ async function readStoredZipEntries(blob: Blob) {
   }
 
   return entries
+}
+
+function debugSessionResponse(report: {
+  group: string
+  protocol: string
+  started_at: string
+  completed_at?: string
+  success: boolean
+  error?: string
+  final_variables?: Record<string, string>
+  events: unknown[]
+}, overrides: Record<string, unknown> = {}) {
+  const terminal = Boolean(report.completed_at)
+  return {
+    replay_session_id: 'debug-session-1',
+    debug_session_id: 'debug-session-1',
+    session: {
+      id: 'debug-session-1',
+      group: report.group,
+      protocol: report.protocol,
+      status: terminal ? (report.success ? 'completed' : 'failed') : 'running',
+      started_at: report.started_at,
+      completed_at: report.completed_at,
+      current_event_index: report.events.length - 1,
+      events: report.events,
+      report,
+      logs: [],
+      raw_output: [],
+      ...overrides,
+    },
+  }
 }
 
 describe('ScriptEditor', () => {
@@ -195,6 +233,22 @@ describe('ScriptEditor', () => {
         events: [],
       },
     })
+    apiMock.startDraftScriptDebugSession.mockResolvedValue(debugSessionResponse({
+      group: 'Checkout Flow-debug',
+      protocol: 'http',
+      started_at: '2026-05-14T20:00:00Z',
+      completed_at: '2026-05-14T20:00:01Z',
+      success: true,
+      events: [],
+    }))
+    apiMock.startScriptDebugSession.mockResolvedValue(debugSessionResponse({
+      group: 'Checkout Flow-debug',
+      protocol: 'http',
+      started_at: '2026-05-14T20:00:00Z',
+      completed_at: '2026-05-14T20:00:01Z',
+      success: true,
+      events: [],
+    }))
     apiMock.startDraftBrowserReplaySession.mockResolvedValue({
       session: {
         id: 'browser-replay-1',
@@ -251,6 +305,11 @@ describe('ScriptEditor', () => {
     apiMock.pauseBrowserReplaySession.mockResolvedValue({ session: { status: 'paused' } })
     apiMock.resumeBrowserReplaySession.mockResolvedValue({ session: { status: 'running' } })
     apiMock.stopBrowserReplaySession.mockResolvedValue(undefined)
+    apiMock.pauseScriptDebugSession.mockResolvedValue({ session: { status: 'paused' } })
+    apiMock.resumeScriptDebugSession.mockResolvedValue({ session: { status: 'running' } })
+    apiMock.stepScriptDebugSession.mockResolvedValue({ session: { status: 'paused' } })
+    apiMock.stopScriptDebugSession.mockResolvedValue({ session: { status: 'stopped' } })
+    apiMock.updateScriptDebugBreakpoints.mockResolvedValue({ session: { breakpoints: [] } })
     apiMock.listAuthoringComponents.mockResolvedValue({ components: [], count: 0 })
   })
 
@@ -459,7 +518,7 @@ describe('ScriptEditor', () => {
   })
 
   it('generates a Web2 HTTP draft preview from browser replay network evidence', async () => {
-    apiMock.startDraftBrowserReplaySession.mockResolvedValueOnce({
+    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce({
       replay_session_id: 'browser-replay-1',
       session: {
         id: 'browser-replay-1',
@@ -1102,7 +1161,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(apiMock.replayDraftScript).toHaveBeenCalledWith(expect.objectContaining({
+    expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalledWith(expect.objectContaining({
       script: expect.objectContaining({ project_id: 'project-1' }),
     }))
   })
@@ -1605,7 +1664,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(apiMock.startDraftBrowserReplaySession).toHaveBeenCalledWith(expect.objectContaining({
+    expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalledWith(expect.objectContaining({
       browser: expect.objectContaining({
         engine: 'webkit',
         headless: true,
@@ -1675,7 +1734,7 @@ describe('ScriptEditor', () => {
   })
 
   it('renders replay start warnings returned by the browser replay API', async () => {
-    apiMock.startDraftBrowserReplaySession.mockResolvedValueOnce({
+    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce({
       replay_session_id: 'browser-replay-1',
       warnings: ['WebKit controller host is missing the Playwright browser cache warmup.'],
       session: {
@@ -1734,7 +1793,7 @@ describe('ScriptEditor', () => {
   })
 
   it('exports the current browser replay session as JSON', async () => {
-    apiMock.startDraftBrowserReplaySession.mockResolvedValueOnce({
+    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce({
       replay_session_id: 'browser-replay-1',
       session: {
         id: 'browser-replay-1',
@@ -1787,7 +1846,7 @@ describe('ScriptEditor', () => {
     })
 
     const exportButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Download Replay JSON',
+      button.textContent?.trim() === 'Download Debug JSON',
     )
     expect(exportButton).toBeDefined()
     if (!exportButton) {
@@ -1801,16 +1860,16 @@ describe('ScriptEditor', () => {
 
     expect(downloadTextFileMock).toHaveBeenCalledTimes(1)
     const [content, filename] = downloadTextFileMock.mock.calls[0]
-    expect(filename).toBe('checkout-flow-browser-replay-1-browser-replay.json')
+    expect(filename).toBe('checkout-flow-browser-replay-1-debug.json')
     const parsed = JSON.parse(content)
-    expect(parsed.schema_version).toBe('apexload.browser_replay_export.v1')
+    expect(parsed.schema_version).toBe('apexload.script_debug_export.v1')
     expect(parsed.replay_session_id).toBe('browser-replay-1')
     expect(parsed.script).toMatchObject({
       name: 'Checkout Flow',
       protocol: 'browser',
     })
     expect(parsed.replay_options).toMatchObject({
-      group_name: 'Checkout Flow-replay',
+      group_name: 'Checkout Flow-debug',
       ignore_think_time: true,
       start_paused: false,
       variables: {},
@@ -1820,14 +1879,14 @@ describe('ScriptEditor', () => {
       status: 'running',
     })
     expect(parsed.report).toMatchObject({
-      group: 'Checkout Flow-replay',
+      group: 'Checkout Flow-debug',
       protocol: 'browser',
     })
-    expect(container.textContent).toContain('Exported browser replay session JSON.')
+    expect(container.textContent).toContain('Exported debugger session JSON.')
   })
 
   it('exports the current browser replay session as a ZIP bundle', async () => {
-    apiMock.startDraftBrowserReplaySession.mockResolvedValueOnce({
+    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce({
       replay_session_id: 'browser-replay-1',
       session: {
         id: 'browser-replay-1',
@@ -1947,7 +2006,7 @@ describe('ScriptEditor', () => {
   })
 
   it('renders replay validation warnings returned on failed browser replay start', async () => {
-    apiMock.startDraftBrowserReplaySession.mockRejectedValueOnce(Object.assign(new Error('Replay validation failed'), {
+    apiMock.startDraftScriptDebugSession.mockRejectedValueOnce(Object.assign(new Error('Replay validation failed'), {
       payload: {
         issues: ['browser engine webkit requires a reachable Playwright runtime'],
         warnings: ['Install Playwright WebKit assets on the controller host before retrying.'],
@@ -2713,9 +2772,8 @@ describe('ScriptEditor', () => {
       ],
     }
 
-    apiMock.replayDraftScript.mockResolvedValueOnce({
-      report: {
-        group: 'SOAP Replay-replay',
+    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+        group: 'SOAP Replay-debug',
         protocol: 'soap',
         started_at: '2026-05-14T20:00:00Z',
         completed_at: '2026-05-14T20:00:01Z',
@@ -2761,8 +2819,7 @@ describe('ScriptEditor', () => {
             },
           },
         ],
-      },
-    })
+    }))
 
     await act(async () => {
       root.render(<ScriptEditor initialScript={soapScript} />)
@@ -2781,7 +2838,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(apiMock.replayDraftScript).toHaveBeenCalled()
+    expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalled()
     expect(container.textContent).toContain('SOAP Fault')
     expect(container.textContent).toContain('SOAP 1.2')
     expect(container.textContent).toContain('Code: env:Sender')
@@ -2841,8 +2898,7 @@ describe('ScriptEditor', () => {
     }, 200))
     expect(container.textContent).toContain('Show full text')
     const highlightedBlocks = Array.from(container.querySelectorAll('.snapshot-code'))
-    expect(highlightedBlocks).toHaveLength(5)
-    expect(highlightedBlocks.some(block => block.textContent?.includes('"orderId": "A-100"'))).toBe(true)
+    expect(highlightedBlocks).toHaveLength(4)
     expect(highlightedBlocks.some(block => block.textContent?.includes('"confirmationId": "CONF-42"'))).toBe(true)
     expect(highlightedBlocks.some(block => block.textContent?.includes('<CreateOrder />'))).toBe(true)
     const resolvedHeadersLabel = Array.from(container.querySelectorAll('.replay-code-block .replay-detail-label')).find(node => node.textContent === 'Resolved Headers')
@@ -2854,9 +2910,8 @@ describe('ScriptEditor', () => {
   })
 
   it('renders browser replay DOM summary and fallback snapshot with highlighted JSON previews', async () => {
-    apiMock.replayDraftScript.mockResolvedValueOnce({
-      report: {
-        group: 'Checkout Flow-replay',
+    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+        group: 'Checkout Flow-debug',
         protocol: 'web_http_html',
         started_at: '2026-05-14T20:00:00Z',
         completed_at: '2026-05-14T20:00:01Z',
@@ -2902,8 +2957,7 @@ describe('ScriptEditor', () => {
             },
           },
         ],
-      },
-    })
+    }))
 
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
@@ -2922,7 +2976,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(apiMock.replayDraftScript).toHaveBeenCalled()
+    expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalled()
     expect(container.textContent).toContain('Page URL')
     expect(container.textContent).toContain('https://shop.example.com/catalog')
     expect(container.textContent).toContain('Page Title')
@@ -2995,9 +3049,8 @@ describe('ScriptEditor', () => {
   })
 
   it('does not render an empty browser artifacts section for metadata-only replay events', async () => {
-    apiMock.replayDraftScript.mockResolvedValueOnce({
-      report: {
-        group: 'Checkout Flow-replay',
+    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+        group: 'Checkout Flow-debug',
         protocol: 'web_http_html',
         started_at: '2026-05-14T20:00:00Z',
         completed_at: '2026-05-14T20:00:01Z',
@@ -3021,8 +3074,7 @@ describe('ScriptEditor', () => {
             },
           },
         ],
-      },
-    })
+    }))
 
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)

@@ -1157,6 +1157,14 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}, true
 	}
 
+	if path == "/api/v1/scripts/debug/sessions" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveDraftScriptProjectID,
+		}, true
+	}
+
 	if path == "/api/v1/scripts/browser-replay/sessions" && method == http.MethodPost {
 		return accessRequirement{
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -1984,6 +1992,19 @@ func resolveBrowserReplaySessionProjectID(manager *BrowserReplayManager) request
 		session, ok := manager.Get(r.PathValue("session_id"))
 		if !ok {
 			return "", http.StatusNotFound, "browser replay session not found"
+		}
+		return normalizeProjectID(session.ProjectID), 0, ""
+	}
+}
+
+func resolveScriptDebugSessionProjectID(manager *ScriptDebugManager) requestProjectLookup {
+	return func(r *http.Request) (string, int, string) {
+		if manager == nil {
+			return "", http.StatusServiceUnavailable, "script debugger is not configured"
+		}
+		session, ok := manager.Get(r.PathValue("session_id"))
+		if !ok {
+			return "", http.StatusNotFound, "script debug session not found"
 		}
 		return normalizeProjectID(session.ProjectID), 0, ""
 	}
