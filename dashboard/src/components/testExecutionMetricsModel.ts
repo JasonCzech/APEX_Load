@@ -120,24 +120,39 @@ export function buildExecutionChartData({
     }
   }
 
-  if (status === 'PAUSED' && deduped.length > 0) {
-    const lastPoint = deduped[deduped.length - 1]
+  const pointsWithRelativeRunTime = addRelativeRunTime(deduped)
+
+  if (status === 'PAUSED' && pointsWithRelativeRunTime.length > 0) {
+    const lastPoint = pointsWithRelativeRunTime[pointsWithRelativeRunTime.length - 1]
     if (lastPoint.tps < 0.1) {
       let lastNonZeroIndex = -1
-      for (let index = deduped.length - 1; index >= 0; index -= 1) {
-        if (deduped[index].tps > 0.1) {
+      for (let index = pointsWithRelativeRunTime.length - 1; index >= 0; index -= 1) {
+        if (pointsWithRelativeRunTime[index].tps > 0.1) {
           lastNonZeroIndex = index
           break
         }
       }
 
       if (lastNonZeroIndex !== -1) {
-        return deduped.slice(0, lastNonZeroIndex + 6)
+        return pointsWithRelativeRunTime.slice(0, lastNonZeroIndex + 6)
       }
     }
   }
 
-  return deduped
+  return pointsWithRelativeRunTime
+}
+
+function addRelativeRunTime(points: MetricsHistoryPoint[]): MetricsHistoryPoint[] {
+  if (points.length === 0) {
+    return points
+  }
+  const firstTimestamp = points.find(point => typeof point.timestampMs === 'number')?.timestampMs
+  return points.map((point, index) => ({
+    ...point,
+    relativeMs: typeof firstTimestamp === 'number' && typeof point.timestampMs === 'number'
+      ? Math.max(0, point.timestampMs - firstTimestamp)
+      : index * 1000,
+  }))
 }
 
 export function filterExecutionChartData(

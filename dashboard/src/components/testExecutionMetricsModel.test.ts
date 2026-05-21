@@ -128,6 +128,19 @@ describe('testExecutionMetricsModel', () => {
     expect(chartData.map((point) => point.time)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8'])
   })
 
+  it('adds relative run time offsets from chart timestamps', () => {
+    const chartData = buildExecutionChartData({
+      mappedBackendHistory: [],
+      localMetricsHistory: [],
+      fallbackHistory: [
+        { time: '10:00:00', timestampMs: 1_000, vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p99: 130 },
+        { time: '10:00:05', timestampMs: 6_000, vusers: 4, tps: 2, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p99: 135 },
+      ],
+    })
+
+    expect(chartData.map((point) => point.relativeMs)).toEqual([0, 5_000])
+  })
+
   it('filters custom zoom ranges and summarizes the resulting slice', () => {
     const filtered = filterExecutionChartData([
       { time: '10:00:00', vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 90, p90: 120, p99: 150 },

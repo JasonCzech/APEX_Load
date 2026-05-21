@@ -83,6 +83,60 @@ describe('TestExecutionSummary', () => {
 		expect(container.textContent).toContain('Reuse 75% (+25% vs prev)')
 	})
 
+	it('keeps long telemetry names and targets constrained inside cards', async () => {
+		// @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+		const { readFileSync } = await import('node:fs')
+		const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+		const executionCss = readFileSync(`${cwd}/src/components/TestExecution.css`, 'utf8') as string
+		const longTransaction: TxMetrics = {
+			name: 'POST /Services/com/cingular/csi/edp/InquireSubscriberBillingAgreementWithExtremelyLongOperationNameWithoutNaturalBreaks.jws',
+			dependency_type: 'http',
+			dependency_target: 'https://csi-gw-ext.att.com:443/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreementWithExtremelyLongDependencyTargetWithoutNaturalBreaks',
+			count: 12,
+			errors: 0,
+			avg_ms: 180,
+			p50_ms: 150,
+			p90_ms: 210,
+			p99_ms: 260,
+			avg_dns_ms: 8,
+			avg_connect_ms: 14,
+			avg_tls_ms: 20,
+			avg_ttfb_ms: 84,
+			server_telemetry: {
+				samples: 12,
+				avg_server_processing_ms: 48,
+				avg_transfer_ms: 14,
+				avg_request_payload_kb: 1.25,
+				avg_response_payload_kb: 4,
+				connection_reused_pct: 75,
+			},
+		}
+
+		await act(async () => {
+			root.render(
+				<TestExecutionSummary
+					transactions={[longTransaction]}
+					metrics={{ p50_ms: 150, p90_ms: 210, p95_ms: 230, p99_ms: 260 }}
+				/>,
+			)
+		})
+
+		const card = container.querySelector('.server-telemetry-card')
+		const name = container.querySelector('.server-telemetry-name')
+		const target = container.querySelector('.server-telemetry-target')
+
+		expect(container.textContent).toContain('Live Server Telemetry')
+		expect(container.textContent).toContain('Live HTTP Response Decomposition')
+		expect(card).not.toBeNull()
+		expect(name).not.toBeNull()
+		expect(target).not.toBeNull()
+		expect(cssRule(executionCss, '.server-telemetry-card')).toContain('min-width: 0;')
+		expect(cssRule(executionCss, '.server-telemetry-card')).toContain('overflow: hidden;')
+		expect(cssRule(executionCss, '.server-telemetry-name')).toContain('overflow-wrap: anywhere;')
+		expect(cssRule(executionCss, '.server-telemetry-target')).toContain('overflow-wrap: anywhere;')
+		expect(cssRule(executionCss, '.server-telemetry-value')).toContain('word-break: break-word;')
+	})
+
 	it('renders live SOAP operation hotspots when available', async () => {
 		const createOrder: TxMetrics = {
 			name: 'CreateOrder',
@@ -708,3 +762,11 @@ describe('TestExecutionSummary', () => {
 		expect(container.textContent).toContain('grpc.example.test:443')
 	})
 })
+
+function cssRule(css: string, selector: string) {
+	const selectorIndex = css.indexOf(`${selector} {`)
+	if (selectorIndex === -1) return ''
+	const bodyStart = css.indexOf('{', selectorIndex) + 1
+	const bodyEnd = css.indexOf('}', bodyStart)
+	return css.slice(bodyStart, bodyEnd)
+}

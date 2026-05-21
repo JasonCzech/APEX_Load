@@ -52,6 +52,15 @@ type scheduleExecutionBackend struct {
 	started chan string
 }
 
+type scaleBackendCall struct {
+	group  string
+	target int
+}
+
+type scalableExecutionBackendSpy struct {
+	calls chan scaleBackendCall
+}
+
 func (provenanceInventoryBackend) Run(_ *TestRunner, _ *ManagedTest) {}
 
 func (provenanceInventoryBackend) SystemInventory(_ context.Context) []GeneratorInventoryEntry {
@@ -62,6 +71,13 @@ func (b *scheduleExecutionBackend) Run(_ *TestRunner, test *ManagedTest) {
 	if b != nil && b.started != nil {
 		b.started <- test.ID
 	}
+}
+
+func (b *scalableExecutionBackendSpy) Run(_ *TestRunner, _ *ManagedTest) {}
+
+func (b *scalableExecutionBackendSpy) ScaleVUsers(_ *TestRunner, _ *ManagedTest, groupName string, targetVUsers int) error {
+	b.calls <- scaleBackendCall{group: groupName, target: targetVUsers}
+	return nil
 }
 
 func (s *metricsStoreSpy) SaveScript(script *dsl.Script) error {
@@ -689,6 +705,44 @@ func TestCreateTestInheritsProjectRedactionRules(t *testing.T) {
 	}
 	if got := test.groupSpecs[0].RedactionConfig.ScrubText("customer-1234 ok"); got != "[REDACTED] ok" {
 		t.Fatalf("scrubbed text = %q, want inherited project rule applied", got)
+	}
+}
+
+func TestScenarioAndTestRejectStoredScriptWithoutActions(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-empty",
+		Name:     "Empty Import",
+		Protocol: "http",
+		Version:  "1.0.0",
+	})
+
+	_, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Broken Scenario",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{{
+			ScriptID: "script-empty",
+			VUsers:   1,
+		}},
+	})
+	if err == nil {
+		t.Fatal("expected StoreScenario to reject a script without actions")
+	}
+	if !strings.Contains(err.Error(), "group[0]: script must have at least one action") || !strings.Contains(err.Error(), "config.base_url is empty") {
+		t.Fatalf("StoreScenario error = %q, want missing action and base_url details", err.Error())
+	}
+
+	_, err = runner.CreateTest(CreateTestRequest{
+		Name:     "Broken Run",
+		Duration: "1m",
+		ScriptID: "script-empty",
+		VUsers:   1,
+	})
+	if err == nil {
+		t.Fatal("expected CreateTest to reject a script without actions")
+	}
+	if !strings.Contains(err.Error(), "group[0]: script must have at least one action") || !strings.Contains(err.Error(), "config.base_url is empty") {
+		t.Fatalf("CreateTest error = %q, want missing action and base_url details", err.Error())
 	}
 }
 
@@ -2428,6 +2482,145 @@ func TestBuildLiveMetricsForBroadcastOverridesTimestamp(t *testing.T) {
 	}
 }
 
+func TestScaleVUsersWithOptionsRampsGradually(t *testing.T) {
+	cases := []struct {
+		name       string
+		current    int
+		target     int
+		wantSteps  []int
+		wantTotal  int
+		wantGroup  int
+		wantStatus string
+	}{
+		{
+			name:       "add vusers",
+			current:    1,
+			target:     4,
+			wantSteps:  []int{2, 3, 4},
+			wantTotal:  4,
+			wantGroup:  4,
+			wantStatus: "RUNNING",
+		},
+		{
+			name:       "remove vusers",
+			current:    4,
+			target:     1,
+			wantSteps:  []int{3, 2, 1},
+			wantTotal:  1,
+			wantGroup:  1,
+			wantStatus: "RUNNING",
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := NewTestRunner(1, NewHub(), nil)
+			backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 8)}
+			runner.setExecutionBackend(backend)
+			runner.tests["test-1"] = &ManagedTest{
+				ID:          "test-1",
+				Name:        "Gradual scale test",
+				Status:      "RUNNING",
+				ProjectID:   storage.DefaultProjectID,
+				TotalVUsers: tt.current,
+				Groups:      []TestGroup{{Name: "buyers", VUsers: tt.current}},
+			}
+
+			if err := runner.ScaleVUsersWithOptions("test-1", "buyers", tt.target, ScaleVUsersOptions{RampDuration: 60 * time.Millisecond}); err != nil {
+				t.Fatalf("ScaleVUsersWithOptions returned error: %v", err)
+			}
+
+			gotSteps := make([]int, 0, len(tt.wantSteps))
+			deadline := time.After(2 * time.Second)
+			for len(gotSteps) < len(tt.wantSteps) {
+				select {
+				case call := <-backend.calls:
+					if call.group != "buyers" {
+						t.Fatalf("scale group = %q, want buyers", call.group)
+					}
+					gotSteps = append(gotSteps, call.target)
+				case <-deadline:
+					t.Fatalf("timed out waiting for ramp steps, got %v want %v", gotSteps, tt.wantSteps)
+				}
+			}
+			if !intSlicesEqual(gotSteps, tt.wantSteps) {
+				t.Fatalf("ramp steps = %v, want %v", gotSteps, tt.wantSteps)
+			}
+
+			configDeadline := time.Now().Add(2 * time.Second)
+			for {
+				scaled, ok := runner.GetTest("test-1")
+				if !ok {
+					t.Fatal("expected test to exist after gradual scale")
+				}
+				if scaled.Status == tt.wantStatus && scaled.TotalVUsers == tt.wantTotal && scaled.Groups[0].VUsers == tt.wantGroup {
+					break
+				}
+				if time.Now().After(configDeadline) {
+					t.Fatalf("scaled config = groups=%#v total=%d status=%s, want group=%d total=%d status=%s", scaled.Groups, scaled.TotalVUsers, scaled.Status, tt.wantGroup, tt.wantTotal, tt.wantStatus)
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		})
+	}
+}
+
+func TestScaleVUsersWithOptionsExposesActiveRampStatus(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 8)}
+	runner.setExecutionBackend(backend)
+	runner.tests["test-1"] = &ManagedTest{
+		ID:          "test-1",
+		Name:        "Active ramp status test",
+		Status:      "RUNNING",
+		ProjectID:   storage.DefaultProjectID,
+		TotalVUsers: 2,
+		Groups:      []TestGroup{{Name: "buyers", VUsers: 2}},
+	}
+
+	if err := runner.ScaleVUsersWithOptions("test-1", "buyers", 5, ScaleVUsersOptions{RampDuration: time.Second}); err != nil {
+		t.Fatalf("ScaleVUsersWithOptions returned error: %v", err)
+	}
+
+	scaled, ok := runner.GetTest("test-1")
+	if !ok {
+		t.Fatal("expected test to exist after gradual scale")
+	}
+	ramp, ok := scaled.VUserRamps["buyers"]
+	if !ok {
+		t.Fatalf("expected active ramp status, got %#v", scaled.VUserRamps)
+	}
+	if ramp.Group != "buyers" || ramp.StartVUsers != 2 || ramp.TargetVUsers != 5 || ramp.RampDuration != "1s" || ramp.RampDurationSeconds != 1 {
+		t.Fatalf("active ramp status = %#v, want buyers 2->5 over 1s", ramp)
+	}
+	if ramp.StartedAt.IsZero() {
+		t.Fatal("expected active ramp status to include started_at")
+	}
+
+	if err := runner.ScaleVUsers("test-1", "buyers", 2); err != nil {
+		t.Fatalf("ScaleVUsers returned error: %v", err)
+	}
+	scaled, ok = runner.GetTest("test-1")
+	if !ok {
+		t.Fatal("expected test to exist after immediate scale")
+	}
+	if len(scaled.VUserRamps) != 0 {
+		t.Fatalf("expected immediate scale to clear active ramps, got %#v", scaled.VUserRamps)
+	}
+}
+
+func intSlicesEqual(a []int, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestApplyGoalControllerUpdateScalesGroupsAndUpdatesStatus(t *testing.T) {
 	timestamp := time.Date(2026, time.May, 10, 11, 0, 0, 0, time.UTC)
 	testRun := &ManagedTest{
@@ -2590,6 +2783,7 @@ func TestScriptAndTestCrudPersistThroughStoreHelpers(t *testing.T) {
 		Config: dsl.ScriptConfig{
 			BaseURL: "https://example.com",
 		},
+		Actions: []dsl.Action{{Name: "Search", Type: "request", Target: "/search"}},
 	})
 	testRun, err := runner.CreateTest(CreateTestRequest{
 		Name:     "Queued Test",
@@ -3324,6 +3518,8 @@ func TestStartTestFailsWhenScriptShakeoutFails(t *testing.T) {
 		Name:     "Broken Script",
 		Protocol: "definitely-not-supported",
 		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "Broken", Type: "request", Target: "/"}},
 	})
 
 	test, err := runner.CreateTest(CreateTestRequest{

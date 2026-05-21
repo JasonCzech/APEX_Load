@@ -300,6 +300,7 @@ export interface TestSummary {
   baseline_pinned_at?: string
   started_at?: string
   ended_at?: string
+  vuser_ramps?: Record<string, VUserRampStatus>
   live_metrics?: LiveMetrics
   telemetry_health?: TelemetryRunHealth
   error?: string
@@ -313,6 +314,15 @@ export interface TestSummary {
   // backwards compat
   script_id?: string
   script_name?: string
+}
+
+export interface VUserRampStatus {
+  group: string
+  start_vusers: number
+  target_vusers: number
+  started_at: string
+  ramp_duration: string
+  ramp_duration_seconds: number
 }
 
 export interface RunArchiveRecord {
@@ -1444,6 +1454,7 @@ export interface BrowserReplaySessionResponse {
 export interface MetricsHistoryPoint {
   time: string
   timestampMs?: number
+  relativeMs?: number
   vusers: number
   tps: number
   avgMs: number

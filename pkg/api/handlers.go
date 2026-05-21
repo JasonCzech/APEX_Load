@@ -437,7 +437,9 @@ func (s *Server) handleScaleVUsers(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req struct {
 		Group        string `json:"group"`
+		Action       string `json:"action,omitempty"`
 		TargetVUsers int    `json:"target_vusers"`
+		RampDuration string `json:"ramp_duration,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
@@ -451,8 +453,33 @@ func (s *Server) handleScaleVUsers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "target_vusers must be non-negative")
 		return
 	}
+	action := strings.TrimSpace(req.Action)
+	if action == "" {
+		action = "run"
+	}
+	if action != "run" && action != "pause" && action != "stop" {
+		writeError(w, http.StatusBadRequest, "action must be one of run, pause, or stop")
+		return
+	}
+	targetVUsers := req.TargetVUsers
+	if action == "pause" || action == "stop" {
+		targetVUsers = 0
+	}
+	var rampDuration time.Duration
+	if strings.TrimSpace(req.RampDuration) != "" {
+		var err error
+		rampDuration, err = time.ParseDuration(req.RampDuration)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid ramp_duration %q: %v", req.RampDuration, err))
+			return
+		}
+		if rampDuration <= 0 {
+			writeError(w, http.StatusBadRequest, "ramp_duration must be positive")
+			return
+		}
+	}
 
-	if err := s.runner.ScaleVUsers(id, req.Group, req.TargetVUsers); err != nil {
+	if err := s.runner.ScaleVUsersWithOptions(id, req.Group, targetVUsers, ScaleVUsersOptions{RampDuration: rampDuration}); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -462,14 +489,29 @@ func (s *Server) handleScaleVUsers(w http.ResponseWriter, r *http.Request) {
 		projectID = test.ProjectID
 		name = test.Name
 	}
-	s.recordAuditEvent(r, "test.vusers.scale", "success", "test", id, projectID, map[string]any{"name": name, "group": req.Group, "target_vusers": req.TargetVUsers})
+	auditDetails := map[string]any{"name": name, "group": req.Group, "action": action, "target_vusers": targetVUsers}
+	if rampDuration > 0 {
+		auditDetails["ramp_duration"] = req.RampDuration
+	}
+	s.recordAuditEvent(r, "test.vusers.scale", "success", "test", id, projectID, auditDetails)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	payload := map[string]any{
 		"test_id":       id,
 		"group":         req.Group,
-		"target_vusers": req.TargetVUsers,
+		"action":        action,
+		"target_vusers": targetVUsers,
 		"status":        "scaled",
-	})
+	}
+	if action == "pause" {
+		payload["status"] = "paused"
+	} else if action == "stop" {
+		payload["status"] = "stopped"
+	}
+	if rampDuration > 0 {
+		payload["status"] = "ramping"
+		payload["ramp_duration"] = req.RampDuration
+	}
+	writeJSON(w, http.StatusOK, payload)
 }
 
 func (s *Server) handleAdjustDuration(w http.ResponseWriter, r *http.Request) {

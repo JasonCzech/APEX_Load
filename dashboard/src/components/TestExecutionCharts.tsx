@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ComponentProps, type DragEvent, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentProps, type MouseEvent } from 'react'
 import {
   Area,
   CartesianGrid,
@@ -15,6 +15,7 @@ import {
 
 import { MetricsHistoryPoint } from '../types'
 import { routeLatencySeriesLabel } from './latencySeries'
+import { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
 
 type ChartDomain = ComponentProps<typeof YAxis>['domain']
 
@@ -40,10 +41,29 @@ interface Props {
   showRefArea: boolean
   refAreaLeft: string | number
   refAreaEnd: string | number
+  timeRange: ExecutionChartTimeRange
+  onTimeRangeChange: (value: ExecutionChartTimeRange) => void
   isMultiGroup: boolean
   groupNames: string[]
   groupColors: string[]
 }
+
+export interface ChartMetricRow {
+  key: string
+  label: string
+  color: string
+  unit?: string
+}
+
+export interface ChartMetricSummary {
+  latest?: number
+  average?: number
+  min?: number
+  max?: number
+  samples: number
+}
+
+type ChartTimeAxisMode = 'clock' | 'relative'
 
 const chartConfigs: ChartConfig[] = [
   { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
@@ -92,13 +112,37 @@ function readStoredArray(key: string) {
   }
 }
 
-function moveChartId(ids: string[], draggedId: string, targetId: string) {
-  if (draggedId === targetId) return ids
-  const next = ids.filter(id => id !== draggedId)
-  const targetIndex = next.indexOf(targetId)
-  if (targetIndex === -1) return ids
-  next.splice(targetIndex, 0, draggedId)
-  return next
+function readStoredRecordArray(key: string) {
+  if (typeof window === 'undefined') return {}
+  try {
+    const stored = window.localStorage.getItem(key)
+    if (!stored) return {}
+    const parsed = JSON.parse(stored)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter((entry): entry is [string, unknown[]] => typeof entry[0] === 'string' && Array.isArray(entry[1]))
+        .map(([recordKey, value]) => [recordKey, value.filter(item => typeof item === 'string')]),
+    ) as Record<string, string[]>
+  } catch {
+    return {}
+  }
+}
+
+function readStoredTimeAxisMode(): ChartTimeAxisMode {
+  if (typeof window === 'undefined') return 'clock'
+  return window.localStorage.getItem('apexload.execution.chartTimeAxisMode') === 'relative'
+    ? 'relative'
+    : 'clock'
+}
+
+function sameStringArray(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function sameStringSet(left: string[], right: string[]) {
+  const rightSet = new Set(right)
+  return left.length === rightSet.size && left.every(value => rightSet.has(value))
 }
 
 export function chartStateForMonitorPreset(presetId: string, knownChartIds = chartConfigs.map(chart => chart.id)) {
@@ -109,6 +153,21 @@ export function chartStateForMonitorPreset(presetId: string, knownChartIds = cha
     chartOrder: [...selected, ...remaining],
     hiddenChartIds: remaining,
   }
+}
+
+export function formatRelativeRunTime(relativeMs?: number) {
+  const totalSeconds = Math.max(0, Math.floor((relativeMs ?? 0) / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+
+  if (hours > 0) {
+    return `T+${hours}h${minutes > 0 ? `${minutes}m` : ''}${seconds > 0 ? `${seconds}s` : ''}`
+  }
+  if (minutes > 0) {
+    return `T+${minutes}m${seconds > 0 ? `${seconds}s` : ''}`
+  }
+  return `T+${seconds}s`
 }
 
 export function routeLatencySeriesKeys(data: MetricsHistoryPoint[]) {
@@ -170,6 +229,77 @@ export function chartMetricKeys(chart: ChartConfig, groupNames: string[], latenc
     return [...keys, 'vusers']
   }
   return keys
+}
+
+export function chartMetricRows(chart: ChartConfig, groupNames: string[], latencyKeys: string[], groupColors: string[], includeVuserOverlay = false): ChartMetricRow[] {
+  let rows: ChartMetricRow[]
+  switch (chart.id) {
+    case 'vusers':
+      rows = [{ key: 'vusers', label: 'Active VUsers', color: chart.color ?? 'var(--chart-1)' }]
+      break
+    case 'tps':
+      rows = [
+        { key: chart.totalKey ?? 'tps', label: 'Total', color: 'var(--text-muted)' },
+        ...groupNames.map((name, index) => ({ key: `${name}_tps`, label: name, color: groupColors[index % groupColors.length] })),
+      ]
+      break
+    case 'latency':
+      rows = [
+        { key: 'p50', label: 'P50', color: 'var(--chart-5)', unit: 'ms' },
+        { key: 'p90', label: 'P90', color: 'var(--chart-3)', unit: 'ms' },
+        { key: 'p99', label: 'P99', color: 'var(--chart-4)', unit: 'ms' },
+        ...groupNames.map((name, index) => ({ key: `${name}_avgMs`, label: `${name} avg`, color: groupColors[index % groupColors.length], unit: 'ms' })),
+      ]
+      break
+    case 'errors':
+      rows = [{ key: chart.dataKey ?? 'errorPct', label: 'Error Rate', color: chart.color ?? 'var(--chart-4)', unit: '%' }]
+      break
+    case 'io':
+      rows = [
+        { key: 'netSent', label: 'Net Egress', color: 'var(--chart-1)', unit: 'KB/s' },
+        { key: 'netRecv', label: 'Net Ingress', color: 'var(--chart-2)', unit: 'KB/s' },
+        { key: 'diskRead', label: 'Disk Read', color: 'var(--chart-3)', unit: 'KB/s' },
+        { key: 'diskWrite', label: 'Disk Write', color: 'var(--chart-6)', unit: 'KB/s' },
+      ]
+      break
+    case 'network_latency':
+      rows = latencyKeys.map((key, index) => ({
+        key,
+        label: routeLatencySeriesLabel(key),
+        color: groupColors[index % groupColors.length],
+        unit: 'ms',
+      }))
+      break
+    default:
+      rows = chart.keys
+        ? chart.keys.map(key => ({ key: key.k, label: key.n, color: key.c, unit: chart.id === 'cpu' ? '%' : 'MB' }))
+        : chart.dataKey
+          ? [{ key: chart.dataKey, label: 'Total', color: chart.color ?? 'var(--chart-1)' }]
+          : []
+      break
+  }
+  if (includeVuserOverlay && chart.id !== 'vusers' && !rows.some(row => row.key === 'vusers')) {
+    return [...rows, { key: 'vusers', label: 'Active VUsers', color: 'var(--chart-1)' }]
+  }
+  return rows
+}
+
+export function chartMetricSummary(data: MetricsHistoryPoint[], key: string): ChartMetricSummary {
+  const values = data
+    .map(point => point[key])
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+
+  if (values.length === 0) {
+    return { samples: 0 }
+  }
+
+  return {
+    latest: values[values.length - 1],
+    average: values.reduce((sum, value) => sum + value, 0) / values.length,
+    min: Math.min(...values),
+    max: Math.max(...values),
+    samples: values.length,
+  }
 }
 
 export function graphCsvForChart(chart: ChartConfig, data: MetricsHistoryPoint[], groupNames: string[], latencyKeys: string[], includeVuserOverlay = false) {
@@ -273,6 +403,15 @@ function latestGraphValuesText(chart: ChartConfig, latest: MetricsHistoryPoint, 
   return lines.join('\n')
 }
 
+function formatMetricValue(value: number | undefined, unit?: string) {
+  if (value === undefined || !Number.isFinite(value)) return 'n/a'
+  const abs = Math.abs(value)
+  const maximumFractionDigits = abs >= 100 ? 0 : abs >= 10 ? 1 : 2
+  const formatted = value.toLocaleString(undefined, { maximumFractionDigits })
+  if (!unit) return formatted
+  return unit === '%' || unit === 'ms' ? `${formatted}${unit}` : `${formatted} ${unit}`
+}
+
 export default function TestExecutionCharts({
   filteredData,
   expandedChart,
@@ -284,16 +423,19 @@ export default function TestExecutionCharts({
   showRefArea,
   refAreaLeft,
   refAreaEnd,
+  timeRange,
+  onTimeRangeChange,
   isMultiGroup,
   groupNames,
   groupColors,
 }: Props) {
-  const [customizingCharts, setCustomizingCharts] = useState(false)
-  const [draggedChartId, setDraggedChartId] = useState<string | null>(null)
   const [chartOrder, setChartOrder] = useState<string[]>(() => readStoredArray('apexload.execution.chartOrder'))
   const [hiddenChartIds, setHiddenChartIds] = useState<string[]>(() => readStoredArray('apexload.execution.hiddenCharts'))
   const [vuserOverlayChartIds, setVuserOverlayChartIds] = useState<string[]>(() => readStoredArray('apexload.execution.vuserOverlayCharts'))
+  const [chartMetricFilters, setChartMetricFilters] = useState<Record<string, string[]>>(() => readStoredRecordArray('apexload.execution.chartMetricFilters'))
+  const [timeAxisMode, setTimeAxisMode] = useState<ChartTimeAxisMode>(() => readStoredTimeAxisMode())
   const [chartMenu, setChartMenu] = useState<{ chartId: string; x: number; y: number } | null>(null)
+  const [hoveredChartId, setHoveredChartId] = useState<string | null>(null)
   const chartCardRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const chartMenuRef = useRef<HTMLDivElement | null>(null)
 
@@ -320,6 +462,16 @@ export default function TestExecutionCharts({
     if (typeof window === 'undefined') return
     window.localStorage.setItem('apexload.execution.vuserOverlayCharts', JSON.stringify(vuserOverlayChartIds))
   }, [vuserOverlayChartIds])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('apexload.execution.chartMetricFilters', JSON.stringify(chartMetricFilters))
+  }, [chartMetricFilters])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('apexload.execution.chartTimeAxisMode', timeAxisMode)
+  }, [timeAxisMode])
 
   useEffect(() => {
     if (!chartMenu) return
@@ -353,8 +505,25 @@ export default function TestExecutionCharts({
       .filter((chart): chart is ChartConfig => Boolean(chart))
     return ordered.length ? ordered : chartConfigs
   }, [chartOrder])
+  const activeMonitorPresetId = useMemo(() => {
+    const currentOrder = orderedCharts.map(chart => chart.id)
+    return monitorPresets.find(preset => {
+      const presetState = chartStateForMonitorPreset(preset.id)
+      return sameStringArray(presetState.chartOrder, currentOrder)
+        && sameStringSet(presetState.hiddenChartIds, hiddenChartIds.filter(id => chartConfigs.some(chart => chart.id === id)))
+    })?.id ?? ''
+  }, [hiddenChartIds, orderedCharts])
   const latencyKeys = useMemo(() => routeLatencySeriesKeys(filteredData), [filteredData])
   const latencyLatestValues = useMemo(() => latestRouteLatencyValues(filteredData, latencyKeys), [filteredData, latencyKeys])
+  const relativeTimeByClockLabel = useMemo(() => {
+    const labels = new Map<string, number>()
+    filteredData.forEach(point => {
+      if (typeof point.relativeMs === 'number') {
+        labels.set(point.time, point.relativeMs)
+      }
+    })
+    return labels
+  }, [filteredData])
 
   if (filteredData.length <= 1) {
     return null
@@ -363,28 +532,48 @@ export default function TestExecutionCharts({
   const latest = filteredData[filteredData.length - 1] || {}
   const visibleCharts = orderedCharts.filter(chart => !hiddenChartIds.includes(chart.id))
   const hiddenCharts = orderedCharts.filter(chart => hiddenChartIds.includes(chart.id))
+  const displayedCharts = expandedChart
+    ? [
+        ...visibleCharts.filter(chart => chart.id === expandedChart),
+        ...visibleCharts.filter(chart => chart.id !== expandedChart),
+      ]
+    : visibleCharts
   const contextChart = chartMenu ? visibleCharts.find(chart => chart.id === chartMenu.chartId) : undefined
 
-  const handleChartDragStart = (event: DragEvent<HTMLDivElement>, chartId: string) => {
-    if (!customizingCharts) return
-    setDraggedChartId(chartId)
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/plain', chartId)
+  const formatXAxisLabel = (value: string | number) => {
+    if (timeAxisMode === 'clock') return String(value)
+    const relativeMs = relativeTimeByClockLabel.get(String(value))
+    return formatRelativeRunTime(relativeMs)
   }
 
-  const handleChartDragOver = (event: DragEvent<HTMLDivElement>, targetId: string) => {
-    if (!customizingCharts || !draggedChartId || draggedChartId === targetId) return
-    event.preventDefault()
-    event.dataTransfer.dropEffect = 'move'
+  const renderTimeAxis = () => (
+    <XAxis
+      dataKey="time"
+      stroke="var(--text-muted)"
+      fontSize={11}
+      tickFormatter={formatXAxisLabel}
+    />
+  )
+
+  const renderTooltip = (chartId: string) => {
+    const showTimeLabel = hoveredChartId === chartId
+    return (
+      <Tooltip
+        contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
+        labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: showTimeLabel ? 4 : 0, display: showTimeLabel ? undefined : 'none' }}
+        labelFormatter={(value) => showTimeLabel ? formatXAxisLabel(value) : ''}
+        isAnimationActive={false}
+      />
+    )
   }
 
-  const handleChartDrop = (event: DragEvent<HTMLDivElement>, targetId: string) => {
-    if (!customizingCharts) return
-    event.preventDefault()
-    const sourceId = event.dataTransfer.getData('text/plain') || draggedChartId
-    if (!sourceId) return
-    setChartOrder(prev => moveChartId(prev, sourceId, targetId))
-    setDraggedChartId(null)
+  const handleChartMouseMove = (chartId: string, activeLabel?: string | number) => {
+    setHoveredChartId(current => current === chartId ? current : chartId)
+    onChartMouseMove(activeLabel)
+  }
+
+  const handleChartMouseLeave = (chartId: string) => {
+    setHoveredChartId(current => current === chartId ? null : current)
   }
 
   const toggleChartVisibility = (chartId: string) => {
@@ -399,11 +588,51 @@ export default function TestExecutionCharts({
   const isVuserOverlayEnabled = (chartId: string) => chartId !== 'vusers' && vuserOverlayChartIds.includes(chartId)
   const toggleVuserOverlay = (chartId: string) => {
     if (chartId === 'vusers') return
+    const enabling = !vuserOverlayChartIds.includes(chartId)
     setVuserOverlayChartIds(prev =>
       prev.includes(chartId)
         ? prev.filter(id => id !== chartId)
         : [...prev, chartId],
     )
+    setChartMetricFilters(prev => {
+      const storedKeys = prev[chartId]
+      if (enabling) {
+        return storedKeys && !storedKeys.includes('vusers')
+          ? { ...prev, [chartId]: [...storedKeys, 'vusers'] }
+          : prev
+      }
+      if (!storedKeys?.includes('vusers')) return prev
+      const nextKeys = storedKeys.filter(key => key !== 'vusers')
+      return nextKeys.length > 0 ? { ...prev, [chartId]: nextKeys } : prev
+    })
+  }
+
+  const metricRowsForChart = (chart: ChartConfig) => chartMetricRows(chart, groupNames, latencyKeys, groupColors, isVuserOverlayEnabled(chart.id))
+
+  const visibleMetricKeysForChart = (chart: ChartConfig, rows = metricRowsForChart(chart)) => {
+    const availableKeys = rows.map(row => row.key)
+    const storedKeys = chartMetricFilters[chart.id]?.filter(key => availableKeys.includes(key)) ?? []
+    return storedKeys.length > 0 ? storedKeys : availableKeys
+  }
+
+  const isVuserOverlayVisible = (chart: ChartConfig, visibleMetricKeys: string[]) => isVuserOverlayEnabled(chart.id) && visibleMetricKeys.includes('vusers')
+
+  const metricYAxisId = (chart: ChartConfig, visibleMetricKeys: string[]) => isVuserOverlayVisible(chart, visibleMetricKeys) ? 'metric' : undefined
+
+  const showAllMetricRows = (chart: ChartConfig, rows: ChartMetricRow[]) => {
+    setChartMetricFilters(prev => ({ ...prev, [chart.id]: rows.map(row => row.key) }))
+  }
+
+  const toggleMetricRow = (chart: ChartConfig, rows: ChartMetricRow[], key: string) => {
+    const availableKeys = rows.map(row => row.key)
+    setChartMetricFilters(prev => {
+      const currentKeys = prev[chart.id]?.filter(candidate => availableKeys.includes(candidate)) ?? availableKeys
+      const nextKeys = currentKeys.includes(key)
+        ? currentKeys.filter(candidate => candidate !== key)
+        : [...currentKeys, key]
+      if (nextKeys.length === 0) return prev
+      return { ...prev, [chart.id]: nextKeys }
+    })
   }
 
   const openChartMenu = (event: MouseEvent<HTMLDivElement>, chartId: string) => {
@@ -450,19 +679,23 @@ export default function TestExecutionCharts({
   }
 
   const applyMonitorPreset = (presetId: string) => {
+    if (!presetId) {
+      resetCharts()
+      return
+    }
     const next = chartStateForMonitorPreset(presetId)
     setChartOrder(next.chartOrder)
     setHiddenChartIds(next.hiddenChartIds)
   }
 
-  const renderVuserOverlayAxis = (chart: ChartConfig) => (
-    isVuserOverlayEnabled(chart.id) ? (
+  const renderVuserOverlayAxis = (chart: ChartConfig, visibleMetricKeys: string[]) => (
+    isVuserOverlayVisible(chart, visibleMetricKeys) ? (
       <YAxis yAxisId="vusers" orientation="right" stroke="var(--chart-1)" fontSize={11} width={42} domain={[0, 'auto']} />
     ) : null
   )
 
-  const renderVuserOverlayLine = (chart: ChartConfig) => (
-    isVuserOverlayEnabled(chart.id) ? (
+  const renderVuserOverlayLine = (chart: ChartConfig, visibleMetricKeys: string[]) => (
+    isVuserOverlayVisible(chart, visibleMetricKeys) ? (
       <Line
         yAxisId="vusers"
         type="monotone"
@@ -477,47 +710,153 @@ export default function TestExecutionCharts({
     ) : null
   )
 
+  const renderMetricsTable = (chart: ChartConfig, rows: ChartMetricRow[], visibleMetricKeys: string[]) => {
+    if (rows.length === 0) {
+      return (
+        <div className="chart-metrics-empty">
+          No measurements available
+        </div>
+      )
+    }
+    const canFilter = rows.length > 1
+    const allVisible = visibleMetricKeys.length === rows.length
+    return (
+      <div className="chart-metrics-table-wrap">
+        <div className="chart-metrics-table-toolbar">
+          <span>Measurements</span>
+          {canFilter && (
+            <button className="btn btn-sm btn-ghost" type="button" disabled={allVisible} onClick={() => showAllMetricRows(chart, rows)}>
+              All
+            </button>
+          )}
+        </div>
+        <table className="chart-metrics-table">
+          <thead>
+            <tr>
+              {canFilter && <th className="metric-filter-col">Show</th>}
+              <th>Metric</th>
+              <th>Latest</th>
+              <th>Avg</th>
+              <th>Min</th>
+              <th>Max</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(row => {
+              const summary = chartMetricSummary(filteredData, row.key)
+              const visible = visibleMetricKeys.includes(row.key)
+              return (
+                <tr key={row.key} className={visible ? '' : 'muted'}>
+                  {canFilter && (
+                    <td className="metric-filter-col">
+                      <input
+                        type="checkbox"
+                        checked={visible}
+                        disabled={visible && visibleMetricKeys.length === 1}
+                        aria-label={`Show ${row.label}`}
+                        onChange={() => toggleMetricRow(chart, rows, row.key)}
+                      />
+                    </td>
+                  )}
+                  <td>
+                    <span className="chart-metric-name">
+                      <span className="dot" style={{ background: row.color }}></span>
+                      <span>{row.label}</span>
+                    </span>
+                  </td>
+                  <td>{formatMetricValue(summary.latest, row.unit)}</td>
+                  <td>{formatMetricValue(summary.average, row.unit)}</td>
+                  <td>{formatMetricValue(summary.min, row.unit)}</td>
+                  <td>{formatMetricValue(summary.max, row.unit)}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
   return (
     <>
-      <div className="charts-customize-bar">
-        <div>
-          <h3>Graphs</h3>
-          <span>{visibleCharts.length} visible / {hiddenCharts.length} hidden</span>
+      <div className="charts-customize-panel">
+        <div className="charts-customize-panel-section">
+          <div>
+            <h4>Display Window</h4>
+            <span>Graph data range</span>
+          </div>
+          <div className="time-range-selector" role="group" aria-label="Graph display window">
+            <button className={`btn-chip ${timeRange === '3m' ? 'active' : ''}`} type="button" onClick={() => onTimeRangeChange('3m')}>3m</button>
+            <button className={`btn-chip ${timeRange === '10m' ? 'active' : ''}`} type="button" onClick={() => onTimeRangeChange('10m')}>10m</button>
+            <button className={`btn-chip ${timeRange === 'all' ? 'active' : ''}`} type="button" onClick={() => onTimeRangeChange('all')}>Max</button>
+          </div>
         </div>
-        <div className="charts-customize-actions">
-          {customizingCharts && (
-            <>
-              <div className="monitor-preset-buttons">
-                {monitorPresets.map(preset => (
-                  <button key={preset.id} className="btn btn-secondary btn-sm" type="button" onClick={() => applyMonitorPreset(preset.id)}>
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-              <button className="btn btn-secondary btn-sm" type="button" onClick={resetCharts}>
-                Reset Graphs
-              </button>
-            </>
-          )}
-          <button
-            className={`btn btn-sm ${customizingCharts ? 'btn-primary' : 'btn-secondary'}`}
-            type="button"
-            onClick={() => setCustomizingCharts(value => !value)}
+        <div className="charts-customize-panel-section">
+          <div>
+            <h4>Role View</h4>
+            <span>Graph preset</span>
+          </div>
+          <select
+            className="chart-role-select"
+            aria-label="Graph role view"
+            value={activeMonitorPresetId}
+            onChange={event => applyMonitorPreset(event.currentTarget.value)}
           >
-            {customizingCharts ? 'Done' : 'Customize Graphs'}
+            <option value="">Manual view</option>
+            {monitorPresets.map(preset => (
+              <option key={preset.id} value={preset.id}>{preset.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="charts-customize-panel-section">
+          <div>
+            <h4>Display Time</h4>
+            <span>Graph x-axis labels</span>
+          </div>
+          <div className="time-range-selector chart-time-axis-toggle" role="group" aria-label="Graph time axis">
+            <button
+              className={`btn-chip ${timeAxisMode === 'clock' ? 'active' : ''}`}
+              type="button"
+              onClick={() => setTimeAxisMode('clock')}
+              aria-pressed={timeAxisMode === 'clock'}
+            >
+              Clock Time
+            </button>
+            <button
+              className={`btn-chip ${timeAxisMode === 'relative' ? 'active' : ''}`}
+              type="button"
+              onClick={() => setTimeAxisMode('relative')}
+              aria-pressed={timeAxisMode === 'relative'}
+            >
+              Relative Time
+            </button>
+          </div>
+        </div>
+        <div className="charts-customize-panel-section">
+          <div>
+            <h4>Reset</h4>
+            <span>Default graph layout</span>
+          </div>
+          <button className="btn-chip chart-reset-pill" type="button" onClick={resetCharts}>
+            Reset Graphs
           </button>
         </div>
+        {hiddenCharts.length > 0 && (
+          <div className="charts-customize-panel-section">
+            <div>
+              <h4>Hidden Graphs</h4>
+              <span>Restore hidden graph cards</span>
+            </div>
+            <div className="hidden-chart-list">
+              {hiddenCharts.map(chart => (
+                <button key={chart.id} className="hidden-chart-pill" type="button" onClick={() => toggleChartVisibility(chart.id)}>
+                  Show {chart.title}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-
-      {customizingCharts && hiddenCharts.length > 0 && (
-        <div className="hidden-chart-list">
-          {hiddenCharts.map(chart => (
-            <button key={chart.id} className="hidden-chart-pill" type="button" onClick={() => toggleChartVisibility(chart.id)}>
-              Show {chart.title}
-            </button>
-          ))}
-        </div>
-      )}
 
       {visibleCharts.length === 0 ? (
         <div className="charts-empty">
@@ -525,62 +864,55 @@ export default function TestExecutionCharts({
           <button className="btn btn-secondary btn-sm" type="button" onClick={resetCharts}>Reset Graphs</button>
         </div>
       ) : (
-        <div className={`charts-grid ${customizingCharts ? 'is-customizing' : ''}`}>
-          {visibleCharts.map((chart) => (
-            <div
-              key={chart.id}
-              ref={element => {
-                chartCardRefs.current[chart.id] = element
-              }}
-              className={`chart-card ${expandedChart === chart.id ? 'expanded' : ''} ${customizingCharts ? 'editable' : ''} ${draggedChartId === chart.id ? 'dragging' : ''}`}
-              draggable={customizingCharts}
-              onContextMenu={event => openChartMenu(event, chart.id)}
-              onDragStart={event => handleChartDragStart(event, chart.id)}
-              onDragOver={event => handleChartDragOver(event, chart.id)}
-              onDrop={event => handleChartDrop(event, chart.id)}
-              onDragEnd={() => setDraggedChartId(null)}
-            >
-              <div className="chart-card-header">
-                <div className="chart-title-wrap">
-                  {customizingCharts && <span className="chart-drag-handle" title="Drag to reorder">::</span>}
-                  <h3 className="chart-title">{chart.title}</h3>
-                </div>
-                <div className="chart-card-actions">
-                  {customizingCharts && (
-                    <button className="btn-icon btn-hide-chart" type="button" onClick={() => toggleChartVisibility(chart.id)} title="Hide graph">
-                      Hide
+        <div className="charts-grid">
+          {displayedCharts.map((chart) => {
+            const metricRows = metricRowsForChart(chart)
+            const visibleMetricKeys = visibleMetricKeysForChart(chart, metricRows)
+            const metricAxisIdForChart = metricYAxisId(chart, visibleMetricKeys)
+            const showMetric = (key: string) => visibleMetricKeys.includes(key)
+            return (
+              <div
+                key={chart.id}
+                ref={element => {
+                  chartCardRefs.current[chart.id] = element
+                }}
+                className={`chart-card ${expandedChart === chart.id ? 'expanded' : ''}`}
+                onContextMenu={event => openChartMenu(event, chart.id)}
+                onMouseEnter={() => setHoveredChartId(chart.id)}
+                onMouseLeave={() => handleChartMouseLeave(chart.id)}
+              >
+                <div className="chart-card-header">
+                  <div className="chart-title-wrap">
+                    <h3 className="chart-title">{chart.title}</h3>
+                  </div>
+                  <div className="chart-card-actions">
+                    <button
+                      className="btn-icon btn-expand"
+                      type="button"
+                      onClick={() => onExpandedChartChange(expandedChart === chart.id ? null : chart.id)}
+                    >
+                      {expandedChart === chart.id ? '↙' : '↗'}
                     </button>
-                  )}
-                  <button
-                    className="btn-icon btn-expand"
-                    type="button"
-                    disabled={customizingCharts}
-                    onClick={() => onExpandedChartChange(expandedChart === chart.id ? null : chart.id)}
-                  >
-                    {expandedChart === chart.id ? '↙' : '↗'}
-                  </button>
+                  </div>
                 </div>
-          </div>
-          <ResponsiveContainer width="100%" height={expandedChart === chart.id ? 400 : 200}>
+                <ResponsiveContainer width="100%" height={expandedChart === chart.id ? 400 : 200}>
             {chart.type === 'area' ? (
               <ComposedChart
                 data={filteredData}
                 syncId="metrics"
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => onChartMouseMove(event?.activeLabel)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} stroke="var(--text-muted)" fontSize={11} domain={chart.domain} />
-                {renderVuserOverlayAxis(chart)}
-                <Tooltip
-                  contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
-                  labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
-                  isAnimationActive={false}
-                />
-                <Area yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey={chart.dataKey!} name="Total" stroke={chart.color!} fill={chart.color!} fillOpacity={0.15} isAnimationActive={false} />
-                {renderVuserOverlayLine(chart)}
+                {renderTimeAxis()}
+                <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} domain={chart.domain} />
+                {renderVuserOverlayAxis(chart, visibleMetricKeys)}
+                {renderTooltip(chart.id)}
+                {chart.dataKey && showMetric(chart.dataKey) && (
+                  <Area yAxisId={metricAxisIdForChart} type="monotone" dataKey={chart.dataKey} name="Total" stroke={chart.color!} fill={chart.color!} fillOpacity={0.15} isAnimationActive={false} />
+                )}
+                {renderVuserOverlayLine(chart, visibleMetricKeys)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -590,24 +922,22 @@ export default function TestExecutionCharts({
                 data={filteredData}
                 syncId="metrics"
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => onChartMouseMove(event?.activeLabel)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} stroke="var(--text-muted)" fontSize={11} />
-                {renderVuserOverlayAxis(chart)}
-                <Tooltip
-                  contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
-                  labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
-                  isAnimationActive={false}
-                />
+                {renderTimeAxis()}
+                <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} />
+                {renderVuserOverlayAxis(chart, visibleMetricKeys)}
+                {renderTooltip(chart.id)}
                 {isMultiGroup && <Legend verticalAlign="bottom" height={36} />}
-                <Line yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey={chart.totalKey!} name="Total" stroke="var(--text-muted)" dot={false} strokeWidth={2} strokeDasharray={isMultiGroup ? '4 2' : undefined} isAnimationActive={false} />
-                {isMultiGroup && groupNames.map((name, index) => (
-                  <Line key={name} yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey={`${name}_tps`} name={name} stroke={groupColors[index % groupColors.length]} dot={false} isAnimationActive={false} />
+                {chart.totalKey && showMetric(chart.totalKey) && (
+                  <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={chart.totalKey} name="Total" stroke="var(--text-muted)" dot={false} strokeWidth={2} strokeDasharray={isMultiGroup ? '4 2' : undefined} isAnimationActive={false} />
+                )}
+                {isMultiGroup && groupNames.map((name, index) => showMetric(`${name}_tps`) && (
+                  <Line key={name} yAxisId={metricAxisIdForChart} type="monotone" dataKey={`${name}_tps`} name={name} stroke={groupColors[index % groupColors.length]} dot={false} isAnimationActive={false} />
                 ))}
-                {renderVuserOverlayLine(chart)}
+                {renderVuserOverlayLine(chart, visibleMetricKeys)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -617,26 +947,22 @@ export default function TestExecutionCharts({
                 data={filteredData}
                 syncId="metrics"
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => onChartMouseMove(event?.activeLabel)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} stroke="var(--text-muted)" fontSize={11} />
-                {renderVuserOverlayAxis(chart)}
-                <Tooltip
-                  contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
-                  labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
-                  isAnimationActive={false}
-                />
+                {renderTimeAxis()}
+                <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} />
+                {renderVuserOverlayAxis(chart, visibleMetricKeys)}
+                {renderTooltip(chart.id)}
                 <Legend verticalAlign="bottom" height={36} />
-                <Line yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey="p50" name="P50" stroke="var(--chart-5)" dot={false} strokeWidth={2} isAnimationActive={false} />
-                <Line yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey="p90" name="P90" stroke="var(--chart-3)" dot={false} strokeWidth={2} isAnimationActive={false} />
-                <Line yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey="p99" name="P99" stroke="var(--chart-4)" dot={false} strokeWidth={1.5} strokeDasharray="4 2" isAnimationActive={false} />
-                {isMultiGroup && groupNames.map((name, index) => (
-                  <Line key={name} yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey={`${name}_avgMs`} name={`${name} avg`} stroke={groupColors[index % groupColors.length]} dot={false} strokeWidth={1.5} strokeDasharray="2 2" isAnimationActive={false} />
+                {showMetric('p50') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p50" name="P50" stroke="var(--chart-5)" dot={false} strokeWidth={2} isAnimationActive={false} />}
+                {showMetric('p90') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p90" name="P90" stroke="var(--chart-3)" dot={false} strokeWidth={2} isAnimationActive={false} />}
+                {showMetric('p99') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p99" name="P99" stroke="var(--chart-4)" dot={false} strokeWidth={1.5} strokeDasharray="4 2" isAnimationActive={false} />}
+                {isMultiGroup && groupNames.map((name, index) => showMetric(`${name}_avgMs`) && (
+                  <Line key={name} yAxisId={metricAxisIdForChart} type="monotone" dataKey={`${name}_avgMs`} name={`${name} avg`} stroke={groupColors[index % groupColors.length]} dot={false} strokeWidth={1.5} strokeDasharray="2 2" isAnimationActive={false} />
                 ))}
-                {renderVuserOverlayLine(chart)}
+                {renderVuserOverlayLine(chart, visibleMetricKeys)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -646,23 +972,19 @@ export default function TestExecutionCharts({
                 data={filteredData}
                 syncId="metrics"
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => onChartMouseMove(event?.activeLabel)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} stroke="var(--text-muted)" fontSize={11} domain={chart.domain} />
-                {renderVuserOverlayAxis(chart)}
-                <Tooltip
-                  contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
-                  labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
-                  isAnimationActive={false}
-                />
+                {renderTimeAxis()}
+                <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} domain={chart.domain} />
+                {renderVuserOverlayAxis(chart, visibleMetricKeys)}
+                {renderTooltip(chart.id)}
                 <Legend verticalAlign="bottom" height={36} />
-                {chart.keys!.map((key) => (
-                  <Area key={key.k} yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey={key.k} name={key.n} stroke={key.c} fill={key.c} fillOpacity={0.2} isAnimationActive={false} />
+                {chart.keys!.filter(key => showMetric(key.k)).map((key) => (
+                  <Area key={key.k} yAxisId={metricAxisIdForChart} type="monotone" dataKey={key.k} name={key.n} stroke={key.c} fill={key.c} fillOpacity={0.2} isAnimationActive={false} />
                 ))}
-                {renderVuserOverlayLine(chart)}
+                {renderVuserOverlayLine(chart, visibleMetricKeys)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -672,23 +994,19 @@ export default function TestExecutionCharts({
                 data={filteredData}
                 syncId="metrics"
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => onChartMouseMove(event?.activeLabel)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} stroke="var(--text-muted)" fontSize={11} />
-                {renderVuserOverlayAxis(chart)}
-                <Tooltip
-                  contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
-                  labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
-                  isAnimationActive={false}
-                />
+                {renderTimeAxis()}
+                <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} />
+                {renderVuserOverlayAxis(chart, visibleMetricKeys)}
+                {renderTooltip(chart.id)}
                 <Legend verticalAlign="bottom" height={36} />
-                {latencyKeys.map((key, index) => (
+                {latencyKeys.map((key, index) => showMetric(key) && (
                     <Line
                       key={key}
-                      yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined}
+                      yAxisId={metricAxisIdForChart}
                       type="monotone"
                       dataKey={key}
                       name={routeLatencySeriesLabel(key)}
@@ -696,9 +1014,9 @@ export default function TestExecutionCharts({
                       dot={false}
                       strokeWidth={2}
                       isAnimationActive={false}
-	                    />
-	                  ))}
-                {renderVuserOverlayLine(chart)}
+                    />
+                  ))}
+                {renderVuserOverlayLine(chart, visibleMetricKeys)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -708,24 +1026,20 @@ export default function TestExecutionCharts({
                 data={filteredData}
                 syncId="metrics"
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => onChartMouseMove(event?.activeLabel)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} stroke="var(--text-muted)" fontSize={11} />
-                {renderVuserOverlayAxis(chart)}
-                <Tooltip
-                  contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
-                  labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
-                  isAnimationActive={false}
-                />
+                {renderTimeAxis()}
+                <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} />
+                {renderVuserOverlayAxis(chart, visibleMetricKeys)}
+                {renderTooltip(chart.id)}
                 <Legend />
-                <Line yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey="netSent" name="Net Egress" stroke="var(--chart-1)" dot={false} strokeWidth={2} isAnimationActive={false} />
-                <Line yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey="netRecv" name="Net Ingress" stroke="var(--chart-2)" dot={false} strokeWidth={2} isAnimationActive={false} />
-                <Line yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey="diskRead" name="Disk Read" stroke="var(--chart-3)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />
-                <Line yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey="diskWrite" name="Disk Write" stroke="var(--chart-6)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />
-                {renderVuserOverlayLine(chart)}
+                {showMetric('netSent') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="netSent" name="Net Egress" stroke="var(--chart-1)" dot={false} strokeWidth={2} isAnimationActive={false} />}
+                {showMetric('netRecv') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="netRecv" name="Net Ingress" stroke="var(--chart-2)" dot={false} strokeWidth={2} isAnimationActive={false} />}
+                {showMetric('diskRead') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="diskRead" name="Disk Read" stroke="var(--chart-3)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}
+                {showMetric('diskWrite') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="diskWrite" name="Disk Write" stroke="var(--chart-6)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}
+                {renderVuserOverlayLine(chart, visibleMetricKeys)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -733,98 +1047,10 @@ export default function TestExecutionCharts({
             )}
           </ResponsiveContainer>
 
-          <div className="chart-metrics-footer">
-            {chart.id === 'vusers' && (
-              <div className="footer-metric">
-                <span className="dot" style={{ background: 'var(--chart-1)' }}></span>
-                <span className="label">Active:</span>
-                <span className="value">{latest.vusers}</span>
-              </div>
-            )}
-            {chart.id === 'tps' && (
-              <>
-                <div className="footer-metric">
-                  <span className="dot" style={{ background: 'var(--text-muted)' }}></span>
-                  <span className="label">Total:</span>
-                  <span className="value">{latest.tps}</span>
-                </div>
-                {isMultiGroup && groupNames.map((name, index) => (
-                  <div key={name} className="footer-metric">
-                    <span className="dot" style={{ background: groupColors[index % groupColors.length] }}></span>
-                    <span className="label">{name}:</span>
-                    <span className="value">{latest[`${name}_tps`]}</span>
-                  </div>
-                ))}
-              </>
-            )}
-            {chart.id === 'latency' && (
-              <>
-                <div className="footer-metric">
-                  <span className="dot" style={{ background: 'var(--chart-5)' }}></span>
-                  <span className="label">P50:</span>
-                  <span className="value">{latest.p50}ms</span>
-                </div>
-                <div className="footer-metric">
-                  <span className="dot" style={{ background: 'var(--chart-3)' }}></span>
-                  <span className="label">P90:</span>
-                  <span className="value">{latest.p90}ms</span>
-                </div>
-                <div className="footer-metric">
-                  <span className="dot" style={{ background: 'var(--chart-4)' }}></span>
-                  <span className="label">P99:</span>
-                  <span className="value">{latest.p99}ms</span>
-                </div>
-              </>
-            )}
-            {chart.id === 'errors' && (
-              <div className="footer-metric">
-                <span className="dot" style={{ background: 'var(--chart-4)' }}></span>
-                <span className="label">Current:</span>
-                <span className="value">{latest.errorPct}%</span>
-              </div>
-            )}
-            {chart.type === 'area-multi' && chart.keys?.map((key) => (
-              <div key={key.k} className="footer-metric">
-                <span className="dot" style={{ background: key.c }}></span>
-                <span className="label">{key.n}:</span>
-                <span className="value">{latest[key.k]}{chart.id === 'cpu' ? '%' : ' MB'}</span>
-              </div>
-            ))}
-            {chart.id === 'io' && (
-              <>
-                <div className="footer-metric">
-                  <span className="dot" style={{ background: 'var(--chart-1)' }}></span>
-                  <span className="label">Net Out:</span>
-                  <span className="value">{latest.netSent} KB/s</span>
-                </div>
-                <div className="footer-metric">
-                  <span className="dot" style={{ background: 'var(--chart-2)' }}></span>
-                  <span className="label">Net In:</span>
-                  <span className="value">{latest.netRecv} KB/s</span>
-                </div>
-              </>
-            )}
-            {chart.id === 'network_latency' && (
-              <>
-                {latencyKeys.map((key, index) => (
-                    <div key={key} className="footer-metric">
-                      <span className="dot" style={{ background: groupColors[index % groupColors.length] }}></span>
-                      <span className="label">{routeLatencySeriesLabel(key)}:</span>
-                      <span className="value">{latencyLatestValues[key]}ms</span>
-                    </div>
-                  ))}
-              </>
-            )}
-            {isVuserOverlayEnabled(chart.id) && (
-              <div className="footer-metric">
-                <span className="dot" style={{ background: 'var(--chart-1)' }}></span>
-                <span className="label">VUsers:</span>
-                <span className="value">{latest.vusers}</span>
-              </div>
-            )}
-          </div>
+          {renderMetricsTable(chart, metricRows, visibleMetricKeys)}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
       {contextChart && chartMenu && (

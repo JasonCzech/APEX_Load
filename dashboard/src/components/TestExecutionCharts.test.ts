@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import {
   chartMetricKeys,
+  chartMetricRows,
+  chartMetricSummary,
   chartStateForMonitorPreset,
+  formatRelativeRunTime,
   graphCsvForChart,
   latestRouteLatencyValues,
   routeLatencySeriesKeys,
@@ -78,5 +81,36 @@ describe('chartStateForMonitorPreset', () => {
 
     expect(chartMetricKeys(chart, [], [], true)).toEqual(['tps', 'vusers'])
     expect(csv).toBe('time,tps,vusers\n10:00:00,4,12')
+  })
+
+  it('builds metric table rows for grouped charts and overlays', () => {
+    const chart: ChartConfig = { id: 'tps', title: 'Transactions Per Second', type: 'line-multi', totalKey: 'tps' }
+
+    expect(chartMetricRows(chart, ['Checkout', 'Search'], [], ['#00a3ff', '#ffaa00'], true)).toEqual([
+      { key: 'tps', label: 'Total', color: 'var(--text-muted)' },
+      { key: 'Checkout_tps', label: 'Checkout', color: '#00a3ff' },
+      { key: 'Search_tps', label: 'Search', color: '#ffaa00' },
+      { key: 'vusers', label: 'Active VUsers', color: 'var(--chart-1)' },
+    ])
+  })
+
+  it('summarizes metric rows from finite samples only', () => {
+    expect(chartMetricSummary([
+      { time: '10:00:00', vusers: 1, tps: 2, avgMs: 100, errorPct: 0, p50: 90, p90: 100, p99: 120 },
+      { time: '10:00:01', vusers: 2, tps: 4, avgMs: 120, errorPct: 0, p50: 100, p90: 120, p99: 140 },
+      { time: '10:00:02', vusers: 3, tps: Number.NaN, avgMs: 130, errorPct: 0, p50: 110, p90: 130, p99: 150 },
+    ], 'tps')).toEqual({
+      latest: 4,
+      average: 3,
+      min: 2,
+      max: 4,
+      samples: 2,
+    })
+  })
+
+  it('formats relative run time labels for graph axes', () => {
+    expect(formatRelativeRunTime(0)).toBe('T+0s')
+    expect(formatRelativeRunTime(65_000)).toBe('T+1m5s')
+    expect(formatRelativeRunTime(3_723_000)).toBe('T+1h2m3s')
   })
 })

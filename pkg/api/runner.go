@@ -156,6 +156,7 @@ type ManagedTest struct {
 	CreatedByDisplayName  string                       `json:"created_by_display_name,omitempty"`
 	StartedBySubject      string                       `json:"started_by_subject,omitempty"`
 	StartedByDisplayName  string                       `json:"started_by_display_name,omitempty"`
+	VUserRamps            map[string]VUserRampStatus   `json:"vuser_ramps,omitempty"`
 	LiveMetrics           *LiveMetrics                 `json:"live_metrics,omitempty"`
 	History               []*LiveMetrics               `json:"history,omitempty"`
 	ComparisonBaseline    *RunComparisonBaseline       `json:"comparison_baseline,omitempty"`
@@ -184,6 +185,25 @@ type ManagedTest struct {
 	remoteFinalizing             bool
 	telemetryDiagnostic          telemetryDiagnosticState
 	errorPatterns                map[string]*LiveErrorPattern
+	vuserScaleRamps              map[string]*vuserScaleRamp
+}
+
+type ScaleVUsersOptions struct {
+	RampDuration time.Duration
+}
+
+type vuserScaleRamp struct {
+	cancel context.CancelFunc
+	status VUserRampStatus
+}
+
+type VUserRampStatus struct {
+	Group               string    `json:"group"`
+	StartVUsers         int       `json:"start_vusers"`
+	TargetVUsers        int       `json:"target_vusers"`
+	StartedAt           time.Time `json:"started_at"`
+	RampDuration        string    `json:"ramp_duration"`
+	RampDurationSeconds int64     `json:"ramp_duration_seconds"`
 }
 
 type TestGroup struct {
@@ -2423,6 +2443,12 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %s", index, strings.Join(issues, "; "))
 		}
 	}
+	if len(scriptCopy.Actions) == 0 {
+		if issues := dsl.ValidateScriptIssues(&scriptCopy); len(issues) > 0 {
+			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %s", index, strings.Join(issues, "; "))
+		}
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: script must have at least one action", index)
+	}
 	effectiveRuntimeSettings, err = tr.resolveEffectiveRuntimeSettings(script.ProjectID, effectiveRuntimeSettings)
 	if err != nil {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: resolve redaction rules: %w", index, err)
@@ -2636,6 +2662,7 @@ func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {
 		return nil, false
 	}
 	cloned := *t
+	cloned.VUserRamps = cloneVUserRampStatusMap(t.VUserRamps)
 	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(t)
 	return &cloned, true
 }
@@ -3520,6 +3547,9 @@ func (tr *TestRunner) StopTest(id string) error {
 	if !ok {
 		return fmt.Errorf("test not found: %s", id)
 	}
+	tr.mu.Lock()
+	tr.cancelAllVUserScaleRampsLocked(test)
+	tr.mu.Unlock()
 	if test.multiEngine == nil {
 		backend := test.executionBackend
 		if backend == nil {
@@ -3549,23 +3579,151 @@ func (tr *TestRunner) AbortTest(id string) error {
 }
 
 func (tr *TestRunner) ScaleVUsers(id string, groupName string, targetVUsers int) error {
-	tr.mu.RLock()
-	test, ok := tr.tests[id]
-	tr.mu.RUnlock()
-	if !ok {
-		return fmt.Errorf("test not found: %s", id)
+	return tr.ScaleVUsersWithOptions(id, groupName, targetVUsers, ScaleVUsersOptions{})
+}
+
+func (tr *TestRunner) ScaleVUsersWithOptions(id string, groupName string, targetVUsers int, opts ScaleVUsersOptions) error {
+	if opts.RampDuration <= 0 {
+		return tr.scaleVUsersNow(id, groupName, targetVUsers, true)
 	}
-	if test.Status != "RUNNING" {
-		return fmt.Errorf("test is %s, must be RUNNING to scale", test.Status)
-	}
+	return tr.scheduleVUserScaleRamp(id, groupName, targetVUsers, opts.RampDuration)
+}
+
+func (tr *TestRunner) scheduleVUserScaleRamp(id string, groupName string, targetVUsers int, rampDuration time.Duration) error {
 	if targetVUsers < 0 {
 		return fmt.Errorf("target vusers must be non-negative")
 	}
-	if test.multiEngine == nil {
-		backend := test.executionBackend
-		if backend == nil {
-			backend = tr.execution
+	if rampDuration <= 0 {
+		return fmt.Errorf("ramp duration must be positive")
+	}
+
+	tr.mu.Lock()
+	test, ok := tr.tests[id]
+	if !ok {
+		tr.mu.Unlock()
+		return fmt.Errorf("test not found: %s", id)
+	}
+	if test.Status != "RUNNING" {
+		tr.mu.Unlock()
+		return fmt.Errorf("test is %s, must be RUNNING to scale", test.Status)
+	}
+
+	currentVUsers, found := testGroupVUsers(test, groupName)
+	if !found {
+		tr.mu.Unlock()
+		return fmt.Errorf("group not found: %s", groupName)
+	}
+	tr.cancelVUserScaleRampLocked(test, groupName)
+	if currentVUsers == targetVUsers {
+		tr.mu.Unlock()
+		return nil
+	}
+
+	startedAt := time.Now()
+	rampStatus := VUserRampStatus{
+		Group:               groupName,
+		StartVUsers:         currentVUsers,
+		TargetVUsers:        targetVUsers,
+		StartedAt:           startedAt,
+		RampDuration:        rampDuration.String(),
+		RampDurationSeconds: int64(rampDuration / time.Second),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	ramp := &vuserScaleRamp{cancel: cancel, status: rampStatus}
+	if test.vuserScaleRamps == nil {
+		test.vuserScaleRamps = make(map[string]*vuserScaleRamp)
+	}
+	if test.VUserRamps == nil {
+		test.VUserRamps = make(map[string]VUserRampStatus)
+	}
+	test.vuserScaleRamps[groupName] = ramp
+	test.VUserRamps[groupName] = rampStatus
+	projectID := normalizeProjectID(test.ProjectID)
+	tr.mu.Unlock()
+
+	tr.hub.BroadcastJSON(map[string]any{
+		"type":                  "vusers_ramp_started",
+		"test_id":               id,
+		"project_id":            projectID,
+		"group":                 rampStatus.Group,
+		"current_vusers":        rampStatus.StartVUsers,
+		"target_vusers":         rampStatus.TargetVUsers,
+		"ramp_duration":         rampStatus.RampDuration,
+		"ramp_duration_seconds": rampStatus.RampDurationSeconds,
+		"timestamp":             startedAt,
+	})
+
+	go tr.runVUserScaleRamp(ctx, ramp, id, groupName, currentVUsers, targetVUsers, rampDuration)
+	return nil
+}
+
+func (tr *TestRunner) runVUserScaleRamp(ctx context.Context, ramp *vuserScaleRamp, id string, groupName string, currentVUsers int, targetVUsers int, rampDuration time.Duration) {
+	defer tr.finishVUserScaleRamp(id, groupName, ramp)
+
+	delta := targetVUsers - currentVUsers
+	steps := absInt(delta)
+	if steps == 0 {
+		return
+	}
+	direction := 1
+	if delta < 0 {
+		direction = -1
+	}
+	interval := rampDuration / time.Duration(steps)
+	if interval <= 0 {
+		interval = time.Nanosecond
+	}
+
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+	for step := 1; step <= steps; step++ {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
 		}
+
+		nextTarget := currentVUsers + direction*step
+		if err := tr.scaleVUsersNow(id, groupName, nextTarget, false); err != nil {
+			slog.Warn("gradual vuser scale stopped", "test_id", id, "group", groupName, "target_vusers", nextTarget, "error", err)
+			return
+		}
+		if step < steps {
+			timer.Reset(interval)
+		}
+	}
+}
+
+func (tr *TestRunner) scaleVUsersNow(id string, groupName string, targetVUsers int, cancelExistingRamp bool) error {
+	tr.mu.Lock()
+	test, ok := tr.tests[id]
+	if !ok {
+		tr.mu.Unlock()
+		return fmt.Errorf("test not found: %s", id)
+	}
+	if test.Status != "RUNNING" {
+		tr.mu.Unlock()
+		return fmt.Errorf("test is %s, must be RUNNING to scale", test.Status)
+	}
+	if targetVUsers < 0 {
+		tr.mu.Unlock()
+		return fmt.Errorf("target vusers must be non-negative")
+	}
+	if _, found := testGroupVUsers(test, groupName); !found {
+		tr.mu.Unlock()
+		return fmt.Errorf("group not found: %s", groupName)
+	}
+	if cancelExistingRamp {
+		tr.cancelVUserScaleRampLocked(test, groupName)
+	}
+	multiEngine := test.multiEngine
+	backend := test.executionBackend
+	if backend == nil {
+		backend = tr.execution
+	}
+	tr.mu.Unlock()
+
+	if multiEngine == nil {
 		scalable, ok := backend.(scalableExecutionBackend)
 		if !ok {
 			return fmt.Errorf("test backend does not support scaling vusers")
@@ -3574,13 +3732,33 @@ func (tr *TestRunner) ScaleVUsers(id string, groupName string, targetVUsers int)
 			return err
 		}
 	} else {
-		if err := test.multiEngine.ScaleVUsers(groupName, targetVUsers); err != nil {
+		if err := multiEngine.ScaleVUsers(groupName, targetVUsers); err != nil {
 			return err
 		}
 	}
 
-	// Update the test's group metadata
+	totalVUsers, projectID := tr.updateTestGroupVUsers(id, groupName, targetVUsers)
+	tr.hub.BroadcastJSON(map[string]any{
+		"type":          "vusers_changed",
+		"test_id":       id,
+		"project_id":    projectID,
+		"group":         groupName,
+		"target_vusers": targetVUsers,
+		"total_vusers":  totalVUsers,
+		"timestamp":     time.Now(),
+	})
+
+	return nil
+}
+
+func (tr *TestRunner) updateTestGroupVUsers(id string, groupName string, targetVUsers int) (int, string) {
 	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	test, ok := tr.tests[id]
+	if !ok {
+		return 0, ""
+	}
 	totalVUsers := 0
 	for i := range test.Groups {
 		if test.Groups[i].Name == groupName {
@@ -3589,19 +3767,90 @@ func (tr *TestRunner) ScaleVUsers(id string, groupName string, targetVUsers int)
 		totalVUsers += test.Groups[i].VUsers
 	}
 	test.TotalVUsers = totalVUsers
-	tr.mu.Unlock()
+	return totalVUsers, normalizeProjectID(test.ProjectID)
+}
 
-	tr.hub.BroadcastJSON(map[string]any{
-		"type":          "vusers_changed",
-		"test_id":       id,
-		"project_id":    normalizeProjectID(test.ProjectID),
-		"group":         groupName,
-		"target_vusers": targetVUsers,
-		"total_vusers":  totalVUsers,
-		"timestamp":     time.Now(),
-	})
+func (tr *TestRunner) cancelVUserScaleRampLocked(test *ManagedTest, groupName string) {
+	if test == nil || test.vuserScaleRamps == nil {
+		return
+	}
+	if ramp, ok := test.vuserScaleRamps[groupName]; ok {
+		ramp.cancel()
+		delete(test.vuserScaleRamps, groupName)
+	}
+	if test.VUserRamps != nil {
+		delete(test.VUserRamps, groupName)
+		if len(test.VUserRamps) == 0 {
+			test.VUserRamps = nil
+		}
+	}
+	if len(test.vuserScaleRamps) == 0 {
+		test.vuserScaleRamps = nil
+	}
+}
 
-	return nil
+func (tr *TestRunner) cancelAllVUserScaleRampsLocked(test *ManagedTest) {
+	if test == nil || test.vuserScaleRamps == nil {
+		return
+	}
+	for groupName, ramp := range test.vuserScaleRamps {
+		ramp.cancel()
+		delete(test.vuserScaleRamps, groupName)
+	}
+	test.vuserScaleRamps = nil
+	test.VUserRamps = nil
+}
+
+func (tr *TestRunner) finishVUserScaleRamp(id string, groupName string, ramp *vuserScaleRamp) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	test, ok := tr.tests[id]
+	if !ok || test.vuserScaleRamps == nil {
+		return
+	}
+	if test.vuserScaleRamps[groupName] == ramp {
+		delete(test.vuserScaleRamps, groupName)
+		if test.VUserRamps != nil {
+			delete(test.VUserRamps, groupName)
+			if len(test.VUserRamps) == 0 {
+				test.VUserRamps = nil
+			}
+		}
+	}
+	if len(test.vuserScaleRamps) == 0 {
+		test.vuserScaleRamps = nil
+	}
+}
+
+func cloneVUserRampStatusMap(in map[string]VUserRampStatus) map[string]VUserRampStatus {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]VUserRampStatus, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func testGroupVUsers(test *ManagedTest, groupName string) (int, bool) {
+	if test == nil {
+		return 0, false
+	}
+	for _, group := range test.Groups {
+		if group.Name == groupName {
+			return group.VUsers, true
+		}
+	}
+	return 0, false
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error {
@@ -5132,6 +5381,7 @@ func (tr *TestRunner) failTestBeforeRun(test *ManagedTest, message string) {
 
 func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, endTime time.Time, finalError string, archiveRecord *storage.RunArchiveRecord) {
 	tr.mu.Lock()
+	tr.cancelAllVUserScaleRampsLocked(test)
 	test.Status = finalStatus
 	test.PendingSince = nil
 	test.PendingReason = ""

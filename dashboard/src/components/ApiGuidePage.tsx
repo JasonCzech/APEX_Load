@@ -85,6 +85,8 @@ const endpointGroups = [
       { method: 'POST', path: '/api/v1/tests', operations: ['manage_tests'] },
       { method: 'POST', path: '/api/v1/tests/{id}/start', operations: ['manage_tests'] },
       { method: 'POST', path: '/api/v1/tests/{id}/stop', operations: ['manage_tests'] },
+      { method: 'PATCH', path: '/api/v1/tests/{id}/vusers', purpose: 'Run, pause, stop, or ramp a specific VUser group.', operations: ['manage_tests'] },
+      { method: 'PATCH', path: '/api/v1/tests/{id}/duration', operations: ['manage_tests'] },
       { method: 'GET', path: '/api/v1/tests/{id}/metrics', operations: ['view_tests'] },
       { method: 'GET', path: '/api/v1/tests/{id}/archive/report', operations: ['view_tests'] },
     ],

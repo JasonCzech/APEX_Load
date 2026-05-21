@@ -257,9 +257,11 @@ Control endpoints:
 | `POST` | `/api/v1/tests/{id}/abort` | Abort immediately. |
 | `POST` | `/api/v1/tests/{id}/pause` | Soft-pause between actions. |
 | `POST` | `/api/v1/tests/{id}/resume` | Resume a paused run. |
-| `PATCH` | `/api/v1/tests/{id}/vusers` | Change VUser count for a group. |
+| `PATCH` | `/api/v1/tests/{id}/vusers` | Change VUser count for a group. Send `action: "run"` to apply `target_vusers`, or `action: "pause"` / `"stop"` to drive that group to zero. Include optional `ramp_duration`, such as `"2m"`, to add or remove VUsers gradually. |
 | `PATCH` | `/api/v1/tests/{id}/duration` | Extend or shorten duration. |
 | `GET` | `/api/v1/tests/{id}/metrics` | Current metrics snapshot. |
+
+When a gradual VUser change is in progress, `GET /api/v1/tests/{id}` includes `vuser_ramps` keyed by group name. Each ramp reports `start_vusers`, `target_vusers`, `started_at`, `ramp_duration`, and `ramp_duration_seconds` so clients can project the active ramp until it finishes.
 
 ### 5. Stream Live Events
 
@@ -269,7 +271,7 @@ Use the global WebSocket for dashboard-style updates:
 ws://<controller-host>:8080/api/v1/ws
 ```
 
-Messages are JSON and include a `type` field such as `metrics_update`, `test_created`, `test_started`, `test_complete`, `test_failed`, `test_paused`, `test_resumed`, `vusers_changed`, `duration_changed`, and `latency_update`.
+Messages are JSON and include a `type` field such as `metrics_update`, `test_created`, `test_started`, `test_complete`, `test_failed`, `test_paused`, `test_resumed`, `vusers_ramp_started`, `vusers_changed`, `duration_changed`, and `latency_update`.
 
 ### 6. Download Reports And Archives
 

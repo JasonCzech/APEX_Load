@@ -138,8 +138,15 @@ type TestMetricsResponse = {
 type ScaleVUsersResponse = {
   test_id: string
   group: string
+  action?: 'run' | 'pause' | 'stop'
   target_vusers: number
+  ramp_duration?: string
   status: string
+}
+
+type ScaleVUsersOptions = {
+  action?: 'run' | 'pause' | 'stop'
+  ramp_duration?: string
 }
 
 type AdjustDurationResponse = {
@@ -355,10 +362,10 @@ export function useTestApi() {
   )
 
   const scaleVUsers = useCallback(
-    (testId: string, group: string, targetVUsers: number) =>
+    (testId: string, group: string, targetVUsers: number, options?: ScaleVUsersOptions) =>
       request<ScaleVUsersResponse>(`/tests/${testId}/vusers`, {
         method: 'PATCH',
-        body: JSON.stringify({ group, target_vusers: targetVUsers }),
+        body: JSON.stringify({ group, target_vusers: targetVUsers, action: options?.action, ramp_duration: options?.ramp_duration }),
       }),
     [],
   )

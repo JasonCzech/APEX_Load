@@ -2,7 +2,7 @@ export function parseDurationToSeconds(input?: string): number {
   if (!input) return 0;
   
   // Handles multiple units like "1h 30m" or "90m"
-  const regex = /(\d+)(h|m|s)/g;
+  const regex = /(\d+)(ms|h|m|s)/g;
   let totalSeconds = 0;
   let hasMatch = false;
 
@@ -15,11 +15,12 @@ export function parseDurationToSeconds(input?: string): number {
     if (unit === 'h') totalSeconds += value * 3600;
     else if (unit === 'm') totalSeconds += value * 60;
     else if (unit === 's') totalSeconds += value;
+    else if (unit === 'ms') totalSeconds += value / 1000;
   }
 
   // Fallback to strict single unit parsing if no multi-matches
   if (!hasMatch) {
-    const singleMatch = input.trim().match(/^(\d+)([smh])$/);
+    const singleMatch = input.trim().match(/^(\d+)(ms|[smh])$/);
     if (!singleMatch) return 0;
     
     const val = parseInt(singleMatch[1] || '0', 10);
@@ -28,9 +29,10 @@ export function parseDurationToSeconds(input?: string): number {
     if (u === 'h') return val * 3600;
     if (u === 'm') return val * 60;
     if (u === 's') return val;
+    if (u === 'ms') return Math.ceil(val / 1000);
   }
 
-  return totalSeconds;
+  return Math.ceil(totalSeconds);
 }
 
 export function formatTimeCompact(seconds: number): string {

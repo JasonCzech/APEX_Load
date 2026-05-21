@@ -221,6 +221,106 @@ func TestHandleScaleVUsersReturnsGroupError(t *testing.T) {
 	}
 }
 
+func TestHandleScaleVUsersAcceptsGradualRampDuration(t *testing.T) {
+	server, testRun := newRunningControlTestServer(t)
+
+	body, _ := json.Marshal(map[string]any{
+		"group":         "buyers",
+		"target_vusers": 3,
+		"ramp_duration": "60ms",
+	})
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testRun.ID+"/vusers", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if payload["status"] != "ramping" || payload["ramp_duration"] != "60ms" {
+		t.Fatalf("scale payload = %#v, want ramping response", payload)
+	}
+	ramping, ok := server.runner.GetTest(testRun.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to exist", testRun.ID)
+	}
+	if ramp := ramping.VUserRamps["buyers"]; ramp.TargetVUsers != 3 || ramp.RampDuration != "60ms" {
+		t.Fatalf("active ramp status = %#v, want target 3 over 60ms", ramp)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		scaled, ok := server.runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if len(scaled.Groups) == 1 && scaled.Groups[0].VUsers == 3 && scaled.TotalVUsers == 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected gradual scale to reach 3 vusers, got groups=%#v total=%d", scaled.Groups, scaled.TotalVUsers)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestHandleScaleVUsersAcceptsGroupAction(t *testing.T) {
+	server, testRun := newRunningControlTestServer(t)
+
+	body, _ := json.Marshal(map[string]any{
+		"group":         "buyers",
+		"action":        "pause",
+		"target_vusers": 3,
+	})
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testRun.ID+"/vusers", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if payload["action"] != "pause" || payload["status"] != "paused" || payload["target_vusers"] != float64(0) {
+		t.Fatalf("scale payload = %#v, want pause action with zero target", payload)
+	}
+	scaled, ok := server.runner.GetTest(testRun.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to exist", testRun.ID)
+	}
+	if len(scaled.Groups) != 1 || scaled.Groups[0].VUsers != 0 || scaled.TotalVUsers != 0 {
+		t.Fatalf("paused group state = groups=%#v total=%d, want zero vusers", scaled.Groups, scaled.TotalVUsers)
+	}
+}
+
+func TestHandleScaleVUsersRejectsUnknownGroupAction(t *testing.T) {
+	server, testRun := newRunningControlTestServer(t)
+
+	body, _ := json.Marshal(map[string]any{
+		"group":         "buyers",
+		"action":        "restart",
+		"target_vusers": 3,
+	})
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testRun.ID+"/vusers", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "action must be one of run, pause, or stop") {
+		t.Fatalf("scale body = %q, want action validation error", resp.Body.String())
+	}
+}
+
 func TestHandlePinAndUnpinComparisonBaseline(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	completedAt := time.Date(2026, time.May, 12, 12, 0, 0, 0, time.UTC)

@@ -50,6 +50,7 @@ type MultiGroupEngine struct {
 	totalCtx       context.Context
 	wg             *sync.WaitGroup
 	vuserCancels   map[int]context.CancelFunc
+	vuserGroups    map[int]string
 	nextVUserID    int
 	paused         bool
 	pauseCh        chan struct{}
@@ -113,6 +114,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 
 	mge.mu.Lock()
 	mge.vuserCancels = make(map[int]context.CancelFunc)
+	mge.vuserGroups = make(map[int]string)
 	mge.nextVUserID = 0
 	mge.pauseCh = make(chan struct{})
 	close(mge.pauseCh) // Start unpaused
@@ -311,6 +313,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 
 	mge.mu.Lock()
 	mge.vuserCancels[vuserID] = vuCancel
+	mge.vuserGroups[vuserID] = group.Name
 	mge.mu.Unlock()
 
 	if rampDownDelay > 0 {
@@ -348,6 +351,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 			vuProto.Teardown(context.Background())
 			mge.mu.Lock()
 			delete(mge.vuserCancels, vuserID)
+			delete(mge.vuserGroups, vuserID)
 			mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 			mge.mu.Unlock()
 		}()
@@ -389,6 +393,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 
 	mge.mu.Lock()
 	mge.vuserCancels[vuserID] = vuCancel
+	mge.vuserGroups[vuserID] = group.Name
 	mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 	mge.mu.Unlock()
 
@@ -398,6 +403,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		vuCancel()
 		mge.mu.Lock()
 		delete(mge.vuserCancels, vuserID)
+		delete(mge.vuserGroups, vuserID)
 		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 		mge.mu.Unlock()
 		return
@@ -407,6 +413,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		vuCancel()
 		mge.mu.Lock()
 		delete(mge.vuserCancels, vuserID)
+		delete(mge.vuserGroups, vuserID)
 		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 		mge.mu.Unlock()
 		return
@@ -420,6 +427,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 			vuProto.Teardown(context.Background())
 			mge.mu.Lock()
 			delete(mge.vuserCancels, vuserID)
+			delete(mge.vuserGroups, vuserID)
 			mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 			mge.mu.Unlock()
 		}()
@@ -487,8 +495,12 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 			if removed >= toRemove {
 				break
 			}
+			if mge.vuserGroups[id] != groupName {
+				continue
+			}
 			cancel()
 			delete(mge.vuserCancels, id)
+			delete(mge.vuserGroups, id)
 			removed++
 		}
 	}

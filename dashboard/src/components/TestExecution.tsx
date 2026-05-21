@@ -86,9 +86,16 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     onToggleControls,
     vuserTargets,
     onVuserTargetChange,
+    vuserGroupActions,
+    onVuserGroupActionChange,
+    vuserRampEnabled,
+    onVuserRampEnabledChange,
+    vuserRampDuration,
+    onVuserRampDurationChange,
     durationInput,
     onDurationInputChange,
     onScaleVUsers,
+    onStopAllVUsers,
     onAdjustDuration,
     liveControlPreview,
   } = useExecutionLiveControls(testId, test, showControlFeedback)
@@ -176,18 +183,10 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       <TestExecutionHeader
         test={test}
         isMultiGroup={isMultiGroup}
-        timeRange={timeRange}
-        onTimeRangeChange={onTimeRangeChange}
         onBack={onBack}
         onStart={onStart}
         onSelectTest={onSelectTest}
-        isRunning={isRunning}
-        isPaused={isPaused}
         isStopping={isStopping}
-        onStop={onStop}
-        onAbort={onAbort}
-        onPause={onPause}
-        onResume={onResume}
         showArchiveDownload={showArchiveDownload}
         onDownloadArchive={onDownloadArchive}
       />
@@ -200,10 +199,24 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
           test={test}
           vuserTargets={vuserTargets}
           onVuserTargetChange={onVuserTargetChange}
+          vuserGroupActions={vuserGroupActions}
+          onVuserGroupActionChange={onVuserGroupActionChange}
+          vuserRampEnabled={vuserRampEnabled}
+          onVuserRampEnabledChange={onVuserRampEnabledChange}
+          vuserRampDuration={vuserRampDuration}
+          onVuserRampDurationChange={onVuserRampDurationChange}
           onScaleVUsers={onScaleVUsers}
+          onStopAllVUsers={onStopAllVUsers}
           durationInput={durationInput}
           onDurationInputChange={onDurationInputChange}
           onAdjustDuration={onAdjustDuration}
+          isRunning={isRunning}
+          isPaused={isPaused}
+          isStopping={isStopping}
+          onPause={onPause}
+          onResume={onResume}
+          onStop={onStop}
+          onAbort={onAbort}
           liveControlPreview={liveControlPreview}
           controlFeedback={controlFeedback}
           groupColors={GROUP_COLORS}
@@ -298,6 +311,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         showRefArea={showRefArea}
         refAreaLeft={refAreaLeft}
         refAreaEnd={refAreaEnd}
+        timeRange={timeRange}
+        onTimeRangeChange={onTimeRangeChange}
         isMultiGroup={isMultiGroup}
         groupNames={groupNames}
         groupColors={GROUP_COLORS}
