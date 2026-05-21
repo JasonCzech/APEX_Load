@@ -1311,6 +1311,7 @@ export interface WSMessage {
   timestamp?: string
   event_index?: number
   data?: LiveMetrics
+  latency?: NetworkLatency
   event?: unknown
   report?: unknown
   session?: unknown

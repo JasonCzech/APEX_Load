@@ -6,6 +6,7 @@ import {
   mapExecutionHistory,
   summarizeExecutionChartData,
 } from './testExecutionMetricsModel'
+import { latencySeriesKeyForTarget } from './latencySeries'
 
 describe('testExecutionMetricsModel', () => {
   it('maps backend execution history into chart points with group and latency metrics', () => {
@@ -88,6 +89,8 @@ describe('testExecutionMetricsModel', () => {
     }])
 
     expect(mapped).toHaveLength(1)
+    const endpointKey = latencySeriesKeyForTarget({ name: 'edge', endpoint: 'https://example.test' })
+
     expect(mapped[0]).toMatchObject({
       vusers: 12,
       tps: 4.5,
@@ -95,7 +98,7 @@ describe('testExecutionMetricsModel', () => {
       Checkout_tps: 4.5,
       Checkout_avgMs: 123,
       Checkout_vusers: 12,
-      latency_edge: 42,
+      [endpointKey]: 42,
       cpuProcess: 10,
       memProcess: 256,
       jmsConsumerLagMs: 32,

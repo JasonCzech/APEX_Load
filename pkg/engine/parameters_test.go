@@ -103,6 +103,40 @@ func TestParameterRuntime_DataSourceParameter(t *testing.T) {
 	}
 }
 
+func TestParameterRuntime_TrimsFileParameterValuesBeforeInterpolation(t *testing.T) {
+	vu := &VUser{
+		Variables: map[string]string{},
+		Script: &dsl.Script{
+			Parameters: []dsl.Parameter{{
+				Name:      "url",
+				Type:      "file",
+				Values:    []string{"https://csi-gw-ext.att.com:443 \r\n"},
+				Selection: "sequential",
+				Update:    "each_iteration",
+			}},
+		},
+	}
+	vu.Parameters = NewParameterRuntime(vu.Script.Parameters, nil, 0)
+	vu.Parameters.Prime()
+
+	if got := vu.interpolate("{{var.url}}/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws"); got != "https://csi-gw-ext.att.com:443/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws" {
+		t.Fatalf("interpolated URL = %q", got)
+	}
+}
+
+func TestParameterRuntime_ResolvesParameterNamesCaseInsensitively(t *testing.T) {
+	runtime := NewParameterRuntime([]dsl.Parameter{{
+		Name:   "url",
+		Type:   "list",
+		Values: []string{"https://csi-gw-ext.att.com:443"},
+	}}, nil, 0)
+	runtime.Prime()
+
+	if got, ok := runtime.ResolveNamed("URL"); !ok || got != "https://csi-gw-ext.att.com:443" {
+		t.Fatalf("ResolveNamed(\"URL\") = %q, %v", got, ok)
+	}
+}
+
 func TestVUser_Interpolate_ParametersAndFunctions(t *testing.T) {
 	vu := &VUser{
 		Variables: map[string]string{},

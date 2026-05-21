@@ -150,6 +150,20 @@ func TestJavaHTTPExecuteRejectsInvalidBase64(t *testing.T) {
 	}
 }
 
+func TestResolveJavaHTTPURLNormalizesAbsoluteURLBoundaryWhitespace(t *testing.T) {
+	got := resolveJavaHTTPURL("https://example.com", "https://service.example.com:443 /invoke")
+	if got != "https://service.example.com:443/invoke" {
+		t.Fatalf("resolveJavaHTTPURL returned %q", got)
+	}
+}
+
+func TestResolveJavaHTTPURLTrimsUnresolvedLeadingTemplateBase(t *testing.T) {
+	got := resolveJavaHTTPURL("https://service.example.com:443", "{{var.url}}/invoke")
+	if got != "https://service.example.com:443/invoke" {
+		t.Fatalf("resolveJavaHTTPURL returned %q", got)
+	}
+}
+
 func TestJavaHTTPInitAllowsSidecarHelperMode(t *testing.T) {
 	p := &JavaHTTP{}
 	if err := p.Init(context.Background(), map[string]any{

@@ -1040,6 +1040,51 @@
   border-color: var(--text-muted);
 }
 
+.chart-context-menu {
+  position: fixed;
+  z-index: 1200;
+  width: 224px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(33, 36, 47, 0.96);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(12px);
+}
+
+.chart-context-menu-title {
+  padding: 6px 8px 8px;
+  color: #aeb7c8;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.chart-context-menu button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #f3f6fb;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chart-context-menu button:hover,
+.chart-context-menu button:focus-visible {
+  outline: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
 .time-range-selector {
   display: flex;
   background: var(--bg-secondary);

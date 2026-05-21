@@ -1,4 +1,5 @@
 import { LiveMetrics, MetricsHistoryPoint, TestStatus } from '../types'
+import { latencySeriesKeyForTarget } from './latencySeries'
 
 export interface ExecutionChartSummary {
   avgTps: number
@@ -65,7 +66,7 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
 
   if (metric.latency?.targets) {
     metric.latency.targets.forEach((target) => {
-      point[`latency_${target.name}`] = target.latency_ms
+      point[latencySeriesKeyForTarget(target)] = target.latency_ms
     })
   }
 

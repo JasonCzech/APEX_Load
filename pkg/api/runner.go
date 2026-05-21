@@ -172,6 +172,7 @@ type ManagedTest struct {
 	groupSpecs                   []engine.GroupConfig
 	goalControl                  *goalControllerState
 	executionBackend             testExecutionBackend
+	lastNetworkLatency           *NetworkLatency
 	remoteTarget                 string
 	remoteClient                 generatorClient
 	remoteMetricsStream          *generatorrpc.MetricsStream
@@ -929,6 +930,7 @@ func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *L
 		P99Ms:           record.P99Ms,
 		Browser:         browserSummaryRecordToLiveMetrics(record.Browser),
 		BrowserByDevice: browserDeviceSummaryRecordToLiveMetrics(record.BrowserByDevice),
+		Latency:         networkLatencyRecordToLiveMetrics(record.Latency),
 	}
 	if record.DroppedResults > 0 || record.WebsocketClients > 0 || record.WebsocketDroppedMessages > 0 || record.WebsocketDroppedEvents > 0 || !record.CollectedAt.IsZero() || !record.GeneratorPublishedAt.IsZero() || !record.ControllerReceivedAt.IsZero() || !record.PublishedAt.IsZero() || record.SampleAgeMs > 0 || record.GeneratorProcessingLagMs > 0 || record.TransportLagMs > 0 || record.ControllerFanoutLagMs > 0 {
 		live.Telemetry = &TelemetryHealth{
@@ -997,6 +999,25 @@ func browserDeviceSummaryRecordToLiveMetrics(records map[string]*storage.Browser
 		return nil
 	}
 	return result
+}
+
+func networkLatencyRecordToLiveMetrics(record *storage.NetworkLatencySummaryRecord) *NetworkLatency {
+	if record == nil {
+		return nil
+	}
+	latency := &NetworkLatency{Targets: make([]LatencyTarget, 0, len(record.Targets))}
+	for _, target := range record.Targets {
+		latency.Targets = append(latency.Targets, LatencyTarget{
+			Name:        target.Name,
+			Endpoint:    target.Endpoint,
+			LatencyMs:   target.LatencyMs,
+			IP:          target.IP,
+			Hops:        target.Hops,
+			LastSuccess: target.LastSuccess,
+			Timestamp:   target.Timestamp,
+		})
+	}
+	return latency
 }
 
 func (tr *TestRunner) StoreScript(script *dsl.Script) *StoredScript {
@@ -1112,6 +1133,7 @@ func (tr *TestRunner) UpdateScript(id string, script *dsl.Script) (*StoredScript
 	if !ok {
 		return nil, false
 	}
+	script.ID = existing.ID
 	existing.Name = script.Name
 	existing.Protocol = script.Protocol
 	existing.Version = script.Version
@@ -1120,6 +1142,9 @@ func (tr *TestRunner) UpdateScript(id string, script *dsl.Script) (*StoredScript
 	}
 	if script.FolderID == nil {
 		script.FolderID = existing.FolderID
+	}
+	if script.CreatedAt.IsZero() && existing.Script != nil {
+		script.CreatedAt = existing.Script.CreatedAt
 	}
 	existing.ProjectID = script.ProjectID
 	existing.FolderID = script.FolderID
@@ -4885,6 +4910,14 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	test.errorPatterns = updateLiveErrorPatterns(test.errorPatterns, live, test.ID)
 	live.ErrorPatterns = liveErrorPatternsList(test.errorPatterns)
 	test.TelemetryHealth = cloneTelemetryRunHealth(telemetryRunHealth)
+	if live.Latency == nil {
+		live.Latency = cloneNetworkLatency(test.lastNetworkLatency)
+		if live.Latency == nil && test.LiveMetrics != nil {
+			live.Latency = cloneNetworkLatency(test.LiveMetrics.Latency)
+		}
+	} else {
+		test.lastNetworkLatency = cloneNetworkLatency(live.Latency)
+	}
 	test.LiveMetrics = live
 	test.History = append(test.History, live)
 	if len(test.History) > maxManagedTestHistory {
@@ -6012,15 +6045,7 @@ func decodeStoredGeneratorAssignment(value any) *GeneratorAssignmentSettings {
 
 func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, live *LiveMetrics) {
 	// Identify unique base URLs across all groups
-	endpoints := make(map[string]string)
-	for _, g := range test.Groups {
-		if g.script != nil && g.script.Config.BaseURL != "" {
-			u, err := url.Parse(g.script.Config.BaseURL)
-			if err == nil {
-				endpoints[u.Host] = g.script.Config.BaseURL
-			}
-		}
-	}
+	endpoints := tr.latencyEndpointsForTest(test)
 
 	if len(endpoints) == 0 {
 		return
@@ -6045,7 +6070,11 @@ func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, live *LiveMetrics
 	wg.Wait()
 
 	tr.mu.Lock()
-	live.Latency = latency
+	live.Latency = cloneNetworkLatency(latency)
+	test.lastNetworkLatency = cloneNetworkLatency(latency)
+	if test.LiveMetrics != nil {
+		test.LiveMetrics.Latency = cloneNetworkLatency(latency)
+	}
 	tr.mu.Unlock()
 
 	// Broadcast the latency update specifically if needed,
@@ -6056,6 +6085,224 @@ func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, live *LiveMetrics
 		"project_id": normalizeProjectID(test.ProjectID),
 		"latency":    latency,
 	})
+}
+
+func (tr *TestRunner) latencyEndpointsForTest(test *ManagedTest) map[string]string {
+	endpoints := make(map[string]string)
+	for _, g := range test.Groups {
+		script := g.script
+		if script == nil && g.ScriptID != "" {
+			tr.mu.RLock()
+			if stored, ok := tr.scripts[g.ScriptID]; ok {
+				script = stored.Script
+			}
+			tr.mu.RUnlock()
+		}
+		addLatencyEndpoint(endpoints, script)
+	}
+	return endpoints
+}
+
+func addLatencyEndpoint(endpoints map[string]string, script *dsl.Script) {
+	if script == nil {
+		return
+	}
+	if addParameterizedLatencyEndpoints(endpoints, script) {
+		return
+	}
+	raw := strings.TrimSpace(script.Config.BaseURL)
+	if raw == "" {
+		return
+	}
+	addLatencyEndpointValue(endpoints, raw)
+}
+
+func addParameterizedLatencyEndpoints(endpoints map[string]string, script *dsl.Script) bool {
+	added := false
+	for _, action := range script.Actions {
+		raw := strings.TrimSpace(action.Target)
+		if raw == "" {
+			continue
+		}
+		if endpoint, ok := resolveLatencyEndpointTemplatePrefix(raw, script); ok {
+			addLatencyEndpointValue(endpoints, endpoint)
+			added = true
+		}
+	}
+	return added
+}
+
+var latencyTemplatePrefixPattern = regexp.MustCompile(`^\{\{([^{}]+)\}\}`)
+
+func resolveLatencyEndpointTemplatePrefix(raw string, script *dsl.Script) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	match := latencyTemplatePrefixPattern.FindStringSubmatchIndex(raw)
+	if len(match) != 4 {
+		return "", false
+	}
+	expr := strings.TrimSpace(raw[match[2]:match[3]])
+	if !strings.HasPrefix(expr, "var.") {
+		return "", false
+	}
+	name := strings.TrimSpace(strings.TrimPrefix(expr, "var."))
+	value, ok := firstScriptParameterValue(script, name)
+	if !ok {
+		return "", false
+	}
+	value = strings.TrimRight(strings.TrimSpace(value), "/")
+	if !strings.HasPrefix(strings.ToLower(value), "http://") && !strings.HasPrefix(strings.ToLower(value), "https://") {
+		return "", false
+	}
+	suffix := strings.TrimLeft(raw[match[1]:], " \t\r\n")
+	return normalizeLatencyEndpointValue(value + suffix), true
+}
+
+func addLatencyEndpointValue(endpoints map[string]string, raw string) {
+	raw = normalizeLatencyEndpointValue(raw)
+	host, ok := latencyHostFromEndpoint(raw)
+	if !ok {
+		return
+	}
+	endpoints[host] = raw
+}
+
+var latencyEndpointBoundaryWhitespacePattern = regexp.MustCompile(`^(https?://[^/?#\s]+)\s+([/?#].*)$`)
+
+func normalizeLatencyEndpointValue(raw string) string {
+	raw = strings.TrimSpace(raw)
+	return latencyEndpointBoundaryWhitespacePattern.ReplaceAllString(raw, "$1$2")
+}
+
+func firstScriptParameterValue(script *dsl.Script, name string) (string, bool) {
+	for _, param := range script.Parameters {
+		if param.Name != name {
+			continue
+		}
+		for _, value := range param.Values {
+			if strings.TrimSpace(value) != "" {
+				return value, true
+			}
+		}
+		if param.DataSource != "" && param.Column != "" {
+			return firstScriptDataSourceValue(script.DataSources, param.DataSource, param.Column)
+		}
+	}
+	return "", false
+}
+
+func firstScriptDataSourceValue(sources []dsl.DataSource, sourceName, column string) (string, bool) {
+	for _, source := range sources {
+		if source.Name != sourceName || strings.TrimSpace(source.InlineData) == "" {
+			continue
+		}
+		for _, delimiter := range latencyDataSourceDelimiters(source.Delimiter) {
+			if value, ok := firstScriptDataSourceValueWithDelimiter(source, column, delimiter); ok {
+				return value, true
+			}
+		}
+	}
+	return "", false
+}
+
+func latencyDataSourceDelimiters(delimiter string) []rune {
+	if strings.TrimSpace(delimiter) == "" {
+		return []rune{',', '\t', ';', '|'}
+	}
+	if strings.EqualFold(strings.TrimSpace(delimiter), `\t`) || strings.EqualFold(strings.TrimSpace(delimiter), "tab") {
+		return []rune{'\t'}
+	}
+	return []rune{[]rune(delimiter)[0]}
+}
+
+func firstScriptDataSourceValueWithDelimiter(source dsl.DataSource, column string, delimiter rune) (string, bool) {
+	rows := parseInlineDataRows(source.InlineData, delimiter)
+	if len(rows) == 0 {
+		return "", false
+	}
+	rowIndex := 0
+	columnIndex := 0
+	if source.FirstRowHeader {
+		if len(rows) < 2 {
+			return "", false
+		}
+		index, ok := indexScriptDataSourceColumn(rows[0], column)
+		if !ok {
+			return "", false
+		}
+		columnIndex = index
+		rowIndex = 1
+	} else if len(source.Columns) > 0 {
+		index, ok := indexScriptDataSourceColumn(source.Columns, column)
+		if !ok {
+			return "", false
+		}
+		columnIndex = index
+	}
+	if columnIndex >= len(rows[rowIndex]) {
+		return "", false
+	}
+	value := strings.TrimSpace(rows[rowIndex][columnIndex])
+	return value, value != ""
+}
+
+func parseInlineDataRows(content string, delimiter rune) [][]string {
+	reader := csv.NewReader(strings.NewReader(content))
+	reader.Comma = delimiter
+	reader.FieldsPerRecord = -1
+	reader.LazyQuotes = true
+	reader.TrimLeadingSpace = true
+	rows, err := reader.ReadAll()
+	if err != nil {
+		return nil
+	}
+	filtered := rows[:0]
+	for _, row := range rows {
+		nonEmpty := false
+		for index := range row {
+			row[index] = strings.TrimSpace(strings.TrimPrefix(row[index], "\ufeff"))
+			if row[index] != "" {
+				nonEmpty = true
+			}
+		}
+		if nonEmpty {
+			filtered = append(filtered, row)
+		}
+	}
+	return filtered
+}
+
+func indexScriptDataSourceColumn(columns []string, column string) (int, bool) {
+	for index, candidate := range columns {
+		if strings.EqualFold(strings.TrimSpace(candidate), strings.TrimSpace(column)) {
+			return index, true
+		}
+	}
+	return 0, false
+}
+
+func latencyHostFromEndpoint(raw string) (string, bool) {
+	parsed, err := url.Parse(raw)
+	if err == nil && parsed.Host != "" {
+		return parsed.Host, true
+	}
+	if !strings.Contains(raw, "://") {
+		parsed, err = url.Parse("//" + raw)
+		if err == nil && parsed.Host != "" {
+			return parsed.Host, true
+		}
+	}
+	return "", false
+}
+
+func cloneNetworkLatency(in *NetworkLatency) *NetworkLatency {
+	if in == nil {
+		return nil
+	}
+	out := &NetworkLatency{}
+	if len(in.Targets) > 0 {
+		out.Targets = append([]LatencyTarget(nil), in.Targets...)
+	}
+	return out
 }
 
 func (tr *TestRunner) measureEndpointLatency(host, endpoint string) LatencyTarget {

@@ -875,6 +875,26 @@ func TestBuildHTTPSnapshot_RedactsSecretRequestValues(t *testing.T) {
 	}
 }
 
+func TestBuildHTTPSnapshot_UsesEffectiveURLWhenRedactedTargetIsUnresolvedTemplate(t *testing.T) {
+	effectiveURL := "https://csi-gw-ext.att.com:443/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws"
+	snapshot := buildHTTPSnapshot(
+		http.MethodPost,
+		effectiveURL,
+		nil,
+		nil,
+		"{{var.url}}/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws",
+		nil,
+		nil,
+		0,
+		nil,
+		nil,
+	)
+
+	if snapshot.RequestURL != effectiveURL {
+		t.Fatalf("RequestURL = %q, want effective URL %q", snapshot.RequestURL, effectiveURL)
+	}
+}
+
 func TestHTTP_Execute_WithRequiredGlobalContentCheck(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
@@ -970,6 +990,13 @@ func TestHTTP_ResolveURL(t *testing.T) {
 		{"https://other.com/path", "https://other.com/path"},
 		{"http://other.com/path", "http://other.com/path"},
 		{"/", "https://api.example.com/"},
+		{" https://other.com:443/path ", "https://other.com:443/path"},
+		{"https://other.com:443 /path", "https://other.com:443/path"},
+		{"https://other.com:443\t/path", "https://other.com:443/path"},
+		{"https://other.com:443\r\n/path", "https://other.com:443/path"},
+		{"{{var.url}}/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws", "https://api.example.com/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws"},
+		{"{{var.url}} /Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws", "https://api.example.com/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws"},
+		{"{{param.URL}}/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws", "https://api.example.com/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws"},
 	}
 
 	for _, tt := range tests {

@@ -168,6 +168,8 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 				parameterSections[filepath.Base(parameterFileName)] = parsed.Sections
 			}
 		}
+		applyKnownParameterReferences(result.Script)
+		applyParameterizedBaseURL(result.Script)
 		attachLoadRunnerMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames, trueClientInspection)
 		return result, nil
 	}
@@ -277,6 +279,8 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 	}
 
+	applyKnownParameterReferences(result.Script)
+	applyParameterizedBaseURL(result.Script)
 	attachLoadRunnerMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames, nil)
 	return result, nil
 }

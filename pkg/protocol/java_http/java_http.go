@@ -190,13 +190,7 @@ func buildJavaHTTPPreflightSnapshot(baseURL string, action *protocol.Action) *pr
 }
 
 func resolveJavaHTTPURL(baseURL string, target string) string {
-	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
-		return target
-	}
-	if strings.TrimSpace(baseURL) == "" {
-		return target
-	}
-	return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(target, "/")
+	return httpproto.ResolveURL(baseURL, target)
 }
 
 func durationToMilliseconds(duration time.Duration) float64 {

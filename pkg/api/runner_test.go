@@ -1656,6 +1656,52 @@ func TestPublishLiveMetricsUpdatesStatePersistsHistoryAndBroadcasts(t *testing.T
 	}
 }
 
+func TestPublishLiveMetricsCarriesPreviousNetworkLatency(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	previous := &NetworkLatency{Targets: []LatencyTarget{{
+		Name:        "edge",
+		Endpoint:    "https://example.test",
+		LatencyMs:   42,
+		LastSuccess: true,
+		Timestamp:   time.Date(2026, time.May, 10, 10, 14, 55, 0, time.UTC),
+	}}}
+	testRun := &ManagedTest{
+		ID:                 "test-1",
+		Name:               "Checkout",
+		lastNetworkLatency: previous,
+	}
+	live := &LiveMetrics{Timestamp: time.Date(2026, time.May, 10, 10, 15, 0, 0, time.UTC), ActiveVUsers: 12}
+
+	runner.publishLiveMetrics(testRun, live, nil)
+
+	if live.Latency == nil || len(live.Latency.Targets) != 1 {
+		t.Fatalf("expected previous network latency on live metrics, got %#v", live.Latency)
+	}
+	if live.Latency == previous {
+		t.Fatal("expected carried latency to be cloned")
+	}
+
+	select {
+	case msg := <-hub.broadcast:
+		var payload struct {
+			Type string       `json:"type"`
+			Data *LiveMetrics `json:"data"`
+		}
+		if err := json.Unmarshal(msg, &payload); err != nil {
+			t.Fatalf("failed to decode broadcast payload: %v", err)
+		}
+		if payload.Type != "metrics_update" || payload.Data == nil || payload.Data.Latency == nil {
+			t.Fatalf("expected metrics_update with latency payload, got %#v", payload)
+		}
+		if got := payload.Data.Latency.Targets[0].LatencyMs; got != 42 {
+			t.Fatalf("latency = %v, want 42", got)
+		}
+	default:
+		t.Fatal("expected metrics_update broadcast")
+	}
+}
+
 func TestPublishLiveMetricsTrimsInMemoryHistory(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(2, hub, nil)
@@ -2290,6 +2336,16 @@ func TestLoadStoredTestHistoryBuildsLiveMetricsFromTypedIntervalSummaries(t *tes
 						AvgBrowserProcessMem: 256,
 					},
 				},
+				Latency: &storage.NetworkLatencySummaryRecord{
+					Targets: []storage.NetworkLatencyTargetRecord{{
+						Name:        "edge",
+						Endpoint:    "https://example.test",
+						LatencyMs:   42.5,
+						IP:          "192.0.2.10",
+						LastSuccess: true,
+						Timestamp:   time.Date(2026, time.May, 13, 17, 14, 59, 900000000, time.UTC),
+					}},
+				},
 				DroppedResults:           5,
 				WebsocketDroppedMessages: 2,
 				CollectedAt:              time.Date(2026, time.May, 13, 17, 14, 59, 0, time.UTC),
@@ -2329,6 +2385,9 @@ func TestLoadStoredTestHistoryBuildsLiveMetricsFromTypedIntervalSummaries(t *tes
 	}
 	if testRun.LiveMetrics.BrowserByDevice["iphone_se"].DevicePlatform != "ios" {
 		t.Fatalf("expected device platform to round-trip from typed history, got %#v", testRun.LiveMetrics.BrowserByDevice["iphone_se"])
+	}
+	if testRun.LiveMetrics.Latency == nil || len(testRun.LiveMetrics.Latency.Targets) != 1 || testRun.LiveMetrics.Latency.Targets[0].LatencyMs != 42.5 {
+		t.Fatalf("expected network latency to round-trip from typed history, got %#v", testRun.LiveMetrics.Latency)
 	}
 }
 
@@ -2503,7 +2562,6 @@ func TestScriptAndTestCrudPersistThroughStoreHelpers(t *testing.T) {
 	}
 
 	updatedScript := &dsl.Script{
-		ID:       "script-1",
 		Name:     "Checkout v2",
 		Protocol: "http",
 		Version:  "1.1.0",
@@ -2513,6 +2571,9 @@ func TestScriptAndTestCrudPersistThroughStoreHelpers(t *testing.T) {
 	}
 	if len(store.savedScripts) != 2 || store.savedScripts[1] != updatedScript {
 		t.Fatalf("expected SaveScript to be called for update, got %#v", store.savedScripts)
+	}
+	if store.savedScripts[1].ID != "script-1" {
+		t.Fatalf("expected update save to preserve existing script ID, got %q", store.savedScripts[1].ID)
 	}
 	if !runner.DeleteScript("script-1") {
 		t.Fatal("expected DeleteScript to succeed")

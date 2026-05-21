@@ -53,7 +53,7 @@ type storeTx struct {
 
 const (
 	intervalSummarySchemaVersionV1 = "apexload.interval-summary.v1"
-	intervalSummarySchemaVersion   = "apexload.interval-summary.v3"
+	intervalSummarySchemaVersion   = "apexload.interval-summary.v4"
 	archiveRecordSchemaVersion     = "apexload.archive.v1"
 )
 
@@ -87,6 +87,20 @@ type BrowserDeviceMetricsRecord struct {
 	AvgBrowserProcessMem float64 `json:"avg_browser_process_mem_mb,omitempty"`
 }
 
+type NetworkLatencySummaryRecord struct {
+	Targets []NetworkLatencyTargetRecord `json:"targets"`
+}
+
+type NetworkLatencyTargetRecord struct {
+	Name        string    `json:"name"`
+	Endpoint    string    `json:"endpoint"`
+	LatencyMs   float64   `json:"latency_ms"`
+	IP          string    `json:"ip,omitempty"`
+	Hops        int       `json:"hops,omitempty"`
+	LastSuccess bool      `json:"last_success"`
+	Timestamp   time.Time `json:"timestamp"`
+}
+
 type IntervalSummaryRecord struct {
 	SchemaVersion            string                                 `json:"schema_version,omitempty"`
 	Timestamp                time.Time                              `json:"timestamp"`
@@ -102,6 +116,7 @@ type IntervalSummaryRecord struct {
 	P99Ms                    float64                                `json:"p99_ms"`
 	Browser                  *BrowserMetricsSummaryRecord           `json:"browser,omitempty"`
 	BrowserByDevice          map[string]*BrowserDeviceMetricsRecord `json:"browser_by_device,omitempty"`
+	Latency                  *NetworkLatencySummaryRecord           `json:"latency,omitempty"`
 	DroppedResults           int64                                  `json:"dropped_results,omitempty"`
 	WebsocketClients         int                                    `json:"websocket_clients,omitempty"`
 	WebsocketDroppedMessages int64                                  `json:"websocket_dropped_messages,omitempty"`
@@ -572,6 +587,7 @@ func (s *SQLiteStore) init() error {
 			metadata_json TEXT,
 			config TEXT,
 			data_sources TEXT,
+			parameters TEXT,
 			init TEXT,
 			actions TEXT,
 			teardown TEXT,
@@ -628,6 +644,7 @@ func (s *SQLiteStore) init() error {
 			p99_ms REAL,
 			browser_json TEXT,
 			browser_by_device_json TEXT,
+			latency_json TEXT,
 			dropped_results INTEGER,
 			websocket_clients INTEGER,
 			websocket_dropped_messages INTEGER,
@@ -814,6 +831,7 @@ func (s *SQLiteStore) init() error {
 		{`ALTER TABLE releases ADD COLUMN project_id TEXT REFERENCES projects(id)`, "releases.project_id"},
 		{`ALTER TABLE scripts ADD COLUMN project_id TEXT REFERENCES projects(id)`, "scripts.project_id"},
 		{`ALTER TABLE scripts ADD COLUMN folder_id TEXT REFERENCES folders(id)`, "scripts.folder_id"},
+		{`ALTER TABLE scripts ADD COLUMN parameters TEXT`, "scripts.parameters"},
 		{`ALTER TABLE tests ADD COLUMN project_id TEXT REFERENCES projects(id)`, "tests.project_id"},
 		{`ALTER TABLE tests ADD COLUMN folder_id TEXT REFERENCES folders(id)`, "tests.folder_id"},
 		{`ALTER TABLE tests ADD COLUMN application_id TEXT REFERENCES applications(id)`, "tests.application_id"},
@@ -836,6 +854,7 @@ func (s *SQLiteStore) init() error {
 		{`ALTER TABLE test_interval_summaries ADD COLUMN controller_fanout_lag_ms REAL`, "test_interval_summaries.controller_fanout_lag_ms"},
 		{`ALTER TABLE test_interval_summaries ADD COLUMN browser_json TEXT`, "test_interval_summaries.browser_json"},
 		{`ALTER TABLE test_interval_summaries ADD COLUMN browser_by_device_json TEXT`, "test_interval_summaries.browser_by_device_json"},
+		{`ALTER TABLE test_interval_summaries ADD COLUMN latency_json TEXT`, "test_interval_summaries.latency_json"},
 		{`ALTER TABLE service_accounts ADD COLUMN active INTEGER NOT NULL DEFAULT 1`, "service_accounts.active"},
 		{`ALTER TABLE service_accounts ADD COLUMN expires_at DATETIME`, "service_accounts.expires_at"},
 		{`ALTER TABLE service_accounts ADD COLUMN key_rotated_at DATETIME`, "service_accounts.key_rotated_at"},
@@ -2472,6 +2491,7 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 	metadataJSON, _ := json.Marshal(script.Metadata)
 	configJSON, _ := json.Marshal(script.Config)
 	dataSourcesJSON, _ := json.Marshal(script.DataSources)
+	parametersJSON, _ := json.Marshal(script.Parameters)
 	initJSON, _ := json.Marshal(script.Init)
 	actionsJSON, _ := json.Marshal(script.Actions)
 	teardownJSON, _ := json.Marshal(script.Teardown)
@@ -2481,36 +2501,36 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 	}
 	script.UpdatedAt = time.Now()
 
-	query := `INSERT INTO scripts (id, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, config, data_sources, init, actions, teardown, created_at, updated_at)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	query := `INSERT INTO scripts (id, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(id) DO UPDATE SET
 			  name=excluded.name, protocol=excluded.protocol, version=excluded.version, 
 			  project_id=excluded.project_id, folder_id=excluded.folder_id,
 			  generated_by=excluded.generated_by, generated_from=excluded.generated_from,
 			  metadata_json=excluded.metadata_json,
-			  config=excluded.config, data_sources=excluded.data_sources, 
+			  config=excluded.config, data_sources=excluded.data_sources, parameters=excluded.parameters, 
 			  init=excluded.init, actions=excluded.actions, teardown=excluded.teardown, 
 			  updated_at=excluded.updated_at`
 
 	_, err := s.db.Exec(query,
 		script.ID, script.Name, script.Protocol, script.Version, script.ProjectID, script.FolderID,
 		script.GeneratedBy, script.GeneratedFrom,
-		string(metadataJSON), string(configJSON), string(dataSourcesJSON), string(initJSON), string(actionsJSON), string(teardownJSON),
+		string(metadataJSON), string(configJSON), string(dataSourcesJSON), string(parametersJSON), string(initJSON), string(actionsJSON), string(teardownJSON),
 		script.CreatedAt, script.UpdatedAt)
 	return err
 }
 
 func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
 	var script dsl.Script
-	var metadataJSON, configJSON, dataSourcesJSON, initJSON, actionsJSON, teardownJSON string
+	var metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string
 
-	query := `SELECT id, name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, init, actions, teardown, created_at, updated_at
+	query := `SELECT id, name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, COALESCE(parameters, ''), init, actions, teardown, created_at, updated_at
 			  FROM scripts WHERE id = ?`
 	err := s.db.QueryRow(query, id).Scan(
 		&script.ID, &script.Name, &script.Protocol, &script.Version,
 		&script.ProjectID, &script.FolderID,
 		&script.GeneratedBy, &script.GeneratedFrom,
-		&metadataJSON, &configJSON, &dataSourcesJSON, &initJSON, &actionsJSON, &teardownJSON,
+		&metadataJSON, &configJSON, &dataSourcesJSON, &parametersJSON, &initJSON, &actionsJSON, &teardownJSON,
 		&script.CreatedAt, &script.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -2521,6 +2541,9 @@ func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
 	}
 	json.Unmarshal([]byte(configJSON), &script.Config)
 	json.Unmarshal([]byte(dataSourcesJSON), &script.DataSources)
+	if parametersJSON != "" && parametersJSON != "null" {
+		json.Unmarshal([]byte(parametersJSON), &script.Parameters)
+	}
 	json.Unmarshal([]byte(initJSON), &script.Init)
 	json.Unmarshal([]byte(actionsJSON), &script.Actions)
 	json.Unmarshal([]byte(teardownJSON), &script.Teardown)
@@ -2530,7 +2553,7 @@ func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
 
 func (s *SQLiteStore) ListScripts(projectID string, folderID *string) ([]*dsl.Script, error) {
 	args := []any{}
-	query := `SELECT id, name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, init, actions, teardown, created_at, updated_at FROM scripts`
+	query := `SELECT id, name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, COALESCE(parameters, ''), init, actions, teardown, created_at, updated_at FROM scripts`
 	var filters []string
 	if projectID != "" {
 		filters = append(filters, `project_id = ?`)
@@ -2557,12 +2580,12 @@ func (s *SQLiteStore) ListScripts(projectID string, folderID *string) ([]*dsl.Sc
 	var scripts []*dsl.Script
 	for rows.Next() {
 		var script dsl.Script
-		var metadataJSON, configJSON, dataSourcesJSON, initJSON, actionsJSON, teardownJSON string
+		var metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string
 		err := rows.Scan(
 			&script.ID, &script.Name, &script.Protocol, &script.Version,
 			&script.ProjectID, &script.FolderID,
 			&script.GeneratedBy, &script.GeneratedFrom,
-			&metadataJSON, &configJSON, &dataSourcesJSON, &initJSON, &actionsJSON, &teardownJSON,
+			&metadataJSON, &configJSON, &dataSourcesJSON, &parametersJSON, &initJSON, &actionsJSON, &teardownJSON,
 			&script.CreatedAt, &script.UpdatedAt)
 		if err != nil {
 			return nil, err
@@ -2572,6 +2595,9 @@ func (s *SQLiteStore) ListScripts(projectID string, folderID *string) ([]*dsl.Sc
 		}
 		json.Unmarshal([]byte(configJSON), &script.Config)
 		json.Unmarshal([]byte(dataSourcesJSON), &script.DataSources)
+		if parametersJSON != "" && parametersJSON != "null" {
+			json.Unmarshal([]byte(parametersJSON), &script.Parameters)
+		}
 		json.Unmarshal([]byte(initJSON), &script.Init)
 		json.Unmarshal([]byte(actionsJSON), &script.Actions)
 		json.Unmarshal([]byte(teardownJSON), &script.Teardown)
@@ -2877,6 +2903,10 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 		if err != nil {
 			return err
 		}
+		latencyJSON, err := marshalNullableJSON(record.Latency)
+		if err != nil {
+			return err
+		}
 		var collectedAt any
 		if !record.CollectedAt.IsZero() {
 			collectedAt = record.CollectedAt
@@ -2896,11 +2926,11 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 		_, err = s.db.Exec(`INSERT INTO test_interval_summaries (
 			test_id, schema_version, timestamp, active_vusers, tps, avg_response_ms, error_pct,
 			total_transactions, total_errors, p50_ms, p90_ms, p95_ms, p99_ms,
-			browser_json, browser_by_device_json,
+			browser_json, browser_by_device_json, latency_json,
 			dropped_results, websocket_clients, websocket_dropped_messages, websocket_dropped_events,
 			generator_published_at, controller_received_at, collected_at, published_at,
 			generator_processing_lag_ms, transport_lag_ms, controller_fanout_lag_ms, sample_age_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			testID,
 			record.SchemaVersion,
 			record.Timestamp,
@@ -2916,6 +2946,7 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 			record.P99Ms,
 			browserJSON,
 			browserByDeviceJSON,
+			latencyJSON,
 			record.DroppedResults,
 			record.WebsocketClients,
 			record.WebsocketDroppedMessages,
@@ -2981,6 +3012,7 @@ func (s *SQLiteStore) getTypedHistory(testID string) ([]any, error) {
 		p99_ms,
 		browser_json,
 		browser_by_device_json,
+		latency_json,
 		dropped_results,
 		websocket_clients,
 		websocket_dropped_messages,
@@ -3004,6 +3036,7 @@ func (s *SQLiteStore) getTypedHistory(testID string) ([]any, error) {
 		var record IntervalSummaryRecord
 		var browserJSON sql.NullString
 		var browserByDeviceJSON sql.NullString
+		var latencyJSON sql.NullString
 		var droppedResults sql.NullInt64
 		var websocketClients sql.NullInt64
 		var websocketDroppedMessages sql.NullInt64
@@ -3032,6 +3065,7 @@ func (s *SQLiteStore) getTypedHistory(testID string) ([]any, error) {
 			&record.P99Ms,
 			&browserJSON,
 			&browserByDeviceJSON,
+			&latencyJSON,
 			&droppedResults,
 			&websocketClients,
 			&websocketDroppedMessages,
@@ -3055,6 +3089,11 @@ func (s *SQLiteStore) getTypedHistory(testID string) ([]any, error) {
 		}
 		if browserByDeviceJSON.Valid && strings.TrimSpace(browserByDeviceJSON.String) != "" {
 			if err := json.Unmarshal([]byte(browserByDeviceJSON.String), &record.BrowserByDevice); err != nil {
+				return nil, err
+			}
+		}
+		if latencyJSON.Valid && strings.TrimSpace(latencyJSON.String) != "" {
+			if err := json.Unmarshal([]byte(latencyJSON.String), &record.Latency); err != nil {
 				return nil, err
 			}
 		}
@@ -3156,6 +3195,7 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		P99Ms           float64                           `json:"p99_ms"`
 		Browser         *browserEnvelope                  `json:"browser,omitempty"`
 		BrowserByDevice map[string]*browserDeviceEnvelope `json:"browser_by_device,omitempty"`
+		Latency         *NetworkLatencySummaryRecord      `json:"latency,omitempty"`
 		Telemetry       *telemetryEnvelope                `json:"telemetry,omitempty"`
 	}
 
@@ -3217,6 +3257,11 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 				AvgBrowserProcessCPU: metrics.AvgBrowserProcessCPU,
 				AvgBrowserProcessMem: metrics.AvgBrowserProcessMem,
 			}
+		}
+	}
+	if summary.Latency != nil {
+		record.Latency = &NetworkLatencySummaryRecord{
+			Targets: append([]NetworkLatencyTargetRecord(nil), summary.Latency.Targets...),
 		}
 	}
 	if record.Timestamp.IsZero() {

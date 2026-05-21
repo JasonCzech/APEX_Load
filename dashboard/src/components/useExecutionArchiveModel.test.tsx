@@ -39,8 +39,10 @@ function ArchiveHarness({ test }: { test: TestSummary | null }) {
       <span data-testid="rows">{String(model.archiveTransactions.length)}</span>
       <span data-testid="page-start">{String(model.archivePageStart)}</span>
       <span data-testid="page-end">{String(model.archivePageEnd)}</span>
+      <span data-testid="expanded">{model.expandedArchiveEvent || 'none'}</span>
       <span data-testid="error">{model.archiveError || 'none'}</span>
       <button data-testid="next" onClick={() => model.onNextPage()}>next</button>
+      <button data-testid="inspect" onClick={() => model.onExpandedArchiveEventChange('row-1')}>inspect</button>
       <button data-testid="set-group" onClick={() => model.onSelectedArchiveGroupChange('Checkout')}>group</button>
     </div>
   )
@@ -165,6 +167,92 @@ describe('useExecutionArchiveModel', () => {
     expect(readTestId('rows')).toBe('1')
     expect(readTestId('page-start')).toBe('1')
     expect(readTestId('page-end')).toBe('1')
+  })
+
+  it('keeps an expanded transaction inspection open across test object refreshes', async () => {
+    apiMock.getTestArchiveReport.mockResolvedValue({
+      manifest: {
+        schema_version: 'v1',
+        test_id: 'test-1',
+        test_name: 'Checkout',
+        created_at: '2026-05-12T20:00:00Z',
+        transactions_file: 'transactions.jsonl',
+        resource_samples_file: 'resources.jsonl',
+        interval_summaries_file: 'interval_summaries.jsonl',
+        transaction_count: 3,
+        resource_sample_count: 1,
+        interval_summary_count: 1,
+      },
+      overview: {
+        transactions: 3,
+        errors: 1,
+        error_pct: 33.3,
+        avg_response_ms: 120,
+        min_response_ms: 80,
+        max_response_ms: 220,
+        resource_samples: 1,
+        interval_summaries: 1,
+        peak_tps: 15,
+        peak_active_vusers: 10,
+      },
+      by_action: {
+        Login: {
+          transactions: 3,
+          errors: 1,
+          error_pct: 33.3,
+          avg_response_ms: 120,
+          min_response_ms: 80,
+          max_response_ms: 220,
+        },
+      },
+      by_soap_operation: {},
+      resource_peaks: {
+        cpu_process_pct: 10,
+        mem_process_mb: 200,
+        net_sent_kbps: 11,
+        net_recv_kbps: 12,
+        disk_read_kbps: 13,
+        disk_write_kbps: 14,
+      },
+    })
+    apiMock.getTestArchiveTransactions.mockResolvedValue({
+      transactions: [
+        {
+          timestamp: '2026-05-12T20:05:00Z',
+          test_id: 'test-1',
+          test_name: 'Checkout',
+          group: 'Web',
+          action_name: 'Login',
+          duration_ms: 123,
+          success: true,
+        },
+      ],
+      total: 3,
+      count: 1,
+      limit: 10,
+      offset: 0,
+    })
+
+    await act(async () => {
+      root.render(<ArchiveHarness test={buildArchivedTest()} />)
+    })
+    await flushPromises()
+
+    await click('inspect')
+    expect(readTestId('expanded')).toBe('row-1')
+
+    await act(async () => {
+      root.render(<ArchiveHarness test={{ ...buildArchivedTest(), name: 'Checkout Journey Refreshed' }} />)
+    })
+    await flushPromises()
+
+    expect(readTestId('expanded')).toBe('row-1')
+    expect(apiMock.getTestArchiveTransactions).toHaveBeenCalledTimes(1)
+
+    await click('set-group')
+    await flushPromises()
+
+    expect(readTestId('expanded')).toBe('none')
   })
 
   it('resets pagination when archive filters change', async () => {
@@ -340,6 +428,12 @@ describe('useExecutionArchiveModel', () => {
 
   function readTestId(testId: string) {
     return container.querySelector(`[data-testid="${testId}"]`)?.textContent
+  }
+
+  async function click(testId: string) {
+    await act(async () => {
+      container.querySelector(`[data-testid="${testId}"]`)?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
   }
 })
 

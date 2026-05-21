@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, type ComponentProps, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentProps, type DragEvent, type MouseEvent } from 'react'
 import {
   Area,
-  AreaChart,
   CartesianGrid,
+  ComposedChart,
   Legend,
   Line,
   LineChart,
@@ -14,10 +14,11 @@ import {
 } from 'recharts'
 
 import { MetricsHistoryPoint } from '../types'
+import { routeLatencySeriesLabel } from './latencySeries'
 
 type ChartDomain = ComponentProps<typeof YAxis>['domain']
 
-interface ChartConfig {
+export interface ChartConfig {
   id: string
   title: string
   type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'line-io' | 'line-network'
@@ -35,7 +36,7 @@ interface Props {
   onChartMouseDown: (activeLabel?: string | number) => void
   onChartMouseMove: (activeLabel?: string | number) => void
   onZoom: () => void
-  onChartScrollWheel: (event: React.WheelEvent<HTMLDivElement>) => void
+  onResetZoom: () => void
   showRefArea: boolean
   refAreaLeft: string | number
   refAreaEnd: string | number
@@ -110,6 +111,168 @@ export function chartStateForMonitorPreset(presetId: string, knownChartIds = cha
   }
 }
 
+export function routeLatencySeriesKeys(data: MetricsHistoryPoint[]) {
+  const keys = new Set<string>()
+  data.forEach(point => {
+    Object.keys(point)
+      .filter(key => key.startsWith('latency_') && typeof point[key] === 'number')
+      .forEach(key => keys.add(key))
+  })
+  return Array.from(keys)
+}
+
+export function latestRouteLatencyValues(data: MetricsHistoryPoint[], keys = routeLatencySeriesKeys(data)) {
+  const values: Record<string, number | undefined> = {}
+  keys.forEach(key => {
+    for (let index = data.length - 1; index >= 0; index -= 1) {
+      const value = data[index][key]
+      if (typeof value === 'number') {
+        values[key] = value
+        break
+      }
+    }
+  })
+  return values
+}
+
+export function chartMetricKeys(chart: ChartConfig, groupNames: string[], latencyKeys: string[], includeVuserOverlay = false) {
+  let keys: string[]
+  switch (chart.id) {
+    case 'tps':
+      keys = [
+        chart.totalKey ?? 'tps',
+        ...groupNames.map(name => `${name}_tps`),
+      ]
+      break
+    case 'latency':
+      keys = [
+        'p50',
+        'p90',
+        'p99',
+        ...groupNames.map(name => `${name}_avgMs`),
+      ]
+      break
+    case 'io':
+      keys = ['netSent', 'netRecv', 'diskRead', 'diskWrite']
+      break
+    case 'network_latency':
+      keys = latencyKeys
+      break
+    default:
+      if (chart.keys) {
+        keys = chart.keys.map(key => key.k)
+      } else {
+        keys = chart.dataKey ? [chart.dataKey] : []
+      }
+      break
+  }
+  if (includeVuserOverlay && chart.id !== 'vusers' && !keys.includes('vusers')) {
+    return [...keys, 'vusers']
+  }
+  return keys
+}
+
+export function graphCsvForChart(chart: ChartConfig, data: MetricsHistoryPoint[], groupNames: string[], latencyKeys: string[], includeVuserOverlay = false) {
+  const keys = ['time', ...chartMetricKeys(chart, groupNames, latencyKeys, includeVuserOverlay)]
+  const rows = [
+    keys.map(escapeCsvCell).join(','),
+    ...data.map(point => keys.map(key => escapeCsvCell(point[key])).join(',')),
+  ]
+  return rows.join('\n')
+}
+
+function escapeCsvCell(value: unknown) {
+  if (value === undefined || value === null) return ''
+  const text = String(value)
+  if (!/[",\n\r]/.test(text)) return text
+  return `"${text.replace(/"/g, '""')}"`
+}
+
+function safeFileName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'graph'
+}
+
+function downloadBlob(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function downloadTextFile(filename: string, content: string, type = 'text/plain;charset=utf-8') {
+  downloadBlob(filename, new Blob([content], { type }))
+}
+
+function resolveCssVariables(value: string) {
+  const rootStyles = getComputedStyle(document.documentElement)
+  return value.replace(/var\((--[^),\s]+)(?:,[^)]+)?\)/g, (_, variable: string) => rootStyles.getPropertyValue(variable).trim() || value)
+}
+
+function inlineSvgStyles(source: Element, clone: Element) {
+  const sourceElements = [source, ...Array.from(source.querySelectorAll('*'))]
+  const cloneElements = [clone, ...Array.from(clone.querySelectorAll('*'))]
+  sourceElements.forEach((sourceElement, index) => {
+    const cloneElement = cloneElements[index] as SVGElement | undefined
+    if (!cloneElement) return
+    const styles = getComputedStyle(sourceElement)
+    ;['fill', 'stroke', 'color', 'font-family', 'font-size', 'font-weight', 'opacity'].forEach(property => {
+      const value = styles.getPropertyValue(property)
+      if (value && value !== 'none') {
+        cloneElement.style.setProperty(property, value)
+      }
+    })
+    ;['fill', 'stroke'].forEach(attribute => {
+      const value = cloneElement.getAttribute(attribute)
+      if (value?.includes('var(')) {
+        cloneElement.setAttribute(attribute, resolveCssVariables(value))
+      }
+    })
+  })
+}
+
+function chartSnapshotSvg(card: HTMLElement, chart: ChartConfig) {
+  const svg = card.querySelector('svg')
+  if (!svg) return null
+  const clone = svg.cloneNode(true) as SVGSVGElement
+  inlineSvgStyles(svg, clone)
+  const rect = svg.getBoundingClientRect()
+  const width = rect.width || Number(svg.getAttribute('width')) || 900
+  const height = rect.height || Number(svg.getAttribute('height')) || 360
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  clone.setAttribute('width', String(width))
+  clone.setAttribute('height', String(height))
+  if (!clone.getAttribute('viewBox')) {
+    clone.setAttribute('viewBox', `0 0 ${width} ${height}`)
+  }
+  const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+  background.setAttribute('x', '0')
+  background.setAttribute('y', '0')
+  background.setAttribute('width', '100%')
+  background.setAttribute('height', '100%')
+  background.setAttribute('fill', getComputedStyle(card).backgroundColor || '#ffffff')
+  clone.insertBefore(background, clone.firstChild)
+
+  const title = document.createElementNS('http://www.w3.org/2000/svg', 'title')
+  title.textContent = chart.title
+  clone.insertBefore(title, clone.firstChild)
+
+  return new XMLSerializer().serializeToString(clone)
+}
+
+function latestGraphValuesText(chart: ChartConfig, latest: MetricsHistoryPoint, groupNames: string[], latencyKeys: string[], latencyLatestValues: Record<string, number | undefined>) {
+  const keys = chartMetricKeys(chart, groupNames, latencyKeys)
+  const lines = [`${chart.title}`]
+  keys.forEach(key => {
+    const value = chart.id === 'network_latency' ? latencyLatestValues[key] : latest[key]
+    lines.push(`${chart.id === 'network_latency' ? routeLatencySeriesLabel(key) : key}: ${value ?? 'n/a'}`)
+  })
+  return lines.join('\n')
+}
+
 export default function TestExecutionCharts({
   filteredData,
   expandedChart,
@@ -117,7 +280,7 @@ export default function TestExecutionCharts({
   onChartMouseDown,
   onChartMouseMove,
   onZoom,
-  onChartScrollWheel,
+  onResetZoom,
   showRefArea,
   refAreaLeft,
   refAreaEnd,
@@ -129,6 +292,10 @@ export default function TestExecutionCharts({
   const [draggedChartId, setDraggedChartId] = useState<string | null>(null)
   const [chartOrder, setChartOrder] = useState<string[]>(() => readStoredArray('apexload.execution.chartOrder'))
   const [hiddenChartIds, setHiddenChartIds] = useState<string[]>(() => readStoredArray('apexload.execution.hiddenCharts'))
+  const [vuserOverlayChartIds, setVuserOverlayChartIds] = useState<string[]>(() => readStoredArray('apexload.execution.vuserOverlayCharts'))
+  const [chartMenu, setChartMenu] = useState<{ chartId: string; x: number; y: number } | null>(null)
+  const chartCardRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const chartMenuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const knownIds = chartConfigs.map(chart => chart.id)
@@ -149,6 +316,36 @@ export default function TestExecutionCharts({
     window.localStorage.setItem('apexload.execution.hiddenCharts', JSON.stringify(hiddenChartIds))
   }, [hiddenChartIds])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('apexload.execution.vuserOverlayCharts', JSON.stringify(vuserOverlayChartIds))
+  }, [vuserOverlayChartIds])
+
+  useEffect(() => {
+    if (!chartMenu) return
+    const closeMenu = () => setChartMenu(null)
+    const closeMenuOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (target instanceof Node && chartMenuRef.current?.contains(target)) {
+        return
+      }
+      setChartMenu(null)
+    }
+    const closeMenuOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setChartMenu(null)
+      }
+    }
+    window.addEventListener('pointerdown', closeMenuOnOutsidePointerDown)
+    window.addEventListener('resize', closeMenu)
+    window.addEventListener('keydown', closeMenuOnEscape)
+    return () => {
+      window.removeEventListener('pointerdown', closeMenuOnOutsidePointerDown)
+      window.removeEventListener('resize', closeMenu)
+      window.removeEventListener('keydown', closeMenuOnEscape)
+    }
+  }, [chartMenu])
+
   const orderedCharts = useMemo(() => {
     const byId = new Map(chartConfigs.map(chart => [chart.id, chart]))
     const ordered = chartOrder
@@ -156,6 +353,8 @@ export default function TestExecutionCharts({
       .filter((chart): chart is ChartConfig => Boolean(chart))
     return ordered.length ? ordered : chartConfigs
   }, [chartOrder])
+  const latencyKeys = useMemo(() => routeLatencySeriesKeys(filteredData), [filteredData])
+  const latencyLatestValues = useMemo(() => latestRouteLatencyValues(filteredData, latencyKeys), [filteredData, latencyKeys])
 
   if (filteredData.length <= 1) {
     return null
@@ -164,6 +363,7 @@ export default function TestExecutionCharts({
   const latest = filteredData[filteredData.length - 1] || {}
   const visibleCharts = orderedCharts.filter(chart => !hiddenChartIds.includes(chart.id))
   const hiddenCharts = orderedCharts.filter(chart => hiddenChartIds.includes(chart.id))
+  const contextChart = chartMenu ? visibleCharts.find(chart => chart.id === chartMenu.chartId) : undefined
 
   const handleChartDragStart = (event: DragEvent<HTMLDivElement>, chartId: string) => {
     if (!customizingCharts) return
@@ -195,6 +395,55 @@ export default function TestExecutionCharts({
     )
   }
 
+  const isVuserOverlayAvailable = (chart: ChartConfig) => chart.id !== 'vusers'
+  const isVuserOverlayEnabled = (chartId: string) => chartId !== 'vusers' && vuserOverlayChartIds.includes(chartId)
+  const toggleVuserOverlay = (chartId: string) => {
+    if (chartId === 'vusers') return
+    setVuserOverlayChartIds(prev =>
+      prev.includes(chartId)
+        ? prev.filter(id => id !== chartId)
+        : [...prev, chartId],
+    )
+  }
+
+  const openChartMenu = (event: MouseEvent<HTMLDivElement>, chartId: string) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const menuWidth = 224
+    const menuHeight = 260
+    const viewportWidth = window.innerWidth || 1024
+    const viewportHeight = window.innerHeight || 768
+    setChartMenu({
+      chartId,
+      x: Math.max(12, Math.min(event.clientX, viewportWidth - menuWidth - 12)),
+      y: Math.max(12, Math.min(event.clientY, viewportHeight - menuHeight - 12)),
+    })
+  }
+
+  const runChartAction = (action: () => void) => {
+    action()
+    setChartMenu(null)
+  }
+
+  const downloadChartSvgSnapshot = (chart: ChartConfig) => {
+    const card = chartCardRefs.current[chart.id]
+    if (!card) return
+    const snapshot = chartSnapshotSvg(card, chart)
+    if (!snapshot) return
+    downloadTextFile(`${safeFileName(chart.title)}-snapshot.svg`, snapshot, 'image/svg+xml;charset=utf-8')
+  }
+
+  const exportChartCsv = (chart: ChartConfig) => {
+    downloadTextFile(`${safeFileName(chart.title)}-data.csv`, graphCsvForChart(chart, filteredData, groupNames, latencyKeys, isVuserOverlayEnabled(chart.id)), 'text/csv;charset=utf-8')
+  }
+
+  const copyLatestValues = (chart: ChartConfig) => {
+    const text = latestGraphValuesText(chart, latest, groupNames, latencyKeys, latencyLatestValues)
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(text)
+    }
+  }
+
   const resetCharts = () => {
     setChartOrder(chartConfigs.map(chart => chart.id))
     setHiddenChartIds([])
@@ -205,6 +454,28 @@ export default function TestExecutionCharts({
     setChartOrder(next.chartOrder)
     setHiddenChartIds(next.hiddenChartIds)
   }
+
+  const renderVuserOverlayAxis = (chart: ChartConfig) => (
+    isVuserOverlayEnabled(chart.id) ? (
+      <YAxis yAxisId="vusers" orientation="right" stroke="var(--chart-1)" fontSize={11} width={42} domain={[0, 'auto']} />
+    ) : null
+  )
+
+  const renderVuserOverlayLine = (chart: ChartConfig) => (
+    isVuserOverlayEnabled(chart.id) ? (
+      <Line
+        yAxisId="vusers"
+        type="monotone"
+        dataKey="vusers"
+        name="Active VUsers"
+        stroke="var(--chart-1)"
+        dot={false}
+        strokeWidth={1.75}
+        strokeDasharray="5 3"
+        isAnimationActive={false}
+      />
+    ) : null
+  )
 
   return (
     <>
@@ -258,13 +529,16 @@ export default function TestExecutionCharts({
           {visibleCharts.map((chart) => (
             <div
               key={chart.id}
+              ref={element => {
+                chartCardRefs.current[chart.id] = element
+              }}
               className={`chart-card ${expandedChart === chart.id ? 'expanded' : ''} ${customizingCharts ? 'editable' : ''} ${draggedChartId === chart.id ? 'dragging' : ''}`}
               draggable={customizingCharts}
+              onContextMenu={event => openChartMenu(event, chart.id)}
               onDragStart={event => handleChartDragStart(event, chart.id)}
               onDragOver={event => handleChartDragOver(event, chart.id)}
               onDrop={event => handleChartDrop(event, chart.id)}
               onDragEnd={() => setDraggedChartId(null)}
-              onWheel={onChartScrollWheel}
             >
               <div className="chart-card-header">
                 <div className="chart-title-wrap">
@@ -289,7 +563,7 @@ export default function TestExecutionCharts({
           </div>
           <ResponsiveContainer width="100%" height={expandedChart === chart.id ? 400 : 200}>
             {chart.type === 'area' ? (
-              <AreaChart
+              <ComposedChart
                 data={filteredData}
                 syncId="metrics"
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
@@ -298,17 +572,19 @@ export default function TestExecutionCharts({
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis stroke="var(--text-muted)" fontSize={11} domain={chart.domain} />
+                <YAxis yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} stroke="var(--text-muted)" fontSize={11} domain={chart.domain} />
+                {renderVuserOverlayAxis(chart)}
                 <Tooltip
                   contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
                   labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
                   isAnimationActive={false}
                 />
-                <Area type="monotone" dataKey={chart.dataKey!} name="Total" stroke={chart.color!} fill={chart.color!} fillOpacity={0.15} isAnimationActive={false} />
+                <Area yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey={chart.dataKey!} name="Total" stroke={chart.color!} fill={chart.color!} fillOpacity={0.15} isAnimationActive={false} />
+                {renderVuserOverlayLine(chart)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
-              </AreaChart>
+              </ComposedChart>
             ) : chart.type === 'line-multi' ? (
               <LineChart
                 data={filteredData}
@@ -319,17 +595,19 @@ export default function TestExecutionCharts({
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis stroke="var(--text-muted)" fontSize={11} />
+                <YAxis yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} stroke="var(--text-muted)" fontSize={11} />
+                {renderVuserOverlayAxis(chart)}
                 <Tooltip
                   contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
                   labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
                   isAnimationActive={false}
                 />
                 {isMultiGroup && <Legend verticalAlign="bottom" height={36} />}
-                <Line type="monotone" dataKey={chart.totalKey!} name="Total" stroke="var(--text-muted)" dot={false} strokeWidth={2} strokeDasharray={isMultiGroup ? '4 2' : undefined} isAnimationActive={false} />
+                <Line yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey={chart.totalKey!} name="Total" stroke="var(--text-muted)" dot={false} strokeWidth={2} strokeDasharray={isMultiGroup ? '4 2' : undefined} isAnimationActive={false} />
                 {isMultiGroup && groupNames.map((name, index) => (
-                  <Line key={name} type="monotone" dataKey={`${name}_tps`} name={name} stroke={groupColors[index % groupColors.length]} dot={false} isAnimationActive={false} />
+                  <Line key={name} yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey={`${name}_tps`} name={name} stroke={groupColors[index % groupColors.length]} dot={false} isAnimationActive={false} />
                 ))}
+                {renderVuserOverlayLine(chart)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -344,25 +622,27 @@ export default function TestExecutionCharts({
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis stroke="var(--text-muted)" fontSize={11} />
+                <YAxis yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} stroke="var(--text-muted)" fontSize={11} />
+                {renderVuserOverlayAxis(chart)}
                 <Tooltip
                   contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
                   labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
                   isAnimationActive={false}
                 />
                 <Legend verticalAlign="bottom" height={36} />
-                <Line type="monotone" dataKey="p50" name="P50" stroke="var(--chart-5)" dot={false} strokeWidth={2} isAnimationActive={false} />
-                <Line type="monotone" dataKey="p90" name="P90" stroke="var(--chart-3)" dot={false} strokeWidth={2} isAnimationActive={false} />
-                <Line type="monotone" dataKey="p99" name="P99" stroke="var(--chart-4)" dot={false} strokeWidth={1.5} strokeDasharray="4 2" isAnimationActive={false} />
+                <Line yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey="p50" name="P50" stroke="var(--chart-5)" dot={false} strokeWidth={2} isAnimationActive={false} />
+                <Line yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey="p90" name="P90" stroke="var(--chart-3)" dot={false} strokeWidth={2} isAnimationActive={false} />
+                <Line yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey="p99" name="P99" stroke="var(--chart-4)" dot={false} strokeWidth={1.5} strokeDasharray="4 2" isAnimationActive={false} />
                 {isMultiGroup && groupNames.map((name, index) => (
-                  <Line key={name} type="monotone" dataKey={`${name}_avgMs`} name={`${name} avg`} stroke={groupColors[index % groupColors.length]} dot={false} strokeWidth={1.5} strokeDasharray="2 2" isAnimationActive={false} />
+                  <Line key={name} yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey={`${name}_avgMs`} name={`${name} avg`} stroke={groupColors[index % groupColors.length]} dot={false} strokeWidth={1.5} strokeDasharray="2 2" isAnimationActive={false} />
                 ))}
+                {renderVuserOverlayLine(chart)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </LineChart>
             ) : chart.type === 'area-multi' ? (
-              <AreaChart
+              <ComposedChart
                 data={filteredData}
                 syncId="metrics"
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
@@ -371,7 +651,8 @@ export default function TestExecutionCharts({
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis stroke="var(--text-muted)" fontSize={11} domain={chart.domain} />
+                <YAxis yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} stroke="var(--text-muted)" fontSize={11} domain={chart.domain} />
+                {renderVuserOverlayAxis(chart)}
                 <Tooltip
                   contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
                   labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
@@ -379,12 +660,13 @@ export default function TestExecutionCharts({
                 />
                 <Legend verticalAlign="bottom" height={36} />
                 {chart.keys!.map((key) => (
-                  <Area key={key.k} type="monotone" dataKey={key.k} name={key.n} stroke={key.c} fill={key.c} fillOpacity={0.2} isAnimationActive={false} />
+                  <Area key={key.k} yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey={key.k} name={key.n} stroke={key.c} fill={key.c} fillOpacity={0.2} isAnimationActive={false} />
                 ))}
+                {renderVuserOverlayLine(chart)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
-              </AreaChart>
+              </ComposedChart>
             ) : chart.type === 'line-network' ? (
               <LineChart
                 data={filteredData}
@@ -395,27 +677,28 @@ export default function TestExecutionCharts({
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis stroke="var(--text-muted)" fontSize={11} />
+                <YAxis yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} stroke="var(--text-muted)" fontSize={11} />
+                {renderVuserOverlayAxis(chart)}
                 <Tooltip
                   contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
                   labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
                   isAnimationActive={false}
                 />
                 <Legend verticalAlign="bottom" height={36} />
-                {Object.keys(latest)
-                  .filter(key => key.startsWith('latency_'))
-                  .map((key, index) => (
+                {latencyKeys.map((key, index) => (
                     <Line
                       key={key}
+                      yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined}
                       type="monotone"
                       dataKey={key}
-                      name={key.replace('latency_', '')}
+                      name={routeLatencySeriesLabel(key)}
                       stroke={groupColors[index % groupColors.length]}
                       dot={false}
                       strokeWidth={2}
                       isAnimationActive={false}
-                    />
-                  ))}
+	                    />
+	                  ))}
+                {renderVuserOverlayLine(chart)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -430,17 +713,19 @@ export default function TestExecutionCharts({
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis stroke="var(--text-muted)" fontSize={11} />
+                <YAxis yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} stroke="var(--text-muted)" fontSize={11} />
+                {renderVuserOverlayAxis(chart)}
                 <Tooltip
                   contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
                   labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
                   isAnimationActive={false}
                 />
                 <Legend />
-                <Line type="monotone" dataKey="netSent" name="Net Egress" stroke="var(--chart-1)" dot={false} strokeWidth={2} isAnimationActive={false} />
-                <Line type="monotone" dataKey="netRecv" name="Net Ingress" stroke="var(--chart-2)" dot={false} strokeWidth={2} isAnimationActive={false} />
-                <Line type="monotone" dataKey="diskRead" name="Disk Read" stroke="var(--chart-3)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />
-                <Line type="monotone" dataKey="diskWrite" name="Disk Write" stroke="var(--chart-6)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />
+                <Line yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey="netSent" name="Net Egress" stroke="var(--chart-1)" dot={false} strokeWidth={2} isAnimationActive={false} />
+                <Line yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey="netRecv" name="Net Ingress" stroke="var(--chart-2)" dot={false} strokeWidth={2} isAnimationActive={false} />
+                <Line yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey="diskRead" name="Disk Read" stroke="var(--chart-3)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />
+                <Line yAxisId={isVuserOverlayEnabled(chart.id) ? 'metric' : undefined} type="monotone" dataKey="diskWrite" name="Disk Write" stroke="var(--chart-6)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />
+                {renderVuserOverlayLine(chart)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -521,20 +806,54 @@ export default function TestExecutionCharts({
             )}
             {chart.id === 'network_latency' && (
               <>
-                {Object.keys(latest)
-                  .filter(key => key.startsWith('latency_'))
-                  .map((key, index) => (
+                {latencyKeys.map((key, index) => (
                     <div key={key} className="footer-metric">
                       <span className="dot" style={{ background: groupColors[index % groupColors.length] }}></span>
-                      <span className="label">{key.replace('latency_', '')}:</span>
-                      <span className="value">{latest[key]}ms</span>
+                      <span className="label">{routeLatencySeriesLabel(key)}:</span>
+                      <span className="value">{latencyLatestValues[key]}ms</span>
                     </div>
                   ))}
               </>
             )}
+            {isVuserOverlayEnabled(chart.id) && (
+              <div className="footer-metric">
+                <span className="dot" style={{ background: 'var(--chart-1)' }}></span>
+                <span className="label">VUsers:</span>
+                <span className="value">{latest.vusers}</span>
+              </div>
+            )}
           </div>
             </div>
           ))}
+        </div>
+      )}
+      {contextChart && chartMenu && (
+        <div
+          ref={chartMenuRef}
+          className="chart-context-menu"
+          style={{ left: chartMenu.x, top: chartMenu.y }}
+          role="menu"
+          aria-label={`${contextChart.title} actions`}
+          onClick={event => event.stopPropagation()}
+          onContextMenu={event => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+        >
+          <div className="chart-context-menu-title">{contextChart.title}</div>
+          <button type="button" role="menuitem" onClick={() => runChartAction(onResetZoom)}>Reset Zoom</button>
+          {isVuserOverlayAvailable(contextChart) && (
+            <button type="button" role="menuitem" onClick={() => runChartAction(() => toggleVuserOverlay(contextChart.id))}>
+              {isVuserOverlayEnabled(contextChart.id) ? 'Hide VUsers Overlay' : 'Overlay VUsers'}
+            </button>
+          )}
+          <button type="button" role="menuitem" onClick={() => runChartAction(() => onExpandedChartChange(expandedChart === contextChart.id ? null : contextChart.id))}>
+            {expandedChart === contextChart.id ? 'Collapse Graph' : 'Expand Graph'}
+          </button>
+          <button type="button" role="menuitem" onClick={() => runChartAction(() => downloadChartSvgSnapshot(contextChart))}>Download Snapshot</button>
+          <button type="button" role="menuitem" onClick={() => runChartAction(() => exportChartCsv(contextChart))}>Export Graph Data</button>
+          <button type="button" role="menuitem" onClick={() => runChartAction(() => copyLatestValues(contextChart))}>Copy Latest Values</button>
+          <button type="button" role="menuitem" onClick={() => runChartAction(() => toggleChartVisibility(contextChart.id))}>Hide Graph</button>
         </div>
       )}
     </>

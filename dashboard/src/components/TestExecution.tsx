@@ -62,7 +62,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     onChartMouseDown,
     onChartMouseMove,
     onZoom,
-    onChartScrollWheel,
+    onResetZoom,
   } = useExecutionChartModel({
     test,
     history,
@@ -294,7 +294,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         onChartMouseDown={onChartMouseDown}
         onChartMouseMove={onChartMouseMove}
         onZoom={onZoom}
-        onChartScrollWheel={onChartScrollWheel}
+        onResetZoom={onResetZoom}
         showRefArea={showRefArea}
         refAreaLeft={refAreaLeft}
         refAreaEnd={refAreaEnd}

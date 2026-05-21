@@ -29,10 +29,24 @@ func TestSQLiteStoreSaveScriptPreservesMetadata(t *testing.T) {
 		Config: dsl.ScriptConfig{
 			BaseURL: "https://example.com",
 		},
+		DataSources: []dsl.DataSource{{
+			Name:           "url",
+			Type:           "dat",
+			InlineData:     "URL\nhttps://csi-gw-ext.att.com:443\n",
+			Strategy:       "sequential",
+			FirstRowHeader: true,
+		}},
+		Parameters: []dsl.Parameter{{
+			Name:       "url",
+			Type:       "file",
+			DataSource: "url",
+			Column:     "URL",
+			Update:     "each_iteration",
+		}},
 		Actions: []dsl.Action{{
 			Name:   "Homepage",
 			Type:   "GET",
-			Target: "/",
+			Target: "{{var.url}}/",
 		}},
 		Metadata: &dsl.ScriptMetadata{
 			Import: &dsl.ImportMetadata{
@@ -71,6 +85,19 @@ func TestSQLiteStoreSaveScriptPreservesMetadata(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected metadata JSON to contain %q, got %s", want, text)
 		}
+	}
+	if len(roundTrip.Parameters) != 1 || roundTrip.Parameters[0].Name != "url" || roundTrip.Parameters[0].Column != "URL" {
+		t.Fatalf("expected parameters to round-trip through sqlite, got %#v", roundTrip.Parameters)
+	}
+	if len(roundTrip.DataSources) != 1 || !strings.Contains(roundTrip.DataSources[0].InlineData, "https://csi-gw-ext.att.com:443") {
+		t.Fatalf("expected data source to round-trip through sqlite, got %#v", roundTrip.DataSources)
+	}
+	listed, err := store.ListScripts("", nil)
+	if err != nil {
+		t.Fatalf("ListScripts returned error: %v", err)
+	}
+	if len(listed) != 1 || len(listed[0].Parameters) != 1 || listed[0].Parameters[0].Name != "url" {
+		t.Fatalf("expected listed script parameters to round-trip through sqlite, got %#v", listed)
 	}
 }
 
@@ -849,6 +876,16 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 				"avg_js_heap_used_mb":    18.0,
 			},
 		},
+		"latency": map[string]any{
+			"targets": []map[string]any{{
+				"name":         "edge",
+				"endpoint":     "https://example.test",
+				"latency_ms":   42.5,
+				"ip":           "192.0.2.10",
+				"last_success": true,
+				"timestamp":    timestamp.Add(-100 * time.Millisecond),
+			}},
+		},
 		"telemetry": map[string]any{
 			"dropped_results":             3,
 			"websocket_clients":           2,
@@ -904,6 +941,9 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 	}
 	if record.BrowserByDevice == nil || record.BrowserByDevice["iphone_se"] == nil || record.BrowserByDevice["iphone_se"].DeviceTier != "low" {
 		t.Fatalf("unexpected browser by device summary: %#v", record.BrowserByDevice)
+	}
+	if record.Latency == nil || len(record.Latency.Targets) != 1 || record.Latency.Targets[0].LatencyMs != 42.5 {
+		t.Fatalf("unexpected latency summary: %#v", record.Latency)
 	}
 	if !record.GeneratorPublishedAt.Equal(timestamp.Add(-400 * time.Millisecond)) {
 		t.Fatalf("generator_published_at = %s, want %s", record.GeneratorPublishedAt, timestamp.Add(-400*time.Millisecond))

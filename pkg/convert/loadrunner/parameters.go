@@ -175,7 +175,262 @@ func cleanParameterName(name string) string {
 	if strings.HasPrefix(strings.ToLower(name), "parameter:") {
 		name = strings.TrimSpace(name[len("parameter:"):])
 	}
-	return name
+	return canonicalLoadRunnerParameterName(name)
+}
+
+func canonicalLoadRunnerParameterName(name string) string {
+	name = strings.ToLower(strings.TrimSpace(cleanConfigValue(name)))
+	name = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
+			return r
+		}
+		return '_'
+	}, name)
+	for strings.Contains(name, "__") {
+		name = strings.ReplaceAll(name, "__", "_")
+	}
+	return strings.Trim(name, "_")
+}
+
+var (
+	templateVariablePrefixPattern     = regexp.MustCompile(`^\{\{(?:var|param)\.([a-z0-9_]+)\}\}`)
+	templateParameterReferencePattern = regexp.MustCompile(`\{\{var\.([a-z0-9_]+)\}\}`)
+)
+
+func applyKnownParameterReferences(script *dsl.Script) {
+	if script == nil || len(script.Parameters) == 0 {
+		return
+	}
+	names := make(map[string]struct{}, len(script.Parameters))
+	for _, param := range script.Parameters {
+		name := canonicalLoadRunnerParameterName(param.Name)
+		if name != "" {
+			names[name] = struct{}{}
+		}
+	}
+	if len(names) == 0 {
+		return
+	}
+	for index := range script.Actions {
+		action := &script.Actions[index]
+		action.Target = rewriteKnownParameterReferences(action.Target, names)
+		action.Selector = rewriteKnownParameterReferences(action.Selector, names)
+		action.Value = rewriteKnownParameterReferences(action.Value, names)
+		action.Body = rewriteKnownParameterReferences(action.Body, names)
+		for key, value := range action.Headers {
+			action.Headers[key] = rewriteKnownParameterReferences(value, names)
+		}
+		for key, value := range action.Params {
+			action.Params[key] = rewriteKnownParameterReferencesAny(value, names)
+		}
+		for key, value := range action.Metadata {
+			action.Metadata[key] = rewriteKnownParameterReferencesAny(value, names)
+		}
+		for assertionIndex := range action.Assertions {
+			action.Assertions[assertionIndex].Value = rewriteKnownParameterReferences(action.Assertions[assertionIndex].Value, names)
+			action.Assertions[assertionIndex].Expected = rewriteKnownParameterReferencesAny(action.Assertions[assertionIndex].Expected, names)
+		}
+		for extractorIndex := range action.Extractors {
+			action.Extractors[extractorIndex].Expression = rewriteKnownParameterReferences(action.Extractors[extractorIndex].Expression, names)
+		}
+		if action.WaitFor != nil {
+			action.WaitFor.Value = rewriteKnownParameterReferences(action.WaitFor.Value, names)
+		}
+		if action.Auth != nil {
+			action.Auth.Username = rewriteKnownParameterReferences(action.Auth.Username, names)
+			action.Auth.Password = rewriteKnownParameterReferences(action.Auth.Password, names)
+			action.Auth.Token = rewriteKnownParameterReferences(action.Auth.Token, names)
+			action.Auth.Domain = rewriteKnownParameterReferences(action.Auth.Domain, names)
+		}
+		if action.SOAP != nil {
+			action.SOAP.Action = rewriteKnownParameterReferences(action.SOAP.Action, names)
+			action.SOAP.Operation = rewriteKnownParameterReferences(action.SOAP.Operation, names)
+			action.SOAP.BodyMode = rewriteKnownParameterReferences(action.SOAP.BodyMode, names)
+		}
+	}
+}
+
+func rewriteKnownParameterReferences(value string, names map[string]struct{}) string {
+	if value == "" || len(names) == 0 {
+		return value
+	}
+	return templateParameterReferencePattern.ReplaceAllStringFunc(value, func(token string) string {
+		match := templateParameterReferencePattern.FindStringSubmatch(token)
+		if len(match) != 2 {
+			return token
+		}
+		if _, ok := names[match[1]]; !ok {
+			return token
+		}
+		return "{{param." + match[1] + "}}"
+	})
+}
+
+func rewriteKnownParameterReferencesAny(value any, names map[string]struct{}) any {
+	switch typed := value.(type) {
+	case string:
+		return rewriteKnownParameterReferences(typed, names)
+	case []any:
+		for index, item := range typed {
+			typed[index] = rewriteKnownParameterReferencesAny(item, names)
+		}
+		return typed
+	case []string:
+		for index, item := range typed {
+			typed[index] = rewriteKnownParameterReferences(item, names)
+		}
+		return typed
+	case map[string]any:
+		for key, item := range typed {
+			typed[key] = rewriteKnownParameterReferencesAny(item, names)
+		}
+		return typed
+	default:
+		return value
+	}
+}
+
+func applyParameterizedBaseURL(script *dsl.Script) {
+	if script == nil || !isLoadRunnerFallbackBaseURL(script.Config.BaseURL) {
+		return
+	}
+	for _, action := range script.Actions {
+		match := templateVariablePrefixPattern.FindStringSubmatch(strings.TrimSpace(action.Target))
+		if len(match) != 2 {
+			continue
+		}
+		value, ok := firstConcreteParameterValue(script, match[1])
+		if !ok {
+			continue
+		}
+		value = strings.TrimRight(strings.TrimSpace(value), "/")
+		if isHTTPBaseURL(value) {
+			script.Config.BaseURL = value
+			return
+		}
+	}
+}
+
+func isLoadRunnerFallbackBaseURL(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	return trimmed == "" || strings.EqualFold(trimmed, "https://example.com")
+}
+
+func isHTTPBaseURL(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+}
+
+func firstConcreteParameterValue(script *dsl.Script, name string) (string, bool) {
+	for _, param := range script.Parameters {
+		if param.Name != name {
+			continue
+		}
+		for _, value := range param.Values {
+			if strings.TrimSpace(value) != "" {
+				return cleanConfigValue(value), true
+			}
+		}
+		if param.DataSource != "" && param.Column != "" {
+			return firstParameterDataSourceValue(script.DataSources, param.DataSource, param.Column)
+		}
+	}
+	return "", false
+}
+
+func firstParameterDataSourceValue(sources []dsl.DataSource, sourceName, column string) (string, bool) {
+	for _, source := range sources {
+		if source.Name != sourceName || strings.TrimSpace(source.InlineData) == "" {
+			continue
+		}
+		for _, delimiter := range candidateParameterDelimiters(source.Delimiter) {
+			if value, ok := firstParameterDataSourceValueWithDelimiter(source, column, delimiter); ok {
+				return value, true
+			}
+		}
+	}
+	return "", false
+}
+
+func candidateParameterDelimiters(delimiter string) []string {
+	if strings.TrimSpace(delimiter) == "" {
+		return []string{",", "\t", ";", "|"}
+	}
+	if normalized := normalizeParameterDelimiter(delimiter); strings.TrimSpace(normalized) != "" {
+		return []string{normalized}
+	}
+	return []string{",", "\t", ";", "|"}
+}
+
+func firstParameterDataSourceValueWithDelimiter(source dsl.DataSource, column, delimiter string) (string, bool) {
+	lines := nonEmptyParameterLines(source.InlineData)
+	if len(lines) == 0 {
+		return "", false
+	}
+	rowIndex := 0
+	columnIndex := 0
+	if source.FirstRowHeader {
+		if len(lines) < 2 {
+			return "", false
+		}
+		headers := parseParameterDataLine(lines[0], delimiter)
+		index, ok := indexParameterColumn(headers, column)
+		if !ok {
+			return "", false
+		}
+		columnIndex = index
+		rowIndex = 1
+	} else if len(source.Columns) > 0 {
+		index, ok := indexParameterColumn(source.Columns, column)
+		if !ok {
+			return "", false
+		}
+		columnIndex = index
+	}
+	fields := parseParameterDataLine(lines[rowIndex], delimiter)
+	if columnIndex >= len(fields) {
+		return "", false
+	}
+	value := cleanConfigValue(fields[columnIndex])
+	return value, strings.TrimSpace(value) != ""
+}
+
+func nonEmptyParameterLines(content string) []string {
+	lines := make([]string, 0)
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(strings.TrimPrefix(line, "\ufeff"))
+		if trimmed != "" {
+			lines = append(lines, trimmed)
+		}
+	}
+	return lines
+}
+
+func indexParameterColumn(columns []string, column string) (int, bool) {
+	for index, candidate := range columns {
+		if strings.EqualFold(cleanConfigValue(candidate), cleanConfigValue(column)) {
+			return index, true
+		}
+	}
+	return 0, false
+}
+
+func parseParameterDataLine(line, delimiter string) []string {
+	reader := csv.NewReader(strings.NewReader(line))
+	reader.FieldsPerRecord = -1
+	if delimiter != "" {
+		if r, _ := utf8.DecodeRuneInString(delimiter); r != utf8.RuneError {
+			reader.Comma = r
+		}
+	}
+	fields, err := reader.Read()
+	if err != nil {
+		fields = strings.Split(line, delimiter)
+	}
+	for i := range fields {
+		fields[i] = cleanConfigValue(fields[i])
+	}
+	return fields
 }
 
 func firstNonEmpty(values ...string) string {

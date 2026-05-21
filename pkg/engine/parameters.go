@@ -92,16 +92,27 @@ func (pr *ParameterRuntime) ResolveNamed(name string) (string, bool) {
 	if pr == nil {
 		return "", false
 	}
-	param, ok := pr.params[name]
+	paramName := name
+	param, ok := pr.params[paramName]
 	if !ok {
-		return "", false
+		for candidate, candidateParam := range pr.params {
+			if strings.EqualFold(candidate, name) {
+				paramName = candidate
+				param = candidateParam
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return "", false
+		}
 	}
-	state := pr.states[name]
+	state := pr.states[paramName]
 	if effectiveParameterUpdate(param) == "each_occurrence" {
 		return pr.generate(param, state)
 	}
 	if !state.hasCached {
-		pr.refresh(name)
+		pr.refresh(paramName)
 	}
 	if !state.hasCached {
 		return "", false
@@ -360,7 +371,7 @@ func (pr *ParameterRuntime) valuesForParameter(param dsl.Parameter, state *param
 		return state.values, len(state.values) > 0
 	}
 	if len(param.Values) > 0 {
-		state.values = append([]string(nil), param.Values...)
+		state.values = normalizeParameterValues(param.Values)
 		state.loaded = true
 		return state.values, true
 	}
@@ -374,6 +385,14 @@ func (pr *ParameterRuntime) valuesForParameter(param dsl.Parameter, state *param
 	state.values = values
 	state.loaded = true
 	return state.values, true
+}
+
+func normalizeParameterValues(values []string) []string {
+	normalized := make([]string, len(values))
+	for index, value := range values {
+		normalized[index] = strings.TrimSpace(value)
+	}
+	return normalized
 }
 
 func resolveBuiltinFunction(expr string, now func() time.Time) (string, bool) {

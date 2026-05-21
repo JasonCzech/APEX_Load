@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +39,11 @@ type HTTP struct {
 	maxRedirects             int    // -1 = no follow, 0 = default (10)
 	requestTimeout           time.Duration
 }
+
+var (
+	absoluteHTTPURLBoundaryWhitespace = regexp.MustCompile(`^(https?://[^/?#\s]+)\s+([/?#].*)$`)
+	leadingTemplateBaseURLPattern     = regexp.MustCompile(`^\{\{\s*(?:var|param)\.[^{}]+\s*\}\}\s*`)
+)
 
 func (h *HTTP) Name() string { return "http" }
 
@@ -275,10 +281,29 @@ func (h *HTTP) HealthCheck(ctx context.Context) error {
 }
 
 func (h *HTTP) resolveURL(target string) string {
+	return ResolveURL(h.baseURL, target)
+}
+
+func ResolveURL(baseURL string, target string) string {
+	target = NormalizeURLTarget(target)
 	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
 		return target
 	}
-	return strings.TrimRight(h.baseURL, "/") + "/" + strings.TrimLeft(target, "/")
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return target
+	}
+	target = TrimLeadingTemplateBaseURL(target)
+	return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(target, "/")
+}
+
+func NormalizeURLTarget(target string) string {
+	target = strings.TrimSpace(target)
+	return absoluteHTTPURLBoundaryWhitespace.ReplaceAllString(target, "$1$2")
+}
+
+func TrimLeadingTemplateBaseURL(target string) string {
+	return leadingTemplateBaseURLPattern.ReplaceAllString(strings.TrimSpace(target), "")
 }
 
 // parseTLSVersion converts a human-readable TLS version string to the crypto/tls constant.
@@ -326,10 +351,7 @@ func correlationIDFromHTTPHeader(headers http.Header) string {
 }
 
 func buildHTTPSnapshot(method string, targetURL string, requestHeaders http.Header, requestBody []byte, redactedTarget string, redactedHeaders map[string]string, redactedBody []byte, responseStatus int, responseHeaders map[string]string, responseBody []byte) *protocol.ErrorSnapshot {
-	requestURL := targetURL
-	if redactedTarget != "" {
-		requestURL = redactedTarget
-	}
+	requestURL := snapshotRequestURL(targetURL, redactedTarget)
 	headers := cloneHTTPHeaders(requestHeaders)
 	if len(redactedHeaders) > 0 {
 		headers = cloneStringMap(redactedHeaders)
@@ -347,6 +369,17 @@ func buildHTTPSnapshot(method string, targetURL string, requestHeaders http.Head
 		ResponseHeaders: cloneStringMap(responseHeaders),
 		ResponseBody:    string(responseBody),
 	}
+}
+
+func snapshotRequestURL(targetURL, redactedTarget string) string {
+	redacted := strings.TrimSpace(redactedTarget)
+	if redacted == "" {
+		return targetURL
+	}
+	if strings.Contains(redacted, "{{") && strings.Contains(redacted, "}}") {
+		return targetURL
+	}
+	return NormalizeURLTarget(redacted)
 }
 
 func cloneHTTPHeaders(headers http.Header) map[string]string {

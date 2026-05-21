@@ -778,7 +778,8 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, opts ConvertO
 	// Apply body
 	if fn.Body != "" {
 		action.Body = fn.Body
-		// Convert LoadRunner parameter syntax {ParamName} → template syntax {{var.ParamName}}
+		// Convert LoadRunner parameter syntax {ParamName} to template syntax.
+		// Known .prm-backed parameters are rewritten from var to param after all archive files are parsed.
 		action.Body = convertParamReferences(action.Body)
 	}
 
@@ -980,11 +981,23 @@ func sanitizeName(name string) string {
 	return result
 }
 
-// convertParamReferences converts LoadRunner {ParamName} to APEX Load {{var.ParamName}}.
+// convertParamReferences converts LoadRunner {ParamName} to APEX Load {{var.paramname}}.
+// Archive-level post-processing rewrites known .prm-backed parameters to {{param.name}},
+// leaving web_reg_save_param and other dynamic values as {{var.name}}.
 func convertParamReferences(s string) string {
 	// Match {ParamName} but not {{already.converted}}
 	re := regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_]*)\}`)
-	return re.ReplaceAllString(s, "{{var.$1}}")
+	return re.ReplaceAllStringFunc(s, func(token string) string {
+		match := re.FindStringSubmatch(token)
+		if len(match) != 2 {
+			return token
+		}
+		name := canonicalLoadRunnerParameterName(match[1])
+		if name == "" {
+			return token
+		}
+		return "{{var." + name + "}}"
+	})
 }
 
 // computeThinkTimeStats calculates mean and standard deviation for think times.

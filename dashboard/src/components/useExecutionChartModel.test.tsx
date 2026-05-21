@@ -36,8 +36,7 @@ function ChartHarness({
       <button data-testid="begin" onClick={() => model.onChartMouseDown('10:00:00')}>begin</button>
       <button data-testid="move" onClick={() => model.onChartMouseMove('10:00:01')}>move</button>
       <button data-testid="zoom" onClick={() => model.onZoom()}>zoom</button>
-      <button data-testid="scroll-zoom-in" onClick={() => model.onChartScrollWheel({ deltaY: -100, preventDefault: () => {} } as never)}>scroll-zoom-in</button>
-      <button data-testid="scroll-zoom-out" onClick={() => model.onChartScrollWheel({ deltaY: 100, preventDefault: () => {} } as never)}>scroll-zoom-out</button>
+      <button data-testid="reset" onClick={() => model.onResetZoom()}>reset</button>
     </div>
   )
 }
@@ -157,6 +156,11 @@ describe('useExecutionChartModel', () => {
     expect(readTestId('time-range')).toBe('custom')
     expect(readTestId('filtered-count')).toBe('2')
     expect(readTestId('show-ref-area')).toBe('no')
+
+    await click('reset')
+
+    expect(readTestId('time-range')).toBe('all')
+    expect(readTestId('filtered-count')).toBe('3')
   })
 
   it('filters by elapsed time instead of raw point count for 10m view', async () => {
@@ -189,53 +193,6 @@ describe('useExecutionChartModel', () => {
     })
 
     expect(readTestId('filtered-count')).toBe('37')
-  })
-
-  it('adjusts custom zoom ranges dynamically on scroll wheel events', async () => {
-    const history = Array.from({ length: 40 }, (_, index) => ({
-      time: `10:00:${String(index).padStart(2, '0')}`,
-      timestampMs: Date.UTC(2026, 4, 14, 10, 0, index),
-      vusers: 2,
-      tps: index,
-      avgMs: 100,
-      errorPct: 0,
-      p50: 90,
-      p90: 120,
-      p99: 150,
-    }))
-
-    await act(async () => {
-      root.render(
-        <ChartHarness
-          test={{ status: 'RUNNING', history: [] }}
-          history={history}
-          localMetricsHistory={[]}
-        />,
-      )
-    })
-
-    // Initially at full timeline range (40 points)
-    expect(readTestId('time-range')).toBe('all')
-    expect(readTestId('filtered-count')).toBe('40')
-
-    // Scroll zoom in: contracts the timeline range centered on center (index 20)
-    // leftDist = 20 - 0 = 20. rightDist = 39 - 20 = 19.
-    // scale = 0.15 -> shrinkLeft = 3, shrinkRight = 3
-    // new range indices: 3 to 36 -> length 34 points
-    await click('scroll-zoom-in')
-
-    expect(readTestId('time-range')).toBe('custom')
-    expect(readTestId('filtered-count')).toBe('34')
-
-    // Scroll zoom out: expands the range back out to indices 1 to 39 (39 points)
-    await click('scroll-zoom-out')
-    expect(readTestId('time-range')).toBe('custom')
-    expect(readTestId('filtered-count')).toBe('39')
-
-    // Scroll zoom out again: reaches the limit, so it resets to 'all' (length 40 points)
-    await click('scroll-zoom-out')
-    expect(readTestId('time-range')).toBe('all')
-    expect(readTestId('filtered-count')).toBe('40')
   })
 
   async function click(testId: string) {

@@ -436,7 +436,7 @@ func TestSanitizeName(t *testing.T) {
 
 func TestConvertParamReferences(t *testing.T) {
 	input := "sid={SessionID}&user={Username}"
-	expected := "sid={{var.SessionID}}&user={{var.Username}}"
+	expected := "sid={{var.sessionid}}&user={{var.username}}"
 	got := convertParamReferences(input)
 	if got != expected {
 		t.Errorf("expected %q, got %q", expected, got)
@@ -537,13 +537,13 @@ UpdateValueOn=Each Occurrence
 	}
 	var loginUser *dsl.Parameter
 	for index := range result.Script.Parameters {
-		if result.Script.Parameters[index].Name == "LoginUser" {
+		if result.Script.Parameters[index].Name == "loginuser" {
 			loginUser = &result.Script.Parameters[index]
 			break
 		}
 	}
 	if loginUser == nil || loginUser.Type != "file" {
-		t.Fatalf("parameters = %#v, want file-backed LoginUser", result.Script.Parameters)
+		t.Fatalf("parameters = %#v, want file-backed loginuser", result.Script.Parameters)
 	}
 	if len(result.Script.DataSources) != 1 || result.Script.DataSources[0].Name != "users" {
 		t.Fatalf("data sources = %#v, want one mapped users data source", result.Script.DataSources)
@@ -633,17 +633,17 @@ Type="Table"
 		t.Fatalf("connect timeout = %d, want quoted runtime setting parsed", result.Script.Config.HTTP.ConnectTimeoutMs)
 	}
 	if len(result.Script.Parameters) != 2 {
-		t.Fatalf("parameters = %#v, want UserName and billingMarket", result.Script.Parameters)
+		t.Fatalf("parameters = %#v, want username and billingmarket", result.Script.Parameters)
 	}
 	params := map[string]dsl.Parameter{}
 	for _, parameter := range result.Script.Parameters {
 		params[parameter.Name] = parameter
 	}
-	if params["UserName"].DataSource != "username" || params["UserName"].Column != "UserName" {
-		t.Fatalf("UserName parameter = %#v, want quoted Col 1 mapped to UserName data source header", params["UserName"])
+	if params["username"].DataSource != "username" || params["username"].Column != "UserName" {
+		t.Fatalf("username parameter = %#v, want quoted Col 1 mapped to UserName data source header", params["username"])
 	}
-	if params["billingMarket"].DataSource != "acme_iao" || params["billingMarket"].Column != "billingMarket" {
-		t.Fatalf("billingMarket parameter = %#v, want ACME_IAO billingMarket column", params["billingMarket"])
+	if params["billingmarket"].DataSource != "acme_iao" || params["billingmarket"].Column != "billingMarket" {
+		t.Fatalf("billingmarket parameter = %#v, want ACME_IAO billingMarket column", params["billingmarket"])
 	}
 	if len(result.Script.DataSources) != 2 {
 		t.Fatalf("data sources = %#v, want two .dat sources", result.Script.DataSources)
@@ -652,6 +652,77 @@ Type="Table"
 		if !source.FirstRowHeader {
 			t.Fatalf("data source = %#v, want header inference for quoted .dat imports", source)
 		}
+	}
+}
+
+func TestConvertZipCanonicalizesURLParameterReferences(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+
+	addFile("ACME.usr", `[General]
+Type="Web"
+
+[Parameters]
+Parameter1="ACME.prm"
+
+[Actions]
+Action1="Action.c"
+`)
+	addFile("Action.c", `
+	Action()
+	{
+		web_custom_request("InquireSubscriberBillingAgreement",
+			"URL={URL}/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws",
+			"Method=POST",
+			"Body=url={URL}&session={SessionID}",
+			LAST);
+		return 0;
+	}
+`)
+	addFile("ACME.prm", `[parameter:URL]
+ColumnName="Col 1"
+Delimiter=","
+GenerateNewVal="Once"
+ParamName="URL"
+SelectNextRow="Sequential"
+Table="URL.dat"
+Type="Table"
+`)
+	addFile("URL.dat", "URL\nhttps://csi-gw-ext.att.com:443\n")
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions = %#v, want one imported request", result.Script.Actions)
+	}
+	if got := result.Script.Actions[0].Target; got != "{{param.url}}/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws" {
+		t.Fatalf("target = %q, want URL parameter reference canonicalized to param.url", got)
+	}
+	if got := result.Script.Actions[0].Body; got != "url={{param.url}}&session={{var.sessionid}}" {
+		t.Fatalf("body = %q, want known .prm parameters as param and dynamic values as var", got)
+	}
+	if got := result.Script.Config.BaseURL; got != "https://csi-gw-ext.att.com:443" {
+		t.Fatalf("base_url = %q, want first URL.dat value to replace LoadRunner fallback", got)
+	}
+	if len(result.Script.Parameters) != 1 {
+		t.Fatalf("parameters = %#v, want one URL parameter", result.Script.Parameters)
+	}
+	if got := result.Script.Parameters[0]; got.Name != "url" || got.Type != "file" || got.DataSource != "url" || got.Column != "URL" {
+		t.Fatalf("parameter = %#v, want URL.dat mapped as file parameter named url", got)
 	}
 }
 
@@ -703,19 +774,19 @@ Type="Time"
 	for _, parameter := range parsed.Parameters {
 		params[parameter.Name] = parameter
 	}
-	if got := params["IterationNo"]; got.Type != "current_iteration" || got.Start != 1 || got.Step != 1 || got.PadWidth != 4 || got.Update != "each_iteration" {
+	if got := params["iterationno"]; got.Type != "current_iteration" || got.Start != 1 || got.Step != 1 || got.PadWidth != 4 || got.Update != "each_iteration" {
 		t.Fatalf("IterationNo = %#v, want native current_iteration parameter", got)
 	}
-	if got := params["LGName"]; got.Type != "host" || got.Update != "once" || len(got.Values) != 0 {
+	if got := params["lgname"]; got.Type != "host" || got.Update != "once" || len(got.Values) != 0 {
 		t.Fatalf("LGName = %#v, want native host parameter without forced fallback value", got)
 	}
-	if got := params["ReqDateTime"]; got.Type != "time" || got.Format != "2006-01-02T15:04:05Z" || got.Timezone != "UTC" || got.Update != "each_iteration" {
+	if got := params["reqdatetime"]; got.Type != "time" || got.Format != "2006-01-02T15:04:05Z" || got.Timezone != "UTC" || got.Update != "each_iteration" {
 		t.Fatalf("ReqDateTime = %#v, want mapped UTC time parameter", got)
 	}
-	if got := params["Time"]; got.Type != "time" || got.Format != "15:04:05" || got.Update != "each_iteration" {
+	if got := params["time"]; got.Type != "time" || got.Format != "15:04:05" || got.Update != "each_iteration" {
 		t.Fatalf("Time = %#v, want mapped time-only parameter", got)
 	}
-	if got := params["TimeStamp"]; got.Type != "time" || got.Format != "2006-01-02T15:04:05Z" || got.Timezone != "UTC" {
+	if got := params["timestamp"]; got.Type != "time" || got.Format != "2006-01-02T15:04:05Z" || got.Timezone != "UTC" {
 		t.Fatalf("TimeStamp = %#v, want mapped timestamp-style time parameter", got)
 	}
 }
