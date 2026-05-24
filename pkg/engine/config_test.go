@@ -596,6 +596,12 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 					JitterMs:      15,
 					PacketLossPct: 1.5,
 				},
+				Streaming: dsl.StreamingConfig{
+					Mode:                "fixed",
+					BufferSizeSeconds:   12,
+					FixedBitrateKbps:    1800,
+					BandwidthEstimation: "instant",
+				},
 			},
 		},
 	}
@@ -683,6 +689,18 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 	}
 	if cfg["web_network_simulation_packet_loss_pct"] != 1.5 {
 		t.Errorf("web_network_simulation_packet_loss_pct = %v, want 1.5", cfg["web_network_simulation_packet_loss_pct"])
+	}
+	if cfg["web_streaming_mode"] != "fixed" {
+		t.Errorf("web_streaming_mode = %v, want fixed", cfg["web_streaming_mode"])
+	}
+	if cfg["web_streaming_buffer_size_seconds"] != float64(12) {
+		t.Errorf("web_streaming_buffer_size_seconds = %v, want 12", cfg["web_streaming_buffer_size_seconds"])
+	}
+	if cfg["web_streaming_fixed_bitrate_kbps"] != float64(1800) {
+		t.Errorf("web_streaming_fixed_bitrate_kbps = %v, want 1800", cfg["web_streaming_fixed_bitrate_kbps"])
+	}
+	if cfg["web_streaming_bandwidth_estimation"] != "instant" {
+		t.Errorf("web_streaming_bandwidth_estimation = %v, want instant", cfg["web_streaming_bandwidth_estimation"])
 	}
 }
 

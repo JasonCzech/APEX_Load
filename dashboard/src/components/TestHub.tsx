@@ -510,7 +510,7 @@ function ScenarioModelPreviewPanel({
         </div>
         <div className="scenario-model-summary">
           <span><strong>{model.peakVusers}</strong> peak VUsers</span>
-          <span><strong>{formatModelTimeLabel(model.durationSeconds).replace('T+', '')}</strong> duration</span>
+          <span><strong>{formatModelTimeLabel(model.durationSeconds)}</strong> duration</span>
           <span><strong>{groupSeries.length}</strong> groups</span>
           <span>{shapeLabel}</span>
           <span>{dataPoolLabel}</span>

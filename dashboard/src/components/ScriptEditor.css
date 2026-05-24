@@ -192,8 +192,8 @@
 }
 .editor-support-dialog.open {
   position: fixed;
-  top: clamp(24px, 6vh, 64px);
-  left: 50%;
+  top: var(--support-dialog-top, clamp(24px, 6vh, 64px));
+  left: var(--support-dialog-left, 50%);
   z-index: 30;
   display: flex;
   flex-direction: column;
@@ -202,6 +202,7 @@
   margin: 0;
   padding: 0;
   border-radius: 14px;
+  overflow: hidden;
   box-shadow: 0 24px 54px rgba(15, 23, 42, 0.34);
   transform: translateX(-50%);
 }
@@ -218,8 +219,18 @@
   --support-dialog-max-height: 86vh;
 }
 .support-dialog-runtime {
-  --support-dialog-width: 1040px;
-  --support-dialog-max-height: 86vh;
+  --support-dialog-top: 112px;
+  --support-dialog-left: calc(50% + 120px);
+  --support-dialog-width: 780px;
+  --support-dialog-max-height: calc(100vh - 144px);
+}
+.support-dialog-runtime > .runtime-settings-grid {
+  display: flex;
+  flex-direction: column;
+  align-content: start;
+}
+.support-dialog-runtime .settings-section {
+  flex: 0 0 auto;
 }
 .support-dialog-import {
   --support-dialog-width: 980px;
@@ -239,6 +250,8 @@
 }
 .editor-support-dialog > .panel-body,
 .editor-support-dialog > .runtime-settings-grid {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
 }
 .import-metadata-panel {
@@ -625,12 +638,25 @@
 .form-grid label { display: flex; flex-direction: column; gap: 4px; }
 .form-grid label span { font-size: 12px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.03em; }
 .form-grid label.full-width { grid-column: 1 / -1; }
-.form-grid input, .form-grid select {
+.form-grid input, .form-grid select, .form-grid textarea,
+.settings-sub-group > label input,
+.settings-sub-group > label select,
+.settings-sub-group > label textarea {
   background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px;
   padding: 8px 12px; color: var(--text-primary); font-size: 13px; outline: none;
   transition: border-color 0.15s;
+  width: 100%;
 }
-.form-grid input:focus, .form-grid select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(99,102,241,0.12); }
+.form-grid textarea,
+.settings-sub-group > label textarea {
+  min-height: 82px;
+  resize: vertical;
+  line-height: 1.4;
+}
+.form-grid input:focus, .form-grid select:focus, .form-grid textarea:focus,
+.settings-sub-group > label input:focus,
+.settings-sub-group > label select:focus,
+.settings-sub-group > label textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(99,102,241,0.12); }
 .auto-parameter-section {
   display: grid;
   gap: 12px;
@@ -2574,6 +2600,48 @@
 }
 .checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); cursor: pointer; }
 .checkbox-label input[type="checkbox"] { accent-color: var(--accent); }
+.logging-settings-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.85fr) minmax(260px, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.logging-settings-layout > label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.logging-settings-layout > label span {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.logging-settings-layout select {
+  width: 100%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.logging-settings-layout select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(99,102,241,0.12);
+}
+.logging-checkbox-group {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding-top: 20px;
+}
+.logging-checkbox-group .checkbox-label {
+  min-height: 34px;
+}
 
 /* Buttons */
 .btn { padding: 8px 16px; border-radius: 6px; border: none; font-size: 13px; font-weight: 500; transition: all 0.15s; }
@@ -2627,6 +2695,9 @@
 .settings-section.open {
   background: rgba(99, 102, 241, 0.03);
   border-color: rgba(99, 102, 241, 0.35);
+}
+.editor-support-dialog .settings-section.open {
+  overflow: visible;
 }
 .section-toggle {
   display: flex; align-items: center; gap: 10px; width: 100%;
@@ -2696,6 +2767,18 @@
 .settings-sub-group h5 {
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--accent); font-weight: 600; margin: 0 0 10px 0;
+}
+.settings-sub-group > label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-sub-group > label span {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .browser-config-warning {

@@ -953,10 +953,10 @@ Emits JSON messages for all test events:
 - `config.web_runtime.network_simulation.preset`: `56k`, `dsl`, `t1`, or `10mbps`
 - `config.web_runtime.network_simulation.bandwidth_kbps`, `config.web_runtime.network_simulation.latency_ms`: Custom transport shaping values
 - `config.web_runtime.network_simulation.jitter_ms`, `config.web_runtime.network_simulation.packet_loss_pct`: Optional jitter and packet-loss simulation values for custom HTTP transport shaping
-- `config.web_runtime.streaming.mode`: `adaptive` or `fixed` compatibility setting for imported/authored media RTS
-- `config.web_runtime.streaming.buffer_size_seconds`: Preserved streaming buffer setting
-- `config.web_runtime.streaming.fixed_bitrate_kbps`: Preserved fixed-bitrate setting
-- `config.web_runtime.streaming.bandwidth_estimation`: `rolling` or `instant` compatibility setting
+- `config.web_runtime.streaming.mode`: `adaptive` or `fixed` media-response pacing mode
+- `config.web_runtime.streaming.buffer_size_seconds`: Startup buffering delay for media-like HTTP responses
+- `config.web_runtime.streaming.fixed_bitrate_kbps`: Fixed-bitrate media-response shaping value
+- `config.web_runtime.streaming.bandwidth_estimation`: `rolling` or `instant` adaptive bitrate estimator
 - `config.web_runtime.data_formatting.auto_detect`: Preserve or enable automatic DFE detection behavior
 - `config.web_runtime.data_formatting.chain[]`: Ordered DFE transform chain
 
@@ -973,7 +973,7 @@ Emits JSON messages for all test events:
 | Global content checks | `config.web_runtime.content_checks[]` | Executed in HTTP runtime |
 | Network emulation | `config.web_runtime.network_simulation.*` | Executed in browser runtime and HTTP-family transport shaping |
 | Data formatting | `config.web_runtime.data_formatting.*` | Partial: HTTP runtime executes configured DFE chains and auto-detects obvious base64-encoded text payloads; browser/runtime-wide DFE parity is still incomplete |
-| Streaming | `config.web_runtime.streaming.*` | Compatibility-only: preserved and importable, but media playback semantics are not executed yet |
+| Streaming | `config.web_runtime.streaming.*` | Executed in HTTP runtime for media-like responses using buffer and bitrate pacing |
 | Additional attributes | `config.web_runtime.additional_attributes` | Compatibility-only metadata |
 
 See [docs/LOADRUNNER_RTS_REFERENCE.md](docs/LOADRUNNER_RTS_REFERENCE.md) for the broader Web HTTP/HTML mapping, including compatibility-only and non-applicable RTS concepts.

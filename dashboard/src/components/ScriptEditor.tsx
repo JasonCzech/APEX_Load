@@ -5092,7 +5092,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       <div className="settings-sub-group">
                         <h5>Streaming</h5>
                         <div className="cell-muted" style={{ marginBottom: 12 }}>
-                          Streaming settings are compatibility-only today. APEX Load preserves and imports these values, but does not execute media playback buffering or adaptive bitrate behavior yet.
+                          Streaming settings apply runtime pacing to media-like HTTP responses.
                         </div>
                         <div className="form-grid">
                           <label>
@@ -5188,7 +5188,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </button>
                   {openSections['log'] && (
                     <div className="section-body">
-                      <div className="form-grid">
+                      <div className="logging-settings-layout">
                         <label>
                           <span>Log Level</span>
                           <select value={script.config.log?.level || 'standard'}
@@ -5198,41 +5198,43 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             <option value="extended">Extended (verbose)</option>
                           </select>
                         </label>
-                        <label className="checkbox-label">
-                          <input type="checkbox" checked={script.config.log?.on_error_only || false}
-                            onChange={e => updateField('config.log', { ...script.config.log, on_error_only: e.target.checked })} />
-                          <span>Extended log on error only</span>
-                        </label>
-                        <label className="checkbox-label">
-                          <input type="checkbox" checked={script.config.log?.extended_options?.includes('parameter_substitution') || false}
-                            onChange={e => updateField('config.log', {
-                              ...script.config.log,
-                              extended_options: e.target.checked
-                                ? [...new Set([...(script.config.log?.extended_options || []), 'parameter_substitution'])]
-                                : (script.config.log?.extended_options || []).filter(option => option !== 'parameter_substitution'),
-                            })} />
-                          <span>Parameter substitution</span>
-                        </label>
-                        <label className="checkbox-label">
-                          <input type="checkbox" checked={script.config.log?.extended_options?.includes('data_returned') || false}
-                            onChange={e => updateField('config.log', {
-                              ...script.config.log,
-                              extended_options: e.target.checked
-                                ? [...new Set([...(script.config.log?.extended_options || []), 'data_returned'])]
-                                : (script.config.log?.extended_options || []).filter(option => option !== 'data_returned'),
-                            })} />
-                          <span>Data returned by server</span>
-                        </label>
-                        <label className="checkbox-label">
-                          <input type="checkbox" checked={script.config.log?.extended_options?.includes('advanced_trace') || false}
-                            onChange={e => updateField('config.log', {
-                              ...script.config.log,
-                              extended_options: e.target.checked
-                                ? [...new Set([...(script.config.log?.extended_options || []), 'advanced_trace'])]
-                                : (script.config.log?.extended_options || []).filter(option => option !== 'advanced_trace'),
-                            })} />
-                          <span>Advanced trace</span>
-                        </label>
+                        <div className="logging-checkbox-group">
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.log?.on_error_only || false}
+                              onChange={e => updateField('config.log', { ...script.config.log, on_error_only: e.target.checked })} />
+                            <span>Extended log on error only</span>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.log?.extended_options?.includes('parameter_substitution') || false}
+                              onChange={e => updateField('config.log', {
+                                ...script.config.log,
+                                extended_options: e.target.checked
+                                  ? [...new Set([...(script.config.log?.extended_options || []), 'parameter_substitution'])]
+                                  : (script.config.log?.extended_options || []).filter(option => option !== 'parameter_substitution'),
+                              })} />
+                            <span>Parameter substitution</span>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.log?.extended_options?.includes('data_returned') || false}
+                              onChange={e => updateField('config.log', {
+                                ...script.config.log,
+                                extended_options: e.target.checked
+                                  ? [...new Set([...(script.config.log?.extended_options || []), 'data_returned'])]
+                                  : (script.config.log?.extended_options || []).filter(option => option !== 'data_returned'),
+                              })} />
+                            <span>Data returned by server</span>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.log?.extended_options?.includes('advanced_trace') || false}
+                              onChange={e => updateField('config.log', {
+                                ...script.config.log,
+                                extended_options: e.target.checked
+                                  ? [...new Set([...(script.config.log?.extended_options || []), 'advanced_trace'])]
+                                  : (script.config.log?.extended_options || []).filter(option => option !== 'advanced_trace'),
+                              })} />
+                            <span>Advanced trace</span>
+                          </label>
+                        </div>
                       </div>
                     </div>
                   )}

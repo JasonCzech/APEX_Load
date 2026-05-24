@@ -130,7 +130,7 @@ func TestValidateScriptIncludesWebKitWarnings(t *testing.T) {
 	}
 }
 
-func TestValidateScriptIncludesStreamingCompatibilityWarnings(t *testing.T) {
+func TestValidateScriptTreatsStreamingSettingsAsExecutable(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	stored := server.runner.StoreScript(&dsl.Script{
 		Name:     "Streaming Import Draft",
@@ -158,11 +158,12 @@ func TestValidateScriptIncludesStreamingCompatibilityWarnings(t *testing.T) {
 	}
 
 	warnings := extractValidationWarnings(t, resp.Body.Bytes())
-	if len(warnings) != 1 || !strings.Contains(strings.ToLower(warnings[0]), "media playback semantics") {
-		t.Fatalf("warnings = %#v, want streaming compatibility guidance", warnings)
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v, want no streaming compatibility warning", warnings)
 	}
-	if !strings.Contains(warnings[0], "mode=fixed") || !strings.Contains(warnings[0], "buffer=30s") || !strings.Contains(warnings[0], "fixed_bitrate=1800kbps") || !strings.Contains(warnings[0], "bandwidth_estimation=instant") {
-		t.Fatalf("warnings = %#v, want preserved streaming settings", warnings)
+	parity := extractValidationRuntimeSettingParity(t, resp.Body.Bytes())
+	if len(parity) != 1 || parity[0].ID != "streaming" || parity[0].Status != loadrunner.RuntimeSettingStatusExecuted {
+		t.Fatalf("runtime_settings_parity = %#v, want executable streaming entry", parity)
 	}
 }
 
@@ -229,7 +230,7 @@ func TestScriptValidationIncludesRuntimeSettingParityForImportedDraftsAndStoredS
 						{ID: "run_logic_auto_transactions", Area: "Run Logic", Concept: "Auto-transactions", Status: loadrunner.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
 						{ID: "logging", Area: "Logging", Concept: "Log level, error-only, and extended logging options", Status: loadrunner.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
 						{ID: "browser_download_resources_recorded", Area: "Browser Emulation", Concept: "Download resources = recorded", Status: loadrunner.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
-						{ID: "streaming", Area: "Streaming", Concept: "Adaptive or fixed playback settings", Status: loadrunner.RuntimeSettingStatusCompatibilityOnly, RuntimeFiles: []string{"default.cfg"}},
+						{ID: "streaming", Area: "Streaming", Concept: "Adaptive or fixed playback settings", Status: loadrunner.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
 					},
 					"runtime_settings_migration_readiness": &loadrunner.RuntimeSettingMigrationReadiness{
 						ScorePct:         0,
@@ -282,16 +283,16 @@ func TestScriptValidationIncludesRuntimeSettingParityForImportedDraftsAndStoredS
 			}
 
 			counts := extractValidationRuntimeSettingStatusCounts(t, resp.Body.Bytes())
-			if counts["executed"] != 4 || counts["partial"] != 0 || counts["compatibility_only"] != 1 {
-				t.Fatalf("runtime_settings_status_counts = %#v, want executed=4 partial=0 compatibility_only=1", counts)
+			if counts["executed"] != 5 || counts["partial"] != 0 || counts["compatibility_only"] != 0 {
+				t.Fatalf("runtime_settings_status_counts = %#v, want executed=5 partial=0 compatibility_only=0", counts)
 			}
 
 			readiness := extractValidationMigrationReadiness(t, resp.Body.Bytes())
 			if readiness == nil {
 				t.Fatal("expected migration_readiness")
 			}
-			if !readiness.Blocked || readiness.ScorePct != 85 {
-				t.Fatalf("migration_readiness = %#v, want blocked score=85", readiness)
+			if readiness.Blocked || readiness.ScorePct != 100 {
+				t.Fatalf("migration_readiness = %#v, want ready score=100", readiness)
 			}
 			if len(readiness.Policy.BlockStatuses) != 2 || readiness.Policy.BlockStatuses[0] != loadrunner.RuntimeSettingStatusPartial || readiness.Policy.BlockStatuses[1] != loadrunner.RuntimeSettingStatusCompatibilityOnly {
 				t.Fatalf("migration_readiness.policy = %#v, want partial + compatibility_only", readiness.Policy)

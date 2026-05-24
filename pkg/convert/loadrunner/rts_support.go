@@ -372,8 +372,8 @@ var loadRunnerRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Area:    "Streaming",
 			Concept: "Adaptive or fixed playback settings",
 			Fields:  []string{"config.web_runtime.streaming"},
-			Status:  RuntimeSettingStatusCompatibilityOnly,
-			Notes:   "Streaming and media playback semantics are preserved but not executed.",
+			Status:  RuntimeSettingStatusExecuted,
+			Notes:   "HTTP runtime applies streaming buffer and bitrate pacing to media-like responses.",
 		},
 		matchers: []runtimeSettingMatcher{matcher([]string{"Streaming"}, []string{"Mode", "BufferSizeSeconds", "BufferSize", "FixedBitrateKbps", "FixedBitrate", "BandwidthEstimation"})},
 	},
@@ -403,7 +403,7 @@ var loadRunnerRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 
 var loadRunnerRTSSupportMatrixNotes = []string{
 	"download_resources = recorded is executed for import/recording flows that preserve recorded-resource URL metadata; manually authored scripts should supply equivalent metadata before selecting that mode.",
-	"Streaming and media playback settings remain compatibility-only and do not execute browser media semantics.",
+	"Streaming settings execute in the HTTP runtime for media-like responses through buffer and bitrate pacing.",
 	"DFE parity is complete for the supported HTTP response transform envelope: base64, gzip, JSON/XML, URL, and HTML transforms plus conservative base64/gzip auto-detection.",
 	"Extended logging parity is complete for APEX Load's trace envelope: log level, error-only logging, parameter substitution, returned data, and advanced trace metadata.",
 }

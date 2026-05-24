@@ -533,9 +533,6 @@ func loadRunnerImportWarnings(result *loadrunner.ConvertResult) []string {
 		return nil
 	}
 	warnings := append([]string(nil), result.Warnings...)
-	if result.Script != nil && hasStreamingCompatibilityOnlySettings(result.Script) {
-		warnings = append(warnings, streamingCompatibilityWarning(result.Script))
-	}
 	return uniqueSortedStrings(warnings)
 }
 

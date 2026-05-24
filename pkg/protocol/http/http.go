@@ -33,6 +33,7 @@ type HTTP struct {
 	contentChecks            []contentCheck
 	dataFormattingAutoDetect bool
 	dataFormattingChain      []dataFormattingTransform
+	streaming                streamingProfile
 	defaultHeaders           map[string]string
 	authType                 string
 	authHeader               string // pre-computed Authorization header value
@@ -78,6 +79,7 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.contentChecks = parseContentChecks(config)
 	h.dataFormattingAutoDetect = parseDataFormattingAutoDetect(config)
 	h.dataFormattingChain = parseDataFormattingChain(config)
+	h.streaming = parseStreamingProfile(config)
 	h.authType, h.authHeader = buildAuthHeader(config)
 
 	h.bufPool = sync.Pool{
@@ -181,8 +183,22 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	buf.Reset()
 	defer h.bufPool.Put(buf)
 
+	bodyReadStart := time.Now()
 	n, _ := io.Copy(buf, resp.Body)
+	bodyReadDuration := time.Since(bodyReadStart)
 	resp.Body.Close()
+
+	if delay := h.streaming.responseDelay(resp, action, targetURL, n, bodyReadDuration); delay > 0 {
+		if err := h.streaming.wait(ctx, delay); err != nil {
+			result.Duration = time.Since(result.StartTime)
+			result.StatusCode = resp.StatusCode
+			result.BytesReceived = n
+			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, connectionReused, redirectCount, redirectDuration)
+			result.ErrorMessage = err.Error()
+			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, action.RedactedTarget, action.RedactedHeaders, action.RedactedBody, resp.StatusCode, cloneHTTPHeaders(resp.Header), buf.Bytes())
+			return result, nil
+		}
+	}
 
 	result.Duration = time.Since(result.StartTime)
 	result.StatusCode = resp.StatusCode

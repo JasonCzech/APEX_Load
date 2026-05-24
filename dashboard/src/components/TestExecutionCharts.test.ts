@@ -122,8 +122,8 @@ describe('chartStateForMonitorPreset', () => {
   })
 
   it('formats relative run time labels for graph axes', () => {
-    expect(formatRelativeRunTime(0)).toBe('T+0s')
-    expect(formatRelativeRunTime(65_000)).toBe('T+1m5s')
-    expect(formatRelativeRunTime(3_723_000)).toBe('T+1h2m3s')
+    expect(formatRelativeRunTime(0)).toBe('0s')
+    expect(formatRelativeRunTime(65_000)).toBe('1m5s')
+    expect(formatRelativeRunTime(3_723_000)).toBe('1h2m3s')
   })
 })

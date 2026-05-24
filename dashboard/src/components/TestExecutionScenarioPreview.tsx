@@ -362,7 +362,7 @@ export default function TestExecutionScenarioPreview({
                   allowDecimals={false}
                 />
                 <Tooltip
-                  labelFormatter={(value) => `T+${formatTimeCompact(Number(value))}`}
+                  labelFormatter={(value) => formatTimeCompact(Number(value))}
                   contentStyle={{ background: 'rgba(33, 36, 47, 0.92)', border: '1px solid var(--border)', borderRadius: 10 }}
                   formatter={(value: number, name: string) => [value, name === 'total' ? 'Total' : name]}
                 />

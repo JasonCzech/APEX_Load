@@ -812,6 +812,51 @@ describe('ScriptEditor', () => {
   expect(container.textContent).toContain('Network Emulation')
   expect(container.textContent).toContain('Jitter (ms)')
   expect(container.textContent).toContain('Packet Loss (%)')
+
+  const contentCheckArea = Array.from(container.querySelectorAll('textarea')).find(area =>
+    area.getAttribute('placeholder') === 'Access Denied|any_response|true',
+  ) as HTMLTextAreaElement | undefined
+  expect(contentCheckArea).toBeDefined()
+  expect(contentCheckArea?.readOnly).toBe(false)
+  })
+
+  it('keeps existing RTS accordion sections open when HTTP Transport is expanded', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    const runtimeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
+    expect(runtimeButton).toBeDefined()
+    if (!runtimeButton) return
+
+    await act(async () => {
+      runtimeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    async function clickSection(label: string) {
+      const button = Array.from(container.querySelectorAll('.section-toggle')).find(candidate =>
+        candidate.textContent?.includes(label),
+      ) as HTMLButtonElement | undefined
+      expect(button).toBeDefined()
+      if (!button) return
+      await act(async () => {
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+    }
+
+    function sectionFor(label: string) {
+      return Array.from(container.querySelectorAll('.settings-section')).find(section =>
+        section.textContent?.includes(label),
+      )
+    }
+
+    await clickSection('Think Time')
+    await clickSection('Iteration Pacing')
+    await clickSection('HTTP Transport')
+
+    expect(sectionFor('Think Time')?.classList.contains('open')).toBe(true)
+    expect(sectionFor('Iteration Pacing')?.classList.contains('open')).toBe(true)
+    expect(sectionFor('HTTP Transport')?.classList.contains('open')).toBe(true)
   })
 
   it('rehydrates editor state when a different initial script is provided', async () => {
@@ -1518,6 +1563,8 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Workload Model')
     expect(container.textContent).toContain('Open arrival-rate')
     expect(container.textContent).toContain('Parameter substitution')
+    expect(container.querySelector('.logging-settings-layout')).toBeTruthy()
+    expect(container.querySelectorAll('.logging-checkbox-group .checkbox-label')).toHaveLength(4)
 
     const compatibilityToggle = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.includes('Web HTTP/HTML Compatibility'),
@@ -2099,6 +2146,9 @@ describe('ScriptEditor', () => {
     await act(async () => {
       compatibilityToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+
+    expect(container.textContent).toContain('Streaming settings apply runtime pacing to media-like HTTP responses.')
+    expect(container.textContent).not.toContain('Streaming settings are compatibility-only today')
 
     const dfeArea = Array.from(container.querySelectorAll('textarea')).find(area =>
       area.getAttribute('placeholder') === 'base64\ngzip mode=decode\njson_to_xml',

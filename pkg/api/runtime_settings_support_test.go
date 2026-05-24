@@ -58,8 +58,8 @@ func TestRuntimeSettingsSupportMatrixEndpointCoversW3ProtocolsAndPresets(t *test
 	if !runtimeSettingsSupportEntryContains(payload.SupportMatrix, "vugen_web2_http_conversion_readiness", "executed") {
 		t.Fatalf("support matrix missing Web 2.0 HTTP conversion readiness classification")
 	}
-	if !runtimeSettingsDecisionContains(payload.Decisions, "streaming-media-runtime", "compatibility_only") {
-		t.Fatalf("streaming/media decision = %#v, want compatibility_only", payload.Decisions)
+	if !runtimeSettingsDecisionContains(payload.Decisions, "streaming-media-runtime", "executed") {
+		t.Fatalf("streaming/media decision = %#v, want executed", payload.Decisions)
 	}
 }
 
@@ -107,8 +107,8 @@ func TestRuntimeSettingsReportEndpointsExportScriptAndScenarioEvidence(t *testin
 	if err := json.Unmarshal(resp.Body.Bytes(), &report); err != nil {
 		t.Fatalf("unmarshal script report: %v", err)
 	}
-	if report.Status != "needs_review" {
-		t.Fatalf("script report status = %q, want needs_review", report.Status)
+	if report.Status != "ready" {
+		t.Fatalf("script report status = %q, want ready", report.Status)
 	}
 	if report.Support.MatrixEndpoint != "/api/v1/runtime-settings/support-matrix" || len(report.Presets) == 0 {
 		t.Fatalf("script report support/presets = %#v presets=%d", report.Support, len(report.Presets))
@@ -116,8 +116,8 @@ func TestRuntimeSettingsReportEndpointsExportScriptAndScenarioEvidence(t *testin
 	if !runtimeSettingsReportHasEntry(report, "streaming") {
 		t.Fatalf("script report entries = %#v, want streaming", report.Entries)
 	}
-	if !hasRuntimeSettingsWarning(report.Findings) {
-		t.Fatalf("script findings = %#v, want warning", report.Findings)
+	if hasRuntimeSettingsWarning(report.Findings) {
+		t.Fatalf("script findings = %#v, want no streaming warning", report.Findings)
 	}
 
 	csvReq := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/"+scenario.ID+"/runtime-settings/report?format=csv", nil)
@@ -130,7 +130,7 @@ func TestRuntimeSettingsReportEndpointsExportScriptAndScenarioEvidence(t *testin
 		t.Fatalf("content type = %q, want csv", ct)
 	}
 	body := csvResp.Body.String()
-	if !strings.Contains(body, "streaming") || !strings.Contains(body, "compatibility_only") || !strings.Contains(body, "web") {
+	if !strings.Contains(body, "streaming") || !strings.Contains(body, "executed") || !strings.Contains(body, "web") {
 		t.Fatalf("scenario csv body missing runtime evidence:\n%s", body)
 	}
 }

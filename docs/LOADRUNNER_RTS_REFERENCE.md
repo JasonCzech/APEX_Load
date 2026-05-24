@@ -41,10 +41,10 @@ The planned Web HTTP/HTML RTS parity scope is complete. Settings that APEX Load 
 | Download Filters | Allow list / block list hosts | `config.web_runtime.download_filters.*` | Executed | Browser runtime enforces host-based asset filtering. |
 | Content Check | Global required/forbidden text checks | `config.web_runtime.content_checks[]` | Executed | HTTP runtime enforces checks against main-document responses. |
 | Network Speed Simulation | Preset and custom bandwidth/latency | `config.web_runtime.network_simulation.*` | Executed | Browser runtime maps settings onto DevTools network throttling. |
-| Streaming | Adaptive vs fixed mode | `config.web_runtime.streaming.mode` | Compatibility-only | Stored and imported, but APEX Load does not execute media playback semantics; validation warnings include preserved values for review. |
-| Streaming | Buffer size | `config.web_runtime.streaming.buffer_size_seconds` | Compatibility-only | Preserved for parity only and surfaced in streaming compatibility warnings. |
-| Streaming | Fixed bitrate | `config.web_runtime.streaming.fixed_bitrate_kbps` | Compatibility-only | Preserved for parity only and surfaced in streaming compatibility warnings. |
-| Streaming | Bandwidth estimation | `config.web_runtime.streaming.bandwidth_estimation` | Compatibility-only | Preserved for parity only and surfaced in streaming compatibility warnings. |
+| Streaming | Adaptive vs fixed mode | `config.web_runtime.streaming.mode` | Executed | HTTP runtime applies streaming pacing to media-like responses. |
+| Streaming | Buffer size | `config.web_runtime.streaming.buffer_size_seconds` | Executed | Adds startup buffering delay to media-like HTTP responses. |
+| Streaming | Fixed bitrate | `config.web_runtime.streaming.fixed_bitrate_kbps` | Executed | Fixed mode shapes media response duration to the configured bitrate. |
+| Streaming | Bandwidth estimation | `config.web_runtime.streaming.bandwidth_estimation` | Executed | Adaptive mode uses instant or rolling response throughput estimates for media pacing. |
 | Data Formatting | Auto-detect DFEs | `config.web_runtime.data_formatting.auto_detect` | Executed | HTTP runtime auto-detects the supported DFE envelope: obvious base64 text and gzip-compressed text payloads before extraction and assertions. |
 | Data Formatting | DFE transform chain | `config.web_runtime.data_formatting.chain[]` | Executed | HTTP runtime executes the supported DFE chain: `base64`, `gzip`, `json_to_xml`, `xml_to_json`, `url_decode`, `url_encode`, `html_unescape`, and `html_escape`. |
 | Replay engine mode | WinInet / process-vs-thread runtime concepts | N/A | Non-applicable | APEX Load uses Go HTTP/browser runtimes and goroutine VUsers instead of WinInet or Windows process/thread replay modes. |
@@ -52,7 +52,7 @@ The planned Web HTTP/HTML RTS parity scope is complete. Settings that APEX Load 
 ## Intentional Caveats
 
 - `download_resources = recorded` depends on recorded-resource URL metadata. Browser replay enforces it for import/recording flows that capture those URLs; manually authored scripts should provide equivalent metadata before selecting that mode.
-- Streaming/media playback semantics are intentionally compatibility-only for now.
+- Streaming/media settings execute at HTTP response pacing level; they do not launch a full browser media player.
 - Browser/runtime-wide DFE parity is intentionally bounded to APEX Load's supported HTTP response transform chain.
 - Logging parity is intentionally scoped to APEX Load's trace envelope rather than byte-for-byte VuGen log formatting.
 

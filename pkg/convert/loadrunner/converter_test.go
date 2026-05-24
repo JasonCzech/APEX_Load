@@ -1207,7 +1207,7 @@ func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
 		"download_filters":                    RuntimeSettingStatusExecuted,
 		"content_checks":                      RuntimeSettingStatusExecuted,
 		"network_simulation":                  RuntimeSettingStatusExecuted,
-		"streaming":                           RuntimeSettingStatusCompatibilityOnly,
+		"streaming":                           RuntimeSettingStatusExecuted,
 		"data_formatting_auto_detect":         RuntimeSettingStatusExecuted,
 		"data_formatting_chain":               RuntimeSettingStatusExecuted,
 	}
@@ -1215,8 +1215,8 @@ func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
 		assertRuntimeSettingParityEntry(t, parity, id, status)
 	}
 	counts := RuntimeSettingStatusCounts(parity)
-	if counts[string(RuntimeSettingStatusExecuted)] != 25 || counts[string(RuntimeSettingStatusPartial)] != 0 || counts[string(RuntimeSettingStatusCompatibilityOnly)] != 2 {
-		t.Fatalf("status counts = %#v, want executed=25 partial=0 compatibility_only=2", counts)
+	if counts[string(RuntimeSettingStatusExecuted)] != 26 || counts[string(RuntimeSettingStatusPartial)] != 0 || counts[string(RuntimeSettingStatusCompatibilityOnly)] != 1 {
+		t.Fatalf("status counts = %#v, want executed=26 partial=0 compatibility_only=1", counts)
 	}
 }
 
@@ -1245,12 +1245,12 @@ Chain=base64,gzip mode=decode
 	}
 	assertRuntimeSettingParityEntry(t, parity, "run_logic_iterations", RuntimeSettingStatusExecuted)
 	assertRuntimeSettingParityEntry(t, parity, "logging", RuntimeSettingStatusExecuted)
-	assertRuntimeSettingParityEntry(t, parity, "streaming", RuntimeSettingStatusCompatibilityOnly)
+	assertRuntimeSettingParityEntry(t, parity, "streaming", RuntimeSettingStatusExecuted)
 	assertRuntimeSettingParityEntry(t, parity, "data_formatting_auto_detect", RuntimeSettingStatusExecuted)
 	assertRuntimeSettingParityEntry(t, parity, "data_formatting_chain", RuntimeSettingStatusExecuted)
 	counts := RuntimeSettingStatusCounts(parity)
-	if counts[string(RuntimeSettingStatusExecuted)] != 4 || counts[string(RuntimeSettingStatusPartial)] != 0 || counts[string(RuntimeSettingStatusCompatibilityOnly)] != 1 {
-		t.Fatalf("status counts = %#v, want executed=4 partial=0 compatibility_only=1", counts)
+	if counts[string(RuntimeSettingStatusExecuted)] != 5 || counts[string(RuntimeSettingStatusPartial)] != 0 || counts[string(RuntimeSettingStatusCompatibilityOnly)] != 0 {
+		t.Fatalf("status counts = %#v, want executed=5 partial=0 compatibility_only=0", counts)
 	}
 }
 
@@ -1291,7 +1291,7 @@ func TestBuildRTSParityReportFromScriptClassifiesConfiguredScriptSettings(t *tes
 	assertRuntimeSettingParityStatus(t, parity, "run_logic_auto_transactions", RuntimeSettingStatusExecuted)
 	assertRuntimeSettingParityStatus(t, parity, "logging", RuntimeSettingStatusExecuted)
 	assertRuntimeSettingParityStatus(t, parity, "browser_download_resources_recorded", RuntimeSettingStatusExecuted)
-	assertRuntimeSettingParityStatus(t, parity, "streaming", RuntimeSettingStatusCompatibilityOnly)
+	assertRuntimeSettingParityStatus(t, parity, "streaming", RuntimeSettingStatusExecuted)
 }
 
 func TestBuildRTSParityReportFromScriptSkipsDefaultCompatibilityNoise(t *testing.T) {
@@ -1338,26 +1338,26 @@ func TestBuildRTSMigrationReadinessHonorsBlockStatuses(t *testing.T) {
 	parity := []RuntimeSettingParityEntry{
 		{ID: "run_logic_iterations", Area: "Run Logic", Concept: "Iterations", Status: RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
 		{ID: "logging", Area: "Logging", Concept: "Log level, error-only, and extended logging options", Status: RuntimeSettingStatusPartial, RuntimeFiles: []string{"default.cfg"}},
-		{ID: "streaming", Area: "Streaming", Concept: "Adaptive or fixed playback settings", Status: RuntimeSettingStatusCompatibilityOnly, RuntimeFiles: []string{"default.cfg"}},
+		{ID: "streaming", Area: "Streaming", Concept: "Adaptive or fixed playback settings", Status: RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
 	}
 
 	readiness := BuildRTSMigrationReadiness(parity, RuntimeSettingMigrationPolicy{BlockStatuses: []RuntimeSettingStatus{RuntimeSettingStatusPartial, RuntimeSettingStatusCompatibilityOnly}})
 	if readiness == nil {
 		t.Fatal("expected migration readiness")
 	}
-	if readiness.ScorePct != 62 {
-		t.Fatalf("score_pct = %d, want 62", readiness.ScorePct)
+	if readiness.ScorePct != 87 {
+		t.Fatalf("score_pct = %d, want 87", readiness.ScorePct)
 	}
 	if !readiness.Blocked {
 		t.Fatal("expected readiness to be blocked")
 	}
-	if len(readiness.BlockingStatuses) != 2 || readiness.BlockingStatuses[0] != RuntimeSettingStatusPartial || readiness.BlockingStatuses[1] != RuntimeSettingStatusCompatibilityOnly {
-		t.Fatalf("blocking_statuses = %#v, want partial + compatibility_only", readiness.BlockingStatuses)
+	if len(readiness.BlockingStatuses) != 1 || readiness.BlockingStatuses[0] != RuntimeSettingStatusPartial {
+		t.Fatalf("blocking_statuses = %#v, want partial", readiness.BlockingStatuses)
 	}
-	if len(readiness.BlockingSettings) != 2 {
-		t.Fatalf("blocking_settings = %#v, want 2 entries", readiness.BlockingSettings)
+	if len(readiness.BlockingSettings) != 1 {
+		t.Fatalf("blocking_settings = %#v, want 1 entry", readiness.BlockingSettings)
 	}
-	if !strings.Contains(readiness.Summary, "62%") || !strings.Contains(readiness.Summary, "partial, compatibility_only") {
+	if !strings.Contains(readiness.Summary, "87%") || !strings.Contains(readiness.Summary, "partial") {
 		t.Fatalf("summary = %q, want score and policy statuses", readiness.Summary)
 	}
 }

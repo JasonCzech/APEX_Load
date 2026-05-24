@@ -150,7 +150,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		RedactionConfig: redactionConfig,
 		SnapshotStore:   NewSnapshotStore(128),
 	}
-	vu.loadDataRow()
+	vu.prepareRuntimeState()
 	for key, value := range opts.Variables {
 		vu.Variables[key] = value
 	}

@@ -162,12 +162,12 @@ export function formatRelativeRunTime(relativeMs?: number) {
   const seconds = totalSeconds % 60
 
   if (hours > 0) {
-    return `T+${hours}h${minutes > 0 ? `${minutes}m` : ''}${seconds > 0 ? `${seconds}s` : ''}`
+    return `${hours}h${minutes > 0 ? `${minutes}m` : ''}${seconds > 0 ? `${seconds}s` : ''}`
   }
   if (minutes > 0) {
-    return `T+${minutes}m${seconds > 0 ? `${seconds}s` : ''}`
+    return `${minutes}m${seconds > 0 ? `${seconds}s` : ''}`
   }
-  return `T+${seconds}s`
+  return `${seconds}s`
 }
 
 export function routeLatencySeriesKeys(data: MetricsHistoryPoint[]) {

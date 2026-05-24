@@ -109,9 +109,9 @@ func buildRuntimeSettingsSupportResponse(now time.Time) RuntimeSettingsSupportRe
 		Decisions: []RuntimeSettingsDecision{
 			{
 				ID:        "streaming-media-runtime",
-				Decision:  "compatibility_only",
+				Decision:  "executed",
 				Status:    "decided",
-				Rationale: "APEX Load preserves LoadRunner-style streaming and media playback settings for migration review, but does not claim native media playback runtime semantics until a funded implementation and benchmark evidence exist.",
+				Rationale: "APEX Load now maps LoadRunner-style streaming settings into HTTP runtime pacing for media-like responses, including startup buffer delay, fixed bitrate shaping, and adaptive bitrate estimation.",
 				Evidence:  []string{"docs/LOADRUNNER_RTS_REFERENCE.md", "docs/RUNTIME_SETTINGS_PARITY.md", "/api/v1/runtime-settings/support-matrix"},
 			},
 		},

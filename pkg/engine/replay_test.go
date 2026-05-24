@@ -91,6 +91,62 @@ func TestReplayScriptRunsAllPhasesAndInterpolatesExtractions(t *testing.T) {
 	}
 }
 
+func TestReplayScriptInterpolatesParametersInEventsAndSnapshots(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{
+			ActionName:   action.Name,
+			Success:      false,
+			StatusCode:   404,
+			ErrorMessage: "not found",
+			Snapshot: &protocol.ErrorSnapshot{
+				RequestMethod: action.Method,
+				RequestURL:    action.Target,
+			},
+		}, nil
+	})
+
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name:     "Replay Parameter Script",
+		Protocol: protocolName,
+		Config: dsl.ScriptConfig{
+			ErrorHandling: dsl.ErrorHandlingConfig{
+				SnapshotOnError: true,
+			},
+		},
+		Parameters: []dsl.Parameter{{
+			Name:      "order_id",
+			Type:      "list",
+			Values:    []string{"ORDER-42"},
+			Update:    "once",
+			Selection: "sequential",
+		}},
+		Actions: []dsl.Action{{
+			Name:   "get-order",
+			Type:   "GET",
+			Method: "GET",
+			Target: "https://csi-gw-ext.att.com:443/orders/{{param.order_id}}",
+		}},
+	}, ReplayOptions{IgnoreThinkTime: true})
+	if err != nil {
+		t.Fatalf("ReplayScript returned error: %v", err)
+	}
+	if len(report.Events) != 1 {
+		t.Fatalf("event count = %d, want 1", len(report.Events))
+	}
+
+	wantURL := "https://csi-gw-ext.att.com:443/orders/ORDER-42"
+	event := report.Events[0]
+	if event.Target != wantURL {
+		t.Fatalf("event target = %q, want %q", event.Target, wantURL)
+	}
+	if event.Snapshot == nil || event.Snapshot.RequestURL != wantURL {
+		t.Fatalf("snapshot request url = %#v, want %q", event.Snapshot, wantURL)
+	}
+	if len(report.Snapshots) != 1 || report.Snapshots[0].RequestURL != wantURL {
+		t.Fatalf("stored snapshots = %#v, want one snapshot for %q", report.Snapshots, wantURL)
+	}
+}
+
 func TestReplayScriptPreservesSourceStepLabels(t *testing.T) {
 	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
 		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil

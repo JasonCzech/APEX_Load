@@ -49,10 +49,10 @@ describe('LoadRunnerImport', () => {
           id: 'streaming',
           area: 'Streaming',
           concept: 'Adaptive or fixed playback settings',
-          status: 'compatibility_only',
+          status: 'executed',
         },
       ],
-      notes: ['Streaming and media playback settings remain compatibility-only.'],
+      notes: ['Streaming settings execute in the HTTP runtime for media-like responses.'],
       tested_examples: [
         {
           title: 'Extended Web HTTP/HTML runtime import',
@@ -321,7 +321,7 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('HTTP: Timeouts, redirects, and connection reuse')
     expect(container.textContent).toContain('Tested Examples')
     expect(container.textContent).toContain('Known Caveats')
-    expect(container.textContent).toContain('Streaming and media playback settings remain compatibility-only')
+    expect(container.textContent).toContain('Streaming settings execute in the HTTP runtime for media-like responses')
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
     expect(fileInput).not.toBeNull()

@@ -84,9 +84,9 @@ export function formatModelTimeLabel(seconds: number): string {
   const hours = Math.floor(whole / 3600)
   const minutes = Math.floor((whole % 3600) / 60)
   const secs = whole % 60
-  if (hours > 0) return `T+${hours}h${minutes}m`
-  if (minutes > 0) return `T+${minutes}m${secs ? `${secs}s` : ''}`
-  return `T+${secs}s`
+  if (hours > 0) return `${hours}h${minutes}m`
+  if (minutes > 0) return `${minutes}m${secs ? `${secs}s` : ''}`
+  return `${secs}s`
 }
 
 export function validateStageTimeline(duration: string, stages: LoadStageDraft[]): StageTimelineValidationResult {
@@ -124,7 +124,7 @@ export function validateStageTimeline(duration: string, stages: LoadStageDraft[]
       status: 'error',
       totalSeconds,
       scenarioDurationSeconds,
-      message: `Stage schedule is ${formatModelTimeLabel(totalSeconds).replace('T+', '')}, longer than the ${formatModelTimeLabel(scenarioDurationSeconds).replace('T+', '')} scenario duration.`,
+      message: `Stage schedule is ${formatModelTimeLabel(totalSeconds)}, longer than the ${formatModelTimeLabel(scenarioDurationSeconds)} scenario duration.`,
     }
   }
 
@@ -133,7 +133,7 @@ export function validateStageTimeline(duration: string, stages: LoadStageDraft[]
       status: 'warning',
       totalSeconds,
       scenarioDurationSeconds,
-      message: `Stages cover ${formatModelTimeLabel(totalSeconds).replace('T+', '')}; the last target holds for the remaining ${formatModelTimeLabel(scenarioDurationSeconds - totalSeconds).replace('T+', '')}.`,
+      message: `Stages cover ${formatModelTimeLabel(totalSeconds)}; the last target holds for the remaining ${formatModelTimeLabel(scenarioDurationSeconds - totalSeconds)}.`,
     }
   }
 

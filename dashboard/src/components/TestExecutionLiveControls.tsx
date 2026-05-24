@@ -252,7 +252,7 @@ export default function TestExecutionLiveControls({
                       allowDecimals={false}
                     />
                     <Tooltip
-                      labelFormatter={(value) => `T+${formatTimeLong(Number(value))}`}
+                      labelFormatter={(value) => formatTimeLong(Number(value))}
                       contentStyle={{ background: 'rgba(33, 36, 47, 0.92)', border: '1px solid var(--border)', borderRadius: 10 }}
                       formatter={(value: number, name: string) => [value, name === 'total' ? 'Total' : name]}
                     />

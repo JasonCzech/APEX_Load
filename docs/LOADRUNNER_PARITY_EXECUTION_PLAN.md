@@ -290,7 +290,7 @@ Recent progress:
 - R2.2 is implemented across protocols that expose request/response artifacts. HTTP, browser, SOAP, Java-over-HTTP, WebSocket, and gRPC failure paths now populate snapshots so `snapshot_on_error` can capture protocol evidence for archive/debug workflows.
 - R2.3 is implemented for imported and manually authored browser scripts when preserved recorded-resource metadata is present. The engine forwards `recorded_resource_urls` into browser protocol config, browser replay enforces recorded-only resource loading, and validation warns when `download_resources = recorded` lacks the required metadata.
 - R2.4 is implemented as the supported execution slice for DFE/data-formatting chains. HTTP replay applies explicit `base64`, `gzip`, `json_to_xml`, `xml_to_json`, `url_decode`, `url_encode`, `html_unescape`, and `html_escape` transforms plus conservative base64/gzip auto-detection, while `docs/LOADRUNNER_RTS_REFERENCE.md` documents the bounded scope.
-- R2.5 is implemented for the planned preserved-only streaming/media scope. Import and validation responses warn that media playback semantics are not executed, include preserved streaming values for review, and keep those settings classified as compatibility-only in parity metadata.
+- R2.5 now executes the planned HTTP streaming/media scope. The HTTP runtime maps imported streaming mode, startup buffer, fixed bitrate, and bandwidth-estimation settings into media-like response pacing, and parity metadata classifies the setting as executed.
 
 ### Epic R3: Parity Verification Harness
 Goal: make parity claims testable and regression-resistant.
@@ -314,13 +314,13 @@ Recent progress:
 
 ### Runtime Parity Completion Ledger
 - R1 inventory/classification: complete through the code-owned LoadRunner RTS matrix, import metadata, validation metadata, dashboard/script-editor visibility, and migration-readiness scoring.
-- R2 execution gaps: complete for the planned Web HTTP/HTML scope through scoped extended logging, cross-protocol error snapshots, recorded-resource enforcement, supported DFE execution, and explicit streaming/media compatibility warnings.
+- R2 execution gaps: complete for the planned Web HTTP/HTML scope through scoped extended logging, cross-protocol error snapshots, recorded-resource enforcement, supported DFE execution, and HTTP streaming/media response pacing.
 - R3 verification harness: complete through golden Web HTTP/HTML fixtures, side-by-side support assertions, API-envelope parity regressions, and the published support matrix with tested examples.
 
 ### Runtime Parity Workstream Notes
 - Existing seams: `docs/LOADRUNNER_RTS_REFERENCE.md`, converter packages, `pkg/protocol/http`, browser protocol, validation APIs
 - Key risk: trying to chase every historical setting before closing the few that dominate real migrations
-- Completion checkpoint: W3 now has code-owned support classifications without partial entries in the planned RTS surface, import/validation envelopes, migration readiness scoring, tested golden fixtures, public RTS docs, expanded protocol snapshots, recorded-resource enforcement, supported DFE execution, and explicit streaming/media compatibility guidance.
+- Completion checkpoint: W3 now has code-owned support classifications without partial entries in the planned RTS surface, import/validation envelopes, migration readiness scoring, tested golden fixtures, public RTS docs, expanded protocol snapshots, recorded-resource enforcement, supported DFE execution, and HTTP streaming/media response pacing.
 
 ## Workstream 4: Auth / RBAC
 
@@ -495,7 +495,7 @@ Practical parity in these target areas is now tied to the following completed ga
 - Lifecycle notification webhooks now support Dynatrace Events API v2 payloads with API-token auth, optional entity selectors, event timeouts, and failure events mapped to Dynatrace `ERROR_EVENT` annotations.
 - Scripts can import target-side Prometheus text metrics through `config.observability.external_metrics`, carrying selected CPU, memory, queue-depth, or application gauges into live resource snapshots and archived resource samples.
 - Network emulation now has attribution as well as shaping: transaction results include a normalized `network_profile`, live metrics expose `network_profiles`, and archive reports aggregate response/error stats under `by_network_profile`.
-- Streaming/media compatibility warnings now include the preserved mode, buffer, fixed-bitrate, and bandwidth-estimation values so import review and validation explain exactly which LoadRunner settings remain non-executed.
+- Streaming/media settings now execute through HTTP media-response pacing, so import review no longer emits compatibility-only streaming warnings.
 - Browser/mobile capacity advice now classifies scenarios as `http`, `browser`, or `mixed`, applies conservative device-tier density caps for browser VUsers, and warns users that browser runtimes are diagnostic canaries rather than HTTP-scale goroutine VUsers.
 - TrueClient MobileWeb import now converts simple JavaScript scroll intent (`window.scrollTo` / `window.scrollBy`) into `browser_swipe` actions, reducing blocker repair items for common mobile review-only steps.
 - TrueClient MobileWeb import now also maps JavaScript `location` navigation assignments and `assign` / `replace` calls into `browser_navigate`, shrinking the unsupported JavaScript envelope for common page-transition scripts.

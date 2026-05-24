@@ -38,7 +38,7 @@ The support endpoint publishes six reusable profiles:
 
 ## Streaming And Media Decision
 
-Streaming/media runtime settings remain `compatibility_only`. APEX Load preserves imported playback mode, buffer, bitrate, and bandwidth-estimation settings so reviewers can compare migration inputs, but it does not claim native media playback semantics. A future implementation requires a funded runtime design, protocol fixtures, and benchmark evidence before the status can change.
+Streaming/media runtime settings are `executed` for HTTP scripts. APEX Load maps imported playback mode, buffer, bitrate, and bandwidth-estimation settings into media-like response pacing so fixed bitrate playback, startup buffering, and adaptive bandwidth estimates affect action duration and transfer telemetry.
 
 ## Evidence
 

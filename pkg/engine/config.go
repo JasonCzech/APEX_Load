@@ -105,6 +105,20 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 			cfg["web_network_simulation_packet_loss_pct"] = networkCfg.PacketLossPct
 		}
 	}
+	if streamingCfg := script.Config.WebRuntime.Streaming; streamingCfg.Mode != "" || streamingCfg.BufferSizeSeconds > 0 || streamingCfg.FixedBitrateKbps > 0 || streamingCfg.BandwidthEstimation != "" {
+		if streamingCfg.Mode != "" {
+			cfg["web_streaming_mode"] = streamingCfg.Mode
+		}
+		if streamingCfg.BufferSizeSeconds > 0 {
+			cfg["web_streaming_buffer_size_seconds"] = float64(streamingCfg.BufferSizeSeconds)
+		}
+		if streamingCfg.FixedBitrateKbps > 0 {
+			cfg["web_streaming_fixed_bitrate_kbps"] = float64(streamingCfg.FixedBitrateKbps)
+		}
+		if streamingCfg.BandwidthEstimation != "" {
+			cfg["web_streaming_bandwidth_estimation"] = streamingCfg.BandwidthEstimation
+		}
+	}
 	if webSocketCfg.ReadTimeoutMs > 0 {
 		cfg["websocket_read_timeout_ms"] = float64(webSocketCfg.ReadTimeoutMs)
 	}
