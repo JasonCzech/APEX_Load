@@ -334,6 +334,13 @@ describe('TestExecutionCharts context menu', () => {
     expect(titles[1]).toBe('Transactions Per Second')
   })
 
+  it('can suppress the chart-grid Load Impact card when the archive report owns it', async () => {
+    await renderCharts(null, false)
+
+    expect(container.querySelector('.load-impact-card')).toBeNull()
+    expect(chartTitles()[0]).toBe('Virtual Users')
+  })
+
   it('rearranges graph cards by dragging a chart grabber', async () => {
     await renderCharts()
 
@@ -527,7 +534,7 @@ describe('TestExecutionCharts context menu', () => {
     element.dispatchEvent(event)
   }
 
-  async function renderCharts(expandedChart: string | null = null) {
+  async function renderCharts(expandedChart: string | null = null, showLoadImpact = true) {
     await act(async () => {
       root.render(
         <TestExecutionCharts
@@ -549,6 +556,7 @@ describe('TestExecutionCharts context menu', () => {
           isMultiGroup={false}
           groupNames={[]}
           groupColors={['#00a3ff']}
+          showLoadImpact={showLoadImpact}
         />,
       )
     })

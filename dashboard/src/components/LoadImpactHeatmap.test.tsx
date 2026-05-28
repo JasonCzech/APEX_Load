@@ -2,10 +2,38 @@
 
 import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MetricsHistoryPoint } from '../types'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
+
+vi.mock('./LoadImpact3DHeatmap', () => ({
+  default: ({ model, onSelectedCellKeyChange }: {
+    model: {
+      rows: Array<{
+        cells: Array<{
+          metric: { id: string; label: string }
+          bucket: { id: string; label: string }
+          sampleCount: number
+        }>
+      }>
+    }
+    onSelectedCellKeyChange: (key: string) => void
+  }) => {
+    const cell = model.rows
+      .flatMap(row => row.cells)
+      .find(candidate => candidate.sampleCount > 0)
+    const key = cell ? `${cell.metric.id}:${cell.bucket.id}` : ''
+
+    return (
+      <div data-testid="mock-3d-heatmap">
+        <button type="button" onClick={() => onSelectedCellKeyChange(key)}>
+          Select 3D cell
+        </button>
+      </div>
+    )
+  },
+}))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -88,8 +116,45 @@ describe('LoadImpactHeatmap', () => {
     expect(container.textContent).toContain('No load-impact data yet.')
   })
 
+  it('switches to 3D mode and keeps cell selection wired to the detail table', async () => {
+    await act(async () => {
+      root.render(
+        <LoadImpactHeatmap
+          points={[
+            point('10:00:00', 5, { avgMs: 100, tps: 3, p95: 130 }),
+            point('10:00:01', 10, { avgMs: 140, tps: 4, p95: 180 }),
+          ]}
+        />,
+      )
+    })
+
+    const tab3d = buttonByText('3D')
+    expect(tab3d).not.toBeNull()
+
+    await act(async () => {
+      tab3d?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="mock-3d-heatmap"]')).not.toBeNull()
+    expect(container.querySelector('.load-impact-table')).toBeNull()
+    expect(tab3d?.getAttribute('aria-selected')).toBe('true')
+
+    const select3dCell = buttonByText('Select 3D cell')
+    await act(async () => {
+      select3dCell?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.load-impact-detail')?.textContent).toContain('ART at 5 VUsers')
+    expect(container.querySelector('.load-impact-detail')?.textContent).toContain('1 data points')
+  })
+
   function rowLabels() {
     return Array.from(container.querySelectorAll('.load-impact-table tbody th')).map(node => node.textContent)
+  }
+
+  function buttonByText(text: string) {
+    return Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === text) ?? null
   }
 })
 

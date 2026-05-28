@@ -69,6 +69,23 @@ export const LOAD_IMPACT_METRICS: LoadImpactMetric[] = [
   { id: 'diskWrite', key: 'diskWrite', label: 'Disk Write', unit: 'KB/s', category: 'resource' },
 ]
 
+export function loadImpactCellKey(cell: LoadImpactCell) {
+  return `${cell.metric.id}:${cell.bucket.id}`
+}
+
+export function formatLoadImpactCellTitle(cell: LoadImpactCell) {
+  if (cell.sampleCount === 0) {
+    return `${cell.bucket.label}: no ${cell.metric.label} samples`
+  }
+  return [
+    `${cell.bucket.label}`,
+    `${cell.metric.label} avg ${formatLoadImpactValue(cell.average, cell.metric.unit)}`,
+    `min ${formatLoadImpactValue(cell.min, cell.metric.unit)}`,
+    `max ${formatLoadImpactValue(cell.max, cell.metric.unit)}`,
+    `${cell.sampleCount} sample${cell.sampleCount === 1 ? '' : 's'}`,
+  ].join(' | ')
+}
+
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }

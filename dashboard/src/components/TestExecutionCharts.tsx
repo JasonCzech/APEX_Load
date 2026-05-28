@@ -47,6 +47,7 @@ interface Props {
   isMultiGroup: boolean
   groupNames: string[]
   groupColors: string[]
+  showLoadImpact?: boolean
 }
 
 export interface ChartMetricRow {
@@ -551,6 +552,7 @@ export default function TestExecutionCharts({
   isMultiGroup,
   groupNames,
   groupColors,
+  showLoadImpact = true,
 }: Props) {
   const [chartOrder, setChartOrder] = useState<string[]>(() => readStoredArray('apexload.execution.chartOrder'))
   const [hiddenChartIds, setHiddenChartIds] = useState<string[]>(() => readStoredArray('apexload.execution.hiddenCharts'))
@@ -1184,12 +1186,14 @@ export default function TestExecutionCharts({
         )}
       </div>
 
-      <LoadImpactHeatmap
-        points={filteredData}
-        title="Load Impact"
-        subtitle="Performance and resource behavior grouped by active VUser load."
-        emptyMessage="Load impact appears after live metrics include active VUsers and performance or resource samples."
-      />
+      {showLoadImpact && (
+        <LoadImpactHeatmap
+          points={filteredData}
+          title="Load Impact"
+          subtitle="Performance and resource behavior grouped by active VUser load."
+          emptyMessage="Load impact appears after live metrics include active VUsers and performance or resource samples."
+        />
+      )}
 
       {visibleCharts.length === 0 ? (
         <div className="charts-empty">

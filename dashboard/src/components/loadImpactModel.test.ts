@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import { MetricsHistoryPoint } from '../types'
-import { buildLoadImpactModel, formatLoadImpactValue } from './loadImpactModel'
+import {
+  buildLoadImpactModel,
+  formatLoadImpactCellTitle,
+  formatLoadImpactValue,
+  loadImpactCellKey,
+} from './loadImpactModel'
 
 describe('loadImpactModel', () => {
   it('uses exact VUser levels when there are 10 or fewer distinct loads', () => {
@@ -82,6 +87,17 @@ describe('loadImpactModel', () => {
     expect(formatLoadImpactValue(123.45, 'ms')).toBe('123ms')
     expect(formatLoadImpactValue(1.2345, '%')).toBe('1.23%')
     expect(formatLoadImpactValue(45.67, 'KB/s')).toBe('45.7 KB/s')
+  })
+
+  it('formats shared cell metadata for 2D and 3D views', () => {
+    const model = buildLoadImpactModel([
+      point('10:00:00', 5, { avgMs: 100 }),
+      point('10:00:01', 5, { avgMs: 140 }),
+    ])
+    const cell = model.rows[0].cells[0]
+
+    expect(loadImpactCellKey(cell)).toBe('avgMs:vusers-5')
+    expect(formatLoadImpactCellTitle(cell)).toBe('5 VUsers | ART avg 120ms | min 100ms | max 140ms | 2 samples')
   })
 })
 

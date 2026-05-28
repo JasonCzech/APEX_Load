@@ -1,7 +1,13 @@
-import { CSSProperties, useMemo, useState } from 'react'
+import { type CSSProperties, useMemo, useState } from 'react'
 
-import { MetricsHistoryPoint } from '../types'
-import { buildLoadImpactModel, formatLoadImpactValue, LoadImpactCell } from './loadImpactModel'
+import type { MetricsHistoryPoint } from '../types'
+import LoadImpact3DHeatmap from './LoadImpact3DHeatmap'
+import {
+  buildLoadImpactModel,
+  formatLoadImpactCellTitle,
+  formatLoadImpactValue,
+  loadImpactCellKey,
+} from './loadImpactModel'
 import './LoadImpactHeatmap.css'
 
 interface Props {
@@ -11,10 +17,6 @@ interface Props {
   loading?: boolean
   error?: string
   emptyMessage?: string
-}
-
-function cellKey(cell: LoadImpactCell) {
-  return `${cell.metric.id}:${cell.bucket.id}`
 }
 
 function formatPointTimestamp(point: MetricsHistoryPoint) {
@@ -29,19 +31,6 @@ function relatedValue(point: MetricsHistoryPoint, key: keyof MetricsHistoryPoint
   return typeof value === 'number' && Number.isFinite(value) ? formatLoadImpactValue(value, unit) : 'n/a'
 }
 
-function cellTitle(cell: LoadImpactCell) {
-  if (cell.sampleCount === 0) {
-    return `${cell.bucket.label}: no ${cell.metric.label} samples`
-  }
-  return [
-    `${cell.bucket.label}`,
-    `${cell.metric.label} avg ${formatLoadImpactValue(cell.average, cell.metric.unit)}`,
-    `min ${formatLoadImpactValue(cell.min, cell.metric.unit)}`,
-    `max ${formatLoadImpactValue(cell.max, cell.metric.unit)}`,
-    `${cell.sampleCount} sample${cell.sampleCount === 1 ? '' : 's'}`,
-  ].join(' | ')
-}
-
 export default function LoadImpactHeatmap({
   points,
   title = 'Load Impact',
@@ -51,11 +40,12 @@ export default function LoadImpactHeatmap({
   emptyMessage = 'Load impact appears after metrics include active VUsers and performance or resource samples.',
 }: Props) {
   const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d')
   const model = useMemo(() => buildLoadImpactModel(points), [points])
   const selectedCell = useMemo(() => {
     if (!selectedCellKey) return null
     for (const row of model.rows) {
-      const cell = row.cells.find(candidate => cellKey(candidate) === selectedCellKey)
+      const cell = row.cells.find(candidate => loadImpactCellKey(candidate) === selectedCellKey)
       if (cell) return cell
     }
     return null
@@ -68,10 +58,34 @@ export default function LoadImpactHeatmap({
           <h3 className="chart-title">{title}</h3>
           <p className="load-impact-copy">{subtitle}</p>
         </div>
-        <div className="load-impact-badges">
-          {loading && <span className="archive-chip">Loading</span>}
-          {!loading && model.pointCount > 0 && <span className="archive-chip">{model.pointCount} samples</span>}
-          {!loading && model.buckets.length > 0 && <span className="archive-chip">{model.buckets.length} load buckets</span>}
+        <div className="load-impact-header-actions">
+          {!loading && model.rows.length > 0 && model.buckets.length > 0 && (
+            <div className="load-impact-view-toggle" role="tablist" aria-label="Load Impact view mode">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={viewMode === '2d'}
+                className={`btn-chip ${viewMode === '2d' ? 'active' : ''}`}
+                onClick={() => setViewMode('2d')}
+              >
+                2D
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={viewMode === '3d'}
+                className={`btn-chip ${viewMode === '3d' ? 'active' : ''}`}
+                onClick={() => setViewMode('3d')}
+              >
+                3D
+              </button>
+            </div>
+          )}
+          <div className="load-impact-badges">
+            {loading && <span className="archive-chip">Loading</span>}
+            {!loading && model.pointCount > 0 && <span className="archive-chip">{model.pointCount} samples</span>}
+            {!loading && model.buckets.length > 0 && <span className="archive-chip">{model.buckets.length} load buckets</span>}
+          </div>
         </div>
       </div>
 
@@ -87,53 +101,62 @@ export default function LoadImpactHeatmap({
         </div>
       ) : (
         <>
-          <div className="load-impact-table-wrap">
-            <table className="load-impact-table">
-              <thead>
-                <tr>
-                  <th scope="col">Metric</th>
-                  {model.buckets.map(bucket => (
-                    <th key={bucket.id} scope="col">
-                      <span>{bucket.label}</span>
-                      <small>{bucket.sampleCount} total</small>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {model.rows.map(row => (
-                  <tr key={row.metric.id}>
-                    <th scope="row">
-                      <span>{row.metric.label}</span>
-                      {row.metric.unit && <small>{row.metric.unit}</small>}
-                    </th>
-                    {row.cells.map(cell => {
-                      const selected = selectedCellKey === cellKey(cell)
-                      const alpha = cell.sampleCount > 0 ? 0.12 + cell.intensity * 0.68 : 0
-                      return (
-                        <td key={cell.bucket.id}>
-                          <button
-                            type="button"
-                            className={`load-impact-cell${selected ? ' selected' : ''}`}
-                            disabled={cell.sampleCount === 0}
-                            title={cellTitle(cell)}
-                            aria-label={`${cell.metric.label} at ${cell.bucket.label}: ${cellTitle(cell)}`}
-                            onClick={() => setSelectedCellKey(cellKey(cell))}
-                            style={{
-                              '--load-impact-alpha': alpha,
-                            } as CSSProperties}
-                          >
-                            <strong>{formatLoadImpactValue(cell.average, cell.metric.unit)}</strong>
-                            <span>{cell.sampleCount}</span>
-                          </button>
-                        </td>
-                      )
-                    })}
+          {viewMode === '3d' ? (
+            <LoadImpact3DHeatmap
+              model={model}
+              selectedCellKey={selectedCellKey}
+              onSelectedCellKeyChange={setSelectedCellKey}
+            />
+          ) : (
+            <div className="load-impact-table-wrap">
+              <table className="load-impact-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Metric</th>
+                    {model.buckets.map(bucket => (
+                      <th key={bucket.id} scope="col">
+                        <span>{bucket.label}</span>
+                        <small>{bucket.sampleCount} total</small>
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {model.rows.map(row => (
+                    <tr key={row.metric.id}>
+                      <th scope="row">
+                        <span>{row.metric.label}</span>
+                        {row.metric.unit && <small>{row.metric.unit}</small>}
+                      </th>
+                      {row.cells.map(cell => {
+                        const selected = selectedCellKey === loadImpactCellKey(cell)
+                        const alpha = cell.sampleCount > 0 ? 0.12 + cell.intensity * 0.68 : 0
+                        const title = formatLoadImpactCellTitle(cell)
+                        return (
+                          <td key={cell.bucket.id}>
+                            <button
+                              type="button"
+                              className={`load-impact-cell${selected ? ' selected' : ''}`}
+                              disabled={cell.sampleCount === 0}
+                              title={title}
+                              aria-label={`${cell.metric.label} at ${cell.bucket.label}: ${title}`}
+                              onClick={() => setSelectedCellKey(loadImpactCellKey(cell))}
+                              style={{
+                                '--load-impact-alpha': alpha,
+                              } as CSSProperties}
+                            >
+                              <strong>{formatLoadImpactValue(cell.average, cell.metric.unit)}</strong>
+                              <span>{cell.sampleCount}</span>
+                            </button>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {selectedCell && selectedCell.sampleCount > 0 && (
             <div className="load-impact-detail">

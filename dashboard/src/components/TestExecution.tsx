@@ -357,6 +357,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         isMultiGroup={isMultiGroup}
         groupNames={groupNames}
         groupColors={GROUP_COLORS}
+        showLoadImpact={!(showArchiveSection && archiveReport)}
       />
 
       <TestExecutionSummary
