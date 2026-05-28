@@ -167,6 +167,44 @@ describe('TestExecutionCharts context menu', () => {
     expect(menuActionTexts()).toContain('Hide VUsers Overlay')
   })
 
+  it('toggles ART and TPS overlay lines from the graph context menu', async () => {
+    await renderCharts()
+
+    const vusersChart = container.querySelectorAll('.chart-card')[0]
+    expect(vusersChart?.textContent).toContain('Virtual Users')
+
+    await act(async () => {
+      vusersChart?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 180, clientY: 160 }))
+    })
+
+    expect(menuActionTexts()).not.toContain('Overlay VUsers')
+    expect(menuActionTexts()).toContain('Overlay ART')
+    expect(menuActionTexts()).toContain('Overlay TPS')
+
+    await act(async () => {
+      menuButton('Overlay ART')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(vusersChart?.querySelector('path[data-testid="mock-line"][data-name="ART"]')).not.toBeNull()
+    expect(vusersChart?.textContent).toContain('ART')
+    expect(window.localStorage.getItem('apexload.execution.artOverlayCharts')).toBe('["vusers"]')
+
+    await act(async () => {
+      vusersChart?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 180, clientY: 160 }))
+    })
+
+    expect(menuActionTexts()).toContain('Hide ART Overlay')
+    expect(menuActionTexts()).toContain('Overlay TPS')
+
+    await act(async () => {
+      menuButton('Overlay TPS')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(vusersChart?.querySelector('path[data-testid="mock-line"][data-name="TPS"]')).not.toBeNull()
+    expect(vusersChart?.textContent).toContain('TPS')
+    expect(window.localStorage.getItem('apexload.execution.tpsOverlayCharts')).toBe('["vusers"]')
+  })
+
   it('keeps synced graph tooltips while only the hovered chart displays the time label', async () => {
     await renderCharts()
 

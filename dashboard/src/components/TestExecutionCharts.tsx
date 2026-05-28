@@ -67,6 +67,7 @@ type ChartTimeAxisMode = 'clock' | 'relative'
 type ChartDensityMode = 'standard' | 'six_up'
 type ResponseTimeNetworkMode = 'end_to_end' | 'application'
 type ChartDropPosition = 'before' | 'after'
+type OverlayMetricKey = 'vusers' | 'avgMs' | 'tps'
 
 const chartConfigs: ChartConfig[] = [
   { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
@@ -95,6 +96,33 @@ const chartConfigs: ChartConfig[] = [
   { id: 'io', title: 'Network & Disk I/O (KB/s)', type: 'line-io' },
   { id: 'network_latency', title: 'Route Latency (ms)', type: 'line-network' },
 ]
+
+const overlayMetricRows: Record<OverlayMetricKey, ChartMetricRow> = {
+  vusers: { key: 'vusers', label: 'Active VUsers', color: 'var(--chart-1)' },
+  avgMs: { key: 'avgMs', label: 'ART', color: 'var(--chart-4)', unit: 'ms' },
+  tps: { key: 'tps', label: 'TPS', color: 'var(--chart-5)' },
+}
+
+const overlayMetricMenuLabels: Record<OverlayMetricKey, string> = {
+  vusers: 'VUsers',
+  avgMs: 'ART',
+  tps: 'TPS',
+}
+
+function isOverlayMetricAvailable(chart: ChartConfig, key: OverlayMetricKey) {
+  if (key === 'vusers') return chart.id !== 'vusers'
+  if (key === 'avgMs') return chart.id !== 'latency'
+  if (key === 'tps') return chart.id !== 'tps'
+  return false
+}
+
+function normalizeOverlayMetricKeys(chart: ChartConfig, includeVuserOverlay: boolean, overlayMetricKeys: OverlayMetricKey[] = []) {
+  const keys = new Set<OverlayMetricKey>(overlayMetricKeys)
+  if (includeVuserOverlay) {
+    keys.add('vusers')
+  }
+  return Array.from(keys).filter(key => isOverlayMetricAvailable(chart, key))
+}
 
 function normalizedChartOrder(order: string[]) {
   const knownIds = chartConfigs.map(chart => chart.id)
@@ -257,7 +285,13 @@ export function responseTimeDataWithoutNetworkLatency(data: MetricsHistoryPoint[
   })
 }
 
-export function chartMetricKeys(chart: ChartConfig, groupNames: string[], latencyKeys: string[], includeVuserOverlay = false) {
+export function chartMetricKeys(
+  chart: ChartConfig,
+  groupNames: string[],
+  latencyKeys: string[],
+  includeVuserOverlay = false,
+  overlayMetricKeys: OverlayMetricKey[] = [],
+) {
   let keys: string[]
   switch (chart.id) {
     case 'tps':
@@ -289,13 +323,19 @@ export function chartMetricKeys(chart: ChartConfig, groupNames: string[], latenc
       }
       break
   }
-  if (includeVuserOverlay && chart.id !== 'vusers' && !keys.includes('vusers')) {
-    return [...keys, 'vusers']
-  }
-  return keys
+  const overlays = normalizeOverlayMetricKeys(chart, includeVuserOverlay, overlayMetricKeys)
+    .filter(key => !keys.includes(key))
+  return overlays.length > 0 ? [...keys, ...overlays] : keys
 }
 
-export function chartMetricRows(chart: ChartConfig, groupNames: string[], latencyKeys: string[], groupColors: string[], includeVuserOverlay = false): ChartMetricRow[] {
+export function chartMetricRows(
+  chart: ChartConfig,
+  groupNames: string[],
+  latencyKeys: string[],
+  groupColors: string[],
+  includeVuserOverlay = false,
+  overlayMetricKeys: OverlayMetricKey[] = [],
+): ChartMetricRow[] {
   let rows: ChartMetricRow[]
   switch (chart.id) {
     case 'vusers':
@@ -343,10 +383,10 @@ export function chartMetricRows(chart: ChartConfig, groupNames: string[], latenc
           : []
       break
   }
-  if (includeVuserOverlay && chart.id !== 'vusers' && !rows.some(row => row.key === 'vusers')) {
-    return [...rows, { key: 'vusers', label: 'Active VUsers', color: 'var(--chart-1)' }]
-  }
-  return rows
+  const overlayRows = normalizeOverlayMetricKeys(chart, includeVuserOverlay, overlayMetricKeys)
+    .filter(key => !rows.some(row => row.key === key))
+    .map(key => overlayMetricRows[key])
+  return overlayRows.length > 0 ? [...rows, ...overlayRows] : rows
 }
 
 export function chartMetricSummary(data: MetricsHistoryPoint[], key: string): ChartMetricSummary {
@@ -367,8 +407,15 @@ export function chartMetricSummary(data: MetricsHistoryPoint[], key: string): Ch
   }
 }
 
-export function graphCsvForChart(chart: ChartConfig, data: MetricsHistoryPoint[], groupNames: string[], latencyKeys: string[], includeVuserOverlay = false) {
-  const keys = ['time', ...chartMetricKeys(chart, groupNames, latencyKeys, includeVuserOverlay)]
+export function graphCsvForChart(
+  chart: ChartConfig,
+  data: MetricsHistoryPoint[],
+  groupNames: string[],
+  latencyKeys: string[],
+  includeVuserOverlay = false,
+  overlayMetricKeys: OverlayMetricKey[] = [],
+) {
+  const keys = ['time', ...chartMetricKeys(chart, groupNames, latencyKeys, includeVuserOverlay, overlayMetricKeys)]
   const rows = [
     keys.map(escapeCsvCell).join(','),
     ...data.map(point => keys.map(key => escapeCsvCell(point[key])).join(',')),
@@ -458,8 +505,15 @@ function chartSnapshotSvg(card: HTMLElement, chart: ChartConfig) {
   return new XMLSerializer().serializeToString(clone)
 }
 
-function latestGraphValuesText(chart: ChartConfig, latest: MetricsHistoryPoint, groupNames: string[], latencyKeys: string[], latencyLatestValues: Record<string, number | undefined>) {
-  const keys = chartMetricKeys(chart, groupNames, latencyKeys)
+function latestGraphValuesText(
+  chart: ChartConfig,
+  latest: MetricsHistoryPoint,
+  groupNames: string[],
+  latencyKeys: string[],
+  latencyLatestValues: Record<string, number | undefined>,
+  overlayMetricKeys: OverlayMetricKey[] = [],
+) {
+  const keys = chartMetricKeys(chart, groupNames, latencyKeys, false, overlayMetricKeys)
   const lines = [`${chart.title}`]
   keys.forEach(key => {
     const value = chart.id === 'network_latency' ? latencyLatestValues[key] : latest[key]
@@ -497,6 +551,8 @@ export default function TestExecutionCharts({
   const [chartOrder, setChartOrder] = useState<string[]>(() => readStoredArray('apexload.execution.chartOrder'))
   const [hiddenChartIds, setHiddenChartIds] = useState<string[]>(() => readStoredArray('apexload.execution.hiddenCharts'))
   const [vuserOverlayChartIds, setVuserOverlayChartIds] = useState<string[]>(() => readStoredArray('apexload.execution.vuserOverlayCharts'))
+  const [artOverlayChartIds, setArtOverlayChartIds] = useState<string[]>(() => readStoredArray('apexload.execution.artOverlayCharts'))
+  const [tpsOverlayChartIds, setTpsOverlayChartIds] = useState<string[]>(() => readStoredArray('apexload.execution.tpsOverlayCharts'))
   const [chartMetricFilters, setChartMetricFilters] = useState<Record<string, string[]>>(() => readStoredRecordArray('apexload.execution.chartMetricFilters'))
   const [timeAxisMode, setTimeAxisMode] = useState<ChartTimeAxisMode>(() => readStoredTimeAxisMode())
   const [chartDensity, setChartDensity] = useState<ChartDensityMode>(() => readStoredChartDensity())
@@ -526,6 +582,16 @@ export default function TestExecutionCharts({
     if (typeof window === 'undefined') return
     window.localStorage.setItem('apexload.execution.vuserOverlayCharts', JSON.stringify(vuserOverlayChartIds))
   }, [vuserOverlayChartIds])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('apexload.execution.artOverlayCharts', JSON.stringify(artOverlayChartIds))
+  }, [artOverlayChartIds])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('apexload.execution.tpsOverlayCharts', JSON.stringify(tpsOverlayChartIds))
+  }, [tpsOverlayChartIds])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -665,30 +731,52 @@ export default function TestExecutionCharts({
     )
   }
 
-  const isVuserOverlayAvailable = (chart: ChartConfig) => chart.id !== 'vusers'
-  const isVuserOverlayEnabled = (chartId: string) => chartId !== 'vusers' && vuserOverlayChartIds.includes(chartId)
-  const toggleVuserOverlay = (chartId: string) => {
-    if (chartId === 'vusers') return
-    const enabling = !vuserOverlayChartIds.includes(chartId)
-    setVuserOverlayChartIds(prev =>
-      prev.includes(chartId)
-        ? prev.filter(id => id !== chartId)
-        : [...prev, chartId],
+  const overlayChartIdsForMetric = (key: OverlayMetricKey) => {
+    if (key === 'vusers') return vuserOverlayChartIds
+    if (key === 'avgMs') return artOverlayChartIds
+    return tpsOverlayChartIds
+  }
+
+  const setOverlayChartIdsForMetric = (key: OverlayMetricKey, updater: (prev: string[]) => string[]) => {
+    if (key === 'vusers') {
+      setVuserOverlayChartIds(updater)
+    } else if (key === 'avgMs') {
+      setArtOverlayChartIds(updater)
+    } else {
+      setTpsOverlayChartIds(updater)
+    }
+  }
+
+  const isOverlayMetricEnabled = (chart: ChartConfig, key: OverlayMetricKey) => {
+    return isOverlayMetricAvailable(chart, key) && overlayChartIdsForMetric(key).includes(chart.id)
+  }
+
+  const overlayMetricKeysForChart = (chart: ChartConfig): OverlayMetricKey[] => {
+    return (['vusers', 'avgMs', 'tps'] as OverlayMetricKey[]).filter(key => isOverlayMetricEnabled(chart, key))
+  }
+
+  const toggleOverlayMetric = (chart: ChartConfig, key: OverlayMetricKey) => {
+    if (!isOverlayMetricAvailable(chart, key)) return
+    const enabling = !overlayChartIdsForMetric(key).includes(chart.id)
+    setOverlayChartIdsForMetric(key, prev =>
+      prev.includes(chart.id)
+        ? prev.filter(id => id !== chart.id)
+        : [...prev, chart.id],
     )
     setChartMetricFilters(prev => {
-      const storedKeys = prev[chartId]
+      const storedKeys = prev[chart.id]
       if (enabling) {
-        return storedKeys && !storedKeys.includes('vusers')
-          ? { ...prev, [chartId]: [...storedKeys, 'vusers'] }
+        return storedKeys && !storedKeys.includes(key)
+          ? { ...prev, [chart.id]: [...storedKeys, key] }
           : prev
       }
-      if (!storedKeys?.includes('vusers')) return prev
-      const nextKeys = storedKeys.filter(key => key !== 'vusers')
-      return nextKeys.length > 0 ? { ...prev, [chartId]: nextKeys } : prev
+      if (!storedKeys?.includes(key)) return prev
+      const nextKeys = storedKeys.filter(storedKey => storedKey !== key)
+      return nextKeys.length > 0 ? { ...prev, [chart.id]: nextKeys } : prev
     })
   }
 
-  const metricRowsForChart = (chart: ChartConfig) => chartMetricRows(chart, groupNames, latencyKeys, groupColors, isVuserOverlayEnabled(chart.id))
+  const metricRowsForChart = (chart: ChartConfig) => chartMetricRows(chart, groupNames, latencyKeys, groupColors, false, overlayMetricKeysForChart(chart))
 
   const visibleMetricKeysForChart = (chart: ChartConfig, rows = metricRowsForChart(chart)) => {
     const availableKeys = rows.map(row => row.key)
@@ -696,9 +784,14 @@ export default function TestExecutionCharts({
     return storedKeys.length > 0 ? storedKeys : availableKeys
   }
 
-  const isVuserOverlayVisible = (chart: ChartConfig, visibleMetricKeys: string[]) => isVuserOverlayEnabled(chart.id) && visibleMetricKeys.includes('vusers')
+  const visibleOverlayMetricKeys = (chart: ChartConfig, visibleMetricKeys: string[]) => {
+    const overlayKeys = overlayMetricKeysForChart(chart)
+    return overlayKeys.filter(key => visibleMetricKeys.includes(key))
+  }
 
-  const metricYAxisId = (chart: ChartConfig, visibleMetricKeys: string[]) => isVuserOverlayVisible(chart, visibleMetricKeys) ? 'metric' : undefined
+  const isVuserOverlayVisible = (chart: ChartConfig, visibleMetricKeys: string[]) => visibleOverlayMetricKeys(chart, visibleMetricKeys).includes('vusers')
+
+  const metricYAxisId = (chart: ChartConfig, visibleMetricKeys: string[]) => visibleOverlayMetricKeys(chart, visibleMetricKeys).length > 0 ? 'metric' : undefined
 
   const showAllMetricRows = (chart: ChartConfig, rows: ChartMetricRow[]) => {
     setChartMetricFilters(prev => ({ ...prev, [chart.id]: rows.map(row => row.key) }))
@@ -720,7 +813,7 @@ export default function TestExecutionCharts({
     event.preventDefault()
     event.stopPropagation()
     const menuWidth = 224
-    const menuHeight = 260
+    const menuHeight = 340
     const viewportWidth = window.innerWidth || 1024
     const viewportHeight = window.innerHeight || 768
     setChartMenu({
@@ -744,13 +837,13 @@ export default function TestExecutionCharts({
   }
 
   const exportChartCsv = (chart: ChartConfig) => {
-    downloadTextFile(`${safeFileName(chart.title)}-data.csv`, graphCsvForChart(chart, chartDataFor(chart), groupNames, latencyKeys, isVuserOverlayEnabled(chart.id)), 'text/csv;charset=utf-8')
+    downloadTextFile(`${safeFileName(chart.title)}-data.csv`, graphCsvForChart(chart, chartDataFor(chart), groupNames, latencyKeys, false, overlayMetricKeysForChart(chart)), 'text/csv;charset=utf-8')
   }
 
   const copyLatestValues = (chart: ChartConfig) => {
     const chartData = chartDataFor(chart)
     const chartLatest = chartData[chartData.length - 1] || latest
-    const text = latestGraphValuesText(chart, chartLatest, groupNames, latencyKeys, latencyLatestValues)
+    const text = latestGraphValuesText(chart, chartLatest, groupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart))
     if (navigator.clipboard?.writeText) {
       void navigator.clipboard.writeText(text)
     }
@@ -878,27 +971,42 @@ export default function TestExecutionCharts({
     setResponseTimeNetworkMode(included ? 'end_to_end' : 'application')
   }
 
-  const renderVuserOverlayAxis = (chart: ChartConfig, visibleMetricKeys: string[]) => (
-    isVuserOverlayVisible(chart, visibleMetricKeys) ? (
-      <YAxis yAxisId="vusers" orientation="right" stroke="var(--chart-1)" fontSize={11} width={42} domain={[0, 'auto']} />
-    ) : null
-  )
+  const renderOverlayAxes = (chart: ChartConfig, visibleMetricKeys: string[]) => {
+    const visibleOverlayKeys = visibleOverlayMetricKeys(chart, visibleMetricKeys)
+    const showVuserAxis = visibleOverlayKeys.includes('vusers')
+    const showRateAxis = visibleOverlayKeys.some(key => key === 'avgMs' || key === 'tps')
+    return (
+      <>
+        {showVuserAxis && (
+          <YAxis yAxisId="vusers" orientation="right" stroke={overlayMetricRows.vusers.color} fontSize={11} width={42} domain={[0, 'auto']} />
+        )}
+        {showRateAxis && (
+          <YAxis yAxisId="rateOverlay" orientation="right" stroke="var(--text-muted)" fontSize={11} width={42} domain={[0, 'auto']} />
+        )}
+      </>
+    )
+  }
 
-  const renderVuserOverlayLine = (chart: ChartConfig, visibleMetricKeys: string[]) => (
-    isVuserOverlayVisible(chart, visibleMetricKeys) ? (
-      <Line
-        yAxisId="vusers"
-        type="monotone"
-        dataKey="vusers"
-        name="Active VUsers"
-        stroke="var(--chart-1)"
-        dot={false}
-        strokeWidth={1.75}
-        strokeDasharray="5 3"
-        isAnimationActive={false}
-      />
-    ) : null
-  )
+  const renderOverlayLines = (chart: ChartConfig, visibleMetricKeys: string[]) => {
+    const visibleOverlayKeys = visibleOverlayMetricKeys(chart, visibleMetricKeys)
+    return visibleOverlayKeys.map(key => {
+      const row = overlayMetricRows[key]
+      return (
+        <Line
+          key={`overlay-${key}`}
+          yAxisId={key === 'vusers' ? 'vusers' : 'rateOverlay'}
+          type="monotone"
+          dataKey={key}
+          name={row.label}
+          stroke={row.color}
+          dot={false}
+          strokeWidth={1.75}
+          strokeDasharray="5 3"
+          isAnimationActive={false}
+        />
+      )
+    })
+  }
 
   const renderMetricsTable = (chart: ChartConfig, rows: ChartMetricRow[], visibleMetricKeys: string[], chartData: MetricsHistoryPoint[]) => {
     if (rows.length === 0) {
@@ -1150,12 +1258,12 @@ export default function TestExecutionCharts({
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
                 <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} domain={chart.domain} />
-                {renderVuserOverlayAxis(chart, visibleMetricKeys)}
+                {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {chart.dataKey && showMetric(chart.dataKey) && (
                   <Area yAxisId={metricAxisIdForChart} type="monotone" dataKey={chart.dataKey} name="Total" stroke={chart.color!} fill={chart.color!} fillOpacity={0.15} isAnimationActive={false} />
                 )}
-                {renderVuserOverlayLine(chart, visibleMetricKeys)}
+                {renderOverlayLines(chart, visibleMetricKeys)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -1171,7 +1279,7 @@ export default function TestExecutionCharts({
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
                 <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} />
-                {renderVuserOverlayAxis(chart, visibleMetricKeys)}
+                {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {isMultiGroup && <Legend verticalAlign="bottom" height={36} />}
                 {chart.totalKey && showMetric(chart.totalKey) && (
@@ -1180,7 +1288,7 @@ export default function TestExecutionCharts({
                 {isMultiGroup && groupNames.map((name, index) => showMetric(`${name}_tps`) && (
                   <Line key={name} yAxisId={metricAxisIdForChart} type="monotone" dataKey={`${name}_tps`} name={name} stroke={groupColors[index % groupColors.length]} dot={false} isAnimationActive={false} />
                 ))}
-                {renderVuserOverlayLine(chart, visibleMetricKeys)}
+                {renderOverlayLines(chart, visibleMetricKeys)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -1196,7 +1304,7 @@ export default function TestExecutionCharts({
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
                 <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} />
-                {renderVuserOverlayAxis(chart, visibleMetricKeys)}
+                {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 <Legend verticalAlign="bottom" height={36} />
                 {showMetric('avgMs') && (
@@ -1208,7 +1316,7 @@ export default function TestExecutionCharts({
                 {showMetric('p50') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p50" name="P50" stroke="var(--chart-5)" dot={false} strokeWidth={1.25} strokeDasharray="3 3" isAnimationActive={false} />}
                 {showMetric('p90') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p90" name="P90" stroke="var(--chart-3)" dot={false} strokeWidth={1.25} strokeDasharray="3 3" isAnimationActive={false} />}
                 {showMetric('p99') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p99" name="P99" stroke="var(--chart-4)" dot={false} strokeWidth={1.25} strokeDasharray="4 2" isAnimationActive={false} />}
-                {renderVuserOverlayLine(chart, visibleMetricKeys)}
+                {renderOverlayLines(chart, visibleMetricKeys)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -1224,13 +1332,13 @@ export default function TestExecutionCharts({
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
                 <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} domain={chart.domain} />
-                {renderVuserOverlayAxis(chart, visibleMetricKeys)}
+                {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 <Legend verticalAlign="bottom" height={36} />
                 {chart.keys!.filter(key => showMetric(key.k)).map((key) => (
                   <Area key={key.k} yAxisId={metricAxisIdForChart} type="monotone" dataKey={key.k} name={key.n} stroke={key.c} fill={key.c} fillOpacity={0.2} isAnimationActive={false} />
                 ))}
-                {renderVuserOverlayLine(chart, visibleMetricKeys)}
+                {renderOverlayLines(chart, visibleMetricKeys)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -1246,7 +1354,7 @@ export default function TestExecutionCharts({
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
                 <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} />
-                {renderVuserOverlayAxis(chart, visibleMetricKeys)}
+                {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 <Legend verticalAlign="bottom" height={36} />
                 {latencyKeys.map((key, index) => showMetric(key) && (
@@ -1262,7 +1370,7 @@ export default function TestExecutionCharts({
                       isAnimationActive={false}
                     />
                   ))}
-                {renderVuserOverlayLine(chart, visibleMetricKeys)}
+                {renderOverlayLines(chart, visibleMetricKeys)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -1278,14 +1386,14 @@ export default function TestExecutionCharts({
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
                 <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} />
-                {renderVuserOverlayAxis(chart, visibleMetricKeys)}
+                {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 <Legend />
                 {showMetric('netSent') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="netSent" name="Net Egress" stroke="var(--chart-1)" dot={false} strokeWidth={2} isAnimationActive={false} />}
                 {showMetric('netRecv') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="netRecv" name="Net Ingress" stroke="var(--chart-2)" dot={false} strokeWidth={2} isAnimationActive={false} />}
                 {showMetric('diskRead') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="diskRead" name="Disk Read" stroke="var(--chart-3)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}
                 {showMetric('diskWrite') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="diskWrite" name="Disk Write" stroke="var(--chart-6)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}
-                {renderVuserOverlayLine(chart, visibleMetricKeys)}
+                {renderOverlayLines(chart, visibleMetricKeys)}
                 {showRefArea && (
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
@@ -1314,11 +1422,13 @@ export default function TestExecutionCharts({
         >
           <div className="chart-context-menu-title">{contextChart.title}</div>
           <button type="button" role="menuitem" onClick={() => runChartAction(onResetZoom)}>Reset Zoom</button>
-          {isVuserOverlayAvailable(contextChart) && (
-            <button type="button" role="menuitem" onClick={() => runChartAction(() => toggleVuserOverlay(contextChart.id))}>
-              {isVuserOverlayEnabled(contextChart.id) ? 'Hide VUsers Overlay' : 'Overlay VUsers'}
-            </button>
-          )}
+          {(['vusers', 'avgMs', 'tps'] as OverlayMetricKey[])
+            .filter(key => isOverlayMetricAvailable(contextChart, key))
+            .map(key => (
+              <button key={key} type="button" role="menuitem" onClick={() => runChartAction(() => toggleOverlayMetric(contextChart, key))}>
+                {isOverlayMetricEnabled(contextChart, key) ? `Hide ${overlayMetricMenuLabels[key]} Overlay` : `Overlay ${overlayMetricMenuLabels[key]}`}
+              </button>
+            ))}
           {contextChart.id === 'latency' && (
             <button type="button" role="menuitem" onClick={() => runChartAction(() => setResponseTimeNetworkLatencyIncluded(responseTimeNetworkMode === 'application'))}>
               {responseTimeNetworkMode === 'application' ? 'Include Network Latency' : 'Remove Network Latency'}

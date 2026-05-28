@@ -3,6 +3,7 @@ import {
 } from '../types'
 import TestExecutionArchive from './TestExecutionArchive'
 import { useExecutionActionBridge } from './useExecutionActionBridge'
+import { useExecutionArchiveResourceHistory } from './useExecutionArchiveResourceHistory'
 import { useExecutionArchiveModel } from './useExecutionArchiveModel'
 import { useExecutionLiveControls } from './useExecutionLiveControls'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
@@ -51,6 +52,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     scriptDetailsError,
   } = useExecutionScenarioPreviewModel(test)
   const { localMetricsHistory, latestMetrics } = useExecutionMetricsStream(testId, test?.status)
+  const { archiveResourceHistory } = useExecutionArchiveResourceHistory(test)
   const {
     filteredData,
     summary,
@@ -67,6 +69,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     test,
     history,
     localMetricsHistory,
+    archiveResourceHistory,
   })
   const {
     controlFeedback,

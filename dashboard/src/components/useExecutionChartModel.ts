@@ -17,12 +17,14 @@ interface UseExecutionChartModelOptions {
   test: TestSummary | null
   history: MetricsHistoryPoint[]
   localMetricsHistory: MetricsHistoryPoint[]
+  archiveResourceHistory?: MetricsHistoryPoint[]
 }
 
 export function useExecutionChartModel({
   test,
   history,
   localMetricsHistory,
+  archiveResourceHistory = [],
 }: UseExecutionChartModelOptions) {
   const [chartZoomState, dispatchChartZoom] = useReducer(executionChartZoomReducer, initialExecutionChartZoomState)
   const mappedBackendHistory = useMemo(() => {
@@ -34,9 +36,10 @@ export function useExecutionChartModel({
       mappedBackendHistory,
       localMetricsHistory,
       fallbackHistory: history,
+      archiveResourceHistory,
       status: test?.status,
     })
-  }, [history, localMetricsHistory, mappedBackendHistory, test?.status])
+  }, [archiveResourceHistory, history, localMetricsHistory, mappedBackendHistory, test?.status])
 
   const filteredData = useMemo(() => {
     return filterExecutionChartData(chartData, chartZoomState.timeRange, chartZoomState.zoomRange)

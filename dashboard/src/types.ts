@@ -554,6 +554,22 @@ export interface RunArchiveResourcePeaks {
   disk_write_kbps: number
 }
 
+export interface ResourceSample {
+  timestamp: string
+  test_id?: string
+  test_name?: string
+  active_vusers?: number
+  cpu_process_pct: number
+  cpu_free_pct: number
+  mem_process_mb: number
+  mem_free_mb: number
+  net_sent_kbps: number
+  net_recv_kbps: number
+  disk_read_kbps: number
+  disk_write_kbps: number
+  external_metrics?: Record<string, number>
+}
+
 export interface RunArchiveOverview {
   transactions: number
   errors: number

@@ -1,4 +1,4 @@
-import { LiveMetrics, MetricsHistoryPoint, TestStatus } from '../types'
+import { LiveMetrics, MetricsHistoryPoint, ResourceSample, TestStatus } from '../types'
 import { latencySeriesKeyForTarget } from './latencySeries'
 
 export interface ExecutionChartSummary {
@@ -81,10 +81,101 @@ export function mapExecutionHistory(history: LiveMetrics[] | undefined): Metrics
   return history.map(mapExecutionMetricToHistoryPoint)
 }
 
+export function mapArchiveResourceSamples(samples: ResourceSample[] | undefined): MetricsHistoryPoint[] {
+  if (!samples?.length) {
+    return []
+  }
+
+  return samples
+    .map((sample) => {
+      const timestampMs = Date.parse(sample.timestamp)
+      return {
+        time: new Date(sample.timestamp).toLocaleTimeString(),
+        timestampMs: Number.isNaN(timestampMs) ? undefined : timestampMs,
+        vusers: sample.active_vusers ?? 0,
+        tps: 0,
+        avgMs: 0,
+        errorPct: 0,
+        p50: 0,
+        p90: 0,
+        p99: 0,
+        cpuProcess: sample.cpu_process_pct,
+        cpuFree: sample.cpu_free_pct,
+        memProcess: sample.mem_process_mb,
+        memFree: sample.mem_free_mb,
+        netSent: sample.net_sent_kbps,
+        netRecv: sample.net_recv_kbps,
+        diskRead: sample.disk_read_kbps,
+        diskWrite: sample.disk_write_kbps,
+      }
+    })
+    .filter(point => typeof point.timestampMs === 'number')
+}
+
+export function mergeArchiveResourceHistory(
+  chartHistory: MetricsHistoryPoint[],
+  archiveResourceHistory: MetricsHistoryPoint[] | undefined,
+): MetricsHistoryPoint[] {
+  if (!archiveResourceHistory?.length) {
+    return chartHistory
+  }
+
+  if (chartHistory.length === 0) {
+    return [...archiveResourceHistory]
+  }
+
+  const resourcesByTimestamp = new Map<number, MetricsHistoryPoint>()
+  archiveResourceHistory.forEach((point) => {
+    if (typeof point.timestampMs === 'number') {
+      resourcesByTimestamp.set(point.timestampMs, point)
+    }
+  })
+
+  const matchedResourceTimestamps = new Set<number>()
+  const merged = chartHistory.map((point) => {
+    if (typeof point.timestampMs !== 'number') {
+      return point
+    }
+    const resourcePoint = resourcesByTimestamp.get(point.timestampMs)
+    if (!resourcePoint) {
+      return point
+    }
+    matchedResourceTimestamps.add(point.timestampMs)
+    return {
+      ...point,
+      vusers: point.vusers || resourcePoint.vusers,
+      cpuProcess: resourcePoint.cpuProcess,
+      cpuFree: resourcePoint.cpuFree,
+      memProcess: resourcePoint.memProcess,
+      memFree: resourcePoint.memFree,
+      netSent: resourcePoint.netSent,
+      netRecv: resourcePoint.netRecv,
+      diskRead: resourcePoint.diskRead,
+      diskWrite: resourcePoint.diskWrite,
+    }
+  })
+
+  const resourceOnlyPoints = archiveResourceHistory.filter(point => (
+    typeof point.timestampMs === 'number' && !matchedResourceTimestamps.has(point.timestampMs)
+  ))
+
+  if (resourceOnlyPoints.length === 0) {
+    return merged
+  }
+
+  return [...merged, ...resourceOnlyPoints].sort((left, right) => {
+    if (typeof left.timestampMs === 'number' && typeof right.timestampMs === 'number') {
+      return left.timestampMs - right.timestampMs
+    }
+    return 0
+  })
+}
+
 interface BuildExecutionChartDataOptions {
   mappedBackendHistory: MetricsHistoryPoint[]
   localMetricsHistory: MetricsHistoryPoint[]
   fallbackHistory: MetricsHistoryPoint[]
+  archiveResourceHistory?: MetricsHistoryPoint[]
   status?: TestStatus
 }
 
@@ -92,6 +183,7 @@ export function buildExecutionChartData({
   mappedBackendHistory,
   localMetricsHistory,
   fallbackHistory,
+  archiveResourceHistory,
   status,
 }: BuildExecutionChartDataOptions): MetricsHistoryPoint[] {
   let combined: MetricsHistoryPoint[] = []
@@ -120,7 +212,8 @@ export function buildExecutionChartData({
     }
   }
 
-  const pointsWithRelativeRunTime = addRelativeRunTime(deduped)
+  const resourceEnrichedPoints = mergeArchiveResourceHistory(deduped, archiveResourceHistory)
+  const pointsWithRelativeRunTime = addRelativeRunTime(resourceEnrichedPoints)
 
   if (status === 'PAUSED' && pointsWithRelativeRunTime.length > 0) {
     const lastPoint = pointsWithRelativeRunTime[pointsWithRelativeRunTime.length - 1]

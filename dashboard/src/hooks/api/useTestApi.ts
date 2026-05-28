@@ -10,6 +10,7 @@ import {
   LoadModelTemplatesResponse,
   LoadModelValidationReport,
   LiveMetrics,
+  ResourceSample,
   RunArchiveManifest,
   RunArchiveReport,
   RuntimeSettingsOverride,
@@ -167,7 +168,7 @@ type AdjustDurationResponse = {
 }
 
 type ArchiveTransactionsResponse = ArchivePage<TransactionEvent>
-type ArchiveResourcesResponse = ArchivePage<unknown>
+type ArchiveResourcesResponse = ArchivePage<ResourceSample>
 type ArchiveSummariesResponse = ArchivePage<IntervalSummaryRecord>
 
 function buildQuery(params?: Record<string, string | number | boolean | undefined>) {
