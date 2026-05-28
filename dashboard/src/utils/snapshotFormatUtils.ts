@@ -33,35 +33,115 @@ function formatJSONBody(body: string): string {
   }
 }
 
+function decodeSafeTextEntity(entity: string): string {
+  const lower = entity.toLowerCase()
+  const namedEntities: Record<string, string> = {
+    '&amp;': '&',
+    '&apos;': "'",
+    '&nbsp;': ' ',
+    '&quot;': '"',
+  }
+  if (namedEntities[lower]) return namedEntities[lower]
+  if (lower === '&lt;' || lower === '&gt;') return entity
+
+  const decimalMatch = entity.match(/^&#(\d+);$/)
+  if (decimalMatch) {
+    const codePoint = Number(decimalMatch[1])
+    if (Number.isInteger(codePoint) && codePoint !== 60 && codePoint !== 62) {
+      try {
+        return String.fromCodePoint(codePoint)
+      } catch {
+        return entity
+      }
+    }
+  }
+
+  const hexMatch = entity.match(/^&#x([0-9a-f]+);$/i)
+  if (hexMatch) {
+    const codePoint = Number.parseInt(hexMatch[1], 16)
+    if (Number.isInteger(codePoint) && codePoint !== 60 && codePoint !== 62) {
+      try {
+        return String.fromCodePoint(codePoint)
+      } catch {
+        return entity
+      }
+    }
+  }
+
+  return entity
+}
+
+function decodeMarkupTextEntities(value: string): string {
+  const tagPattern = /<[^>]*>/g
+  let cursor = 0
+  let decoded = ''
+
+  for (const match of value.matchAll(tagPattern)) {
+    const index = match.index ?? 0
+    if (index > cursor) {
+      decoded += value.slice(cursor, index).replace(/&(?:amp|apos|nbsp|quot|lt|gt|#\d+|#x[0-9a-f]+);/gi, decodeSafeTextEntity)
+    }
+    decoded += match[0]
+    cursor = index + match[0].length
+  }
+
+  if (cursor < value.length) {
+    decoded += value.slice(cursor).replace(/&(?:amp|apos|nbsp|quot|lt|gt|#\d+|#x[0-9a-f]+);/gi, decodeSafeTextEntity)
+  }
+
+  return decoded
+}
+
+function getMarkupTagName(value: string): string {
+  const match = value.match(/^<\/?\s*([^\s/>]+)/)
+  return match?.[1]?.toLowerCase() || ''
+}
+
 function formatXMLBody(body: string): string {
   const normalized = body.trim().replace(/>\s+</g, '><')
   if (!normalized.startsWith('<')) return body
 
-  const tokens = normalized
-    .replace(/(>)(<)(\/?)/g, '$1\n$2$3')
-    .split('\n')
-    .filter(Boolean)
+  const tokens = normalized.match(/<[^>]+>|[^<]+/g)?.filter(token => token.trim()) || []
 
   let indentLevel = 0
   const lines: string[] = []
 
-  tokens.forEach(token => {
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]
     const trimmed = token.trim()
-    if (!trimmed) return
+    if (!trimmed) continue
 
     if (/^<\//.test(trimmed)) {
       indentLevel = Math.max(indentLevel - 1, 0)
+      lines.push(`${'  '.repeat(indentLevel)}${trimmed}`)
+      continue
     }
 
-    lines.push(`${'  '.repeat(indentLevel)}${trimmed}`)
+    if (!trimmed.startsWith('<')) {
+      lines.push(`${'  '.repeat(indentLevel)}${decodeMarkupTextEntities(trimmed)}`)
+      continue
+    }
 
     const opensBlock = /^<(?!!|\?|\/)([^>]+)>$/.test(trimmed)
       && !/\/>$/.test(trimmed)
       && !/<[^>]+>.*<\/[^>]+>$/.test(trimmed)
     if (opensBlock) {
-      indentLevel += 1
+      const nextToken = tokens[index + 1]?.trim()
+      const closingToken = tokens[index + 2]?.trim()
+      const tagName = getMarkupTagName(trimmed)
+      const closingTagName = closingToken ? getMarkupTagName(closingToken) : ''
+      if (nextToken && !nextToken.startsWith('<') && closingToken?.startsWith('</') && tagName === closingTagName) {
+        lines.push(`${'  '.repeat(indentLevel)}${trimmed}${decodeMarkupTextEntities(nextToken)}${closingToken}`)
+        index += 2
+      } else {
+        lines.push(`${'  '.repeat(indentLevel)}${trimmed}`)
+        indentLevel += 1
+      }
+      continue
     }
-  })
+
+    lines.push(`${'  '.repeat(indentLevel)}${trimmed}`)
+  }
 
   return lines.join('\n')
 }
@@ -81,6 +161,25 @@ export function formatCapturedHeaders(headers?: Record<string, string>, emptyMes
   return Object.entries(headers)
     .map(([key, value]) => `${key}: ${value}`)
     .join('\n')
+}
+
+export function formatSnapshotRequestLineAndHeaders(snapshot?: SnapshotCopySection): string {
+  const requestLine = `${snapshot?.request_method || 'n/a'} ${snapshot?.request_url || ''}`.trim()
+  return [
+    requestLine,
+    '',
+    'Headers',
+    formatCapturedHeaders(snapshot?.request_headers),
+  ].join('\n')
+}
+
+export function formatSnapshotResponseStatusAndHeaders(snapshot?: SnapshotCopySection, fallbackStatus?: number): string {
+  return [
+    `Status: ${String(snapshot?.response_status || fallbackStatus || 'n/a')}`,
+    '',
+    'Headers',
+    formatCapturedHeaders(snapshot?.response_headers),
+  ].join('\n')
 }
 
 export function formatCapturedBody(body?: string, headers?: Record<string, string>, emptyMessage = 'No body captured'): string {

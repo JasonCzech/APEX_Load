@@ -20,6 +20,9 @@ func TestStaticRoutesServeIndexForClientPath(t *testing.T) {
 	if contentType := resp.Header().Get("Content-Type"); !strings.Contains(contentType, "text/html") {
 		t.Fatalf("content-type = %q, want text/html", contentType)
 	}
+	if got := resp.Header().Get("Permissions-Policy"); got != "clipboard-write=(self)" {
+		t.Fatalf("permissions-policy = %q, want clipboard-write=(self)", got)
+	}
 	if !strings.Contains(resp.Body.String(), "<div id=\"root\"></div>") {
 		t.Fatalf("body = %q, want dashboard shell", resp.Body.String())
 	}

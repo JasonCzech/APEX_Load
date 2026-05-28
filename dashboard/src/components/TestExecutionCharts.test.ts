@@ -8,6 +8,7 @@ import {
   formatRelativeRunTime,
   graphCsvForChart,
   latestRouteLatencyValues,
+  responseTimeDataWithoutNetworkLatency,
   routeLatencySeriesKeys,
   type ChartConfig,
 } from './TestExecutionCharts'
@@ -105,6 +106,55 @@ describe('chartStateForMonitorPreset', () => {
       { key: 'p90', label: 'P90', color: 'var(--chart-3)', unit: 'ms' },
       { key: 'p99', label: 'P99', color: 'var(--chart-4)', unit: 'ms' },
     ])
+  })
+
+  it('can subtract measured route latency from response time chart data', () => {
+    const edgeKey = 'latency_edge'
+    const serviceKey = 'latency_service'
+    const data = [
+      {
+        time: '10:00:00',
+        vusers: 1,
+        tps: 1,
+        avgMs: 100,
+        errorPct: 0,
+        p50: 80,
+        p90: 120,
+        p99: 160,
+        Checkout_avgMs: 90,
+        [edgeKey]: 10,
+        [serviceKey]: 30,
+      },
+      {
+        time: '10:00:01',
+        vusers: 1,
+        tps: 1,
+        avgMs: 8,
+        errorPct: 0,
+        p50: 7,
+        p90: 9,
+        p99: 11,
+        Checkout_avgMs: 12,
+        [edgeKey]: 20,
+      },
+      {
+        time: '10:00:02',
+        vusers: 1,
+        tps: 1,
+        avgMs: 105,
+        errorPct: 0,
+        p50: 85,
+        p90: 125,
+        p99: 165,
+        Checkout_avgMs: 95,
+      },
+    ]
+
+    const adjusted = responseTimeDataWithoutNetworkLatency(data, [edgeKey, serviceKey], ['Checkout'])
+
+    expect(adjusted[0]).toMatchObject({ avgMs: 80, Checkout_avgMs: 70, p50: 60, p90: 100, p99: 140 })
+    expect(adjusted[1]).toMatchObject({ avgMs: 0, Checkout_avgMs: 0, p50: 0, p90: 0, p99: 0 })
+    expect(adjusted[2]).toBe(data[2])
   })
 
   it('summarizes metric rows from finite samples only', () => {

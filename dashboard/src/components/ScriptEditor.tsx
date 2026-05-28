@@ -3672,7 +3672,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                             className="btn btn-sm btn-ghost"
                                             onClick={() => void handleCopyReplaySnapshotSection(`${index}:request`, formatSnapshotRequestSection(event.snapshot))}
                                           >
-                                            {copiedReplaySnapshotSection === `${index}:request` ? 'Copied' : 'Copy request'}
+                                            {copiedReplaySnapshotSection === `${index}:request` ? 'Copied' : 'Copy full request'}
                                           </button>
                                         </div>
                                         <pre>{`${event.snapshot.request_method || 'n/a'} ${event.snapshot.request_url || ''}`.trim()}</pre>
@@ -3691,7 +3691,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                             className="btn btn-sm btn-ghost"
                                             onClick={() => void handleCopyReplaySnapshotSection(`${index}:response`, formatSnapshotResponseSection(event.snapshot, event.status_code))}
                                           >
-                                            {copiedReplaySnapshotSection === `${index}:response` ? 'Copied' : 'Copy response'}
+                                            {copiedReplaySnapshotSection === `${index}:response` ? 'Copied' : 'Copy full response'}
                                           </button>
                                         </div>
                                         <pre>{String(event.snapshot.response_status || event.status_code || 'n/a')}</pre>

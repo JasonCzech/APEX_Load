@@ -33,3 +33,108 @@
 .snapshot-code-token-text {
   color: var(--code-text);
 }
+
+.snapshot-full-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: var(--modal-backdrop);
+}
+
+.snapshot-full-dialog {
+  width: min(980px, calc(100vw - 56px));
+  max-height: min(84vh, calc(100vh - 56px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+}
+
+.snapshot-full-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.snapshot-full-dialog-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.snapshot-full-dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.snapshot-full-dialog-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.snapshot-full-dialog-body pre {
+  margin: 0;
+  max-height: none;
+  min-height: 360px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.snapshot-full-dialog-copy-source {
+  width: 100%;
+  min-height: 360px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--code-bg);
+  color: var(--code-text);
+  font: inherit;
+  font-family: var(--font-mono);
+  line-height: 1.5;
+  padding: 14px;
+  white-space: pre;
+}
+
+@media (max-width: 640px) {
+  .snapshot-full-dialog-backdrop {
+    align-items: stretch;
+    padding: 14px;
+  }
+
+  .snapshot-full-dialog {
+    width: 100%;
+    max-height: calc(100vh - 28px);
+  }
+
+  .snapshot-full-dialog-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .snapshot-full-dialog-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .snapshot-full-dialog-body pre {
+    min-height: 280px;
+  }
+
+  .snapshot-full-dialog-copy-source {
+    min-height: 280px;
+  }
+}

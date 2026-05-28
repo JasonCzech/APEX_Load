@@ -56,7 +56,7 @@ vi.mock('recharts', () => {
     ),
     LineChart: MockChart,
     ReferenceArea: Mock,
-    ResponsiveContainer: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+    ResponsiveContainer: ({ children, height }: { children?: ReactNode; height?: number }) => <div data-testid="mock-responsive-container" data-height={String(height ?? '')}>{children}</div>,
     Tooltip: MockTooltip,
     XAxis: Mock,
     YAxis: Mock,
@@ -296,6 +296,49 @@ describe('TestExecutionCharts context menu', () => {
     expect(titles[1]).toBe('Transactions Per Second')
   })
 
+  it('rearranges graph cards by dragging a chart grabber', async () => {
+    await renderCharts()
+
+    expect(chartTitles().slice(0, 3)).toEqual([
+      'Virtual Users',
+      'Transactions Per Second',
+      'Response Time (ms)',
+    ])
+
+    const cards = () => Array.from(container.querySelectorAll<HTMLElement>('.chart-card'))
+    const responseCard = cards().find(card => card.textContent?.includes('Response Time (ms)'))
+    const vusersCard = cards().find(card => card.textContent?.includes('Virtual Users'))
+    const responseGrabber = responseCard?.querySelector<HTMLElement>('.chart-drag-handle')
+    expect(responseGrabber).not.toBeNull()
+
+    const dataTransfer = createDragDataTransfer()
+    await act(async () => {
+      dispatchDragEvent(responseGrabber!, 'dragstart', dataTransfer)
+      dispatchDragEvent(vusersCard!, 'dragover', dataTransfer, { clientX: 0, clientY: 0 })
+      dispatchDragEvent(vusersCard!, 'drop', dataTransfer, { clientX: 0, clientY: 0 })
+      dispatchDragEvent(responseGrabber!, 'dragend', dataTransfer)
+    })
+
+    expect(chartTitles()[0]).toBe('Response Time (ms)')
+    expect(window.localStorage.getItem('apexload.execution.chartOrder')).toContain('["latency","vusers","tps"')
+  })
+
+  it('rearranges graph cards from the grabber keyboard controls', async () => {
+    await renderCharts()
+
+    const tpsGrabber = Array.from(container.querySelectorAll<HTMLElement>('.chart-card'))
+      .find(card => card.textContent?.includes('Transactions Per Second'))
+      ?.querySelector<HTMLElement>('.chart-drag-handle')
+    expect(tpsGrabber).not.toBeNull()
+
+    await act(async () => {
+      tpsGrabber?.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Home' }))
+    })
+
+    expect(chartTitles()[0]).toBe('Transactions Per Second')
+    expect(window.localStorage.getItem('apexload.execution.chartOrder')).toContain('["tps","vusers"')
+  })
+
   it('always shows graph settings controls without expanding a customize panel', async () => {
     await renderCharts()
 
@@ -309,11 +352,17 @@ describe('TestExecutionCharts context menu', () => {
     expect(container.querySelector('.charts-customize-panel')?.textContent).toContain('10m')
     expect(container.querySelector('.charts-customize-panel')?.textContent).toContain('Max')
     expect(container.querySelector('.charts-customize-panel')?.textContent).not.toContain('Custom')
+    expect(container.querySelector('.charts-customize-panel')?.textContent).toContain('Zoom')
+    expect(container.querySelector('.charts-customize-panel')?.textContent).toContain('6 Graphs')
     expect(container.querySelector('.charts-customize-panel')?.textContent).toContain('Role View')
     expect(container.querySelector('.charts-customize-panel')?.textContent).toContain('Display Time')
+    expect(container.querySelector('.charts-customize-panel')?.textContent).not.toContain('Network latency')
+    expect(container.querySelector('.charts-customize-panel')?.textContent).not.toContain('Removed')
     expect(container.querySelector('.btn-expand')?.hasAttribute('disabled')).toBe(false)
     expect(buttonByText('Clock Time')?.getAttribute('aria-pressed')).toBe('true')
     expect(buttonByText('Relative Time')?.getAttribute('aria-pressed')).toBe('false')
+    expect(buttonByText('Standard')?.getAttribute('aria-pressed')).toBe('true')
+    expect(buttonByText('6 Graphs')?.getAttribute('aria-pressed')).toBe('false')
 
     const roleSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Graph role view"]')
     expect(roleSelect).not.toBeNull()
@@ -332,6 +381,39 @@ describe('TestExecutionCharts context menu', () => {
     expect(buttonByText('Clock Time')?.getAttribute('aria-pressed')).toBe('false')
     expect(buttonByText('Relative Time')?.getAttribute('aria-pressed')).toBe('true')
     expect(window.localStorage.getItem('apexload.execution.chartTimeAxisMode')).toBe('relative')
+
+    await act(async () => {
+      buttonByText('6 Graphs')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.charts-grid')?.className).toContain('six-up')
+    expect(buttonByText('Standard')?.getAttribute('aria-pressed')).toBe('false')
+    expect(buttonByText('6 Graphs')?.getAttribute('aria-pressed')).toBe('true')
+    expect(window.localStorage.getItem('apexload.execution.chartDensity')).toBe('six_up')
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-responsive-container"]')).map(container => container.getAttribute('data-height'))).toEqual(Array(8).fill('132'))
+    expect(container.querySelector('.chart-metrics-table')).toBeNull()
+
+    await act(async () => {
+      buttonByText('Standard')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.charts-grid')?.className).not.toContain('six-up')
+    expect(window.localStorage.getItem('apexload.execution.chartDensity')).toBe('standard')
+    expect(container.querySelector('.chart-metrics-table')).not.toBeNull()
+
+    const responseChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Response Time (ms)'))
+    const responseLatencyCheckbox = responseChart?.querySelector<HTMLInputElement>('.chart-card-checkbox input[type="checkbox"]')
+    expect(responseChart?.textContent).toContain('Include network latency')
+    expect(responseLatencyCheckbox?.checked).toBe(true)
+    expect(responseChart?.textContent).toContain('110ms')
+
+    await act(async () => {
+      responseLatencyCheckbox?.click()
+    })
+
+    expect(responseLatencyCheckbox?.checked).toBe(false)
+    expect(window.localStorage.getItem('apexload.execution.responseTimeNetworkMode')).toBe('application')
+    expect(responseChart?.textContent).toContain('82.6ms')
 
     await act(async () => {
       if (roleSelect) {
@@ -389,13 +471,31 @@ describe('TestExecutionCharts context menu', () => {
     return Array.from(container.querySelectorAll('.chart-card .chart-title')).map(title => title.textContent)
   }
 
+  function createDragDataTransfer() {
+    const data = new Map<string, string>()
+    return {
+      dropEffect: 'move',
+      effectAllowed: 'move',
+      getData: vi.fn((type: string) => data.get(type) ?? ''),
+      setData: vi.fn((type: string, value: string) => data.set(type, value)),
+    } as unknown as DataTransfer
+  }
+
+  function dispatchDragEvent(element: HTMLElement, type: string, dataTransfer: DataTransfer, coordinates: { clientX?: number; clientY?: number } = {}) {
+    const event = new Event(type, { bubbles: true, cancelable: true }) as DragEvent
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
+    Object.defineProperty(event, 'clientX', { value: coordinates.clientX ?? 0 })
+    Object.defineProperty(event, 'clientY', { value: coordinates.clientY ?? 0 })
+    element.dispatchEvent(event)
+  }
+
   async function renderCharts(expandedChart: string | null = null) {
     await act(async () => {
       root.render(
         <TestExecutionCharts
           filteredData={[
-            { time: '10:00:00', vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p99: 130 },
-            { time: '10:00:01', vusers: 4, tps: 2, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p99: 135 },
+            { time: '10:00:00', vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p99: 130, latency_edge: 20 },
+            { time: '10:00:01', vusers: 4, tps: 2, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p99: 135, latency_edge: 27.4 },
           ]}
           expandedChart={expandedChart}
           onExpandedChartChange={vi.fn()}

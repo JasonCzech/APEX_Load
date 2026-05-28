@@ -13,6 +13,37 @@ import { downloadBlob } from '../utils/fileUtils'
 export const ARCHIVE_PAGE_SIZE_DEFAULT = 10
 export const ARCHIVE_PAGE_SIZE_OPTIONS = [10, 25, 50] as const
 
+export type ArchiveTransactionSortKey = 'time' | 'status' | 'duration' | 'bytes' | 'error'
+export type ArchiveTransactionSortDir = 'asc' | 'desc'
+export type ArchiveTransactionSort = {
+  key: ArchiveTransactionSortKey
+  direction: ArchiveTransactionSortDir
+} | null
+
+export type ArchiveTransactionFilterField = keyof ArchiveTransactionFilters
+
+export interface ArchiveTransactionFilters {
+  timeFrom: string
+  timeTo: string
+  status: string
+  minDurationMs: string
+  maxDurationMs: string
+  minBytes: string
+  maxBytes: string
+  errorContains: string
+}
+
+export const DEFAULT_ARCHIVE_TRANSACTION_FILTERS: ArchiveTransactionFilters = {
+  timeFrom: '',
+  timeTo: '',
+  status: '',
+  minDurationMs: '',
+  maxDurationMs: '',
+  minBytes: '',
+  maxBytes: '',
+  errorContains: '',
+}
+
 interface ExecutionArchiveModel {
   hasArchive: boolean
   archiveError: string
@@ -29,6 +60,12 @@ interface ExecutionArchiveModel {
   onSelectedArchiveGroupChange: (value: string) => void
   archiveErrorsOnly: boolean
   onArchiveErrorsOnlyChange: (value: boolean) => void
+  archiveTransactionSort: ArchiveTransactionSort
+  onArchiveTransactionSortChange: (key: ArchiveTransactionSortKey) => void
+  archiveTransactionFilters: ArchiveTransactionFilters
+  archiveTransactionFiltersActive: boolean
+  onArchiveTransactionFilterChange: (field: ArchiveTransactionFilterField, value: string) => void
+  onArchiveTransactionFiltersReset: () => void
   archiveTransactionsLoading: boolean
   archiveTransactionsTotal: number
   archivePageStart: number
@@ -54,6 +91,21 @@ function buildArchiveDownloadName(test: TestSummary): string {
   return `${test.name.replace(/\s+/g, '-').toLowerCase()}-${test.id}`
 }
 
+function parseNumberFilter(value: string): number | undefined {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function parseTimeFilter(value: string): string | undefined {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  const parsed = new Date(trimmed)
+  if (Number.isNaN(parsed.getTime())) return undefined
+  return parsed.toISOString()
+}
+
 export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArchiveModel {
   const api = useApi()
   const [archiveReport, setArchiveReport] = useState<RunArchiveReport | null>(null)
@@ -66,6 +118,8 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
   const [selectedArchiveSOAPOperation, setSelectedArchiveSOAPOperation] = useState('')
   const [selectedArchiveGroup, setSelectedArchiveGroup] = useState('')
   const [archiveErrorsOnly, setArchiveErrorsOnly] = useState(false)
+  const [archiveTransactionSort, setArchiveTransactionSort] = useState<ArchiveTransactionSort>(null)
+  const [archiveTransactionFilters, setArchiveTransactionFilters] = useState<ArchiveTransactionFilters>(DEFAULT_ARCHIVE_TRANSACTION_FILTERS)
   const [archiveTransactionsOffset, setArchiveTransactionsOffset] = useState(0)
   const [archivePageSize, setArchivePageSize] = useState(ARCHIVE_PAGE_SIZE_DEFAULT)
   const [expandedArchiveEvent, setExpandedArchiveEvent] = useState<string | null>(null)
@@ -87,6 +141,8 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
       setSelectedArchiveSOAPOperation('')
       setSelectedArchiveGroup('')
       setArchiveErrorsOnly(false)
+      setArchiveTransactionSort(null)
+      setArchiveTransactionFilters(DEFAULT_ARCHIVE_TRANSACTION_FILTERS)
       setArchiveTransactionsOffset(0)
       setExpandedArchiveEvent(null)
       return
@@ -143,6 +199,16 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
           soap_operation: selectedArchiveSOAPOperation || undefined,
           group: selectedArchiveGroup || undefined,
           success: archiveErrorsOnly ? false : undefined,
+          time_from: parseTimeFilter(archiveTransactionFilters.timeFrom),
+          time_to: parseTimeFilter(archiveTransactionFilters.timeTo),
+          status: archiveTransactionFilters.status.trim() || undefined,
+          min_duration_ms: parseNumberFilter(archiveTransactionFilters.minDurationMs),
+          max_duration_ms: parseNumberFilter(archiveTransactionFilters.maxDurationMs),
+          min_bytes: parseNumberFilter(archiveTransactionFilters.minBytes),
+          max_bytes: parseNumberFilter(archiveTransactionFilters.maxBytes),
+          error_contains: archiveTransactionFilters.errorContains.trim() || undefined,
+          sort_by: archiveTransactionSort?.key,
+          sort_dir: archiveTransactionSort?.direction,
           limit: archivePageSize,
           offset: archiveTransactionsOffset,
         })
@@ -166,7 +232,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
     return () => {
       cancelled = true
     }
-  }, [api, archiveErrorsOnly, archivePageSize, archiveTransactionsOffset, hasArchive, selectedArchiveAction, selectedArchiveGroup, selectedArchiveSOAPOperation, testID, testStatus])
+  }, [api, archiveErrorsOnly, archivePageSize, archiveTransactionFilters, archiveTransactionSort, archiveTransactionsOffset, hasArchive, selectedArchiveAction, selectedArchiveGroup, selectedArchiveSOAPOperation, testID, testStatus])
 
   const archiveActionEntries = useMemo(() => {
     if (!archiveReport) return []
@@ -182,6 +248,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
 
   const archivePageStart = archiveTransactionsTotal === 0 ? 0 : archiveTransactionsOffset + 1
   const archivePageEnd = Math.min(archiveTransactionsOffset + archiveTransactions.length, archiveTransactionsTotal)
+  const archiveTransactionFiltersActive = Object.values(archiveTransactionFilters).some(value => value.trim() !== '')
 
   const onSelectedArchiveActionChange = useCallback((value: string) => {
     setSelectedArchiveAction(value)
@@ -203,6 +270,32 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
 
   const onArchiveErrorsOnlyChange = useCallback((value: boolean) => {
     setArchiveErrorsOnly(value)
+    setArchiveTransactionsOffset(0)
+    setExpandedArchiveEvent(null)
+  }, [])
+
+  const onArchiveTransactionSortChange = useCallback((key: ArchiveTransactionSortKey) => {
+    setArchiveTransactionSort(current => {
+      if (current?.key === key) {
+        return { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+      }
+      return { key, direction: key === 'time' ? 'desc' : 'asc' }
+    })
+    setArchiveTransactionsOffset(0)
+    setExpandedArchiveEvent(null)
+  }, [])
+
+  const onArchiveTransactionFilterChange = useCallback((field: ArchiveTransactionFilterField, value: string) => {
+    setArchiveTransactionFilters(current => ({
+      ...current,
+      [field]: value,
+    }))
+    setArchiveTransactionsOffset(0)
+    setExpandedArchiveEvent(null)
+  }, [])
+
+  const onArchiveTransactionFiltersReset = useCallback(() => {
+    setArchiveTransactionFilters(DEFAULT_ARCHIVE_TRANSACTION_FILTERS)
     setArchiveTransactionsOffset(0)
     setExpandedArchiveEvent(null)
   }, [])
@@ -269,6 +362,12 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
     onSelectedArchiveGroupChange,
     archiveErrorsOnly,
     onArchiveErrorsOnlyChange,
+    archiveTransactionSort,
+    onArchiveTransactionSortChange,
+    archiveTransactionFilters,
+    archiveTransactionFiltersActive,
+    onArchiveTransactionFilterChange,
+    onArchiveTransactionFiltersReset,
     archiveTransactionsLoading,
     archiveTransactionsTotal,
     archivePageStart,

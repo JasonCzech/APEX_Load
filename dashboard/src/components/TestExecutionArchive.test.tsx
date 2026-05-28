@@ -474,6 +474,22 @@ describe('TestExecutionArchive', () => {
     const detailValueTexts = Array.from(container.querySelectorAll('.scenario-script-detail-value')).map(node => node.textContent)
     expect(detailValueTexts).toContain('iphone_se · iOS · WebKit · low tier')
     expect(detailValueTexts).not.toContain('iphone_se · WebKit · low tier')
+    expect(detailValueTexts).not.toContain('POST https://soap.example.test/orders')
+    expect(detailValueTexts).not.toContain('200')
+    expect(container.textContent).toContain('Request line and headers')
+    expect(container.textContent).toContain('Request body')
+    expect(container.textContent).toContain('Response status and headers')
+    expect(container.textContent).toContain('Response body')
+    const requestPreview = Array.from(container.querySelectorAll('pre.archive-event-detail-pre')).find(node =>
+      node.textContent?.includes('POST https://soap.example.test/orders') &&
+      node.textContent?.includes('Content-Type: application/soap+xml'),
+    )
+    expect(requestPreview).toBeDefined()
+    const responsePreview = Array.from(container.querySelectorAll('pre.archive-event-detail-pre')).find(node =>
+      node.textContent?.includes('Status: 200') &&
+      node.textContent?.includes('Content-Type: application/soap+xml'),
+    )
+    expect(responsePreview).toBeDefined()
     expect(container.textContent).toContain('INP: 56.0 ms')
     expect(container.textContent).toContain('Response')
     const overallBreakdownButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Overall')
@@ -508,8 +524,8 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Browser Platform Breakdown (LCP / INP / CLS)')
     expect(container.textContent).toContain('Series: LCP and INP on the left axis, CLS on the right axis.')
     const copyFaultButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy fault'))
-    const copyRequestButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy request'))
-    const copyResponseButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy response'))
+    const copyRequestButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy full request'))
+    const copyResponseButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy full response'))
     expect(copyFaultButton).toBeDefined()
     expect(copyRequestButton).toBeDefined()
     expect(copyResponseButton).toBeDefined()
@@ -557,7 +573,7 @@ describe('TestExecutionArchive', () => {
       response_body: '<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><env:Fault><env:Code><env:Value>env:Sender</env:Value></env:Code><env:Reason><env:Text xml:lang="en">Request validation failed</env:Text></env:Reason></env:Fault></env:Body></env:Envelope>',
     }, 200))
     expect(container.textContent).toContain('Expand snapshots')
-    expect(container.textContent).toContain('Show full text')
+    expect(container.textContent).toContain('Open full text')
     expect(container.textContent).not.toContain('X-Debug-11')
     expect(container.textContent).not.toContain('X-Trace-11')
     expect(container.querySelectorAll('.snapshot-code-token-tag').length).toBeGreaterThan(0)
@@ -578,6 +594,94 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Collapse snapshots')
     expect(container.textContent).toContain('X-Debug-11')
     expect(container.textContent).toContain('X-Trace-11')
+  })
+
+  it('renders transaction drill-down column sort and filter controls', async () => {
+    const onSort = vi.fn()
+    const onFilterChange = vi.fn()
+    const onFiltersReset = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <TestExecutionArchive
+          hasArchive={true}
+          test={test}
+          archiveError=""
+          archiveLoading={false}
+          archiveReport={archiveReport}
+          onDownloadBrowserDiagnostics={vi.fn()}
+          onDownloadArchiveArtifact={vi.fn()}
+          archiveActionEntries={[]}
+          archiveSOAPOperationEntries={[]}
+          selectedArchiveAction=""
+          onSelectedArchiveActionChange={vi.fn()}
+          selectedArchiveSOAPOperation=""
+          onSelectedArchiveSOAPOperationChange={vi.fn()}
+          archiveGroups={[]}
+          selectedArchiveGroup=""
+          onSelectedArchiveGroupChange={vi.fn()}
+          archiveErrorsOnly={false}
+          onArchiveErrorsOnlyChange={vi.fn()}
+          archiveTransactionSort={{ key: 'duration', direction: 'desc' }}
+          onArchiveTransactionSortChange={onSort}
+          archiveTransactionFilters={{
+            timeFrom: '',
+            timeTo: '',
+            status: '500',
+            minDurationMs: '100',
+            maxDurationMs: '',
+            minBytes: '',
+            maxBytes: '',
+            errorContains: 'timeout',
+          }}
+          archiveTransactionFiltersActive={true}
+          onArchiveTransactionFilterChange={onFilterChange}
+          onArchiveTransactionFiltersReset={onFiltersReset}
+          archiveTransactionsLoading={false}
+          archiveTransactionsTotal={1}
+          archivePageStart={1}
+          archivePageEnd={1}
+          archiveTransactionsOffset={0}
+          archivePageSize={50}
+          onPageSizeChange={vi.fn()}
+          onPreviousPage={vi.fn()}
+          onNextPage={vi.fn()}
+          archiveTransactions={[{
+            timestamp: '2026-05-14T20:00:30Z',
+            test_id: 'test-1',
+            test_name: 'SOAP Fault Test',
+            action_name: 'CreateOrder',
+            duration_ms: 120,
+            bytes_received: 256,
+            status_code: 500,
+            success: false,
+            error_message: 'upstream timeout',
+          }]}
+          expandedArchiveEvent={null}
+          onExpandedArchiveEventChange={vi.fn()}
+        />,
+      )
+    })
+
+    const statusFilter = container.querySelector('input[aria-label="Filter transactions by status"]') as HTMLInputElement | null
+    expect(statusFilter?.value).toBe('500')
+
+    const durationSort = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Duration'))
+    expect(durationSort).toBeDefined()
+    if (!durationSort || !statusFilter) return
+
+    await act(async () => {
+      durationSort.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set?.call(statusFilter, '404')
+      statusFilter.dispatchEvent(new Event('input', { bubbles: true }))
+      const clearButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Clear')
+      clearButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(onSort).toHaveBeenCalledWith('duration')
+    expect(onFilterChange).toHaveBeenCalledWith('status', '404')
+    expect(onFiltersReset).toHaveBeenCalled()
   })
 
   it('renders mixed engine and platform browser rollups from the archive report', async () => {
@@ -882,13 +986,35 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Response size class: small')
     expect(container.textContent).toContain('Envelope overhead: 0.75 KB')
     expect(container.textContent).toContain('SOAP fault: soapenv:Client / client')
-    expect(container.textContent).toContain('SOAP namespace conflict: undeclared prefixes: auth')
-    expect(container.textContent).toContain('Redirects: 2 hops / 31.0 ms')
-    expect(container.textContent).toContain('Message latency: 18.0 ms')
-    expect(container.textContent).toContain('Messages: 1 sent / 1 received')
-    expect(container.textContent).toContain('Message throughput: 6.4 sent/s / 5.8 received/s')
-    expect(container.textContent).toContain('Consumer lag: 22.0 ms')
-    expect(container.textContent).toContain('Connection: new')
+
+    const serverTelemetryCard = Array.from(container.querySelectorAll('.archive-event-detail-card')).find(card => card.textContent?.includes('Server Telemetry'))
+    expect(serverTelemetryCard).toBeDefined()
+    const copyTelemetryButton = Array.from(serverTelemetryCard?.querySelectorAll('button') ?? []).find(button => button.textContent?.includes('Copy'))
+    const openTelemetryButton = Array.from(serverTelemetryCard?.querySelectorAll('button') ?? []).find(button => button.textContent?.includes('Open full text'))
+    expect(copyTelemetryButton).toBeDefined()
+    expect(openTelemetryButton).toBeDefined()
+    if (!copyTelemetryButton || !openTelemetryButton) return
+
+    await act(async () => {
+      copyTelemetryButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Server processing: 48.0 ms'))
+
+    await act(async () => {
+      openTelemetryButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const dialog = document.body.querySelector('[role="dialog"][aria-label="Full text"]')
+    expect(dialog?.textContent).toContain('SOAP namespace conflict: undeclared prefixes: auth')
+    expect(dialog?.textContent).toContain('Redirects: 2 hops / 31.0 ms')
+    expect(dialog?.textContent).toContain('Message latency: 18.0 ms')
+    expect(dialog?.textContent).toContain('Messages: 1 sent / 1 received')
+    expect(dialog?.textContent).toContain('Message throughput: 6.4 sent/s / 5.8 received/s')
+    expect(dialog?.textContent).toContain('Consumer lag: 22.0 ms')
+    expect(dialog?.textContent).toContain('Connection: new')
   })
 
   it('renders SOAP operation archive summaries when present', async () => {

@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { canCopyTextToClipboard, copyTextToClipboard } from '../utils/clipboardUtils'
+import SnapshotFullDialog from './SnapshotFullDialog'
+
 const MAX_PREVIEW_LINES = 10
 const MAX_PREVIEW_CHARS = 800
 
@@ -22,53 +25,50 @@ function buildPreviewText(value: string): string {
   return value
 }
 
-function shouldCollapseText(value: string): boolean {
-  return value.length > MAX_PREVIEW_CHARS || value.split('\n').length > MAX_PREVIEW_LINES
-}
-
 export default function SnapshotTextPreview({
   text,
   emptyMessage = 'n/a',
   preClassName,
   expanded,
-  onExpandedChange,
 }: Props) {
   const normalizedText = useMemo(() => text || emptyMessage, [text, emptyMessage])
-  const [internalExpanded, setInternalExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
-  const isControlled = typeof expanded === 'boolean'
-  const isExpanded = isControlled ? expanded : internalExpanded
+  const [copyFailed, setCopyFailed] = useState(false)
+  const [fullDialogOpen, setFullDialogOpen] = useState(false)
+  const isExpanded = expanded === true
 
   useEffect(() => {
-    if (!isControlled) {
-      setInternalExpanded(false)
-    }
     setCopied(false)
-  }, [normalizedText, isControlled])
+    setCopyFailed(false)
+    setFullDialogOpen(false)
+  }, [normalizedText])
 
-  const canExpand = text ? shouldCollapseText(normalizedText) : false
+  const canOpenFull = Boolean(text)
   const canCopy = Boolean(text)
-  const copySupported = typeof navigator !== 'undefined' && typeof navigator.clipboard?.writeText === 'function'
+  const copySupported = canCopyTextToClipboard()
   const visibleText = isExpanded ? normalizedText : buildPreviewText(normalizedText)
 
   const handleCopy = async () => {
-    if (!text || !copySupported) return
-    await navigator.clipboard.writeText(normalizedText)
-    setCopied(true)
+    if (!text || !copySupported) return false
+    const copiedText = await copyTextToClipboard(normalizedText)
+    setCopied(copiedText)
+    setCopyFailed(!copiedText)
+    if (!copiedText) {
+      setFullDialogOpen(true)
+    }
+    return copiedText
   }
 
-  const handleToggle = () => {
-    const next = !isExpanded
-    if (!isControlled) {
-      setInternalExpanded(next)
-    }
-    onExpandedChange?.(next)
+  const handleOpenFull = () => {
+    setCopied(false)
+    setCopyFailed(false)
+    setFullDialogOpen(true)
   }
 
   return (
     <>
       <pre className={preClassName}>{visibleText}</pre>
-      {(canExpand || canCopy) && (
+      {(canOpenFull || canCopy) && (
         <div className="snapshot-body-actions">
           {canCopy && (
             <button
@@ -77,20 +77,32 @@ export default function SnapshotTextPreview({
               onClick={() => void handleCopy()}
               disabled={!copySupported}
             >
-              {copied ? 'Copied' : 'Copy'}
+              {copyFailed ? 'Copy failed' : copied ? 'Copied' : 'Copy'}
             </button>
           )}
-          {canExpand && (
+          {canOpenFull && (
             <button
               type="button"
               className="btn btn-sm btn-ghost snapshot-body-toggle"
-              onClick={handleToggle}
+              onClick={handleOpenFull}
             >
-              {isExpanded ? 'Show less' : 'Show full text'}
+              Open full text
             </button>
           )}
         </div>
       )}
+      <SnapshotFullDialog
+        title="Full text"
+        open={fullDialogOpen}
+        copied={copied}
+        copyFailed={copyFailed}
+        copyDisabled={!copySupported || !canCopy}
+        manualCopyText={normalizedText}
+        onCopy={() => void handleCopy()}
+        onClose={() => setFullDialogOpen(false)}
+      >
+        <pre className={preClassName}>{normalizedText}</pre>
+      </SnapshotFullDialog>
     </>
   )
 }

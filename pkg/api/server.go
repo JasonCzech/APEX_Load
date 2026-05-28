@@ -431,12 +431,14 @@ func (s *Server) routes(allowedOrigins []string) {
 				http.NotFound(w, r)
 				return
 			}
+			setDashboardStaticHeaders(w)
 			w.Header().Set("Content-Type", "text/html")
 			w.Write([]byte("<!DOCTYPE html><html><body><h1>APEX Load</h1><p>Dashboard not built. Run: cd dashboard && npm run build</p></body></html>"))
 		}))
 	} else {
 		fileServer := http.FileServer(http.FS(staticSub))
 		s.mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			setDashboardStaticHeaders(w)
 			// Serve real files directly. Only extensionless client routes fall back to the SPA shell.
 			path := strings.TrimPrefix(r.URL.Path, "/")
 			if path == "" {
@@ -452,6 +454,11 @@ func (s *Server) routes(allowedOrigins []string) {
 			fileServer.ServeHTTP(w, r)
 		}))
 	}
+}
+
+func setDashboardStaticHeaders(w http.ResponseWriter) {
+	w.Header().Set("Permissions-Policy", "clipboard-write=(self)")
+	w.Header().Set("Feature-Policy", "clipboard-write 'self'")
 }
 
 func (s *Server) Start() error {

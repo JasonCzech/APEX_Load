@@ -1,6 +1,8 @@
 import { Fragment, ReactNode, useEffect, useMemo, useState } from 'react'
 
+import { canCopyTextToClipboard, copyTextToClipboard } from '../utils/clipboardUtils'
 import { detectCapturedBodyFormat, formatCapturedBody, type CapturedBodyFormat } from '../utils/snapshotFormatUtils'
+import SnapshotFullDialog from './SnapshotFullDialog'
 import './SnapshotBodyPreview.css'
 
 const MAX_PREVIEW_LINES = 14
@@ -24,10 +26,6 @@ function buildPreviewBody(value: string): string {
     return `${value.slice(0, MAX_PREVIEW_CHARS).trimEnd()}\n…`
   }
   return value
-}
-
-function shouldCollapseBody(value: string): boolean {
-  return value.length > MAX_PREVIEW_CHARS || value.split('\n').length > MAX_PREVIEW_LINES
 }
 
 function renderJSONLine(line: string, lineKey: string): ReactNode[] {
@@ -184,7 +182,6 @@ export default function SnapshotBodyPreview({
   emptyMessage = 'No body captured',
   preClassName,
   expanded,
-  onExpandedChange,
 }: Props) {
   const formattedBody = useMemo(() => {
     if (!body) return emptyMessage
@@ -194,41 +191,43 @@ export default function SnapshotBodyPreview({
     if (!body) return 'plain'
     return detectCapturedBodyFormat(body, headers)
   }, [body, headers])
-  const [internalExpanded, setInternalExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
-  const isControlled = typeof expanded === 'boolean'
-  const isExpanded = isControlled ? expanded : internalExpanded
+  const [copyFailed, setCopyFailed] = useState(false)
+  const [fullDialogOpen, setFullDialogOpen] = useState(false)
+  const isExpanded = expanded === true
 
   useEffect(() => {
-    if (!isControlled) {
-      setInternalExpanded(false)
-    }
     setCopied(false)
-  }, [formattedBody, isControlled])
+    setCopyFailed(false)
+    setFullDialogOpen(false)
+  }, [formattedBody])
 
-  const canExpand = body ? shouldCollapseBody(formattedBody) : false
+  const canOpenFull = Boolean(body)
   const canCopy = Boolean(body)
-  const copySupported = typeof navigator !== 'undefined' && typeof navigator.clipboard?.writeText === 'function'
+  const copySupported = canCopyTextToClipboard()
   const visibleBody = isExpanded ? formattedBody : buildPreviewBody(formattedBody)
 
   const handleCopy = async () => {
-    if (!body || !copySupported) return
-    await navigator.clipboard.writeText(formattedBody)
-    setCopied(true)
+    if (!body || !copySupported) return false
+    const copiedText = await copyTextToClipboard(formattedBody)
+    setCopied(copiedText)
+    setCopyFailed(!copiedText)
+    if (!copiedText) {
+      setFullDialogOpen(true)
+    }
+    return copiedText
   }
 
-  const handleToggle = () => {
-    const next = !isExpanded
-    if (!isControlled) {
-      setInternalExpanded(next)
-    }
-    onExpandedChange?.(next)
+  const handleOpenFull = () => {
+    setCopied(false)
+    setCopyFailed(false)
+    setFullDialogOpen(true)
   }
 
   return (
     <>
       <pre className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'}>{renderHighlightedCode(visibleBody, bodyFormat)}</pre>
-      {(canExpand || canCopy) && (
+      {(canOpenFull || canCopy) && (
         <div className="snapshot-body-actions">
           {canCopy && (
             <button
@@ -237,20 +236,34 @@ export default function SnapshotBodyPreview({
               onClick={() => void handleCopy()}
               disabled={!copySupported}
             >
-              {copied ? 'Copied' : 'Copy'}
+              {copyFailed ? 'Copy failed' : copied ? 'Copied' : 'Copy'}
             </button>
           )}
-          {canExpand && (
+          {canOpenFull && (
             <button
               type="button"
               className="btn btn-sm btn-ghost snapshot-body-toggle"
-              onClick={handleToggle}
+              onClick={handleOpenFull}
             >
-              {isExpanded ? 'Show less' : 'Show full body'}
+              Open full body
             </button>
           )}
         </div>
       )}
+      <SnapshotFullDialog
+        title="Full body"
+        open={fullDialogOpen}
+        copied={copied}
+        copyFailed={copyFailed}
+        copyDisabled={!copySupported || !canCopy}
+        manualCopyText={formattedBody}
+        onCopy={() => void handleCopy()}
+        onClose={() => setFullDialogOpen(false)}
+      >
+        <pre className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'}>
+          {renderHighlightedCode(formattedBody, bodyFormat)}
+        </pre>
+      </SnapshotFullDialog>
     </>
   )
 }

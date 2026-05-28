@@ -14,15 +14,25 @@ import {
   getBrowserBreakdownTitle,
 } from './browserBreakdownModel'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
+import SnapshotFullDialog from './SnapshotFullDialog'
 import SnapshotTextPreview from './SnapshotTextPreview'
 import { extractSOAPFaultSummaryFromBody, formatSOAPFaultSummary } from './soapFaultUtils'
 import {
-  formatCapturedHeaders,
+  formatSnapshotRequestLineAndHeaders,
   formatSnapshotRequestSection,
+  formatSnapshotResponseStatusAndHeaders,
   formatSnapshotResponseSection,
 } from '../utils/snapshotFormatUtils'
+import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
-import { ARCHIVE_PAGE_SIZE_OPTIONS } from './useExecutionArchiveModel'
+import {
+  ARCHIVE_PAGE_SIZE_OPTIONS,
+  DEFAULT_ARCHIVE_TRANSACTION_FILTERS,
+  type ArchiveTransactionFilterField,
+  type ArchiveTransactionFilters,
+  type ArchiveTransactionSort,
+  type ArchiveTransactionSortKey,
+} from './useExecutionArchiveModel'
 
 interface Props {
   hasArchive: boolean
@@ -43,6 +53,12 @@ interface Props {
   onSelectedArchiveGroupChange: (value: string) => void
   archiveErrorsOnly: boolean
   onArchiveErrorsOnlyChange: (value: boolean) => void
+  archiveTransactionSort?: ArchiveTransactionSort
+  onArchiveTransactionSortChange?: (key: ArchiveTransactionSortKey) => void
+  archiveTransactionFilters?: ArchiveTransactionFilters
+  archiveTransactionFiltersActive?: boolean
+  onArchiveTransactionFilterChange?: (field: ArchiveTransactionFilterField, value: string) => void
+  onArchiveTransactionFiltersReset?: () => void
   archiveTransactionsLoading: boolean
   archiveTransactionsTotal: number
   archivePageStart: number
@@ -67,6 +83,14 @@ function formatArchiveTime(value?: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'n/a'
   return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 } as Intl.DateTimeFormatOptions)
+}
+
+function ArchiveSortIndicator({ active, direction }: { active: boolean, direction?: 'asc' | 'desc' }) {
+  return (
+    <span className={`sort-icon ${active ? 'active' : ''}`}>
+      {active ? (direction === 'asc' ? '↑' : '↓') : '↕'}
+    </span>
+  )
 }
 
 function formatBrowserMetric(value: number | undefined, suffix = '', digits = 1): string {
@@ -215,6 +239,13 @@ function buildArchiveReportHref(testId: string, format?: string, profile?: strin
   if (profile) params.set('profile', profile)
   const query = params.toString()
   return `/api/v1/tests/${encodeURIComponent(testId)}/archive/report${query ? `?${query}` : ''}`
+}
+
+function formatManualCopyTitle(key: string): string {
+  if (key.endsWith(':request')) return 'Full request'
+  if (key.endsWith(':response')) return 'Full response'
+  if (key.endsWith(':soap-fault')) return 'Full SOAP fault'
+  return 'Full text'
 }
 
 function renderBrowserSummary(
@@ -412,6 +443,12 @@ export default function TestExecutionArchive({
   onSelectedArchiveGroupChange,
   archiveErrorsOnly,
   onArchiveErrorsOnlyChange,
+  archiveTransactionSort = null,
+  onArchiveTransactionSortChange = () => {},
+  archiveTransactionFilters = DEFAULT_ARCHIVE_TRANSACTION_FILTERS,
+  archiveTransactionFiltersActive = false,
+  onArchiveTransactionFilterChange = () => {},
+  onArchiveTransactionFiltersReset = () => {},
   archiveTransactionsLoading,
   archiveTransactionsTotal,
   archivePageStart,
@@ -426,6 +463,8 @@ export default function TestExecutionArchive({
   onExpandedArchiveEventChange,
 }: Props) {
   const [copiedSection, setCopiedSection] = useState<string | null>(null)
+  const [copyFailedSection, setCopyFailedSection] = useState<string | null>(null)
+  const [manualCopySection, setManualCopySection] = useState<{ key: string; title: string; value: string } | null>(null)
   const [expandedSnapshotSections, setExpandedSnapshotSections] = useState<Record<string, boolean>>({})
   const [browserBreakdown, setBrowserBreakdown] = useState<BrowserBreakdown>('device')
   const [summaryTimelineExpanded, setSummaryTimelineExpanded] = useState(false)
@@ -443,11 +482,26 @@ export default function TestExecutionArchive({
   const summaryTimelineEntries = summaryTimelineExpanded || !summaryTimelineNeedsCollapse ? summaryTimelineFiltered : summaryTimelineFiltered.slice(0, SUMMARY_TIMELINE_COLLAPSED_LIMIT)
   const runtimeBrowserSummary = formatBrowserRuntimeSummary(archiveReport?.manifest.provenance?.runtime_settings?.browser)
   const selectedActionStats = archiveReport?.by_action?.[selectedArchiveAction]
+  const renderArchiveSortButton = (key: ArchiveTransactionSortKey, label: string) => {
+    const active = archiveTransactionSort?.key === key
+    return (
+      <button
+        type="button"
+        className={`archive-sort-button${active ? ' active' : ''}`}
+        onClick={() => onArchiveTransactionSortChange(key)}
+        aria-pressed={active}
+      >
+        <span>{label}</span>
+        <ArchiveSortIndicator active={active} direction={archiveTransactionSort?.direction} />
+      </button>
+    )
+  }
 
   const handleCopySection = async (key: string, value: string) => {
-    if (!navigator.clipboard?.writeText) return
-    await navigator.clipboard.writeText(value)
-    setCopiedSection(key)
+    const copied = await copyTextToClipboard(value)
+    setCopiedSection(copied ? key : null)
+    setCopyFailedSection(copied ? null : key)
+    setManualCopySection(copied ? null : { key, title: formatManualCopyTitle(key), value })
   }
 
   const toggleSnapshotSection = (key: string, expanded: boolean) => {
@@ -463,6 +517,22 @@ export default function TestExecutionArchive({
 
   return (
     <div className="archive-report-card">
+      <SnapshotFullDialog
+        title={manualCopySection?.title ?? 'Full text'}
+        open={manualCopySection !== null}
+        copied={copiedSection === manualCopySection?.key}
+        copyFailed={copyFailedSection === manualCopySection?.key}
+        copyDisabled={manualCopySection === null}
+        manualCopyText={manualCopySection?.value}
+        onCopy={() => {
+          if (manualCopySection) {
+            void handleCopySection(manualCopySection.key, manualCopySection.value)
+          }
+        }}
+        onClose={() => setManualCopySection(null)}
+      >
+        <pre>{manualCopySection?.value ?? ''}</pre>
+      </SnapshotFullDialog>
       <div className="archive-report-header">
         <div>
           <h3 className="archive-report-title">Archive Report</h3>
@@ -1267,57 +1337,154 @@ export default function TestExecutionArchive({
               {!archiveTransactionsLoading && archiveTransactions.length === 0 ? (
                 <p className="scenario-script-status">No archived transactions loaded for this action.</p>
               ) : (
-                <table className="tx-table archive-events-table">
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>Status</th>
-                      <th>Duration</th>
-                      <th>Bytes</th>
-                      <th>Error</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {archiveTransactions.map((event, index) => {
-                      const rowKey = `${event.timestamp}-${index}`
-                      const hasSnapshot = Boolean(event.snapshot)
-                      const hasInspectDetails = hasSnapshot || Boolean(event.client_metrics) || Boolean(event.server_telemetry)
-                      const browserWaterfall = formatBrowserWaterfall(event.client_metrics)
-                      const isExpanded = expandedArchiveEvent === rowKey
-                      const soapFault = extractSOAPFaultSummaryFromBody(event.snapshot?.response_body)
-                      const snapshotSections = [
-                        event.snapshot?.request_headers && Object.keys(event.snapshot.request_headers).length > 0 ? 'request-headers' : null,
-                        event.snapshot?.request_body ? 'request-body' : null,
-                        event.snapshot?.response_headers && Object.keys(event.snapshot.response_headers).length > 0 ? 'response-headers' : null,
-                        event.snapshot?.response_body ? 'response-body' : null,
-                      ].filter((section): section is 'request-headers' | 'request-body' | 'response-headers' | 'response-body' => Boolean(section))
-                      const snapshotSectionKey = (section: 'request-headers' | 'request-body' | 'response-headers' | 'response-body') => `${rowKey}:${section}`
-                      const allSnapshotSectionsExpanded = snapshotSections.length > 0 && snapshotSections.every(section => expandedSnapshotSections[snapshotSectionKey(section)])
+                <div className="archive-events-table-wrap">
+                  <table className="tx-table archive-events-table">
+                    <thead>
+                      <tr>
+                        <th>{renderArchiveSortButton('time', 'Time')}</th>
+                        <th>{renderArchiveSortButton('status', 'Status')}</th>
+                        <th>{renderArchiveSortButton('duration', 'Duration')}</th>
+                        <th>{renderArchiveSortButton('bytes', 'Bytes')}</th>
+                        <th>{renderArchiveSortButton('error', 'Error')}</th>
+                        <th></th>
+                      </tr>
+                      <tr className="archive-column-filter-row">
+                        <th>
+                          <div className="archive-filter-stack archive-filter-stack-wide">
+                            <input
+                              className="archive-column-filter-input"
+                              type="datetime-local"
+                              step="1"
+                              aria-label="Filter transactions from time"
+                              value={archiveTransactionFilters.timeFrom}
+                              onChange={(event) => onArchiveTransactionFilterChange('timeFrom', event.target.value)}
+                            />
+                            <input
+                              className="archive-column-filter-input"
+                              type="datetime-local"
+                              step="1"
+                              aria-label="Filter transactions to time"
+                              value={archiveTransactionFilters.timeTo}
+                              onChange={(event) => onArchiveTransactionFilterChange('timeTo', event.target.value)}
+                            />
+                          </div>
+                        </th>
+                        <th>
+                          <input
+                            className="archive-column-filter-input"
+                            type="search"
+                            placeholder="Status"
+                            aria-label="Filter transactions by status"
+                            value={archiveTransactionFilters.status}
+                            onChange={(event) => onArchiveTransactionFilterChange('status', event.target.value)}
+                          />
+                        </th>
+                        <th>
+                          <div className="archive-filter-stack">
+                            <input
+                              className="archive-column-filter-input"
+                              type="number"
+                              min="0"
+                              placeholder="Min ms"
+                              aria-label="Minimum transaction duration"
+                              value={archiveTransactionFilters.minDurationMs}
+                              onChange={(event) => onArchiveTransactionFilterChange('minDurationMs', event.target.value)}
+                            />
+                            <input
+                              className="archive-column-filter-input"
+                              type="number"
+                              min="0"
+                              placeholder="Max ms"
+                              aria-label="Maximum transaction duration"
+                              value={archiveTransactionFilters.maxDurationMs}
+                              onChange={(event) => onArchiveTransactionFilterChange('maxDurationMs', event.target.value)}
+                            />
+                          </div>
+                        </th>
+                        <th>
+                          <div className="archive-filter-stack">
+                            <input
+                              className="archive-column-filter-input"
+                              type="number"
+                              min="0"
+                              placeholder="Min"
+                              aria-label="Minimum received bytes"
+                              value={archiveTransactionFilters.minBytes}
+                              onChange={(event) => onArchiveTransactionFilterChange('minBytes', event.target.value)}
+                            />
+                            <input
+                              className="archive-column-filter-input"
+                              type="number"
+                              min="0"
+                              placeholder="Max"
+                              aria-label="Maximum received bytes"
+                              value={archiveTransactionFilters.maxBytes}
+                              onChange={(event) => onArchiveTransactionFilterChange('maxBytes', event.target.value)}
+                            />
+                          </div>
+                        </th>
+                        <th>
+                          <input
+                            className="archive-column-filter-input archive-error-filter-input"
+                            type="search"
+                            placeholder="Contains"
+                            aria-label="Filter transactions by error text"
+                            value={archiveTransactionFilters.errorContains}
+                            onChange={(event) => onArchiveTransactionFilterChange('errorContains', event.target.value)}
+                          />
+                        </th>
+                        <th>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-secondary archive-clear-filters-button"
+                            disabled={!archiveTransactionFiltersActive}
+                            onClick={onArchiveTransactionFiltersReset}
+                          >
+                            Clear
+                          </button>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {archiveTransactions.map((event, index) => {
+                        const rowKey = `${event.timestamp}-${index}`
+                        const hasSnapshot = Boolean(event.snapshot)
+                        const hasInspectDetails = hasSnapshot || Boolean(event.client_metrics) || Boolean(event.server_telemetry)
+                        const browserWaterfall = formatBrowserWaterfall(event.client_metrics)
+                        const isExpanded = expandedArchiveEvent === rowKey
+                        const soapFault = extractSOAPFaultSummaryFromBody(event.snapshot?.response_body)
+                        const snapshotSections = [
+                          event.snapshot?.request_headers && Object.keys(event.snapshot.request_headers).length > 0 ? 'request-headers' : null,
+                          event.snapshot?.request_body ? 'request-body' : null,
+                          event.snapshot?.response_headers && Object.keys(event.snapshot.response_headers).length > 0 ? 'response-headers' : null,
+                          event.snapshot?.response_body ? 'response-body' : null,
+                        ].filter((section): section is 'request-headers' | 'request-body' | 'response-headers' | 'response-body' => Boolean(section))
+                        const snapshotSectionKey = (section: 'request-headers' | 'request-body' | 'response-headers' | 'response-body') => `${rowKey}:${section}`
+                        const allSnapshotSectionsExpanded = snapshotSections.length > 0 && snapshotSections.every(section => expandedSnapshotSections[snapshotSectionKey(section)])
 
-                      return (
-                        <Fragment key={rowKey}>
-                          <tr className={!event.success ? 'archive-error-row' : ''}>
-                            <td className="archive-time-cell">{formatArchiveTime(event.timestamp)}</td>
-                            <td className={event.success ? '' : 'error-cell'}>{event.status_code || (event.success ? 'OK' : 'ERR')}</td>
-                            <td>{event.duration_ms.toFixed(1)} ms</td>
-                            <td>{event.bytes_received || 0}</td>
-                            <td className={!event.success ? 'error-cell' : 'cell-muted'}>{event.error_message || '—'}</td>
-                            <td>
-                              {hasInspectDetails ? (
-                                <button
-                                  className="btn btn-sm btn-secondary archive-detail-toggle"
-                                  onClick={() => onExpandedArchiveEventChange(isExpanded ? null : rowKey)}
-                                >
-                                  {isExpanded ? 'Hide' : 'Inspect'}
-                                </button>
-                              ) : null}
-                            </td>
-                          </tr>
-                          {isExpanded && hasInspectDetails && (
-                            <tr className="archive-event-detail-row">
-                              <td colSpan={6}>
-                                <div className="archive-event-detail-grid">
+                        return (
+                          <Fragment key={rowKey}>
+                            <tr className={!event.success ? 'archive-error-row' : ''}>
+                              <td className="archive-time-cell">{formatArchiveTime(event.timestamp)}</td>
+                              <td className={event.success ? '' : 'error-cell'}>{event.status_code || (event.success ? 'OK' : 'ERR')}</td>
+                              <td>{event.duration_ms.toFixed(1)} ms</td>
+                              <td>{event.bytes_received || 0}</td>
+                              <td className={!event.success ? 'error-cell' : 'cell-muted'}>{event.error_message || '—'}</td>
+                              <td>
+                                {hasInspectDetails ? (
+                                  <button
+                                    className="btn btn-sm btn-secondary archive-detail-toggle"
+                                    onClick={() => onExpandedArchiveEventChange(isExpanded ? null : rowKey)}
+                                  >
+                                    {isExpanded ? 'Hide' : 'Inspect'}
+                                  </button>
+                                ) : null}
+                              </td>
+                            </tr>
+                            {isExpanded && hasInspectDetails && (
+                              <tr className="archive-event-detail-row">
+                                <td colSpan={6}>
+                                  <div className="archive-event-detail-grid">
                                   {hasSnapshot && snapshotSections.length > 0 && (
                                     <div className="archive-event-detail-grid-header">
                                       <span className="scenario-script-detail-label">Captured Snapshot</span>
@@ -1343,7 +1510,7 @@ export default function TestExecutionArchive({
                                           className="btn btn-sm btn-ghost"
                                           onClick={() => void handleCopySection(`${rowKey}:soap-fault`, formatSOAPFaultSummary(soapFault))}
                                         >
-                                          {copiedSection === `${rowKey}:soap-fault` ? 'Copied' : 'Copy fault'}
+                                          {copyFailedSection === `${rowKey}:soap-fault` ? 'Copy failed' : copiedSection === `${rowKey}:soap-fault` ? 'Copied' : 'Copy fault'}
                                         </button>
                                       </div>
                                       <span className="scenario-script-detail-value">SOAP {soapFault.version}</span>
@@ -1370,7 +1537,10 @@ export default function TestExecutionArchive({
                                       <div className="archive-event-detail-header">
                                         <span className="scenario-script-detail-label">Server Telemetry</span>
                                       </div>
-                                      <pre className="archive-event-detail-pre">{formatServerTelemetryBlock(event.server_telemetry)}</pre>
+                                      <SnapshotTextPreview
+                                        text={formatServerTelemetryBlock(event.server_telemetry)}
+                                        preClassName="archive-event-detail-pre"
+                                      />
                                     </div>
                                   )}
                                   {hasSnapshot && (
@@ -1383,16 +1553,17 @@ export default function TestExecutionArchive({
                                             className="btn btn-sm btn-ghost"
                                             onClick={() => void handleCopySection(`${rowKey}:request`, formatSnapshotRequestSection(event.snapshot))}
                                           >
-                                            {copiedSection === `${rowKey}:request` ? 'Copied' : 'Copy request'}
+                                            {copyFailedSection === `${rowKey}:request` ? 'Copy failed' : copiedSection === `${rowKey}:request` ? 'Copied' : 'Copy full request'}
                                           </button>
                                         </div>
-                                        <span className="scenario-script-detail-value">{event.snapshot?.request_method || 'n/a'} {event.snapshot?.request_url || ''}</span>
+                                        <span className="scenario-script-detail-label">Request line and headers</span>
                                         <SnapshotTextPreview
-                                          text={formatCapturedHeaders(event.snapshot?.request_headers)}
+                                          text={formatSnapshotRequestLineAndHeaders(event.snapshot)}
                                           preClassName="archive-event-detail-pre"
                                           expanded={expandedSnapshotSections[snapshotSectionKey('request-headers')]}
                                           onExpandedChange={(expanded) => toggleSnapshotSection(snapshotSectionKey('request-headers'), expanded)}
                                         />
+                                        <span className="scenario-script-detail-label">Request body</span>
                                         <SnapshotBodyPreview
                                           body={event.snapshot?.request_body}
                                           headers={event.snapshot?.request_headers}
@@ -1410,16 +1581,17 @@ export default function TestExecutionArchive({
                                             className="btn btn-sm btn-ghost"
                                             onClick={() => void handleCopySection(`${rowKey}:response`, formatSnapshotResponseSection(event.snapshot, event.status_code))}
                                           >
-                                            {copiedSection === `${rowKey}:response` ? 'Copied' : 'Copy response'}
+                                            {copyFailedSection === `${rowKey}:response` ? 'Copy failed' : copiedSection === `${rowKey}:response` ? 'Copied' : 'Copy full response'}
                                           </button>
                                         </div>
-                                        <span className="scenario-script-detail-value">{event.snapshot?.response_status || event.status_code || 'n/a'}</span>
+                                        <span className="scenario-script-detail-label">Response status and headers</span>
                                         <SnapshotTextPreview
-                                          text={formatCapturedHeaders(event.snapshot?.response_headers)}
+                                          text={formatSnapshotResponseStatusAndHeaders(event.snapshot, event.status_code)}
                                           preClassName="archive-event-detail-pre"
                                           expanded={expandedSnapshotSections[snapshotSectionKey('response-headers')]}
                                           onExpandedChange={(expanded) => toggleSnapshotSection(snapshotSectionKey('response-headers'), expanded)}
                                         />
+                                        <span className="scenario-script-detail-label">Response body</span>
                                         <SnapshotBodyPreview
                                           body={event.snapshot?.response_body}
                                           headers={event.snapshot?.response_headers}
@@ -1431,15 +1603,16 @@ export default function TestExecutionArchive({
                                       </div>
                                     </>
                                   )}
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </div>

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -150,10 +151,20 @@ func (s *Server) handleGetRunArchiveTransactions(w http.ResponseWriter, r *http.
 		"limit":        page.Limit,
 		"offset":       page.Offset,
 		"filters": map[string]any{
-			"action":         filter.Action,
-			"soap_operation": filter.SOAPOperation,
-			"group":          filter.Group,
-			"success":        filter.Success,
+			"action":          filter.Action,
+			"soap_operation":  filter.SOAPOperation,
+			"group":           filter.Group,
+			"time_from":       filter.TimeFrom,
+			"time_to":         filter.TimeTo,
+			"status":          filter.Status,
+			"min_duration_ms": filter.MinDurationMs,
+			"max_duration_ms": filter.MaxDurationMs,
+			"min_bytes":       filter.MinBytes,
+			"max_bytes":       filter.MaxBytes,
+			"error_contains":  filter.ErrorContains,
+			"success":         filter.Success,
+			"sort_by":         filter.SortBy,
+			"sort_dir":        filter.SortDir,
 		},
 	})
 }
@@ -370,16 +381,19 @@ func parseArchivePage(w http.ResponseWriter, r *http.Request) (archivePage, bool
 }
 
 func parseTransactionEventFilter(w http.ResponseWriter, r *http.Request) (transactionEventFilter, bool) {
+	query := r.URL.Query()
 	filter := transactionEventFilter{
-		Action:           r.URL.Query().Get("action"),
-		SOAPOperation:    r.URL.Query().Get("soap_operation"),
-		Group:            r.URL.Query().Get("group"),
-		CorrelationID:    r.URL.Query().Get("correlation_id"),
-		TraceID:          r.URL.Query().Get("trace_id"),
-		DependencyType:   r.URL.Query().Get("dependency_type"),
-		DependencyTarget: r.URL.Query().Get("dependency_target"),
+		Action:           strings.TrimSpace(query.Get("action")),
+		SOAPOperation:    strings.TrimSpace(query.Get("soap_operation")),
+		Group:            strings.TrimSpace(query.Get("group")),
+		CorrelationID:    strings.TrimSpace(query.Get("correlation_id")),
+		TraceID:          strings.TrimSpace(query.Get("trace_id")),
+		DependencyType:   strings.TrimSpace(query.Get("dependency_type")),
+		DependencyTarget: strings.TrimSpace(query.Get("dependency_target")),
+		Status:           strings.TrimSpace(query.Get("status")),
+		ErrorContains:    strings.TrimSpace(query.Get("error_contains")),
 	}
-	if raw := r.URL.Query().Get("success"); raw != "" {
+	if raw := query.Get("success"); raw != "" {
 		parsed, err := strconv.ParseBool(raw)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid success")
@@ -387,7 +401,115 @@ func parseTransactionEventFilter(w http.ResponseWriter, r *http.Request) (transa
 		}
 		filter.Success = &parsed
 	}
+	if raw := query.Get("time_from"); raw != "" {
+		parsed, err := parseArchiveFilterTime(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid time_from")
+			return transactionEventFilter{}, false
+		}
+		filter.TimeFrom = &parsed
+	}
+	if raw := query.Get("time_to"); raw != "" {
+		parsed, err := parseArchiveFilterTime(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid time_to")
+			return transactionEventFilter{}, false
+		}
+		filter.TimeTo = &parsed
+	}
+	if filter.TimeFrom != nil && filter.TimeTo != nil && filter.TimeFrom.After(*filter.TimeTo) {
+		writeError(w, http.StatusBadRequest, "time_from cannot be after time_to")
+		return transactionEventFilter{}, false
+	}
+
+	var ok bool
+	if filter.MinDurationMs, ok = parseOptionalFloatQuery(w, r, "min_duration_ms"); !ok {
+		return transactionEventFilter{}, false
+	}
+	if filter.MaxDurationMs, ok = parseOptionalFloatQuery(w, r, "max_duration_ms"); !ok {
+		return transactionEventFilter{}, false
+	}
+	if filter.MinDurationMs != nil && filter.MaxDurationMs != nil && *filter.MinDurationMs > *filter.MaxDurationMs {
+		writeError(w, http.StatusBadRequest, "min_duration_ms cannot be greater than max_duration_ms")
+		return transactionEventFilter{}, false
+	}
+	if filter.MinBytes, ok = parseOptionalInt64Query(w, r, "min_bytes"); !ok {
+		return transactionEventFilter{}, false
+	}
+	if filter.MaxBytes, ok = parseOptionalInt64Query(w, r, "max_bytes"); !ok {
+		return transactionEventFilter{}, false
+	}
+	if filter.MinBytes != nil && filter.MaxBytes != nil && *filter.MinBytes > *filter.MaxBytes {
+		writeError(w, http.StatusBadRequest, "min_bytes cannot be greater than max_bytes")
+		return transactionEventFilter{}, false
+	}
+
+	if raw := strings.TrimSpace(query.Get("sort_by")); raw != "" {
+		switch raw {
+		case "time", "status", "duration", "bytes", "error":
+			filter.SortBy = raw
+		default:
+			writeError(w, http.StatusBadRequest, "invalid sort_by")
+			return transactionEventFilter{}, false
+		}
+		sortDir := strings.ToLower(strings.TrimSpace(query.Get("sort_dir")))
+		switch sortDir {
+		case "", "asc":
+			filter.SortDir = "asc"
+		case "desc":
+			filter.SortDir = "desc"
+		default:
+			writeError(w, http.StatusBadRequest, "invalid sort_dir")
+			return transactionEventFilter{}, false
+		}
+	}
 	return filter, true
+}
+
+func parseOptionalFloatQuery(w http.ResponseWriter, r *http.Request, name string) (*float64, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return nil, true
+	}
+	parsed, err := strconv.ParseFloat(raw, 64)
+	if err != nil || parsed < 0 {
+		writeError(w, http.StatusBadRequest, "invalid "+name)
+		return nil, false
+	}
+	return &parsed, true
+}
+
+func parseOptionalInt64Query(w http.ResponseWriter, r *http.Request, name string) (*int64, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return nil, true
+	}
+	parsed, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || parsed < 0 {
+		writeError(w, http.StatusBadRequest, "invalid "+name)
+		return nil, false
+	}
+	return &parsed, true
+}
+
+func parseArchiveFilterTime(raw string) (time.Time, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return time.Time{}, fmt.Errorf("empty time")
+	}
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04",
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+	} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unsupported time format")
 }
 
 func artifactContentType(name string) string {

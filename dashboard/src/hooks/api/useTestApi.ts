@@ -30,6 +30,16 @@ type ArchiveTransactionsParams = {
   soap_operation?: string
   group?: string
   success?: boolean
+  time_from?: string
+  time_to?: string
+  status?: string
+  min_duration_ms?: number
+  max_duration_ms?: number
+  min_bytes?: number
+  max_bytes?: number
+  error_contains?: string
+  sort_by?: string
+  sort_dir?: 'asc' | 'desc'
 }
 
 type ArchiveListParams = {
@@ -320,6 +330,16 @@ export function useTestApi() {
         soap_operation: params?.soap_operation,
         group: params?.group,
         success: params?.success,
+        time_from: params?.time_from,
+        time_to: params?.time_to,
+        status: params?.status,
+        min_duration_ms: params?.min_duration_ms,
+        max_duration_ms: params?.max_duration_ms,
+        min_bytes: params?.min_bytes,
+        max_bytes: params?.max_bytes,
+        error_contains: params?.error_contains,
+        sort_by: params?.sort_by,
+        sort_dir: params?.sort_dir,
       })
       return request<ArchiveTransactionsResponse>(`/tests/${id}/archive/transactions${suffix}`)
     },

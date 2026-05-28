@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   formatCapturedBody,
+  formatSnapshotRequestLineAndHeaders,
   formatSnapshotRequestSection,
+  formatSnapshotResponseStatusAndHeaders,
   formatSnapshotResponseSection,
 } from './snapshotFormatUtils'
 
@@ -12,6 +14,25 @@ describe('formatCapturedBody', () => {
 
     expect(formatCapturedBody(body, { 'Content-Type': 'application/soap+xml' })).toContain('\n  <env:Body>')
     expect(formatCapturedBody(body, { 'Content-Type': 'application/soap+xml' })).toContain('\n        <env:Value>env:Sender</env:Value>')
+  })
+
+  it('decodes safe HTML entities in markup text nodes', () => {
+    const body = '<HTML><BODY>"http&#58;&#47;&#47;csi&#45;gw&#45;ext&#46;att&#46;com&#47;Services" on this server.<P>Reference&#32;&#35;18&#46;f7d2f17</P></BODY></HTML>'
+
+    expect(formatCapturedBody(body, { 'Content-Type': 'text/html' })).toBe([
+      '<HTML>',
+      '  <BODY>',
+      '    "http://csi-gw-ext.att.com/Services" on this server.',
+      '    <P>Reference #18.f7d2f17</P>',
+      '  </BODY>',
+      '</HTML>',
+    ].join('\n'))
+  })
+
+  it('does not decode escaped angle brackets into rendered markup', () => {
+    const body = '<HTML><BODY>Expected &lt;Success&gt; marker</BODY></HTML>'
+
+    expect(formatCapturedBody(body, { 'Content-Type': 'text/html' })).toContain('Expected &lt;Success&gt; marker')
   })
 
   it('pretty prints JSON payloads detected from headers', () => {
@@ -41,6 +62,31 @@ describe('formatCapturedBody', () => {
       '{',
       '  "orderId": 123',
       '}',
+    ].join('\n'))
+  })
+
+  it('formats request line and headers for the drill-down preview', () => {
+    expect(formatSnapshotRequestLineAndHeaders({
+      request_method: 'POST',
+      request_url: 'https://api.example.test/orders',
+      request_headers: { 'Content-Type': 'application/xml' },
+    })).toBe([
+      'POST https://api.example.test/orders',
+      '',
+      'Headers',
+      'Content-Type: application/xml',
+    ].join('\n'))
+  })
+
+  it('formats response status and headers for the drill-down preview', () => {
+    expect(formatSnapshotResponseStatusAndHeaders({
+      response_status: 403,
+      response_headers: { 'Content-Type': 'application/xml' },
+    }, 500)).toBe([
+      'Status: 403',
+      '',
+      'Headers',
+      'Content-Type: application/xml',
     ].join('\n'))
   })
 

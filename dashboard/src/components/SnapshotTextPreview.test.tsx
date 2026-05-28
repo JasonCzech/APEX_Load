@@ -31,17 +31,17 @@ describe('SnapshotTextPreview', () => {
     container.remove()
   })
 
-  it('collapses long header text until expanded', async () => {
+  it('opens long header text in a full dialog', async () => {
     const text = Array.from({ length: 14 }, (_, index) => `X-Debug-${index}: value-${index}`).join('\n')
 
     await act(async () => {
       root.render(<SnapshotTextPreview text={text} />)
     })
 
-    expect(container.textContent).toContain('Show full text')
+    expect(container.textContent).toContain('Open full text')
     expect(container.textContent).not.toContain('X-Debug-13')
 
-    const button = Array.from(container.querySelectorAll('button')).find(node => node.textContent?.includes('Show full text'))
+    const button = Array.from(container.querySelectorAll('button')).find(node => node.textContent?.includes('Open full text'))
     expect(button).not.toBeNull()
     if (!button) {
       return
@@ -51,17 +51,45 @@ describe('SnapshotTextPreview', () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('Show less')
-    expect(container.textContent).toContain('X-Debug-13')
+    const dialog = document.body.querySelector('[role="dialog"][aria-label="Full text"]')
+    expect(dialog).not.toBeNull()
+    expect(container.textContent).not.toContain('X-Debug-13')
+    expect(dialog?.textContent).toContain('X-Debug-13')
+
+    const copyButton = Array.from(dialog?.querySelectorAll('button') ?? []).find(node => node.textContent?.includes('Copy'))
+    expect(copyButton).not.toBeNull()
+    if (!copyButton) {
+      return
+    }
+
+    await act(async () => {
+      copyButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(writeText).toHaveBeenCalledWith(text)
+    expect(dialog?.textContent).toContain('Copied')
+
+    const closeButton = Array.from(dialog?.querySelectorAll('button') ?? []).find(node => node.textContent?.includes('Close'))
+    expect(closeButton).not.toBeNull()
+    if (!closeButton) {
+      return
+    }
+
+    await act(async () => {
+      closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(document.body.querySelector('[role="dialog"][aria-label="Full text"]')).toBeNull()
   })
 
-  it('renders short text without a toggle', async () => {
+  it('renders short text with copy and full-text actions', async () => {
     await act(async () => {
       root.render(<SnapshotTextPreview text={'Content-Type: application/json'} />)
     })
 
     const buttons = Array.from(container.querySelectorAll('button'))
-    expect(buttons.some(button => button.textContent?.includes('Show full text'))).toBe(false)
+    expect(buttons.some(button => button.textContent?.includes('Open full text'))).toBe(true)
     expect(buttons.some(button => button.textContent?.includes('Copy'))).toBe(true)
     expect(container.textContent).toContain('Content-Type: application/json')
   })
@@ -88,7 +116,7 @@ describe('SnapshotTextPreview', () => {
     expect(container.textContent).toContain('Copied')
   })
 
-  it('supports controlled expansion', async () => {
+  it('honors controlled expansion state', async () => {
     const text = Array.from({ length: 14 }, (_, index) => `X-Debug-${index}: value-${index}`).join('\n')
     const onExpandedChange = vi.fn()
 
@@ -97,19 +125,8 @@ describe('SnapshotTextPreview', () => {
     })
 
     expect(container.textContent).not.toContain('X-Debug-13')
-
-    const button = Array.from(container.querySelectorAll('button')).find(node => node.textContent?.includes('Show full text'))
-    expect(button).not.toBeNull()
-    if (!button) {
-      return
-    }
-
-    await act(async () => {
-      button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onExpandedChange).toHaveBeenCalledWith(true)
-    expect(container.textContent).not.toContain('X-Debug-13')
+    expect(container.textContent).toContain('Open full text')
+    expect(onExpandedChange).not.toHaveBeenCalled()
 
     await act(async () => {
       root.render(<SnapshotTextPreview text={text} expanded={true} onExpandedChange={onExpandedChange} />)

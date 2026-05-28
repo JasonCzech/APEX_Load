@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ComponentProps, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentProps, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react'
 import {
   Area,
   CartesianGrid,
@@ -64,6 +64,9 @@ export interface ChartMetricSummary {
 }
 
 type ChartTimeAxisMode = 'clock' | 'relative'
+type ChartDensityMode = 'standard' | 'six_up'
+type ResponseTimeNetworkMode = 'end_to_end' | 'application'
+type ChartDropPosition = 'before' | 'after'
 
 const chartConfigs: ChartConfig[] = [
   { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
@@ -92,6 +95,13 @@ const chartConfigs: ChartConfig[] = [
   { id: 'io', title: 'Network & Disk I/O (KB/s)', type: 'line-io' },
   { id: 'network_latency', title: 'Route Latency (ms)', type: 'line-network' },
 ]
+
+function normalizedChartOrder(order: string[]) {
+  const knownIds = chartConfigs.map(chart => chart.id)
+  const retained = order.filter(id => knownIds.includes(id))
+  const added = knownIds.filter(id => !retained.includes(id))
+  return [...retained, ...added]
+}
 
 export const monitorPresets = [
   { id: 'run_operator', label: 'Run Operator', chartIds: ['vusers', 'tps', 'latency', 'errors'] },
@@ -134,6 +144,20 @@ function readStoredTimeAxisMode(): ChartTimeAxisMode {
   return window.localStorage.getItem('apexload.execution.chartTimeAxisMode') === 'relative'
     ? 'relative'
     : 'clock'
+}
+
+function readStoredChartDensity(): ChartDensityMode {
+  if (typeof window === 'undefined') return 'standard'
+  return window.localStorage.getItem('apexload.execution.chartDensity') === 'six_up'
+    ? 'six_up'
+    : 'standard'
+}
+
+function readStoredResponseTimeNetworkMode(): ResponseTimeNetworkMode {
+  if (typeof window === 'undefined') return 'end_to_end'
+  return window.localStorage.getItem('apexload.execution.responseTimeNetworkMode') === 'application'
+    ? 'application'
+    : 'end_to_end'
 }
 
 function sameStringArray(left: string[], right: string[]) {
@@ -192,6 +216,45 @@ export function latestRouteLatencyValues(data: MetricsHistoryPoint[], keys = rou
     }
   })
   return values
+}
+
+function responseTimeMetricKeys(groupNames: string[]) {
+  return [
+    'avgMs',
+    ...groupNames.map(name => `${name}_avgMs`),
+    'p50',
+    'p90',
+    'p99',
+  ]
+}
+
+function averageRouteLatencyForPoint(point: MetricsHistoryPoint, latencyKeys: string[]) {
+  const values = latencyKeys
+    .map(key => point[key])
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  if (values.length === 0) return undefined
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function roundChartValue(value: number) {
+  return Math.round(value * 10) / 10
+}
+
+export function responseTimeDataWithoutNetworkLatency(data: MetricsHistoryPoint[], latencyKeys: string[], groupNames: string[]) {
+  if (latencyKeys.length === 0) return data
+  const responseKeys = responseTimeMetricKeys(groupNames)
+  return data.map(point => {
+    const routeLatencyMs = averageRouteLatencyForPoint(point, latencyKeys)
+    if (routeLatencyMs === undefined) return point
+    const next = { ...point }
+    responseKeys.forEach(key => {
+      const value = point[key]
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        next[key] = Math.max(0, roundChartValue(value - routeLatencyMs))
+      }
+    })
+    return next
+  })
 }
 
 export function chartMetricKeys(chart: ChartConfig, groupNames: string[], latencyKeys: string[], includeVuserOverlay = false) {
@@ -436,18 +499,17 @@ export default function TestExecutionCharts({
   const [vuserOverlayChartIds, setVuserOverlayChartIds] = useState<string[]>(() => readStoredArray('apexload.execution.vuserOverlayCharts'))
   const [chartMetricFilters, setChartMetricFilters] = useState<Record<string, string[]>>(() => readStoredRecordArray('apexload.execution.chartMetricFilters'))
   const [timeAxisMode, setTimeAxisMode] = useState<ChartTimeAxisMode>(() => readStoredTimeAxisMode())
+  const [chartDensity, setChartDensity] = useState<ChartDensityMode>(() => readStoredChartDensity())
+  const [responseTimeNetworkMode, setResponseTimeNetworkMode] = useState<ResponseTimeNetworkMode>(() => readStoredResponseTimeNetworkMode())
   const [chartMenu, setChartMenu] = useState<{ chartId: string; x: number; y: number } | null>(null)
   const [hoveredChartId, setHoveredChartId] = useState<string | null>(null)
+  const [draggingChartId, setDraggingChartId] = useState<string | null>(null)
+  const [dragOverChartId, setDragOverChartId] = useState<string | null>(null)
   const chartCardRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const chartMenuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    const knownIds = chartConfigs.map(chart => chart.id)
-    setChartOrder(prev => {
-      const retained = prev.filter(id => knownIds.includes(id))
-      const added = knownIds.filter(id => !retained.includes(id))
-      return [...retained, ...added]
-    })
+    setChartOrder(prev => normalizedChartOrder(prev))
   }, [])
 
   useEffect(() => {
@@ -474,6 +536,16 @@ export default function TestExecutionCharts({
     if (typeof window === 'undefined') return
     window.localStorage.setItem('apexload.execution.chartTimeAxisMode', timeAxisMode)
   }, [timeAxisMode])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('apexload.execution.chartDensity', chartDensity)
+  }, [chartDensity])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('apexload.execution.responseTimeNetworkMode', responseTimeNetworkMode)
+  }, [responseTimeNetworkMode])
 
   useEffect(() => {
     if (!chartMenu) return
@@ -517,6 +589,12 @@ export default function TestExecutionCharts({
   }, [hiddenChartIds, orderedCharts])
   const latencyKeys = useMemo(() => routeLatencySeriesKeys(filteredData), [filteredData])
   const latencyLatestValues = useMemo(() => latestRouteLatencyValues(filteredData, latencyKeys), [filteredData, latencyKeys])
+  const responseTimeChartData = useMemo(
+    () => responseTimeNetworkMode === 'application'
+      ? responseTimeDataWithoutNetworkLatency(filteredData, latencyKeys, groupNames)
+      : filteredData,
+    [filteredData, groupNames, latencyKeys, responseTimeNetworkMode],
+  )
   const relativeTimeByClockLabel = useMemo(() => {
     const labels = new Map<string, number>()
     filteredData.forEach(point => {
@@ -541,6 +619,7 @@ export default function TestExecutionCharts({
       ]
     : visibleCharts
   const contextChart = chartMenu ? visibleCharts.find(chart => chart.id === chartMenu.chartId) : undefined
+  const chartDataFor = (chart: ChartConfig) => chart.id === 'latency' ? responseTimeChartData : filteredData
 
   const formatXAxisLabel = (value: string | number) => {
     if (timeAxisMode === 'clock') return String(value)
@@ -665,13 +744,118 @@ export default function TestExecutionCharts({
   }
 
   const exportChartCsv = (chart: ChartConfig) => {
-    downloadTextFile(`${safeFileName(chart.title)}-data.csv`, graphCsvForChart(chart, filteredData, groupNames, latencyKeys, isVuserOverlayEnabled(chart.id)), 'text/csv;charset=utf-8')
+    downloadTextFile(`${safeFileName(chart.title)}-data.csv`, graphCsvForChart(chart, chartDataFor(chart), groupNames, latencyKeys, isVuserOverlayEnabled(chart.id)), 'text/csv;charset=utf-8')
   }
 
   const copyLatestValues = (chart: ChartConfig) => {
-    const text = latestGraphValuesText(chart, latest, groupNames, latencyKeys, latencyLatestValues)
+    const chartData = chartDataFor(chart)
+    const chartLatest = chartData[chartData.length - 1] || latest
+    const text = latestGraphValuesText(chart, chartLatest, groupNames, latencyKeys, latencyLatestValues)
     if (navigator.clipboard?.writeText) {
       void navigator.clipboard.writeText(text)
+    }
+  }
+
+  const reorderChart = (sourceChartId: string, targetChartId: string, position: ChartDropPosition) => {
+    if (sourceChartId === targetChartId) return
+    setChartOrder(prev => {
+      const next = normalizedChartOrder(prev)
+      const sourceIndex = next.indexOf(sourceChartId)
+      const targetIndex = next.indexOf(targetChartId)
+      if (sourceIndex === -1 || targetIndex === -1) return prev
+      const [movedChartId] = next.splice(sourceIndex, 1)
+      const insertionIndex = next.indexOf(targetChartId) + (position === 'after' ? 1 : 0)
+      next.splice(insertionIndex, 0, movedChartId)
+      return next
+    })
+  }
+
+  const moveChartByOffset = (chartId: string, offset: number) => {
+    setChartOrder(prev => {
+      const next = normalizedChartOrder(prev)
+      const sourceIndex = next.indexOf(chartId)
+      if (sourceIndex === -1) return prev
+      const targetIndex = Math.max(0, Math.min(next.length - 1, sourceIndex + offset))
+      if (targetIndex === sourceIndex) return prev
+      const [movedChartId] = next.splice(sourceIndex, 1)
+      next.splice(targetIndex, 0, movedChartId)
+      return next
+    })
+  }
+
+  const moveChartToBoundary = (chartId: string, boundary: 'start' | 'end') => {
+    setChartOrder(prev => {
+      const next = normalizedChartOrder(prev)
+      const sourceIndex = next.indexOf(chartId)
+      if (sourceIndex === -1) return prev
+      const targetIndex = boundary === 'start' ? 0 : next.length - 1
+      if (sourceIndex === targetIndex) return prev
+      const [movedChartId] = next.splice(sourceIndex, 1)
+      next.splice(targetIndex, 0, movedChartId)
+      return next
+    })
+  }
+
+  const handleChartDragStart = (event: DragEvent<HTMLButtonElement>, chartId: string) => {
+    event.stopPropagation()
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', chartId)
+    setDraggingChartId(chartId)
+    setDragOverChartId(null)
+  }
+
+  const handleChartDragOver = (event: DragEvent<HTMLDivElement>, chartId: string) => {
+    const sourceChartId = draggingChartId || event.dataTransfer.getData('text/plain')
+    if (!sourceChartId || sourceChartId === chartId) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    setDragOverChartId(current => current === chartId ? current : chartId)
+  }
+
+  const handleChartDrop = (event: DragEvent<HTMLDivElement>, chartId: string) => {
+    const sourceChartId = draggingChartId || event.dataTransfer.getData('text/plain')
+    if (!sourceChartId || sourceChartId === chartId) {
+      setDraggingChartId(null)
+      setDragOverChartId(null)
+      return
+    }
+    event.preventDefault()
+    const rect = chartCardRefs.current[chartId]?.getBoundingClientRect()
+    const dropAfterTarget = rect
+      ? event.clientY > rect.top + rect.height / 2 || event.clientX > rect.left + rect.width / 2
+      : false
+    reorderChart(sourceChartId, chartId, dropAfterTarget ? 'after' : 'before')
+    setDraggingChartId(null)
+    setDragOverChartId(null)
+  }
+
+  const handleChartDragEnd = () => {
+    setDraggingChartId(null)
+    setDragOverChartId(null)
+  }
+
+  const handleChartReorderKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, chartId: string) => {
+    switch (event.key) {
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        event.preventDefault()
+        moveChartByOffset(chartId, -1)
+        break
+      case 'ArrowRight':
+      case 'ArrowDown':
+        event.preventDefault()
+        moveChartByOffset(chartId, 1)
+        break
+      case 'Home':
+        event.preventDefault()
+        moveChartToBoundary(chartId, 'start')
+        break
+      case 'End':
+        event.preventDefault()
+        moveChartToBoundary(chartId, 'end')
+        break
+      default:
+        break
     }
   }
 
@@ -688,6 +872,10 @@ export default function TestExecutionCharts({
     const next = chartStateForMonitorPreset(presetId)
     setChartOrder(next.chartOrder)
     setHiddenChartIds(next.hiddenChartIds)
+  }
+
+  const setResponseTimeNetworkLatencyIncluded = (included: boolean) => {
+    setResponseTimeNetworkMode(included ? 'end_to_end' : 'application')
   }
 
   const renderVuserOverlayAxis = (chart: ChartConfig, visibleMetricKeys: string[]) => (
@@ -712,7 +900,7 @@ export default function TestExecutionCharts({
     ) : null
   )
 
-  const renderMetricsTable = (chart: ChartConfig, rows: ChartMetricRow[], visibleMetricKeys: string[]) => {
+  const renderMetricsTable = (chart: ChartConfig, rows: ChartMetricRow[], visibleMetricKeys: string[], chartData: MetricsHistoryPoint[]) => {
     if (rows.length === 0) {
       return (
         <div className="chart-metrics-empty">
@@ -745,7 +933,7 @@ export default function TestExecutionCharts({
           </thead>
           <tbody>
             {rows.map(row => {
-              const summary = chartMetricSummary(filteredData, row.key)
+              const summary = chartMetricSummary(chartData, row.key)
               const visible = visibleMetricKeys.includes(row.key)
               return (
                 <tr key={row.key} className={visible ? '' : 'muted'}>
@@ -791,6 +979,30 @@ export default function TestExecutionCharts({
             <button className={`btn-chip ${timeRange === '3m' ? 'active' : ''}`} type="button" onClick={() => onTimeRangeChange('3m')}>3m</button>
             <button className={`btn-chip ${timeRange === '10m' ? 'active' : ''}`} type="button" onClick={() => onTimeRangeChange('10m')}>10m</button>
             <button className={`btn-chip ${timeRange === 'all' ? 'active' : ''}`} type="button" onClick={() => onTimeRangeChange('all')}>Max</button>
+          </div>
+        </div>
+        <div className="charts-customize-panel-section">
+          <div>
+            <h4>Zoom</h4>
+            <span>Graph density</span>
+          </div>
+          <div className="time-range-selector chart-segment-toggle" role="group" aria-label="Graph density">
+            <button
+              className={`btn-chip ${chartDensity === 'standard' ? 'active' : ''}`}
+              type="button"
+              onClick={() => setChartDensity('standard')}
+              aria-pressed={chartDensity === 'standard'}
+            >
+              Standard
+            </button>
+            <button
+              className={`btn-chip ${chartDensity === 'six_up' ? 'active' : ''}`}
+              type="button"
+              onClick={() => setChartDensity('six_up')}
+              aria-pressed={chartDensity === 'six_up'}
+            >
+              6 Graphs
+            </button>
           </div>
         </div>
         <div className="charts-customize-panel-section">
@@ -866,8 +1078,10 @@ export default function TestExecutionCharts({
           <button className="btn btn-secondary btn-sm" type="button" onClick={resetCharts}>Reset Graphs</button>
         </div>
       ) : (
-        <div className="charts-grid">
+        <div className={`charts-grid ${chartDensity === 'six_up' ? 'six-up' : ''}`}>
           {displayedCharts.map((chart) => {
+            const chartData = chartDataFor(chart)
+            const chartHeight = chartDensity === 'six_up' && expandedChart !== chart.id ? 132 : expandedChart === chart.id ? 400 : 200
             const metricRows = metricRowsForChart(chart)
             const visibleMetricKeys = visibleMetricKeysForChart(chart, metricRows)
             const metricAxisIdForChart = metricYAxisId(chart, visibleMetricKeys)
@@ -878,16 +1092,43 @@ export default function TestExecutionCharts({
                 ref={element => {
                   chartCardRefs.current[chart.id] = element
                 }}
-                className={`chart-card ${expandedChart === chart.id ? 'expanded' : ''}`}
+                className={`chart-card ${expandedChart === chart.id ? 'expanded' : ''} ${draggingChartId === chart.id ? 'dragging' : ''} ${dragOverChartId === chart.id ? 'drop-target' : ''}`}
                 onContextMenu={event => openChartMenu(event, chart.id)}
                 onMouseEnter={() => setHoveredChartId(chart.id)}
                 onMouseLeave={() => handleChartMouseLeave(chart.id)}
+                onDragOver={event => handleChartDragOver(event, chart.id)}
+                onDragLeave={() => setDragOverChartId(current => current === chart.id ? null : current)}
+                onDrop={event => handleChartDrop(event, chart.id)}
               >
                 <div className="chart-card-header">
                   <div className="chart-title-wrap">
+                    <button
+                      className="chart-drag-handle"
+                      type="button"
+                      draggable
+                      aria-label={`Rearrange ${chart.title}`}
+                      title="Drag to rearrange graph. Use arrow keys to move."
+                      onDragStart={event => handleChartDragStart(event, chart.id)}
+                      onDragEnd={handleChartDragEnd}
+                      onKeyDown={event => handleChartReorderKeyDown(event, chart.id)}
+                    />
                     <h3 className="chart-title">{chart.title}</h3>
                   </div>
                   <div className="chart-card-actions">
+                    {chart.id === 'latency' && (
+                      <label
+                        className="chart-card-checkbox"
+                        title={latencyKeys.length === 0 ? 'No route latency samples available' : undefined}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={responseTimeNetworkMode === 'end_to_end'}
+                          disabled={latencyKeys.length === 0}
+                          onChange={event => setResponseTimeNetworkLatencyIncluded(event.currentTarget.checked)}
+                        />
+                        <span>Include network latency</span>
+                      </label>
+                    )}
                     <button
                       className="btn-icon btn-expand"
                       type="button"
@@ -897,10 +1138,10 @@ export default function TestExecutionCharts({
                     </button>
                   </div>
                 </div>
-                <ResponsiveContainer width="100%" height={expandedChart === chart.id ? 400 : 200}>
+                <ResponsiveContainer width="100%" height={chartHeight}>
             {chart.type === 'area' ? (
               <ComposedChart
-                data={filteredData}
+                data={chartData}
                 syncId="metrics"
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
@@ -921,7 +1162,7 @@ export default function TestExecutionCharts({
               </ComposedChart>
             ) : chart.type === 'line-multi' ? (
               <LineChart
-                data={filteredData}
+                data={chartData}
                 syncId="metrics"
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
@@ -946,7 +1187,7 @@ export default function TestExecutionCharts({
               </LineChart>
             ) : chart.type === 'line-latency' ? (
               <LineChart
-                data={filteredData}
+                data={chartData}
                 syncId="metrics"
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
@@ -974,7 +1215,7 @@ export default function TestExecutionCharts({
               </LineChart>
             ) : chart.type === 'area-multi' ? (
               <ComposedChart
-                data={filteredData}
+                data={chartData}
                 syncId="metrics"
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
@@ -996,7 +1237,7 @@ export default function TestExecutionCharts({
               </ComposedChart>
             ) : chart.type === 'line-network' ? (
               <LineChart
-                data={filteredData}
+                data={chartData}
                 syncId="metrics"
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
@@ -1028,7 +1269,7 @@ export default function TestExecutionCharts({
               </LineChart>
             ) : (
               <LineChart
-                data={filteredData}
+                data={chartData}
                 syncId="metrics"
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
@@ -1052,7 +1293,7 @@ export default function TestExecutionCharts({
             )}
           </ResponsiveContainer>
 
-          {renderMetricsTable(chart, metricRows, visibleMetricKeys)}
+          {(chartDensity === 'standard' || expandedChart === chart.id) && renderMetricsTable(chart, metricRows, visibleMetricKeys, chartData)}
             </div>
             )
           })}
@@ -1076,6 +1317,11 @@ export default function TestExecutionCharts({
           {isVuserOverlayAvailable(contextChart) && (
             <button type="button" role="menuitem" onClick={() => runChartAction(() => toggleVuserOverlay(contextChart.id))}>
               {isVuserOverlayEnabled(contextChart.id) ? 'Hide VUsers Overlay' : 'Overlay VUsers'}
+            </button>
+          )}
+          {contextChart.id === 'latency' && (
+            <button type="button" role="menuitem" onClick={() => runChartAction(() => setResponseTimeNetworkLatencyIncluded(responseTimeNetworkMode === 'application'))}>
+              {responseTimeNetworkMode === 'application' ? 'Include Network Latency' : 'Remove Network Latency'}
             </button>
           )}
           <button type="button" role="menuitem" onClick={() => runChartAction(() => onExpandedChartChange(expandedChart === contextChart.id ? null : contextChart.id))}>

@@ -40,10 +40,15 @@ function ArchiveHarness({ test }: { test: TestSummary | null }) {
       <span data-testid="page-start">{String(model.archivePageStart)}</span>
       <span data-testid="page-end">{String(model.archivePageEnd)}</span>
       <span data-testid="expanded">{model.expandedArchiveEvent || 'none'}</span>
+      <span data-testid="sort">{model.archiveTransactionSort ? `${model.archiveTransactionSort.key}:${model.archiveTransactionSort.direction}` : 'none'}</span>
+      <span data-testid="status-filter">{model.archiveTransactionFilters.status || 'none'}</span>
       <span data-testid="error">{model.archiveError || 'none'}</span>
       <button data-testid="next" onClick={() => model.onNextPage()}>next</button>
       <button data-testid="inspect" onClick={() => model.onExpandedArchiveEventChange('row-1')}>inspect</button>
       <button data-testid="set-group" onClick={() => model.onSelectedArchiveGroupChange('Checkout')}>group</button>
+      <button data-testid="sort-duration" onClick={() => model.onArchiveTransactionSortChange('duration')}>sort duration</button>
+      <button data-testid="filter-status" onClick={() => model.onArchiveTransactionFilterChange('status', '500')}>filter status</button>
+      <button data-testid="clear-filters" onClick={() => model.onArchiveTransactionFiltersReset()}>clear filters</button>
     </div>
   )
 }
@@ -159,6 +164,7 @@ describe('useExecutionArchiveModel', () => {
       soap_operation: undefined,
       group: undefined,
       success: undefined,
+      ...defaultArchiveTransactionQuery(),
       limit: 10,
       offset: 0,
     })
@@ -344,6 +350,7 @@ describe('useExecutionArchiveModel', () => {
       soap_operation: undefined,
       group: undefined,
       success: undefined,
+      ...defaultArchiveTransactionQuery(),
       limit: 10,
       offset: 10,
     })
@@ -359,11 +366,130 @@ describe('useExecutionArchiveModel', () => {
       soap_operation: undefined,
       group: 'Checkout',
       success: undefined,
+      ...defaultArchiveTransactionQuery(),
       limit: 10,
       offset: 0,
     })
     expect(readTestId('group')).toBe('Checkout')
     expect(readTestId('offset')).toBe('0')
+  })
+
+  it('sends column sort and filter options to the archive transaction query', async () => {
+    apiMock.getTestArchiveReport.mockResolvedValue({
+      manifest: {
+        schema_version: 'v1',
+        test_id: 'test-1',
+        test_name: 'Checkout',
+        created_at: '2026-05-12T20:00:00Z',
+        transactions_file: 'transactions.jsonl',
+        resource_samples_file: 'resources.jsonl',
+        interval_summaries_file: 'interval_summaries.jsonl',
+        transaction_count: 60,
+        resource_sample_count: 1,
+        interval_summary_count: 1,
+      },
+      overview: {
+        transactions: 60,
+        errors: 0,
+        error_pct: 0,
+        avg_response_ms: 120,
+        min_response_ms: 80,
+        max_response_ms: 220,
+        resource_samples: 1,
+        interval_summaries: 1,
+        peak_tps: 15,
+        peak_active_vusers: 10,
+      },
+      by_action: {
+        Login: {
+          transactions: 60,
+          errors: 0,
+          error_pct: 0,
+          avg_response_ms: 120,
+          min_response_ms: 80,
+          max_response_ms: 220,
+        },
+      },
+      by_soap_operation: {},
+      resource_peaks: {
+        cpu_process_pct: 10,
+        mem_process_mb: 200,
+        net_sent_kbps: 11,
+        net_recv_kbps: 12,
+        disk_read_kbps: 13,
+        disk_write_kbps: 14,
+      },
+    })
+    apiMock.getTestArchiveTransactions.mockResolvedValue({
+      transactions: [
+        {
+          timestamp: '2026-05-12T20:05:00Z',
+          test_id: 'test-1',
+          test_name: 'Checkout',
+          group: 'Web',
+          action_name: 'Login',
+          duration_ms: 123,
+          success: false,
+          status_code: 500,
+        },
+      ],
+      total: 60,
+      count: 1,
+      limit: 10,
+      offset: 0,
+    })
+
+    await act(async () => {
+      root.render(<ArchiveHarness test={buildArchivedTest()} />)
+    })
+    await flushPromises()
+
+    await click('next')
+    await flushPromises()
+    expect(readTestId('offset')).toBe('10')
+
+    await click('sort-duration')
+    await flushPromises()
+
+    expect(readTestId('sort')).toBe('duration:asc')
+    expect(readTestId('offset')).toBe('0')
+    expect(apiMock.getTestArchiveTransactions).toHaveBeenLastCalledWith('test-1', {
+      action: 'Login',
+      soap_operation: undefined,
+      group: undefined,
+      success: undefined,
+      ...defaultArchiveTransactionQuery({ sort_by: 'duration', sort_dir: 'asc' }),
+      limit: 10,
+      offset: 0,
+    })
+
+    await click('filter-status')
+    await flushPromises()
+
+    expect(readTestId('status-filter')).toBe('500')
+    expect(apiMock.getTestArchiveTransactions).toHaveBeenLastCalledWith('test-1', {
+      action: 'Login',
+      soap_operation: undefined,
+      group: undefined,
+      success: undefined,
+      ...defaultArchiveTransactionQuery({ status: '500', sort_by: 'duration', sort_dir: 'asc' }),
+      limit: 10,
+      offset: 0,
+    })
+
+    await click('clear-filters')
+    await flushPromises()
+
+    expect(readTestId('status-filter')).toBe('none')
+    expect(apiMock.getTestArchiveTransactions).toHaveBeenLastCalledWith('test-1', {
+      action: 'Login',
+      soap_operation: undefined,
+      group: undefined,
+      success: undefined,
+      ...defaultArchiveTransactionQuery({ sort_by: 'duration', sort_dir: 'asc' }),
+      limit: 10,
+      offset: 0,
+    })
   })
 
   it('downloads browser diagnostics bundles for archived tests', async () => {
@@ -436,6 +562,22 @@ describe('useExecutionArchiveModel', () => {
     })
   }
 })
+
+function defaultArchiveTransactionQuery(overrides: Record<string, string | undefined> = {}) {
+  return {
+    time_from: undefined,
+    time_to: undefined,
+    status: undefined,
+    min_duration_ms: undefined,
+    max_duration_ms: undefined,
+    min_bytes: undefined,
+    max_bytes: undefined,
+    error_contains: undefined,
+    sort_by: undefined,
+    sort_dir: undefined,
+    ...overrides,
+  }
+}
 
 function buildArchivedTest(): TestSummary {
   return {

@@ -2898,8 +2898,8 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Snapshot Request')
     expect(container.textContent).toContain('Snapshot Response')
     const copyFaultButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy fault'))
-    const copyRequestButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy request'))
-    const copyResponseButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy response'))
+    const copyRequestButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy full request'))
+    const copyResponseButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy full response'))
     expect(copyFaultButton).toBeDefined()
     expect(copyRequestButton).toBeDefined()
     expect(copyResponseButton).toBeDefined()
@@ -2946,7 +2946,7 @@ describe('ScriptEditor', () => {
       },
       response_body: '<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><env:Fault><env:Code><env:Value>env:Sender</env:Value></env:Code><env:Reason><env:Text xml:lang="en">Request validation failed</env:Text></env:Reason></env:Fault></env:Body></env:Envelope>',
     }, 200))
-    expect(container.textContent).toContain('Show full text')
+    expect(container.textContent).toContain('Open full text')
     const highlightedBlocks = Array.from(container.querySelectorAll('.snapshot-code'))
     expect(highlightedBlocks).toHaveLength(4)
     expect(highlightedBlocks.some(block => block.textContent?.includes('"confirmationId": "CONF-42"'))).toBe(true)

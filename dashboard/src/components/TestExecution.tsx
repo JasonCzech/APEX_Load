@@ -117,6 +117,12 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     onSelectedArchiveGroupChange,
     archiveErrorsOnly,
     onArchiveErrorsOnlyChange,
+    archiveTransactionSort,
+    onArchiveTransactionSortChange,
+    archiveTransactionFilters,
+    archiveTransactionFiltersActive,
+    onArchiveTransactionFilterChange,
+    onArchiveTransactionFiltersReset,
     archiveTransactionsLoading,
     archiveTransactionsTotal,
     archivePageStart,
@@ -278,6 +284,12 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
           onSelectedArchiveGroupChange={onSelectedArchiveGroupChange}
           archiveErrorsOnly={archiveErrorsOnly}
           onArchiveErrorsOnlyChange={onArchiveErrorsOnlyChange}
+          archiveTransactionSort={archiveTransactionSort}
+          onArchiveTransactionSortChange={onArchiveTransactionSortChange}
+          archiveTransactionFilters={archiveTransactionFilters}
+          archiveTransactionFiltersActive={archiveTransactionFiltersActive}
+          onArchiveTransactionFilterChange={onArchiveTransactionFilterChange}
+          onArchiveTransactionFiltersReset={onArchiveTransactionFiltersReset}
           archiveTransactionsLoading={archiveTransactionsLoading}
           archiveTransactionsTotal={archiveTransactionsTotal}
           archivePageStart={archivePageStart}

@@ -169,7 +169,17 @@ type transactionEventFilter struct {
 	TraceID          string
 	DependencyType   string
 	DependencyTarget string
+	TimeFrom         *time.Time
+	TimeTo           *time.Time
+	Status           string
+	MinDurationMs    *float64
+	MaxDurationMs    *float64
+	MinBytes         *int64
+	MaxBytes         *int64
+	ErrorContains    string
 	Success          *bool
+	SortBy           string
+	SortDir          string
 }
 
 type RunArchiveReport struct {
@@ -492,6 +502,7 @@ type BrowserDiagnosticArtifacts struct {
 var archiveErrorUUIDPattern = regexp.MustCompile(`\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b`)
 var archiveErrorNumberPattern = regexp.MustCompile(`\b\d+\b`)
 var archiveErrorWhitespacePattern = regexp.MustCompile(`\s+`)
+var archiveSnapshotLeadingTemplateBasePattern = regexp.MustCompile(`^\{\{\s*(?:var|param)\.[^{}]+\s*\}\}\s*(.*)$`)
 
 type runArchiveWriter struct {
 	mu              sync.Mutex
@@ -807,33 +818,173 @@ func loadArchiveTransactions(record *storage.RunArchiveRecord, filter transactio
 		return nil, 0, err
 	}
 	path := filepath.Join(record.ArchivePath, manifest.TransactionsFile)
-	return readJSONLPage(path, page, func(item *TransactionEvent) bool {
-		if filter.Action != "" && !strings.EqualFold(item.ActionName, filter.Action) {
-			return false
+	predicate := func(item *TransactionEvent) bool {
+		return transactionMatchesArchiveFilter(item, filter)
+	}
+
+	if filter.SortBy != "" {
+		items, total, err := readJSONLFiltered(path, predicate)
+		if err != nil {
+			return nil, 0, err
 		}
-		if filter.SOAPOperation != "" && !strings.EqualFold(strings.TrimSpace(item.Extractions["soap_operation"]), filter.SOAPOperation) {
-			return false
+		sortArchiveTransactions(items, filter.SortBy, filter.SortDir)
+		paged := pageArchiveItems(items, page)
+		normalizeArchiveTransactionSnapshots(paged)
+		return paged, total, nil
+	}
+
+	items, total, err := readJSONLPage(path, page, predicate)
+	if err != nil {
+		return nil, 0, err
+	}
+	normalizeArchiveTransactionSnapshots(items)
+	return items, total, nil
+}
+
+func transactionMatchesArchiveFilter(item *TransactionEvent, filter transactionEventFilter) bool {
+	if filter.Action != "" && !strings.EqualFold(item.ActionName, filter.Action) {
+		return false
+	}
+	if filter.SOAPOperation != "" && !strings.EqualFold(strings.TrimSpace(item.Extractions["soap_operation"]), filter.SOAPOperation) {
+		return false
+	}
+	if filter.Group != "" && !strings.EqualFold(item.Group, filter.Group) {
+		return false
+	}
+	if filter.CorrelationID != "" && !strings.EqualFold(item.CorrelationID, filter.CorrelationID) {
+		return false
+	}
+	if filter.TraceID != "" && !strings.EqualFold(item.TraceID, filter.TraceID) {
+		return false
+	}
+	if filter.DependencyType != "" && !strings.EqualFold(item.DependencyType, filter.DependencyType) {
+		return false
+	}
+	if filter.DependencyTarget != "" && !strings.EqualFold(item.DependencyTarget, filter.DependencyTarget) {
+		return false
+	}
+	if filter.TimeFrom != nil && item.Timestamp.Before(*filter.TimeFrom) {
+		return false
+	}
+	if filter.TimeTo != nil && item.Timestamp.After(*filter.TimeTo) {
+		return false
+	}
+	if filter.Status != "" && !strings.Contains(strings.ToLower(transactionStatusLabel(item)), strings.ToLower(filter.Status)) {
+		return false
+	}
+	if filter.MinDurationMs != nil && item.DurationMs < *filter.MinDurationMs {
+		return false
+	}
+	if filter.MaxDurationMs != nil && item.DurationMs > *filter.MaxDurationMs {
+		return false
+	}
+	if filter.MinBytes != nil && item.BytesReceived < *filter.MinBytes {
+		return false
+	}
+	if filter.MaxBytes != nil && item.BytesReceived > *filter.MaxBytes {
+		return false
+	}
+	if filter.ErrorContains != "" && !strings.Contains(strings.ToLower(item.ErrorMessage), strings.ToLower(filter.ErrorContains)) {
+		return false
+	}
+	if filter.Success != nil && item.Success != *filter.Success {
+		return false
+	}
+	return true
+}
+
+func transactionStatusLabel(item *TransactionEvent) string {
+	if item.StatusCode != 0 {
+		return fmt.Sprint(item.StatusCode)
+	}
+	if item.Success {
+		return "OK"
+	}
+	return "ERR"
+}
+
+func transactionStatusSortValue(item TransactionEvent) int {
+	if item.StatusCode != 0 {
+		return item.StatusCode
+	}
+	if item.Success {
+		return 200
+	}
+	return 599
+}
+
+func sortArchiveTransactions(items []TransactionEvent, sortBy string, sortDir string) {
+	descending := strings.EqualFold(sortDir, "desc")
+	sort.SliceStable(items, func(i, j int) bool {
+		result := compareArchiveTransactions(items[i], items[j], sortBy)
+		if result == 0 && sortBy != "time" {
+			result = compareTime(items[i].Timestamp, items[j].Timestamp)
 		}
-		if filter.Group != "" && !strings.EqualFold(item.Group, filter.Group) {
-			return false
+		if result == 0 {
+			result = strings.Compare(items[i].ActionName, items[j].ActionName)
 		}
-		if filter.CorrelationID != "" && !strings.EqualFold(item.CorrelationID, filter.CorrelationID) {
-			return false
+		if descending {
+			return result > 0
 		}
-		if filter.TraceID != "" && !strings.EqualFold(item.TraceID, filter.TraceID) {
-			return false
-		}
-		if filter.DependencyType != "" && !strings.EqualFold(item.DependencyType, filter.DependencyType) {
-			return false
-		}
-		if filter.DependencyTarget != "" && !strings.EqualFold(item.DependencyTarget, filter.DependencyTarget) {
-			return false
-		}
-		if filter.Success != nil && item.Success != *filter.Success {
-			return false
-		}
-		return true
+		return result < 0
 	})
+}
+
+func compareArchiveTransactions(a TransactionEvent, b TransactionEvent, sortBy string) int {
+	switch sortBy {
+	case "time":
+		return compareTime(a.Timestamp, b.Timestamp)
+	case "status":
+		return compareInt(transactionStatusSortValue(a), transactionStatusSortValue(b))
+	case "duration":
+		return compareFloat(a.DurationMs, b.DurationMs)
+	case "bytes":
+		return compareInt64(a.BytesReceived, b.BytesReceived)
+	case "error":
+		return strings.Compare(strings.ToLower(a.ErrorMessage), strings.ToLower(b.ErrorMessage))
+	default:
+		return 0
+	}
+}
+
+func compareTime(a time.Time, b time.Time) int {
+	if a.Before(b) {
+		return -1
+	}
+	if a.After(b) {
+		return 1
+	}
+	return 0
+}
+
+func compareFloat(a float64, b float64) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
+}
+
+func compareInt(a int, b int) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
+}
+
+func compareInt64(a int64, b int64) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
 }
 
 func loadArchiveResourceSamples(record *storage.RunArchiveRecord, page archivePage) ([]ResourceSample, int, error) {
@@ -858,6 +1009,58 @@ func loadArchiveIntervalSummaries(record *storage.RunArchiveRecord, page archive
 	}
 	path := filepath.Join(record.ArchivePath, manifest.IntervalSummariesFile)
 	return readJSONLPage[IntervalSummaryRecord](path, page, nil)
+}
+
+func normalizeArchiveTransactionSnapshots(items []TransactionEvent) {
+	for index := range items {
+		normalizeArchiveTransactionSnapshot(&items[index])
+	}
+}
+
+func normalizeArchiveTransactionSnapshot(item *TransactionEvent) {
+	if item == nil || item.Snapshot == nil {
+		return
+	}
+	item.Snapshot.RequestURL = resolveArchivedSnapshotRequestURL(item.Snapshot.RequestURL, item.DependencyTarget)
+}
+
+func resolveArchivedSnapshotRequestURL(requestURL string, dependencyTarget string) string {
+	requestURL = strings.TrimSpace(requestURL)
+	if requestURL == "" || !strings.Contains(requestURL, "{{") || !strings.Contains(requestURL, "}}") {
+		return requestURL
+	}
+	match := archiveSnapshotLeadingTemplateBasePattern.FindStringSubmatch(requestURL)
+	if len(match) != 2 {
+		return requestURL
+	}
+	dependencyTarget = strings.TrimSpace(dependencyTarget)
+	if dependencyTarget == "" {
+		return requestURL
+	}
+	if base, _, ok := strings.Cut(dependencyTarget, "#"); ok {
+		dependencyTarget = strings.TrimSpace(base)
+	}
+	if dependencyTarget == "" {
+		return requestURL
+	}
+
+	baseURL := dependencyTarget
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		scheme := "https://"
+		if strings.HasSuffix(baseURL, ":80") {
+			scheme = "http://"
+		}
+		baseURL = scheme + baseURL
+	}
+
+	suffix := strings.TrimSpace(match[1])
+	if suffix == "" {
+		return baseURL
+	}
+	if strings.HasPrefix(suffix, "/") || strings.HasPrefix(suffix, "?") || strings.HasPrefix(suffix, "#") {
+		return strings.TrimRight(baseURL, "/") + suffix
+	}
+	return strings.TrimRight(baseURL, "/") + "/" + suffix
 }
 
 func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport, error) {
@@ -2449,9 +2652,14 @@ func finalizeReportBrowserDeviceMetrics(summary *BrowserDeviceLiveMetrics) {
 }
 
 func readAllArchiveTransactions(record *storage.RunArchiveRecord) ([]TransactionEvent, error) {
-	return readAllArchiveRecords[TransactionEvent](record, func(manifest *RunArchiveManifest) string {
+	items, err := readAllArchiveRecords[TransactionEvent](record, func(manifest *RunArchiveManifest) string {
 		return manifest.TransactionsFile
 	})
+	if err != nil {
+		return nil, err
+	}
+	normalizeArchiveTransactionSnapshots(items)
+	return items, nil
 }
 
 func readAllArchiveResources(record *storage.RunArchiveRecord) ([]ResourceSample, error) {
@@ -2494,6 +2702,55 @@ func readAllArchiveRecords[T any](record *storage.RunArchiveRecord, pathSelector
 		return nil, err
 	}
 	return items, nil
+}
+
+func readJSONLFiltered[T any](path string, predicate func(*T) bool) ([]T, int, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 2*1024*1024)
+
+	items := make([]T, 0)
+	matched := 0
+	for scanner.Scan() {
+		var item T
+		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
+			return nil, 0, err
+		}
+		if predicate != nil && !predicate(&item) {
+			continue
+		}
+		items = append(items, item)
+		matched++
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, 0, err
+	}
+	return items, matched, nil
+}
+
+func pageArchiveItems[T any](items []T, page archivePage) []T {
+	limit := page.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	offset := page.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(items) {
+		return []T{}
+	}
+	end := offset + limit
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[offset:end]
 }
 
 func readJSONLPage[T any](path string, page archivePage, predicate func(*T) bool) ([]T, int, error) {
