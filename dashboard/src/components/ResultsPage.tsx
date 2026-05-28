@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { downloadBlob } from '../utils/fileUtils'
@@ -31,6 +31,49 @@ type SortField = 'name' | 'status' | 'total_vusers' | 'groups' | 'started' | 'du
 type StatusFilter = 'all' | 'complete' | 'failed' | 'aborted'
 type ArchiveFilter = 'all' | 'ready' | 'pending'
 type ComparisonBreakdown = BrowserBreakdown
+type RefreshOptions = {
+  initial?: boolean
+}
+type ComparisonChartMetric = 'tps' | 'art' | 'p50' | 'p90' | 'p95' | 'p99' | 'errors'
+type ComparisonChartDataKey =
+  | 'leftTps'
+  | 'rightTps'
+  | 'leftArt'
+  | 'rightArt'
+  | 'leftP50'
+  | 'rightP50'
+  | 'leftP90'
+  | 'rightP90'
+  | 'leftP95'
+  | 'rightP95'
+  | 'leftP99'
+  | 'rightP99'
+  | 'leftErrorPct'
+  | 'rightErrorPct'
+type ComparisonSummaryLineConfig = {
+  dataKey: ComparisonChartDataKey
+  name: string
+  stroke: string
+  yAxisId: 'value'
+}
+type ComparisonChartMetricConfig = {
+  id: ComparisonChartMetric
+  label: string
+  leftKey: ComparisonChartDataKey
+  rightKey: ComparisonChartDataKey
+  description: string
+  valueFormat: 'count' | 'ms' | 'percent'
+}
+
+const COMPARISON_CHART_METRICS: ComparisonChartMetricConfig[] = [
+  { id: 'tps', label: 'TPS', leftKey: 'leftTps', rightKey: 'rightTps', description: 'transactions per second', valueFormat: 'count' },
+  { id: 'art', label: 'ART', leftKey: 'leftArt', rightKey: 'rightArt', description: 'average response time', valueFormat: 'ms' },
+  { id: 'p50', label: 'P50', leftKey: 'leftP50', rightKey: 'rightP50', description: 'median response time', valueFormat: 'ms' },
+  { id: 'p90', label: 'P90', leftKey: 'leftP90', rightKey: 'rightP90', description: '90th percentile response time', valueFormat: 'ms' },
+  { id: 'p95', label: 'P95', leftKey: 'leftP95', rightKey: 'rightP95', description: '95th percentile response time', valueFormat: 'ms' },
+  { id: 'p99', label: 'P99', leftKey: 'leftP99', rightKey: 'rightP99', description: '99th percentile response time', valueFormat: 'ms' },
+  { id: 'errors', label: 'Errors', leftKey: 'leftErrorPct', rightKey: 'rightErrorPct', description: 'error percentage', valueFormat: 'percent' },
+]
 
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleString() : 'Never'
@@ -172,6 +215,38 @@ function buildTestReportHref(testId: string) {
   return `/api/v1/tests/${encodeURIComponent(testId)}/report`
 }
 
+function formatShortRunId(id: string) {
+  return id.length > 12 ? id.slice(0, 8) : id
+}
+
+function formatComparisonRunLabel(test: TestSummary) {
+  const name = test.name || 'Unnamed run'
+  return `${name} (${formatShortRunId(test.id)})`
+}
+
+function getComparisonChartMetricConfig(metric: ComparisonChartMetric): ComparisonChartMetricConfig {
+  return COMPARISON_CHART_METRICS.find(item => item.id === metric) || COMPARISON_CHART_METRICS[0]
+}
+
+function formatComparisonChartValue(value: unknown, format: ComparisonChartMetricConfig['valueFormat']) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 'n/a'
+  }
+  if (format === 'ms') return `${value.toFixed(1)} ms`
+  if (format === 'percent') return `${value.toFixed(2)}%`
+  return value.toFixed(1)
+}
+
+export function buildComparisonSummarySeries(leftRunLabel: string, rightRunLabel: string, metric: ComparisonChartMetric = 'tps'): ComparisonSummaryLineConfig[] {
+  const config = getComparisonChartMetricConfig(metric)
+  const leftStroke = 'var(--chart-1)'
+  const rightStroke = 'var(--chart-2)'
+  return [
+    { dataKey: config.leftKey, name: `${leftRunLabel} ${config.label}`, stroke: leftStroke, yAxisId: 'value' },
+    { dataKey: config.rightKey, name: `${rightRunLabel} ${config.label}`, stroke: rightStroke, yAxisId: 'value' },
+  ]
+}
+
 function formatBaselinePin(value?: string) {
   return value ? new Date(value).toLocaleString() : 'Pinned baseline'
 }
@@ -234,20 +309,37 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
   const [comparisonLoading, setComparisonLoading] = useState(false)
   const [comparisonError, setComparisonError] = useState('')
   const [comparisonBreakdown, setComparisonBreakdown] = useState<ComparisonBreakdown>('device')
+  const [comparisonChartMetric, setComparisonChartMetric] = useState<ComparisonChartMetric>('tps')
   const [error, setError] = useState('')
+  const [resultsLoading, setResultsLoading] = useState(true)
+  const [resultsRefreshing, setResultsRefreshing] = useState(false)
   const [sortField, setSortField] = useState<SortField>('started')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('all')
+  const refreshRequestRef = useRef(0)
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options: RefreshOptions = {}) => {
+    const requestId = ++refreshRequestRef.current
+    const initial = Boolean(options.initial)
     if (!activeApplication?.id || !activeRelease?.id) {
       setTests([])
       setSlaGovernance(null)
       setExternalImports([])
       setError('')
+      setResultsLoading(false)
+      setResultsRefreshing(false)
       return
+    }
+    if (initial) {
+      setResultsLoading(true)
+      setResultsRefreshing(false)
+      setTests([])
+      setSlaGovernance(null)
+      setExternalImports([])
+    } else {
+      setResultsRefreshing(true)
     }
     try {
       const [res, governanceRes, importsRes] = await Promise.all([
@@ -255,18 +347,25 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
         safeApiCall(() => api.getReleaseSLAGovernance(activeRelease.id), null),
         safeApiCall(() => api.listExternalResultImports({ release_id: activeRelease.id }), { imports: [], count: 0, limit: 0, offset: 0 }),
       ])
+      if (requestId !== refreshRequestRef.current) return
       setTests(res.tests || [])
       setSlaGovernance(governanceRes)
       setExternalImports(importsRes.imports || [])
       setError('')
     } catch (error: unknown) {
+      if (requestId !== refreshRequestRef.current) return
       setError(getErrorMessage(error, 'Unable to load results'))
+    } finally {
+      if (requestId === refreshRequestRef.current) {
+        setResultsLoading(false)
+        setResultsRefreshing(false)
+      }
     }
   }, [api, activeApplication?.id, activeRelease?.id])
 
   useEffect(() => {
-    refresh()
-    const interval = setInterval(refresh, 10000)
+    refresh({ initial: true })
+    const interval = setInterval(() => refresh(), 10000)
     return () => clearInterval(interval)
   }, [refresh])
 
@@ -470,10 +569,34 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
       sample: index + 1,
       leftTps: leftSeries[index]?.tps,
       rightTps: rightSeries[index]?.tps,
+      leftArt: leftSeries[index]?.avg_response_ms,
+      rightArt: rightSeries[index]?.avg_response_ms,
+      leftP50: leftSeries[index]?.p50_ms,
+      rightP50: rightSeries[index]?.p50_ms,
+      leftP90: leftSeries[index]?.p90_ms,
+      rightP90: rightSeries[index]?.p90_ms,
       leftP95: leftSeries[index]?.p95_ms,
       rightP95: rightSeries[index]?.p95_ms,
+      leftP99: leftSeries[index]?.p99_ms,
+      rightP99: rightSeries[index]?.p99_ms,
+      leftErrorPct: leftSeries[index]?.error_pct,
+      rightErrorPct: rightSeries[index]?.error_pct,
     }))
   }, [comparisonCards, comparisonSummaries])
+
+  const comparisonChartMetricConfig = useMemo(
+    () => getComparisonChartMetricConfig(comparisonChartMetric),
+    [comparisonChartMetric],
+  )
+
+  const comparisonSummarySeries = useMemo(() => {
+    if (comparisonCards.length !== 2) return []
+    return buildComparisonSummarySeries(
+      formatComparisonRunLabel(comparisonCards[0].test),
+      formatComparisonRunLabel(comparisonCards[1].test),
+      comparisonChartMetric,
+    )
+  }, [comparisonCards, comparisonChartMetric])
 
   const browserBreakdownChartData = useMemo(() => {
     if (comparisonCards.length !== 2 || !comparisonCards.every(item => item.report)) {
@@ -502,7 +625,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
   }, [comparisonBreakdown, comparisonCards])
 
   const browserBreakdownChartSeries = useMemo(
-    () => buildComparisonBrowserBreakdownSeries(comparisonCards.map(({ test }) => ({ id: test.id, name: test.name }))),
+    () => buildComparisonBrowserBreakdownSeries(comparisonCards.map(({ test }) => ({ id: test.id, name: formatComparisonRunLabel(test) }))),
     [comparisonCards],
   )
 
@@ -620,6 +743,8 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
           </p>
         </div>
         <div className="results-actions">
+          {resultsLoading && <span className="results-load-status">Loading results...</span>}
+          {!resultsLoading && resultsRefreshing && <span className="results-load-status">Refreshing...</span>}
           {selectedIds.size === 2 && comparableTests.length === 2 && (
             <span className="results-compare-hint">Comparing 2 archived runs</span>
           )}
@@ -636,27 +761,27 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
       <div className="results-overview">
         <div>
           <span>Completed</span>
-          <strong>{completed.length}</strong>
+          <strong>{resultsLoading ? '...' : completed.length}</strong>
         </div>
         <div>
           <span>Successful</span>
-          <strong>{summary.complete}</strong>
+          <strong>{resultsLoading ? '...' : summary.complete}</strong>
         </div>
         <div>
           <span>Failed</span>
-          <strong>{summary.failed}</strong>
+          <strong>{resultsLoading ? '...' : summary.failed}</strong>
         </div>
         <div>
           <span>Aborted</span>
-          <strong>{summary.aborted}</strong>
+          <strong>{resultsLoading ? '...' : summary.aborted}</strong>
         </div>
         <div>
           <span>Archives Ready</span>
-          <strong>{summary.archivesReady}</strong>
+          <strong>{resultsLoading ? '...' : summary.archivesReady}</strong>
         </div>
         <div>
           <span>Latest Run</span>
-          <strong>{summary.latestRun ? formatShortDate(summary.latestRun.start_time || summary.latestRun.created_at) : 'None yet'}</strong>
+          <strong>{resultsLoading ? '...' : summary.latestRun ? formatShortDate(summary.latestRun.start_time || summary.latestRun.created_at) : 'None yet'}</strong>
         </div>
       </div>
 
@@ -667,23 +792,25 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
               <h3>Release SLA Gate</h3>
               <p>{slaGovernance?.owner.display_name || 'Project administrators'}</p>
             </div>
-            <strong className={governanceStatusClass(slaGovernance?.status)}>{formatGovernanceStatus(slaGovernance?.status)}</strong>
+            <strong className={governanceStatusClass(slaGovernance?.status)}>{resultsLoading ? 'Loading' : formatGovernanceStatus(slaGovernance?.status)}</strong>
           </div>
           <div className="results-governance-metrics">
             <div>
               <span>Runs</span>
-              <strong>{slaGovernance?.summary.total_runs ?? completed.length}</strong>
+              <strong>{resultsLoading ? '...' : slaGovernance?.summary.total_runs ?? completed.length}</strong>
             </div>
             <div>
               <span>Breaches</span>
-              <strong className={(slaGovernance?.summary.unwaived_breaches || 0) > 0 ? 'text-danger' : ''}>{slaGovernance?.summary.failed_runs ?? 0}</strong>
+              <strong className={(slaGovernance?.summary.unwaived_breaches || 0) > 0 ? 'text-danger' : ''}>{resultsLoading ? '...' : slaGovernance?.summary.failed_runs ?? 0}</strong>
             </div>
             <div>
               <span>Waivers</span>
-              <strong className={(slaGovernance?.waivers?.length || 0) > 0 ? 'telemetry-text-warning' : ''}>{slaGovernance?.waivers?.length ?? 0}</strong>
+              <strong className={(slaGovernance?.waivers?.length || 0) > 0 ? 'telemetry-text-warning' : ''}>{resultsLoading ? '...' : slaGovernance?.waivers?.length ?? 0}</strong>
             </div>
           </div>
-          {slaGovernance?.breach_history?.length ? (
+          {resultsLoading ? (
+            <p className="results-governance-hint">Loading SLA governance...</p>
+          ) : slaGovernance?.breach_history?.length ? (
             <div className="results-governance-list">
               {slaGovernance.breach_history.slice(0, 3).map(run => (
                 <p key={run.test_id}>
@@ -714,9 +841,11 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
               <h3>External Results</h3>
               <p>k6, JMeter, and Gatling trend inputs</p>
             </div>
-            <strong>{externalImports.length}</strong>
+            <strong>{resultsLoading ? '...' : externalImports.length}</strong>
           </div>
-          {externalImports.length === 0 ? (
+          {resultsLoading ? (
+            <p className="results-governance-hint">Loading external result imports...</p>
+          ) : externalImports.length === 0 ? (
             <p className="results-governance-hint">No external result imports are attached to this release.</p>
           ) : (
             <div className="results-governance-list">
@@ -827,6 +956,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                         <div>
                           <h4>{test.name}</h4>
                           <p>{formatDate(test.start_time || test.created_at)}</p>
+                          <span className="results-run-id" title={test.id}>Run ID {formatShortRunId(test.id)}</span>
                         </div>
                         <StatusBadge status={resolveStatus(test, testStatuses)} />
                       </div>
@@ -955,23 +1085,52 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
 
                   {comparisonChartData.length > 0 && (
                     <div className="results-compare-chart-card">
-                      <h4 className="results-compare-chart-title">Archived Summary Curves</h4>
+                      <div className="results-compare-chart-header">
+                        <div>
+                          <h4 className="results-compare-chart-title">Archived Summary Curves</h4>
+                          <p className="results-compare-chart-copy">
+                            Showing {comparisonChartMetricConfig.description}; color identifies the run.
+                          </p>
+                        </div>
+                        <div className="results-compare-metric-tabs" role="tablist" aria-label="Comparison metric">
+                          {COMPARISON_CHART_METRICS.map(metric => (
+                            <button
+                              key={metric.id}
+                              type="button"
+                              role="tab"
+                              aria-selected={comparisonChartMetric === metric.id}
+                              className={`results-compare-metric-tab${comparisonChartMetric === metric.id ? ' active' : ''}`}
+                              onClick={() => setComparisonChartMetric(metric.id)}
+                            >
+                              {metric.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <ResponsiveContainer width="100%" height={260}>
                         <LineChart data={comparisonChartData}>
                           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                           <XAxis dataKey="sample" stroke="var(--text-muted)" fontSize={11} />
-                          <YAxis yAxisId="tps" stroke="var(--text-muted)" fontSize={11} />
-                          <YAxis yAxisId="p95" orientation="right" stroke="var(--text-muted)" fontSize={11} />
+                          <YAxis yAxisId="value" stroke="var(--text-muted)" fontSize={11} />
                           <Tooltip
                             contentStyle={{ background: 'rgba(33, 36, 47, 0.94)', border: '1px solid var(--border)', borderRadius: 10 }}
                             labelFormatter={value => `Sample ${value}`}
+                            formatter={(value) => formatComparisonChartValue(value, comparisonChartMetricConfig.valueFormat)}
                             isAnimationActive={false}
                           />
                           <Legend />
-                          <Line yAxisId="tps" type="monotone" dataKey="leftTps" name={`${comparisonCards[0].test.name} TPS`} stroke="var(--chart-1)" dot={false} isAnimationActive={false} />
-                          <Line yAxisId="tps" type="monotone" dataKey="rightTps" name={`${comparisonCards[1].test.name} TPS`} stroke="var(--chart-2)" dot={false} isAnimationActive={false} />
-                          <Line yAxisId="p95" type="monotone" dataKey="leftP95" name={`${comparisonCards[0].test.name} P95`} stroke="var(--chart-4)" dot={false} strokeDasharray="4 2" isAnimationActive={false} />
-                          <Line yAxisId="p95" type="monotone" dataKey="rightP95" name={`${comparisonCards[1].test.name} P95`} stroke="var(--chart-5)" dot={false} strokeDasharray="4 2" isAnimationActive={false} />
+                          {comparisonSummarySeries.map(series => (
+                            <Line
+                              key={series.dataKey}
+                              yAxisId={series.yAxisId}
+                              type="monotone"
+                              dataKey={series.dataKey}
+                              name={series.name}
+                              stroke={series.stroke}
+                              dot={false}
+                              isAnimationActive={false}
+                            />
+                          ))}
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
@@ -980,26 +1139,42 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                     <thead>
                       <tr>
                         <th>Action</th>
-                        <th>{comparisonCards[0].test.name} Avg</th>
-                        <th>{comparisonCards[1].test.name} Avg</th>
-                        <th>Latency Delta</th>
-                        <th>{comparisonCards[0].test.name} Errors</th>
-                        <th>{comparisonCards[1].test.name} Errors</th>
+                        <th>Run</th>
+                        <th>Avg ART</th>
+                        <th>Errors</th>
+                        <th>Delta vs First</th>
                       </tr>
                     </thead>
                     <tbody>
                       {comparisonActionRows.map(row => (
-                        <tr key={row.name}>
-                          <td className="cell-name">{row.name}</td>
-                          <td>{row.left?.avg_response_ms?.toFixed(1) || '0.0'} ms</td>
-                          <td>{row.right?.avg_response_ms?.toFixed(1) || '0.0'} ms</td>
-                          <td className={row.deltaMs > 0 ? 'text-danger' : row.deltaMs < 0 ? 'text-success' : 'cell-muted'}>
-                            {row.deltaMs >= 0 ? '+' : ''}
-                            {row.deltaMs.toFixed(1)} ms
-                          </td>
-                          <td>{row.left?.errors || 0}</td>
-                          <td>{row.right?.errors || 0}</td>
-                        </tr>
+                        <Fragment key={row.name}>
+                          <tr className="results-compare-action-start">
+                            <td className="cell-name" rowSpan={2}>{row.name}</td>
+                            <td>
+                              <span className="results-compare-run-label results-compare-run-label-inline">
+                                <span className="results-run-dot results-run-dot-left" aria-hidden="true" />
+                                {formatComparisonRunLabel(comparisonCards[0].test)}
+                              </span>
+                            </td>
+                            <td>{row.left?.avg_response_ms?.toFixed(1) || '0.0'} ms</td>
+                            <td>{row.left?.errors || 0}</td>
+                            <td className="cell-muted">Reference</td>
+                          </tr>
+                          <tr>
+                            <td>
+                              <span className="results-compare-run-label results-compare-run-label-inline">
+                                <span className="results-run-dot results-run-dot-right" aria-hidden="true" />
+                                {formatComparisonRunLabel(comparisonCards[1].test)}
+                              </span>
+                            </td>
+                            <td>{row.right?.avg_response_ms?.toFixed(1) || '0.0'} ms</td>
+                            <td>{row.right?.errors || 0}</td>
+                            <td className={row.deltaMs > 0 ? 'text-danger' : row.deltaMs < 0 ? 'text-success' : 'cell-muted'}>
+                              {row.deltaMs >= 0 ? '+' : ''}
+                              {row.deltaMs.toFixed(1)} ms
+                            </td>
+                          </tr>
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>
@@ -1011,8 +1186,16 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
       )}
 
       <div className="page-section">
-        <h3 className="section-title">Release Results ({filteredCompleted.length})</h3>
-        {completed.length === 0 ? (
+        <h3 className="section-title">Release Results ({resultsLoading ? '...' : filteredCompleted.length})</h3>
+        {resultsLoading ? (
+          <div className="empty-card results-loading-card" role="status" aria-live="polite" aria-busy="true">
+            <span className="results-loading-spinner" aria-hidden="true" />
+            <div>
+              <p>Loading release results...</p>
+              <p className="empty-hint">Fetching completed scenarios, archives, and external imports for this release.</p>
+            </div>
+          </div>
+        ) : completed.length === 0 ? (
           <div className="empty-card">
             <p>No completed scenarios yet.</p>
             <p className="empty-hint">Run a scenario in this release to see archives, summaries, and comparisons here.</p>

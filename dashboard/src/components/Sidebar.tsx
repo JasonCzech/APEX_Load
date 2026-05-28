@@ -44,6 +44,27 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element; requiresAccess
     ),
   },
   {
+    id: 'new-test',
+    label: 'New Test',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polygon points="10 8 16 12 10 16 10 8" />
+      </svg>
+    ),
+  },
+  {
+    id: 'results',
+    label: 'Results',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="18" y1="20" x2="18" y2="10" />
+        <line x1="12" y1="20" x2="12" y2="4" />
+        <line x1="6" y1="20" x2="6" y2="14" />
+      </svg>
+    ),
+  },
+  {
     id: 'repository',
     label: 'Repository',
     icon: (
@@ -63,16 +84,6 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element; requiresAccess
     ),
   },
   {
-    id: 'new-test',
-    label: 'New Test',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <polygon points="10 8 16 12 10 16 10 8" />
-      </svg>
-    ),
-  },
-  {
     id: 'scripts',
     label: 'Scripts',
     icon: (
@@ -84,17 +95,6 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element; requiresAccess
         <polyline points="10 9 9 9 8 9" />
       </svg>
     )
-  },
-  {
-    id: 'results',
-    label: 'Results',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="18" y1="20" x2="18" y2="10" />
-        <line x1="12" y1="20" x2="12" y2="4" />
-        <line x1="6" y1="20" x2="6" y2="14" />
-      </svg>
-    ),
   },
   {
     id: 'monitoring',

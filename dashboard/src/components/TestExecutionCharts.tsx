@@ -14,6 +14,7 @@ import {
 } from 'recharts'
 
 import { MetricsHistoryPoint } from '../types'
+import LoadImpactHeatmap from './LoadImpactHeatmap'
 import { routeLatencySeriesLabel } from './latencySeries'
 import { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
 
@@ -252,6 +253,7 @@ function responseTimeMetricKeys(groupNames: string[]) {
     ...groupNames.map(name => `${name}_avgMs`),
     'p50',
     'p90',
+    'p95',
     'p99',
   ]
 }
@@ -306,6 +308,7 @@ export function chartMetricKeys(
         ...groupNames.map(name => `${name}_avgMs`),
         'p50',
         'p90',
+        'p95',
         'p99',
       ]
       break
@@ -353,6 +356,7 @@ export function chartMetricRows(
         ...groupNames.map((name, index) => ({ key: `${name}_avgMs`, label: name, color: groupColors[index % groupColors.length], unit: 'ms' })),
         { key: 'p50', label: 'P50', color: 'var(--chart-5)', unit: 'ms' },
         { key: 'p90', label: 'P90', color: 'var(--chart-3)', unit: 'ms' },
+        { key: 'p95', label: 'P95', color: 'var(--chart-2)', unit: 'ms' },
         { key: 'p99', label: 'P99', color: 'var(--chart-4)', unit: 'ms' },
       ]
       break
@@ -1180,6 +1184,13 @@ export default function TestExecutionCharts({
         )}
       </div>
 
+      <LoadImpactHeatmap
+        points={filteredData}
+        title="Load Impact"
+        subtitle="Performance and resource behavior grouped by active VUser load."
+        emptyMessage="Load impact appears after live metrics include active VUsers and performance or resource samples."
+      />
+
       {visibleCharts.length === 0 ? (
         <div className="charts-empty">
           <span>All graphs are hidden</span>
@@ -1315,6 +1326,7 @@ export default function TestExecutionCharts({
                 ))}
                 {showMetric('p50') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p50" name="P50" stroke="var(--chart-5)" dot={false} strokeWidth={1.25} strokeDasharray="3 3" isAnimationActive={false} />}
                 {showMetric('p90') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p90" name="P90" stroke="var(--chart-3)" dot={false} strokeWidth={1.25} strokeDasharray="3 3" isAnimationActive={false} />}
+                {showMetric('p95') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p95" name="P95" stroke="var(--chart-2)" dot={false} strokeWidth={1.25} strokeDasharray="4 2" isAnimationActive={false} />}
                 {showMetric('p99') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="p99" name="P99" stroke="var(--chart-4)" dot={false} strokeWidth={1.25} strokeDasharray="4 2" isAnimationActive={false} />}
                 {renderOverlayLines(chart, visibleMetricKeys)}
                 {showRefArea && (

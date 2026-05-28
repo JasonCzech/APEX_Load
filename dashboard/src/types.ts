@@ -1590,7 +1590,9 @@ export interface MetricsHistoryPoint {
   errorPct: number
   p50: number
   p90: number
+  p95?: number
   p99: number
+  resourceSampleOnly?: number
   // System Resources
   cpuProcess?: number
   cpuFree?: number

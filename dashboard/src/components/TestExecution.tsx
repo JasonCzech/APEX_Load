@@ -1,9 +1,12 @@
+import { useMemo } from 'react'
+
 import {
   MetricsHistoryPoint,
 } from '../types'
 import TestExecutionArchive from './TestExecutionArchive'
 import { useExecutionActionBridge } from './useExecutionActionBridge'
 import { useExecutionArchiveResourceHistory } from './useExecutionArchiveResourceHistory'
+import { useExecutionArchiveSummaryHistory } from './useExecutionArchiveSummaryHistory'
 import { useExecutionArchiveModel } from './useExecutionArchiveModel'
 import { useExecutionLiveControls } from './useExecutionLiveControls'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
@@ -17,6 +20,7 @@ import TestExecutionScenarioOverview from './TestExecutionScenarioOverview'
 import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
+import { mergeArchiveResourceHistory } from './testExecutionMetricsModel'
 import { buildExecutionPhaseModel } from './testExecutionPhaseModel'
 import { buildExecutionStatusModel, describeGoalController } from './testExecutionStatusModel'
 import { useExecutionChartModel } from './useExecutionChartModel'
@@ -52,7 +56,21 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     scriptDetailsError,
   } = useExecutionScenarioPreviewModel(test)
   const { localMetricsHistory, latestMetrics } = useExecutionMetricsStream(testId, test?.status)
-  const { archiveResourceHistory } = useExecutionArchiveResourceHistory(test)
+  const {
+    archiveResourceHistory,
+    archiveResourceError,
+    archiveResourcesLoading,
+  } = useExecutionArchiveResourceHistory(test)
+  const {
+    archiveSummaryHistory,
+    archiveSummaryError,
+    archiveSummariesLoading,
+  } = useExecutionArchiveSummaryHistory(test)
+  const archiveLoadImpactData = useMemo(
+    () => mergeArchiveResourceHistory(archiveSummaryHistory, archiveResourceHistory),
+    [archiveResourceHistory, archiveSummaryHistory],
+  )
+  const archiveLoadImpactError = [archiveSummaryError, archiveResourceError].filter(Boolean).join(' ')
   const {
     filteredData,
     summary,
@@ -274,6 +292,9 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
           archiveError={archiveError}
           archiveLoading={archiveLoading}
           archiveReport={archiveReport}
+          loadImpactData={archiveLoadImpactData}
+          loadImpactLoading={archiveSummariesLoading || archiveResourcesLoading}
+          loadImpactError={archiveLoadImpactError}
           onDownloadBrowserDiagnostics={onDownloadBrowserDiagnostics}
           onDownloadArchiveArtifact={onDownloadArchiveArtifact}
           archiveActionEntries={archiveActionEntries}

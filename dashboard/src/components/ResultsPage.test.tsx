@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import ResultsPage from './ResultsPage'
+import ResultsPage, { buildComparisonSummarySeries } from './ResultsPage'
 import { downloadBlob } from '../utils/fileUtils'
 
 const apiMock = {
@@ -241,6 +241,159 @@ describe('ResultsPage', () => {
     })
     container.remove()
     vi.clearAllMocks()
+  })
+
+  it('uses one line color per compared run across TPS and P95 series', () => {
+    const tpsSeries = buildComparisonSummarySeries('ACME (90328d19)', 'ACME (44641072)', 'tps')
+    const p95Series = buildComparisonSummarySeries('ACME (90328d19)', 'ACME (44641072)', 'p95')
+
+    expect(tpsSeries).toEqual([
+      { dataKey: 'leftTps', name: 'ACME (90328d19) TPS', stroke: 'var(--chart-1)', yAxisId: 'value' },
+      { dataKey: 'rightTps', name: 'ACME (44641072) TPS', stroke: 'var(--chart-2)', yAxisId: 'value' },
+    ])
+    expect(p95Series).toEqual([
+      { dataKey: 'leftP95', name: 'ACME (90328d19) P95', stroke: 'var(--chart-1)', yAxisId: 'value' },
+      { dataKey: 'rightP95', name: 'ACME (44641072) P95', stroke: 'var(--chart-2)', yAxisId: 'value' },
+    ])
+  })
+
+  it('shows a loading state before rendering an empty release result list', async () => {
+    let resolveTests: (value: { tests: never[] }) => void = () => {}
+    apiMock.listTests.mockReturnValueOnce(new Promise(resolve => {
+      resolveTests = resolve
+    }))
+    apiMock.getReleaseSLAGovernance.mockResolvedValueOnce(null)
+    apiMock.listExternalResultImports.mockResolvedValueOnce({ imports: [], count: 0, limit: 0, offset: 0 })
+
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Loading release results...')
+    expect(container.textContent).toContain('Loading results...')
+    expect(container.textContent).not.toContain('No completed scenarios yet.')
+
+    await act(async () => {
+      resolveTests({ tests: [] })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).not.toContain('Loading release results...')
+    expect(container.textContent).toContain('No completed scenarios yet.')
+  })
+
+  it('disambiguates comparison labels when selected runs have the same scenario name', async () => {
+    apiMock.listTests.mockResolvedValueOnce({
+      tests: [
+        {
+          id: 'run-a',
+          name: 'Checkout',
+          status: 'COMPLETE',
+          total_vusers: 10,
+          duration: '5m',
+          created_at: '2026-05-12T18:00:00Z',
+          ended_at: '2026-05-12T18:05:00Z',
+          archive: { transaction_count: 1000 },
+        },
+        {
+          id: 'run-b',
+          name: 'Checkout',
+          status: 'COMPLETE',
+          total_vusers: 12,
+          duration: '5m',
+          created_at: '2026-05-12T19:00:00Z',
+          ended_at: '2026-05-12T19:05:00Z',
+          archive: { transaction_count: 1100 },
+        },
+      ],
+    })
+    apiMock.getTestArchiveReport.mockImplementation(async (id: string) => ({
+      manifest: { test_id: id, provenance: { runtime_settings: {} } },
+      overview: {
+        transactions: id === 'run-a' ? 1000 : 1100,
+        errors: 0,
+        error_pct: 0,
+        avg_response_ms: id === 'run-a' ? 95 : 102,
+        min_response_ms: 80,
+        max_response_ms: 140,
+        resource_samples: 0,
+        interval_summaries: 2,
+        peak_tps: id === 'run-a' ? 30 : 28,
+        peak_active_vusers: id === 'run-a' ? 10 : 12,
+      },
+      by_action: {
+        Search: { count: 20, errors: 0, avg_response_ms: id === 'run-a' ? 90 : 120 },
+      },
+      resource_peaks: {
+        cpu_process_pct: 10,
+        mem_process_mb: 100,
+        net_sent_kbps: 0,
+        net_recv_kbps: 0,
+        disk_read_kbps: 0,
+        disk_write_kbps: 0,
+      },
+    }))
+    apiMock.getTestArchiveSummaries.mockImplementation(async (id: string) => ({
+      summaries: [
+        { timestamp: '2026-05-12T18:01:00Z', tps: id === 'run-a' ? 10 : 12, p95_ms: id === 'run-a' ? 110 : 140 },
+        { timestamp: '2026-05-12T18:02:00Z', tps: id === 'run-a' ? 11 : 13, p95_ms: id === 'run-a' ? 105 : 145 },
+      ],
+    }))
+
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    const rowCheckboxes = Array.from(container.querySelectorAll('tbody input[type="checkbox"]')) as HTMLInputElement[]
+    expect(rowCheckboxes).toHaveLength(2)
+
+    await act(async () => {
+      rowCheckboxes[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      rowCheckboxes[0].dispatchEvent(new Event('change', { bubbles: true }))
+      rowCheckboxes[1].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      rowCheckboxes[1].dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Run ID run-a')
+    expect(container.textContent).toContain('Run ID run-b')
+    expect(container.textContent).toContain('Checkout (run-a)')
+    expect(container.textContent).toContain('Checkout (run-b)')
+    expect(container.textContent).toContain('Search')
+    expect(container.textContent).toContain('Run')
+    expect(container.textContent).toContain('Avg ART')
+    expect(container.textContent).toContain('Reference')
+    expect(container.textContent).toContain('-30.0 ms')
+
+    const tpsTab = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'TPS') as HTMLButtonElement | undefined
+    const p95Tab = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'P95') as HTMLButtonElement | undefined
+    expect(tpsTab?.getAttribute('aria-selected')).toBe('true')
+    expect(p95Tab).toBeDefined()
+
+    await act(async () => {
+      p95Tab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(p95Tab?.getAttribute('aria-selected')).toBe('true')
+    expect(container.textContent).toContain('Showing 95th percentile response time; color identifies the run.')
   })
 
   it('shows archived browser metrics in the two-run comparison cards', async () => {

@@ -1,7 +1,8 @@
 import { Fragment, useState } from 'react'
 
-import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, RunArchiveActionStats, RunArchiveReport, RunArchiveSOAPFaultTimelineBucket, RunArchiveSOAPPayloadTimelineBucket, TestSummary, TransactionEvent } from '../types'
+import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, MetricsHistoryPoint, RunArchiveActionStats, RunArchiveReport, RunArchiveSOAPFaultTimelineBucket, RunArchiveSOAPPayloadTimelineBucket, TestSummary, TransactionEvent } from '../types'
 import BrowserBreakdownChart from './BrowserBreakdownChart'
+import LoadImpactHeatmap from './LoadImpactHeatmap'
 import {
   BrowserBreakdown,
   buildBrowserBreakdownData,
@@ -40,6 +41,9 @@ interface Props {
   archiveError: string
   archiveLoading: boolean
   archiveReport: RunArchiveReport | null
+  loadImpactData?: MetricsHistoryPoint[]
+  loadImpactLoading?: boolean
+  loadImpactError?: string
   onDownloadBrowserDiagnostics: () => void
   onDownloadArchiveArtifact: (artifactName: string) => void
   archiveActionEntries: Array<[string, RunArchiveActionStats]>
@@ -430,6 +434,9 @@ export default function TestExecutionArchive({
   archiveError,
   archiveLoading,
   archiveReport,
+  loadImpactData = [],
+  loadImpactLoading = false,
+  loadImpactError = '',
   onDownloadBrowserDiagnostics,
   onDownloadArchiveArtifact,
   archiveActionEntries,
@@ -608,6 +615,15 @@ export default function TestExecutionArchive({
               <span className="scenario-script-detail-value">{archiveReport.resource_peaks.net_sent_kbps.toFixed(1)} / {archiveReport.resource_peaks.net_recv_kbps.toFixed(1)} KB/s</span>
             </div>
           </div>
+
+          <LoadImpactHeatmap
+            points={loadImpactData}
+            loading={loadImpactLoading}
+            error={loadImpactError}
+            title="Load Impact"
+            subtitle="Archived performance and resource response grouped by active VUser load."
+            emptyMessage="Load impact appears when archived interval summaries or resource samples include active VUser data."
+          />
 
           {archiveReport.completeness && (
             <div className="tx-section archive-summary-section">

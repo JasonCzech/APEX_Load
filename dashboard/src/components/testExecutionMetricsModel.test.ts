@@ -4,6 +4,7 @@ import {
   buildExecutionChartData,
   filterExecutionChartData,
   mapArchiveResourceSamples,
+  mapArchiveSummarySamples,
   mapExecutionHistory,
   mergeArchiveResourceHistory,
   summarizeExecutionChartData,
@@ -97,6 +98,7 @@ describe('testExecutionMetricsModel', () => {
       vusers: 12,
       tps: 4.5,
       avgMs: 123,
+      p95: 160,
       Checkout_tps: 4.5,
       Checkout_avgMs: 123,
       Checkout_vusers: 12,
@@ -161,10 +163,42 @@ describe('testExecutionMetricsModel', () => {
       timestampMs: Date.parse('2026-05-12T20:00:01.123Z'),
       vusers: 8,
       tps: 0,
+      p95: 0,
+      resourceSampleOnly: 1,
       cpuProcess: 11,
       memProcess: 256,
       netSent: 12,
       diskWrite: 4,
+    })
+  })
+
+  it('maps archived interval summaries into performance chart points', () => {
+    const mapped = mapArchiveSummarySamples([{
+      timestamp: '2026-05-12T20:00:01.123Z',
+      test_id: 'test-1',
+      test_name: 'Checkout',
+      active_vusers: 12,
+      tps: 8.5,
+      avg_response_ms: 140,
+      error_pct: 1.25,
+      total_transactions: 20,
+      total_errors: 1,
+      p50_ms: 90,
+      p90_ms: 130,
+      p95_ms: 155,
+      p99_ms: 220,
+    }])
+
+    expect(mapped[0]).toMatchObject({
+      timestampMs: Date.parse('2026-05-12T20:00:01.123Z'),
+      vusers: 12,
+      tps: 8.5,
+      avgMs: 140,
+      errorPct: 1.25,
+      p50: 90,
+      p90: 130,
+      p95: 155,
+      p99: 220,
     })
   })
 

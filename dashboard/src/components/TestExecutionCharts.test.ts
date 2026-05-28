@@ -56,6 +56,7 @@ describe('chartStateForMonitorPreset', () => {
           errorPct: 0,
           p50: 80,
           p90: 100,
+          p95: 115,
           p99: 130,
           Checkout_avgMs: 92,
         },
@@ -64,8 +65,8 @@ describe('chartStateForMonitorPreset', () => {
       [],
     )
 
-    expect(chartMetricKeys(chart, ['Checkout'], [])).toEqual(['avgMs', 'Checkout_avgMs', 'p50', 'p90', 'p99'])
-    expect(csv).toBe('time,avgMs,Checkout_avgMs,p50,p90,p99\n10:00:00,100,92,80,100,130')
+    expect(chartMetricKeys(chart, ['Checkout'], [])).toEqual(['avgMs', 'Checkout_avgMs', 'p50', 'p90', 'p95', 'p99'])
+    expect(csv).toBe('time,avgMs,Checkout_avgMs,p50,p90,p95,p99\n10:00:00,100,92,80,100,115,130')
   })
 
   it('can include active VUsers when exporting a graph with the overlay enabled', () => {
@@ -104,6 +105,7 @@ describe('chartStateForMonitorPreset', () => {
       { key: 'Search_avgMs', label: 'Search', color: '#ffaa00', unit: 'ms' },
       { key: 'p50', label: 'P50', color: 'var(--chart-5)', unit: 'ms' },
       { key: 'p90', label: 'P90', color: 'var(--chart-3)', unit: 'ms' },
+      { key: 'p95', label: 'P95', color: 'var(--chart-2)', unit: 'ms' },
       { key: 'p99', label: 'P99', color: 'var(--chart-4)', unit: 'ms' },
     ])
   })
@@ -120,6 +122,7 @@ describe('chartStateForMonitorPreset', () => {
         errorPct: 0,
         p50: 80,
         p90: 120,
+        p95: 140,
         p99: 160,
         Checkout_avgMs: 90,
         [edgeKey]: 10,
@@ -133,6 +136,7 @@ describe('chartStateForMonitorPreset', () => {
         errorPct: 0,
         p50: 7,
         p90: 9,
+        p95: 10,
         p99: 11,
         Checkout_avgMs: 12,
         [edgeKey]: 20,
@@ -145,6 +149,7 @@ describe('chartStateForMonitorPreset', () => {
         errorPct: 0,
         p50: 85,
         p90: 125,
+        p95: 145,
         p99: 165,
         Checkout_avgMs: 95,
       },
@@ -152,8 +157,8 @@ describe('chartStateForMonitorPreset', () => {
 
     const adjusted = responseTimeDataWithoutNetworkLatency(data, [edgeKey, serviceKey], ['Checkout'])
 
-    expect(adjusted[0]).toMatchObject({ avgMs: 80, Checkout_avgMs: 70, p50: 60, p90: 100, p99: 140 })
-    expect(adjusted[1]).toMatchObject({ avgMs: 0, Checkout_avgMs: 0, p50: 0, p90: 0, p99: 0 })
+    expect(adjusted[0]).toMatchObject({ avgMs: 80, Checkout_avgMs: 70, p50: 60, p90: 100, p95: 120, p99: 140 })
+    expect(adjusted[1]).toMatchObject({ avgMs: 0, Checkout_avgMs: 0, p50: 0, p90: 0, p95: 0, p99: 0 })
     expect(adjusted[2]).toBe(data[2])
   })
 

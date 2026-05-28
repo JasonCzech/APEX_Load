@@ -240,8 +240,6 @@ describe('DashboardPage', () => {
     expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', project_id: 'project-1' })
 
     expect(getButtonByText('Generators Available').textContent).toContain('1')
-    expect(container.textContent).toContain('LCP ms')
-    expect(container.textContent).toContain('240')
     expect(container.textContent).toContain('SLA Breaches')
     expect(container.textContent).toContain('Avg Completeness')
     expect(container.textContent).toContain('88%')
@@ -252,7 +250,9 @@ describe('DashboardPage', () => {
     expect(container.textContent).toContain('Telemetry Breaches')
     expect(container.textContent).toContain('Breached')
     expect(container.textContent).toContain('Export CSV')
-    expect(container.textContent).toContain('Browser Runtime')
+    expect(container.textContent).toContain('View Results')
+    expect(container.textContent).not.toContain('Browser Runtime')
+    expect(container.textContent).not.toContain('Test Summary')
     expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
     expect(container.textContent).toContain('pixel_8 · Landscape · Touch enabled · Headless')
 
@@ -357,6 +357,48 @@ describe('DashboardPage', () => {
       applicationState.activeApplication = previousApplication
       applicationState.activeRelease = previousRelease
     }
+  })
+
+  it('uses the compact empty state when no tests are active', async () => {
+    apiMock.listTests.mockResolvedValueOnce({
+      tests: [
+        {
+          id: 'test-complete-only',
+          name: 'Release Smoke',
+          status: 'COMPLETE',
+          application_id: 'app-1',
+          release_id: 'rel-1',
+          groups: [{ name: 'g1', script_id: 'script-2', script_name: 'Smoke', protocol: 'http', vusers: 1 }],
+          total_vusers: 1,
+          duration: '5m',
+          created_at: '2026-05-12T18:00:00Z',
+          ended_at: '2026-05-12T18:05:00Z',
+          archive: { transaction_count: 1200 },
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const activeTestsEmptyState = Array.from(container.querySelectorAll('.dash-empty.compact'))
+      .find(element => element.textContent?.includes('No tests currently running'))
+
+    expect(activeTestsEmptyState).toBeDefined()
+    expect(activeTestsEmptyState?.textContent).toContain('Start a scenario from the Scenarios page')
   })
 
   function clickButtonByText(text: string) {

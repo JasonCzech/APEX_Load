@@ -1,0 +1,216 @@
+.load-impact-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  padding: 18px;
+  margin: 18px 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.load-impact-header,
+.load-impact-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.load-impact-copy {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.load-impact-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.load-impact-state {
+  margin-top: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 18px;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+}
+
+.load-impact-table-wrap {
+  margin-top: 16px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.load-impact-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.load-impact-table th,
+.load-impact-table td {
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 0;
+  text-align: left;
+  vertical-align: stretch;
+}
+
+.load-impact-table tr:last-child th,
+.load-impact-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.load-impact-table th:last-child,
+.load-impact-table td:last-child {
+  border-right: 0;
+}
+
+.load-impact-table thead th,
+.load-impact-table tbody th {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 10px 12px;
+}
+
+.load-impact-table thead th:first-child,
+.load-impact-table tbody th {
+  width: 150px;
+}
+
+.load-impact-table small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.load-impact-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+  min-height: 58px;
+  border: 0;
+  border-radius: 0;
+  padding: 9px 10px;
+  color: var(--text-primary);
+  background: rgba(49, 102, 220, var(--load-impact-alpha, 0));
+  cursor: pointer;
+  text-align: left;
+}
+
+.load-impact-cell strong {
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.load-impact-cell span {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.load-impact-cell span::after {
+  content: " samples";
+}
+
+.load-impact-cell:disabled {
+  cursor: not-allowed;
+  color: var(--text-muted);
+  background: transparent;
+  opacity: 0.62;
+}
+
+.load-impact-cell:disabled span::after {
+  content: " samples";
+}
+
+.load-impact-cell:not(:disabled):hover,
+.load-impact-cell.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.load-impact-detail {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  padding: 14px;
+}
+
+.load-impact-detail h4 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.load-impact-detail p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.load-impact-detail-table-wrap {
+  margin-top: 12px;
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+
+.load-impact-detail-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+}
+
+.load-impact-detail-table th,
+.load-impact-detail-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.load-impact-detail-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.load-impact-detail-table tr:last-child td {
+  border-bottom: 0;
+}
+
+@media (max-width: 760px) {
+  .load-impact-card {
+    padding: 14px;
+  }
+
+  .load-impact-header,
+  .load-impact-detail-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .load-impact-badges {
+    justify-content: flex-start;
+  }
+}

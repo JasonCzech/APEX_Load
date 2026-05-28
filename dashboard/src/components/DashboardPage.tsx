@@ -61,10 +61,6 @@ function formatNumber(value: number, digits = 0) {
   return Number.isFinite(value) ? value.toFixed(digits) : digits > 0 ? '0.0' : '0'
 }
 
-function formatBrowserMs(value?: number, digits = 0) {
-  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '—'
-}
-
 function formatOptionalNumber(value?: number, digits = 0) {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '—'
 }
@@ -470,6 +466,8 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     }
     onNavigate('tests')
   }
+  const trendPreviewRows = performanceTrend.slice(0, 5)
+  const aggregateHistory = Object.values(metricsHistory).flat().slice(-60)
 
   return (
     <div className="page dash">
@@ -584,6 +582,20 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
             <span className="release-metric-label">Current Error Rate</span>
           </button>
         </div>
+        <div className="release-status-strip" aria-label="Run status summary">
+          <button type="button" className="release-status-stat dash-card-button" onClick={navigateToResults}>
+            <span className="release-status-value text-success">{stats.completed}</span>
+            <span className="release-status-label">Completed</span>
+          </button>
+          <button type="button" className="release-status-stat dash-card-button" onClick={navigateToResults}>
+            <span className="release-status-value" style={{ color: 'var(--chart-3)' }}>{stats.aborted}</span>
+            <span className="release-status-label">Aborted</span>
+          </button>
+          <button type="button" className="release-status-stat dash-card-button" onClick={navigateToTests}>
+            <span className="release-status-value" style={{ color: 'var(--accent)' }}>{stats.active}</span>
+            <span className="release-status-label">Active Now</span>
+          </button>
+        </div>
       </section>
 
       <section className="dash-section dash-performance-trend">
@@ -593,6 +605,11 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
             {activeRelease?.id && performanceTrend.length > 0 && (
               <button type="button" className="btn btn-secondary btn-sm" onClick={downloadTrendCsv}>
                 Export CSV
+              </button>
+            )}
+            {performanceTrend.length > 0 && (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={navigateToResults}>
+                View Results
               </button>
             )}
             <span className="dash-context-chip">Last {archivedReleaseRuns.length || 0} archived runs</span>
@@ -636,32 +653,24 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                   <tr>
                     <th>Run</th>
                     <th>Completed</th>
-                    <th>Browser Runtime</th>
                     <th className="num">Peak TPS</th>
                     <th className="num">Avg ms</th>
-                    <th className="num">LCP ms</th>
                     <th className="num">Errors</th>
                     <th className="num">SLA</th>
                     <th className="num">Complete</th>
-                    <th className="num">CPU</th>
-                    <th className="num">Memory</th>
-                    <th className="num">Telemetry</th>
-                    <th className="num">Peak VUsers</th>
-                    <th className="num">Transactions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {performanceTrend.map(({ test, report, runtimeSummary }) => (
+                  {trendPreviewRows.map(({ test, report, runtimeSummary }) => (
                     <tr key={test.id} onClick={() => onSelectTest(test.id)}>
                       <td>
                         <span className="trend-run-name">{test.name}</span>
                         <span className="trend-run-meta">{test.script_name || `${test.total_vusers} VUsers`}</span>
+                        {runtimeSummary && <span className="trend-run-meta">{runtimeSummary}</span>}
                       </td>
                       <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
-                      <td>{runtimeSummary || 'Default browser'}</td>
                       <td className="num strong">{formatNumber(report.overview.peak_tps, 1)}</td>
                       <td className="num">{formatNumber(report.overview.avg_response_ms)}</td>
-                      <td className="num">{formatBrowserMs(report.overview.browser?.avg_lcp_ms)}</td>
                       <td className={`num ${report.overview.error_pct > 0 ? 'text-danger strong' : ''}`}>
                         {formatNumber(report.overview.error_pct, 2)}%
                       </td>
@@ -669,18 +678,16 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                         {report.manifest?.sla_breached ? 'Breached' : 'Passed'}
                       </td>
                       <td className="num">{formatOptionalNumber(report.completeness?.score_pct, 0)}%</td>
-                      <td className="num">{formatOptionalNumber(report.resource_peaks?.cpu_process_pct, 1)}%</td>
-                      <td className="num">{formatOptionalNumber(report.resource_peaks?.mem_process_mb, 0)} MB</td>
-                      <td className={`num ${report.overview.telemetry?.status === 'breached' ? 'text-danger strong' : ''}`}>
-                        {report.overview.telemetry?.status || 'n/a'}
-                      </td>
-                      <td className="num">{report.overview.peak_active_vusers.toLocaleString()}</td>
-                      <td className="num">{report.overview.transactions.toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            {performanceTrend.length > trendPreviewRows.length && (
+              <button type="button" className="trend-preview-footer dash-card-button" onClick={navigateToResults}>
+                View {performanceTrend.length - trendPreviewRows.length} more archived run{performanceTrend.length - trendPreviewRows.length === 1 ? '' : 's'} in Results
+              </button>
+            )}
           </>
         )}
       </section>
@@ -692,7 +699,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           {stats.active > 0 && <span className="dash-badge pulse">{stats.active}</span>}
         </h3>
         {activeTests.length === 0 ? (
-          <div className="dash-empty">
+          <div className="dash-empty compact">
             <span className="dash-empty-icon">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
@@ -806,6 +813,23 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
             })}
           </div>
         )}
+        {activeTests.length > 0 && aggregateHistory.length > 1 && (
+          <button type="button" className="dash-aggregate-chart dash-card-button" onClick={navigateToTests}>
+            <span className="aggregate-label">Aggregate TPS (active tests)</span>
+            <ResponsiveContainer width="100%" height={70}>
+              <AreaChart data={aggregateHistory}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="time" hide />
+                <YAxis hide />
+                <Tooltip
+                  contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }}
+                  labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
+                />
+                <Area type="monotone" dataKey="tps" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.15} strokeWidth={1.5} isAnimationActive={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </button>
+        )}
       </section>
 
       {/* Bottom row: Activity Feed + Summary Stats */}
@@ -860,65 +884,6 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
               ))}
             </div>
           )}
-        </section>
-
-        {/* Test Summary Breakdown */}
-        <section className="dash-section dash-summary">
-          <h3 className="dash-section-title">Test Summary</h3>
-          <div className="dash-summary-cards">
-            <button type="button" className="summary-stat dash-card-button" onClick={navigateToResults}>
-              <span className="summary-stat-value text-success">{stats.completed}</span>
-              <span className="summary-stat-label">Completed</span>
-              <div className="summary-bar">
-                <div className="summary-bar-fill success" style={{ width: stats.total ? `${(stats.completed / stats.total) * 100}%` : '0%' }} />
-              </div>
-            </button>
-            <button type="button" className="summary-stat dash-card-button" onClick={navigateToResults}>
-              <span className="summary-stat-value text-danger">{stats.failed}</span>
-              <span className="summary-stat-label">Failed</span>
-              <div className="summary-bar">
-                <div className="summary-bar-fill danger" style={{ width: stats.total ? `${(stats.failed / stats.total) * 100}%` : '0%' }} />
-              </div>
-            </button>
-            <button type="button" className="summary-stat dash-card-button" onClick={navigateToResults}>
-              <span className="summary-stat-value" style={{ color: 'var(--chart-3)' }}>{stats.aborted}</span>
-              <span className="summary-stat-label">Aborted</span>
-              <div className="summary-bar">
-                <div className="summary-bar-fill warning" style={{ width: stats.total ? `${(stats.aborted / stats.total) * 100}%` : '0%' }} />
-              </div>
-            </button>
-            <button type="button" className="summary-stat dash-card-button" onClick={navigateToTests}>
-              <span className="summary-stat-value" style={{ color: 'var(--accent)' }}>{stats.active}</span>
-              <span className="summary-stat-label">Active Now</span>
-              <div className="summary-bar">
-                <div className="summary-bar-fill active" style={{ width: stats.total ? `${(stats.active / stats.total) * 100}%` : '0%' }} />
-              </div>
-            </button>
-          </div>
-
-          {/* Aggregate sparkline if we have any active test history */}
-          {activeTests.length > 0 && (() => {
-            const allHistory = Object.values(metricsHistory).flat()
-            if (allHistory.length < 2) return null
-            const aggregated = allHistory.slice(-60)
-            return (
-              <button type="button" className="dash-aggregate-chart dash-card-button" onClick={navigateToTests}>
-                <span className="aggregate-label">Aggregate TPS (active tests)</span>
-                <ResponsiveContainer width="100%" height={80}>
-                  <AreaChart data={aggregated}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="time" hide />
-                    <YAxis hide />
-                    <Tooltip
-                      contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }}
-                      labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
-                    />
-                    <Area type="monotone" dataKey="tps" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.15} strokeWidth={1.5} isAnimationActive={false} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </button>
-            )
-          })()}
         </section>
       </div>
     </div>

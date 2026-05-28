@@ -218,6 +218,22 @@ describe('Sidebar', () => {
     expect(onNavigate).toHaveBeenCalledWith('docs')
   })
 
+  it('places New Test and Results immediately after Dashboard in the main navigation', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+        />,
+      )
+    })
+
+    const labels = Array.from(container.querySelectorAll('.sidebar-nav .nav-label')).map(label => label.textContent)
+
+    expect(labels.slice(0, 3)).toEqual(['Dashboard', 'New Test', 'Results'])
+  })
+
   it('shows Access navigation only when service-account management is allowed', async () => {
     const onNavigate = vi.fn()
 

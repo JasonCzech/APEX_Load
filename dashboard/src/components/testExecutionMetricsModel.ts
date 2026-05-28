@@ -1,4 +1,4 @@
-import { LiveMetrics, MetricsHistoryPoint, ResourceSample, TestStatus } from '../types'
+import { IntervalSummaryRecord, LiveMetrics, MetricsHistoryPoint, ResourceSample, TestStatus } from '../types'
 import { latencySeriesKeyForTarget } from './latencySeries'
 
 export interface ExecutionChartSummary {
@@ -18,6 +18,7 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
     errorPct: metric.error_pct || 0,
     p50: metric.p50_ms,
     p90: metric.p90_ms,
+    p95: metric.p95_ms,
     p99: metric.p99_ms,
     cpuProcess: metric.resources?.cpu_process_pct,
     cpuFree: metric.resources?.cpu_free_pct,
@@ -98,7 +99,9 @@ export function mapArchiveResourceSamples(samples: ResourceSample[] | undefined)
         errorPct: 0,
         p50: 0,
         p90: 0,
+        p95: 0,
         p99: 0,
+        resourceSampleOnly: 1,
         cpuProcess: sample.cpu_process_pct,
         cpuFree: sample.cpu_free_pct,
         memProcess: sample.mem_process_mb,
@@ -107,6 +110,30 @@ export function mapArchiveResourceSamples(samples: ResourceSample[] | undefined)
         netRecv: sample.net_recv_kbps,
         diskRead: sample.disk_read_kbps,
         diskWrite: sample.disk_write_kbps,
+      }
+    })
+    .filter(point => typeof point.timestampMs === 'number')
+}
+
+export function mapArchiveSummarySamples(summaries: IntervalSummaryRecord[] | undefined): MetricsHistoryPoint[] {
+  if (!summaries?.length) {
+    return []
+  }
+
+  return summaries
+    .map((summary) => {
+      const timestampMs = Date.parse(summary.timestamp)
+      return {
+        time: new Date(summary.timestamp).toLocaleTimeString(),
+        timestampMs: Number.isNaN(timestampMs) ? undefined : timestampMs,
+        vusers: summary.active_vusers,
+        tps: summary.tps,
+        avgMs: summary.avg_response_ms,
+        errorPct: summary.error_pct || 0,
+        p50: summary.p50_ms,
+        p90: summary.p90_ms,
+        p95: summary.p95_ms,
+        p99: summary.p99_ms,
       }
     })
     .filter(point => typeof point.timestampMs === 'number')
