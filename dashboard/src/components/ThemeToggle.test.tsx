@@ -29,18 +29,23 @@ describe('ThemeToggle', () => {
     const onThemeChange = vi.fn()
 
     await act(async () => {
-      root.render(<ThemeToggle theme="dark" onThemeChange={onThemeChange} />)
+      root.render(<ThemeToggle theme="sepia" onThemeChange={onThemeChange} />)
     })
 
     const light = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Light'))
+    const sepia = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Sepia'))
     const dark = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Dark'))
+    expect(light).toBeDefined()
+    expect(sepia).toBeDefined()
+    expect(dark).toBeDefined()
     expect(light?.getAttribute('aria-pressed')).toBe('false')
-    expect(dark?.getAttribute('aria-pressed')).toBe('true')
+    expect(sepia?.getAttribute('aria-pressed')).toBe('true')
+    expect(dark?.getAttribute('aria-pressed')).toBe('false')
 
     await act(async () => {
-      light?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      sepia?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(onThemeChange).toHaveBeenCalledWith('light')
+    expect(onThemeChange).toHaveBeenCalledWith('sepia')
   })
 })

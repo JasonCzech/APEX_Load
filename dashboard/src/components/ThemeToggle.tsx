@@ -24,6 +24,21 @@ export default function ThemeToggle({ theme, onThemeChange }: ThemeToggleProps) 
       </button>
       <button
         type="button"
+        className={theme === 'sepia' ? 'active' : ''}
+        aria-pressed={theme === 'sepia'}
+        onClick={() => onThemeChange('sepia')}
+      >
+        <span className="theme-toggle-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <circle cx="12" cy="12" r="7" />
+            <path d="M12 5v14" />
+            <path d="M12 5a7 7 0 0 1 0 14" fill="currentColor" stroke="none" />
+          </svg>
+        </span>
+        <span>Sepia</span>
+      </button>
+      <button
+        type="button"
         className={theme === 'dark' ? 'active' : ''}
         aria-pressed={theme === 'dark'}
         onClick={() => onThemeChange('dark')}

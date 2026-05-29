@@ -15,6 +15,7 @@ function ThemeHarness() {
     <div>
       <span data-testid="theme">{theme}</span>
       <button type="button" onClick={() => setTheme('light')}>light</button>
+      <button type="button" onClick={() => setTheme('sepia')}>sepia</button>
       <button type="button" onClick={() => setTheme('dark')}>dark</button>
     </div>
   )
@@ -69,5 +70,31 @@ describe('useDashboardTheme', () => {
     expect(container.querySelector('[data-testid="theme"]')?.textContent).toBe('dark')
     expect(window.localStorage.getItem('apexload.theme')).toBe('dark')
     expect(document.documentElement.dataset.theme).toBe('dark')
+  })
+
+  it('loads, applies, and persists sepia with light browser color semantics', async () => {
+    window.localStorage.setItem('apexload.theme', 'sepia')
+
+    await act(async () => {
+      root.render(<ThemeHarness />)
+    })
+
+    expect(container.querySelector('[data-testid="theme"]')?.textContent).toBe('sepia')
+    expect(document.documentElement.dataset.theme).toBe('sepia')
+    expect(document.documentElement.style.colorScheme).toBe('light')
+    expect(window.localStorage.getItem('apexload.theme')).toBe('sepia')
+  })
+
+  it('rejects unknown stored theme values back to dark', async () => {
+    window.localStorage.setItem('apexload.theme', 'midnight')
+
+    await act(async () => {
+      root.render(<ThemeHarness />)
+    })
+
+    expect(container.querySelector('[data-testid="theme"]')?.textContent).toBe('dark')
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(document.documentElement.style.colorScheme).toBe('dark')
+    expect(window.localStorage.getItem('apexload.theme')).toBe('dark')
   })
 })

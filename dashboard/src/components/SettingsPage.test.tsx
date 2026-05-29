@@ -525,6 +525,28 @@ describe('SettingsPage', () => {
     downloadBlobMock.mockReset()
   })
 
+  it('offers Sepia in the dashboard theme selector', async () => {
+    const onThemeChange = vi.fn()
+
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={onThemeChange} />)
+    })
+
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+
+    const themeSelect = findSettingSelect(generalSection, 'Dashboard Theme')
+    expect(Array.from(themeSelect?.options || []).map(option => option.value)).toEqual(['dark', 'light', 'sepia'])
+
+    if (!themeSelect) return
+    await setFieldValue(themeSelect, 'sepia')
+
+    expect(onThemeChange).toHaveBeenCalledWith('sepia')
+  })
+
   it('defaults generator capacity fields to the connected live pod capacity when settings are still at the stock defaults', async () => {
     await act(async () => {
       root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)

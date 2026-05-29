@@ -71,7 +71,7 @@
 
 .theme-toggle {
   display: grid;
-  grid-template-columns: repeat(2, minmax(74px, 1fr));
+  grid-template-columns: repeat(3, minmax(62px, 1fr));
   align-items: center;
   gap: 3px;
   padding: 3px;

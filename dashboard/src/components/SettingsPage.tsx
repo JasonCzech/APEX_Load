@@ -2188,6 +2188,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
               >
                 <option value="dark">Dark</option>
                 <option value="light">Light</option>
+                <option value="sepia">Sepia</option>
               </select>
             </div>
             <div className="settings-subsection">
