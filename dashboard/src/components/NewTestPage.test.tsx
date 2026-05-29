@@ -42,8 +42,12 @@ vi.mock('recharts', () => ({
   ReferenceArea: () => <span data-testid="mock-reference-area" />,
   ResponsiveContainer: ({ children }: { children?: ReactNode }) => <div data-testid="mock-responsive-container">{children}</div>,
   Tooltip: () => <span data-testid="mock-tooltip" />,
-  XAxis: () => <span data-testid="mock-x-axis" />,
-  YAxis: () => <span data-testid="mock-y-axis" />,
+  XAxis: ({ label }: { label?: string | { value?: string } }) => (
+    <span data-testid="mock-x-axis" data-label={typeof label === 'string' ? label : label?.value ?? ''} />
+  ),
+  YAxis: ({ label }: { label?: string | { value?: string } }) => (
+    <span data-testid="mock-y-axis" data-label={typeof label === 'string' ? label : label?.value ?? ''} />
+  ),
 }))
 
 describe('NewTestPage', () => {
@@ -493,6 +497,8 @@ describe('NewTestPage', () => {
     expect(profileCard.textContent).toContain('20m total')
     expect(readinessCard.compareDocumentPosition(profileCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(profileCard.querySelector('[data-testid="mock-responsive-container"]')).toBeTruthy()
+    expect(profileCard.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('Elapsed time')
+    expect(profileCard.querySelector('[data-testid="mock-y-axis"]')?.getAttribute('data-label')).toBe('VUsers')
     expect(container.textContent).toContain('Apply runtime defaults to all script groups')
     const scriptGroupsTable = container.querySelector('.new-test-script-table')
     expect(scriptGroupsTable).toBeTruthy()

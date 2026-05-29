@@ -6,6 +6,7 @@ import {
   formatBrowserBreakdownTooltipLabel,
   formatBrowserBreakdownTooltipValue,
 } from './browserBreakdownModel'
+import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 
 interface BrowserBreakdownChartProps {
   title: string
@@ -14,12 +15,6 @@ interface BrowserBreakdownChartProps {
   series: BrowserBreakdownSeries[]
   height?: number
   segmentLabel?: string
-}
-
-const tooltipStyle = {
-  background: 'rgba(33, 36, 47, 0.94)',
-  border: '1px solid var(--border)',
-  borderRadius: 10,
 }
 
 export default function BrowserBreakdownChart({
@@ -42,13 +37,36 @@ export default function BrowserBreakdownChart({
       <h4 className="results-compare-chart-title">{title}</h4>
       {copy && <p className="results-compare-chart-copy">{copy}</p>}
       <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={data}>
+        <LineChart data={data} margin={{ top: 10, right: hasScoreAxis ? 92 : 18, bottom: 12, left: 24 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-          <XAxis dataKey="segment" stroke="var(--text-muted)" fontSize={11} />
-          <YAxis yAxisId="timings" stroke="var(--text-muted)" fontSize={11} />
-          {hasScoreAxis && <YAxis yAxisId="cls" orientation="right" stroke="var(--text-muted)" fontSize={11} domain={[0, 'auto']} />}
+          <XAxis
+            dataKey="segment"
+            stroke="var(--text-muted)"
+            fontSize={11}
+            height={42}
+            label={{ value: segmentLabel, position: 'insideBottom', offset: -4, fill: 'var(--text-muted)', fontSize: 11 }}
+          />
+          <YAxis
+            yAxisId="timings"
+            stroke="var(--text-muted)"
+            fontSize={11}
+            width={88}
+            label={{ value: 'Timing (ms)', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 11 }}
+          />
+          {hasScoreAxis && (
+            <YAxis
+              yAxisId="cls"
+              orientation="right"
+              stroke="var(--text-muted)"
+              fontSize={11}
+              width={70}
+              domain={[0, 'auto']}
+              label={{ value: 'CLS score', angle: 90, position: 'right', fill: 'var(--text-muted)', fontSize: 11 }}
+            />
+          )}
           <Tooltip
-            contentStyle={tooltipStyle}
+            contentStyle={chartTooltipContentStyle}
+            labelStyle={chartTooltipLabelStyle}
             labelFormatter={value => formatBrowserBreakdownTooltipLabel(value, segmentLabel)}
             formatter={(value, name, item) => {
               const metadata = seriesByKey.get(String((item as { dataKey?: string } | undefined)?.dataKey ?? ''))

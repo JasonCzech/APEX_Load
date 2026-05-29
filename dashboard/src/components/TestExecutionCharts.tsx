@@ -15,6 +15,7 @@ import {
 
 import { MetricsHistoryPoint } from '../types'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
+import { chartTooltipContentStyle } from './chartTooltipTheme'
 import { routeLatencySeriesLabel } from './latencySeries'
 import { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
 
@@ -70,6 +71,7 @@ type ChartDensityMode = 'standard' | 'six_up'
 type ResponseTimeNetworkMode = 'end_to_end' | 'application'
 type ChartDropPosition = 'before' | 'after'
 type OverlayMetricKey = 'vusers' | 'avgMs' | 'tps'
+type ChartMargin = ComponentProps<typeof LineChart>['margin']
 
 const chartConfigs: ChartConfig[] = [
   { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
@@ -111,6 +113,12 @@ const overlayMetricMenuLabels: Record<OverlayMetricKey, string> = {
   tps: 'TPS',
 }
 
+const AXIS_LABEL_STYLE = {
+  fill: 'var(--text-muted)',
+  fontSize: 11,
+  fontWeight: 700,
+}
+
 function isOverlayMetricAvailable(chart: ChartConfig, key: OverlayMetricKey) {
   if (key === 'vusers') return chart.id !== 'vusers'
   if (key === 'avgMs') return chart.id !== 'latency'
@@ -124,6 +132,81 @@ function normalizeOverlayMetricKeys(chart: ChartConfig, includeVuserOverlay: boo
     keys.add('vusers')
   }
   return Array.from(keys).filter(key => isOverlayMetricAvailable(chart, key))
+}
+
+function chartPrimaryYAxisLabel(chart: ChartConfig) {
+  switch (chart.id) {
+    case 'vusers':
+      return 'VUsers'
+    case 'tps':
+      return 'TPS'
+    case 'latency':
+      return 'Response time (ms)'
+    case 'errors':
+      return 'Error rate (%)'
+    case 'cpu':
+      return 'CPU (%)'
+    case 'mem':
+      return 'Memory (MB)'
+    case 'io':
+      return 'Throughput (KB/s)'
+    case 'network_latency':
+      return 'Route latency (ms)'
+    default:
+      return chart.title
+  }
+}
+
+function bottomAxisLabel(value: string) {
+  return {
+    value,
+    position: 'insideBottom',
+    offset: -18,
+    style: AXIS_LABEL_STYLE,
+  }
+}
+
+function leftAxisLabel(value: string) {
+  return {
+    value,
+    angle: -90,
+    position: 'left',
+    offset: 0,
+    style: { ...AXIS_LABEL_STYLE, textAnchor: 'middle' },
+  }
+}
+
+function rightAxisLabel(value: string) {
+  return {
+    value,
+    angle: 90,
+    position: 'right',
+    offset: 0,
+    style: { ...AXIS_LABEL_STYLE, textAnchor: 'middle' },
+  }
+}
+
+function chartMarginForOverlayKeys(overlayKeys: OverlayMetricKey[]): ChartMargin {
+  const rightAxisCount = Number(overlayKeys.includes('vusers'))
+    + Number(overlayKeys.some(key => key === 'avgMs' || key === 'tps'))
+  return {
+    top: 12,
+    right: rightAxisCount > 1 ? 126 : rightAxisCount === 1 ? 88 : 18,
+    bottom: 8,
+    left: 24,
+  }
+}
+
+function rateOverlayAxisLabel(overlayKeys: OverlayMetricKey[]) {
+  const labels = []
+  if (overlayKeys.includes('avgMs')) labels.push('ART (ms)')
+  if (overlayKeys.includes('tps')) labels.push('TPS')
+  return labels.join(' / ')
+}
+
+function chartTitleWithOverlays(chart: ChartConfig, overlayKeys: OverlayMetricKey[]) {
+  const labels = overlayKeys.map(key => overlayMetricMenuLabels[key])
+  return labels.length > 0 ? `${chart.title} + ${labels.join(' + ')}` : chart.title
 }
 
 function normalizedChartOrder(order: string[]) {
@@ -564,6 +647,7 @@ export default function TestExecutionCharts({
   const [chartDensity, setChartDensity] = useState<ChartDensityMode>(() => readStoredChartDensity())
   const [responseTimeNetworkMode, setResponseTimeNetworkMode] = useState<ResponseTimeNetworkMode>(() => readStoredResponseTimeNetworkMode())
   const [chartMenu, setChartMenu] = useState<{ chartId: string; x: number; y: number } | null>(null)
+  const [chartDrawerOpen, setChartDrawerOpen] = useState(false)
   const [hoveredChartId, setHoveredChartId] = useState<string | null>(null)
   const [draggingChartId, setDraggingChartId] = useState<string | null>(null)
   const [dragOverChartId, setDragOverChartId] = useState<string | null>(null)
@@ -644,6 +728,18 @@ export default function TestExecutionCharts({
     }
   }, [chartMenu])
 
+  useEffect(() => {
+    if (!chartDrawerOpen) return
+
+    const closeDrawerOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setChartDrawerOpen(false)
+      }
+    }
+    window.addEventListener('keydown', closeDrawerOnEscape)
+    return () => window.removeEventListener('keydown', closeDrawerOnEscape)
+  }, [chartDrawerOpen])
+
   const orderedCharts = useMemo(() => {
     const byId = new Map(chartConfigs.map(chart => [chart.id, chart]))
     const ordered = chartOrder
@@ -683,7 +779,6 @@ export default function TestExecutionCharts({
 
   const latest = filteredData[filteredData.length - 1] || {}
   const visibleCharts = orderedCharts.filter(chart => !hiddenChartIds.includes(chart.id))
-  const hiddenCharts = orderedCharts.filter(chart => hiddenChartIds.includes(chart.id))
   const displayedCharts = expandedChart
     ? [
         ...visibleCharts.filter(chart => chart.id === expandedChart),
@@ -704,7 +799,10 @@ export default function TestExecutionCharts({
       dataKey="time"
       stroke="var(--text-muted)"
       fontSize={11}
+      height={46}
+      tickMargin={8}
       tickFormatter={formatXAxisLabel}
+      label={bottomAxisLabel(timeAxisMode === 'relative' ? 'Run time' : 'Clock time')}
     />
   )
 
@@ -712,7 +810,7 @@ export default function TestExecutionCharts({
     const showTimeLabel = hoveredChartId === chartId
     return (
       <Tooltip
-        contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
+        contentStyle={{ ...chartTooltipContentStyle, borderRadius: 8 }}
         labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: showTimeLabel ? 4 : 0, display: showTimeLabel ? undefined : 'none' }}
         labelFormatter={(value) => showTimeLabel ? formatXAxisLabel(value) : ''}
         isAnimationActive={false}
@@ -834,22 +932,29 @@ export default function TestExecutionCharts({
     setChartMenu(null)
   }
 
+  const displayTitleForChart = (chart: ChartConfig) => {
+    const rows = metricRowsForChart(chart)
+    const visibleMetricKeys = visibleMetricKeysForChart(chart, rows)
+    return chartTitleWithOverlays(chart, visibleOverlayMetricKeys(chart, visibleMetricKeys))
+  }
+
   const downloadChartSvgSnapshot = (chart: ChartConfig) => {
     const card = chartCardRefs.current[chart.id]
     if (!card) return
-    const snapshot = chartSnapshotSvg(card, chart)
+    const displayTitle = displayTitleForChart(chart)
+    const snapshot = chartSnapshotSvg(card, { ...chart, title: displayTitle })
     if (!snapshot) return
-    downloadTextFile(`${safeFileName(chart.title)}-snapshot.svg`, snapshot, 'image/svg+xml;charset=utf-8')
+    downloadTextFile(`${safeFileName(displayTitle)}-snapshot.svg`, snapshot, 'image/svg+xml;charset=utf-8')
   }
 
   const exportChartCsv = (chart: ChartConfig) => {
-    downloadTextFile(`${safeFileName(chart.title)}-data.csv`, graphCsvForChart(chart, chartDataFor(chart), groupNames, latencyKeys, false, overlayMetricKeysForChart(chart)), 'text/csv;charset=utf-8')
+    downloadTextFile(`${safeFileName(displayTitleForChart(chart))}-data.csv`, graphCsvForChart(chart, chartDataFor(chart), groupNames, latencyKeys, false, overlayMetricKeysForChart(chart)), 'text/csv;charset=utf-8')
   }
 
   const copyLatestValues = (chart: ChartConfig) => {
     const chartData = chartDataFor(chart)
     const chartLatest = chartData[chartData.length - 1] || latest
-    const text = latestGraphValuesText(chart, chartLatest, groupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart))
+    const text = latestGraphValuesText({ ...chart, title: displayTitleForChart(chart) }, chartLatest, groupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart))
     if (navigator.clipboard?.writeText) {
       void navigator.clipboard.writeText(text)
     }
@@ -977,21 +1082,163 @@ export default function TestExecutionCharts({
     setResponseTimeNetworkMode(included ? 'end_to_end' : 'application')
   }
 
+  const renderChartConfigurationPanel = () => (
+    <div className="charts-config-panel">
+      <div className="charts-config-panel-section">
+        <div>
+          <h4>Graph Cards</h4>
+          <span>Add or remove graph cards</span>
+        </div>
+        <div className="charts-config-option-list">
+          {orderedCharts.map(chart => {
+            const visible = !hiddenChartIds.includes(chart.id)
+            return (
+              <label key={chart.id} className="charts-config-option">
+                <input
+                  type="checkbox"
+                  checked={visible}
+                  aria-label={`Show ${chart.title}`}
+                  onChange={() => toggleChartVisibility(chart.id)}
+                />
+                <span>
+                  <strong>{chart.title}</strong>
+                  <small>{visible ? 'Visible' : 'Hidden'}</small>
+                </span>
+              </label>
+            )
+          })}
+        </div>
+      </div>
+      <div className="charts-config-panel-section">
+        <div>
+          <h4>Display Window</h4>
+          <span>Graph data range</span>
+        </div>
+        <div className="time-range-selector" role="group" aria-label="Graph display window">
+          <button className={`btn-chip ${timeRange === '3m' ? 'active' : ''}`} type="button" onClick={() => onTimeRangeChange('3m')}>3m</button>
+          <button className={`btn-chip ${timeRange === '10m' ? 'active' : ''}`} type="button" onClick={() => onTimeRangeChange('10m')}>10m</button>
+          <button className={`btn-chip ${timeRange === 'all' ? 'active' : ''}`} type="button" onClick={() => onTimeRangeChange('all')}>Max</button>
+        </div>
+      </div>
+      <div className="charts-config-panel-section">
+        <div>
+          <h4>Zoom</h4>
+          <span>Graph density</span>
+        </div>
+        <div className="time-range-selector chart-segment-toggle" role="group" aria-label="Graph density">
+          <button
+            className={`btn-chip ${chartDensity === 'standard' ? 'active' : ''}`}
+            type="button"
+            onClick={() => setChartDensity('standard')}
+            aria-pressed={chartDensity === 'standard'}
+          >
+            Standard
+          </button>
+          <button
+            className={`btn-chip ${chartDensity === 'six_up' ? 'active' : ''}`}
+            type="button"
+            onClick={() => setChartDensity('six_up')}
+            aria-pressed={chartDensity === 'six_up'}
+          >
+            6 Graphs
+          </button>
+        </div>
+      </div>
+      <div className="charts-config-panel-section">
+        <div>
+          <h4>Role View</h4>
+          <span>Graph preset</span>
+        </div>
+        <select
+          className="chart-role-select"
+          aria-label="Graph role view"
+          value={activeMonitorPresetId}
+          onChange={event => applyMonitorPreset(event.currentTarget.value)}
+        >
+          <option value="">Manual view</option>
+          {monitorPresets.map(preset => (
+            <option key={preset.id} value={preset.id}>{preset.label}</option>
+          ))}
+        </select>
+      </div>
+      <div className="charts-config-panel-section">
+        <div>
+          <h4>Display Time</h4>
+          <span>Graph x-axis labels</span>
+        </div>
+        <div className="time-range-selector chart-time-axis-toggle" role="group" aria-label="Graph time axis">
+          <button
+            className={`btn-chip ${timeAxisMode === 'clock' ? 'active' : ''}`}
+            type="button"
+            onClick={() => setTimeAxisMode('clock')}
+            aria-pressed={timeAxisMode === 'clock'}
+          >
+            Clock Time
+          </button>
+          <button
+            className={`btn-chip ${timeAxisMode === 'relative' ? 'active' : ''}`}
+            type="button"
+            onClick={() => setTimeAxisMode('relative')}
+            aria-pressed={timeAxisMode === 'relative'}
+          >
+            Relative Time
+          </button>
+        </div>
+      </div>
+      <div className="charts-config-panel-section">
+        <div>
+          <h4>Reset</h4>
+          <span>Default graph layout</span>
+        </div>
+        <button className="btn-chip chart-reset-pill" type="button" onClick={resetCharts}>
+          Reset Graphs
+        </button>
+      </div>
+    </div>
+  )
+
   const renderOverlayAxes = (chart: ChartConfig, visibleMetricKeys: string[]) => {
     const visibleOverlayKeys = visibleOverlayMetricKeys(chart, visibleMetricKeys)
     const showVuserAxis = visibleOverlayKeys.includes('vusers')
-    const showRateAxis = visibleOverlayKeys.some(key => key === 'avgMs' || key === 'tps')
+    const rateAxisLabel = rateOverlayAxisLabel(visibleOverlayKeys)
     return (
       <>
         {showVuserAxis && (
-          <YAxis yAxisId="vusers" orientation="right" stroke={overlayMetricRows.vusers.color} fontSize={11} width={42} domain={[0, 'auto']} />
+          <YAxis
+            yAxisId="vusers"
+            orientation="right"
+            stroke={overlayMetricRows.vusers.color}
+            fontSize={11}
+            width={72}
+            domain={[0, 'auto']}
+            label={rightAxisLabel('VUsers')}
+          />
         )}
-        {showRateAxis && (
-          <YAxis yAxisId="rateOverlay" orientation="right" stroke="var(--text-muted)" fontSize={11} width={42} domain={[0, 'auto']} />
+        {rateAxisLabel && (
+          <YAxis
+            yAxisId="rateOverlay"
+            orientation="right"
+            stroke="var(--text-muted)"
+            fontSize={11}
+            width={86}
+            domain={[0, 'auto']}
+            label={rightAxisLabel(rateAxisLabel)}
+          />
         )}
       </>
     )
   }
+
+  const renderMetricAxis = (chart: ChartConfig, visibleMetricKeys: string[], domain?: ChartDomain) => (
+    <YAxis
+      yAxisId={metricYAxisId(chart, visibleMetricKeys)}
+      stroke="var(--text-muted)"
+      fontSize={11}
+      width={82}
+      domain={domain}
+      label={leftAxisLabel(chartPrimaryYAxisLabel(chart))}
+    />
+  )
 
   const renderOverlayLines = (chart: ChartConfig, visibleMetricKeys: string[]) => {
     const visibleOverlayKeys = visibleOverlayMetricKeys(chart, visibleMetricKeys)
@@ -1083,109 +1330,6 @@ export default function TestExecutionCharts({
 
   return (
     <>
-      <div className="charts-customize-panel">
-        <div className="charts-customize-panel-section">
-          <div>
-            <h4>Display Window</h4>
-            <span>Graph data range</span>
-          </div>
-          <div className="time-range-selector" role="group" aria-label="Graph display window">
-            <button className={`btn-chip ${timeRange === '3m' ? 'active' : ''}`} type="button" onClick={() => onTimeRangeChange('3m')}>3m</button>
-            <button className={`btn-chip ${timeRange === '10m' ? 'active' : ''}`} type="button" onClick={() => onTimeRangeChange('10m')}>10m</button>
-            <button className={`btn-chip ${timeRange === 'all' ? 'active' : ''}`} type="button" onClick={() => onTimeRangeChange('all')}>Max</button>
-          </div>
-        </div>
-        <div className="charts-customize-panel-section">
-          <div>
-            <h4>Zoom</h4>
-            <span>Graph density</span>
-          </div>
-          <div className="time-range-selector chart-segment-toggle" role="group" aria-label="Graph density">
-            <button
-              className={`btn-chip ${chartDensity === 'standard' ? 'active' : ''}`}
-              type="button"
-              onClick={() => setChartDensity('standard')}
-              aria-pressed={chartDensity === 'standard'}
-            >
-              Standard
-            </button>
-            <button
-              className={`btn-chip ${chartDensity === 'six_up' ? 'active' : ''}`}
-              type="button"
-              onClick={() => setChartDensity('six_up')}
-              aria-pressed={chartDensity === 'six_up'}
-            >
-              6 Graphs
-            </button>
-          </div>
-        </div>
-        <div className="charts-customize-panel-section">
-          <div>
-            <h4>Role View</h4>
-            <span>Graph preset</span>
-          </div>
-          <select
-            className="chart-role-select"
-            aria-label="Graph role view"
-            value={activeMonitorPresetId}
-            onChange={event => applyMonitorPreset(event.currentTarget.value)}
-          >
-            <option value="">Manual view</option>
-            {monitorPresets.map(preset => (
-              <option key={preset.id} value={preset.id}>{preset.label}</option>
-            ))}
-          </select>
-        </div>
-        <div className="charts-customize-panel-section">
-          <div>
-            <h4>Display Time</h4>
-            <span>Graph x-axis labels</span>
-          </div>
-          <div className="time-range-selector chart-time-axis-toggle" role="group" aria-label="Graph time axis">
-            <button
-              className={`btn-chip ${timeAxisMode === 'clock' ? 'active' : ''}`}
-              type="button"
-              onClick={() => setTimeAxisMode('clock')}
-              aria-pressed={timeAxisMode === 'clock'}
-            >
-              Clock Time
-            </button>
-            <button
-              className={`btn-chip ${timeAxisMode === 'relative' ? 'active' : ''}`}
-              type="button"
-              onClick={() => setTimeAxisMode('relative')}
-              aria-pressed={timeAxisMode === 'relative'}
-            >
-              Relative Time
-            </button>
-          </div>
-        </div>
-        <div className="charts-customize-panel-section">
-          <div>
-            <h4>Reset</h4>
-            <span>Default graph layout</span>
-          </div>
-          <button className="btn-chip chart-reset-pill" type="button" onClick={resetCharts}>
-            Reset Graphs
-          </button>
-        </div>
-        {hiddenCharts.length > 0 && (
-          <div className="charts-customize-panel-section">
-            <div>
-              <h4>Hidden Graphs</h4>
-              <span>Restore hidden graph cards</span>
-            </div>
-            <div className="hidden-chart-list">
-              {hiddenCharts.map(chart => (
-                <button key={chart.id} className="hidden-chart-pill" type="button" onClick={() => toggleChartVisibility(chart.id)}>
-                  Show {chart.title}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
       {showLoadImpact && (
         <LoadImpactHeatmap
           points={filteredData}
@@ -1194,6 +1338,28 @@ export default function TestExecutionCharts({
           emptyMessage="Load impact appears after live metrics include active VUsers and performance or resource samples."
         />
       )}
+
+      <div className="charts-toolbar" aria-label="Final graph controls">
+        <div>
+          <h3 className="chart-title">Runtime Graphs</h3>
+          <p className="archive-section-copy">Live and archived time-series charts for the selected run.</p>
+        </div>
+        <div className="charts-toolbar-actions">
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setChartDrawerOpen(true)}
+            aria-expanded={chartDrawerOpen}
+          >
+            Configure Graphs
+          </button>
+          <div className="charts-toolbar-badges">
+            <span className="archive-chip">{visibleCharts.length} graph{visibleCharts.length === 1 ? '' : 's'}</span>
+            <span className="archive-chip">{chartDensity === 'six_up' ? '6 Graphs' : 'Standard'}</span>
+            <span className="archive-chip">{timeAxisMode === 'relative' ? 'Relative time' : 'Clock time'}</span>
+          </div>
+        </div>
+      </div>
 
       {visibleCharts.length === 0 ? (
         <div className="charts-empty">
@@ -1207,6 +1373,9 @@ export default function TestExecutionCharts({
             const chartHeight = chartDensity === 'six_up' && expandedChart !== chart.id ? 132 : expandedChart === chart.id ? 400 : 200
             const metricRows = metricRowsForChart(chart)
             const visibleMetricKeys = visibleMetricKeysForChart(chart, metricRows)
+            const visibleOverlayKeysForTitle = visibleOverlayMetricKeys(chart, visibleMetricKeys)
+            const chartTitle = chartTitleWithOverlays(chart, visibleOverlayKeysForTitle)
+            const chartMargin = chartMarginForOverlayKeys(visibleOverlayKeysForTitle)
             const metricAxisIdForChart = metricYAxisId(chart, visibleMetricKeys)
             const showMetric = (key: string) => visibleMetricKeys.includes(key)
             return (
@@ -1229,13 +1398,13 @@ export default function TestExecutionCharts({
                       className="chart-drag-handle"
                       type="button"
                       draggable
-                      aria-label={`Rearrange ${chart.title}`}
+                      aria-label={`Rearrange ${chartTitle}`}
                       title="Drag to rearrange graph. Use arrow keys to move."
                       onDragStart={event => handleChartDragStart(event, chart.id)}
                       onDragEnd={handleChartDragEnd}
                       onKeyDown={event => handleChartReorderKeyDown(event, chart.id)}
                     />
-                    <h3 className="chart-title">{chart.title}</h3>
+                    <h3 className="chart-title">{chartTitle}</h3>
                   </div>
                   <div className="chart-card-actions">
                     {chart.id === 'latency' && (
@@ -1266,13 +1435,14 @@ export default function TestExecutionCharts({
               <ComposedChart
                 data={chartData}
                 syncId="metrics"
+                margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
-                <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} domain={chart.domain} />
+                {renderMetricAxis(chart, visibleMetricKeys, chart.domain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {chart.dataKey && showMetric(chart.dataKey) && (
@@ -1287,13 +1457,14 @@ export default function TestExecutionCharts({
               <LineChart
                 data={chartData}
                 syncId="metrics"
+                margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
-                <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} />
+                {renderMetricAxis(chart, visibleMetricKeys)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {isMultiGroup && <Legend verticalAlign="bottom" height={36} />}
@@ -1312,13 +1483,14 @@ export default function TestExecutionCharts({
               <LineChart
                 data={chartData}
                 syncId="metrics"
+                margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
-                <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} />
+                {renderMetricAxis(chart, visibleMetricKeys)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 <Legend verticalAlign="bottom" height={36} />
@@ -1341,13 +1513,14 @@ export default function TestExecutionCharts({
               <ComposedChart
                 data={chartData}
                 syncId="metrics"
+                margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
-                <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} domain={chart.domain} />
+                {renderMetricAxis(chart, visibleMetricKeys, chart.domain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 <Legend verticalAlign="bottom" height={36} />
@@ -1363,13 +1536,14 @@ export default function TestExecutionCharts({
               <LineChart
                 data={chartData}
                 syncId="metrics"
+                margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
-                <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} />
+                {renderMetricAxis(chart, visibleMetricKeys)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 <Legend verticalAlign="bottom" height={36} />
@@ -1395,13 +1569,14 @@ export default function TestExecutionCharts({
               <LineChart
                 data={chartData}
                 syncId="metrics"
+                margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
-                <YAxis yAxisId={metricAxisIdForChart} stroke="var(--text-muted)" fontSize={11} />
+                {renderMetricAxis(chart, visibleMetricKeys)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 <Legend />
@@ -1423,6 +1598,26 @@ export default function TestExecutionCharts({
           })}
         </div>
       )}
+      {chartDrawerOpen && (
+        <div className="charts-config-drawer-layer">
+          <button
+            type="button"
+            className="charts-config-backdrop"
+            aria-label="Close graph configuration"
+            onClick={() => setChartDrawerOpen(false)}
+          />
+          <aside className="charts-config-drawer" role="dialog" aria-modal="true" aria-label="Final graph configuration">
+            <div className="charts-config-drawer-header">
+              <div>
+                <h3>Graph Configuration</h3>
+                <p>Choose graph cards, presets, density, and time display for the final graph area.</p>
+              </div>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setChartDrawerOpen(false)}>Close</button>
+            </div>
+            {renderChartConfigurationPanel()}
+          </aside>
+        </div>
+      )}
       {contextChart && chartMenu && (
         <div
           ref={chartMenuRef}
@@ -1436,7 +1631,7 @@ export default function TestExecutionCharts({
             event.stopPropagation()
           }}
         >
-          <div className="chart-context-menu-title">{contextChart.title}</div>
+          <div className="chart-context-menu-title">{displayTitleForChart(contextChart)}</div>
           <button type="button" role="menuitem" onClick={() => runChartAction(onResetZoom)}>Reset Zoom</button>
           {(['vusers', 'avgMs', 'tps'] as OverlayMetricKey[])
             .filter(key => isOverlayMetricAvailable(contextChart, key))

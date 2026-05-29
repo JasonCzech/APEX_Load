@@ -177,6 +177,16 @@ describe('TestExecutionArchive', () => {
         avg_long_task_count: 1,
         avg_blocking_resources: 2,
       },
+      telemetry: {
+        status: 'degraded',
+        samples: 3,
+        healthy_intervals: 1,
+        degraded_intervals: 2,
+        breached_intervals: 0,
+        max_sample_age_ms: 850,
+        max_generator_processing_lag_ms: 40,
+        max_transport_lag_ms: 60,
+      },
     },
     evidence_tiers: [
       { tier: 'summary', label: 'Summary', status: 'present', count: 3, description: 'Aggregated run totals.' },
@@ -387,6 +397,17 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Completeness Score')
     expect(container.textContent).toContain('92% · needs review')
     expect(container.textContent).toContain('telemetry gaps')
+    const metadataBoxes = Array.from(container.querySelectorAll('.archive-metadata-box'))
+    expect(metadataBoxes.map(box => box.querySelector('h3')?.textContent)).toEqual([
+      'Telemetry Health',
+      'Schema Compatibility',
+      'Evidence Tiers',
+      'Run Provenance',
+      'Change Attribution',
+    ])
+    expect(container.textContent).toContain('1 healthy · 2 degraded · 0 breached')
+    expect(container.textContent).toContain('Max Sample Age')
+    expect(container.textContent).toContain('850ms')
     expect(container.textContent).toContain('Schema Compatibility')
     expect(container.textContent).toContain('apexload.archive_report.v1')
     expect(container.textContent).toContain('standalone html')

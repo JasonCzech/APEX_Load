@@ -5,6 +5,7 @@ import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
 import { formatTimeCompact, parseDurationToSeconds } from '../utils/timeUtils'
+import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import './CreateTestModal.css'
 
 interface Props {
@@ -2278,24 +2279,29 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                 <>
                   <div className="new-test-profile-chart">
                     <ResponsiveContainer width="100%" height={210}>
-                      <AreaChart data={runLoadProfilePreview.points} margin={{ top: 10, right: 12, left: -18, bottom: 0 }}>
+                      <AreaChart data={runLoadProfilePreview.points} margin={{ top: 10, right: 12, left: 20, bottom: 14 }}>
                         <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
                         <XAxis
                           dataKey="second"
                           tickFormatter={(value) => formatTimeCompact(Number(value))}
                           stroke="var(--text-muted)"
                           fontSize={10}
+                          height={38}
                           tickLine={false}
+                          label={{ value: 'Elapsed time', position: 'insideBottom', offset: -4, fill: 'var(--text-muted)', fontSize: 10 }}
                         />
                         <YAxis
                           stroke="var(--text-muted)"
                           fontSize={10}
+                          width={66}
                           tickLine={false}
                           allowDecimals={false}
+                          label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 10 }}
                         />
                         <Tooltip
                           labelFormatter={(value) => `Time: ${formatTimeCompact(Number(value))}`}
-                          contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '12px' }}
+                          contentStyle={{ ...chartTooltipContentStyle, borderRadius: 8, fontSize: '12px' }}
+                          labelStyle={chartTooltipLabelStyle}
                           formatter={(value: number, name: string) => [value, name === 'total' ? 'Total VUsers' : name]}
                         />
                         {effectiveScenarioGroups.map((group, index) => (

@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import ResultsPage, { buildComparisonSummarySeries } from './ResultsPage'
+import ResultsPage, { buildComparisonSummarySeries, comparisonChartYAxisLabel } from './ResultsPage'
 import { downloadBlob } from '../utils/fileUtils'
 
 const apiMock = {
@@ -255,6 +255,25 @@ describe('ResultsPage', () => {
       { dataKey: 'leftP95', name: 'ACME (90328d19) P95', stroke: 'var(--chart-1)', yAxisId: 'value' },
       { dataKey: 'rightP95', name: 'ACME (44641072) P95', stroke: 'var(--chart-2)', yAxisId: 'value' },
     ])
+  })
+
+  it('labels comparison chart axes with the selected metric units', () => {
+    expect(comparisonChartYAxisLabel({
+      id: 'p95',
+      label: 'P95',
+      leftKey: 'leftP95',
+      rightKey: 'rightP95',
+      description: '95th percentile response time',
+      valueFormat: 'ms',
+    })).toBe('P95 (ms)')
+    expect(comparisonChartYAxisLabel({
+      id: 'errors',
+      label: 'Errors',
+      leftKey: 'leftErrorPct',
+      rightKey: 'rightErrorPct',
+      description: 'error percentage',
+      valueFormat: 'percent',
+    })).toBe('Error rate (%)')
   })
 
   it('shows a loading state before rendering an empty release result list', async () => {

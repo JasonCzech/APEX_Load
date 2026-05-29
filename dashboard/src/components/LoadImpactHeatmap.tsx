@@ -1,13 +1,16 @@
-import { type CSSProperties, useMemo, useState } from 'react'
+import { type CSSProperties, useEffect, useMemo, useState } from 'react'
 
 import type { MetricsHistoryPoint } from '../types'
 import LoadImpact3DHeatmap from './LoadImpact3DHeatmap'
 import {
+  LOAD_IMPACT_METRICS,
   buildLoadImpactModel,
+  filterLoadImpactModel,
   formatLoadImpactCellTitle,
   formatLoadImpactValue,
   loadImpactCellKey,
 } from './loadImpactModel'
+import type { LoadImpactBucket, LoadImpactRow } from './loadImpactModel'
 import './LoadImpactHeatmap.css'
 
 interface Props {
@@ -18,6 +21,14 @@ interface Props {
   error?: string
   emptyMessage?: string
 }
+
+type LoadImpactSortDirection = 'asc' | 'desc'
+type LoadImpactSortState = {
+  key: string
+  direction: LoadImpactSortDirection
+}
+
+const METRIC_SORT_KEY = 'metric'
 
 function formatPointTimestamp(point: MetricsHistoryPoint) {
   if (typeof point.timestampMs === 'number') {
@@ -31,6 +42,46 @@ function relatedValue(point: MetricsHistoryPoint, key: keyof MetricsHistoryPoint
   return typeof value === 'number' && Number.isFinite(value) ? formatLoadImpactValue(value, unit) : 'n/a'
 }
 
+function metricSampleCount(row: LoadImpactRow) {
+  return row.cells.reduce((sum, cell) => sum + cell.sampleCount, 0)
+}
+
+function loadPointDescriptor(bucket: LoadImpactBucket) {
+  return `${bucket.exact ? 'Exact load point' : 'Load range'} · ${bucket.sampleCount} total sample${bucket.sampleCount === 1 ? '' : 's'}`
+}
+
+function bucketSortKey(bucketId: string) {
+  return `bucket:${bucketId}`
+}
+
+function compareMaybeNumber(left: number | undefined, right: number | undefined, direction: LoadImpactSortDirection) {
+  const leftMissing = left === undefined || !Number.isFinite(left)
+  const rightMissing = right === undefined || !Number.isFinite(right)
+  if (leftMissing && rightMissing) return 0
+  if (leftMissing) return 1
+  if (rightMissing) return -1
+  return direction === 'asc' ? left - right : right - left
+}
+
+export function sortLoadImpactRows(rows: LoadImpactRow[], sort: LoadImpactSortState | null): LoadImpactRow[] {
+  if (!sort) return rows
+
+  return [...rows].sort((left, right) => {
+    const fallback = left.metric.label.localeCompare(right.metric.label)
+    if (sort.key === METRIC_SORT_KEY) {
+      const multiplier = sort.direction === 'asc' ? 1 : -1
+      return fallback * multiplier
+    }
+
+    const bucketId = sort.key.replace(/^bucket:/, '')
+    const leftCell = left.cells.find(cell => cell.bucket.id === bucketId)
+    const rightCell = right.cells.find(cell => cell.bucket.id === bucketId)
+    const valueComparison = compareMaybeNumber(leftCell?.average, rightCell?.average, sort.direction)
+    if (valueComparison !== 0) return valueComparison
+    return fallback
+  })
+}
+
 export default function LoadImpactHeatmap({
   points,
   title = 'Load Impact',
@@ -41,15 +92,134 @@ export default function LoadImpactHeatmap({
 }: Props) {
   const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d')
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [selectedMetricIds, setSelectedMetricIds] = useState<string[] | null>(null)
+  const [selectedBucketIds, setSelectedBucketIds] = useState<string[] | null>(null)
+  const [sortState, setSortState] = useState<LoadImpactSortState | null>(null)
   const model = useMemo(() => buildLoadImpactModel(points), [points])
+  const availableMetricIds = useMemo(() => model.rows.map(row => row.metric.id), [model.rows])
+  const availableBucketIds = useMemo(() => model.buckets.map(bucket => bucket.id), [model.buckets])
+  const effectiveMetricIds = selectedMetricIds ?? availableMetricIds
+  const effectiveBucketIds = selectedBucketIds ?? availableBucketIds
+  const displayModel = useMemo(
+    () => filterLoadImpactModel(model, effectiveMetricIds, effectiveBucketIds),
+    [model, effectiveMetricIds, effectiveBucketIds],
+  )
+  const sortedRows = useMemo(
+    () => sortLoadImpactRows(displayModel.rows, sortState),
+    [displayModel.rows, sortState],
+  )
   const selectedCell = useMemo(() => {
     if (!selectedCellKey) return null
-    for (const row of model.rows) {
+    for (const row of displayModel.rows) {
       const cell = row.cells.find(candidate => loadImpactCellKey(candidate) === selectedCellKey)
       if (cell) return cell
     }
     return null
-  }, [model.rows, selectedCellKey])
+  }, [displayModel.rows, selectedCellKey])
+  const availableMetricIdSet = useMemo(() => new Set(availableMetricIds), [availableMetricIds])
+  const unavailableMetricCount = LOAD_IMPACT_METRICS.filter(metric => !availableMetricIdSet.has(metric.id)).length
+
+  useEffect(() => {
+    if (!drawerOpen) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setDrawerOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [drawerOpen])
+
+  const resetConfiguration = () => {
+    setSelectedMetricIds(null)
+    setSelectedBucketIds(null)
+    setSelectedCellKey(null)
+  }
+
+  const selectAllConfiguration = () => {
+    setSelectedMetricIds(availableMetricIds)
+    setSelectedBucketIds(availableBucketIds)
+  }
+
+  const clearConfiguration = () => {
+    setSelectedMetricIds([])
+    setSelectedBucketIds([])
+    setSelectedCellKey(null)
+  }
+
+  const toggleSort = (key: string) => {
+    setSortState(prev => prev?.key === key
+      ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
+      : { key, direction: key === METRIC_SORT_KEY ? 'asc' : 'desc' })
+  }
+
+  const sortIndicator = (key: string) => {
+    if (sortState?.key !== key) return '↕'
+    return sortState.direction === 'asc' ? '↑' : '↓'
+  }
+
+  const ariaSort = (key: string): 'ascending' | 'descending' | 'none' => {
+    if (sortState?.key !== key) return 'none'
+    return sortState.direction === 'asc' ? 'ascending' : 'descending'
+  }
+
+  const toggleMetric = (metricId: string) => {
+    setSelectedMetricIds(prev => {
+      const current = prev ?? availableMetricIds
+      return current.includes(metricId)
+        ? current.filter(id => id !== metricId)
+        : [...current, metricId]
+    })
+    setSelectedCellKey(null)
+  }
+
+  const toggleBucket = (bucketId: string) => {
+    setSelectedBucketIds(prev => {
+      const current = prev ?? availableBucketIds
+      return current.includes(bucketId)
+        ? current.filter(id => id !== bucketId)
+        : [...current, bucketId]
+    })
+    setSelectedCellKey(null)
+  }
+
+  const renderMetricOption = (row: LoadImpactRow) => {
+    const checked = effectiveMetricIds.includes(row.metric.id)
+    return (
+      <label key={row.metric.id} className="load-impact-graph-option">
+        <input
+          type="checkbox"
+          value={row.metric.id}
+          checked={checked}
+          onChange={() => toggleMetric(row.metric.id)}
+        />
+        <span>
+          <strong>{row.metric.label}</strong>
+          <small>{row.metric.category} · {metricSampleCount(row)} samples{row.metric.unit ? ` · ${row.metric.unit}` : ''}</small>
+        </span>
+      </label>
+    )
+  }
+
+  const renderBucketOption = (bucket: LoadImpactBucket) => {
+    const checked = effectiveBucketIds.includes(bucket.id)
+    return (
+      <label key={bucket.id} className="load-impact-graph-option">
+        <input
+          type="checkbox"
+          value={bucket.id}
+          checked={checked}
+          onChange={() => toggleBucket(bucket.id)}
+        />
+        <span>
+          <strong>{bucket.label}</strong>
+          <small>{loadPointDescriptor(bucket)}</small>
+        </span>
+      </label>
+    )
+  }
 
   return (
     <section className="load-impact-card" aria-label={title}>
@@ -59,6 +229,15 @@ export default function LoadImpactHeatmap({
           <p className="load-impact-copy">{subtitle}</p>
         </div>
         <div className="load-impact-header-actions">
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setDrawerOpen(true)}
+            disabled={loading || model.rows.length === 0 || model.buckets.length === 0}
+            aria-expanded={drawerOpen}
+          >
+            Configure Graphs
+          </button>
           {!loading && model.rows.length > 0 && model.buckets.length > 0 && (
             <div className="load-impact-view-toggle" role="tablist" aria-label="Load Impact view mode">
               <button
@@ -84,7 +263,8 @@ export default function LoadImpactHeatmap({
           <div className="load-impact-badges">
             {loading && <span className="archive-chip">Loading</span>}
             {!loading && model.pointCount > 0 && <span className="archive-chip">{model.pointCount} samples</span>}
-            {!loading && model.buckets.length > 0 && <span className="archive-chip">{model.buckets.length} load buckets</span>}
+            {!loading && model.rows.length > 0 && <span className="archive-chip">{displayModel.rows.length}/{model.rows.length} metrics</span>}
+            {!loading && model.buckets.length > 0 && <span className="archive-chip">{displayModel.buckets.length}/{model.buckets.length} loads</span>}
           </div>
         </div>
       </div>
@@ -99,11 +279,15 @@ export default function LoadImpactHeatmap({
         <div className="load-impact-state">
           {emptyMessage}
         </div>
+      ) : displayModel.rows.length === 0 || displayModel.buckets.length === 0 ? (
+        <div className="load-impact-state">
+          No heatmap cells selected. Open Configure Graphs to add metrics and VUser load points.
+        </div>
       ) : (
         <>
           {viewMode === '3d' ? (
             <LoadImpact3DHeatmap
-              model={model}
+              model={displayModel}
               selectedCellKey={selectedCellKey}
               onSelectedCellKeyChange={setSelectedCellKey}
             />
@@ -112,17 +296,35 @@ export default function LoadImpactHeatmap({
               <table className="load-impact-table">
                 <thead>
                   <tr>
-                    <th scope="col">Metric</th>
-                    {model.buckets.map(bucket => (
-                      <th key={bucket.id} scope="col">
-                        <span>{bucket.label}</span>
-                        <small>{bucket.sampleCount} total</small>
+                    <th scope="col" aria-sort={ariaSort(METRIC_SORT_KEY)}>
+                      <button
+                        type="button"
+                        className="load-impact-sort-header"
+                        onClick={() => toggleSort(METRIC_SORT_KEY)}
+                      >
+                        <span>Metric</span>
+                        <span className="load-impact-sort-icon" aria-hidden="true">{sortIndicator(METRIC_SORT_KEY)}</span>
+                      </button>
+                    </th>
+                    {displayModel.buckets.map(bucket => (
+                      <th key={bucket.id} scope="col" aria-sort={ariaSort(bucketSortKey(bucket.id))}>
+                        <button
+                          type="button"
+                          className="load-impact-sort-header"
+                          onClick={() => toggleSort(bucketSortKey(bucket.id))}
+                        >
+                          <span>
+                            <span>{bucket.label}</span>
+                            <small>{bucket.sampleCount} total</small>
+                          </span>
+                          <span className="load-impact-sort-icon" aria-hidden="true">{sortIndicator(bucketSortKey(bucket.id))}</span>
+                        </button>
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {model.rows.map(row => (
+                  {sortedRows.map(row => (
                     <tr key={row.metric.id}>
                       <th scope="row">
                         <span>{row.metric.label}</span>
@@ -208,6 +410,53 @@ export default function LoadImpactHeatmap({
             </div>
           )}
         </>
+      )}
+
+      {drawerOpen && (
+        <div className="load-impact-graph-drawer-layer">
+          <button
+            type="button"
+            className="load-impact-graph-backdrop"
+            aria-label="Close heatmap configuration"
+            onClick={() => setDrawerOpen(false)}
+          />
+          <aside className="load-impact-graph-drawer" role="dialog" aria-modal="true" aria-label="Load impact heatmap configuration">
+            <div className="load-impact-graph-drawer-header">
+              <div>
+                <h3>Heatmap Configuration</h3>
+                <p>Choose which metrics and VUser load points are displayed in this heatmap.</p>
+              </div>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setDrawerOpen(false)}>Close</button>
+            </div>
+            <div className="load-impact-graph-drawer-actions">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={resetConfiguration}>
+                Reset
+              </button>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={selectAllConfiguration}>
+                Add All
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={clearConfiguration}>
+                Remove All
+              </button>
+            </div>
+            <div className="load-impact-graph-option-list">
+              <p className="load-impact-graph-drawer-note">
+                Showing {displayModel.rows.length} of {model.rows.length} metrics across {displayModel.buckets.length} of {model.buckets.length} VUser load points.
+              </p>
+              <span className="results-compare-label">Performance Metrics</span>
+              {model.rows.filter(row => row.metric.category === 'performance').map(renderMetricOption)}
+              <span className="results-compare-label">Resource Metrics</span>
+              {model.rows.filter(row => row.metric.category === 'resource').map(renderMetricOption)}
+              <span className="results-compare-label">VUser Load Points</span>
+              {model.buckets.map(renderBucketOption)}
+              {unavailableMetricCount > 0 && (
+                <p className="load-impact-graph-drawer-note">
+                  {unavailableMetricCount} metric{unavailableMetricCount === 1 ? '' : 's'} without samples are hidden from this selector.
+                </p>
+              )}
+            </div>
+          </aside>
+        </div>
       )}
     </section>
   )

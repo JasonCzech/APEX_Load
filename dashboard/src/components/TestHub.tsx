@@ -519,18 +519,39 @@ function ScenarioModelPreviewPanel({
       </div>
       <div className="scenario-model-chart">
         <ResponsiveContainer width="100%" height={340}>
-          <ComposedChart data={model.points} margin={{ top: 16, right: tpsSeries ? 48 : 24, bottom: 10, left: 8 }}>
+          <ComposedChart data={model.points} margin={{ top: 16, right: tpsSeries ? 92 : 24, bottom: 18, left: 24 }}>
             <CartesianGrid stroke="var(--border-subtle, var(--border))" strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="elapsedSeconds"
               tickFormatter={(value) => formatModelTimeLabel(Number(value))}
               stroke="var(--text-muted)"
               fontSize={11}
+              height={42}
               tickLine={false}
               axisLine={false}
+              label={{ value: 'Elapsed time', position: 'insideBottom', offset: -4, fill: 'var(--text-muted)', fontSize: 11 }}
             />
-            <YAxis yAxisId="vusers" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-            {tpsSeries && <YAxis yAxisId="tps" orientation="right" stroke="var(--warning)" fontSize={11} tickLine={false} axisLine={false} />}
+            <YAxis
+              yAxisId="vusers"
+              stroke="var(--text-muted)"
+              fontSize={11}
+              width={80}
+              tickLine={false}
+              axisLine={false}
+              label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 11 }}
+            />
+            {tpsSeries && (
+              <YAxis
+                yAxisId="tps"
+                orientation="right"
+                stroke="var(--warning)"
+                fontSize={11}
+                width={68}
+                tickLine={false}
+                axisLine={false}
+                label={{ value: 'TPS', angle: 90, position: 'right', fill: 'var(--warning)', fontSize: 11 }}
+              />
+            )}
             <Tooltip content={<ScenarioModelTooltip />} />
             {groupSeries.map(series => (
               <Area

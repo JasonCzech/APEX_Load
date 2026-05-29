@@ -11,6 +11,8 @@ import TestExecutionCharts from './TestExecutionCharts'
 
 vi.mock('recharts', () => {
   const Mock = ({ children }: { children?: ReactNode }) => <g>{children}</g>
+  const labelText = (label?: string | { value?: string }) => (typeof label === 'string' ? label : label?.value ?? '')
+  const labelPosition = (label?: string | { position?: string }) => (typeof label === 'string' ? '' : label?.position ?? '')
   const MockChart = ({
     children,
     syncId,
@@ -58,8 +60,12 @@ vi.mock('recharts', () => {
     ReferenceArea: Mock,
     ResponsiveContainer: ({ children, height }: { children?: ReactNode; height?: number }) => <div data-testid="mock-responsive-container" data-height={String(height ?? '')}>{children}</div>,
     Tooltip: MockTooltip,
-    XAxis: Mock,
-    YAxis: Mock,
+    XAxis: ({ dataKey, label }: { dataKey?: string; label?: string | { value?: string; position?: string } }) => (
+      <g data-testid="mock-x-axis" data-key={dataKey ?? ''} data-label={labelText(label)} data-label-position={labelPosition(label)} />
+    ),
+    YAxis: ({ yAxisId, label, orientation }: { yAxisId?: string | number; label?: string | { value?: string; position?: string }; orientation?: string }) => (
+      <g data-testid="mock-y-axis" data-y-axis-id={String(yAxisId ?? '')} data-orientation={orientation ?? 'left'} data-label={labelText(label)} data-label-position={labelPosition(label)} />
+    ),
   }
 })
 
@@ -172,6 +178,9 @@ describe('TestExecutionCharts context menu', () => {
 
     const vusersChart = container.querySelectorAll('.chart-card')[0]
     expect(vusersChart?.textContent).toContain('Virtual Users')
+    expect(vusersChart?.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('Clock time')
+    expect(axisLabels(vusersChart)).toContain('VUsers')
+    expect(axisLabelPositions(vusersChart)).toContain('left')
 
     await act(async () => {
       vusersChart?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 180, clientY: 160 }))
@@ -186,7 +195,9 @@ describe('TestExecutionCharts context menu', () => {
     })
 
     expect(vusersChart?.querySelector('path[data-testid="mock-line"][data-name="ART"]')).not.toBeNull()
-    expect(vusersChart?.textContent).toContain('ART')
+    expect(vusersChart?.querySelector('.chart-title')?.textContent).toBe('Virtual Users + ART')
+    expect(axisLabels(vusersChart)).toEqual(expect.arrayContaining(['VUsers', 'ART (ms)']))
+    expect(axisLabelPositions(vusersChart)).toEqual(expect.arrayContaining(['left', 'right']))
     expect(window.localStorage.getItem('apexload.execution.artOverlayCharts')).toBe('["vusers"]')
 
     await act(async () => {
@@ -195,13 +206,15 @@ describe('TestExecutionCharts context menu', () => {
 
     expect(menuActionTexts()).toContain('Hide ART Overlay')
     expect(menuActionTexts()).toContain('Overlay TPS')
+    expect(container.querySelector('.chart-context-menu-title')?.textContent).toBe('Virtual Users + ART')
 
     await act(async () => {
       menuButton('Overlay TPS')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(vusersChart?.querySelector('path[data-testid="mock-line"][data-name="TPS"]')).not.toBeNull()
-    expect(vusersChart?.textContent).toContain('TPS')
+    expect(vusersChart?.querySelector('.chart-title')?.textContent).toBe('Virtual Users + ART + TPS')
+    expect(axisLabels(vusersChart)).toEqual(expect.arrayContaining(['VUsers', 'ART (ms) / TPS']))
     expect(window.localStorage.getItem('apexload.execution.tpsOverlayCharts')).toBe('["vusers"]')
   })
 
@@ -384,25 +397,35 @@ describe('TestExecutionCharts context menu', () => {
     expect(window.localStorage.getItem('apexload.execution.chartOrder')).toContain('["tps","vusers"')
   })
 
-  it('always shows graph settings controls without expanding a customize panel', async () => {
-    await renderCharts()
+  it('opens final graph settings from a Configure Graphs drawer', async () => {
+    await renderCharts(null, false)
 
-    expect(buttonByText('Customize Graphs')).toBeUndefined()
-    expect(buttonByText('Done')).toBeUndefined()
     expect(container.querySelector('.charts-customize-bar')).toBeNull()
     expect(container.querySelector('.charts-customize-actions')).toBeNull()
     expect(container.querySelector('.monitor-preset-buttons')).toBeNull()
-    expect(container.querySelector('.charts-customize-panel')?.textContent).toContain('Display Window')
-    expect(container.querySelector('.charts-customize-panel')?.textContent).toContain('3m')
-    expect(container.querySelector('.charts-customize-panel')?.textContent).toContain('10m')
-    expect(container.querySelector('.charts-customize-panel')?.textContent).toContain('Max')
-    expect(container.querySelector('.charts-customize-panel')?.textContent).not.toContain('Custom')
-    expect(container.querySelector('.charts-customize-panel')?.textContent).toContain('Zoom')
-    expect(container.querySelector('.charts-customize-panel')?.textContent).toContain('6 Graphs')
-    expect(container.querySelector('.charts-customize-panel')?.textContent).toContain('Role View')
-    expect(container.querySelector('.charts-customize-panel')?.textContent).toContain('Display Time')
-    expect(container.querySelector('.charts-customize-panel')?.textContent).not.toContain('Network latency')
-    expect(container.querySelector('.charts-customize-panel')?.textContent).not.toContain('Removed')
+    expect(container.querySelector('.charts-customize-panel')).toBeNull()
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('Runtime Graphs')
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('8 graphs')
+    expect(container.querySelector('.charts-config-drawer')).toBeNull()
+
+    await act(async () => {
+      buttonByText('Configure Graphs')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const drawer = container.querySelector('.charts-config-drawer')
+    expect(drawer?.textContent).toContain('Graph Configuration')
+    expect(drawer?.textContent).toContain('Graph Cards')
+    expect(drawer?.textContent).toContain('Display Window')
+    expect(drawer?.textContent).toContain('3m')
+    expect(drawer?.textContent).toContain('10m')
+    expect(drawer?.textContent).toContain('Max')
+    expect(drawer?.textContent).not.toContain('Custom')
+    expect(drawer?.textContent).toContain('Zoom')
+    expect(drawer?.textContent).toContain('6 Graphs')
+    expect(drawer?.textContent).toContain('Role View')
+    expect(drawer?.textContent).toContain('Display Time')
+    expect(drawer?.textContent).not.toContain('Network latency')
+    expect(drawer?.textContent).not.toContain('Removed')
     expect(container.querySelector('.btn-expand')?.hasAttribute('disabled')).toBe(false)
     expect(buttonByText('Clock Time')?.getAttribute('aria-pressed')).toBe('true')
     expect(buttonByText('Relative Time')?.getAttribute('aria-pressed')).toBe('false')
@@ -418,6 +441,17 @@ describe('TestExecutionCharts context menu', () => {
       'Platform Admin',
       'Release Approver',
     ])
+
+    const errorRateGraphToggle = container.querySelector<HTMLInputElement>('input[aria-label="Show Error Rate (%)"]')
+    expect(errorRateGraphToggle?.checked).toBe(true)
+
+    await act(async () => {
+      errorRateGraphToggle?.click()
+    })
+
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(7)
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('7 graphs')
+    expect(window.localStorage.getItem('apexload.execution.hiddenCharts')).toContain('errors')
 
     await act(async () => {
       buttonByText('Relative Time')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -435,7 +469,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(buttonByText('Standard')?.getAttribute('aria-pressed')).toBe('false')
     expect(buttonByText('6 Graphs')?.getAttribute('aria-pressed')).toBe('true')
     expect(window.localStorage.getItem('apexload.execution.chartDensity')).toBe('six_up')
-    expect(Array.from(container.querySelectorAll('[data-testid="mock-responsive-container"]')).map(container => container.getAttribute('data-height'))).toEqual(Array(8).fill('132'))
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-responsive-container"]')).map(container => container.getAttribute('data-height'))).toEqual(Array(7).fill('132'))
     expect(container.querySelector('.chart-metrics-table')).toBeNull()
 
     await act(async () => {
@@ -514,6 +548,18 @@ describe('TestExecutionCharts context menu', () => {
 
   function chartTitles() {
     return Array.from(container.querySelectorAll('.chart-card .chart-title')).map(title => title.textContent)
+  }
+
+  function axisLabels(chart: Element | undefined) {
+    return Array.from(chart?.querySelectorAll('[data-testid="mock-y-axis"]') ?? [])
+      .map(axis => axis.getAttribute('data-label'))
+      .filter(Boolean)
+  }
+
+  function axisLabelPositions(chart: Element | undefined) {
+    return Array.from(chart?.querySelectorAll('[data-testid="mock-y-axis"]') ?? [])
+      .map(axis => axis.getAttribute('data-label-position'))
+      .filter(Boolean)
   }
 
   function createDragDataTransfer() {

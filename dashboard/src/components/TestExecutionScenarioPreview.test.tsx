@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, useState } from 'react'
+import { act, type ReactNode, useState } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -9,14 +9,15 @@ import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('recharts', () => {
-  const Mock = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>
+  const Mock = ({ children }: { children?: ReactNode }) => <div>{children}</div>
+  const labelText = (label?: string | { value?: string }) => (typeof label === 'string' ? label : label?.value ?? '')
 
   return {
     ResponsiveContainer: Mock,
     AreaChart: Mock,
     Area: () => null,
-    XAxis: () => null,
-    YAxis: () => null,
+    XAxis: ({ label }: { label?: string | { value?: string } }) => <div data-testid="mock-x-axis" data-label={labelText(label)} />,
+    YAxis: ({ label }: { label?: string | { value?: string } }) => <div data-testid="mock-y-axis" data-label={labelText(label)} />,
     CartesianGrid: () => null,
     Tooltip: () => null,
     Legend: () => null,
@@ -181,6 +182,8 @@ describe('TestExecutionScenarioPreview', () => {
     expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
     expect(container.textContent).toContain('Continue On Error')
     expect(container.textContent).toContain('Enabled')
+    expect(container.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('Elapsed time')
+    expect(container.querySelector('[data-testid="mock-y-axis"]')?.getAttribute('data-label')).toBe('VUsers')
 
     const nestingWarning = consoleErrorSpy.mock.calls.some(([message]) =>
       typeof message === 'string' && message.includes('validateDOMNesting'),

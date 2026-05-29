@@ -3,6 +3,7 @@ import { Area, AreaChart, CartesianGrid, Legend, Line, ReferenceArea, Responsive
 import { TestGroup, TestSummary } from '../types'
 import { LiveControlPreview, VUserGroupAction } from './testExecutionLiveControlModel'
 import { formatTimeLong, isValidDurationInput } from '../utils/timeUtils'
+import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import DurationField from './DurationField'
 
 interface Props {
@@ -236,24 +237,29 @@ export default function TestExecutionLiveControls({
 
               <div className="control-preview-chart">
                 <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={liveControlPreview.points} margin={{ top: 10, right: 12, left: -18, bottom: 0 }}>
+                  <AreaChart data={liveControlPreview.points} margin={{ top: 10, right: 12, left: 24, bottom: 14 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                     <XAxis
                       dataKey="second"
                       stroke="var(--text-muted)"
                       fontSize={11}
+                      height={42}
                       tickLine={false}
                       tickFormatter={(value) => formatTimeLong(Number(value))}
+                      label={{ value: 'Elapsed time', position: 'insideBottom', offset: -4, fill: 'var(--text-muted)', fontSize: 11 }}
                     />
                     <YAxis
                       stroke="var(--text-muted)"
                       fontSize={11}
+                      width={76}
                       tickLine={false}
                       allowDecimals={false}
+                      label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 11 }}
                     />
                     <Tooltip
                       labelFormatter={(value) => formatTimeLong(Number(value))}
-                      contentStyle={{ background: 'rgba(33, 36, 47, 0.92)', border: '1px solid var(--border)', borderRadius: 10 }}
+                      contentStyle={chartTooltipContentStyle}
+                      labelStyle={chartTooltipLabelStyle}
                       formatter={(value: number, name: string) => [value, name === 'total' ? 'Total' : name]}
                     />
                     <Legend verticalAlign="top" height={28} />

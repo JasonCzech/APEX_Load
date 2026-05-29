@@ -18,6 +18,7 @@ import {
   getBrowserBreakdownTitle,
 } from './browserBreakdownModel'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import StatusBadge from './StatusBadge'
 
 interface Props {
@@ -56,7 +57,7 @@ type ComparisonSummaryLineConfig = {
   stroke: string
   yAxisId: 'value'
 }
-type ComparisonChartMetricConfig = {
+export type ComparisonChartMetricConfig = {
   id: ComparisonChartMetric
   label: string
   leftKey: ComparisonChartDataKey
@@ -235,6 +236,12 @@ function formatComparisonChartValue(value: unknown, format: ComparisonChartMetri
   if (format === 'ms') return `${value.toFixed(1)} ms`
   if (format === 'percent') return `${value.toFixed(2)}%`
   return value.toFixed(1)
+}
+
+export function comparisonChartYAxisLabel(metric: ComparisonChartMetricConfig) {
+  if (metric.valueFormat === 'ms') return `${metric.label} (ms)`
+  if (metric.valueFormat === 'percent') return 'Error rate (%)'
+  return metric.label
 }
 
 export function buildComparisonSummarySeries(leftRunLabel: string, rightRunLabel: string, metric: ComparisonChartMetric = 'tps'): ComparisonSummaryLineConfig[] {
@@ -1108,12 +1115,25 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                         </div>
                       </div>
                       <ResponsiveContainer width="100%" height={260}>
-                        <LineChart data={comparisonChartData}>
+                        <LineChart data={comparisonChartData} margin={{ top: 10, right: 16, bottom: 12, left: 24 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                          <XAxis dataKey="sample" stroke="var(--text-muted)" fontSize={11} />
-                          <YAxis yAxisId="value" stroke="var(--text-muted)" fontSize={11} />
+                          <XAxis
+                            dataKey="sample"
+                            stroke="var(--text-muted)"
+                            fontSize={11}
+                            height={42}
+                            label={{ value: 'Sample', position: 'insideBottom', offset: -4, fill: 'var(--text-muted)', fontSize: 11 }}
+                          />
+                          <YAxis
+                            yAxisId="value"
+                            stroke="var(--text-muted)"
+                            fontSize={11}
+                            width={86}
+                            label={{ value: comparisonChartYAxisLabel(comparisonChartMetricConfig), angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 11 }}
+                          />
                           <Tooltip
-                            contentStyle={{ background: 'rgba(33, 36, 47, 0.94)', border: '1px solid var(--border)', borderRadius: 10 }}
+                            contentStyle={chartTooltipContentStyle}
+                            labelStyle={chartTooltipLabelStyle}
                             labelFormatter={value => `Sample ${value}`}
                             formatter={(value) => formatComparisonChartValue(value, comparisonChartMetricConfig.valueFormat)}
                             isAnimationActive={false}

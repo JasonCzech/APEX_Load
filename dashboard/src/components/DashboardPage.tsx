@@ -7,6 +7,7 @@ import { useProject } from '../hooks/useProject'
 import { TestSummary, MetricsHistoryPoint, RunArchiveReport, SystemInventoryResponse } from '../types'
 import { downloadBlob } from '../utils/fileUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { chartTooltipContentStyle } from './chartTooltipTheme'
 import { type NavPage } from './Sidebar'
 import StatusBadge from './StatusBadge'
 import './DashboardPage.css'
@@ -822,7 +823,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                 <XAxis dataKey="time" hide />
                 <YAxis hide />
                 <Tooltip
-                  contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }}
+                  contentStyle={{ ...chartTooltipContentStyle, borderRadius: 6, fontSize: 12 }}
                   labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
                 />
                 <Area type="monotone" dataKey="tps" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.15} strokeWidth={1.5} isAnimationActive={false} />

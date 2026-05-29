@@ -38,6 +38,7 @@ vi.mock('recharts', () => {
   const Mock = ({ children }: { children?: ReactNode }) => <g>{children}</g>
   const MockChart = ({ children }: { children?: ReactNode }) => <svg data-testid="scenario-model-chart">{children}</svg>
   const MockTooltip = () => <g data-testid="scenario-model-tooltip" />
+  const labelText = (label?: string | { value?: string }) => (typeof label === 'string' ? label : label?.value ?? '')
   return {
     Area: ({ dataKey, name }: { dataKey?: string; name?: string }) => <path data-testid="scenario-model-area" data-key={dataKey} data-name={name} />,
     CartesianGrid: Mock,
@@ -45,8 +46,10 @@ vi.mock('recharts', () => {
     Line: ({ dataKey, name }: { dataKey?: string; name?: string }) => <path data-testid="scenario-model-line" data-key={dataKey} data-name={name} />,
     ResponsiveContainer: ({ children }: { children?: ReactNode }) => <div data-testid="scenario-model-responsive">{children}</div>,
     Tooltip: MockTooltip,
-    XAxis: Mock,
-    YAxis: Mock,
+    XAxis: ({ label }: { label?: string | { value?: string } }) => <g data-testid="scenario-model-x-axis" data-label={labelText(label)} />,
+    YAxis: ({ label, orientation }: { label?: string | { value?: string }; orientation?: string }) => (
+      <g data-testid="scenario-model-y-axis" data-label={labelText(label)} data-orientation={orientation ?? 'left'} />
+    ),
   }
 })
 
@@ -809,6 +812,8 @@ describe('TestHub', () => {
     await clickWizardStep('Shape / Source')
 
     expect(container.textContent).toContain('Model Preview')
+    expect(container.querySelector('[data-testid="scenario-model-x-axis"]')?.getAttribute('data-label')).toBe('Elapsed time')
+    expect(Array.from(container.querySelectorAll('[data-testid="scenario-model-y-axis"]')).map(axis => axis.getAttribute('data-label'))).toContain('VUsers')
     expect(container.textContent).toContain('Scenario Library')
     expect(container.textContent).not.toContain('Existing Scripts Library')
 

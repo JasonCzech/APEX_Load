@@ -5,6 +5,7 @@ import {
 
 import { CapacityAdvisory, RuntimeSettingsOverride, ScriptShakeoutReport, TestSummary } from '../types'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import { QueuedScenarioPreview, QueuedScenarioRow, ScenarioScriptDetail } from './testExecutionScenarioModel'
 import { formatTimeCompact } from '../utils/timeUtils'
 
@@ -384,24 +385,29 @@ export default function TestExecutionScenarioPreview({
 
           <div className="scenario-preview-chart">
             <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={queuedScenarioPreview.points} margin={{ top: 8, right: 12, left: -18, bottom: 4 }}>
+              <AreaChart data={queuedScenarioPreview.points} margin={{ top: 8, right: 12, left: 24, bottom: 14 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                 <XAxis
                   dataKey="second"
                   stroke="var(--text-muted)"
                   fontSize={11}
+                  height={42}
                   tickLine={false}
                   tickFormatter={(value) => formatTimeCompact(Number(value))}
+                  label={{ value: 'Elapsed time', position: 'insideBottom', offset: -4, fill: 'var(--text-muted)', fontSize: 11 }}
                 />
                 <YAxis
                   stroke="var(--text-muted)"
                   fontSize={11}
+                  width={76}
                   tickLine={false}
                   allowDecimals={false}
+                  label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 11 }}
                 />
                 <Tooltip
                   labelFormatter={(value) => formatTimeCompact(Number(value))}
-                  contentStyle={{ background: 'rgba(33, 36, 47, 0.92)', border: '1px solid var(--border)', borderRadius: 10 }}
+                  contentStyle={chartTooltipContentStyle}
+                  labelStyle={chartTooltipLabelStyle}
                   formatter={(value: number, name: string) => [value, name === 'total' ? 'Total' : name]}
                 />
                 <Legend verticalAlign="top" height={32} />

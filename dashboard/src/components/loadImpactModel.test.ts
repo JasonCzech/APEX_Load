@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { MetricsHistoryPoint } from '../types'
 import {
   buildLoadImpactModel,
+  filterLoadImpactModel,
   formatLoadImpactCellTitle,
   formatLoadImpactValue,
   loadImpactCellKey,
@@ -66,6 +67,26 @@ describe('loadImpactModel', () => {
       max: 220,
       intensity: 1,
     })
+  })
+
+  it('filters selected metrics and VUser load points with recalculated intensity', () => {
+    const model = buildLoadImpactModel([
+      point('10:00:00', 5, { avgMs: 100, tps: 2 }),
+      point('10:00:01', 10, { avgMs: 220, tps: 3 }),
+      point('10:00:02', 15, { avgMs: 340, tps: 4 }),
+    ])
+
+    const filtered = filterLoadImpactModel(
+      model,
+      ['avgMs'],
+      [model.buckets[1].id, model.buckets[2].id],
+    )
+
+    expect(filtered.pointCount).toBe(model.pointCount)
+    expect(filtered.buckets.map(bucket => bucket.label)).toEqual(['10 VUsers', '15 VUsers'])
+    expect(filtered.rows.map(row => row.metric.id)).toEqual(['avgMs'])
+    expect(filtered.rows[0].cells.map(cell => cell.average)).toEqual([220, 340])
+    expect(filtered.rows[0].cells.map(cell => cell.intensity)).toEqual([0, 1])
   })
 
   it('ignores performance zeros from archive resource-only points while keeping resource metrics', () => {

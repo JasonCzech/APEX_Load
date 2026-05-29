@@ -76,6 +76,80 @@ describe('LoadImpactHeatmap', () => {
     expect(rowLabels()).not.toContain('Memory VUsersMB')
   })
 
+  it('configures displayed metrics and VUser load points', async () => {
+    await act(async () => {
+      root.render(
+        <LoadImpactHeatmap
+          points={[
+            point('10:00:00', 5, { avgMs: 100, tps: 3, p95: 130, cpuProcess: 18 }),
+            point('10:00:01', 10, { avgMs: 140, tps: 4, p95: 180, cpuProcess: 22 }),
+            point('10:00:02', 15, { avgMs: 160, tps: 5, p95: 220, cpuProcess: 28 }),
+          ]}
+        />,
+      )
+    })
+
+    expect(rowLabels()).toContain('TPS')
+    expect(bucketLabels()).toContain('10 VUsers')
+
+    const configureButton = buttonByText('Configure Graphs')
+    await act(async () => {
+      configureButton?.click()
+    })
+
+    expect(container.textContent).toContain('Heatmap Configuration')
+
+    const tpsCheckbox = container.querySelector<HTMLInputElement>('input[value="tps"]')
+    const tenVusersCheckbox = container.querySelector<HTMLInputElement>('input[value="vusers-10"]')
+    expect(tpsCheckbox?.checked).toBe(true)
+    expect(tenVusersCheckbox?.checked).toBe(true)
+
+    await act(async () => {
+      tpsCheckbox?.click()
+      tenVusersCheckbox?.click()
+    })
+
+    expect(rowLabels()).not.toContain('TPS')
+    expect(bucketLabels()).not.toContain('10 VUsers')
+    expect(container.textContent).toContain('3/4 metrics')
+    expect(container.textContent).toContain('2/3 loads')
+  })
+
+  it('sorts heatmap rows from metric and VUser load column headers', async () => {
+    await act(async () => {
+      root.render(
+        <LoadImpactHeatmap
+          points={[
+            point('10:00:00', 5, { avgMs: 100, tps: 3, p95: 130, cpuProcess: 18 }),
+            point('10:00:01', 10, { avgMs: 140, tps: 4, p95: 180, cpuProcess: 22 }),
+          ]}
+        />,
+      )
+    })
+
+    expect(rowLabels()[0]).toBe('ARTms')
+
+    await act(async () => {
+      sortButtonByLabel('5 VUsers')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(rowLabels().slice(0, 4)).toEqual(['P95ms', 'ARTms', 'CPU VUsers%', 'TPS'])
+    expect(container.querySelector('thead th[aria-sort="descending"]')?.textContent).toContain('5 VUsers')
+
+    await act(async () => {
+      sortButtonByLabel('5 VUsers')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(rowLabels().slice(0, 4)).toEqual(['TPS', 'CPU VUsers%', 'ARTms', 'P95ms'])
+    expect(container.querySelector('thead th[aria-sort="ascending"]')?.textContent).toContain('5 VUsers')
+
+    await act(async () => {
+      sortButtonByLabel('Metric')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(rowLabels().slice(0, 4)).toEqual(['ARTms', 'CPU VUsers%', 'P95ms', 'TPS'])
+  })
+
   it('opens the data point table when a populated heatmap cell is selected', async () => {
     await act(async () => {
       root.render(
@@ -152,9 +226,18 @@ describe('LoadImpactHeatmap', () => {
     return Array.from(container.querySelectorAll('.load-impact-table tbody th')).map(node => node.textContent)
   }
 
+  function bucketLabels() {
+    return Array.from(container.querySelectorAll('.load-impact-table thead th span')).map(node => node.textContent)
+  }
+
   function buttonByText(text: string) {
     return Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.trim() === text) ?? null
+  }
+
+  function sortButtonByLabel(text: string) {
+    return Array.from(container.querySelectorAll<HTMLButtonElement>('.load-impact-sort-header'))
+      .find(button => button.textContent?.includes(text)) ?? null
   }
 })
 

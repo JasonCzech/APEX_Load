@@ -240,6 +240,43 @@ export function buildLoadImpactModel(
   return { buckets, rows, pointCount: validPoints.length }
 }
 
+export function filterLoadImpactModel(
+  model: LoadImpactModel,
+  metricIds: string[],
+  bucketIds: string[],
+): LoadImpactModel {
+  const selectedMetrics = new Set(metricIds)
+  const selectedBuckets = new Set(bucketIds)
+  const buckets = model.buckets.filter(bucket => selectedBuckets.has(bucket.id))
+
+  const rows = model.rows
+    .filter(row => selectedMetrics.has(row.metric.id))
+    .map((row): LoadImpactRow => {
+      const baseCells = row.cells
+        .filter(cell => selectedBuckets.has(cell.bucket.id))
+        .map(cell => ({ ...cell, intensity: 0 }))
+      const averages = baseCells
+        .map(cell => cell.average)
+        .filter((value): value is number => value !== undefined)
+      const minAverage = averages.length > 0 ? Math.min(...averages) : undefined
+      const maxAverage = averages.length > 0 ? Math.max(...averages) : undefined
+      const averageRange = minAverage !== undefined && maxAverage !== undefined ? maxAverage - minAverage : 0
+      const cells = baseCells.map(cell => ({
+        ...cell,
+        intensity: cell.average === undefined || minAverage === undefined
+          ? 0
+          : averageRange === 0
+            ? 0.65
+            : (cell.average - minAverage) / averageRange,
+      }))
+
+      return { metric: row.metric, cells, minAverage, maxAverage }
+    })
+    .filter(row => row.cells.length > 0)
+
+  return { buckets, rows, pointCount: model.pointCount }
+}
+
 export function formatLoadImpactValue(value: number | undefined, unit?: string): string {
   if (value === undefined || !Number.isFinite(value)) {
     return 'n/a'

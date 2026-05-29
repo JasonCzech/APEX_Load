@@ -17,6 +17,7 @@ vi.mock('recharts', () => {
       {children}
     </svg>
   )
+  const labelText = (label?: string | { value?: string }) => (typeof label === 'string' ? label : label?.value ?? '')
 
   return {
     Area: Mock,
@@ -27,8 +28,8 @@ vi.mock('recharts', () => {
     ReferenceArea: Mock,
     ResponsiveContainer: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
     Tooltip: Mock,
-    XAxis: Mock,
-    YAxis: Mock,
+    XAxis: ({ label }: { label?: string | { value?: string } }) => <g data-testid="mock-x-axis" data-label={labelText(label)} />,
+    YAxis: ({ label }: { label?: string | { value?: string } }) => <g data-testid="mock-y-axis" data-label={labelText(label)} />,
   }
 })
 
@@ -103,6 +104,8 @@ describe('TestExecutionLiveControls', () => {
     expect(container.querySelector<HTMLInputElement>('input[aria-label="Checkout VUser target"]')?.disabled).toBe(true)
     expect(container.querySelector<HTMLInputElement>('input[aria-label="Checkout VUser target value"]')?.disabled).toBe(true)
     expect(buttonByText('Pause')).not.toBeUndefined()
+    expect(container.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('Elapsed time')
+    expect(container.querySelector('[data-testid="mock-y-axis"]')?.getAttribute('data-label')).toBe('VUsers')
 
     await act(async () => {
       setSelectValue(actionSelect!, 'stop')

@@ -3,6 +3,7 @@ import { Fragment, useState } from 'react'
 import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, MetricsHistoryPoint, RunArchiveActionStats, RunArchiveReport, RunArchiveSOAPFaultTimelineBucket, RunArchiveSOAPPayloadTimelineBucket, TestSummary, TransactionEvent } from '../types'
 import BrowserBreakdownChart from './BrowserBreakdownChart'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
+import LoadImpactMetricGraphs from './LoadImpactMetricGraphs'
 import {
   BrowserBreakdown,
   buildBrowserBreakdownData,
@@ -218,6 +219,170 @@ function formatArchiveFlag(enabled: boolean | undefined, truthy = 'Enabled', fal
 
 function formatGeneratorInventoryLabel(target?: string) {
   return target || 'generator'
+}
+
+type ArchiveCompactTone = 'healthy' | 'warning' | 'danger' | 'neutral'
+
+interface ArchiveCompactItem {
+  label: string
+  value: string
+}
+
+interface ArchiveCompactPanel {
+  id: string
+  title: string
+  status?: string
+  tone: ArchiveCompactTone
+  items: ArchiveCompactItem[]
+}
+
+function compactValue(value?: string | number | null): string {
+  if (value === undefined || value === null || value === '') return 'n/a'
+  return String(value)
+}
+
+function compactStatus(value?: string): string {
+  return compactValue(value).replace(/_/g, ' ')
+}
+
+function compactList(values: Array<string | undefined>, limit = 3): string {
+  const present = values.filter((value): value is string => Boolean(value))
+  if (present.length === 0) return 'n/a'
+  const visible = present.slice(0, limit).join(', ')
+  return present.length > limit ? `${visible}, +${present.length - limit} more` : visible
+}
+
+function compactTimestamp(value?: string): string {
+  return value ? formatArchiveTimestamp(value) : 'n/a'
+}
+
+function compactDurationMs(value?: number): string {
+  if (value === undefined || !Number.isFinite(value)) return 'n/a'
+  if (value >= 1000) return `${(value / 1000).toFixed(2)}s`
+  return `${value.toFixed(0)}ms`
+}
+
+function compactToneForStatus(status?: string): ArchiveCompactTone {
+  const normalized = (status || '').toLowerCase()
+  if (['breached', 'incomplete', 'incompatible', 'failed', 'critical', 'error'].some(term => normalized.includes(term))) {
+    return 'danger'
+  }
+  if (['degraded', 'needs_review', 'warning', 'missing', 'unsupported'].some(term => normalized.includes(term))) {
+    return 'warning'
+  }
+  if (['healthy', 'complete', 'compatible', 'present', 'passed'].some(term => normalized.includes(term))) {
+    return 'healthy'
+  }
+  return 'neutral'
+}
+
+function formatCompactGroup(group: NonNullable<NonNullable<RunArchiveReport['manifest']['provenance']>['groups']>[number]) {
+  return `${group.name || group.script_name || group.script_id} · ${group.vusers} VUsers${group.initialization === 'at_once' ? ' · init once' : ''}`
+}
+
+function buildArchiveCompactPanels(
+  report: RunArchiveReport,
+  test: TestSummary,
+  runtimeBrowserSummary: string | null,
+): ArchiveCompactPanel[] {
+  const telemetry = report.overview.telemetry
+  const provenance = report.manifest.provenance
+  const telemetryStatus = telemetry?.status || 'not captured'
+  const compatibilityStatus = report.compatibility?.status || 'not captured'
+  const evidenceTiers = report.evidence_tiers || []
+  const evidenceMissing = evidenceTiers.filter(tier => tier.status !== 'present').length
+  const evidenceStatus = evidenceTiers.length === 0
+    ? 'not captured'
+    : evidenceMissing > 0
+      ? `${evidenceMissing} missing`
+      : 'present'
+  const runtimeOverrides = report.change_attribution?.runtime_overrides
+    ? compactList(report.change_attribution.runtime_override_fields || ['Yes'])
+    : 'No'
+
+  return [
+    {
+      id: 'telemetry',
+      title: 'Telemetry Health',
+      status: compactStatus(telemetryStatus),
+      tone: compactToneForStatus(telemetryStatus),
+      items: [
+        { label: 'Samples', value: compactValue(telemetry?.samples ?? 0) },
+        {
+          label: 'Intervals',
+          value: telemetry
+            ? `${telemetry.healthy_intervals || 0} healthy · ${telemetry.degraded_intervals || 0} degraded · ${telemetry.breached_intervals || 0} breached`
+            : 'n/a',
+        },
+        { label: 'Max Sample Age', value: compactDurationMs(telemetry?.max_sample_age_ms) },
+        { label: 'Generator Lag', value: compactDurationMs(telemetry?.max_generator_processing_lag_ms) },
+        { label: 'Transport Lag', value: compactDurationMs(telemetry?.max_transport_lag_ms) },
+        { label: 'Breach Window', value: telemetry?.first_breach_at || telemetry?.last_breach_at ? `${compactTimestamp(telemetry?.first_breach_at)} - ${compactTimestamp(telemetry?.last_breach_at)}` : 'n/a' },
+      ],
+    },
+    {
+      id: 'schema',
+      title: 'Schema Compatibility',
+      status: compactStatus(compatibilityStatus),
+      tone: compactToneForStatus(compatibilityStatus),
+      items: [
+        { label: 'Report Schema', value: compactValue(report.compatibility?.report_schema_version) },
+        { label: 'Manifest', value: compactValue(report.compatibility?.manifest_schema_version) },
+        {
+          label: 'Outputs',
+          value: compactList((report.compatibility?.outputs || []).map(output => `${output.format.replace(/_/g, ' ')}: ${output.status}`), 4),
+        },
+        {
+          label: 'Issues',
+          value: report.compatibility?.issues?.length
+            ? compactList(report.compatibility.issues.map(issue => `${issue.severity}: ${issue.code}`), 3)
+            : 'None',
+        },
+      ],
+    },
+    {
+      id: 'evidence',
+      title: 'Evidence Tiers',
+      status: evidenceStatus,
+      tone: compactToneForStatus(evidenceStatus),
+      items: [
+        { label: 'Tiers', value: compactList(evidenceTiers.map(tier => `${tier.label}: ${tier.status} · ${tier.count || 0}`), 5) },
+        { label: 'Present', value: compactValue(evidenceTiers.filter(tier => tier.status === 'present').length) },
+        { label: 'Missing', value: compactValue(evidenceMissing) },
+      ],
+    },
+    {
+      id: 'provenance',
+      title: 'Run Provenance',
+      status: provenance ? 'captured' : 'not captured',
+      tone: provenance ? 'healthy' : 'warning',
+      items: [
+        { label: 'Execution Profile', value: provenance ? `${provenance.scenario_mode || 'vuser_driven'} · ${provenance.total_vusers || test.total_vusers} VUsers · ${provenance.duration || test.duration}` : 'n/a' },
+        { label: 'Scope', value: provenance ? `${provenance.project_id || 'unassigned'}${provenance.release_id ? ` / ${provenance.release_id}` : ''}${provenance.scenario_id ? ` / ${provenance.scenario_id}` : ''}` : 'n/a' },
+        { label: 'Runtime Flags', value: provenance ? `Shakeout ${formatArchiveFlag(provenance.script_shakeout)} · Baseline ${formatArchiveFlag(provenance.resource_baseline)}` : 'n/a' },
+        { label: 'Browser Runtime', value: compactValue(runtimeBrowserSummary) },
+        { label: 'Metrics Interval', value: provenance ? `${provenance.execution_settings.general.metrics_interval_seconds}s` : 'n/a' },
+        { label: 'Pinned Baseline', value: provenance?.baseline_pinned ? 'Pinned' : 'Not pinned' },
+        { label: 'Scenario Groups', value: compactList((provenance?.groups || []).map(formatCompactGroup), 3) },
+        { label: 'Controller Environment', value: compactList(Object.entries(provenance?.controller_env || {}).map(([key, value]) => `${key}=${value}`), 2) },
+        { label: 'Generator Inventory', value: compactList((provenance?.generator_inventory || []).map(entry => `${formatGeneratorInventoryLabel(entry.target)} · ${entry.status} · ${entry.available_capacity} available`), 3) },
+      ],
+    },
+    {
+      id: 'change',
+      title: 'Change Attribution',
+      status: report.change_attribution ? 'captured' : 'not captured',
+      tone: report.change_attribution ? 'healthy' : 'warning',
+      items: [
+        { label: 'Scripts', value: compactList(report.change_attribution?.script_revisions || []) },
+        { label: 'Scenario', value: compactValue(report.change_attribution?.scenario_revision) },
+        { label: 'Environment', value: compactValue(report.change_attribution?.environment) },
+        { label: 'Generators', value: compactList(report.change_attribution?.generator_versions || []) },
+        { label: 'Data', value: compactValue(report.change_attribution?.data_revision) },
+        { label: 'Runtime Overrides', value: runtimeOverrides },
+      ],
+    },
+  ]
 }
 
 function buildArchiveFaultTimelineEntries(buckets?: RunArchiveSOAPFaultTimelineBucket[]) {
@@ -488,6 +653,7 @@ export default function TestExecutionArchive({
   const summaryTimelineNeedsCollapse = summaryTimelineFiltered.length > SUMMARY_TIMELINE_COLLAPSED_LIMIT
   const summaryTimelineEntries = summaryTimelineExpanded || !summaryTimelineNeedsCollapse ? summaryTimelineFiltered : summaryTimelineFiltered.slice(0, SUMMARY_TIMELINE_COLLAPSED_LIMIT)
   const runtimeBrowserSummary = formatBrowserRuntimeSummary(archiveReport?.manifest.provenance?.runtime_settings?.browser)
+  const compactMetadataPanels = archiveReport ? buildArchiveCompactPanels(archiveReport, test, runtimeBrowserSummary) : []
   const selectedActionStats = archiveReport?.by_action?.[selectedArchiveAction]
   const renderArchiveSortButton = (key: ArchiveTransactionSortKey, label: string) => {
     const active = archiveTransactionSort?.key === key
@@ -616,15 +782,6 @@ export default function TestExecutionArchive({
             </div>
           </div>
 
-          <LoadImpactHeatmap
-            points={loadImpactData}
-            loading={loadImpactLoading}
-            error={loadImpactError}
-            title="Load Impact"
-            subtitle="Archived performance and resource response grouped by active VUser load."
-            emptyMessage="Load impact appears when archived interval summaries or resource samples include active VUser data."
-          />
-
           {archiveReport.completeness && (
             <div className="tx-section archive-summary-section">
               <div className="archive-section-header archive-section-header-stack">
@@ -650,179 +807,44 @@ export default function TestExecutionArchive({
             </div>
           )}
 
-          {archiveReport.compatibility && (
-            <div className="tx-section archive-summary-section">
-              <div className="archive-section-header archive-section-header-stack">
-                <div>
-                  <h3 className="chart-title">Schema Compatibility</h3>
-                  <p className="archive-section-copy">Report, archive, and export contract status for downstream tools.</p>
-                </div>
-                <span className={`archive-chip ${archiveReport.compatibility.status === 'incompatible' ? 'danger' : ''}`}>
-                  {archiveReport.compatibility.status}
-                </span>
-              </div>
-              <div className="archive-overview-grid">
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Report Schema</span>
-                  <span className="scenario-script-detail-value">{archiveReport.compatibility.report_schema_version}</span>
-                  <span className="capacity-advisory-detail">Manifest {archiveReport.compatibility.manifest_schema_version || 'unknown'}</span>
-                </div>
-                {archiveReport.compatibility.outputs.slice(0, 8).map(output => (
-                  <div key={`${output.format}-${output.artifact || 'generated'}`} className="scenario-script-detail-card">
-                    <span className="scenario-script-detail-label">{output.format.replace(/_/g, ' ')}</span>
-                    <span className="scenario-script-detail-value">{output.status}</span>
-                    <span className="capacity-advisory-detail">{output.artifact || output.reason || output.schema_version}</span>
+          <section className="archive-metadata-summary" aria-label="Archive metadata summary">
+            <div className="archive-metadata-grid">
+              {compactMetadataPanels.map(panel => (
+                <div key={panel.id} className="archive-metadata-box">
+                  <div className="archive-metadata-box-header">
+                    <h3>{panel.title}</h3>
+                    {panel.status && <span className={`archive-compact-status ${panel.tone}`}>{panel.status}</span>}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {archiveReport.evidence_tiers && archiveReport.evidence_tiers.length > 0 && (
-            <div className="tx-section archive-summary-section">
-              <div className="archive-section-header archive-section-header-stack">
-                <div>
-                  <h3 className="chart-title">Evidence Tiers</h3>
-                  <p className="archive-section-copy">Declared report evidence coverage for release, engineering, and audit review.</p>
-                </div>
-              </div>
-              <div className="archive-overview-grid">
-                {archiveReport.evidence_tiers.map(tier => (
-                  <div key={tier.tier} className="scenario-script-detail-card">
-                    <span className="scenario-script-detail-label">{tier.label}</span>
-                    <span className="scenario-script-detail-value">{tier.status} · {tier.count || 0}</span>
-                    <span className="capacity-advisory-detail">{tier.status === 'present' ? tier.description : tier.reason}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {archiveReport.manifest.provenance && (
-            <div className="tx-section archive-summary-section">
-              <div className="archive-section-header archive-section-header-stack">
-                <div>
-                  <h3 className="chart-title">Run Provenance</h3>
-                  <p className="archive-section-copy">Immutable execution inputs captured when the archive bundle was created.</p>
-                </div>
-              </div>
-              <div className="archive-overview-grid">
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Execution Profile</span>
-                  <span className="scenario-script-detail-value">
-                    {archiveReport.manifest.provenance.scenario_mode || 'vuser_driven'} · {archiveReport.manifest.provenance.total_vusers || test.total_vusers} VUsers · {archiveReport.manifest.provenance.duration || test.duration}
-                  </span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Scope</span>
-                  <span className="scenario-script-detail-value">
-                    {(archiveReport.manifest.provenance.project_id || 'unassigned')}
-                    {archiveReport.manifest.provenance.release_id ? ` / ${archiveReport.manifest.provenance.release_id}` : ''}
-                    {archiveReport.manifest.provenance.scenario_id ? ` / ${archiveReport.manifest.provenance.scenario_id}` : ''}
-                  </span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Runtime Flags</span>
-                  <span className="scenario-script-detail-value">
-                    Shakeout {formatArchiveFlag(archiveReport.manifest.provenance.script_shakeout)} · Baseline {formatArchiveFlag(archiveReport.manifest.provenance.resource_baseline)}
-                  </span>
-                </div>
-                {runtimeBrowserSummary && (
-                  <div className="scenario-script-detail-card">
-                    <span className="scenario-script-detail-label">Browser Runtime</span>
-                    <span className="scenario-script-detail-value">{runtimeBrowserSummary}</span>
-                  </div>
-                )}
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Metrics Interval</span>
-                  <span className="scenario-script-detail-value">{archiveReport.manifest.provenance.execution_settings.general.metrics_interval_seconds}s</span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Start Delay</span>
-                  <span className="scenario-script-detail-value">{archiveReport.manifest.provenance.start_delay || 'None'}</span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Pinned Baseline</span>
-                  <span className="scenario-script-detail-value">{archiveReport.manifest.provenance.baseline_pinned ? 'Pinned' : 'Not pinned'}</span>
-                </div>
-              </div>
-
-              {archiveReport.manifest.provenance.groups && archiveReport.manifest.provenance.groups.length > 0 && (
-                <div>
-                  <span className="results-compare-label">Scenario Groups</span>
-                  <div className="archive-report-badges">
-                    {archiveReport.manifest.provenance.groups.map(group => (
-                      <span key={`${group.script_id}-${group.name}`} className="archive-chip">
-                        {group.name || group.script_name || group.script_id} · {group.vusers} VUsers{group.initialization === 'at_once' ? ' · init once' : ''}
-                      </span>
+                  <dl className="archive-compact-list">
+                    {panel.items.map(item => (
+                      <div key={`${panel.id}-${item.label}`} className="archive-compact-row">
+                        <dt>{item.label}</dt>
+                        <dd>{item.value}</dd>
+                      </div>
                     ))}
-                  </div>
+                  </dl>
                 </div>
-              )}
-
-              {archiveReport.manifest.provenance.controller_env && Object.keys(archiveReport.manifest.provenance.controller_env).length > 0 && (
-                <div>
-                  <span className="results-compare-label">Controller Environment</span>
-                  <div className="archive-report-badges">
-                    {Object.entries(archiveReport.manifest.provenance.controller_env).map(([key, value]) => (
-                      <span key={key} className="archive-chip">{key}={value}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {archiveReport.manifest.provenance.generator_inventory && archiveReport.manifest.provenance.generator_inventory.length > 0 && (
-                <div>
-                  <span className="results-compare-label">Generator Inventory</span>
-                  <div className="archive-report-badges">
-                    {archiveReport.manifest.provenance.generator_inventory.map(entry => (
-                      <span key={`${entry.target}-${entry.generator_id || entry.status}`} className="archive-chip">
-                        {formatGeneratorInventoryLabel(entry.target)} · {entry.status} · {entry.available_capacity} available
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
+              ))}
             </div>
-          )}
+          </section>
 
-          {archiveReport.change_attribution && (
-            <div className="tx-section archive-summary-section">
-              <div className="archive-section-header archive-section-header-stack">
-                <div>
-                  <h3 className="chart-title">Change Attribution</h3>
-                  <p className="archive-section-copy">Run inputs that explain whether result changes came from scripts, data, environment, generators, or runtime overrides.</p>
-                </div>
-              </div>
-              <div className="archive-overview-grid">
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Scripts</span>
-                  <span className="scenario-script-detail-value">{archiveReport.change_attribution.script_revisions?.join(', ') || 'n/a'}</span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Scenario</span>
-                  <span className="scenario-script-detail-value">{archiveReport.change_attribution.scenario_revision || 'n/a'}</span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Environment</span>
-                  <span className="scenario-script-detail-value">{archiveReport.change_attribution.environment || 'n/a'}</span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Generators</span>
-                  <span className="scenario-script-detail-value">{archiveReport.change_attribution.generator_versions?.join(', ') || 'n/a'}</span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Data</span>
-                  <span className="scenario-script-detail-value">{archiveReport.change_attribution.data_revision || 'n/a'}</span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Runtime Overrides</span>
-                  <span className="scenario-script-detail-value">{archiveReport.change_attribution.runtime_overrides ? 'Yes' : 'No'}</span>
-                  <span className="capacity-advisory-detail">{archiveReport.change_attribution.runtime_override_fields?.join(', ') || 'No overrides'}</span>
-                </div>
-              </div>
-            </div>
-          )}
+          <LoadImpactHeatmap
+            points={loadImpactData}
+            loading={loadImpactLoading}
+            error={loadImpactError}
+            title="Load Impact"
+            subtitle="Archived performance and resource response grouped by active VUser load."
+            emptyMessage="Load impact appears when archived interval summaries or resource samples include active VUser data."
+          />
+
+          <LoadImpactMetricGraphs
+            points={loadImpactData}
+            loading={loadImpactLoading}
+            error={loadImpactError}
+            title="Metrics Under Load"
+            subtitle="Add or remove report graphs for selected metrics across active VUser load."
+            emptyMessage="Load metric graphs appear when archived interval summaries or resource samples include active VUser data."
+          />
 
           {archiveReport.error_patterns && archiveReport.error_patterns.length > 0 && (
             <div className="tx-section archive-summary-section">

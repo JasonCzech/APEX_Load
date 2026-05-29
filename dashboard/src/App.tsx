@@ -1,11 +1,12 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDashboardTheme } from './hooks/useDashboardTheme'
 import { useWebSocket } from './hooks/useWebSocket'
 import { ApplicationProvider } from './hooks/ApplicationProvider'
 import { useApplication } from './hooks/useApplication'
 import { MetricsHistoryPoint, TelemetryDiagnostic, TelemetryDiagnosticEntry, WSMessage } from './types'
-import Sidebar, { NavPage } from './components/Sidebar'
+import Sidebar, { type NavPage } from './components/Sidebar'
 import DashboardPage from './components/DashboardPage'
+import { type AppView, parseAppViewFromHash, viewToLocationHash } from './appRouting'
 import { appendTelemetryDiagnostic } from './components/monitoringTelemetryDiagnostics'
 import AuthGate from './components/AuthGate'
 import { useAuthStatus } from './hooks/useAuthStatus'
@@ -29,14 +30,11 @@ const ApplicationRepositoryPage = lazy(() => import('./components/ApplicationRep
 const AccessPage = lazy(() => import('./components/AccessPage'))
 const SettingsPage = lazy(() => import('./components/SettingsPage'))
 
-type View =
-  | { page: NavPage }
-  | { page: 'new-test'; scenarioId?: string }
-  | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
-  | { page: 'test'; testId: string }
-
 function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuthStatus }) {
-  const [view, setView] = useState<View>({ page: 'dashboard' })
+  const [view, setView] = useState<AppView>(() => (
+    typeof window === 'undefined' ? { page: 'dashboard' } : parseAppViewFromHash(window.location.hash)
+  ))
+  const routeSyncInitialized = useRef(false)
   const [metricsHistory, setMetricsHistory] = useState<Record<string, MetricsHistoryPoint[]>>({})
   const [testStatuses, setTestStatuses] = useState<Record<string, string>>({})
   const [telemetryDiagnostics, setTelemetryDiagnostics] = useState<TelemetryDiagnosticEntry[]>([])
@@ -137,6 +135,41 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const handleNavigate = (page: NavPage) => {
     setView({ page })
   }
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+
+    const handleRouteChange = () => {
+      const nextView = parseAppViewFromHash(window.location.hash)
+      const nextHash = viewToLocationHash(nextView)
+      setView(current => (viewToLocationHash(current) === nextHash ? current : nextView))
+    }
+
+    window.addEventListener('popstate', handleRouteChange)
+    window.addEventListener('hashchange', handleRouteChange)
+    return () => {
+      window.removeEventListener('popstate', handleRouteChange)
+      window.removeEventListener('hashchange', handleRouteChange)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const nextHash = viewToLocationHash(view)
+    if (!routeSyncInitialized.current) {
+      routeSyncInitialized.current = true
+      if (!window.location.hash && view.page === 'dashboard') return
+      if (window.location.hash !== nextHash) {
+        window.history.replaceState(null, '', nextHash)
+      }
+      return
+    }
+
+    if (window.location.hash !== nextHash) {
+      window.history.pushState(null, '', nextHash)
+    }
+  }, [view])
 
   const setActiveDomain = useCallback((domain: import('./types').Domain) => {
     setActiveDomainState(domain)
