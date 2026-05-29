@@ -12,12 +12,21 @@ export interface TestGroup {
   iterations?: number
   runtime_settings?: RuntimeSettingsOverride
   initialization?: 'at_runtime' | 'at_once'
+  assignment?: GeneratorAssignmentSettings
 }
 
 export interface GeneratorAssignmentSettings {
   mode?: 'auto' | 'specific_hosts' | 'region_weighted'
   selected_targets?: string[]
   region_weights?: Record<string, number>
+  shard_strategy?: 'capacity_weighted'
+}
+
+export interface GeneratorShardSummary {
+  group: string
+  target: string
+  vusers: number
+  shard_strategy?: 'capacity_weighted'
 }
 
 export interface ScenarioFootprint {
@@ -262,6 +271,7 @@ export interface RunArchiveProvenance {
   goal_config?: GoalConfig
   runtime_settings?: RuntimeSettingsOverride
   groups?: TestGroup[]
+  generator_shards?: GeneratorShardSummary[]
   baseline_pinned?: boolean
   baseline_pinned_at?: string
   execution_settings: RunArchiveExecutionSettingsSnapshot

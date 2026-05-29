@@ -67,6 +67,7 @@ type RunArchiveProvenance struct {
 	TotalVUsers           int                                 `json:"total_vusers,omitempty"`
 	Duration              string                              `json:"duration,omitempty"`
 	Assignment            *GeneratorAssignmentSettings        `json:"assignment,omitempty"`
+	GeneratorShards       []GeneratorShardSummary             `json:"generator_shards,omitempty"`
 	GoalConfig            *GoalConfig                         `json:"goal_config,omitempty"`
 	RuntimeSettings       *RuntimeSettingsOverride            `json:"runtime_settings,omitempty"`
 	RuntimeSettingsReview *RuntimeSettingsReview              `json:"runtime_settings_review,omitempty"`
@@ -579,6 +580,10 @@ func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {
 	}
 	cloned := make([]TestGroup, len(groups))
 	copy(cloned, groups)
+	for i := range cloned {
+		cloned[i].RuntimeSettings = cloneRuntimeSettings(groups[i].RuntimeSettings)
+		cloned[i].Assignment = cloneGeneratorAssignmentSettings(groups[i].Assignment)
+	}
 	return cloned
 }
 

@@ -107,6 +107,7 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	provenance.TotalVUsers = test.TotalVUsers
 	provenance.Duration = test.DurationStr
 	provenance.Assignment = cloneGeneratorAssignmentSettings(test.Assignment)
+	provenance.GeneratorShards = cloneGeneratorShardSummaries(test.GeneratorShards)
 	provenance.GoalConfig = cloneGoalConfig(test.GoalConfig)
 	provenance.RuntimeSettings = cloneRuntimeSettings(test.RuntimeSettings)
 	provenance.RuntimeSettingsReview = cloneRuntimeSettingsReview(test.RuntimeSettingsReview)

@@ -262,6 +262,82 @@ func TestPlanDistributedGroupTargetsUsesNegotiatedGeneratorProtocols(t *testing.
 	}
 }
 
+func TestPlanDistributedGroupShardsSplitsSpecificHostsByCapacity(t *testing.T) {
+	groups := []TestGroup{{
+		Name:     "buyers",
+		Protocol: "http",
+		VUsers:   10,
+		Assignment: &GeneratorAssignmentSettings{
+			Mode:            generatorAssignmentModeSpecificHosts,
+			SelectedTargets: []string{"gen-a", "gen-b"},
+			ShardStrategy:   generatorShardStrategyCapacityWeighted,
+		},
+	}}
+	loadByTarget := map[string]generatorLoadSnapshot{
+		"gen-a": {Target: "gen-a", AvailableCapacity: 90, SupportedProtocols: []string{"http"}},
+		"gen-b": {Target: "gen-b", AvailableCapacity: 10, SupportedProtocols: []string{"http"}},
+	}
+
+	shards := planDistributedGroupShards(groups, loadByTarget, []string{"gen-a", "gen-b"}, nil, nil)
+
+	if len(shards["buyers"]) != 2 {
+		t.Fatalf("buyer shards = %#v, want two host shards", shards["buyers"])
+	}
+	got := map[string]int{}
+	for _, shard := range shards["buyers"] {
+		got[shard.Target] = shard.VUsers
+		if shard.Group != "buyers" || shard.ShardStrategy != generatorShardStrategyCapacityWeighted {
+			t.Fatalf("unexpected shard metadata: %#v", shard)
+		}
+	}
+	if got["gen-a"] != 8 || got["gen-b"] != 2 {
+		t.Fatalf("shard vusers = %#v, want gen-a=8 gen-b=2", got)
+	}
+}
+
+func TestPlanDistributedGroupShardsRejectsIncompatibleSpecificHost(t *testing.T) {
+	groups := []TestGroup{{
+		Name:     "grpc-callers",
+		Protocol: "grpc",
+		VUsers:   5,
+		Assignment: &GeneratorAssignmentSettings{
+			Mode:            generatorAssignmentModeSpecificHosts,
+			SelectedTargets: []string{"gen-a"},
+		},
+	}}
+	loadByTarget := map[string]generatorLoadSnapshot{
+		"gen-a": {Target: "gen-a", AvailableCapacity: 50, SupportedProtocols: []string{"http"}},
+	}
+
+	shards := planDistributedGroupShards(groups, loadByTarget, []string{"gen-a"}, nil, []generatorTargetSpec{{Address: "gen-a", Protocols: []string{"http"}}})
+
+	if len(shards["grpc-callers"]) != 0 {
+		t.Fatalf("grpc-callers shards = %#v, want no compatible placement", shards["grpc-callers"])
+	}
+}
+
+func TestAggregateDistributedMetricsBatchesSumsDuplicateGroupMetrics(t *testing.T) {
+	batch := aggregateDistributedMetricsBatches("test-1", map[string]generatorrpc.MetricsBatch{
+		"gen-a": {
+			TestID: "test-1",
+			Stats:  generatorrpc.GeneratorStats{ActiveVUsers: 8},
+			Groups: []generatorrpc.GroupMetric{{Name: "buyers", ActiveVUsers: 8}},
+		},
+		"gen-b": {
+			TestID: "test-1",
+			Stats:  generatorrpc.GeneratorStats{ActiveVUsers: 2},
+			Groups: []generatorrpc.GroupMetric{{Name: "buyers", ActiveVUsers: 2}},
+		},
+	})
+
+	if batch.Stats.ActiveVUsers != 10 {
+		t.Fatalf("active vusers = %d, want 10", batch.Stats.ActiveVUsers)
+	}
+	if len(batch.Groups) != 1 || batch.Groups[0].Name != "buyers" || batch.Groups[0].ActiveVUsers != 10 {
+		t.Fatalf("group metrics = %#v, want one aggregated buyers group with 10 vusers", batch.Groups)
+	}
+}
+
 func TestDistributedExecutionBackendStopTestClearsRemoteAssignment(t *testing.T) {
 	const bufSize = 1024 * 1024
 
@@ -1612,6 +1688,174 @@ func TestDistributedExecutionBackendHonorsExplicitHostSelection(t *testing.T) {
 	}
 	if stopB.Acknowledged {
 		t.Fatalf("expected generator B to not own explicit-host test")
+	}
+}
+
+func TestDistributedExecutionBackendShardsGroupAcrossSpecificHostsAndRescales(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	listenerA := bufconn.Listen(bufSize)
+	serverA := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(serverA, generatorrpc.NewService("generator-a", 100))
+	go func() {
+		_ = serverA.Serve(listenerA)
+	}()
+	t.Cleanup(func() {
+		serverA.Stop()
+		_ = listenerA.Close()
+	})
+
+	listenerB := bufconn.Listen(bufSize)
+	serverB := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(serverB, generatorrpc.NewService("generator-b", 100))
+	go func() {
+		_ = serverB.Serve(listenerB)
+	}()
+	t.Cleanup(func() {
+		serverB.Stop()
+		_ = listenerB.Close()
+	})
+
+	dialTarget := func(ctx context.Context, target string) (*generatorrpc.Client, error) {
+		switch target {
+		case "bufnet-a":
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listenerA.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		case "bufnet-b":
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listenerB.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		default:
+			return nil, context.DeadlineExceeded
+		}
+	}
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet-a", "bufnet-b"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			return dialTarget(ctx, target)
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-sharded-host",
+		Name:     "Sharded Host",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com", RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions:  []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Group host sharding",
+		Duration: "30s",
+		Groups: []CreateGroupEntry{{
+			Name:     "Group A",
+			ScriptID: "script-sharded-host",
+			VUsers:   30,
+			RampUp:   "0s",
+			Assignment: &GeneratorAssignmentSettings{
+				Mode:            generatorAssignmentModeSpecificHosts,
+				SelectedTargets: []string{"bufnet-a", "bufnet-b"},
+				ShardStrategy:   generatorShardStrategyCapacityWeighted,
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		started, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if started.Status == "RUNNING" && started.LiveMetrics != nil {
+			shards := started.remoteGroupShards["Group A"]
+			if len(shards) != 2 {
+				t.Fatalf("remote group shards = %#v, want two shards", shards)
+			}
+			byTarget := map[string]int{}
+			for _, shard := range shards {
+				byTarget[shard.Target] = shard.VUsers
+			}
+			if byTarget["bufnet-a"] != 15 || byTarget["bufnet-b"] != 15 {
+				t.Fatalf("initial shard vusers = %#v, want 15/15", byTarget)
+			}
+			if len(started.GeneratorShards) != 2 {
+				t.Fatalf("generator shard summary = %#v, want two entries", started.GeneratorShards)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected distributed backend to start sharded test, got status %q", started.Status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if err := runner.ScaleVUsers(testRun.ID, "Group A", 60); err != nil {
+		t.Fatalf("ScaleVUsers returned error: %v", err)
+	}
+
+	scaled, ok := runner.GetTest(testRun.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to exist after scale", testRun.ID)
+	}
+	scaledByTarget := map[string]int{}
+	for _, shard := range scaled.remoteGroupShards["Group A"] {
+		scaledByTarget[shard.Target] = shard.VUsers
+	}
+	if scaledByTarget["bufnet-a"] != 30 || scaledByTarget["bufnet-b"] != 30 {
+		t.Fatalf("scaled shard vusers = %#v, want 30/30", scaledByTarget)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	clientA, err := dialTarget(ctx, "bufnet-a")
+	if err != nil {
+		t.Fatalf("Dial generator A: %v", err)
+	}
+	defer clientA.Close()
+	clientB, err := dialTarget(ctx, "bufnet-b")
+	if err != nil {
+		t.Fatalf("Dial generator B: %v", err)
+	}
+	defer clientB.Close()
+
+	stopA, err := clientA.StopTest(ctx, testRun.ID, true)
+	if err != nil {
+		t.Fatalf("StopTest generator A: %v", err)
+	}
+	stopB, err := clientB.StopTest(ctx, testRun.ID, true)
+	if err != nil {
+		t.Fatalf("StopTest generator B: %v", err)
+	}
+	if !stopA.Acknowledged || !stopB.Acknowledged {
+		t.Fatalf("expected both generators to own sharded work, got stopA=%#v stopB=%#v", stopA, stopB)
+	}
+	if stopA.PendingVUsers != 30 || stopB.PendingVUsers != 30 {
+		t.Fatalf("pending vusers after scale = %d/%d, want 30/30", stopA.PendingVUsers, stopB.PendingVUsers)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -306,7 +307,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		tr.failTestBeforeRun(test, "no reachable generator targets configured")
 		return
 	}
-	groupTargets := planDistributedGroupTargets(test.Groups, loadByTarget, allowedTargets, assignment, b.targets)
+	groupShards := planDistributedGroupShards(test.Groups, loadByTarget, allowedTargets, assignment, b.targets)
 	for _, group := range test.Groups {
 		if group.script == nil {
 			cleanup()
@@ -314,20 +315,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			return
 		}
 
-		target := groupTargets[group.Name]
-		if target == "" {
+		shards := groupShards[group.Name]
+		if len(shards) == 0 {
 			cleanup()
 			tr.failTestBeforeRun(test, generatorPlacementRejectionMessage(group, loadByTarget, b.targets))
 			return
-		}
-		client := clientsByTarget[target]
-		if client == nil {
-			cleanup()
-			tr.failTestBeforeRun(test, fmt.Sprintf("selected generator %q is not connected", target))
-			return
-		}
-		if distributedScripts[target] == nil {
-			distributedScripts[target] = make(map[string]struct{})
 		}
 
 		scriptContent, contentHash, err := marshalDistributedScript(group.script)
@@ -337,44 +329,60 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			return
 		}
 
-		if _, ok := distributedScripts[target][group.ScriptID]; !ok {
-			if _, err := client.DistributeScript(ctx, generatorrpc.Script{
-				ID:          group.ScriptID,
-				Content:     scriptContent,
-				ContentHash: contentHash,
-			}); err != nil {
+		for _, shard := range shards {
+			if shard.VUsers <= 0 {
+				continue
+			}
+			target := shard.Target
+			client := clientsByTarget[target]
+			if client == nil {
 				cleanup()
-				tr.failTestBeforeRun(test, fmt.Sprintf("distribute script %q: %v", group.ScriptName, err))
+				tr.failTestBeforeRun(test, fmt.Sprintf("selected generator %q is not connected", target))
 				return
 			}
-			distributedScripts[target][group.ScriptID] = struct{}{}
-		}
+			if distributedScripts[target] == nil {
+				distributedScripts[target] = make(map[string]struct{})
+			}
 
-		assignment, err := client.AssignWork(ctx, generatorrpc.Assignment{
-			TestID:                test.ID,
-			GroupName:             group.Name,
-			TargetDurationSeconds: int64(test.Duration / time.Second),
-			ScriptID:              group.ScriptID,
-			VUserCount:            int32(group.VUsers),
-			RampUpSeconds:         int32(group.rampUpDur / time.Second),
-		})
-		if err != nil {
-			cleanup()
-			tr.failTestBeforeRun(test, fmt.Sprintf("assign work for group %q: %v", group.Name, err))
-			return
+			if _, ok := distributedScripts[target][group.ScriptID]; !ok {
+				if _, err := client.DistributeScript(ctx, generatorrpc.Script{
+					ID:          group.ScriptID,
+					Content:     scriptContent,
+					ContentHash: contentHash,
+				}); err != nil {
+					cleanup()
+					tr.failTestBeforeRun(test, fmt.Sprintf("distribute script %q: %v", group.ScriptName, err))
+					return
+				}
+				distributedScripts[target][group.ScriptID] = struct{}{}
+			}
+
+			assignment, err := client.AssignWork(ctx, generatorrpc.Assignment{
+				TestID:                test.ID,
+				GroupName:             group.Name,
+				TargetDurationSeconds: int64(test.Duration / time.Second),
+				ScriptID:              group.ScriptID,
+				VUserCount:            int32(shard.VUsers),
+				RampUpSeconds:         int32(group.rampUpDur / time.Second),
+			})
+			if err != nil {
+				cleanup()
+				tr.failTestBeforeRun(test, fmt.Sprintf("assign work for group %q on %q: %v", group.Name, target, err))
+				return
+			}
+			if !assignment.Accepted {
+				cleanup()
+				tr.failTestBeforeRun(test, fmt.Sprintf("generator rejected group %q on %q: %s", group.Name, target, assignment.ErrorMessage))
+				return
+			}
+			snapshot := loadByTarget[target]
+			snapshot.AvailableCapacity = assignment.AvailableCapacity
+			snapshot.Stats.ActiveVUsers += int32(shard.VUsers)
+			loadByTarget[target] = snapshot
 		}
-		if !assignment.Accepted {
-			cleanup()
-			tr.failTestBeforeRun(test, fmt.Sprintf("generator rejected group %q: %s", group.Name, assignment.ErrorMessage))
-			return
-		}
-		snapshot := loadByTarget[target]
-		snapshot.AvailableCapacity = assignment.AvailableCapacity
-		snapshot.Stats.ActiveVUsers += int32(group.VUsers)
-		loadByTarget[target] = snapshot
 	}
 
-	for _, target := range orderedAssignedTargets(groupTargets, allowedTargets) {
+	for _, target := range orderedAssignedShardTargets(groupShards, allowedTargets) {
 		if _, ok := streamsByTarget[target]; ok {
 			continue
 		}
@@ -387,7 +395,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		streamsByTarget[target] = stream
 	}
 
-	b.startDistributedTestRun(tr, test, groupTargets, clientsByTarget, streamsByTarget)
+	b.startDistributedTestRun(tr, test, groupShards, clientsByTarget, streamsByTarget)
 }
 
 func (b *distributedExecutionBackend) StopTest(tr *TestRunner, test *ManagedTest) error {
@@ -431,24 +439,88 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 	if !groupExists {
 		return fmt.Errorf("test group not found: %s", groupName)
 	}
-	client, err := b.clientForGroup(test, groupName)
+	shards := test.remoteGroupShards[groupName]
+	if len(shards) == 0 {
+		if target, ok := test.remoteGroupTargets[groupName]; ok && target != "" {
+			shards = []GeneratorShardSummary{{Group: groupName, Target: target, VUsers: testGroupCurrentShardVUsers(test, groupName)}}
+		}
+	}
+	if len(shards) == 0 {
+		client, err := b.clientForGroup(test, groupName)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+		defer cancel()
+		adjustment, err := client.AdjustVUsers(ctx, generatorrpc.VUserAdjustment{
+			TestID:       test.ID,
+			GroupName:    groupName,
+			TargetVUsers: int32(targetVUsers),
+		})
+		if err != nil {
+			return fmt.Errorf("adjust remote vusers: %w", err)
+		}
+		if !adjustment.Accepted {
+			return fmt.Errorf("generator did not accept vuser adjustment for %s", test.ID)
+		}
+		return nil
+	}
+
+	clients, err := b.clientsForTest(test)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
-	defer cancel()
-	adjustment, err := client.AdjustVUsers(ctx, generatorrpc.VUserAdjustment{
-		TestID:       test.ID,
-		GroupName:    groupName,
-		TargetVUsers: int32(targetVUsers),
-	})
-	if err != nil {
-		return fmt.Errorf("adjust remote vusers: %w", err)
+	targets := shardTargets(shards)
+	loadByTarget := make(map[string]generatorLoadSnapshot, len(targets))
+	for _, target := range targets {
+		client := clients[target]
+		if client == nil {
+			return fmt.Errorf("selected generator %q is not connected", target)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+		snapshot := b.probeGeneratorLoad(ctx, target, client)
+		cancel()
+		snapshot.AvailableCapacity += int32(shardVUsersForTarget(shards, target))
+		loadByTarget[target] = snapshot
 	}
-	if !adjustment.Accepted {
-		return fmt.Errorf("generator did not accept vuser adjustment for %s", test.ID)
+	nextShards := capacityWeightedShardsIncludingZero(groupName, targetVUsers, targets, loadByTarget, shardStrategyForGroupShards(shards))
+	previousByTarget := make(map[string]int, len(shards))
+	for _, shard := range shards {
+		previousByTarget[shard.Target] = shard.VUsers
 	}
+	successes := make([]GeneratorShardSummary, 0, len(nextShards))
+	for _, shard := range nextShards {
+		client := clients[shard.Target]
+		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+		adjustment, err := client.AdjustVUsers(ctx, generatorrpc.VUserAdjustment{
+			TestID:       test.ID,
+			GroupName:    groupName,
+			TargetVUsers: int32(shard.VUsers),
+		})
+		cancel()
+		if err != nil || !adjustment.Accepted {
+			rollbackErr := b.rollbackShardVUsers(test.ID, groupName, clients, successes, previousByTarget)
+			if err != nil {
+				if rollbackErr != nil {
+					return fmt.Errorf("adjust remote vusers on %s: %w; rollback shard vusers: %v", shard.Target, err, rollbackErr)
+				}
+				return fmt.Errorf("adjust remote vusers on %s: %w", shard.Target, err)
+			}
+			if rollbackErr != nil {
+				return fmt.Errorf("generator did not accept vuser adjustment for %s on %s; rollback shard vusers: %v", test.ID, shard.Target, rollbackErr)
+			}
+			return fmt.Errorf("generator did not accept vuser adjustment for %s on %s", test.ID, shard.Target)
+		}
+		successes = append(successes, shard)
+	}
+	tr.mu.Lock()
+	if test.remoteGroupShards == nil {
+		test.remoteGroupShards = make(map[string][]GeneratorShardSummary)
+	}
+	test.remoteGroupShards[groupName] = cloneGeneratorShardSummaries(nextShards)
+	test.remoteGroupTargets = primaryTargetsFromShards(test.remoteGroupShards)
+	test.GeneratorShards = flattenGroupShards(test.remoteGroupShards)
+	tr.mu.Unlock()
 	return nil
 }
 
@@ -509,7 +581,7 @@ func marshalDistributedScript(script any) ([]byte, string, error) {
 	return content, hex.EncodeToString(hash[:]), nil
 }
 
-func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, test *ManagedTest, groupTargets map[string]string, clientsByTarget map[string]generatorClient, streamsByTarget map[string]*generatorrpc.MetricsStream) {
+func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, test *ManagedTest, groupShards map[string][]GeneratorShardSummary, clientsByTarget map[string]generatorClient, streamsByTarget map[string]*generatorrpc.MetricsStream) {
 	ctx, cancel := context.WithCancel(context.Background())
 	now := time.Now()
 	orderedTargets := orderedGeneratorTargets(clientsByTarget, b.configuredTargets())
@@ -525,7 +597,9 @@ func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, te
 	test.remoteTarget = firstTarget
 	test.remoteClient = clientsByTarget[firstTarget]
 	test.remoteMetricsStream = streamsByTarget[firstTarget]
-	test.remoteGroupTargets = cloneStringMap(groupTargets)
+	test.remoteGroupTargets = primaryTargetsFromShards(groupShards)
+	test.remoteGroupShards = cloneGroupShardMap(groupShards)
+	test.GeneratorShards = flattenGroupShards(groupShards)
 	test.remoteClientsByTarget = cloneClientMap(clientsByTarget)
 	test.remoteMetricsStreamsByTarget = cloneMetricsStreamMap(streamsByTarget)
 	test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
@@ -608,6 +682,37 @@ func (b *distributedExecutionBackend) clientForGroup(test *ManagedTest, groupNam
 	return b.clientForTest(test)
 }
 
+func (b *distributedExecutionBackend) rollbackShardVUsers(testID string, groupName string, clients map[string]generatorClient, successes []GeneratorShardSummary, previousByTarget map[string]int) error {
+	var rollbackErr error
+	for _, shard := range successes {
+		client := clients[shard.Target]
+		if client == nil {
+			rollbackErr = fmt.Errorf("selected generator %q is not connected", shard.Target)
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+		adjustment, err := client.AdjustVUsers(ctx, generatorrpc.VUserAdjustment{
+			TestID:       testID,
+			GroupName:    groupName,
+			TargetVUsers: int32(previousByTarget[shard.Target]),
+		})
+		cancel()
+		if err != nil {
+			rollbackErr = fmt.Errorf("adjust rollback on %s: %w", shard.Target, err)
+			continue
+		}
+		if !adjustment.Accepted {
+			rollbackErr = fmt.Errorf("generator %s did not accept rollback for %s", shard.Target, testID)
+		}
+	}
+	return rollbackErr
+}
+
+func testGroupCurrentShardVUsers(test *ManagedTest, groupName string) int {
+	vusers, _ := testGroupVUsers(test, groupName)
+	return vusers
+}
+
 func (b *distributedExecutionBackend) closeRemoteResources(test *ManagedTest) {
 	if len(test.remoteMetricsStreamsByTarget) > 0 {
 		for _, stream := range test.remoteMetricsStreamsByTarget {
@@ -628,6 +733,7 @@ func (b *distributedExecutionBackend) closeRemoteResources(test *ManagedTest) {
 	test.remoteClient = nil
 	test.remoteClientsByTarget = nil
 	test.remoteGroupTargets = nil
+	test.remoteGroupShards = nil
 	test.remoteMetricsBatchesByTarget = nil
 	test.remoteTargetStates = nil
 }
@@ -1262,9 +1368,12 @@ func (s *regionPlacementState) consume(target string, vusers int) {
 }
 
 func planDistributedGroupTargets(groups []TestGroup, loadByTarget map[string]generatorLoadSnapshot, preferred []string, assignment *GeneratorAssignmentSettings, targetSpecs []generatorTargetSpec) map[string]string {
-	assignments := make(map[string]string, len(groups))
+	return primaryTargetsFromShards(planDistributedGroupShards(groups, loadByTarget, preferred, assignment, targetSpecs))
+}
+
+func planDistributedGroupShards(groups []TestGroup, loadByTarget map[string]generatorLoadSnapshot, preferred []string, assignment *GeneratorAssignmentSettings, targetSpecs []generatorTargetSpec) map[string][]GeneratorShardSummary {
 	if len(loadByTarget) == 0 {
-		return assignments
+		return nil
 	}
 	projected := make(map[string]generatorLoadSnapshot, len(loadByTarget))
 	for key, value := range loadByTarget {
@@ -1272,19 +1381,155 @@ func planDistributedGroupTargets(groups []TestGroup, loadByTarget map[string]gen
 	}
 	regionState := newRegionPlacementState(groups, assignment, targetSpecs)
 	compatibility := newGeneratorCompatibilityIndex(targetSpecs, loadByTarget)
+	shardsByGroup := make(map[string][]GeneratorShardSummary, len(groups))
 	for _, group := range groups {
-		target := chooseGeneratorTargetForGroup(group, projected, preferred, regionState, compatibility)
-		assignments[group.Name] = target
-		if target == "" {
+		shards := chooseGeneratorShardsForGroup(group, projected, preferred, regionState, compatibility)
+		shardsByGroup[group.Name] = shards
+		for _, shard := range shards {
+			if shard.Target == "" || shard.VUsers <= 0 {
+				continue
+			}
+			snapshot := projected[shard.Target]
+			snapshot.AvailableCapacity -= int32(shard.VUsers)
+			snapshot.Stats.ActiveVUsers += int32(shard.VUsers)
+			projected[shard.Target] = snapshot
+			regionState.consume(shard.Target, shard.VUsers)
+		}
+	}
+	return shardsByGroup
+}
+
+func chooseGeneratorShardsForGroup(group TestGroup, loadByTarget map[string]generatorLoadSnapshot, preferred []string, regionState *regionPlacementState, compatibility *generatorCompatibilityIndex) []GeneratorShardSummary {
+	if group.Assignment != nil && group.Assignment.Mode == generatorAssignmentModeSpecificHosts {
+		targets := make([]string, 0, len(group.Assignment.SelectedTargets))
+		for _, target := range group.Assignment.SelectedTargets {
+			if _, ok := loadByTarget[target]; !ok {
+				return nil
+			}
+			if compatibility != nil && !compatibility.targetCanRun(target, group.Protocol) {
+				return nil
+			}
+			targets = append(targets, target)
+		}
+		return capacityWeightedShards(group.Name, group.VUsers, targets, loadByTarget, group.Assignment.ShardStrategy)
+	}
+
+	target := chooseGeneratorTargetForGroup(group, loadByTarget, preferred, regionState, compatibility)
+	if target == "" {
+		return nil
+	}
+	return []GeneratorShardSummary{{Group: group.Name, Target: target, VUsers: group.VUsers}}
+}
+
+func capacityWeightedShards(groupName string, vusers int, targets []string, loadByTarget map[string]generatorLoadSnapshot, strategy string) []GeneratorShardSummary {
+	return buildCapacityWeightedShards(groupName, vusers, targets, loadByTarget, strategy, false)
+}
+
+func capacityWeightedShardsIncludingZero(groupName string, vusers int, targets []string, loadByTarget map[string]generatorLoadSnapshot, strategy string) []GeneratorShardSummary {
+	return buildCapacityWeightedShards(groupName, vusers, targets, loadByTarget, strategy, true)
+}
+
+func buildCapacityWeightedShards(groupName string, vusers int, targets []string, loadByTarget map[string]generatorLoadSnapshot, strategy string, includeZero bool) []GeneratorShardSummary {
+	if len(targets) == 0 || vusers <= 0 {
+		if !includeZero {
+			return nil
+		}
+		shards := make([]GeneratorShardSummary, 0, len(targets))
+		for _, target := range targets {
+			shards = append(shards, GeneratorShardSummary{
+				Group:         groupName,
+				Target:        target,
+				VUsers:        0,
+				ShardStrategy: firstNonEmpty(strategy, generatorShardStrategyCapacityWeighted),
+			})
+		}
+		return shards
+	}
+	if len(targets) == 1 {
+		return []GeneratorShardSummary{{Group: groupName, Target: targets[0], VUsers: vusers}}
+	}
+	if strategy == "" {
+		strategy = generatorShardStrategyCapacityWeighted
+	}
+	allocations := allocateCapacityWeightedVUsers(vusers, targets, loadByTarget)
+	shards := make([]GeneratorShardSummary, 0, len(targets))
+	for _, target := range targets {
+		if allocations[target] <= 0 && !includeZero {
 			continue
 		}
-		snapshot := projected[target]
-		snapshot.AvailableCapacity -= int32(group.VUsers)
-		snapshot.Stats.ActiveVUsers += int32(group.VUsers)
-		projected[target] = snapshot
-		regionState.consume(target, group.VUsers)
+		shards = append(shards, GeneratorShardSummary{
+			Group:         groupName,
+			Target:        target,
+			VUsers:        allocations[target],
+			ShardStrategy: strategy,
+		})
 	}
-	return assignments
+	return shards
+}
+
+func allocateCapacityWeightedVUsers(total int, targets []string, loadByTarget map[string]generatorLoadSnapshot) map[string]int {
+	allocations := make(map[string]int, len(targets))
+	if total <= 0 || len(targets) == 0 {
+		return allocations
+	}
+	remaining := total
+	if total >= len(targets) {
+		for _, target := range targets {
+			allocations[target] = 1
+		}
+		remaining -= len(targets)
+	}
+	if remaining <= 0 {
+		return allocations
+	}
+
+	type weightedAllocation struct {
+		target    string
+		weight    float64
+		base      int
+		remainder float64
+		index     int
+	}
+	weighted := make([]weightedAllocation, 0, len(targets))
+	totalWeight := 0.0
+	for index, target := range targets {
+		weight := float64(loadByTarget[target].AvailableCapacity)
+		if weight < 0 {
+			weight = 0
+		}
+		weighted = append(weighted, weightedAllocation{target: target, weight: weight, index: index})
+		totalWeight += weight
+	}
+	if totalWeight <= 0 {
+		totalWeight = float64(len(weighted))
+		for index := range weighted {
+			weighted[index].weight = 1
+		}
+	}
+
+	assigned := 0
+	for index := range weighted {
+		exact := float64(remaining) * weighted[index].weight / totalWeight
+		base := int(math.Floor(exact))
+		weighted[index].base = base
+		weighted[index].remainder = exact - float64(base)
+		allocations[weighted[index].target] += base
+		assigned += base
+	}
+	sort.SliceStable(weighted, func(left int, right int) bool {
+		if weighted[left].remainder != weighted[right].remainder {
+			return weighted[left].remainder > weighted[right].remainder
+		}
+		if weighted[left].weight != weighted[right].weight {
+			return weighted[left].weight > weighted[right].weight
+		}
+		return weighted[left].index < weighted[right].index
+	})
+	for index, remainingAssigned := 0, remaining-assigned; remainingAssigned > 0; index, remainingAssigned = index+1, remainingAssigned-1 {
+		next := weighted[index%len(weighted)]
+		allocations[next.target]++
+	}
+	return allocations
 }
 
 func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]generatorLoadSnapshot, preferred []string, regionState *regionPlacementState, compatibility *generatorCompatibilityIndex) string {
@@ -1357,6 +1602,19 @@ func orderedAssignedTargets(groupTargets map[string]string, preferred []string) 
 	return orderedTargetList(set, preferred)
 }
 
+func orderedAssignedShardTargets(groupShards map[string][]GeneratorShardSummary, preferred []string) []string {
+	set := make(map[string]struct{})
+	for _, shards := range groupShards {
+		for _, shard := range shards {
+			if shard.Target == "" || shard.VUsers <= 0 {
+				continue
+			}
+			set[shard.Target] = struct{}{}
+		}
+	}
+	return orderedTargetList(set, preferred)
+}
+
 func orderedGeneratorTargets(clients map[string]generatorClient, preferred []string) []string {
 	set := make(map[string]struct{}, len(clients))
 	for target := range clients {
@@ -1404,6 +1662,89 @@ func cloneStringMap(values map[string]string) map[string]string {
 	return cloned
 }
 
+func primaryTargetsFromShards(groupShards map[string][]GeneratorShardSummary) map[string]string {
+	if len(groupShards) == 0 {
+		return nil
+	}
+	primary := make(map[string]string, len(groupShards))
+	for group, shards := range groupShards {
+		for _, shard := range shards {
+			if shard.Target == "" || shard.VUsers <= 0 {
+				continue
+			}
+			primary[group] = shard.Target
+			break
+		}
+	}
+	return primary
+}
+
+func cloneGroupShardMap(values map[string][]GeneratorShardSummary) map[string][]GeneratorShardSummary {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string][]GeneratorShardSummary, len(values))
+	for key, shards := range values {
+		cloned[key] = cloneGeneratorShardSummaries(shards)
+	}
+	return cloned
+}
+
+func flattenGroupShards(values map[string][]GeneratorShardSummary) []GeneratorShardSummary {
+	if len(values) == 0 {
+		return nil
+	}
+	groups := make([]string, 0, len(values))
+	for group := range values {
+		groups = append(groups, group)
+	}
+	sort.Strings(groups)
+	out := make([]GeneratorShardSummary, 0)
+	for _, group := range groups {
+		shards := cloneGeneratorShardSummaries(values[group])
+		sort.SliceStable(shards, func(left int, right int) bool {
+			return shards[left].Target < shards[right].Target
+		})
+		out = append(out, shards...)
+	}
+	return out
+}
+
+func shardTargets(shards []GeneratorShardSummary) []string {
+	targets := make([]string, 0, len(shards))
+	seen := make(map[string]struct{}, len(shards))
+	for _, shard := range shards {
+		if shard.Target == "" {
+			continue
+		}
+		if _, ok := seen[shard.Target]; ok {
+			continue
+		}
+		seen[shard.Target] = struct{}{}
+		targets = append(targets, shard.Target)
+	}
+	return targets
+}
+
+func shardVUsersForTarget(shards []GeneratorShardSummary, target string) int {
+	total := 0
+	for _, shard := range shards {
+		if shard.Target == target {
+			total += shard.VUsers
+		}
+	}
+	return total
+}
+
+func shardStrategyForGroupShards(shards []GeneratorShardSummary) string {
+	for _, shard := range shards {
+		if shard.ShardStrategy != "" {
+			return shard.ShardStrategy
+		}
+	}
+	return ""
+}
+
 func cloneClientMap(values map[string]generatorClient) map[string]generatorClient {
 	if len(values) == 0 {
 		return nil
@@ -1432,6 +1773,7 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	hasCollectedAt := false
 	hasPublishedAt := false
 	hasControllerReceivedAt := false
+	groupsByName := make(map[string]int32)
 	for target := range batches {
 		targets = append(targets, target)
 	}
@@ -1446,7 +1788,12 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		combined.Stats.MemoryBytes += batch.Stats.MemoryBytes
 		combined.Stats.GoroutineCount += batch.Stats.GoroutineCount
 		combined.Transactions = append(combined.Transactions, batch.Transactions...)
-		combined.Groups = append(combined.Groups, batch.Groups...)
+		for _, group := range batch.Groups {
+			if group.Name == "" {
+				continue
+			}
+			groupsByName[group.Name] += group.ActiveVUsers
+		}
 		if batch.Telemetry != nil {
 			if combined.Telemetry == nil {
 				combined.Telemetry = &generatorrpc.MetricsTelemetry{}
@@ -1469,9 +1816,14 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 			}
 		}
 	}
-	sort.Slice(combined.Groups, func(left int, right int) bool {
-		return combined.Groups[left].Name < combined.Groups[right].Name
-	})
+	groupNames := make([]string, 0, len(groupsByName))
+	for name := range groupsByName {
+		groupNames = append(groupNames, name)
+	}
+	sort.Strings(groupNames)
+	for _, name := range groupNames {
+		combined.Groups = append(combined.Groups, generatorrpc.GroupMetric{Name: name, ActiveVUsers: groupsByName[name]})
+	}
 	return combined
 }
 

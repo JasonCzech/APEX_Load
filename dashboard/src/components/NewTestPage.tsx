@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Application, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, StoredScenario } from '../types'
+import { Application, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, StoredScenario, SystemInventoryGenerator } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -85,6 +85,7 @@ type GroupRunOverride = {
   ramp_down?: string
   initialization?: 'at_runtime' | 'at_once'
   runtime_settings?: RuntimeSettingsOverride
+  assignment?: GeneratorAssignmentSettings
 }
 
 type GroupEditDraft = {
@@ -105,6 +106,8 @@ type GroupEditDraft = {
   browser_headless: string
   browser_touch_mode: string
   browser_orientation: string
+  assignmentMode: 'auto' | 'specific_hosts'
+  selectedTargets: string[]
 }
 
 type RunLoadProfilePreview = {
@@ -143,6 +146,10 @@ function hasRuntimeSettingsValues(settings?: RuntimeSettingsOverride) {
     || Boolean(settings.browser)
 }
 
+function hasGroupAssignmentValues(assignment?: GeneratorAssignmentSettings) {
+  return assignment?.mode === 'specific_hosts' && Boolean(assignment.selected_targets?.length)
+}
+
 function hasGroupOverrideValues(override?: GroupRunOverride) {
   if (!override) return false
   return hasOwnKey(override, 'vusers')
@@ -150,6 +157,7 @@ function hasGroupOverrideValues(override?: GroupRunOverride) {
     || hasOwnKey(override, 'ramp_down')
     || hasOwnKey(override, 'initialization')
     || hasRuntimeSettingsValues(override.runtime_settings)
+    || hasGroupAssignmentValues(override.assignment)
 }
 
 function groupOverrideCount(overrides: Record<string, GroupRunOverride>) {
@@ -687,6 +695,7 @@ function buildGroupsForRunPayload(scenario: StoredScenario | undefined, override
     const key = groupOverrideKey(group)
     const override = overrides[key]
     const effective = applyGroupOverride(group, override)
+    const runtimeSettings = override?.runtime_settings || group.runtime_settings
     return {
       name: effective.name || effective.script_name || `Group ${effective.order + 1}`,
       script_id: effective.script_id,
@@ -696,9 +705,53 @@ function buildGroupsForRunPayload(scenario: StoredScenario | undefined, override
       stages: effective.stages,
       iterations: group.iterations,
       initialization: effective.initialization || 'at_runtime',
-      ...(override?.runtime_settings ? { runtime_settings: override.runtime_settings } : {}),
+      ...(runtimeSettings ? { runtime_settings: runtimeSettings } : {}),
+      ...(override?.assignment ? { assignment: override.assignment } : {}),
     }
   })
+}
+
+function formatGroupPlacement(override?: GroupRunOverride) {
+  const assignment = override?.assignment
+  const targets = assignment?.selected_targets || []
+  if (!targets.length) return 'Auto'
+  if (targets.length === 1) return `Pinned: ${targets[0]}`
+  return `Sharded: ${targets.length} hosts, capacity weighted`
+}
+
+function groupPlacementSummary(overrides: Record<string, GroupRunOverride>) {
+  const placements = Object.values(overrides).filter(override => hasGroupAssignmentValues(override.assignment))
+  if (placements.length === 0) return 'Auto placement'
+  const pinned = placements.filter(override => (override.assignment?.selected_targets || []).length === 1).length
+  const sharded = placements.length - pinned
+  return [
+    pinned > 0 ? formatCount(pinned, 'pinned group') : '',
+    sharded > 0 ? formatCount(sharded, 'sharded group') : '',
+  ].filter(Boolean).join(', ')
+}
+
+function generatorCanRunGroup(generator: SystemInventoryGenerator, group?: ScenarioScriptGroup) {
+  const drainActive = !generator.drain_state || generator.drain_state === 'active'
+  const connected = ['connected', 'healthy', 'ready'].includes(generator.status)
+  const compatible = !generator.compatibility_state || generator.compatibility_state === 'compatible' || generator.compatibility_state === 'unknown'
+  const protocols = generator.supported_protocols || []
+  const protocolSupported = !group?.protocol || protocols.length === 0 || protocols.includes(group.protocol)
+  return drainActive && connected && compatible && protocolSupported && (generator.available_capacity ?? 0) > 0
+}
+
+function generatorDisabledReason(generator: SystemInventoryGenerator, group?: ScenarioScriptGroup) {
+  if (generator.drain_state && generator.drain_state !== 'active') return `Host is ${generator.drain_state}`
+  if (!['connected', 'healthy', 'ready'].includes(generator.status)) return `Host is ${generator.status}`
+  if (generator.compatibility_state && generator.compatibility_state !== 'compatible' && generator.compatibility_state !== 'unknown') return generator.compatibility_issues?.[0] || `Compatibility is ${generator.compatibility_state}`
+  const protocols = generator.supported_protocols || []
+  if (group?.protocol && protocols.length > 0 && !protocols.includes(group.protocol)) return `Does not support ${group.protocol}`
+  if ((generator.available_capacity ?? 0) <= 0) return 'No available capacity'
+  return ''
+}
+
+function selectedGeneratorCapacity(generators: SystemInventoryGenerator[], selectedTargets: string[]) {
+  const selected = new Set(selectedTargets)
+  return generators.reduce((total, generator) => selected.has(generator.target) ? total + (generator.available_capacity || 0) : total, 0)
 }
 
 function buildGroupRuntimeTableValues(group: ScenarioScriptGroup, scenario: StoredScenario, runDefaultOverrides: RunDefaultOverrides, override?: GroupRunOverride) {
@@ -760,6 +813,8 @@ function emptyGroupEditDraft(): GroupEditDraft {
     browser_headless: '',
     browser_touch_mode: '',
     browser_orientation: '',
+    assignmentMode: 'auto',
+    selectedTargets: [],
   }
 }
 
@@ -793,6 +848,8 @@ function buildGroupEditDraft(group: ScenarioScriptGroup, override?: GroupRunOver
     browser_headless: runtime?.browser?.headless === undefined ? '' : String(runtime.browser.headless),
     browser_touch_mode: runtime?.browser?.touch_mode === undefined ? '' : String(runtime.browser.touch_mode),
     browser_orientation: runtime?.browser?.orientation || '',
+    assignmentMode: override?.assignment?.mode === 'specific_hosts' ? 'specific_hosts' : 'auto',
+    selectedTargets: override?.assignment?.selected_targets || [],
   }
 }
 
@@ -830,6 +887,9 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [draftEstimate, setDraftEstimate] = useState<DraftCapacityEstimate | null>(null)
   const [estimateLoading, setEstimateLoading] = useState(false)
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
+  const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
+  const [generatorInventoryLoading, setGeneratorInventoryLoading] = useState(false)
+  const [generatorInventoryError, setGeneratorInventoryError] = useState('')
 
   const refresh = useCallback(async () => {
     try {
@@ -881,6 +941,30 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       cancelled = true
     }
   }, [activeProject?.id, api])
+  useEffect(() => {
+    let cancelled = false
+    const loadInventory = async () => {
+      setGeneratorInventoryLoading(true)
+      setGeneratorInventoryError('')
+      try {
+        const response = await api.getSystemInventory()
+        if (!cancelled) {
+          setGeneratorInventory(response.generators || [])
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setGeneratorInventory([])
+          setGeneratorInventoryError(getErrorMessage(err, 'Unable to load generator inventory'))
+        }
+      } finally {
+        if (!cancelled) setGeneratorInventoryLoading(false)
+      }
+    }
+    loadInventory()
+    return () => {
+      cancelled = true
+    }
+  }, [api])
 
   const scenario = useMemo(() => scenarios.find(item => item.id === scenarioId), [scenarios, scenarioId])
   const release = useMemo(() => releases.find(item => item.id === releaseId), [releases, releaseId])
@@ -912,6 +996,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     () => scenario?.scripts.find(group => groupOverrideKey(group) === editingGroupKey),
     [editingGroupKey, scenario],
   )
+  const generatorByTarget = useMemo(() => new Map(generatorInventory.map(generator => [generator.target, generator])), [generatorInventory])
   const filteredScenarios = useMemo(() => {
     const query = scenarioQuery.trim().toLowerCase()
     if (!query) return scenarios
@@ -968,11 +1053,12 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       { label: 'Script Groups', value: scenario ? formatCount(effectiveScenarioGroups.length, 'group') : '0 groups' },
       { label: 'Protocols', value: protocols.length ? protocols.join(', ') : 'None' },
       { label: 'Run Overrides', value: formatCount(runOverridesCount, 'override') },
+      { label: 'Host Placement', value: groupPlacementSummary(groupRunOverrides) },
       { label: 'Shared Data Pools', value: dataPoolValue },
       { label: 'Capacity', value: capacityValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
       { label: 'Bottleneck', value: bottleneckValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
     ]
-  }, [draftEstimate?.capacity_advisory, effectiveRunDuration, effectiveScenarioGroups.length, estimateLoading, protocols, release?.name, runName, runOverridesCount, scenario, totalVUsers])
+  }, [draftEstimate?.capacity_advisory, effectiveRunDuration, effectiveScenarioGroups.length, estimateLoading, groupRunOverrides, protocols, release?.name, runName, runOverridesCount, scenario, totalVUsers])
   const selectedScenarioSummaryItems = useMemo(() => {
     if (!scenario) return []
     return [
@@ -1376,6 +1462,26 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     }
     if (hasRuntimeSettingsValues(runtimeSettings)) {
       nextOverride.runtime_settings = runtimeSettings
+    }
+    if (groupEditDraft.assignmentMode === 'specific_hosts') {
+      const selectedTargets = groupEditDraft.selectedTargets.filter(Boolean)
+      if (selectedTargets.length === 0) {
+        setError('Select at least one load generator host for group placement.')
+        return
+      }
+      const unavailableTargets = selectedTargets.filter(target => {
+        const generator = generatorByTarget.get(target)
+        return generator ? !generatorCanRunGroup(generator, editingGroup) : false
+      })
+      if (unavailableTargets.length > 0) {
+        setError(`Selected generator is not eligible for this group: ${unavailableTargets.join(', ')}`)
+        return
+      }
+      nextOverride.assignment = {
+        mode: 'specific_hosts',
+        selected_targets: selectedTargets,
+        ...(selectedTargets.length > 1 ? { shard_strategy: 'capacity_weighted' as const } : {}),
+      }
     }
 
     setGroupRunOverrides(prev => {
@@ -2091,6 +2197,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	                        <th>Auto Tx</th>
 	                        <th>Error Handling</th>
 	                        <th>Browser</th>
+	                        <th>Placement</th>
 	                        <th aria-label="Actions" />
 	                      </tr>
                     </thead>
@@ -2122,6 +2229,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	                            <td className="new-test-runtime-cell">{runtimeValues.autoTransactions}</td>
 	                            <td className="new-test-runtime-cell">{runtimeValues.errorHandling}</td>
 	                            <td className="new-test-runtime-cell">{runtimeValues.browser}</td>
+	                            <td className="new-test-runtime-cell">{formatGroupPlacement(override)}</td>
 	                            <td>
                               <button className="btn btn-sm btn-secondary" type="button" onClick={(event) => { event.stopPropagation(); openGroupEditor(sourceGroup) }}>Edit</button>
                             </td>
@@ -2323,6 +2431,71 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                       <input className="settings-input" value={groupEditDraft.ramp_down} onChange={event => setGroupEditDraft(prev => ({ ...prev, ramp_down: event.target.value }))} placeholder="Scenario default" />
                     </label>
                   </div>
+                </section>
+                <section>
+                  <h4>Load Generator Sharding</h4>
+                  <p className="new-test-inline-note">Saved host placement applies only to this run. Multiple hosts split this group by available capacity.</p>
+                  <div className="new-test-placement-toggle" role="radiogroup" aria-label="Load generator placement">
+                    <label className={groupEditDraft.assignmentMode === 'auto' ? 'selected' : ''}>
+                      <input
+                        type="radio"
+                        name="group-assignment-mode"
+                        checked={groupEditDraft.assignmentMode === 'auto'}
+                        onChange={() => setGroupEditDraft(prev => ({ ...prev, assignmentMode: 'auto', selectedTargets: [] }))}
+                      />
+                      <span>Automatic placement</span>
+                    </label>
+                    <label className={groupEditDraft.assignmentMode === 'specific_hosts' ? 'selected' : ''}>
+                      <input
+                        type="radio"
+                        name="group-assignment-mode"
+                        checked={groupEditDraft.assignmentMode === 'specific_hosts'}
+                        onChange={() => setGroupEditDraft(prev => ({ ...prev, assignmentMode: 'specific_hosts' }))}
+                      />
+                      <span>Specific host sharding</span>
+                    </label>
+                  </div>
+                  {groupEditDraft.assignmentMode === 'specific_hosts' && (
+                    <div className="new-test-generator-picker">
+                      {generatorInventoryLoading ? (
+                        <div className="new-test-empty compact">Loading generator inventory...</div>
+                      ) : generatorInventory.length === 0 ? (
+                        <div className="new-test-empty compact">{generatorInventoryError || 'No load generators are registered.'}</div>
+                      ) : (
+                        generatorInventory.map(generator => {
+                          const selected = groupEditDraft.selectedTargets.includes(generator.target)
+                          const eligible = generatorCanRunGroup(generator, editingGroup)
+                          const disabledReason = generatorDisabledReason(generator, editingGroup)
+                          return (
+                            <label key={generator.target} className={`new-test-generator-option ${selected ? 'selected' : ''} ${!eligible ? 'disabled' : ''}`}>
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                disabled={!eligible && !selected}
+                                onChange={event => {
+                                  setGroupEditDraft(prev => {
+                                    const selectedTargets = event.target.checked
+                                      ? Array.from(new Set([...prev.selectedTargets, generator.target]))
+                                      : prev.selectedTargets.filter(target => target !== generator.target)
+                                    return { ...prev, selectedTargets }
+                                  })
+                                }}
+                              />
+                              <span>
+                                <strong>{generator.target}</strong>
+                                <em>{generator.region || 'default'} · {generator.available_capacity} capacity · {generator.active_vusers} active</em>
+                                {disabledReason && <em className="warning">{disabledReason}</em>}
+                              </span>
+                            </label>
+                          )
+                        })
+                      )}
+                      <div className="new-test-placement-summary">
+                        <strong>{formatGroupPlacement({ assignment: { mode: groupEditDraft.assignmentMode, selected_targets: groupEditDraft.selectedTargets, ...(groupEditDraft.selectedTargets.length > 1 ? { shard_strategy: 'capacity_weighted' as const } : {}) } })}</strong>
+                        <span>{selectedGeneratorCapacity(generatorInventory, groupEditDraft.selectedTargets)} selected VUser capacity</span>
+                      </div>
+                    </div>
+                  )}
                 </section>
                 <section>
                   <h4>Runtime Settings</h4>

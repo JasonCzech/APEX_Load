@@ -142,6 +142,7 @@ type ManagedTest struct {
 	GoalConfig            *GoalConfig                  `json:"goal_config,omitempty"`
 	RuntimeSettings       *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
 	TotalVUsers           int                          `json:"total_vusers"`
+	GeneratorShards       []GeneratorShardSummary      `json:"generator_shards,omitempty"`
 	Duration              time.Duration                `json:"duration_ns"`
 	DurationStr           string                       `json:"duration"`
 	CreatedAt             time.Time                    `json:"created_at"`
@@ -178,6 +179,7 @@ type ManagedTest struct {
 	remoteClient                 generatorClient
 	remoteMetricsStream          *generatorrpc.MetricsStream
 	remoteGroupTargets           map[string]string
+	remoteGroupShards            map[string][]GeneratorShardSummary
 	remoteClientsByTarget        map[string]generatorClient
 	remoteMetricsStreamsByTarget map[string]*generatorrpc.MetricsStream
 	remoteMetricsBatchesByTarget map[string]generatorrpc.MetricsBatch
@@ -207,20 +209,28 @@ type VUserRampStatus struct {
 }
 
 type TestGroup struct {
-	Name            string                   `json:"name"`
-	ScriptID        string                   `json:"script_id"`
-	ScriptName      string                   `json:"script_name"`
-	Protocol        string                   `json:"protocol"`
-	VUsers          int                      `json:"vusers"`
-	RampUp          string                   `json:"ramp_up,omitempty"`
-	RampDown        string                   `json:"ramp_down,omitempty"`
-	Stages          []storage.LoadStage      `json:"stages,omitempty"`
-	Iterations      *int                     `json:"iterations,omitempty"`
-	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
-	RunLogicGoals   *RunLogicGoalSnapshot    `json:"run_logic_goals,omitempty"`
-	Initialization  string                   `json:"initialization,omitempty"`
+	Name            string                       `json:"name"`
+	ScriptID        string                       `json:"script_id"`
+	ScriptName      string                       `json:"script_name"`
+	Protocol        string                       `json:"protocol"`
+	VUsers          int                          `json:"vusers"`
+	RampUp          string                       `json:"ramp_up,omitempty"`
+	RampDown        string                       `json:"ramp_down,omitempty"`
+	Stages          []storage.LoadStage          `json:"stages,omitempty"`
+	Iterations      *int                         `json:"iterations,omitempty"`
+	RuntimeSettings *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	Assignment      *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	RunLogicGoals   *RunLogicGoalSnapshot        `json:"run_logic_goals,omitempty"`
+	Initialization  string                       `json:"initialization,omitempty"`
 	rampUpDur       time.Duration
 	script          *dsl.Script
+}
+
+type GeneratorShardSummary struct {
+	Group         string `json:"group"`
+	Target        string `json:"target"`
+	VUsers        int    `json:"vusers"`
+	ShardStrategy string `json:"shard_strategy,omitempty"`
 }
 
 type RunLogicGoalSnapshot struct {
@@ -587,17 +597,18 @@ type ScenarioScriptRef struct {
 }
 
 const (
-	generatorAssignmentModeAuto           = "auto"
-	generatorAssignmentModeSpecificHosts  = "specific_hosts"
-	generatorAssignmentModeRegionWeighted = "region_weighted"
-	maxManagedTestHistory                 = 3600
-	telemetryDiagnosticSampleInterval     = 5 * time.Second
-	telemetrySustainedBreachWindow        = 15 * time.Second
-	maxTelemetryDiagnosticSamples         = 3
-	slowTransactionDiagnosticThresholdMs  = 1000.0
-	jmsBrokerPressureMinLagMs             = 200.0
-	jmsBrokerPressureLagMultiplier        = 2.0
-	jmsBrokerPressureSendRecvRatio        = 1.5
+	generatorAssignmentModeAuto            = "auto"
+	generatorAssignmentModeSpecificHosts   = "specific_hosts"
+	generatorAssignmentModeRegionWeighted  = "region_weighted"
+	generatorShardStrategyCapacityWeighted = "capacity_weighted"
+	maxManagedTestHistory                  = 3600
+	telemetryDiagnosticSampleInterval      = 5 * time.Second
+	telemetrySustainedBreachWindow         = 15 * time.Second
+	maxTelemetryDiagnosticSamples          = 3
+	slowTransactionDiagnosticThresholdMs   = 1000.0
+	jmsBrokerPressureMinLagMs              = 200.0
+	jmsBrokerPressureLagMultiplier         = 2.0
+	jmsBrokerPressureSendRecvRatio         = 1.5
 )
 
 var runtimeOverrideEnvPattern = regexp.MustCompile(`\{\{\s*env\.([^{}\s]+)\s*\}\}`)
@@ -606,6 +617,7 @@ type GeneratorAssignmentSettings struct {
 	Mode            string         `json:"mode,omitempty"`
 	SelectedTargets []string       `json:"selected_targets,omitempty"`
 	RegionWeights   map[string]int `json:"region_weights,omitempty"`
+	ShardStrategy   string         `json:"shard_strategy,omitempty"`
 }
 
 type ScenarioFootprint struct {
@@ -1755,15 +1767,16 @@ type RuntimeSettingsOverride struct {
 }
 
 type CreateGroupEntry struct {
-	Name            string                   `json:"name"`
-	ScriptID        string                   `json:"script_id"`
-	VUsers          int                      `json:"vusers"`
-	RampUp          string                   `json:"ramp_up,omitempty"`
-	RampDown        string                   `json:"ramp_down,omitempty"`
-	Stages          []storage.LoadStage      `json:"stages,omitempty"`
-	Iterations      *int                     `json:"iterations,omitempty"`
-	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
-	InitStrategy    string                   `json:"initialization,omitempty"` // "at_runtime", "at_once"
+	Name            string                       `json:"name"`
+	ScriptID        string                       `json:"script_id"`
+	VUsers          int                          `json:"vusers"`
+	RampUp          string                       `json:"ramp_up,omitempty"`
+	RampDown        string                       `json:"ramp_down,omitempty"`
+	Stages          []storage.LoadStage          `json:"stages,omitempty"`
+	Iterations      *int                         `json:"iterations,omitempty"`
+	RuntimeSettings *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	Assignment      *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	InitStrategy    string                       `json:"initialization,omitempty"` // "at_runtime", "at_once"
 }
 
 type StartTestOptions struct {
@@ -1878,6 +1891,38 @@ func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*Gen
 	}
 }
 
+func normalizeGroupGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*GeneratorAssignmentSettings, error) {
+	if in == nil {
+		return nil, nil
+	}
+	out, err := normalizeGeneratorAssignmentSettings(in)
+	if err != nil {
+		return nil, err
+	}
+	if out == nil {
+		return nil, nil
+	}
+	switch out.Mode {
+	case generatorAssignmentModeAuto:
+		return out, nil
+	case generatorAssignmentModeSpecificHosts:
+		strategy := strings.TrimSpace(in.ShardStrategy)
+		if len(out.SelectedTargets) > 1 && strategy == "" {
+			strategy = generatorShardStrategyCapacityWeighted
+		}
+		if strategy != "" && strategy != generatorShardStrategyCapacityWeighted {
+			return nil, fmt.Errorf("group assignment.shard_strategy must be capacity_weighted")
+		}
+		if len(out.SelectedTargets) <= 1 {
+			strategy = ""
+		}
+		out.ShardStrategy = strategy
+		return out, nil
+	default:
+		return nil, fmt.Errorf("group assignment.mode must be auto or specific_hosts")
+	}
+}
+
 func cloneGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) *GeneratorAssignmentSettings {
 	if in == nil {
 		return nil
@@ -1891,6 +1936,15 @@ func cloneGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) *Generato
 		}
 	}
 	return &out
+}
+
+func cloneGeneratorShardSummaries(in []GeneratorShardSummary) []GeneratorShardSummary {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]GeneratorShardSummary, len(in))
+	copy(out, in)
+	return out
 }
 
 func buildScenarioFootprint(test *ManagedTest) *ScenarioFootprint {
@@ -2432,6 +2486,10 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 	if group.RuntimeSettings != nil && group.RuntimeSettings.Iterations != nil && *group.RuntimeSettings.Iterations < 1 {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: runtime_settings.iterations must be greater than 0", index)
 	}
+	assignment, err := normalizeGroupGeneratorAssignmentSettings(group.Assignment)
+	if err != nil {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %w", index, err)
+	}
 
 	rampUp, err := parseOptionalGroupDuration(rampUpValue, index, "ramp_up")
 	if err != nil {
@@ -2485,6 +2543,7 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 		Stages:          cloneLoadStages(group.Stages),
 		Iterations:      effectiveIterations,
 		RuntimeSettings: cloneRuntimeSettings(group.RuntimeSettings),
+		Assignment:      cloneGeneratorAssignmentSettings(assignment),
 		RunLogicGoals:   runLogicGoalSnapshot(script.Script),
 		Initialization:  initStrategy,
 		rampUpDur:       rampUp,

@@ -74,6 +74,7 @@ type TestCreateGroupEntry = {
   iterations?: number
   runtime_settings?: RuntimeSettingsOverride
   initialization?: 'at_runtime' | 'at_once'
+  assignment?: GeneratorAssignmentSettings
 }
 
 type TestCreateRequest = {

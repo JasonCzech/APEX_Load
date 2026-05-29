@@ -3810,7 +3810,7 @@
 }
 
 .new-test-script-table {
-  min-width: 1180px;
+  min-width: 1280px;
 }
 
 .new-test-script-table th,
@@ -4178,6 +4178,82 @@
   font-size: 13px;
 }
 
+.new-test-placement-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.new-test-placement-toggle label,
+.new-test-generator-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.new-test-placement-toggle label.selected,
+.new-test-generator-option.selected {
+  border-color: rgba(0, 163, 255, 0.55);
+  background: rgba(0, 163, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.new-test-generator-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.new-test-generator-option.disabled {
+  opacity: 0.62;
+}
+
+.new-test-generator-option span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.new-test-generator-option strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.new-test-generator-option em {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.3;
+}
+
+.new-test-generator-option em.warning {
+  color: var(--warning);
+}
+
+.new-test-placement-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.new-test-placement-summary strong {
+  color: var(--text-primary);
+}
+
 .run-group-modal .modal-actions {
   position: sticky;
   bottom: 0;
@@ -4209,12 +4285,13 @@
 @media (max-width: 720px) {
   .new-test-run-config-row,
   .new-test-setup-grid,
-  .new-test-default-editor-grid {
+  .new-test-default-editor-grid,
+  .new-test-placement-toggle {
     grid-template-columns: 1fr;
   }
 
   .new-test-script-table {
-    min-width: 1180px;
+    min-width: 1280px;
   }
 }
 

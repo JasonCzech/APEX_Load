@@ -21,6 +21,7 @@ const apiMock = {
   estimateTest: vi.fn(),
   startTest: vi.fn(),
   getAuthEffectiveAccess: vi.fn(),
+  getSystemInventory: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -105,6 +106,50 @@ describe('NewTestPage', () => {
             { id: 'view_tests', label: 'View tests', allowed: true, grant_source: 'project' },
             { id: 'manage_tests', label: 'Manage tests', allowed: true, grant_source: 'project' },
           ],
+        },
+      ],
+    })
+    apiMock.getSystemInventory.mockResolvedValue({
+      execution_mode: 'distributed',
+      controller: { id: 'controller-1', status: 'ready', address: ':8080', version: 'dev', execution_mode: 'distributed' },
+      generators: [
+        {
+          target: 'gen-a:9090',
+          generator_id: 'gen-a',
+          region: 'east',
+          status: 'connected',
+          supported_protocols: ['http'],
+          compatibility_state: 'compatible',
+          drain_state: 'active',
+          capacity_state: 'available',
+          health_score: 100,
+          available_capacity: 100,
+          active_vusers: 0,
+          cpu_percent: 0,
+          memory_bytes: 0,
+          goroutine_count: 1,
+          cpu_limit_cores: 4,
+          memory_limit_bytes: 8_589_934_592,
+          max_vusers: 100,
+        },
+        {
+          target: 'gen-b:9090',
+          generator_id: 'gen-b',
+          region: 'west',
+          status: 'connected',
+          supported_protocols: ['http'],
+          compatibility_state: 'compatible',
+          drain_state: 'active',
+          capacity_state: 'available',
+          health_score: 100,
+          available_capacity: 200,
+          active_vusers: 0,
+          cpu_percent: 0,
+          memory_bytes: 0,
+          goroutine_count: 1,
+          cpu_limit_cores: 4,
+          memory_limit_bytes: 8_589_934_592,
+          max_vusers: 200,
         },
       ],
     })
@@ -630,6 +675,96 @@ describe('NewTestPage', () => {
           iterations: 4,
           log_level: 'extended',
           pacing: { type: 'fixed_delay', delay_ms: 750 },
+        },
+      })],
+    }))
+  })
+
+  it('saves per-group host sharding as a run-only assignment override', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Checkout Smoke',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          scripts: [
+            { order: 1, name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Script', protocol: 'http', vusers: 30, ramp_up: '1m' },
+          ],
+          script_count: 1,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+
+    const editButton = Array.from(container.querySelectorAll('.new-test-script-table button')).find(button => button.textContent === 'Edit')
+    await act(async () => {
+      editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const modal = container.querySelector('.run-group-modal') as HTMLElement | null
+    expect(modal).toBeTruthy()
+    if (!modal) return
+
+    const shardingRadio = Array.from(modal.querySelectorAll('label')).find(label => label.textContent?.includes('Specific host sharding'))?.querySelector('input') as HTMLInputElement | null
+    expect(shardingRadio).toBeTruthy()
+    await act(async () => {
+      shardingRadio?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const hostCheckboxes = Array.from(modal.querySelectorAll('.new-test-generator-option input')) as HTMLInputElement[]
+    expect(hostCheckboxes).toHaveLength(2)
+    await act(async () => {
+      hostCheckboxes.forEach(checkbox => checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    })
+
+    expect(modal.textContent).toContain('Sharded: 2 hosts, capacity weighted')
+    expect(modal.textContent).toContain('300 selected VUser capacity')
+
+    const saveButton = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run')
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const scriptGroupsTableText = container.querySelector('.new-test-script-table')?.textContent || ''
+    expect(scriptGroupsTableText).toContain('Placement')
+    expect(scriptGroupsTableText).toContain('Sharded: 2 hosts, capacity weighted')
+    expect(container.textContent).toContain('Host Placement')
+    expect(container.textContent).toContain('1 sharded group')
+
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
+    await act(async () => {
+      createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+      scenario_id: 'scenario-1',
+      groups: [expect.objectContaining({
+        name: 'Checkout',
+        script_id: 'script-1',
+        vusers: 30,
+        ramp_up: '1m',
+        assignment: {
+          mode: 'specific_hosts',
+          selected_targets: ['gen-a:9090', 'gen-b:9090'],
+          shard_strategy: 'capacity_weighted',
         },
       })],
     }))
