@@ -10,6 +10,7 @@ export interface TestGroup {
   ramp_down?: string
   stages?: LoadStageDraft[]
   iterations?: number
+  runtime_settings?: RuntimeSettingsOverride
   initialization?: 'at_runtime' | 'at_once'
 }
 
@@ -1349,6 +1350,8 @@ export interface StoredScenario {
     ramp_up?: string
     ramp_down?: string
     stages?: LoadStageDraft[]
+    iterations?: number
+    runtime_settings?: RuntimeSettingsOverride
     initialization?: 'at_runtime' | 'at_once'
   }>
   schedules?: ScenarioSchedule[]

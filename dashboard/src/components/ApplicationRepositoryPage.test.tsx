@@ -12,16 +12,31 @@ const repositoryApiMock = {
   listProjectReleases: vi.fn(),
   createRepositoryCategory: vi.fn(),
   createProjectRelease: vi.fn(),
+  archiveRelease: vi.fn(),
+  deleteRelease: vi.fn(),
 }
 
 vi.mock('../hooks/api/useRepositoryApi', () => ({
   useRepositoryApi: () => repositoryApiMock,
 }))
 
+const projectApiMock = {
+  deleteProject: vi.fn(),
+}
+
+vi.mock('../hooks/api/useProjectApi', () => ({
+  useProjectApi: () => projectApiMock,
+}))
+
 const scriptApiMock = {
   listScripts: vi.fn(),
   listScenarios: vi.fn(),
   listDataPools: vi.fn(),
+  getDataPool: vi.fn(),
+  updateDataPool: vi.fn(),
+  deleteScript: vi.fn(),
+  deleteScenario: vi.fn(),
+  deleteDataPool: vi.fn(),
 }
 
 vi.mock('../hooks/api/useScriptApi', () => ({
@@ -30,6 +45,7 @@ vi.mock('../hooks/api/useScriptApi', () => ({
 
 const testApiMock = {
   listTests: vi.fn(),
+  deleteTest: vi.fn(),
 }
 
 vi.mock('../hooks/api/useTestApi', () => ({
@@ -68,6 +84,10 @@ function setSelectValue(select: HTMLSelectElement, value: string) {
   select.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
+function findCheckbox(container: HTMLElement, label: string): HTMLInputElement | undefined {
+  return Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => input.getAttribute('aria-label') === label) as HTMLInputElement | undefined
+}
+
 describe('ApplicationRepositoryPage', () => {
   let container: HTMLDivElement
   let root: Root
@@ -79,6 +99,9 @@ describe('ApplicationRepositoryPage', () => {
     repositoryApiMock.listProjectReleases.mockResolvedValue({ releases: [{ id: 'release-1', application_id: 'app-1', project_id: project.id, name: '2026.05', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }], count: 1 })
     repositoryApiMock.createRepositoryCategory.mockResolvedValue({ id: 'category-2', domain_id: domain.id, repository_id: repository.id, name: 'Search', created_at: '', updated_at: '' })
     repositoryApiMock.createProjectRelease.mockResolvedValue({ id: 'release-2', application_id: 'app-1', project_id: project.id, name: '2026.06', created_at: '', updated_at: '' })
+    repositoryApiMock.archiveRelease.mockResolvedValue({ id: 'release-1', application_id: 'app-1', project_id: project.id, name: '2026.05', archived_at: '2026-05-10T00:00:00Z', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' })
+    repositoryApiMock.deleteRelease.mockResolvedValue({ deleted: 'release-1' })
+    projectApiMock.deleteProject.mockResolvedValue({ deleted: project.id })
     scriptApiMock.listScripts.mockResolvedValue({
       scripts: [{
         id: 'script-1',
@@ -116,6 +139,31 @@ describe('ApplicationRepositoryPage', () => {
       }],
       count: 1,
     })
+    scriptApiMock.getDataPool.mockResolvedValue({
+      data_pool: {
+        id: 'pool-1',
+        name: 'Checkout Users',
+        description: 'Seeded user pool',
+        project_id: project.id,
+        schema: { username: 'string' },
+        created_at: '2026-05-06T00:00:00Z',
+        updated_at: '2026-05-07T00:00:00Z',
+      },
+      rows: [],
+    })
+    scriptApiMock.updateDataPool.mockResolvedValue({
+      id: 'pool-1',
+      name: 'Checkout Users',
+      description: 'Seeded user pool',
+      project_id: project.id,
+      schema: { username: 'string' },
+      archived_at: '2026-05-10T00:00:00Z',
+      created_at: '2026-05-06T00:00:00Z',
+      updated_at: '2026-05-07T00:00:00Z',
+    })
+    scriptApiMock.deleteScript.mockResolvedValue({ deleted: 'script-1' })
+    scriptApiMock.deleteScenario.mockResolvedValue({ deleted: 'scenario-1' })
+    scriptApiMock.deleteDataPool.mockResolvedValue({ deleted: 'pool-1' })
     testApiMock.listTests.mockResolvedValue({
       tests: [{
         id: 'test-1',
@@ -131,6 +179,7 @@ describe('ApplicationRepositoryPage', () => {
       }],
       count: 1,
     })
+    testApiMock.deleteTest.mockResolvedValue({ deleted: 'test-1' })
   })
 
   afterEach(() => {
@@ -253,5 +302,79 @@ describe('ApplicationRepositoryPage', () => {
     expect(container.textContent).toContain('Scripts: unable to load 1 project (Forbidden)')
     expect(container.textContent).toContain('Checkout API')
     expect(container.textContent).toContain('2026.05')
+  })
+
+  it('selects multiple repository items and bulk archives or deletes eligible rows', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => {
+      root.render(
+        <ApplicationRepositoryPage
+          domains={[domain]}
+          activeDomain={domain}
+          applicationRepository={repository}
+          categories={[category]}
+          projects={[project]}
+          canManageRepository
+          canManageProjects
+          canManageReleases
+          onDomainChange={vi.fn()}
+          onRepositoryRefresh={vi.fn()}
+          onProjectsRefresh={vi.fn()}
+          onProjectCreated={vi.fn()}
+          onOpenScript={vi.fn()}
+          onOpenTest={vi.fn()}
+          onCreateTestFromScenario={vi.fn()}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const releaseCheckbox = findCheckbox(container, 'Select 2026.05')
+    const dataPoolCheckbox = findCheckbox(container, 'Select Checkout Users')
+    expect(releaseCheckbox).toBeDefined()
+    expect(dataPoolCheckbox).toBeDefined()
+
+    await act(async () => {
+      releaseCheckbox?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      dataPoolCheckbox?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('2 items selected')
+    expect(container.textContent).toContain('Archive selected (2)')
+
+    await act(async () => {
+      findButton(container, 'Archive selected (2)')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(confirmSpy).toHaveBeenCalledWith('Archive 2 selected items?')
+    expect(repositoryApiMock.archiveRelease).toHaveBeenCalledWith('release-1')
+    expect(scriptApiMock.getDataPool).toHaveBeenCalledWith('pool-1')
+    expect(scriptApiMock.updateDataPool).toHaveBeenCalledWith('pool-1', expect.objectContaining({
+      name: 'Checkout Users',
+      description: 'Seeded user pool',
+      project_id: project.id,
+      schema: { username: 'string' },
+      archived_at: expect.any(String),
+    }))
+    expect(container.textContent).toContain('Archived 2 selected items.')
+
+    await act(async () => {
+      findCheckbox(container, 'Select Checkout Smoke')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      findCheckbox(container, 'Select Checkout Run')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Delete selected (2)')
+    await act(async () => {
+      findButton(container, 'Delete selected (2)')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(confirmSpy).toHaveBeenCalledWith('Delete 2 selected items? This cannot be undone.')
+    expect(testApiMock.deleteTest).toHaveBeenCalledWith('test-1')
+    expect(scriptApiMock.deleteScript).toHaveBeenCalledWith('script-1')
+    expect(container.textContent).toContain('Deleted 2 selected items.')
+
+    confirmSpy.mockRestore()
   })
 })

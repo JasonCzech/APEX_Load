@@ -71,6 +71,8 @@ type TestCreateGroupEntry = {
     target_vusers?: number
     target_tps?: number
   }>
+  iterations?: number
+  runtime_settings?: RuntimeSettingsOverride
   initialization?: 'at_runtime' | 'at_once'
 }
 

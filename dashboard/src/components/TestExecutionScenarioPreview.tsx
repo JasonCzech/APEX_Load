@@ -3,7 +3,7 @@ import {
   Tooltip, ResponsiveContainer, Legend, ReferenceArea,
 } from 'recharts'
 
-import { CapacityAdvisory, ScriptShakeoutReport, TestSummary } from '../types'
+import { CapacityAdvisory, RuntimeSettingsOverride, ScriptShakeoutReport, TestSummary } from '../types'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { QueuedScenarioPreview, QueuedScenarioRow, ScenarioScriptDetail } from './testExecutionScenarioModel'
 import { formatTimeCompact } from '../utils/timeUtils'
@@ -102,6 +102,37 @@ function formatOverrideThinkTime(test: TestSummary): string {
   return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
 }
 
+function formatRuntimePacingOverride(pacing?: RuntimeSettingsOverride['pacing']): string | null {
+  if (!pacing?.type) return null
+  if (pacing.type === 'none') return 'None'
+  if (pacing.type === 'fixed_delay') return `Fixed delay · ${pacing.delay_ms || 0}ms`
+  if (pacing.type === 'fixed_interval') return `Fixed interval · ${pacing.interval_ms || 0}ms`
+  if (pacing.type === 'tps') return `Target TPS · ${pacing.tps || 0}`
+  return pacing.type.replace(/_/g, ' ')
+}
+
+function formatRuntimeThinkTimeOverride(thinkTime?: RuntimeSettingsOverride['think_time']): string | null {
+  if (!thinkTime) return null
+  if (thinkTime.ignore) return 'Disabled'
+  return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
+}
+
+function formatEffectivePacing(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+  const groupOverride = formatRuntimePacingOverride(group.runtime_settings?.pacing)
+  if (groupOverride) return `${groupOverride} (group override)`
+  const testOverride = formatRuntimePacingOverride(test.runtime_settings?.pacing)
+  if (testOverride) return `${testOverride} (scenario override)`
+  return formatPacingLabel(scriptDetail)
+}
+
+function formatEffectiveThinkTime(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+  const groupOverride = formatRuntimeThinkTimeOverride(group.runtime_settings?.think_time)
+  if (groupOverride) return `${groupOverride} (group override)`
+  const testOverride = formatRuntimeThinkTimeOverride(test.runtime_settings?.think_time)
+  if (testOverride) return `${testOverride} (scenario override)`
+  return formatThinkTimeLabel(scriptDetail)
+}
+
 function formatContinueOnError(test: TestSummary): string {
   const override = test.runtime_settings?.error_handling?.continue_on_error
   if (override === undefined) return 'Script default'
@@ -109,6 +140,7 @@ function formatContinueOnError(test: TestSummary): string {
 }
 
 function formatEffectiveIterations(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+  if (group.runtime_settings?.iterations !== undefined) return `${group.runtime_settings.iterations} (group override)`
   if (group.iterations !== undefined) return `${group.iterations} (group override)`
   const override = test.runtime_settings?.iterations
   if (override !== undefined) return `${override} (scenario override)`
@@ -117,19 +149,25 @@ function formatEffectiveIterations(group: TestSummary['groups'][number], scriptD
   return `${iterations}`
 }
 
-function formatEffectiveAutoTransactions(scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+function formatEffectiveAutoTransactions(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+  const groupOverride = group.runtime_settings?.auto_transactions
+  if (groupOverride) return `${groupOverride} (group override)`
   const override = test.runtime_settings?.auto_transactions
   if (override) return `${override} (scenario override)`
   return scriptDetail?.script?.config?.run_logic?.auto_transactions || 'none'
 }
 
-function formatEffectiveLogLevel(scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+function formatEffectiveLogLevel(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+  const groupOverride = group.runtime_settings?.log_level
+  if (groupOverride) return `${groupOverride} (group override)`
   const override = test.runtime_settings?.log_level
   if (override) return `${override} (scenario override)`
   return scriptDetail?.script?.config?.log?.level || 'standard'
 }
 
-function formatSnapshotOnError(scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+function formatSnapshotOnError(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+  const groupOverride = group.runtime_settings?.error_handling?.snapshot_on_error
+  if (groupOverride !== undefined) return groupOverride ? 'Enabled (group override)' : 'Disabled (group override)'
   const override = test.runtime_settings?.error_handling?.snapshot_on_error
   if (override !== undefined) return override ? 'Enabled (scenario override)' : 'Disabled (scenario override)'
   return scriptDetail?.script?.config?.error_handling?.snapshot_on_error ? 'Enabled' : 'Disabled'
@@ -583,11 +621,11 @@ export default function TestExecutionScenarioPreview({
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Think Time</span>
-                            <span className="scenario-script-detail-value">{formatThinkTimeLabel(detail)}</span>
+                            <span className="scenario-script-detail-value">{formatEffectiveThinkTime(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Pacing</span>
-                            <span className="scenario-script-detail-value">{formatPacingLabel(detail)}</span>
+                            <span className="scenario-script-detail-value">{formatEffectivePacing(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Iterations</span>
@@ -595,15 +633,15 @@ export default function TestExecutionScenarioPreview({
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Auto Transactions</span>
-                            <span className="scenario-script-detail-value">{formatEffectiveAutoTransactions(detail, test)}</span>
+                            <span className="scenario-script-detail-value">{formatEffectiveAutoTransactions(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Log Level</span>
-                            <span className="scenario-script-detail-value">{formatEffectiveLogLevel(detail, test)}</span>
+                            <span className="scenario-script-detail-value">{formatEffectiveLogLevel(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Snapshot On Error</span>
-                            <span className="scenario-script-detail-value">{formatSnapshotOnError(detail, test)}</span>
+                            <span className="scenario-script-detail-value">{formatSnapshotOnError(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">HTTP Runtime</span>

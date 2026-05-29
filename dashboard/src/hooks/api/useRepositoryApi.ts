@@ -78,6 +78,10 @@ export function useRepositoryApi() {
     [],
   )
 
+  const archiveRelease = useCallback((id: string) => request<Release>(`/releases/${id}/archive`, { method: 'POST' }), [])
+
+  const deleteRelease = useCallback((id: string) => request<DeleteEntityResponse>(`/releases/${id}`, { method: 'DELETE' }), [])
+
   return useMemo(
     () => ({
       listDomains,
@@ -92,6 +96,8 @@ export function useRepositoryApi() {
       deleteRepositoryCategory,
       listProjectReleases,
       createProjectRelease,
+      archiveRelease,
+      deleteRelease,
     }),
     [
       listDomains,
@@ -106,6 +112,8 @@ export function useRepositoryApi() {
       deleteRepositoryCategory,
       listProjectReleases,
       createProjectRelease,
+      archiveRelease,
+      deleteRelease,
     ],
   )
 }

@@ -12,6 +12,7 @@ import {
   TestSummary,
 } from '../types'
 import { useRepositoryApi } from '../hooks/api/useRepositoryApi'
+import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useScriptApi } from '../hooks/api/useScriptApi'
 import { useTestApi } from '../hooks/api/useTestApi'
 import StatusBadge from './StatusBadge'
@@ -86,6 +87,15 @@ const DEFAULT_FILTERS: RepositoryCatalogFilters = {
 const DEFAULT_SORT: RepositoryCatalogSort = {
   key: 'last_activity',
   direction: 'desc',
+}
+
+const BULK_DELETE_ORDER: Record<RepositoryAssetKind, number> = {
+  test: 0,
+  scenario: 1,
+  script: 2,
+  data_pool: 3,
+  release: 4,
+  project: 5,
 }
 
 const TIMEFRAME_OPTIONS = [
@@ -166,6 +176,10 @@ function renderStatus(row: RepositoryAssetRow) {
   return <span className={`repository-status-pill ${statusTone(row.status)}`}>{row.status || 'Unknown'}</span>
 }
 
+function repositoryRowKey(row: RepositoryAssetRow) {
+  return `${row.kind}:${row.id}`
+}
+
 export default function ApplicationRepositoryPage({
   domains,
   activeDomain,
@@ -184,6 +198,7 @@ export default function ApplicationRepositoryPage({
   onCreateTestFromScenario,
 }: Props) {
   const repositoryApi = useRepositoryApi()
+  const projectApi = useProjectApi()
   const scriptApi = useScriptApi()
   const testApi = useTestApi()
   const [newCategoryName, setNewCategoryName] = useState('')
@@ -200,6 +215,8 @@ export default function ApplicationRepositoryPage({
   const [catalogLoading, setCatalogLoading] = useState(false)
   const [catalogWarnings, setCatalogWarnings] = useState<Record<string, string>>({})
   const [catalogLoadedAt, setCatalogLoadedAt] = useState('')
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Set<string>>(() => new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
 
@@ -369,6 +386,36 @@ export default function ApplicationRepositoryPage({
 
   const visibleRows = useMemo(() => sortRepositoryRows(filteredRows, sort), [filteredRows, sort])
 
+  useEffect(() => {
+    const validKeys = new Set(catalogRows.map(repositoryRowKey))
+    setSelectedRowKeys(prev => {
+      if (prev.size === 0) return prev
+      let changed = false
+      const next = new Set<string>()
+      prev.forEach(key => {
+        if (validKeys.has(key)) {
+          next.add(key)
+        } else {
+          changed = true
+        }
+      })
+      return changed ? next : prev
+    })
+  }, [catalogRows])
+
+  const selectedRows = useMemo(
+    () => catalogRows.filter(row => selectedRowKeys.has(repositoryRowKey(row))),
+    [catalogRows, selectedRowKeys],
+  )
+
+  const selectedVisibleRows = useMemo(
+    () => visibleRows.filter(row => selectedRowKeys.has(repositoryRowKey(row))),
+    [selectedRowKeys, visibleRows],
+  )
+
+  const allVisibleRowsSelected = visibleRows.length > 0 && selectedVisibleRows.length === visibleRows.length
+  const hasPartialVisibleSelection = selectedVisibleRows.length > 0 && !allVisibleRowsSelected
+
   const filterActive = filters.query.trim()
     || filters.projectId !== 'all'
     || filters.releaseId !== 'all'
@@ -429,6 +476,153 @@ export default function ApplicationRepositoryPage({
     setSort(prev => prev.key === key
       ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
       : { key, direction: key === 'name' || key === 'kind' || key === 'project' || key === 'release' ? 'asc' : 'desc' })
+  }
+
+  const toggleVisibleRowsSelection = () => {
+    setSelectedRowKeys(prev => {
+      const next = new Set(prev)
+      if (allVisibleRowsSelected) {
+        visibleRows.forEach(row => next.delete(repositoryRowKey(row)))
+      } else {
+        visibleRows.forEach(row => next.add(repositoryRowKey(row)))
+      }
+      return next
+    })
+  }
+
+  const toggleRowSelection = (row: RepositoryAssetRow) => {
+    const key = repositoryRowKey(row)
+    setSelectedRowKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
+
+  const clearSelectedRows = () => {
+    setSelectedRowKeys(new Set())
+  }
+
+  const canDeleteRow = useCallback((row: RepositoryAssetRow) => {
+    if (row.kind === 'project') return canManageProjects
+    if (row.kind === 'release') return canManageReleases
+    return canManageRepository
+  }, [canManageProjects, canManageReleases, canManageRepository])
+
+  const canArchiveRow = useCallback((row: RepositoryAssetRow) => {
+    if (row.archived) return false
+    if (row.kind === 'release') return canManageReleases
+    if (row.kind === 'data_pool') return canManageRepository
+    return false
+  }, [canManageReleases, canManageRepository])
+
+  const deletableSelectedRows = useMemo(
+    () => selectedRows.filter(canDeleteRow).sort((left, right) => BULK_DELETE_ORDER[left.kind] - BULK_DELETE_ORDER[right.kind]),
+    [canDeleteRow, selectedRows],
+  )
+
+  const archiveableSelectedRows = useMemo(
+    () => selectedRows.filter(canArchiveRow),
+    [canArchiveRow, selectedRows],
+  )
+
+  const deleteRepositoryRow = useCallback(async (row: RepositoryAssetRow) => {
+    switch (row.kind) {
+      case 'project':
+        await projectApi.deleteProject(row.id)
+        break
+      case 'release':
+        await repositoryApi.deleteRelease(row.id)
+        break
+      case 'script':
+        await scriptApi.deleteScript(row.id)
+        break
+      case 'scenario':
+        await scriptApi.deleteScenario(row.id)
+        break
+      case 'test':
+        await testApi.deleteTest(row.id)
+        break
+      case 'data_pool':
+        await scriptApi.deleteDataPool(row.id)
+        break
+      default:
+        break
+    }
+  }, [projectApi, repositoryApi, scriptApi, testApi])
+
+  const archiveRepositoryRow = useCallback(async (row: RepositoryAssetRow) => {
+    if (row.kind === 'release') {
+      await repositoryApi.archiveRelease(row.id)
+      return
+    }
+    if (row.kind === 'data_pool') {
+      const details = await scriptApi.getDataPool(row.id)
+      const pool = details.data_pool
+      await scriptApi.updateDataPool(row.id, {
+        name: pool.name || row.name,
+        description: pool.description,
+        schema: pool.schema,
+        project_id: pool.project_id || row.projectId,
+        archived_at: new Date().toISOString(),
+      })
+    }
+  }, [repositoryApi, scriptApi])
+
+  const refreshAfterBulkChange = useCallback(async (rows: RepositoryAssetRow[]) => {
+    if (rows.some(row => row.kind === 'project')) {
+      await onProjectsRefresh()
+      return
+    }
+    await refreshCatalogAssets()
+  }, [onProjectsRefresh, refreshCatalogAssets])
+
+  const handleBulkDelete = async () => {
+    if (bulkBusy || deletableSelectedRows.length === 0) return
+    const count = deletableSelectedRows.length
+    if (!window.confirm(`Delete ${plural(count, 'selected item')}? This cannot be undone.`)) return
+    setBulkBusy(true)
+    setError('')
+    setStatus('')
+    try {
+      for (const row of deletableSelectedRows) {
+        await deleteRepositoryRow(row)
+      }
+      const deletedKeys = new Set(deletableSelectedRows.map(repositoryRowKey))
+      setSelectedRowKeys(prev => new Set(Array.from(prev).filter(key => !deletedKeys.has(key))))
+      await refreshAfterBulkChange(deletableSelectedRows)
+      const unchanged = selectedRows.length - deletableSelectedRows.length
+      setStatus(`Deleted ${plural(count, 'selected item')}${unchanged > 0 ? `; ${plural(unchanged, 'item')} unchanged.` : '.'}`)
+    } catch (err) {
+      setError(getErrorMessage(err, 'Unable to delete selected repository items.'))
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  const handleBulkArchive = async () => {
+    if (bulkBusy || archiveableSelectedRows.length === 0) return
+    const count = archiveableSelectedRows.length
+    if (!window.confirm(`Archive ${plural(count, 'selected item')}?`)) return
+    setBulkBusy(true)
+    setError('')
+    setStatus('')
+    try {
+      await Promise.all(archiveableSelectedRows.map(archiveRepositoryRow))
+      const archivedKeys = new Set(archiveableSelectedRows.map(repositoryRowKey))
+      setSelectedRowKeys(prev => new Set(Array.from(prev).filter(key => !archivedKeys.has(key))))
+      await refreshAfterBulkChange(archiveableSelectedRows)
+      const unchanged = selectedRows.length - archiveableSelectedRows.length
+      setStatus(`Archived ${plural(count, 'selected item')}${unchanged > 0 ? `; ${plural(unchanged, 'item')} unchanged.` : '.'}`)
+    } catch (err) {
+      setError(getErrorMessage(err, 'Unable to archive selected repository items.'))
+    } finally {
+      setBulkBusy(false)
+    }
   }
 
   const renderRowAction = (row: RepositoryAssetRow) => {
@@ -622,6 +816,36 @@ export default function ApplicationRepositoryPage({
           </div>
         )}
 
+        {activeTab !== 'structure' && selectedRows.length > 0 && (
+          <div className="repository-bulk-bar" role="region" aria-label="Bulk repository actions">
+            <div className="repository-bulk-summary">
+              <strong>{plural(selectedRows.length, 'item')} selected</strong>
+              <span>{archiveableSelectedRows.length > 0 ? plural(archiveableSelectedRows.length, 'archiveable item') : 'No archiveable items'}</span>
+            </div>
+            <div className="repository-bulk-actions">
+              <button
+                type="button"
+                className="repository-row-action"
+                onClick={handleBulkArchive}
+                disabled={bulkBusy || archiveableSelectedRows.length === 0}
+              >
+                Archive selected ({archiveableSelectedRows.length})
+              </button>
+              <button
+                type="button"
+                className="repository-row-action danger"
+                onClick={handleBulkDelete}
+                disabled={bulkBusy || deletableSelectedRows.length === 0}
+              >
+                Delete selected ({deletableSelectedRows.length})
+              </button>
+              <button type="button" className="repository-row-action" onClick={clearSelectedRows} disabled={bulkBusy}>
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'structure' ? (
           <div className="repository-structure-panel">
             {canManageRepository && activeDomain && (
@@ -700,6 +924,17 @@ export default function ApplicationRepositoryPage({
             <table>
               <thead>
                 <tr>
+                  <th className="repository-select-cell">
+                    <input
+                      type="checkbox"
+                      className="repository-select-checkbox"
+                      aria-label="Select all visible repository items"
+                      aria-checked={allVisibleRowsSelected ? 'true' : hasPartialVisibleSelection ? 'mixed' : 'false'}
+                      checked={allVisibleRowsSelected}
+                      disabled={visibleRows.length === 0}
+                      onChange={toggleVisibleRowsSelection}
+                    />
+                  </th>
                   <th className="sortable" onClick={() => updateSort('name')}>Asset <span className={`sort-icon ${sort.key === 'name' ? 'active' : ''}`}>{sortIndicator(sort, 'name')}</span></th>
                   <th className="sortable" onClick={() => updateSort('kind')}>Type <span className={`sort-icon ${sort.key === 'kind' ? 'active' : ''}`}>{sortIndicator(sort, 'kind')}</span></th>
                   <th className="sortable" onClick={() => updateSort('project')}>Project <span className={`sort-icon ${sort.key === 'project' ? 'active' : ''}`}>{sortIndicator(sort, 'project')}</span></th>
@@ -712,7 +947,16 @@ export default function ApplicationRepositoryPage({
               </thead>
               <tbody>
                 {visibleRows.map(row => (
-                  <tr key={`${row.kind}:${row.id}`}>
+                  <tr key={repositoryRowKey(row)}>
+                    <td className="repository-select-cell">
+                      <input
+                        type="checkbox"
+                        className="repository-select-checkbox"
+                        aria-label={`Select ${row.name}`}
+                        checked={selectedRowKeys.has(repositoryRowKey(row))}
+                        onChange={() => toggleRowSelection(row)}
+                      />
+                    </td>
                     <td>
                       <div className="repository-asset-name">
                         <strong>{row.name}</strong>
@@ -757,7 +1001,7 @@ export default function ApplicationRepositoryPage({
                 ))}
                 {visibleRows.length === 0 && (
                   <tr className="no-hover">
-                    <td colSpan={8}>
+                    <td colSpan={9}>
                       <div className="repository-empty table-empty">
                         {catalogLoading ? 'Loading repository assets...' : filterActive ? 'No assets match the current filters.' : 'No assets found for this domain.'}
                       </div>

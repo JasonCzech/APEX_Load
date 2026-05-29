@@ -207,19 +207,20 @@ type VUserRampStatus struct {
 }
 
 type TestGroup struct {
-	Name           string                `json:"name"`
-	ScriptID       string                `json:"script_id"`
-	ScriptName     string                `json:"script_name"`
-	Protocol       string                `json:"protocol"`
-	VUsers         int                   `json:"vusers"`
-	RampUp         string                `json:"ramp_up,omitempty"`
-	RampDown       string                `json:"ramp_down,omitempty"`
-	Stages         []storage.LoadStage   `json:"stages,omitempty"`
-	Iterations     *int                  `json:"iterations,omitempty"`
-	RunLogicGoals  *RunLogicGoalSnapshot `json:"run_logic_goals,omitempty"`
-	Initialization string                `json:"initialization,omitempty"`
-	rampUpDur      time.Duration
-	script         *dsl.Script
+	Name            string                   `json:"name"`
+	ScriptID        string                   `json:"script_id"`
+	ScriptName      string                   `json:"script_name"`
+	Protocol        string                   `json:"protocol"`
+	VUsers          int                      `json:"vusers"`
+	RampUp          string                   `json:"ramp_up,omitempty"`
+	RampDown        string                   `json:"ramp_down,omitempty"`
+	Stages          []storage.LoadStage      `json:"stages,omitempty"`
+	Iterations      *int                     `json:"iterations,omitempty"`
+	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
+	RunLogicGoals   *RunLogicGoalSnapshot    `json:"run_logic_goals,omitempty"`
+	Initialization  string                   `json:"initialization,omitempty"`
+	rampUpDur       time.Duration
+	script          *dsl.Script
 }
 
 type RunLogicGoalSnapshot struct {
@@ -1682,6 +1683,25 @@ type CreateTestRequest struct {
 	RampUp   string `json:"ramp_up,omitempty"`
 	// Test-level runtime overrides (mirrors LR Controller override behavior)
 	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
+
+	scriptShakeoutProvided   bool
+	resourceBaselineProvided bool
+}
+
+func (req *CreateTestRequest) UnmarshalJSON(data []byte) error {
+	type createTestRequestAlias CreateTestRequest
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	var decoded createTestRequestAlias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*req = CreateTestRequest(decoded)
+	_, req.scriptShakeoutProvided = raw["script_shakeout"]
+	_, req.resourceBaselineProvided = raw["resource_baseline"]
+	return nil
 }
 
 type CreateScenarioRequest struct {
@@ -1735,14 +1755,15 @@ type RuntimeSettingsOverride struct {
 }
 
 type CreateGroupEntry struct {
-	Name         string              `json:"name"`
-	ScriptID     string              `json:"script_id"`
-	VUsers       int                 `json:"vusers"`
-	RampUp       string              `json:"ramp_up,omitempty"`
-	RampDown     string              `json:"ramp_down,omitempty"`
-	Stages       []storage.LoadStage `json:"stages,omitempty"`
-	Iterations   *int                `json:"iterations,omitempty"`
-	InitStrategy string              `json:"initialization,omitempty"` // "at_runtime", "at_once"
+	Name            string                   `json:"name"`
+	ScriptID        string                   `json:"script_id"`
+	VUsers          int                      `json:"vusers"`
+	RampUp          string                   `json:"ramp_up,omitempty"`
+	RampDown        string                   `json:"ramp_down,omitempty"`
+	Stages          []storage.LoadStage      `json:"stages,omitempty"`
+	Iterations      *int                     `json:"iterations,omitempty"`
+	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
+	InitStrategy    string                   `json:"initialization,omitempty"` // "at_runtime", "at_once"
 }
 
 type StartTestOptions struct {
@@ -2246,10 +2267,10 @@ func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenar
 	req.Name = firstNonEmpty(req.Name, scenario.Name)
 	req.Duration = firstNonEmpty(req.Duration, scenario.Duration)
 	req.ScenarioMode = firstNonEmpty(req.ScenarioMode, scenario.ScenarioMode)
-	if !req.ScriptShakeout {
+	if !req.scriptShakeoutProvided && !req.ScriptShakeout {
 		req.ScriptShakeout = scenario.ScriptShakeout
 	}
-	if !req.ResourceBaseline {
+	if !req.resourceBaselineProvided && !req.ResourceBaseline {
 		req.ResourceBaseline = scenario.ResourceBaseline
 	}
 	if req.StartDelay == "" {
@@ -2408,6 +2429,9 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 	if group.Iterations != nil && *group.Iterations < 1 {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: iterations must be greater than 0", index)
 	}
+	if group.RuntimeSettings != nil && group.RuntimeSettings.Iterations != nil && *group.RuntimeSettings.Iterations < 1 {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: runtime_settings.iterations must be greater than 0", index)
+	}
 
 	rampUp, err := parseOptionalGroupDuration(rampUpValue, index, "ramp_up")
 	if err != nil {
@@ -2436,33 +2460,39 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: initialization must be at_runtime or at_once", index)
 	}
 
-	testGroup := TestGroup{
-		Name:           name,
-		ScriptID:       group.ScriptID,
-		ScriptName:     script.Name,
-		Protocol:       script.Protocol,
-		VUsers:         vusers,
-		RampUp:         rampUpValue,
-		RampDown:       rampDownValue,
-		Stages:         cloneLoadStages(group.Stages),
-		Iterations:     group.Iterations,
-		RunLogicGoals:  runLogicGoalSnapshot(script.Script),
-		Initialization: initStrategy,
-		rampUpDur:      rampUp,
-		script:         script.Script,
-	}
-
-	scriptCopy := *script.Script
-	if len(sharedDataSources) > 0 {
-		scriptCopy.DataSources = append(cloneDataSources(scriptCopy.DataSources), sharedDataSources...)
-	}
-	effectiveRuntimeSettings := cloneRuntimeSettings(runtimeSettings)
-	if group.Iterations != nil {
+	effectiveRuntimeSettings := mergeRuntimeSettings(runtimeSettings, group.RuntimeSettings)
+	if group.Iterations != nil && (group.RuntimeSettings == nil || group.RuntimeSettings.Iterations == nil) {
 		if effectiveRuntimeSettings == nil {
 			effectiveRuntimeSettings = &RuntimeSettingsOverride{}
 		}
 		iterations := *group.Iterations
 		effectiveRuntimeSettings.Iterations = &iterations
+	}
+	effectiveIterations := group.Iterations
+	if effectiveRuntimeSettings != nil && effectiveRuntimeSettings.Iterations != nil {
+		iterations := *effectiveRuntimeSettings.Iterations
+		effectiveIterations = &iterations
+	}
+
+	testGroup := TestGroup{
+		Name:            name,
+		ScriptID:        group.ScriptID,
+		ScriptName:      script.Name,
+		Protocol:        script.Protocol,
+		VUsers:          vusers,
+		RampUp:          rampUpValue,
+		RampDown:        rampDownValue,
+		Stages:          cloneLoadStages(group.Stages),
+		Iterations:      effectiveIterations,
+		RuntimeSettings: cloneRuntimeSettings(group.RuntimeSettings),
+		RunLogicGoals:   runLogicGoalSnapshot(script.Script),
+		Initialization:  initStrategy,
+		rampUpDur:       rampUp,
+	}
+
+	scriptCopy := *script.Script
+	if len(sharedDataSources) > 0 {
+		scriptCopy.DataSources = append(cloneDataSources(scriptCopy.DataSources), sharedDataSources...)
 	}
 	if effectiveRuntimeSettings != nil {
 		if err := applyRuntimeOverrides(&scriptCopy, effectiveRuntimeSettings); err != nil {
@@ -2486,6 +2516,7 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 	if err != nil {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: build redaction config: %w", index, err)
 	}
+	testGroup.script = &scriptCopy
 
 	engineGroup := engine.GroupConfig{
 		Name:            name,
@@ -6059,6 +6090,86 @@ func cloneRuntimeSettings(overrides *RuntimeSettingsOverride) *RuntimeSettingsOv
 		copy(clone.RedactionRules, overrides.RedactionRules)
 	}
 	return &clone
+}
+
+func mergeRuntimeSettings(base *RuntimeSettingsOverride, group *RuntimeSettingsOverride) *RuntimeSettingsOverride {
+	if base == nil {
+		return cloneRuntimeSettings(group)
+	}
+	merged := cloneRuntimeSettings(base)
+	if group == nil {
+		return merged
+	}
+	if merged == nil {
+		merged = &RuntimeSettingsOverride{}
+	}
+	if group.Iterations != nil {
+		iterations := *group.Iterations
+		merged.Iterations = &iterations
+	}
+	if group.Pacing != nil {
+		pacing := *group.Pacing
+		merged.Pacing = &pacing
+	}
+	if group.ThinkTime != nil {
+		thinkTime := *group.ThinkTime
+		merged.ThinkTime = &thinkTime
+	}
+	if group.ErrorHandling != nil {
+		errorHandling := *group.ErrorHandling
+		merged.ErrorHandling = &errorHandling
+	}
+	if group.Browser != nil {
+		browser := RuntimeBrowserOverride{}
+		if merged.Browser != nil {
+			browser = *merged.Browser
+			if merged.Browser.Headless != nil {
+				headless := *merged.Browser.Headless
+				browser.Headless = &headless
+			}
+			if merged.Browser.TouchMode != nil {
+				touchMode := *merged.Browser.TouchMode
+				browser.TouchMode = &touchMode
+			}
+		}
+		if group.Browser.Headless != nil {
+			headless := *group.Browser.Headless
+			browser.Headless = &headless
+		}
+		if group.Browser.DeviceProfile != "" {
+			browser.DeviceProfile = group.Browser.DeviceProfile
+		}
+		if group.Browser.TouchMode != nil {
+			touchMode := *group.Browser.TouchMode
+			browser.TouchMode = &touchMode
+		}
+		if group.Browser.Orientation != "" {
+			browser.Orientation = group.Browser.Orientation
+		}
+		merged.Browser = &browser
+	}
+	if group.LogLevel != "" {
+		merged.LogLevel = group.LogLevel
+	}
+	if group.AutoTransactions != "" {
+		merged.AutoTransactions = group.AutoTransactions
+	}
+	if group.BaseURL != "" {
+		merged.BaseURL = group.BaseURL
+	}
+	if len(group.Env) > 0 {
+		if merged.Env == nil {
+			merged.Env = make(map[string]string, len(group.Env))
+		}
+		for key, value := range group.Env {
+			merged.Env[key] = value
+		}
+	}
+	if len(group.RedactionRules) > 0 {
+		merged.RedactionRules = make([]engine.RedactionRule, len(group.RedactionRules))
+		copy(merged.RedactionRules, group.RedactionRules)
+	}
+	return merged
 }
 
 func buildRuntimeRedactionConfig(runtimeSettings *RuntimeSettingsOverride) (*engine.RedactionConfig, error) {

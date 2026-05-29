@@ -1,8 +1,10 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
-import { Application, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, Release, ScenarioSchedule, ScenarioScheduleOccurrence, StoredScenario } from '../types'
+import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Application, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, StoredScenario } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
+import { formatTimeCompact, parseDurationToSeconds } from '../utils/timeUtils'
 import './CreateTestModal.css'
 
 interface Props {
@@ -30,8 +32,136 @@ type ScheduleDraft = {
   availability_end_time: string
 }
 
+type RunDefaultKey =
+  | 'duration'
+  | 'iterations'
+  | 'log_level'
+  | 'auto_transactions'
+  | 'pacing'
+  | 'think_time'
+  | 'continue_on_error'
+  | 'snapshot_on_error'
+  | 'script_shakeout'
+  | 'resource_baseline'
+
+type RunRuntimeOverrideDraft = {
+  iterations?: number | null
+  pacing?: RuntimeSettingsOverride['pacing'] | null
+  think_time?: RuntimeSettingsOverride['think_time'] | null
+  log_level?: string | null
+  auto_transactions?: string | null
+  continue_on_error?: boolean | null
+  snapshot_on_error?: boolean | null
+}
+
+type RunDefaultOverrides = {
+  duration?: string
+  script_shakeout?: boolean
+  resource_baseline?: boolean
+  runtime_settings: RunRuntimeOverrideDraft
+}
+
+type RunDefaultCard = {
+  key: RunDefaultKey
+  label: string
+  value: string
+  scenarioValue: string
+  isDefault: boolean
+  isOverridden: boolean
+}
+
+type RunDefaultEditDraft = {
+  value: string
+  pacingType: string
+  pacingAmount: string
+  thinkIgnore: boolean
+}
+
+type ScenarioScriptGroup = StoredScenario['scripts'][number]
+
+type GroupRunOverride = {
+  vusers?: number
+  ramp_up?: string
+  ramp_down?: string
+  initialization?: 'at_runtime' | 'at_once'
+  runtime_settings?: RuntimeSettingsOverride
+}
+
+type GroupEditDraft = {
+  vusers: string
+  ramp_up: string
+  ramp_down: string
+  initialization: 'at_runtime' | 'at_once'
+  iterations: string
+  log_level: string
+  auto_transactions: string
+  pacingType: string
+  pacingAmount: string
+  thinkTimeMs: string
+  thinkIgnore: boolean
+  continue_on_error: string
+  snapshot_on_error: string
+  browser_device_profile: string
+  browser_headless: string
+  browser_touch_mode: string
+  browser_orientation: string
+}
+
+type RunLoadProfilePreview = {
+  points: Array<Record<string, number>>
+  totalSeconds: number
+  steadySeconds: number
+  preBaselineSeconds: number
+  postBaselineSeconds: number
+  peakVUsers: number
+}
+
+const RESOURCE_BASELINE_SECONDS = 5 * 60
+const LOAD_PROFILE_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2']
+const GLOBAL_RUN_DEFAULT_KEYS = new Set<RunDefaultKey>(['duration', 'script_shakeout', 'resource_baseline'])
+
+function buildEmptyRunDefaultOverrides(): RunDefaultOverrides {
+  return { runtime_settings: {} }
+}
+
+function hasOwnKey(object: object, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(object, key)
+}
+
+function groupOverrideKey(group: ScenarioScriptGroup) {
+  return `${group.order}:${group.script_id}`
+}
+
+function hasRuntimeSettingsValues(settings?: RuntimeSettingsOverride) {
+  if (!settings) return false
+  return settings.iterations !== undefined
+    || Boolean(settings.pacing)
+    || Boolean(settings.think_time)
+    || Boolean(settings.log_level)
+    || Boolean(settings.auto_transactions)
+    || Boolean(settings.error_handling)
+    || Boolean(settings.browser)
+}
+
+function hasGroupOverrideValues(override?: GroupRunOverride) {
+  if (!override) return false
+  return hasOwnKey(override, 'vusers')
+    || hasOwnKey(override, 'ramp_up')
+    || hasOwnKey(override, 'ramp_down')
+    || hasOwnKey(override, 'initialization')
+    || hasRuntimeSettingsValues(override.runtime_settings)
+}
+
+function groupOverrideCount(overrides: Record<string, GroupRunOverride>) {
+  return Object.values(overrides).filter(hasGroupOverrideValues).length
+}
+
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'
+}
+
+function formatCount(value: number, singular: string, plural = `${singular}s`) {
+  return `${value} ${value === 1 ? singular : plural}`
 }
 
 function formatScheduleTimestamp(value?: string) {
@@ -59,8 +189,7 @@ function scheduleStatusTone(value?: string) {
   return ''
 }
 
-function formatRuntimePacing(scenario?: StoredScenario | null) {
-  const pacing = scenario?.runtime_settings?.pacing
+function formatRuntimePacingConfig(pacing?: RuntimeSettingsOverride['pacing'] | null) {
   if (!pacing?.type) return 'Script default'
   if (pacing.type === 'none') return 'None'
   if (pacing.type === 'fixed_delay') return `Fixed delay · ${pacing.delay_ms || 0}ms`
@@ -69,17 +198,367 @@ function formatRuntimePacing(scenario?: StoredScenario | null) {
   return pacing.type.replace(/_/g, ' ')
 }
 
-function formatRuntimeThinkTime(scenario?: StoredScenario | null) {
-  const thinkTime = scenario?.runtime_settings?.think_time
+function formatRuntimePacingTableValue(pacing?: RuntimeSettingsOverride['pacing'] | null) {
+  if (!pacing?.type) return 'Script timing'
+  return formatRuntimePacingConfig(pacing)
+}
+
+function formatRuntimePacing(scenario?: StoredScenario | null) {
+  return formatRuntimePacingConfig(scenario?.runtime_settings?.pacing)
+}
+
+function formatRuntimeThinkTimeConfig(thinkTime?: RuntimeSettingsOverride['think_time'] | null) {
   if (!thinkTime) return 'Script default'
   if (thinkTime.ignore) return 'Disabled'
   return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
 }
 
+function formatRuntimeThinkTimeTableValue(thinkTime?: RuntimeSettingsOverride['think_time'] | null) {
+  if (!thinkTime) return 'Script think time'
+  return formatRuntimeThinkTimeConfig(thinkTime)
+}
+
+function formatRuntimeThinkTime(scenario?: StoredScenario | null) {
+  return formatRuntimeThinkTimeConfig(scenario?.runtime_settings?.think_time)
+}
+
+function formatRuntimeBooleanValue(value?: boolean | null) {
+  if (value === undefined || value === null) return 'Script default'
+  return value ? 'Enabled' : 'Disabled'
+}
+
 function formatRuntimeContinueOnError(scenario?: StoredScenario | null) {
   const value = scenario?.runtime_settings?.error_handling?.continue_on_error
-  if (value === undefined) return 'Script default'
+  return formatRuntimeBooleanValue(value)
+}
+
+function formatEnabledValue(value?: boolean) {
   return value ? 'Enabled' : 'Disabled'
+}
+
+function formatResourceBaselineValue(value?: boolean) {
+  return value ? '5m before and after' : 'Disabled'
+}
+
+function formatRuntimeText(value: string | undefined | null, fallback: string) {
+  if (!value) return fallback
+  const formatted = value.replace(/_/g, ' ')
+  return formatted.charAt(0).toUpperCase() + formatted.slice(1)
+}
+
+function formatRuntimeErrorHandlingTableValue(continueOnError?: boolean, snapshotOnError?: boolean) {
+  const continueLabel = continueOnError ? 'Continue' : 'Stop'
+  const snapshotLabel = snapshotOnError ? 'Snapshot' : 'No snapshot'
+  return `${continueLabel} / ${snapshotLabel}`
+}
+
+function formatRuntimeBrowserTableValue(browser?: RuntimeSettingsOverride['browser']) {
+  if (!browser) return 'Standard'
+  const parts = [
+    browser.device_profile,
+    browser.orientation ? browser.orientation.charAt(0).toUpperCase() + browser.orientation.slice(1) : '',
+    browser.headless === undefined ? '' : browser.headless ? 'Headless' : 'Headed',
+    browser.touch_mode === undefined ? '' : browser.touch_mode ? 'Touch' : 'No touch',
+  ].filter(Boolean)
+  return parts.length ? parts.join(' · ') : 'Standard'
+}
+
+function getEffectiveRunDuration(scenario?: StoredScenario | null, overrides?: RunDefaultOverrides) {
+  return overrides?.duration?.trim() || scenario?.duration || ''
+}
+
+function getEffectiveResourceBaseline(scenario?: StoredScenario | null, overrides?: RunDefaultOverrides) {
+  if (!scenario) return false
+  return hasOwnKey(overrides || {}, 'resource_baseline') ? Boolean(overrides?.resource_baseline) : Boolean(scenario.resource_baseline)
+}
+
+function getEffectiveRuntimeDefaults(scenario: StoredScenario, overrides: RunDefaultOverrides) {
+  const runtimeOverrides = overrides.runtime_settings
+  const scenarioRuntime = scenario.runtime_settings
+  return {
+    iterations: hasOwnKey(runtimeOverrides, 'iterations') ? runtimeOverrides.iterations ?? undefined : scenarioRuntime?.iterations,
+    pacing: hasOwnKey(runtimeOverrides, 'pacing') ? runtimeOverrides.pacing ?? undefined : scenarioRuntime?.pacing,
+    think_time: hasOwnKey(runtimeOverrides, 'think_time') ? runtimeOverrides.think_time ?? undefined : scenarioRuntime?.think_time,
+    browser: scenarioRuntime?.browser,
+    log_level: hasOwnKey(runtimeOverrides, 'log_level') ? runtimeOverrides.log_level || undefined : scenarioRuntime?.log_level,
+    auto_transactions: hasOwnKey(runtimeOverrides, 'auto_transactions') ? runtimeOverrides.auto_transactions || undefined : scenarioRuntime?.auto_transactions,
+    continue_on_error: hasOwnKey(runtimeOverrides, 'continue_on_error') ? runtimeOverrides.continue_on_error ?? undefined : scenarioRuntime?.error_handling?.continue_on_error,
+    snapshot_on_error: hasOwnKey(runtimeOverrides, 'snapshot_on_error') ? runtimeOverrides.snapshot_on_error ?? undefined : scenarioRuntime?.error_handling?.snapshot_on_error,
+  }
+}
+
+function applyGroupOverride(group: ScenarioScriptGroup, override?: GroupRunOverride): ScenarioScriptGroup {
+  if (!override) return group
+  return {
+    ...group,
+    vusers: hasOwnKey(override, 'vusers') ? Number(override.vusers) : group.vusers,
+    ramp_up: hasOwnKey(override, 'ramp_up') ? override.ramp_up : group.ramp_up,
+    ramp_down: hasOwnKey(override, 'ramp_down') ? override.ramp_down : group.ramp_down,
+    initialization: hasOwnKey(override, 'initialization') ? override.initialization : group.initialization,
+  }
+}
+
+function buildEffectiveScenarioGroups(scenario: StoredScenario | undefined, overrides: Record<string, GroupRunOverride>) {
+  return (scenario?.scripts || []).map(group => applyGroupOverride(group, overrides[groupOverrideKey(group)]))
+}
+
+function effectiveGroupIterations(group: ScenarioScriptGroup, scenario: StoredScenario, runDefaultOverrides: RunDefaultOverrides, groupOverride?: GroupRunOverride) {
+  const runDefaults = getEffectiveRuntimeDefaults(scenario, runDefaultOverrides)
+  return groupOverride?.runtime_settings?.iterations ?? runDefaults.iterations ?? group.iterations ?? group.runtime_settings?.iterations
+}
+
+function effectiveGroupRuntimeSettings(group: ScenarioScriptGroup, scenario: StoredScenario, runDefaultOverrides: RunDefaultOverrides, groupOverride?: GroupRunOverride) {
+  const runDefaults = getEffectiveRuntimeDefaults(scenario, runDefaultOverrides)
+  const groupRuntime = group.runtime_settings
+  return {
+    iterations: effectiveGroupIterations(group, scenario, runDefaultOverrides, groupOverride),
+    pacing: groupOverride?.runtime_settings?.pacing ?? runDefaults.pacing ?? groupRuntime?.pacing,
+    think_time: groupOverride?.runtime_settings?.think_time ?? runDefaults.think_time ?? groupRuntime?.think_time,
+    browser: groupOverride?.runtime_settings?.browser ?? runDefaults.browser ?? groupRuntime?.browser,
+    log_level: groupOverride?.runtime_settings?.log_level ?? runDefaults.log_level ?? groupRuntime?.log_level,
+    auto_transactions: groupOverride?.runtime_settings?.auto_transactions ?? runDefaults.auto_transactions ?? groupRuntime?.auto_transactions,
+    continue_on_error: groupOverride?.runtime_settings?.error_handling?.continue_on_error ?? runDefaults.continue_on_error ?? groupRuntime?.error_handling?.continue_on_error,
+    snapshot_on_error: groupOverride?.runtime_settings?.error_handling?.snapshot_on_error ?? runDefaults.snapshot_on_error ?? groupRuntime?.error_handling?.snapshot_on_error,
+  }
+}
+
+function hasRunRuntimeOverrides(overrides: RunDefaultOverrides) {
+  return Object.keys(overrides.runtime_settings).length > 0
+}
+
+function buildRuntimeSettingsForRun(scenario: StoredScenario, overrides: RunDefaultOverrides): RuntimeSettingsOverride | undefined {
+  if (!hasRunRuntimeOverrides(overrides)) return undefined
+  const effective = getEffectiveRuntimeDefaults(scenario, overrides)
+  const runtimeOverrides = overrides.runtime_settings
+  const payload: RuntimeSettingsOverride = {}
+
+  if (effective.iterations !== undefined) payload.iterations = Number(effective.iterations)
+  if (effective.pacing) payload.pacing = { ...effective.pacing }
+  if (effective.think_time) payload.think_time = { ...effective.think_time }
+  if (effective.browser) payload.browser = { ...effective.browser }
+  if (effective.log_level) payload.log_level = effective.log_level
+  if (effective.auto_transactions) payload.auto_transactions = effective.auto_transactions
+
+  const shouldSendErrorHandling = Boolean(scenario.runtime_settings?.error_handling)
+    || hasOwnKey(runtimeOverrides, 'continue_on_error')
+    || hasOwnKey(runtimeOverrides, 'snapshot_on_error')
+  if (shouldSendErrorHandling) {
+    payload.error_handling = {
+      continue_on_error: effective.continue_on_error ?? false,
+      snapshot_on_error: effective.snapshot_on_error ?? false,
+    }
+  }
+
+  return payload
+}
+
+function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], duration: string, startDelay: string | undefined, resourceBaseline: boolean): RunLoadProfilePreview {
+  if (!groups.length) {
+    return {
+      points: [],
+      totalSeconds: 0,
+      steadySeconds: 0,
+      preBaselineSeconds: 0,
+      postBaselineSeconds: 0,
+      peakVUsers: 0,
+    }
+  }
+
+  const steadySeconds = parseDurationToSeconds(duration)
+  const startDelaySeconds = parseDurationToSeconds(startDelay)
+  const preBaselineSeconds = startDelaySeconds + (resourceBaseline ? RESOURCE_BASELINE_SECONDS : 0)
+  const postBaselineSeconds = resourceBaseline ? RESOURCE_BASELINE_SECONDS : 0
+  const maxRampDown = groups.reduce((max, group) => Math.max(max, parseDurationToSeconds(group.ramp_down)), 0)
+  const totalSeconds = preBaselineSeconds + steadySeconds + maxRampDown + postBaselineSeconds
+  if (totalSeconds <= 0) {
+    return { points: [], totalSeconds: 0, steadySeconds, preBaselineSeconds, postBaselineSeconds, peakVUsers: 0 }
+  }
+
+  const step = Math.max(1, Math.floor(totalSeconds / 30))
+  const points: Array<Record<string, number>> = []
+  let peakVUsers = 0
+
+  for (let second = 0; second <= totalSeconds; second += step) {
+    const point: Record<string, number> = { second, total: 0 }
+    groups.forEach((group, index) => {
+      const rampUp = parseDurationToSeconds(group.ramp_up)
+      const rampDown = parseDurationToSeconds(group.ramp_down)
+      const loadSecond = Math.max(0, second - preBaselineSeconds)
+      let value = 0
+
+      if (second < preBaselineSeconds) {
+        value = 0
+      } else if (loadSecond < rampUp) {
+        value = rampUp > 0 ? (loadSecond / rampUp) * group.vusers : group.vusers
+      } else if (loadSecond < steadySeconds) {
+        value = group.vusers
+      } else if (loadSecond < steadySeconds + rampDown) {
+        value = rampDown > 0 ? (1 - ((loadSecond - steadySeconds) / rampDown)) * group.vusers : 0
+      }
+
+      const roundedValue = Math.round(Math.max(0, value))
+      point[`group${index}`] = roundedValue
+      point.total += roundedValue
+    })
+    peakVUsers = Math.max(peakVUsers, point.total)
+    points.push(point)
+  }
+
+  const lastPoint = points[points.length - 1]
+  if (!lastPoint || lastPoint.second < totalSeconds) {
+    const finalPoint: Record<string, number> = { second: totalSeconds, total: 0 }
+    groups.forEach((_, index) => {
+      finalPoint[`group${index}`] = 0
+    })
+    points.push(finalPoint)
+  }
+
+  return {
+    points,
+    totalSeconds,
+    steadySeconds,
+    preBaselineSeconds,
+    postBaselineSeconds,
+    peakVUsers,
+  }
+}
+
+function buildRunDefaultCards(scenario: StoredScenario | undefined, overrides: RunDefaultOverrides): RunDefaultCard[] {
+  if (!scenario) return []
+  const effectiveRuntime = getEffectiveRuntimeDefaults(scenario, overrides)
+  const duration = getEffectiveRunDuration(scenario, overrides)
+  const scriptShakeout = hasOwnKey(overrides, 'script_shakeout') ? overrides.script_shakeout : scenario.script_shakeout
+  const resourceBaseline = hasOwnKey(overrides, 'resource_baseline') ? overrides.resource_baseline : scenario.resource_baseline
+  return [
+    {
+      key: 'duration',
+      label: 'Duration',
+      value: duration,
+      scenarioValue: scenario.duration,
+      isDefault: false,
+      isOverridden: hasOwnKey(overrides, 'duration'),
+    },
+    {
+      key: 'iterations',
+      label: 'Iterations',
+      value: effectiveRuntime.iterations === undefined ? 'Script default' : String(effectiveRuntime.iterations),
+      scenarioValue: String(scenario.runtime_settings?.iterations ?? 'Script default'),
+      isDefault: effectiveRuntime.iterations === undefined,
+      isOverridden: hasOwnKey(overrides.runtime_settings, 'iterations'),
+    },
+    {
+      key: 'log_level',
+      label: 'Log Level',
+      value: effectiveRuntime.log_level || 'Script default',
+      scenarioValue: scenario.runtime_settings?.log_level || 'Script default',
+      isDefault: !effectiveRuntime.log_level,
+      isOverridden: hasOwnKey(overrides.runtime_settings, 'log_level'),
+    },
+    {
+      key: 'auto_transactions',
+      label: 'Auto Transactions',
+      value: effectiveRuntime.auto_transactions || 'Script default',
+      scenarioValue: scenario.runtime_settings?.auto_transactions || 'Script default',
+      isDefault: !effectiveRuntime.auto_transactions,
+      isOverridden: hasOwnKey(overrides.runtime_settings, 'auto_transactions'),
+    },
+    {
+      key: 'pacing',
+      label: 'Pacing',
+      value: formatRuntimePacingConfig(effectiveRuntime.pacing),
+      scenarioValue: formatRuntimePacing(scenario),
+      isDefault: !effectiveRuntime.pacing,
+      isOverridden: hasOwnKey(overrides.runtime_settings, 'pacing'),
+    },
+    {
+      key: 'think_time',
+      label: 'Think Time',
+      value: formatRuntimeThinkTimeConfig(effectiveRuntime.think_time),
+      scenarioValue: formatRuntimeThinkTime(scenario),
+      isDefault: !effectiveRuntime.think_time,
+      isOverridden: hasOwnKey(overrides.runtime_settings, 'think_time'),
+    },
+    {
+      key: 'continue_on_error',
+      label: 'Continue On Error',
+      value: formatRuntimeBooleanValue(effectiveRuntime.continue_on_error),
+      scenarioValue: formatRuntimeContinueOnError(scenario),
+      isDefault: effectiveRuntime.continue_on_error === undefined,
+      isOverridden: hasOwnKey(overrides.runtime_settings, 'continue_on_error'),
+    },
+    {
+      key: 'snapshot_on_error',
+      label: 'Snapshot On Error',
+      value: formatRuntimeBooleanValue(effectiveRuntime.snapshot_on_error),
+      scenarioValue: formatRuntimeBooleanValue(scenario.runtime_settings?.error_handling?.snapshot_on_error),
+      isDefault: effectiveRuntime.snapshot_on_error === undefined,
+      isOverridden: hasOwnKey(overrides.runtime_settings, 'snapshot_on_error'),
+    },
+    {
+      key: 'script_shakeout',
+      label: 'Script Shakeout',
+      value: formatEnabledValue(scriptShakeout),
+      scenarioValue: formatEnabledValue(scenario.script_shakeout),
+      isDefault: false,
+      isOverridden: hasOwnKey(overrides, 'script_shakeout'),
+    },
+    {
+      key: 'resource_baseline',
+      label: 'Resource Baseline',
+      value: formatResourceBaselineValue(resourceBaseline),
+      scenarioValue: formatResourceBaselineValue(scenario.resource_baseline),
+      isDefault: false,
+      isOverridden: hasOwnKey(overrides, 'resource_baseline'),
+    },
+  ]
+}
+
+function buildRunDefaultEditDraft(key: RunDefaultKey, scenario: StoredScenario, overrides: RunDefaultOverrides): RunDefaultEditDraft {
+  const effectiveRuntime = getEffectiveRuntimeDefaults(scenario, overrides)
+  const base: RunDefaultEditDraft = { value: '', pacingType: '', pacingAmount: '', thinkIgnore: false }
+  if (key === 'duration') {
+    return { ...base, value: getEffectiveRunDuration(scenario, overrides) }
+  }
+  if (key === 'iterations') {
+    return { ...base, value: effectiveRuntime.iterations === undefined ? '' : String(effectiveRuntime.iterations) }
+  }
+  if (key === 'log_level') {
+    return { ...base, value: effectiveRuntime.log_level || '' }
+  }
+  if (key === 'auto_transactions') {
+    return { ...base, value: effectiveRuntime.auto_transactions || '' }
+  }
+  if (key === 'pacing') {
+    const pacing = effectiveRuntime.pacing
+    const amount = pacing?.type === 'fixed_delay'
+      ? pacing.delay_ms
+      : pacing?.type === 'fixed_interval'
+        ? pacing.interval_ms
+        : pacing?.type === 'tps'
+          ? pacing.tps
+          : ''
+    return { ...base, pacingType: pacing?.type || '', pacingAmount: amount === undefined ? '' : String(amount) }
+  }
+  if (key === 'think_time') {
+    const thinkTime = effectiveRuntime.think_time
+    return {
+      ...base,
+      value: thinkTime?.ignore ? '' : (thinkTime?.mean_ms === undefined ? '' : String(thinkTime.mean_ms)),
+      thinkIgnore: Boolean(thinkTime?.ignore),
+    }
+  }
+  if (key === 'continue_on_error') {
+    return { ...base, value: effectiveRuntime.continue_on_error === undefined ? '' : String(effectiveRuntime.continue_on_error) }
+  }
+  if (key === 'snapshot_on_error') {
+    return { ...base, value: effectiveRuntime.snapshot_on_error === undefined ? '' : String(effectiveRuntime.snapshot_on_error) }
+  }
+  if (key === 'script_shakeout') {
+    const value = hasOwnKey(overrides, 'script_shakeout') ? overrides.script_shakeout : scenario.script_shakeout
+    return { ...base, value: String(Boolean(value)) }
+  }
+  const value = hasOwnKey(overrides, 'resource_baseline') ? overrides.resource_baseline : scenario.resource_baseline
+  return { ...base, value: String(Boolean(value)) }
 }
 
 const COMMON_TIMEZONES = [
@@ -166,8 +645,17 @@ function totalScenarioVUsers(scenario?: StoredScenario | null) {
   return scenario?.scripts.reduce((sum, script) => sum + (script.vusers || 0), 0) || 0
 }
 
+function totalGroupVUsers(groups: ScenarioScriptGroup[]) {
+  return groups.reduce((sum, script) => sum + (script.vusers || 0), 0)
+}
+
 function scenarioProtocolList(scenario?: StoredScenario | null) {
   const values = new Set((scenario?.scripts || []).map(script => script.protocol || 'http'))
+  return Array.from(values)
+}
+
+function groupProtocolList(groups: ScenarioScriptGroup[]) {
+  const values = new Set(groups.map(script => script.protocol || 'http'))
   return Array.from(values)
 }
 
@@ -191,6 +679,39 @@ function scenarioSearchText(scenario: StoredScenario) {
     ...(scenario.data_pools || []).map(pool => `${pool.alias} ${pool.pool_name || pool.pool_id}`),
     ...(scenario.associated_releases || []).map(release => release.name),
   ].filter(Boolean).join(' ').toLowerCase()
+}
+
+function buildGroupsForRunPayload(scenario: StoredScenario | undefined, overrides: Record<string, GroupRunOverride>) {
+  if (!scenario || groupOverrideCount(overrides) === 0) return undefined
+  return scenario.scripts.map(group => {
+    const key = groupOverrideKey(group)
+    const override = overrides[key]
+    const effective = applyGroupOverride(group, override)
+    return {
+      name: effective.name || effective.script_name || `Group ${effective.order + 1}`,
+      script_id: effective.script_id,
+      vusers: effective.vusers,
+      ramp_up: effective.ramp_up || undefined,
+      ramp_down: effective.ramp_down || undefined,
+      stages: effective.stages,
+      iterations: group.iterations,
+      initialization: effective.initialization || 'at_runtime',
+      ...(override?.runtime_settings ? { runtime_settings: override.runtime_settings } : {}),
+    }
+  })
+}
+
+function buildGroupRuntimeTableValues(group: ScenarioScriptGroup, scenario: StoredScenario, runDefaultOverrides: RunDefaultOverrides, override?: GroupRunOverride) {
+  const runtime = effectiveGroupRuntimeSettings(group, scenario, runDefaultOverrides, override)
+  return {
+    iterations: runtime.iterations === undefined ? 'Duration driven' : String(runtime.iterations),
+    pacing: formatRuntimePacingTableValue(runtime.pacing),
+    thinkTime: formatRuntimeThinkTimeTableValue(runtime.think_time),
+    logLevel: formatRuntimeText(runtime.log_level, 'Standard'),
+    autoTransactions: formatRuntimeText(runtime.auto_transactions, 'None'),
+    errorHandling: formatRuntimeErrorHandlingTableValue(runtime.continue_on_error, runtime.snapshot_on_error),
+    browser: formatRuntimeBrowserTableValue(runtime.browser),
+  }
 }
 
 function buildDefaultScheduleDraft(scenario?: StoredScenario | null, releaseId?: string) {
@@ -220,6 +741,61 @@ function isEffectiveOperationAllowed(resources: DashboardAuthEffectiveAccessReso
   return true
 }
 
+function emptyGroupEditDraft(): GroupEditDraft {
+  return {
+    vusers: '',
+    ramp_up: '',
+    ramp_down: '',
+    initialization: 'at_runtime',
+    iterations: '',
+    log_level: '',
+    auto_transactions: '',
+    pacingType: '',
+    pacingAmount: '',
+    thinkTimeMs: '',
+    thinkIgnore: false,
+    continue_on_error: '',
+    snapshot_on_error: '',
+    browser_device_profile: '',
+    browser_headless: '',
+    browser_touch_mode: '',
+    browser_orientation: '',
+  }
+}
+
+function buildGroupEditDraft(group: ScenarioScriptGroup, override?: GroupRunOverride): GroupEditDraft {
+  const effective = applyGroupOverride(group, override)
+  const runtime = override?.runtime_settings
+  const pacing = runtime?.pacing
+  const pacingAmount = pacing?.type === 'fixed_delay'
+    ? pacing.delay_ms
+    : pacing?.type === 'fixed_interval'
+      ? pacing.interval_ms
+      : pacing?.type === 'tps'
+        ? pacing.tps
+        : ''
+  return {
+    ...emptyGroupEditDraft(),
+    vusers: String(effective.vusers || ''),
+    ramp_up: effective.ramp_up || '',
+    ramp_down: effective.ramp_down || '',
+    initialization: effective.initialization || 'at_runtime',
+    iterations: runtime?.iterations === undefined ? '' : String(runtime.iterations),
+    log_level: runtime?.log_level || '',
+    auto_transactions: runtime?.auto_transactions || '',
+    pacingType: pacing?.type || '',
+    pacingAmount: pacingAmount === undefined ? '' : String(pacingAmount),
+    thinkTimeMs: runtime?.think_time?.mean_ms === undefined ? '' : String(runtime.think_time.mean_ms),
+    thinkIgnore: Boolean(runtime?.think_time?.ignore),
+    continue_on_error: runtime?.error_handling?.continue_on_error === undefined ? '' : String(runtime.error_handling.continue_on_error),
+    snapshot_on_error: runtime?.error_handling?.snapshot_on_error === undefined ? '' : String(runtime.error_handling.snapshot_on_error),
+    browser_device_profile: runtime?.browser?.device_profile || '',
+    browser_headless: runtime?.browser?.headless === undefined ? '' : String(runtime.browser.headless),
+    browser_touch_mode: runtime?.browser?.touch_mode === undefined ? '' : String(runtime.browser.touch_mode),
+    browser_orientation: runtime?.browser?.orientation || '',
+  }
+}
+
 export default function NewTestPage({ activeApplication, activeRelease, releases, initialScenarioId, onSelectTest, onCreateRelease, onOpenScenarioBuilder }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
@@ -242,6 +818,14 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [error, setError] = useState('')
   const [confirmDeleteScheduleId, setConfirmDeleteScheduleId] = useState<string | null>(null)
   const [showAllRuntimeDefaults, setShowAllRuntimeDefaults] = useState(false)
+  const [runDefaultOverrides, setRunDefaultOverrides] = useState<RunDefaultOverrides>(() => buildEmptyRunDefaultOverrides())
+  const [editingDefaultKey, setEditingDefaultKey] = useState<RunDefaultKey | null>(null)
+  const [defaultEditDraft, setDefaultEditDraft] = useState<RunDefaultEditDraft>({ value: '', pacingType: '', pacingAmount: '', thinkIgnore: false })
+  const [defaultSaveNotice, setDefaultSaveNotice] = useState('')
+  const [groupRunOverrides, setGroupRunOverrides] = useState<Record<string, GroupRunOverride>>({})
+  const [editingGroupKey, setEditingGroupKey] = useState<string | null>(null)
+  const [groupEditDraft, setGroupEditDraft] = useState<GroupEditDraft>(() => emptyGroupEditDraft())
+  const [groupSaveNotice, setGroupSaveNotice] = useState('')
   const [showNewRelease, setShowNewRelease] = useState(false)
   const [draftEstimate, setDraftEstimate] = useState<DraftCapacityEstimate | null>(null)
   const [estimateLoading, setEstimateLoading] = useState(false)
@@ -268,6 +852,15 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     setScenarioId(prev => prev === initialScenarioId ? prev : initialScenarioId)
     setRunName('')
   }, [initialScenarioId])
+  useEffect(() => {
+    setRunDefaultOverrides(buildEmptyRunDefaultOverrides())
+    setGroupRunOverrides({})
+    setEditingDefaultKey(null)
+    setEditingGroupKey(null)
+    setDefaultSaveNotice('')
+    setGroupSaveNotice('')
+    setShowAllRuntimeDefaults(false)
+  }, [scenarioId])
   useEffect(() => { setReleaseId(activeRelease?.id || releases[0]?.id || '') }, [activeRelease?.id, releases])
   useEffect(() => {
     let cancelled = false
@@ -291,6 +884,34 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 
   const scenario = useMemo(() => scenarios.find(item => item.id === scenarioId), [scenarios, scenarioId])
   const release = useMemo(() => releases.find(item => item.id === releaseId), [releases, releaseId])
+  const effectiveRunDuration = useMemo(() => getEffectiveRunDuration(scenario, runDefaultOverrides), [scenario, runDefaultOverrides])
+  const effectiveResourceBaseline = useMemo(() => getEffectiveResourceBaseline(scenario, runDefaultOverrides), [scenario, runDefaultOverrides])
+  const effectiveScenarioGroups = useMemo(() => buildEffectiveScenarioGroups(scenario, groupRunOverrides), [groupRunOverrides, scenario])
+  const runLoadProfilePreview = useMemo(
+    () => buildRunLoadProfilePreview(effectiveScenarioGroups, effectiveRunDuration, scenario?.start_delay, effectiveResourceBaseline),
+    [effectiveResourceBaseline, effectiveRunDuration, effectiveScenarioGroups, scenario?.start_delay],
+  )
+  const runDefaultCards = useMemo(() => buildRunDefaultCards(scenario, runDefaultOverrides), [scenario, runDefaultOverrides])
+  const globalRunDefaultCards = useMemo(
+    () => runDefaultCards.filter(card => GLOBAL_RUN_DEFAULT_KEYS.has(card.key)),
+    [runDefaultCards],
+  )
+  const runtimeRunDefaultCards = useMemo(
+    () => runDefaultCards.filter(card => !GLOBAL_RUN_DEFAULT_KEYS.has(card.key)),
+    [runDefaultCards],
+  )
+  const runtimeRunDefaultOverrideCount = useMemo(
+    () => runtimeRunDefaultCards.filter(card => card.isOverridden).length,
+    [runtimeRunDefaultCards],
+  )
+  const editingDefaultCard = useMemo(
+    () => runDefaultCards.find(card => card.key === editingDefaultKey),
+    [editingDefaultKey, runDefaultCards],
+  )
+  const editingGroup = useMemo(
+    () => scenario?.scripts.find(group => groupOverrideKey(group) === editingGroupKey),
+    [editingGroupKey, scenario],
+  )
   const filteredScenarios = useMemo(() => {
     const query = scenarioQuery.trim().toLowerCase()
     if (!query) return scenarios
@@ -311,17 +932,57 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       setScheduleLoading(false)
     }
   }, [api])
-  const totalVUsers = useMemo(() => totalScenarioVUsers(scenario), [scenario])
-  const protocols = useMemo(() => scenarioProtocolList(scenario), [scenario])
-  const associatedReleases = useMemo(() => {
-    const releases = scenario?.associated_releases || []
-    const seen = new Set<string>()
-    return releases.filter(r => {
-      const key = r.id || `${r.application_id || 'release'}:${r.name}`
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
+  const totalVUsers = useMemo(() => totalGroupVUsers(effectiveScenarioGroups), [effectiveScenarioGroups])
+  const protocols = useMemo(() => groupProtocolList(effectiveScenarioGroups), [effectiveScenarioGroups])
+  const groupOverridesCount = useMemo(() => groupOverrideCount(groupRunOverrides), [groupRunOverrides])
+  const runOverridesCount = useMemo(() => runDefaultCards.filter(card => card.isOverridden).length + groupOverridesCount, [groupOverridesCount, runDefaultCards])
+  const launchSummaryItems = useMemo(() => {
+    const capacityAdvisory = draftEstimate?.capacity_advisory
+    const dataPools = scenario?.data_pools || []
+    const dataPoolValue = !scenario
+      ? 'None'
+      : dataPools.length
+        ? dataPools.map(pool => pool.alias || pool.pool_name || pool.pool_id).join(', ')
+        : 'None'
+    const capacityValue = !scenario
+      ? 'Select a scenario'
+      : estimateLoading
+        ? 'Refreshing estimate...'
+        : capacityAdvisory
+          ? `${formatCount(capacityAdvisory.recommended_generators, 'generator')} needed; ${capacityAdvisory.available_generators} available`
+          : 'Pending estimate'
+    const bottleneckValue = !scenario
+      ? 'Not available'
+      : estimateLoading
+        ? 'Refreshing...'
+        : capacityAdvisory
+          ? `${capacityAdvisory.bottleneck}, ${capacityAdvisory.headroom_pct}% headroom`
+          : 'Pending estimate'
+
+    return [
+      { label: 'Run Name', value: runName.trim() || scenario?.name || 'Unnamed' },
+      { label: 'Scenario', value: scenario?.name || 'None selected' },
+      { label: 'Release', value: release?.name || 'None selected' },
+      { label: 'Duration', value: effectiveRunDuration || 'Not set' },
+      { label: 'Total VUsers', value: String(totalVUsers) },
+      { label: 'Script Groups', value: scenario ? formatCount(effectiveScenarioGroups.length, 'group') : '0 groups' },
+      { label: 'Protocols', value: protocols.length ? protocols.join(', ') : 'None' },
+      { label: 'Run Overrides', value: formatCount(runOverridesCount, 'override') },
+      { label: 'Shared Data Pools', value: dataPoolValue },
+      { label: 'Capacity', value: capacityValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
+      { label: 'Bottleneck', value: bottleneckValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
+    ]
+  }, [draftEstimate?.capacity_advisory, effectiveRunDuration, effectiveScenarioGroups.length, estimateLoading, protocols, release?.name, runName, runOverridesCount, scenario, totalVUsers])
+  const selectedScenarioSummaryItems = useMemo(() => {
+    if (!scenario) return []
+    return [
+      { label: 'Mode', value: formatScenarioMode(scenario.scenario_mode) },
+      { label: 'Created', value: formatDate(scenario.created_at) },
+      { label: 'Last Run', value: formatDate(scenario.last_run_at) },
+      { label: 'Script Groups', value: String(scenario.scripts.length) },
+      ...((scenario.result_count ?? 0) > 0 ? [{ label: 'Results', value: String(scenario.result_count) }] : []),
+      ...((scenario.data_pools?.length || 0) > 0 ? [{ label: 'Shared Data Pools', value: String(scenario.data_pools?.length || 0) }] : []),
+    ]
   }, [scenario])
   const readiness = useMemo(() => {
     const checks = [
@@ -359,13 +1020,22 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     setEstimateLoading(true)
     const timer = window.setTimeout(async () => {
       try {
-        const estimate = await api.estimateTest({
+        const runtimeSettings = buildRuntimeSettingsForRun(scenario, runDefaultOverrides)
+        const groupPayloads = buildGroupsForRunPayload(scenario, groupRunOverrides)
+        const estimatePayload = {
           name: scenario.name,
-          duration: scenario.duration,
+          duration: effectiveRunDuration,
           application_id: activeApplication.id,
           release_id: releaseId || undefined,
           scenario_id: scenario.id,
           project_id: activeProject?.id,
+          ...(runtimeSettings !== undefined ? { runtime_settings: runtimeSettings } : {}),
+          ...(groupPayloads ? { groups: groupPayloads } : {}),
+          ...(hasOwnKey(runDefaultOverrides, 'script_shakeout') ? { script_shakeout: Boolean(runDefaultOverrides.script_shakeout) } : {}),
+          ...(hasOwnKey(runDefaultOverrides, 'resource_baseline') ? { resource_baseline: Boolean(runDefaultOverrides.resource_baseline) } : {}),
+        }
+        const estimate = await api.estimateTest({
+          ...estimatePayload,
         })
         if (!cancelled) setDraftEstimate(estimate)
       } catch {
@@ -375,11 +1045,12 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       }
     }, 400)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [activeApplication, activeProject?.id, api, releaseId, scenario])
+  }, [activeApplication, activeProject?.id, api, effectiveRunDuration, groupRunOverrides, releaseId, runDefaultOverrides, scenario])
 
-  const step1Complete = Boolean(activeApplication && release)
-  const step2Complete = Boolean(scenario && scenario.scripts.length > 0)
-  const step3Complete = step1Complete && step2Complete
+  const step1Complete = Boolean(scenario && scenario.scripts.length > 0)
+  const step2Complete = Boolean(activeApplication && release)
+  const step3Complete = step1Complete
+  const step4Complete = step1Complete && step2Complete
 
   const createRelease = async () => {
     const name = newReleaseName.trim()
@@ -406,14 +1077,21 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     setCreating(true)
     setError('')
     try {
-      const test = await api.createTest({
+      const runtimeSettings = buildRuntimeSettingsForRun(scenario, runDefaultOverrides)
+      const groupPayloads = buildGroupsForRunPayload(scenario, groupRunOverrides)
+      const payload = {
         name: runName.trim() || scenario.name,
-        duration: scenario.duration,
+        duration: effectiveRunDuration,
         application_id: activeApplication.id,
         release_id: releaseId,
         scenario_id: scenario.id,
         project_id: activeProject?.id,
-      })
+        ...(runtimeSettings !== undefined ? { runtime_settings: runtimeSettings } : {}),
+        ...(groupPayloads ? { groups: groupPayloads } : {}),
+        ...(hasOwnKey(runDefaultOverrides, 'script_shakeout') ? { script_shakeout: Boolean(runDefaultOverrides.script_shakeout) } : {}),
+        ...(hasOwnKey(runDefaultOverrides, 'resource_baseline') ? { resource_baseline: Boolean(runDefaultOverrides.resource_baseline) } : {}),
+      }
+      const test = await api.createTest(payload)
       if (start) {
         await api.startTest(test.id)
       }
@@ -423,6 +1101,295 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     } finally {
       setCreating(false)
     }
+  }
+
+  const openRunDefaultEditor = (key: RunDefaultKey) => {
+    if (!scenario) return
+    setDefaultEditDraft(buildRunDefaultEditDraft(key, scenario, runDefaultOverrides))
+    setEditingDefaultKey(key)
+  }
+
+  const setRuntimeOverride = <K extends keyof RunRuntimeOverrideDraft>(field: K, value: RunRuntimeOverrideDraft[K]) => {
+    setRunDefaultOverrides(prev => ({
+      ...prev,
+      runtime_settings: {
+        ...prev.runtime_settings,
+        [field]: value,
+      },
+    }))
+  }
+
+  const clearRunDefaultOverride = () => {
+    if (!editingDefaultKey || !editingDefaultCard) return
+    const key = editingDefaultKey
+    setRunDefaultOverrides(prev => {
+      const next: RunDefaultOverrides = {
+        ...prev,
+        runtime_settings: { ...prev.runtime_settings },
+      }
+      if (key === 'duration') {
+        delete next.duration
+      } else if (key === 'script_shakeout') {
+        delete next.script_shakeout
+      } else if (key === 'resource_baseline') {
+        delete next.resource_baseline
+      } else {
+        delete next.runtime_settings[key]
+      }
+      return next
+    })
+    setDefaultSaveNotice(`${editingDefaultCard.label} now uses the scenario default. Scenario defaults were not changed.`)
+    setEditingDefaultKey(null)
+  }
+
+  const saveRunDefaultOverride = () => {
+    if (!editingDefaultKey || !editingDefaultCard) return
+    const key = editingDefaultKey
+    if (key === 'duration') {
+      const duration = defaultEditDraft.value.trim()
+      if (!duration) {
+        setError('Duration is required for a run override.')
+        return
+      }
+      setRunDefaultOverrides(prev => ({ ...prev, duration }))
+    } else if (key === 'iterations') {
+      setRuntimeOverride('iterations', defaultEditDraft.value ? Number(defaultEditDraft.value) : null)
+    } else if (key === 'log_level') {
+      setRuntimeOverride('log_level', defaultEditDraft.value || null)
+    } else if (key === 'auto_transactions') {
+      setRuntimeOverride('auto_transactions', defaultEditDraft.value || null)
+    } else if (key === 'pacing') {
+      if (!defaultEditDraft.pacingType) {
+        setRuntimeOverride('pacing', null)
+      } else if (defaultEditDraft.pacingType === 'none') {
+        setRuntimeOverride('pacing', { type: 'none' })
+      } else if (defaultEditDraft.pacingType === 'fixed_interval') {
+        setRuntimeOverride('pacing', { type: 'fixed_interval', interval_ms: defaultEditDraft.pacingAmount ? Number(defaultEditDraft.pacingAmount) : 0 })
+      } else if (defaultEditDraft.pacingType === 'tps') {
+        setRuntimeOverride('pacing', { type: 'tps', tps: defaultEditDraft.pacingAmount ? Number(defaultEditDraft.pacingAmount) : 0 })
+      } else {
+        setRuntimeOverride('pacing', { type: 'fixed_delay', delay_ms: defaultEditDraft.pacingAmount ? Number(defaultEditDraft.pacingAmount) : 0 })
+      }
+    } else if (key === 'think_time') {
+      if (defaultEditDraft.thinkIgnore) {
+        setRuntimeOverride('think_time', { type: 'fixed', mean_ms: defaultEditDraft.value ? Number(defaultEditDraft.value) : 0, ignore: true })
+      } else if (defaultEditDraft.value) {
+        setRuntimeOverride('think_time', { type: 'fixed', mean_ms: Number(defaultEditDraft.value), ignore: false })
+      } else {
+        setRuntimeOverride('think_time', null)
+      }
+    } else if (key === 'continue_on_error') {
+      setRuntimeOverride('continue_on_error', defaultEditDraft.value === '' ? null : defaultEditDraft.value === 'true')
+    } else if (key === 'snapshot_on_error') {
+      setRuntimeOverride('snapshot_on_error', defaultEditDraft.value === '' ? null : defaultEditDraft.value === 'true')
+    } else if (key === 'script_shakeout') {
+      setRunDefaultOverrides(prev => ({ ...prev, script_shakeout: defaultEditDraft.value === 'true' }))
+    } else if (key === 'resource_baseline') {
+      setRunDefaultOverrides(prev => ({ ...prev, resource_baseline: defaultEditDraft.value === 'true' }))
+    }
+    if (!GLOBAL_RUN_DEFAULT_KEYS.has(key)) {
+      setShowAllRuntimeDefaults(true)
+    }
+    setError('')
+    setDefaultSaveNotice(`Saved ${editingDefaultCard.label} for this run only. Scenario defaults were not changed.`)
+    setEditingDefaultKey(null)
+  }
+
+  const renderRunDefaultEditorControl = () => {
+    if (!editingDefaultKey) return null
+    if (editingDefaultKey === 'duration') {
+      return (
+        <label>
+          <span>Run duration</span>
+          <input className="settings-input" value={defaultEditDraft.value} onChange={event => setDefaultEditDraft(prev => ({ ...prev, value: event.target.value }))} placeholder="30m0s" />
+        </label>
+      )
+    }
+    if (editingDefaultKey === 'iterations') {
+      return (
+        <label>
+          <span>Iterations</span>
+          <input className="settings-input" type="number" min="1" value={defaultEditDraft.value} onChange={event => setDefaultEditDraft(prev => ({ ...prev, value: event.target.value }))} placeholder="Script default" />
+        </label>
+      )
+    }
+    if (editingDefaultKey === 'log_level') {
+      return (
+        <label>
+          <span>Log level</span>
+          <select className="settings-input" value={defaultEditDraft.value} onChange={event => setDefaultEditDraft(prev => ({ ...prev, value: event.target.value }))}>
+            <option value="">Script default</option>
+            <option value="disabled">Disabled</option>
+            <option value="standard">Standard</option>
+            <option value="extended">Extended</option>
+          </select>
+        </label>
+      )
+    }
+    if (editingDefaultKey === 'auto_transactions') {
+      return (
+        <label>
+          <span>Auto transactions</span>
+          <select className="settings-input" value={defaultEditDraft.value} onChange={event => setDefaultEditDraft(prev => ({ ...prev, value: event.target.value }))}>
+            <option value="">Script default</option>
+            <option value="none">None</option>
+            <option value="per_action">Per Action</option>
+            <option value="per_iteration">Per Iteration</option>
+          </select>
+        </label>
+      )
+    }
+    if (editingDefaultKey === 'pacing') {
+      return (
+        <div className="new-test-default-editor-grid">
+          <label>
+            <span>Pacing</span>
+            <select className="settings-input" value={defaultEditDraft.pacingType} onChange={event => setDefaultEditDraft(prev => ({ ...prev, pacingType: event.target.value, pacingAmount: event.target.value === 'none' ? '' : prev.pacingAmount }))}>
+              <option value="">Script default</option>
+              <option value="none">None</option>
+              <option value="fixed_delay">Fixed delay</option>
+              <option value="fixed_interval">Fixed interval</option>
+              <option value="tps">Target TPS</option>
+            </select>
+          </label>
+          {defaultEditDraft.pacingType && defaultEditDraft.pacingType !== 'none' && (
+            <label>
+              <span>{defaultEditDraft.pacingType === 'tps' ? 'Target TPS' : 'Milliseconds'}</span>
+              <input className="settings-input" type="number" min="0" value={defaultEditDraft.pacingAmount} onChange={event => setDefaultEditDraft(prev => ({ ...prev, pacingAmount: event.target.value }))} placeholder="0" />
+            </label>
+          )}
+        </div>
+      )
+    }
+    if (editingDefaultKey === 'think_time') {
+      return (
+        <div className="new-test-default-editor-grid">
+          <label>
+            <span>Think time mean (ms)</span>
+            <input className="settings-input" type="number" min="0" value={defaultEditDraft.value} onChange={event => setDefaultEditDraft(prev => ({ ...prev, value: event.target.value }))} placeholder="Script default" disabled={defaultEditDraft.thinkIgnore} />
+          </label>
+          <label className="checkbox-label new-test-default-checkbox">
+            <input type="checkbox" checked={defaultEditDraft.thinkIgnore} onChange={event => setDefaultEditDraft(prev => ({ ...prev, thinkIgnore: event.target.checked }))} />
+            <span>Ignore think time</span>
+          </label>
+        </div>
+      )
+    }
+    if (editingDefaultKey === 'continue_on_error' || editingDefaultKey === 'snapshot_on_error') {
+      return (
+        <label>
+          <span>{editingDefaultKey === 'continue_on_error' ? 'Continue on error' : 'Snapshot on error'}</span>
+          <select className="settings-input" value={defaultEditDraft.value} onChange={event => setDefaultEditDraft(prev => ({ ...prev, value: event.target.value }))}>
+            <option value="">Script default</option>
+            <option value="true">Enabled</option>
+            <option value="false">Disabled</option>
+          </select>
+        </label>
+      )
+    }
+    return (
+      <label>
+        <span>{editingDefaultKey === 'script_shakeout' ? 'Script shakeout' : 'Resource baseline'}</span>
+        <select className="settings-input" value={defaultEditDraft.value} onChange={event => setDefaultEditDraft(prev => ({ ...prev, value: event.target.value }))}>
+          <option value="true">Enabled</option>
+          <option value="false">Disabled</option>
+        </select>
+      </label>
+    )
+  }
+
+  const openGroupEditor = (group: ScenarioScriptGroup) => {
+    const key = groupOverrideKey(group)
+    setGroupEditDraft(buildGroupEditDraft(group, groupRunOverrides[key]))
+    setEditingGroupKey(key)
+  }
+
+  const clearGroupOverride = () => {
+    if (!editingGroupKey || !editingGroup) return
+    setGroupRunOverrides(prev => {
+      const next = { ...prev }
+      delete next[editingGroupKey]
+      return next
+    })
+    setGroupSaveNotice(`${editingGroup.name || editingGroup.script_name || 'Script group'} now uses scenario and run defaults. Scenario defaults were not changed.`)
+    setEditingGroupKey(null)
+  }
+
+  const saveGroupOverride = () => {
+    if (!editingGroupKey || !editingGroup || !scenario) return
+    const nextOverride: GroupRunOverride = {}
+    const vusers = Number(groupEditDraft.vusers)
+    if (!Number.isFinite(vusers) || vusers < 1) {
+      setError('VUsers must be greater than 0 for a script group override.')
+      return
+    }
+    if (vusers !== editingGroup.vusers) nextOverride.vusers = vusers
+    const rampUp = groupEditDraft.ramp_up.trim()
+    const rampDown = groupEditDraft.ramp_down.trim()
+    if (rampUp !== (editingGroup.ramp_up || '')) nextOverride.ramp_up = rampUp
+    if (rampDown !== (editingGroup.ramp_down || '')) nextOverride.ramp_down = rampDown
+    if (groupEditDraft.initialization !== (editingGroup.initialization || 'at_runtime')) {
+      nextOverride.initialization = groupEditDraft.initialization
+    }
+
+    const runtimeSettings: RuntimeSettingsOverride = {}
+    if (groupEditDraft.iterations.trim()) {
+      const iterations = Number(groupEditDraft.iterations)
+      if (!Number.isFinite(iterations) || iterations < 1) {
+        setError('Iterations must be greater than 0 for a script group override.')
+        return
+      }
+      runtimeSettings.iterations = iterations
+    }
+    if (groupEditDraft.log_level) runtimeSettings.log_level = groupEditDraft.log_level
+    if (groupEditDraft.auto_transactions) runtimeSettings.auto_transactions = groupEditDraft.auto_transactions
+    if (groupEditDraft.pacingType) {
+      if (groupEditDraft.pacingType === 'none') {
+        runtimeSettings.pacing = { type: 'none' }
+      } else if (groupEditDraft.pacingType === 'fixed_interval') {
+        runtimeSettings.pacing = { type: 'fixed_interval', interval_ms: groupEditDraft.pacingAmount ? Number(groupEditDraft.pacingAmount) : 0 }
+      } else if (groupEditDraft.pacingType === 'tps') {
+        runtimeSettings.pacing = { type: 'tps', tps: groupEditDraft.pacingAmount ? Number(groupEditDraft.pacingAmount) : 0 }
+      } else {
+        runtimeSettings.pacing = { type: 'fixed_delay', delay_ms: groupEditDraft.pacingAmount ? Number(groupEditDraft.pacingAmount) : 0 }
+      }
+    }
+    if (groupEditDraft.thinkIgnore) {
+      runtimeSettings.think_time = { type: 'fixed', mean_ms: groupEditDraft.thinkTimeMs ? Number(groupEditDraft.thinkTimeMs) : 0, ignore: true }
+    } else if (groupEditDraft.thinkTimeMs.trim()) {
+      runtimeSettings.think_time = { type: 'fixed', mean_ms: Number(groupEditDraft.thinkTimeMs), ignore: false }
+    }
+    if (groupEditDraft.continue_on_error || groupEditDraft.snapshot_on_error) {
+      const defaults = getEffectiveRuntimeDefaults(scenario, runDefaultOverrides)
+      runtimeSettings.error_handling = {
+        continue_on_error: groupEditDraft.continue_on_error ? groupEditDraft.continue_on_error === 'true' : Boolean(defaults.continue_on_error),
+        snapshot_on_error: groupEditDraft.snapshot_on_error ? groupEditDraft.snapshot_on_error === 'true' : Boolean(defaults.snapshot_on_error),
+      }
+    }
+    if (groupEditDraft.browser_device_profile || groupEditDraft.browser_headless || groupEditDraft.browser_touch_mode || groupEditDraft.browser_orientation) {
+      runtimeSettings.browser = {
+        ...(groupEditDraft.browser_device_profile ? { device_profile: groupEditDraft.browser_device_profile } : {}),
+        ...(groupEditDraft.browser_headless ? { headless: groupEditDraft.browser_headless === 'true' } : {}),
+        ...(groupEditDraft.browser_touch_mode ? { touch_mode: groupEditDraft.browser_touch_mode === 'true' } : {}),
+        ...(groupEditDraft.browser_orientation ? { orientation: groupEditDraft.browser_orientation } : {}),
+      }
+    }
+    if (hasRuntimeSettingsValues(runtimeSettings)) {
+      nextOverride.runtime_settings = runtimeSettings
+    }
+
+    setGroupRunOverrides(prev => {
+      const next = { ...prev }
+      if (hasGroupOverrideValues(nextOverride)) {
+        next[editingGroupKey] = nextOverride
+      } else {
+        delete next[editingGroupKey]
+      }
+      return next
+    })
+    setError('')
+    setGroupSaveNotice('Saved script settings for this run only. Scenario defaults were not changed.')
+    setEditingGroupKey(null)
   }
 
   const submitSchedule = async () => {
@@ -925,57 +1892,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
           <section className="new-test-step">
             <div className="new-test-step-header">
               <span className={`new-test-step-index${step1Complete ? ' complete' : ''}`}>{step1Complete ? '✓' : '1'}</span>
-              <div>
-                <h3>Release Context</h3>
-                <p>Results are always stored against one release.</p>
-              </div>
-            </div>
-            <div className="settings-group">
-              <div className="setting-row">
-                <div className="setting-info">
-                  <span className="setting-label">Application</span>
-                  <span className="setting-desc">Top-level application under test</span>
-                </div>
-                <span className="setting-value">{activeApplication?.name || 'No application selected'}</span>
-              </div>
-              <div className="setting-row">
-                <div className="setting-info">
-                  <span className="setting-label">Release</span>
-                  <span className="setting-desc">Required target for results</span>
-                </div>
-                <select className="settings-input" value={releaseId} onChange={(event) => setReleaseId(event.target.value)}>
-                  <option value="">Select release</option>
-                  {releases.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
-                {showNewRelease ? (
-                  <div className="new-test-release-create-row">
-                    <input className="settings-input" value={newReleaseName} onChange={event => setNewReleaseName(event.target.value)} placeholder="Release name, e.g. PI30" autoFocus />
-                    <button className="btn btn-secondary" onClick={createRelease} disabled={!newReleaseName.trim()}>Add</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => { setShowNewRelease(false); setNewReleaseName('') }}>Cancel</button>
-                  </div>
-                ) : (
-                  <button className="btn btn-ghost btn-sm new-test-add-release-link" onClick={() => setShowNewRelease(true)}>+ New Release</button>
-                )}
-              </div>
-              {scenario && associatedReleases.length > 0 && (
-                <div className="setting-row new-test-associated-inline">
-                  <div className="setting-info">
-                    <span className="setting-label">Previously Tested</span>
-                    <span className="setting-desc">Releases this scenario has been run against</span>
-                  </div>
-                  <div className="new-test-tag-list">
-                    {associatedReleases.map((item) => <span key={item.id} className="new-test-tag">{item.name}</span>)}
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className="new-test-step">
-            <div className="new-test-step-header">
-              <span className={`new-test-step-index${step2Complete ? ' complete' : ''}`}>{step2Complete ? '✓' : '2'}</span>
               <div className="new-test-step-header-content">
-                <h3>Scenario</h3>
+                <h3>Select Scenario</h3>
                 <p>Choose the reusable workload definition to execute.</p>
               </div>
               {onOpenScenarioBuilder && (
@@ -989,231 +1907,532 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
               )}
             </div>
             <div className="settings-group">
-              <div className="new-test-scenario-picker">
-                <label className="library-search new-test-scenario-search">
-                  <span>Search scenarios</span>
-                  <input
-                    type="search"
-                    value={scenarioQuery}
-                    onChange={(event) => setScenarioQuery(event.target.value)}
-                    placeholder="Find by scenario, script, protocol, release, or data pool..."
-                  />
-                </label>
-                <div className="new-test-scenario-count">
-                  {scenarioQuery.trim() ? `${filteredScenarios.length} matching scenario${filteredScenarios.length === 1 ? '' : 's'}` : `${scenarios.length} available scenario${scenarios.length === 1 ? '' : 's'}`}
-                </div>
-                {filteredScenarios.length > 0 ? (
-                  <div className="new-test-scenario-card-grid">
-                    {filteredScenarios.map(item => {
-                      const itemProtocols = scenarioProtocolList(item)
-                      const selected = item.id === scenarioId
-                      return (
-                        <button
-                          type="button"
-                          key={item.id}
-                          className={`new-test-scenario-card ${selected ? 'selected' : ''}`}
-                          onClick={() => selectScenario(item.id)}
-                        >
-                          <div className="new-test-scenario-card-top">
-                            <span className="new-test-scenario-card-title">{item.name}</span>
-                            <span className={`new-test-scenario-card-mode ${item.scenario_mode === 'goal_oriented' ? 'goal' : ''}`}>{formatScenarioModeShort(item.scenario_mode)}</span>
-                          </div>
-                          <span className="new-test-scenario-card-meta">{formatScenarioWorkloadSummary(item)} · {item.duration || 'No duration'}</span>
-                          <span className="new-test-scenario-card-meta">{itemProtocols.length ? itemProtocols.join(', ') : 'No protocol'}</span>
-                        </button>
-                      )
-                    })}
+              <div className="new-test-scenario-browser">
+                <div className="new-test-scenario-picker">
+                  <label className="library-search new-test-scenario-search">
+                    <span>Search scenarios</span>
+                    <input
+                      type="search"
+                      value={scenarioQuery}
+                      onChange={(event) => setScenarioQuery(event.target.value)}
+                      placeholder="Find by scenario, script, protocol, release, or data pool..."
+                    />
+                  </label>
+                  <div className="new-test-scenario-count">
+                    {scenarioQuery.trim() ? `${filteredScenarios.length} matching scenario${filteredScenarios.length === 1 ? '' : 's'}` : `${scenarios.length} available scenario${scenarios.length === 1 ? '' : 's'}`}
                   </div>
-                ) : (
-                  <div className="new-test-empty compact">No scenarios match this search.</div>
-                )}
+                  {filteredScenarios.length > 0 ? (
+                    <div className="new-test-scenario-card-grid compact">
+                      {filteredScenarios.map(item => {
+                        const itemProtocols = scenarioProtocolList(item)
+                        const selected = item.id === scenarioId
+                        return (
+                          <button
+                            type="button"
+                            key={item.id}
+                            className={`new-test-scenario-card ${selected ? 'selected' : ''}`}
+                            onClick={() => selectScenario(item.id)}
+                          >
+                            <div className="new-test-scenario-card-top">
+                              <span className="new-test-scenario-card-title">{item.name}</span>
+                              <span className={`new-test-scenario-card-mode ${item.scenario_mode === 'goal_oriented' ? 'goal' : ''}`}>{formatScenarioModeShort(item.scenario_mode)}</span>
+                            </div>
+                            <span className="new-test-scenario-card-meta">{formatScenarioWorkloadSummary(item)} · {item.duration || 'No duration'}</span>
+                            <span className="new-test-scenario-card-meta">{itemProtocols.length ? itemProtocols.join(', ') : 'No protocol'}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="new-test-empty compact">No scenarios match this search.</div>
+                  )}
+                </div>
+                <aside className="new-test-scenario-facts" aria-label="Selected scenario details">
+                  <h4>Scenario Details</h4>
+                  {scenario ? (
+                    <dl className="new-test-scenario-list">
+                      {selectedScenarioSummaryItems.map(item => (
+                        <div key={item.label}>
+                          <dt>{item.label}</dt>
+                          <dd>{item.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : (
+                    <p>Select a scenario to review its details.</p>
+                  )}
+                </aside>
               </div>
-              {scenario && (
-                <div className="new-test-detail-grid">
-                  <div>
-                    <span>Mode</span>
-                    <strong>{formatScenarioMode(scenario.scenario_mode)}</strong>
-                  </div>
-                  <div>
-                    <span>Created</span>
-                    <strong>{formatDate(scenario.created_at)}</strong>
-                  </div>
-                  <div>
-                    <span>Last Run</span>
-                    <strong>{formatDate(scenario.last_run_at)}</strong>
-                  </div>
-                  {(scenario.result_count ?? 0) > 0 && (
-                    <div>
-                      <span>Results</span>
-                      <strong>{scenario.result_count}</strong>
-                    </div>
-                  )}
-                  {(scenario.data_pools?.length || 0) > 0 && (
-                    <div>
-                      <span>Shared Data Pools</span>
-                      <strong>{scenario.data_pools?.length}</strong>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           </section>
 
-          <section className="new-test-step">
-            <div className="new-test-step-header">
-              <span className={`new-test-step-index${step3Complete ? ' complete' : ''}`}>{step3Complete ? '✓' : '3'}</span>
-              <div>
-                <h3>Run Review</h3>
-                <p>Confirm the workload before creating the run.</p>
-              </div>
-            </div>
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-label">Run Name</span>
-                <span className="setting-desc">Shown in results and monitoring</span>
-              </div>
-              <input className="settings-input" value={runName} onChange={event => setRunName(event.target.value)} placeholder={scenario?.name || 'Run name'} />
-            </div>
-            {scenario ? (
-              <div className="new-test-table-wrap">
-              <div className="data-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Group</th>
-                      <th>Script</th>
-                      <th>Protocol</th>
-                      <th>VUsers</th>
-                      <th>Ramp Up</th>
-                      <th>Ramp Down</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {scenario.scripts.map(script => (
-                      <tr key={`${script.order}-${script.script_id}`}>
-                        <td className="cell-name">{script.name || script.script_name}</td>
-                        <td>{script.script_name || script.script_id}</td>
-                        <td><span className="protocol-badge">{script.protocol || 'http'}</span></td>
-                        <td>{script.vusers}</td>
-                        <td className="cell-muted">{script.ramp_up || 'None'}</td>
-                        <td className="cell-muted">{script.ramp_down || 'None'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              </div>
-            ) : (
-              <div className="new-test-empty">Select a scenario to preview scripts, VUsers, and ramp behavior.</div>
-            )}
-            {scenario && draftEstimate?.capacity_advisory && (
-              <div className={`draft-capacity-card new-test-capacity-card ${draftEstimate.capacity_advisory.requires_override ? 'warning' : 'ready'}`}>
-                <div className="draft-capacity-header">
-                  <h4>Capacity Estimate</h4>
-                  {estimateLoading && <span className="draft-capacity-status">Refreshing...</span>}
+          <div className="new-test-run-config-row">
+            <section className="new-test-step">
+              <div className="new-test-step-header">
+                <span className={`new-test-step-index${step2Complete ? ' complete' : ''}`}>{step2Complete ? '✓' : '2'}</span>
+                <div>
+                  <h3>Run Setup</h3>
+                  <p>Name the run and attach it to a release.</p>
                 </div>
-                <div className="draft-capacity-metrics">
-                  <div className="draft-capacity-metric">
-                    <span className="draft-capacity-label">Generators</span>
-                    <strong>{draftEstimate.capacity_advisory.recommended_generators}</strong>
-                    <span>{draftEstimate.capacity_advisory.available_generators} available</span>
-                  </div>
-                  <div className="draft-capacity-metric">
-                    <span className="draft-capacity-label">Bottleneck</span>
-                    <strong>{draftEstimate.capacity_advisory.bottleneck}</strong>
-                    <span>{draftEstimate.capacity_advisory.headroom_pct}% headroom</span>
-                  </div>
-                  <div className="draft-capacity-metric">
-                    <span className="draft-capacity-label">Est. Resources</span>
-                    <strong>{draftEstimate.capacity_advisory.estimated_total.cpu_cores.toFixed(1)} CPU</strong>
-                    <span>{Math.round(draftEstimate.capacity_advisory.estimated_total.memory_mb)} MB / {Math.round(draftEstimate.capacity_advisory.estimated_total.network_mbps)} Mbps</span>
-                  </div>
-                </div>
-                {draftEstimate.capacity_advisory.warnings && draftEstimate.capacity_advisory.warnings.length > 0 && (
-                  <div className="draft-capacity-warnings">
-                    {draftEstimate.capacity_advisory.warnings.map((warning) => (
-                      <p key={warning}>{warning}</p>
-                    ))}
-                  </div>
-                )}
               </div>
-            )}
-            {scenario && (
-              <>
-              {(scenario.data_pools || []).length > 0 && (
-                <div className="new-test-associated-row">
-                  <span className="setting-label">Shared Data Pools</span>
-                  <div className="new-test-tag-list">
-                    {(scenario.data_pools || []).map(pool => (
-                      <span key={`${pool.pool_id}-${pool.alias}`} className="new-test-tag">
-                        {pool.alias}: {pool.pool_name || pool.pool_id} / {pool.selection_strategy}
-                      </span>
-                    ))}
+              <div className="settings-group new-test-setup-grid">
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label">Run Name</span>
+                    <span className="setting-desc">Shown in results and monitoring</span>
                   </div>
+                  <input className="settings-input" value={runName} onChange={event => setRunName(event.target.value)} placeholder={scenario?.name || 'Run name'} />
                 </div>
+                <div className="setting-row new-test-release-row">
+                  <div className="setting-info">
+                    <span className="setting-label">Release</span>
+                    <span className="setting-desc">Required target for results</span>
+                  </div>
+                  <select className="settings-input" value={releaseId} onChange={(event) => setReleaseId(event.target.value)}>
+                    <option value="">Select release</option>
+                    {releases.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                  {showNewRelease ? (
+                    <div className="new-test-release-create-row">
+                      <input className="settings-input" value={newReleaseName} onChange={event => setNewReleaseName(event.target.value)} placeholder="Release name, e.g. PI30" autoFocus />
+                      <button className="btn btn-secondary" onClick={createRelease} disabled={!newReleaseName.trim()}>Add</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => { setShowNewRelease(false); setNewReleaseName('') }}>Cancel</button>
+                    </div>
+                  ) : (
+                    <button className="btn btn-ghost btn-sm new-test-add-release-link" onClick={() => setShowNewRelease(true)}>+ New Release</button>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            <section className="new-test-step">
+              <div className="new-test-step-header">
+                <span className={`new-test-step-index${step3Complete ? ' complete' : ''}`}>{step3Complete ? '✓' : '3'}</span>
+                <div>
+                  <h3>Global Run Settings</h3>
+                  <p>Set run-wide behavior; script-specific runtime edits live in Script Groups.</p>
+                </div>
+              </div>
+              {defaultSaveNotice && (
+                <div className="new-test-default-notice" role="status">{defaultSaveNotice}</div>
               )}
-              {(() => {
-                const allCards: Array<{ label: string; value: string; isDefault: boolean }> = [
-                  { label: 'Duration', value: scenario.duration, isDefault: false },
-                  { label: 'Iterations', value: String(scenario.runtime_settings?.iterations ?? 'Script default'), isDefault: !scenario.runtime_settings?.iterations },
-                  { label: 'Log Level', value: scenario.runtime_settings?.log_level || 'Script default', isDefault: !scenario.runtime_settings?.log_level },
-                  { label: 'Auto Transactions', value: scenario.runtime_settings?.auto_transactions || 'Script default', isDefault: !scenario.runtime_settings?.auto_transactions },
-                  { label: 'Pacing', value: formatRuntimePacing(scenario), isDefault: formatRuntimePacing(scenario) === 'Script default' },
-                  { label: 'Think Time', value: formatRuntimeThinkTime(scenario), isDefault: formatRuntimeThinkTime(scenario) === 'Script default' },
-                  { label: 'Continue On Error', value: formatRuntimeContinueOnError(scenario), isDefault: formatRuntimeContinueOnError(scenario) === 'Script default' },
-                  { label: 'Snapshot On Error', value: scenario.runtime_settings?.error_handling?.snapshot_on_error ? 'Enabled' : 'Script default', isDefault: !scenario.runtime_settings?.error_handling?.snapshot_on_error },
-                  { label: 'Script Shakeout', value: scenario.script_shakeout ? 'Enabled' : 'Disabled', isDefault: false },
-                  { label: 'Resource Baseline', value: scenario.resource_baseline ? '5m before and after' : 'Disabled', isDefault: false },
-                ]
-                const visible = showAllRuntimeDefaults ? allCards : allCards.filter(c => !c.isDefault)
-                const hiddenCount = allCards.length - allCards.filter(c => !c.isDefault).length
-                return (
-                  <>
-                    <div className="new-test-detail-grid review">
-                      {visible.map(card => (
-                        <div key={card.label}>
+              {scenario ? (
+                <>
+                  <div className="new-test-detail-grid review new-test-default-grid">
+                    {globalRunDefaultCards.map(card => (
+                      <button
+                        key={card.key}
+                        type="button"
+                        className={`new-test-default-card ${card.isOverridden ? 'overridden' : ''}`}
+                        onClick={() => openRunDefaultEditor(card.key)}
+                      >
+                        <span>{card.label}</span>
+                        <strong>{card.value}</strong>
+                        {card.isOverridden && <em>Run override</em>}
+                      </button>
+                    ))}
+                  </div>
+                  <details
+                    className="new-test-runtime-defaults"
+                    open={showAllRuntimeDefaults}
+                    onToggle={event => setShowAllRuntimeDefaults((event.currentTarget as HTMLDetailsElement).open)}
+                  >
+                    <summary>
+                      <span>Apply runtime defaults to all script groups</span>
+                      {runtimeRunDefaultOverrideCount > 0 && <em>{runtimeRunDefaultOverrideCount} override{runtimeRunDefaultOverrideCount === 1 ? '' : 's'}</em>}
+                    </summary>
+                    <div className="new-test-detail-grid review new-test-default-grid">
+                      {runtimeRunDefaultCards.map(card => (
+                        <button
+                          key={card.key}
+                          type="button"
+                          className={`new-test-default-card ${card.isOverridden ? 'overridden' : ''}`}
+                          onClick={() => openRunDefaultEditor(card.key)}
+                        >
                           <span>{card.label}</span>
                           <strong>{card.value}</strong>
-                        </div>
+                          {card.isOverridden && <em>Run override</em>}
+                        </button>
                       ))}
                     </div>
-                    {hiddenCount > 0 && (
-                      <button className="btn btn-sm btn-ghost" type="button" onClick={() => setShowAllRuntimeDefaults(prev => !prev)}>
-                        {showAllRuntimeDefaults ? 'Hide defaults' : `Show ${hiddenCount} default${hiddenCount === 1 ? '' : 's'}`}
-                      </button>
-                    )}
-                  </>
-                )
-              })()}
-              </>
+                  </details>
+                </>
+              ) : (
+                <div className="new-test-empty">Select a scenario to review global settings for this run.</div>
+              )}
+            </section>
+          </div>
+
+          <section className="new-test-step">
+            <div className="new-test-step-header">
+              <span className={`new-test-step-index${step4Complete ? ' complete' : ''}`}>{step4Complete ? '✓' : '4'}</span>
+              <div>
+                <h3>Script Groups</h3>
+                <p>Click a row to override workload or runtime settings for this run only.</p>
+              </div>
+            </div>
+            {groupSaveNotice && (
+              <div className="new-test-default-notice" role="status">{groupSaveNotice}</div>
+            )}
+            {scenario ? (
+              <div className="new-test-table-wrap">
+                <div className="data-table">
+                  <table className="new-test-script-table">
+                    <thead>
+	                      <tr>
+	                        <th>Group</th>
+	                        <th>Script</th>
+	                        <th>Protocol</th>
+	                        <th>Workload</th>
+	                        <th>Iterations</th>
+	                        <th>Pacing</th>
+	                        <th>Think Time</th>
+	                        <th>Log Level</th>
+	                        <th>Auto Tx</th>
+	                        <th>Error Handling</th>
+	                        <th>Browser</th>
+	                        <th aria-label="Actions" />
+	                      </tr>
+                    </thead>
+                    <tbody>
+                      {effectiveScenarioGroups.map((group, index) => {
+	                        const sourceGroup = scenario.scripts[index] || group
+	                        const key = groupOverrideKey(sourceGroup)
+	                        const override = groupRunOverrides[key]
+	                        const runtimeValues = buildGroupRuntimeTableValues(sourceGroup, scenario, runDefaultOverrides, override)
+	                        return (
+	                          <tr key={key} className={hasGroupOverrideValues(override) ? 'new-test-script-row overridden' : 'new-test-script-row'} onClick={() => openGroupEditor(sourceGroup)}>
+                            <td className="cell-name">
+                              <span>{group.name || group.script_name}</span>
+                              {hasGroupOverrideValues(override) && <em className="new-test-override-pill">Run override</em>}
+                            </td>
+                            <td>{group.script_name || group.script_id}</td>
+                            <td><span className="protocol-badge">{group.protocol || 'http'}</span></td>
+                            <td>
+                              <div className="new-test-workload-stack">
+                                <strong>{group.vusers} VUsers</strong>
+                                <span>{group.ramp_up || 'No ramp up'} / {group.ramp_down || 'No ramp down'}</span>
+                                <span>{group.initialization === 'at_once' ? 'Init at once' : 'Init at runtime'}</span>
+	                              </div>
+	                            </td>
+	                            <td className="new-test-runtime-cell">{runtimeValues.iterations}</td>
+	                            <td className="new-test-runtime-cell">{runtimeValues.pacing}</td>
+	                            <td className="new-test-runtime-cell">{runtimeValues.thinkTime}</td>
+	                            <td className="new-test-runtime-cell">{runtimeValues.logLevel}</td>
+	                            <td className="new-test-runtime-cell">{runtimeValues.autoTransactions}</td>
+	                            <td className="new-test-runtime-cell">{runtimeValues.errorHandling}</td>
+	                            <td className="new-test-runtime-cell">{runtimeValues.browser}</td>
+	                            <td>
+                              <button className="btn btn-sm btn-secondary" type="button" onClick={(event) => { event.stopPropagation(); openGroupEditor(sourceGroup) }}>Edit</button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div className="new-test-empty">Select a scenario to preview and edit script groups.</div>
             )}
           </section>
         </div>
 
-        <aside className="new-test-summary">
-          <h3>Launch Readiness</h3>
-          <div className="new-test-summary-grid">
-            <div><span>Application</span><strong>{activeApplication?.name || 'None'}</strong></div>
-            <div><span>Release</span><strong>{release?.name || 'None'}</strong></div>
-            <div><span>Scenario</span><strong>{scenario?.name || 'None'}</strong></div>
-            <div><span>Total VUsers</span><strong>{totalVUsers}</strong></div>
-            <div><span>Duration</span><strong>{scenario?.duration || 'Not set'}</strong></div>
-            <div><span>Protocols</span><strong>{protocols.length ? protocols.join(', ') : 'None'}</strong></div>
-          </div>
-          <div className="readiness-list">
-            {readiness.map(item => (
-              <div className={`readiness-item ${item.ready ? 'ready' : 'blocked'}`} key={item.label}>
-                <span>{item.ready ? 'Ready' : 'Needed'}</span>
-                <p>{item.label}</p>
+        <aside className="new-test-sidebar-column">
+          <section className="new-test-summary">
+            <h3>Launch Summary</h3>
+            <dl className="new-test-summary-list" aria-label="Run settings summary">
+              {launchSummaryItems.map(item => (
+                <div key={item.label} className={item.tone === 'warning' ? 'warning' : undefined}>
+                  <dt>{item.label}</dt>
+                  <dd>{item.value}</dd>
+                </div>
+              ))}
+            </dl>
+            <div className="new-test-launch-actions">
+              <button className="btn btn-secondary" onClick={() => createRun(false)} disabled={!canLaunch}>Create Queued Run</button>
+              <button className="btn btn-primary" onClick={() => createRun(true)} disabled={!canLaunch}>Create & Start</button>
+            </div>
+          </section>
+          {scenario && (
+            <section className="new-test-profile-card" aria-label="Modeled Load Profile">
+              <div className="new-test-profile-header">
+                <div>
+                  <h3>Modeled Load Profile</h3>
+                  <p>Planned VUsers for this run.</p>
+                </div>
+                <div className="new-test-profile-stat">
+                  <strong>{runLoadProfilePreview.peakVUsers}</strong>
+                  <span>peak</span>
+                </div>
               </div>
-            ))}
-          </div>
-          <div className="new-test-launch-actions">
-            <button className="btn btn-secondary" onClick={() => createRun(false)} disabled={!canLaunch}>Create Queued Run</button>
-            <button className="btn btn-primary" onClick={() => createRun(true)} disabled={!canLaunch}>Create & Start</button>
-          </div>
+              {runLoadProfilePreview.points.length > 0 ? (
+                <>
+                  <div className="new-test-profile-chart">
+                    <ResponsiveContainer width="100%" height={210}>
+                      <AreaChart data={runLoadProfilePreview.points} margin={{ top: 10, right: 12, left: -18, bottom: 0 }}>
+                        <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                        <XAxis
+                          dataKey="second"
+                          tickFormatter={(value) => formatTimeCompact(Number(value))}
+                          stroke="var(--text-muted)"
+                          fontSize={10}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          stroke="var(--text-muted)"
+                          fontSize={10}
+                          tickLine={false}
+                          allowDecimals={false}
+                        />
+                        <Tooltip
+                          labelFormatter={(value) => `Time: ${formatTimeCompact(Number(value))}`}
+                          contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '12px' }}
+                          formatter={(value: number, name: string) => [value, name === 'total' ? 'Total VUsers' : name]}
+                        />
+                        {effectiveScenarioGroups.map((group, index) => (
+                          <Area
+                            key={`${group.order}-${group.script_id}`}
+                            type="monotone"
+                            dataKey={`group${index}`}
+                            name={group.name || group.script_name || `Group ${index + 1}`}
+                            stackId="run-profile"
+                            stroke={LOAD_PROFILE_COLORS[index % LOAD_PROFILE_COLORS.length]}
+                            fill={LOAD_PROFILE_COLORS[index % LOAD_PROFILE_COLORS.length]}
+                            fillOpacity={0.28}
+                            isAnimationActive={false}
+                          />
+                        ))}
+                        <Line
+                          type="monotone"
+                          dataKey="total"
+                          name="Total"
+                          stroke="var(--text-primary)"
+                          strokeWidth={2}
+                          dot={false}
+                          isAnimationActive={false}
+                        />
+                        <ReferenceArea
+                          x1={runLoadProfilePreview.preBaselineSeconds}
+                          x2={runLoadProfilePreview.preBaselineSeconds + runLoadProfilePreview.steadySeconds}
+                          fill="var(--accent)"
+                          fillOpacity={0.05}
+                          strokeOpacity={0}
+                        />
+                        {runLoadProfilePreview.preBaselineSeconds > 0 && (
+                          <ReferenceArea
+                            x1={0}
+                            x2={runLoadProfilePreview.preBaselineSeconds}
+                            fill="var(--warning)"
+                            fillOpacity={0.05}
+                            strokeOpacity={0}
+                          />
+                        )}
+                        {runLoadProfilePreview.postBaselineSeconds > 0 && (
+                          <ReferenceArea
+                            x1={runLoadProfilePreview.totalSeconds - runLoadProfilePreview.postBaselineSeconds}
+                            x2={runLoadProfilePreview.totalSeconds}
+                            fill="var(--warning)"
+                            fillOpacity={0.05}
+                            strokeOpacity={0}
+                          />
+                        )}
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="new-test-profile-legend">
+                    {effectiveScenarioGroups.map((group, index) => (
+                      <span key={`${group.order}-${group.script_id}`}>
+                        <i style={{ background: LOAD_PROFILE_COLORS[index % LOAD_PROFILE_COLORS.length] }} />
+                        {group.name || group.script_name || `Group ${index + 1}`}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="new-test-profile-meta">
+                    <span>{formatTimeCompact(runLoadProfilePreview.totalSeconds)} total</span>
+                    <span>{formatTimeCompact(runLoadProfilePreview.steadySeconds)} steady</span>
+                  </div>
+                </>
+              ) : (
+                <div className="new-test-empty compact">Select a runnable scenario to preview the load profile.</div>
+              )}
+            </section>
+          )}
         </aside>
       </div>
+      )}
+
+      {editingDefaultKey && editingDefaultCard && (
+        <div className="modal-overlay" onClick={() => setEditingDefaultKey(null)}>
+          <div className="modal run-default-modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Edit {editingDefaultCard.label}</h3>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditingDefaultKey(null)}>Close</button>
+            </div>
+            <div className="new-test-default-editor">
+              <p className="new-test-default-editor-note">Saved changes apply only to the run created from this page. The scenario default remains unchanged.</p>
+              <div className="new-test-default-current">
+                <span>Scenario default</span>
+                <strong>{editingDefaultCard.scenarioValue}</strong>
+              </div>
+              {renderRunDefaultEditorControl()}
+              <div className="modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setEditingDefaultKey(null)}>Cancel</button>
+                <button type="button" className="btn btn-secondary" onClick={clearRunDefaultOverride}>Use Scenario Default</button>
+                <button type="button" className="btn btn-primary" onClick={saveRunDefaultOverride}>Save Run Override</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingGroupKey && editingGroup && scenario && (
+        <div className="modal-overlay" onClick={() => setEditingGroupKey(null)}>
+          <div className="modal run-default-modal run-group-modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Edit {editingGroup.name || editingGroup.script_name || 'Script Group'}</h3>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditingGroupKey(null)}>Close</button>
+            </div>
+            <div className="new-test-default-editor">
+              <p className="new-test-default-editor-note">Saved changes apply only to the run created from this page. The scenario default remains unchanged.</p>
+              <div className="new-test-default-current">
+                <span>Scenario defaults</span>
+                <strong>{editingGroup.vusers} VUsers · {editingGroup.ramp_up || 'No ramp up'} / {editingGroup.ramp_down || 'No ramp down'}</strong>
+              </div>
+              <div className="new-test-group-editor-sections">
+                <section>
+                  <h4>Workload</h4>
+                  <div className="new-test-default-editor-grid">
+                    <label>
+                      <span>VUsers</span>
+                      <input className="settings-input" type="number" min="1" value={groupEditDraft.vusers} onChange={event => setGroupEditDraft(prev => ({ ...prev, vusers: event.target.value }))} />
+                    </label>
+                    <label>
+                      <span>Initialization</span>
+                      <select className="settings-input" value={groupEditDraft.initialization} onChange={event => setGroupEditDraft(prev => ({ ...prev, initialization: event.target.value as 'at_runtime' | 'at_once' }))}>
+                        <option value="at_runtime">At runtime</option>
+                        <option value="at_once">At once</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Ramp up</span>
+                      <input className="settings-input" value={groupEditDraft.ramp_up} onChange={event => setGroupEditDraft(prev => ({ ...prev, ramp_up: event.target.value }))} placeholder="Scenario default" />
+                    </label>
+                    <label>
+                      <span>Ramp down</span>
+                      <input className="settings-input" value={groupEditDraft.ramp_down} onChange={event => setGroupEditDraft(prev => ({ ...prev, ramp_down: event.target.value }))} placeholder="Scenario default" />
+                    </label>
+                  </div>
+                </section>
+                <section>
+                  <h4>Runtime Settings</h4>
+                  <div className="new-test-default-editor-grid">
+                    <label>
+                      <span>Iterations</span>
+                      <input className="settings-input" type="number" min="1" value={groupEditDraft.iterations} onChange={event => setGroupEditDraft(prev => ({ ...prev, iterations: event.target.value }))} placeholder="Use default" />
+                    </label>
+                    <label>
+                      <span>Log level</span>
+                      <select className="settings-input" value={groupEditDraft.log_level} onChange={event => setGroupEditDraft(prev => ({ ...prev, log_level: event.target.value }))}>
+                        <option value="">Use default</option>
+                        <option value="disabled">Disabled</option>
+                        <option value="standard">Standard</option>
+                        <option value="extended">Extended</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Auto transactions</span>
+                      <select className="settings-input" value={groupEditDraft.auto_transactions} onChange={event => setGroupEditDraft(prev => ({ ...prev, auto_transactions: event.target.value }))}>
+                        <option value="">Use default</option>
+                        <option value="none">None</option>
+                        <option value="per_action">Per Action</option>
+                        <option value="per_iteration">Per Iteration</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Pacing</span>
+                      <select className="settings-input" value={groupEditDraft.pacingType} onChange={event => setGroupEditDraft(prev => ({ ...prev, pacingType: event.target.value, pacingAmount: event.target.value === 'none' ? '' : prev.pacingAmount }))}>
+                        <option value="">Use default</option>
+                        <option value="none">None</option>
+                        <option value="fixed_delay">Fixed delay</option>
+                        <option value="fixed_interval">Fixed interval</option>
+                        <option value="tps">Target TPS</option>
+                      </select>
+                    </label>
+                    {groupEditDraft.pacingType && groupEditDraft.pacingType !== 'none' && (
+                      <label>
+                        <span>{groupEditDraft.pacingType === 'tps' ? 'Target TPS' : 'Milliseconds'}</span>
+                        <input className="settings-input" type="number" min="0" value={groupEditDraft.pacingAmount} onChange={event => setGroupEditDraft(prev => ({ ...prev, pacingAmount: event.target.value }))} />
+                      </label>
+                    )}
+                    <label>
+                      <span>Think time mean (ms)</span>
+                      <input className="settings-input" type="number" min="0" value={groupEditDraft.thinkTimeMs} onChange={event => setGroupEditDraft(prev => ({ ...prev, thinkTimeMs: event.target.value }))} placeholder="Use default" disabled={groupEditDraft.thinkIgnore} />
+                    </label>
+                    <label className="checkbox-label new-test-default-checkbox">
+                      <input type="checkbox" checked={groupEditDraft.thinkIgnore} onChange={event => setGroupEditDraft(prev => ({ ...prev, thinkIgnore: event.target.checked }))} />
+                      <span>Ignore think time</span>
+                    </label>
+                    <label>
+                      <span>Continue on error</span>
+                      <select className="settings-input" value={groupEditDraft.continue_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, continue_on_error: event.target.value }))}>
+                        <option value="">Use default</option>
+                        <option value="true">Enabled</option>
+                        <option value="false">Disabled</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Snapshot on error</span>
+                      <select className="settings-input" value={groupEditDraft.snapshot_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, snapshot_on_error: event.target.value }))}>
+                        <option value="">Use default</option>
+                        <option value="true">Enabled</option>
+                        <option value="false">Disabled</option>
+                      </select>
+                    </label>
+                  </div>
+                </section>
+                <section>
+                  <h4>Browser Runtime</h4>
+                  <div className="new-test-default-editor-grid">
+                    <label>
+                      <span>Device profile</span>
+                      <input className="settings-input" value={groupEditDraft.browser_device_profile} onChange={event => setGroupEditDraft(prev => ({ ...prev, browser_device_profile: event.target.value }))} placeholder="Use default" />
+                    </label>
+                    <label>
+                      <span>Orientation</span>
+                      <select className="settings-input" value={groupEditDraft.browser_orientation} onChange={event => setGroupEditDraft(prev => ({ ...prev, browser_orientation: event.target.value }))}>
+                        <option value="">Use default</option>
+                        <option value="portrait">Portrait</option>
+                        <option value="landscape">Landscape</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Headless</span>
+                      <select className="settings-input" value={groupEditDraft.browser_headless} onChange={event => setGroupEditDraft(prev => ({ ...prev, browser_headless: event.target.value }))}>
+                        <option value="">Use default</option>
+                        <option value="true">Enabled</option>
+                        <option value="false">Disabled</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Touch mode</span>
+                      <select className="settings-input" value={groupEditDraft.browser_touch_mode} onChange={event => setGroupEditDraft(prev => ({ ...prev, browser_touch_mode: event.target.value }))}>
+                        <option value="">Use default</option>
+                        <option value="true">Enabled</option>
+                        <option value="false">Disabled</option>
+                      </select>
+                    </label>
+                  </div>
+                </section>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setEditingGroupKey(null)}>Cancel</button>
+                <button type="button" className="btn btn-secondary" onClick={clearGroupOverride}>Use Scenario Defaults</button>
+                <button type="button" className="btn btn-primary" onClick={saveGroupOverride}>Save For This Run</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {confirmDeleteScheduleId && (

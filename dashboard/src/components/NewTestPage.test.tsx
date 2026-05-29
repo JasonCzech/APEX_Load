@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, type ReactNode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -18,6 +18,7 @@ const apiMock = {
   approveScenarioScheduleApproval: vi.fn(),
   rejectScenarioScheduleApproval: vi.fn(),
   createTest: vi.fn(),
+  estimateTest: vi.fn(),
   startTest: vi.fn(),
   getAuthEffectiveAccess: vi.fn(),
 }
@@ -30,6 +31,18 @@ vi.mock('../hooks/useProject', () => ({
   useProject: () => ({
     activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
   }),
+}))
+
+vi.mock('recharts', () => ({
+  Area: () => <span data-testid="mock-area" />,
+  AreaChart: ({ children }: { children?: ReactNode }) => <div data-testid="mock-load-profile-chart">{children}</div>,
+  CartesianGrid: () => <span data-testid="mock-cartesian-grid" />,
+  Line: () => <span data-testid="mock-line" />,
+  ReferenceArea: () => <span data-testid="mock-reference-area" />,
+  ResponsiveContainer: ({ children }: { children?: ReactNode }) => <div data-testid="mock-responsive-container">{children}</div>,
+  Tooltip: () => <span data-testid="mock-tooltip" />,
+  XAxis: () => <span data-testid="mock-x-axis" />,
+  YAxis: () => <span data-testid="mock-y-axis" />,
 }))
 
 describe('NewTestPage', () => {
@@ -72,6 +85,7 @@ describe('NewTestPage', () => {
       ],
     })
     apiMock.createTest.mockResolvedValue({ id: 'test-1' })
+    apiMock.estimateTest.mockResolvedValue({})
     apiMock.startTest.mockResolvedValue({})
     apiMock.listScenarioSchedules.mockResolvedValue({ schedules: [], count: 0 })
     apiMock.listScenarioScheduleOccurrences.mockResolvedValue({ occurrences: [], count: 0 })
@@ -188,7 +202,7 @@ describe('NewTestPage', () => {
     expect(selectedCard?.textContent).toContain('Builder Created Scenario')
   })
 
-  it('renders duplicate release names without duplicate key warnings', async () => {
+  it('omits previously tested release tags without duplicate key warnings', async () => {
     await act(async () => {
       root.render(
         <NewTestPage
@@ -212,7 +226,8 @@ describe('NewTestPage', () => {
     expect(duplicateKeyWarning).toBe(false)
 
     const releaseTags = Array.from(container.querySelectorAll('.new-test-tag')).map((element) => element.textContent)
-    expect(releaseTags).toEqual(['PI29', 'PI29'])
+    expect(releaseTags).toEqual([])
+    expect(container.textContent).not.toContain('Previously Tested')
   })
 
   it('creates a scenario schedule from the schedules view', async () => {
@@ -335,6 +350,289 @@ describe('NewTestPage', () => {
 
     expect(container.textContent).toContain('0 matching scenarios')
     expect(container.textContent).toContain('No scenarios match this search.')
+  })
+
+  it('places scenario first, merges launch summary, and saves card edits as run-only overrides', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Checkout Smoke',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          runtime_settings: {
+            log_level: 'standard',
+            auto_transactions: 'per_iteration',
+            error_handling: { snapshot_on_error: true },
+          },
+          script_shakeout: true,
+          resource_baseline: true,
+          scripts: [
+            { order: 1, name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Script', protocol: 'http', vusers: 10 },
+          ],
+          script_count: 1,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [
+            { id: 'release-0', name: 'PI28', application_id: 'app-1' },
+          ],
+        },
+      ],
+    })
+    const selectTest = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={selectTest}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+
+    const headers = Array.from(container.querySelectorAll('.new-test-step-header h3'))
+    const scenarioHeader = headers.find(element => element.textContent === 'Select Scenario')
+    const setupHeader = headers.find(element => element.textContent === 'Run Setup')
+    const defaultsHeader = headers.find(element => element.textContent === 'Global Run Settings')
+    const groupsHeader = headers.find(element => element.textContent === 'Script Groups')
+    expect(scenarioHeader).toBeTruthy()
+    expect(setupHeader).toBeTruthy()
+    expect(defaultsHeader).toBeTruthy()
+    expect(groupsHeader).toBeTruthy()
+    if (!scenarioHeader || !setupHeader || !defaultsHeader || !groupsHeader) return
+    expect(scenarioHeader.compareDocumentPosition(setupHeader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(setupHeader.compareDocumentPosition(defaultsHeader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(defaultsHeader.compareDocumentPosition(groupsHeader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const setupSettingsRow = setupHeader.closest('.new-test-run-config-row')
+    expect(setupSettingsRow).toBeTruthy()
+    expect(defaultsHeader.closest('.new-test-run-config-row')).toBe(setupSettingsRow)
+    const scenarioSection = scenarioHeader.closest('.new-test-step')
+    const scenarioFacts = scenarioSection?.querySelector('.new-test-scenario-facts')
+    expect(scenarioSection?.querySelector('.new-test-scenario-browser')).toBeTruthy()
+    expect(scenarioSection?.querySelector('.new-test-detail-grid.compact')).toBeNull()
+    expect(scenarioFacts?.textContent).toContain('Scenario Details')
+    expect(scenarioFacts?.textContent).toContain('Mode')
+    expect(scenarioFacts?.textContent).toContain('VUser Driven')
+    expect(scenarioFacts?.textContent).toContain('Script Groups')
+    const setupSection = setupHeader.closest('.new-test-step')
+    expect(setupSection?.textContent).not.toContain('Application')
+    expect(setupSection?.textContent).not.toContain('Previously Tested')
+
+    const sidebar = container.querySelector('.new-test-sidebar-column')
+    const readinessCard = sidebar?.querySelector('.new-test-summary')
+    const profileCard = sidebar?.querySelector('.new-test-profile-card')
+    expect(readinessCard).toBeTruthy()
+    expect(profileCard).toBeTruthy()
+    if (!readinessCard || !profileCard) return
+    expect(readinessCard.textContent).toContain('Launch Summary')
+    expect(readinessCard.querySelector('.readiness-list')).toBeNull()
+    expect(readinessCard.querySelector('.new-test-summary-grid')).toBeNull()
+    const summaryList = readinessCard.querySelector('.new-test-summary-list')
+    expect(summaryList).toBeTruthy()
+    expect(summaryList?.textContent).toContain('Run Name')
+    expect(summaryList?.textContent).toContain('Checkout Smoke')
+    expect(summaryList?.textContent).toContain('Release')
+    expect(summaryList?.textContent).toContain('PI29')
+    expect(summaryList?.textContent).toContain('Total VUsers')
+    expect(summaryList?.textContent).toContain('Script Groups')
+    expect(summaryList?.textContent).toContain('Capacity')
+    expect(readinessCard.textContent).not.toContain('Application')
+    expect(profileCard.textContent).toContain('Modeled Load Profile')
+    expect(profileCard.textContent).toContain('Planned VUsers for this run.')
+    expect(profileCard.textContent).toContain('10peak')
+    expect(profileCard.textContent).toContain('20m total')
+    expect(readinessCard.compareDocumentPosition(profileCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(profileCard.querySelector('[data-testid="mock-responsive-container"]')).toBeTruthy()
+    expect(container.textContent).toContain('Apply runtime defaults to all script groups')
+    const scriptGroupsTable = container.querySelector('.new-test-script-table')
+    expect(scriptGroupsTable).toBeTruthy()
+    const scriptGroupsTableText = scriptGroupsTable?.textContent || ''
+    expect(scriptGroupsTableText).toContain('Iterations')
+    expect(scriptGroupsTableText).toContain('Pacing')
+    expect(scriptGroupsTableText).toContain('Think Time')
+    expect(scriptGroupsTableText).toContain('Log Level')
+    expect(scriptGroupsTableText).toContain('Auto Tx')
+    expect(scriptGroupsTableText).toContain('Duration driven')
+    expect(scriptGroupsTableText).toContain('Script timing')
+    expect(scriptGroupsTableText).toContain('Script think time')
+    expect(scriptGroupsTableText).toContain('Standard')
+    expect(scriptGroupsTableText).toContain('Per iteration')
+    expect(scriptGroupsTableText).toContain('Stop / Snapshot')
+    expect(scriptGroupsTableText).not.toMatch(/\bdefault\b/i)
+
+    const runtimeDefaultsToggle = container.querySelector('.new-test-runtime-defaults summary') as HTMLElement | null
+    expect(runtimeDefaultsToggle).toBeTruthy()
+    await act(async () => {
+      runtimeDefaultsToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const logLevelCard = Array.from(container.querySelectorAll('button.new-test-default-card')).find(button => button.textContent?.includes('Log Level'))
+    expect(logLevelCard).toBeTruthy()
+
+    await act(async () => {
+      logLevelCard?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Edit Log Level')
+    expect(container.textContent).toContain('Saved changes apply only to the run created from this page')
+    expect(container.textContent).toContain('Scenario default')
+    expect(container.textContent).toContain('standard')
+
+    const logLevelSelect = container.querySelector('.run-default-modal select') as HTMLSelectElement | null
+    expect(logLevelSelect).toBeTruthy()
+    if (!logLevelSelect) return
+
+    await act(async () => {
+      setSelectValue(logLevelSelect, 'extended')
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save Run Override')
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Saved Log Level for this run only. Scenario defaults were not changed.')
+    const overriddenLogLevelCard = Array.from(container.querySelectorAll('button.new-test-default-card')).find(button => button.textContent?.includes('Log Level'))
+    expect(overriddenLogLevelCard?.textContent).toContain('extended')
+    expect(overriddenLogLevelCard?.textContent).toContain('Run override')
+
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
+    await act(async () => {
+      createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Checkout Smoke',
+      duration: '10m',
+      scenario_id: 'scenario-1',
+      runtime_settings: {
+        log_level: 'extended',
+        auto_transactions: 'per_iteration',
+        error_handling: {
+          continue_on_error: false,
+          snapshot_on_error: true,
+        },
+      },
+    }))
+    expect(selectTest).toHaveBeenCalledWith('test-1')
+  })
+
+  it('saves per-script runtime settings as run-only group overrides', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Checkout Smoke',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          runtime_settings: {
+            log_level: 'standard',
+            auto_transactions: 'per_iteration',
+          },
+          scripts: [
+            { order: 1, name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Script', protocol: 'http', vusers: 10, ramp_up: '1m', ramp_down: '30s' },
+          ],
+          script_count: 1,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+
+    const editButton = Array.from(container.querySelectorAll('.new-test-script-table button')).find(button => button.textContent === 'Edit')
+    expect(editButton).toBeTruthy()
+
+    await act(async () => {
+      editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const modal = container.querySelector('.run-group-modal') as HTMLElement | null
+    expect(modal).toBeTruthy()
+    if (!modal) return
+    expect(modal.textContent).toContain('Saved changes apply only to the run created from this page')
+
+    const vusersInput = findControlByLabel<HTMLInputElement>(modal, 'VUsers', 'input')
+    const iterationsInput = findControlByLabel<HTMLInputElement>(modal, 'Iterations', 'input')
+    const logLevelSelect = findControlByLabel<HTMLSelectElement>(modal, 'Log level', 'select')
+    const pacingSelect = findControlByLabel<HTMLSelectElement>(modal, 'Pacing', 'select')
+    expect(vusersInput).toBeTruthy()
+    expect(iterationsInput).toBeTruthy()
+    expect(logLevelSelect).toBeTruthy()
+    expect(pacingSelect).toBeTruthy()
+    if (!vusersInput || !iterationsInput || !logLevelSelect || !pacingSelect) return
+
+    await act(async () => {
+      setInputValue(vusersInput, '25')
+      setInputValue(iterationsInput, '4')
+      setSelectValue(logLevelSelect, 'extended')
+      setSelectValue(pacingSelect, 'fixed_delay')
+    })
+
+    const pacingAmountInput = Array.from(modal.querySelectorAll('label')).find(label => label.textContent?.includes('Milliseconds'))?.querySelector('input') as HTMLInputElement | null
+    expect(pacingAmountInput).toBeTruthy()
+    if (!pacingAmountInput) return
+
+    await act(async () => {
+      setInputValue(pacingAmountInput, '750')
+    })
+
+    const saveButton = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run')
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Saved script settings for this run only. Scenario defaults were not changed.')
+    expect(container.textContent).toContain('25 VUsers')
+    const scriptGroupsTable = container.querySelector('.new-test-script-table')
+    expect(scriptGroupsTable).toBeTruthy()
+    const scriptGroupsTableText = scriptGroupsTable?.textContent || ''
+    expect(scriptGroupsTableText).toContain('4')
+    expect(scriptGroupsTableText).toContain('Fixed delay · 750ms')
+    expect(scriptGroupsTableText).toContain('Extended')
+    expect(scriptGroupsTableText).not.toMatch(/\bdefault\b/i)
+    expect(container.textContent).toContain('Run override')
+
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
+    await act(async () => {
+      createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+      scenario_id: 'scenario-1',
+      groups: [expect.objectContaining({
+        name: 'Checkout',
+        script_id: 'script-1',
+        vusers: 25,
+        ramp_up: '1m',
+        ramp_down: '30s',
+        runtime_settings: {
+          iterations: 4,
+          log_level: 'extended',
+          pacing: { type: 'fixed_delay', delay_ms: 750 },
+        },
+      })],
+    }))
   })
 
   it('surfaces governed schedule policies and approval actions', async () => {
@@ -542,4 +840,16 @@ function setInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
   setter?.call(input, value)
   input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+function setSelectValue(select: HTMLSelectElement, value: string) {
+  const prototype = Object.getPrototypeOf(select) as HTMLSelectElement
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+  setter?.call(select, value)
+  select.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+function findControlByLabel<T extends HTMLElement>(root: HTMLElement, labelText: string, selector: string): T | null {
+  const label = Array.from(root.querySelectorAll('label')).find(element => element.textContent?.includes(labelText))
+  return (label?.querySelector(selector) as T | null) || null
 }

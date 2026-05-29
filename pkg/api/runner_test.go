@@ -664,6 +664,45 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	}
 }
 
+func TestCreateTestRequestFromScenarioHonorsExplicitFalseBooleans(t *testing.T) {
+	scenario := &StoredScenario{
+		ID:               "scenario-1",
+		Name:             "Scenario Defaults",
+		Duration:         "1m",
+		ScriptShakeout:   true,
+		ResourceBaseline: true,
+		Scripts: []ScenarioScriptRef{{
+			Order:    1,
+			ScriptID: "script-1",
+			VUsers:   1,
+		}},
+	}
+
+	var explicit CreateTestRequest
+	if err := json.Unmarshal([]byte(`{"scenario_id":"scenario-1","script_shakeout":false,"resource_baseline":false}`), &explicit); err != nil {
+		t.Fatalf("unmarshal explicit request: %v", err)
+	}
+	got := createTestRequestFromScenario(explicit, scenario)
+	if got.ScriptShakeout {
+		t.Fatal("expected explicit script_shakeout=false to override scenario default")
+	}
+	if got.ResourceBaseline {
+		t.Fatal("expected explicit resource_baseline=false to override scenario default")
+	}
+
+	var inherited CreateTestRequest
+	if err := json.Unmarshal([]byte(`{"scenario_id":"scenario-1"}`), &inherited); err != nil {
+		t.Fatalf("unmarshal inherited request: %v", err)
+	}
+	got = createTestRequestFromScenario(inherited, scenario)
+	if !got.ScriptShakeout {
+		t.Fatal("expected omitted script_shakeout to inherit scenario default")
+	}
+	if !got.ResourceBaseline {
+		t.Fatal("expected omitted resource_baseline to inherit scenario default")
+	}
+}
+
 func TestCreateTestInheritsProjectRedactionRules(t *testing.T) {
 	hub := NewHub()
 	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
@@ -895,6 +934,148 @@ func TestCompileManagedTestGroupLockedAppliesEphemeralTargetOverridesWithoutMuta
 	}
 	if stored.Script.Actions[0].Headers["X-Namespace"] != "{{env.target_namespace}}" {
 		t.Fatalf("stored header X-Namespace = %q, want template to remain intact", stored.Script.Actions[0].Headers["X-Namespace"])
+	}
+}
+
+func TestCompileManagedTestGroupLockedAppliesGroupRuntimeOverridesWithPrecedence(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-group-runtime",
+		Name:     "Group Runtime Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL:  "https://example.com",
+			RunLogic: dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_iteration"},
+			Pacing:   dsl.PacingConfig{Type: "none"},
+			Log:      dsl.LogConfig{Level: "standard"},
+		},
+		Actions: []dsl.Action{{Name: "runtime-step", Type: "GET", Target: "/orders"}},
+	})
+
+	groupIterations := 4
+	groupRuntimeIterations := 9
+	topLevelIterations := 2
+	testGroup, engineGroup, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		Name:       "Checkout group",
+		ScriptID:   "script-group-runtime",
+		VUsers:     5,
+		Iterations: &groupIterations,
+		RuntimeSettings: &RuntimeSettingsOverride{
+			Iterations:       &groupRuntimeIterations,
+			LogLevel:         "extended",
+			AutoTransactions: "per_action",
+			Pacing:           &dsl.PacingConfig{Type: "fixed_delay", DelayMs: 750},
+		},
+	}, &RuntimeSettingsOverride{
+		Iterations:       &topLevelIterations,
+		LogLevel:         "standard",
+		AutoTransactions: "per_iteration",
+		Pacing:           &dsl.PacingConfig{Type: "fixed_interval", IntervalMs: 2500},
+	}, nil)
+	if err != nil {
+		t.Fatalf("compileManagedTestGroupLocked returned error: %v", err)
+	}
+	if testGroup.Iterations == nil || *testGroup.Iterations != groupRuntimeIterations {
+		t.Fatalf("test group iterations = %#v, want runtime_settings.iterations %d", testGroup.Iterations, groupRuntimeIterations)
+	}
+	if testGroup.RuntimeSettings == nil || testGroup.RuntimeSettings.LogLevel != "extended" {
+		t.Fatalf("test group runtime settings = %#v, want group override", testGroup.RuntimeSettings)
+	}
+	if engineGroup.Script.Config.RunLogic.Iterations != groupRuntimeIterations {
+		t.Fatalf("engine iterations = %d, want %d", engineGroup.Script.Config.RunLogic.Iterations, groupRuntimeIterations)
+	}
+	if engineGroup.Script.Config.Log.Level != "extended" {
+		t.Fatalf("engine log level = %q, want extended", engineGroup.Script.Config.Log.Level)
+	}
+	if engineGroup.Script.Config.RunLogic.AutoTransactions != "per_action" {
+		t.Fatalf("engine auto transactions = %q, want per_action", engineGroup.Script.Config.RunLogic.AutoTransactions)
+	}
+	if engineGroup.Script.Config.Pacing.Type != "fixed_delay" || engineGroup.Script.Config.Pacing.DelayMs != 750 {
+		t.Fatalf("engine pacing = %#v, want group fixed_delay 750ms", engineGroup.Script.Config.Pacing)
+	}
+
+	stored, ok := runner.GetScript("script-group-runtime")
+	if !ok {
+		t.Fatal("expected stored script to remain available")
+	}
+	if stored.Script.Config.RunLogic.Iterations != 1 || stored.Script.Config.Log.Level != "standard" {
+		t.Fatalf("stored script config mutated: %#v", stored.Script.Config)
+	}
+}
+
+func TestCreateTestWithGroupRuntimeOverridesDoesNotMutateScenarioDefaults(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-scenario-group-runtime",
+		Name:     "Scenario Group Runtime Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL:  "https://example.com",
+			RunLogic: dsl.RunLogicConfig{Iterations: 1},
+			Log:      dsl.LogConfig{Level: "standard"},
+		},
+		Actions: []dsl.Action{{Name: "runtime-step", Type: "GET", Target: "/orders"}},
+	})
+	scenarioIterations := 3
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Scenario Defaults",
+		Duration: "10m",
+		Groups: []CreateGroupEntry{{
+			Name:       "Checkout",
+			ScriptID:   "script-scenario-group-runtime",
+			VUsers:     10,
+			RampUp:     "1m",
+			Iterations: &scenarioIterations,
+		}},
+		RuntimeSettings: &RuntimeSettingsOverride{LogLevel: "standard"},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+
+	runIterations := 8
+	test, err := runner.CreateTest(CreateTestRequest{
+		ScenarioID: scenario.ID,
+		Groups: []CreateGroupEntry{{
+			Name:     "Checkout",
+			ScriptID: "script-scenario-group-runtime",
+			VUsers:   25,
+			RampUp:   "30s",
+			RuntimeSettings: &RuntimeSettingsOverride{
+				Iterations: &runIterations,
+				LogLevel:   "extended",
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	if len(test.Groups) != 1 {
+		t.Fatalf("test groups = %#v, want one group", test.Groups)
+	}
+	if test.Groups[0].VUsers != 25 || test.Groups[0].RampUp != "30s" {
+		t.Fatalf("test group workload = %#v, want run-only workload overrides", test.Groups[0])
+	}
+	if test.Groups[0].RuntimeSettings == nil || test.Groups[0].RuntimeSettings.LogLevel != "extended" {
+		t.Fatalf("test group runtime settings = %#v, want run-only runtime overrides", test.Groups[0].RuntimeSettings)
+	}
+	if test.Groups[0].Iterations == nil || *test.Groups[0].Iterations != runIterations {
+		t.Fatalf("test group iterations = %#v, want %d", test.Groups[0].Iterations, runIterations)
+	}
+
+	storedScenario := runner.scenarios[scenario.ID]
+	if storedScenario.Scripts[0].VUsers != 10 || storedScenario.Scripts[0].RampUp != "1m" {
+		t.Fatalf("stored scenario script mutated: %#v", storedScenario.Scripts[0])
+	}
+	if storedScenario.Scripts[0].Iterations == nil || *storedScenario.Scripts[0].Iterations != scenarioIterations {
+		t.Fatalf("stored scenario iterations = %#v, want %d", storedScenario.Scripts[0].Iterations, scenarioIterations)
+	}
+	if storedScenario.RuntimeSettings == nil || storedScenario.RuntimeSettings.LogLevel != "standard" {
+		t.Fatalf("stored scenario runtime settings mutated: %#v", storedScenario.RuntimeSettings)
 	}
 }
 

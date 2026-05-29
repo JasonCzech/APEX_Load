@@ -340,7 +340,7 @@ func calculateScenarioComplexity(groups []TestGroup, runtimeSettings *RuntimeSet
 			scriptScore += math.Min(float64(len(group.script.Actions))*0.04, 0.6)
 			scriptScore += math.Min(float64(len(group.script.Init)+len(group.script.Teardown))*0.02, 0.2)
 			scriptScore += countActionComplexity(group.script.Actions)
-			scriptScore += runtimeOverheadScore(group.script.Config, runtimeSettings)
+			scriptScore += runtimeOverheadScore(group.script.Config, nil)
 		}
 		if group.Initialization == "at_once" {
 			scriptScore += 0.08
@@ -551,6 +551,9 @@ func isBrowserCapacityGroup(group TestGroup) bool {
 }
 
 func browserDeviceProfileForCapacity(group TestGroup, runtimeSettings *RuntimeSettingsOverride) string {
+	if group.RuntimeSettings != nil && group.RuntimeSettings.Browser != nil && strings.TrimSpace(group.RuntimeSettings.Browser.DeviceProfile) != "" {
+		return strings.TrimSpace(group.RuntimeSettings.Browser.DeviceProfile)
+	}
 	if runtimeSettings != nil && runtimeSettings.Browser != nil && strings.TrimSpace(runtimeSettings.Browser.DeviceProfile) != "" {
 		return strings.TrimSpace(runtimeSettings.Browser.DeviceProfile)
 	}
