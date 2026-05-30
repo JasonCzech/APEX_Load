@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { type AuthoringComponent, type AuthoringTemplate, type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
+import PageViewToggle from './PageViewToggle'
 
 interface Props {
   onBack: () => void
@@ -181,7 +182,18 @@ export default function ScriptCreateOptions({
           <h2>Create Script</h2>
           <p className="page-subtitle">Start from a template, build manually, record a browser flow, or import an existing asset.</p>
         </div>
-        <button className="btn btn-secondary" onClick={onBack}>Script Library ({scripts.length})</button>
+        <PageViewToggle
+          value="create-options"
+          ariaLabel="Script page view"
+          className="script-page-toggle"
+          onChange={view => {
+            if (view === 'library') onBack()
+          }}
+          options={[
+            { value: 'library', label: 'Script Library' },
+            { value: 'create-options', label: 'Create Script Options' },
+          ]}
+        />
       </div>
 
       <div className="script-workflow-picker" aria-label="Script creation workflows">

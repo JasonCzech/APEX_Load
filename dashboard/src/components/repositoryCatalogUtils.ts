@@ -1,4 +1,5 @@
 import {
+  Application,
   Domain,
   Project,
   Release,
@@ -56,6 +57,7 @@ export interface RepositoryAssetRow {
 
 export interface RepositoryCatalogBuildInput {
   activeDomain: Domain | null
+  activeApplication?: Application | null
   categories: RepositoryCategory[]
   projects: Project[]
   releasesByProject: Record<string, Release[]>
@@ -135,6 +137,28 @@ function releaseIdsFromRefs(refs?: Array<{ id: string; name: string }>) {
   return unique((refs || []).map(ref => ref.id))
 }
 
+function releaseMatchesApplication(release: Release | undefined, activeApplicationId: string) {
+  return !activeApplicationId || release?.application_id === activeApplicationId
+}
+
+function releaseRefMatchesApplication(ref: { id: string; application_id?: string } | undefined, activeApplicationId: string, releaseMap: Map<string, Release>) {
+  if (!activeApplicationId || !ref) return !activeApplicationId
+  if (ref.application_id) return ref.application_id === activeApplicationId
+  return releaseMatchesApplication(releaseMap.get(ref.id), activeApplicationId)
+}
+
+function releaseRefsForApplication<T extends { id: string; application_id?: string }>(refs: T[] | undefined, activeApplicationId: string, releaseMap: Map<string, Release>) {
+  const values = refs || []
+  if (!activeApplicationId) return values
+  return values.filter(ref => releaseRefMatchesApplication(ref, activeApplicationId, releaseMap))
+}
+
+function testMatchesApplication(test: TestSummary, activeApplicationId: string, releaseMap: Map<string, Release>) {
+  if (!activeApplicationId) return true
+  if (test.application_id) return test.application_id === activeApplicationId
+  return releaseMatchesApplication(test.release_id ? releaseMap.get(test.release_id) : undefined, activeApplicationId)
+}
+
 function scenarioModeLabel(value?: StoredScenario['scenario_mode']) {
   return value === 'goal_oriented' ? 'Goal' : 'VUser'
 }
@@ -148,6 +172,7 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
   const projectMap = new Map(scopedProjects.map(project => [project.id, project]))
   const categoryMap = new Map(input.categories.map(category => [category.id, category]))
   const releaseMap = new Map<string, Release>()
+  const activeApplicationId = input.activeApplication?.id || ''
 
   Object.values(input.releasesByProject).forEach(releases => {
     releases.forEach(release => releaseMap.set(release.id, release))
@@ -184,6 +209,7 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
     if (!project) continue
     const category = project.category_id ? categoryMap.get(project.category_id) : undefined
     for (const release of releases) {
+      if (!releaseMatchesApplication(release, activeApplicationId)) continue
       const archived = Boolean(release.archived_at)
       rows.push({
         id: release.id,
@@ -215,13 +241,16 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
     if (!project) continue
     const category = project.category_id ? categoryMap.get(project.category_id) : undefined
     for (const script of scripts) {
+      const scriptReleaseRefs = releaseRefsForApplication([
+        ...(script.associated_releases || []),
+        ...(script.scenario_run_releases || []),
+      ], activeApplicationId, releaseMap)
+      if (activeApplicationId && scriptReleaseRefs.length === 0) continue
       const releaseNames = unique([
-        ...releaseNamesFromRefs(script.associated_releases),
-        ...releaseNamesFromRefs(script.scenario_run_releases),
+        ...releaseNamesFromRefs(scriptReleaseRefs),
       ])
       const releaseIds = unique([
-        ...releaseIdsFromRefs(script.associated_releases),
-        ...releaseIdsFromRefs(script.scenario_run_releases),
+        ...releaseIdsFromRefs(scriptReleaseRefs),
       ])
       const status = script.authoring_health?.status || 'Ready'
       rows.push({
@@ -252,8 +281,10 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
     if (!project) continue
     const category = project.category_id ? categoryMap.get(project.category_id) : undefined
     for (const scenario of scenarios) {
-      const releaseNames = releaseNamesFromRefs(scenario.associated_releases)
-      const releaseIds = releaseIdsFromRefs(scenario.associated_releases)
+      const scenarioReleaseRefs = releaseRefsForApplication(scenario.associated_releases, activeApplicationId, releaseMap)
+      if (activeApplicationId && scenarioReleaseRefs.length === 0) continue
+      const releaseNames = releaseNamesFromRefs(scenarioReleaseRefs)
+      const releaseIds = releaseIdsFromRefs(scenarioReleaseRefs)
       const protocols = protocolListFromScenario(scenario)
       const status = scenarioModeLabel(scenario.scenario_mode)
       rows.push({
@@ -297,6 +328,7 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
     if (!project) continue
     const category = project.category_id ? categoryMap.get(project.category_id) : undefined
     for (const test of tests) {
+      if (!testMatchesApplication(test, activeApplicationId, releaseMap)) continue
       const release = test.release_id ? releaseMap.get(test.release_id) : undefined
       const protocols = protocolListFromTest(test)
       rows.push({

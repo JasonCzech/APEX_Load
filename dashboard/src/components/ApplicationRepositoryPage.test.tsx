@@ -56,6 +56,7 @@ const domain = { id: 'domain-1', name: 'Retail', created_at: '', updated_at: '' 
 const repository = { id: 'repo-1', domain_id: domain.id, name: 'Application Repository', created_at: '', updated_at: '' }
 const category = { id: 'category-1', domain_id: domain.id, repository_id: repository.id, name: 'Checkout', created_at: '', updated_at: '' }
 const project = { id: 'project-1', domain_id: domain.id, category_id: category.id, name: 'Checkout API', created_at: '', updated_at: '' }
+const application = { id: 'app-1', project_id: project.id, name: 'ACC', created_at: '', updated_at: '' }
 
 async function flushPromises() {
   await act(async () => {
@@ -125,6 +126,7 @@ describe('ApplicationRepositoryPage', () => {
         updated_at: '2026-05-05T00:00:00Z',
         script_count: 1,
         result_count: 1,
+        associated_releases: [{ id: 'release-1', application_id: 'app-1', name: '2026.05' }],
       }],
       count: 1,
     })
@@ -169,6 +171,7 @@ describe('ApplicationRepositoryPage', () => {
         id: 'test-1',
         name: 'Checkout Run',
         status: 'COMPLETE',
+        application_id: 'app-1',
         project_id: project.id,
         release_id: 'release-1',
         scenario_id: 'scenario-1',
@@ -195,6 +198,7 @@ describe('ApplicationRepositoryPage', () => {
         <ApplicationRepositoryPage
           domains={[domain]}
           activeDomain={domain}
+          activeApplication={application}
           applicationRepository={repository}
           categories={[category]}
           projects={[project]}
@@ -273,8 +277,130 @@ describe('ApplicationRepositoryPage', () => {
       addRelease?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(repositoryApiMock.createProjectRelease).toHaveBeenCalledWith(project.id, { name: '2026.06' })
+    expect(repositoryApiMock.createProjectRelease).toHaveBeenCalledWith(project.id, { name: '2026.06', application_id: application.id })
     expect(container.textContent).toContain('Release created.')
+  })
+
+  it('scopes scripts, scenarios, tests, and releases to the selected application', async () => {
+    repositoryApiMock.listProjectReleases.mockResolvedValueOnce({
+      releases: [
+        { id: 'release-1', application_id: 'app-1', project_id: project.id, name: '2026.05', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' },
+        { id: 'release-foreign', application_id: 'app-2', project_id: project.id, name: 'Foreign Release', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' },
+      ],
+      count: 2,
+    })
+    scriptApiMock.listScripts.mockResolvedValueOnce({
+      scripts: [
+        {
+          id: 'script-1',
+          name: 'Checkout Smoke',
+          protocol: 'http',
+          version: '1.0.0',
+          project_id: project.id,
+          created_at: '2026-05-03T00:00:00Z',
+          scenario_count: 1,
+          associated_releases: [{ id: 'release-1', application_id: 'app-1', name: '2026.05' }],
+        },
+        {
+          id: 'script-foreign',
+          name: 'Billing Smoke',
+          protocol: 'http',
+          version: '1.0.0',
+          project_id: project.id,
+          created_at: '2026-05-03T00:00:00Z',
+          scenario_count: 1,
+          associated_releases: [{ id: 'release-foreign', application_id: 'app-2', name: 'Foreign Release' }],
+        },
+      ],
+      count: 2,
+    })
+    scriptApiMock.listScenarios.mockResolvedValueOnce({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Checkout Peak',
+          duration: '30m',
+          scripts: [{ order: 1, script_id: 'script-1', script_name: 'Checkout Smoke', protocol: 'http', vusers: 10 }],
+          created_at: '2026-05-04T00:00:00Z',
+          updated_at: '2026-05-05T00:00:00Z',
+          script_count: 1,
+          associated_releases: [{ id: 'release-1', application_id: 'app-1', name: '2026.05' }],
+        },
+        {
+          id: 'scenario-foreign',
+          name: 'Billing Peak',
+          duration: '30m',
+          scripts: [{ order: 1, script_id: 'script-foreign', script_name: 'Billing Smoke', protocol: 'http', vusers: 10 }],
+          created_at: '2026-05-04T00:00:00Z',
+          updated_at: '2026-05-05T00:00:00Z',
+          script_count: 1,
+          associated_releases: [{ id: 'release-foreign', application_id: 'app-2', name: 'Foreign Release' }],
+        },
+      ],
+      count: 2,
+    })
+    testApiMock.listTests.mockResolvedValueOnce({
+      tests: [
+        {
+          id: 'test-1',
+          name: 'Checkout Run',
+          status: 'COMPLETE',
+          application_id: 'app-1',
+          project_id: project.id,
+          release_id: 'release-1',
+          scenario_id: 'scenario-1',
+          groups: [{ name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Smoke', protocol: 'http', vusers: 10 }],
+          total_vusers: 10,
+          duration: '30m',
+          created_at: '2026-05-08T00:00:00Z',
+        },
+        {
+          id: 'test-foreign',
+          name: 'Billing Run',
+          status: 'COMPLETE',
+          application_id: 'app-2',
+          project_id: project.id,
+          release_id: 'release-foreign',
+          scenario_id: 'scenario-foreign',
+          groups: [{ name: 'Billing', script_id: 'script-foreign', script_name: 'Billing Smoke', protocol: 'http', vusers: 10 }],
+          total_vusers: 10,
+          duration: '30m',
+          created_at: '2026-05-08T00:00:00Z',
+        },
+      ],
+      count: 2,
+    })
+
+    await act(async () => {
+      root.render(
+        <ApplicationRepositoryPage
+          domains={[domain]}
+          activeDomain={domain}
+          activeApplication={application}
+          applicationRepository={repository}
+          categories={[category]}
+          projects={[project]}
+          canManageRepository
+          canManageProjects
+          canManageReleases
+          onDomainChange={vi.fn()}
+          onRepositoryRefresh={vi.fn()}
+          onProjectsRefresh={vi.fn()}
+          onProjectCreated={vi.fn()}
+        />,
+      )
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('for ACC')
+    expect(container.textContent).toContain('Checkout Smoke')
+    expect(container.textContent).toContain('Checkout Peak')
+    expect(container.textContent).toContain('Checkout Run')
+    expect(container.textContent).toContain('2026.05')
+    expect(container.textContent).not.toContain('Billing Smoke')
+    expect(container.textContent).not.toContain('Billing Peak')
+    expect(container.textContent).not.toContain('Billing Run')
+    expect(container.textContent).not.toContain('Foreign Release')
   })
 
   it('shows asset load failures as non-blocking catalog warnings', async () => {
@@ -284,6 +410,7 @@ describe('ApplicationRepositoryPage', () => {
         <ApplicationRepositoryPage
           domains={[domain]}
           activeDomain={domain}
+          activeApplication={application}
           applicationRepository={repository}
           categories={[category]}
           projects={[project]}
@@ -311,6 +438,7 @@ describe('ApplicationRepositoryPage', () => {
         <ApplicationRepositoryPage
           domains={[domain]}
           activeDomain={domain}
+          activeApplication={application}
           applicationRepository={repository}
           categories={[category]}
           projects={[project]}

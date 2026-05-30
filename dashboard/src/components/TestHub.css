@@ -477,10 +477,15 @@
 
 .scenario-source-card.selected,
 .scenario-source-card:hover,
+.scenario-clone-card.selected,
 .scenario-clone-card:hover,
 .scenario-shape-catalog-card.selected {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+.scenario-clone-card.selected {
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.16);
 }
 
 .scenario-source-card span,
@@ -716,6 +721,48 @@
   gap: 7px;
 }
 
+.scenario-source-runs-panel {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+}
+
+.scenario-linked-runs-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px 4px;
+}
+
+.scenario-source-runs-panel .scenario-linked-runs-content {
+  padding: 0;
+}
+
+.scenario-linked-runs-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.scenario-linked-runs-header div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.scenario-linked-runs-header strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.scenario-linked-runs-header span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .scenario-builder-card,
 .scenario-builder-disclosure {
   border: 1px solid var(--border);
@@ -790,6 +837,13 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.scenario-script-group-list.scenario-script-group-list-spacious {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
 }
 
 .scenario-script-group-card {
@@ -1478,6 +1532,10 @@
     grid-template-columns: 1fr 1fr;
   }
 
+  .scenario-script-group-list.scenario-script-group-list-spacious {
+    grid-template-columns: 1fr;
+  }
+
   .scenario-wizard-panel-header,
   .scenario-model-preview-header {
     flex-direction: column;
@@ -1511,5 +1569,11 @@
   .runs-header .runs-col:nth-child(5),
   .run-row .runs-col:nth-child(5) {
     display: none;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1100px) {
+  .scenario-script-group-list.scenario-script-group-list-spacious {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

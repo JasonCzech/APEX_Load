@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 
 import {
+  Application,
   ApplicationRepository,
   Domain,
   Project,
@@ -33,6 +34,7 @@ import {
 interface Props {
   domains: Domain[]
   activeDomain: Domain | null
+  activeApplication: Application | null
   applicationRepository: ApplicationRepository | null
   categories: RepositoryCategory[]
   projects: Project[]
@@ -183,6 +185,7 @@ function repositoryRowKey(row: RepositoryAssetRow) {
 export default function ApplicationRepositoryPage({
   domains,
   activeDomain,
+  activeApplication,
   applicationRepository,
   categories,
   projects,
@@ -342,6 +345,7 @@ export default function ApplicationRepositoryPage({
 
   const catalogRows = useMemo(() => buildRepositoryCatalogRows({
     activeDomain,
+    activeApplication,
     categories,
     projects,
     releasesByProject,
@@ -349,7 +353,7 @@ export default function ApplicationRepositoryPage({
     scenariosByProject,
     testsByProject,
     dataPoolsByProject,
-  }), [activeDomain, categories, dataPoolsByProject, projects, releasesByProject, scenariosByProject, scriptsByProject, testsByProject])
+  }), [activeApplication, activeDomain, categories, dataPoolsByProject, projects, releasesByProject, scenariosByProject, scriptsByProject, testsByProject])
 
   const summary = useMemo(() => summarizeRepositoryRows(catalogRows), [catalogRows])
 
@@ -463,7 +467,10 @@ export default function ApplicationRepositoryPage({
     setError('')
     setStatus('')
     try {
-      const release = await repositoryApi.createProjectRelease(project.id, { name })
+      const release = await repositoryApi.createProjectRelease(project.id, {
+        name,
+        application_id: activeApplication?.project_id === project.id ? activeApplication.id : undefined,
+      })
       setReleasesByProject(prev => ({ ...prev, [project.id]: [release, ...(prev[project.id] || [])] }))
       setNewReleaseNameByProject(prev => ({ ...prev, [project.id]: '' }))
       setStatus('Release created.')
@@ -625,6 +632,10 @@ export default function ApplicationRepositoryPage({
     }
   }
 
+  const emptyCatalogMessage = activeApplication
+    ? `No assets found for ${activeApplication.name}.`
+    : 'No assets found for this domain.'
+
   const renderRowAction = (row: RepositoryAssetRow) => {
     if (row.kind === 'script' && onOpenScript) {
       return <button type="button" className="repository-row-action" onClick={() => onOpenScript(row.id)}>Edit</button>
@@ -647,7 +658,10 @@ export default function ApplicationRepositoryPage({
         <div>
           <p className="page-kicker">Repository</p>
           <h1>{applicationRepository?.name || 'Application Repository'}</h1>
-          <p className="page-subtitle">Search, sort, and inspect the domain inventory across scripts, scenarios, tests, releases, projects, and shared data.</p>
+          <p className="page-subtitle">
+            Search, sort, and inspect repository assets
+            {activeApplication ? ` for ${activeApplication.name}` : ' across the selected domain'}.
+          </p>
         </div>
         <label className="repository-domain-select">
           <span>Domain</span>
@@ -1003,7 +1017,7 @@ export default function ApplicationRepositoryPage({
                   <tr className="no-hover">
                     <td colSpan={9}>
                       <div className="repository-empty table-empty">
-                        {catalogLoading ? 'Loading repository assets...' : filterActive ? 'No assets match the current filters.' : 'No assets found for this domain.'}
+                        {catalogLoading ? 'Loading repository assets...' : filterActive ? 'No assets match the current filters.' : emptyCatalogMessage}
                       </div>
                     </td>
                   </tr>

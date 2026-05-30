@@ -15,6 +15,7 @@ import { useProject } from './hooks/useProject'
 import { DevViewProvider, useDevView } from './hooks/DevViewProvider'
 import { useSystemApi } from './hooks/api/useSystemApi'
 import { useRepositoryApi } from './hooks/api/useRepositoryApi'
+import { isEffectiveOperationAllowed } from './utils/authAccessUtils'
 import ThemeToggle from './components/ThemeToggle'
 import './App.css'
 import './components/Pages.css'
@@ -117,13 +118,13 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   }, [activeDomain?.id, projects])
   const { connectionState } = useWebSocket({ onMessage: handleWSMessage, projectId: activeProject?.id })
   const { applications, releases, activeApplication, activeRelease, setActiveApplication, setActiveRelease, createAndSelectApplication, createAndSelectRelease } = useApplication()
-  const canManageServiceAccounts = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_service_accounts')
-  const canManageUsers = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_users')
-  const canViewUserActivity = isEffectiveOperationAllowed(effectiveAccessResources, 'view_user_activity')
+  const canManageServiceAccounts = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_service_accounts', false)
+  const canManageUsers = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_users', false)
+  const canViewUserActivity = isEffectiveOperationAllowed(effectiveAccessResources, 'view_user_activity', false)
   const canUseAccessWorkspace = canManageServiceAccounts || canManageUsers || canViewUserActivity
-  const canManageRepositoryProjects = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_repository_projects')
-  const canManageRepositoryReleases = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_repository_releases')
-  const canManageRepository = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_application_repository')
+  const canManageRepositoryProjects = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_repository_projects', false)
+  const canManageRepositoryReleases = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_repository_releases', false)
+  const canManageRepository = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_application_repository', false)
 
   const navigateToTest = (id: string) => setView({ page: 'test', testId: id })
   const activePage = view.page === 'test' ? 'tests' : view.page
@@ -364,6 +365,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             <ApplicationRepositoryPage
               domains={domains}
               activeDomain={activeDomain}
+              activeApplication={activeApplication}
               applicationRepository={applicationRepository}
               categories={repositoryCategories}
               projects={projects}
@@ -395,16 +397,6 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       </main>
     </div>
   )
-}
-
-function isEffectiveOperationAllowed(resources: import('./types').DashboardAuthEffectiveAccessResource[], operationID: string): boolean {
-  for (const resource of resources) {
-    const operation = resource.operations.find(item => item.id === operationID)
-    if (operation) {
-      return operation.allowed
-    }
-  }
-  return false
 }
 
 export default function App() {

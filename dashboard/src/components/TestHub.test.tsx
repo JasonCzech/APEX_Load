@@ -67,7 +67,11 @@ describe('TestHub', () => {
   }
 
   const clickWizardStep = async (text: string) => {
-    const button = Array.from(container.querySelectorAll('.scenario-wizard-step')).find(item => item.textContent?.includes(text))
+    let button = Array.from(container.querySelectorAll('.scenario-wizard-step')).find(item => item.textContent?.includes(text))
+    if (!button) {
+      await clickButton('Scenario Builder Wizard')
+      button = Array.from(container.querySelectorAll('.scenario-wizard-step')).find(item => item.textContent?.includes(text))
+    }
     expect(button).toBeDefined()
     if (!button) return
     await act(async () => {
@@ -403,6 +407,20 @@ describe('TestHub', () => {
       }],
       count: 1,
     })
+    apiMock.listScenarioResults.mockResolvedValueOnce({
+      tests: [{
+        id: 'run-1',
+        name: 'Checkout Load 001',
+        status: 'COMPLETE',
+        release_id: 'release-1',
+        groups: [{ name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Flow', protocol: 'http', vusers: 20 }],
+        total_vusers: 20,
+        duration: '7m',
+        created_at: '2026-05-13T00:00:00Z',
+        start_time: '2026-05-13T00:01:00Z',
+      }],
+      count: 1,
+    })
 
     await act(async () => {
       root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
@@ -410,11 +428,33 @@ describe('TestHub', () => {
 
     await flushPromises()
 
+    await clickButton('Scenario Builder Wizard')
     await clickButton('Model from Existing Scenario')
     await clickButton('Pinned Checkout')
+    await flushPromises()
+
+    expect(container.textContent).toContain('20 peak VUsers')
+    expect(container.textContent).toContain('Choose Scenario To Model')
+    expect(container.textContent).not.toContain('Existing Scripts Library')
+    expect(container.textContent).not.toContain('Scenario Library (')
+    expect(apiMock.listScenarioResults).toHaveBeenCalledWith('scenario-source')
+    const selectedCloneCard = Array.from(container.querySelectorAll('.scenario-clone-card.selected')).find(card => card.textContent?.includes('Pinned Checkout'))
+    expect(selectedCloneCard).toBeDefined()
+    const chart = container.querySelector('[data-testid="scenario-model-chart"]')
+    const runPanel = container.querySelector('.scenario-source-runs-panel')
+    expect(runPanel).toBeDefined()
+    const runPanelText = Array.from(container.querySelectorAll('.scenario-source-runs-panel')).map(panel => panel.textContent || '').join(' ')
+    expect(runPanelText).toContain('Past Scenario Runs')
+    expect(runPanelText).toContain('Checkout Load 001')
+    if (chart && runPanel) {
+      expect((chart.compareDocumentPosition(runPanel) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true)
+    }
+
+    await clickButton('Next')
 
     expect(Array.from(container.querySelectorAll('input')).some(input => input.value === 'Pinned Checkout (Copy)')).toBe(true)
-    expect(container.textContent).toContain('20 peak VUsers')
+    expect(container.textContent).not.toContain('Choose Scenario To Model')
+    expect(container.textContent).toContain('Existing Scripts Library')
 
     await clickButton('Save Scenario')
     await flushPromises()
@@ -480,6 +520,7 @@ describe('TestHub', () => {
     await act(async () => {
       editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    await flushPromises()
 
     const groupCards = Array.from(container.querySelectorAll('.scenario-script-group-card'))
     expect(groupCards).toHaveLength(2)
@@ -794,7 +835,7 @@ describe('TestHub', () => {
     expect(container.querySelector('[aria-label="Closed VUser workload shape"]')).toBeTruthy()
   })
 
-  it('shows scenario and script libraries only on the relevant wizard steps', async () => {
+  it('toggles between the scenario library and builder wizard views', async () => {
     const onSelectTest = vi.fn()
 
     await act(async () => {
@@ -803,10 +844,15 @@ describe('TestHub', () => {
 
     await flushPromises()
 
-    expect(container.textContent).toContain('Scenario Builder Wizard')
-    expect(container.textContent).not.toContain('+ New Scenario')
-    expect(container.textContent).not.toContain('Model Preview')
     expect(container.textContent).toContain('Scenario Library')
+    expect(container.querySelector('.scenario-builder')).toBeNull()
+    expect(container.textContent).not.toContain('Existing Scripts Library')
+
+    await clickButton('Scenario Builder Wizard')
+
+    expect(container.textContent).toContain('Scenario Builder Wizard')
+    expect(container.textContent).not.toContain('Model Preview')
+    expect(container.textContent).not.toContain('Scenario Library (')
     expect(container.textContent).not.toContain('Existing Scripts Library')
 
     await clickWizardStep('Shape / Source')
@@ -814,29 +860,53 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Model Preview')
     expect(container.querySelector('[data-testid="scenario-model-x-axis"]')?.getAttribute('data-label')).toBe('Elapsed time')
     expect(Array.from(container.querySelectorAll('[data-testid="scenario-model-y-axis"]')).map(axis => axis.getAttribute('data-label'))).toContain('VUsers')
-    expect(container.textContent).toContain('Scenario Library')
+    expect(container.textContent).not.toContain('Scenario Library (')
     expect(container.textContent).not.toContain('Existing Scripts Library')
 
     await clickWizardStep('Scripts')
 
-    expect(container.textContent).not.toContain('Scenario Library')
+    expect(container.textContent).not.toContain('Scenario Library (')
     expect(container.textContent).toContain('Existing Scripts Library')
     expect(container.textContent).toContain('Checkout Flow')
 
     await clickWizardStep('Run Settings')
 
-    expect(container.textContent).not.toContain('Scenario Library')
+    expect(container.textContent).not.toContain('Scenario Library (')
     expect(container.textContent).not.toContain('Existing Scripts Library')
 
     await clickWizardStep('Data')
 
-    expect(container.textContent).not.toContain('Scenario Library')
+    expect(container.textContent).not.toContain('Scenario Library (')
     expect(container.textContent).not.toContain('Existing Scripts Library')
 
     await clickWizardStep('Review')
 
-    expect(container.textContent).not.toContain('Scenario Library')
+    expect(container.textContent).not.toContain('Scenario Library (')
     expect(container.textContent).not.toContain('Existing Scripts Library')
+
+    await clickButton('Cancel')
+
+    expect(container.textContent).toContain('Scenario Library')
+    expect(container.textContent).not.toContain('Existing Scripts Library')
+  })
+
+  it('renders script groups in the spacious multi-card list on the Scripts step', async () => {
+    const onSelectTest = vi.fn()
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+
+    await flushPromises()
+    await clickWizardStep('Scripts')
+
+    await clickButton('+ Add Script Group')
+    await clickButton('+ Add Script Group')
+    await clickButton('+ Add Script Group')
+
+    const groupList = container.querySelector('.scenario-script-group-list.scenario-script-group-list-spacious')
+    expect(groupList).toBeDefined()
+    expect(groupList?.querySelectorAll('.scenario-script-group-card')).toHaveLength(4)
   })
 
   it('saves from review and opens a new test run for the saved scenario', async () => {

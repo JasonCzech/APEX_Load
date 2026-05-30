@@ -3,6 +3,7 @@ import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip,
 import { DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, ScenarioDataPoolBinding, ScenarioMode, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
+import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import { formatTimeCompact, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import './TestHub.css'
@@ -11,6 +12,7 @@ import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPa
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { buildScenarioModelPreview, buildScenarioShapeCatalog, formatModelTimeLabel, ScenarioModelPreview, ScenarioSourceMode, ScenarioWizardStep, validateStageTimeline } from './scenarioWizardUtils'
 import DurationField from './DurationField'
+import PageViewToggle from './PageViewToggle'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -609,16 +611,6 @@ function ScenarioModelPreviewPanel({
   )
 }
 
-function isEffectiveOperationAllowed(resources: DashboardAuthEffectiveAccessResource[], operationID: string): boolean {
-  for (const resource of resources) {
-    const operation = resource.operations.find(item => item.id === operationID)
-    if (operation) {
-      return operation.allowed
-    }
-  }
-  return true
-}
-
 function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
@@ -631,11 +623,12 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
   const [loadModelValidation, setLoadModelValidation] = useState<LoadModelValidationReport | null>(null)
   const [loadModelValidationLoading, setLoadModelValidationLoading] = useState(false)
   const [loadModelValidationError, setLoadModelValidationError] = useState('')
-  const [showForm, setShowForm] = useState(true)
+  const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [wizardStep, setWizardStep] = useState<ScenarioWizardStep>('start')
   const [scenarioSourceMode, setScenarioSourceMode] = useState<ScenarioSourceMode>('shape')
   const [scenarioCloneQuery, setScenarioCloneQuery] = useState('')
+  const [selectedCloneScenarioId, setSelectedCloneScenarioId] = useState('')
   const [selectedShapeId, setSelectedShapeId] = useState('')
   const [form, setForm] = useState<ScenarioFormState>(emptyScenarioForm())
   const [error, setError] = useState('')
@@ -685,6 +678,10 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
   )
   const selectedShape = shapeCatalog.find(option => option.id === selectedShapeId)
   const selectedTemplate = loadModelTemplates.find(template => template.id === selectedLoadModelTemplateId)
+  const selectedCloneScenario = useMemo(
+    () => scenarios.find(scenario => scenario.id === selectedCloneScenarioId) || null,
+    [scenarios, selectedCloneScenarioId],
+  )
   const scenarioModel = useMemo(
     () => buildScenarioModelPreview({
       duration: form.duration,
@@ -711,7 +708,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
       : scripts
     return [...filtered].sort((left, right) => left.name.localeCompare(right.name))
   }, [scriptLibraryQuery, scripts])
-  const showScenarioLibrary = !showForm || wizardStep === 'start' || wizardStep === 'source'
+  const showScenarioLibrary = !showForm
   const showScriptLibrary = showForm && wizardStep === 'scripts'
   const showModelPreview = showForm && wizardStep !== 'start'
 
@@ -897,12 +894,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
     })
   }
 
-  const toggleScenarioRuns = async (scenario: StoredScenario) => {
-    if (expandedScenarioId === scenario.id) {
-      setExpandedScenarioId(null)
-      return
-    }
-    setExpandedScenarioId(scenario.id)
+  const loadScenarioRuns = async (scenario: StoredScenario) => {
     if (scenarioRuns[scenario.id]) return
     setLoadingRunsFor(scenario.id)
     try {
@@ -920,6 +912,15 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
     }
   }
 
+  const toggleScenarioRuns = async (scenario: StoredScenario) => {
+    if (expandedScenarioId === scenario.id) {
+      setExpandedScenarioId(null)
+      return
+    }
+    setExpandedScenarioId(scenario.id)
+    await loadScenarioRuns(scenario)
+  }
+
   const openCreate = () => {
     if (!canManageTests) {
       setError('Current session can view scenarios but cannot create or edit them.')
@@ -930,12 +931,19 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
     setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
     setSelectedShapeId('')
+    setSelectedCloneScenarioId('')
     setScenarioSourceMode('shape')
     setScenarioCloneQuery('')
     setWizardStep('start')
     setLoadModelValidation(null)
     setLoadModelValidationError('')
     setShowForm(true)
+  }
+
+  const openScenarioLibrary = () => {
+    setShowForm(false)
+    setEditingId(null)
+    setConfirmDeleteScenarioId(null)
   }
 
   const openEdit = (scenario: StoredScenario) => {
@@ -949,6 +957,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
     setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
     setSelectedShapeId('')
+    setSelectedCloneScenarioId('')
     setScenarioSourceMode('existing')
     setScenarioCloneQuery('')
     setWizardStep('scripts')
@@ -969,6 +978,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
 
   const selectScenarioSourceMode = (mode: ScenarioSourceMode) => {
     setScenarioSourceMode(mode)
+    if (mode === 'shape') setSelectedCloneScenarioId('')
     setWizardStep('source')
   }
 
@@ -979,14 +989,16 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
     setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
     setSelectedShapeId('')
+    setSelectedCloneScenarioId(scenario.id)
     setScenarioSourceMode('existing')
     setLoadModelValidation(null)
     setLoadModelValidationError('')
-    setWizardStep('scripts')
+    void loadScenarioRuns(scenario)
   }
 
   const selectShapeOption = (shapeId: string) => {
     setSelectedShapeId(shapeId)
+    setSelectedCloneScenarioId('')
     setSelectedLoadModelTemplateId('')
     setLoadModelValidation(null)
     setLoadModelValidationError('')
@@ -1001,6 +1013,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
     const template = loadModelTemplates.find(item => item.id === templateId)
     if (!template) return
     setSelectedShapeId(template.shape_id)
+    setSelectedCloneScenarioId('')
     setScenarioSourceMode('shape')
     setWizardStep('scripts')
     setForm(prev => ({
@@ -1185,7 +1198,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
     setWizardStep('start')
     setLoadModelValidation(null)
     setLoadModelValidationError('')
-    setShowForm(true)
+    setShowForm(false)
   }
 
   const saveScenario = async () => {
@@ -1240,6 +1253,73 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
   const validationLabel = loadModelValidation ? formatLoadModelDimension(loadModelValidation.status) : 'Not validated'
   const requiredDraftReady = Boolean(form.name.trim() && isValidDurationInput(form.duration) && formGroups.every(group => group.script_id))
 
+  const renderScenarioRunsContent = (scenario: StoredScenario) => {
+    const runs = scenarioRuns[scenario.id] || []
+    const loading = loadingRunsFor === scenario.id
+    return (
+      <div className="scenario-linked-runs-content">
+        <div className="scenario-linked-runs-header">
+          <div>
+            <strong>Past Scenario Runs</strong>
+            <span>{loading ? 'Loading runs...' : `${runs.length} linked run${runs.length === 1 ? '' : 's'}`}</span>
+          </div>
+          <span className="scenario-table-assignment-detail">{scenario.name}</span>
+        </div>
+        {runs.length === 0 ? (
+          <div className="cell-muted">{loading ? 'Loading runs...' : 'No runs for this scenario yet.'}</div>
+        ) : (
+          <div className="data-table">
+            <table>
+              <thead>
+                <tr>
+                  <th onClick={() => handleInnerSort('name')} className="sortable">
+                    Run Name <SortIndicator active={innerSortField === 'name'} direction={innerSortDirection} />
+                  </th>
+                  <th onClick={() => handleInnerSort('status')} className="sortable">
+                    Status <SortIndicator active={innerSortField === 'status'} direction={innerSortDirection} />
+                  </th>
+                  <th onClick={() => handleInnerSort('release_id')} className="sortable">
+                    Release ID <SortIndicator active={innerSortField === 'release_id'} direction={innerSortDirection} />
+                  </th>
+                  <th onClick={() => handleInnerSort('start_time')} className="sortable">
+                    Started <SortIndicator active={innerSortField === 'start_time'} direction={innerSortDirection} />
+                  </th>
+                  <th onClick={() => handleInnerSort('duration')} className="sortable">
+                    Duration <SortIndicator active={innerSortField === 'duration'} direction={innerSortDirection} />
+                  </th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {getSortedInnerRuns(runs).map(run => (
+                  <tr key={run.id} className="clickable-row" onClick={(event) => { event.stopPropagation(); onSelectTest(run.id) }}>
+                    <td className="cell-name">{run.name}</td>
+                    <td>{run.status}</td>
+                    <td className="cell-mono">{run.release_id || '—'}</td>
+                    <td className="cell-muted">{formatDateTime(run.start_time || run.created_at)}</td>
+                    <td className="cell-muted">{run.duration}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <button className="btn btn-sm btn-secondary" onClick={(event) => { event.stopPropagation(); onSelectTest(run.id) }}>Open</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const renderSourceScenarioRunsPanel = () => {
+    if (wizardStep !== 'source' || scenarioSourceMode !== 'existing' || !selectedCloneScenario) return null
+    return (
+      <section className="scenario-source-runs-panel" aria-live="polite">
+        {renderScenarioRunsContent(selectedCloneScenario)}
+      </section>
+    )
+  }
+
   const renderWizardStep = () => {
     if (wizardStep === 'start') {
       return (
@@ -1273,8 +1353,8 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
               <p>{scenarioSourceMode === 'existing' ? 'The selected scenario becomes an editable copy; the original remains unchanged.' : 'Supported workload models and starter templates are combined into one actionable catalog.'}</p>
             </div>
             <div className="scenario-source-toggle">
-              <button type="button" className={`mode-chip ${scenarioSourceMode === 'shape' ? 'active' : ''}`} onClick={() => setScenarioSourceMode('shape')}>Shapes</button>
-              <button type="button" className={`mode-chip ${scenarioSourceMode === 'existing' ? 'active' : ''}`} onClick={() => setScenarioSourceMode('existing')}>Existing</button>
+              <button type="button" className={`mode-chip ${scenarioSourceMode === 'shape' ? 'active' : ''}`} onClick={() => selectScenarioSourceMode('shape')}>Shapes</button>
+              <button type="button" className={`mode-chip ${scenarioSourceMode === 'existing' ? 'active' : ''}`} onClick={() => selectScenarioSourceMode('existing')}>Existing</button>
             </div>
           </div>
           {scenarioSourceMode === 'existing' ? (
@@ -1285,7 +1365,13 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
               </label>
               <div className="scenario-clone-list">
                 {filteredCloneScenarios.map(scenario => (
-                  <button key={scenario.id} type="button" className="scenario-clone-card" onClick={() => cloneScenarioDraft(scenario)}>
+                  <button
+                    key={scenario.id}
+                    type="button"
+                    className={`scenario-clone-card ${selectedCloneScenarioId === scenario.id ? 'selected' : ''}`}
+                    aria-pressed={selectedCloneScenarioId === scenario.id}
+                    onClick={() => cloneScenarioDraft(scenario)}
+                  >
                     <div>
                       <strong>{scenario.name}</strong>
                       <span>{formatScenarioScripts(scenario)}</span>
@@ -1696,6 +1782,19 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
           <h2>Scenarios</h2>
           <p className="page-subtitle">Reusable scenario definitions linked to scripts, releases, and results.</p>
         </div>
+        <PageViewToggle
+          value={showForm ? 'builder' : 'library'}
+          ariaLabel="Scenario page view"
+          className="scenario-page-toggle"
+          onChange={view => {
+            if (view === 'library') openScenarioLibrary()
+            else openCreate()
+          }}
+          options={[
+            { value: 'library', label: 'Scenario Library' },
+            { value: 'builder', label: 'Scenario Builder Wizard', disabled: !canManageTests },
+          ]}
+        />
       </div>
 
       {error && <div className="settings-error-inline">{error}</div>}
@@ -1739,10 +1838,12 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
             />
           )}
 
+          {renderSourceScenarioRunsPanel()}
+
           {blockingStageTimelineMessage && <div className="settings-error-inline">{blockingStageTimelineMessage}</div>}
 
           <div className="scenario-builder-actions">
-            <button className="btn btn-secondary" onClick={openCreate}>Cancel</button>
+            <button className="btn btn-secondary" onClick={openScenarioLibrary}>Cancel</button>
             <button
               className="btn btn-secondary"
               onClick={() => {
@@ -1927,53 +2028,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
                   {expandedScenarioId === scenario.id && (
                     <tr className="no-hover">
                       <td colSpan={5} style={{ background: 'var(--bg-primary)' }}>
-                        <div style={{ padding: '10px 4px' }}>
-                          <div className="cell-muted" style={{ marginBottom: 8 }}>
-                            Linked Scenario Runs {loadingRunsFor === scenario.id ? '(loading...)' : `(${(scenarioRuns[scenario.id] || []).length})`}
-                          </div>
-                          {(scenarioRuns[scenario.id] || []).length === 0 ? (
-                            <div className="cell-muted">No runs for this scenario yet.</div>
-                          ) : (
-                            <div className="data-table">
-                              <table>
-                                <thead>
-                                  <tr>
-                                    <th onClick={() => handleInnerSort('name')} className="sortable">
-                                      Run Name <SortIndicator active={innerSortField === 'name'} direction={innerSortDirection} />
-                                    </th>
-                                    <th onClick={() => handleInnerSort('status')} className="sortable">
-                                      Status <SortIndicator active={innerSortField === 'status'} direction={innerSortDirection} />
-                                    </th>
-                                    <th onClick={() => handleInnerSort('release_id')} className="sortable">
-                                      Release ID <SortIndicator active={innerSortField === 'release_id'} direction={innerSortDirection} />
-                                    </th>
-                                    <th onClick={() => handleInnerSort('start_time')} className="sortable">
-                                      Started <SortIndicator active={innerSortField === 'start_time'} direction={innerSortDirection} />
-                                    </th>
-                                    <th onClick={() => handleInnerSort('duration')} className="sortable">
-                                      Duration <SortIndicator active={innerSortField === 'duration'} direction={innerSortDirection} />
-                                    </th>
-                                    <th style={{ textAlign: 'right' }}>Actions</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {getSortedInnerRuns(scenarioRuns[scenario.id] || []).map(run => (
-                                    <tr key={run.id} className="clickable-row" onClick={(e) => { e.stopPropagation(); onSelectTest(run.id) }}>
-                                      <td className="cell-name">{run.name}</td>
-                                      <td>{run.status}</td>
-                                      <td className="cell-mono">{run.release_id || '—'}</td>
-                                      <td className="cell-muted">{formatDateTime(run.start_time || run.created_at)}</td>
-                                      <td className="cell-muted">{run.duration}</td>
-                                      <td style={{ textAlign: 'right' }}>
-                                        <button className="btn btn-sm btn-secondary" onClick={(e) => { e.stopPropagation(); onSelectTest(run.id) }}>Open</button>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
+                        {renderScenarioRunsContent(scenario)}
                       </td>
                     </tr>
                   )}

@@ -471,6 +471,12 @@ describe('NewTestPage', () => {
     const setupSection = setupHeader.closest('.new-test-step')
     expect(setupSection?.textContent).not.toContain('Application')
     expect(setupSection?.textContent).not.toContain('Previously Tested')
+    const runOnlyNotice = container.querySelector('.new-test-run-only-callout')
+    expect(runOnlyNotice?.textContent).toContain('Note: Changes on this page only override the default settings for the current run.')
+    expect(runOnlyNotice?.textContent).toContain('To change scenario defaults, edit the scenario through the Scenario Editor.')
+    if (!runOnlyNotice) return
+    expect(scenarioHeader.compareDocumentPosition(runOnlyNotice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(runOnlyNotice.compareDocumentPosition(setupHeader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     const sidebar = container.querySelector('.new-test-sidebar-column')
     const readinessCard = sidebar?.querySelector('.new-test-summary')

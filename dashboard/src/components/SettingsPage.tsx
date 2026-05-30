@@ -6,7 +6,9 @@ import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
 import { ArchiveRetentionPlanResponse, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
+import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
+import { mergeSettingsOrder, moveSettingsSection, readSettingsSectionArray, SETTINGS_SECTIONS, type SettingsSectionId } from './settingsSectionLayout'
 import './CreateTestModal.css'
 import { downloadBlob } from '../utils/fileUtils'
 
@@ -70,16 +72,6 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
   },
 }
 
-const SETTINGS_SECTIONS = [
-  { id: 'general', title: 'General' },
-  { id: 'thresholds', title: 'Performance Thresholds' },
-  { id: 'capacity', title: 'Capacity Planning' },
-  { id: 'applications', title: 'Applications & Releases' },
-  { id: 'projects', title: 'Projects & Compliance' },
-  { id: 'data-pools', title: 'Shared Data Pools' },
-  { id: 'integrations', title: 'Integrations' },
-] as const
-
 const GENERATOR_PRESETS = [
   { id: 'local', label: 'Local', cpu_cores: 2, memory_mb: 4096, network_mbps: 250, max_vusers: 1000 },
   { id: 'standard', label: 'Standard Pod', cpu_cores: 4, memory_mb: 8192, network_mbps: 1000, max_vusers: 10000 },
@@ -112,8 +104,6 @@ const OIDC_PROVIDER_PRESETS = [
     description: 'Keeps the standard OIDC scope and claim contract for any compliant issuer.',
   },
 ] as const
-
-type SettingsSectionId = typeof SETTINGS_SECTIONS[number]['id']
 
 type DraftRedactionRule = {
   name: string
@@ -336,16 +326,6 @@ function formatGrantSource(grantSource?: string): string {
   default:
     return 'Not granted'
   }
-}
-
-function isEffectiveOperationAllowed(resources: DashboardAuthEffectiveAccessResource[], operationID: string): boolean {
-  for (const resource of resources) {
-    const operation = resource.operations.find(item => item.id === operationID)
-    if (operation) {
-      return operation.allowed
-    }
-  }
-  return true
 }
 
 function formatHeaderContractValue(value?: string, fallback = 'Not configured'): string {
@@ -3970,33 +3950,4 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
       )}
     </div>
   )
-}
-
-function readSettingsSectionArray(key: string): SettingsSectionId[] {
-  if (typeof window === 'undefined') return []
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(key) || '[]')
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter((value): value is SettingsSectionId =>
-      SETTINGS_SECTIONS.some(section => section.id === value),
-    )
-  } catch {
-    return []
-  }
-}
-
-function mergeSettingsOrder(order: SettingsSectionId[]) {
-  const ids = SETTINGS_SECTIONS.map(section => section.id)
-  const retained = order.filter(id => ids.includes(id))
-  const added = ids.filter(id => !retained.includes(id))
-  return [...retained, ...added]
-}
-
-function moveSettingsSection(ids: SettingsSectionId[], draggedId: SettingsSectionId, targetId: SettingsSectionId) {
-  if (draggedId === targetId) return ids
-  const next = ids.filter(id => id !== draggedId)
-  const targetIndex = next.indexOf(targetId)
-  if (targetIndex === -1) return ids
-  next.splice(targetIndex, 0, draggedId)
-  return next
 }

@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, DashboardAuthEffectiveAccessResource, StoredScript } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
+import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import AuthoringSessionsPanel from './AuthoringSessionsPanel'
 import ScriptsAuthoringShell from './ScriptsAuthoringShell'
 import ScriptsLibraryTable from './ScriptsLibraryTable'
+import PageViewToggle from './PageViewToggle'
 import { type ScriptDefinition } from '../types/scripts'
 import { useScriptsLibraryModel } from './useScriptsLibraryModel'
 import { type ImportedSaveResult, type ScriptsAuthoringSubView, useScriptsAuthoringState } from './useScriptsAuthoringState'
@@ -77,16 +79,6 @@ function scriptSearchText(script: StoredScript) {
     ...(script.associated_releases || []).map(release => release.name),
     ...(script.scenario_run_releases || []).map(release => release.name),
   ].filter(Boolean).join(' ').toLowerCase()
-}
-
-function isEffectiveOperationAllowed(resources: DashboardAuthEffectiveAccessResource[], operationID: string): boolean {
-  for (const resource of resources) {
-    const operation = resource.operations.find(item => item.id === operationID)
-    if (operation) {
-      return operation.allowed
-    }
-  }
-  return true
 }
 
 function cloneScriptDraft(source: ScriptDefinition, fallbackName: string, projectId?: string): ScriptDefinition {
@@ -317,10 +309,24 @@ export default function ScriptsPage({ initialMode = 'create-options', initialEdi
       <div className="page">
         <div className="page-header">
           <div>
-            <h2>Script Library</h2>
+            <h2>Scripts</h2>
             <p className="page-subtitle">Reusable scripts. Release associations are inferred from actual test usage.</p>
           </div>
-          {canManageScripts && <button className="btn btn-primary" onClick={openCreateOptions}>Create Script</button>}
+          {canManageScripts && (
+            <PageViewToggle
+              value="library"
+              ariaLabel="Script page view"
+              className="script-page-toggle"
+              onChange={view => {
+                if (view === 'library') openLibrary()
+                else openCreateOptions()
+              }}
+              options={[
+                { value: 'library', label: 'Script Library' },
+                { value: 'create-options', label: 'Create Script Options' },
+              ]}
+            />
+          )}
         </div>
 
         <div className="page-section">

@@ -785,6 +785,63 @@ func TestScenarioAndTestRejectStoredScriptWithoutActions(t *testing.T) {
 	}
 }
 
+func TestListScriptsFilteredIncludesUsageMetadata(t *testing.T) {
+	store := &metricsStoreSpy{
+		releasesByID: map[string]*storage.Release{
+			"release-1": {ID: "release-1", ApplicationID: "app-1", Name: "PI29"},
+		},
+	}
+	runner := NewTestRunner(1, NewHub(), store)
+	stored := runner.StoreScript(&dsl.Script{
+		ID:        "script-repository-scope",
+		Name:      "Checkout Smoke",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-1",
+		Config:    dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions:   []dsl.Action{{Name: "home", Type: "GET", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Checkout Peak",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{{
+			ScriptID: stored.ID,
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	if _, err := runner.CreateTest(CreateTestRequest{
+		Name:          "Checkout Run",
+		Duration:      "1m",
+		ApplicationID: "app-1",
+		ReleaseID:     "release-1",
+		ScenarioID:    scenario.ID,
+		ProjectID:     "project-1",
+	}); err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	scripts := runner.ListScriptsFiltered("project-1", nil)
+	if len(scripts) != 1 {
+		t.Fatalf("ListScriptsFiltered returned %d scripts, want 1", len(scripts))
+	}
+	got := scripts[0]
+	if got.ScenarioCount != 1 {
+		t.Fatalf("ScenarioCount = %d, want 1", got.ScenarioCount)
+	}
+	if len(got.AssociatedReleases) != 1 || got.AssociatedReleases[0].ApplicationID != "app-1" || got.AssociatedReleases[0].Name != "PI29" {
+		t.Fatalf("AssociatedReleases = %#v, want release metadata for app-1", got.AssociatedReleases)
+	}
+	if len(got.ScenarioRunReleases) != 1 || got.ScenarioRunReleases[0].ApplicationID != "app-1" {
+		t.Fatalf("ScenarioRunReleases = %#v, want scenario run release metadata for app-1", got.ScenarioRunReleases)
+	}
+	if got.LastRunAt == nil {
+		t.Fatal("LastRunAt is nil, want run activity timestamp")
+	}
+}
+
 func TestApplyRuntimeOverridesAppliesExtendedOverrideFields(t *testing.T) {
 	headless := false
 	touchMode := true

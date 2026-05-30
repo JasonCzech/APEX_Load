@@ -110,6 +110,105 @@ describe('repositoryCatalogUtils', () => {
     expect(rows.find(row => row.id === 'scenario-1')?.summary).toContain('1 script')
   })
 
+  it('scopes application-linked rows to the selected application', () => {
+    const rows = buildRepositoryCatalogRows({
+      activeDomain: domain,
+      activeApplication: { id: 'app-1', project_id: project.id, name: 'ACC', created_at: '', updated_at: '' },
+      categories: [category],
+      projects: [project],
+      releasesByProject: {
+        [project.id]: [
+          { id: 'release-1', application_id: 'app-1', project_id: project.id, name: '2026.05', created_at: '2026-01-04T00:00:00Z', updated_at: '2026-01-05T00:00:00Z' },
+          { id: 'release-foreign', application_id: 'app-2', project_id: project.id, name: 'Foreign Release', created_at: '2026-01-04T00:00:00Z', updated_at: '2026-01-05T00:00:00Z' },
+        ],
+      },
+      scriptsByProject: {
+        [project.id]: [
+          {
+            id: 'script-1',
+            name: 'Checkout Smoke',
+            protocol: 'http',
+            version: '1.0.0',
+            project_id: project.id,
+            created_at: '2026-01-07T00:00:00Z',
+            associated_releases: [{ id: 'release-1', application_id: 'app-1', name: '2026.05' }],
+          },
+          {
+            id: 'script-foreign',
+            name: 'Billing Smoke',
+            protocol: 'http',
+            version: '1.0.0',
+            project_id: project.id,
+            created_at: '2026-01-07T00:00:00Z',
+            associated_releases: [{ id: 'release-foreign', application_id: 'app-2', name: 'Foreign Release' }],
+          },
+        ],
+      },
+      scenariosByProject: {
+        [project.id]: [
+          {
+            id: 'scenario-1',
+            name: 'Checkout Peak',
+            duration: '30m',
+            scripts: [{ order: 1, script_id: 'script-1', script_name: 'Checkout Smoke', protocol: 'http', vusers: 25 }],
+            created_at: '2026-01-08T00:00:00Z',
+            updated_at: '2026-01-09T00:00:00Z',
+            script_count: 1,
+            associated_releases: [{ id: 'release-1', application_id: 'app-1', name: '2026.05' }],
+          },
+          {
+            id: 'scenario-foreign',
+            name: 'Billing Peak',
+            duration: '30m',
+            scripts: [{ order: 1, script_id: 'script-foreign', script_name: 'Billing Smoke', protocol: 'http', vusers: 25 }],
+            created_at: '2026-01-08T00:00:00Z',
+            updated_at: '2026-01-09T00:00:00Z',
+            script_count: 1,
+            associated_releases: [{ id: 'release-foreign', application_id: 'app-2', name: 'Foreign Release' }],
+          },
+        ],
+      },
+      testsByProject: {
+        [project.id]: [
+          {
+            id: 'test-1',
+            name: 'Checkout Run 001',
+            status: 'COMPLETE',
+            application_id: 'app-1',
+            project_id: project.id,
+            release_id: 'release-1',
+            scenario_id: 'scenario-1',
+            groups: [{ name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Smoke', protocol: 'http', vusers: 25 }],
+            total_vusers: 25,
+            duration: '30m',
+            created_at: '2026-01-10T00:00:00Z',
+          },
+          {
+            id: 'test-foreign',
+            name: 'Billing Run 001',
+            status: 'COMPLETE',
+            application_id: 'app-2',
+            project_id: project.id,
+            release_id: 'release-foreign',
+            scenario_id: 'scenario-foreign',
+            groups: [{ name: 'Billing', script_id: 'script-foreign', script_name: 'Billing Smoke', protocol: 'http', vusers: 25 }],
+            total_vusers: 25,
+            duration: '30m',
+            created_at: '2026-01-10T00:00:00Z',
+          },
+        ],
+      },
+      dataPoolsByProject: {},
+    })
+
+    const ids = rows.map(row => row.id)
+    expect(ids).toEqual(expect.arrayContaining(['release-1', 'script-1', 'scenario-1', 'test-1']))
+    expect(ids).not.toContain('release-foreign')
+    expect(ids).not.toContain('script-foreign')
+    expect(ids).not.toContain('scenario-foreign')
+    expect(ids).not.toContain('test-foreign')
+  })
+
   it('searches and filters mixed rows by tab, status, protocol, and project', () => {
     const rows = buildRows()
 

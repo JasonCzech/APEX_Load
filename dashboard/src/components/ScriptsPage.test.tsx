@@ -316,6 +316,36 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('script-id:saved-script-1')
   })
 
+  it('toggles between the script library and create script options', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    let toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
+    expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('false')
+    expect(toggleButtons.find(button => button.textContent?.includes('Create Script Options'))?.getAttribute('aria-pressed')).toBe('true')
+    expect(container.textContent).toContain('Model From Existing Script')
+    expect(container.textContent).not.toContain('Script Library (')
+
+    await clickButton('Script Library')
+
+    toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
+    expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('true')
+    expect(toggleButtons.find(button => button.textContent?.includes('Create Script Options'))?.getAttribute('aria-pressed')).toBe('false')
+    expect(container.textContent).toContain('Script Library (1)')
+    expect(container.textContent).not.toContain('Model From Existing Script')
+
+    await clickButton('Create Script Options')
+
+    toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
+    expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('false')
+    expect(toggleButtons.find(button => button.textContent?.includes('Create Script Options'))?.getAttribute('aria-pressed')).toBe('true')
+    expect(container.textContent).toContain('Model From Existing Script')
+    expect(container.textContent).not.toContain('Script Library (')
+  })
+
   it('models a new draft from an existing saved script without editing the original', async () => {
     apiMock.getScript.mockResolvedValueOnce({
       script: {
