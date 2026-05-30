@@ -16,6 +16,7 @@ interface Props {
   onOpenCreateOptions: () => void
   onImported: (result: ImportedSaveResult) => void
   onEditDraft: NonNullable<ComponentProps<typeof ScriptsAuthoringSurface>['onEditDraft']>
+  onReturnToDraftSource: () => void
   onStartExistingScript?: (script: StoredScript) => void
   canManageScripts?: boolean
   children: ReactNode
@@ -32,6 +33,7 @@ export default function ScriptsAuthoringShell({
   onOpenCreateOptions,
   onImported,
   onEditDraft,
+  onReturnToDraftSource,
   onStartExistingScript,
   canManageScripts = true,
   children,
@@ -72,6 +74,7 @@ export default function ScriptsAuthoringShell({
         subView={authoringState.subView}
         draftScript={authoringState.draftScript}
         draftEditorFocus={authoringState.draftEditorFocus}
+        draftReturnTarget={authoringState.draftReturnTarget}
         authoringNotice={authoringState.authoringNotice}
         editingId={authoringState.editingId}
         editingScript={authoringState.editingScript}
@@ -82,6 +85,7 @@ export default function ScriptsAuthoringShell({
         onOpenCreateOptions={onOpenCreateOptions}
         onImported={onImported}
         onEditDraft={onEditDraft}
+        onReturnToDraftSource={onReturnToDraftSource}
       />
     )
   }

@@ -20,6 +20,9 @@ type ParsedFunction struct {
 	URL        string            // Target URL
 	Action     string            // Action/target URL for form submissions
 	LineNumber int               // Source line number for diagnostics
+	Filename   string            // Source file containing the function
+	EndLine    int               // Source line where the function call ends
+	RawBlock   string            // Original source block for source review
 }
 
 // ParsedAction represents a parsed .c action file.
@@ -85,6 +88,7 @@ func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	lineNum := 0
 	var currentBlock strings.Builder
+	var rawBlock strings.Builder
 	inBlock := false
 	blockStartLine := 0
 
@@ -112,21 +116,25 @@ func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 			inBlock = true
 			blockStartLine = lineNum
 			currentBlock.Reset()
+			rawBlock.Reset()
 		}
 
 		if inBlock {
 			currentBlock.WriteString(trimmed)
 			currentBlock.WriteString(" ")
+			rawBlock.WriteString(line)
+			rawBlock.WriteString("\n")
 
 			// Check if the block is complete (ends with ");")
 			blockStr := currentBlock.String()
 			if strings.Contains(blockStr, ");") {
-				fn, err := parseFunctionBlock(blockStr, blockStartLine)
+				fn, err := parseFunctionBlock(blockStr, filename, blockStartLine, lineNum, rawBlock.String())
 				if err == nil {
 					parsed.Functions = append(parsed.Functions, fn)
 				}
 				inBlock = false
 				currentBlock.Reset()
+				rawBlock.Reset()
 			}
 		}
 	}
@@ -148,11 +156,14 @@ func isCControlCall(line string) bool {
 }
 
 // parseFunctionBlock parses a complete function call block.
-func parseFunctionBlock(block string, lineNum int) (ParsedFunction, error) {
+func parseFunctionBlock(block string, filename string, lineNum int, endLine int, rawBlock string) (ParsedFunction, error) {
 	fn := ParsedFunction{
 		Args:       make(map[string]string),
 		Headers:    make(map[string]string),
 		LineNumber: lineNum,
+		Filename:   filename,
+		EndLine:    endLine,
+		RawBlock:   strings.TrimRight(rawBlock, "\n"),
 	}
 
 	// Extract function name

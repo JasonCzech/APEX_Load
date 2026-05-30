@@ -73,7 +73,7 @@ export const EMPTY_DATA_SOURCE: DataSourceConfig = {
   type: 'csv',
   path: '',
   strategy: 'sequential',
-  delimiter: ',',
+  delimiter: 'auto',
   first_row_header: true,
   columns: [],
   inline_data: '',
@@ -383,8 +383,34 @@ function normalizeOptionalString(value: unknown): string | undefined {
 }
 
 export function inferDelimiter(source: DataSourceConfig): string {
-  if (source.delimiter && source.delimiter.length > 0) return source.delimiter
-  return source.type === 'dat' ? '\t' : ','
+  const detected = detectInlineDataDelimiter(source.inline_data || '')
+  const rawDelimiter = source.delimiter || ''
+  const delimiter = rawDelimiter === '\t' ? '\t' : rawDelimiter.trim()
+  if (delimiter.length > 0) {
+    const normalized = delimiter.toLowerCase()
+    if (normalized === 'auto') return detected || (source.type === 'dat' ? '\t' : ',')
+    if (delimiter === '\t' || delimiter === '\\t' || normalized === 'tab') return '\t'
+    if (normalized === 'comma') return ','
+    if (delimiter === ',' && detected === '\t') return '\t'
+    return delimiter
+  }
+  return detected || (source.type === 'dat' ? '\t' : ',')
+}
+
+export function detectInlineDataDelimiter(raw: string): string | null {
+  const lines = raw.split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(0, 20)
+  if (lines.length === 0) return null
+
+  const score = (delimiter: string) => lines.reduce((total, line) => {
+    const count = line.split(delimiter).length - 1
+    return total + (count > 0 ? count + 1 : 0)
+  }, 0)
+
+  const commaScore = score(',')
+  const tabScore = score('\t')
+  if (tabScore === 0 && commaScore === 0) return null
+  if (tabScore > commaScore) return '\t'
+  return ','
 }
 
 export function summarizeInlineData(source: DataSourceConfig): { rows: number; columns: number } {

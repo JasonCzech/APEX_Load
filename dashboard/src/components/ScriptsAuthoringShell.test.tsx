@@ -25,6 +25,7 @@ vi.mock('./ScriptsAuthoringSurface', () => ({
   default: ({
     subView,
     draftScript,
+    draftReturnTarget,
     authoringNotice,
     editingId,
     projectId,
@@ -33,9 +34,11 @@ vi.mock('./ScriptsAuthoringSurface', () => ({
     onOpenCreateOptions,
     onImported,
     onEditDraft,
+    onReturnToDraftSource,
   }: {
     subView: string
     draftScript?: { name?: string } | null
+    draftReturnTarget?: { label?: string } | null
     authoringNotice?: string | null
     editingId?: string | null
     projectId?: string
@@ -44,11 +47,13 @@ vi.mock('./ScriptsAuthoringSurface', () => ({
     onOpenCreateOptions?: () => void
     onImported?: (result: { scripts: StoredScript[]; scenario?: { name?: string } | null }) => void
     onEditDraft?: (script: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] }) => void
+    onReturnToDraftSource?: () => void
   }) => (
     <div data-testid="authoring-surface">
       <span>subview:{subView}</span>
       <span>draft:{draftScript?.name || 'none'}</span>
       <span>notice:{authoringNotice || 'none'}</span>
+      <span>return:{draftReturnTarget?.label || 'none'}</span>
       <span>editing:{editingId || 'none'}</span>
       <span>project:{projectId || 'none'}</span>
       <button onClick={() => onSaved?.({
@@ -77,6 +82,7 @@ vi.mock('./ScriptsAuthoringSurface', () => ({
         actions: [],
       })}
       >surface-edit-draft</button>
+      <button onClick={onReturnToDraftSource}>surface-return</button>
     </div>
   ),
 }))
@@ -110,6 +116,7 @@ function createState(subView: AuthoringState['subView'], overrides: Partial<Auth
     editingScript: null,
     draftScript: null,
     draftEditorFocus: null,
+    draftReturnTarget: null,
     authoringNotice: null,
     ...overrides,
   }
@@ -358,6 +365,7 @@ describe('ScriptsAuthoringShell', () => {
     const onOpenCreateOptions = vi.fn()
     const onImported = vi.fn()
     const onEditDraft = vi.fn()
+    const onReturnToDraftSource = vi.fn()
 
     await act(async () => {
       root.render(renderShell({
@@ -376,6 +384,7 @@ describe('ScriptsAuthoringShell', () => {
         onOpenCreateOptions,
         onImported,
         onEditDraft,
+        onReturnToDraftSource,
       }))
     })
 
@@ -390,6 +399,7 @@ describe('ScriptsAuthoringShell', () => {
     await clickButton('surface-create-options')
     await clickButton('surface-imported')
     await clickButton('surface-edit-draft')
+    await clickButton('surface-return')
 
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'saved-script-1', name: 'Saved Script' }))
     expect(onOpenLibrary).toHaveBeenCalled()
@@ -398,6 +408,7 @@ describe('ScriptsAuthoringShell', () => {
       scripts: [expect.objectContaining({ id: 'imported-script-1', name: 'Imported Script' })],
     }))
     expect(onEditDraft).toHaveBeenCalledWith(expect.objectContaining({ name: 'Surface Draft' }))
+    expect(onReturnToDraftSource).toHaveBeenCalled()
   })
 
   function renderShell({
@@ -409,6 +420,7 @@ describe('ScriptsAuthoringShell', () => {
     onOpenCreateOptions = vi.fn(),
     onImported = vi.fn(),
     onEditDraft = vi.fn(),
+    onReturnToDraftSource = vi.fn(),
     onStartExistingScript = vi.fn(),
     children = <div />,
   }: {
@@ -420,6 +432,7 @@ describe('ScriptsAuthoringShell', () => {
     onOpenCreateOptions?: () => void
     onImported?: (result: { scripts: StoredScript[]; scenario?: { name?: string } | null }) => void
     onEditDraft?: (script: ScriptDefinition) => void
+    onReturnToDraftSource?: () => void
     onStartExistingScript?: (script: StoredScript) => void
     children?: ReactNode
   }) {
@@ -435,6 +448,7 @@ describe('ScriptsAuthoringShell', () => {
         onOpenCreateOptions={onOpenCreateOptions}
         onImported={onImported}
         onEditDraft={onEditDraft}
+        onReturnToDraftSource={onReturnToDraftSource}
         onStartExistingScript={onStartExistingScript}
       >
         {children}

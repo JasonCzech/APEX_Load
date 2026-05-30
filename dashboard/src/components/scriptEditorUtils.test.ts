@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildReplayStartPayload,
+  detectInlineDataDelimiter,
+  inferDelimiter,
+  parseInlineData,
   parseReplayVariablesText,
 } from './scriptEditorUtils'
 import { type ScriptDefinition } from '../types/scripts'
@@ -99,5 +102,44 @@ describe('scriptEditorUtils replay handoff helpers', () => {
       script,
       browser: undefined,
     })
+  })
+
+  it('detects comma and tab inline data delimiters', () => {
+    expect(detectInlineDataDelimiter('username,password\nalice,secret')).toBe(',')
+    expect(detectInlineDataDelimiter('username\tpassword\nalice\tsecret')).toBe('\t')
+    expect(detectInlineDataDelimiter('username\nalice')).toBeNull()
+  })
+
+  it('uses auto delimiter detection while preserving manual overrides', () => {
+    const tabData = 'username\tpassword\nalice\tsecret'
+
+    expect(inferDelimiter({
+      name: 'users',
+      type: 'csv',
+      path: '',
+      strategy: 'sequential',
+      delimiter: 'auto',
+      inline_data: tabData,
+    })).toBe('\t')
+
+    expect(parseInlineData({
+      name: 'users',
+      type: 'csv',
+      path: '',
+      strategy: 'sequential',
+      delimiter: ',',
+      first_row_header: true,
+      inline_data: tabData,
+    }).columns).toEqual(['username', 'password'])
+
+    expect(parseInlineData({
+      name: 'users',
+      type: 'csv',
+      path: '',
+      strategy: 'sequential',
+      delimiter: 'comma',
+      first_row_header: true,
+      inline_data: tabData,
+    }).columns).toEqual(['username\tpassword'])
   })
 })

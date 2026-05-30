@@ -51,15 +51,13 @@ func loadDataSource(src dsl.DataSource) (*dataSource, error) {
 	}
 	defer readerSource.Close()
 
-	delimiter := ','
-	if src.Delimiter != "" {
-		delimiter = rune(src.Delimiter[0])
+	content, err := io.ReadAll(readerSource)
+	if err != nil {
+		return nil, fmt.Errorf("read data source: %w", err)
 	}
-	if src.Type == "dat" && src.Delimiter == "" {
-		delimiter = '\t'
-	}
+	delimiter := resolveDataSourceDelimiter(src, string(content))
 
-	reader := csv.NewReader(readerSource)
+	reader := csv.NewReader(strings.NewReader(string(content)))
 	reader.Comma = delimiter
 	reader.LazyQuotes = true
 	reader.TrimLeadingSpace = true
@@ -115,6 +113,67 @@ func loadDataSource(src dsl.DataSource) (*dataSource, error) {
 	}
 
 	return ds, nil
+}
+
+func resolveDataSourceDelimiter(src dsl.DataSource, content string) rune {
+	if src.Delimiter == "\t" {
+		return '\t'
+	}
+	delimiter := strings.TrimSpace(src.Delimiter)
+	switch strings.ToLower(delimiter) {
+	case "":
+		if src.Type == "dat" {
+			return '\t'
+		}
+		if detected := detectDataSourceDelimiter(content); detected != 0 {
+			return detected
+		}
+		return ','
+	case "auto":
+		if detected := detectDataSourceDelimiter(content); detected != 0 {
+			return detected
+		}
+		if src.Type == "dat" {
+			return '\t'
+		}
+		return ','
+	case `\t`, "tab":
+		return '\t'
+	case "comma":
+		return ','
+	default:
+		return []rune(delimiter)[0]
+	}
+}
+
+func detectDataSourceDelimiter(content string) rune {
+	commaScore := scoreDataSourceDelimiter(content, ',')
+	tabScore := scoreDataSourceDelimiter(content, '\t')
+	if tabScore == 0 && commaScore == 0 {
+		return 0
+	}
+	if tabScore > commaScore {
+		return '\t'
+	}
+	return ','
+}
+
+func scoreDataSourceDelimiter(content string, delimiter rune) int {
+	score := 0
+	for index, line := range strings.Split(content, "\n") {
+		if index >= 20 {
+			break
+		}
+		line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		if line == "" {
+			continue
+		}
+		count := strings.Count(line, string(delimiter))
+		if count > 0 {
+			score += count + 1
+		}
+	}
+	return score
 }
 
 func openDataSourceReader(src dsl.DataSource) (io.ReadCloser, error) {

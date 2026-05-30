@@ -30,6 +30,8 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <span data-testid="draft-target-section">{model.authoringState.draftEditorFocus?.targetSection || 'none'}</span>
       <span data-testid="draft-target-data-source">{model.authoringState.draftEditorFocus?.targetDataSource || 'none'}</span>
       <span data-testid="draft-target-runtime-area">{model.authoringState.draftEditorFocus?.targetRuntimeArea || 'none'}</span>
+      <span data-testid="draft-return-label">{model.authoringState.draftReturnTarget?.label || 'none'}</span>
+      <span data-testid="draft-return-subview">{model.authoringState.draftReturnTarget?.subView || 'none'}</span>
       <span data-testid="authoring-notice">{model.authoringState.authoringNotice || 'none'}</span>
       <button data-testid="open-library" onClick={model.openLibrary}>open-library</button>
       <button data-testid="open-create-options" onClick={model.openCreateOptions}>open-create-options</button>
@@ -41,6 +43,8 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <button data-testid="draft-edit-runtime-area-focused" onClick={() => model.handleDraftEdit({ name: 'Runtime Area Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'runtime', targetRuntimeArea: 'Logging' })}>draft-edit-runtime-area-focused</button>
       <button data-testid="draft-edit-parameter-data-focused" onClick={() => model.handleDraftEdit({ name: 'Parameter Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'parameter-data' })}>draft-edit-parameter-data-focused</button>
       <button data-testid="draft-edit-data-source-focused" onClick={() => model.handleDraftEdit({ name: 'Data Source Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'parameter-data', targetDataSource: 'login_users' })}>draft-edit-data-source-focused</button>
+      <button data-testid="draft-edit-with-return" onClick={() => model.handleDraftEdit({ name: 'Review Draft', protocol: 'http', config: {}, actions: [] } as never, undefined, { subView: 'import', label: 'Back to Converted Script' })}>draft-edit-with-return</button>
+      <button data-testid="return-draft-source" onClick={model.returnToDraftSource}>return-draft-source</button>
       <button data-testid="load-edit" onClick={() => void model.handleEdit('script-1')}>load-edit</button>
       <button data-testid="save-script" onClick={() => model.handleSavedScript({ id: 'saved-script-1', name: 'Saved Draft', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z' })}>save-script</button>
       <button data-testid="save-script-with-notice" onClick={() => model.handleSavedScript({ id: 'saved-script-3', name: 'Saved Notice Draft', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z' }, 'Saved 2 scripts. Reviewing the first saved script.')}>save-script-with-notice</button>
@@ -133,6 +137,22 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('draft-target-section')).toBe('parameter-data')
     expect(readTestId('draft-target-data-source')).toBe('login_users')
 
+    await click('draft-edit-with-return')
+
+    expect(readTestId('subview')).toBe('create')
+    expect(readTestId('draft-name')).toBe('Review Draft')
+    expect(readTestId('draft-return-label')).toBe('Back to Converted Script')
+    expect(readTestId('draft-return-subview')).toBe('import')
+
+    await click('return-draft-source')
+
+    expect(readTestId('subview')).toBe('import')
+    expect(readTestId('draft-name')).toBe('none')
+    expect(readTestId('draft-return-label')).toBe('none')
+    expect(readTestId('draft-return-subview')).toBe('none')
+
+    await click('draft-edit-data-source-focused')
+
     await click('save-script')
 
     expect(readTestId('subview')).toBe('edit')
@@ -143,6 +163,8 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('draft-target-section')).toBe('none')
     expect(readTestId('draft-target-data-source')).toBe('none')
     expect(readTestId('draft-target-runtime-area')).toBe('none')
+    expect(readTestId('draft-return-label')).toBe('none')
+    expect(readTestId('draft-return-subview')).toBe('none')
     expect(readTestId('authoring-notice')).toBe('none')
 
     await click('save-script-with-notice')
@@ -159,6 +181,8 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('draft-target-section')).toBe('none')
     expect(readTestId('draft-target-data-source')).toBe('none')
     expect(readTestId('draft-target-runtime-area')).toBe('none')
+    expect(readTestId('draft-return-label')).toBe('none')
+    expect(readTestId('draft-return-subview')).toBe('none')
     expect(readTestId('authoring-notice')).toBe('none')
   })
 

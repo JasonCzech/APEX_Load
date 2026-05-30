@@ -146,9 +146,8 @@ func parseDataSourceShape(source dsl.DataSource) parsedDataSourceShape {
 	}
 	reader := csv.NewReader(strings.NewReader(inline))
 	reader.FieldsPerRecord = -1
-	if delimiter := strings.TrimSpace(source.Delimiter); delimiter != "" {
-		runes := []rune(delimiter)
-		reader.Comma = runes[0]
+	if source.Delimiter != "" {
+		reader.Comma = authoringDataSourceDelimiter(source.Delimiter, source.Type, inline)
 	}
 	records, err := reader.ReadAll()
 	if err != nil && err != io.EOF {
@@ -172,6 +171,58 @@ func parseDataSourceShape(source dsl.DataSource) parsedDataSourceShape {
 		rowCount = 0
 	}
 	return parsedDataSourceShape{columns: columns, rows: rowCount, known: true}
+}
+
+func authoringDataSourceDelimiter(delimiter, sourceType, content string) rune {
+	if delimiter == "\t" {
+		return '\t'
+	}
+	switch strings.ToLower(strings.TrimSpace(delimiter)) {
+	case "", "auto":
+		if detected := detectInlineDataSourceDelimiter(content); detected != 0 {
+			return detected
+		}
+		if sourceType == "dat" {
+			return '\t'
+		}
+		return ','
+	case `\t`, "tab":
+		return '\t'
+	case "comma":
+		return ','
+	default:
+		return []rune(strings.TrimSpace(delimiter))[0]
+	}
+}
+
+func detectInlineDataSourceDelimiter(content string) rune {
+	commaScore := scoreInlineDataSourceDelimiter(content, ',')
+	tabScore := scoreInlineDataSourceDelimiter(content, '\t')
+	if tabScore == 0 && commaScore == 0 {
+		return 0
+	}
+	if tabScore > commaScore {
+		return '\t'
+	}
+	return ','
+}
+
+func scoreInlineDataSourceDelimiter(content string, delimiter rune) int {
+	score := 0
+	for index, line := range strings.Split(content, "\n") {
+		if index >= 20 {
+			break
+		}
+		line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		if line == "" {
+			continue
+		}
+		count := strings.Count(line, string(delimiter))
+		if count > 0 {
+			score += count + 1
+		}
+	}
+	return score
 }
 
 func requiredRowsForParameter(script *dsl.Script, param dsl.Parameter, source dsl.DataSource) int {

@@ -22,6 +22,40 @@ vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
 
+const sourceReviewFixture = {
+  source_files: [
+    {
+      path: 'Action.c',
+      language: 'c',
+      content: 'Action()\n{\n\tweb_url("Homepage",\n\t\t"URL=https://example.com/app/home",\n\t\tLAST);\n}',
+      original_bytes: 96,
+      redacted: true,
+    },
+  ],
+  mappings: [
+    {
+      id: 'action-homepage',
+      source_file: 'Action.c',
+      start_line: 3,
+      end_line: 5,
+      function: 'web_url',
+      target_path: 'actions[0]',
+      target_name: 'Homepage',
+      target_kind: 'action',
+      status: 'converted',
+      notes: 'Converted to a generated APEX Load action.',
+    },
+  ],
+}
+
+function cssRule(css: string, selector: string) {
+  const selectorIndex = css.indexOf(`${selector} {`)
+  expect(selectorIndex).toBeGreaterThanOrEqual(0)
+  const bodyStart = css.indexOf('{', selectorIndex) + 1
+  const bodyEnd = css.indexOf('}', bodyStart)
+  return css.slice(bodyStart, bodyEnd)
+}
+
 describe('LoadRunnerImport', () => {
   let container: HTMLDivElement
   let root: Root
@@ -142,6 +176,7 @@ describe('LoadRunnerImport', () => {
               ],
               project_settings: { General: { Type: 'Web' } },
               unsupported_functions: ['web_set_max_html_param_len'],
+              source_review: sourceReviewFixture,
             },
           },
         },
@@ -197,6 +232,7 @@ describe('LoadRunnerImport', () => {
         mapped_runtime_file: 'default.cfg',
         project_sections: ['Actions', 'General'],
         runtime_files: ['default.cfg'],
+        source_review: sourceReviewFixture,
         migration_readiness: {
           score_pct: 100,
           blocked: false,
@@ -219,6 +255,14 @@ describe('LoadRunnerImport', () => {
         name: 'Demo LoadRunner Script',
         protocol: 'http',
         actions: [{ name: 'Homepage' }],
+        metadata: {
+          import: {
+            source: 'loadrunner',
+            preserved: {
+              source_review: sourceReviewFixture,
+            },
+          },
+        },
       },
       warnings: ['validation review'],
       unsupported_elements: ['web_set_max_html_param_len'],
@@ -238,6 +282,7 @@ describe('LoadRunnerImport', () => {
         mapped_runtime_file: 'default.cfg',
         project_sections: ['Actions', 'General'],
         runtime_files: ['default.cfg'],
+        source_review: sourceReviewFixture,
         migration_readiness: {
           score_pct: 100,
           blocked: false,
@@ -294,6 +339,16 @@ describe('LoadRunnerImport', () => {
     vi.clearAllMocks()
   })
 
+  it('layers import modal dialogs above the sticky app chrome', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const importCss = readFileSync(`${cwd}/src/components/LoadRunnerImport.css`, 'utf8') as string
+    const backdropRule = cssRule(importCss, '.lr-modal-backdrop')
+
+    expect(backdropRule).toContain('z-index: 220;')
+  })
+
   it('imports a zip and saves the converted script', async () => {
     const onImported = vi.fn()
     apiMock.createScript.mockResolvedValueOnce({
@@ -312,16 +367,51 @@ describe('LoadRunnerImport', () => {
 
     expect(container.textContent).toContain('Protocol-aware detection uses .usr metadata plus source signatures')
     expect(container.textContent).toContain('Runtime Settings Coverage')
-    expect(container.textContent).toContain('Protocol Import Coverage')
+    expect(container.textContent).not.toContain('Protocol Import Coverage')
+    expect(container.querySelector('.lr-conversion-row')).not.toBeNull()
+    expect(container.querySelector('.lr-import-actions-card')).not.toBeNull()
+    expect(container.querySelector('.lr-protocol-route-list')).not.toBeNull()
     expect(container.textContent).toContain('Executable')
     expect(container.textContent).toContain('External Runner')
-    expect(container.textContent).toContain('Executed')
     expect(container.textContent).toContain('Partial')
-    expect(container.textContent).toContain('Compatibility-only')
+    expect(container.textContent).toContain('Compatibility Only')
+    expect(container.querySelectorAll('.lr-preserved-card')).toHaveLength(0)
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(container.textContent).not.toContain('HTTP: Timeouts, redirects, and connection reuse')
+    expect(container.textContent).not.toContain('Tested Examples')
+    expect(container.textContent).not.toContain('Known Caveats')
+    expect(container.textContent).not.toContain('Streaming settings execute in the HTTP runtime for media-like responses')
+
+    const coverageButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings Coverage'))
+    expect(coverageButton).toBeDefined()
+    if (!coverageButton) {
+      return
+    }
+
+    await act(async () => {
+      coverageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(container.textContent).toContain('Coverage Details')
+    expect(container.textContent).toContain('Executed')
     expect(container.textContent).toContain('HTTP: Timeouts, redirects, and connection reuse')
     expect(container.textContent).toContain('Tested Examples')
     expect(container.textContent).toContain('Known Caveats')
     expect(container.textContent).toContain('Streaming settings execute in the HTTP runtime for media-like responses')
+
+    const closeCoverageButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Close'))
+    expect(closeCoverageButton).toBeDefined()
+    if (!closeCoverageButton) {
+      return
+    }
+
+    await act(async () => {
+      closeCoverageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(container.textContent).not.toContain('HTTP: Timeouts, redirects, and connection reuse')
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
     expect(fileInput).not.toBeNull()
@@ -364,6 +454,7 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('Unsupported LoadRunner Functions (1)')
     expect(container.textContent).toContain('Import Review Sections (2)')
     expect(container.textContent).toContain('Repair Suggestions (2)')
+    expect(container.querySelectorAll('.lr-review-row .lr-warnings')).toHaveLength(2)
     expect(container.textContent).toContain('Replace unsupported web_set_max_html_param_len')
     expect(container.textContent).toContain('Review preserved runtime settings')
     expect(container.textContent).toContain('Unsupported LoadRunner Elements')
@@ -382,13 +473,35 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('Found in Step 1')
     expect(container.textContent).toContain('Used in Step 2, Step 3')
     expect(container.textContent).toContain('Parameter File Mappings')
+    expect(container.querySelector('.lr-parameter-table')).not.toBeNull()
+    expect(Array.from(container.querySelectorAll('.lr-parameter-table th')).map(header => header.textContent)).toEqual([
+      'File',
+      'Section',
+      'Mapped Data Source',
+      'Mapping',
+      'Action',
+    ])
     expect(container.textContent).toContain('LoginUsers.prm')
     expect(container.textContent).toContain('LoginUser')
     expect(container.textContent).toContain('column username')
     expect(container.textContent).toContain('table Users.dat')
     expect(container.textContent).toContain('Generated Data Sources')
+    expect(container.querySelector('.lr-data-source-table')).not.toBeNull()
+    expect(Array.from(container.querySelectorAll('.lr-data-source-table th')).map(header => header.textContent)).toEqual([
+      'Source',
+      'Type',
+      'Rows',
+      'Columns',
+      'Action',
+    ])
     expect(container.textContent).toContain('users')
-    expect(container.textContent).toContain('2 rows')
+    expect(container.textContent).toContain('csv')
+    expect(container.textContent).toContain('username')
+    expect(container.textContent).toContain('Source Mapping')
+    expect(container.textContent).toContain('Compare redacted VuGen source with the generated APEX Load DSL.')
+    expect(container.textContent).toContain('Action.c:3-5')
+    expect(container.textContent).toContain('web_url')
+    expect(container.textContent).toContain('"name": "Homepage"')
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))
     expect(saveButton).toBeDefined()
@@ -420,6 +533,153 @@ describe('LoadRunnerImport', () => {
         }),
       })],
     }))
+  })
+
+  it('copies selected source mapping snippets', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: undefined,
+    })
+    Object.defineProperty(window.navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+
+    await act(async () => {
+      root.render(<LoadRunnerImport />)
+    })
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+
+    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const copySource = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy Source'))
+    const copyDsl = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy DSL'))
+    expect(copySource).toBeDefined()
+    expect(copyDsl).toBeDefined()
+    if (!copySource || !copyDsl) return
+    expect((copySource as HTMLButtonElement).disabled).toBe(false)
+    expect((copyDsl as HTMLButtonElement).disabled).toBe(false)
+
+    await act(async () => {
+      copySource.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('web_url'))
+    expect(container.textContent).toContain('Copied')
+
+    await act(async () => {
+      copyDsl.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('"name": "Homepage"'))
+  })
+
+  it('queues multiple LoadRunner archives, removes one, and converts the remaining files', async () => {
+    const firstFile = new File(['alpha'], 'alpha.zip', { type: 'application/zip' })
+    const removedFile = new File(['beta'], 'beta.zip', { type: 'application/zip' })
+    const lastFile = new File(['gamma'], 'gamma.zip', { type: 'application/zip' })
+    apiMock.importLoadRunner.mockImplementation(async (file: File) => ({
+      script: {
+        name: file.name.replace(/\.zip$/i, ''),
+        protocol: 'http',
+        actions: [{ name: 'Homepage' }],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      summary: {
+        project_file: file.name,
+        unsupported_function_count: 0,
+      },
+      stats: {
+        total_functions: 1,
+        converted_actions: 1,
+        extractors: 0,
+        think_times: 0,
+        transactions: 0,
+        skipped: 0,
+      },
+    }))
+
+    await act(async () => {
+      root.render(<LoadRunnerImport />)
+    })
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+    expect(fileInput.multiple).toBe(true)
+
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [firstFile, removedFile, lastFile],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('3 ZIP files queued')
+    expect(container.textContent).toContain('alpha.zip')
+    expect(container.textContent).toContain('beta.zip')
+    expect(container.textContent).toContain('gamma.zip')
+
+    const removeBeta = container.querySelector('[aria-label="Remove beta.zip"]') as HTMLButtonElement | null
+    expect(removeBeta).not.toBeNull()
+    if (!removeBeta) {
+      return
+    }
+
+    await act(async () => {
+      removeBeta.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('2 ZIP files queued')
+    expect(container.textContent).not.toContain('beta.zip')
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert 2 LoadRunner Scripts'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.importLoadRunner).toHaveBeenCalledTimes(2)
+    expect(apiMock.importLoadRunner.mock.calls[0][0]).toBe(firstFile)
+    expect(apiMock.importLoadRunner.mock.calls[1][0]).toBe(lastFile)
+    expect(apiMock.importLoadRunner.mock.calls.map(call => (call[0] as File).name)).toEqual(['alpha.zip', 'gamma.zip'])
+    expect(container.textContent).toContain('Converted 2 of 2 LoadRunner scripts')
+    expect(container.textContent).toContain('alpha')
   })
 
   it('shows protocol review artifacts instead of executable save for external-runner imports', async () => {
@@ -505,9 +765,9 @@ describe('LoadRunnerImport', () => {
     })
     await flushPromises()
 
-    expect(container.textContent).toContain('Detected Protocol')
+    expect(container.textContent).not.toContain('Detected Protocol')
     expect(container.textContent).toContain('SAP GUI')
-    expect(container.textContent).toContain('External Runner Required')
+    expect(container.textContent).toContain('external_runner_required')
     expect(container.textContent).toContain('SAP GUI review artifact')
     expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))).toBeUndefined()
 
@@ -1254,7 +1514,7 @@ describe('LoadRunnerImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo LoadRunner Script',
       protocol: 'http',
-    }), { targetSection: 'parameter-data' })
+    }), { targetSection: 'parameter-data', targetDataSource: 'users' })
   })
 
   it('opens parameter files from the summary card in the visual editor with a parameter-data focus hint', async () => {
@@ -1306,7 +1566,7 @@ describe('LoadRunnerImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo LoadRunner Script',
       protocol: 'http',
-    }), { targetSection: 'parameter-data' })
+    }), { targetSection: 'parameter-data', targetDataSource: 'users' })
   })
 
   it('opens the first generated data source summary jump in the visual editor with a data source focus hint', async () => {

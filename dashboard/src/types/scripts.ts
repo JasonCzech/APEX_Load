@@ -263,6 +263,33 @@ export interface ScriptImportMetadata {
   preserved?: Record<string, unknown>
 }
 
+export interface LoadRunnerSourceReviewFile {
+  path: string
+  language?: string
+  content: string
+  original_bytes?: number
+  truncated?: boolean
+  redacted?: boolean
+}
+
+export interface LoadRunnerSourceReviewMapping {
+  id: string
+  source_file: string
+  start_line: number
+  end_line?: number
+  function?: string
+  target_path?: string
+  target_name?: string
+  target_kind?: string
+  status: string
+  notes?: string
+}
+
+export interface LoadRunnerSourceReview {
+  source_files?: LoadRunnerSourceReviewFile[]
+  mappings?: LoadRunnerSourceReviewMapping[]
+}
+
 export interface ScriptMetadata {
   import?: ScriptImportMetadata
 }

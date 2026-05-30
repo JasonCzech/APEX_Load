@@ -8,12 +8,13 @@ import JavaHttpImport from './JavaHttpImport'
 import RecordingStudio from './RecordingStudio'
 import SampleScriptImport from './SampleScriptImport'
 import ProtocolAssetImport from './ProtocolAssetImport'
-import { type DraftEditorFocus, type ImportedSaveResult, type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
+import { type AuthoringReturnTarget, type DraftEditorFocus, type ImportedSaveResult, type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
 
 interface Props {
   subView: ScriptsAuthoringSubView
   draftScript: ScriptDefinition | null
   draftEditorFocus: DraftEditorFocus | null
+  draftReturnTarget: AuthoringReturnTarget | null
   authoringNotice: string | null
   editingId: string | null
   editingScript: ScriptDefinition | null
@@ -23,15 +24,17 @@ interface Props {
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
   onImported: (result: ImportedSaveResult) => void
-  onEditDraft: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
+  onEditDraft: (script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null) => void
+  onReturnToDraftSource: () => void
 }
 
 function renderCreateOptionsSurface(
   content: ReactNode,
   onBack: () => void,
+  hidden = false,
 ) {
   return (
-    <div className="page">
+    <div className="page" hidden={hidden}>
       <button className="btn btn-secondary" onClick={onBack} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
       {content}
     </div>
@@ -42,6 +45,7 @@ export default function ScriptsAuthoringSurface({
   subView,
   draftScript,
   draftEditorFocus,
+  draftReturnTarget,
   authoringNotice,
   editingId,
   editingScript,
@@ -52,16 +56,48 @@ export default function ScriptsAuthoringSurface({
   onOpenCreateOptions,
   onImported,
   onEditDraft,
+  onReturnToDraftSource,
 }: Props) {
+  const loadRunnerEditReturnTarget: AuthoringReturnTarget = {
+    subView: 'import',
+    label: 'Back to Converted Script',
+    description: 'Return to the converted LoadRunner review without losing the current import results.',
+  }
+  const openLoadRunnerDraftInEditor = (script: ScriptDefinition, focus?: DraftEditorFocus) => {
+    onEditDraft(script, focus, loadRunnerEditReturnTarget)
+  }
+  const renderLoadRunnerImportSurface = (hidden = false) => renderCreateOptionsSurface(
+    <LoadRunnerImport projectId={projectId} onImported={onImported} onEdit={openLoadRunnerDraftInEditor} onClose={onOpenCreateOptions} />,
+    onOpenCreateOptions,
+    hidden,
+  )
+  const closeCreateEditor = draftReturnTarget ? onReturnToDraftSource : onOpenLibrary
+
   switch (subView) {
     case 'create':
-      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
+      if (draftReturnTarget?.subView === 'import') {
+        return (
+          <div className="scripts-authoring-stack">
+            {renderLoadRunnerImportSurface(true)}
+            <div className="page">
+              <div className="authoring-return-bar">
+                <button className="btn btn-secondary" onClick={onReturnToDraftSource}>{draftReturnTarget.label}</button>
+                {draftReturnTarget.description && <span>{draftReturnTarget.description}</span>}
+              </div>
+              {authoringNotice && <div className="settings-notice">{authoringNotice}</div>}
+              <ScriptEditor initialScript={draftScript} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} onSave={onSaved} onClose={closeCreateEditor} />
+            </div>
+          </div>
+        )
+      }
+      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} onSave={onSaved} onClose={closeCreateEditor} /></div>
     case 'edit':
       return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
     case 'import':
-      return renderCreateOptionsSurface(
-        <LoadRunnerImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
-        onOpenCreateOptions,
+      return (
+        <div className="scripts-authoring-stack">
+          {renderLoadRunnerImportSurface(false)}
+        </div>
       )
     case 'jmeter-import':
       return renderCreateOptionsSurface(

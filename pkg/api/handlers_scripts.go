@@ -62,6 +62,7 @@ type loadRunnerImportSummary struct {
 	Web2MigrationReadiness      *web2MigrationReadinessReport                `json:"web2_migration_readiness,omitempty"`
 	DetectedProtocol            *loadrunner.DetectedProtocol                 `json:"detected_protocol,omitempty"`
 	ReviewArtifact              *loadrunner.ReviewArtifact                   `json:"review_artifact,omitempty"`
+	SourceReview                *loadrunner.SourceReview                     `json:"source_review,omitempty"`
 	ImportMode                  string                                       `json:"import_mode,omitempty"`
 	UnsupportedFunctionCount    int                                          `json:"unsupported_function_count"`
 }
@@ -1236,6 +1237,9 @@ func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedE
 	if result != nil && result.ReviewArtifact != nil {
 		summary.ReviewArtifact = result.ReviewArtifact
 	}
+	if result != nil && result.SourceReview != nil {
+		summary.SourceReview = result.SourceReview
+	}
 
 	if result == nil || result.Script == nil || result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
 		return summary
@@ -1257,6 +1261,9 @@ func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedE
 	summary.TrueClientInspection = trueClientArchiveInspectionValue(preserved["trueclient_archive_inspection"])
 	summary.SourceScriptType = stringValue(preserved["source_script_type"])
 	summary.SourceProfile = stringValue(preserved["source_profile"])
+	if summary.SourceReview == nil {
+		summary.SourceReview = sourceReviewValue(preserved["source_review"])
+	}
 	if summary.MigrationReadiness == nil && len(summary.RuntimeSettingsParity) > 0 {
 		summary.MigrationReadiness = loadrunner.BuildRTSMigrationReadiness(summary.RuntimeSettingsParity, readinessPolicy)
 	}
@@ -1279,6 +1286,9 @@ func persistLoadRunnerImportSummary(result *loadrunner.ConvertResult, summary lo
 	}
 	if summary.Web2MigrationReadiness != nil {
 		result.Script.Metadata.Import.Preserved["web2_migration_readiness"] = summary.Web2MigrationReadiness
+	}
+	if summary.SourceReview != nil {
+		result.Script.Metadata.Import.Preserved["source_review"] = summary.SourceReview
 	}
 }
 
@@ -1346,6 +1356,91 @@ func trueClientArchiveInspectionValue(value any) *trueclient.ArchiveInspection {
 		return typed
 	case trueclient.ArchiveInspection:
 		return &typed
+	default:
+		return nil
+	}
+}
+
+func sourceReviewValue(value any) *loadrunner.SourceReview {
+	switch typed := value.(type) {
+	case *loadrunner.SourceReview:
+		return typed
+	case loadrunner.SourceReview:
+		clone := typed
+		return &clone
+	case map[string]any:
+		review := &loadrunner.SourceReview{
+			SourceFiles: sourceReviewFilesValue(typed["source_files"]),
+			Mappings:    sourceReviewMappingsValue(typed["mappings"]),
+		}
+		if len(review.SourceFiles) == 0 && len(review.Mappings) == 0 {
+			return nil
+		}
+		return review
+	default:
+		return nil
+	}
+}
+
+func sourceReviewFilesValue(value any) []loadrunner.SourceReviewFile {
+	switch typed := value.(type) {
+	case []loadrunner.SourceReviewFile:
+		return append([]loadrunner.SourceReviewFile(nil), typed...)
+	case []any:
+		files := make([]loadrunner.SourceReviewFile, 0, len(typed))
+		for _, item := range typed {
+			mapping, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			file := loadrunner.SourceReviewFile{
+				Path:          stringValue(mapping["path"]),
+				Language:      stringValue(mapping["language"]),
+				Content:       stringValue(mapping["content"]),
+				OriginalBytes: intValue(mapping["original_bytes"]),
+				Truncated:     boolValue(mapping["truncated"]),
+				Redacted:      boolValue(mapping["redacted"]),
+			}
+			if file.Path == "" {
+				continue
+			}
+			files = append(files, file)
+		}
+		return files
+	default:
+		return nil
+	}
+}
+
+func sourceReviewMappingsValue(value any) []loadrunner.SourceReviewMapping {
+	switch typed := value.(type) {
+	case []loadrunner.SourceReviewMapping:
+		return append([]loadrunner.SourceReviewMapping(nil), typed...)
+	case []any:
+		mappings := make([]loadrunner.SourceReviewMapping, 0, len(typed))
+		for _, item := range typed {
+			raw, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			mapping := loadrunner.SourceReviewMapping{
+				ID:         stringValue(raw["id"]),
+				SourceFile: stringValue(raw["source_file"]),
+				StartLine:  intValue(raw["start_line"]),
+				EndLine:    intValue(raw["end_line"]),
+				Function:   stringValue(raw["function"]),
+				TargetPath: stringValue(raw["target_path"]),
+				TargetName: stringValue(raw["target_name"]),
+				TargetKind: stringValue(raw["target_kind"]),
+				Status:     stringValue(raw["status"]),
+				Notes:      stringValue(raw["notes"]),
+			}
+			if mapping.ID == "" && mapping.SourceFile == "" && mapping.TargetPath == "" {
+				continue
+			}
+			mappings = append(mappings, mapping)
+		}
+		return mappings
 	default:
 		return nil
 	}

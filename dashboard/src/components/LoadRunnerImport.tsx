@@ -1,11 +1,12 @@
-import { useEffect, useState, useRef, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
 import { type DetectedLoadRunnerProtocol, type ImportRepairSuggestion, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerProtocolSupportEntry, type LoadRunnerReviewArtifact, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse } from '../types/scriptImports'
 import { type BrowserReplaySession } from '../types'
-import { type ScriptDefinition } from '../types/scripts'
+import { type LoadRunnerSourceReview, type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildReplayStartPayload, getImportSummary, summarizeInlineData } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
+import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { type DraftEditorFocus, type ImportedSaveResult } from './useScriptsAuthoringState'
 import './LoadRunnerImport.css'
@@ -20,6 +21,13 @@ function getImportMetadata(script?: ScriptDefinition): ImportMetadata | null {
   return script?.metadata?.import || null
 }
 
+function getSourceReviewFromMetadata(metadata?: ImportMetadata | null): LoadRunnerSourceReview | null {
+  const sourceReview = metadata?.preserved?.source_review as LoadRunnerSourceReview | undefined
+  if (!sourceReview) return null
+  if (!Array.isArray(sourceReview.source_files) && !Array.isArray(sourceReview.mappings)) return null
+  return sourceReview
+}
+
 function getSummaryList(values?: string[]) {
   return Array.isArray(values) ? values : []
 }
@@ -28,11 +36,54 @@ function isBrowserImport(script: ScriptDefinition | null): boolean {
   return script?.protocol === 'browser'
 }
 
+function isLoadRunnerZipFile(file: File) {
+  const lowerName = file.name.toLowerCase()
+  return lowerName.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
+}
+
+function formatLoadRunnerFileSize(file: File) {
+  return `${(file.size / 1024).toFixed(1)} KB`
+}
+
+function loadRunnerImportStatusLabel(status: LoadRunnerImportQueueStatus) {
+  switch (status) {
+    case 'validating':
+      return 'Validating'
+    case 'validated':
+      return 'Validated'
+    case 'converting':
+      return 'Converting'
+    case 'converted':
+      return 'Converted'
+    case 'failed':
+      return 'Failed'
+    default:
+      return 'Queued'
+  }
+}
+
+function buildLoadRunnerImportQueueItem(file: File, id: string): LoadRunnerImportQueueItem {
+  return {
+    id,
+    file,
+    status: 'queued',
+    result: null,
+    reviewMode: null,
+    error: '',
+    notice: '',
+    replayValidationLoading: false,
+    replayValidationError: '',
+    replayValidationWarnings: [],
+    replayValidationSession: null,
+  }
+}
+
 function buildReviewArtifactDraft(
   artifact: LoadRunnerReviewArtifact,
   detectedProtocol: DetectedLoadRunnerProtocol | null,
   projectId?: string,
   requestedName?: string,
+  sourceReview?: LoadRunnerSourceReview | null,
 ): ScriptDefinition {
   const protocol = detectedProtocol?.apexload_protocol || detectedProtocol?.canonical_loadrunner_protocol || 'review'
   const name = requestedName?.trim() || artifact.title || detectedProtocol?.display_name || 'LoadRunner Protocol Review'
@@ -52,6 +103,7 @@ function buildReviewArtifactDraft(
         preserved: {
           detected_protocol: detectedProtocol,
           review_artifact: artifact,
+          ...(sourceReview ? { source_review: sourceReview } : {}),
         },
       },
     },
@@ -66,6 +118,21 @@ interface Props {
 }
 
 type ReviewMode = 'validation' | 'conversion'
+type LoadRunnerImportQueueStatus = 'queued' | 'validating' | 'validated' | 'converting' | 'converted' | 'failed'
+
+interface LoadRunnerImportQueueItem {
+  id: string
+  file: File
+  status: LoadRunnerImportQueueStatus
+  result: LoadRunnerImportResult | null
+  reviewMode: ReviewMode | null
+  error: string
+  notice: string
+  replayValidationLoading: boolean
+  replayValidationError: string
+  replayValidationWarnings: string[]
+  replayValidationSession: BrowserReplaySession | null
+}
 
 type LoadRunnerSupportMatrixSection = {
   key: string
@@ -248,24 +315,37 @@ function findUnsupportedRepairSuggestion(repairSuggestions: ImportRepairSuggesti
 export default function LoadRunnerImport({ projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
-  const [file, setFile] = useState<File | null>(null)
+  const itemCounterRef = useRef(0)
+  const [importItems, setImportItems] = useState<LoadRunnerImportQueueItem[]>([])
+  const [selectedItemId, setSelectedItemId] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [workingMode, setWorkingMode] = useState<'convert' | 'validate' | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [result, setResult] = useState<LoadRunnerImportResult | null>(null)
-  const [reviewMode, setReviewMode] = useState<ReviewMode | null>(null)
   const [supportMatrix, setSupportMatrix] = useState<LoadRunnerSupportMatrixEntry[]>([])
   const [supportMatrixNotes, setSupportMatrixNotes] = useState<string[]>([])
   const [supportMatrixExamples, setSupportMatrixExamples] = useState<LoadRunnerSupportMatrixExample[]>([])
   const [protocolSupportMatrix, setProtocolSupportMatrix] = useState<LoadRunnerProtocolSupportEntry[]>([])
+  const [runtimeCoverageOpen, setRuntimeCoverageOpen] = useState(false)
   const [reviewArtifactSaving, setReviewArtifactSaving] = useState(false)
-  const [replayValidationLoading, setReplayValidationLoading] = useState(false)
-  const [replayValidationError, setReplayValidationError] = useState('')
-  const [replayValidationWarnings, setReplayValidationWarnings] = useState<string[]>([])
-  const [replayValidationSession, setReplayValidationSession] = useState<BrowserReplaySession | null>(null)
 
   const [options, setOptions] = useState<ImportOptions>(DEFAULT_IMPORT_OPTIONS)
+  const selectedItem = useMemo(
+    () => importItems.find(item => item.id === selectedItemId) || importItems[0] || null,
+    [importItems, selectedItemId],
+  )
+  const file = selectedItem?.file ?? null
+  const result = selectedItem?.result ?? null
+  const reviewMode = selectedItem?.reviewMode ?? null
+  const replayValidationLoading = selectedItem?.replayValidationLoading ?? false
+  const replayValidationError = selectedItem?.replayValidationError ?? ''
+  const replayValidationWarnings = selectedItem?.replayValidationWarnings ?? []
+  const replayValidationSession = selectedItem?.replayValidationSession ?? null
+  const displayError = error || selectedItem?.error || ''
+  const displayNotice = notice || selectedItem?.notice || ''
+  const queuedFileCount = importItems.length
+  const validateButtonLabel = queuedFileCount > 1 ? `Validate ${queuedFileCount} Scripts` : 'Validate Only'
+  const convertButtonLabel = queuedFileCount > 1 ? `Convert ${queuedFileCount} LoadRunner Scripts` : 'Convert LoadRunner Script'
   const importedScript = result?.script ?? result?.scripts?.[0] ?? null
   const detectedProtocol = result?.detected_protocol ?? result?.summary?.detected_protocol ?? null
   const reviewArtifact = result?.review_artifact ?? result?.summary?.review_artifact ?? null
@@ -273,6 +353,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const importMetadata = getImportMetadata(importedScript || undefined)
   const importSummary = getImportSummary(importMetadata)
   const reviewSummary: LoadRunnerImportSummary | null = result?.summary || null
+  const sourceReview = reviewSummary?.source_review || getSourceReviewFromMetadata(importMetadata)
   const projectSections = getSummaryList(reviewSummary?.project_sections).length > 0
     ? getSummaryList(reviewSummary?.project_sections)
     : importSummary.projectSections
@@ -288,6 +369,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const reviewSections = result?.review_sections || []
   const repairSuggestions = result?.repair_suggestions || []
   const supportMatrixSections = summarizeLoadRunnerSupportMatrix(supportMatrix)
+  const hasRuntimeCoverage = supportMatrix.length > 0
   const protocolCoverageSections = summarizeLoadRunnerProtocolSupport(protocolSupportMatrix)
   const migrationReadiness: LoadRunnerMigrationReadiness | null = reviewSummary?.migration_readiness || null
   const reviewedMigrationPolicy = migrationReadiness?.policy?.block_statuses
@@ -375,6 +457,10 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const actionWrapStyle: CSSProperties = { marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }
   const sectionActionStyle: CSSProperties = { marginBottom: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }
 
+  const updateImportItem = (itemId: string, patch: Partial<LoadRunnerImportQueueItem>) => {
+    setImportItems(items => items.map(item => item.id === itemId ? { ...item, ...patch } : item))
+  }
+
   const openImportedScriptInEditor = (focus?: DraftEditorFocus) => {
     if (!importedScript || !onEdit) return
     onEdit(importedScript, focus)
@@ -390,6 +476,14 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     openImportedScriptInEditor({ targetSection: 'parameter-data', targetDataSource: normalizedSourceName })
   }
 
+  const openImportedParameterDataInEditor = (sourceName?: string | null) => {
+    const normalizedSourceName = sourceName?.trim()
+    openImportedScriptInEditor({
+      targetSection: 'parameter-data',
+      ...(normalizedSourceName ? { targetDataSource: normalizedSourceName } : {}),
+    })
+  }
+
   const buildMigrationPolicyRelaxationButtons = (keyPrefix: string): EditorActionButton[] => {
     if (!migrationReadiness?.blocked || !reviewMode) return []
 
@@ -402,7 +496,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
 
         setOptions(nextOptions)
         const nextMode = reviewMode === 'validation' ? 'validate' : 'convert'
-        void runReview(nextMode, nextOptions, buildMigrationPolicyRefreshNotice(nextMode, nextOptions))
+        void runReview(nextMode, nextOptions, buildMigrationPolicyRefreshNotice(nextMode, nextOptions), selectedItem ? [selectedItem.id] : undefined)
       },
     }))
   }
@@ -418,7 +512,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     setOptions(nextOptions)
     if (reviewMode) {
       const nextMode = reviewMode === 'validation' ? 'validate' : 'convert'
-      void runReview(nextMode, nextOptions, buildMigrationPolicyRefreshNotice(nextMode, nextOptions))
+      void runReview(nextMode, nextOptions, buildMigrationPolicyRefreshNotice(nextMode, nextOptions), selectedItem ? [selectedItem.id] : undefined)
     }
   }
 
@@ -473,7 +567,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
           buttons.push({
             key: 'review-preserved-parameter-files',
             label: 'Open Parameter Files In Editor',
-            onClick: () => openImportedScriptInEditor({ targetSection: 'parameter-data' }),
+            onClick: () => openImportedParameterDataInEditor(firstMappedParameterDataSourceName || firstGeneratedDataSourceName),
           })
         }
         if (onEdit && firstGeneratedDataSourceName) {
@@ -533,17 +627,13 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     return buttons
   }
 
-  const resetReplayValidation = () => {
-    setReplayValidationLoading(false)
-    setReplayValidationError('')
-    setReplayValidationWarnings([])
-    setReplayValidationSession(null)
-  }
-
   const setBrowserReplayStartedNotice = (wasStarted: boolean) => {
-    setNotice(wasStarted
-      ? 'Draft browser replay restarted. Review the refreshed draft browser replay session before saving it to the library.'
-      : 'Draft browser replay started. Review the draft browser replay session before saving it to the library.')
+    if (!selectedItem) return
+    updateImportItem(selectedItem.id, {
+      notice: wasStarted
+        ? 'Draft browser replay restarted. Review the refreshed draft browser replay session before saving it to the library.'
+        : 'Draft browser replay started. Review the draft browser replay session before saving it to the library.',
+    })
   }
 
   useEffect(() => {
@@ -586,17 +676,17 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
           if (cancelled || !response?.session) {
             return
           }
-          setReplayValidationSession(response.session)
-          if (Array.isArray(response.warnings)) {
-            setReplayValidationWarnings(response.warnings)
-          }
-          if (response.session.status === 'failed' && response.session.error) {
-            setReplayValidationError(response.session.error)
-          }
+          updateImportItem(selectedItem.id, {
+            replayValidationSession: response.session,
+            replayValidationWarnings: Array.isArray(response.warnings) ? response.warnings : replayValidationWarnings,
+            replayValidationError: response.session.status === 'failed' && response.session.error ? response.session.error : replayValidationError,
+          })
         })
         .catch((error: unknown) => {
           if (!cancelled) {
-            setReplayValidationError(getErrorMessage(error, 'Draft browser replay status refresh failed'))
+            updateImportItem(selectedItem.id, {
+              replayValidationError: getErrorMessage(error, 'Draft browser replay status refresh failed'),
+            })
           }
         })
     }
@@ -606,65 +696,163 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       cancelled = true
       window.clearInterval(intervalId)
     }
-  }, [api, browserReplayInProgress, replayValidationLoading, replayValidationSession?.id])
+  }, [api, browserReplayInProgress, replayValidationError, replayValidationLoading, replayValidationSession?.id, replayValidationWarnings, selectedItem?.id])
+
+  const addFilesToQueue = (fileList?: FileList | File[] | null) => {
+    const incomingFiles = Array.from(fileList || [])
+    if (incomingFiles.length === 0) return
+
+    const zipFiles = incomingFiles.filter(isLoadRunnerZipFile)
+    if (zipFiles.length === 0) {
+      setError('Please upload ZIP files containing LoadRunner script folders.')
+      return
+    }
+
+    const nextItems = zipFiles.map((nextFile) => {
+      itemCounterRef.current += 1
+      return buildLoadRunnerImportQueueItem(nextFile, `lr-import-${Date.now()}-${itemCounterRef.current}`)
+    })
+    setImportItems(items => [...items, ...nextItems])
+    setSelectedItemId(nextItems[0].id)
+    setError(zipFiles.length === incomingFiles.length ? '' : `${incomingFiles.length - zipFiles.length} non-ZIP file${incomingFiles.length - zipFiles.length === 1 ? '' : 's'} skipped.`)
+    setNotice('')
+  }
+
+  const removeQueuedFile = (itemId: string) => {
+    const removingSelectedItem = selectedItemId === itemId
+    const nextSelectedItem = removingSelectedItem
+      ? importItems.find(item => item.id !== itemId)?.id || ''
+      : selectedItemId
+    setImportItems(items => {
+      const nextItems = items.filter(item => item.id !== itemId)
+      return nextItems
+    })
+    setSelectedItemId(nextSelectedItem)
+    setNotice('')
+  }
+
+  const clearQueuedFiles = () => {
+    setImportItems([])
+    setSelectedItemId('')
+    setError('')
+    setNotice('')
+    if (fileRef.current) {
+      fileRef.current.value = ''
+    }
+  }
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault(); setDragOver(false)
-    const f = e.dataTransfer.files[0]
-    if (f && (f.name.endsWith('.zip') || f.type === 'application/zip')) {
-      setFile(f); setError(''); setNotice(''); setResult(null); setReviewMode(null); resetReplayValidation()
-    } else { setError('Please upload a ZIP file containing a LoadRunner script folder.') }
+    e.preventDefault()
+    setDragOver(false)
+    addFilesToQueue(e.dataTransfer.files)
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]
-    if (f) { setFile(f); setError(''); setNotice(''); setResult(null); setReviewMode(null); resetReplayValidation() }
+    addFilesToQueue(e.target.files)
+    e.target.value = ''
   }
 
-  const runReview = async (mode: 'convert' | 'validate', reviewOptions: ImportOptions = options, completionNotice?: string) => {
-    if (!file) return
-    setWorkingMode(mode); setError(''); setNotice(''); setResult(null); resetReplayValidation()
-    try {
-      const request = mode === 'validate' ? api.validateLoadRunnerImport : api.importLoadRunner
-      const res = await request(file, {
-        name: reviewOptions.name || undefined,
-        project_id: projectId,
-        base_url: reviewOptions.base_url || undefined,
-        include_assertions: reviewOptions.include_assertions,
-        preserve_transactions: reviewOptions.preserve_transactions,
-        migration_block_statuses: buildMigrationBlockStatuses(reviewOptions),
-      })
-      setResult(res)
-      setReviewMode(mode === 'validate' ? 'validation' : 'conversion')
-      setNotice(completionNotice || (mode === 'validate'
-        ? 'Validation complete. Review the generated script, warnings, and preserved settings before saving.'
-        : 'Conversion complete. Review the generated script, warnings, and preserved settings before saving.'))
-    } catch (error: unknown) {
-      setError(getErrorMessage(error, mode === 'validate' ? 'Validation failed' : 'Import failed'))
-    } finally { setWorkingMode(null) }
+  const runReview = async (
+    mode: 'convert' | 'validate',
+    reviewOptions: ImportOptions = options,
+    completionNotice?: string,
+    itemIds?: string[],
+  ) => {
+    const targetItems = importItems.filter(item => !itemIds || itemIds.includes(item.id))
+    if (targetItems.length === 0) return
+
+    const runningStatus = mode === 'validate' ? 'validating' : 'converting'
+    const completeStatus = mode === 'validate' ? 'validated' : 'converted'
+    const targetIds = new Set(targetItems.map(item => item.id))
+
+    setWorkingMode(mode)
+    setError('')
+    setNotice('')
+    setSelectedItemId(prev => targetIds.has(prev) ? prev : targetItems[0].id)
+    setImportItems(items => items.map(item => targetIds.has(item.id)
+      ? {
+          ...item,
+          status: runningStatus,
+          result: null,
+          reviewMode: null,
+          error: '',
+          notice: '',
+          replayValidationLoading: false,
+          replayValidationError: '',
+          replayValidationWarnings: [],
+          replayValidationSession: null,
+        }
+      : item))
+
+    let successCount = 0
+    let failureCount = 0
+    const request = mode === 'validate' ? api.validateLoadRunnerImport : api.importLoadRunner
+    const useNameOverride = targetItems.length === 1
+
+    for (const item of targetItems) {
+      try {
+        const res = await request(item.file, {
+          name: useNameOverride ? reviewOptions.name || undefined : undefined,
+          project_id: projectId,
+          base_url: reviewOptions.base_url || undefined,
+          include_assertions: reviewOptions.include_assertions,
+          preserve_transactions: reviewOptions.preserve_transactions,
+          migration_block_statuses: buildMigrationBlockStatuses(reviewOptions),
+        })
+        successCount += 1
+        updateImportItem(item.id, {
+          status: completeStatus,
+          result: res,
+          reviewMode: mode === 'validate' ? 'validation' : 'conversion',
+          error: '',
+          notice: completionNotice || (mode === 'validate'
+            ? 'Validation complete. Review the generated script, warnings, and preserved settings before saving.'
+            : 'Conversion complete. Review the generated script, warnings, and preserved settings before saving.'),
+        })
+      } catch (error: unknown) {
+        failureCount += 1
+        updateImportItem(item.id, {
+          status: 'failed',
+          error: getErrorMessage(error, mode === 'validate' ? 'Validation failed' : 'Import failed'),
+          notice: '',
+        })
+      }
+    }
+
+    setWorkingMode(null)
+    if (targetItems.length > 1) {
+      const action = mode === 'validate' ? 'Validated' : 'Converted'
+      setNotice(`${action} ${successCount} of ${targetItems.length} LoadRunner script${targetItems.length === 1 ? '' : 's'}${failureCount > 0 ? `; ${failureCount} failed` : ''}.`)
+    }
   }
 
   const startBrowserReplayValidation = async () => {
-    if (!importedScript) return
+    if (!importedScript || !selectedItem) return
     const script = importedScript
 
-    setReplayValidationLoading(true)
-    setReplayValidationError('')
-    setReplayValidationWarnings([])
+    updateImportItem(selectedItem.id, {
+      replayValidationLoading: true,
+      replayValidationError: '',
+      replayValidationWarnings: [],
+    })
 
     try {
       const res = await api.startDraftBrowserReplaySession(buildReplayStartPayload(script, {
         projectId,
         ignoreThinkTime: true,
       }))
-      setReplayValidationSession(res.session)
-      setReplayValidationWarnings(Array.isArray(res.warnings) ? res.warnings : [])
+      updateImportItem(selectedItem.id, {
+        replayValidationSession: res.session,
+        replayValidationWarnings: Array.isArray(res.warnings) ? res.warnings : [],
+      })
       return true
     } catch (error: unknown) {
-      setReplayValidationError(getErrorMessage(error, 'Draft browser replay failed to start'))
+      updateImportItem(selectedItem.id, {
+        replayValidationError: getErrorMessage(error, 'Draft browser replay failed to start'),
+      })
       return false
     } finally {
-      setReplayValidationLoading(false)
+      updateImportItem(selectedItem.id, { replayValidationLoading: false })
     }
   }
 
@@ -708,7 +896,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
         source: 'loadrunner_review_artifact',
         name: reviewArtifact.title || detectedProtocol?.display_name || 'LoadRunner protocol review',
         status: 'reviewing',
-        draft: importedScript || buildReviewArtifactDraft(reviewArtifact, detectedProtocol, projectId, options.name),
+        draft: importedScript || buildReviewArtifactDraft(reviewArtifact, detectedProtocol, projectId, options.name, sourceReview),
         review_state: {
           review_artifact: reviewArtifact,
           detected_protocol: detectedProtocol,
@@ -744,226 +932,222 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       </div>
 
       {/* Drop zone */}
-      <div className={`lr-dropzone ${dragOver ? 'drag-over' : ''} ${file ? 'has-file' : ''}`}
+      <div className={`lr-dropzone ${dragOver ? 'drag-over' : ''} ${queuedFileCount > 0 ? 'has-file' : ''}`}
         onDragOver={e => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         onClick={() => fileRef.current?.click()}>
-        <input ref={fileRef} type="file" accept=".zip" onChange={handleFileSelect} hidden />
-        {file ? (
-          <div className="lr-file-info">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            <div>
-              <span className="lr-filename">{file.name}</span>
-              <span className="lr-filesize">{(file.size / 1024).toFixed(1)} KB</span>
+        <input ref={fileRef} type="file" accept=".zip" multiple onChange={handleFileSelect} hidden />
+        {queuedFileCount > 0 ? (
+          <div className="lr-file-queue">
+            <div className="lr-file-info">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <div>
+                <span className="lr-filename">{queuedFileCount} ZIP file{queuedFileCount === 1 ? '' : 's'} queued</span>
+                <span className="lr-filesize">Click to add more, or remove individual scripts below.</span>
+              </div>
+              <button className="btn btn-sm btn-ghost" onClick={e => { e.stopPropagation(); clearQueuedFiles() }}>Clear All</button>
             </div>
-            <button className="btn btn-sm btn-ghost" onClick={e => { e.stopPropagation(); setFile(null); setResult(null) }}>Change</button>
+            <div className="lr-file-list" aria-label="Queued LoadRunner scripts">
+              {importItems.map(item => (
+                <div
+                  key={item.id}
+                  role="button"
+                  tabIndex={0}
+                  className={`lr-file-row ${selectedItem?.id === item.id ? 'active' : ''} ${item.status === 'failed' ? 'failed' : ''}`}
+                  aria-pressed={selectedItem?.id === item.id}
+                  onClick={event => {
+                    event.stopPropagation()
+                    setSelectedItemId(item.id)
+                    setError('')
+                    setNotice('')
+                  }}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      setSelectedItemId(item.id)
+                      setError('')
+                      setNotice('')
+                    }
+                  }}
+                >
+                  <span className="lr-file-row-main">
+                    <strong>{item.file.name}</strong>
+                    <small>{formatLoadRunnerFileSize(item.file)} · {loadRunnerImportStatusLabel(item.status)}</small>
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost lr-file-remove"
+                    aria-label={`Remove ${item.file.name}`}
+                    onClick={event => {
+                      event.stopPropagation()
+                      removeQueuedFile(item.id)
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           <div className="lr-drop-content">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <p>Drop a LoadRunner <code>.zip</code> file here</p>
+            <p>Drop one or more LoadRunner <code>.zip</code> files here</p>
             <span className="lr-drop-hint">or click to browse</span>
           </div>
         )}
       </div>
 
       {/* Options */}
-      <div className="lr-options">
-        <h3 className="lr-section-title">Conversion Options</h3>
-        <div className="lr-options-grid">
-          <label><span>Script Name (optional)</span>
-            <input value={options.name} onChange={e => setOptions(o => ({ ...o, name: e.target.value }))} placeholder="Auto-detected from .usr file" />
-          </label>
-          <label><span>Base URL Override (optional)</span>
-            <input value={options.base_url} onChange={e => setOptions(o => ({ ...o, base_url: e.target.value }))} placeholder="Auto-detected from first URL" />
-          </label>
-          <label className="lr-checkbox">
-            <input type="checkbox" checked={options.include_assertions} onChange={e => setOptions(o => ({ ...o, include_assertions: e.target.checked }))} />
-            <span>Add default status_code assertions</span>
-          </label>
-          <label className="lr-checkbox">
-            <input type="checkbox" checked={options.preserve_transactions} onChange={e => setOptions(o => ({ ...o, preserve_transactions: e.target.checked }))} />
-            <span>Preserve transaction names in generated actions</span>
-          </label>
-          <label className="lr-checkbox">
-            <input type="checkbox" checked={options.block_partial} onChange={e => setOptions(o => ({ ...o, block_partial: e.target.checked }))} />
-            <span>Treat partial runtime settings as blockers</span>
-          </label>
-          <label className="lr-checkbox">
-            <input type="checkbox" checked={options.block_compatibility_only} onChange={e => setOptions(o => ({ ...o, block_compatibility_only: e.target.checked }))} />
-            <span>Treat preserved-only runtime settings as blockers</span>
-          </label>
-          <label className="lr-checkbox">
-            <input type="checkbox" checked={options.block_non_applicable} onChange={e => setOptions(o => ({ ...o, block_non_applicable: e.target.checked }))} />
-            <span>Treat non-applicable runtime settings as blockers</span>
-          </label>
-        </div>
-        <p className="lr-subtitle">Selected migration block policy: {formatMigrationBlockPolicySummary(options)}</p>
-        {reviewedMigrationPolicy && (
-          <p className="lr-subtitle">Reviewed migration block policy: {formatMigrationBlockPolicySummary(reviewedMigrationPolicy)}</p>
-        )}
-        {hasPendingMigrationPolicyChanges && (
-          <p className="lr-subtitle">Refresh review to apply the selected migration block policy.</p>
-        )}
-        {hasCustomMigrationBlockPolicy(options) && (
-          <div className="replay-panel-actions" style={actionWrapStyle}>
-            <button className="btn btn-secondary btn-sm" onClick={restoreRecommendedMigrationPolicy}>
-              Restore Recommended Block Policy
-            </button>
+      <div className="lr-conversion-row">
+        <div className="lr-options">
+          <div className="lr-options-header">
+            <h3 className="lr-section-title">Conversion Options</h3>
+            {hasRuntimeCoverage && (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setRuntimeCoverageOpen(true)}>
+                Runtime Settings Coverage
+              </button>
+            )}
           </div>
-        )}
-      </div>
-
-      <div className="settings-notice">
-        Protocol-aware detection uses .usr metadata plus source signatures. Conflicting evidence is gated for review instead of being saved as an executable script.
-      </div>
-
-      {supportMatrix.length > 0 && (
-        <div className="lr-preserved">
-          <div className="lr-preserved-header">
-            <h4>Runtime Settings Coverage</h4>
-            <span>Code-owned LoadRunner runtime settings support matrix</span>
+          <div className="lr-options-grid">
+            <label><span>Script Name (optional)</span>
+              <input value={options.name} onChange={e => setOptions(o => ({ ...o, name: e.target.value }))} placeholder="Auto-detected from .usr file" />
+            </label>
+            <label><span>Base URL Override (optional)</span>
+              <input value={options.base_url} onChange={e => setOptions(o => ({ ...o, base_url: e.target.value }))} placeholder="Auto-detected from first URL" />
+            </label>
+            <label className="lr-checkbox">
+              <input type="checkbox" checked={options.include_assertions} onChange={e => setOptions(o => ({ ...o, include_assertions: e.target.checked }))} />
+              <span>Add default status_code assertions</span>
+            </label>
+            <label className="lr-checkbox">
+              <input type="checkbox" checked={options.preserve_transactions} onChange={e => setOptions(o => ({ ...o, preserve_transactions: e.target.checked }))} />
+              <span>Preserve transaction names in generated actions</span>
+            </label>
+            <label className="lr-checkbox">
+              <input type="checkbox" checked={options.block_partial} onChange={e => setOptions(o => ({ ...o, block_partial: e.target.checked }))} />
+              <span>Treat partial runtime settings as blockers</span>
+            </label>
+            <label className="lr-checkbox">
+              <input type="checkbox" checked={options.block_compatibility_only} onChange={e => setOptions(o => ({ ...o, block_compatibility_only: e.target.checked }))} />
+              <span>Treat preserved-only runtime settings as blockers</span>
+            </label>
+            <label className="lr-checkbox">
+              <input type="checkbox" checked={options.block_non_applicable} onChange={e => setOptions(o => ({ ...o, block_non_applicable: e.target.checked }))} />
+              <span>Treat non-applicable runtime settings as blockers</span>
+            </label>
           </div>
-
-          <div className="lr-preserved-grid">
-            {supportMatrixSections.map(section => (
-              <div className="lr-preserved-card" key={section.key}>
-                <span className="lr-preserved-label">{section.title}</span>
-                <strong>{section.items.length}</strong>
-                <small>{section.preview || 'No entries'}</small>
-              </div>
-            ))}
-          </div>
-
-          <div className="lr-warnings">
-            <h4>Coverage Details</h4>
-            {supportMatrixSections.map(section => (
-              <details key={section.key}>
-                <summary>{section.title} ({section.items.length})</summary>
-                <ul>
-                  {section.items.map(entry => (
-                    <li key={entry.id}>{entry.area}: {entry.concept}</li>
-                  ))}
-                </ul>
-              </details>
-            ))}
-          </div>
-
-          {supportMatrixExamples.length > 0 && (
-            <div className="lr-warnings">
-              <h4>Tested Examples</h4>
-              {supportMatrixExamples.map(example => (
-                <div key={example.test} className="lr-review-section">
-                  <div className="lr-review-section-header">
-                    <strong>{example.title}</strong>
-                    <span>tested</span>
-                  </div>
-                  <p>{example.coverage}</p>
-                  <ul><li>{example.test}</li></ul>
-                </div>
-              ))}
-            </div>
+          {queuedFileCount > 1 && (
+            <p className="lr-subtitle">Script Name override is ignored for batch conversion so each imported script can keep its detected source name.</p>
           )}
-
-          {supportMatrixNotes.length > 0 && (
-            <div className="lr-warnings">
-              <h4>Known Caveats</h4>
-              <ul>{supportMatrixNotes.map((note, index) => <li key={index}>{note}</li>)}</ul>
-            </div>
+          <p className="lr-subtitle">Selected migration block policy: {formatMigrationBlockPolicySummary(options)}</p>
+          {reviewedMigrationPolicy && (
+            <p className="lr-subtitle">Reviewed migration block policy: {formatMigrationBlockPolicySummary(reviewedMigrationPolicy)}</p>
           )}
-        </div>
-      )}
-
-      {protocolCoverageSections.length > 0 && (
-        <div className="lr-preserved">
-          <div className="lr-preserved-header">
-            <h4>Protocol Import Coverage</h4>
-            <span>Executable, review-only, external-runner, and unsupported VuGen protocol routes</span>
-          </div>
-          <div className="lr-preserved-grid">
-            {protocolCoverageSections.map(section => (
-              <div className="lr-preserved-card" key={section.key}>
-                <span className="lr-preserved-label">{section.title}</span>
-                <strong>{section.items.length}</strong>
-                <small>{section.preview || 'No protocols'}</small>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="replay-panel-actions">
-        <button className="btn btn-secondary btn-lg" onClick={() => runReview('validate')} disabled={!file || workingMode !== null}>
-          {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : 'Validate Only'}
-        </button>
-        <button className="btn btn-primary btn-lg" onClick={() => runReview('convert')} disabled={!file || workingMode !== null}>
-          {workingMode === 'convert' ? <><span className="spinner" /> Converting...</> : 'Convert LoadRunner Script'}
-        </button>
-      </div>
-
-      {error && <div className="lr-error">{error}</div>}
-      {notice && <div className="settings-notice">{notice}</div>}
-
-      {result && detectedProtocol && (
-        <div className="lr-preserved">
-          <div className="lr-preserved-header">
-            <h4>Detected Protocol</h4>
-            <span>{formatProtocolGateLabel(detectedProtocol)}</span>
-          </div>
-          <div className="lr-preserved-grid">
-            <div className="lr-preserved-card">
-              <span className="lr-preserved-label">LoadRunner Protocol</span>
-              <strong>{detectedProtocol.display_name || detectedProtocol.canonical_loadrunner_protocol}</strong>
-              <small>{detectedProtocol.source_type ? `.usr Type=${detectedProtocol.source_type}` : 'Content-derived'}</small>
-            </div>
-            <div className="lr-preserved-card">
-              <span className="lr-preserved-label">APEX Load Route</span>
-              <strong>{detectedProtocol.apexload_protocol || 'Review artifact'}</strong>
-              <small>{detectedProtocol.bundle || 'No bundle mapped'}</small>
-            </div>
-            <div className="lr-preserved-card">
-              <span className="lr-preserved-label">Import Mode</span>
-              <strong>{formatImportMode(detectedProtocol.import_mode)}</strong>
-              <small>Confidence: {formatImportMode(detectedProtocol.confidence)}</small>
-            </div>
-            <div className="lr-preserved-card">
-              <span className="lr-preserved-label">Required Evidence</span>
-              <strong>{detectedProtocol.required_evidence?.length || 0}</strong>
-              <small>{detectedProtocol.required_evidence?.slice(0, 2).join(', ') || 'None'}</small>
-            </div>
-          </div>
-          {(detectedProtocol.conflicts?.length || detectedProtocol.warnings?.length || detectedProtocol.signals?.length) ? (
-            <div className="lr-warnings">
-              {detectedProtocol.conflicts?.length ? (
-                <div className="lr-review-section">
-                  <div className="lr-review-section-header"><strong>Protocol Conflicts</strong><span>review</span></div>
-                  <ul>{detectedProtocol.conflicts.map((conflict, index) => <li key={`conflict-${index}`}>{conflict}</li>)}</ul>
-                </div>
-              ) : null}
-              {detectedProtocol.warnings?.length ? (
-                <div className="lr-review-section">
-                  <div className="lr-review-section-header"><strong>Protocol Warnings</strong><span>warning</span></div>
-                  <ul>{detectedProtocol.warnings.map((warning, index) => <li key={`protocol-warning-${index}`}>{warning}</li>)}</ul>
-                </div>
-              ) : null}
-              {detectedProtocol.signals?.length ? (
-                <details>
-                  <summary>Detection signals ({detectedProtocol.signals.length})</summary>
-                  <ul>{detectedProtocol.signals.map((signal, index) => <li key={`signal-${index}`}>{signal}</li>)}</ul>
-                </details>
-              ) : null}
-            </div>
-          ) : null}
-          {reviewArtifact && detectedProtocol.import_mode !== 'executable' && (
+          {hasPendingMigrationPolicyChanges && (
+            <p className="lr-subtitle">Refresh review to apply the selected migration block policy.</p>
+          )}
+          {hasCustomMigrationBlockPolicy(options) && (
             <div className="replay-panel-actions" style={actionWrapStyle}>
-              <button className="btn btn-primary" onClick={handleSaveReviewArtifact} disabled={reviewArtifactSaving}>
-                {reviewArtifactSaving ? <><span className="spinner" /> Saving Review Artifact...</> : 'Save Review Artifact'}
+              <button className="btn btn-secondary btn-sm" onClick={restoreRecommendedMigrationPolicy}>
+                Restore Recommended Block Policy
               </button>
             </div>
           )}
         </div>
+
+        <div className="lr-import-actions-card">
+          <div>
+            <h3 className="lr-section-title">Validation / Conversion</h3>
+            <p className="lr-subtitle">{queuedFileCount} ZIP file{queuedFileCount === 1 ? '' : 's'} queued</p>
+          </div>
+          <div className="lr-import-action-buttons">
+            <button className="btn btn-secondary btn-lg" onClick={() => runReview('validate')} disabled={queuedFileCount === 0 || workingMode !== null}>
+              {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : validateButtonLabel}
+            </button>
+            <button className="btn btn-primary btn-lg" onClick={() => runReview('convert')} disabled={queuedFileCount === 0 || workingMode !== null}>
+              {workingMode === 'convert' ? <><span className="spinner" /> Converting...</> : convertButtonLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {runtimeCoverageOpen && hasRuntimeCoverage && (
+        <div className="lr-modal-backdrop" role="presentation" onClick={() => setRuntimeCoverageOpen(false)}>
+          <div
+            className="lr-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="lr-runtime-coverage-title"
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="lr-modal-header">
+              <div>
+                <h3 id="lr-runtime-coverage-title">Runtime Settings Coverage</h3>
+                <p>Code-owned LoadRunner runtime settings support matrix</p>
+              </div>
+              <button type="button" className="btn btn-ghost" onClick={() => setRuntimeCoverageOpen(false)}>Close</button>
+            </div>
+            <div className="lr-modal-body">
+              <div className="lr-warnings">
+                <h4>Coverage Details</h4>
+                {supportMatrixSections.map(section => (
+                  <details key={section.key}>
+                    <summary>{section.title} ({section.items.length})</summary>
+                    <ul>
+                      {section.items.map(entry => (
+                        <li key={entry.id}>{entry.area}: {entry.concept}</li>
+                      ))}
+                    </ul>
+                  </details>
+                ))}
+              </div>
+
+              {supportMatrixExamples.length > 0 && (
+                <div className="lr-warnings">
+                  <h4>Tested Examples</h4>
+                  {supportMatrixExamples.map(example => (
+                    <div key={example.test} className="lr-review-section">
+                      <div className="lr-review-section-header">
+                        <strong>{example.title}</strong>
+                        <span>tested</span>
+                      </div>
+                      <p>{example.coverage}</p>
+                      <ul><li>{example.test}</li></ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {supportMatrixNotes.length > 0 && (
+                <div className="lr-warnings">
+                  <h4>Known Caveats</h4>
+                  <ul>{supportMatrixNotes.map((note, index) => <li key={index}>{note}</li>)}</ul>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
+
+      <div className="settings-notice">
+        <p>Protocol-aware detection uses .usr metadata plus source signatures. Conflicting evidence is gated for review instead of being saved as an executable script.</p>
+        {protocolCoverageSections.length > 0 && (
+          <ul className="lr-protocol-route-list" aria-label="VuGen protocol import routes">
+            {protocolCoverageSections.map(section => (
+              <li key={section.key}>
+                <strong>{section.title}</strong>: {section.items.length}
+                {section.preview ? <span>{section.preview}</span> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {displayError && <div className="lr-error">{displayError}</div>}
+      {displayNotice && <div className="settings-notice">{displayNotice}</div>}
 
       {/* Results */}
       {result && !importedScript && reviewArtifact && (
@@ -1000,6 +1184,9 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
               </div>
             ))}
           </div>
+          {sourceReview && (
+            <SourceMappingReview sourceReview={sourceReview} script={null} />
+          )}
         </div>
       )}
 
@@ -1091,91 +1278,99 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
               </div>
             )}
 
-            {reviewSections.length > 0 && (
-              <div className="lr-warnings">
-                <h4>Import Review Sections ({reviewSections.length})</h4>
-                {reviewSections.map(section => (
-                  <div key={section.key} className="lr-review-section">
-                    <div className="lr-review-section-header">
-                      <strong>{section.title}</strong>
-                      <span>{section.severity}</span>
-                    </div>
-                    {section.summary && <p>{section.summary}</p>}
-                    {renderEditorActionButtons(getReviewSectionActions(section.key), sectionActionStyle)}
-                    {section.items.length > 0 && (
-                      <ul>{section.items.slice(0, 6).map((item, index) => <li key={`${section.key}-${index}`}>{item}</li>)}</ul>
-                    )}
+            {(reviewSections.length > 0 || repairSuggestions.length > 0) && (
+              <div className="lr-review-row">
+                {reviewSections.length > 0 && (
+                  <div className="lr-warnings">
+                    <h4>Import Review Sections ({reviewSections.length})</h4>
+                    {reviewSections.map(section => (
+                      <div key={section.key} className="lr-review-section">
+                        <div className="lr-review-section-header">
+                          <strong>{section.title}</strong>
+                          <span>{section.severity}</span>
+                        </div>
+                        {section.summary && <p>{section.summary}</p>}
+                        {renderEditorActionButtons(getReviewSectionActions(section.key), sectionActionStyle)}
+                        {section.items.length > 0 && (
+                          <ul>{section.items.slice(0, 6).map((item, index) => <li key={`${section.key}-${index}`}>{item}</li>)}</ul>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
+
+                {repairSuggestions.length > 0 && (
+                  <div className="lr-warnings">
+                    <h4>Repair Suggestions ({repairSuggestions.length})</h4>
+                    {repairSuggestions.map(suggestion => {
+                      const suggestionTitle = suggestion.category === 'replay'
+                        ? normalizeReplaySuggestionCopy(suggestion.title)
+                        : suggestion.title
+                      const suggestionDescription = suggestion.category === 'replay'
+                        ? normalizeReplaySuggestionCopy(suggestion.description)
+                        : suggestion.description
+                      const suggestionAction = suggestion.category === 'replay'
+                        ? normalizeReplaySuggestionCopy(suggestion.action)
+                        : suggestion.action
+
+                      return (
+                      <div key={suggestion.id} className="lr-review-section">
+                        <div className="lr-review-section-header">
+                          <strong>{suggestionTitle}</strong>
+                          <span>{suggestion.severity}</span>
+                        </div>
+                        {suggestion.target_action && <p>Action: {suggestion.target_action}</p>}
+                        {typeof suggestion.selector_stability_score === 'number' && (
+                          <p>Selector stability: {suggestion.selector_stability_score}/100{suggestion.selector_signals?.length ? ` - ${suggestion.selector_signals.join(', ')}` : ''}</p>
+                        )}
+                        {suggestionDescription && <p>{suggestionDescription}</p>}
+                        {suggestionAction && <ul><li>{suggestionAction}</li></ul>}
+                        {suggestion.target_action && onEdit && (
+                          renderEditorActionButtons([
+                            {
+                              key: `${suggestion.id}:target-action`,
+                              label: 'Open Target Action In Editor',
+                              onClick: () => openImportedScriptInEditor({ targetAction: suggestion.target_action }),
+                            },
+                          ])
+                        )}
+                        {!suggestion.target_action && suggestion.category === 'runtime' && (
+                          renderEditorActionButtons([
+                            onEdit ? {
+                              key: `${suggestion.id}:runtime-review`,
+                              label: 'Open Runtime Review In Editor',
+                              onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
+                            } : null,
+                            onEdit && firstRuntimeBlockingArea && suggestion.id === 'runtime:migration-readiness' ? {
+                              key: `${suggestion.id}:blocking-area`,
+                              label: 'Open First Blocking Setting In Editor',
+                              onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeBlockingArea),
+                            } : null,
+                            ...(
+                              suggestion.id === 'runtime:migration-readiness'
+                                ? buildMigrationPolicyRelaxationButtons(`${suggestion.id}:relax`)
+                                : []
+                            ),
+                          ].filter((button): button is EditorActionButton => Boolean(button)))
+                        )}
+                        {!suggestion.target_action && suggestion.category === 'replay' && onEdit && (
+                          renderEditorActionButtons([
+                            {
+                              key: `${suggestion.id}:open-script`,
+                              label: 'Open Imported Draft In Editor',
+                              onClick: () => openImportedScriptInEditor(),
+                            },
+                          ])
+                        )}
+                      </div>
+                    )})}
+                  </div>
+                )}
               </div>
             )}
 
-            {repairSuggestions.length > 0 && (
-              <div className="lr-warnings">
-                <h4>Repair Suggestions ({repairSuggestions.length})</h4>
-                {repairSuggestions.map(suggestion => {
-                  const suggestionTitle = suggestion.category === 'replay'
-                    ? normalizeReplaySuggestionCopy(suggestion.title)
-                    : suggestion.title
-                  const suggestionDescription = suggestion.category === 'replay'
-                    ? normalizeReplaySuggestionCopy(suggestion.description)
-                    : suggestion.description
-                  const suggestionAction = suggestion.category === 'replay'
-                    ? normalizeReplaySuggestionCopy(suggestion.action)
-                    : suggestion.action
-
-                  return (
-                  <div key={suggestion.id} className="lr-review-section">
-                    <div className="lr-review-section-header">
-                      <strong>{suggestionTitle}</strong>
-                      <span>{suggestion.severity}</span>
-                    </div>
-                    {suggestion.target_action && <p>Action: {suggestion.target_action}</p>}
-                    {typeof suggestion.selector_stability_score === 'number' && (
-                      <p>Selector stability: {suggestion.selector_stability_score}/100{suggestion.selector_signals?.length ? ` - ${suggestion.selector_signals.join(', ')}` : ''}</p>
-                    )}
-                    {suggestionDescription && <p>{suggestionDescription}</p>}
-                    {suggestionAction && <ul><li>{suggestionAction}</li></ul>}
-                    {suggestion.target_action && onEdit && (
-                      renderEditorActionButtons([
-                        {
-                          key: `${suggestion.id}:target-action`,
-                          label: 'Open Target Action In Editor',
-                          onClick: () => openImportedScriptInEditor({ targetAction: suggestion.target_action }),
-                        },
-                      ])
-                    )}
-                    {!suggestion.target_action && suggestion.category === 'runtime' && (
-                      renderEditorActionButtons([
-                        onEdit ? {
-                          key: `${suggestion.id}:runtime-review`,
-                          label: 'Open Runtime Review In Editor',
-                          onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
-                        } : null,
-                        onEdit && firstRuntimeBlockingArea && suggestion.id === 'runtime:migration-readiness' ? {
-                          key: `${suggestion.id}:blocking-area`,
-                          label: 'Open First Blocking Setting In Editor',
-                          onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeBlockingArea),
-                        } : null,
-                        ...(
-                          suggestion.id === 'runtime:migration-readiness'
-                            ? buildMigrationPolicyRelaxationButtons(`${suggestion.id}:relax`)
-                            : []
-                        ),
-                      ].filter((button): button is EditorActionButton => Boolean(button)))
-                    )}
-                    {!suggestion.target_action && suggestion.category === 'replay' && onEdit && (
-                      renderEditorActionButtons([
-                        {
-                          key: `${suggestion.id}:open-script`,
-                          label: 'Open Imported Draft In Editor',
-                          onClick: () => openImportedScriptInEditor(),
-                        },
-                      ])
-                    )}
-                  </div>
-                )})}
-              </div>
+            {sourceReview && (
+              <SourceMappingReview sourceReview={sourceReview} script={importedScript} />
             )}
 
             {importMetadata && (
@@ -1223,7 +1418,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                       {
                         key: 'summary-parameter-files',
                         label: 'Open Parameter Files In Editor',
-                        onClick: () => openImportedScriptInEditor({ targetSection: 'parameter-data' }),
+                        onClick: () => openImportedParameterDataInEditor(firstMappedParameterDataSourceName || firstGeneratedDataSourceName),
                       },
                       firstMappedParameterDataSourceName ? {
                         key: 'summary-parameter-source',
@@ -1310,7 +1505,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                       {
                         key: 'parameter-mappings-review',
                         label: 'Open Parameter Files In Editor',
-                        onClick: () => openImportedScriptInEditor({ targetSection: 'parameter-data' }),
+                        onClick: () => openImportedParameterDataInEditor(firstMappedParameterDataSourceName || firstGeneratedDataSourceName),
                       },
                       firstMappedParameterDataSourceName ? {
                         key: 'parameter-mappings-source',
@@ -1318,26 +1513,41 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                         onClick: () => openImportedDataSourceInEditor(firstMappedParameterDataSourceName),
                       } : null,
                     ].filter((button): button is EditorActionButton => Boolean(button)), sectionActionStyle)}
-                    <ul>
-                      {importSummary.parameterFileSections.map((section) => {
-                        const mappedSourceName = findImportedParameterMappingDataSourceName(generatedDataSources, section.values)
-                        return (
-                          <li key={`${section.file}:${section.name}`}>
-                            <strong>{section.file}</strong>
-                            {`: ${section.name}`}
-                            {renderParameterMappingDetails(section.values)}
-                            {mappedSourceName && onEdit && (
-                              <>
-                                {' '}
-                                <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'parameter-data', targetDataSource: mappedSourceName })}>
-                                  Open Mapped Data Source In Editor
-                                </button>
-                              </>
-                            )}
-                          </li>
-                        )
-                      })}
-                    </ul>
+                    <div className="lr-table-wrap">
+                      <table className="lr-parameter-table">
+                        <thead>
+                          <tr>
+                            <th>File</th>
+                            <th>Section</th>
+                            <th>Mapped Data Source</th>
+                            <th>Mapping</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {importSummary.parameterFileSections.map((section) => {
+                            const mappedSourceName = findImportedParameterMappingDataSourceName(generatedDataSources, section.values)
+                            return (
+                              <tr key={`${section.file}:${section.name}`}>
+                                <td><strong>{section.file}</strong></td>
+                                <td>{section.name}</td>
+                                <td>{mappedSourceName || 'Not generated'}</td>
+                                <td>{formatParameterMappingDetails(section.values) || 'No explicit mapping options'}</td>
+                                <td>
+                                  {mappedSourceName && onEdit ? (
+                                    <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'parameter-data', targetDataSource: mappedSourceName })}>
+                                      Open Mapped Data Source In Editor
+                                    </button>
+                                  ) : (
+                                    <span className="lr-table-muted">None</span>
+                                  )}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
 
@@ -1477,7 +1687,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                       {
                         key: 'generated-sources-review',
                         label: 'Open Parameter Data In Editor',
-                        onClick: () => openImportedScriptInEditor({ targetSection: 'parameter-data' }),
+                        onClick: () => openImportedParameterDataInEditor(firstGeneratedDataSourceName),
                       },
                       firstGeneratedDataSourceName ? {
                         key: 'generated-sources-source',
@@ -1485,25 +1695,42 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                         onClick: () => openImportedDataSourceInEditor(firstGeneratedDataSourceName),
                       } : null,
                     ].filter((button): button is EditorActionButton => Boolean(button)), sectionActionStyle)}
-                    <ul>
-                      {generatedDataSources.map((source) => (
-                        <li key={source.name}>
-                          <strong>{source.name}</strong>
-                          {`: ${source.type} • ${source.rows} row${source.rows === 1 ? '' : 's'} • `}
-                          {typeof source.columns === 'number'
-                            ? `${source.columns} column${source.columns === 1 ? '' : 's'}`
-                            : source.columns.join(', ') || 'No columns'}
-                          {onEdit && (
-                            <>
-                              {' '}
-                              <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'parameter-data', targetDataSource: source.name })}>
-                                Open Source In Editor
-                              </button>
-                            </>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="lr-table-wrap">
+                      <table className="lr-data-source-table">
+                        <thead>
+                          <tr>
+                            <th>Source</th>
+                            <th>Type</th>
+                            <th>Rows</th>
+                            <th>Columns</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {generatedDataSources.map((source) => (
+                            <tr key={source.name}>
+                              <td><strong>{source.name}</strong></td>
+                              <td>{source.type}</td>
+                              <td>{source.rows}</td>
+                              <td>
+                                {typeof source.columns === 'number'
+                                  ? `${source.columns} column${source.columns === 1 ? '' : 's'}`
+                                  : source.columns.join(', ') || 'No columns'}
+                              </td>
+                              <td>
+                                {onEdit ? (
+                                  <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'parameter-data', targetDataSource: source.name })}>
+                                    Open Source In Editor
+                                  </button>
+                                ) : (
+                                  <span className="lr-table-muted">None</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
 
@@ -1634,20 +1861,6 @@ function protocolImportMode(entry: LoadRunnerProtocolSupportEntry): string {
   }
 }
 
-function formatImportMode(value?: string | null): string {
-  const text = value?.trim()
-  if (!text) return 'Unknown'
-  return text
-    .split('_')
-    .filter(Boolean)
-    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
-
-function formatProtocolGateLabel(detected: DetectedLoadRunnerProtocol): string {
-  return `${formatImportMode(detected.import_mode)} route • ${formatImportMode(detected.confidence)} confidence`
-}
-
 function getImportedParameterMappingValue(values: Record<string, string>, aliases: string[]): string {
   const normalizedAliases = aliases.map(alias => alias.toLowerCase())
   const match = Object.entries(values).find(([key]) => normalizedAliases.includes(key.toLowerCase()))
@@ -1683,12 +1896,12 @@ function findImportedParameterMappingDataSourceName(
   return lowerMatch?.name || null
 }
 
-function renderParameterMappingDetails(values: Record<string, string>) {
+function formatParameterMappingDetails(values: Record<string, string>) {
   const details: string[] = []
   if (values.Type) details.push(values.Type)
   if (values.ColumnName) details.push(`column ${values.ColumnName}`)
   if (values.Table) details.push(`table ${values.Table}`)
   if (values.SelectNextRow) details.push(values.SelectNextRow)
   if (values.UpdateValueOn) details.push(values.UpdateValueOn)
-  return details.length > 0 ? ` • ${details.join(' • ')}` : ''
+  return details.join(' • ')
 }

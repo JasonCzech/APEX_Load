@@ -44,8 +44,9 @@ vi.mock('./ScriptEditor', () => ({
 }))
 
 vi.mock('./LoadRunnerImport', () => ({
-  default: ({ onImported, onClose }: { onImported?: (result: { scripts: Array<{ id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }>; scenario?: { name?: string } | null }) => void, onClose?: () => void }) => (
+  default: ({ onImported, onEdit, onClose }: { onImported?: (result: { scripts: Array<{ id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }>; scenario?: { name?: string } | null }) => void, onEdit?: (script: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] }, focus?: { targetSection?: string }) => void, onClose?: () => void }) => (
     <div data-testid="loadrunner-import">
+      <input aria-label="mock-loadrunner-state" defaultValue="converted-review" />
       <button onClick={() => onImported?.({
         scripts: [{
           id: 'imported-script-1',
@@ -60,6 +61,13 @@ vi.mock('./LoadRunnerImport', () => ({
           },
         }],
       })}>mock-loadrunner-save</button>
+      <button onClick={() => onEdit?.({
+        name: 'Converted LoadRunner Draft',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://import.example.com' },
+        actions: [],
+      }, { targetSection: 'runtime' })}>mock-loadrunner-review-option</button>
       <button onClick={onClose}>mock-loadrunner-close</button>
     </div>
   ),
@@ -628,6 +636,48 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Create Script')
     await clickButton('Import Existing')
     expect(container.textContent).toContain('Import JMeter')
+  })
+
+  it('returns from LoadRunner review editor options to the converted script review', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    await clickButton('Import Existing')
+
+    const loadRunnerButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import LoadRunner'))
+    expect(loadRunnerButton).toBeDefined()
+    if (!loadRunnerButton) {
+      return
+    }
+
+    await act(async () => {
+      loadRunnerButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="loadrunner-import"]')).not.toBeNull()
+    const preservedInput = container.querySelector('input[aria-label="mock-loadrunner-state"]') as HTMLInputElement | null
+    expect(preservedInput).not.toBeNull()
+    if (!preservedInput) {
+      return
+    }
+    preservedInput.value = 'review-state-preserved'
+
+    await clickButton('mock-loadrunner-review-option')
+
+    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    expect(container.textContent).toContain('editor:Converted LoadRunner Draft')
+    expect(container.textContent).toContain('Back to Converted Script')
+    expect(container.querySelector('[data-testid="loadrunner-import"]')).not.toBeNull()
+
+    await clickButton('Back to Converted Script')
+
+    expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+    expect(container.querySelector('[data-testid="loadrunner-import"]')).not.toBeNull()
+    expect((container.querySelector('input[aria-label="mock-loadrunner-state"]') as HTMLInputElement | null)?.value).toBe('review-state-preserved')
+    expect(container.textContent).toContain('mock-loadrunner-review-option')
   })
 
   it('returns JMeter import close actions to the create options shell', async () => {

@@ -157,6 +157,12 @@ func TestParseActionFile(t *testing.T) {
 			if fn.Method != "GET" {
 				t.Errorf("expected method 'GET', got '%s'", fn.Method)
 			}
+			if fn.Filename != "Action.c" || fn.LineNumber == 0 || fn.EndLine <= fn.LineNumber {
+				t.Errorf("source location = %q:%d-%d, want Action.c with multi-line range", fn.Filename, fn.LineNumber, fn.EndLine)
+			}
+			if !strings.Contains(fn.RawBlock, `web_url("Homepage"`) || !strings.Contains(fn.RawBlock, `"URL=https://example.com/app/home"`) {
+				t.Errorf("raw block = %q, want original web_url source", fn.RawBlock)
+			}
 		}
 	}
 }
@@ -213,6 +219,13 @@ func TestConvert(t *testing.T) {
 	if len(result.Stats.UnsupportedFuncs) != 1 || result.Stats.UnsupportedFuncs[0] != "web_set_max_html_param_len" {
 		t.Fatalf("unsupported funcs = %#v, want [web_set_max_html_param_len]", result.Stats.UnsupportedFuncs)
 	}
+	if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 {
+		t.Fatal("expected source review mappings")
+	}
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "actions[0]", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_reg_save_param", "actions[0].extractors", "contributor")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_think_time", "config.think_time", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_set_max_html_param_len", "metadata.import.preserved.unsupported_functions", "review_only")
 
 	// Check think time config was computed
 	if result.Script.Config.ThinkTime.MeanMs == 0 {
@@ -229,6 +242,16 @@ func TestConvert(t *testing.T) {
 
 	t.Logf("Converted %d LR functions → %d DSL actions, %d extractors, %d think times",
 		result.Stats.TotalFunctions, result.Stats.ConvertedActions, result.Stats.Extractors, result.Stats.ThinkTimes)
+}
+
+func assertSourceReviewMapping(t *testing.T, mappings []SourceReviewMapping, functionName string, targetPath string, status string) {
+	t.Helper()
+	for _, mapping := range mappings {
+		if mapping.Function == functionName && mapping.TargetPath == targetPath && mapping.Status == status {
+			return
+		}
+	}
+	t.Fatalf("missing source mapping function=%s target=%s status=%s in %#v", functionName, targetPath, status, mappings)
 }
 
 func TestConvertSupportsLoadRunnerRuntimeControls(t *testing.T) {
@@ -495,6 +518,7 @@ RuntimeSettings=default.cfg
 Action1=Action.c
 `)
 	addFile("Action.c", sampleActionC)
+	addFile("globals.h", "Authorization: Bearer raw-secret-token\npassword=raw-secret-password\n")
 	addFile("default.cfg", `[HTTP]
 ConnectTimeout=45
 ReceiveTimeout=20
@@ -548,6 +572,9 @@ UpdateValueOn=Each Occurrence
 	if len(result.Script.DataSources) != 1 || result.Script.DataSources[0].Name != "users" {
 		t.Fatalf("data sources = %#v, want one mapped users data source", result.Script.DataSources)
 	}
+	if result.Script.DataSources[0].Path != "Users.dat" {
+		t.Fatalf("data source path = %q, want original Users.dat filename", result.Script.DataSources[0].Path)
+	}
 	payload, err := json.Marshal(result.Script.Metadata.Import)
 	if err != nil {
 		t.Fatalf("json.Marshal returned error: %v", err)
@@ -557,6 +584,46 @@ UpdateValueOn=Each Occurrence
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected metadata JSON to contain %q, got %s", want, text)
 		}
+	}
+	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) == 0 || len(result.SourceReview.Mappings) == 0 {
+		t.Fatalf("source review = %#v, want files and mappings", result.SourceReview)
+	}
+	preserved := result.Script.Metadata.Import.Preserved
+	if preserved["source_review"] == nil {
+		t.Fatalf("preserved metadata missing source_review: %#v", preserved)
+	}
+	sourceReviewPayload, err := json.Marshal(preserved["source_review"])
+	if err != nil {
+		t.Fatalf("json.Marshal(source_review) returned error: %v", err)
+	}
+	if strings.Contains(string(sourceReviewPayload), "raw-secret-token") || strings.Contains(string(sourceReviewPayload), "raw-secret-password") {
+		t.Fatalf("source review leaked raw secret literals: %s", string(sourceReviewPayload))
+	}
+}
+
+func TestBuildSourceReviewRedactsSecrets(t *testing.T) {
+	review := BuildSourceReview(map[string]string{
+		"Action.c": `Action()
+{
+	web_add_header("Authorization", "Bearer super-secret-token");
+	web_submit_data("Login", "Action=https://example.test/login", ITEMDATA, "Name=password", "Value=plain-secret", ENDITEM, LAST);
+}`,
+	}, []SourceReviewMapping{{
+		SourceFile: "Action.c",
+		StartLine:  3,
+		EndLine:    3,
+		Function:   "web_add_header",
+		Status:     "contributor",
+	}})
+	if review == nil || len(review.SourceFiles) != 1 {
+		t.Fatalf("review = %#v, want one source file", review)
+	}
+	content := review.SourceFiles[0].Content
+	if strings.Contains(content, "super-secret-token") || strings.Contains(content, "plain-secret") {
+		t.Fatalf("source review content was not redacted: %s", content)
+	}
+	if !strings.Contains(content, "[REDACTED]") {
+		t.Fatalf("source review content = %s, want redaction marker", content)
 	}
 }
 
@@ -648,10 +715,15 @@ Type="Table"
 	if len(result.Script.DataSources) != 2 {
 		t.Fatalf("data sources = %#v, want two .dat sources", result.Script.DataSources)
 	}
+	dataSourcePaths := map[string]string{}
 	for _, source := range result.Script.DataSources {
+		dataSourcePaths[source.Name] = source.Path
 		if !source.FirstRowHeader {
 			t.Fatalf("data source = %#v, want header inference for quoted .dat imports", source)
 		}
+	}
+	if dataSourcePaths["username"] != "UserName.dat" || dataSourcePaths["acme_iao"] != "ACME_IAO.dat" {
+		t.Fatalf("data source paths = %#v, want original .dat filenames", dataSourcePaths)
 	}
 }
 

@@ -6738,11 +6738,20 @@ func firstScriptDataSourceValue(sources []dsl.DataSource, sourceName, column str
 }
 
 func latencyDataSourceDelimiters(delimiter string) []rune {
+	if delimiter == "\t" {
+		return []rune{'\t'}
+	}
 	if strings.TrimSpace(delimiter) == "" {
+		return []rune{',', '\t', ';', '|'}
+	}
+	if strings.EqualFold(strings.TrimSpace(delimiter), "auto") {
 		return []rune{',', '\t', ';', '|'}
 	}
 	if strings.EqualFold(strings.TrimSpace(delimiter), `\t`) || strings.EqualFold(strings.TrimSpace(delimiter), "tab") {
 		return []rune{'\t'}
+	}
+	if strings.EqualFold(strings.TrimSpace(delimiter), "comma") {
+		return []rune{','}
 	}
 	return []rune{[]rune(delimiter)[0]}
 }

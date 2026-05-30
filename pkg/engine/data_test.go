@@ -214,6 +214,48 @@ func TestDataProvider_CustomDelimiter(t *testing.T) {
 	}
 }
 
+func TestDataProvider_AutoDelimiter(t *testing.T) {
+	dp, err := NewDataProvider([]dsl.DataSource{
+		{
+			Name:           "users",
+			Type:           "csv",
+			InlineData:     "username\tpassword\nalice\tpass1\nbob\tpass2\n",
+			Delimiter:      "auto",
+			FirstRowHeader: true,
+			Strategy:       "sequential",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewDataProvider auto delimiter: %v", err)
+	}
+
+	row := dp.GetRow("users", 0)
+	if row["users.username"] != "alice" || row["users.password"] != "pass1" {
+		t.Fatalf("auto delimiter row = %#v", row)
+	}
+}
+
+func TestDataProvider_DelimiterAliases(t *testing.T) {
+	dp, err := NewDataProvider([]dsl.DataSource{
+		{
+			Name:           "users",
+			Type:           "csv",
+			InlineData:     "username,password\nalice,pass1\n",
+			Delimiter:      "comma",
+			FirstRowHeader: true,
+			Strategy:       "sequential",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewDataProvider comma delimiter: %v", err)
+	}
+
+	row := dp.GetRow("users", 0)
+	if row["users.username"] != "alice" || row["users.password"] != "pass1" {
+		t.Fatalf("comma delimiter row = %#v", row)
+	}
+}
+
 func TestDataProvider_FileNotFound(t *testing.T) {
 	_, err := NewDataProvider([]dsl.DataSource{
 		{Name: "data", Type: "csv", Path: "/nonexistent/file.csv"},

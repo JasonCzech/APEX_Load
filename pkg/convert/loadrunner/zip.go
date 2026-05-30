@@ -170,6 +170,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 		applyKnownParameterReferences(result.Script)
 		applyParameterizedBaseURL(result.Script)
+		result.SourceReview = BuildSourceReview(files, sourceReviewMappings(result))
 		attachLoadRunnerMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames, trueClientInspection)
 		return result, nil
 	}
@@ -281,6 +282,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 
 	applyKnownParameterReferences(result.Script)
 	applyParameterizedBaseURL(result.Script)
+	result.SourceReview = BuildSourceReview(files, sourceReviewMappings(result))
 	attachLoadRunnerMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames, nil)
 	return result, nil
 }
@@ -297,6 +299,7 @@ func newLoadRunnerReviewResult(detected DetectedProtocol, files map[string]strin
 		DetectedProtocol: &detected,
 		Warnings:         append([]string(nil), detected.Warnings...),
 		ReviewArtifact:   NewReviewArtifact(detected, files, actions, metadata),
+		SourceReview:     BuildSourceReview(files, reviewOnlySourceReviewMappings(actions, "review_only", "Import was gated for protocol review.")),
 		Stats:            ConvertStats{},
 	}
 	for _, action := range actions {
@@ -472,6 +475,9 @@ func attachLoadRunnerMetadata(script *dsl.Script, result *ConvertResult, project
 	}
 	if result != nil && result.ReviewArtifact != nil {
 		preserved["review_artifact"] = result.ReviewArtifact
+	}
+	if result != nil && result.SourceReview != nil {
+		preserved["source_review"] = result.SourceReview
 	}
 	if result != nil && result.RecordedResourceURLsCaptured {
 		preserved["recorded_resource_urls_available"] = true

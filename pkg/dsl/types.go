@@ -386,7 +386,7 @@ type DataSource struct {
 	Path           string   `json:"path,omitempty"`
 	InlineData     string   `json:"inline_data,omitempty"` // optional inline CSV/DAT content
 	Strategy       string   `json:"strategy"`              // "sequential", "random", "unique", "pop"
-	Delimiter      string   `json:"delimiter,omitempty"`   // default ","
+	Delimiter      string   `json:"delimiter,omitempty"`   // default ","; accepts "auto", "comma", "tab"
 	FirstRowHeader bool     `json:"first_row_header,omitempty"`
 	Columns        []string `json:"columns,omitempty"` // explicit column names if no header
 }

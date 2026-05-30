@@ -2280,6 +2280,27 @@
   margin-top: 5px;
 }
 
+.scripts-authoring-stack {
+  display: contents;
+}
+
+.authoring-return-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.authoring-return-bar .btn {
+  flex-shrink: 0;
+}
+
 .script-health-token {
   display: inline-flex;
   align-items: center;

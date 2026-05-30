@@ -43,8 +43,11 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 		if !ok {
 			result.Stats.Skipped++
 			result.Stats.UnsupportedFuncs = append(result.Stats.UnsupportedFuncs, fn.Name)
+			appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, "metadata.import.preserved.unsupported_functions", fn.Name, "unsupported", "review_only", "No executable database mapping exists for this LoadRunner function yet."))
 			continue
 		}
+		actionIndex := len(result.Script.Actions)
+		appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "Converted to a generated APEX Load database action."))
 		result.Script.Actions = append(result.Script.Actions, action)
 		result.Stats.ConvertedActions++
 	}
@@ -180,10 +183,17 @@ func detectDatabaseDriver(detected DetectedProtocol) string {
 }
 
 func sourceFunctionMetadata(fn ParsedFunction) map[string]any {
-	return map[string]any{
+	metadata := map[string]any{
 		"source_function": fn.Name,
 		"source_line":     fn.LineNumber,
 	}
+	if fn.Filename != "" {
+		metadata["source_file"] = fn.Filename
+	}
+	if fn.EndLine > 0 && fn.EndLine != fn.LineNumber {
+		metadata["source_end_line"] = fn.EndLine
+	}
+	return metadata
 }
 
 func markDetectedReviewOnly(detected DetectedProtocol, warning string) DetectedProtocol {

@@ -54,8 +54,11 @@ func ConvertNetwork(actions []*ParsedAction, opts ConvertOptions, detected Detec
 		if !ok {
 			result.Stats.Skipped++
 			result.Stats.UnsupportedFuncs = append(result.Stats.UnsupportedFuncs, fn.Name)
+			appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, "metadata.import.preserved.unsupported_functions", fn.Name, "unsupported", "review_only", "No executable network mapping exists for this LoadRunner function yet."))
 			continue
 		}
+		actionIndex := len(result.Script.Actions)
+		appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "Converted to a generated APEX Load network action."))
 		result.Script.Actions = append(result.Script.Actions, action)
 		result.Stats.ConvertedActions++
 	}

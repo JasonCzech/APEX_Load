@@ -146,6 +146,7 @@ func buildParameterDataSource(dataSourceName, dataFile, dataContent, column, del
 	dataSource := dsl.DataSource{
 		Name:           dataSourceName,
 		Type:           parameterFileType(dataFile),
+		Path:           filepath.Base(cleanConfigValue(dataFile)),
 		InlineData:     dataContent,
 		Strategy:       "sequential",
 		FirstRowHeader: firstRowHeader,

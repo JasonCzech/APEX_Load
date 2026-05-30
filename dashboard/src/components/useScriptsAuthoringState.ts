@@ -14,12 +14,19 @@ export interface DraftEditorFocus {
 	targetRuntimeArea?: string | null
 }
 
+export interface AuthoringReturnTarget {
+  subView: ScriptsAuthoringSubView
+  label: string
+  description?: string
+}
+
 export interface AuthoringState {
   subView: ScriptsAuthoringSubView
   editingId: string | null
   editingScript: ScriptDefinition | null
   draftScript: ScriptDefinition | null
   draftEditorFocus: DraftEditorFocus | null
+  draftReturnTarget: AuthoringReturnTarget | null
   authoringNotice: string | null
 }
 
@@ -60,7 +67,8 @@ interface ScriptsAuthoringStateModel {
   openCreateOptions: () => void
   handleEdit: (id: string) => Promise<void>
   handleSavedScript: (script: StoredScript, notice?: string | null) => void
-  handleDraftEdit: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
+  handleDraftEdit: (script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null) => void
+  returnToDraftSource: () => void
   startDraft: (factory: () => ScriptDefinition) => void
   createOptionActions: ScriptsCreateOptionActions
 }
@@ -82,6 +90,18 @@ function normalizeDraftEditorFocus(focus?: DraftEditorFocus | null): DraftEditor
   }
 }
 
+function normalizeAuthoringReturnTarget(returnTarget?: AuthoringReturnTarget | null): AuthoringReturnTarget | null {
+  const label = returnTarget?.label?.trim()
+  if (!returnTarget || !label) return null
+
+  const description = returnTarget.description?.trim()
+  return {
+    subView: returnTarget.subView,
+    label,
+    ...(description ? { description } : {}),
+  }
+}
+
 function normalizeSubView(mode?: ScriptsAuthoringSubView): ScriptsAuthoringSubView {
   if (!mode) return 'list'
   return mode === 'create' ? 'create-options' : mode
@@ -94,6 +114,7 @@ function createAuthoringState(mode?: ScriptsAuthoringSubView, editId?: string): 
     editingScript: null,
     draftScript: null,
     draftEditorFocus: null,
+    draftReturnTarget: null,
     authoringNotice: null,
   }
 }
@@ -106,7 +127,7 @@ export function useScriptsAuthoringState({
   const [authoringState, setAuthoringState] = useState<AuthoringState>(() => createAuthoringState(initialMode, initialEditId))
 
   const setSubview = useCallback((subView: ScriptsAuthoringSubView) => {
-    setAuthoringState({ subView, editingId: null, editingScript: null, draftScript: null, draftEditorFocus: null, authoringNotice: null })
+    setAuthoringState({ subView, editingId: null, editingScript: null, draftScript: null, draftEditorFocus: null, draftReturnTarget: null, authoringNotice: null })
   }, [])
 
   const openLibrary = useCallback(() => {
@@ -157,13 +178,14 @@ export function useScriptsAuthoringState({
     setSubview('wsdl-import')
   }, [setSubview])
 
-  const openDraftEditor = useCallback((script: ScriptDefinition, focus?: DraftEditorFocus) => {
+  const openDraftEditor = useCallback((script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null) => {
     setAuthoringState({
       subView: 'create',
       editingId: null,
       editingScript: null,
       draftScript: script,
       draftEditorFocus: normalizeDraftEditorFocus(focus),
+      draftReturnTarget: normalizeAuthoringReturnTarget(returnTarget),
       authoringNotice: null,
     })
   }, [])
@@ -201,12 +223,13 @@ export function useScriptsAuthoringState({
       const res = await api.getScript(id)
       setAuthoringState({
         subView: 'edit',
-        editingId: id,
-        editingScript: res.script ?? null,
-        draftScript: null,
-        draftEditorFocus: null,
-        authoringNotice: null,
-      })
+      editingId: id,
+      editingScript: res.script ?? null,
+      draftScript: null,
+      draftEditorFocus: null,
+      draftReturnTarget: null,
+      authoringNotice: null,
+    })
     } catch {
       // Ignore edit-load failures to preserve existing page behavior.
     }
@@ -219,8 +242,26 @@ export function useScriptsAuthoringState({
       editingScript: savedScript.script ?? previous.draftScript ?? previous.editingScript,
       draftScript: null,
       draftEditorFocus: null,
+      draftReturnTarget: null,
       authoringNotice: notice?.trim() || null,
     }))
+  }, [])
+
+  const returnToDraftSource = useCallback(() => {
+    setAuthoringState(previous => {
+      const returnTarget = previous.draftReturnTarget
+      if (!returnTarget) return previous
+
+      return {
+        subView: returnTarget.subView,
+        editingId: null,
+        editingScript: null,
+        draftScript: null,
+        draftEditorFocus: null,
+        draftReturnTarget: null,
+        authoringNotice: null,
+      }
+    })
   }, [])
 
   useEffect(() => {
@@ -240,6 +281,7 @@ export function useScriptsAuthoringState({
     handleEdit,
     handleSavedScript,
     handleDraftEdit: openDraftEditor,
+    returnToDraftSource,
     startDraft,
     createOptionActions: {
       startApiScript,

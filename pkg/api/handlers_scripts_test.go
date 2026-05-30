@@ -625,6 +625,11 @@ UpdateValueOn=Each Iteration
 		Script  struct {
 			Protocol string `json:"protocol"`
 			Name     string `json:"name"`
+			Metadata struct {
+				Import struct {
+					Preserved map[string]json.RawMessage `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
 		} `json:"script"`
 		Warnings            []string `json:"warnings"`
 		UnsupportedElements []string `json:"unsupported_elements"`
@@ -697,6 +702,21 @@ UpdateValueOn=Each Iteration
 	readiness, ok := result.Summary["migration_readiness"].(map[string]any)
 	if !ok || readiness["score_pct"] != float64(100) || readiness["blocked"] != false {
 		t.Fatalf("summary.migration_readiness = %#v, want score=100 blocked=false", result.Summary["migration_readiness"])
+	}
+	sourceReview, ok := result.Summary["source_review"].(map[string]any)
+	if !ok {
+		t.Fatalf("summary.source_review = %#v, want object", result.Summary["source_review"])
+	}
+	sourceFiles, ok := sourceReview["source_files"].([]any)
+	if !ok || len(sourceFiles) == 0 {
+		t.Fatalf("source_review.source_files = %#v, want non-empty slice", sourceReview["source_files"])
+	}
+	mappings, ok := sourceReview["mappings"].([]any)
+	if !ok || len(mappings) == 0 {
+		t.Fatalf("source_review.mappings = %#v, want non-empty slice", sourceReview["mappings"])
+	}
+	if _, ok := result.Script.Metadata.Import.Preserved["source_review"]; !ok {
+		t.Fatalf("script metadata missing preserved source_review: %#v", result.Script.Metadata.Import.Preserved)
 	}
 }
 
@@ -2333,6 +2353,37 @@ func TestDraftValidationReturnsDataSourceFitHealth(t *testing.T) {
 	}
 	if payload.AuthoringHealth.Status != "blocked" {
 		t.Fatalf("authoring health = %#v, want blocked from data-source fit", payload.AuthoringHealth)
+	}
+}
+
+func TestDraftValidationDataSourceFitUsesAutoDelimiter(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	body := []byte(`{"script":{
+		"name":"data-fit-auto",
+		"version":"1.0.0",
+		"protocol":"http",
+		"config":{"base_url":"https://example.test"},
+		"data_sources":[{"name":"users","type":"csv","strategy":"sequential","delimiter":"auto","inline_data":"username\tpassword\nalice\tpass1\nbob\tpass2\n","first_row_header":true}],
+		"parameters":[{"name":"password","type":"file","data_source":"users","column":"password","selection":"sequential"}],
+		"actions":[{"name":"Home","type":"request","target":"/"}]
+	}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(body))
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload scriptValidationResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if !payload.Valid {
+		t.Fatalf("valid = false, want structural validation to pass; issues=%v", payload.Issues)
+	}
+	if payload.DataSourceFit == nil || payload.DataSourceFit.Status != "ready" {
+		t.Fatalf("data_source_fit = %#v, want ready fit report", payload.DataSourceFit)
 	}
 }
 

@@ -131,6 +131,7 @@ export default function ScriptsPage({ initialMode = 'create-options', initialEdi
     handleEdit,
     handleSavedScript,
     handleDraftEdit,
+    returnToDraftSource,
     createOptionActions,
   } = useScriptsAuthoringState({
     api,
@@ -303,6 +304,7 @@ export default function ScriptsPage({ initialMode = 'create-options', initialEdi
       onOpenCreateOptions={openCreateOptions}
       onImported={handleImported}
       onEditDraft={handleDraftEdit}
+      onReturnToDraftSource={returnToDraftSource}
       onStartExistingScript={handleStartExistingScript}
       canManageScripts={canManageScripts}
     >
