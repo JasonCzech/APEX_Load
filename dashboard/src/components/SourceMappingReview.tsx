@@ -1,8 +1,22 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 
 import { type LoadRunnerSourceReview, type LoadRunnerSourceReviewFile, type LoadRunnerSourceReviewMapping, type ScriptDefinition } from '../types/scripts'
 import { canCopyTextToClipboard, copyTextToClipboard } from '../utils/clipboardUtils'
+import { buildDslDocument, lineRangeForTargetPath } from './dslJsonPointers'
+import {
+  computeCoverage,
+  dslLineStatus,
+  lineStatusForSource,
+  mappingForDslLine,
+  mappingForSourceLine,
+  mappingMatchesFile,
+  statusCategory,
+} from './sourceMappingModel'
 import './SourceMappingReview.css'
+
+// CodeMirror is only needed inside this review surface, so keep it out of the
+// main bundle.
+const LinkedCodePane = lazy(() => import('./LinkedCodePane'))
 
 type SortField = 'source' | 'function' | 'target' | 'status'
 type SortDirection = 'asc' | 'desc'
@@ -11,6 +25,14 @@ interface Props {
   sourceReview?: LoadRunnerSourceReview | null
   script?: ScriptDefinition | null
   title?: string
+}
+
+// CSS class names for category chips/gutters (reuses the existing status styles).
+const CATEGORY_CLASS: Record<string, string> = {
+  converted: 'converted',
+  preserved: 'preserved',
+  review: 'review_only',
+  unsupported: 'unsupported',
 }
 
 function normalizeMappings(sourceReview?: LoadRunnerSourceReview | null): LoadRunnerSourceReviewMapping[] {
@@ -63,69 +85,16 @@ function formatSourceRange(mapping?: LoadRunnerSourceReviewMapping | null) {
   return `${mapping.source_file}:${mapping.start_line}`
 }
 
-function resolvePathValue(script: ScriptDefinition | null | undefined, targetPath?: string): unknown {
-  if (!script || !targetPath) return null
-  const normalized = targetPath.replace(/\[(\d+)\]/g, '.$1')
-  const parts = normalized.split('.').filter(Boolean)
-  let current: unknown = script
-  for (const part of parts) {
-    if (current == null) return null
-    if (Array.isArray(current)) {
-      const index = Number(part)
-      current = Number.isInteger(index) ? current[index] : undefined
-      continue
-    }
-    if (typeof current === 'object') {
-      current = (current as Record<string, unknown>)[part]
-      continue
-    }
-    return null
-  }
-  return current ?? null
-}
-
-function buildDslSnippet(script: ScriptDefinition | null | undefined, mapping?: LoadRunnerSourceReviewMapping | null) {
-  if (!mapping) return ''
-  const value = resolvePathValue(script, mapping.target_path)
-  if (value !== null && value !== undefined) {
-    return JSON.stringify(value, null, 2)
-  }
-  return JSON.stringify({
-    target_path: mapping.target_path || 'review-only',
-    target_name: mapping.target_name || '',
-    status: mapping.status,
-    notes: mapping.notes || '',
-  }, null, 2)
-}
-
-function buildSourceExcerpt(file: LoadRunnerSourceReviewFile | null, mapping?: LoadRunnerSourceReviewMapping | null) {
-  if (!file || !mapping) return ''
-  const lines = file.content.split('\n')
-  const start = Math.max(1, mapping.start_line || 1)
-  const end = Math.max(start, mapping.end_line || start)
+function excerptFromText(text: string, startLine?: number, endLine?: number) {
+  if (!text || !startLine) return ''
+  const lines = text.split('\n')
+  const start = Math.max(1, startLine)
+  const end = Math.max(start, endLine || startLine)
   return lines.slice(start - 1, end).join('\n')
 }
 
-function SourcePreview({ file, selectedMapping }: { file: LoadRunnerSourceReviewFile | null; selectedMapping?: LoadRunnerSourceReviewMapping | null }) {
-  if (!file) {
-    return <div className="source-map-empty">No source file content was captured.</div>
-  }
-  const start = selectedMapping && fileMatchesPath(file, selectedMapping.source_file) ? selectedMapping.start_line : 0
-  const end = selectedMapping && fileMatchesPath(file, selectedMapping.source_file) ? selectedMapping.end_line || selectedMapping.start_line : 0
-  return (
-    <div className="source-map-code" role="region" aria-label={`${file.path} source`}>
-      {file.content.split('\n').map((line, index) => {
-        const lineNumber = index + 1
-        const highlighted = start > 0 && lineNumber >= start && lineNumber <= end
-        return (
-          <div key={`${file.path}:${lineNumber}`} className={`source-map-code-line ${highlighted ? 'highlighted' : ''}`}>
-            <span className="source-map-line-number">{lineNumber}</span>
-            <code>{line || ' '}</code>
-          </div>
-        )
-      })}
-    </div>
-  )
+function PaneFallback() {
+  return <div className="source-map-empty">Loading code view…</div>
 }
 
 export default function SourceMappingReview({ sourceReview, script, title = 'Source Mapping' }: Props) {
@@ -146,6 +115,17 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
     () => findSourceFile(files, selectedFilePath || selectedMapping?.source_file),
     [files, selectedFilePath, selectedMapping?.source_file],
   )
+
+  const dslDocument = useMemo(() => (script ? buildDslDocument(script) : null), [script])
+  const dslStatus = useMemo(
+    () => (dslDocument ? dslLineStatus(dslDocument.ranges, mappings) : { lines: new Map<number, never>(), withoutOrigin: [] }),
+    [dslDocument, mappings],
+  )
+  const coverage = useMemo(
+    () => computeCoverage(mappings, dslStatus.withoutOrigin.length),
+    [mappings, dslStatus.withoutOrigin.length],
+  )
+  const sourceGutter = useMemo(() => lineStatusForSource(mappings, selectedFile?.path), [mappings, selectedFile])
 
   useEffect(() => {
     const nextMapping = mappings[0]
@@ -173,8 +153,20 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
     return null
   }
 
-  const dslSnippet = buildDslSnippet(script, selectedMapping)
-  const sourceExcerpt = buildSourceExcerpt(selectedFile, selectedMapping)
+  const selectMapping = (mapping: LoadRunnerSourceReviewMapping | null) => {
+    if (!mapping) return
+    setSelectedMappingId(mapping.id)
+    if (mapping.source_file) setSelectedFilePath(mapping.source_file)
+    setCopied('')
+  }
+
+  const sourceActiveRange = selectedMapping && selectedFile && mappingMatchesFile(selectedMapping, selectedFile.path)
+    ? { startLine: selectedMapping.start_line, endLine: selectedMapping.end_line || selectedMapping.start_line }
+    : null
+  const dslActiveRange = dslDocument ? lineRangeForTargetPath(dslDocument.ranges, selectedMapping?.target_path) : null
+
+  const sourceExcerpt = excerptFromText(selectedFile?.content || '', sourceActiveRange?.startLine, sourceActiveRange?.endLine)
+  const dslExcerpt = excerptFromText(dslDocument?.text || '', dslActiveRange?.startLine, dslActiveRange?.endLine)
   const copySupported = canCopyTextToClipboard()
 
   const handleSort = (field: SortField) => {
@@ -192,17 +184,48 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
     setCopied(ok ? kind : '')
   }
 
+  const handleSourceLineClick = (line: number) => {
+    selectMapping(mappingForSourceLine(mappings, selectedFile?.path, line))
+  }
+  const handleDslLineClick = (line: number) => {
+    if (!dslDocument) return
+    selectMapping(mappingForDslLine(dslDocument.ranges, mappings, line))
+  }
+
+  const coverageChips: Array<{ key: string; label: string; value: number }> = [
+    { key: 'converted', label: 'Converted', value: coverage.converted },
+    { key: 'preserved', label: 'Preserved', value: coverage.preserved },
+    { key: 'review', label: 'Needs review', value: coverage.review },
+    { key: 'unsupported', label: 'Unsupported', value: coverage.unsupported },
+  ]
+
   return (
     <section className="source-map-review">
       <div className="source-map-header">
         <div>
           <h4>{title}</h4>
-          <p>Compare redacted VuGen source with the generated APEX Load DSL.</p>
+          <p>Validate the conversion line by line — select on either side and the match is highlighted on the other.</p>
         </div>
         <div className="source-map-summary">
           <span>{files.length} file{files.length === 1 ? '' : 's'}</span>
           <span>{mappings.length} mapping{mappings.length === 1 ? '' : 's'}</span>
         </div>
+      </div>
+
+      <div className="source-map-coverage" role="group" aria-label="Conversion coverage">
+        {coverageChips.map(chip => (
+          <span key={chip.key} className={`source-map-status ${CATEGORY_CLASS[chip.key]}`}>
+            {chip.label}: {chip.value}
+          </span>
+        ))}
+        {dslDocument && (
+          <span
+            className={`source-map-status ${coverage.dslWithoutOrigin > 0 ? 'unsupported' : 'converted'}`}
+            title="DSL elements (actions, parameters, data sources) with no traceable source origin"
+          >
+            DSL without source origin: {coverage.dslWithoutOrigin}
+          </span>
+        )}
       </div>
 
       <div className="source-map-toolbar">
@@ -237,16 +260,12 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
               <tr
                 key={mapping.id}
                 className={mapping.id === selectedMapping?.id ? 'active' : ''}
-                onClick={() => {
-                  setSelectedMappingId(mapping.id)
-                  setSelectedFilePath(mapping.source_file)
-                  setCopied('')
-                }}
+                onClick={() => selectMapping(mapping)}
               >
                 <td className="cell-mono">{formatSourceRange(mapping)}</td>
                 <td>{mapping.function || '-'}</td>
                 <td className="cell-mono">{mapping.target_path || mapping.target_name || 'review-only'}</td>
-                <td><span className={`source-map-status ${mapping.status || 'review'}`}>{formatStatusLabel(mapping.status)}</span></td>
+                <td><span className={`source-map-status ${CATEGORY_CLASS[statusCategory(mapping.status)]}`}>{formatStatusLabel(mapping.status)}</span></td>
               </tr>
             ))}
             {filteredMappings.length === 0 && (
@@ -266,17 +285,43 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
               {copied === 'source' ? 'Copied' : 'Copy Source'}
             </button>
           </div>
-          <SourcePreview file={selectedFile} selectedMapping={selectedMapping} />
+          {selectedFile ? (
+            <Suspense fallback={<PaneFallback />}>
+              <LinkedCodePane
+                value={selectedFile.content}
+                language={selectedFile.language}
+                gutterStatuses={sourceGutter}
+                activeRange={sourceActiveRange}
+                onLineClick={handleSourceLineClick}
+                ariaLabel={`${selectedFile.path} source`}
+              />
+            </Suspense>
+          ) : (
+            <div className="source-map-empty">No source file content was captured.</div>
+          )}
         </div>
 
         <div className="source-map-panel">
           <div className="source-map-panel-header">
             <strong>{selectedMapping?.target_path || 'Generated DSL'}</strong>
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyValue('dsl', dslSnippet)} disabled={!copySupported || !dslSnippet}>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyValue('dsl', dslExcerpt)} disabled={!copySupported || !dslExcerpt}>
               {copied === 'dsl' ? 'Copied' : 'Copy DSL'}
             </button>
           </div>
-          <pre className="source-map-dsl">{dslSnippet || 'No generated DSL target selected.'}</pre>
+          {dslDocument ? (
+            <Suspense fallback={<PaneFallback />}>
+              <LinkedCodePane
+                value={dslDocument.text}
+                language="json"
+                gutterStatuses={dslStatus.lines}
+                activeRange={dslActiveRange}
+                onLineClick={handleDslLineClick}
+                ariaLabel="Generated DSL"
+              />
+            </Suspense>
+          ) : (
+            <div className="source-map-empty">DSL has not been generated yet. Complete the import to compare the native script.</div>
+          )}
         </div>
       </div>
     </section>

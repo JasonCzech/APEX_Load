@@ -1,0 +1,177 @@
+import { useEffect, useMemo, useRef } from 'react'
+import CodeMirror from '@uiw/react-codemirror'
+import { cpp } from '@codemirror/lang-cpp'
+import { javascript } from '@codemirror/lang-javascript'
+import { json } from '@codemirror/lang-json'
+import { xml } from '@codemirror/lang-xml'
+import { type Extension, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state'
+import { Decoration, type DecorationSet, EditorView, GutterMarker, gutter } from '@codemirror/view'
+
+import { type LineRange } from './dslJsonPointers'
+import { type GutterStatus } from './sourceMappingModel'
+import { apexCodeMirrorTheme } from './codeMirrorTheme'
+
+// Effect + field that hold the "linked" line range highlighted from the other
+// pane. Updated imperatively (see the effect below) so changing the selection
+// never reconfigures the whole editor.
+const setLinkedRange = StateEffect.define<LineRange | null>()
+
+function buildLineDecorations(state: EditorView['state'], range: LineRange | null): DecorationSet {
+  if (!range) return Decoration.none
+  const builder = new RangeSetBuilder<Decoration>()
+  const lineDeco = Decoration.line({ class: 'apex-linked-line' })
+  const lastLine = state.doc.lines
+  const start = Math.max(1, range.startLine)
+  const end = Math.min(lastLine, range.endLine)
+  for (let lineNo = start; lineNo <= end; lineNo += 1) {
+    const line = state.doc.line(lineNo)
+    builder.add(line.from, line.from, lineDeco)
+  }
+  return builder.finish()
+}
+
+const linkedRangeField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(decorations, tr) {
+    let next = decorations.map(tr.changes)
+    for (const effect of tr.effects) {
+      if (effect.is(setLinkedRange)) {
+        next = buildLineDecorations(tr.state, effect.value)
+      }
+    }
+    return next
+  },
+  provide: field => EditorView.decorations.from(field),
+})
+
+class StatusMarker extends GutterMarker {
+  constructor(readonly status: GutterStatus) {
+    super()
+  }
+
+  eq(other: StatusMarker) {
+    return other.status === this.status
+  }
+
+  toDOM() {
+    const span = document.createElement('span')
+    span.className = `apex-status-marker ${this.status}`
+    return span
+  }
+}
+
+function statusGutter(statuses: Map<number, GutterStatus>): Extension {
+  return gutter({
+    class: 'apex-status-gutter',
+    lineMarker(view, lineBlock) {
+      const lineNo = view.state.doc.lineAt(lineBlock.from).number
+      const status = statuses.get(lineNo)
+      return status ? new StatusMarker(status) : null
+    },
+    lineMarkerChange: () => false,
+    initialSpacer: () => new StatusMarker('converted'),
+  })
+}
+
+function languageExtension(language?: string): Extension[] {
+  switch ((language || '').toLowerCase()) {
+    case 'json':
+      return [json()]
+    case 'c':
+    case 'cpp':
+    case 'h':
+      return [cpp()]
+    case 'javascript':
+    case 'js':
+      return [javascript()]
+    case 'xml':
+      return [xml()]
+    default:
+      return []
+  }
+}
+
+interface Props {
+  value: string
+  language?: string
+  gutterStatuses?: Map<number, GutterStatus>
+  activeRange?: LineRange | null
+  onLineClick?: (line: number) => void
+  ariaLabel?: string
+  maxHeight?: string
+}
+
+export default function LinkedCodePane({
+  value,
+  language,
+  gutterStatuses,
+  activeRange,
+  onLineClick,
+  ariaLabel,
+  maxHeight = '420px',
+}: Props) {
+  const viewRef = useRef<EditorView | null>(null)
+  const clickRef = useRef(onLineClick)
+  clickRef.current = onLineClick
+
+  const extensions = useMemo<Extension[]>(() => {
+    const exts: Extension[] = [
+      apexCodeMirrorTheme,
+      linkedRangeField,
+      EditorView.lineWrapping,
+      EditorView.editable.of(false),
+      EditorView.domEventHandlers({
+        mousedown(event, view) {
+          const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
+          if (pos == null) return false
+          const lineNo = view.state.doc.lineAt(pos).number
+          clickRef.current?.(lineNo)
+          return false
+        },
+      }),
+      ...languageExtension(language),
+    ]
+    if (gutterStatuses && gutterStatuses.size > 0) {
+      exts.push(statusGutter(gutterStatuses))
+    }
+    return exts
+  }, [language, gutterStatuses])
+
+  // Apply the linked-line highlight and scroll it into view whenever the active
+  // range (or the underlying document) changes.
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    const effects: StateEffect<unknown>[] = [setLinkedRange.of(activeRange ?? null)]
+    if (activeRange && activeRange.startLine >= 1 && activeRange.startLine <= view.state.doc.lines) {
+      const line = view.state.doc.line(activeRange.startLine)
+      effects.push(EditorView.scrollIntoView(line.from, { y: 'center' }))
+    }
+    view.dispatch({ effects })
+  }, [activeRange, value])
+
+  return (
+    <div className="linked-code-pane" role="region" aria-label={ariaLabel}>
+      <CodeMirror
+        value={value}
+        extensions={extensions}
+        editable={false}
+        readOnly
+        theme="none"
+        maxHeight={maxHeight}
+        basicSetup={{
+          lineNumbers: true,
+          foldGutter: false,
+          highlightActiveLine: false,
+          highlightActiveLineGutter: false,
+          dropCursor: false,
+          allowMultipleSelections: false,
+          highlightSelectionMatches: false,
+        }}
+        onCreateEditor={view => {
+          viewRef.current = view
+        }}
+      />
+    </div>
+  )
+}

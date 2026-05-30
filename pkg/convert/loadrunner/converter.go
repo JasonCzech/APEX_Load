@@ -198,6 +198,11 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_service_call":
 			action, warnings := convertAction(fn, baseURL, currentTransaction, opts)
 			if action != nil {
+				// Capture pre-attach counts so contributor mappings can point at the
+				// exact extractor/assertion index they land on in the generated action.
+				baseExtractorCount := len(action.Extractors)
+				baseAssertionCount := len(action.Assertions)
+
 				if len(pendingAssertions) > 0 {
 					action.Assertions = append(action.Assertions, pendingAssertions...)
 					pendingAssertions = nil
@@ -241,8 +246,22 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				actionIndex := len(result.Script.Actions)
 				targetPath := fmt.Sprintf("actions[%d]", actionIndex)
 				appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, targetPath, action.Name, "action", "converted", "Converted to a generated APEX Load action."))
+				// Contributors (extractors, assertions, headers) were collected in source
+				// order ahead of this request, so the Nth extractor/assertion mapping lines
+				// up with the Nth attached extractor/assertion.
+				extractorIndex := baseExtractorCount
+				assertionIndex := baseAssertionCount
 				for _, pendingMapping := range pendingSourceMappings {
-					pendingMapping.TargetPath = sourceReviewContributorTargetPath(targetPath, pendingMapping.TargetKind)
+					contributorIndex := -1
+					switch pendingMapping.TargetKind {
+					case "extractor":
+						contributorIndex = extractorIndex
+						extractorIndex++
+					case "assertion":
+						contributorIndex = assertionIndex
+						assertionIndex++
+					}
+					pendingMapping.TargetPath = sourceReviewContributorTargetPath(targetPath, pendingMapping.TargetKind, contributorIndex)
 					if pendingMapping.TargetName == "" {
 						pendingMapping.TargetName = action.Name
 					}
@@ -454,12 +473,12 @@ func setLoadRunnerWebRuntimeAttribute(script *dsl.Script, key, value string) {
 	script.Config.WebRuntime.AdditionalAttributes[key] = value
 }
 
-func sourceReviewContributorTargetPath(actionPath string, targetKind string) string {
+func sourceReviewContributorTargetPath(actionPath string, targetKind string, index int) string {
 	switch targetKind {
 	case "extractor":
-		return actionPath + ".extractors"
+		return fmt.Sprintf("%s.extractors[%d]", actionPath, index)
 	case "assertion":
-		return actionPath + ".assertions"
+		return fmt.Sprintf("%s.assertions[%d]", actionPath, index)
 	case "headers":
 		return actionPath + ".headers"
 	case "transaction":

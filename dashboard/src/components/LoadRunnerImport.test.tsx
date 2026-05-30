@@ -22,6 +22,14 @@ vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
 
+// CodeMirror can't measure layout under jsdom; render the pane's text directly so
+// the source/DSL content is assertable. The real editor is verified in-browser.
+vi.mock('./LinkedCodePane', () => ({
+  default: ({ value, ariaLabel }: { value: string; ariaLabel?: string }) => (
+    <pre aria-label={ariaLabel}>{value}</pre>
+  ),
+}))
+
 const sourceReviewFixture = {
   source_files: [
     {
@@ -498,7 +506,7 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('csv')
     expect(container.textContent).toContain('username')
     expect(container.textContent).toContain('Source Mapping')
-    expect(container.textContent).toContain('Compare redacted VuGen source with the generated APEX Load DSL.')
+    expect(container.textContent).toContain('Validate the conversion line by line')
     expect(container.textContent).toContain('Action.c:3-5')
     expect(container.textContent).toContain('web_url')
     expect(container.textContent).toContain('"name": "Homepage"')

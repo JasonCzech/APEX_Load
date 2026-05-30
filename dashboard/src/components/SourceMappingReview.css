@@ -227,6 +227,34 @@
   text-align: center;
 }
 
+.source-map-coverage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.source-map-coverage .source-map-status {
+  text-transform: none;
+  font-weight: 600;
+}
+
+.linked-code-pane {
+  min-width: 0;
+}
+
+.linked-code-pane .cm-editor {
+  background: var(--bg-primary);
+}
+
+.linked-code-pane .cm-editor.cm-focused {
+  outline: none;
+}
+
+.linked-code-pane .cm-scroller {
+  overflow: auto;
+}
+
 @media (max-width: 960px) {
   .source-map-panels {
     grid-template-columns: 1fr;

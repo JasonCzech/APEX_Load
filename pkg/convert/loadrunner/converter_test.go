@@ -223,7 +223,7 @@ func TestConvert(t *testing.T) {
 		t.Fatal("expected source review mappings")
 	}
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "actions[0]", "converted")
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_reg_save_param", "actions[0].extractors", "contributor")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_reg_save_param", "actions[0].extractors[0]", "contributor")
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_think_time", "config.think_time", "converted")
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_set_max_html_param_len", "metadata.import.preserved.unsupported_functions", "review_only")
 
@@ -252,6 +252,48 @@ func assertSourceReviewMapping(t *testing.T, mappings []SourceReviewMapping, fun
 		}
 	}
 	t.Fatalf("missing source mapping function=%s target=%s status=%s in %#v", functionName, targetPath, status, mappings)
+}
+
+func TestConvertContributorMappingsUseIndexedTargetPaths(t *testing.T) {
+	const source = `#include "web_api.h"
+
+Action()
+{
+	web_reg_save_param("TokenA", "LB=tokenA=", "RB=;", LAST);
+	web_reg_save_param("TokenB", "LB=tokenB=", "RB=;", LAST);
+	web_reg_find("Text=Welcome", LAST);
+	web_reg_find("Text=Dashboard", LAST);
+	web_url("Landing", "URL=https://example.com/landing", LAST);
+	return 0;
+}
+`
+	parsed, err := ParseActionFile("Action.c", source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{ScriptName: "Indexed", IncludeAssertions: false})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	if result.SourceReview == nil {
+		t.Fatal("expected source review")
+	}
+
+	// Each contributor must point at the exact extractor/assertion index it landed on,
+	// so the dashboard's side-by-side view can highlight the sub-action element.
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_reg_save_param", "actions[0].extractors[0]", "contributor")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_reg_save_param", "actions[0].extractors[1]", "contributor")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_reg_find", "actions[0].assertions[0]", "contributor")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_reg_find", "actions[0].assertions[1]", "contributor")
+
+	// And the indices must actually address the attached elements in order.
+	action := result.Script.Actions[0]
+	if len(action.Extractors) != 2 || action.Extractors[0].Name != "TokenA" || action.Extractors[1].Name != "TokenB" {
+		t.Fatalf("extractors = %#v, want [TokenA TokenB]", action.Extractors)
+	}
+	if len(action.Assertions) != 2 {
+		t.Fatalf("assertions = %#v, want 2 contributor assertions", action.Assertions)
+	}
 }
 
 func TestConvertSupportsLoadRunnerRuntimeControls(t *testing.T) {
