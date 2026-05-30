@@ -6239,6 +6239,8 @@ interface ParameterDefinitionGroup {
   parameters: Array<{ index: number; parameter: ParameterConfig }>
 }
 
+const PARAMETER_DEFINITION_COLUMN_COUNT = 8
+
 function buildParameterDefinitionGroups(parameters: ParameterConfig[], dataSources: ScriptDataSource[] = []): ParameterDefinitionGroup[] {
   const dataSourceByName = new Map(dataSources.map(source => [source.name, source]))
   const groups: ParameterDefinitionGroup[] = []
@@ -6270,6 +6272,39 @@ function buildParameterDefinitionGroups(parameters: ParameterConfig[], dataSourc
   })
 
   return groups
+}
+
+function isUserDefinedParameterFileGroup(group: ParameterDefinitionGroup): boolean {
+  if (group.rowCount === null) return false
+  const sourceType = (group.sourceType || '').trim().toLowerCase()
+  const sourceFile = (group.sourceFile || '').trim().toLowerCase()
+  return sourceType === 'csv' || sourceType === 'dat' || sourceFile.endsWith('.csv') || sourceFile.endsWith('.dat')
+}
+
+interface ParameterDefinitionSectionGroup {
+  key: string
+  groups: ParameterDefinitionGroup[]
+  summary: string
+  title: string
+}
+
+function buildParameterDefinitionSections(groups: ParameterDefinitionGroup[]): ParameterDefinitionSectionGroup[] {
+  const userDefinedFiles = groups.filter(isUserDefinedParameterFileGroup)
+  const builtInTypes = groups.filter(group => !isUserDefinedParameterFileGroup(group))
+  return [
+    {
+      key: 'user-defined-files',
+      title: 'User-Defined Files (.dat / .csv)',
+      summary: `${userDefinedFiles.length} source${userDefinedFiles.length === 1 ? '' : 's'}`,
+      groups: userDefinedFiles,
+    },
+    {
+      key: 'built-in-parameters',
+      title: 'Built-In / Generated Parameters',
+      summary: `${builtInTypes.length} type${builtInTypes.length === 1 ? '' : 's'}`,
+      groups: builtInTypes,
+    },
+  ].filter(section => section.groups.length > 0)
 }
 
 function formatParameterRowCount(rowCount?: number | null): string {
@@ -6449,6 +6484,10 @@ function ParameterDefinitionsSection({
     () => buildParameterDefinitionGroups(script.parameters || [], script.data_sources || []),
     [script.data_sources, script.parameters],
   )
+  const parameterSections = useMemo(
+    () => buildParameterDefinitionSections(parameterGroups),
+    [parameterGroups],
+  )
   const focusedParameterSourceKey = useMemo(
     () => findParameterDefinitionGroupBySource(parameterGroups, focusedSourceName)?.key || null,
     [focusedSourceName, parameterGroups],
@@ -6502,6 +6541,56 @@ function ParameterDefinitionsSection({
   const selectParameter = (idx: number, parameter: ParameterConfig) => {
     onSelectParameter(idx, parameter)
   }
+  const renderParameterGroup = (group: ParameterDefinitionGroup) => {
+    const isExpanded = expandedParameterSources.has(group.key)
+    return (
+      <Fragment key={group.key}>
+        <tr className="parameter-source-row">
+          <td>
+            <button
+              type="button"
+              className="parameter-source-toggle"
+              aria-expanded={isExpanded}
+              aria-label={`${isExpanded ? 'Collapse' : 'Expand'} source ${group.sourceFile}`}
+              onClick={() => toggleParameterSource(group.key)}
+            >
+              <span aria-hidden="true" className="parameter-section-chevron">{isExpanded ? '▾' : '▸'}</span>
+              <span className="parameter-source-label">
+                <strong>{group.sourceFile}</strong>
+                <small>
+                  {[group.sourceType, group.sourceName && group.sourceName !== group.sourceFile ? group.sourceName : '']
+                    .filter(Boolean)
+                    .join(' · ')}
+                </small>
+              </span>
+            </button>
+          </td>
+          <td>{group.parameters.length} parameter{group.parameters.length === 1 ? '' : 's'}</td>
+          <td className="cell-mono">{formatParameterRowCount(group.rowCount)}</td>
+          <td>{summarizeParameterValues(group.parameters.map(({ parameter }) => parameter.update || 'each_iteration'))}</td>
+          <td>{summarizeParameterGroupSelection(group)}</td>
+          <td>{summarizeParameterGroupColumns(group)}</td>
+          <td className="cell-mono">—</td>
+          <td className="parameter-cell-empty" style={{ textAlign: 'right' }}>{isExpanded ? 'Expanded' : 'Select to edit'}</td>
+        </tr>
+        {isExpanded && group.parameters.map(({ index: idx, parameter }) => (
+          <ParameterDefinitionRow
+            idx={idx}
+            key={`${group.key}-${parameter.name || 'parameter'}-${idx}`}
+            isSelected={selectedParameterIdx === idx}
+            onOpenChoice={setActiveParameterChoice}
+            onOpenSettings={setActiveParameterSettingsIdx}
+            onOpenSelectionSettings={setActiveSelectionSettingsIdx}
+            onRemoveParameter={onRemoveParameter}
+            onSelectParameter={selectParameter}
+            onUpdateParameter={onUpdateParameter}
+            parameter={parameter}
+            rowCount={group.rowCount}
+          />
+        ))}
+      </Fragment>
+    )
+  }
 
   return (
     <>
@@ -6540,56 +6629,17 @@ function ParameterDefinitionsSection({
               </tr>
             </thead>
             <tbody>
-              {parameterGroups.map(group => {
-                const isExpanded = expandedParameterSources.has(group.key)
-                return (
-                  <Fragment key={group.key}>
-                    <tr className="parameter-source-row">
-                      <td>
-                        <button
-                          type="button"
-                          className="parameter-source-toggle"
-                          aria-expanded={isExpanded}
-                          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} source ${group.sourceFile}`}
-                          onClick={() => toggleParameterSource(group.key)}
-                        >
-                          <span aria-hidden="true" className="parameter-section-chevron">{isExpanded ? '▾' : '▸'}</span>
-                          <span className="parameter-source-label">
-                            <strong>{group.sourceFile}</strong>
-                            <small>
-                              {[group.sourceType, group.sourceName && group.sourceName !== group.sourceFile ? group.sourceName : '']
-                                .filter(Boolean)
-                                .join(' · ')}
-                            </small>
-                          </span>
-                        </button>
-                      </td>
-                      <td>{group.parameters.length} parameter{group.parameters.length === 1 ? '' : 's'}</td>
-                      <td className="cell-mono">{formatParameterRowCount(group.rowCount)}</td>
-                      <td>{summarizeParameterValues(group.parameters.map(({ parameter }) => parameter.update || 'each_iteration'))}</td>
-                      <td>{summarizeParameterGroupSelection(group)}</td>
-                      <td>{summarizeParameterGroupColumns(group)}</td>
-                      <td className="cell-mono">—</td>
-                      <td className="parameter-cell-empty" style={{ textAlign: 'right' }}>{isExpanded ? 'Expanded' : 'Select to edit'}</td>
-                    </tr>
-                    {isExpanded && group.parameters.map(({ index: idx, parameter }) => (
-                      <ParameterDefinitionRow
-                        idx={idx}
-                        key={`${group.key}-${parameter.name || 'parameter'}-${idx}`}
-                        isSelected={selectedParameterIdx === idx}
-                        onOpenChoice={setActiveParameterChoice}
-                        onOpenSettings={setActiveParameterSettingsIdx}
-                        onOpenSelectionSettings={setActiveSelectionSettingsIdx}
-                        onRemoveParameter={onRemoveParameter}
-                        onSelectParameter={selectParameter}
-                        onUpdateParameter={onUpdateParameter}
-                        parameter={parameter}
-                        rowCount={group.rowCount}
-                      />
-                    ))}
-                  </Fragment>
-                )
-              })}
+              {parameterSections.map(section => (
+                <Fragment key={section.key}>
+                  <tr className="parameter-category-row">
+                    <td colSpan={PARAMETER_DEFINITION_COLUMN_COUNT}>
+                      <span>{section.title}</span>
+                      <small>{section.summary}</small>
+                    </td>
+                  </tr>
+                  {section.groups.map(renderParameterGroup)}
+                </Fragment>
+              ))}
             </tbody>
           </table>
           {activeParameterChoice && activeChoiceParameter && (

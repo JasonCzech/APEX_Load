@@ -1268,6 +1268,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
     expect(container.textContent).toContain('Parameters')
     expect(container.textContent).not.toContain('Named Parameters')
+    expect(container.textContent).toContain('Built-In / Generated Parameters')
     const namedParameterHeaders = Array.from(container.querySelectorAll('.parameter-definitions-table thead th')).map(header => header.textContent?.trim())
     expect(namedParameterHeaders).toEqual(['Source File / Type', 'Parameter Name', 'Rows', 'Update', 'Selection', 'Settings', 'Template', 'Actions'])
     expect(namedParameterHeaders).not.toContain('Name')
@@ -1332,6 +1333,9 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelectorAll('.parameter-source-row')).toHaveLength(2)
+    expect(Array.from(container.querySelectorAll('.parameter-category-row')).map(row => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+      'User-Defined Files (.dat / .csv)2 sources',
+    ])
     expect(container.querySelectorAll('.parameter-child-row')).toHaveLength(0)
     const parameterTable = container.querySelector('.parameter-definitions-table') as HTMLTableElement | null
     expect(container.textContent).toContain('BBCRandomLinks.dat')
@@ -1534,6 +1538,10 @@ describe('ScriptEditor', () => {
     expect(parameterDialog?.textContent).not.toContain('Users.csv')
     expect(parameterDialog?.textContent).not.toContain('Passwords.dat')
     expect(parameterDialog?.querySelectorAll('.parameter-source-row')).toHaveLength(2)
+    expect(Array.from(parameterDialog?.querySelectorAll('.parameter-category-row') || []).map(row => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+      'User-Defined Files (.dat / .csv)1 source',
+      'Built-In / Generated Parameters1 type',
+    ])
     expect(parameterDialog?.textContent).toContain('2 parameters')
     expect(parameterDialog?.textContent).toContain('Current Iteration')
 

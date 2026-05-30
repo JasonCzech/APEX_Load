@@ -386,6 +386,25 @@
 .parameter-table tbody tr:last-child td {
   border-bottom: none;
 }
+.parameter-category-row td {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.parameter-category-row span {
+  color: var(--text-primary);
+}
+.parameter-category-row small {
+  margin-left: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
 .parameter-source-controls,
 .parameter-selection-controls,
 .parameter-settings-controls {
