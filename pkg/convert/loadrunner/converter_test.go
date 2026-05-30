@@ -863,6 +863,41 @@ Type="Time"
 	}
 }
 
+func TestParseParameterFilePreservesSameLineSelection(t *testing.T) {
+	parsed := ParseParameterFile("ACME.prm", `[parameter:UserName]
+ColumnName="UserName"
+GenerateNewVal="EachIteration"
+ParamName="UserName"
+SelectNextRow="Random"
+Table="Users.dat"
+Type="Table"
+
+[parameter:Password]
+ColumnName="Password"
+GenerateNewVal="EachIteration"
+ParamName="Password"
+SelectNextRow="Same line as UserName"
+Table="Users.dat"
+Type="Table"
+`, map[string]string{
+		"Users.dat": "UserName,Password\nalice,a-pass\nbob,b-pass\n",
+	})
+
+	if len(parsed.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", parsed.Warnings)
+	}
+	params := map[string]dsl.Parameter{}
+	for _, parameter := range parsed.Parameters {
+		params[parameter.Name] = parameter
+	}
+	if got := params["password"]; got.SameLineAs != "username" || got.DataSource != "users" || got.Column != "Password" {
+		t.Fatalf("Password = %#v, want same-line sync to username in Users.dat", got)
+	}
+	if got := params["username"]; got.Selection != "random" || got.SameLineAs != "" {
+		t.Fatalf("UserName = %#v, want independent random row selection", got)
+	}
+}
+
 func TestParseRuntimeCfgToScriptConfigMapsExtendedRuntimeSettings(t *testing.T) {
 	runtimeCfg := ParseRuntimeCfg(`[HTTP]
 ConnectTimeout=45

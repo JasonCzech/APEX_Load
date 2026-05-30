@@ -39,11 +39,13 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 			continue
 		}
 
+		selectNextRow := lower["selectnextrow"]
 		param := dsl.Parameter{
 			Name:         name,
 			Update:       mapParameterUpdate(firstNonEmpty(lower["updatevalueon"], lower["generatenewval"])),
-			Selection:    mapParameterSelection(lower["selectnextrow"]),
+			Selection:    mapParameterSelection(selectNextRow),
 			OnExhaustion: mapParameterExhaustion(firstNonEmpty(lower["outofvalues"], lower["whenoutofvalues"], lower["outofrangepolicy"])),
+			SameLineAs:   parseParameterSameLineAs(selectNextRow),
 		}
 		rawType := strings.ToLower(firstNonEmpty(lower["type"], lower["valuetype"], lower["datatype"], lower["paramtype"]))
 		switch {
@@ -568,6 +570,21 @@ func mapParameterSelection(value string) string {
 	default:
 		return ""
 	}
+}
+
+func parseParameterSameLineAs(value string) string {
+	value = strings.TrimSpace(cleanConfigValue(value))
+	if value == "" {
+		return ""
+	}
+	lower := strings.ToLower(value)
+	index := strings.Index(lower, "same line as")
+	if index < 0 {
+		return ""
+	}
+	reference := strings.TrimSpace(value[index+len("same line as"):])
+	reference = strings.Trim(reference, ` "'=:,;()[]`)
+	return cleanParameterName(reference)
 }
 
 func mapParameterExhaustion(value string) string {

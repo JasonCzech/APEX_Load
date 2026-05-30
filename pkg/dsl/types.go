@@ -397,6 +397,7 @@ type Parameter struct {
 	Update        string   `json:"update,omitempty"`
 	Selection     string   `json:"selection,omitempty"`
 	OnExhaustion  string   `json:"on_exhaustion,omitempty"`
+	SameLineAs    string   `json:"same_line_as,omitempty"`
 	DataSource    string   `json:"data_source,omitempty"`
 	Column        string   `json:"column,omitempty"`
 	Format        string   `json:"format,omitempty"`

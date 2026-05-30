@@ -24,15 +24,17 @@ type ParameterRuntime struct {
 }
 
 type parameterState struct {
-	hasCached bool
-	cached    string
-	nextIndex int
-	used      map[int]bool
-	counter   int
-	seeded    bool
-	random    *rand.Rand
-	values    []string
-	loaded    bool
+	hasCached  bool
+	cached     string
+	nextIndex  int
+	used       map[int]bool
+	counter    int
+	seeded     bool
+	random     *rand.Rand
+	values     []string
+	loaded     bool
+	lastIndex  int
+	hasRowPick bool
 }
 
 func NewParameterRuntime(parameters []dsl.Parameter, provider *DataProvider, vuserID int) *ParameterRuntime {
@@ -69,10 +71,19 @@ func (pr *ParameterRuntime) Prime() {
 	}
 	for _, name := range pr.order {
 		param := pr.params[name]
-		if effectiveParameterUpdate(param) == "each_occurrence" {
+		if effectiveParameterUpdate(param) == "each_occurrence" || hasSameLineReference(param) {
 			continue
 		}
 		pr.refresh(name)
+	}
+	for _, name := range pr.order {
+		param := pr.params[name]
+		if effectiveParameterUpdate(param) == "each_occurrence" {
+			continue
+		}
+		if hasSameLineReference(param) {
+			pr.refresh(name)
+		}
 	}
 }
 
@@ -82,7 +93,13 @@ func (pr *ParameterRuntime) RefreshIteration() {
 	}
 	for _, name := range pr.order {
 		param := pr.params[name]
-		if effectiveParameterUpdate(param) == "each_iteration" {
+		if effectiveParameterUpdate(param) == "each_iteration" && !hasSameLineReference(param) {
+			pr.refresh(name)
+		}
+	}
+	for _, name := range pr.order {
+		param := pr.params[name]
+		if effectiveParameterUpdate(param) == "each_iteration" && hasSameLineReference(param) {
 			pr.refresh(name)
 		}
 	}
@@ -109,7 +126,7 @@ func (pr *ParameterRuntime) ResolveNamed(name string) (string, bool) {
 	}
 	state := pr.states[paramName]
 	if effectiveParameterUpdate(param) == "each_occurrence" {
-		return pr.generate(param, state)
+		return pr.generate(param, state, nil)
 	}
 	if !state.hasCached {
 		pr.refresh(paramName)
@@ -141,27 +158,46 @@ func effectiveOnExhaustion(param dsl.Parameter) string {
 	return "wrap"
 }
 
+func hasSameLineReference(param dsl.Parameter) bool {
+	return strings.TrimSpace(param.SameLineAs) != ""
+}
+
 func (pr *ParameterRuntime) refresh(name string) {
+	pr.refreshWithStack(name, nil)
+}
+
+func (pr *ParameterRuntime) refreshWithStack(name string, visiting map[string]bool) {
 	param := pr.params[name]
 	state := pr.states[name]
-	value, ok := pr.generate(param, state)
+	value, ok := pr.generate(param, state, visiting)
 	if !ok {
 		state.cached = ""
 		state.hasCached = false
+		state.hasRowPick = false
 		return
 	}
 	state.cached = value
 	state.hasCached = true
 }
 
-func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState) (string, bool) {
+func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState, visiting map[string]bool) (string, bool) {
 	switch dsl.CanonicalParameterType(param.Type) {
 	case "file", "list":
+		if hasSameLineReference(param) {
+			return pr.generateSameLineValue(param, state, visiting)
+		}
 		values, ok := pr.valuesForParameter(param, state)
 		if !ok || len(values) == 0 {
 			return "", false
 		}
-		return generateSelectedValue(values, param, state)
+		value, index, ok := generateSelectedValue(values, param, state)
+		if ok && index >= 0 {
+			state.lastIndex = index
+			state.hasRowPick = true
+		} else if ok {
+			state.hasRowPick = false
+		}
+		return value, ok
 	case "random_number":
 		return formatNumericValue(state.random.Intn(param.Max-param.Min+1)+param.Min, param), true
 	case "date_time":
@@ -223,6 +259,53 @@ func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState)
 	}
 }
 
+func (pr *ParameterRuntime) generateSameLineValue(param dsl.Parameter, state *parameterState, visiting map[string]bool) (string, bool) {
+	referenceName, _, referenceState, ok := pr.findParameter(param.SameLineAs)
+	if !ok || referenceState == state {
+		return "", false
+	}
+	if !referenceState.hasRowPick {
+		if visiting == nil {
+			visiting = make(map[string]bool)
+		}
+		if visiting[referenceName] {
+			return "", false
+		}
+		visiting[referenceName] = true
+		pr.refreshWithStack(referenceName, visiting)
+		delete(visiting, referenceName)
+	}
+	if !referenceState.hasRowPick {
+		return "", false
+	}
+	values, ok := pr.valuesForParameter(param, state)
+	if !ok || len(values) == 0 {
+		return "", false
+	}
+	if referenceState.lastIndex < 0 || referenceState.lastIndex >= len(values) {
+		return "", false
+	}
+	state.lastIndex = referenceState.lastIndex
+	state.hasRowPick = true
+	return values[referenceState.lastIndex], true
+}
+
+func (pr *ParameterRuntime) findParameter(name string) (string, dsl.Parameter, *parameterState, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", dsl.Parameter{}, nil, false
+	}
+	if param, ok := pr.params[name]; ok {
+		return name, param, pr.states[name], true
+	}
+	for candidate, param := range pr.params {
+		if strings.EqualFold(candidate, name) {
+			return candidate, param, pr.states[candidate], true
+		}
+	}
+	return "", dsl.Parameter{}, nil, false
+}
+
 func generateCounterValue(param dsl.Parameter, state *parameterState) (string, bool) {
 	if !state.seeded {
 		state.counter = param.Start
@@ -271,13 +354,14 @@ func resolveParameterTime(now func() time.Time, param dsl.Parameter) (time.Time,
 	return current, true
 }
 
-func generateSelectedValue(values []string, param dsl.Parameter, state *parameterState) (string, bool) {
+func generateSelectedValue(values []string, param dsl.Parameter, state *parameterState) (string, int, bool) {
 	if len(values) == 0 {
-		return "", false
+		return "", -1, false
 	}
 	switch effectiveParameterSelection(param) {
 	case "random":
-		return values[state.random.Intn(len(values))], true
+		index := state.random.Intn(len(values))
+		return values[index], index, true
 	case "unique":
 		if len(state.used) >= len(values) {
 			switch effectiveOnExhaustion(param) {
@@ -285,9 +369,9 @@ func generateSelectedValue(values []string, param dsl.Parameter, state *paramete
 				state.used = make(map[int]bool)
 				state.nextIndex = 0
 			case "empty":
-				return "", true
+				return "", -1, true
 			default:
-				return "", false
+				return "", -1, false
 			}
 		}
 		for attempts := 0; attempts < len(values); attempts++ {
@@ -297,23 +381,24 @@ func generateSelectedValue(values []string, param dsl.Parameter, state *paramete
 			}
 			state.used[idx] = true
 			state.nextIndex = idx + 1
-			return values[idx], true
+			return values[idx], idx, true
 		}
-		return "", false
+		return "", -1, false
 	default:
 		if state.nextIndex >= len(values) {
 			switch effectiveOnExhaustion(param) {
 			case "wrap":
 				state.nextIndex = 0
 			case "empty":
-				return "", true
+				return "", -1, true
 			default:
-				return "", false
+				return "", -1, false
 			}
 		}
-		value := values[state.nextIndex]
+		index := state.nextIndex
+		value := values[index]
 		state.nextIndex++
-		return value, true
+		return value, index, true
 	}
 }
 

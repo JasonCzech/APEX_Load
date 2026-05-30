@@ -745,7 +745,6 @@ describe('ScriptEditor', () => {
     })
 
     const dialog = container.querySelector('[aria-label="Parameter Data"]')
-    const openTypeChooser = () => dialog?.querySelector('button[aria-label="Change Parameter Type for param_1"]') as HTMLButtonElement | null
     const openSettings = () => dialog?.querySelector('button[aria-label="Open settings for param_1"]') as HTMLButtonElement | null
     const closeSettings = async () => {
       const closeButton = container.querySelector('[aria-label="Settings for param_1"] button.btn-ghost') as HTMLButtonElement | null
@@ -754,65 +753,47 @@ describe('ScriptEditor', () => {
         closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       })
     }
-    const chooseOption = (label: string) => Array.from(container.querySelectorAll('.parameter-choice-option')).find(button =>
-      button.querySelector('strong')?.textContent?.trim() === label,
-    ) as HTMLButtonElement | undefined
-    const typeButton = openTypeChooser()
-    expect(typeButton).not.toBeNull()
-    if (!typeButton) {
+    const chooseParameterType = async (value: string) => {
+      const typeSelect = container.querySelector('[aria-label="Settings for param_1"] select[aria-label="Parameter Type for param_1"]') as HTMLSelectElement | null
+      expect(typeSelect).not.toBeNull()
+      if (!typeSelect) return
+      const selectValueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+      await act(async () => {
+        selectValueSetter?.call(typeSelect, value)
+        typeSelect.dispatchEvent(new Event('input', { bubbles: true }))
+        typeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+    }
+    const settingsButton = openSettings()
+    expect(settingsButton).not.toBeNull()
+    if (!settingsButton) {
       return
     }
 
     await act(async () => {
-      typeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      settingsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const optionValues = Array.from(container.querySelectorAll('.parameter-choice-option .cell-mono')).map(option => option.textContent?.trim())
+    expect(container.textContent).toContain('Parameter Settings')
+    expect(container.textContent).toContain('General')
+    const optionValues = Array.from(container.querySelectorAll('[aria-label="Parameter Type for param_1"] option')).map(option => (option as HTMLOptionElement).value)
     expect(optionValues).toEqual(expect.arrayContaining(['current_iteration', 'host', 'time']))
-    expect(container.textContent).toContain('Uses the current VUser iteration number')
 
-    await act(async () => {
-      chooseOption('Current Iteration')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    await act(async () => {
-      openSettings()?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    await chooseParameterType('current_iteration')
 
     expect(container.textContent).toContain('Parameter Settings')
     expect(container.textContent).toContain('Generated Values')
     expect((container.querySelector('[aria-label="Settings for param_1"] input[placeholder="start"]') as HTMLInputElement | null)?.value).toBe('1')
     expect((container.querySelector('[aria-label="Settings for param_1"] input[placeholder="step"]') as HTMLInputElement | null)?.value).toBe('1')
-    await closeSettings()
 
-    await act(async () => {
-      openTypeChooser()?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    await act(async () => {
-      chooseOption('Host')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    await act(async () => {
-      openSettings()?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    await chooseParameterType('host')
 
     expect(container.querySelector('[aria-label="Settings for param_1"] input[placeholder="host-a, host-b"]')).not.toBeNull()
-    await closeSettings()
 
-    await act(async () => {
-      openTypeChooser()?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    await act(async () => {
-      chooseOption('Time')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    await act(async () => {
-      openSettings()?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    await chooseParameterType('time')
 
     expect((container.querySelector('[aria-label="Settings for param_1"] input[placeholder="Go time layout"]') as HTMLInputElement | null)?.value).toBe('15:04:05')
+    await closeSettings()
   })
 
   it('runs auto parameterization from the parameter data dialog', async () => {
@@ -1288,7 +1269,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Parameters')
     expect(container.textContent).not.toContain('Named Parameters')
     const namedParameterHeaders = Array.from(container.querySelectorAll('.parameter-definitions-table thead th')).map(header => header.textContent?.trim())
-    expect(namedParameterHeaders).toEqual(['Source File / Type', 'Parameter Name', 'Update', 'Selection', 'Settings', 'Template', 'Actions'])
+    expect(namedParameterHeaders).toEqual(['Source File / Type', 'Parameter Name', 'Rows', 'Update', 'Selection', 'Settings', 'Template', 'Actions'])
     expect(namedParameterHeaders).not.toContain('Name')
     expect(namedParameterHeaders).not.toContain('Source')
     expect(namedParameterHeaders).not.toContain('Type')
@@ -1356,6 +1337,8 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('BBCRandomLinks.dat')
     expect(container.textContent).toContain('2 parameters')
     expect(parameterTable?.textContent).not.toContain('bbclink01')
+    const firstSourceCells = Array.from((container.querySelector('.parameter-source-row') as HTMLTableRowElement | null)?.cells || [])
+    expect(firstSourceCells[2]?.textContent?.trim()).toBe('1')
 
     const expandBbcLinks = container.querySelector('button[aria-label="Expand source BBCRandomLinks.dat"]') as HTMLButtonElement | null
     expect(expandBbcLinks).not.toBeNull()
@@ -1366,14 +1349,16 @@ describe('ScriptEditor', () => {
     expect(container.querySelectorAll('.parameter-child-row')).toHaveLength(2)
     const firstExpandedRow = container.querySelector('.parameter-child-row') as HTMLTableRowElement | null
     const firstExpandedCells = Array.from(firstExpandedRow?.cells || [])
-    expect(firstExpandedCells[0]?.textContent).toContain('File')
-    expect(firstExpandedCells[0]?.querySelector('button[aria-label="Change Parameter Type for bbclink01"]')).not.toBeNull()
+    expect(firstExpandedCells[0]?.textContent?.trim()).toBe('')
+    expect(firstExpandedCells[0]?.querySelector('input, select, button')).toBeNull()
+    expect(firstExpandedCells[2]?.textContent?.trim()).toBe('1')
     expect(firstExpandedRow?.querySelector('select')).toBeNull()
-    expect(firstExpandedCells[3]?.querySelectorAll('button')).toHaveLength(1)
+    expect(firstExpandedCells[4]?.querySelectorAll('button')).toHaveLength(1)
     expect(Array.from(container.querySelectorAll('.parameter-child-row input[placeholder="session_id"]')).map(input => (input as HTMLInputElement).value)).toEqual(['bbclink01', 'bbclink02'])
     const expandedHeaders = Array.from(container.querySelectorAll('.parameter-definitions-table thead th')).map(header => header.textContent?.trim())
     expect(expandedHeaders[0]).toBe('Source File / Type')
     expect(expandedHeaders[1]).toBe('Parameter Name')
+    expect(expandedHeaders[2]).toBe('Rows')
     expect(container.textContent).not.toContain('Hide Data')
 
     await act(async () => {
@@ -1440,6 +1425,16 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Reserve unique rows')
     expect(container.textContent).toContain('Exhaustion Behavior')
     expect(container.textContent).toContain('Fail the VUser action')
+    expect(container.textContent).toContain('Same Line Sync')
+    const sameLineSelect = container.querySelector('select[aria-label="Same Line Sync for bbclink01"]') as HTMLSelectElement | null
+    expect(sameLineSelect).not.toBeNull()
+    expect(Array.from(sameLineSelect?.options || []).map(option => option.value)).toEqual(expect.arrayContaining(['', 'bbclink02']))
+    const selectValueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+    await act(async () => {
+      selectValueSetter?.call(sameLineSelect, 'bbclink02')
+      sameLineSelect?.dispatchEvent(new Event('input', { bubbles: true }))
+      sameLineSelect?.dispatchEvent(new Event('change', { bubbles: true }))
+    })
 
     const uniqueOption = Array.from(container.querySelectorAll('.parameter-choice-option')).find(button =>
       button.querySelector('strong')?.textContent?.trim() === 'Unique',
@@ -1467,6 +1462,100 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.parameter-choice-dialog')).toBeNull()
     const updatedSelectionSettingsButton = container.querySelector('button[aria-label="Open Selection settings for bbclink01"]') as HTMLButtonElement | null
     expect(updatedSelectionSettingsButton?.textContent).toContain('Unique / Error')
+    expect(updatedSelectionSettingsButton?.textContent).toContain('Same line as bbclink02')
+  })
+
+  it('merges csv and dat parameter source files into a common source file', async () => {
+    const sourceMergeScript: ScriptDefinition = {
+      ...initialScript,
+      parameters: [
+        {
+          name: 'username',
+          type: 'file',
+          update: 'each_iteration',
+          selection: 'sequential',
+          on_exhaustion: 'wrap',
+          data_source: 'users',
+          column: 'UserName',
+        },
+        {
+          name: 'password',
+          type: 'file',
+          update: 'each_iteration',
+          selection: 'sequential',
+          on_exhaustion: 'wrap',
+          data_source: 'passwords',
+          column: 'Password',
+        },
+        {
+          name: 'iteration',
+          type: 'current_iteration',
+          update: 'each_iteration',
+        },
+      ],
+      data_sources: [
+        {
+          name: 'users',
+          type: 'csv',
+          path: 'Users.csv',
+          strategy: 'sequential',
+          first_row_header: true,
+          inline_data: 'UserName\nalice\nbob',
+        },
+        {
+          name: 'passwords',
+          type: 'dat',
+          path: 'Passwords.dat',
+          strategy: 'sequential',
+          delimiter: 'comma',
+          first_row_header: true,
+          inline_data: 'Password\na-pass\nb-pass',
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={sourceMergeScript} initialFocusedSection="parameter-data" />)
+    })
+
+    const mergeButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Merge Source Files',
+    ) as HTMLButtonElement | undefined
+    expect(mergeButton).toBeDefined()
+    expect(mergeButton?.disabled).toBe(false)
+
+    await act(async () => {
+      mergeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Merged 2 parameter source files into merged_parameters.')
+    const parameterDialog = container.querySelector('.parameter-data-dialog') as HTMLDivElement | null
+    expect(parameterDialog?.textContent).toContain('merged_parameters.csv')
+    expect(parameterDialog?.textContent).not.toContain('Users.csv')
+    expect(parameterDialog?.textContent).not.toContain('Passwords.dat')
+    expect(parameterDialog?.querySelectorAll('.parameter-source-row')).toHaveLength(2)
+    expect(parameterDialog?.textContent).toContain('2 parameters')
+    expect(parameterDialog?.textContent).toContain('Current Iteration')
+
+    const expandMerged = container.querySelector('button[aria-label="Expand source merged_parameters.csv"]') as HTMLButtonElement | null
+    if (expandMerged) {
+      await act(async () => {
+        expandMerged.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+    }
+
+    expect(Array.from(container.querySelectorAll('.parameter-child-row input[placeholder="session_id"]')).map(input => (input as HTMLInputElement).value)).toEqual(['username', 'password'])
+    const selectedDataView = container.querySelector('.parameter-data-selected-view') as HTMLDivElement | null
+    expect(selectedDataView?.textContent).toContain('merged_parameters Parameter Data')
+    expect(selectedDataView?.textContent).toContain('username, password')
+    expect(selectedDataView?.textContent).toContain('username')
+    expect(selectedDataView?.textContent).toContain('password')
+    expect(Array.from(selectedDataView?.querySelectorAll('.parameter-grid tbody input') || []).map(input => (input as HTMLInputElement).value)).toEqual([
+      'alice',
+      'a-pass',
+      'bob',
+      'b-pass',
+    ])
   })
 
   it('collapses named parameters and parameter data sources independently', async () => {
@@ -1588,6 +1677,30 @@ describe('ScriptEditor', () => {
     expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toEqual(['alice', 'bob'])
     expect((container.querySelector('select[aria-label="Delimiter for users"]') as HTMLSelectElement | null)?.value).toBe('auto')
     expect(container.querySelector('.parameter-delimiter-toggle')).toBeNull()
+
+    const rawModeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Raw Mode') as HTMLButtonElement | undefined
+    expect(rawModeButton).toBeDefined()
+    await act(async () => {
+      rawModeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const rawData = container.querySelector('textarea[aria-label="Raw data for users"]') as HTMLTextAreaElement | null
+    expect(rawData?.value).toBe('username\nalice\nbob')
+    expect(rawData?.value).not.toContain('secret')
+    const textAreaValueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+    await act(async () => {
+      textAreaValueSetter?.call(rawData, 'username\nanna\nben')
+      rawData?.dispatchEvent(new Event('input', { bubbles: true }))
+      rawData?.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const gridModeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Grid Mode') as HTMLButtonElement | undefined
+    expect(gridModeButton).toBeDefined()
+    await act(async () => {
+      gridModeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toEqual(['anna', 'ben'])
 
     const delimiterSelect = container.querySelector('select[aria-label="Delimiter for users"]') as HTMLSelectElement | null
     expect(delimiterSelect).not.toBeNull()

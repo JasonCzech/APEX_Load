@@ -333,6 +333,13 @@
 .parameter-data-selected-view {
   margin-bottom: 20px;
 }
+.parameter-dialog-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 .parameter-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border);

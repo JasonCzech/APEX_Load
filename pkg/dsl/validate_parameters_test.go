@@ -15,6 +15,7 @@ func TestValidateScriptIssues_Parameters(t *testing.T) {
 			{Name: "dup", Type: "random_number", Min: 10, Max: 1},
 			{Name: "clock", Type: "date_time", Timezone: "Mars/Olympus"},
 			{Name: "token", Type: "random_string", Length: 0},
+			{Name: "password", Type: "file", DataSource: "users", Column: "password", SameLineAs: "missing"},
 		},
 		Actions: []Action{{Name: "call", Type: "request", Target: "/ping"}},
 	}
@@ -28,6 +29,7 @@ func TestValidateScriptIssues_Parameters(t *testing.T) {
 	assertIssue(t, issues, "parameters[2] \"dup\": min must be less than or equal to max")
 	assertIssue(t, issues, "parameters[3] \"clock\": invalid timezone \"Mars/Olympus\"")
 	assertIssue(t, issues, "parameters[4] \"token\": length must be greater than zero for random_string parameters")
+	assertIssue(t, issues, "parameters[5] \"password\": same_line_as references unknown parameter \"missing\"")
 }
 
 func TestValidateScriptIssues_ParametersAllowsSupportedValues(t *testing.T) {
@@ -48,9 +50,10 @@ func TestValidateScriptIssues_ParametersAllowsSupportedValues(t *testing.T) {
 			{Name: "lr_time_alias", Type: "Time", Format: "15:04:05"},
 			{Name: "region", Type: "list", Selection: "random", Values: []string{"us-east-1", "us-west-2"}, Seed: &seed},
 			{Name: "username", Type: "file", DataSource: "users", Column: "username", Selection: "unique", OnExhaustion: "wrap"},
+			{Name: "password", Type: "file", DataSource: "users", Column: "password", Selection: "random", SameLineAs: "username"},
 			{Name: "timestamp", Type: "timestamp", Format: "iso8601", Timezone: "UTC"},
 		},
-		DataSources: []DataSource{{Name: "users", Type: "csv", InlineData: "username\nalice\n", FirstRowHeader: true}},
+		DataSources: []DataSource{{Name: "users", Type: "csv", InlineData: "username,password\nalice,secret\n", FirstRowHeader: true}},
 		Actions:     []Action{{Name: "call", Type: "request", Target: "/ping"}},
 	}
 

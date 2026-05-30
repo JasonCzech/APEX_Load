@@ -456,6 +456,18 @@ func validateParameterIssues(script *Script) []string {
 	}
 
 	var issues []string
+	parametersByName := make(map[string]Parameter, len(script.Parameters))
+	for _, param := range script.Parameters {
+		name := strings.TrimSpace(param.Name)
+		if name == "" {
+			continue
+		}
+		normalized := strings.ToLower(name)
+		if _, exists := parametersByName[normalized]; !exists {
+			parametersByName[normalized] = param
+		}
+	}
+
 	seen := make(map[string]struct{}, len(script.Parameters))
 	for i, param := range script.Parameters {
 		label := fmt.Sprintf("parameters[%d]", i)
@@ -486,6 +498,18 @@ func validateParameterIssues(script *Script) []string {
 		}
 		if param.OnExhaustion != "" && !isAllowedValue(param.OnExhaustion, "wrap", "empty", "error") {
 			issues = append(issues, fmt.Sprintf("%s %q: on_exhaustion must be wrap, empty, or error", label, name))
+		}
+		if sameLineAs := strings.TrimSpace(param.SameLineAs); sameLineAs != "" {
+			reference, ok := parametersByName[strings.ToLower(sameLineAs)]
+			if !ok {
+				issues = append(issues, fmt.Sprintf("%s %q: same_line_as references unknown parameter %q", label, name, sameLineAs))
+			} else if strings.EqualFold(strings.TrimSpace(reference.Name), name) {
+				issues = append(issues, fmt.Sprintf("%s %q: same_line_as cannot reference itself", label, name))
+			} else if paramType != "file" && paramType != "list" {
+				issues = append(issues, fmt.Sprintf("%s %q: same_line_as requires a file or list parameter", label, name))
+			} else if strings.TrimSpace(param.DataSource) == "" || strings.TrimSpace(reference.DataSource) == "" || !strings.EqualFold(strings.TrimSpace(param.DataSource), strings.TrimSpace(reference.DataSource)) {
+				issues = append(issues, fmt.Sprintf("%s %q: same_line_as must reference a parameter in the same data_source", label, name))
+			}
 		}
 
 		switch paramType {

@@ -349,6 +349,7 @@ export interface ScriptParameterDefinition {
   update?: string
   selection?: string
   on_exhaustion?: string
+  same_line_as?: string
   data_source?: string
   column?: string
   format?: string

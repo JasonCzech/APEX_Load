@@ -103,6 +103,58 @@ func TestParameterRuntime_DataSourceParameter(t *testing.T) {
 	}
 }
 
+func TestParameterRuntime_SameLineParameterUsesReferencedRow(t *testing.T) {
+	seed := int64(17)
+	provider, err := NewDataProvider([]dsl.DataSource{{
+		Name:           "users",
+		Type:           "csv",
+		InlineData:     "username,password\nalice,a-pass\nbob,b-pass\ncarol,c-pass\n",
+		FirstRowHeader: true,
+	}})
+	if err != nil {
+		t.Fatalf("NewDataProvider: %v", err)
+	}
+
+	runtime := NewParameterRuntime([]dsl.Parameter{
+		{
+			Name:       "password",
+			Type:       "file",
+			DataSource: "users",
+			Column:     "password",
+			Selection:  "random",
+			SameLineAs: "username",
+			Update:     "each_iteration",
+		},
+		{
+			Name:       "username",
+			Type:       "file",
+			DataSource: "users",
+			Column:     "username",
+			Selection:  "random",
+			Update:     "each_iteration",
+			Seed:       &seed,
+		},
+	}, provider, 0)
+	runtime.Prime()
+
+	expectedPassword := map[string]string{
+		"alice": "a-pass",
+		"bob":   "b-pass",
+		"carol": "c-pass",
+	}
+	for iteration := 0; iteration < 6; iteration++ {
+		username, userOK := runtime.ResolveNamed("username")
+		password, passwordOK := runtime.ResolveNamed("password")
+		if !userOK || !passwordOK {
+			t.Fatalf("iteration %d ResolveNamed ok = %v/%v, want both true", iteration, userOK, passwordOK)
+		}
+		if password != expectedPassword[username] {
+			t.Fatalf("iteration %d password = %q for username %q, want %q", iteration, password, username, expectedPassword[username])
+		}
+		runtime.RefreshIteration()
+	}
+}
+
 func TestParameterRuntime_TrimsFileParameterValuesBeforeInterpolation(t *testing.T) {
 	vu := &VUser{
 		Variables: map[string]string{},

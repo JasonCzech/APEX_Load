@@ -2832,6 +2832,22 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setSuccess(`Exported ${base}.${ext}`)
   }
 
+  const mergeParameterSourceFiles = () => {
+    const merge = buildMergedParameterSourceScript(script)
+    if (!merge) {
+      setError('At least two .dat or .csv parameter source files are required to merge.')
+      return
+    }
+
+    pushEditorHistory(script)
+    setScript(merge.script)
+    setOpenDataEditor(merge.mergedSourceIndex)
+    setDataSourceHistory({})
+    setDataEditorMode({ [merge.mergedSourceIndex]: 'grid' })
+    setError('')
+    setSuccess(`Merged ${merge.sourceCount} parameter source files into ${merge.mergedSourceName}.`)
+  }
+
   const updateDataCell = (sourceIdx: number, rowIdx: number, colIdx: number, value: string) => {
     const source = (script.data_sources || [])[sourceIdx]
     if (!source) return
@@ -5764,6 +5780,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               onClose={closeParameterDialog}
               onExportDataSourceFile={exportDataSourceFile}
               onImportDataSourceFile={importDataSourceFile}
+              onMergeParameterSources={mergeParameterSourceFiles}
               onRedoDataSource={redoDataSource}
               onRemoveDataColumn={removeDataColumn}
               onRemoveDataRow={removeDataRow}
@@ -5878,6 +5895,7 @@ interface ParameterDataDialogProps {
   onClose: () => void
   onExportDataSourceFile: (source: DataSourceConfig, idx: number) => void
   onImportDataSourceFile: (idx: number, file: File | null) => void
+  onMergeParameterSources: () => void
   onOpenDataEditor: (idx: number) => void
   onRedoDataSource: (idx: number) => void
   onRemoveDataColumn: (idx: number, colIdx: number) => void
@@ -5920,6 +5938,7 @@ function ParameterDataDialog({
   onClose,
   onExportDataSourceFile,
   onImportDataSourceFile,
+  onMergeParameterSources,
   onOpenDataEditor,
   onRedoDataSource,
   onRemoveDataColumn,
@@ -5946,6 +5965,7 @@ function ParameterDataDialog({
 }: ParameterDataDialogProps) {
   const [isNamedParametersOpen, setIsNamedParametersOpen] = useState(true)
   const [isDataSourcesOpen, setIsDataSourcesOpen] = useState(true)
+  const mergeSummary = useMemo(() => summarizeParameterSourceMerge(script), [script])
   const [selectedParameterIdx, setSelectedParameterIdx] = useState<number | null>(() => {
     if (openDataEditor === null) return null
     return findFirstParameterIndexByDataSource(script.parameters, script.data_sources?.[openDataEditor]?.name)
@@ -5996,7 +6016,20 @@ function ParameterDataDialog({
             <h3 className="panel-title">Parameter Data ({script.data_sources?.length || 0})</h3>
             <p className="editor-dialog-subtitle">Manage parameters and reusable parameter data without leaving the action workspace.</p>
           </div>
-          <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
+          <div className="parameter-dialog-actions">
+            <button
+              className="btn btn-sm btn-ghost"
+              disabled={!mergeSummary.canMerge}
+              onClick={onMergeParameterSources}
+              title={mergeSummary.canMerge
+                ? `Merge ${mergeSummary.sourceCount} source files for ${mergeSummary.parameterCount} parameters`
+                : 'Requires at least two .dat or .csv parameter source files'}
+              type="button"
+            >
+              Merge Source Files
+            </button>
+            <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
+          </div>
         </div>
         <div className="editor-dialog-body">
           {pendingParameterDraft && (
@@ -6202,6 +6235,7 @@ interface ParameterDefinitionGroup {
   sourceFile: string
   sourceName: string
   sourceType: string
+  rowCount: number | null
   parameters: Array<{ index: number; parameter: ParameterConfig }>
 }
 
@@ -6215,6 +6249,7 @@ function buildParameterDefinitionGroups(parameters: ParameterConfig[], dataSourc
     const matchedSource = sourceName ? dataSourceByName.get(sourceName) : undefined
     const sourceFile = (matchedSource?.path || matchedSource?.name || sourceName || formatGeneratedParameterSource(parameter)).trim()
     const sourceType = (matchedSource?.type || parameter.type || 'list').trim()
+    const rowCount = matchedSource ? summarizeInlineData(matchedSource).rows : null
     const key = matchedSource?.name || sourceName || `type:${sourceType || sourceFile}`
     let group = groupByKey.get(key)
 
@@ -6224,6 +6259,7 @@ function buildParameterDefinitionGroups(parameters: ParameterConfig[], dataSourc
         sourceFile,
         sourceName: matchedSource?.name || sourceName,
         sourceType,
+        rowCount,
         parameters: [],
       }
       groupByKey.set(key, group)
@@ -6234,6 +6270,10 @@ function buildParameterDefinitionGroups(parameters: ParameterConfig[], dataSourc
   })
 
   return groups
+}
+
+function formatParameterRowCount(rowCount?: number | null): string {
+  return rowCount === null || rowCount === undefined ? '—' : String(rowCount)
 }
 
 function formatParameterTypeLabel(value?: string | null): string {
@@ -6280,13 +6320,40 @@ function summarizeParameterValues(values: string[], fallback = '—'): string {
 function summarizeParameterGroupSelection(group: ParameterDefinitionGroup): string {
   return summarizeParameterValues(group.parameters.map(({ parameter }) => {
     if (parameter.type !== 'file' && parameter.type !== 'list') return ''
-    return `${parameter.selection || 'sequential'} / ${parameter.on_exhaustion || 'wrap'}`
+    const sync = parameter.same_line_as ? `same line as ${parameter.same_line_as}` : ''
+    return [sync, `${parameter.selection || 'sequential'} / ${parameter.on_exhaustion || 'wrap'}`]
+      .filter(Boolean)
+      .join(' · ')
   }))
 }
 
 function summarizeParameterGroupColumns(group: ParameterDefinitionGroup): string {
   const columns = summarizeParameterValues(group.parameters.map(({ parameter }) => parameter.column || ''))
   return columns === '—' ? '—' : `Columns: ${columns}`
+}
+
+interface ParameterSameLineOption {
+  label: string
+  value: string
+}
+
+function getSameLineParameterOptions(parameters: ParameterConfig[], idx: number | null): ParameterSameLineOption[] {
+  if (idx === null) return []
+  const current = parameters[idx]
+  const sourceName = normalizeParameterDataLookup(current?.data_source)
+  if (!current || !sourceName || (current.type !== 'file' && current.type !== 'list')) return []
+  return parameters
+    .map((parameter, index) => ({ parameter, index }))
+    .filter(({ parameter, index }) =>
+      index !== idx
+      && Boolean(parameter.name?.trim())
+      && (parameter.type === 'file' || parameter.type === 'list')
+      && normalizeParameterDataLookup(parameter.data_source) === sourceName,
+    )
+    .map(({ parameter }) => ({
+      label: `${parameter.name}${parameter.column ? ` (${parameter.column})` : ''}`,
+      value: parameter.name || '',
+    }))
 }
 
 type ParameterChoiceField = 'type' | 'update' | 'selection' | 'on_exhaustion'
@@ -6392,6 +6459,10 @@ function ParameterDefinitionsSection({
   )
   const activeChoiceParameter = activeParameterChoice ? (script.parameters || [])[activeParameterChoice.idx] : null
   const activeSelectionSettingsParameter = activeSelectionSettingsIdx !== null ? (script.parameters || [])[activeSelectionSettingsIdx] : null
+  const activeSameLineOptions = useMemo(
+    () => getSameLineParameterOptions(script.parameters || [], activeSelectionSettingsIdx),
+    [activeSelectionSettingsIdx, script.parameters],
+  )
   const activeParameterSettingsParameter = activeParameterSettingsIdx !== null ? (script.parameters || [])[activeParameterSettingsIdx] : null
   useEffect(() => {
     if (!focusedParameterSourceKey) return
@@ -6460,6 +6531,7 @@ function ParameterDefinitionsSection({
               <tr>
                 <th className="parameter-source-type-column">Source File / Type</th>
                 <th>Parameter Name</th>
+                <th>Rows</th>
                 <th>Update</th>
                 <th>Selection</th>
                 <th>Settings</th>
@@ -6493,6 +6565,7 @@ function ParameterDefinitionsSection({
                         </button>
                       </td>
                       <td>{group.parameters.length} parameter{group.parameters.length === 1 ? '' : 's'}</td>
+                      <td className="cell-mono">{formatParameterRowCount(group.rowCount)}</td>
                       <td>{summarizeParameterValues(group.parameters.map(({ parameter }) => parameter.update || 'each_iteration'))}</td>
                       <td>{summarizeParameterGroupSelection(group)}</td>
                       <td>{summarizeParameterGroupColumns(group)}</td>
@@ -6511,6 +6584,7 @@ function ParameterDefinitionsSection({
                         onSelectParameter={selectParameter}
                         onUpdateParameter={onUpdateParameter}
                         parameter={parameter}
+                        rowCount={group.rowCount}
                       />
                     ))}
                   </Fragment>
@@ -6531,12 +6605,14 @@ function ParameterDefinitionsSection({
               onClose={() => setActiveSelectionSettingsIdx(null)}
               onUpdate={(field, value) => onUpdateParameter(activeSelectionSettingsIdx, field, value)}
               parameter={activeSelectionSettingsParameter}
+              sameLineOptions={activeSameLineOptions}
             />
           )}
           {activeParameterSettingsIdx !== null && activeParameterSettingsParameter && (
             <ParameterSettingsDialog
               onClose={() => setActiveParameterSettingsIdx(null)}
               onUpdate={(field, value) => onUpdateParameter(activeParameterSettingsIdx, field, value)}
+              onUpdateType={(value) => onUpdateParameterType(activeParameterSettingsIdx, value)}
               parameter={activeParameterSettingsParameter}
             />
           )}
@@ -6556,6 +6632,7 @@ interface ParameterDefinitionRowProps {
   onSelectParameter: (idx: number, parameter: ParameterConfig) => void
   onUpdateParameter: (idx: number, field: keyof ParameterConfig, value: unknown) => void
   parameter: ParameterConfig
+  rowCount: number | null
 }
 
 function ParameterDefinitionRow({
@@ -6568,6 +6645,7 @@ function ParameterDefinitionRow({
   onSelectParameter,
   onUpdateParameter,
   parameter,
+  rowCount,
 }: ParameterDefinitionRowProps) {
   const parameterName = parameter.name || `Parameter ${idx + 1}`
   const selectParameter = () => onSelectParameter(idx, parameter)
@@ -6577,14 +6655,7 @@ function ParameterDefinitionRow({
       onClick={selectParameter}
       onFocus={selectParameter}
     >
-      <td className="parameter-source-type-cell">
-        <ParameterChoiceButton
-          field="type"
-          onClick={() => onOpenChoice({ field: 'type', idx })}
-          parameterName={parameterName}
-          value={getParameterChoiceValue(parameter, 'type')}
-        />
-      </td>
+      <td className="parameter-source-type-cell" aria-label="Source file or type inherited from expanded row" />
       <td>
         <input
           value={parameter.name || ''}
@@ -6592,6 +6663,7 @@ function ParameterDefinitionRow({
           placeholder="session_id"
         />
       </td>
+      <td className="cell-mono">{formatParameterRowCount(rowCount)}</td>
       <td>
         <ParameterChoiceButton
           field="update"
@@ -6690,6 +6762,7 @@ function ParameterSelectionSettingsButton({
         {formatParameterChoiceLabel('selection', getParameterChoiceValue(parameter, 'selection'))}
         {' / '}
         {formatParameterChoiceLabel('on_exhaustion', getParameterChoiceValue(parameter, 'on_exhaustion'))}
+        {parameter.same_line_as ? ` · Same line as ${parameter.same_line_as}` : ''}
       </small>
     </button>
   )
@@ -6790,6 +6863,7 @@ function ParameterChoiceDialog({
 interface ParameterSettingsDialogProps {
   onClose: () => void
   onUpdate: (field: keyof ParameterConfig, value: unknown) => void
+  onUpdateType: (value: string) => void
   parameter: ParameterConfig
 }
 
@@ -6808,6 +6882,7 @@ function updateOptionalNumber(onUpdate: (field: keyof ParameterConfig, value: un
 function ParameterSettingsDialog({
   onClose,
   onUpdate,
+  onUpdateType,
   parameter,
 }: ParameterSettingsDialogProps) {
   const parameterName = parameter.name || 'Parameter'
@@ -6834,6 +6909,27 @@ function ParameterSettingsDialog({
           <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
         </div>
         <div className="editor-dialog-body parameter-settings-dialog-body">
+          <details className="parameter-settings-accordion" open>
+            <summary>
+              <strong>General</strong>
+              <span>Parameter type and runtime behavior</span>
+            </summary>
+            <div className="parameter-settings-grid">
+              <label>
+                <span>Parameter Type</span>
+                <select
+                  aria-label={`Parameter Type for ${parameterName}`}
+                  value={parameterType}
+                  onChange={event => onUpdateType(event.target.value)}
+                >
+                  {PARAMETER_CHOICE_DEFINITIONS.type.options.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </details>
+
           <details className="parameter-settings-accordion" open={hasDataMappingSettings}>
             <summary>
               <strong>Data Mapping</strong>
@@ -7003,14 +7099,16 @@ function ParameterSettingsDialog({
 
 interface ParameterSelectionSettingsDialogProps {
   onClose: () => void
-  onUpdate: (field: 'selection' | 'on_exhaustion', value: string) => void
+  onUpdate: (field: 'selection' | 'on_exhaustion' | 'same_line_as', value: string | undefined) => void
   parameter: ParameterConfig
+  sameLineOptions: ParameterSameLineOption[]
 }
 
 function ParameterSelectionSettingsDialog({
   onClose,
   onUpdate,
   parameter,
+  sameLineOptions,
 }: ParameterSelectionSettingsDialogProps) {
   const parameterName = parameter.name || 'Parameter'
   const selectionValue = getParameterChoiceValue(parameter, 'selection')
@@ -7043,6 +7141,29 @@ function ParameterSelectionSettingsDialog({
             onSelect={value => onUpdate('on_exhaustion', value)}
             selectedValue={exhaustionValue}
           />
+          <section className="parameter-selection-choice-group">
+            <div>
+              <h4>Same Line Sync</h4>
+              <p>Use the row selected by another parameter from the same source file, so random or unique row selection keeps related columns together.</p>
+            </div>
+            <label className="parameter-settings-wide">
+              <span>Sync Row With</span>
+              <select
+                aria-label={`Same Line Sync for ${parameterName}`}
+                disabled={sameLineOptions.length === 0}
+                value={parameter.same_line_as || ''}
+                onChange={event => onUpdate('same_line_as', event.target.value || undefined)}
+              >
+                <option value="">Independent row selection</option>
+                {sameLineOptions.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            {sameLineOptions.length === 0 && (
+              <p className="parameter-settings-empty">No other parameters are mapped to this source file.</p>
+            )}
+          </section>
         </div>
       </div>
     </div>
@@ -7100,6 +7221,203 @@ function getParameterDataColumnIndexes(parameter: ParameterConfig, columns: stri
   if (exactColumnIndex >= 0) return [exactColumnIndex]
 
   return columns.length === 1 ? [0] : []
+}
+
+function stringifyFocusedParameterData(source: DataSourceConfig, parsed: { columns: string[]; rows: string[][] }, columnIndexes: number[]): string {
+  const columns = columnIndexes.map(colIdx => parsed.columns[colIdx] || `col_${colIdx + 1}`)
+  const rows = parsed.rows.map(row => columnIndexes.map(colIdx => row[colIdx] || ''))
+  return stringifyInlineData(source, columns, rows)
+}
+
+function mergeFocusedParameterData(
+  source: DataSourceConfig,
+  parsed: { columns: string[]; rows: string[][] },
+  columnIndexes: number[],
+  rawValue: string,
+): string {
+  const viewSource: DataSourceConfig = {
+    ...source,
+    columns: source.first_row_header === false ? columnIndexes.map(colIdx => parsed.columns[colIdx] || `col_${colIdx + 1}`) : [],
+    inline_data: rawValue,
+  }
+  const focused = parseInlineData(viewSource)
+  const nextColumns = [...parsed.columns]
+  if (source.first_row_header !== false) {
+    columnIndexes.forEach((colIdx, position) => {
+      const nextName = focused.columns[position]?.trim()
+      if (nextName) nextColumns[colIdx] = nextName
+    })
+  }
+
+  const rowCount = Math.max(parsed.rows.length, focused.rows.length)
+  const nextRows = Array.from({ length: rowCount }, (_, rowIdx) => {
+    const nextRow = [...(parsed.rows[rowIdx] || [])]
+    while (nextRow.length < nextColumns.length) nextRow.push('')
+    columnIndexes.forEach((colIdx, position) => {
+      nextRow[colIdx] = focused.rows[rowIdx]?.[position] || ''
+    })
+    return nextRow.slice(0, nextColumns.length)
+  })
+
+  return stringifyInlineData(source, nextColumns, nextRows)
+}
+
+interface ParameterSourceMergeCandidate {
+  columnIndex: number | null
+  parameter: ParameterConfig
+  parameterIndex: number
+  parsed: { columns: string[]; rows: string[][] }
+  source: DataSourceConfig
+  sourceIndex: number
+  targetColumn: string
+}
+
+interface ParameterSourceMergeSummary {
+  canMerge: boolean
+  parameterCount: number
+  sourceCount: number
+}
+
+interface ParameterSourceMergeResult extends ParameterSourceMergeSummary {
+  mergedSourceIndex: number
+  mergedSourceName: string
+  rowCount: number
+  script: ScriptData
+}
+
+function isParameterSourceMergeEligible(source?: DataSourceConfig | null): source is DataSourceConfig {
+  if (!source) return false
+  const type = (source.type || '').trim().toLowerCase()
+  const path = (source.path || source.name || '').trim().toLowerCase()
+  return type === 'csv' || type === 'dat' || path.endsWith('.csv') || path.endsWith('.dat')
+}
+
+function uniqueParameterMergeColumnName(requested: string, used: Set<string>): string {
+  const base = (requested || 'parameter').trim() || 'parameter'
+  let candidate = base
+  let suffix = 2
+  while (used.has(normalizeParameterDataLookup(candidate))) {
+    candidate = `${base}_${suffix}`
+    suffix += 1
+  }
+  used.add(normalizeParameterDataLookup(candidate))
+  return candidate
+}
+
+function uniqueMergedParameterSourceName(sources: DataSourceConfig[]): string {
+  const used = new Set(sources.map(source => normalizeParameterDataLookup(source.name)))
+  const base = 'merged_parameters'
+  let candidate = base
+  let suffix = 2
+  while (used.has(normalizeParameterDataLookup(candidate))) {
+    candidate = `${base}_${suffix}`
+    suffix += 1
+  }
+  return candidate
+}
+
+function collectParameterSourceMergeCandidates(script: ScriptData): ParameterSourceMergeCandidate[] {
+  const sources = script.data_sources || []
+  const sourceByName = new Map<string, { index: number; source: DataSourceConfig }>()
+  sources.forEach((source, index) => {
+    const key = normalizeParameterDataLookup(source.name)
+    if (key) sourceByName.set(key, { index, source })
+  })
+
+  const usedColumns = new Set<string>()
+  return (script.parameters || []).flatMap((parameter, parameterIndex) => {
+    if (parameter.type !== 'file' && parameter.type !== 'list') return []
+    const sourceMatch = sourceByName.get(normalizeParameterDataLookup(parameter.data_source))
+    if (!sourceMatch || !isParameterSourceMergeEligible(sourceMatch.source)) return []
+
+    const parsed = parseInlineData(sourceMatch.source)
+    const columnIndexes = getParameterDataColumnIndexes(parameter, parsed.columns)
+    const columnIndex = columnIndexes[0] ?? null
+    const sourceColumnName = columnIndex !== null ? parsed.columns[columnIndex] : ''
+    const targetColumn = uniqueParameterMergeColumnName(
+      parameter.name || parameter.column || sourceColumnName || `parameter_${parameterIndex + 1}`,
+      usedColumns,
+    )
+
+    return [{
+      columnIndex,
+      parameter,
+      parameterIndex,
+      parsed,
+      source: sourceMatch.source,
+      sourceIndex: sourceMatch.index,
+      targetColumn,
+    }]
+  })
+}
+
+function summarizeParameterSourceMerge(script: ScriptData): ParameterSourceMergeSummary {
+  const candidates = collectParameterSourceMergeCandidates(script)
+  const sourceCount = new Set(candidates.map(candidate => candidate.sourceIndex)).size
+  return {
+    canMerge: sourceCount > 1 && candidates.length > 0,
+    parameterCount: candidates.length,
+    sourceCount,
+  }
+}
+
+function buildMergedParameterSourceScript(script: ScriptData): ParameterSourceMergeResult | null {
+  const candidates = collectParameterSourceMergeCandidates(script)
+  const sourceIndexes = new Set(candidates.map(candidate => candidate.sourceIndex))
+  if (sourceIndexes.size <= 1 || candidates.length === 0) return null
+
+  const sources = script.data_sources || []
+  const parameters = script.parameters || []
+  const mergedSourceName = uniqueMergedParameterSourceName(sources)
+  const targetSourceShell: DataSourceConfig = {
+    ...EMPTY_DATA_SOURCE,
+    name: mergedSourceName,
+    type: 'csv',
+    path: `${mergedSourceName}.csv`,
+    strategy: 'sequential',
+    delimiter: 'comma',
+    first_row_header: true,
+    columns: [],
+  }
+  const columns = candidates.map(candidate => candidate.targetColumn)
+  const rowCount = candidates.reduce((max, candidate) => Math.max(max, candidate.parsed.rows.length), 0)
+  const rows = Array.from({ length: rowCount }, (_, rowIdx) =>
+    candidates.map(candidate => {
+      if (candidate.columnIndex === null) return ''
+      return candidate.parsed.rows[rowIdx]?.[candidate.columnIndex] || ''
+    }),
+  )
+  const mergedSource: DataSourceConfig = {
+    ...targetSourceShell,
+    inline_data: stringifyInlineData(targetSourceShell, columns, rows),
+  }
+  const targetColumnByParameterIndex = new Map(candidates.map(candidate => [candidate.parameterIndex, candidate.targetColumn]))
+  const nextParameters = parameters.map((parameter, index) => {
+    const targetColumn = targetColumnByParameterIndex.get(index)
+    if (!targetColumn) return parameter
+    return {
+      ...parameter,
+      data_source: mergedSourceName,
+      column: targetColumn,
+    }
+  })
+  const nextSources = sources.filter((_, index) => !sourceIndexes.has(index))
+  const mergedSourceIndex = nextSources.length
+  nextSources.push(mergedSource)
+
+  return {
+    canMerge: true,
+    mergedSourceIndex,
+    mergedSourceName,
+    parameterCount: candidates.length,
+    rowCount,
+    script: {
+      ...script,
+      data_sources: nextSources,
+      parameters: nextParameters,
+    },
+    sourceCount: sourceIndexes.size,
+  }
 }
 
 interface ParameterDataSourcesSectionProps {
@@ -7395,9 +7713,19 @@ function ParameterDataSourceRows({
   const filteredRows = parsed.rows
     .map((row, rowIdx) => ({ row, rowIdx }))
     .filter(({ row }) => dataSourceRowMatchesFilter(row, filterText, effectiveFilterColumn))
-  const effectiveDataEditorMode = isFocusedParameterView ? 'grid' : dataEditorMode
+  const focusedRawData = isFocusedParameterView
+    ? stringifyFocusedParameterData(source, parsed, visibleColumnIndexes)
+    : source.inline_data || ''
   const updateDelimiterChoice = (choice: DataSourceDelimiterChoice) => {
     onUpdateDataSource(index, 'delimiter', getDataSourceDelimiterValue(choice), true)
+  }
+  const updateRawData = (value: string) => {
+    onUpdateDataSource(
+      index,
+      'inline_data',
+      isFocusedParameterView ? mergeFocusedParameterData(source, parsed, visibleColumnIndexes, value) : value,
+      true,
+    )
   }
   const sortColumn = (colIdx: number) => {
     const nextDirection: DataSourceSortDirection = sortState?.column === colIdx && sortState.direction === 'asc'
@@ -7509,11 +7837,9 @@ function ParameterDataSourceRows({
                   <div className="parameter-editor-controls">
                     <button className="btn btn-sm btn-ghost" disabled={!history?.past?.length} onClick={() => onUndoDataSource(index)}>Undo</button>
                     <button className="btn btn-sm btn-ghost" disabled={!history?.future?.length} onClick={() => onRedoDataSource(index)}>Redo</button>
-                    {!isFocusedParameterView && (
-                      <button className="btn btn-sm btn-ghost" onClick={() => onToggleDataEditorMode(index)}>
-                        {dataEditorMode === 'grid' ? 'Raw Mode' : 'Grid Mode'}
-                      </button>
-                    )}
+                    <button className="btn btn-sm btn-ghost" onClick={() => onToggleDataEditorMode(index)}>
+                      {dataEditorMode === 'grid' ? 'Raw Mode' : 'Grid Mode'}
+                    </button>
                     <label className="btn btn-sm btn-ghost file-btn">
                       Import
                       <input
@@ -7548,7 +7874,7 @@ function ParameterDataSourceRows({
                   ))}
                 </div>
               )}
-              {effectiveDataEditorMode === 'grid' ? (
+              {dataEditorMode === 'grid' ? (
                 <div className="parameter-grid-wrap">
                   <div className="parameter-grid-actions">
                     <div className="parameter-grid-action-buttons">
@@ -7684,8 +8010,9 @@ function ParameterDataSourceRows({
                 </div>
               ) : (
                 <textarea
-                  value={source.inline_data || ''}
-                  onChange={e => onUpdateDataSource(index, 'inline_data', e.target.value, true)}
+                  aria-label={`Raw data for ${sourceLabel}`}
+                  value={focusedRawData}
+                  onChange={e => updateRawData(e.target.value)}
                   placeholder={source.first_row_header !== false ? 'username,password\nalice,pass1\nbob,pass2' : 'alice,pass1\nbob,pass2'}
                   spellCheck={false}
                 />
