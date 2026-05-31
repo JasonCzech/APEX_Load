@@ -1,0 +1,21 @@
+# OpenText VuGen COM Vuser Functions (LRC).
+# COM scripts drive Windows COM objects; APEX Load has no COM apartment/runtime bridge,
+# so these are deterministically preserved for manual rework.
+# Format: name,family,support_mode[,reason]
+lrc_BSTR,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.
+lrc_CoInitialize,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.
+lrc_CoUninitialize,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.
+lrc_CreateObject,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.
+lrc_GetIUnknown,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.
+lrc_GUIDFromString,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.
+lrc_QueryInterface,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.
+lrc_Release,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.
+lrc_variant_BSTR,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.
+lrc_variant_bool,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.
+lrc_variant_date,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.
+lrc_variant_double,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.
+lrc_variant_float,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.
+lrc_variant_int,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.
+lrc_variant_long,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.
+lrc_variant_short,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.
+lrc_variant_string,com,review_only,COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.

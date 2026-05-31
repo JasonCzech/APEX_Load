@@ -82,17 +82,23 @@ Branch `loadrunner-function-catalog-phase-a` (off `main`).
   no-ops or review placeholders.
 - **B4 messaging/streaming**: JMS, WebSocket, and gRPC imports route to existing
   `jms_*`, `ws_*`, and `grpc_*` DSL action types.
+- **Phase C deterministic no-runtime families**: SAPGUI, Citrix, Oracle NCA, RTE, RDP,
+  COM/LRC, .NET helpers, Flex/RTMP, VTS, and MQTT have checked-in catalog dispositions
+  (`review_only` or `external_required`) with source-review mappings instead of falling to
+  `custom_call`.
 
 ## Remaining work
 
 ### Future catalog refreshes
 
-`sapgui_*`, `sap_*` (web), `ctrx_*`, `nca_*`, `siebel_*`, `flex_*`/`amf_*` RTMP, RTE `TE_*`,
-TruClient, Java, .NET: keep `review_only` with a **family-specific reason** (e.g. "SAPGUI GUI
-virtual-user step has no APEX Load runtime; preserved for manual rework"). The engine already
-logs these via `loadrunner_review` / `custom_call`. No execution — there is no GUI VU runtime;
-faithful preservation is the goal. When a VuGen doc refresh adds names, expand catalog coverage
-via `tools/lrcatalog` fixtures so every documented function is dispositioned.
+`sapgui_*`, `sap_*` (web), `ctrx_*`, `nca_*`, `rdp_*`, `lrc_*`, `siebel_*`,
+`flex_*`/`amf_*` RTMP, RTE `TE_*`, TruClient, Java, .NET, MQTT, and other no-runtime
+families should keep a deterministic `review_only` or `external_required` disposition with
+a **family-specific reason**. The engine logs these via `loadrunner_review`,
+`loadrunner_external`, or `custom_call`. No execution is implied where APEX Load has no
+native VU runtime; faithful preservation is the goal. When a VuGen doc refresh adds names,
+expand catalog coverage via `tools/lrcatalog` fixtures so every documented function is
+dispositioned.
 
 ### Phase D — tests & verification (per CLAUDE.md testing policy)
 

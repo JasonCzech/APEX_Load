@@ -72,6 +72,10 @@ func TestRegistryLoadsAllFamilyFiles(t *testing.T) {
 		{"sapgui_logon", "sapgui", LoadRunnerSupportReviewOnly},      // sapgui.csv
 		{"ctrx_connect_server", "citrix", LoadRunnerSupportReviewOnly},
 		{"TE_connect", "rte", LoadRunnerSupportReviewOnly}, // case-insensitive lookup
+		{"rdp_mouse_click", "rdp", LoadRunnerSupportReviewOnly},
+		{"lrc_CreateObject", "com", LoadRunnerSupportReviewOnly},
+		{"InvokeMethod", "dotnet", LoadRunnerSupportReviewOnly},
+		{"mqtt_connect", "mqtt", LoadRunnerSupportExternalRequired},
 		{"lrvtc_connect", "vts", LoadRunnerSupportExternalRequired},
 	}
 	for _, tc := range cases {

@@ -120,6 +120,10 @@ var protocolTypeAliases = map[string]protocolProfile{
 	"vb .net":                    templateProfile("vb_dotnet_vuser", "VB .NET Vuser"),
 	"devweb":                     reviewProfile("devweb", "DevWeb", "Templates Protocol Bundle", "Use the native DevWeb importer for executable conversion."),
 	"jmeter":                     reviewProfile("jmeter", "JMeter", "Templates Protocol Bundle", "Use the native JMeter importer for executable conversion."),
+	"com":                        reviewProfile("com_lrc", "COM Vuser", "COM Protocol Bundle", "COM/LRC imports require a Windows COM runtime bridge and are preserved for review."),
+	"mqtt":                       externalProfile("mqtt", "MQTT", "IoT Protocol Bundle", "MQTT imports require an approved MQTT runner or adapter before replay."),
+	"rdp":                        reviewProfile("rdp", "RDP", "Remote Desktop Protocol Bundle", "RDP imports drive a remote desktop session and are preserved for review."),
+	"remote desktop protocol":    reviewProfile("rdp", "RDP", "Remote Desktop Protocol Bundle", "RDP imports drive a remote desktop session and are preserved for review."),
 }
 
 func DetectProtocol(files map[string]string, projectConfig *ProjectConfig, actions []*ParsedAction) DetectedProtocol {
@@ -210,8 +214,14 @@ func profileForType(scriptType string) (protocolProfile, bool) {
 		return databaseProfile(), true
 	case strings.Contains(key, "web service") || strings.Contains(key, "soap"):
 		return soapProfile(), true
+	case key == "com" || strings.Contains(key, "com vuser"):
+		return reviewProfile("com_lrc", "COM Vuser", "COM Protocol Bundle", "COM/LRC imports require a Windows COM runtime bridge and are preserved for review."), true
 	case strings.Contains(key, "jms") || strings.Contains(key, "messaging"):
 		return jmsProfile(), true
+	case strings.Contains(key, "mqtt"):
+		return externalProfile("mqtt", "MQTT", "IoT Protocol Bundle", "MQTT imports require an approved MQTT runner or adapter before replay."), true
+	case key == "rdp" || strings.Contains(key, "remote desktop"):
+		return reviewProfile("rdp", "RDP", "Remote Desktop Protocol Bundle", "RDP imports drive a remote desktop session and are preserved for review."), true
 	case strings.Contains(key, "websocket") || strings.Contains(key, "web socket"):
 		return websocketProfile(), true
 	case strings.Contains(key, "grpc") || strings.Contains(key, "g rpc"):
@@ -247,6 +257,18 @@ func profileFromContent(files map[string]string, actions []*ParsedAction) (*prot
 		if containsFunctionPrefix(counts, "jms_") {
 			profile := jmsProfile()
 			return &profile, []string{"JMS function calls"}
+		}
+		if containsFunctionPrefix(counts, "mqtt_") {
+			profile := externalProfile("mqtt", "MQTT", "IoT Protocol Bundle", "mqtt_* function calls require an approved MQTT runner or adapter.")
+			return &profile, []string{"MQTT function calls"}
+		}
+		if containsFunctionPrefix(counts, "rdp_") {
+			profile := reviewProfile("rdp", "RDP", "Remote Desktop Protocol Bundle", "rdp_* function calls drive a remote desktop session and are preserved for review.")
+			return &profile, []string{"RDP function calls"}
+		}
+		if containsFunctionPrefix(counts, "lrc_") {
+			profile := reviewProfile("com_lrc", "COM Vuser", "COM Protocol Bundle", "lrc_* function calls require a Windows COM runtime bridge and are preserved for review.")
+			return &profile, []string{"COM/LRC function calls"}
 		}
 		if containsFunctionPrefix(counts, "websocket_") || containsFunctionPrefix(counts, "ws_") {
 			profile := websocketProfile()
@@ -297,6 +319,15 @@ func profileFromContent(files map[string]string, actions []*ParsedAction) (*prot
 	case strings.Contains(archiveText, "jms_"):
 		profile := jmsProfile()
 		return &profile, []string{"JMS source evidence"}
+	case strings.Contains(archiveText, "mqtt_"):
+		profile := externalProfile("mqtt", "MQTT", "IoT Protocol Bundle", "MQTT source evidence requires an approved MQTT runner or adapter.")
+		return &profile, []string{"MQTT source evidence"}
+	case strings.Contains(archiveText, "rdp_"):
+		profile := reviewProfile("rdp", "RDP", "Remote Desktop Protocol Bundle", "RDP source evidence drives a remote desktop session and is preserved for review.")
+		return &profile, []string{"RDP source evidence"}
+	case strings.Contains(archiveText, "lrc_"):
+		profile := reviewProfile("com_lrc", "COM Vuser", "COM Protocol Bundle", "COM/LRC source evidence requires a Windows COM runtime bridge and is preserved for review.")
+		return &profile, []string{"COM/LRC source evidence"}
 	case strings.Contains(archiveText, "websocket_") || strings.Contains(archiveText, "ws_connect") || strings.Contains(archiveText, "ws_send"):
 		profile := websocketProfile()
 		return &profile, []string{"WebSocket source evidence"}

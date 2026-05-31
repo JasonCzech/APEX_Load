@@ -30,25 +30,30 @@ import (
 // familyPolicy is the default disposition applied to functions discovered in a fixture but
 // not yet present in the catalog. Curated rows always win over these defaults.
 type familyPolicy struct {
-	family      string
-	defaultMode string
-	reason      string
+	family            string
+	defaultMode       string
+	reason            string
+	allowPlainAnchors bool
 }
 
 // policies maps a fixture/catalog stem (fixtures/<stem>.html -> <stem>.csv) to its default
 // disposition. Add an entry here when introducing a new protocol family fixture.
 var policies = map[string]familyPolicy{
-	"web":               {"web", "review_only", "Documented VuGen web function; pending native APEX Load mapping, preserved for review."},
-	"socket":            {"socket", "review_only", "Documented VuGen Winsock (lrs_) function; pending native socket mapping, preserved for review."},
-	"network_protocols": {"network", "review_only", "Documented VuGen network protocol function; pending native network mapping, preserved for review."},
-	"messaging":         {"messaging", "review_only", "Documented VuGen messaging function; pending native messaging mapping, preserved for review."},
-	"database_lrd":      {"database", "review_only", "Documented VuGen database (lrd_) function; pending native db_* mapping, preserved for review."},
-	"sapgui":            {"sapgui", "review_only", "SAPGUI GUI step has no APEX Load runtime; preserved for manual rework."},
-	"citrix":            {"citrix", "review_only", "Citrix ICA step has no APEX Load runtime; preserved for manual rework."},
-	"oracle_nca":        {"oracle_nca", "review_only", "Oracle NCA step has no APEX Load runtime; preserved for manual rework."},
-	"rte":               {"rte", "review_only", "RTE terminal step has no APEX Load runtime; preserved for manual rework."},
-	"flex":              {"flex", "review_only", "Documented VuGen Flex/AMF function; pending native mapping, preserved for review."},
-	"vts":               {"vts", "external_required", "Requires an external Virtual Table Server (VTS) integration."},
+	"web":               {"web", "review_only", "Documented VuGen web function; pending native APEX Load mapping, preserved for review.", false},
+	"socket":            {"socket", "review_only", "Documented VuGen Winsock (lrs_) function; pending native socket mapping, preserved for review.", false},
+	"network_protocols": {"network", "review_only", "Documented VuGen network protocol function; pending native network mapping, preserved for review.", false},
+	"messaging":         {"messaging", "review_only", "Documented VuGen messaging function; pending native messaging mapping, preserved for review.", false},
+	"database_lrd":      {"database", "review_only", "Documented VuGen database (lrd_) function; pending native db_* mapping, preserved for review.", false},
+	"com_lrc":           {"com", "review_only", "COM/LRC client automation function has no APEX Load runtime; preserved for manual rework.", false},
+	"dotnet":            {"dotnet", "review_only", ".NET Vuser helper has no APEX Load CLR runner; preserved for manual rework.", true},
+	"mqtt":              {"mqtt", "external_required", "MQTT protocol function requires an approved MQTT runner or adapter before replay.", false},
+	"rdp":               {"rdp", "review_only", "RDP GUI/remote-desktop step has no APEX Load runtime; preserved for manual rework.", false},
+	"sapgui":            {"sapgui", "review_only", "SAPGUI GUI step has no APEX Load runtime; preserved for manual rework.", false},
+	"citrix":            {"citrix", "review_only", "Citrix ICA step has no APEX Load runtime; preserved for manual rework.", false},
+	"oracle_nca":        {"oracle_nca", "review_only", "Oracle NCA step has no APEX Load runtime; preserved for manual rework.", false},
+	"rte":               {"rte", "review_only", "RTE terminal step has no APEX Load runtime; preserved for manual rework.", false},
+	"flex":              {"flex", "review_only", "Documented VuGen Flex/AMF function; pending native mapping, preserved for review.", false},
+	"vts":               {"vts", "external_required", "Requires an external Virtual Table Server (VTS) integration.", false},
 }
 
 // anchorPattern captures the text of HTML anchors in the reference index fixtures, e.g.
@@ -123,7 +128,7 @@ func Generate(fixturesDir, catalogDir string, check bool) ([]string, error) {
 		}
 
 		fixturePath := filepath.Join(fixturesDir, entry.Name())
-		names, err := extractFunctionNames(fixturePath)
+		names, err := extractFunctionNames(fixturePath, policy.allowPlainAnchors)
 		if err != nil {
 			return nil, err
 		}
@@ -163,7 +168,7 @@ func Generate(fixturesDir, catalogDir string, check bool) ([]string, error) {
 
 // extractFunctionNames returns the function-like anchor texts from a fixture, de-duplicated
 // in first-seen order. Function-like means it contains an underscore (e.g. web_set_user).
-func extractFunctionNames(path string) ([]string, error) {
+func extractFunctionNames(path string, allowPlainAnchors bool) ([]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read fixture %s: %w", path, err)
@@ -172,7 +177,10 @@ func extractFunctionNames(path string) ([]string, error) {
 	var names []string
 	for _, match := range anchorPattern.FindAllStringSubmatch(string(data), -1) {
 		token := strings.TrimSpace(match[1])
-		if !strings.Contains(token, "_") {
+		if !allowPlainAnchors && !strings.Contains(token, "_") {
+			continue
+		}
+		if !isFunctionLikeAnchor(token) {
 			continue
 		}
 		key := strings.ToLower(token)
@@ -183,6 +191,27 @@ func extractFunctionNames(path string) ([]string, error) {
 		names = append(names, token)
 	}
 	return names, nil
+}
+
+func isFunctionLikeAnchor(token string) bool {
+	if token == "" {
+		return false
+	}
+	if strings.ContainsAny(token, " \t\r\n") {
+		return false
+	}
+	if strings.Contains(token, "_") {
+		return true
+	}
+	if token[0] < 'A' || token[0] > 'Z' {
+		return false
+	}
+	for _, r := range token {
+		if r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // readCatalogNames returns the set of function names already present in a catalog CSV

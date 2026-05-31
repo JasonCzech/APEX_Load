@@ -1,0 +1,22 @@
+# OpenText VuGen Remote Desktop Protocol (RDP) functions.
+# RDP scripts drive a remote desktop session; APEX Load has no RDP GUI virtual-user
+# runtime, so these are deterministically preserved for manual rework (Phase C).
+# Format: name,family,support_mode[,reason]
+rdp_connect_server,rdp,review_only,RDP remote-desktop step has no APEX Load runtime; preserved for manual rework.
+rdp_disconnect_server,rdp,review_only,RDP remote-desktop step has no APEX Load runtime; preserved for manual rework.
+rdp_mouse_button_down,rdp,review_only,RDP remote-desktop mouse step has no APEX Load runtime; preserved for manual rework.
+rdp_mouse_button_up,rdp,review_only,RDP remote-desktop mouse step has no APEX Load runtime; preserved for manual rework.
+rdp_mouse_click,rdp,review_only,RDP remote-desktop mouse step has no APEX Load runtime; preserved for manual rework.
+rdp_mouse_double_click,rdp,review_only,RDP remote-desktop mouse step has no APEX Load runtime; preserved for manual rework.
+rdp_mouse_drag,rdp,review_only,RDP remote-desktop mouse step has no APEX Load runtime; preserved for manual rework.
+rdp_mouse_move,rdp,review_only,RDP remote-desktop mouse step has no APEX Load runtime; preserved for manual rework.
+rdp_mouse_wheel,rdp,review_only,RDP remote-desktop mouse step has no APEX Load runtime; preserved for manual rework.
+rdp_key,rdp,review_only,RDP remote-desktop keyboard step has no APEX Load runtime; preserved for manual rework.
+rdp_type,rdp,review_only,RDP remote-desktop keyboard step has no APEX Load runtime; preserved for manual rework.
+rdp_sync_on_image,rdp,review_only,RDP remote-desktop synchronization step has no APEX Load runtime; preserved for manual rework.
+rdp_sync_on_text,rdp,review_only,RDP remote-desktop synchronization step has no APEX Load runtime; preserved for manual rework.
+rdp_sync_on_object_info,rdp,review_only,RDP remote-desktop object synchronization step has no APEX Load runtime; preserved for manual rework.
+rdp_sync_object_mouse_click,rdp,review_only,RDP Agent object mouse step has no APEX Load runtime; preserved for manual rework.
+rdp_sync_object_mouse_double_click,rdp,review_only,RDP Agent object mouse step has no APEX Load runtime; preserved for manual rework.
+rdp_get_text,rdp,review_only,RDP remote-desktop text capture has no APEX Load runtime; preserved for manual rework.
+rdp_get_object_info,rdp,review_only,RDP Agent object inspection has no APEX Load runtime; preserved for manual rework.

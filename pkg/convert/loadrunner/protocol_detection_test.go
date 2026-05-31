@@ -31,6 +31,9 @@ func TestDetectProtocolFromUSRType(t *testing.T) {
 		{name: "jms", scriptType: "JMS", canonical: "jms", storm: "jms-solace", mode: ImportModeExecutable},
 		{name: "websocket", scriptType: "WebSocket", canonical: "websocket", storm: "websocket", mode: ImportModeExecutable},
 		{name: "grpc", scriptType: "gRPC", canonical: "grpc", storm: "grpc", mode: ImportModeExecutable},
+		{name: "mqtt", scriptType: "MQTT", canonical: "mqtt", storm: "", mode: ImportModeExternalRunnerRequired},
+		{name: "rdp", scriptType: "Remote Desktop Protocol", canonical: "rdp", storm: "", mode: ImportModeReviewOnly},
+		{name: "com", scriptType: "COM", canonical: "com_lrc", storm: "", mode: ImportModeReviewOnly},
 		{name: "oracle web", scriptType: "Oracle-Web", canonical: "oracle_web", storm: "http", mode: ImportModeExecutable},
 		{name: "siebel web", scriptType: "Siebel-Web", canonical: "siebel_web", storm: "http", mode: ImportModeExecutable},
 		{name: "oracle nca", scriptType: "Oracle NCA", canonical: "oracle_nca", storm: "", mode: ImportModeExternalRunnerRequired},
@@ -222,6 +225,64 @@ func TestConvertZipRoutesMessagingImports(t *testing.T) {
 	}
 	if firstActionOfType(grpcResult.Script.Actions, "grpc_unary").Type == "" || firstActionOfType(grpcResult.Script.Actions, "grpc_server_stream").Type == "" {
 		t.Fatalf("grpc actions = %#v, want unary and server stream", grpcResult.Script.Actions)
+	}
+}
+
+func TestConvertZipClassifiesPhaseCNoRuntimeFamilies(t *testing.T) {
+	tests := []struct {
+		name       string
+		scriptType string
+		action     string
+		canonical  string
+		mode       ImportMode
+	}{
+		{
+			name:       "rdp",
+			scriptType: "RDP",
+			action: `Action()
+{
+    rdp_mouse_click("StepDescription=Click", LAST);
+}`,
+			canonical: "rdp",
+			mode:      ImportModeReviewOnly,
+		},
+		{
+			name:       "com",
+			scriptType: "COM",
+			action: `Action()
+{
+    lrc_CreateObject("ProgID=Excel.Application", LAST);
+}`,
+			canonical: "com_lrc",
+			mode:      ImportModeReviewOnly,
+		},
+		{
+			name:       "mqtt",
+			scriptType: "MQTT",
+			action: `Action()
+{
+    mqtt_connect(client, "tcp://broker.example.test:1883");
+}`,
+			canonical: "mqtt",
+			mode:      ImportModeExternalRunnerRequired,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ConvertZip(buildLoadRunnerProtocolZip(t, tt.scriptType, tt.action), ConvertOptions{})
+			if err != nil {
+				t.Fatalf("ConvertZip returned error: %v", err)
+			}
+			if result.Script != nil {
+				t.Fatalf("script = %#v, want review artifact for no-runtime family", result.Script)
+			}
+			if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalLoadRunnerProtocol != tt.canonical || result.DetectedProtocol.ImportMode != tt.mode {
+				t.Fatalf("detected = %#v, want canonical=%s mode=%s", result.DetectedProtocol, tt.canonical, tt.mode)
+			}
+			if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 {
+				t.Fatalf("source review = %#v, want review mappings", result.SourceReview)
+			}
+		})
 	}
 }
 

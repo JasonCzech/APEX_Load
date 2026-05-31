@@ -15,8 +15,9 @@ name,family,support_mode[,reason]
 - **family** — the dispatch key used by `convertLoadRunnerFunctionAction`
   (`pkg/convert/loadrunner/utility_actions.go`). Families with rich converter/engine handlers
   (e.g. `message`, `transaction`, `parameter`, `metric`, `runtime`, `timer`, `json`, `xml`,
-  `database`, `secret`) produce executable `loadrunner_*` actions; all other families fall to
-  a deterministic `loadrunner_review` / `loadrunner_external` preserve action.
+  `database`, `network`, `messaging`, `secret`) produce executable or state-preserving
+  `loadrunner_*` actions; no-runtime families fall to a deterministic `loadrunner_review` /
+  `loadrunner_external` preserve action.
 - **support_mode** — the disposition: `executable`, `native_noop`, `review_only`,
   `external_required`. (A fifth mode, `custom_review`, is assigned at runtime to parsed C
   calls that are **not** in any catalog — the total fallback that guarantees no function ever

@@ -1,0 +1,22 @@
+# OpenText VuGen MQTT protocol functions.
+# APEX Load does not ship an MQTT protocol runtime yet; these documented functions are
+# classified as external-required instead of falling through to custom_call.
+# Format: name,family,support_mode[,reason]
+mqtt_await_messages,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_clear_inbox,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_connect,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_create,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_disconnect,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_free_message,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_get_length,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_get_payload,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_get_topic,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_publish,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_read_inbox,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_set_client_id,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_set_credentials,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_set_lwt,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_set_tls_certificate,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_set_tls_parameters,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_subscribe,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
+mqtt_unsubscribe,mqtt,external_required,MQTT protocol function requires an approved MQTT runner or adapter before replay.
