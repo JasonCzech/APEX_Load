@@ -164,6 +164,8 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
             subtitle={`${actionCount} action(s) generated from ${kind === 'devweb' ? 'DevWeb source' : kind === 'har' ? 'HAR entries' : kind === 'openapi' ? 'OpenAPI operations' : kind === 'postman' ? 'Postman requests' : 'WSDL operations'}.`}
             script={(result.script || result.scripts?.[0])!}
             warnings={result.warnings}
+            unsupportedElements={result.unsupported_elements}
+            reviewSections={result.review_sections}
             saving={saveTask.pending}
             onSave={handleSave}
             onEdit={onEdit ? () => onEdit((result.script || result.scripts?.[0]) as ScriptDefinition) : undefined}

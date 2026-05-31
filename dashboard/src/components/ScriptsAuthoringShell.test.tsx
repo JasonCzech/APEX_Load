@@ -95,6 +95,7 @@ function createActions(overrides: Partial<ScriptsCreateOptionActions> = {}): Scr
     startWebScript: vi.fn(),
     startJmsScript: vi.fn(),
     startTemplateScript: vi.fn(),
+    composeComponentScript: vi.fn(),
     openLoadRunnerImport: vi.fn(),
     openJMeterImport: vi.fn(),
     openRecorder: vi.fn(),
@@ -350,7 +351,7 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).toContain('HTTP Smoke')
     expect(container.textContent).toContain('OAuth Bearer Token Flow')
     expect(container.textContent).toContain('ci smoke · api, ci, smoke')
-    expect(container.textContent).toContain('3 VUsers / 2m')
+    expect(container.textContent).toContain('Suggested load: 3 VUsers · 2m')
 
     await clickButton('HTTP Smoke')
     expect(actions.startTemplateScript).toHaveBeenCalledWith(expect.objectContaining({

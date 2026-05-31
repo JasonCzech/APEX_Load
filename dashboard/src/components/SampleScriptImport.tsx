@@ -653,6 +653,8 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
             subtitle={`${result.stats.converted_actions} action(s) derived from ${result.stats.total_requests} request sample(s).`}
             script={(result.script || result.scripts?.[0])!}
             warnings={result.warnings}
+            unsupportedElements={result.unsupported_elements}
+            reviewSections={result.review_sections}
             saving={saving}
             onSave={handleSave}
             onEdit={onEdit ? () => onEdit((result.script || result.scripts?.[0]) as ScriptDefinition) : undefined}

@@ -40,12 +40,14 @@ func main() {
 
 	generatorTargets := parseGeneratorTargets(os.Getenv("APEXLOAD_GENERATORS"))
 	generatorTimeout := parseGeneratorTimeout(os.Getenv("APEXLOAD_GENERATOR_TIMEOUT"))
+	recorderProxyAddr := recorderProxyAddrFromEnv()
 	if len(generatorTargets) > 0 {
 		slog.Info("distributed execution enabled", "generators", generatorTargets, "timeout", generatorTimeout)
 	}
 
 	server := api.NewServer(api.ServerConfig{
 		Addr:             addr,
+		ProxyAddr:        recorderProxyAddr,
 		MaxConcurrent:    10,
 		Store:            store,
 		GeneratorTargets: generatorTargets,
@@ -108,4 +110,8 @@ func parseGeneratorTimeout(raw string) time.Duration {
 		return 10 * time.Second
 	}
 	return duration
+}
+
+func recorderProxyAddrFromEnv() string {
+	return strings.TrimSpace(os.Getenv("APEXLOAD_RECORDER_PROXY_ADDR"))
 }

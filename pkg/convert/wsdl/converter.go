@@ -407,7 +407,7 @@ func soapBodySkeleton(doc definitions, op operationInfo, diagnostics *diag.Colle
 	if !found && part.Type != "" {
 		bodyName = localName(firstNonEmpty(part.Name, op.Name))
 		if fields, ok := xsdFieldsForType(doc, localName(part.Type)); ok {
-			return bodyName, renderXSDFields(fields, diagnostics, location, 3), true
+			return bodyName, renderXSDFields(doc, fields, diagnostics, location, 3), true
 		}
 	}
 	if !found {
@@ -419,7 +419,7 @@ func soapBodySkeleton(doc definitions, op operationInfo, diagnostics *diag.Colle
 		diagnostics.Add(diag.Warning, "WSDL XSD type", location, "element "+bodyName+" has no supported complexType sequence; generated a placeholder SOAP body")
 		return bodyName, "", false
 	}
-	return bodyName, renderXSDFields(fields, diagnostics, location, 3), true
+	return bodyName, renderXSDFields(doc, fields, diagnostics, location, 3), true
 }
 
 func inputMessagePart(doc definitions, messageRef string) (messagePart, bool) {
@@ -473,7 +473,7 @@ func xsdFieldsForType(doc definitions, typeName string) ([]xsdElement, bool) {
 	return nil, false
 }
 
-func renderXSDFields(fields []xsdElement, diagnostics *diag.Collector, location string, depth int) string {
+func renderXSDFields(doc definitions, fields []xsdElement, diagnostics *diag.Collector, location string, depth int) string {
 	if len(fields) == 0 {
 		return ""
 	}
@@ -486,7 +486,21 @@ func renderXSDFields(fields []xsdElement, diagnostics *diag.Collector, location 
 		}
 		if field.ComplexType != nil && field.ComplexType.Sequence != nil {
 			lines = append(lines, indent+"<tns:"+name+">")
-			lines = append(lines, renderXSDFields(field.ComplexType.Sequence.Elements, diagnostics, location, depth+1))
+			lines = append(lines, renderXSDFields(doc, field.ComplexType.Sequence.Elements, diagnostics, location, depth+1))
+			lines = append(lines, indent+"</tns:"+name+">")
+			continue
+		}
+		if refElement, ok := findXSDElement(doc, field.Ref); ok && strings.TrimSpace(field.Ref) != "" {
+			if nested, ok := xsdFieldsForElement(doc, refElement); ok {
+				lines = append(lines, indent+"<tns:"+name+">")
+				lines = append(lines, renderXSDFields(doc, nested, diagnostics, location, depth+1))
+				lines = append(lines, indent+"</tns:"+name+">")
+				continue
+			}
+		}
+		if fieldsForType, ok := xsdFieldsForType(doc, localName(field.Type)); ok {
+			lines = append(lines, indent+"<tns:"+name+">")
+			lines = append(lines, renderXSDFields(doc, fieldsForType, diagnostics, location, depth+1))
 			lines = append(lines, indent+"</tns:"+name+">")
 			continue
 		}

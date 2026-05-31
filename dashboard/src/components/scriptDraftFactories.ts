@@ -1,3 +1,4 @@
+import { type AuthoringComponent } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 
 function createBaseDraft(): ScriptDefinition {
@@ -143,4 +144,42 @@ export function createJmsDraft(): ScriptDefinition {
     },
     actions: [],
   }
+}
+
+function baseDraftForComponent(component: AuthoringComponent): ScriptDefinition {
+  for (const protocol of component.protocols) {
+    const normalized = protocol.toLowerCase()
+    if (normalized === 'soap') return createSoapDraft()
+    if (normalized === 'java_http') return createJavaHttpDraft()
+    if (normalized === 'browser' || normalized === 'trueclient_mobile_web' || normalized === 'trueclient2_web') {
+      return createWebDraft()
+    }
+    if (normalized.startsWith('jms')) return createJmsDraft()
+  }
+  return createApiDraft()
+}
+
+// composeComponentDraft seeds a new draft script from a Component Library entry.
+// The dashboard ScriptDefinition has no init/teardown phases, so the component's
+// init, actions, and teardown fragments are folded into a single actions array in
+// that order, keeping everything visible and editable in the draft editor.
+export function composeComponentDraft(component: AuthoringComponent): ScriptDefinition {
+  const base = baseDraftForComponent(component)
+  const draft: ScriptDefinition = {
+    ...base,
+    name: component.name,
+    config: { ...base.config, ...(component.config ?? {}) } as ScriptDefinition['config'],
+    actions: [
+      ...(component.init ?? []),
+      ...(component.actions ?? []),
+      ...(component.teardown ?? []),
+    ],
+  }
+  if (component.data_sources?.length) {
+    draft.data_sources = component.data_sources
+  }
+  if (component.parameters?.length) {
+    draft.parameters = component.parameters
+  }
+  return draft
 }

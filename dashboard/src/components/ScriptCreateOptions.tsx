@@ -15,6 +15,7 @@ interface Props {
   onOpenRecorder: () => void
   onStartJmsScript: () => void
   onStartTemplateScript: (script: ScriptDefinition) => void
+  onComposeComponent: (component: AuthoringComponent) => void
   onOpenLoadRunnerImport: () => void
   onOpenJMeterImport: () => void
   onOpenDevWebImport: () => void
@@ -90,6 +91,7 @@ export default function ScriptCreateOptions({
   onOpenRecorder,
   onStartJmsScript,
   onStartTemplateScript,
+  onComposeComponent,
   onOpenLoadRunnerImport,
   onOpenJMeterImport,
   onOpenDevWebImport,
@@ -341,7 +343,7 @@ export default function ScriptCreateOptions({
                     <span className="script-create-template-tags">{template.use_case.replace(/_/g, ' ')}</span>
                   )}
                   {template.recommended_scenario && (
-                    <small>{template.recommended_scenario.vusers || 1} VUsers / {template.recommended_scenario.duration || 'script default'}</small>
+                    <small title="A starting recommendation only — not applied automatically. Set load when you create a scenario.">Suggested load: {template.recommended_scenario.vusers || 1} VUsers · {template.recommended_scenario.duration || 'script default'}</small>
                   )}
                 </button>
               )) : (
@@ -360,7 +362,7 @@ export default function ScriptCreateOptions({
             </div>
             <div className="script-create-component-list">
               {components.length > 0 ? components.map(component => (
-                <article key={component.id} className="script-create-component">
+                <button key={component.id} type="button" className="script-create-component" onClick={() => onComposeComponent(component)}>
                   <div>
                     <span className="script-create-type-badge inline">{component.kind.replace(/_/g, ' ')}</span>
                     <h3>{component.name}</h3>
@@ -370,7 +372,7 @@ export default function ScriptCreateOptions({
                     <span>{component.protocols.includes('*') ? 'All protocols' : component.protocols.join(', ')}</span>
                     {component.tags?.length ? <span>{component.tags.slice(0, 3).join(' / ')}</span> : null}
                   </div>
-                </article>
+                </button>
               )) : (
                 <div className="script-create-empty">No reusable components are available from this controller.</div>
               )}

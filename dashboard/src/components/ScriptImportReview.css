@@ -32,12 +32,16 @@
   justify-content: flex-end;
 }
 
-.script-import-review-warnings {
+.script-import-review-warnings,
+.script-import-review-unsupported,
+.script-import-review-sections {
   padding: 14px 20px;
   border-bottom: 1px solid var(--border);
 }
 
 .script-import-review-warnings h4,
+.script-import-review-unsupported h4,
+.script-import-review-sections h4,
 .script-import-review-preview h4 {
   margin: 0 0 8px;
   color: var(--text-secondary);
@@ -47,12 +51,71 @@
   letter-spacing: 0.04em;
 }
 
-.script-import-review-warnings ul {
+.script-import-review-warnings ul,
+.script-import-review-unsupported ul,
+.script-import-review-section ul {
   margin: 0;
   padding-left: 18px;
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.8;
+}
+
+.script-import-review-unsupported {
+  background: color-mix(in srgb, var(--warning) 7%, transparent);
+}
+
+.script-import-review-unsupported h4 {
+  color: var(--warning);
+}
+
+.script-import-review-section-list {
+  display: grid;
+  gap: 8px;
+}
+
+.script-import-review-section {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.script-import-review-section summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.script-import-review-section summary small {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.script-import-review-section p {
+  margin: 0;
+  padding: 0 12px 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.script-import-review-section ul {
+  padding: 0 12px 12px 30px;
+}
+
+.script-import-review-section.severity-warning summary,
+.script-import-review-section.severity-blocker summary {
+  color: var(--warning);
 }
 
 .script-import-review-preview-row {

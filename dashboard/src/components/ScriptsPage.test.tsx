@@ -840,6 +840,47 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('editor:Browser Checkout Canary')
   })
 
+  it('composes a Component Library entry into the draft editor', async () => {
+    apiMock.listAuthoringTemplates.mockResolvedValueOnce({ templates: [], count: 0 })
+    apiMock.listAuthoringComponents.mockResolvedValueOnce({
+      components: [{
+        id: 'component-oauth-flow',
+        kind: 'auth_flow',
+        name: 'OAuth Bearer Token Flow',
+        protocols: ['http', 'soap'],
+        summary: 'Token acquisition with reusable Authorization header wiring.',
+        tags: ['auth', 'oauth'],
+        config: { http: { default_headers: { Authorization: 'Bearer {{var.access_token}}' } } },
+        init: [{ name: 'Acquire Access Token', type: 'request', method: 'POST', target: '/oauth/token' }],
+      }],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+
+    await flushPromises()
+    await flushPromises()
+    await clickButton('Use Template')
+
+    expect(container.textContent).toContain('Component Library')
+    expect(container.textContent).toContain('OAuth Bearer Token Flow')
+
+    const componentButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('OAuth Bearer Token Flow'))
+    expect(componentButton).toBeDefined()
+    if (!componentButton) {
+      return
+    }
+
+    await act(async () => {
+      componentButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    expect(container.textContent).toContain('editor:OAuth Bearer Token Flow')
+  })
+
   it('surfaces resumable authoring sessions and approves them through the backend gate', async () => {
     apiMock.listAuthoringSessions.mockResolvedValue({
       sessions: [{

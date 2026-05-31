@@ -55,6 +55,7 @@ export default function ScriptsAuthoringShell({
         onOpenRecorder={createOptionActions.openRecorder}
         onStartJmsScript={createOptionActions.startJmsScript}
         onStartTemplateScript={createOptionActions.startTemplateScript}
+        onComposeComponent={createOptionActions.composeComponentScript}
         onOpenLoadRunnerImport={createOptionActions.openLoadRunnerImport}
         onOpenJMeterImport={createOptionActions.openJMeterImport}
         onOpenDevWebImport={createOptionActions.openDevWebImport}

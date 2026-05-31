@@ -55,6 +55,8 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <button data-testid="open-wsdl" onClick={model.createOptionActions.openWSDLImport}>open-wsdl</button>
       <button data-testid="start-java-http" onClick={model.createOptionActions.startJavaHttpScript}>start-java-http</button>
       <button data-testid="start-template" onClick={() => model.createOptionActions.startTemplateScript({ name: 'Template Draft', protocol: 'browser', config: {}, actions: [] } as never)}>start-template</button>
+      <button data-testid="compose-component" onClick={() => model.createOptionActions.composeComponentScript({ id: 'browser-login-transaction', kind: 'login_transaction', name: 'Browser Login Transaction', protocols: ['browser'], summary: 'Login sequence.', actions: [{ name: 'Open Login', type: 'browser_navigate', target: '/login' }] } as never)}>compose-component</button>
+      <span data-testid="draft-action-count">{model.authoringState.draftScript?.actions.length ?? 'none'}</span>
     </div>
   )
 }
@@ -276,6 +278,13 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('subview')).toBe('create')
     expect(readTestId('draft-name')).toBe('Template Draft')
     expect(readTestId('draft-protocol')).toBe('browser')
+
+    await click('compose-component')
+
+    expect(readTestId('subview')).toBe('create')
+    expect(readTestId('draft-name')).toBe('Browser Login Transaction')
+    expect(readTestId('draft-protocol')).toBe('browser')
+    expect(readTestId('draft-action-count')).toBe('1')
   })
 
   it('keeps the current edit shell when the script fetch fails', async () => {

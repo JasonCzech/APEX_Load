@@ -1897,6 +1897,17 @@
   flex-direction: column;
   gap: 14px;
   min-height: 180px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.script-create-component:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .script-create-component h3 {

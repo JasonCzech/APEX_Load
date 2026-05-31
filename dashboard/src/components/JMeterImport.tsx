@@ -286,6 +286,8 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
             previewData={{ scripts: result.scripts, scenario_draft: result.scenario_draft, summary: result.summary }}
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
+            unsupportedElements={result.unsupported_elements}
+            reviewSections={result.review_sections}
             saving={saving}
             saveLabel={`${reviewMode === 'validation' ? 'Save Reviewed' : 'Save'} ${result.scripts?.length || 0} Script${(result.scripts?.length || 0) === 1 ? '' : 's'}`}
             onSave={handleSaveConverted}
@@ -301,13 +303,6 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.assertions}</span><span className="lr-stat-label">Assertions</span></div>
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.unsupported}</span><span className="lr-stat-label">Unsupported</span></div>
             </div>
-
-            {result.unsupported_elements.length > 0 && (
-              <div className="lr-warnings">
-                <h4>Unsupported Elements ({result.unsupported_elements.length})</h4>
-                <ul>{result.unsupported_elements.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul>
-              </div>
-            )}
 
             {result.assumptions.length > 0 && (
               <div className="lr-warnings">

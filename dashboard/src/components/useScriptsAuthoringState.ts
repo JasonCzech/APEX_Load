@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { type StoredScenario, type StoredScript } from '../types'
+import { type AuthoringComponent, type StoredScenario, type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
-import { createApiDraft, createJavaHttpDraft, createJmsDraft, createSoapDraft, createWebDraft } from './scriptDraftFactories'
+import { composeComponentDraft, createApiDraft, createJavaHttpDraft, createJmsDraft, createSoapDraft, createWebDraft } from './scriptDraftFactories'
 
 export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample' | 'java-http-import' | 'devweb-import' | 'har-import' | 'openapi-import' | 'postman-import' | 'wsdl-import'
 
@@ -48,6 +48,7 @@ export interface ScriptsCreateOptionActions {
   startWebScript: () => void
   startJmsScript: () => void
   startTemplateScript: (script: ScriptDefinition) => void
+  composeComponentScript: (component: AuthoringComponent) => void
   openLoadRunnerImport: () => void
   openJMeterImport: () => void
   openRecorder: () => void
@@ -218,6 +219,10 @@ export function useScriptsAuthoringState({
     openDraftEditor(script)
   }, [openDraftEditor])
 
+  const composeComponentScript = useCallback((component: AuthoringComponent) => {
+    openDraftEditor(composeComponentDraft(component))
+  }, [openDraftEditor])
+
   const handleEdit = useCallback(async (id: string) => {
     try {
       const res = await api.getScript(id)
@@ -290,6 +295,7 @@ export function useScriptsAuthoringState({
       startWebScript,
       startJmsScript,
       startTemplateScript,
+      composeComponentScript,
       openLoadRunnerImport,
       openJMeterImport,
       openRecorder,

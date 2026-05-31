@@ -70,6 +70,7 @@ type document struct {
 	Schemes     []string              `json:"schemes,omitempty" yaml:"schemes,omitempty"`
 	Host        string                `json:"host,omitempty" yaml:"host,omitempty"`
 	BasePath    string                `json:"basePath,omitempty" yaml:"basePath,omitempty"`
+	Consumes    []string              `json:"consumes,omitempty" yaml:"consumes,omitempty"`
 	Paths       map[string]pathItem   `json:"paths,omitempty" yaml:"paths,omitempty"`
 	Components  components            `json:"components,omitempty" yaml:"components,omitempty"`
 	Security    []map[string][]string `json:"security,omitempty" yaml:"security,omitempty"`
@@ -119,6 +120,7 @@ type operation struct {
 	Tags        []string              `json:"tags,omitempty" yaml:"tags,omitempty"`
 	Parameters  []parameter           `json:"parameters,omitempty" yaml:"parameters,omitempty"`
 	RequestBody *requestBody          `json:"requestBody,omitempty" yaml:"requestBody,omitempty"`
+	Consumes    []string              `json:"consumes,omitempty" yaml:"consumes,omitempty"`
 	Responses   map[string]any        `json:"responses,omitempty" yaml:"responses,omitempty"`
 	Security    []map[string][]string `json:"security,omitempty" yaml:"security,omitempty"`
 }
@@ -129,6 +131,8 @@ type parameter struct {
 	In       string `json:"in,omitempty" yaml:"in,omitempty"`
 	Required bool   `json:"required,omitempty" yaml:"required,omitempty"`
 	Schema   schema `json:"schema,omitempty" yaml:"schema,omitempty"`
+	Type     string `json:"type,omitempty" yaml:"type,omitempty"`
+	Format   string `json:"format,omitempty" yaml:"format,omitempty"`
 	Example  any    `json:"example,omitempty" yaml:"example,omitempty"`
 }
 
@@ -247,7 +251,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				columns[name] = struct{}{}
 			}
 			for _, param := range append(item.Parameters, candidate.op.Parameters...) {
-				if param.Name != "" {
+				param = res.resolveParameter(param, strings.ToUpper(candidate.method)+" "+path)
+				if param.Name != "" && !strings.EqualFold(param.In, "body") {
 					columns[sanitizeColumnName(param.Name)] = struct{}{}
 				}
 			}
@@ -508,7 +513,11 @@ func buildAction(path, method string, pathParams []parameter, op *operation, inc
 	target := templatePath(path, params)
 	headers := map[string]string{"Accept": "application/json"}
 	applyHeaderAndCookieParams(headers, params)
-	body, contentType, bodyColumns := requestBodyExample(res.resolveRequestBody(op.RequestBody, location), res, location)
+	bodySource := res.resolveRequestBody(op.RequestBody, location)
+	if bodySource == nil {
+		bodySource = swagger2RequestBody(params, op, res, location)
+	}
+	body, contentType, bodyColumns := requestBodyExample(bodySource, res, location)
 	if contentType != "" {
 		headers["Content-Type"] = contentType
 	}
@@ -751,6 +760,68 @@ func applyHeaderAndCookieParams(headers map[string]string, params []parameter) {
 		cookies = append([]string{existing}, cookies...)
 	}
 	headers["Cookie"] = strings.Join(cookies, "; ")
+}
+
+func swagger2RequestBody(params []parameter, op *operation, res resolver, location string) *requestBody {
+	if op == nil {
+		return nil
+	}
+	var bodyParams []parameter
+	var formParams []parameter
+	for _, param := range params {
+		switch strings.ToLower(strings.TrimSpace(param.In)) {
+		case "body":
+			bodyParams = append(bodyParams, param)
+		case "formdata":
+			formParams = append(formParams, param)
+		}
+	}
+	if len(bodyParams) > 0 {
+		if len(bodyParams) > 1 {
+			res.add(diag.Warning, "Swagger 2 body parameters", location, "multiple body parameters were reduced to the first schema")
+		}
+		contentType := firstNonEmpty(firstContentType(op.Consumes), firstContentType(res.doc.Consumes), "application/json")
+		return &requestBody{Content: map[string]mediaType{
+			contentType: {Schema: parameterSchema(bodyParams[0]), Example: bodyParams[0].Example},
+		}}
+	}
+	if len(formParams) == 0 {
+		return nil
+	}
+	contentType := firstNonEmpty(firstContentType(op.Consumes), firstContentType(res.doc.Consumes), "application/x-www-form-urlencoded")
+	if contentType == "" || strings.Contains(strings.ToLower(contentType), "json") {
+		contentType = "application/x-www-form-urlencoded"
+	}
+	props := map[string]schema{}
+	for _, param := range formParams {
+		if param.Name == "" {
+			continue
+		}
+		props[param.Name] = parameterSchema(param)
+	}
+	if len(props) == 0 {
+		return nil
+	}
+	res.add(diag.Info, "Swagger 2 formData parameters", location, "formData parameters were modeled as a request body; validate encoding and file fields before replay")
+	return &requestBody{Content: map[string]mediaType{
+		contentType: {Schema: schema{Type: "object", Properties: props}},
+	}}
+}
+
+func parameterSchema(param parameter) schema {
+	if param.Schema.Ref != "" || param.Schema.Type != "" || len(param.Schema.Properties) > 0 || param.Schema.Items != nil || param.Schema.Format != "" {
+		return param.Schema
+	}
+	return schema{Type: param.Type, Format: param.Format}
+}
+
+func firstContentType(values []string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func headerValue(headers map[string]string, key string) string {

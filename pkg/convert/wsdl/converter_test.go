@@ -103,6 +103,13 @@ func TestConvertWSDLBuildsTypedSkeletonAndReportsAdditionalEndpoints(t *testing.
         <xsd:sequence>
           <xsd:element name="accountId" type="xsd:string"/>
           <xsd:element name="includeInactive" type="xsd:boolean"/>
+          <xsd:element name="billingAddress" type="tns:AddressType"/>
+        </xsd:sequence>
+      </xsd:complexType>
+      <xsd:complexType name="AddressType">
+        <xsd:sequence>
+          <xsd:element name="street" type="xsd:string"/>
+          <xsd:element name="postalCode" type="xsd:string"/>
         </xsd:sequence>
       </xsd:complexType>
     </xsd:schema>
@@ -138,7 +145,9 @@ func TestConvertWSDLBuildsTypedSkeletonAndReportsAdditionalEndpoints(t *testing.
 	body := result.Script.Actions[0].Body
 	if !strings.Contains(body, "<tns:GetAccountRequest>") ||
 		!strings.Contains(body, "<tns:accountId>{{data.wsdl.accountId}}</tns:accountId>") ||
-		!strings.Contains(body, "<tns:includeInactive>true</tns:includeInactive>") {
+		!strings.Contains(body, "<tns:includeInactive>true</tns:includeInactive>") ||
+		!strings.Contains(body, "<tns:billingAddress>") ||
+		!strings.Contains(body, "<tns:street>{{data.wsdl.street}}</tns:street>") {
 		t.Fatalf("typed SOAP body was not generated: %s", body)
 	}
 	if !containsWSDLDiagnostic(result, "WSDL service endpoints") {

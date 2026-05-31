@@ -226,6 +226,64 @@ func TestConvertOpenAPIResolvesRefsAndReportsUnsupportedConstructs(t *testing.T)
 	}
 }
 
+func TestConvertSwagger2BodyAndFormParameters(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "swagger": "2.0",
+  "info": {"title": "Legacy Orders", "version": "1.0"},
+  "host": "api.example.test",
+  "schemes": ["https"],
+  "basePath": "/v1",
+  "consumes": ["application/json"],
+  "definitions": {
+    "OrderInput": {
+      "type": "object",
+      "properties": {
+        "customerId": {"type": "string"},
+        "quantity": {"type": "integer"}
+      }
+    }
+  },
+  "paths": {
+    "/orders": {
+      "post": {
+        "operationId": "createLegacyOrder",
+        "parameters": [
+          {"name": "body", "in": "body", "schema": {"$ref": "#/definitions/OrderInput"}}
+        ],
+        "responses": {"201": {}}
+      }
+    },
+    "/uploads": {
+      "post": {
+        "operationId": "uploadLegacyFile",
+        "consumes": ["multipart/form-data"],
+        "parameters": [
+          {"name": "file", "in": "formData", "type": "string", "format": "binary"},
+          {"name": "description", "in": "formData", "type": "string"}
+        ],
+        "responses": {"200": {}}
+      }
+    }
+  }
+}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	legacy := openAPIAction(result, "createLegacyOrder")
+	if !strings.Contains(legacy.Body, "{{data.openapi.customerid}}") || !strings.Contains(legacy.Body, "{{data.openapi.quantity}}") {
+		t.Fatalf("Swagger 2 body parameter was not expanded: %s", legacy.Body)
+	}
+	upload := openAPIAction(result, "uploadLegacyFile")
+	if !strings.Contains(upload.Body, "{{file.file}}") || !strings.Contains(upload.Headers["Content-Type"], "multipart/form-data") {
+		t.Fatalf("Swagger 2 formData action = %#v", upload)
+	}
+	if !containsOpenAPIDiagnostic(result, "Swagger 2 formData parameters") {
+		t.Fatalf("diagnostics = %#v, want formData modeling info", result.Unsupported)
+	}
+}
+
 func openAPIAction(result *ConvertResult, name string) dslActionForTest {
 	for _, action := range result.Script.Actions {
 		if action.Name == name {
