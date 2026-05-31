@@ -50,6 +50,13 @@ type parsedStep struct {
 	Action   dsl.Action
 }
 
+type devwebReviewPattern struct {
+	Element   string
+	Construct string
+	Detail    string
+	Regex     *regexp.Regexp
+}
+
 var (
 	actionBlockPattern    = regexp.MustCompile("(?s)load\\.action\\s*\\(\\s*[\"'`]([^\"'`]+)[\"'`]\\s*,\\s*(?:async\\s*)?function\\s*\\([^)]*\\)\\s*\\{(.*?)\\}\\s*\\)")
 	webRequestPattern     = regexp.MustCompile(`(?s)(?:new\s+)?load\.WebRequest\s*\(\s*\{(.*?)\}\s*\)\s*\.send\s*\(`)
@@ -62,6 +69,32 @@ var (
 	thinkTimePattern      = regexp.MustCompile(`load\.thinkTime\s*\(\s*([0-9]+(?:\.[0-9]+)?)\s*\)`)
 	webRequestCallPattern = regexp.MustCompile(`load\.WebRequest\s*\(`)
 	correlationPattern    = regexp.MustCompile(`(?i)\b(?:load\.)?(?:correlat\w*|extract\w*|web_reg_save_param|web\.regSaveParam)\b`)
+	reviewOnlyPatterns    = []devwebReviewPattern{
+		{
+			Element:   "DevWeb dynamic JavaScript",
+			Construct: "dynamic JavaScript control flow",
+			Detail:    "JavaScript control flow is not executed by the static importer; converted SDK calls are extracted without preserving branch or loop semantics",
+			Regex:     regexp.MustCompile(`(?m)\b(?:if|switch|for|while)\s*\(`),
+		},
+		{
+			Element:   "DevWeb custom module",
+			Construct: "custom module",
+			Detail:    "custom module imports are not executed by the importer; review helper logic and recreate required behavior before replay",
+			Regex:     regexp.MustCompile("(?m)\\b(?:const|let|var)\\s+[A-Za-z_$][\\w$]*\\s*=\\s*require\\s*\\(|\\bimport\\s+(?:[^;]+?\\s+from\\s+)?[\"'`]"),
+		},
+		{
+			Element:   "DevWeb async control flow",
+			Construct: "async JavaScript control flow",
+			Detail:    "Promise/timer control flow is not executed by the importer; verify ordering and timing before promoting the generated script",
+			Regex:     regexp.MustCompile(`(?m)\b(?:Promise\.|setTimeout\s*\(|setInterval\s*\(|\.then\s*\(|\.catch\s*\()`),
+		},
+		{
+			Element:   "DevWeb template literal",
+			Construct: "dynamic template literal",
+			Detail:    "template literals with JavaScript expressions are not evaluated by the importer; replace dynamic values with explicit APEX data or variables",
+			Regex:     regexp.MustCompile("`[^`]*\\$\\{[^}]+\\}[^`]*`"),
+		},
+	}
 )
 
 func Convert(req ImportRequest) (*ConvertResult, error) {
@@ -205,6 +238,7 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 	for _, match := range correlationPattern.FindAllStringIndex(block.Body, -1) {
 		diagnostics.Add(diag.Warning, "DevWeb correlation helper", devwebLocation(block, match[0]), "correlation/extraction helper is not executed by the importer; recreate it with APEX Load extractors before replay")
 	}
+	diagnoseReviewOnlyJavaScript(block, stats, diagnostics)
 
 	socketVars := map[string]string{}
 	for _, match := range webSocketNewPattern.FindAllStringSubmatch(block.Body, -1) {
@@ -302,6 +336,28 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 	return steps
 }
 
+func diagnoseReviewOnlyJavaScript(block namedBlock, stats *ConvertStats, diagnostics *diag.Collector) {
+	for _, pattern := range reviewOnlyPatterns {
+		for _, match := range pattern.Regex.FindAllStringIndex(block.Body, -1) {
+			stats.UnsupportedCalls = appendDevWebUnsupportedCall(stats.UnsupportedCalls, pattern.Construct)
+			diagnostics.Add(diag.Warning, pattern.Element, devwebLocation(block, match[0]), pattern.Detail)
+		}
+	}
+}
+
+func appendDevWebUnsupportedCall(values []string, value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return values
+	}
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
 func webRequestCallCovered(offset int, matches [][]int) bool {
 	for _, match := range matches {
 		if len(match) >= 2 && offset >= match[0] && offset < match[1] {
@@ -332,14 +388,31 @@ func parseWebRequest(blockName string, objectLiteral string) (dsl.Action, bool) 
 	if body == "" {
 		body = objectStringField(objectLiteral, "bodyText")
 	}
+	headers := objectStringMapField(objectLiteral, "headers")
+	if containsTemplateExpression(rawURL) || containsTemplateExpression(method) || containsTemplateExpression(body) || stringMapContainsTemplateExpression(headers) {
+		return dsl.Action{}, false
+	}
 	return dsl.Action{
 		Name:    actionName(blockName, method),
 		Type:    "request",
 		Method:  method,
 		Target:  rawURL,
-		Headers: objectStringMapField(objectLiteral, "headers"),
+		Headers: headers,
 		Body:    body,
 	}, true
+}
+
+func containsTemplateExpression(value string) bool {
+	return strings.Contains(value, "${")
+}
+
+func stringMapContainsTemplateExpression(values map[string]string) bool {
+	for _, value := range values {
+		if containsTemplateExpression(value) {
+			return true
+		}
+	}
+	return false
 }
 
 func dominantProtocol(protocols []string, warnings *[]string) string {

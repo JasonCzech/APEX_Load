@@ -145,6 +145,37 @@ load.action("Mixed", async function() {
 	}
 }
 
+func TestConvertDevWebReportsReviewOnlyJavaScriptConstructs(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `
+load.action("Dynamic", async function() {
+  const helper = require("./helper");
+  if (helper.enabled) load.thinkTime(0.1);
+  for (let i = 0; i < 2; i++) load.thinkTime(i);
+  Promise.resolve().then(helper.sign);
+  new load.WebRequest({ url: ` + "`https://api.example.test/orders/${helper.id}`" + ` }).send();
+  new load.WebRequest({ url: "https://api.example.test/health" }).send();
+});`,
+	})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if result.Stats.ConvertedActions != 1 {
+		t.Fatalf("converted actions = %d, want 1", result.Stats.ConvertedActions)
+	}
+	for _, element := range []string{
+		"DevWeb dynamic JavaScript",
+		"DevWeb custom module",
+		"DevWeb async control flow",
+		"DevWeb template literal",
+		"DevWeb load.WebRequest",
+	} {
+		if !containsDevWebDiagnostic(result, element) {
+			t.Fatalf("diagnostics = %#v, want %s warning", result.Unsupported, element)
+		}
+	}
+}
+
 func containsDevWebDiagnostic(result *ConvertResult, element string) bool {
 	for _, item := range result.Unsupported {
 		if strings.Contains(item.Element, element) || strings.Contains(item.String(), element) {
