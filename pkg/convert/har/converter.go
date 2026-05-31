@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -20,6 +21,7 @@ type ConvertOptions struct {
 type ConvertResult struct {
 	Script       *dsl.Script          `json:"script"`
 	Warnings     []string             `json:"warnings,omitempty"`
+	Unsupported  diag.Diagnostics     `json:"unsupported,omitempty"`
 	Stats        sample.ConvertStats  `json:"stats"`
 	Correlations []sample.Correlation `json:"correlations,omitempty"`
 }
@@ -53,6 +55,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	return &ConvertResult{
 		Script:       result.Script,
 		Warnings:     result.Warnings,
+		Unsupported:  result.Unsupported,
 		Stats:        result.Stats,
 		Correlations: result.Correlations,
 	}, nil

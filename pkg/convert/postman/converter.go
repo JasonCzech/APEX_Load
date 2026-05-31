@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -50,10 +51,11 @@ type ReviewSummary struct {
 }
 
 type ConvertResult struct {
-	Script   *dsl.Script   `json:"script"`
-	Warnings []string      `json:"warnings,omitempty"`
-	Stats    ConvertStats  `json:"stats"`
-	Summary  ReviewSummary `json:"summary"`
+	Script      *dsl.Script      `json:"script"`
+	Warnings    []string         `json:"warnings,omitempty"`
+	Unsupported diag.Diagnostics `json:"unsupported,omitempty"`
+	Stats       ConvertStats     `json:"stats"`
+	Summary     ReviewSummary    `json:"summary"`
 }
 
 type collection struct {
@@ -61,6 +63,7 @@ type collection struct {
 	Item     []item         `json:"item"`
 	Variable []variable     `json:"variable"`
 	Auth     *auth          `json:"auth"`
+	Event    []event        `json:"event"`
 }
 
 type collectionInfo struct {
@@ -72,6 +75,17 @@ type item struct {
 	Name    string     `json:"name"`
 	Item    []item     `json:"item"`
 	Request requestRaw `json:"request"`
+	Event   []event    `json:"event"`
+}
+
+type event struct {
+	Listen string      `json:"listen"`
+	Script eventScript `json:"script"`
+}
+
+type eventScript struct {
+	Type string   `json:"type"`
+	Exec []string `json:"exec"`
 }
 
 type requestRaw struct {
@@ -167,6 +181,7 @@ type requestItem struct {
 	Name    string
 	Folder  string
 	Request requestRaw
+	Events  []event
 }
 
 var variablePattern = regexp.MustCompile(`\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}`)
@@ -187,12 +202,14 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	requests := []requestItem{}
 	folders := 0
-	collectItems(col.Item, "", &requests, &folders)
+	collectItems(col.Item, "", col.Event, &requests, &folders)
 	if len(requests) == 0 {
 		return nil, errors.New("Postman collection contains no requests")
 	}
 
+	var diagnostics diag.Collector
 	vars := collectionVariables(col.Variable)
+	applyPostmanEventVariables(vars, requests, &diagnostics)
 	baseURL, warnings := deriveBaseURL(requests, vars, req.Options.BaseURL)
 	scriptName := sanitizeName(firstNonEmpty(req.Options.ScriptName, req.Name, col.Info.Name, "Imported_Postman_Collection"))
 	authSchemes := sortedAuthSchemes(requests, col.Auth)
@@ -247,9 +264,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	sanitizeSensitive := boolOption(req.Options.SanitizeSensitive, true)
 	includeAssertions := boolOption(req.Options.IncludeAssertions, true)
 	for index, item := range requests {
-		action, actionWarnings := buildAction(index, item, baseURL, vars, sanitizeSensitive, includeAssertions)
+		reportPostmanEvents(item, &diagnostics)
+		action, actionWarnings := buildAction(index, item, baseURL, vars, sanitizeSensitive, includeAssertions, &diagnostics)
 		if action.Name == "" {
 			result.Stats.SkippedItems = append(result.Stats.SkippedItems, item.Name)
+			diagnostics.Add(diag.Warning, "Postman item skipped", postmanItemLocation(item), "request item could not be converted into an executable action")
 			continue
 		}
 		result.Warnings = append(result.Warnings, actionWarnings...)
@@ -266,11 +285,17 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if len(result.Script.Actions) == 0 {
 		return nil, errors.New("Postman collection contains no supported requests")
 	}
+	if gap := result.Stats.TotalRequests - result.Stats.ConvertedActions - len(result.Stats.SkippedItems); gap > 0 {
+		diagnostics.Add(diag.Warning, "Postman completeness guard", "collection", fmt.Sprintf("%d request item(s) were present but not converted or explicitly skipped", gap))
+	}
+	result.Unsupported = diagnostics.Items()
 	return result, nil
 }
 
-func collectItems(items []item, folder string, requests *[]requestItem, folders *int) {
+func collectItems(items []item, folder string, inheritedEvents []event, requests *[]requestItem, folders *int) {
 	for _, item := range items {
+		events := append([]event{}, inheritedEvents...)
+		events = append(events, item.Event...)
 		if len(item.Item) > 0 {
 			nextFolder := strings.TrimSpace(item.Name)
 			if folder != "" && nextFolder != "" {
@@ -279,13 +304,13 @@ func collectItems(items []item, folder string, requests *[]requestItem, folders 
 				nextFolder = folder
 			}
 			(*folders)++
-			collectItems(item.Item, nextFolder, requests, folders)
+			collectItems(item.Item, nextFolder, events, requests, folders)
 			continue
 		}
 		if item.Request.URL.Raw == "" && item.Request.raw == "" && item.Request.Method == "" {
 			continue
 		}
-		*requests = append(*requests, requestItem{Name: item.Name, Folder: folder, Request: item.Request})
+		*requests = append(*requests, requestItem{Name: item.Name, Folder: folder, Request: item.Request, Events: events})
 	}
 }
 
@@ -298,6 +323,54 @@ func collectionVariables(vars []variable) map[string]string {
 		out[v.Key] = strings.TrimSpace(fmt.Sprint(v.Value))
 	}
 	return out
+}
+
+var postmanSetPattern = regexp.MustCompile(`pm\.(?:environment|collectionVariables)\.set\s*\(\s*["']([^"']+)["']\s*,\s*["']([^"']*)["']\s*\)`)
+
+func applyPostmanEventVariables(vars map[string]string, requests []requestItem, diagnostics *diag.Collector) {
+	for _, req := range requests {
+		location := postmanItemLocation(req)
+		for _, ev := range req.Events {
+			for _, line := range ev.Script.Exec {
+				for _, match := range postmanSetPattern.FindAllStringSubmatch(line, -1) {
+					if len(match) < 3 {
+						continue
+					}
+					key := strings.TrimSpace(match[1])
+					if key == "" {
+						continue
+					}
+					vars[key] = match[2]
+					diagnostics.Add(diag.Info, "Postman script variable", location, "translated deterministic pm variable assignment for "+key)
+				}
+			}
+		}
+	}
+}
+
+func reportPostmanEvents(item requestItem, diagnostics *diag.Collector) {
+	location := postmanItemLocation(item)
+	for _, ev := range item.Events {
+		listen := strings.ToLower(strings.TrimSpace(ev.Listen))
+		if listen == "" {
+			continue
+		}
+		switch listen {
+		case "prerequest":
+			diagnostics.Add(diag.Warning, "Postman pre-request script", location, "pre-request script is not executed during import; review auth signing, variable mutation, and correlation logic before replay")
+		case "test":
+			diagnostics.Add(diag.Warning, "Postman test script", location, "test script is not executed during import; translate assertions or side effects before replay")
+		default:
+			diagnostics.Add(diag.Info, "Postman event script", location, "event script "+listen+" is not executed during import")
+		}
+	}
+}
+
+func postmanItemLocation(item requestItem) string {
+	if item.Folder != "" && item.Name != "" {
+		return item.Folder + " / " + item.Name
+	}
+	return firstNonEmpty(item.Name, item.Folder, "Postman request")
 }
 
 func deriveBaseURL(requests []requestItem, vars map[string]string, override string) (string, []string) {
@@ -341,7 +414,7 @@ func buildParameters(vars map[string]string, baseURL string) []dsl.Parameter {
 	return params
 }
 
-func buildAction(index int, item requestItem, baseURL string, vars map[string]string, sanitizeSensitive bool, includeAssertions bool) (dsl.Action, []string) {
+func buildAction(index int, item requestItem, baseURL string, vars map[string]string, sanitizeSensitive bool, includeAssertions bool, diagnostics *diag.Collector) (dsl.Action, []string) {
 	req := item.Request
 	method := strings.ToUpper(firstNonEmpty(req.Method, "GET"))
 	raw := rawURL(req.URL)
@@ -358,7 +431,7 @@ func buildAction(index int, item requestItem, baseURL string, vars map[string]st
 		headers[h.Key] = rewriteVariables(h.Value)
 	}
 
-	bodyText, contentType, warnings := requestBody(req.Body)
+	bodyText, contentType, warnings := requestBody(req.Body, diagnostics, postmanItemLocation(item))
 	if contentType != "" && headerValue(headers, "Content-Type") == "" {
 		headers["Content-Type"] = contentType
 	}
@@ -454,7 +527,7 @@ func toTarget(raw string, baseURL string, vars map[string]string) string {
 	return rewriteVariables(raw)
 }
 
-func requestBody(b *body) (string, string, []string) {
+func requestBody(b *body, diagnostics *diag.Collector, location string) (string, string, []string) {
 	if b == nil {
 		return "", "", nil
 	}
@@ -472,19 +545,20 @@ func requestBody(b *body) (string, string, []string) {
 		return values.Encode(), "application/x-www-form-urlencoded", nil
 	case "formdata":
 		values := map[string]string{}
-		warnings := []string{"Postman form-data body was flattened to JSON for review; file upload parts require manual validation before replay"}
+		diagnostics.Add(diag.Warning, "Postman form-data", location, "form-data body was flattened to JSON for review; multipart replay and file upload parts require manual validation")
 		for _, entry := range b.FormData {
 			if entry.Disabled || entry.Key == "" {
 				continue
 			}
 			if strings.EqualFold(entry.Type, "file") {
 				values[entry.Key] = "{{var." + normalizeVariableName(entry.Key) + "_file}}"
+				diagnostics.Add(diag.Warning, "Postman form-data file", location, "file part "+entry.Key+" cannot be seeded from the collection JSON; provide a governed file parameter before replay")
 				continue
 			}
 			values[entry.Key] = entry.Value
 		}
 		data, _ := json.MarshalIndent(values, "", "  ")
-		return string(data), "application/json", warnings
+		return string(data), "application/json", nil
 	case "graphql":
 		payload := map[string]any{}
 		if b.GraphQL != nil {
@@ -501,7 +575,8 @@ func requestBody(b *body) (string, string, []string) {
 		data, _ := json.MarshalIndent(payload, "", "  ")
 		return string(data), "application/json", nil
 	default:
-		return "", "", []string{fmt.Sprintf("Postman body mode %q is not natively converted; add the payload manually before replay", b.Mode)}
+		diagnostics.Add(diag.Warning, "Postman body mode", location, fmt.Sprintf("body mode %q is not natively converted; add the payload manually before replay", b.Mode))
+		return "", "", nil
 	}
 }
 

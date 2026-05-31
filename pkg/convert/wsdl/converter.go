@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -47,19 +48,76 @@ type ReviewSummary struct {
 }
 
 type ConvertResult struct {
-	Script   *dsl.Script   `json:"script"`
-	Warnings []string      `json:"warnings,omitempty"`
-	Stats    ConvertStats  `json:"stats"`
-	Summary  ReviewSummary `json:"summary"`
+	Script      *dsl.Script      `json:"script"`
+	Warnings    []string         `json:"warnings,omitempty"`
+	Unsupported diag.Diagnostics `json:"unsupported,omitempty"`
+	Stats       ConvertStats     `json:"stats"`
+	Summary     ReviewSummary    `json:"summary"`
 }
 
 type definitions struct {
-	XMLName         xml.Name   `xml:"definitions"`
-	Name            string     `xml:"name,attr"`
-	TargetNamespace string     `xml:"targetNamespace,attr"`
-	Services        []service  `xml:"service"`
-	PortTypes       []portType `xml:"portType"`
-	Bindings        []binding  `xml:"binding"`
+	XMLName         xml.Name     `xml:"definitions"`
+	Name            string       `xml:"name,attr"`
+	TargetNamespace string       `xml:"targetNamespace,attr"`
+	Services        []service    `xml:"service"`
+	PortTypes       []portType   `xml:"portType"`
+	Bindings        []binding    `xml:"binding"`
+	Messages        []message    `xml:"message"`
+	Types           []types      `xml:"types"`
+	Imports         []wsdlImport `xml:"import"`
+}
+
+type wsdlImport struct {
+	Namespace string `xml:"namespace,attr"`
+	Location  string `xml:"location,attr"`
+}
+
+type types struct {
+	Schemas []xsdSchema `xml:"schema"`
+}
+
+type xsdSchema struct {
+	TargetNamespace string           `xml:"targetNamespace,attr"`
+	Imports         []xsdImport      `xml:"import"`
+	Includes        []xsdInclude     `xml:"include"`
+	Elements        []xsdElement     `xml:"element"`
+	ComplexTypes    []xsdComplexType `xml:"complexType"`
+}
+
+type xsdImport struct {
+	Namespace      string `xml:"namespace,attr"`
+	SchemaLocation string `xml:"schemaLocation,attr"`
+}
+
+type xsdInclude struct {
+	SchemaLocation string `xml:"schemaLocation,attr"`
+}
+
+type xsdElement struct {
+	Name        string          `xml:"name,attr"`
+	Type        string          `xml:"type,attr"`
+	Ref         string          `xml:"ref,attr"`
+	ComplexType *xsdComplexType `xml:"complexType"`
+}
+
+type xsdComplexType struct {
+	Name     string       `xml:"name,attr"`
+	Sequence *xsdSequence `xml:"sequence"`
+}
+
+type xsdSequence struct {
+	Elements []xsdElement `xml:"element"`
+}
+
+type message struct {
+	Name  string        `xml:"name,attr"`
+	Parts []messagePart `xml:"part"`
+}
+
+type messagePart struct {
+	Name    string `xml:"name,attr"`
+	Element string `xml:"element,attr"`
+	Type    string `xml:"type,attr"`
 }
 
 type service struct {
@@ -82,7 +140,13 @@ type portType struct {
 }
 
 type wsdlOperation struct {
-	Name string `xml:"name,attr"`
+	Name   string            `xml:"name,attr"`
+	Input  *operationMessage `xml:"input"`
+	Output *operationMessage `xml:"output"`
+}
+
+type operationMessage struct {
+	Message string `xml:"message,attr"`
 }
 
 type binding struct {
@@ -113,7 +177,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		return nil, errors.New("invalid WSDL document: root element must be definitions")
 	}
 
-	baseURL, warnings := deriveBaseURL(doc, req.Options.BaseURL)
+	var diagnostics diag.Collector
+	addImportDiagnostics(doc, &diagnostics)
+	baseURL, warnings := deriveBaseURL(doc, req.Options.BaseURL, &diagnostics)
 	soapVersion := firstNonEmpty(req.Options.SOAPVersion, detectSOAPVersion(content), "1.1")
 	serviceName := firstNonEmpty(firstServiceName(doc), doc.Name, "Imported_WSDL_Service")
 	scriptName := sanitizeName(firstNonEmpty(req.Options.ScriptName, req.Name, serviceName))
@@ -172,7 +238,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			Headers: map[string]string{
 				"Content-Type": soapContentType(soapVersion),
 			},
-			Body: soapEnvelope(doc.TargetNamespace, op.Name),
+			Body: soapEnvelope(doc, op, &diagnostics),
 			SOAP: &dsl.SOAPActionConfig{
 				Action:    op.SOAPAction,
 				Operation: op.Name,
@@ -196,12 +262,14 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if result.Script.Config.BaseURL == "" {
 		result.Warnings = append(result.Warnings, "SOAP endpoint URL could not be derived; set options.base_url before saving the script")
 	}
+	result.Unsupported = diagnostics.Items()
 	return result, nil
 }
 
 type operationInfo struct {
-	Name       string
-	SOAPAction string
+	Name         string
+	SOAPAction   string
+	InputMessage string
 }
 
 func collectOperations(doc definitions, filter []string) []operationInfo {
@@ -211,7 +279,11 @@ func collectOperations(doc definitions, filter []string) []operationInfo {
 		for _, op := range pt.Operations {
 			name := strings.TrimSpace(op.Name)
 			if name != "" && (len(allowed) == 0 || allowed[name]) {
-				operationMap[name] = operationInfo{Name: name}
+				info := operationInfo{Name: name}
+				if op.Input != nil {
+					info.InputMessage = strings.TrimSpace(op.Input.Message)
+				}
+				operationMap[name] = info
 			}
 		}
 	}
@@ -244,18 +316,25 @@ func collectOperations(doc definitions, filter []string) []operationInfo {
 	return result
 }
 
-func deriveBaseURL(doc definitions, override string) (string, []string) {
+func deriveBaseURL(doc definitions, override string, diagnostics *diag.Collector) (string, []string) {
 	if value := strings.TrimSpace(override); value != "" {
 		return value, nil
 	}
+	locations := []string{}
 	for _, svc := range doc.Services {
 		for _, port := range svc.Ports {
 			for _, address := range port.Addresses {
 				if strings.TrimSpace(address.Location) != "" {
-					return strings.TrimSpace(address.Location), nil
+					locations = append(locations, strings.TrimSpace(address.Location))
 				}
 			}
 		}
+	}
+	if len(locations) > 0 {
+		if len(locations) > 1 {
+			diagnostics.Add(diag.Info, "WSDL service endpoints", "definitions/service", "using first endpoint "+locations[0]+"; additional endpoints preserved for review: "+strings.Join(locations[1:], ", "))
+		}
+		return locations[0], nil
 	}
 	return "", []string{"WSDL service address was not provided; imported SOAP actions need options.base_url before execution"}
 }
@@ -294,16 +373,166 @@ func soapActionTarget(baseURL string) string {
 	return parsed.Path
 }
 
-func soapEnvelope(targetNamespace, operation string) string {
-	namespace := firstNonEmpty(targetNamespace, "urn:service")
+func soapEnvelope(doc definitions, op operationInfo, diagnostics *diag.Collector) string {
+	namespace := firstNonEmpty(doc.TargetNamespace, "urn:service")
+	bodyName, children, ok := soapBodySkeleton(doc, op, diagnostics)
+	if bodyName == "" {
+		bodyName = op.Name
+	}
+	if !ok {
+		children = "      <!-- Review request elements from the WSDL/XSD and replace placeholders before replay. -->"
+	}
 	return fmt.Sprintf(`<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="%s">
   <soapenv:Header/>
   <soapenv:Body>
     <tns:%s>
-      <!-- Review request elements from the WSDL/XSD and replace placeholders before replay. -->
+%s
     </tns:%s>
   </soapenv:Body>
-</soapenv:Envelope>`, namespace, operation, operation)
+</soapenv:Envelope>`, namespace, bodyName, children, bodyName)
+}
+
+func soapBodySkeleton(doc definitions, op operationInfo, diagnostics *diag.Collector) (string, string, bool) {
+	location := "operation " + op.Name
+	part, ok := inputMessagePart(doc, op.InputMessage)
+	if !ok {
+		diagnostics.Add(diag.Warning, "WSDL input message", location, "input message/part could not be resolved; generated a placeholder SOAP body")
+		return op.Name, "", false
+	}
+	bodyName := localName(firstNonEmpty(part.Element, part.Name, op.Name))
+	if bodyName == "" {
+		bodyName = op.Name
+	}
+	element, found := findXSDElement(doc, bodyName)
+	if !found && part.Type != "" {
+		bodyName = localName(firstNonEmpty(part.Name, op.Name))
+		if fields, ok := xsdFieldsForType(doc, localName(part.Type)); ok {
+			return bodyName, renderXSDFields(fields, diagnostics, location, 3), true
+		}
+	}
+	if !found {
+		diagnostics.Add(diag.Warning, "WSDL XSD element", location, "message part "+bodyName+" has no inlined XSD element/type; generated a placeholder SOAP body")
+		return bodyName, "", false
+	}
+	fields, ok := xsdFieldsForElement(doc, element)
+	if !ok {
+		diagnostics.Add(diag.Warning, "WSDL XSD type", location, "element "+bodyName+" has no supported complexType sequence; generated a placeholder SOAP body")
+		return bodyName, "", false
+	}
+	return bodyName, renderXSDFields(fields, diagnostics, location, 3), true
+}
+
+func inputMessagePart(doc definitions, messageRef string) (messagePart, bool) {
+	name := localName(messageRef)
+	if name == "" {
+		return messagePart{}, false
+	}
+	for _, msg := range doc.Messages {
+		if msg.Name != name || len(msg.Parts) == 0 {
+			continue
+		}
+		return msg.Parts[0], true
+	}
+	return messagePart{}, false
+}
+
+func findXSDElement(doc definitions, name string) (xsdElement, bool) {
+	name = localName(name)
+	for _, t := range doc.Types {
+		for _, schema := range t.Schemas {
+			for _, element := range schema.Elements {
+				if localName(firstNonEmpty(element.Name, element.Ref)) == name {
+					return element, true
+				}
+			}
+		}
+	}
+	return xsdElement{}, false
+}
+
+func xsdFieldsForElement(doc definitions, element xsdElement) ([]xsdElement, bool) {
+	if element.ComplexType != nil && element.ComplexType.Sequence != nil {
+		return element.ComplexType.Sequence.Elements, true
+	}
+	if element.Type != "" {
+		return xsdFieldsForType(doc, localName(element.Type))
+	}
+	return nil, false
+}
+
+func xsdFieldsForType(doc definitions, typeName string) ([]xsdElement, bool) {
+	for _, t := range doc.Types {
+		for _, schema := range t.Schemas {
+			for _, ct := range schema.ComplexTypes {
+				if ct.Name == typeName && ct.Sequence != nil {
+					return ct.Sequence.Elements, true
+				}
+			}
+		}
+	}
+	return nil, false
+}
+
+func renderXSDFields(fields []xsdElement, diagnostics *diag.Collector, location string, depth int) string {
+	if len(fields) == 0 {
+		return ""
+	}
+	indent := strings.Repeat("  ", depth)
+	lines := make([]string, 0, len(fields))
+	for _, field := range fields {
+		name := localName(firstNonEmpty(field.Name, field.Ref))
+		if name == "" {
+			continue
+		}
+		if field.ComplexType != nil && field.ComplexType.Sequence != nil {
+			lines = append(lines, indent+"<tns:"+name+">")
+			lines = append(lines, renderXSDFields(field.ComplexType.Sequence.Elements, diagnostics, location, depth+1))
+			lines = append(lines, indent+"</tns:"+name+">")
+			continue
+		}
+		if strings.TrimSpace(field.Ref) != "" {
+			diagnostics.Add(diag.Warning, "WSDL XSD ref", location, "referenced child element "+field.Ref+" was represented with a placeholder value")
+		}
+		lines = append(lines, indent+"<tns:"+name+">"+placeholderForXSDType(field.Type, name)+"</tns:"+name+">")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func placeholderForXSDType(typeName string, fieldName string) string {
+	switch strings.ToLower(localName(typeName)) {
+	case "int", "integer", "long", "short", "decimal", "double", "float":
+		return "1"
+	case "boolean":
+		return "true"
+	case "datetime", "date":
+		return "{{fn.now()}}"
+	default:
+		return "{{data.wsdl." + sanitizeName(fieldName) + "}}"
+	}
+}
+
+func addImportDiagnostics(doc definitions, diagnostics *diag.Collector) {
+	for _, item := range doc.Imports {
+		diagnostics.Add(diag.Warning, "WSDL import", "definitions", "referenced WSDL import "+firstNonEmpty(item.Location, item.Namespace)+" was not followed; inline or import it separately")
+	}
+	for _, t := range doc.Types {
+		for _, schema := range t.Schemas {
+			for _, item := range schema.Imports {
+				diagnostics.Add(diag.Warning, "XSD import", "types/schema", "referenced XSD import "+firstNonEmpty(item.SchemaLocation, item.Namespace)+" was not followed; inline or import it separately")
+			}
+			for _, item := range schema.Includes {
+				diagnostics.Add(diag.Warning, "XSD include", "types/schema", "referenced XSD include "+item.SchemaLocation+" was not followed; inline or import it separately")
+			}
+		}
+	}
+}
+
+func localName(value string) string {
+	value = strings.TrimSpace(value)
+	if idx := strings.LastIndex(value, ":"); idx >= 0 {
+		value = value[idx+1:]
+	}
+	return value
 }
 
 func stringSet(values []string) map[string]bool {

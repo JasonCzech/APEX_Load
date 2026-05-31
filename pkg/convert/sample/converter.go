@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -49,10 +50,11 @@ type Correlation struct {
 }
 
 type ConvertResult struct {
-	Script       *dsl.Script   `json:"script"`
-	Warnings     []string      `json:"warnings,omitempty"`
-	Stats        ConvertStats  `json:"stats"`
-	Correlations []Correlation `json:"correlations,omitempty"`
+	Script       *dsl.Script      `json:"script"`
+	Warnings     []string         `json:"warnings,omitempty"`
+	Unsupported  diag.Diagnostics `json:"unsupported,omitempty"`
+	Stats        ConvertStats     `json:"stats"`
+	Correlations []Correlation    `json:"correlations,omitempty"`
 }
 
 type exchange struct {
@@ -111,9 +113,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	var (
-		exchanges []exchange
-		warnings  []string
-		err       error
+		exchanges   []exchange
+		warnings    []string
+		err         error
+		diagnostics diag.Collector
 	)
 
 	switch format {
@@ -124,7 +127,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	case "rest_json":
 		exchanges, warnings, err = parseRESTJSON(req.Content)
 	case "har":
-		exchanges, warnings, err = parseHAR(req.Content)
+		exchanges, warnings, err = parseHAR(req.Content, &diagnostics)
 	default:
 		return nil, fmt.Errorf("unsupported format %q", req.Format)
 	}
@@ -191,6 +194,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			},
 		},
 		Warnings:     warnings,
+		Unsupported:  diagnostics.Items(),
 		Correlations: correlations,
 		Stats: ConvertStats{
 			Format:        format,
@@ -614,7 +618,7 @@ func parseRESTJSON(content string) ([]exchange, []string, error) {
 	return exchanges, nil, nil
 }
 
-func parseHAR(content string) ([]exchange, []string, error) {
+func parseHAR(content string, diagnostics *diag.Collector) ([]exchange, []string, error) {
 	var payload any
 	if err := json.Unmarshal([]byte(content), &payload); err != nil {
 		return nil, nil, fmt.Errorf("failed to parse HAR JSON: %w", err)
@@ -624,8 +628,8 @@ func parseHAR(content string) ([]exchange, []string, error) {
 		return nil, nil, err
 	}
 	exchanges := make([]exchange, 0, len(items))
-	for _, item := range items {
-		ex, err := parseHARItem(item)
+	for index, item := range items {
+		ex, err := parseHARItem(item, diagnostics, index)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -717,18 +721,27 @@ func extractHARItems(payload any) ([]map[string]any, error) {
 	return nil, errors.New("HAR content must include log.entries or a single entry with request/response")
 }
 
-func parseHARItem(item map[string]any) (exchange, error) {
+func parseHARItem(item map[string]any, diagnostics *diag.Collector, index int) (exchange, error) {
 	requestData, ok := item["request"].(map[string]any)
 	if !ok {
 		return exchange{}, errors.New("HAR entry is missing request")
 	}
+	location := fmt.Sprintf("HAR entry %d", index+1)
 	ex := exchange{
 		Method:     strings.ToUpper(stringValue(requestData["method"])),
 		URL:        stringValue(requestData["url"]),
-		Body:       harBody(requestData),
-		Headers:    headerListToMap(requestData["headers"]),
+		Body:       harBody(requestData, diagnostics, location),
+		Headers:    headerListToMap(requestData["headers"], diagnostics, location),
 		DurationMs: floatValue(item["time"]),
 	}
+	if ex.Headers == nil {
+		ex.Headers = map[string]string{}
+	}
+	if ex.Method != "" || ex.URL != "" {
+		location = strings.TrimSpace(ex.Method + " " + ex.URL)
+	}
+	applyHARPostDataHeaders(requestData, ex.Headers)
+	mergeHARCookies(requestData["cookies"], ex.Headers, diagnostics, location)
 	if startedAt, ok := parseHARStartedAt(item["startedDateTime"]); ok {
 		ex.StartedAt = startedAt
 		ex.HasStartedAt = true
@@ -743,7 +756,7 @@ func parseHARItem(item map[string]any) (exchange, error) {
 		}
 		ex.Response = &response{
 			Status:  intValue(responseData["status"]),
-			Headers: headerListToMap(responseData["headers"]),
+			Headers: headerListToMap(responseData["headers"], diagnostics, location+" response"),
 			Body:    responseBody,
 		}
 	}
@@ -1195,12 +1208,14 @@ func mapValueToStringMap(value any) map[string]string {
 	return result
 }
 
-func headerListToMap(value any) map[string]string {
+func headerListToMap(value any, diagnostics *diag.Collector, location string) map[string]string {
 	items, ok := value.([]any)
 	if !ok {
 		return nil
 	}
 	result := make(map[string]string, len(items))
+	canonical := map[string]string{}
+	duplicateSetCookie := false
 	for _, item := range items {
 		mapped, ok := item.(map[string]any)
 		if !ok {
@@ -1210,16 +1225,153 @@ func headerListToMap(value any) map[string]string {
 		if name == "" {
 			continue
 		}
-		result[name] = stringValue(mapped["value"])
+		value := stringValue(mapped["value"])
+		normalized := strings.ToLower(name)
+		existingKey := canonical[normalized]
+		if existingKey == "" {
+			canonical[normalized] = name
+			result[name] = value
+			continue
+		}
+		if strings.EqualFold(existingKey, "Set-Cookie") {
+			duplicateSetCookie = true
+		}
+		if result[existingKey] == "" {
+			result[existingKey] = value
+		} else if value != "" {
+			result[existingKey] += ", " + value
+		}
+	}
+	if duplicateSetCookie {
+		diagnostics.Add(diag.Info, "duplicate Set-Cookie headers", location, "multiple Set-Cookie headers were folded into one comma-joined header value; validate cookie replay behavior")
 	}
 	return result
 }
 
-func harBody(requestData map[string]any) string {
+func harBody(requestData map[string]any, diagnostics *diag.Collector, location string) string {
 	if postData, ok := requestData["postData"].(map[string]any); ok {
 		if text := bodyValue(postData["text"]); text != "" {
 			return text
 		}
+		return harParamsBody(postData, diagnostics, location)
 	}
 	return ""
+}
+
+func harParamsBody(postData map[string]any, diagnostics *diag.Collector, location string) string {
+	params, ok := postData["params"].([]any)
+	if !ok || len(params) == 0 {
+		return ""
+	}
+	mimeType := strings.ToLower(stringValue(postData["mimeType"]))
+	if strings.Contains(mimeType, "multipart/form-data") {
+		return harMultipartBody(params, diagnostics, location)
+	}
+	values := url.Values{}
+	for _, item := range params {
+		param, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := stringValue(param["name"])
+		if name == "" {
+			continue
+		}
+		value := stringValue(param["value"])
+		if filename := stringValue(param["fileName"]); filename != "" || value == "" {
+			placeholder := "{{file." + sanitizeIdentifier(name) + "}}"
+			if filename != "" {
+				placeholder = filename
+			}
+			value = placeholder
+			diagnostics.Add(diag.Warning, "HAR postData.params file", location, "form parameter "+name+" references file content that is not embedded in the HAR; replace the placeholder before replay")
+		}
+		values.Add(name, value)
+	}
+	if !strings.Contains(mimeType, "application/x-www-form-urlencoded") && mimeType != "" {
+		diagnostics.Add(diag.Info, "HAR postData.params", location, "postData.params were serialized as URL-encoded form data because text was absent")
+	}
+	return values.Encode()
+}
+
+func harMultipartBody(params []any, diagnostics *diag.Collector, location string) string {
+	const boundary = "----apexload-har-boundary"
+	var b strings.Builder
+	for _, item := range params {
+		param, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := stringValue(param["name"])
+		if name == "" {
+			continue
+		}
+		value := stringValue(param["value"])
+		filename := stringValue(param["fileName"])
+		b.WriteString("--" + boundary + "\r\n")
+		if filename != "" || value == "" {
+			if filename == "" {
+				filename = "upload.bin"
+			}
+			b.WriteString(`Content-Disposition: form-data; name="` + name + `"; filename="` + filename + `"` + "\r\n")
+			if contentType := stringValue(param["contentType"]); contentType != "" {
+				b.WriteString("Content-Type: " + contentType + "\r\n")
+			}
+			b.WriteString("\r\n{{file." + sanitizeIdentifier(name) + "}}\r\n")
+			diagnostics.Add(diag.Warning, "HAR multipart file", location, "multipart parameter "+name+" references file bytes that are not embedded in the HAR; replace {{file."+sanitizeIdentifier(name)+"}} before replay")
+			continue
+		}
+		b.WriteString(`Content-Disposition: form-data; name="` + name + `"` + "\r\n\r\n")
+		b.WriteString(value + "\r\n")
+	}
+	b.WriteString("--" + boundary + "--\r\n")
+	return b.String()
+}
+
+func applyHARPostDataHeaders(requestData map[string]any, headers map[string]string) {
+	if headers == nil {
+		return
+	}
+	postData, ok := requestData["postData"].(map[string]any)
+	if !ok {
+		return
+	}
+	mimeType := stringValue(postData["mimeType"])
+	if mimeType == "" || headerLookup(headers, "Content-Type") != "" {
+		return
+	}
+	if strings.Contains(strings.ToLower(mimeType), "multipart/form-data") && !strings.Contains(strings.ToLower(mimeType), "boundary=") {
+		mimeType += "; boundary=----apexload-har-boundary"
+	}
+	headers["Content-Type"] = mimeType
+}
+
+func mergeHARCookies(value any, headers map[string]string, diagnostics *diag.Collector, location string) {
+	if headerLookup(headers, "Cookie") != "" {
+		return
+	}
+	items, ok := value.([]any)
+	if !ok || len(items) == 0 {
+		return
+	}
+	pairs := make([]string, 0, len(items))
+	for _, item := range items {
+		mapped, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := stringValue(mapped["name"])
+		if name == "" {
+			continue
+		}
+		pairs = append(pairs, name+"="+stringValue(mapped["value"]))
+	}
+	if len(pairs) == 0 {
+		return
+	}
+	if headers == nil {
+		return
+	}
+	headers["Cookie"] = strings.Join(pairs, "; ")
+	diagnostics.Add(diag.Info, "HAR cookies[]", location, "request cookies[] were merged into a Cookie header; browser cookie-jar state is not simulated")
 }

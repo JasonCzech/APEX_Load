@@ -119,4 +119,133 @@ paths:
 	if len(result.Stats.SkippedOperations) != 1 {
 		t.Fatalf("skipped operations = %v, want one filtered operation", result.Stats.SkippedOperations)
 	}
+	if len(result.Unsupported) == 0 {
+		t.Fatalf("unsupported diagnostics = %#v, want skipped operation diagnostic", result.Unsupported)
+	}
+}
+
+func TestConvertOpenAPIResolvesRefsAndReportsUnsupportedConstructs(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "openapi": "3.0.3",
+  "info": {"title": "Orders", "version": "1.0"},
+  "servers": [{"url": "https://api.example.test"}],
+  "components": {
+    "schemas": {
+      "OrderInput": {
+        "type": "object",
+        "properties": {
+          "customerId": {"type": "string"},
+          "quantity": {"type": "integer"}
+        }
+      }
+    }
+  },
+  "paths": {
+    "/orders": {
+      "post": {
+        "operationId": "createOrder",
+        "parameters": [
+          {"name": "X-Tenant", "in": "header", "schema": {"type": "string"}},
+          {"name": "session_id", "in": "cookie", "schema": {"type": "string"}}
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {"schema": {"$ref": "#/components/schemas/OrderInput"}}
+          }
+        },
+        "responses": {"201": {}}
+      }
+    },
+    "/uploads": {
+      "post": {
+        "operationId": "uploadDocument",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {"type": "string", "format": "binary"},
+                  "description": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {"200": {}}
+      }
+    },
+    "/composed": {
+      "post": {
+        "operationId": "createComposed",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {"type": "object", "properties": {"baseId": {"type": "string"}}},
+                  {"type": "object", "properties": {"lineCount": {"type": "integer"}}}
+                ]
+              }
+            }
+          }
+        },
+        "responses": {"200": {}}
+      }
+    }
+  }
+}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	create := openAPIAction(result, "createOrder")
+	if !strings.Contains(create.Body, "{{data.openapi.customerid}}") || !strings.Contains(create.Body, "{{data.openapi.quantity}}") {
+		t.Fatalf("ref body was not expanded: %s", create.Body)
+	}
+	if create.Headers["X-Tenant"] != "{{data.openapi.x_tenant}}" {
+		t.Fatalf("header parameter = %q", create.Headers["X-Tenant"])
+	}
+	if create.Headers["Cookie"] != "session_id={{data.openapi.session_id}}" {
+		t.Fatalf("cookie parameter = %q", create.Headers["Cookie"])
+	}
+	upload := openAPIAction(result, "uploadDocument")
+	if !strings.Contains(upload.Body, "{{file.file}}") || !strings.Contains(upload.Headers["Content-Type"], "boundary=----apexload-openapi-boundary") {
+		t.Fatalf("multipart upload action = %#v", upload)
+	}
+	composed := openAPIAction(result, "createComposed")
+	if !strings.Contains(composed.Body, "{{data.openapi.baseid}}") || !strings.Contains(composed.Body, "{{data.openapi.linecount}}") {
+		t.Fatalf("allOf body was not merged: %s", composed.Body)
+	}
+	if !containsOpenAPIDiagnostic(result, "OpenAPI multipart file") {
+		t.Fatalf("diagnostics = %#v, want multipart file warning", result.Unsupported)
+	}
+	if !containsOpenAPIDiagnostic(result, "OpenAPI allOf") {
+		t.Fatalf("diagnostics = %#v, want allOf warning", result.Unsupported)
+	}
+}
+
+func openAPIAction(result *ConvertResult, name string) dslActionForTest {
+	for _, action := range result.Script.Actions {
+		if action.Name == name {
+			return dslActionForTest{Body: action.Body, Headers: action.Headers, Target: action.Target}
+		}
+	}
+	return dslActionForTest{}
+}
+
+type dslActionForTest struct {
+	Body    string
+	Headers map[string]string
+	Target  string
+}
+
+func containsOpenAPIDiagnostic(result *ConvertResult, element string) bool {
+	for _, item := range result.Unsupported {
+		if strings.Contains(item.Element, element) || strings.Contains(item.String(), element) {
+			return true
+		}
+	}
+	return false
 }

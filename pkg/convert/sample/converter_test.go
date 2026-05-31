@@ -226,3 +226,97 @@ func TestConvertHARWithThinkTime(t *testing.T) {
 		t.Fatalf("warnings = %#v, want think time guidance", result.Warnings)
 	}
 }
+
+func TestConvertHARPreservesFormParamsCookiesAndDuplicateHeaders(t *testing.T) {
+	sanitizeSensitive := false
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {
+				"entries": [
+					{
+						"request": {
+							"method": "POST",
+							"url": "https://api.example.com/search",
+							"headers": [],
+							"cookies": [
+								{"name": "sid", "value": "abc"},
+								{"name": "theme", "value": "dark"}
+							],
+							"postData": {
+								"mimeType": "application/x-www-form-urlencoded",
+								"params": [
+									{"name": "q", "value": "widgets"},
+									{"name": "page", "value": "1"}
+								]
+							}
+						},
+						"response": {
+							"status": 200,
+							"headers": [
+								{"name": "Set-Cookie", "value": "a=1"},
+								{"name": "Set-Cookie", "value": "b=2"}
+							],
+							"content": {"text": "{}"}
+						}
+					},
+					{
+						"request": {
+							"method": "POST",
+							"url": "https://api.example.com/upload",
+							"headers": [],
+							"postData": {
+								"mimeType": "multipart/form-data",
+								"params": [
+									{"name": "description", "value": "quarterly report"},
+									{"name": "file", "fileName": "report.pdf", "contentType": "application/pdf"}
+								]
+							}
+						},
+						"response": {"status": 201, "headers": [], "content": {"text": "{}"}}
+					}
+				]
+			}
+		}`,
+		Options: ConvertOptions{SanitizeSensitive: &sanitizeSensitive, InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %d, want 2", len(result.Script.Actions))
+	}
+	first := result.Script.Actions[0]
+	if first.Body != "page=1&q=widgets" {
+		t.Fatalf("urlencoded body = %q", first.Body)
+	}
+	if first.Headers["Content-Type"] != "application/x-www-form-urlencoded" {
+		t.Fatalf("content type = %q", first.Headers["Content-Type"])
+	}
+	if first.Headers["Cookie"] != "sid=abc; theme=dark" {
+		t.Fatalf("cookie header = %q", first.Headers["Cookie"])
+	}
+	second := result.Script.Actions[1]
+	if !strings.Contains(second.Body, `filename="report.pdf"`) || !strings.Contains(second.Body, "{{file.file}}") {
+		t.Fatalf("multipart body did not preserve file placeholder: %s", second.Body)
+	}
+	if !containsSampleDiagnostic(result, "HAR multipart file") {
+		t.Fatalf("diagnostics = %#v, want multipart file warning", result.Unsupported)
+	}
+	if !containsSampleDiagnostic(result, "duplicate Set-Cookie headers") {
+		t.Fatalf("diagnostics = %#v, want duplicate Set-Cookie info", result.Unsupported)
+	}
+	if !containsSampleDiagnostic(result, "HAR cookies[]") {
+		t.Fatalf("diagnostics = %#v, want cookies[] info", result.Unsupported)
+	}
+}
+
+func containsSampleDiagnostic(result *ConvertResult, element string) bool {
+	for _, item := range result.Unsupported {
+		if strings.Contains(item.Element, element) || strings.Contains(item.String(), element) {
+			return true
+		}
+	}
+	return false
+}

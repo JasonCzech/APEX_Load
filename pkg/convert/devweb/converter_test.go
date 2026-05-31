@@ -3,6 +3,7 @@ package devweb
 import (
 	"archive/zip"
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -118,4 +119,37 @@ func TestConvertZipUsesFirstJavaScriptFile(t *testing.T) {
 	if result.Stats.ConvertedActions != 1 {
 		t.Fatalf("converted actions = %d, want 1", result.Stats.ConvertedActions)
 	}
+}
+
+func TestConvertDevWebReportsUnparseableWebRequestAndCorrelationHelpers(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `
+load.action("Mixed", async function() {
+  const options = { url: dynamicUrl(), method: "POST" };
+  new load.WebRequest(options).send();
+  new load.WebRequest({ url: "https://api.example.test/health" }).send();
+  load.extract("token", "body", /token/);
+});`,
+	})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if result.Stats.ConvertedActions != 1 {
+		t.Fatalf("converted actions = %d, want 1", result.Stats.ConvertedActions)
+	}
+	if !containsDevWebDiagnostic(result, "DevWeb load.WebRequest") {
+		t.Fatalf("diagnostics = %#v, want WebRequest warning", result.Unsupported)
+	}
+	if !containsDevWebDiagnostic(result, "DevWeb correlation helper") {
+		t.Fatalf("diagnostics = %#v, want correlation helper warning", result.Unsupported)
+	}
+}
+
+func containsDevWebDiagnostic(result *ConvertResult, element string) bool {
+	for _, item := range result.Unsupported {
+		if strings.Contains(item.Element, element) || strings.Contains(item.String(), element) {
+			return true
+		}
+	}
+	return false
 }

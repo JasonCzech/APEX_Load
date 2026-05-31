@@ -503,3 +503,57 @@ func TestConvertJMXXPath2InvalidNamespacesWarn(t *testing.T) {
 		t.Fatalf("unexpected warning detail: %#v", result.Warnings)
 	}
 }
+
+func TestConvertJMXReportsFlattenedControllersAndScriptSamplers(t *testing.T) {
+	const scriptedJMX = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Scripted Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Users" enabled="true"/>
+      <hashTree>
+        <IfController testname="Only Premium Users" enabled="true">
+          <stringProp name="IfController.condition">${isPremium}</stringProp>
+        </IfController>
+        <hashTree>
+          <HTTPSamplerProxy testname="Get Premium Offer" enabled="true">
+            <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+            <stringProp name="HTTPSampler.protocol">https</stringProp>
+            <stringProp name="HTTPSampler.path">/premium</stringProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+          </HTTPSamplerProxy>
+          <hashTree/>
+        </hashTree>
+        <JSR223Sampler testname="Sign Request" enabled="true">
+          <stringProp name="scriptLanguage">groovy</stringProp>
+          <stringProp name="script">vars.put("sig", "abc")</stringProp>
+        </JSR223Sampler>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+
+	result, err := ConvertJMX([]byte(scriptedJMX), ConvertOptions{FileName: "scripted.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	if result.Stats.ConvertedActions != 1 {
+		t.Fatalf("converted actions = %d, want 1", result.Stats.ConvertedActions)
+	}
+	if !containsJMeterDiagnostic(result, "JMeter IfController") {
+		t.Fatalf("diagnostics = %#v, want IfController warning", result.Unsupported)
+	}
+	if !containsJMeterDiagnostic(result, "JMeter JSR223Sampler") {
+		t.Fatalf("diagnostics = %#v, want JSR223Sampler warning", result.Unsupported)
+	}
+}
+
+func containsJMeterDiagnostic(result *ConvertResult, element string) bool {
+	for _, item := range result.Unsupported {
+		if strings.Contains(item.Element, element) || strings.Contains(item.String(), element) {
+			return true
+		}
+	}
+	return false
+}
