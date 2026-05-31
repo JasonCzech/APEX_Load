@@ -280,6 +280,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if result.Script.Config.BaseURL == "" {
 		result.Warnings = append(result.Warnings, "SOAP endpoint URL could not be derived; set options.base_url before saving the script")
 	}
+	if gap := result.Stats.OperationsDetected - result.Stats.ConvertedActions; gap > 0 {
+		diagnostics.Add(diag.Warning, "WSDL completeness guard", "definitions", fmt.Sprintf("%d operation(s) were detected but not converted into SOAP actions", gap))
+	}
 	result.Unsupported = diagnostics.Items()
 	return result, nil
 }

@@ -341,6 +341,100 @@ func TestConvertSwagger2ResolvesTopLevelParameterRefs(t *testing.T) {
 	}
 }
 
+func TestConvertOpenAPIFormURLEncodedAndVariantSchemas(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "openapi": "3.0.3",
+  "info": {"title": "Variant API", "version": "1.0"},
+  "servers": [{"url": "https://api.example.test"}],
+  "paths": {
+    "/sessions": {
+      "post": {
+        "operationId": "createSession",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {"type": "string"},
+                  "password": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {"200": {}}
+      }
+    },
+    "/variants": {
+      "post": {
+        "operationId": "createVariant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {"propertyName": "kind"},
+                "oneOf": [
+                  {"type": "object", "properties": {"kind": {"type": "string"}, "cardId": {"type": "string"}}},
+                  {"type": "object", "properties": {"kind": {"type": "string"}, "bankId": {"type": "string"}}}
+                ]
+              }
+            }
+          }
+        },
+        "responses": {"202": {}}
+      }
+    },
+    "/fallbacks": {
+      "post": {
+        "operationId": "createFallback",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {"type": "object", "properties": {"email": {"type": "string"}}},
+                  {"type": "object", "properties": {"phone": {"type": "string"}}}
+                ]
+              }
+            }
+          }
+        },
+        "responses": {"200": {}}
+      }
+    }
+  }
+}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+
+	session := openAPIAction(result, "createSession")
+	if session.Headers["Content-Type"] != "application/x-www-form-urlencoded" {
+		t.Fatalf("form content type = %q", session.Headers["Content-Type"])
+	}
+	if !strings.Contains(session.Body, "password=%7B%7Bdata.openapi.password%7D%7D") ||
+		!strings.Contains(session.Body, "username=%7B%7Bdata.openapi.username%7D%7D") {
+		t.Fatalf("form body = %q, want encoded data placeholders", session.Body)
+	}
+
+	variant := openAPIAction(result, "createVariant")
+	if !strings.Contains(variant.Body, "{{data.openapi.cardid}}") || strings.Contains(variant.Body, "bankId") {
+		t.Fatalf("oneOf body = %s, want first variant only", variant.Body)
+	}
+	fallback := openAPIAction(result, "createFallback")
+	if !strings.Contains(fallback.Body, "{{data.openapi.email}}") || strings.Contains(fallback.Body, "phone") {
+		t.Fatalf("anyOf body = %s, want first variant only", fallback.Body)
+	}
+	for _, element := range []string{"OpenAPI oneOf", "OpenAPI anyOf", "OpenAPI discriminator"} {
+		if !containsOpenAPIDiagnostic(result, element) {
+			t.Fatalf("diagnostics = %#v, want %s", result.Unsupported, element)
+		}
+	}
+}
+
 func openAPIAction(result *ConvertResult, name string) dslActionForTest {
 	for _, action := range result.Script.Actions {
 		if action.Name == name {

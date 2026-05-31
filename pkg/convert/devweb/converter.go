@@ -190,6 +190,9 @@ func convertSource(name string, content string, opts ConvertOptions) (*ConvertRe
 	if result.Script.Protocol == "grpc" {
 		result.Script.Config.GRPC.UseReflection = true
 	}
+	if gap := result.Stats.TotalSteps - result.Stats.HTTPRequests - result.Stats.WebSocketActions - result.Stats.GRPCCalls - result.Stats.ThinkTimes - result.Stats.Skipped; gap > 0 {
+		diagnostics.Add(diag.Warning, "DevWeb completeness guard", result.Script.Name, fmt.Sprintf("%d SDK construct(s) were detected but not converted or explicitly skipped", gap))
+	}
 	result.Unsupported = diagnostics.Items()
 	return result, nil
 }

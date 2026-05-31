@@ -541,6 +541,9 @@ func TestConvertJMXReportsFlattenedControllersAndScriptSamplers(t *testing.T) {
 	if result.Stats.ConvertedActions != 1 {
 		t.Fatalf("converted actions = %d, want 1", result.Stats.ConvertedActions)
 	}
+	if result.Stats.TotalSamplers != 2 || result.Stats.SkippedSamplers != 1 {
+		t.Fatalf("sampler accounting = total %d skipped %d, want total 2 skipped 1", result.Stats.TotalSamplers, result.Stats.SkippedSamplers)
+	}
 	if !containsJMeterDiagnostic(result, "JMeter IfController") {
 		t.Fatalf("diagnostics = %#v, want IfController warning", result.Unsupported)
 	}

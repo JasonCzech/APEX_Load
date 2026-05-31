@@ -194,7 +194,6 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			},
 		},
 		Warnings:     warnings,
-		Unsupported:  diagnostics.Items(),
 		Correlations: correlations,
 		Stats: ConvertStats{
 			Format:        format,
@@ -267,6 +266,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	applySOAPSampleProtocol(result.Script, &result.Warnings)
 
+	if gap := result.Stats.TotalRequests - result.Stats.ConvertedActions; gap > 0 {
+		diagnostics.Add(diag.Warning, "Sample completeness guard", format, fmt.Sprintf("%d request(s) were parsed but not converted into actions", gap))
+	}
+	result.Unsupported = diagnostics.Items()
 	result.Stats.CorrelationsDetected = len(correlations)
 	return result, nil
 }

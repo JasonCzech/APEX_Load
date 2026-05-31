@@ -41,6 +41,8 @@ type ConvertResult struct {
 type ConvertStats struct {
 	ThreadGroups     int `json:"thread_groups"`
 	Samplers         int `json:"samplers"`
+	TotalSamplers    int `json:"total_samplers,omitempty"`
+	SkippedSamplers  int `json:"skipped_samplers,omitempty"`
 	ConvertedActions int `json:"converted_actions"`
 	Headers          int `json:"headers"`
 	Variables        int `json:"variables"`
@@ -182,6 +184,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		result.Assumptions = append(result.Assumptions, "No Thread Group was found; the whole plan was converted into a single script.")
 	}
 	result.Stats.ThreadGroups = len(threadGroups)
+	result.Stats.TotalSamplers, result.Stats.SkippedSamplers = countJMeterSamplerElements(trees)
 	result.Summary.ThreadGroupCount = len(threadGroups)
 
 	for i, tg := range threadGroups {
@@ -253,6 +256,9 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	result.Summary.SamplerCount = result.Stats.Samplers
 	result.Summary.VariablesDiscovered = sortedKeys(variableNames)
 	result.Summary.CSVSourcesDiscovered = sortedKeys(csvNames)
+	if gap := result.Stats.TotalSamplers - result.Stats.ConvertedActions - result.Stats.SkippedSamplers; gap > 0 {
+		diagnostics.Add(diag.Warning, "JMeter completeness guard", firstNonEmpty(opts.FileName, "JMX plan"), fmt.Sprintf("%d sampler(s) were detected but not converted or explicitly skipped", gap))
+	}
 	result.Unsupported = diagnostics.Items()
 	for _, script := range result.Scripts {
 		if script.Metadata == nil {
@@ -335,6 +341,38 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 		if len(child.Children) > 0 && child.Element.Name != "HTTPSamplerProxy" {
 			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics)
 		}
+	}
+}
+
+func countJMeterSamplerElements(nodes []*treeNode) (int, int) {
+	total := 0
+	skipped := 0
+	for _, node := range nodes {
+		if node == nil || node.Element == nil {
+			continue
+		}
+		if isJMeterSamplerElement(node.Element.Name) {
+			total++
+			if node.Element.Name != "HTTPSamplerProxy" {
+				skipped++
+			}
+		}
+		childTotal, childSkipped := countJMeterSamplerElements(node.Children)
+		total += childTotal
+		skipped += childSkipped
+	}
+	return total, skipped
+}
+
+func isJMeterSamplerElement(name string) bool {
+	if name == "HTTPSamplerProxy" || strings.HasSuffix(name, "Sampler") {
+		return true
+	}
+	switch name {
+	case "JMSPublisher", "JMSSubscriber", "JavaSampler", "TCPSampler", "FTPSampler":
+		return true
+	default:
+		return false
 	}
 }
 
