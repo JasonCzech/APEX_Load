@@ -1202,6 +1202,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             saveLabel={saveActionLabel}
             onSave={handleSaveConverted}
             onEdit={onEdit ? () => openImportedScriptInEditor() : undefined}
+            previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} /> : undefined}
           >
 
             {browserImport && (
@@ -1367,10 +1368,6 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                   </div>
                 )}
               </div>
-            )}
-
-            {sourceReview && (
-              <SourceMappingReview sourceReview={sourceReview} script={importedScript} />
             )}
 
             {importMetadata && (

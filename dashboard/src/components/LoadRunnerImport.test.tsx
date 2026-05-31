@@ -510,6 +510,12 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('Action.c:3-5')
     expect(container.textContent).toContain('web_url')
     expect(container.textContent).toContain('"name": "Homepage"')
+    const review = container.querySelector('.script-import-review')
+    const previewRow = Array.from(review?.children || []).find(element => element.classList.contains('script-import-review-preview-row'))
+    expect(previewRow).toBeDefined()
+    expect(previewRow?.querySelector('.script-import-review-preview h4')?.textContent).toBe('Generated Script Preview')
+    expect(previewRow?.querySelector('.script-import-review-preview-aside > .source-map-review')).not.toBeNull()
+    expect(Array.from(review?.children || []).filter(element => element.classList.contains('source-map-review'))).toHaveLength(0)
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))
     expect(saveButton).toBeDefined()

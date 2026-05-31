@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react'
 
 import { type ScriptDefinition } from '../types/scripts'
+import './ScriptImportReview.css'
 
 interface Props {
   title: string
@@ -14,6 +15,7 @@ interface Props {
   saveLabel?: string
   editLabel?: string
   previewTitle?: string
+  previewAside?: ReactNode
   onSave?: () => void
   onEdit?: () => void
   children?: ReactNode
@@ -31,10 +33,18 @@ export default function ScriptImportReview({
   saveLabel = 'Save To Script Library',
   editLabel = 'Open In Visual Editor',
   previewTitle = 'Generated Script Preview',
+  previewAside,
   onSave,
   onEdit,
   children,
 }: Props) {
+  const previewPane = (
+    <div className="script-import-review-preview">
+      <h4>{previewTitle}</h4>
+      <pre>{JSON.stringify(previewData ?? { script }, null, 2)}</pre>
+    </div>
+  )
+
   return (
     <div className="script-import-review">
       <div className="script-import-review-header">
@@ -59,10 +69,14 @@ export default function ScriptImportReview({
         </div>
       )}
 
-      <div className="script-import-review-preview">
-        <h4>{previewTitle}</h4>
-        <pre>{JSON.stringify(previewData ?? { script }, null, 2)}</pre>
-      </div>
+      {previewAside ? (
+        <div className="script-import-review-preview-row">
+          {previewPane}
+          <div className="script-import-review-preview-aside">
+            {previewAside}
+          </div>
+        </div>
+      ) : previewPane}
     </div>
   )
 }
