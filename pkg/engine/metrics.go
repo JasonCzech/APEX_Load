@@ -20,6 +20,21 @@ type MetricsCollector struct {
 	done              chan struct{}
 	targetTPS         float64
 	groupTargetTPS    map[string]float64
+	dataPointsMu      sync.Mutex
+	dataPoints        map[string]*DataPointMetrics
+}
+
+// DataPointMetrics is the running aggregate for a named LoadRunner user data point
+// (lr_user_data_point and friends). Values are cumulative for the life of the run.
+type DataPointMetrics struct {
+	Name  string  `json:"name"`
+	Group string  `json:"group,omitempty"`
+	Count int64   `json:"count"`
+	Sum   float64 `json:"sum"`
+	Last  float64 `json:"last"`
+	Min   float64 `json:"min"`
+	Max   float64 `json:"max"`
+	Avg   float64 `json:"avg"`
 }
 
 const throughputGapAlertThresholdPct = 5.0
@@ -55,6 +70,7 @@ type MetricsSnapshot struct {
 	BrowserByDevice        map[string]*BrowserDeviceMetrics `json:"browser_by_device,omitempty"`
 	Telemetry              *TelemetryMetrics                `json:"telemetry,omitempty"`
 	Resources              *SystemResources                 `json:"resources,omitempty"`
+	DataPoints             map[string]*DataPointMetrics     `json:"data_points,omitempty"`
 }
 
 type BrowserMetricsSummary struct {
@@ -177,6 +193,7 @@ func NewMetricsCollector(bufferSize int) *MetricsCollector {
 		resCollector:   NewResourceCollector(),
 		done:           make(chan struct{}),
 		groupTargetTPS: make(map[string]float64),
+		dataPoints:     make(map[string]*DataPointMetrics),
 	}
 }
 
@@ -266,6 +283,54 @@ func (mc *MetricsCollector) RecordTransaction(name string, duration time.Duratio
 	}
 }
 
+// RecordDataPoint accumulates a named LoadRunner user data point (lr_user_data_point and
+// friends). Values are aggregated cumulatively per name and surfaced in each snapshot's
+// DataPoints map.
+func (mc *MetricsCollector) RecordDataPoint(name string, value float64, group string) {
+	if name == "" {
+		return
+	}
+	mc.dataPointsMu.Lock()
+	defer mc.dataPointsMu.Unlock()
+	if mc.dataPoints == nil {
+		mc.dataPoints = make(map[string]*DataPointMetrics)
+	}
+	dp, ok := mc.dataPoints[name]
+	if !ok {
+		dp = &DataPointMetrics{Name: name, Group: group, Min: value, Max: value}
+		mc.dataPoints[name] = dp
+	}
+	dp.Count++
+	dp.Sum += value
+	dp.Last = value
+	if group != "" {
+		dp.Group = group
+	}
+	if value < dp.Min {
+		dp.Min = value
+	}
+	if value > dp.Max {
+		dp.Max = value
+	}
+	dp.Avg = dp.Sum / float64(dp.Count)
+}
+
+// snapshotDataPoints returns a deep copy of the current data-point aggregates for inclusion
+// in a metrics snapshot, or nil when none have been recorded.
+func (mc *MetricsCollector) snapshotDataPoints() map[string]*DataPointMetrics {
+	mc.dataPointsMu.Lock()
+	defer mc.dataPointsMu.Unlock()
+	if len(mc.dataPoints) == 0 {
+		return nil
+	}
+	out := make(map[string]*DataPointMetrics, len(mc.dataPoints))
+	for name, dp := range mc.dataPoints {
+		clone := *dp
+		out[name] = &clone
+	}
+	return out
+}
+
 func (mc *MetricsCollector) aggregate(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -339,6 +404,8 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		groupTargets[name] = target
 	}
 	mc.targetsMu.RUnlock()
+
+	snap.DataPoints = mc.snapshotDataPoints()
 
 	var totalDuration time.Duration
 	td := NewTDigest(200)

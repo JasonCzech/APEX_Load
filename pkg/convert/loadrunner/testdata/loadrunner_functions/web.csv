@@ -1,15 +1,13 @@
 # OpenText VuGen Web (HTTP/HTML) protocol functions.
-# The core request + correlation functions (web_url, web_submit_data, web_submit_form,
-# web_custom_request, web_service_call, web_reg_save_param, web_reg_find, web_add_header,
-# web_add_auto_header, web_cache_cleanup, web_cleanup_cookies, web_set_sockets_option,
-# web_set_timeout) are converted by dedicated handlers in converter.go and are intentionally
-# not listed here. The long-tail web functions below are catalogued for deterministic
-# disposition; Phase B upgrades the high-value correlation/config functions to executable.
+# The core request + correlation functions are converted by dedicated handlers in
+# converter.go and are intentionally not listed here (the generator's handledExternally set
+# keeps them out): web_url, web_submit_data, web_submit_form, web_custom_request,
+# web_service_call, web_reg_find, web_add_header, web_add_auto_header, web_cache_cleanup,
+# web_cleanup_cookies, web_set_sockets_option, web_set_timeout, and the correlation family
+# web_reg_save_param / web_reg_save_param_ex / _regexp / _json / _xpath (executable -> dsl.Extractor).
+# The long-tail web functions below are catalogued for deterministic disposition; Phase B
+# upgrades further high-value config functions to executable.
 # Format: name,family,support_mode[,reason]
-web_reg_save_param_ex,web,review_only,Registers a correlation capture; pending native extractor mapping in Phase B web support.
-web_reg_save_param_regexp,web,review_only,Registers a regex correlation capture; pending native extractor mapping in Phase B web support.
-web_reg_save_param_json,web,review_only,Registers a JSON correlation capture; pending native extractor mapping in Phase B web support.
-web_reg_save_param_xpath,web,review_only,Registers an XPath correlation capture; pending native extractor mapping in Phase B web support.
 web_save_param_length,web,review_only,Saves the length of a captured parameter; pending native mapping.
 web_reg_async_attributes,web,review_only,Declares an async/push conversation; pending native mapping.
 web_set_max_html_param_len,web,review_only,HTML parameter length tuning has no direct APEX Load effect; preserved for review.

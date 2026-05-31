@@ -525,6 +525,15 @@ func (vu *VUser) handleLoadRunnerMetricAction(ctx context.Context, action dsl.Ac
 	if len(args) > 1 {
 		value = args[1]
 	}
+	// lr_user_data_point (and _ex/_instance variants) report a named numeric sample.
+	// Record it as a real metric; non-numeric metric calls (e.g. lr_checkpoint) just log.
+	recorded := false
+	if vu.Metrics != nil && name != "" {
+		if parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64); err == nil {
+			vu.Metrics.RecordDataPoint(name, parsed, vu.Group)
+			recorded = true
+		}
+	}
 	slog.Default().InfoContext(ctx, "loadrunner metric",
 		"vuser", vu.ID,
 		"group", vu.Group,
@@ -532,6 +541,7 @@ func (vu *VUser) handleLoadRunnerMetricAction(ctx context.Context, action dsl.Ac
 		"function", loadRunnerActionFunction(action),
 		"name", name,
 		"value", value,
+		"recorded", recorded,
 	)
 }
 

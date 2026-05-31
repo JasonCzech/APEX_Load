@@ -115,7 +115,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 	for _, fn := range allFunctions {
 		switch fn.Name {
-		case "web_reg_save_param":
+		case "web_reg_save_param", "web_reg_save_param_ex", "web_reg_save_param_regexp", "web_reg_save_param_json", "web_reg_save_param_xpath":
 			ext := convertExtractor(fn)
 			if ext != nil {
 				pendingExtractors = append(pendingExtractors, *ext)
@@ -966,9 +966,35 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, opts ConvertO
 
 // convertExtractor converts a web_reg_save_param to a DSL Extractor.
 func convertExtractor(fn ParsedFunction) *dsl.Extractor {
-	paramName := fn.StepName
+	// The name is the first positional arg (web_reg_save_param) or the ParamName= named
+	// arg (web_reg_save_param_ex / _regexp / _json / _xpath).
+	paramName := firstNonEmpty(fn.StepName, fn.Args["ParamName"])
 	if paramName == "" {
 		return nil
+	}
+
+	ext := &dsl.Extractor{
+		Name:   paramName,
+		Source: "body",
+	}
+
+	// web_reg_save_param_regexp("ParamName=...", "RegExp=...", ...) -> regex extractor.
+	if regExp := fn.Args["RegExp"]; regExp != "" {
+		ext.Type = "regex"
+		ext.Expression = regExp
+		return ext
+	}
+	// web_reg_save_param_json("ParamName=...", "QueryString=$.path", ...) -> jsonpath extractor.
+	if jsonQuery := fn.Args["QueryString"]; jsonQuery != "" {
+		ext.Type = "jsonpath"
+		ext.Expression = jsonQuery
+		return ext
+	}
+	// web_reg_save_param_xpath("ParamName=...", "Query=//node", ...) -> xpath extractor.
+	if xpathQuery := fn.Args["Query"]; xpathQuery != "" {
+		ext.Type = "xpath"
+		ext.Expression = xpathQuery
+		return ext
 	}
 
 	lb := fn.Args["LB"]
@@ -984,11 +1010,6 @@ func convertExtractor(fn ParsedFunction) *dsl.Extractor {
 				rb = strings.TrimPrefix(raw, "RB=")
 			}
 		}
-	}
-
-	ext := &dsl.Extractor{
-		Name:   paramName,
-		Source: "body",
 	}
 
 	// If boundaries look like JSON path markers, use jsonpath

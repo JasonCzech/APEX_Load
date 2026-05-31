@@ -53,6 +53,30 @@ var policies = map[string]familyPolicy{
 // <a href="...">web_set_user</a> -> web_set_user.
 var anchorPattern = regexp.MustCompile(`(?is)<a\b[^>]*>\s*([A-Za-z][A-Za-z0-9_]*)\s*(?:\(\))?\s*</a>`)
 
+// handledExternally lists functions converted by dedicated handlers in the converter/engine
+// (not via the catalog dispatch), so they are intentionally absent from the catalog CSVs.
+// The generator skips them even when a fixture lists them, avoiding false drift. Keys are
+// lowercased to match the case-insensitive catalog.
+var handledExternally = map[string]bool{
+	"web_url":                   true,
+	"web_submit_data":           true,
+	"web_submit_form":           true,
+	"web_custom_request":        true,
+	"web_service_call":          true,
+	"web_reg_find":              true,
+	"web_add_header":            true,
+	"web_add_auto_header":       true,
+	"web_cache_cleanup":         true,
+	"web_cleanup_cookies":       true,
+	"web_set_sockets_option":    true,
+	"web_set_timeout":           true,
+	"web_reg_save_param":        true,
+	"web_reg_save_param_ex":     true,
+	"web_reg_save_param_regexp": true,
+	"web_reg_save_param_json":   true,
+	"web_reg_save_param_xpath":  true,
+}
+
 func main() {
 	fixturesDir := flag.String("fixtures", "tools/lrcatalog/fixtures", "directory of saved VuGen reference index HTML fixtures")
 	catalogDir := flag.String("catalog", "pkg/convert/loadrunner/testdata/loadrunner_functions", "directory of per-family catalog CSV files")
@@ -110,7 +134,11 @@ func Generate(fixturesDir, catalogDir string, check bool) ([]string, error) {
 
 		var missing []string
 		for _, name := range names {
-			if _, present := existing[strings.ToLower(name)]; !present {
+			key := strings.ToLower(name)
+			if handledExternally[key] {
+				continue
+			}
+			if _, present := existing[key]; !present {
 				missing = append(missing, name)
 			}
 		}

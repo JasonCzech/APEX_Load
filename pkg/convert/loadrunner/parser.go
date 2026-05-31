@@ -207,7 +207,7 @@ func parseFunctionBlock(block string, filename string, lineNum int, endLine int,
 		parseWebCustomRequest(&fn, inner)
 	case "web_service_call":
 		parseWebServiceCall(&fn, inner)
-	case "web_reg_save_param":
+	case "web_reg_save_param", "web_reg_save_param_ex", "web_reg_save_param_regexp", "web_reg_save_param_json", "web_reg_save_param_xpath":
 		parseWebRegSaveParam(&fn, inner)
 	case "web_reg_find":
 		parseWebRegFind(&fn, inner)

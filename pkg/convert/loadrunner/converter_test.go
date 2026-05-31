@@ -680,6 +680,67 @@ func TestConvertWebRegFindToAssertions(t *testing.T) {
 	}
 }
 
+func TestConvertWebRegSaveParamVariantsToExtractors(t *testing.T) {
+	const source = `Action()
+{
+	web_reg_save_param_ex("ParamName=SessionId", "LB=sid=", "RB=;", "Ord=1", LAST);
+	web_reg_save_param_regexp("ParamName=Token", "RegExp=token=(.*?);", "Ord=1", LAST);
+	web_reg_save_param_json("ParamName=UserId", "QueryString=$.user.id", "SelectAll=No", LAST);
+	web_reg_save_param_xpath("ParamName=NodeId", "Query=//user/@id", "Ord=1", LAST);
+	web_url("Landing", "URL=https://example.test/landing", LAST);
+	return 0;
+}
+`
+	parsed, err := ParseActionFile("Action.c", source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+
+	if result.Stats.Extractors != 4 {
+		t.Fatalf("extractors = %d, want 4", result.Stats.Extractors)
+	}
+	if len(result.Stats.UnsupportedFuncs) != 0 || result.Stats.CustomCallFunctions != 0 {
+		t.Fatalf("stats = %#v, want all variants handled as executable extractors", result.Stats)
+	}
+
+	action := findActionByName(t, result.Script.Actions, "Landing")
+	byName := make(map[string]dsl.Extractor, len(action.Extractors))
+	for _, ext := range action.Extractors {
+		byName[ext.Name] = ext
+	}
+
+	cases := []struct {
+		name string
+		typ  string
+		expr string
+	}{
+		{"SessionId", "boundary", "LB=sid=|RB=;"},
+		{"Token", "regex", "token=(.*?);"},
+		{"UserId", "jsonpath", "$.user.id"},
+		{"NodeId", "xpath", "//user/@id"},
+	}
+	for _, tc := range cases {
+		ext, ok := byName[tc.name]
+		if !ok {
+			t.Errorf("%s: extractor not attached to request; got %#v", tc.name, action.Extractors)
+			continue
+		}
+		if ext.Type != tc.typ || ext.Expression != tc.expr {
+			t.Errorf("%s: type=%q expr=%q, want type=%q expr=%q", tc.name, ext.Type, ext.Expression, tc.typ, tc.expr)
+		}
+		if ext.Source != "body" {
+			t.Errorf("%s: source=%q, want body", tc.name, ext.Source)
+		}
+	}
+
+	// The extractor functions must be recorded as executable in the source-review trail.
+	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "web_reg_save_param_regexp", LoadRunnerSupportExecutable)
+}
+
 func TestConvertSOAPCustomRequest(t *testing.T) {
 	parsed, err := ParseActionFile("Action.c", sampleSOAPActionC)
 	if err != nil {
