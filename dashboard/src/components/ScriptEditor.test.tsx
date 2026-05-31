@@ -738,11 +738,8 @@ describe('ScriptEditor', () => {
       addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const expandSource = container.querySelector('button[aria-label="Expand source List"]') as HTMLButtonElement | null
-    expect(expandSource).not.toBeNull()
-    await act(async () => {
-      expandSource?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    expect(container.querySelector('button[aria-label="Collapse source List"]')).not.toBeNull()
+    expect((container.querySelector('input[value="param_1"]') as HTMLInputElement | null)?.value).toBe('param_1')
 
     const dialog = container.querySelector('[aria-label="Parameter Data"]')
     const openSettings = () => dialog?.querySelector('button[aria-label="Open settings for param_1"]') as HTMLButtonElement | null
@@ -794,6 +791,44 @@ describe('ScriptEditor', () => {
 
     expect((container.querySelector('[aria-label="Settings for param_1"] input[placeholder="Go time layout"]') as HTMLInputElement | null)?.value).toBe('15:04:05')
     await closeSettings()
+  })
+
+  it('reveals a newly added parameter when the parameters section is collapsed', async () => {
+    const scriptWithoutParameters: ScriptDefinition = {
+      ...initialScript,
+      parameters: [],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={scriptWithoutParameters} initialFocusedSection="parameter-data" />)
+    })
+
+    const collapseNamed = container.querySelector('button[aria-label="Collapse Parameters"]') as HTMLButtonElement | null
+    expect(collapseNamed).not.toBeNull()
+
+    await act(async () => {
+      collapseNamed?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('button[aria-label="Expand Parameters"]')).not.toBeNull()
+    expect(container.querySelector('.parameter-definitions-table')).toBeNull()
+
+    const addButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === '+ Add Parameter',
+    )
+    expect(addButton).toBeDefined()
+    if (!addButton) {
+      return
+    }
+
+    await act(async () => {
+      addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('button[aria-label="Collapse Parameters"]')).not.toBeNull()
+    expect(container.querySelector('button[aria-label="Collapse source List"]')).not.toBeNull()
+    expect(container.querySelector('button[aria-label="Open settings for param_1"]')).not.toBeNull()
+    expect((container.querySelector('input[value="param_1"]') as HTMLInputElement | null)?.value).toBe('param_1')
   })
 
   it('runs auto parameterization from the parameter data dialog', async () => {

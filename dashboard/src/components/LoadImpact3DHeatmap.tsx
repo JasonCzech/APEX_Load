@@ -34,6 +34,36 @@ interface LabelSprite {
   material: THREE.SpriteMaterial
 }
 
+function disposeMaterial(material: THREE.Material | THREE.Material[]) {
+  if (Array.isArray(material)) {
+    material.forEach(item => item.dispose())
+    return
+  }
+  material.dispose()
+}
+
+function disposeMesh(mesh: THREE.Mesh) {
+  mesh.geometry.dispose()
+  disposeMaterial(mesh.material)
+}
+
+function disposeLabel(label: LabelSprite) {
+  label.material.dispose()
+  label.texture.dispose()
+}
+
+function disposeGrid(grid: THREE.GridHelper) {
+  grid.geometry.dispose()
+  disposeMaterial(grid.material)
+}
+
+function buildLoadImpact3DLayoutKey(model: LoadImpactModel): string {
+  return [
+    model.buckets.map(bucket => bucket.id).join('|'),
+    model.rows.map(row => row.metric.id).join('|'),
+  ].join('::')
+}
+
 function buildSceneCells(model: LoadImpactModel): SceneCell[] {
   return model.rows.flatMap((row, rowIndex) =>
     row.cells
@@ -136,6 +166,15 @@ export default function LoadImpact3DHeatmap({
   onSelectedCellKeyChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const sceneRef = useRef<THREE.Scene | null>(null)
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
+  const controlsRef = useRef<OrbitControls | null>(null)
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
+  const meshesRef = useRef<THREE.Mesh[]>([])
+  const labelsRef = useRef<LabelSprite[]>([])
+  const gridRef = useRef<THREE.GridHelper | null>(null)
+  const layoutKeyRef = useRef('')
+  const selectedCellChangeRef = useRef(onSelectedCellKeyChange)
   const hoveredKeyRef = useRef<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<LoadImpactCell | null>(null)
   const sceneCells = useMemo(() => buildSceneCells(model), [model])
@@ -145,40 +184,35 @@ export default function LoadImpact3DHeatmap({
   )
 
   useEffect(() => {
+    selectedCellChangeRef.current = onSelectedCellKeyChange
+  }, [onSelectedCellKeyChange])
+
+  useEffect(() => {
     const container = containerRef.current
-    if (!container || sceneCells.length === 0) return
+    if (!container) return
 
     const width = Math.max(420, container.clientWidth || 720)
     const height = Math.max(360, container.clientHeight || 420)
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: true,
-      preserveDrawingBuffer: true,
     })
     renderer.setSize(width, height)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     renderer.domElement.className = 'load-impact-3d-canvas'
     container.innerHTML = ''
     container.appendChild(renderer.domElement)
+    rendererRef.current = renderer
 
     const scene = new THREE.Scene()
-    const rowCount = model.rows.length
-    const bucketCount = model.buckets.length
-    const xSpacing = 1.02
-    const zSpacing = 0.82
-    const xOffset = ((bucketCount - 1) * xSpacing) / 2
-    const zOffset = ((rowCount - 1) * zSpacing) / 2
-    const maxDimension = Math.max(bucketCount * xSpacing, rowCount * zSpacing)
+    sceneRef.current = scene
 
     const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 140)
-    camera.position.set(
-      maxDimension * 0.9,
-      Math.max(7.4, rowCount * 0.5),
-      Math.max(12.5, bucketCount * 1.16),
-    )
+    cameraRef.current = camera
     camera.lookAt(0, 0.45, 0)
 
     const controls = new OrbitControls(camera, renderer.domElement)
+    controlsRef.current = controls
     controls.enableDamping = true
     controls.autoRotate = true
     controls.autoRotateSpeed = 0.24
@@ -195,61 +229,6 @@ export default function LoadImpact3DHeatmap({
     fillLight.position.set(5, 4, -5)
     scene.add(fillLight)
 
-    const grid = new THREE.GridHelper(Math.max(8, maxDimension + 2), Math.max(8, bucketCount), 0xd7dfeb, 0xd7dfeb)
-    grid.position.y = -0.02
-    scene.add(grid)
-
-    const meshes: THREE.Mesh[] = []
-    const labels: LabelSprite[] = []
-    sceneCells.forEach(item => {
-      const heightValue = 0.14 + item.cell.intensity * 2.7
-      const geometry = new THREE.BoxGeometry(0.68, heightValue, 0.54)
-      const material = new THREE.MeshStandardMaterial({
-        color: colorForIntensity(item.cell.intensity, item.cellKey === selectedCellKey),
-        roughness: 0.55,
-        metalness: 0.04,
-      })
-      const mesh = new THREE.Mesh(geometry, material)
-      mesh.position.set(item.xIndex * xSpacing - xOffset, heightValue / 2, item.zIndex * zSpacing - zOffset)
-      mesh.userData = {
-        cell: item.cell,
-        cellKey: item.cellKey,
-        title: formatLoadImpactCellTitle(item.cell),
-      } satisfies MeshUserData
-      meshes.push(mesh)
-      scene.add(mesh)
-    })
-
-    model.buckets.forEach((bucket, bucketIndex) => {
-      const label = createLabelSprite(bucket.label, { maxLength: 14 })
-      if (!label) return
-      label.sprite.position.set(bucketIndex * xSpacing - xOffset, 0.28, zOffset + 1.08)
-      labels.push(label)
-      scene.add(label.sprite)
-    })
-
-    model.rows.forEach((row, rowIndex) => {
-      const label = createLabelSprite(row.metric.label, { maxLength: 18 })
-      if (!label) return
-      label.sprite.position.set(xOffset + 1.22, 0.28, rowIndex * zSpacing - zOffset)
-      labels.push(label)
-      scene.add(label.sprite)
-    })
-
-    const vuserAxisLabel = createLabelSprite('VUser Load', { emphasis: true, maxLength: 16 })
-    if (vuserAxisLabel) {
-      vuserAxisLabel.sprite.position.set(0, 0.62, zOffset + 1.86)
-      labels.push(vuserAxisLabel)
-      scene.add(vuserAxisLabel.sprite)
-    }
-
-    const metricAxisLabel = createLabelSprite('Metric', { emphasis: true, maxLength: 12 })
-    if (metricAxisLabel) {
-      metricAxisLabel.sprite.position.set(xOffset + 2.08, 0.62, 0)
-      labels.push(metricAxisLabel)
-      scene.add(metricAxisLabel.sprite)
-    }
-
     const raycaster = new THREE.Raycaster()
     const pointer = new THREE.Vector2()
 
@@ -258,7 +237,7 @@ export default function LoadImpact3DHeatmap({
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
       raycaster.setFromCamera(pointer, camera)
-      const hit = raycaster.intersectObjects(meshes, false)[0]
+      const hit = raycaster.intersectObjects(meshesRef.current, false)[0]
       return hit ? meshUserData(hit.object) : null
     }
 
@@ -280,7 +259,7 @@ export default function LoadImpact3DHeatmap({
     const handleClick = (event: PointerEvent) => {
       const hit = intersectCell(event)
       if (hit) {
-        onSelectedCellKeyChange(hit.cellKey)
+        selectedCellChangeRef.current(hit.cellKey)
       }
     }
 
@@ -328,23 +307,129 @@ export default function LoadImpact3DHeatmap({
       renderer.domElement.removeEventListener('pointerleave', handlePointerLeave)
       renderer.domElement.removeEventListener('click', handleClick)
       controls.dispose()
-      meshes.forEach(mesh => {
-        mesh.geometry.dispose()
-        const material = mesh.material
-        if (Array.isArray(material)) {
-          material.forEach(item => item.dispose())
-        } else {
-          material.dispose()
-        }
-      })
-      labels.forEach(label => {
-        label.material.dispose()
-        label.texture.dispose()
-      })
+      meshesRef.current.forEach(mesh => disposeMesh(mesh))
+      meshesRef.current = []
+      labelsRef.current.forEach(label => disposeLabel(label))
+      labelsRef.current = []
+      if (gridRef.current) {
+        disposeGrid(gridRef.current)
+        gridRef.current = null
+      }
       renderer.dispose()
       renderer.domElement.remove()
+      rendererRef.current = null
+      sceneRef.current = null
+      cameraRef.current = null
+      controlsRef.current = null
     }
-  }, [model, onSelectedCellKeyChange, sceneCells, selectedCellKey])
+  }, [])
+
+  useEffect(() => {
+    const scene = sceneRef.current
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+    if (!scene || !camera || !controls) return
+
+    meshesRef.current.forEach(mesh => {
+      scene.remove(mesh)
+      disposeMesh(mesh)
+    })
+    meshesRef.current = []
+    labelsRef.current.forEach(label => {
+      scene.remove(label.sprite)
+      disposeLabel(label)
+    })
+    labelsRef.current = []
+
+    if (sceneCells.length === 0) {
+      hoveredKeyRef.current = null
+      setHoveredCell(null)
+      return
+    }
+
+    const rowCount = model.rows.length
+    const bucketCount = model.buckets.length
+    const xSpacing = 1.02
+    const zSpacing = 0.82
+    const xOffset = ((bucketCount - 1) * xSpacing) / 2
+    const zOffset = ((rowCount - 1) * zSpacing) / 2
+    const maxDimension = Math.max(bucketCount * xSpacing, rowCount * zSpacing)
+    const layoutKey = buildLoadImpact3DLayoutKey(model)
+
+    if (layoutKeyRef.current !== layoutKey || !gridRef.current) {
+      layoutKeyRef.current = layoutKey
+      if (gridRef.current) {
+        scene.remove(gridRef.current)
+        disposeGrid(gridRef.current)
+      }
+      const grid = new THREE.GridHelper(Math.max(8, maxDimension + 2), Math.max(8, bucketCount), 0xd7dfeb, 0xd7dfeb)
+      grid.position.y = -0.02
+      gridRef.current = grid
+      scene.add(grid)
+      camera.position.set(
+        maxDimension * 0.9,
+        Math.max(7.4, rowCount * 0.5),
+        Math.max(12.5, bucketCount * 1.16),
+      )
+      camera.lookAt(0, 0.45, 0)
+      controls.target.set(0, 0.5, 0)
+      controls.update()
+    }
+
+    sceneCells.forEach(item => {
+      const heightValue = 0.14 + item.cell.intensity * 2.7
+      const geometry = new THREE.BoxGeometry(0.68, heightValue, 0.54)
+      const material = new THREE.MeshStandardMaterial({
+        color: colorForIntensity(item.cell.intensity, item.cellKey === selectedCellKey),
+        roughness: 0.55,
+        metalness: 0.04,
+      })
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.position.set(item.xIndex * xSpacing - xOffset, heightValue / 2, item.zIndex * zSpacing - zOffset)
+      mesh.userData = {
+        cell: item.cell,
+        cellKey: item.cellKey,
+        title: formatLoadImpactCellTitle(item.cell),
+      } satisfies MeshUserData
+      meshesRef.current.push(mesh)
+      scene.add(mesh)
+    })
+
+    model.buckets.forEach((bucket, bucketIndex) => {
+      const label = createLabelSprite(bucket.label, { maxLength: 14 })
+      if (!label) return
+      label.sprite.position.set(bucketIndex * xSpacing - xOffset, 0.28, zOffset + 1.08)
+      labelsRef.current.push(label)
+      scene.add(label.sprite)
+    })
+
+    model.rows.forEach((row, rowIndex) => {
+      const label = createLabelSprite(row.metric.label, { maxLength: 18 })
+      if (!label) return
+      label.sprite.position.set(xOffset + 1.22, 0.28, rowIndex * zSpacing - zOffset)
+      labelsRef.current.push(label)
+      scene.add(label.sprite)
+    })
+
+    const vuserAxisLabel = createLabelSprite('VUser Load', { emphasis: true, maxLength: 16 })
+    if (vuserAxisLabel) {
+      vuserAxisLabel.sprite.position.set(0, 0.62, zOffset + 1.86)
+      labelsRef.current.push(vuserAxisLabel)
+      scene.add(vuserAxisLabel.sprite)
+    }
+
+    const metricAxisLabel = createLabelSprite('Metric', { emphasis: true, maxLength: 12 })
+    if (metricAxisLabel) {
+      metricAxisLabel.sprite.position.set(xOffset + 2.08, 0.62, 0)
+      labelsRef.current.push(metricAxisLabel)
+      scene.add(metricAxisLabel.sprite)
+    }
+
+    const hoveredKey = hoveredKeyRef.current
+    if (hoveredKey) {
+      setHoveredCell(sceneCells.find(item => item.cellKey === hoveredKey)?.cell ?? null)
+    }
+  }, [model, sceneCells, selectedCellKey])
 
   const activeCell = hoveredCell ?? selectedCell
 

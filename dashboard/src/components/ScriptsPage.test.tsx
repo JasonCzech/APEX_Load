@@ -244,11 +244,6 @@ describe('ScriptsPage', () => {
 
     expect(apiMock.listScripts).toHaveBeenCalledWith('project-1')
 
-    expect(container.textContent).toContain('Create Script')
-    expect(container.textContent).toContain('Model From Existing Script')
-
-    await clickButton('Script Library')
-
     expect(container.textContent).toContain('Script Library')
     expect(container.textContent).toContain('Existing Script')
     expect(container.textContent).toContain('Needs Review · 72')
@@ -274,9 +269,10 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('warnings · warning · 1')
     expect(container.textContent).toContain('Validation warnings need review before promotion.')
 
-    await clickButton('Create Script')
+    await clickButton('Create Script Options')
 
     expect(container.textContent).toContain('Create Script')
+    expect(container.textContent).toContain('Model From Existing Script')
 
     await clickButton('Build Manually')
 
@@ -332,14 +328,6 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     let toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
-    expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('false')
-    expect(toggleButtons.find(button => button.textContent?.includes('Create Script Options'))?.getAttribute('aria-pressed')).toBe('true')
-    expect(container.textContent).toContain('Model From Existing Script')
-    expect(container.textContent).not.toContain('Script Library (')
-
-    await clickButton('Script Library')
-
-    toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
     expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('true')
     expect(toggleButtons.find(button => button.textContent?.includes('Create Script Options'))?.getAttribute('aria-pressed')).toBe('false')
     expect(container.textContent).toContain('Script Library (1)')
@@ -352,6 +340,14 @@ describe('ScriptsPage', () => {
     expect(toggleButtons.find(button => button.textContent?.includes('Create Script Options'))?.getAttribute('aria-pressed')).toBe('true')
     expect(container.textContent).toContain('Model From Existing Script')
     expect(container.textContent).not.toContain('Script Library (')
+
+    await clickButton('Script Library')
+
+    toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
+    expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('true')
+    expect(toggleButtons.find(button => button.textContent?.includes('Create Script Options'))?.getAttribute('aria-pressed')).toBe('false')
+    expect(container.textContent).toContain('Script Library (1)')
+    expect(container.textContent).not.toContain('Model From Existing Script')
   })
 
   it('models a new draft from an existing saved script without editing the original', async () => {
@@ -370,7 +366,7 @@ describe('ScriptsPage', () => {
     })
 
     await act(async () => {
-      root.render(<ScriptsPage />)
+      root.render(<ScriptsPage initialMode="create-options" />)
     })
 
     await flushPromises()
@@ -472,7 +468,7 @@ describe('ScriptsPage', () => {
 
   it('routes source-guided OpenAPI import through the draft editor', async () => {
     await act(async () => {
-      root.render(<ScriptsPage />)
+      root.render(<ScriptsPage initialMode="create-options" />)
     })
 
     await flushPromises()
@@ -490,7 +486,7 @@ describe('ScriptsPage', () => {
 
   it('routes jmeter import edit handoff through the draft editor', async () => {
     await act(async () => {
-      root.render(<ScriptsPage />)
+      root.render(<ScriptsPage initialMode="create-options" />)
     })
 
     await flushPromises()
@@ -525,7 +521,7 @@ describe('ScriptsPage', () => {
 
   it('shows a follow-on notice when a multi-script import also saves a scenario draft', async () => {
     await act(async () => {
-      root.render(<ScriptsPage />)
+      root.render(<ScriptsPage initialMode="create-options" />)
     })
 
     await flushPromises()
@@ -563,7 +559,7 @@ describe('ScriptsPage', () => {
 
   it('keeps the persisted editor open after an import save handoff', async () => {
     await act(async () => {
-      root.render(<ScriptsPage />)
+      root.render(<ScriptsPage initialMode="create-options" />)
     })
 
     await flushPromises()
@@ -602,7 +598,7 @@ describe('ScriptsPage', () => {
 
   it('returns LoadRunner import close actions to the create options shell', async () => {
     await act(async () => {
-      root.render(<ScriptsPage />)
+      root.render(<ScriptsPage initialMode="create-options" />)
     })
 
     await flushPromises()
@@ -640,7 +636,7 @@ describe('ScriptsPage', () => {
 
   it('returns from LoadRunner review editor options to the converted script review', async () => {
     await act(async () => {
-      root.render(<ScriptsPage />)
+      root.render(<ScriptsPage initialMode="create-options" />)
     })
 
     await flushPromises()
@@ -682,7 +678,7 @@ describe('ScriptsPage', () => {
 
   it('returns JMeter import close actions to the create options shell', async () => {
     await act(async () => {
-      root.render(<ScriptsPage />)
+      root.render(<ScriptsPage initialMode="create-options" />)
     })
 
     await flushPromises()
@@ -721,7 +717,7 @@ describe('ScriptsPage', () => {
 
   it('shows SOAP and Java-over-HTTP create options and routes them into the draft editor', async () => {
     await act(async () => {
-      root.render(<ScriptsPage />)
+      root.render(<ScriptsPage initialMode="create-options" />)
     })
 
     await flushPromises()
@@ -815,7 +811,7 @@ describe('ScriptsPage', () => {
     })
 
     await act(async () => {
-      root.render(<ScriptsPage />)
+      root.render(<ScriptsPage initialMode="create-options" />)
     })
 
     await flushPromises()
@@ -1083,7 +1079,7 @@ describe('ScriptsPage', () => {
 
   it('routes the Java-over-HTTP import option into the dedicated Java import surface', async () => {
     await act(async () => {
-      root.render(<ScriptsPage />)
+      root.render(<ScriptsPage initialMode="create-options" />)
     })
 
     await flushPromises()

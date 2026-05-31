@@ -99,7 +99,7 @@ function cloneScriptDraft(source: ScriptDefinition, fallbackName: string, projec
   return cloned
 }
 
-export default function ScriptsPage({ initialMode = 'create-options', initialEditId, onSelectScenario }: Props) {
+export default function ScriptsPage({ initialMode = 'list', initialEditId, onSelectScenario }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [scripts, setScripts] = useState<StoredScript[]>([])

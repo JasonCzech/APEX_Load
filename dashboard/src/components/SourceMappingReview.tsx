@@ -54,6 +54,10 @@ function findSourceFile(files: LoadRunnerSourceReviewFile[], path?: string) {
   return files.find(file => fileMatchesPath(file, path)) || files[0] || null
 }
 
+function findFirstMappingForFile(mappings: LoadRunnerSourceReviewMapping[], filePath?: string) {
+  return mappings.find(mapping => mappingMatchesFile(mapping, filePath)) || null
+}
+
 function compareText(a: string, b: string, direction: SortDirection) {
   const result = a.localeCompare(b)
   return direction === 'asc' ? result : -result
@@ -108,7 +112,7 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
   const [copied, setCopied] = useState<'source' | 'dsl' | ''>('')
 
   const selectedMapping = useMemo(
-    () => mappings.find(mapping => mapping.id === selectedMappingId) || mappings[0] || null,
+    () => mappings.find(mapping => mapping.id === selectedMappingId) || null,
     [mappings, selectedMappingId],
   )
   const selectedFile = useMemo(
@@ -157,6 +161,13 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
     if (!mapping) return
     setSelectedMappingId(mapping.id)
     if (mapping.source_file) setSelectedFilePath(mapping.source_file)
+    setCopied('')
+  }
+
+  const selectSourceFile = (filePath: string) => {
+    const nextMapping = findFirstMappingForFile(mappings, filePath)
+    setSelectedFilePath(filePath)
+    setSelectedMappingId(nextMapping?.id || '')
     setCopied('')
   }
 
@@ -231,7 +242,7 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
       <div className="source-map-toolbar">
         <label>
           <span>Source File</span>
-          <select value={selectedFile?.path || ''} onChange={event => setSelectedFilePath(event.target.value)}>
+          <select value={selectedFile?.path || ''} onChange={event => selectSourceFile(event.target.value)}>
             {files.map(file => (
               <option key={file.path} value={file.path}>
                 {file.path}{file.truncated ? ' (truncated)' : ''}

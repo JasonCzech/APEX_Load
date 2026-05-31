@@ -6480,6 +6480,7 @@ function ParameterDefinitionsSection({
   const [activeParameterChoice, setActiveParameterChoice] = useState<{ field: ParameterChoiceField; idx: number } | null>(null)
   const [activeSelectionSettingsIdx, setActiveSelectionSettingsIdx] = useState<number | null>(null)
   const [activeParameterSettingsIdx, setActiveParameterSettingsIdx] = useState<number | null>(null)
+  const previousParameterCountRef = useRef(script.parameters?.length || 0)
   const parameterGroups = useMemo(
     () => buildParameterDefinitionGroups(script.parameters || [], script.data_sources || []),
     [script.data_sources, script.parameters],
@@ -6521,6 +6522,25 @@ function ParameterDefinitionsSection({
       return next
     })
   }, [selectedParameterSourceKey])
+  useEffect(() => {
+    const nextCount = script.parameters?.length || 0
+    const previousCount = previousParameterCountRef.current
+    previousParameterCountRef.current = nextCount
+    if (nextCount <= previousCount) return
+
+    const addedParameterIndex = nextCount - 1
+    const addedParameterSourceKey = parameterGroups.find(group =>
+      group.parameters.some(({ index }) => index === addedParameterIndex),
+    )?.key
+    if (!addedParameterSourceKey) return
+
+    setExpandedParameterSources(previous => {
+      if (previous.has(addedParameterSourceKey)) return previous
+      const next = new Set(previous)
+      next.add(addedParameterSourceKey)
+      return next
+    })
+  }, [parameterGroups, script.parameters])
   const toggleParameterSource = (sourceKey: string) => {
     setExpandedParameterSources(previous => {
       const next = new Set(previous)
@@ -6540,6 +6560,10 @@ function ParameterDefinitionsSection({
   }
   const selectParameter = (idx: number, parameter: ParameterConfig) => {
     onSelectParameter(idx, parameter)
+  }
+  const handleAddParameter = () => {
+    if (!isOpen) onToggleOpen()
+    onAddParameter()
   }
   const renderParameterGroup = (group: ParameterDefinitionGroup) => {
     const isExpanded = expandedParameterSources.has(group.key)
@@ -6608,7 +6632,7 @@ function ParameterDefinitionsSection({
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Define parameters with VuGen-style update cadence and generated values.</span>
           </span>
         </button>
-        <button className="btn btn-sm btn-accent" onClick={onAddParameter}>+ Add Parameter</button>
+        <button type="button" className="btn btn-sm btn-accent" onClick={handleAddParameter}>+ Add Parameter</button>
       </div>
 
       {isOpen && ((script.parameters?.length || 0) === 0 ? (

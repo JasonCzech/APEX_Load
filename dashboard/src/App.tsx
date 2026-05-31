@@ -46,6 +46,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const isDevUserPreview = authStatus?.mode === 'dev' && devViewMode === 'user'
   const scriptMode = view.page === 'scripts' && 'mode' in view ? view.mode : undefined
   const scriptEditId = view.page === 'scripts' && 'scriptId' in view ? view.scriptId : undefined
+  const [scriptsNavigationVersion, setScriptsNavigationVersion] = useState(0)
   const [effectiveAccessResources, setEffectiveAccessResources] = useState<import('./types').DashboardAuthEffectiveAccessResource[]>([])
   const [domains, setDomains] = useState<import('./types').Domain[]>([])
   const [activeDomain, setActiveDomainState] = useState<import('./types').Domain | null>(null)
@@ -134,6 +135,9 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const navigateToNewTestForScenario = (scenarioId: string) => setView({ page: 'new-test', scenarioId })
 
   const handleNavigate = (page: NavPage) => {
+    if (page === 'scripts') {
+      setScriptsNavigationVersion(version => version + 1)
+    }
     setView({ page })
   }
 
@@ -349,7 +353,12 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             />
           )}
           {view.page === 'scripts' && (
-            <ScriptsPage initialMode={scriptMode} initialEditId={scriptEditId} onSelectScenario={navigateToTest} />
+            <ScriptsPage
+              key={`scripts-${scriptsNavigationVersion}-${scriptMode || 'list'}-${scriptEditId || ''}`}
+              initialMode={scriptMode}
+              initialEditId={scriptEditId}
+              onSelectScenario={navigateToTest}
+            />
           )}
           {view.page === 'results' && (
             <ResultsPage
