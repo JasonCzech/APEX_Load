@@ -297,6 +297,9 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
           >
             <div className="lr-stats-grid">
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.converted_actions}</span><span className="lr-stat-label">Actions</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.samplers}</span><span className="lr-stat-label">HTTP Samplers</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.total_samplers ?? result.stats.samplers}</span><span className="lr-stat-label">Total Samplers</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.skipped_samplers ?? 0}</span><span className="lr-stat-label">Skipped Samplers</span></div>
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.thread_groups}</span><span className="lr-stat-label">Thread Groups</span></div>
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.csv_sources}</span><span className="lr-stat-label">CSV Sources</span></div>
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.variables}</span><span className="lr-stat-label">Variables</span></div>

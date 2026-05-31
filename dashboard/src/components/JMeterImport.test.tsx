@@ -60,6 +60,8 @@ describe('JMeterImport', () => {
       stats: {
         thread_groups: 1,
         samplers: 1,
+        total_samplers: 2,
+        skipped_samplers: 1,
         converted_actions: 1,
         headers: 0,
         variables: 0,
@@ -141,6 +143,10 @@ describe('JMeterImport', () => {
     expect(container.textContent).toContain('1 actions / 0 data sources / 2 extractors')
     expect(container.textContent).toContain('Validation Review')
     expect(container.textContent).toContain('Save Reviewed 1 Script')
+    const stats = Array.from(container.querySelectorAll('.lr-stat')).map(item => item.textContent)
+    expect(stats).toContain('1HTTP Samplers')
+    expect(stats).toContain('2Total Samplers')
+    expect(stats).toContain('1Skipped Samplers')
   })
 
   it('routes the reviewed script through the shared edit handoff', async () => {

@@ -156,6 +156,8 @@ export interface LoadRunnerSupportMatrixExample {
 export interface JMeterConvertStats {
   thread_groups: number
   samplers: number
+  total_samplers?: number
+  skipped_samplers?: number
   converted_actions: number
   headers: number
   variables: number
