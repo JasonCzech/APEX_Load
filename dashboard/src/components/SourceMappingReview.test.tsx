@@ -170,4 +170,32 @@ describe('SourceMappingReview', () => {
     expect(copyDsl).toBeDefined()
     expect(copyDsl?.disabled).toBe(true)
   })
+
+  it('adds explanatory tooltips to source mapping coverage pills', async () => {
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />)
+    })
+    await flushPromises()
+
+    const preservedPill = Array.from(container.querySelectorAll('.source-map-coverage .source-map-status'))
+      .find(pill => pill.textContent?.includes('Preserved')) as HTMLSpanElement | undefined
+    const dslOriginPill = Array.from(container.querySelectorAll('.source-map-coverage .source-map-status'))
+      .find(pill => pill.textContent?.includes('DSL without source origin')) as HTMLSpanElement | undefined
+
+    expect(preservedPill).toBeDefined()
+    expect(preservedPill?.tabIndex).toBe(0)
+    expect(preservedPill?.dataset.tooltip).toContain('attached to a nearby request')
+    expect(preservedPill?.getAttribute('aria-label')).toContain('Nothing was dropped')
+    expect(container.querySelector('.source-map-coverage .source-map-status')?.classList.contains('align-start')).toBe(true)
+    expect(dslOriginPill?.classList.contains('align-end')).toBe(true)
+
+    await act(async () => {
+      preservedPill?.focus()
+    })
+    expect(preservedPill?.getAttribute('aria-describedby')).toBeTruthy()
+    expect(container.querySelector('[role="tooltip"]')?.textContent).toContain('Nothing was dropped')
+
+    expect(dslOriginPill).toBeDefined()
+    expect(dslOriginPill?.dataset.tooltip).toContain('no direct LoadRunner source line')
+  })
 })

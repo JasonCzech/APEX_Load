@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useId, useMemo, useState } from 'react'
 
 import { type LoadRunnerSourceReview, type LoadRunnerSourceReviewFile, type LoadRunnerSourceReviewMapping, type ScriptDefinition } from '../types/scripts'
 import { canCopyTextToClipboard, copyTextToClipboard } from '../utils/clipboardUtils'
@@ -33,6 +33,14 @@ const CATEGORY_CLASS: Record<string, string> = {
   preserved: 'preserved',
   review: 'review_only',
   unsupported: 'unsupported',
+}
+
+const COVERAGE_HELP: Record<string, string> = {
+  converted: 'Converted into its own executable DSL action, such as a request, think time, or native runtime step.',
+  preserved: 'Carried over without becoming a standalone action: attached to a nearby request as an extractor, assertion, header, or transaction name, or kept as import metadata. Nothing was dropped.',
+  review: 'Recognized by the importer but needs human review before replay, usually because the source behavior requires confirmation or an external runner.',
+  unsupported: 'No native source mapping was available for this statement. This should be rare; review it before relying on replay results.',
+  dslWithoutOrigin: 'Generated DSL nodes with no direct LoadRunner source line, often synthesized defaults or importer-created data. Check them if the count is unexpected.',
 }
 
 function normalizeMappings(sourceReview?: LoadRunnerSourceReview | null): LoadRunnerSourceReviewMapping[] {
@@ -103,6 +111,45 @@ function excerptFromText(text: string, startLine?: number, endLine?: number) {
 
 function PaneFallback() {
   return <div className="source-map-empty">Loading code view…</div>
+}
+
+function SourceMapCoveragePill({
+  align = 'center',
+  className,
+  label,
+  tooltip,
+  value,
+}: {
+  align?: 'start' | 'center' | 'end'
+  className: string
+  label: string
+  tooltip: string
+  value: number
+}) {
+  const tooltipId = useId()
+  const [showTooltip, setShowTooltip] = useState(false)
+
+  return (
+    <span
+      className={`source-map-status source-map-tooltip ${className} align-${align}`}
+      tabIndex={0}
+      data-tooltip={tooltip}
+      aria-label={`${label}: ${value}. ${tooltip}`}
+      aria-describedby={showTooltip ? tooltipId : undefined}
+      onBlur={() => setShowTooltip(false)}
+      onClick={() => setShowTooltip(true)}
+      onFocus={() => setShowTooltip(true)}
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+    >
+      {label}: {value}
+      {showTooltip && (
+        <span id={tooltipId} className="source-map-tooltip-bubble" role="tooltip">
+          {tooltip}
+        </span>
+      )}
+    </span>
+  )
 }
 
 export default function SourceMappingReview({ sourceReview, script, title = 'Source Mapping' }: Props) {
@@ -229,18 +276,24 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
       </div>
 
       <div className="source-map-coverage" role="group" aria-label="Conversion coverage">
-        {coverageChips.map(chip => (
-          <span key={chip.key} className={`source-map-status ${CATEGORY_CLASS[chip.key]}`}>
-            {chip.label}: {chip.value}
-          </span>
+        {coverageChips.map((chip, index) => (
+          <SourceMapCoveragePill
+            key={chip.key}
+            align={index === 0 ? 'start' : 'center'}
+            className={CATEGORY_CLASS[chip.key]}
+            label={chip.label}
+            value={chip.value}
+            tooltip={COVERAGE_HELP[chip.key]}
+          />
         ))}
         {dslDocument && (
-          <span
-            className={`source-map-status ${coverage.dslWithoutOrigin > 0 ? 'unsupported' : 'converted'}`}
-            title="DSL elements (actions, parameters, data sources) with no traceable source origin"
-          >
-            DSL without source origin: {coverage.dslWithoutOrigin}
-          </span>
+          <SourceMapCoveragePill
+            align="end"
+            className={coverage.dslWithoutOrigin > 0 ? 'unsupported' : 'converted'}
+            label="DSL without source origin"
+            value={coverage.dslWithoutOrigin}
+            tooltip={COVERAGE_HELP.dslWithoutOrigin}
+          />
         )}
       </div>
 
