@@ -1,5 +1,5 @@
-# OpenText VuGen 26.1 C Vuser utility function baseline.
-# Format: name,family,support_mode
+# OpenText VuGen 26.1 C Vuser utility functions (lr_ prefix).
+# Format: name,family,support_mode[,reason]
 lr_abort,runtime,executable
 lr_advance_param,parameter,executable
 lr_aws_get_secret,secret,external_required

@@ -1,0 +1,18 @@
+# OpenText VuGen RTE (Remote Terminal Emulation) protocol functions (TE_ prefix).
+# RTE scripts drive a terminal emulator screen; APEX Load has no terminal virtual-user
+# runtime, so these are deterministically preserved for manual rework (Phase C).
+# Format: name,family,support_mode[,reason]
+TE_connect,rte,review_only,RTE terminal step has no APEX Load runtime; preserved for manual rework.
+TE_set_field,rte,review_only,RTE terminal step has no APEX Load runtime; preserved for manual rework.
+TE_type,rte,review_only,RTE terminal step has no APEX Load runtime; preserved for manual rework.
+TE_wait_sync,rte,review_only,RTE terminal step has no APEX Load runtime; preserved for manual rework.
+TE_wait_text,rte,review_only,RTE terminal step has no APEX Load runtime; preserved for manual rework.
+TE_wait_cursor,rte,review_only,RTE terminal step has no APEX Load runtime; preserved for manual rework.
+TE_wait_silent,rte,review_only,RTE terminal step has no APEX Load runtime; preserved for manual rework.
+TE_find_text,rte,review_only,RTE terminal step has no APEX Load runtime; preserved for manual rework.
+TE_get_text_line,rte,review_only,RTE terminal step has no APEX Load runtime; preserved for manual rework.
+TE_getcursorposition,rte,review_only,RTE terminal step has no APEX Load runtime; preserved for manual rework.
+TE_set_cursor_position,rte,review_only,RTE terminal step has no APEX Load runtime; preserved for manual rework.
+TE_get_cursor_position,rte,review_only,RTE terminal step has no APEX Load runtime; preserved for manual rework.
+TE_send_text,rte,review_only,RTE terminal step has no APEX Load runtime; preserved for manual rework.
+TE_disconnect,rte,review_only,RTE terminal step has no APEX Load runtime; preserved for manual rework.

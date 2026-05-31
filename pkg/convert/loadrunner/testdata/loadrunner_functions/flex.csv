@@ -1,0 +1,12 @@
+# OpenText VuGen Flex / AMF (Adobe Flex Remoting) protocol functions.
+# Flex remoting rides on HTTP/AMF; Phase B may map flex_web_request to a native request.
+# Format: name,family,support_mode[,reason]
+flex_amf_call,flex,review_only,Flex AMF remoting call; pending native AMF-over-HTTP mapping in Phase B.
+flex_amf_define_header,flex,review_only,Defines an AMF header; pending native mapping in Phase B.
+flex_amf_define_envelope,flex,review_only,Defines an AMF envelope; pending native mapping in Phase B.
+flex_web_request,flex,review_only,Flex HTTP request; pending native request mapping in Phase B.
+flex_rtmp_connect,flex,review_only,Flex RTMP streaming connect; no APEX Load RTMP runtime, preserved for review.
+flex_rtmp_disconnect,flex,review_only,Flex RTMP streaming disconnect; no APEX Load RTMP runtime, preserved for review.
+flex_rtmp_send,flex,review_only,Flex RTMP send; no APEX Load RTMP runtime, preserved for review.
+flex_rtmp_receive_stream,flex,review_only,Flex RTMP receive stream; no APEX Load RTMP runtime, preserved for review.
+flex_save_param_ex,flex,review_only,Captures an AMF response value; pending native extractor mapping in Phase B.

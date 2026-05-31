@@ -1,0 +1,21 @@
+# OpenText VuGen SAPGUI (SAP GUI for Windows) protocol functions.
+# SAPGUI scripts drive the SAP Windows GUI; APEX Load has no GUI virtual-user runtime,
+# so these are deterministically preserved for manual rework (Phase C).
+# Format: name,family,support_mode[,reason]
+sapgui_logon,sapgui,review_only,SAPGUI logon step has no APEX Load GUI runtime; preserved for manual rework.
+sapgui_open_connection,sapgui,review_only,SAPGUI connection step has no APEX Load GUI runtime; preserved for manual rework.
+sapgui_open_connection_ex,sapgui,review_only,SAPGUI connection step has no APEX Load GUI runtime; preserved for manual rework.
+sapgui_select_active_connection,sapgui,review_only,SAPGUI GUI step has no APEX Load runtime; preserved for manual rework.
+sapgui_select_active_session,sapgui,review_only,SAPGUI GUI step has no APEX Load runtime; preserved for manual rework.
+sapgui_select_active_window,sapgui,review_only,SAPGUI GUI step has no APEX Load runtime; preserved for manual rework.
+sapgui_set_active_window,sapgui,review_only,SAPGUI GUI step has no APEX Load runtime; preserved for manual rework.
+sapgui_press_button,sapgui,review_only,SAPGUI GUI step has no APEX Load runtime; preserved for manual rework.
+sapgui_send_vkey,sapgui,review_only,SAPGUI GUI step has no APEX Load runtime; preserved for manual rework.
+sapgui_set_text,sapgui,review_only,SAPGUI GUI step has no APEX Load runtime; preserved for manual rework.
+sapgui_call_method,sapgui,review_only,SAPGUI GUI step has no APEX Load runtime; preserved for manual rework.
+sapgui_set_property,sapgui,review_only,SAPGUI GUI step has no APEX Load runtime; preserved for manual rework.
+sapgui_get_property,sapgui,review_only,SAPGUI GUI step has no APEX Load runtime; preserved for manual rework.
+sapgui_select_menu_item,sapgui,review_only,SAPGUI GUI step has no APEX Load runtime; preserved for manual rework.
+sapgui_status_bar_get_text,sapgui,review_only,SAPGUI GUI step has no APEX Load runtime; preserved for manual rework.
+sapgui_status_bar_get_type,sapgui,review_only,SAPGUI GUI step has no APEX Load runtime; preserved for manual rework.
+sapgui_logoff,sapgui,review_only,SAPGUI logoff step has no APEX Load GUI runtime; preserved for manual rework.

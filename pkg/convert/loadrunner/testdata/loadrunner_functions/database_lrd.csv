@@ -1,0 +1,23 @@
+# OpenText VuGen Database (lrd_) protocol functions (ODBC/CtLib/Oracle/etc.).
+# Phase B can map the statement/cursor primitives to native db_* actions.
+# Format: name,family,support_mode[,reason]
+lrd_init,database,review_only,Initializes the LRD database environment; pending native db_* mapping in Phase B.
+lrd_open_connection,database,review_only,Opens a database connection; pending native db_connect mapping in Phase B.
+lrd_close_connection,database,review_only,Closes a database connection; pending native db_* mapping in Phase B.
+lrd_open_cursor,database,review_only,Opens a database cursor; pending native db_* mapping in Phase B.
+lrd_close_cursor,database,review_only,Closes a database cursor; pending native db_* mapping in Phase B.
+lrd_stmt,database,review_only,Associates a SQL statement with a cursor; pending native db_query/db_exec mapping in Phase B.
+lrd_exec,database,review_only,Executes a SQL statement; pending native db_exec mapping in Phase B.
+lrd_fetch,database,review_only,Fetches rows from a cursor; pending native db_query mapping in Phase B.
+lrd_bind_col,database,review_only,Binds a result column; pending native extractor mapping in Phase B.
+lrd_bind_placeholder,database,review_only,Binds a statement placeholder; pending native parameter mapping in Phase B.
+lrd_save_value,database,review_only,Saves a bound value into a parameter; pending native extractor mapping in Phase B.
+lrd_save_col,database,review_only,Saves a result-set column into a parameter; pending native extractor mapping in Phase B.
+lrd_assign,database,review_only,Assigns a value to a parameter; pending native mapping in Phase B.
+lrd_assign_bind,database,review_only,Assigns and binds a placeholder; pending native mapping in Phase B.
+lrd_commit,database,review_only,Commits a transaction; pending native db_commit mapping in Phase B.
+lrd_rollback,database,review_only,Rolls back a transaction; pending native db_rollback mapping in Phase B.
+lrd_db_option,database,review_only,Sets a database option; pending native config mapping in Phase B.
+lrd_ora8_commit,database,review_only,Commits an Oracle OCI transaction; pending native db_commit mapping in Phase B.
+lrd_handle_alloc,database,native_noop,Allocates a database handle; no APEX Load side effect, handled as a native no-op.
+lrd_handle_free,database,native_noop,Frees a database handle; no APEX Load side effect, handled as a native no-op.

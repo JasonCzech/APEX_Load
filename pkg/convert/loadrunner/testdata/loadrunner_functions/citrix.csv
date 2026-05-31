@@ -1,0 +1,20 @@
+# OpenText VuGen Citrix ICA protocol functions.
+# Citrix scripts drive a remote desktop session; APEX Load has no GUI/ICA virtual-user
+# runtime, so these are deterministically preserved for manual rework (Phase C).
+# Format: name,family,support_mode[,reason]
+ctrx_connect_server,citrix,review_only,Citrix ICA step has no APEX Load runtime; preserved for manual rework.
+ctrx_disconnect_server,citrix,review_only,Citrix ICA step has no APEX Load runtime; preserved for manual rework.
+ctrx_set_connect_opt,citrix,review_only,Citrix ICA step has no APEX Load runtime; preserved for manual rework.
+ctrx_set_window,citrix,review_only,Citrix ICA step has no APEX Load runtime; preserved for manual rework.
+ctrx_win_exist,citrix,review_only,Citrix ICA step has no APEX Load runtime; preserved for manual rework.
+ctrx_sync_on_window,citrix,review_only,Citrix ICA step has no APEX Load runtime; preserved for manual rework.
+ctrx_sync_on_bitmap,citrix,review_only,Citrix ICA step has no APEX Load runtime; preserved for manual rework.
+ctrx_sync_on_bitmap_change,citrix,review_only,Citrix ICA step has no APEX Load runtime; preserved for manual rework.
+ctrx_mouse_click,citrix,review_only,Citrix ICA step has no APEX Load runtime; preserved for manual rework.
+ctrx_mouse_double_click,citrix,review_only,Citrix ICA step has no APEX Load runtime; preserved for manual rework.
+ctrx_obj_mouse_click,citrix,review_only,Citrix ICA step has no APEX Load runtime; preserved for manual rework.
+ctrx_type,citrix,review_only,Citrix ICA step has no APEX Load runtime; preserved for manual rework.
+ctrx_key,citrix,review_only,Citrix ICA step has no APEX Load runtime; preserved for manual rework.
+ctrx_wait_for_event,citrix,review_only,Citrix ICA step has no APEX Load runtime; preserved for manual rework.
+ctrx_get_text,citrix,review_only,Citrix ICA step has no APEX Load runtime; preserved for manual rework.
+ctrx_set_waiting_time,citrix,review_only,Citrix ICA step has no APEX Load runtime; preserved for manual rework.

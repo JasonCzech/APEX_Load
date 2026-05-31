@@ -1,0 +1,20 @@
+# OpenText VuGen Windows Sockets (Winsock / lrs_) protocol functions.
+# Phase B can map the send/receive primitives to native tcp_/udp_ actions.
+# Format: name,family,support_mode[,reason]
+lrs_create_socket,socket,review_only,Opens a Winsock socket; pending native tcp_/udp_ connect mapping in Phase B.
+lrs_close_socket,socket,review_only,Closes a Winsock socket; pending native tcp_/udp_ mapping in Phase B.
+lrs_send,socket,review_only,Sends socket data; pending native tcp_send/udp_send mapping in Phase B.
+lrs_receive,socket,review_only,Receives socket data; pending native tcp_request/udp_request mapping in Phase B.
+lrs_receive_ex,socket,review_only,Receives a fixed length of socket data; pending native mapping in Phase B.
+lrs_length_receive,socket,review_only,Receives a length-prefixed socket buffer; pending native mapping in Phase B.
+lrs_save_param,socket,review_only,Captures a socket buffer into a parameter; pending native extractor mapping in Phase B.
+lrs_save_param_ex,socket,review_only,Captures a socket buffer (binary) into a parameter; pending native extractor mapping in Phase B.
+lrs_save_searched_string,socket,review_only,Captures a substring of a socket buffer; pending native extractor mapping in Phase B.
+lrs_get_socket_handler,socket,review_only,Reads a socket handle; pending native mapping.
+lrs_set_socket_handler,socket,review_only,Sets a socket handle; pending native mapping.
+lrs_set_send_buffer,socket,review_only,Sets the send buffer; pending native mapping in Phase B.
+lrs_set_receive_option,socket,review_only,Sets a receive option; pending native mapping in Phase B.
+lrs_disable_socket,socket,review_only,Disables a socket; pending native mapping.
+lrs_enable_socket,socket,review_only,Enables a socket; pending native mapping.
+lrs_cleanup,socket,native_noop,Releases Winsock resources; no APEX Load side effect, handled as a native no-op.
+lrs_startup,socket,native_noop,Initializes Winsock; no APEX Load side effect, handled as a native no-op.

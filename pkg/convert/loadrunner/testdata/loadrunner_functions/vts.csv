@@ -1,0 +1,16 @@
+# OpenText VuGen Virtual Table Server (VTS) functions (lrvtc_ / vtc_).
+# VTS is an external shared-data server; these require an external VTS integration.
+# Format: name,family,support_mode[,reason]
+lrvtc_connect,vts,external_required,Connects to an external Virtual Table Server (VTS); requires an external VTS integration.
+lrvtc_disconnect,vts,external_required,Disconnects from VTS; requires an external VTS integration.
+lrvtc_query_column,vts,external_required,Queries a VTS column; requires an external VTS integration.
+lrvtc_query_row,vts,external_required,Queries a VTS row; requires an external VTS integration.
+lrvtc_send_message,vts,external_required,Sends a value to a VTS column; requires an external VTS integration.
+lrvtc_send_row1,vts,external_required,Sends a row to VTS; requires an external VTS integration.
+lrvtc_retrieve_message,vts,external_required,Retrieves and pops a VTS value; requires an external VTS integration.
+lrvtc_retrieve_messages,vts,external_required,Retrieves multiple VTS values; requires an external VTS integration.
+lrvtc_update_message,vts,external_required,Updates a VTS cell; requires an external VTS integration.
+lrvtc_update_message_ifequal,vts,external_required,Conditionally updates a VTS cell; requires an external VTS integration.
+lrvtc_clear_column,vts,external_required,Clears a VTS column; requires an external VTS integration.
+lrvtc_clear_row,vts,external_required,Clears a VTS row; requires an external VTS integration.
+lrvtc_increment,vts,external_required,Increments a VTS cell; requires an external VTS integration.

@@ -1,0 +1,18 @@
+# OpenText VuGen Oracle NCA (Oracle Applications Forms) protocol functions.
+# Oracle NCA scripts drive the Oracle Forms applet; APEX Load has no NCA virtual-user
+# runtime, so these are deterministically preserved for manual rework (Phase C).
+# Format: name,family,support_mode[,reason]
+nca_connect_server,oracle_nca,review_only,Oracle NCA step has no APEX Load runtime; preserved for manual rework.
+nca_set_connect_opt,oracle_nca,review_only,Oracle NCA step has no APEX Load runtime; preserved for manual rework.
+nca_button_press,oracle_nca,review_only,Oracle NCA step has no APEX Load runtime; preserved for manual rework.
+nca_edit_set,oracle_nca,review_only,Oracle NCA step has no APEX Load runtime; preserved for manual rework.
+nca_edit_get,oracle_nca,review_only,Oracle NCA step has no APEX Load runtime; preserved for manual rework.
+nca_lov_select_item,oracle_nca,review_only,Oracle NCA step has no APEX Load runtime; preserved for manual rework.
+nca_lov_find_value,oracle_nca,review_only,Oracle NCA step has no APEX Load runtime; preserved for manual rework.
+nca_list_activate_item,oracle_nca,review_only,Oracle NCA step has no APEX Load runtime; preserved for manual rework.
+nca_combo_select_item,oracle_nca,review_only,Oracle NCA step has no APEX Load runtime; preserved for manual rework.
+nca_check_box_set,oracle_nca,review_only,Oracle NCA step has no APEX Load runtime; preserved for manual rework.
+nca_tab_select,oracle_nca,review_only,Oracle NCA step has no APEX Load runtime; preserved for manual rework.
+nca_flex_button_press,oracle_nca,review_only,Oracle NCA step has no APEX Load runtime; preserved for manual rework.
+nca_menu_select_item,oracle_nca,review_only,Oracle NCA step has no APEX Load runtime; preserved for manual rework.
+nca_get_object_info,oracle_nca,review_only,Oracle NCA step has no APEX Load runtime; preserved for manual rework.

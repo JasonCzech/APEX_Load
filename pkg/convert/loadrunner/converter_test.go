@@ -253,8 +253,11 @@ func TestConvert(t *testing.T) {
 	if len(result.Stats.UnsupportedFuncs) != 0 {
 		t.Fatalf("unsupported funcs = %#v, want none", result.Stats.UnsupportedFuncs)
 	}
-	if result.Stats.CustomCallFunctions != 1 {
-		t.Fatalf("custom_call_functions = %d, want web_set_max_html_param_len preserved as custom review action", result.Stats.CustomCallFunctions)
+	if result.Stats.CustomCallFunctions != 0 {
+		t.Fatalf("custom_call_functions = %d, want web_set_max_html_param_len catalogued rather than a custom call", result.Stats.CustomCallFunctions)
+	}
+	if result.Stats.ReviewOnlyFunctions < 1 {
+		t.Fatalf("review_only_functions = %d, want web_set_max_html_param_len preserved as a documented review action", result.Stats.ReviewOnlyFunctions)
 	}
 	if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 {
 		t.Fatal("expected source review mappings")
@@ -564,8 +567,13 @@ func TestLoadRunnerFunctionRegistryCoversDocumentedFunctions(t *testing.T) {
 	}
 	for _, def := range defs {
 		t.Run(def.Name, func(t *testing.T) {
-			if def.SupportMode == "" || def.Family == "" {
-				t.Fatalf("definition = %#v, want family and support mode", def)
+			if def.SupportMode == "" || def.Family == "" || def.Reason == "" {
+				t.Fatalf("definition = %#v, want family, support mode, and reason", def)
+			}
+			switch def.SupportMode {
+			case LoadRunnerSupportExecutable, LoadRunnerSupportNativeNoop, LoadRunnerSupportReviewOnly, LoadRunnerSupportExternalRequired:
+			default:
+				t.Fatalf("definition = %#v, has unknown support mode", def)
 			}
 			source := "Action()\n{\n" + sampleLoadRunnerFunctionCall(def) + "\nweb_url(\"Home\", \"URL=https://example.test/home\", LAST);\nreturn 0;\n}\n"
 			parsed, err := ParseActionFile("Action.c", source)

@@ -250,16 +250,10 @@ func loadRunnerSupportNotes(fn ParsedFunction, mode LoadRunnerSupportMode) strin
 		return "Parsed custom C helper call preserved as a review action."
 	}
 	if def, ok := lookupLoadRunnerFunction(fn.Name); ok {
-		switch mode {
-		case LoadRunnerSupportExternalRequired:
-			return "Documented LoadRunner function requires external runtime or governed secret integration."
-		case LoadRunnerSupportReviewOnly:
-			return "Documented LoadRunner function preserved as a native review action."
-		case LoadRunnerSupportNativeNoop:
-			return "Documented LoadRunner function has no direct APEX Load side effect and is handled as a native no-op."
-		default:
-			return "Converted documented LoadRunner " + def.Family + " function to a native action."
+		if def.Reason != "" {
+			return def.Reason
 		}
+		return defaultLoadRunnerReason(def.Family, mode)
 	}
 	return "Parsed LoadRunner function converted to a native action."
 }

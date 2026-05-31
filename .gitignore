@@ -3,6 +3,7 @@ bin/
 controller
 generator
 apexctl
+/lrcatalog
 *.exe
 *.exe~
 *.dll
