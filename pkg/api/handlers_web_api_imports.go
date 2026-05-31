@@ -64,12 +64,13 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		result.Warnings = append(result.Warnings, issues...)
 	}
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
-		Result:         result,
-		Script:         result.Script,
-		Warnings:       result.Warnings,
-		Stats:          result.Stats,
-		Summary:        result.Summary,
-		ReviewSections: buildOpenAPIReviewSections(result),
+		Result:              result,
+		Script:              result.Script,
+		Warnings:            result.Warnings,
+		Stats:               result.Stats,
+		Summary:             result.Summary,
+		UnsupportedElements: result.Unsupported.Strings(),
+		ReviewSections:      appendImportDiagnosticReviewSections(buildOpenAPIReviewSections(result), result.Unsupported),
 	}))
 }
 
@@ -95,12 +96,13 @@ func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
 		result.Warnings = append(result.Warnings, issues...)
 	}
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
-		Result:         result,
-		Script:         result.Script,
-		Warnings:       result.Warnings,
-		Stats:          result.Stats,
-		Summary:        result.Summary,
-		ReviewSections: buildWSDLReviewSections(result),
+		Result:              result,
+		Script:              result.Script,
+		Warnings:            result.Warnings,
+		Stats:               result.Stats,
+		Summary:             result.Summary,
+		UnsupportedElements: result.Unsupported.Strings(),
+		ReviewSections:      appendImportDiagnosticReviewSections(buildWSDLReviewSections(result), result.Unsupported),
 	}))
 }
 
@@ -126,12 +128,13 @@ func (s *Server) handleImportPostman(w http.ResponseWriter, r *http.Request) {
 		result.Warnings = append(result.Warnings, issues...)
 	}
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
-		Result:         result,
-		Script:         result.Script,
-		Warnings:       result.Warnings,
-		Stats:          result.Stats,
-		Summary:        result.Summary,
-		ReviewSections: buildPostmanReviewSections(result),
+		Result:              result,
+		Script:              result.Script,
+		Warnings:            result.Warnings,
+		Stats:               result.Stats,
+		Summary:             result.Summary,
+		UnsupportedElements: result.Unsupported.Strings(),
+		ReviewSections:      appendImportDiagnosticReviewSections(buildPostmanReviewSections(result), result.Unsupported),
 	}))
 }
 
@@ -376,13 +379,6 @@ func buildWSDLReviewSections(result *wsdl.ConvertResult) []scriptImportReviewSec
 			Severity: "info",
 			Summary:  "Generated SOAP envelopes for review and replay.",
 			Items:    result.Summary.Operations,
-		},
-		{
-			Key:      "wsdl_payload_review",
-			Title:    "SOAP Payload Review",
-			Severity: "warning",
-			Summary:  "Complex XSD payloads are scaffolded and must be reviewed before promotion.",
-			Items:    []string{"Confirm required request elements", "Replace placeholder body content", "Validate SOAPAction and endpoint URL"},
 		},
 	}
 	if result.Summary.TargetNamespace != "" {

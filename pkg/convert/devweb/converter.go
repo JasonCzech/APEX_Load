@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -38,9 +39,10 @@ type ConvertStats struct {
 }
 
 type ConvertResult struct {
-	Script   *dsl.Script  `json:"script"`
-	Warnings []string     `json:"warnings,omitempty"`
-	Stats    ConvertStats `json:"stats"`
+	Script      *dsl.Script      `json:"script"`
+	Warnings    []string         `json:"warnings,omitempty"`
+	Unsupported diag.Diagnostics `json:"unsupported,omitempty"`
+	Stats       ConvertStats     `json:"stats"`
 }
 
 type parsedStep struct {
@@ -58,6 +60,8 @@ var (
 	webSocketClosePattern = regexp.MustCompile(`(?s)([A-Za-z_$][\w$]*)\.close\s*\(`)
 	grpcInvokePattern     = regexp.MustCompile(`(?s)([A-Za-z_$][\w$]*)\.invoke\s*\(\s*([^)]*)\)`)
 	thinkTimePattern      = regexp.MustCompile(`load\.thinkTime\s*\(\s*([0-9]+(?:\.[0-9]+)?)\s*\)`)
+	webRequestCallPattern = regexp.MustCompile(`load\.WebRequest\s*\(`)
+	correlationPattern    = regexp.MustCompile(`(?i)\b(?:load\.)?(?:correlat\w*|extract\w*|web_reg_save_param|web\.regSaveParam)\b`)
 )
 
 func Convert(req ImportRequest) (*ConvertResult, error) {
@@ -112,6 +116,7 @@ func convertSource(name string, content string, opts ConvertOptions) (*ConvertRe
 			},
 		},
 	}
+	var diagnostics diag.Collector
 
 	blocks := actionBlocks(content)
 	if len(blocks) == 0 {
@@ -121,7 +126,7 @@ func convertSource(name string, content string, opts ConvertOptions) (*ConvertRe
 
 	var protocols []string
 	for _, block := range blocks {
-		steps := parseBlock(block, &result.Stats, &result.Warnings)
+		steps := parseBlock(block, &result.Stats, &result.Warnings, &diagnostics)
 		for _, step := range steps {
 			protocols = append(protocols, step.Protocol)
 			result.Script.Actions = append(result.Script.Actions, step.Action)
@@ -129,8 +134,8 @@ func convertSource(name string, content string, opts ConvertOptions) (*ConvertRe
 		}
 	}
 	if len(result.Script.Actions) == 0 && len(blocks) > 0 {
-		result.Warnings = append(result.Warnings, "load.action block parsing could not preserve nested JavaScript objects; imported supported calls from full source")
-		steps := parseBlock(namedBlock{Name: result.Script.Name, Body: content}, &result.Stats, &result.Warnings)
+		diagnostics.Add(diag.Warning, "DevWeb load.action parser", result.Script.Name, "load.action block parsing could not preserve nested JavaScript objects; importing supported calls from full source for review")
+		steps := parseBlock(namedBlock{Name: result.Script.Name, Body: content}, &result.Stats, &result.Warnings, &diagnostics)
 		for _, step := range steps {
 			protocols = append(protocols, step.Protocol)
 			result.Script.Actions = append(result.Script.Actions, step.Action)
@@ -152,6 +157,7 @@ func convertSource(name string, content string, opts ConvertOptions) (*ConvertRe
 	if result.Script.Protocol == "grpc" {
 		result.Script.Config.GRPC.UseReflection = true
 	}
+	result.Unsupported = diagnostics.Items()
 	return result, nil
 }
 
@@ -169,19 +175,35 @@ func actionBlocks(content string) []namedBlock {
 	return blocks
 }
 
-func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string) []parsedStep {
+func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagnostics *diag.Collector) []parsedStep {
 	var steps []parsedStep
-	for _, match := range webRequestPattern.FindAllStringSubmatch(block.Body, -1) {
+	webRequestMatches := webRequestPattern.FindAllStringSubmatchIndex(block.Body, -1)
+	for _, match := range webRequestMatches {
 		stats.TotalSteps++
-		action, ok := parseWebRequest(block.Name, match[1])
+		objectLiteral := block.Body[match[2]:match[3]]
+		action, ok := parseWebRequest(block.Name, objectLiteral)
 		if !ok {
 			stats.Skipped++
 			stats.UnsupportedCalls = append(stats.UnsupportedCalls, "load.WebRequest")
-			*warnings = append(*warnings, "skipped DevWeb WebRequest with unsupported object shape")
+			diagnostics.Add(diag.Warning, "DevWeb load.WebRequest", devwebLocation(block, match[0]), "WebRequest object literal could not be parsed; request was not converted")
 			continue
 		}
 		stats.HTTPRequests++
 		steps = append(steps, parsedStep{Protocol: "http", Action: action})
+	}
+	if calls := webRequestCallPattern.FindAllStringIndex(block.Body, -1); len(calls) > len(webRequestMatches) {
+		for _, call := range calls {
+			if webRequestCallCovered(call[0], webRequestMatches) {
+				continue
+			}
+			stats.TotalSteps++
+			stats.Skipped++
+			stats.UnsupportedCalls = append(stats.UnsupportedCalls, "load.WebRequest")
+			diagnostics.Add(diag.Warning, "DevWeb load.WebRequest", devwebLocation(block, call[0]), "WebRequest call does not use a statically parseable object literal; request was not converted")
+		}
+	}
+	for _, match := range correlationPattern.FindAllStringIndex(block.Body, -1) {
+		diagnostics.Add(diag.Warning, "DevWeb correlation helper", devwebLocation(block, match[0]), "correlation/extraction helper is not executed by the importer; recreate it with APEX Load extractors before replay")
 	}
 
 	socketVars := map[string]string{}
@@ -208,6 +230,7 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string) []par
 		stats.Skipped++
 		stats.UnsupportedCalls = append(stats.UnsupportedCalls, match[1]+".open")
 		*warnings = append(*warnings, "skipped WebSocket open without constructor URL for "+match[1])
+		diagnostics.Add(diag.Warning, "DevWeb WebSocket open", block.Name, "WebSocket open without constructor URL for "+match[1]+" was skipped")
 	}
 	for _, match := range webSocketSendPattern.FindAllStringSubmatch(block.Body, -1) {
 		if _, exists := socketVars[match[1]]; !exists {
@@ -250,7 +273,7 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string) []par
 		if len(args) < 2 {
 			stats.Skipped++
 			stats.UnsupportedCalls = append(stats.UnsupportedCalls, match[1]+".invoke")
-			*warnings = append(*warnings, "skipped gRPC invoke without service/method arguments")
+			diagnostics.Add(diag.Warning, "DevWeb gRPC invoke", block.Name, "gRPC invoke without service/method arguments was skipped")
 			continue
 		}
 		target := grpcTarget(args)
@@ -259,6 +282,7 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string) []par
 			body = jsObjectLiteral(args[2])
 		}
 		stats.GRPCCalls++
+		diagnostics.Add(diag.Warning, "DevWeb gRPC invoke", block.Name, "gRPC invoke was partially converted; proto files, metadata, and payload schema require review")
 		steps = append(steps, parsedStep{Protocol: "grpc", Action: dsl.Action{
 			Name:   actionName(block.Name, "grpc"),
 			Type:   "grpc_unary",
@@ -276,6 +300,23 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string) []par
 		}
 	}
 	return steps
+}
+
+func webRequestCallCovered(offset int, matches [][]int) bool {
+	for _, match := range matches {
+		if len(match) >= 2 && offset >= match[0] && offset < match[1] {
+			return true
+		}
+	}
+	return false
+}
+
+func devwebLocation(block namedBlock, offset int) string {
+	line := 1
+	if offset > 0 && offset <= len(block.Body) {
+		line += strings.Count(block.Body[:offset], "\n")
+	}
+	return fmt.Sprintf("%s line %d", firstNonEmpty(block.Name, "DevWebAction"), line)
 }
 
 func parseWebRequest(blockName string, objectLiteral string) (dsl.Action, bool) {

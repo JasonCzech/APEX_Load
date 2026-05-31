@@ -130,3 +130,69 @@ func TestConvertPostmanRejectsEmptyCollection(t *testing.T) {
 		t.Fatal("Convert returned nil error for empty collection")
 	}
 }
+
+func TestConvertPostmanReportsEventScriptsAndTranslatesSimpleVariables(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+		  "info": {"name": "Scripted Collection"},
+		  "item": [
+		    {
+		      "name": "Signed Request",
+		      "event": [
+		        {
+		          "listen": "prerequest",
+		          "script": {"type": "text/javascript", "exec": [
+		            "pm.environment.set(\"token\", \"abc123\");",
+		            "const signature = sign(pm.request.url);"
+		          ]}
+		        },
+		        {
+		          "listen": "test",
+		          "script": {"type": "text/javascript", "exec": [
+		            "pm.test(\"ok\", function () { pm.response.to.have.status(200); });"
+		          ]}
+		        }
+		      ],
+		      "request": {
+		        "method": "GET",
+		        "url": "https://api.example.com/orders",
+		        "header": [{"key": "Authorization", "value": "Bearer {{token}}"}]
+		      }
+		    }
+		  ]
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if !postmanParameterNames(result, "token") {
+		t.Fatalf("parameters = %#v, want translated token variable", result.Script.Parameters)
+	}
+	if !containsPostmanDiagnostic(result, "Postman pre-request script") {
+		t.Fatalf("diagnostics = %#v, want pre-request warning", result.Unsupported)
+	}
+	if !containsPostmanDiagnostic(result, "Postman test script") {
+		t.Fatalf("diagnostics = %#v, want test script warning", result.Unsupported)
+	}
+	if !containsPostmanDiagnostic(result, "Postman script variable") {
+		t.Fatalf("diagnostics = %#v, want variable translation info", result.Unsupported)
+	}
+}
+
+func postmanParameterNames(result *ConvertResult, name string) bool {
+	for _, param := range result.Script.Parameters {
+		if param.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func containsPostmanDiagnostic(result *ConvertResult, element string) bool {
+	for _, item := range result.Unsupported {
+		if strings.Contains(item.Element, element) || strings.Contains(item.String(), element) {
+			return true
+		}
+	}
+	return false
+}

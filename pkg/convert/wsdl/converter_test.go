@@ -86,3 +86,71 @@ func TestConvertWSDLFiltersOperationsAndUsesOverrideURL(t *testing.T) {
 		t.Fatalf("actions = %+v, want only Keep", result.Script.Actions)
 	}
 }
+
+func TestConvertWSDLBuildsTypedSkeletonAndReportsAdditionalEndpoints(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `<?xml version="1.0"?>
+<definitions name="AccountService"
+  targetNamespace="urn:accounts"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:tns="urn:accounts"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <types>
+    <xsd:schema targetNamespace="urn:accounts">
+      <xsd:element name="GetAccountRequest" type="tns:GetAccountRequestType"/>
+      <xsd:complexType name="GetAccountRequestType">
+        <xsd:sequence>
+          <xsd:element name="accountId" type="xsd:string"/>
+          <xsd:element name="includeInactive" type="xsd:boolean"/>
+        </xsd:sequence>
+      </xsd:complexType>
+    </xsd:schema>
+  </types>
+  <message name="GetAccountInput">
+    <part name="parameters" element="tns:GetAccountRequest"/>
+  </message>
+  <portType name="AccountPortType">
+    <operation name="GetAccount">
+      <input message="tns:GetAccountInput"/>
+    </operation>
+  </portType>
+  <binding name="AccountBinding" type="tns:AccountPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="GetAccount"><soap:operation soapAction="urn:GetAccount"/></operation>
+  </binding>
+  <service name="AccountService">
+    <port name="Primary" binding="tns:AccountBinding">
+      <soap:address location="https://primary.example.test/account"/>
+    </port>
+    <port name="Secondary" binding="tns:AccountBinding">
+      <soap:address location="https://secondary.example.test/account"/>
+    </port>
+  </service>
+</definitions>`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Script.Config.BaseURL != "https://primary.example.test/account" {
+		t.Fatalf("base URL = %q", result.Script.Config.BaseURL)
+	}
+	body := result.Script.Actions[0].Body
+	if !strings.Contains(body, "<tns:GetAccountRequest>") ||
+		!strings.Contains(body, "<tns:accountId>{{data.wsdl.accountId}}</tns:accountId>") ||
+		!strings.Contains(body, "<tns:includeInactive>true</tns:includeInactive>") {
+		t.Fatalf("typed SOAP body was not generated: %s", body)
+	}
+	if !containsWSDLDiagnostic(result, "WSDL service endpoints") {
+		t.Fatalf("diagnostics = %#v, want additional endpoint info", result.Unsupported)
+	}
+}
+
+func containsWSDLDiagnostic(result *ConvertResult, element string) bool {
+	for _, item := range result.Unsupported {
+		if strings.Contains(item.Element, element) || strings.Contains(item.String(), element) {
+			return true
+		}
+	}
+	return false
+}

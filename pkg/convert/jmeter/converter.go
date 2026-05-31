@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -26,14 +27,15 @@ type ConvertOptions struct {
 }
 
 type ConvertResult struct {
-	Scripts             []*dsl.Script  `json:"scripts"`
-	Script              *dsl.Script    `json:"script,omitempty"`
-	ScenarioDraft       *ScenarioDraft `json:"scenario_draft,omitempty"`
-	Warnings            []string       `json:"warnings,omitempty"`
-	UnsupportedElements []string       `json:"unsupported_elements,omitempty"`
-	Assumptions         []string       `json:"assumptions,omitempty"`
-	Stats               ConvertStats   `json:"stats"`
-	Summary             ImportSummary  `json:"summary"`
+	Scripts             []*dsl.Script    `json:"scripts"`
+	Script              *dsl.Script      `json:"script,omitempty"`
+	ScenarioDraft       *ScenarioDraft   `json:"scenario_draft,omitempty"`
+	Warnings            []string         `json:"warnings,omitempty"`
+	UnsupportedElements []string         `json:"unsupported_elements,omitempty"`
+	Unsupported         diag.Diagnostics `json:"unsupported,omitempty"`
+	Assumptions         []string         `json:"assumptions,omitempty"`
+	Stats               ConvertStats     `json:"stats"`
+	Summary             ImportSummary    `json:"summary"`
 }
 
 type ConvertStats struct {
@@ -172,6 +174,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	unsupported := map[string]struct{}{}
 	variableNames := map[string]struct{}{}
 	csvNames := map[string]struct{}{}
+	var diagnostics diag.Collector
 
 	threadGroups := findTreeNodes(trees, "ThreadGroup")
 	if len(threadGroups) == 0 {
@@ -213,7 +216,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			}},
 		}
 
-		walkThreadGroup(tg, &ctx, script, opts, result, unsupported, variableNames, csvNames)
+		walkThreadGroup(tg, &ctx, script, opts, result, unsupported, variableNames, csvNames, &diagnostics)
 		if script.Config.BaseURL == "" {
 			script.Config.BaseURL = opts.BaseURL
 		}
@@ -250,6 +253,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	result.Summary.SamplerCount = result.Stats.Samplers
 	result.Summary.VariablesDiscovered = sortedKeys(variableNames)
 	result.Summary.CSVSourcesDiscovered = sortedKeys(csvNames)
+	result.Unsupported = diagnostics.Items()
 	for _, script := range result.Scripts {
 		if script.Metadata == nil {
 			script.Metadata = &dsl.ScriptMetadata{}
@@ -272,7 +276,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	return result, nil
 }
 
-func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, opts ConvertOptions, result *ConvertResult, unsupported map[string]struct{}, variableNames map[string]struct{}, csvNames map[string]struct{}) {
+func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, opts ConvertOptions, result *ConvertResult, unsupported map[string]struct{}, variableNames map[string]struct{}, csvNames map[string]struct{}, diagnostics *diag.Collector) {
 	for _, child := range node.Children {
 		switch child.Element.Name {
 		case "ConfigTestElement":
@@ -315,19 +319,87 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 				script.Actions = append(script.Actions, *action)
 				result.Stats.ConvertedActions++
 			}
+			diagnoseJMeterChildren(child.Children, diagnostics, unsupported)
 		case "ThreadGroup", "TestPlan":
-			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames)
+			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics)
 			continue
+		case "IfController", "WhileController", "ForeachController", "ForEachController", "LoopController", "TransactionController", "InterleaveControl", "RandomController", "ThroughputController":
+			diagnostics.Add(diag.Warning, "JMeter "+child.Element.Name, jmeterElementLocation(child.Element), "controller logic was flattened; child requests are imported in source order without original conditions or transaction semantics")
 		case "hashTree":
 		default:
 			if strings.TrimSpace(child.Element.Name) != "" {
 				unsupported[child.Element.Name] = struct{}{}
+				diagnoseJMeterElement(child.Element, diagnostics)
 			}
 		}
 		if len(child.Children) > 0 && child.Element.Name != "HTTPSamplerProxy" {
-			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames)
+			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics)
 		}
 	}
+}
+
+func diagnoseJMeterChildren(nodes []*treeNode, diagnostics *diag.Collector, unsupported map[string]struct{}) {
+	for _, child := range nodes {
+		if diagnoseJMeterElement(child.Element, diagnostics) {
+			unsupported[child.Element.Name] = struct{}{}
+		}
+		diagnoseJMeterChildren(child.Children, diagnostics, unsupported)
+	}
+}
+
+func diagnoseJMeterElement(element *xmlNode, diagnostics *diag.Collector) bool {
+	if element == nil || strings.TrimSpace(element.Name) == "" {
+		return false
+	}
+	name := element.Name
+	location := jmeterElementLocation(element)
+	switch {
+	case isJMeterScriptElement(name):
+		diagnostics.Add(diag.Warning, "JMeter "+name, location, "JSR223/BeanShell/Groovy scripting is not executed by the importer; translate script logic before replay")
+		return true
+	case isKnownJMeterUnsupported(name):
+		diagnostics.Add(diag.Warning, "JMeter "+name, location, "element is not converted by the HTTP importer and was preserved for import review")
+		return true
+	case isKnownJMeterSupported(name):
+		return false
+	default:
+		diagnostics.Add(diag.Warning, "JMeter "+name, location, "unrecognized JMX element was not converted; review the source plan before replay")
+		return true
+	}
+}
+
+func isJMeterScriptElement(name string) bool {
+	lower := strings.ToLower(name)
+	return strings.Contains(lower, "jsr223") || strings.Contains(lower, "beanshell") || strings.Contains(lower, "bsh") || strings.Contains(lower, "groovy")
+}
+
+func isKnownJMeterUnsupported(name string) bool {
+	switch name {
+	case "JSR223Sampler", "BeanShellSampler", "BSFSampler", "JDBCSampler", "JMSSampler", "JMSPublisher", "JMSSubscriber", "FTPSampler", "JavaSampler", "TCPSampler", "DebugSampler", "JSR223PreProcessor", "JSR223PostProcessor", "BeanShellPreProcessor", "BeanShellPostProcessor":
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownJMeterSupported(name string) bool {
+	switch name {
+	case "TestPlan", "ThreadGroup", "hashTree", "ConfigTestElement", "HeaderManager", "CookieManager", "Arguments", "CSVDataSet", "ConstantTimer", "UniformRandomTimer", "ResponseAssertion", "HTTPSamplerProxy", "RegexExtractor", "JSONPostProcessor", "JMESPathExtractor", "HtmlExtractor", "XPathExtractor", "XPath2Extractor", "BoundaryExtractor":
+		return true
+	default:
+		return false
+	}
+}
+
+func jmeterElementLocation(element *xmlNode) string {
+	if element == nil {
+		return "JMX element"
+	}
+	name := attrOr(element, "testname", "")
+	if name == "" {
+		name = element.Name
+	}
+	return name
 }
 
 func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions) (*dsl.Action, []string) {

@@ -194,6 +194,61 @@ func TestHandleImportOpenAPIRawJSONDocument(t *testing.T) {
 	}
 }
 
+func TestHandleImportOpenAPISurfacesUnsupportedElements(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name": "External Ref API",
+		"content": `{
+  "openapi": "3.0.3",
+  "info": {"title": "External Ref", "version": "1.0"},
+  "servers": [{"url": "https://api.example.test"}],
+  "paths": {
+    "/orders": {
+      "post": {
+        "operationId": "createOrder",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {"$ref": "external.yaml#/components/schemas/Order"}
+            }
+          }
+        },
+        "responses": {"201": {}}
+      }
+    }
+  }
+}`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/openapi", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		UnsupportedElements []string `json:"unsupported_elements"`
+		ReviewSections      []struct {
+			Key      string   `json:"key"`
+			Severity string   `json:"severity"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if !stringSliceContains(result.UnsupportedElements, "schema reference external.yaml") {
+		t.Fatalf("unsupported elements = %#v, want unresolved ref diagnostic", result.UnsupportedElements)
+	}
+	assertReviewSection(t, result.ReviewSections, "import_diagnostics_warning", "warning", "OpenAPI schema $ref at POST /orders [warning]: schema reference external.yaml#/components/schemas/Order could not be resolved; external refs are not inlined")
+}
+
 func TestHandleImportPostman(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	payload := map[string]any{
@@ -322,7 +377,16 @@ func TestHandleImportWSDL(t *testing.T) {
 	if len(result.Script.Actions) != 1 || !strings.Contains(result.Script.Actions[0].Body, "GetAccount") {
 		t.Fatalf("unexpected actions: %+v", result.Script.Actions)
 	}
-	assertReviewSection(t, result.ReviewSections, "wsdl_payload_review", "warning", "Validate SOAPAction and endpoint URL")
+	assertReviewSection(t, result.ReviewSections, "import_diagnostics_warning", "warning", "WSDL input message at operation GetAccount [warning]: input message/part could not be resolved; generated a placeholder SOAP body")
+}
+
+func stringSliceContains(values []string, needle string) bool {
+	for _, value := range values {
+		if strings.Contains(value, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func webAPIMatrixContains(entries []struct {

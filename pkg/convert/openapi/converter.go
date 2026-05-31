@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"gopkg.in/yaml.v3"
 )
@@ -54,24 +55,25 @@ type ReviewSummary struct {
 }
 
 type ConvertResult struct {
-	Script   *dsl.Script   `json:"script"`
-	Warnings []string      `json:"warnings,omitempty"`
-	Stats    ConvertStats  `json:"stats"`
-	Summary  ReviewSummary `json:"summary"`
+	Script      *dsl.Script      `json:"script"`
+	Warnings    []string         `json:"warnings,omitempty"`
+	Unsupported diag.Diagnostics `json:"unsupported,omitempty"`
+	Stats       ConvertStats     `json:"stats"`
+	Summary     ReviewSummary    `json:"summary"`
 }
 
 type document struct {
-	OpenAPI     string                    `json:"openapi,omitempty" yaml:"openapi,omitempty"`
-	Swagger     string                    `json:"swagger,omitempty" yaml:"swagger,omitempty"`
-	Info        info                      `json:"info,omitempty" yaml:"info,omitempty"`
-	Servers     []server                  `json:"servers,omitempty" yaml:"servers,omitempty"`
-	Schemes     []string                  `json:"schemes,omitempty" yaml:"schemes,omitempty"`
-	Host        string                    `json:"host,omitempty" yaml:"host,omitempty"`
-	BasePath    string                    `json:"basePath,omitempty" yaml:"basePath,omitempty"`
-	Paths       map[string]pathItem       `json:"paths,omitempty" yaml:"paths,omitempty"`
-	Components  components                `json:"components,omitempty" yaml:"components,omitempty"`
-	Security    []map[string][]string     `json:"security,omitempty" yaml:"security,omitempty"`
-	Definitions map[string]map[string]any `json:"definitions,omitempty" yaml:"definitions,omitempty"`
+	OpenAPI     string                `json:"openapi,omitempty" yaml:"openapi,omitempty"`
+	Swagger     string                `json:"swagger,omitempty" yaml:"swagger,omitempty"`
+	Info        info                  `json:"info,omitempty" yaml:"info,omitempty"`
+	Servers     []server              `json:"servers,omitempty" yaml:"servers,omitempty"`
+	Schemes     []string              `json:"schemes,omitempty" yaml:"schemes,omitempty"`
+	Host        string                `json:"host,omitempty" yaml:"host,omitempty"`
+	BasePath    string                `json:"basePath,omitempty" yaml:"basePath,omitempty"`
+	Paths       map[string]pathItem   `json:"paths,omitempty" yaml:"paths,omitempty"`
+	Components  components            `json:"components,omitempty" yaml:"components,omitempty"`
+	Security    []map[string][]string `json:"security,omitempty" yaml:"security,omitempty"`
+	Definitions map[string]schema     `json:"definitions,omitempty" yaml:"definitions,omitempty"`
 }
 
 type info struct {
@@ -85,6 +87,9 @@ type server struct {
 
 type components struct {
 	SecuritySchemes map[string]securityScheme `json:"securitySchemes,omitempty" yaml:"securitySchemes,omitempty"`
+	Schemas         map[string]schema         `json:"schemas,omitempty" yaml:"schemas,omitempty"`
+	Parameters      map[string]parameter      `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	RequestBodies   map[string]requestBody    `json:"requestBodies,omitempty" yaml:"requestBodies,omitempty"`
 }
 
 type securityScheme struct {
@@ -119,6 +124,7 @@ type operation struct {
 }
 
 type parameter struct {
+	Ref      string `json:"$ref,omitempty" yaml:"$ref,omitempty"`
 	Name     string `json:"name,omitempty" yaml:"name,omitempty"`
 	In       string `json:"in,omitempty" yaml:"in,omitempty"`
 	Required bool   `json:"required,omitempty" yaml:"required,omitempty"`
@@ -127,6 +133,7 @@ type parameter struct {
 }
 
 type requestBody struct {
+	Ref      string               `json:"$ref,omitempty" yaml:"$ref,omitempty"`
 	Required bool                 `json:"required,omitempty" yaml:"required,omitempty"`
 	Content  map[string]mediaType `json:"content,omitempty" yaml:"content,omitempty"`
 }
@@ -137,12 +144,17 @@ type mediaType struct {
 }
 
 type schema struct {
-	Type       string            `json:"type,omitempty" yaml:"type,omitempty"`
-	Format     string            `json:"format,omitempty" yaml:"format,omitempty"`
-	Properties map[string]schema `json:"properties,omitempty" yaml:"properties,omitempty"`
-	Items      *schema           `json:"items,omitempty" yaml:"items,omitempty"`
-	Example    any               `json:"example,omitempty" yaml:"example,omitempty"`
-	Enum       []any             `json:"enum,omitempty" yaml:"enum,omitempty"`
+	Ref           string            `json:"$ref,omitempty" yaml:"$ref,omitempty"`
+	Type          string            `json:"type,omitempty" yaml:"type,omitempty"`
+	Format        string            `json:"format,omitempty" yaml:"format,omitempty"`
+	Properties    map[string]schema `json:"properties,omitempty" yaml:"properties,omitempty"`
+	Items         *schema           `json:"items,omitempty" yaml:"items,omitempty"`
+	Example       any               `json:"example,omitempty" yaml:"example,omitempty"`
+	Enum          []any             `json:"enum,omitempty" yaml:"enum,omitempty"`
+	OneOf         []schema          `json:"oneOf,omitempty" yaml:"oneOf,omitempty"`
+	AnyOf         []schema          `json:"anyOf,omitempty" yaml:"anyOf,omitempty"`
+	AllOf         []schema          `json:"allOf,omitempty" yaml:"allOf,omitempty"`
+	Discriminator map[string]any    `json:"discriminator,omitempty" yaml:"discriminator,omitempty"`
 }
 
 var supportedMethods = map[string]bool{
@@ -162,6 +174,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		return nil, errors.New("OpenAPI document contains no paths")
 	}
 
+	var diagnostics diag.Collector
+	res := resolver{doc: doc, diagnostics: &diagnostics}
 	baseURL, warnings := deriveBaseURL(doc, req.Options.BaseURL)
 	scriptName := firstNonEmpty(req.Options.ScriptName, req.Name, doc.Info.Title, "Imported_OpenAPI_Script")
 	result := &ConvertResult{
@@ -213,10 +227,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		for _, candidate := range operationsForPath(item) {
 			result.Stats.TotalOperations++
 			if !supportedMethods[candidate.method] || !operationAllowed(candidate.op, req.Options) {
-				result.Stats.SkippedOperations = append(result.Stats.SkippedOperations, strings.ToUpper(candidate.method)+" "+path)
+				skipped := strings.ToUpper(candidate.method) + " " + path
+				result.Stats.SkippedOperations = append(result.Stats.SkippedOperations, skipped)
+				diagnostics.Add(diag.Warning, "OpenAPI operation skipped", skipped, "operation was not converted because it was filtered or uses an unsupported HTTP method")
 				continue
 			}
-			action, bodyColumns, assertionAdded := buildAction(path, candidate.method, item.Parameters, candidate.op, boolOption(req.Options.IncludeAssertions, true))
+			action, bodyColumns, assertionAdded := buildAction(path, candidate.method, item.Parameters, candidate.op, boolOption(req.Options.IncludeAssertions, true), res)
 			result.Script.Actions = append(result.Script.Actions, action)
 			result.Stats.ConvertedActions++
 			result.Stats.ParametersDetected += len(item.Parameters) + len(candidate.op.Parameters)
@@ -250,6 +266,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if result.Script.Config.BaseURL == "" {
 		result.Warnings = append(result.Warnings, "base URL could not be derived; set options.base_url before saving the script")
 	}
+	if gap := result.Stats.TotalOperations - result.Stats.ConvertedActions - len(result.Stats.SkippedOperations); gap > 0 {
+		diagnostics.Add(diag.Warning, "OpenAPI completeness guard", "document", fmt.Sprintf("%d operation(s) were present but not converted or explicitly skipped", gap))
+	}
+	result.Unsupported = diagnostics.Items()
 	return result, nil
 }
 
@@ -331,12 +351,164 @@ func operationAllowed(op *operation, opts ConvertOptions) bool {
 	return true
 }
 
-func buildAction(path, method string, pathParams []parameter, op *operation, includeAssertion bool) (dsl.Action, []string, bool) {
+type resolver struct {
+	doc         *document
+	diagnostics *diag.Collector
+}
+
+func (r resolver) add(sev diag.Severity, element, location, detail string) {
+	if r.diagnostics != nil {
+		r.diagnostics.Add(sev, element, location, detail)
+	}
+}
+
+func (r resolver) resolveParameter(param parameter, location string) parameter {
+	ref := strings.TrimSpace(param.Ref)
+	if ref == "" {
+		return param
+	}
+	if value, ok := r.localParameter(ref); ok {
+		return value
+	}
+	r.add(diag.Warning, "OpenAPI parameter $ref", location, "parameter reference "+ref+" could not be resolved; parameter was not expanded")
+	return parameter{}
+}
+
+func (r resolver) resolveRequestBody(body *requestBody, location string) *requestBody {
+	if body == nil {
+		return nil
+	}
+	ref := strings.TrimSpace(body.Ref)
+	if ref == "" {
+		return body
+	}
+	if value, ok := r.localRequestBody(ref); ok {
+		return &value
+	}
+	r.add(diag.Warning, "OpenAPI requestBody $ref", location, "requestBody reference "+ref+" could not be resolved; request payload was left empty")
+	return nil
+}
+
+func (r resolver) resolveSchema(s schema, location string, seen map[string]bool) schema {
+	if seen == nil {
+		seen = map[string]bool{}
+	}
+	if ref := strings.TrimSpace(s.Ref); ref != "" {
+		if seen[ref] {
+			r.add(diag.Warning, "OpenAPI schema $ref", location, "schema reference cycle detected at "+ref+"; using an empty object placeholder")
+			return schema{Type: "object"}
+		}
+		seen[ref] = true
+		resolved, ok := r.localSchema(ref)
+		if !ok {
+			r.add(diag.Warning, "OpenAPI schema $ref", location, "schema reference "+ref+" could not be resolved; external refs are not inlined")
+			return schema{Type: "object"}
+		}
+		return r.resolveSchema(resolved, location, seen)
+	}
+	if len(s.Discriminator) > 0 {
+		r.add(diag.Warning, "OpenAPI discriminator", location, "schema discriminator is not modeled; generated sample uses the statically selected shape")
+	}
+	if len(s.AllOf) > 0 {
+		r.add(diag.Warning, "OpenAPI allOf", location, "allOf composition was merged where possible; review generated payload fields")
+		merged := s
+		merged.AllOf = nil
+		if merged.Properties == nil {
+			merged.Properties = map[string]schema{}
+		}
+		for _, member := range s.AllOf {
+			resolved := r.resolveSchema(member, location, copySeen(seen))
+			for name, prop := range resolved.Properties {
+				merged.Properties[name] = prop
+			}
+			if merged.Type == "" {
+				merged.Type = resolved.Type
+			}
+		}
+		return merged
+	}
+	if len(s.OneOf) > 0 {
+		r.add(diag.Warning, "OpenAPI oneOf", location, "oneOf composition was reduced to the first variant for sample generation")
+		return r.resolveSchema(s.OneOf[0], location, copySeen(seen))
+	}
+	if len(s.AnyOf) > 0 {
+		r.add(diag.Warning, "OpenAPI anyOf", location, "anyOf composition was reduced to the first variant for sample generation")
+		return r.resolveSchema(s.AnyOf[0], location, copySeen(seen))
+	}
+	if s.Items != nil {
+		item := r.resolveSchema(*s.Items, location+"[]", copySeen(seen))
+		s.Items = &item
+	}
+	if len(s.Properties) > 0 {
+		props := make(map[string]schema, len(s.Properties))
+		for name, prop := range s.Properties {
+			props[name] = r.resolveSchema(prop, location+"."+name, copySeen(seen))
+		}
+		s.Properties = props
+	}
+	return s
+}
+
+func (r resolver) localSchema(ref string) (schema, bool) {
+	if r.doc == nil {
+		return schema{}, false
+	}
+	switch {
+	case strings.HasPrefix(ref, "#/components/schemas/"):
+		name := refName(ref, "#/components/schemas/")
+		value, ok := r.doc.Components.Schemas[name]
+		return value, ok
+	case strings.HasPrefix(ref, "#/definitions/"):
+		name := refName(ref, "#/definitions/")
+		value, ok := r.doc.Definitions[name]
+		return value, ok
+	default:
+		return schema{}, false
+	}
+}
+
+func (r resolver) localParameter(ref string) (parameter, bool) {
+	if r.doc == nil || !strings.HasPrefix(ref, "#/components/parameters/") {
+		return parameter{}, false
+	}
+	value, ok := r.doc.Components.Parameters[refName(ref, "#/components/parameters/")]
+	return value, ok
+}
+
+func (r resolver) localRequestBody(ref string) (requestBody, bool) {
+	if r.doc == nil || !strings.HasPrefix(ref, "#/components/requestBodies/") {
+		return requestBody{}, false
+	}
+	value, ok := r.doc.Components.RequestBodies[refName(ref, "#/components/requestBodies/")]
+	return value, ok
+}
+
+func refName(ref, prefix string) string {
+	name := strings.TrimPrefix(ref, prefix)
+	name = strings.ReplaceAll(name, "~1", "/")
+	name = strings.ReplaceAll(name, "~0", "~")
+	return name
+}
+
+func copySeen(input map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
+func buildAction(path, method string, pathParams []parameter, op *operation, includeAssertion bool, res resolver) (dsl.Action, []string, bool) {
 	params := append([]parameter{}, pathParams...)
 	params = append(params, op.Parameters...)
+	location := strings.ToUpper(method) + " " + path
+	for i := range params {
+		params[i] = res.resolveParameter(params[i], location)
+	}
 	target := templatePath(path, params)
 	headers := map[string]string{"Accept": "application/json"}
-	body, contentType, bodyColumns := requestBodyExample(op.RequestBody)
+	applyHeaderAndCookieParams(headers, params)
+	body, contentType, bodyColumns := requestBodyExample(res.resolveRequestBody(op.RequestBody, location), res, location)
 	if contentType != "" {
 		headers["Content-Type"] = contentType
 	}
@@ -361,7 +533,7 @@ func buildAction(path, method string, pathParams []parameter, op *operation, inc
 	return action, bodyColumns, false
 }
 
-func requestBodyExample(body *requestBody) (string, string, []string) {
+func requestBodyExample(body *requestBody, res resolver, location string) (string, string, []string) {
 	if body == nil || len(body.Content) == 0 {
 		return "", "", nil
 	}
@@ -374,7 +546,18 @@ func requestBodyExample(body *requestBody) (string, string, []string) {
 	if media.Schema.Example != nil {
 		return renderExample(media.Schema.Example, preferred), preferred, nil
 	}
-	payload, columns := sampleForSchema(media.Schema)
+	if strings.Contains(preferred, "application/x-www-form-urlencoded") {
+		return formURLEncodedExample(media.Schema, res, location), preferred, formColumns(media.Schema, res, location)
+	}
+	if strings.Contains(preferred, "multipart/form-data") {
+		body, columns := multipartFormExample(media.Schema, res, location)
+		contentType := preferred
+		if !strings.Contains(strings.ToLower(contentType), "boundary=") {
+			contentType += "; boundary=----apexload-openapi-boundary"
+		}
+		return body, contentType, columns
+	}
+	payload, columns := sampleForSchema(media.Schema, res, location, map[string]bool{})
 	if payload == nil {
 		return "", preferred, nil
 	}
@@ -388,14 +571,16 @@ func requestBodyExample(body *requestBody) (string, string, []string) {
 	return string(encoded), preferred, columns
 }
 
-func sampleForSchema(s schema) (any, []string) {
+func sampleForSchema(s schema, res resolver, location string, seen map[string]bool) (any, []string) {
+	s = res.resolveSchema(s, location, seen)
 	if len(s.Properties) > 0 || s.Type == "object" {
 		result := map[string]any{}
 		columns := []string{}
 		for _, name := range sortedSchemaPropertyKeys(s.Properties) {
-			value, nested := sampleForSchema(s.Properties[name])
+			prop := res.resolveSchema(s.Properties[name], location+"."+name, copySeen(seen))
+			value, nested := sampleForSchema(prop, res, location+"."+name, copySeen(seen))
 			column := sanitizeColumnName(name)
-			if scalarSchema(s.Properties[name]) {
+			if scalarSchema(prop) {
 				value = "{{data.openapi." + column + "}}"
 				columns = append(columns, column)
 			}
@@ -405,7 +590,7 @@ func sampleForSchema(s schema) (any, []string) {
 		return result, uniqueSorted(columns)
 	}
 	if s.Items != nil || s.Type == "array" {
-		value, columns := sampleForSchema(valueOrEmptySchema(s.Items))
+		value, columns := sampleForSchema(valueOrEmptySchema(s.Items), res, location+"[]", copySeen(seen))
 		return []any{value}, columns
 	}
 	switch strings.ToLower(s.Type) {
@@ -426,6 +611,58 @@ func sampleForSchema(s schema) (any, []string) {
 	}
 }
 
+func formURLEncodedExample(s schema, res resolver, location string) string {
+	values := url.Values{}
+	for _, field := range schemaFieldNames(s, res, location) {
+		values.Set(field, "{{data.openapi."+sanitizeColumnName(field)+"}}")
+	}
+	return values.Encode()
+}
+
+func formColumns(s schema, res resolver, location string) []string {
+	fields := schemaFieldNames(s, res, location)
+	columns := make([]string, 0, len(fields))
+	for _, field := range fields {
+		columns = append(columns, sanitizeColumnName(field))
+	}
+	return uniqueSorted(columns)
+}
+
+func multipartFormExample(s schema, res resolver, location string) (string, []string) {
+	const boundary = "----apexload-openapi-boundary"
+	fields := res.resolveSchema(s, location, map[string]bool{})
+	var b strings.Builder
+	columns := []string{}
+	for _, name := range sortedSchemaPropertyKeys(fields.Properties) {
+		prop := res.resolveSchema(fields.Properties[name], location+"."+name, map[string]bool{})
+		column := sanitizeColumnName(name)
+		columns = append(columns, column)
+		b.WriteString("--" + boundary + "\r\n")
+		if strings.EqualFold(prop.Format, "binary") {
+			b.WriteString(`Content-Disposition: form-data; name="` + name + `"; filename="{{data.openapi.` + column + `}}"` + "\r\n")
+			b.WriteString("Content-Type: application/octet-stream\r\n\r\n")
+			b.WriteString("{{file." + column + "}}\r\n")
+			res.add(diag.Warning, "OpenAPI multipart file", location, "property "+name+" is format: binary; file bytes cannot be generated from the spec and must be supplied before replay")
+			continue
+		}
+		b.WriteString(`Content-Disposition: form-data; name="` + name + `"` + "\r\n\r\n")
+		b.WriteString("{{data.openapi." + column + "}}\r\n")
+	}
+	if len(columns) == 0 {
+		return "", nil
+	}
+	b.WriteString("--" + boundary + "--\r\n")
+	return b.String(), uniqueSorted(columns)
+}
+
+func schemaFieldNames(s schema, res resolver, location string) []string {
+	s = res.resolveSchema(s, location, map[string]bool{})
+	if len(s.Properties) == 0 {
+		return nil
+	}
+	return sortedSchemaPropertyKeys(s.Properties)
+}
+
 func renderExample(value any, contentType string) string {
 	if strings.Contains(contentType, "json") {
 		encoded, err := json.MarshalIndent(value, "", "  ")
@@ -437,7 +674,7 @@ func renderExample(value any, contentType string) string {
 }
 
 func preferredContentType(contentTypes []string) string {
-	for _, candidate := range []string{"application/json", "application/*+json", "text/xml", "application/xml"} {
+	for _, candidate := range []string{"application/json", "application/*+json", "application/x-www-form-urlencoded", "multipart/form-data", "text/xml", "application/xml"} {
 		for _, contentType := range contentTypes {
 			if contentType == candidate || (candidate == "application/*+json" && strings.HasSuffix(contentType, "+json")) {
 				return contentType
@@ -490,6 +727,39 @@ func templatePath(path string, params []parameter) string {
 		}
 	}
 	return target
+}
+
+func applyHeaderAndCookieParams(headers map[string]string, params []parameter) {
+	var cookies []string
+	for _, param := range params {
+		name := strings.TrimSpace(param.Name)
+		if name == "" {
+			continue
+		}
+		template := "{{data.openapi." + sanitizeColumnName(name) + "}}"
+		switch strings.ToLower(strings.TrimSpace(param.In)) {
+		case "header":
+			headers[name] = template
+		case "cookie":
+			cookies = append(cookies, name+"="+template)
+		}
+	}
+	if len(cookies) == 0 {
+		return
+	}
+	if existing := headerValue(headers, "Cookie"); existing != "" {
+		cookies = append([]string{existing}, cookies...)
+	}
+	headers["Cookie"] = strings.Join(cookies, "; ")
+}
+
+func headerValue(headers map[string]string, key string) string {
+	for existingKey, value := range headers {
+		if strings.EqualFold(existingKey, key) {
+			return value
+		}
+	}
+	return ""
 }
 
 func applyAuthDefaults(script *dsl.Script, schemes map[string]securityScheme, warnings *[]string) {

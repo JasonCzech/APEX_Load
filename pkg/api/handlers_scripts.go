@@ -225,10 +225,12 @@ func (s *Server) handleImportDevWeb(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
-		Result:   result,
-		Script:   result.Script,
-		Warnings: result.Warnings,
-		Stats:    result.Stats,
+		Result:              result,
+		Script:              result.Script,
+		Warnings:            result.Warnings,
+		Stats:               result.Stats,
+		UnsupportedElements: result.Unsupported.Strings(),
+		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
 	}))
 }
 
@@ -254,11 +256,13 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
-		Result:       result,
-		Script:       result.Script,
-		Warnings:     result.Warnings,
-		Stats:        result.Stats,
-		Correlations: result.Correlations,
+		Result:              result,
+		Script:              result.Script,
+		Warnings:            result.Warnings,
+		Stats:               result.Stats,
+		Correlations:        result.Correlations,
+		UnsupportedElements: result.Unsupported.Strings(),
+		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
 	}))
 }
 
@@ -1695,13 +1699,15 @@ func stringValue(value any) string {
 }
 
 func writeJMeterImportResponse(w http.ResponseWriter, status int, result *jmeter.ConvertResult) {
+	unsupportedElements := uniqueSortedStrings(append(append([]string{}, result.UnsupportedElements...), result.Unsupported.Strings()...))
 	writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
 		Scripts:             result.Scripts,
 		Script:              result.Script,
 		ScenarioDraft:       result.ScenarioDraft,
 		Warnings:            result.Warnings,
-		UnsupportedElements: result.UnsupportedElements,
+		UnsupportedElements: unsupportedElements,
+		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
 		Assumptions:         result.Assumptions,
 		Stats:               result.Stats,
 		Summary:             result.Summary,
@@ -1799,11 +1805,13 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
-		Result:       result,
-		Script:       result.Script,
-		Warnings:     result.Warnings,
-		Stats:        result.Stats,
-		Correlations: result.Correlations,
+		Result:              result,
+		Script:              result.Script,
+		Warnings:            result.Warnings,
+		Stats:               result.Stats,
+		Correlations:        result.Correlations,
+		UnsupportedElements: result.Unsupported.Strings(),
+		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
 	}))
 }
 

@@ -1,6 +1,9 @@
 package har
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestConvertHAR(t *testing.T) {
 	result, err := Convert([]byte(`{
@@ -59,4 +62,36 @@ func TestConvertHARRequiresContent(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for empty HAR content")
 	}
+}
+
+func TestConvertHARSurfacesSampleDiagnostics(t *testing.T) {
+	result, err := Convert([]byte(`{
+  "log": {
+    "entries": [{
+      "request": {
+        "method": "POST",
+        "url": "https://api.example.test/upload",
+        "headers": [],
+        "postData": {
+          "mimeType": "multipart/form-data",
+          "params": [{"name": "file", "fileName": "payload.bin"}]
+        }
+      },
+      "response": {"status": 200, "content": {"text": "{}"}}
+    }]
+  }
+}`), ConvertOptions{InferExtractors: boolPtr(false)})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if len(result.Unsupported) == 0 {
+		t.Fatal("expected HAR diagnostics to surface through wrapper")
+	}
+	if !strings.Contains(strings.Join(result.Unsupported.Strings(), "\n"), "HAR multipart file") {
+		t.Fatalf("diagnostics = %#v, want multipart file warning", result.Unsupported)
+	}
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
