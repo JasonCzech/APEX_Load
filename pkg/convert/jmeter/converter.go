@@ -318,7 +318,7 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			ctx.assertions = append(ctx.assertions, assertions...)
 			result.Stats.Assertions += len(assertions)
 		case "HTTPSamplerProxy":
-			action, warnings := convertHTTPSampler(child, ctx, opts)
+			action, warnings := convertHTTPSampler(child, ctx, opts, diagnostics)
 			result.Warnings = append(result.Warnings, warnings...)
 			result.Stats.Samplers++
 			if action != nil {
@@ -440,7 +440,7 @@ func jmeterElementLocation(element *xmlNode) string {
 	return name
 }
 
-func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions) (*dsl.Action, []string) {
+func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions, diagnostics *diag.Collector) (*dsl.Action, []string) {
 	element := node.Element
 	name := sanitizeName(attrOr(element, "testname", "HTTP Request"))
 	method := firstNonEmpty(prop(element, "HTTPSampler.method"), "GET")
@@ -472,7 +472,7 @@ func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions
 	if len(params) > 0 {
 		action.Params = params
 	}
-	if extractors, extractorWarnings := parseSamplerExtractors(node); len(extractors) > 0 {
+	if extractors, extractorWarnings := parseSamplerExtractors(node, diagnostics); len(extractors) > 0 {
 		action.Extractors = extractors
 		warnings = append(warnings, extractorWarnings...)
 	} else if len(extractorWarnings) > 0 {
@@ -610,9 +610,10 @@ func firstHeaderValue(headers map[string]string, key string) string {
 	return ""
 }
 
-func parseSamplerExtractors(node *treeNode) ([]dsl.Extractor, []string) {
+func parseSamplerExtractors(node *treeNode, diagnostics *diag.Collector) ([]dsl.Extractor, []string) {
 	var out []dsl.Extractor
 	var warnings []string
+	location := jmeterElementLocation(node.Element)
 	for _, child := range node.Children {
 		switch child.Element.Name {
 		case "RegexExtractor":
@@ -637,6 +638,9 @@ func parseSamplerExtractors(node *treeNode) ([]dsl.Extractor, []string) {
 			ext, warning := parseXPath2Extractor(child.Element)
 			if warning != "" {
 				warnings = append(warnings, warning)
+				if diagnostics != nil {
+					diagnostics.Add(diag.Warning, "JMeter XPath2Extractor", location, warning)
+				}
 			}
 			if ext.Name != "" && ext.Expression != "" {
 				out = append(out, ext)

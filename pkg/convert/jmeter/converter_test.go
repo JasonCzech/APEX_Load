@@ -502,6 +502,9 @@ func TestConvertJMXXPath2InvalidNamespacesWarn(t *testing.T) {
 	if !strings.Contains(result.Warnings[0], "namespace bindings were invalid") {
 		t.Fatalf("unexpected warning detail: %#v", result.Warnings)
 	}
+	if !containsJMeterDiagnostic(result, "JMeter XPath2Extractor") {
+		t.Fatalf("diagnostics = %#v, want XPath2Extractor warning", result.Unsupported)
+	}
 }
 
 func TestConvertJMXReportsFlattenedControllersAndScriptSamplers(t *testing.T) {
