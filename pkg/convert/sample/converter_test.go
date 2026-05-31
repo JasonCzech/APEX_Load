@@ -139,6 +139,46 @@ func TestConvertCurlSOAP(t *testing.T) {
 	}
 }
 
+func TestConvertCurlMultipartFormReportsFileAndUnsupportedFlags(t *testing.T) {
+	sanitizeSensitive := false
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format:  "curl",
+		Content: `curl --compressed -F 'description=quarterly report' -F 'file=@/tmp/report.pdf;type=application/pdf' https://api.example.com/upload`,
+		Options: ConvertOptions{SanitizeSensitive: &sanitizeSensitive, InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
+	}
+	action := result.Script.Actions[0]
+	if action.Method != "POST" {
+		t.Fatalf("method = %q, want POST", action.Method)
+	}
+	if action.Headers["Content-Type"] != "multipart/form-data; boundary=----apexload-curl-boundary" {
+		t.Fatalf("content type = %q", action.Headers["Content-Type"])
+	}
+	for _, want := range []string{
+		`name="description"`,
+		"quarterly report",
+		`name="file"; filename="report.pdf"`,
+		"Content-Type: application/pdf",
+		"{{file.file}}",
+	} {
+		if !strings.Contains(action.Body, want) {
+			t.Fatalf("multipart body = %q, want %q", action.Body, want)
+		}
+	}
+	if !containsSampleDiagnostic(result, "cURL multipart file") {
+		t.Fatalf("diagnostics = %#v, want cURL multipart file warning", result.Unsupported)
+	}
+	if !containsSampleDiagnostic(result, "cURL option") {
+		t.Fatalf("diagnostics = %#v, want unsupported cURL option warning", result.Unsupported)
+	}
+}
+
 func TestConvertBatchRawHTTP(t *testing.T) {
 	result, err := Convert(ImportRequest{
 		Format: "raw_http",
