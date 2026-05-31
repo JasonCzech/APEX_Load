@@ -284,6 +284,63 @@ func TestConvertSwagger2BodyAndFormParameters(t *testing.T) {
 	}
 }
 
+func TestConvertSwagger2ResolvesTopLevelParameterRefs(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "swagger": "2.0",
+  "info": {"title": "Legacy Orders", "version": "1.0"},
+  "host": "api.example.test",
+  "schemes": ["https"],
+  "basePath": "/v1",
+  "consumes": ["application/json"],
+  "definitions": {
+    "OrderInput": {
+      "type": "object",
+      "properties": {
+        "customerId": {"type": "string"},
+        "quantity": {"type": "integer"}
+      }
+    }
+  },
+  "parameters": {
+    "TenantHeader": {"name": "X-Tenant", "in": "header", "type": "string"},
+    "SearchQuery": {"name": "q", "in": "query", "type": "string"},
+    "OrderBody": {"name": "body", "in": "body", "schema": {"$ref": "#/definitions/OrderInput"}}
+  },
+  "paths": {
+    "/orders": {
+      "post": {
+        "operationId": "createLegacyOrderFromRefs",
+        "parameters": [
+          {"$ref": "#/parameters/TenantHeader"},
+          {"$ref": "#/parameters/SearchQuery"},
+          {"$ref": "#/parameters/OrderBody"}
+        ],
+        "responses": {"201": {}}
+      }
+    }
+  }
+}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+
+	action := openAPIAction(result, "createLegacyOrderFromRefs")
+	if action.Headers["X-Tenant"] != "{{data.openapi.x_tenant}}" {
+		t.Fatalf("top-level header ref = %q", action.Headers["X-Tenant"])
+	}
+	if !strings.Contains(action.Target, "q={{data.openapi.q}}") {
+		t.Fatalf("top-level query ref target = %q", action.Target)
+	}
+	if !strings.Contains(action.Body, "{{data.openapi.customerid}}") || !strings.Contains(action.Body, "{{data.openapi.quantity}}") {
+		t.Fatalf("top-level body ref was not expanded: %s", action.Body)
+	}
+	if containsOpenAPIDiagnostic(result, "OpenAPI parameter $ref") {
+		t.Fatalf("diagnostics = %#v, did not expect unresolved parameter ref", result.Unsupported)
+	}
+}
+
 func openAPIAction(result *ConvertResult, name string) dslActionForTest {
 	for _, action := range result.Script.Actions {
 		if action.Name == name {

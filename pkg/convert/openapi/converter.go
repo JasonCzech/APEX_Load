@@ -75,6 +75,7 @@ type document struct {
 	Components  components            `json:"components,omitempty" yaml:"components,omitempty"`
 	Security    []map[string][]string `json:"security,omitempty" yaml:"security,omitempty"`
 	Definitions map[string]schema     `json:"definitions,omitempty" yaml:"definitions,omitempty"`
+	Parameters  map[string]parameter  `json:"parameters,omitempty" yaml:"parameters,omitempty"`
 }
 
 type info struct {
@@ -368,12 +369,24 @@ func (r resolver) add(sev diag.Severity, element, location, detail string) {
 }
 
 func (r resolver) resolveParameter(param parameter, location string) parameter {
+	return r.resolveParameterWithSeen(param, location, nil)
+}
+
+func (r resolver) resolveParameterWithSeen(param parameter, location string, seen map[string]bool) parameter {
 	ref := strings.TrimSpace(param.Ref)
 	if ref == "" {
 		return param
 	}
+	if seen == nil {
+		seen = map[string]bool{}
+	}
+	if seen[ref] {
+		r.add(diag.Warning, "OpenAPI parameter $ref", location, "parameter reference cycle detected at "+ref+"; parameter was not expanded")
+		return parameter{}
+	}
+	seen[ref] = true
 	if value, ok := r.localParameter(ref); ok {
-		return value
+		return r.resolveParameterWithSeen(value, location, seen)
 	}
 	r.add(diag.Warning, "OpenAPI parameter $ref", location, "parameter reference "+ref+" could not be resolved; parameter was not expanded")
 	return parameter{}
@@ -473,11 +486,19 @@ func (r resolver) localSchema(ref string) (schema, bool) {
 }
 
 func (r resolver) localParameter(ref string) (parameter, bool) {
-	if r.doc == nil || !strings.HasPrefix(ref, "#/components/parameters/") {
+	if r.doc == nil {
 		return parameter{}, false
 	}
-	value, ok := r.doc.Components.Parameters[refName(ref, "#/components/parameters/")]
-	return value, ok
+	switch {
+	case strings.HasPrefix(ref, "#/components/parameters/"):
+		value, ok := r.doc.Components.Parameters[refName(ref, "#/components/parameters/")]
+		return value, ok
+	case strings.HasPrefix(ref, "#/parameters/"):
+		value, ok := r.doc.Parameters[refName(ref, "#/parameters/")]
+		return value, ok
+	default:
+		return parameter{}, false
+	}
 }
 
 func (r resolver) localRequestBody(ref string) (requestBody, bool) {
