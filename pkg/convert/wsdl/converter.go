@@ -101,12 +101,30 @@ type xsdElement struct {
 }
 
 type xsdComplexType struct {
-	Name     string       `xml:"name,attr"`
-	Sequence *xsdSequence `xml:"sequence"`
+	Name       string         `xml:"name,attr"`
+	Sequence   *xsdSequence   `xml:"sequence"`
+	All        *xsdAll        `xml:"all"`
+	Choice     *xsdChoice     `xml:"choice"`
+	Attributes []xsdAttribute `xml:"attribute"`
 }
 
 type xsdSequence struct {
 	Elements []xsdElement `xml:"element"`
+}
+
+type xsdAll struct {
+	Elements []xsdElement `xml:"element"`
+}
+
+type xsdChoice struct {
+	Elements []xsdElement `xml:"element"`
+}
+
+type xsdAttribute struct {
+	Name string `xml:"name,attr"`
+	Ref  string `xml:"ref,attr"`
+	Type string `xml:"type,attr"`
+	Use  string `xml:"use,attr"`
 }
 
 type message struct {
@@ -407,7 +425,7 @@ func soapBodySkeleton(doc definitions, op operationInfo, diagnostics *diag.Colle
 	if !found && part.Type != "" {
 		bodyName = localName(firstNonEmpty(part.Name, op.Name))
 		if fields, ok := xsdFieldsForType(doc, localName(part.Type)); ok {
-			return bodyName, renderXSDFields(doc, fields, diagnostics, location, 3), true
+			return bodyName, renderXSDFieldSet(doc, fields, diagnostics, location, 3), true
 		}
 	}
 	if !found {
@@ -416,10 +434,10 @@ func soapBodySkeleton(doc definitions, op operationInfo, diagnostics *diag.Colle
 	}
 	fields, ok := xsdFieldsForElement(doc, element)
 	if !ok {
-		diagnostics.Add(diag.Warning, "WSDL XSD type", location, "element "+bodyName+" has no supported complexType sequence; generated a placeholder SOAP body")
+		diagnostics.Add(diag.Warning, "WSDL XSD type", location, "element "+bodyName+" has no supported complexType model; generated a placeholder SOAP body")
 		return bodyName, "", false
 	}
-	return bodyName, renderXSDFields(doc, fields, diagnostics, location, 3), true
+	return bodyName, renderXSDFieldSet(doc, fields, diagnostics, location, 3), true
 }
 
 func inputMessagePart(doc definitions, messageRef string) (messagePart, bool) {
@@ -450,27 +468,100 @@ func findXSDElement(doc definitions, name string) (xsdElement, bool) {
 	return xsdElement{}, false
 }
 
-func xsdFieldsForElement(doc definitions, element xsdElement) ([]xsdElement, bool) {
-	if element.ComplexType != nil && element.ComplexType.Sequence != nil {
-		return element.ComplexType.Sequence.Elements, true
+type xsdFieldSet struct {
+	Elements   []xsdElement
+	Model      string
+	ChoiceName string
+	Attributes []xsdAttribute
+}
+
+func xsdFieldsForElement(doc definitions, element xsdElement) (xsdFieldSet, bool) {
+	if element.ComplexType != nil {
+		return xsdFieldsForComplexType(*element.ComplexType)
 	}
 	if element.Type != "" {
 		return xsdFieldsForType(doc, localName(element.Type))
 	}
-	return nil, false
+	return xsdFieldSet{}, false
 }
 
-func xsdFieldsForType(doc definitions, typeName string) ([]xsdElement, bool) {
+func xsdFieldsForType(doc definitions, typeName string) (xsdFieldSet, bool) {
 	for _, t := range doc.Types {
 		for _, schema := range t.Schemas {
 			for _, ct := range schema.ComplexTypes {
-				if ct.Name == typeName && ct.Sequence != nil {
-					return ct.Sequence.Elements, true
+				if ct.Name == typeName {
+					return xsdFieldsForComplexType(ct)
 				}
 			}
 		}
 	}
-	return nil, false
+	return xsdFieldSet{}, false
+}
+
+func xsdFieldsForComplexType(ct xsdComplexType) (xsdFieldSet, bool) {
+	set := xsdFieldSet{Model: "sequence", Attributes: ct.Attributes}
+	switch {
+	case ct.Sequence != nil:
+		set.Elements = ct.Sequence.Elements
+	case ct.All != nil:
+		set.Elements = ct.All.Elements
+		set.Model = "all"
+	case ct.Choice != nil:
+		set.Elements = firstChoiceElement(ct.Choice.Elements)
+		set.Model = "choice"
+		if len(set.Elements) > 0 {
+			set.ChoiceName = localName(firstNonEmpty(set.Elements[0].Name, set.Elements[0].Ref))
+		}
+	default:
+		return set, len(set.Attributes) > 0
+	}
+	return set, len(set.Elements) > 0 || len(set.Attributes) > 0
+}
+
+func firstChoiceElement(elements []xsdElement) []xsdElement {
+	for _, element := range elements {
+		if strings.TrimSpace(firstNonEmpty(element.Name, element.Ref)) != "" {
+			return []xsdElement{element}
+		}
+	}
+	return nil
+}
+
+func renderXSDFieldSet(doc definitions, set xsdFieldSet, diagnostics *diag.Collector, location string, depth int) string {
+	addXSDModelDiagnostics(set, diagnostics, location)
+	return renderXSDFields(doc, set.Elements, diagnostics, location, depth)
+}
+
+func addXSDModelDiagnostics(set xsdFieldSet, diagnostics *diag.Collector, location string) {
+	switch set.Model {
+	case "all":
+		diagnostics.Add(diag.Info, "WSDL XSD all", location, "xsd:all elements were rendered in schema order; validate optional and unordered payload semantics before replay")
+	case "choice":
+		choice := firstNonEmpty(set.ChoiceName, "first available branch")
+		diagnostics.Add(diag.Warning, "WSDL XSD choice", location, "xsd:choice was represented with "+choice+"; choose the correct branch before replay")
+	}
+	if len(set.Attributes) > 0 {
+		diagnostics.Add(diag.Warning, "WSDL XSD attributes", location, "attributes "+xsdAttributeNames(set.Attributes)+" are not rendered in the generated SOAP skeleton; add required attributes before replay")
+	}
+}
+
+func xsdAttributeNames(attributes []xsdAttribute) string {
+	names := make([]string, 0, len(attributes))
+	for _, attribute := range attributes {
+		name := localName(firstNonEmpty(attribute.Name, attribute.Ref))
+		if name == "" {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(attribute.Use), "required") {
+			name += " (required)"
+		}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return "declared by the complex type"
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }
 
 func renderXSDFields(doc definitions, fields []xsdElement, diagnostics *diag.Collector, location string, depth int) string {
@@ -484,23 +575,29 @@ func renderXSDFields(doc definitions, fields []xsdElement, diagnostics *diag.Col
 		if name == "" {
 			continue
 		}
-		if field.ComplexType != nil && field.ComplexType.Sequence != nil {
+		if field.ComplexType != nil {
+			nested, ok := xsdFieldsForComplexType(*field.ComplexType)
+			if !ok {
+				diagnostics.Add(diag.Warning, "WSDL XSD type", location, "inline complexType for child element "+name+" has no supported content model; generated an empty SOAP element")
+				lines = append(lines, indent+"<tns:"+name+"></tns:"+name+">")
+				continue
+			}
 			lines = append(lines, indent+"<tns:"+name+">")
-			lines = append(lines, renderXSDFields(doc, field.ComplexType.Sequence.Elements, diagnostics, location, depth+1))
+			lines = append(lines, renderXSDFieldSet(doc, nested, diagnostics, location, depth+1))
 			lines = append(lines, indent+"</tns:"+name+">")
 			continue
 		}
 		if refElement, ok := findXSDElement(doc, field.Ref); ok && strings.TrimSpace(field.Ref) != "" {
 			if nested, ok := xsdFieldsForElement(doc, refElement); ok {
 				lines = append(lines, indent+"<tns:"+name+">")
-				lines = append(lines, renderXSDFields(doc, nested, diagnostics, location, depth+1))
+				lines = append(lines, renderXSDFieldSet(doc, nested, diagnostics, location, depth+1))
 				lines = append(lines, indent+"</tns:"+name+">")
 				continue
 			}
 		}
 		if fieldsForType, ok := xsdFieldsForType(doc, localName(field.Type)); ok {
 			lines = append(lines, indent+"<tns:"+name+">")
-			lines = append(lines, renderXSDFields(doc, fieldsForType, diagnostics, location, depth+1))
+			lines = append(lines, renderXSDFieldSet(doc, fieldsForType, diagnostics, location, depth+1))
 			lines = append(lines, indent+"</tns:"+name+">")
 			continue
 		}
