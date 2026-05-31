@@ -265,6 +265,70 @@ func TestConvertJMXHTTPPlan(t *testing.T) {
 	}
 }
 
+func TestConvertJMXResponseAssertionFieldsAndDynamicFunctions(t *testing.T) {
+	const assertionJMX = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Assertion Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Users" enabled="true"/>
+      <hashTree>
+        <ResponseAssertion testname="Created Status" enabled="true">
+          <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+          <intProp name="Assertion.test_type">8</intProp>
+          <collectionProp name="Assertion.test_strings">
+            <stringProp name="0">201</stringProp>
+          </collectionProp>
+        </ResponseAssertion>
+        <hashTree/>
+        <ResponseAssertion testname="Body Missing Error" enabled="true">
+          <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+          <intProp name="Assertion.test_type">6</intProp>
+          <collectionProp name="Assertion.test_strings">
+            <stringProp name="0">error</stringProp>
+          </collectionProp>
+        </ResponseAssertion>
+        <hashTree/>
+        <ResponseAssertion testname="Header Assertion" enabled="true">
+          <stringProp name="Assertion.test_field">Assertion.response_headers</stringProp>
+          <collectionProp name="Assertion.test_strings">
+            <stringProp name="0">X-Trace</stringProp>
+          </collectionProp>
+        </ResponseAssertion>
+        <hashTree/>
+        <HTTPSamplerProxy testname="Create Order" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/orders/${__UUID()}?ts=${__time()}&amp;tenant=${tenant}</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+	result, err := ConvertJMX([]byte(assertionJMX), ConvertOptions{FileName: "assertions.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	action := result.Scripts[0].Actions[0]
+	if action.Target != "/orders/{{fn.uuid()}}?ts={{fn.timestamp.unix_ms}}&tenant={{var.tenant}}" {
+		t.Fatalf("target = %q", action.Target)
+	}
+	if len(action.Assertions) != 2 {
+		t.Fatalf("assertions = %#v, want status_code and body_not_contains", action.Assertions)
+	}
+	if action.Assertions[0].Type != "status_code" || action.Assertions[0].Expected != 201 {
+		t.Fatalf("first assertion = %#v", action.Assertions[0])
+	}
+	if action.Assertions[1].Type != "body_not_contains" || action.Assertions[1].Value != "error" {
+		t.Fatalf("second assertion = %#v", action.Assertions[1])
+	}
+	if !containsJMeterDiagnostic(result, "response_headers") {
+		t.Fatalf("diagnostics = %#v, want response_headers warning", result.Unsupported)
+	}
+}
+
 func TestConvertJMXRejectsInvalidXML(t *testing.T) {
 	if _, err := ConvertJMX([]byte(`<jmeterTestPlan>`), ConvertOptions{}); err == nil {
 		t.Fatal("expected invalid XML to fail")

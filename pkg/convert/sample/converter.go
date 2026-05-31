@@ -1,6 +1,7 @@
 package sample
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -535,6 +537,9 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 	}
 	ex := exchange{Method: "GET", Headers: map[string]string{}}
 	formParts := []curlFormPart{}
+	dataParts := []string{}
+	dataAsQuery := false
+	methodExplicit := false
 	location := "curl command"
 	for index := 1; index < len(tokens); index++ {
 		token := tokens[index]
@@ -545,10 +550,13 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 				return nil, nil, errors.New("curl sample is missing a method after -X/--request")
 			}
 			ex.Method = strings.ToUpper(tokens[index])
+			methodExplicit = true
 		case strings.HasPrefix(token, "--request="):
 			ex.Method = strings.ToUpper(strings.TrimPrefix(token, "--request="))
+			methodExplicit = true
 		case strings.HasPrefix(token, "-X") && token != "-X":
 			ex.Method = strings.ToUpper(strings.TrimPrefix(token, "-X"))
+			methodExplicit = true
 		case token == "-H" || token == "--header":
 			index++
 			if index >= len(tokens) {
@@ -564,12 +572,22 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 			if index >= len(tokens) {
 				return nil, nil, errors.New("curl sample is missing a body value after data flag")
 			}
-			appendCurlData(&ex, tokens[index])
+			if isCurlDataURLEncodeFlag(token) {
+				dataParts = append(dataParts, encodeCurlDataValue(tokens[index], diagnostics, location))
+			} else {
+				dataParts = append(dataParts, tokens[index])
+			}
 		case isCurlDataFlagWithValue(token):
 			_, value, _ := strings.Cut(token, "=")
-			appendCurlData(&ex, value)
+			if strings.HasPrefix(token, "--data-urlencode=") {
+				dataParts = append(dataParts, encodeCurlDataValue(value, diagnostics, location))
+			} else {
+				dataParts = append(dataParts, value)
+			}
 		case strings.HasPrefix(token, "-d") && token != "-d":
-			appendCurlData(&ex, strings.TrimPrefix(token, "-d"))
+			dataParts = append(dataParts, strings.TrimPrefix(token, "-d"))
+		case token == "-G" || token == "--get":
+			dataAsQuery = true
 		case token == "-F" || token == "--form" || token == "--form-string":
 			index++
 			if index >= len(tokens) {
@@ -640,6 +658,19 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 	if ex.URL == "" {
 		return nil, nil, errors.New("curl sample did not include a URL")
 	}
+	if len(dataParts) > 0 {
+		if dataAsQuery {
+			ex.URL = addCurlQueryData(ex.URL, dataParts)
+			if !methodExplicit {
+				ex.Method = "GET"
+			}
+		} else {
+			ex.Body = strings.Join(dataParts, "&")
+			if !methodExplicit && ex.Method == "GET" {
+				ex.Method = "POST"
+			}
+		}
+	}
 	if len(formParts) > 0 {
 		if strings.TrimSpace(ex.Body) != "" {
 			diagnostics.Add(diag.Warning, "cURL mixed body", location, "both data and multipart form flags were present; multipart form body was used and data flags require review")
@@ -682,6 +713,10 @@ func appendCurlData(ex *exchange, value string) {
 	}
 }
 
+func isCurlDataURLEncodeFlag(token string) bool {
+	return token == "--data-urlencode"
+}
+
 func isCurlDataFlag(token string) bool {
 	switch token {
 	case "-d", "--data", "--data-raw", "--data-binary", "--data-ascii", "--data-urlencode":
@@ -689,6 +724,33 @@ func isCurlDataFlag(token string) bool {
 	default:
 		return false
 	}
+}
+
+func encodeCurlDataValue(raw string, diagnostics *diag.Collector, location string) string {
+	if strings.Contains(raw, "@") && !strings.Contains(raw, "=") {
+		diagnostics.Add(diag.Warning, "cURL data-urlencode", location, "--data-urlencode file-reference syntax was approximated as an encoded literal; review the generated query/body value")
+	}
+	if name, value, ok := strings.Cut(raw, "="); ok && name != "" {
+		return url.QueryEscape(name) + "=" + url.QueryEscape(value)
+	}
+	if strings.HasPrefix(raw, "=") {
+		return url.QueryEscape(strings.TrimPrefix(raw, "="))
+	}
+	return url.QueryEscape(raw)
+}
+
+func addCurlQueryData(rawURL string, dataParts []string) string {
+	if len(dataParts) == 0 {
+		return rawURL
+	}
+	separator := "?"
+	if strings.Contains(rawURL, "?") {
+		separator = "&"
+		if strings.HasSuffix(rawURL, "?") || strings.HasSuffix(rawURL, "&") {
+			separator = ""
+		}
+	}
+	return rawURL + separator + strings.Join(dataParts, "&")
 }
 
 func isCurlDataFlagWithValue(token string) bool {
@@ -948,7 +1010,7 @@ func parseHARItem(item map[string]any, diagnostics *diag.Collector, index int) (
 	if responseData, ok := item["response"].(map[string]any); ok {
 		responseBody := ""
 		if content, ok := responseData["content"].(map[string]any); ok {
-			responseBody = bodyValue(content["text"])
+			responseBody = decodeHARText(bodyValue(content["text"]), stringValue(content["encoding"]), diagnostics, location+" response", "response body")
 		}
 		ex.Response = &response{
 			Status:  intValue(responseData["status"]),
@@ -1447,11 +1509,47 @@ func headerListToMap(value any, diagnostics *diag.Collector, location string) ma
 func harBody(requestData map[string]any, diagnostics *diag.Collector, location string) string {
 	if postData, ok := requestData["postData"].(map[string]any); ok {
 		if text := bodyValue(postData["text"]); text != "" {
-			return text
+			return decodeHARText(text, stringValue(postData["encoding"]), diagnostics, location, "request body")
 		}
 		return harParamsBody(postData, diagnostics, location)
 	}
 	return ""
+}
+
+func decodeHARText(text string, encoding string, diagnostics *diag.Collector, location string, label string) string {
+	if !strings.EqualFold(strings.TrimSpace(encoding), "base64") {
+		return text
+	}
+	decoded, err := decodeBase64Text(text)
+	if err != nil {
+		diagnostics.Add(diag.Warning, "HAR base64 content", location, label+" is marked base64 but could not be decoded; original text was preserved")
+		return text
+	}
+	if !utf8.Valid(decoded) {
+		placeholder := "{{binary.har_" + strings.ReplaceAll(strings.ToLower(label), " ", "_") + "}}"
+		diagnostics.Add(diag.Info, "HAR base64 content", location, label+" decoded to non-UTF-8 bytes and was represented with "+placeholder)
+		return placeholder
+	}
+	return string(decoded)
+}
+
+func decodeBase64Text(value string) ([]byte, error) {
+	compact := strings.Join(strings.Fields(value), "")
+	encodings := []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	}
+	var lastErr error
+	for _, encoding := range encodings {
+		decoded, err := encoding.DecodeString(compact)
+		if err == nil {
+			return decoded, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
 }
 
 func harParamsBody(postData map[string]any, diagnostics *diag.Collector, location string) string {

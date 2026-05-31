@@ -107,6 +107,28 @@ func TestConvertCurl(t *testing.T) {
 	}
 }
 
+func TestConvertCurlGetMovesDataToQueryAndURLEncodes(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format:  "curl",
+		Content: `curl -G https://api.example.com/search --data-urlencode 'q=red widgets' --data-urlencode 'sort=created desc'`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	if action.Method != "GET" {
+		t.Fatalf("method = %q, want GET", action.Method)
+	}
+	if action.Body != "" {
+		t.Fatalf("body = %q, want empty body for -G", action.Body)
+	}
+	if action.Target != "/search?q=red+widgets&sort=created+desc" {
+		t.Fatalf("target = %q", action.Target)
+	}
+}
+
 func TestConvertCurlSOAP(t *testing.T) {
 	result, err := Convert(ImportRequest{
 		Format:  "curl",
@@ -264,6 +286,64 @@ func TestConvertHARWithThinkTime(t *testing.T) {
 	}
 	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "think time") {
 		t.Fatalf("warnings = %#v, want think time guidance", result.Warnings)
+	}
+}
+
+func TestConvertHARDecodesBase64Bodies(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {
+				"entries": [
+					{
+						"request": {
+							"method": "POST",
+							"url": "https://api.example.com/v1/session",
+							"headers": [],
+							"postData": {
+								"mimeType": "application/json",
+								"encoding": "base64",
+								"text": "eyJ1c2VyIjoiYWxpY2UifQ=="
+							}
+						},
+						"response": {
+							"status": 200,
+							"headers": [],
+							"content": {
+								"encoding": "base64",
+								"text": "eyJvayI6dHJ1ZX0="
+							}
+						}
+					},
+					{
+						"request": {
+							"method": "GET",
+							"url": "https://api.example.com/v1/blob",
+							"headers": []
+						},
+						"response": {
+							"status": 200,
+							"headers": [],
+							"content": {
+								"encoding": "base64",
+								"text": "//79"
+							}
+						}
+					}
+				]
+			}
+		}`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Script.Actions[0].Body != `{"user":"alice"}` {
+		t.Fatalf("request body = %q", result.Script.Actions[0].Body)
+	}
+	if !containsSampleDiagnostic(result, "HAR base64 content") {
+		t.Fatalf("diagnostics = %#v, want binary base64 info", result.Unsupported)
 	}
 }
 

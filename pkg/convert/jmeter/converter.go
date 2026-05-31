@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/tmpl"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -314,7 +315,7 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			ctx.timerMs = parseTimerMs(child.Element, child.Element.Name)
 			result.Stats.Timers++
 		case "ResponseAssertion":
-			assertions := parseResponseAssertions(child.Element)
+			assertions := parseResponseAssertions(child.Element, diagnostics)
 			ctx.assertions = append(ctx.assertions, assertions...)
 			result.Stats.Assertions += len(assertions)
 		case "HTTPSamplerProxy":
@@ -443,10 +444,11 @@ func jmeterElementLocation(element *xmlNode) string {
 func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions, diagnostics *diag.Collector) (*dsl.Action, []string) {
 	element := node.Element
 	name := sanitizeName(attrOr(element, "testname", "HTTP Request"))
+	location := jmeterElementLocation(element)
 	method := firstNonEmpty(prop(element, "HTTPSampler.method"), "GET")
-	rawPath := convertVariables(firstNonEmpty(prop(element, "HTTPSampler.path"), ctx.defaultPath, "/"))
+	rawPath := convertVariablesWithDiagnostics(firstNonEmpty(prop(element, "HTTPSampler.path"), ctx.defaultPath, "/"), diagnostics, location)
 	protocol := firstNonEmpty(prop(element, "HTTPSampler.protocol"), ctx.defaultProtocol)
-	domain := convertVariables(firstNonEmpty(prop(element, "HTTPSampler.domain"), ctx.defaultDomain))
+	domain := convertVariablesWithDiagnostics(firstNonEmpty(prop(element, "HTTPSampler.domain"), ctx.defaultDomain), diagnostics, location)
 	port := firstNonEmpty(prop(element, "HTTPSampler.port"), ctx.defaultPort)
 	target := rawPath
 	if domain != "" {
@@ -463,11 +465,11 @@ func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions
 	}
 	var warnings []string
 	for k, v := range ctx.headers {
-		action.Headers[k] = convertVariables(v)
+		action.Headers[k] = convertVariablesWithDiagnostics(v, diagnostics, location)
 	}
-	body, params := parseSamplerArguments(element)
+	body, params := parseSamplerArguments(element, diagnostics, location)
 	if body != "" {
-		action.Body = convertVariables(body)
+		action.Body = convertVariablesWithDiagnostics(body, diagnostics, location)
 	}
 	if len(params) > 0 {
 		action.Params = params
@@ -1021,30 +1023,91 @@ func parseTimerMs(node *xmlNode, elementName string) int {
 	return delay
 }
 
-func parseResponseAssertions(node *xmlNode) []dsl.Assertion {
-	var out []dsl.Assertion
-	for _, valueNode := range childProps(node, "") {
-		text := strings.TrimSpace(valueNode.Text)
-		if text != "" {
-			out = append(out, dsl.Assertion{Type: "body_contains", Value: convertVariables(text)})
+func parseResponseAssertions(node *xmlNode, diagnostics *diag.Collector) []dsl.Assertion {
+	field := strings.TrimSpace(prop(node, "Assertion.test_field"))
+	if field == "" {
+		field = "Assertion.response_data"
+	}
+	testType := parseInt(prop(node, "Assertion.test_type"))
+	location := jmeterElementLocation(node)
+	values := assertionTestStrings(node)
+	if len(values) == 0 {
+		return nil
+	}
+	if field == "Assertion.response_message" || field == "Assertion.response_headers" {
+		if diagnostics != nil {
+			diagnostics.Add(diag.Warning, "JMeter ResponseAssertion", location, "assertion field "+field+" has no native APEX Load assertion mapping and was not converted")
+		}
+		return nil
+	}
+	negated := testType&4 != 0
+	if strings.EqualFold(field, "Assertion.response_code") {
+		out := make([]dsl.Assertion, 0, len(values))
+		for _, value := range values {
+			if negated {
+				if diagnostics != nil {
+					diagnostics.Add(diag.Warning, "JMeter ResponseAssertion", location, "negative response-code assertion "+value+" cannot be represented natively and was skipped")
+				}
+				continue
+			}
+			status, err := strconv.Atoi(strings.TrimSpace(value))
+			if err != nil {
+				if diagnostics != nil {
+					diagnostics.Add(diag.Warning, "JMeter ResponseAssertion", location, "response-code assertion "+value+" is not an integer and was skipped")
+				}
+				continue
+			}
+			out = append(out, dsl.Assertion{Type: "status_code", Expected: status})
+		}
+		return out
+	}
+	switch field {
+	case "Assertion.response_data", "Assertion.response_data_as_document":
+	default:
+		if diagnostics != nil {
+			diagnostics.Add(diag.Warning, "JMeter ResponseAssertion", location, "assertion field "+field+" was approximated as a response body assertion")
 		}
 	}
-	if len(out) == 0 {
-		for _, child := range node.Children {
-			if child.Name == "collectionProp" {
-				for _, grand := range child.Children {
-					text := strings.TrimSpace(grand.Text)
-					if text != "" {
-						out = append(out, dsl.Assertion{Type: "body_contains", Value: convertVariables(text)})
-					}
-				}
-			}
-		}
+	assertionType := "body_contains"
+	if negated {
+		assertionType = "body_not_contains"
+	}
+	if testType&(1|8) != 0 && diagnostics != nil {
+		diagnostics.Add(diag.Info, "JMeter ResponseAssertion", location, "regex or equality assertion semantics were approximated with body contains checks")
+	}
+	var out []dsl.Assertion
+	for _, text := range values {
+		out = append(out, dsl.Assertion{Type: assertionType, Value: convertVariablesWithDiagnostics(text, diagnostics, location)})
 	}
 	return out
 }
 
-func parseSamplerArguments(node *xmlNode) (string, map[string]any) {
+func assertionTestStrings(node *xmlNode) []string {
+	var values []string
+	for _, child := range node.Children {
+		if child.Name != "collectionProp" || !strings.Contains(strings.ToLower(child.Attrs["name"]), "test_strings") {
+			continue
+		}
+		for _, grand := range child.Children {
+			text := strings.TrimSpace(grand.Text)
+			if text != "" {
+				values = append(values, text)
+			}
+		}
+	}
+	if len(values) > 0 {
+		return values
+	}
+	for _, valueNode := range childProps(node, "") {
+		text := strings.TrimSpace(valueNode.Text)
+		if text != "" {
+			values = append(values, text)
+		}
+	}
+	return values
+}
+
+func parseSamplerArguments(node *xmlNode, diagnostics *diag.Collector, location string) (string, map[string]any) {
 	rawBody := strings.EqualFold(prop(node, "HTTPSampler.postBodyRaw"), "true")
 	args := descendantsByAttr(node, "elementType", "HTTPArgument")
 	if len(args) == 0 {
@@ -1062,7 +1125,7 @@ func parseSamplerArguments(node *xmlNode) (string, map[string]any) {
 		name := prop(arg, "Argument.name")
 		value := prop(arg, "Argument.value")
 		if name != "" {
-			params[name] = convertVariables(value)
+			params[name] = convertVariablesWithDiagnostics(value, diagnostics, location)
 		}
 	}
 	if len(params) == 0 {
@@ -1106,6 +1169,11 @@ func firstChild(node *xmlNode, name string) *xmlNode {
 var jmeterVarPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_.-]*)\}`)
 
 func convertVariables(value string) string {
+	return convertVariablesWithDiagnostics(value, nil, "")
+}
+
+func convertVariablesWithDiagnostics(value string, diagnostics *diag.Collector, location string) string {
+	value = tmpl.TranslateDynamic(value, diagnostics, location)
 	return jmeterVarPattern.ReplaceAllString(value, "{{var.$1}}")
 }
 
