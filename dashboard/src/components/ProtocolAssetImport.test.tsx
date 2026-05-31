@@ -71,6 +71,34 @@ describe('ProtocolAssetImport', () => {
         operation_names: ['Create Order'],
       },
     })
+    apiMock.importHAR.mockResolvedValue({
+      scripts: [],
+      script: {
+        name: 'Imported HAR',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://shop.example.test' },
+        actions: [
+          { name: 'GET api orders', type: 'request', method: 'GET', target: '/api/orders' },
+        ],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: {
+        format: 'har',
+        total_requests: 2,
+        converted_actions: 1,
+        filtered_assets: 1,
+        assertions: 1,
+        extractors: 0,
+        correlations_detected: 0,
+      },
+      summary: {},
+    })
   })
 
   afterEach(async () => {
@@ -118,6 +146,48 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('schema reference external.yaml')
     expect(container.textContent).toContain('Import Review (1)')
     expect(container.textContent).toContain('file bytes must be supplied before replay')
+  })
+
+  it('passes the HAR include static assets toggle to the API', async () => {
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="har" projectId="project-1" />)
+    })
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+
+    const file = new File(['{"log":{"entries":[]}}'], 'capture.har', { type: 'application/json' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const includeStatic = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes('Include static assets')) as HTMLInputElement | undefined
+    expect(includeStatic).toBeDefined()
+    if (!includeStatic) return
+
+    await act(async () => {
+      includeStatic.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert HAR'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importHAR).toHaveBeenCalledWith(file, expect.objectContaining({
+      project_id: 'project-1',
+      include_static_assets: true,
+    }))
+    expect(container.textContent).toContain('filtered assets')
   })
 })
 

@@ -195,6 +195,7 @@ export interface SampleImportStats {
   format: string
   total_requests: number
   converted_actions: number
+  filtered_assets?: number
   assertions: number
   extractors: number
   correlations_detected: number

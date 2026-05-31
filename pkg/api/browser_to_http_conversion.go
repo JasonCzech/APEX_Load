@@ -109,10 +109,12 @@ func (s *Server) handlePreviewBrowserToHTTP(w http.ResponseWriter, r *http.Reque
 	}
 	includeAssertions := true
 	inferExtractors := true
+	includeStaticAssets := req.IncludeStaticAssets
 	result, err := har.Convert(harData, har.ConvertOptions{
-		ScriptName:        firstNonEmpty(req.Name, browserHTTPDraftName(req.SourceBrowserScript)),
-		IncludeAssertions: &includeAssertions,
-		InferExtractors:   &inferExtractors,
+		ScriptName:          firstNonEmpty(req.Name, browserHTTPDraftName(req.SourceBrowserScript)),
+		IncludeAssertions:   &includeAssertions,
+		InferExtractors:     &inferExtractors,
+		IncludeStaticAssets: &includeStaticAssets,
 	})
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "failed to generate HTTP draft: "+err.Error())

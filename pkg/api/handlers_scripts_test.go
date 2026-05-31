@@ -559,6 +559,57 @@ func TestHandleImportHARJSON(t *testing.T) {
 	}
 }
 
+func TestHandleImportHARHonorsIncludeStaticAssetsOption(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name": "HAR Import",
+		"options": map[string]any{
+			"include_static_assets": true,
+		},
+		"content": `{
+  "log": {
+    "entries": [
+      {
+        "request": {"method": "GET", "url": "https://api.example.test/app.js", "headers": []},
+        "response": {"status": 200, "content": {"mimeType": "application/javascript", "text": "console.log(1)"}}
+      },
+      {
+        "request": {"method": "GET", "url": "https://api.example.test/health", "headers": []},
+        "response": {"status": 200, "content": {"mimeType": "application/json", "text": "{\"ok\":true}"}}
+      }
+    ]
+  }
+}`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Stats struct {
+			ConvertedActions int `json:"converted_actions"`
+			FilteredAssets   int `json:"filtered_assets"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Stats.ConvertedActions != 2 || result.Stats.FilteredAssets != 0 {
+		t.Fatalf("stats = %#v, want static asset retained", result.Stats)
+	}
+}
+
 func TestHandleImportLoadRunnerReturnsStandardizedEnvelope(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer

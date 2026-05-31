@@ -70,6 +70,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const [name, setName] = useState('')
   const [baseURL, setBaseURL] = useState('')
   const [soapVersion, setSoapVersion] = useState('1.1')
+  const [includeStaticAssets, setIncludeStaticAssets] = useState(false)
   const [messageError, setMessageError] = useState('')
   const labels = copy[kind]
 
@@ -87,7 +88,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
           project_id: projectId,
         }
         if (kind === 'devweb') return api.importDevWeb(file, options)
-        if (kind === 'har') return api.importHAR(file, options)
+        if (kind === 'har') return api.importHAR(file, { ...options, include_static_assets: includeStaticAssets })
         if (kind === 'openapi') return api.importOpenAPI(file, options)
         if (kind === 'postman') return api.importPostman(file, options)
         return api.importWSDL(file, { ...options, soap_version: soapVersion })
@@ -144,6 +145,12 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
                 <option value="1.1">SOAP 1.1</option>
                 <option value="1.2">SOAP 1.2</option>
               </select>
+            </label>
+          )}
+          {kind === 'har' && (
+            <label className="sample-toggle sample-import-span-2">
+              <input type="checkbox" checked={includeStaticAssets} onChange={event => setIncludeStaticAssets(event.target.checked)} />
+              Include static assets
             </label>
           )}
         </div>

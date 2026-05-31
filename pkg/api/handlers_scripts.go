@@ -303,8 +303,9 @@ func readHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportReq
 			Data:      data,
 			ProjectID: r.FormValue("project_id"),
 			Opts: har.ConvertOptions{
-				ScriptName: strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename)),
-				BaseURL:    r.FormValue("base_url"),
+				ScriptName:          firstNonEmpty(r.FormValue("name"), strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename))),
+				BaseURL:             r.FormValue("base_url"),
+				IncludeStaticAssets: parseOptionalBool(r.FormValue("include_static_assets")),
 			},
 		}, true
 	}
@@ -318,8 +319,9 @@ func readHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportReq
 		Data:      data,
 		ProjectID: r.URL.Query().Get("project_id"),
 		Opts: har.ConvertOptions{
-			ScriptName: strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
-			BaseURL:    r.URL.Query().Get("base_url"),
+			ScriptName:          strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
+			BaseURL:             r.URL.Query().Get("base_url"),
+			IncludeStaticAssets: parseOptionalBool(r.URL.Query().Get("include_static_assets")),
 		},
 	}, true
 }
@@ -505,6 +507,14 @@ func parseBoolDefault(value string, defaultValue bool) bool {
 	default:
 		return defaultValue
 	}
+}
+
+func parseOptionalBool(value string) *bool {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parsed := parseBoolDefault(value, false)
+	return &parsed
 }
 
 func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *loadrunner.ConvertResult, readinessPolicy loadrunner.RuntimeSettingMigrationPolicy) {

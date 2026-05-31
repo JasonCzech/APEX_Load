@@ -33,6 +33,7 @@ type SampleImportOptions = {
   include_assertions: boolean
   infer_extractors: boolean
   sanitize_sensitive: boolean
+  include_static_assets: boolean
   auth_type: AuthType
   auth_username: string
   auth_password: string
@@ -198,6 +199,7 @@ const initialOptions: SampleImportOptions = {
   include_assertions: true,
   infer_extractors: true,
   sanitize_sensitive: true,
+  include_static_assets: false,
   auth_type: 'none',
   auth_username: '',
   auth_password: '',
@@ -399,6 +401,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
               include_assertions: options.include_assertions,
               infer_extractors: options.infer_extractors,
               sanitize_sensitive: options.sanitize_sensitive,
+              include_static_assets: format === 'har' ? options.include_static_assets : undefined,
             },
           })
 
@@ -633,6 +636,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
           <label className="sample-toggle"><input type="checkbox" checked={options.include_assertions} onChange={e => updateOption('include_assertions', e.target.checked)} />Infer status assertions</label>
           <label className="sample-toggle"><input type="checkbox" checked={options.infer_extractors} onChange={e => updateOption('infer_extractors', e.target.checked)} />Infer extractors and correlation variables</label>
           <label className="sample-toggle"><input type="checkbox" checked={options.sanitize_sensitive} onChange={e => updateOption('sanitize_sensitive', e.target.checked)} />Sanitize obvious secrets</label>
+          {format === 'har' && <label className="sample-toggle"><input type="checkbox" checked={options.include_static_assets} onChange={e => updateOption('include_static_assets', e.target.checked)} />Include static assets</label>}
           <label className="sample-toggle"><input type="checkbox" checked={options.continue_on_error} onChange={e => updateOption('continue_on_error', e.target.checked)} />Continue on error</label>
         </div>
       </div>
@@ -665,6 +669,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
               <div className="sample-stat"><span className="sample-stat-value">{result.stats.assertions}</span><span className="sample-stat-label">Assertions</span></div>
               <div className="sample-stat"><span className="sample-stat-value">{result.stats.extractors}</span><span className="sample-stat-label">Extractors</span></div>
               <div className="sample-stat"><span className="sample-stat-value">{result.stats.correlations_detected}</span><span className="sample-stat-label">Correlations</span></div>
+              {typeof result.stats.filtered_assets === 'number' && result.stats.filtered_assets > 0 && <div className="sample-stat"><span className="sample-stat-value">{result.stats.filtered_assets}</span><span className="sample-stat-label">Filtered assets</span></div>}
             </div>
 
             {result.correlations.length > 0 && (

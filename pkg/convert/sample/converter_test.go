@@ -289,6 +289,54 @@ func TestConvertHARWithThinkTime(t *testing.T) {
 	}
 }
 
+func TestConvertHARFiltersStaticAssetsByDefault(t *testing.T) {
+	inferExtractors := false
+	content := `{
+		"log": {
+			"entries": [
+				{
+					"request": {"method": "GET", "url": "https://shop.example.com/app.js", "headers": []},
+					"response": {"status": 200, "headers": [], "content": {"mimeType": "application/javascript", "text": "console.log(1)"}}
+				},
+				{
+					"request": {"method": "GET", "url": "https://shop.example.com/api/orders", "headers": []},
+					"response": {"status": 200, "headers": [], "content": {"mimeType": "application/json", "text": "{}"}}
+				}
+			]
+		}
+	}`
+	result, err := Convert(ImportRequest{
+		Format:  "har",
+		Content: content,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Stats.TotalRequests != 2 || result.Stats.FilteredAssets != 1 || result.Stats.ConvertedActions != 1 {
+		t.Fatalf("stats = %#v", result.Stats)
+	}
+	if result.Script.Actions[0].Target != "/api/orders" {
+		t.Fatalf("target = %q, want API request retained", result.Script.Actions[0].Target)
+	}
+	if !containsSampleDiagnostic(result, "HAR static asset filter") {
+		t.Fatalf("diagnostics = %#v, want static filter info", result.Unsupported)
+	}
+
+	includeStaticAssets := true
+	included, err := Convert(ImportRequest{
+		Format:  "har",
+		Content: content,
+		Options: ConvertOptions{InferExtractors: &inferExtractors, IncludeStaticAssets: &includeStaticAssets},
+	})
+	if err != nil {
+		t.Fatalf("Convert with static assets returned error: %v", err)
+	}
+	if included.Stats.FilteredAssets != 0 || included.Stats.ConvertedActions != 2 {
+		t.Fatalf("included stats = %#v", included.Stats)
+	}
+}
+
 func TestConvertHARDecodesBase64Bodies(t *testing.T) {
 	inferExtractors := false
 	result, err := Convert(ImportRequest{

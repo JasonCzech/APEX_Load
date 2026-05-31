@@ -10,12 +10,13 @@ import (
 )
 
 type ConvertOptions struct {
-	ScriptName         string `json:"script_name,omitempty"`
-	BaseURL            string `json:"base_url,omitempty"`
-	IncludeAssertions  *bool  `json:"include_assertions,omitempty"`
-	InferExtractors    *bool  `json:"infer_extractors,omitempty"`
-	SanitizeSensitive  *bool  `json:"sanitize_sensitive,omitempty"`
-	DefaultThinkTimeMs int    `json:"default_think_time_ms,omitempty"`
+	ScriptName          string `json:"script_name,omitempty"`
+	BaseURL             string `json:"base_url,omitempty"`
+	IncludeAssertions   *bool  `json:"include_assertions,omitempty"`
+	InferExtractors     *bool  `json:"infer_extractors,omitempty"`
+	SanitizeSensitive   *bool  `json:"sanitize_sensitive,omitempty"`
+	IncludeStaticAssets *bool  `json:"include_static_assets,omitempty"`
+	DefaultThinkTimeMs  int    `json:"default_think_time_ms,omitempty"`
 }
 
 type ConvertResult struct {
@@ -35,10 +36,11 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		Format:  "har",
 		Content: string(data),
 		Options: sample.ConvertOptions{
-			BaseURL:           opts.BaseURL,
-			IncludeAssertions: opts.IncludeAssertions,
-			InferExtractors:   opts.InferExtractors,
-			SanitizeSensitive: opts.SanitizeSensitive,
+			BaseURL:             opts.BaseURL,
+			IncludeAssertions:   opts.IncludeAssertions,
+			InferExtractors:     opts.InferExtractors,
+			SanitizeSensitive:   opts.SanitizeSensitive,
+			IncludeStaticAssets: opts.IncludeStaticAssets,
 		},
 	})
 	if err != nil {

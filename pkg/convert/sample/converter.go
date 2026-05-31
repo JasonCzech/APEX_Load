@@ -27,16 +27,18 @@ type ImportRequest struct {
 }
 
 type ConvertOptions struct {
-	BaseURL           string `json:"base_url,omitempty"`
-	IncludeAssertions *bool  `json:"include_assertions,omitempty"`
-	InferExtractors   *bool  `json:"infer_extractors,omitempty"`
-	SanitizeSensitive *bool  `json:"sanitize_sensitive,omitempty"`
+	BaseURL             string `json:"base_url,omitempty"`
+	IncludeAssertions   *bool  `json:"include_assertions,omitempty"`
+	InferExtractors     *bool  `json:"infer_extractors,omitempty"`
+	SanitizeSensitive   *bool  `json:"sanitize_sensitive,omitempty"`
+	IncludeStaticAssets *bool  `json:"include_static_assets,omitempty"`
 }
 
 type ConvertStats struct {
 	Format               string `json:"format"`
 	TotalRequests        int    `json:"total_requests"`
 	ConvertedActions     int    `json:"converted_actions"`
+	FilteredAssets       int    `json:"filtered_assets,omitempty"`
 	Assertions           int    `json:"assertions"`
 	Extractors           int    `json:"extractors"`
 	CorrelationsDetected int    `json:"correlations_detected"`
@@ -119,6 +121,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		warnings    []string
 		err         error
 		diagnostics diag.Collector
+		filtered    int
 	)
 
 	switch format {
@@ -129,7 +132,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	case "rest_json":
 		exchanges, warnings, err = parseRESTJSON(req.Content)
 	case "har":
-		exchanges, warnings, err = parseHAR(req.Content, &diagnostics)
+		exchanges, warnings, filtered, err = parseHAR(req.Content, boolOption(req.Options.IncludeStaticAssets, false), &diagnostics)
 	default:
 		return nil, fmt.Errorf("unsupported format %q", req.Format)
 	}
@@ -198,8 +201,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		Warnings:     warnings,
 		Correlations: correlations,
 		Stats: ConvertStats{
-			Format:        format,
-			TotalRequests: len(exchanges),
+			Format:         format,
+			TotalRequests:  len(exchanges) + filtered,
+			FilteredAssets: filtered,
 		},
 	}
 
@@ -876,20 +880,25 @@ func parseRESTJSON(content string) ([]exchange, []string, error) {
 	return exchanges, nil, nil
 }
 
-func parseHAR(content string, diagnostics *diag.Collector) ([]exchange, []string, error) {
+func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collector) ([]exchange, []string, int, error) {
 	var payload any
 	if err := json.Unmarshal([]byte(content), &payload); err != nil {
-		return nil, nil, fmt.Errorf("failed to parse HAR JSON: %w", err)
+		return nil, nil, 0, fmt.Errorf("failed to parse HAR JSON: %w", err)
 	}
 	items, err := extractHARItems(payload)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 	exchanges := make([]exchange, 0, len(items))
+	filtered := 0
 	for index, item := range items {
+		if !includeStaticAssets && isStaticHAREntry(item) {
+			filtered++
+			continue
+		}
 		ex, err := parseHARItem(item, diagnostics, index)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 		exchanges = append(exchanges, ex)
 	}
@@ -897,7 +906,10 @@ func parseHAR(content string, diagnostics *diag.Collector) ([]exchange, []string
 	if len(exchanges) > 1 {
 		warnings = append(warnings, "HAR import preserves inter-request think time when entry timestamps are available, but browser-specific asset metadata is not preserved")
 	}
-	return exchanges, warnings, nil
+	if filtered > 0 {
+		diagnostics.Add(diag.Info, "HAR static asset filter", "HAR import", fmt.Sprintf("%d static asset entr%s skipped by default; enable include_static_assets to retain browser assets", filtered, pluralSuffix(filtered, "y was", "ies were")))
+	}
+	return exchanges, warnings, filtered, nil
 }
 
 func extractRESTItems(payload any) ([]map[string]any, error) {
@@ -977,6 +989,55 @@ func extractHARItems(payload any) ([]map[string]any, error) {
 		return []map[string]any{root}, nil
 	}
 	return nil, errors.New("HAR content must include log.entries or a single entry with request/response")
+}
+
+func isStaticHAREntry(item map[string]any) bool {
+	requestData, _ := item["request"].(map[string]any)
+	responseData, _ := item["response"].(map[string]any)
+	if content, ok := responseData["content"].(map[string]any); ok {
+		if isStaticMIMEType(stringValue(content["mimeType"])) {
+			return true
+		}
+	}
+	return isStaticURL(stringValue(requestData["url"]))
+}
+
+func isStaticMIMEType(mimeType string) bool {
+	mimeType = strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
+	if mimeType == "" {
+		return false
+	}
+	if strings.HasPrefix(mimeType, "image/") || strings.HasPrefix(mimeType, "font/") || strings.HasPrefix(mimeType, "audio/") || strings.HasPrefix(mimeType, "video/") {
+		return true
+	}
+	switch mimeType {
+	case "text/css", "text/javascript", "application/javascript", "application/x-javascript", "application/font-woff", "application/font-woff2", "application/vnd.ms-fontobject":
+		return true
+	default:
+		return false
+	}
+}
+
+func isStaticURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	pathValue := rawURL
+	if err == nil && parsed.Path != "" {
+		pathValue = parsed.Path
+	}
+	pathValue = strings.ToLower(pathValue)
+	for _, ext := range []string{".css", ".js", ".mjs", ".map", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".otf", ".mp4", ".webm", ".mp3", ".wav"} {
+		if strings.HasSuffix(pathValue, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+func pluralSuffix(count int, singular string, plural string) string {
+	if count == 1 {
+		return singular
+	}
+	return plural
 }
 
 func parseHARItem(item map[string]any, diagnostics *diag.Collector, index int) (exchange, error) {

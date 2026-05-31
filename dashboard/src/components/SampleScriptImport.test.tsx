@@ -160,6 +160,71 @@ describe('SampleScriptImport', () => {
     }))
   })
 
+  it('sends the HAR static asset option and surfaces filtered asset counts', async () => {
+    apiMock.importSample.mockResolvedValueOnce({
+      script: {
+        name: 'Imported_HAR_Script',
+        protocol: 'http',
+        config: { base_url: 'https://shop.example.com' },
+        actions: [{ name: 'GET api orders', type: 'request', method: 'GET', target: '/api/orders' }],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: {
+        format: 'har',
+        total_requests: 3,
+        converted_actions: 1,
+        filtered_assets: 2,
+        assertions: 1,
+        extractors: 0,
+        correlations_detected: 0,
+      },
+    })
+
+    await act(async () => {
+      root.render(<SampleScriptImport />)
+    })
+
+    const formatSelect = container.querySelector('select') as HTMLSelectElement | null
+    expect(formatSelect).not.toBeNull()
+    if (!formatSelect) return
+
+    await act(async () => {
+      formatSelect.value = 'har'
+      formatSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const includeStatic = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes('Include static assets')) as HTMLInputElement | undefined
+    expect(includeStatic).toBeDefined()
+    if (!includeStatic) return
+
+    await act(async () => {
+      includeStatic.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importSample).toHaveBeenCalledWith(expect.objectContaining({
+      format: 'har',
+      options: expect.objectContaining({
+        include_static_assets: true,
+      }),
+    }))
+    expect(container.textContent).toContain('Filtered assets')
+    expect(container.textContent).toContain('2')
+  })
+
   it('promotes Java-over-HTTP sample imports into java_http drafts with bounded warnings', async () => {
     const onImported = vi.fn()
 
