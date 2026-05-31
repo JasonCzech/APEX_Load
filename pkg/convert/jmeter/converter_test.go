@@ -329,6 +329,136 @@ func TestConvertJMXResponseAssertionFieldsAndDynamicFunctions(t *testing.T) {
 	}
 }
 
+func TestConvertJMXAdvancedSamplerFidelity(t *testing.T) {
+	const advancedJMX = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Advanced Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Users" enabled="true"/>
+      <hashTree>
+        <AuthManager testname="Auth" enabled="true">
+          <collectionProp name="AuthManager.auth_list">
+            <elementProp name="" elementType="Authorization">
+              <stringProp name="Authorization.url"></stringProp>
+              <stringProp name="Authorization.username">api-user</stringProp>
+              <stringProp name="Authorization.password">api-pass</stringProp>
+              <stringProp name="Authorization.mechanism">BASIC</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Authorization">
+              <stringProp name="Authorization.url">https://api.example.com/private</stringProp>
+              <stringProp name="Authorization.username">digest-user</stringProp>
+              <stringProp name="Authorization.password">digest-pass</stringProp>
+              <stringProp name="Authorization.mechanism">DIGEST</stringProp>
+            </elementProp>
+          </collectionProp>
+        </AuthManager>
+        <hashTree/>
+        <GaussianRandomTimer testname="Gaussian Think" enabled="true">
+          <stringProp name="GaussianRandomTimer.delay">1000</stringProp>
+          <stringProp name="GaussianRandomTimer.range">400</stringProp>
+        </GaussianRandomTimer>
+        <hashTree/>
+        <TransactionController testname="Checkout" enabled="true">
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+          <HTTPSamplerProxy testname="Upload Receipt" enabled="true">
+            <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+            <stringProp name="HTTPSampler.protocol">https</stringProp>
+            <stringProp name="HTTPSampler.path">/private/upload</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <stringProp name="HTTPSampler.connect_timeout">5000</stringProp>
+            <stringProp name="HTTPSampler.response_timeout">15000</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
+            <elementProp name="HTTPsampler.Files" elementType="HTTPFileArgs">
+              <collectionProp name="HTTPFileArgs.files">
+                <elementProp name="" elementType="HTTPFileArg">
+                  <stringProp name="File.path">/tmp/receipt.pdf</stringProp>
+                  <stringProp name="File.paramname">receipt</stringProp>
+                  <stringProp name="File.mimetype">application/pdf</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+	result, err := ConvertJMX([]byte(advancedJMX), ConvertOptions{FileName: "advanced.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	script := result.Scripts[0]
+	if script.Config.HTTP.Auth.Type != "basic" || script.Config.HTTP.Auth.Username != "api-user" {
+		t.Fatalf("global auth = %#v", script.Config.HTTP.Auth)
+	}
+	action := script.Actions[0]
+	if action.Name != "Checkout_Upload_Receipt" {
+		t.Fatalf("action name = %q", action.Name)
+	}
+	if action.Metadata["transaction"] != "Checkout" {
+		t.Fatalf("metadata = %#v, want transaction", action.Metadata)
+	}
+	if action.Auth == nil || action.Auth.Type != "digest" || action.Auth.Username != "digest-user" {
+		t.Fatalf("action auth = %#v", action.Auth)
+	}
+	if action.TimeoutMs != 15000 {
+		t.Fatalf("timeout = %d, want 15000", action.TimeoutMs)
+	}
+	if action.MaxRedirects == nil || *action.MaxRedirects != 0 {
+		t.Fatalf("max redirects = %#v, want 0", action.MaxRedirects)
+	}
+	if action.ThinkTime.MeanMs != 1200 || !action.ThinkTimeAfter {
+		t.Fatalf("think time = %#v after=%v", action.ThinkTime, action.ThinkTimeAfter)
+	}
+	upload, ok := action.Params["receipt"].(map[string]any)
+	if !ok || upload["value"] != "{{file.receipt}}" || upload["content_type"] != "application/pdf" {
+		t.Fatalf("upload params = %#v", action.Params)
+	}
+	if !containsJMeterDiagnostic(result, "JMeter HTTPFileArg") {
+		t.Fatalf("diagnostics = %#v, want HTTPFileArg warning", result.Unsupported)
+	}
+}
+
+func TestConvertJMXThroughputTimerApproximatesThinkTime(t *testing.T) {
+	const throughputJMX = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Throughput Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Users" enabled="true"/>
+      <hashTree>
+        <ConstantThroughputTimer testname="One Per Second" enabled="true">
+          <doubleProp><name>throughput</name><value>60</value><savedValue>0.0</savedValue></doubleProp>
+        </ConstantThroughputTimer>
+        <hashTree/>
+        <HTTPSamplerProxy testname="Ping" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/ping</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+	result, err := ConvertJMX([]byte(throughputJMX), ConvertOptions{FileName: "throughput.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	action := result.Scripts[0].Actions[0]
+	if action.ThinkTime.MeanMs != 1000 || !action.ThinkTimeAfter {
+		t.Fatalf("think time = %#v after=%v, want fixed 1000ms", action.ThinkTime, action.ThinkTimeAfter)
+	}
+	if !containsJMeterDiagnostic(result, "ConstantThroughputTimer") {
+		t.Fatalf("diagnostics = %#v, want throughput approximation info", result.Unsupported)
+	}
+}
+
 func TestConvertJMXRejectsInvalidXML(t *testing.T) {
 	if _, err := ConvertJMX([]byte(`<jmeterTestPlan>`), ConvertOptions{}); err == nil {
 		t.Fatal("expected invalid XML to fail")
