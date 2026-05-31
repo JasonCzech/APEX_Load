@@ -1424,16 +1424,17 @@ func sourceReviewMappingsValue(value any) []loadrunner.SourceReviewMapping {
 				continue
 			}
 			mapping := loadrunner.SourceReviewMapping{
-				ID:         stringValue(raw["id"]),
-				SourceFile: stringValue(raw["source_file"]),
-				StartLine:  intValue(raw["start_line"]),
-				EndLine:    intValue(raw["end_line"]),
-				Function:   stringValue(raw["function"]),
-				TargetPath: stringValue(raw["target_path"]),
-				TargetName: stringValue(raw["target_name"]),
-				TargetKind: stringValue(raw["target_kind"]),
-				Status:     stringValue(raw["status"]),
-				Notes:      stringValue(raw["notes"]),
+				ID:          stringValue(raw["id"]),
+				SourceFile:  stringValue(raw["source_file"]),
+				StartLine:   intValue(raw["start_line"]),
+				EndLine:     intValue(raw["end_line"]),
+				Function:    stringValue(raw["function"]),
+				TargetPath:  stringValue(raw["target_path"]),
+				TargetName:  stringValue(raw["target_name"]),
+				TargetKind:  stringValue(raw["target_kind"]),
+				Status:      stringValue(raw["status"]),
+				SupportMode: stringValue(raw["support_mode"]),
+				Notes:       stringValue(raw["notes"]),
 			}
 			if mapping.ID == "" && mapping.SourceFile == "" && mapping.TargetPath == "" {
 				continue

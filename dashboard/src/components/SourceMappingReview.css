@@ -67,6 +67,19 @@
   border-color: color-mix(in srgb, var(--warning) 40%, var(--border));
 }
 
+.source-map-status-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.source-map-support-mode {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
 .source-map-toolbar {
   align-items: flex-end;
   justify-content: flex-start;

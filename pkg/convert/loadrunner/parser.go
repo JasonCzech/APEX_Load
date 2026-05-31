@@ -14,6 +14,7 @@ type ParsedFunction struct {
 	StepName   string            // The first string argument (step name)
 	Args       map[string]string // Named key-value arguments extracted from ITEMDATA/LAST pairs
 	RawArgs    []string          // Raw string arguments in order
+	CallArgs   []ParsedArgument  // Structured top-level C call arguments in order
 	Headers    map[string]string // Extracted header key-value pairs
 	Body       string            // Request body if present
 	Method     string            // HTTP method (for web_custom_request)
@@ -23,6 +24,15 @@ type ParsedFunction struct {
 	Filename   string            // Source file containing the function
 	EndLine    int               // Source line where the function call ends
 	RawBlock   string            // Original source block for source review
+}
+
+// ParsedArgument represents a single top-level C function call argument.
+type ParsedArgument struct {
+	Raw        string `json:"raw,omitempty"`
+	Value      string `json:"value,omitempty"`
+	Kind       string `json:"kind,omitempty"` // string, key_value, number, identifier, macro, nested_call, expression
+	Name       string `json:"name,omitempty"`
+	NestedCall string `json:"nested_call,omitempty"`
 }
 
 // ParsedAction represents a parsed .c action file.
@@ -181,10 +191,11 @@ func parseFunctionBlock(block string, filename string, lineNum int, endLine int,
 		inner = inner[:endIdx]
 	}
 
-	// Extract all string arguments
-	allStrings := reStringArg.FindAllStringSubmatch(inner, -1)
-	for _, m := range allStrings {
-		fn.RawArgs = append(fn.RawArgs, m[1])
+	fn.CallArgs = parseCFunctionArguments(inner)
+	for _, arg := range fn.CallArgs {
+		if arg.Kind == "string" || arg.Kind == "key_value" {
+			fn.RawArgs = append(fn.RawArgs, arg.Value)
+		}
 	}
 
 	switch fn.Name {
@@ -235,6 +246,100 @@ func parseLoadRunnerRuntimeControl(fn *ParsedFunction, inner string) {
 			fn.Args["value"] = cleaned
 		}
 	}
+}
+
+func parseCFunctionArguments(inner string) []ParsedArgument {
+	rawArgs := splitCFunctionArgs(inner)
+	args := make([]ParsedArgument, 0, len(rawArgs))
+	for _, raw := range rawArgs {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue
+		}
+		arg := ParsedArgument{Raw: trimmed}
+		cleaned := cleanConfigValue(trimmed)
+		arg.Value = cleaned
+		switch {
+		case isQuotedCString(trimmed):
+			arg.Kind = "string"
+			if key, value, ok := splitLoadRunnerKeyValue(cleaned); ok {
+				arg.Kind = "key_value"
+				arg.Name = key
+				arg.Value = value
+			}
+		case strings.EqualFold(cleaned, "LAST") || strings.EqualFold(cleaned, "ITEMDATA") || strings.EqualFold(cleaned, "ENDITEM"):
+			arg.Kind = "macro"
+		case looksLikeNestedCCall(cleaned):
+			arg.Kind = "nested_call"
+			arg.NestedCall = cleaned[:strings.Index(cleaned, "(")]
+		case isNumericCArgument(cleaned):
+			arg.Kind = "number"
+		case isIdentifierCArgument(cleaned):
+			arg.Kind = "identifier"
+		default:
+			arg.Kind = "expression"
+		}
+		args = append(args, arg)
+	}
+	return args
+}
+
+func isQuotedCString(value string) bool {
+	if len(value) < 2 {
+		return false
+	}
+	first := value[0]
+	last := value[len(value)-1]
+	return (first == '"' && last == '"') || (first == '\'' && last == '\'')
+}
+
+func splitLoadRunnerKeyValue(value string) (string, string, bool) {
+	parts := strings.SplitN(value, "=", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	key := strings.TrimSpace(parts[0])
+	if key == "" || strings.ContainsAny(key, " \t\r\n") {
+		return "", "", false
+	}
+	return key, strings.TrimSpace(parts[1]), true
+}
+
+func looksLikeNestedCCall(value string) bool {
+	open := strings.Index(value, "(")
+	close := strings.LastIndex(value, ")")
+	if open <= 0 || close <= open {
+		return false
+	}
+	return isIdentifierCArgument(strings.TrimSpace(value[:open]))
+}
+
+func isNumericCArgument(value string) bool {
+	if value == "" {
+		return false
+	}
+	if _, err := strconv.ParseFloat(value, 64); err == nil {
+		return true
+	}
+	return false
+}
+
+func isIdentifierCArgument(value string) bool {
+	if value == "" {
+		return false
+	}
+	for i, r := range value {
+		if i == 0 {
+			if r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') {
+				return false
+			}
+			continue
+		}
+		if r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 func splitCFunctionArgs(inner string) []string {

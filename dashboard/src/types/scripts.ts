@@ -282,6 +282,7 @@ export interface LoadRunnerSourceReviewMapping {
   target_name?: string
   target_kind?: string
   status: string
+  support_mode?: string
   notes?: string
 }
 

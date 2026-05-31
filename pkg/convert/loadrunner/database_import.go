@@ -41,15 +41,20 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 	for _, fn := range functions {
 		action, ok := convertDatabaseFunction(fn)
 		if !ok {
+			if fallback, mode, fallbackOK := convertLoadRunnerFunctionAction(fn); fallbackOK {
+				appendLoadRunnerAction(result, fn, fallback, mode, loadRunnerSupportNotes(fn, mode))
+				continue
+			}
 			result.Stats.Skipped++
 			result.Stats.UnsupportedFuncs = append(result.Stats.UnsupportedFuncs, fn.Name)
 			appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, "metadata.import.preserved.unsupported_functions", fn.Name, "unsupported", "review_only", "No executable database mapping exists for this LoadRunner function yet."))
 			continue
 		}
 		actionIndex := len(result.Script.Actions)
-		appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "Converted to a generated APEX Load database action."))
+		appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "Converted to a generated APEX Load database action.", LoadRunnerSupportExecutable))
 		result.Script.Actions = append(result.Script.Actions, action)
 		result.Stats.ConvertedActions++
+		recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 	}
 
 	if len(result.Script.Actions) == 0 {

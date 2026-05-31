@@ -662,17 +662,15 @@ UpdateValueOn=Each Iteration
 	if result.Stats.ConvertedActions == 0 {
 		t.Fatalf("converted_actions = %d, want > 0", result.Stats.ConvertedActions)
 	}
-	if len(result.UnsupportedElements) != 1 || result.UnsupportedElements[0] != "web_set_max_html_param_len" {
-		t.Fatalf("unsupported_elements = %v, want [web_set_max_html_param_len]", result.UnsupportedElements)
+	if len(result.UnsupportedElements) != 0 {
+		t.Fatalf("unsupported_elements = %v, want none because parsed custom calls are review actions", result.UnsupportedElements)
 	}
 	if len(result.Assumptions) != 0 {
 		t.Fatalf("assumptions = %v, want none", result.Assumptions)
 	}
-	assertReviewSection(t, result.ReviewSections, "unsupported_elements", "blocker", "web_set_max_html_param_len")
 	assertReviewSection(t, result.ReviewSections, "preserved_metadata", "info", "Project file: Demo.usr")
 	assertReviewSection(t, result.ReviewSections, "runtime_settings_parity", "info", "Executed: HTTP / Timeouts, redirects, and connection reuse [default.cfg]")
 	assertReviewSection(t, result.ReviewSections, "runtime_settings_migration_readiness", "info", "Score: 100%")
-	assertRepairSuggestion(t, result.RepairSuggestions, "unsupported", "blocker", "Replace unsupported web_set_max_html_param_len")
 	assertRepairSuggestion(t, result.RepairSuggestions, "runtime", "info", "Review preserved runtime settings")
 	if got := result.Summary["project_file"]; got != "Demo.usr" {
 		t.Fatalf("summary.project_file = %#v, want Demo.usr", got)
@@ -688,8 +686,8 @@ UpdateValueOn=Each Iteration
 	if !ok || len(projectSections) == 0 {
 		t.Fatalf("summary.project_sections = %#v, want non-empty slice", result.Summary["project_sections"])
 	}
-	if got := result.Summary["unsupported_function_count"]; got != float64(1) {
-		t.Fatalf("summary.unsupported_function_count = %#v, want 1", got)
+	if got := result.Summary["unsupported_function_count"]; got != float64(0) {
+		t.Fatalf("summary.unsupported_function_count = %#v, want 0", got)
 	}
 	runtimeParity, ok := result.Summary["runtime_settings_parity"].([]any)
 	if !ok || len(runtimeParity) == 0 {

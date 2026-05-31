@@ -29,6 +29,60 @@ func TestValidateScriptIssues_RendezvousValidation(t *testing.T) {
 	assertIssue(t, issues, `actions[0] "sync-buyers": rendezvous timeout_ms must be zero or greater`)
 }
 
+func TestValidateScriptIssues_ErrorMessageValidation(t *testing.T) {
+	script := &Script{
+		Name:     "error-message-valid",
+		Protocol: "http",
+		Config:   ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []Action{{
+			Name:  "Login Error",
+			Type:  "error_message",
+			Value: "Login failed for {{var.userid}}",
+		}, {
+			Name:   "checkout",
+			Type:   "request",
+			Target: "/checkout",
+		}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+
+	script.Actions[0].Value = ""
+	script.Actions[0].Params = map[string]any{"format": "Login failed for {{var.userid}}"}
+	issues = ValidateScriptIssues(script)
+	if len(issues) != 0 {
+		t.Fatalf("issues with params.format = %v, want none", issues)
+	}
+
+	script.Actions[0].Params = nil
+	issues = ValidateScriptIssues(script)
+	assertIssue(t, issues, `actions[0] "Login Error": error_message requires value or params.format`)
+}
+
+func TestValidateScriptIssues_LoadRunnerEngineActionsDoNotRequireTarget(t *testing.T) {
+	script := &Script{
+		Name:     "loadrunner-engine-actions",
+		Protocol: "http",
+		Config:   ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []Action{{
+			Name:   "helper",
+			Type:   "custom_call",
+			Params: map[string]any{"function": "my_helper"},
+		}, {
+			Name:   "timer",
+			Type:   "loadrunner_timer",
+			Params: map[string]any{"function": "lr_start_timer"},
+		}},
+	}
+
+	if issues := ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
 func TestValidateScriptIssues_RunLogicGlobalGoals(t *testing.T) {
 	script := &Script{
 		Name:     "invalid-global-goals",

@@ -167,6 +167,40 @@ func TestParseActionFile(t *testing.T) {
 	}
 }
 
+func TestParseActionFileStructuredCallArgs(t *testing.T) {
+	parsed, err := ParseActionFile("Action.c", `Action()
+{
+	custom_helper("Name=Checkout", 42, LR_AUTO, lr_eval_string("{UserID}"), LAST);
+	return 0;
+}
+`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(parsed.Functions) != 1 {
+		t.Fatalf("functions = %#v, want one custom_helper", parsed.Functions)
+	}
+	args := parsed.Functions[0].CallArgs
+	if len(args) != 5 {
+		t.Fatalf("call args = %#v, want five structured args", args)
+	}
+	if args[0].Kind != "key_value" || args[0].Name != "Name" || args[0].Value != "Checkout" {
+		t.Fatalf("arg0 = %#v, want Name=Checkout key_value", args[0])
+	}
+	if args[1].Kind != "number" || args[1].Value != "42" {
+		t.Fatalf("arg1 = %#v, want numeric 42", args[1])
+	}
+	if args[2].Kind != "identifier" || args[2].Value != "LR_AUTO" {
+		t.Fatalf("arg2 = %#v, want identifier LR_AUTO", args[2])
+	}
+	if args[3].Kind != "nested_call" || args[3].NestedCall != "lr_eval_string" {
+		t.Fatalf("arg3 = %#v, want nested lr_eval_string", args[3])
+	}
+	if args[4].Kind != "macro" || args[4].Value != "LAST" {
+		t.Fatalf("arg4 = %#v, want LAST macro", args[4])
+	}
+}
+
 func TestConvert(t *testing.T) {
 	parsed, err := ParseActionFile("Action.c", sampleActionC)
 	if err != nil {
@@ -213,19 +247,22 @@ func TestConvert(t *testing.T) {
 	if result.Stats.Transactions != 1 {
 		t.Errorf("expected 1 transaction, got %d", result.Stats.Transactions)
 	}
-	if result.Stats.Skipped != 1 {
-		t.Errorf("expected 1 skipped function, got %d", result.Stats.Skipped)
+	if result.Stats.Skipped != 0 {
+		t.Errorf("expected no skipped functions, got %d", result.Stats.Skipped)
 	}
-	if len(result.Stats.UnsupportedFuncs) != 1 || result.Stats.UnsupportedFuncs[0] != "web_set_max_html_param_len" {
-		t.Fatalf("unsupported funcs = %#v, want [web_set_max_html_param_len]", result.Stats.UnsupportedFuncs)
+	if len(result.Stats.UnsupportedFuncs) != 0 {
+		t.Fatalf("unsupported funcs = %#v, want none", result.Stats.UnsupportedFuncs)
+	}
+	if result.Stats.CustomCallFunctions != 1 {
+		t.Fatalf("custom_call_functions = %d, want web_set_max_html_param_len preserved as custom review action", result.Stats.CustomCallFunctions)
 	}
 	if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 {
 		t.Fatal("expected source review mappings")
 	}
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "actions[0]", "converted")
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_reg_save_param", "actions[0].extractors[0]", "contributor")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "actions[1]", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_reg_save_param", "actions[1].extractors[0]", "contributor")
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_think_time", "config.think_time", "converted")
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_set_max_html_param_len", "metadata.import.preserved.unsupported_functions", "review_only")
+	assertSourceReviewFunctionStatus(t, result.SourceReview.Mappings, "web_set_max_html_param_len", "review_only")
 
 	// Check think time config was computed
 	if result.Script.Config.ThinkTime.MeanMs == 0 {
@@ -233,7 +270,7 @@ func TestConvert(t *testing.T) {
 	}
 
 	// First action (Homepage) should have the extractor attached
-	firstAction := result.Script.Actions[0]
+	firstAction := findActionByName(t, result.Script.Actions, "Homepage")
 	if len(firstAction.Extractors) != 1 {
 		t.Errorf("expected 1 extractor on first action, got %d", len(firstAction.Extractors))
 	} else if firstAction.Extractors[0].Name != "SessionID" {
@@ -252,6 +289,90 @@ func assertSourceReviewMapping(t *testing.T, mappings []SourceReviewMapping, fun
 		}
 	}
 	t.Fatalf("missing source mapping function=%s target=%s status=%s in %#v", functionName, targetPath, status, mappings)
+}
+
+func assertSourceReviewFunctionStatus(t *testing.T, mappings []SourceReviewMapping, functionName string, status string) {
+	t.Helper()
+	for _, mapping := range mappings {
+		if mapping.Function == functionName && mapping.Status == status {
+			return
+		}
+	}
+	t.Fatalf("missing source mapping function=%s status=%s in %#v", functionName, status, mappings)
+}
+
+func assertSourceReviewSupportMode(t *testing.T, mappings []SourceReviewMapping, functionName string, mode LoadRunnerSupportMode) {
+	t.Helper()
+	for _, mapping := range mappings {
+		if mapping.Function == functionName && mapping.SupportMode == string(mode) {
+			return
+		}
+	}
+	t.Fatalf("missing source mapping function=%s support_mode=%s in %#v", functionName, mode, mappings)
+}
+
+func findActionByName(t *testing.T, actions []dsl.Action, name string) dsl.Action {
+	t.Helper()
+	for _, action := range actions {
+		if action.Name == name {
+			return action
+		}
+	}
+	t.Fatalf("missing action named %q in %#v", name, actions)
+	return dsl.Action{}
+}
+
+func firstProtocolAction(t *testing.T, actions []dsl.Action) dsl.Action {
+	t.Helper()
+	for _, action := range actions {
+		switch action.Type {
+		case "loadrunner_transaction", "loadrunner_runtime", "loadrunner_message", "error_message", "custom_call", "loadrunner_review", "loadrunner_external":
+			continue
+		default:
+			return action
+		}
+	}
+	t.Fatalf("missing protocol action in %#v", actions)
+	return dsl.Action{}
+}
+
+func sampleLoadRunnerFunctionCall(def LoadRunnerFunctionDefinition) string {
+	switch def.Name {
+	case "lr_continue_on_error":
+		return "\tlr_continue_on_error(1);"
+	case "lr_think_time":
+		return "\tlr_think_time(1);"
+	case "lr_rendezvous", "lr_rendezvous_ex":
+		return "\t" + def.Name + "(\"sync_point\");"
+	case "lr_error_message", "lr_message", "lr_log_message", "lr_output_message", "lr_debug_message", "lr_vuser_status_message":
+		return "\t" + def.Name + "(\"Imported message for %s\", lr_eval_string(\"{UserID}\"));"
+	case "lr_start_transaction", "lr_start_sub_transaction", "lr_start_cross_vuser_transaction", "lr_start_transaction_instance":
+		return "\t" + def.Name + "(\"Checkout\");"
+	case "lr_end_transaction", "lr_end_sub_transaction", "lr_end_cross_vuser_transaction", "lr_end_transaction_instance", "lr_stop_transaction", "lr_stop_transaction_instance":
+		return "\t" + def.Name + "(\"Checkout\", LR_AUTO);"
+	case "lr_fail_trans_with_error":
+		return "\t" + def.Name + "(\"Checkout failed\");"
+	case "lr_start_timer", "lr_end_timer":
+		return "\t" + def.Name + "(\"Timer1\");"
+	case "lr_user_data_point", "lr_user_data_point_ex", "lr_user_data_point_instance", "lr_user_data_point_instance_ex", "lr_checkpoint":
+		return "\t" + def.Name + "(\"metric\", 1.5);"
+	case "lr_save_string":
+		return "\tlr_save_string(\"value\", \"SavedParam\");"
+	case "lr_save_int":
+		return "\tlr_save_int(7, \"SavedInt\");"
+	case "lr_param_sprintf":
+		return "\tlr_param_sprintf(\"Greeting\", \"Hello %s\", \"Ada\");"
+	case "lr_param_increment":
+		return "\tlr_param_increment(\"Counter\", 1);"
+	case "lr_save_var":
+		return "\tlr_save_var(\"abcdef\", 3, 0, \"SavedVar\");"
+	case "lr_db_executeSQLStatement":
+		return "\tlr_db_executeSQLStatement(\"SQL=select 1\");"
+	case "lr_aws_get_secret", "lr_azure_ad_client_get_token", "lr_azure_kv_get_secret", "lr_azure_set_service_port", "lr_cyberark_get_vault":
+		return "\t" + def.Name + "(\"SecretName\", \"SecretParam\");"
+	default:
+		return "\t" + def.Name + "(\"Arg1\", \"Arg2\");"
+	}
 }
 
 func TestConvertContributorMappingsUseIndexedTargetPaths(t *testing.T) {
@@ -360,10 +481,26 @@ Action()
 	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
 		t.Fatal("expected import metadata for preserved runtime controls")
 	}
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions = %#v, want native error_message, lr_exit, and Homepage request", result.Script.Actions)
+	}
+	errorAction := result.Script.Actions[0]
+	if errorAction.Type != "error_message" || errorAction.Value != "Imported error message" {
+		t.Fatalf("error action = %#v, want native error_message action", errorAction)
+	}
+	if errorAction.Params["level"] != "error" || errorAction.Params["always"] != true {
+		t.Fatalf("error action params = %#v, want always-on error level", errorAction.Params)
+	}
+	if errorAction.Metadata["source_function"] != "lr_error_message" {
+		t.Fatalf("error action metadata = %#v, want source_function lr_error_message", errorAction.Metadata)
+	}
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_error_message", "actions[0]", "converted")
+	if exitAction := result.Script.Actions[1]; exitAction.Type != "loadrunner_runtime" || exitAction.Params["function"] != "lr_exit" {
+		t.Fatalf("exit action = %#v, want native lr_exit runtime action", exitAction)
+	}
 	preserved := result.Script.Metadata.Import.Preserved
-	messages, ok := preserved["loadrunner_error_messages"].([]map[string]any)
-	if !ok || len(messages) != 1 || messages[0]["message"] != "Imported error message" {
-		t.Fatalf("loadrunner_error_messages = %#v, want preserved lr_error_message", preserved["loadrunner_error_messages"])
+	if _, ok := preserved["loadrunner_error_messages"]; ok {
+		t.Fatalf("loadrunner_error_messages = %#v, want lr_error_message converted natively", preserved["loadrunner_error_messages"])
 	}
 	exits, ok := preserved["loadrunner_exit_controls"].([]map[string]any)
 	if !ok || len(exits) != 1 {
@@ -377,6 +514,103 @@ Action()
 	if !ok || len(args) != 2 || args[0] != "LR_EXIT_VUSER" || args[1] != "LR_AUTO" {
 		t.Fatalf("lr_exit args = %#v, want LR_EXIT_VUSER/LR_AUTO", exits[0]["args"])
 	}
+}
+
+func TestConvertLRErrorMessageFormatsArgumentsAsNativeAction(t *testing.T) {
+	actionC := `
+#include "web_api.h"
+
+Action()
+{
+	lr_error_message("Login failed for User: %s", lr_eval_string("{UserID}"));
+
+	web_url("Homepage",
+		"URL=https://example.com/app/home",
+		LAST);
+
+	return 0;
+}
+`
+	parsed, err := ParseActionFile("Action.c", actionC)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	if result.Stats.Skipped != 0 || len(result.Stats.UnsupportedFuncs) != 0 {
+		t.Fatalf("unsupported funcs = %#v skipped=%d, want none", result.Stats.UnsupportedFuncs, result.Stats.Skipped)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %#v, want error_message plus request", result.Script.Actions)
+	}
+	action := result.Script.Actions[0]
+	if action.Name != "LR_Error_Message_6" || action.Type != "error_message" || action.Value != "Login failed for User: %s" {
+		t.Fatalf("error action = %#v, want formatted native error_message", action)
+	}
+	args, ok := action.Params["args"].([]any)
+	if !ok || len(args) != 1 || args[0] != "{{var.userid}}" {
+		t.Fatalf("error message args = %#v, want {{var.userid}}", action.Params["args"])
+	}
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_error_message", "actions[0]", "converted")
+}
+
+func TestLoadRunnerFunctionRegistryCoversDocumentedFunctions(t *testing.T) {
+	defs := allLoadRunnerFunctionDefinitions()
+	if len(defs) < 80 {
+		t.Fatalf("registry definitions = %d, want documented VuGen 26.1 utility baseline", len(defs))
+	}
+	for _, def := range defs {
+		t.Run(def.Name, func(t *testing.T) {
+			if def.SupportMode == "" || def.Family == "" {
+				t.Fatalf("definition = %#v, want family and support mode", def)
+			}
+			source := "Action()\n{\n" + sampleLoadRunnerFunctionCall(def) + "\nweb_url(\"Home\", \"URL=https://example.test/home\", LAST);\nreturn 0;\n}\n"
+			parsed, err := ParseActionFile("Action.c", source)
+			if err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+			result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+			if err != nil {
+				t.Fatalf("convert error: %v", err)
+			}
+			if len(result.Stats.UnsupportedFuncs) != 0 || result.Stats.Skipped != 0 {
+				t.Fatalf("unsupported funcs = %#v skipped=%d, want none", result.Stats.UnsupportedFuncs, result.Stats.Skipped)
+			}
+			assertSourceReviewSupportMode(t, result.SourceReview.Mappings, def.Name, def.SupportMode)
+		})
+	}
+}
+
+func TestConvertUnknownCFunctionAsCustomCallReviewAction(t *testing.T) {
+	parsed, err := ParseActionFile("Action.c", `Action()
+{
+	my_custom_helper(42, LR_AUTO, "value");
+	web_url("Home", "URL=https://example.test/home", LAST);
+	return 0;
+}
+`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	if len(result.Stats.UnsupportedFuncs) != 0 || result.Stats.CustomCallFunctions != 1 {
+		t.Fatalf("stats = %#v, want one custom call and no unsupported funcs", result.Stats)
+	}
+	action := result.Script.Actions[0]
+	if action.Type != "custom_call" || action.Params["function"] != "my_custom_helper" || action.Params["support_mode"] != string(LoadRunnerSupportCustomReview) {
+		t.Fatalf("custom action = %#v, want custom_call review action", action)
+	}
+	args, ok := action.Params["args"].([]any)
+	if !ok || len(args) != 3 || args[0] != "42" || args[1] != "LR_AUTO" || args[2] != "value" {
+		t.Fatalf("custom args = %#v, want numeric, identifier, and string args preserved", action.Params["args"])
+	}
+	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "my_custom_helper", LoadRunnerSupportCustomReview)
 }
 
 func TestConvertPreserveTransactionsOption(t *testing.T) {
@@ -394,10 +628,10 @@ func TestConvertPreserveTransactionsOption(t *testing.T) {
 		t.Fatalf("convert without transactions error: %v", err)
 	}
 
-	if got := withTransactions.Script.Actions[0].Name; got != "Login_Homepage" {
+	if got := firstProtocolAction(t, withTransactions.Script.Actions).Name; got != "Login_Homepage" {
 		t.Fatalf("preserved action name = %q, want Login_Homepage", got)
 	}
-	if got := withoutTransactions.Script.Actions[0].Name; got != "Homepage" {
+	if got := firstProtocolAction(t, withoutTransactions.Script.Actions).Name; got != "Homepage" {
 		t.Fatalf("non-preserved action name = %q, want Homepage", got)
 	}
 }
@@ -1270,8 +1504,8 @@ func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
 	if result.Script.Config.BaseURL != "https://shop.example.test" {
 		t.Fatalf("base_url = %q, want https://shop.example.test", result.Script.Config.BaseURL)
 	}
-	if result.Stats.ConvertedActions != 5 {
-		t.Fatalf("converted_actions = %d, want 5", result.Stats.ConvertedActions)
+	if result.Stats.ConvertedActions != 7 {
+		t.Fatalf("converted_actions = %d, want 7 including native transaction actions", result.Stats.ConvertedActions)
 	}
 	if result.Stats.Transactions != 1 {
 		t.Fatalf("transactions = %d, want 1", result.Stats.Transactions)

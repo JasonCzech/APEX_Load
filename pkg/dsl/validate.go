@@ -41,8 +41,8 @@ func ValidateScriptIssues(script *Script) []string {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing type", i, action.Name))
 			continue
 		}
-		if action.Type == "rendezvous" {
-			issues = append(issues, validateRendezvousActionIssues(i, action)...)
+		if isEngineActionType(action.Type) {
+			issues = append(issues, validateEngineActionIssues(i, action)...)
 			continue
 		}
 
@@ -137,6 +137,35 @@ func validateGRPCConfigIssues(script *Script) []string {
 		}
 	}
 	return issues
+}
+
+func isEngineActionType(actionType string) bool {
+	switch actionType {
+	case "rendezvous", "error_message",
+		"loadrunner_message", "loadrunner_runtime", "loadrunner_transaction", "loadrunner_timer",
+		"loadrunner_metric", "loadrunner_parameter", "loadrunner_json", "loadrunner_xml",
+		"loadrunner_database", "loadrunner_secret", "loadrunner_external", "loadrunner_review",
+		"custom_call":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateEngineActionIssues(index int, action Action) []string {
+	switch action.Type {
+	case "rendezvous":
+		return validateRendezvousActionIssues(index, action)
+	case "error_message":
+		label := fmt.Sprintf("actions[%d] %q", index, action.Name)
+		if strings.TrimSpace(action.Value) == "" {
+			if format, ok := actionParamStringValue(action.Params, "format"); ok && format != "" {
+				return nil
+			}
+			return []string{fmt.Sprintf("%s: error_message requires value or params.format", label)}
+		}
+	}
+	return nil
 }
 
 func validateGRPCActionIssues(index int, action Action) []string {

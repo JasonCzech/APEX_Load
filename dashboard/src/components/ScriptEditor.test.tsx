@@ -1160,6 +1160,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Action.c:3')
     expect(container.textContent).toContain('web_url')
     expect(container.textContent).toContain('"target": "/login"')
+    expect(container.querySelector('.support-dialog-import')?.classList.contains('open')).toBe(true)
     expect(container.textContent).toContain('Correlation Suggestions')
     expect(container.textContent).toContain('session_id')
     expect(container.textContent).toContain('response via $.sessionId')

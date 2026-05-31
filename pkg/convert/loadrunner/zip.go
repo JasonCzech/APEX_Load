@@ -308,10 +308,13 @@ func newLoadRunnerReviewResult(detected DetectedProtocol, files map[string]strin
 		}
 		result.Stats.TotalFunctions += len(action.Functions)
 		for _, fn := range action.Functions {
-			result.Stats.UnsupportedFuncs = append(result.Stats.UnsupportedFuncs, fn.Name)
+			if def, ok := lookupLoadRunnerFunction(fn.Name); ok {
+				recordLoadRunnerFunctionSupport(result, def.SupportMode)
+			} else {
+				recordLoadRunnerFunctionSupport(result, LoadRunnerSupportCustomReview)
+			}
 		}
 	}
-	result.Stats.Skipped = len(result.Stats.UnsupportedFuncs)
 	if detected.ImportMode == ImportModeReviewOnly || detected.ImportMode == ImportModeExternalRunnerRequired || detected.ImportMode == ImportModeUnsupported {
 		result.Warnings = append(result.Warnings, "Import was classified as "+string(detected.ImportMode)+"; no executable APEX Load script was generated.")
 	}

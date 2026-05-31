@@ -30,16 +30,17 @@ type SourceReviewFile struct {
 }
 
 type SourceReviewMapping struct {
-	ID         string `json:"id"`
-	SourceFile string `json:"source_file"`
-	StartLine  int    `json:"start_line"`
-	EndLine    int    `json:"end_line,omitempty"`
-	Function   string `json:"function,omitempty"`
-	TargetPath string `json:"target_path,omitempty"`
-	TargetName string `json:"target_name,omitempty"`
-	TargetKind string `json:"target_kind,omitempty"`
-	Status     string `json:"status"`
-	Notes      string `json:"notes,omitempty"`
+	ID          string `json:"id"`
+	SourceFile  string `json:"source_file"`
+	StartLine   int    `json:"start_line"`
+	EndLine     int    `json:"end_line,omitempty"`
+	Function    string `json:"function,omitempty"`
+	TargetPath  string `json:"target_path,omitempty"`
+	TargetName  string `json:"target_name,omitempty"`
+	TargetKind  string `json:"target_kind,omitempty"`
+	Status      string `json:"status"`
+	SupportMode string `json:"support_mode,omitempty"`
+	Notes       string `json:"notes,omitempty"`
 }
 
 func BuildSourceReview(files map[string]string, mappings []SourceReviewMapping) *SourceReview {
@@ -97,7 +98,15 @@ func reviewOnlySourceReviewMappings(actions []*ParsedAction, status string, note
 			continue
 		}
 		for _, fn := range action.Functions {
-			mappings = append(mappings, sourceReviewMappingForFunction(fn, "", "", "review", status, notes))
+			mode := LoadRunnerSupportCustomReview
+			if def, ok := lookupLoadRunnerFunction(fn.Name); ok {
+				mode = def.SupportMode
+			}
+			mappingStatus := status
+			if mode == LoadRunnerSupportExternalRequired {
+				mappingStatus = "external_required"
+			}
+			mappings = append(mappings, sourceReviewMappingWithSupportMode(fn, "", "", "review", mappingStatus, notes, mode))
 		}
 	}
 	return mappings
@@ -131,6 +140,7 @@ func normalizeSourceReviewMapping(mapping SourceReviewMapping) SourceReviewMappi
 	mapping.TargetName = strings.TrimSpace(mapping.TargetName)
 	mapping.TargetKind = strings.TrimSpace(mapping.TargetKind)
 	mapping.Status = strings.TrimSpace(mapping.Status)
+	mapping.SupportMode = strings.TrimSpace(mapping.SupportMode)
 	mapping.Notes = strings.TrimSpace(mapping.Notes)
 	if mapping.Status == "" {
 		mapping.Status = "review"

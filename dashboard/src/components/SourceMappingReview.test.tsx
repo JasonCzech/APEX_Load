@@ -58,6 +58,7 @@ const sourceReview = {
       target_name: 'Homepage',
       target_kind: 'action',
       status: 'converted',
+      support_mode: 'executable',
     },
     {
       id: 'logout',
@@ -69,6 +70,7 @@ const sourceReview = {
       target_name: 'Logout',
       target_kind: 'action',
       status: 'converted',
+      support_mode: 'native_noop',
     },
   ],
 }
@@ -145,6 +147,7 @@ describe('SourceMappingReview', () => {
     expect(dslPane.textContent).toContain('"name": "Logout"')
     expect(dslPane.textContent).not.toContain('"name": "Homepage"')
     expect(container.textContent).toContain('actions[1]')
+    expect(container.textContent).toContain('native noop')
   })
 
   it('clears the stale DSL selection when the selected source file has no mapping', async () => {

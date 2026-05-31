@@ -70,7 +70,7 @@ function mappingSortValue(mapping: LoadRunnerSourceReviewMapping, field: SortFie
     case 'target':
       return mapping.target_path || mapping.target_name || ''
     case 'status':
-      return mapping.status || ''
+      return `${mapping.status || ''}:${mapping.support_mode || ''}`
     default:
       return `${mapping.source_file || ''}:${String(mapping.start_line || 0).padStart(8, '0')}`
   }
@@ -78,6 +78,10 @@ function mappingSortValue(mapping: LoadRunnerSourceReviewMapping, field: SortFie
 
 function formatStatusLabel(status?: string) {
   return (status || 'review').replace(/_/g, ' ')
+}
+
+function formatSupportModeLabel(mode?: string) {
+  return (mode || '').replace(/_/g, ' ')
 }
 
 function formatSourceRange(mapping?: LoadRunnerSourceReviewMapping | null) {
@@ -147,6 +151,7 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
         mapping.target_path,
         mapping.target_name,
         mapping.status,
+        mapping.support_mode,
         mapping.notes,
       ].some(value => String(value || '').toLowerCase().includes(needle)))
       : mappings
@@ -276,7 +281,12 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
                 <td className="cell-mono">{formatSourceRange(mapping)}</td>
                 <td>{mapping.function || '-'}</td>
                 <td className="cell-mono">{mapping.target_path || mapping.target_name || 'review-only'}</td>
-                <td><span className={`source-map-status ${CATEGORY_CLASS[statusCategory(mapping.status)]}`}>{formatStatusLabel(mapping.status)}</span></td>
+                <td>
+                  <div className="source-map-status-stack">
+                    <span className={`source-map-status ${CATEGORY_CLASS[statusCategory(mapping.status)]}`}>{formatStatusLabel(mapping.status)}</span>
+                    {mapping.support_mode && <span className="source-map-support-mode">{formatSupportModeLabel(mapping.support_mode)}</span>}
+                  </div>
+                </td>
               </tr>
             ))}
             {filteredMappings.length === 0 && (

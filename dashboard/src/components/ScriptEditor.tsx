@@ -325,6 +325,10 @@ function readSourceReview(metadata?: ScriptImportMetadata | null): LoadRunnerSou
   return value as LoadRunnerSourceReview
 }
 
+function scriptHasSourceReview(script?: ScriptData | null): boolean {
+  return Boolean(readSourceReview(script?.metadata?.import))
+}
+
 function readString(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -8412,7 +8416,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     config: false,
     actions: true,
     runtime: false,
-    import: false,
+    import: scriptHasSourceReview(initialScript),
     replay: false,
   })
   const [isParameterDialogOpen, setIsParameterDialogOpen] = useState(false)
@@ -8445,6 +8449,9 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
   const hydrateEditorState = useCallback((nextScript: ScriptData) => {
     setScript(nextScript)
     setImportBaselineScript(nextScript.metadata?.import ? JSON.parse(JSON.stringify(nextScript)) as ScriptData : null)
+    if (scriptHasSourceReview(nextScript)) {
+      setOpenSections(prev => ({ ...prev, import: true }))
+    }
     setJsonText(JSON.stringify({ script: nextScript }, null, 2))
     setActiveAction(null)
     setIsParameterDialogOpen(false)

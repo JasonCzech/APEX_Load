@@ -20,7 +20,8 @@ type iterationResetProtocol struct {
 }
 
 type loggingProtocol struct {
-	result *protocol.Result
+	result       *protocol.Result
+	executeCalls int
 }
 
 func (p *iterationResetProtocol) Name() string { return "browser" }
@@ -45,6 +46,7 @@ func (p *iterationResetProtocol) HealthCheck(_ context.Context) error { return n
 func (p *loggingProtocol) Name() string                                   { return "http" }
 func (p *loggingProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
 func (p *loggingProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	p.executeCalls++
 	result := *p.result
 	result.ActionName = action.Name
 	return &result, nil
@@ -519,6 +521,203 @@ func TestVUser_Run_ResetsBrowserProtocolPerIteration(t *testing.T) {
 	}
 	if protoStub.teardownCalls != 1 {
 		t.Fatalf("teardownCalls = %d, want 1 between iterations", protoStub.teardownCalls)
+	}
+}
+
+func TestVUser_Run_ErrorMessageActionLogsWhenScriptLoggingDisabled(t *testing.T) {
+	protoStub := &loggingProtocol{result: &protocol.Result{
+		Success:       true,
+		StatusCode:    200,
+		Duration:      time.Millisecond,
+		BytesReceived: 16,
+	}}
+
+	var logBuf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(prev)
+
+	vu := &VUser{
+		ID:        7,
+		Group:     "Login",
+		Proto:     protoStub,
+		Variables: map[string]string{"userid": "qa-user"},
+		Script: &dsl.Script{
+			Protocol: "http",
+			Config: dsl.ScriptConfig{
+				RunLogic: dsl.RunLogicConfig{Iterations: 1},
+				Log:      dsl.LogConfig{Level: "disabled"},
+			},
+			Actions: []dsl.Action{{
+				Name:  "LR_Error_Message_12",
+				Type:  "error_message",
+				Value: "Login failed for User: %s with status %d",
+				Params: map[string]any{
+					"args": []any{"{{var.userid}}", "500"},
+				},
+			}, {
+				Name:   "Home",
+				Type:   "request",
+				Method: "GET",
+				Target: "/home",
+			}},
+		},
+		Metrics: NewMetricsCollector(16),
+	}
+
+	vu.Run(context.Background())
+
+	if protoStub.executeCalls != 1 {
+		t.Fatalf("executeCalls = %d, want only the HTTP request to reach protocol", protoStub.executeCalls)
+	}
+	logOutput := logBuf.String()
+	for _, expected := range []string{
+		"msg=\"loadrunner error message\"",
+		"vuser=7",
+		"group=Login",
+		"action=LR_Error_Message_12",
+		"message=\"Login failed for User: qa-user with status 500\"",
+	} {
+		if !strings.Contains(logOutput, expected) {
+			t.Fatalf("log output missing %q: %s", expected, logOutput)
+		}
+	}
+	if strings.Contains(logOutput, "msg=\"action ok\"") {
+		t.Fatalf("disabled script logging emitted request logs: %s", logOutput)
+	}
+}
+
+func TestRenderPrintfLikeMessageSupportsLoadRunnerFormatting(t *testing.T) {
+	tests := []struct {
+		name   string
+		format string
+		args   []any
+		want   string
+	}{
+		{
+			name:   "numeric flags precision and escaped percent",
+			format: "HTML error %03d was triggered. Value #1 is %s (%.1f%%)",
+			args:   []any{"7", "Param1", "12.34"},
+			want:   "HTML error 007 was triggered. Value #1 is Param1 (12.3%)",
+		},
+		{
+			name:   "c integer length modifiers",
+			format: "total=%ld unsigned=%u",
+			args:   []any{"42", "9"},
+			want:   "total=42 unsigned=9",
+		},
+		{
+			name:   "missing arguments keep specifier visible",
+			format: "HTML error %d was triggered",
+			args:   nil,
+			want:   "HTML error %d was triggered",
+		},
+		{
+			name:   "literal percent text does not consume arguments",
+			format: "Progress was 100% complete for %s",
+			args:   []any{"UserID"},
+			want:   "Progress was 100% complete for UserID",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := renderPrintfLikeMessage(tt.format, tt.args); got != tt.want {
+				t.Fatalf("renderPrintfLikeMessage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVUser_Run_LoadRunnerUtilityActionsStayInEngine(t *testing.T) {
+	vu := &VUser{
+		ID:        3,
+		Group:     "Checkout",
+		Variables: map[string]string{},
+		Script: &dsl.Script{
+			Protocol: "http",
+			Config:   dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+			Actions: []dsl.Action{{
+				Name: "SaveUser",
+				Type: "loadrunner_parameter",
+				Params: map[string]any{
+					"function": "lr_save_string",
+					"args":     []any{"ada", "UserID"},
+				},
+			}, {
+				Name: "Greeting",
+				Type: "loadrunner_parameter",
+				Params: map[string]any{
+					"function": "lr_param_sprintf",
+					"args":     []any{"Greeting", "Hello %s", "{{var.userid}}"},
+				},
+			}, {
+				Name: "Timer1",
+				Type: "loadrunner_timer",
+				Params: map[string]any{
+					"function": "lr_start_timer",
+					"args":     []any{"Timer1"},
+				},
+			}, {
+				Name: "Timer1",
+				Type: "loadrunner_timer",
+				Params: map[string]any{
+					"function": "lr_end_timer",
+					"args":     []any{"Timer1"},
+				},
+			}, {
+				Name: "Checkout",
+				Type: "loadrunner_transaction",
+				Params: map[string]any{
+					"function": "lr_start_transaction",
+					"args":     []any{"Checkout"},
+				},
+			}, {
+				Name: "Checkout",
+				Type: "loadrunner_transaction",
+				Params: map[string]any{
+					"function": "lr_end_transaction",
+					"args":     []any{"Checkout", "LR_PASS"},
+				},
+			}, {
+				Name:  "Status",
+				Type:  "loadrunner_message",
+				Value: "Working as %s",
+				Params: map[string]any{
+					"function":       "lr_vuser_status_message",
+					"format":         "Working as %s",
+					"args":           []any{"{{var.userid}}"},
+					"status_message": true,
+				},
+			}, {
+				Name: "helper",
+				Type: "custom_call",
+				Params: map[string]any{
+					"function":     "helper",
+					"support_mode": "custom_review",
+					"args":         []any{"42"},
+				},
+			}},
+		},
+		Metrics: NewMetricsCollector(16),
+	}
+
+	vu.Run(context.Background())
+
+	if got := vu.Variables["userid"]; got != "ada" {
+		t.Fatalf("userid = %q, want ada", got)
+	}
+	if got := vu.Variables["greeting"]; got != "Hello ada" {
+		t.Fatalf("greeting = %q, want Hello ada", got)
+	}
+	if got := vu.Variables["vuser_status"]; got != "Working as ada" {
+		t.Fatalf("vuser_status = %q, want rendered status", got)
+	}
+	if got := vu.Variables[loadRunnerTimerDurationKey("Timer1")]; got == "" {
+		t.Fatalf("timer duration variable missing: %#v", vu.Variables)
+	}
+	if got := vu.Variables[loadRunnerTransactionStatusKey("Checkout")]; got != "true" {
+		t.Fatalf("transaction status = %q, want true", got)
 	}
 }
 
