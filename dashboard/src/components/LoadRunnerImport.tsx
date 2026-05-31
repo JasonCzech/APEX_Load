@@ -1202,7 +1202,9 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             saveLabel={saveActionLabel}
             onSave={handleSaveConverted}
             onEdit={onEdit ? () => openImportedScriptInEditor() : undefined}
+            previewMode="details"
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} /> : undefined}
+            previewAsideLayout="stack"
           >
 
             {browserImport && (

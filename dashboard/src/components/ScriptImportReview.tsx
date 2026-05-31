@@ -15,7 +15,9 @@ interface Props {
   saveLabel?: string
   editLabel?: string
   previewTitle?: string
+  previewMode?: 'panel' | 'details'
   previewAside?: ReactNode
+  previewAsideLayout?: 'side' | 'stack'
   onSave?: () => void
   onEdit?: () => void
   children?: ReactNode
@@ -33,15 +35,23 @@ export default function ScriptImportReview({
   saveLabel = 'Save To Script Library',
   editLabel = 'Open In Visual Editor',
   previewTitle = 'Generated Script Preview',
+  previewMode = 'panel',
   previewAside,
+  previewAsideLayout = 'side',
   onSave,
   onEdit,
   children,
 }: Props) {
-  const previewPane = (
+  const previewContent = <pre>{JSON.stringify(previewData ?? { script }, null, 2)}</pre>
+  const previewPane = previewMode === 'details' ? (
+    <details className="script-import-review-preview">
+      <summary>{previewTitle}</summary>
+      {previewContent}
+    </details>
+  ) : (
     <div className="script-import-review-preview">
       <h4>{previewTitle}</h4>
-      <pre>{JSON.stringify(previewData ?? { script }, null, 2)}</pre>
+      {previewContent}
     </div>
   )
 
@@ -69,14 +79,19 @@ export default function ScriptImportReview({
         </div>
       )}
 
-      {previewAside ? (
+      {previewAside && previewAsideLayout === 'side' ? (
         <div className="script-import-review-preview-row">
           {previewPane}
           <div className="script-import-review-preview-aside">
             {previewAside}
           </div>
         </div>
-      ) : previewPane}
+      ) : (
+        <>
+          {previewPane}
+          {previewAside}
+        </>
+      )}
     </div>
   )
 }

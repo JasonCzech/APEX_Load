@@ -71,8 +71,20 @@
   padding: 14px 20px;
 }
 
+details.script-import-review-preview {
+  border-bottom: 1px solid var(--border);
+}
+
 .script-import-review-preview-row .script-import-review-preview {
   border-right: 1px solid var(--border);
+  border-bottom: 0;
+}
+
+.script-import-review-preview summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .script-import-review-preview pre {
@@ -87,6 +99,11 @@
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+.script-import-review-preview summary + pre {
+  max-height: 360px;
+  margin-top: 10px;
 }
 
 .script-import-review-preview-aside {
