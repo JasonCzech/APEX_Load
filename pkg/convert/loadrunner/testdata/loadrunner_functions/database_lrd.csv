@@ -1,23 +1,25 @@
 # OpenText VuGen Database (lrd_) protocol functions (ODBC/CtLib/Oracle/etc.).
-# Phase B can map the statement/cursor primitives to native db_* actions.
+# Statement, connection, and transaction primitives are mapped to native db_* actions;
+# cursor/handle lifecycle calls are preserved as native no-ops when they have no APEX
+# Load side effect.
 # Format: name,family,support_mode[,reason]
-lrd_init,database,review_only,Initializes the LRD database environment; pending native db_* mapping in Phase B.
-lrd_open_connection,database,review_only,Opens a database connection; pending native db_connect mapping in Phase B.
-lrd_close_connection,database,review_only,Closes a database connection; pending native db_* mapping in Phase B.
-lrd_open_cursor,database,review_only,Opens a database cursor; pending native db_* mapping in Phase B.
-lrd_close_cursor,database,review_only,Closes a database cursor; pending native db_* mapping in Phase B.
-lrd_stmt,database,review_only,Associates a SQL statement with a cursor; pending native db_query/db_exec mapping in Phase B.
-lrd_exec,database,review_only,Executes a SQL statement; pending native db_exec mapping in Phase B.
-lrd_fetch,database,review_only,Fetches rows from a cursor; pending native db_query mapping in Phase B.
-lrd_bind_col,database,review_only,Binds a result column; pending native extractor mapping in Phase B.
-lrd_bind_placeholder,database,review_only,Binds a statement placeholder; pending native parameter mapping in Phase B.
-lrd_save_value,database,review_only,Saves a bound value into a parameter; pending native extractor mapping in Phase B.
-lrd_save_col,database,review_only,Saves a result-set column into a parameter; pending native extractor mapping in Phase B.
-lrd_assign,database,review_only,Assigns a value to a parameter; pending native mapping in Phase B.
-lrd_assign_bind,database,review_only,Assigns and binds a placeholder; pending native mapping in Phase B.
-lrd_commit,database,review_only,Commits a transaction; pending native db_commit mapping in Phase B.
-lrd_rollback,database,review_only,Rolls back a transaction; pending native db_rollback mapping in Phase B.
-lrd_db_option,database,review_only,Sets a database option; pending native config mapping in Phase B.
-lrd_ora8_commit,database,review_only,Commits an Oracle OCI transaction; pending native db_commit mapping in Phase B.
+lrd_init,database,native_noop,Initializes the LRD database environment; APEX Load initializes the database protocol before replay.
+lrd_open_connection,database,executable,Opens a database connection and maps to db_connect.
+lrd_close_connection,database,executable,Closes a database connection and maps to db_disconnect.
+lrd_open_cursor,database,native_noop,Opens a database cursor; APEX Load executes statements directly and preserves the cursor call as a no-op.
+lrd_close_cursor,database,native_noop,Closes a database cursor; APEX Load executes statements directly and preserves the cursor call as a no-op.
+lrd_stmt,database,executable,Associates a SQL statement with a cursor and maps to db_query/db_exec on execution or flush.
+lrd_exec,database,executable,Executes a SQL statement and maps to db_query/db_exec.
+lrd_fetch,database,executable,Fetches rows from a cursor and maps pending SELECT statements to db_query.
+lrd_bind_col,database,executable,Binds a result column; preserved as a native database state action for source-mapped parameter review.
+lrd_bind_placeholder,database,executable,Binds a statement placeholder and contributes bind values to generated db_* actions.
+lrd_save_value,database,executable,Saves a bound value into a parameter through a native database state action.
+lrd_save_col,database,executable,Saves a result-set column into a parameter through a native database state action.
+lrd_assign,database,executable,Assigns a value to a statement placeholder and contributes bind values to generated db_* actions.
+lrd_assign_bind,database,executable,Assigns and binds a placeholder and contributes bind values to generated db_* actions.
+lrd_commit,database,executable,Commits a transaction and maps to db_commit.
+lrd_rollback,database,executable,Rolls back a transaction and maps to db_rollback.
+lrd_db_option,database,native_noop,Sets a database option; preserved as a native no-op because runtime config is managed by APEX Load.
+lrd_ora8_commit,database,executable,Commits an Oracle OCI transaction and maps to db_commit.
 lrd_handle_alloc,database,native_noop,Allocates a database handle; no APEX Load side effect, handled as a native no-op.
 lrd_handle_free,database,native_noop,Frees a database handle; no APEX Load side effect, handled as a native no-op.

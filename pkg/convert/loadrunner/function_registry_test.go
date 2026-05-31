@@ -67,8 +67,8 @@ func TestRegistryLoadsAllFamilyFiles(t *testing.T) {
 	}{
 		{"lr_save_string", "parameter", LoadRunnerSupportExecutable}, // utility.csv
 		{"web_set_user", "web", LoadRunnerSupportReviewOnly},         // web.csv
-		{"lrs_send", "socket", LoadRunnerSupportReviewOnly},          // socket.csv
-		{"lrd_exec", "database", LoadRunnerSupportReviewOnly},        // database_lrd.csv
+		{"lrs_send", "socket", LoadRunnerSupportExecutable},          // socket.csv
+		{"lrd_exec", "database", LoadRunnerSupportExecutable},        // database_lrd.csv
 		{"sapgui_logon", "sapgui", LoadRunnerSupportReviewOnly},      // sapgui.csv
 		{"ctrx_connect_server", "citrix", LoadRunnerSupportReviewOnly},
 		{"TE_connect", "rte", LoadRunnerSupportReviewOnly}, // case-insensitive lookup

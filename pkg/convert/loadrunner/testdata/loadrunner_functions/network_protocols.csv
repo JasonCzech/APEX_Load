@@ -1,0 +1,59 @@
+# OpenText VuGen DNS/FTP/mail/LDAP protocol functions.
+# Network protocol functions map to native network actions where APEX Load has a runtime;
+# connect/logon/logoff state that is owned by protocol config is preserved as native no-op.
+# Format: name,family,support_mode[,reason]
+dns_query,dns,executable,DNS lookup maps to a native dns_query action.
+dns_query_ex,dns,executable,DNS lookup maps to a native dns_query action with preserved arguments.
+ftp_logon,ftp,executable,FTP logon maps to a native ftp_login action.
+ftp_login,ftp,executable,FTP login maps to a native ftp_login action.
+ftp_connect,ftp,executable,FTP connect maps to a native ftp_login action.
+ftp_logout,ftp,executable,FTP logout maps to a native ftp_command QUIT action.
+ftp_disconnect,ftp,executable,FTP disconnect maps to a native ftp_command QUIT action.
+ftp_noop,ftp,executable,FTP NOOP maps to a native ftp_noop action.
+ftp_command,ftp,executable,FTP command maps to a native ftp_command action.
+ftp_get,ftp,executable,FTP retrieve maps to a native ftp_command RETR action.
+ftp_put,ftp,executable,FTP store maps to a native ftp_command STOR action.
+ftp_delete,ftp,executable,FTP delete maps to a native ftp_command DELE action.
+ftp_rename,ftp,executable,FTP rename maps to native FTP command text for review/replay.
+ftp_mkdir,ftp,executable,FTP mkdir maps to a native ftp_command MKD action.
+ftp_rmdir,ftp,executable,FTP rmdir maps to a native ftp_command RMD action.
+ftp_cd,ftp,executable,FTP directory change maps to a native ftp_command CWD action.
+ftp_pwd,ftp,executable,FTP current directory maps to a native ftp_command PWD action.
+ftp_dir,ftp,executable,FTP directory listing maps to a native ftp_command LIST action.
+ftp_ascii,ftp,executable,FTP ASCII mode maps to a native ftp_command TYPE A action.
+ftp_binary,ftp,executable,FTP binary mode maps to a native ftp_command TYPE I action.
+ftp_site,ftp,executable,FTP SITE command maps to a native ftp_command action.
+ftp_set_option,ftp,native_noop,FTP runtime option is preserved as a native no-op; endpoint config is managed by APEX Load.
+smtp_logon,smtp,native_noop,SMTP logon is preserved as a native no-op; credentials are supplied through network config.
+smtp_logout,smtp,native_noop,SMTP logout is preserved as a native no-op; APEX Load closes protocol connections per action.
+smtp_connect,smtp,native_noop,SMTP connect is preserved as a native no-op; APEX Load opens the connection during smtp_send.
+smtp_disconnect,smtp,native_noop,SMTP disconnect is preserved as a native no-op; APEX Load closes protocol connections per action.
+smtp_send,smtp,executable,SMTP send maps to a native smtp_send action.
+smtp_send_mail,smtp,executable,SMTP send mail maps to a native smtp_send action.
+pop3_logon,pop3,native_noop,POP3 logon is preserved as a native no-op; credentials are supplied through network config.
+pop3_logout,pop3,native_noop,POP3 logout is preserved as a native no-op; APEX Load closes protocol connections per action.
+pop3_connect,pop3,native_noop,POP3 connect is preserved as a native no-op; APEX Load opens the connection during commands.
+pop3_disconnect,pop3,native_noop,POP3 disconnect is preserved as a native no-op; APEX Load closes protocol connections per action.
+pop3_retrieve,pop3,executable,POP3 retrieve maps to a native pop3_command action.
+pop3_delete,pop3,executable,POP3 delete maps to a native pop3_command action.
+pop3_list,pop3,executable,POP3 list maps to a native pop3_command action.
+pop3_command,pop3,executable,POP3 command maps to a native pop3_command action.
+imap_logon,imap,native_noop,IMAP logon is preserved as a native no-op; credentials are supplied through network config.
+imap_logout,imap,native_noop,IMAP logout is preserved as a native no-op; APEX Load closes protocol connections per action.
+imap_connect,imap,native_noop,IMAP connect is preserved as a native no-op; APEX Load opens the connection during commands.
+imap_disconnect,imap,native_noop,IMAP disconnect is preserved as a native no-op; APEX Load closes protocol connections per action.
+imap_select,imap,executable,IMAP select maps to a native imap_command action.
+imap_fetch,imap,executable,IMAP fetch maps to a native imap_command action.
+imap_search,imap,executable,IMAP search maps to a native imap_command action.
+imap_delete,imap,executable,IMAP delete maps to a native imap_command action.
+imap_command,imap,executable,IMAP command maps to a native imap_command action.
+ldap_bind,ldap,executable,LDAP bind maps to a native ldap_bind action.
+ldap_logon,ldap,executable,LDAP logon maps to a native ldap_bind action.
+ldap_login,ldap,executable,LDAP login maps to a native ldap_bind action.
+ldap_search,ldap,executable,LDAP search maps to a native ldap_search action.
+ldap_query,ldap,executable,LDAP query maps to a native ldap_search action.
+ldap_add,ldap,review_only,LDAP add is preserved for review until mutating LDAP operations are approved.
+ldap_modify,ldap,review_only,LDAP modify is preserved for review until mutating LDAP operations are approved.
+ldap_delete,ldap,review_only,LDAP delete is preserved for review until mutating LDAP operations are approved.
+ldap_compare,ldap,review_only,LDAP compare is preserved for review until an assertion mapping is approved.
+ldap_logout,ldap,native_noop,LDAP logout is preserved as a native no-op; APEX Load closes protocol connections per action.

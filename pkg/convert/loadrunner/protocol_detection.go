@@ -27,7 +27,7 @@ const (
 
 type DetectedProtocol struct {
 	CanonicalLoadRunnerProtocol string              `json:"canonical_loadrunner_protocol"`
-	APEXLoadProtocol         string              `json:"apexload_protocol,omitempty"`
+	APEXLoadProtocol            string              `json:"apexload_protocol,omitempty"`
 	Bundle                      string              `json:"bundle,omitempty"`
 	ImportMode                  ImportMode          `json:"import_mode"`
 	Confidence                  DetectionConfidence `json:"confidence"`
@@ -56,7 +56,7 @@ type ReviewArtifact struct {
 type protocolProfile struct {
 	Canonical        string
 	DisplayName      string
-	APEXLoad      string
+	APEXLoad         string
 	Bundle           string
 	Mode             ImportMode
 	Evidence         []string
@@ -95,6 +95,12 @@ var protocolTypeAliases = map[string]protocolProfile{
 	"ldap":                       networkProfile("ldap", "LDAP"),
 	"windows sockets":            networkProfile("winsock", "Windows Sockets"),
 	"winsock":                    networkProfile("winsock", "Winsock"),
+	"jms":                        jmsProfile(),
+	"java messaging service":     jmsProfile(),
+	"websocket":                  websocketProfile(),
+	"web socket":                 websocketProfile(),
+	"grpc":                       grpcProfile(),
+	"g rpc":                      grpcProfile(),
 	"oracle-web":                 oebWebProfile("oracle_web", "Oracle-Web"),
 	"oracle web":                 oebWebProfile("oracle_web", "Oracle-Web"),
 	"siebel-web":                 oebWebProfile("siebel_web", "Siebel-Web"),
@@ -158,7 +164,7 @@ func DetectProtocol(files map[string]string, projectConfig *ProjectConfig, actio
 
 	detected := DetectedProtocol{
 		CanonicalLoadRunnerProtocol: selected.Canonical,
-		APEXLoadProtocol:         selected.APEXLoad,
+		APEXLoadProtocol:            selected.APEXLoad,
 		Bundle:                      selected.Bundle,
 		ImportMode:                  selected.Mode,
 		Confidence:                  confidence,
@@ -204,6 +210,12 @@ func profileForType(scriptType string) (protocolProfile, bool) {
 		return databaseProfile(), true
 	case strings.Contains(key, "web service") || strings.Contains(key, "soap"):
 		return soapProfile(), true
+	case strings.Contains(key, "jms") || strings.Contains(key, "messaging"):
+		return jmsProfile(), true
+	case strings.Contains(key, "websocket") || strings.Contains(key, "web socket"):
+		return websocketProfile(), true
+	case strings.Contains(key, "grpc") || strings.Contains(key, "g rpc"):
+		return grpcProfile(), true
 	case strings.Contains(key, "web"):
 		return webHTTPProfile(), true
 	default:
@@ -231,6 +243,18 @@ func profileFromContent(files map[string]string, actions []*ParsedAction) (*prot
 		if containsFunctionPrefix(counts, "lrd_") || containsFunctionPrefix(counts, "lr_db") || containsFunctionPrefix(counts, "sql") {
 			profile := databaseProfile()
 			return &profile, []string{"database function calls"}
+		}
+		if containsFunctionPrefix(counts, "jms_") {
+			profile := jmsProfile()
+			return &profile, []string{"JMS function calls"}
+		}
+		if containsFunctionPrefix(counts, "websocket_") || containsFunctionPrefix(counts, "ws_") {
+			profile := websocketProfile()
+			return &profile, []string{"WebSocket function calls"}
+		}
+		if containsFunctionPrefix(counts, "grpc_") {
+			profile := grpcProfile()
+			return &profile, []string{"gRPC function calls"}
 		}
 		if subprotocol, ok := networkSubprotocolFromFunctions(counts); ok {
 			profile := networkProfile(subprotocol, strings.ToUpper(subprotocol))
@@ -270,6 +294,15 @@ func profileFromContent(files map[string]string, actions []*ParsedAction) (*prot
 	case looksLikeSQLText(archiveText):
 		profile := databaseProfile()
 		return &profile, []string{"SQL text evidence"}
+	case strings.Contains(archiveText, "jms_"):
+		profile := jmsProfile()
+		return &profile, []string{"JMS source evidence"}
+	case strings.Contains(archiveText, "websocket_") || strings.Contains(archiveText, "ws_connect") || strings.Contains(archiveText, "ws_send"):
+		profile := websocketProfile()
+		return &profile, []string{"WebSocket source evidence"}
+	case strings.Contains(archiveText, "grpc_"):
+		profile := grpcProfile()
+		return &profile, []string{"gRPC source evidence"}
 	case strings.Contains(archiveText, "soapaction") || strings.Contains(archiveText, "<soap") || strings.Contains(archiveText, ":envelope"):
 		profile := soapProfile()
 		return &profile, []string{"SOAP envelope evidence"}
@@ -489,7 +522,7 @@ func webHTTPProfile() protocolProfile {
 	return protocolProfile{
 		Canonical:        "web_http_html",
 		DisplayName:      "Web HTTP/HTML",
-		APEXLoad:      "http",
+		APEXLoad:         "http",
 		Bundle:           "Foundation Entitlement",
 		Mode:             ImportModeExecutable,
 		HarmlessWithSOAP: true,
@@ -500,7 +533,7 @@ func soapProfile() protocolProfile {
 	return protocolProfile{
 		Canonical:   "soap",
 		DisplayName: "Web Services/SOAP",
-		APEXLoad: "soap",
+		APEXLoad:    "soap",
 		Bundle:      "Foundation Entitlement",
 		Mode:        ImportModeExecutable,
 	}
@@ -510,7 +543,7 @@ func trueClientMobileProfile() protocolProfile {
 	return protocolProfile{
 		Canonical:   "truclient_mobile_web",
 		DisplayName: "TruClient Mobile Web",
-		APEXLoad: "browser",
+		APEXLoad:    "browser",
 		Bundle:      "Foundation Entitlement",
 		Mode:        ImportModeExecutable,
 		Evidence:    []string{"Browser replay evidence before promotion"},
@@ -521,7 +554,7 @@ func trueClientWeb2Profile() protocolProfile {
 	return protocolProfile{
 		Canonical:   "truclient2_web",
 		DisplayName: "TruClient 2.0 Web",
-		APEXLoad: "browser",
+		APEXLoad:    "browser",
 		Bundle:      "Foundation Entitlement",
 		Mode:        ImportModeReviewOnly,
 		Evidence:    []string{"Selector review", "Browser replay evidence", "Runtime settings parity review"},
@@ -532,7 +565,7 @@ func databaseProfile() protocolProfile {
 	return protocolProfile{
 		Canonical:   "database",
 		DisplayName: "Database/ODBC",
-		APEXLoad: "database",
+		APEXLoad:    "database",
 		Bundle:      "LoadRunner Enterprise Database Protocol Bundle",
 		Mode:        ImportModeExecutable,
 		Evidence:    []string{"DSN or connection string", "SQL bind data review"},
@@ -546,10 +579,43 @@ func networkProfile(canonical, display string) protocolProfile {
 	return protocolProfile{
 		Canonical:   canonical,
 		DisplayName: display,
-		APEXLoad: "network",
+		APEXLoad:    "network",
 		Bundle:      "LoadRunner Enterprise Network Protocol Bundle",
 		Mode:        ImportModeExecutable,
 		Evidence:    []string{"Endpoint and credential review"},
+	}
+}
+
+func jmsProfile() protocolProfile {
+	return protocolProfile{
+		Canonical:   "jms",
+		DisplayName: "JMS",
+		APEXLoad:    "jms-solace",
+		Bundle:      "LoadRunner Enterprise Messaging Protocol Bundle",
+		Mode:        ImportModeExecutable,
+		Evidence:    []string{"Broker URL", "Destination and credential review"},
+	}
+}
+
+func websocketProfile() protocolProfile {
+	return protocolProfile{
+		Canonical:   "websocket",
+		DisplayName: "WebSocket",
+		APEXLoad:    "websocket",
+		Bundle:      "LoadRunner Enterprise Network Protocol Bundle",
+		Mode:        ImportModeExecutable,
+		Evidence:    []string{"WebSocket endpoint review"},
+	}
+}
+
+func grpcProfile() protocolProfile {
+	return protocolProfile{
+		Canonical:   "grpc",
+		DisplayName: "gRPC",
+		APEXLoad:    "grpc",
+		Bundle:      "LoadRunner Enterprise Network Protocol Bundle",
+		Mode:        ImportModeExecutable,
+		Evidence:    []string{"gRPC target and proto/reflection review"},
 	}
 }
 
@@ -557,7 +623,7 @@ func oebWebProfile(canonical, display string) protocolProfile {
 	return protocolProfile{
 		Canonical:   canonical,
 		DisplayName: display,
-		APEXLoad: "http",
+		APEXLoad:    "http",
 		Bundle:      "Oracle Enterprise Business Protocol Bundle",
 		Mode:        ImportModeExecutable,
 		Evidence:    []string{"Oracle E-Business correlation review", "Replay validation evidence"},

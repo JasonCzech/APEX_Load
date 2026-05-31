@@ -243,6 +243,12 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		result, convertErr = ConvertDatabase(parsedActions, opts, detected)
 	case detected.APEXLoadProtocol == "network":
 		result, convertErr = ConvertNetwork(parsedActions, opts, detected)
+	case detected.APEXLoadProtocol == "jms-solace":
+		result, convertErr = ConvertJMS(parsedActions, opts, detected)
+	case detected.APEXLoadProtocol == "websocket":
+		result, convertErr = ConvertWebSocket(parsedActions, opts, detected)
+	case detected.APEXLoadProtocol == "grpc":
+		result, convertErr = ConvertGRPC(parsedActions, opts, detected)
 	case detected.APEXLoadProtocol == "http" || detected.APEXLoadProtocol == "soap":
 		result, convertErr = Convert(parsedActions, opts)
 		if result != nil {

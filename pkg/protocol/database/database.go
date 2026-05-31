@@ -98,13 +98,19 @@ func (d *Database) Execute(ctx context.Context, action *protocol.Action) (*proto
 	actionType := strings.ToLower(strings.TrimSpace(action.Type))
 	actionCtx := ctx
 	cancel := func() {}
-	if d.queryTimeout > 0 && actionType != "db_begin" && actionType != "database_begin" && actionType != "begin" && actionType != "db_commit" && actionType != "database_commit" && actionType != "commit" && actionType != "db_rollback" && actionType != "database_rollback" && actionType != "rollback" {
+	if d.queryTimeout > 0 && actionType != "db_connect" && actionType != "database_connect" && actionType != "connect" && actionType != "db_disconnect" && actionType != "database_disconnect" && actionType != "disconnect" && actionType != "db_begin" && actionType != "database_begin" && actionType != "begin" && actionType != "db_commit" && actionType != "database_commit" && actionType != "commit" && actionType != "db_rollback" && actionType != "database_rollback" && actionType != "rollback" {
 		actionCtx, cancel = context.WithTimeout(ctx, d.queryTimeout)
 	}
 	defer cancel()
 
 	var err error
 	switch actionType {
+	case "db_connect", "database_connect", "connect":
+		err = d.db.PingContext(actionCtx)
+		result.ResponseBody = `{"connection":"open"}`
+	case "db_disconnect", "database_disconnect", "disconnect":
+		err = d.disconnect()
+		result.ResponseBody = `{"connection":"closed"}`
 	case "db_begin", "database_begin", "begin":
 		err = d.begin(actionCtx)
 		result.ResponseBody = `{"transaction":"begun"}`
@@ -166,6 +172,19 @@ func (d *Database) HealthCheck(ctx context.Context) error {
 		return nil
 	}
 	return d.db.PingContext(ctx)
+}
+
+func (d *Database) disconnect() error {
+	if d.tx != nil {
+		_ = d.tx.Rollback()
+		d.tx = nil
+	}
+	if d.db == nil {
+		return nil
+	}
+	err := d.db.Close()
+	d.db = nil
+	return err
 }
 
 func (d *Database) begin(ctx context.Context) error {

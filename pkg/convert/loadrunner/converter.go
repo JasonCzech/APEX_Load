@@ -1055,11 +1055,16 @@ func firstNonEmptyArg(fn ParsedFunction, key string) string {
 	if value := fn.Args[key]; value != "" {
 		return value
 	}
+	for _, arg := range fn.CallArgs {
+		if strings.EqualFold(arg.Name, key) && strings.TrimSpace(arg.Value) != "" {
+			return strings.TrimSpace(arg.Value)
+		}
+	}
 
 	prefix := key + "="
 	for _, raw := range fn.RawArgs {
-		if strings.HasPrefix(raw, prefix) {
-			return strings.TrimPrefix(raw, prefix)
+		if strings.HasPrefix(strings.ToLower(raw), strings.ToLower(prefix)) {
+			return strings.TrimSpace(raw[len(prefix):])
 		}
 	}
 

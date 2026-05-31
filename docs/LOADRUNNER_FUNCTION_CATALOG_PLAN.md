@@ -9,8 +9,10 @@ engine execution) for every protocol family that has an APEX Load runtime.
 
 Confirmed scope: entire VuGen reference / deterministic disposition / full-stack execution.
 
-Status: **Phase A complete. Phase B in progress** (web correlation + data points shipped;
-database, network, and messaging families remain). Phase C and D not started.
+Status: **Phase A, B, C, and D complete for the checked-in 26.1 baseline.** Phase B now
+includes database, network, JMS, WebSocket, and gRPC imports; Phase C proprietary families
+remain deterministic review/external placeholders with source mapping; Phase D coverage and
+drift checks are in place.
 
 Related docs: [LOADRUNNER_PROTOCOL_IMPORT_ROUTING.md](LOADRUNNER_PROTOCOL_IMPORT_ROUTING.md)
 (archive-level protocol routing), [LOADRUNNER_PARITY_EXECUTION_PLAN.md](LOADRUNNER_PARITY_EXECUTION_PLAN.md)
@@ -67,39 +69,35 @@ Branch `loadrunner-function-catalog-phase-a` (off `main`).
   `review_only` / `external_required` / `native_noop` with reasons.
 - Tooling: `tools/lrcatalog` offline generator + fixtures + drift test + `CATALOG_SOURCING.md`.
 
-### Phase B (partial) — first executable families (commit `66862009`)
+### Phase B — executable families (commits `66862009` + current)
 - **B1 web correlation**: `web_reg_save_param_ex/_regexp/_json/_xpath` → executable
   `dsl.Extractor` (boundary/regex/jsonpath/xpath), attached to the next request.
 - **B5 data points**: `MetricsCollector.RecordDataPoint` + `MetricsSnapshot.DataPoints`;
   `lr_user_data_point` (and `_ex`/`_instance`) record a real metric.
+- **B2 database**: `lrd_*` connection/statement/transaction primitives map to `db_connect`,
+  `db_query`, `db_exec`, `db_commit`, `db_rollback`, and `db_disconnect`; cursor/handle
+  lifecycle calls are native no-ops with source mappings.
+- **B3 network**: Winsock `lrs_*`, DNS, FTP, SMTP, POP3, IMAP, and LDAP functions map to
+  native network protocol actions where executable; config/lifecycle calls remain native
+  no-ops or review placeholders.
+- **B4 messaging/streaming**: JMS, WebSocket, and gRPC imports route to existing
+  `jms_*`, `ws_*`, and `grpc_*` DSL action types.
 
 ## Remaining work
 
-### Phase B — finish executable mapping for engine-supported families
-
-| Item | LoadRunner functions | Target | Primary files |
-| --- | --- | --- | --- |
-| B2 Database | `lrd_*` (init/open/stmt/exec/fetch/bind/save/commit/rollback) | `db_*` actions (`db_connect`, `db_query`, `db_exec`, `db_commit`, `db_rollback`) | `pkg/convert/loadrunner/database_import.go` (`convertDatabaseFunction`), `database_lrd.csv` |
-| B3 Network | `lrs_*` (Winsock), FTP `ftp_*`, mail `smtp_*`/`pop3_*`/`imap_*`, `ldap_*`, `dns_*` | `tcp_*`/`udp_*`, `ftp_*`, `smtp_*`/`pop3_*`/`imap_*`, `ldap_*`, `dns_*` actions | `pkg/convert/loadrunner/network_import.go`, `socket.csv` (+ future per-family CSVs) |
-| B4 Messaging/streaming | `jms_*`, WebSocket, gRPC reference functions | existing `jms_*` / `ws_*` / `grpc_*` action types | new converter handlers + catalog rows |
-
-For each: apply the "making a function executable" pattern above. Engine execution for these
-protocol action types already exists; the work is converter mapping + catalog promotion +
-tests. Functions whose operation is not expressible stay `review_only` with a reason.
-
-### Phase C — GUI/proprietary families (deterministic preserve-with-reason)
+### Future catalog refreshes
 
 `sapgui_*`, `sap_*` (web), `ctrx_*`, `nca_*`, `siebel_*`, `flex_*`/`amf_*` RTMP, RTE `TE_*`,
 TruClient, Java, .NET: keep `review_only` with a **family-specific reason** (e.g. "SAPGUI GUI
 virtual-user step has no APEX Load runtime; preserved for manual rework"). The engine already
 logs these via `loadrunner_review` / `custom_call`. No execution — there is no GUI VU runtime;
-faithful preservation is the goal. Work here is breadth: expand catalog coverage of these
-families via `tools/lrcatalog` fixtures so every documented function is dispositioned.
+faithful preservation is the goal. When a VuGen doc refresh adds names, expand catalog coverage
+via `tools/lrcatalog` fixtures so every documented function is dispositioned.
 
 ### Phase D — tests & verification (per CLAUDE.md testing policy)
 
-- Per-family converter handler tests (table-driven) for B2–B4 mappings.
-- Engine execution tests for newly executable action types.
+- Per-family converter handler tests cover B2–B4 mappings.
+- Engine execution tests cover newly executable action types and native state actions.
 - Keep `TestLoadRunnerFunctionRegistryCoversDocumentedFunctions` and the
   `tools/lrcatalog` drift test green as families grow.
 - Extend `sampleLoadRunnerFunctionCall` (`converter_test.go`) for any new sample shapes.

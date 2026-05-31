@@ -38,15 +38,17 @@ type familyPolicy struct {
 // policies maps a fixture/catalog stem (fixtures/<stem>.html -> <stem>.csv) to its default
 // disposition. Add an entry here when introducing a new protocol family fixture.
 var policies = map[string]familyPolicy{
-	"web":          {"web", "review_only", "Documented VuGen web function; pending native APEX Load mapping, preserved for review."},
-	"socket":       {"socket", "review_only", "Documented VuGen Winsock (lrs_) function; pending native socket mapping, preserved for review."},
-	"database_lrd": {"database", "review_only", "Documented VuGen database (lrd_) function; pending native db_* mapping, preserved for review."},
-	"sapgui":       {"sapgui", "review_only", "SAPGUI GUI step has no APEX Load runtime; preserved for manual rework."},
-	"citrix":       {"citrix", "review_only", "Citrix ICA step has no APEX Load runtime; preserved for manual rework."},
-	"oracle_nca":   {"oracle_nca", "review_only", "Oracle NCA step has no APEX Load runtime; preserved for manual rework."},
-	"rte":          {"rte", "review_only", "RTE terminal step has no APEX Load runtime; preserved for manual rework."},
-	"flex":         {"flex", "review_only", "Documented VuGen Flex/AMF function; pending native mapping, preserved for review."},
-	"vts":          {"vts", "external_required", "Requires an external Virtual Table Server (VTS) integration."},
+	"web":               {"web", "review_only", "Documented VuGen web function; pending native APEX Load mapping, preserved for review."},
+	"socket":            {"socket", "review_only", "Documented VuGen Winsock (lrs_) function; pending native socket mapping, preserved for review."},
+	"network_protocols": {"network", "review_only", "Documented VuGen network protocol function; pending native network mapping, preserved for review."},
+	"messaging":         {"messaging", "review_only", "Documented VuGen messaging function; pending native messaging mapping, preserved for review."},
+	"database_lrd":      {"database", "review_only", "Documented VuGen database (lrd_) function; pending native db_* mapping, preserved for review."},
+	"sapgui":            {"sapgui", "review_only", "SAPGUI GUI step has no APEX Load runtime; preserved for manual rework."},
+	"citrix":            {"citrix", "review_only", "Citrix ICA step has no APEX Load runtime; preserved for manual rework."},
+	"oracle_nca":        {"oracle_nca", "review_only", "Oracle NCA step has no APEX Load runtime; preserved for manual rework."},
+	"rte":               {"rte", "review_only", "RTE terminal step has no APEX Load runtime; preserved for manual rework."},
+	"flex":              {"flex", "review_only", "Documented VuGen Flex/AMF function; pending native mapping, preserved for review."},
+	"vts":               {"vts", "external_required", "Requires an external Virtual Table Server (VTS) integration."},
 }
 
 // anchorPattern captures the text of HTML anchors in the reference index fixtures, e.g.

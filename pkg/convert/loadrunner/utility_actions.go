@@ -20,6 +20,26 @@ func appendLoadRunnerAction(result *ConvertResult, fn ParsedFunction, action dsl
 	recordLoadRunnerFunctionSupport(result, mode)
 }
 
+func appendConvertedProtocolAction(result *ConvertResult, fn ParsedFunction, action dsl.Action, mode LoadRunnerSupportMode, notes string) {
+	if result == nil || result.Script == nil {
+		return
+	}
+	if isLoadRunnerEngineActionType(action.Type) {
+		appendLoadRunnerAction(result, fn, action, mode, notes)
+		return
+	}
+	actionIndex := len(result.Script.Actions)
+	appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", statusForSupportMode(mode), notes, mode))
+	result.Script.Actions = append(result.Script.Actions, action)
+	result.Stats.ConvertedActions++
+	recordLoadRunnerFunctionSupport(result, mode)
+}
+
+func isLoadRunnerEngineActionType(actionType string) bool {
+	actionType = strings.TrimSpace(actionType)
+	return actionType == "rendezvous" || actionType == "error_message" || actionType == "custom_call" || strings.HasPrefix(actionType, "loadrunner_")
+}
+
 func statusForSupportMode(mode LoadRunnerSupportMode) string {
 	switch mode {
 	case LoadRunnerSupportReviewOnly, LoadRunnerSupportCustomReview:
@@ -81,6 +101,10 @@ func convertLoadRunnerFunctionAction(fn ParsedFunction) (dsl.Action, LoadRunnerS
 		return convertGenericLoadRunnerAction(fn, "loadrunner_xml", def), def.SupportMode, true
 	case "database":
 		return convertGenericLoadRunnerAction(fn, "loadrunner_database", def), def.SupportMode, true
+	case "socket", "dns", "ftp", "smtp", "pop3", "imap", "ldap", "network":
+		return convertGenericLoadRunnerAction(fn, "loadrunner_network", def), def.SupportMode, true
+	case "jms", "websocket", "grpc", "messaging":
+		return convertGenericLoadRunnerAction(fn, "loadrunner_messaging", def), def.SupportMode, true
 	case "secret":
 		return convertGenericLoadRunnerAction(fn, "loadrunner_secret", def), def.SupportMode, true
 	default:

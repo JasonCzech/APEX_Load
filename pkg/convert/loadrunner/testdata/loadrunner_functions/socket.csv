@@ -1,20 +1,22 @@
 # OpenText VuGen Windows Sockets (Winsock / lrs_) protocol functions.
-# Phase B can map the send/receive primitives to native tcp_/udp_ actions.
+# Send/receive primitives are mapped to native tcp_/udp_ actions; socket lifecycle calls
+# are preserved as native no-ops when APEX Load's network protocol manages connections per
+# action.
 # Format: name,family,support_mode[,reason]
-lrs_create_socket,socket,review_only,Opens a Winsock socket; pending native tcp_/udp_ connect mapping in Phase B.
-lrs_close_socket,socket,review_only,Closes a Winsock socket; pending native tcp_/udp_ mapping in Phase B.
-lrs_send,socket,review_only,Sends socket data; pending native tcp_send/udp_send mapping in Phase B.
-lrs_receive,socket,review_only,Receives socket data; pending native tcp_request/udp_request mapping in Phase B.
-lrs_receive_ex,socket,review_only,Receives a fixed length of socket data; pending native mapping in Phase B.
-lrs_length_receive,socket,review_only,Receives a length-prefixed socket buffer; pending native mapping in Phase B.
-lrs_save_param,socket,review_only,Captures a socket buffer into a parameter; pending native extractor mapping in Phase B.
-lrs_save_param_ex,socket,review_only,Captures a socket buffer (binary) into a parameter; pending native extractor mapping in Phase B.
-lrs_save_searched_string,socket,review_only,Captures a substring of a socket buffer; pending native extractor mapping in Phase B.
-lrs_get_socket_handler,socket,review_only,Reads a socket handle; pending native mapping.
-lrs_set_socket_handler,socket,review_only,Sets a socket handle; pending native mapping.
-lrs_set_send_buffer,socket,review_only,Sets the send buffer; pending native mapping in Phase B.
-lrs_set_receive_option,socket,review_only,Sets a receive option; pending native mapping in Phase B.
-lrs_disable_socket,socket,review_only,Disables a socket; pending native mapping.
-lrs_enable_socket,socket,review_only,Enables a socket; pending native mapping.
+lrs_create_socket,socket,executable,Opens a Winsock socket and maps to a native tcp_/udp_ connect check.
+lrs_close_socket,socket,native_noop,Closes a Winsock socket; APEX Load network actions manage connection lifecycle per action.
+lrs_send,socket,executable,Sends socket data and maps to tcp_send/udp_send.
+lrs_receive,socket,executable,Receives socket data and maps to tcp_request/udp_request with read enabled.
+lrs_receive_ex,socket,executable,Receives a fixed length of socket data and maps to tcp_request/udp_request with read_bytes.
+lrs_length_receive,socket,executable,Receives a length-prefixed socket buffer and maps to tcp_request/udp_request with read enabled.
+lrs_save_param,socket,executable,Captures a socket buffer into a parameter through a native network state action.
+lrs_save_param_ex,socket,executable,Captures a socket buffer (binary) into a parameter through a native network state action.
+lrs_save_searched_string,socket,executable,Captures a substring of a socket buffer through a native network state action.
+lrs_get_socket_handler,socket,native_noop,Reads a socket handle; preserved as a native no-op because handles are not replay-visible in APEX Load.
+lrs_set_socket_handler,socket,native_noop,Sets a socket handle; preserved as a native no-op because handles are not replay-visible in APEX Load.
+lrs_set_send_buffer,socket,native_noop,Sets the send buffer; preserved as a native no-op for source-mapped review.
+lrs_set_receive_option,socket,native_noop,Sets a receive option; preserved as a native no-op for source-mapped review.
+lrs_disable_socket,socket,native_noop,Disables a socket; preserved as a native no-op for source-mapped review.
+lrs_enable_socket,socket,native_noop,Enables a socket; preserved as a native no-op for source-mapped review.
 lrs_cleanup,socket,native_noop,Releases Winsock resources; no APEX Load side effect, handled as a native no-op.
 lrs_startup,socket,native_noop,Initializes Winsock; no APEX Load side effect, handled as a native no-op.

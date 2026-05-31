@@ -50,7 +50,7 @@ func ConvertNetwork(actions []*ParsedAction, opts ConvertOptions, detected Detec
 	}
 
 	for _, fn := range functions {
-		action, ok := convertNetworkFunction(fn, subprotocol)
+		action, mode, ok := convertNetworkFunction(fn, subprotocol)
 		if !ok {
 			if fallback, mode, fallbackOK := convertLoadRunnerFunctionAction(fn); fallbackOK {
 				appendLoadRunnerAction(result, fn, fallback, mode, loadRunnerSupportNotes(fn, mode))
@@ -61,11 +61,7 @@ func ConvertNetwork(actions []*ParsedAction, opts ConvertOptions, detected Detec
 			appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, "metadata.import.preserved.unsupported_functions", fn.Name, "unsupported", "review_only", "No executable network mapping exists for this LoadRunner function yet."))
 			continue
 		}
-		actionIndex := len(result.Script.Actions)
-		appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "Converted to a generated APEX Load network action.", LoadRunnerSupportExecutable))
-		result.Script.Actions = append(result.Script.Actions, action)
-		result.Stats.ConvertedActions++
-		recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
+		appendConvertedProtocolAction(result, fn, action, mode, "Converted to a generated APEX Load network action.")
 	}
 
 	if len(result.Script.Actions) == 0 {
@@ -85,12 +81,34 @@ func ConvertNetwork(actions []*ParsedAction, opts ConvertOptions, detected Detec
 	return result, nil
 }
 
-func convertNetworkFunction(fn ParsedFunction, defaultSubprotocol string) (dsl.Action, bool) {
+func convertNetworkFunction(fn ParsedFunction, defaultSubprotocol string) (dsl.Action, LoadRunnerSupportMode, bool) {
 	name := strings.ToLower(strings.TrimSpace(fn.Name))
 	subprotocol := defaultSubprotocol
 	if derived := networkSubprotocolFromFunctionName(name); derived != "" {
 		subprotocol = derived
 	}
+	if strings.HasPrefix(name, "lrs_") {
+		return convertWinsockFunction(fn, subprotocol)
+	}
+	if strings.HasPrefix(name, "ftp_") {
+		return convertFTPFunction(fn)
+	}
+	if strings.HasPrefix(name, "smtp_") {
+		return convertSMTPFunction(fn)
+	}
+	if strings.HasPrefix(name, "pop3_") {
+		return convertMailCommandFunction(fn, "pop3_command", "STAT")
+	}
+	if strings.HasPrefix(name, "imap_") {
+		return convertMailCommandFunction(fn, "imap_command", "CAPABILITY")
+	}
+	if strings.HasPrefix(name, "ldap_") {
+		return convertLDAPFunction(fn)
+	}
+	if strings.HasPrefix(name, "dns_") {
+		return convertDNSFunction(fn)
+	}
+
 	target := firstNetworkTarget(fn, subprotocol)
 	action := dsl.Action{
 		Name:     sanitizeName(firstNonEmpty(fn.StepName, fn.Name, "network_action")),
@@ -128,7 +146,7 @@ func convertNetworkFunction(fn ParsedFunction, defaultSubprotocol string) (dsl.A
 		action.Type = "tcp_request"
 		action.Body = firstNonEmpty(networkCommandValue(fn), fn.Body, "ping")
 	default:
-		return dsl.Action{}, false
+		return dsl.Action{}, "", false
 	}
 	if strings.TrimSpace(action.Target) == "" {
 		switch action.Type {
@@ -140,7 +158,290 @@ func convertNetworkFunction(fn ParsedFunction, defaultSubprotocol string) (dsl.A
 			action.Target = networkPlaceholderTarget(subprotocol)
 		}
 	}
-	return action, true
+	return action, LoadRunnerSupportExecutable, true
+}
+
+func convertWinsockFunction(fn ParsedFunction, subprotocol string) (dsl.Action, LoadRunnerSupportMode, bool) {
+	name := strings.ToLower(strings.TrimSpace(fn.Name))
+	networkName := "tcp"
+	if subprotocol == "udp" {
+		networkName = "udp"
+	}
+	target := firstNonEmpty(firstNetworkTarget(fn, networkName), networkPlaceholderTarget(networkName))
+	action := dsl.Action{
+		Name:     sanitizeName(firstNonEmpty(fn.StepName, fn.Name, "winsock_action")),
+		Target:   target,
+		Metadata: sourceFunctionMetadata(fn),
+		Params:   map[string]any{"function": fn.Name, "subprotocol": networkName},
+	}
+	switch name {
+	case "lrs_create_socket":
+		action.Type = networkName + "_request"
+		action.Params["connect_only"] = true
+	case "lrs_send":
+		action.Type = networkName + "_send"
+		action.Body = firstNonEmpty(networkCommandValue(fn), fn.Body)
+	case "lrs_receive", "lrs_receive_ex", "lrs_length_receive":
+		action.Type = networkName + "_request"
+		action.Params["read"] = true
+		if readBytes := networkReadBytes(fn); readBytes > 0 {
+			action.Params["read_bytes"] = readBytes
+		}
+	case "lrs_save_param", "lrs_save_param_ex", "lrs_save_searched_string":
+		return networkNativeAction(fn, "loadrunner_network"), supportModeForFunction(fn, LoadRunnerSupportExecutable), true
+	case "lrs_close_socket", "lrs_cleanup", "lrs_startup", "lrs_get_socket_handler", "lrs_set_socket_handler", "lrs_set_send_buffer", "lrs_set_receive_option", "lrs_disable_socket", "lrs_enable_socket":
+		return networkNativeAction(fn, "loadrunner_network"), supportModeForFunction(fn, LoadRunnerSupportNativeNoop), true
+	default:
+		return dsl.Action{}, "", false
+	}
+	if len(action.Params) == 0 {
+		action.Params = nil
+	}
+	return action, LoadRunnerSupportExecutable, true
+}
+
+func convertDNSFunction(fn ParsedFunction) (dsl.Action, LoadRunnerSupportMode, bool) {
+	action := dsl.Action{
+		Name:     sanitizeName(firstNonEmpty(fn.StepName, fn.Name, "dns_query")),
+		Type:     "dns_query",
+		Target:   firstNonEmpty(firstNetworkTarget(fn, "dns"), networkArg(fn, "Domain"), "{{network.host}}"),
+		Params:   map[string]any{"record_type": firstNonEmpty(networkArg(fn, "RecordType"), networkArg(fn, "Type"), "A")},
+		Metadata: sourceFunctionMetadata(fn),
+	}
+	return action, LoadRunnerSupportExecutable, true
+}
+
+func convertFTPFunction(fn ParsedFunction) (dsl.Action, LoadRunnerSupportMode, bool) {
+	name := strings.ToLower(strings.TrimSpace(fn.Name))
+	target := firstNonEmpty(firstNetworkTarget(fn, "ftp"), networkPlaceholderTarget("ftp"))
+	action := dsl.Action{
+		Name:     sanitizeName(firstNonEmpty(fn.StepName, fn.Name, "ftp_action")),
+		Type:     "ftp_command",
+		Target:   target,
+		Metadata: sourceFunctionMetadata(fn),
+		Params:   credentialParams(fn),
+	}
+	switch name {
+	case "ftp_logon", "ftp_login", "ftp_connect":
+		action.Type = "ftp_login"
+		action.Value = "NOOP"
+	case "ftp_logout", "ftp_disconnect":
+		action.Value = "QUIT"
+	case "ftp_noop":
+		action.Type = "ftp_noop"
+		action.Value = "NOOP"
+	default:
+		action.Value = firstNonEmpty(networkCommandValue(fn), ftpCommandFromFunction(fn))
+	}
+	if action.Value == "" {
+		action.Value = "NOOP"
+	}
+	if len(action.Params) == 0 {
+		action.Params = nil
+	}
+	return action, LoadRunnerSupportExecutable, true
+}
+
+func convertSMTPFunction(fn ParsedFunction) (dsl.Action, LoadRunnerSupportMode, bool) {
+	name := strings.ToLower(strings.TrimSpace(fn.Name))
+	if name == "smtp_logon" || name == "smtp_logout" || name == "smtp_connect" || name == "smtp_disconnect" {
+		return networkNativeAction(fn, "loadrunner_network"), supportModeForFunction(fn, LoadRunnerSupportNativeNoop), true
+	}
+	params := credentialParams(fn)
+	if from := firstNonEmpty(networkArg(fn, "From"), networkArg(fn, "MailFrom")); from != "" {
+		params["from"] = from
+	}
+	if to := firstNonEmpty(networkArg(fn, "To"), networkArg(fn, "RcptTo"), networkArg(fn, "Recipients")); to != "" {
+		params["to"] = splitNetworkList(to)
+	}
+	action := dsl.Action{
+		Name:     sanitizeName(firstNonEmpty(fn.StepName, fn.Name, "smtp_send")),
+		Type:     "smtp_send",
+		Target:   firstNonEmpty(firstNetworkTarget(fn, "smtp"), networkArg(fn, "To"), "{{network.to}}"),
+		Body:     firstNonEmpty(networkArg(fn, "Body"), networkArg(fn, "Message"), networkCommandValue(fn), "Imported SMTP message body"),
+		Params:   params,
+		Metadata: sourceFunctionMetadata(fn),
+	}
+	if len(action.Params) == 0 {
+		action.Params = nil
+	}
+	return action, LoadRunnerSupportExecutable, true
+}
+
+func convertMailCommandFunction(fn ParsedFunction, actionType string, fallbackCommand string) (dsl.Action, LoadRunnerSupportMode, bool) {
+	name := strings.ToLower(strings.TrimSpace(fn.Name))
+	if strings.Contains(name, "logon") || strings.Contains(name, "login") || strings.Contains(name, "logout") || strings.Contains(name, "connect") || strings.Contains(name, "disconnect") {
+		return networkNativeAction(fn, "loadrunner_network"), supportModeForFunction(fn, LoadRunnerSupportNativeNoop), true
+	}
+	subprotocol := strings.TrimSuffix(strings.SplitN(actionType, "_", 2)[0], "_")
+	params := credentialParams(fn)
+	action := dsl.Action{
+		Name:     sanitizeName(firstNonEmpty(fn.StepName, fn.Name, actionType)),
+		Type:     actionType,
+		Target:   firstNonEmpty(firstNetworkTarget(fn, subprotocol), networkPlaceholderTarget(subprotocol)),
+		Value:    firstNonEmpty(networkCommandValue(fn), mailCommandFromFunction(fn), fallbackCommand),
+		Params:   params,
+		Metadata: sourceFunctionMetadata(fn),
+	}
+	if len(action.Params) == 0 {
+		action.Params = nil
+	}
+	return action, LoadRunnerSupportExecutable, true
+}
+
+func convertLDAPFunction(fn ParsedFunction) (dsl.Action, LoadRunnerSupportMode, bool) {
+	name := strings.ToLower(strings.TrimSpace(fn.Name))
+	params := credentialParams(fn)
+	if filter := networkArg(fn, "Filter"); filter != "" {
+		params["filter"] = filter
+	}
+	if attrs := networkArg(fn, "Attributes"); attrs != "" {
+		params["attributes"] = splitNetworkList(attrs)
+	}
+	action := dsl.Action{
+		Name:     sanitizeName(firstNonEmpty(fn.StepName, fn.Name, "ldap_action")),
+		Target:   firstNonEmpty(firstNetworkTarget(fn, "ldap"), networkArg(fn, "BaseDN"), "{{network.base_dn}}"),
+		Params:   params,
+		Metadata: sourceFunctionMetadata(fn),
+	}
+	if strings.Contains(name, "search") || strings.Contains(name, "query") {
+		action.Type = "ldap_search"
+	} else if strings.Contains(name, "bind") || strings.Contains(name, "logon") || strings.Contains(name, "login") {
+		action.Type = "ldap_bind"
+		action.Target = firstNetworkTarget(fn, "ldap")
+	} else {
+		return networkNativeAction(fn, "loadrunner_network"), supportModeForFunction(fn, LoadRunnerSupportReviewOnly), true
+	}
+	if len(action.Params) == 0 {
+		action.Params = nil
+	}
+	return action, LoadRunnerSupportExecutable, true
+}
+
+func networkNativeAction(fn ParsedFunction, actionType string) dsl.Action {
+	def, ok := lookupLoadRunnerFunction(fn.Name)
+	if !ok {
+		def = LoadRunnerFunctionDefinition{Name: strings.ToLower(fn.Name), Family: "network", SupportMode: LoadRunnerSupportNativeNoop, Reason: defaultLoadRunnerReason("network", LoadRunnerSupportNativeNoop)}
+	}
+	return convertGenericLoadRunnerAction(fn, actionType, def)
+}
+
+func networkReadBytes(fn ParsedFunction) int {
+	for _, key := range []string{"Length", "Bytes", "ReadBytes", "Size"} {
+		if value := networkArg(fn, key); value != "" {
+			if parsed, err := strconv.Atoi(strings.TrimSpace(value)); err == nil {
+				return parsed
+			}
+		}
+	}
+	for _, arg := range loadRunnerControlArgs(fn) {
+		if parsed, err := strconv.Atoi(strings.TrimSpace(arg)); err == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	return 0
+}
+
+func credentialParams(fn ParsedFunction) map[string]any {
+	params := map[string]any{}
+	if username := firstNonEmpty(networkArg(fn, "User"), networkArg(fn, "Username"), networkArg(fn, "UserName")); username != "" {
+		params["username"] = username
+	}
+	if password := networkArg(fn, "Password"); password != "" {
+		params["password"] = password
+	}
+	return params
+}
+
+func ftpCommandFromFunction(fn ParsedFunction) string {
+	name := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(fn.Name)), "ftp_")
+	args := loadRunnerControlArgs(fn)
+	firstArg := ""
+	if len(args) > 0 {
+		firstArg = args[0]
+	}
+	secondArg := ""
+	if len(args) > 1 {
+		secondArg = args[1]
+	}
+	switch name {
+	case "get", "retrieve":
+		return strings.TrimSpace("RETR " + firstArg)
+	case "put", "store", "upload":
+		return strings.TrimSpace("STOR " + firstArg)
+	case "delete", "del":
+		return strings.TrimSpace("DELE " + firstArg)
+	case "mkdir":
+		return strings.TrimSpace("MKD " + firstArg)
+	case "rmdir":
+		return strings.TrimSpace("RMD " + firstArg)
+	case "cd", "cwd":
+		return strings.TrimSpace("CWD " + firstArg)
+	case "pwd":
+		return "PWD"
+	case "dir", "list", "ls":
+		return strings.TrimSpace(firstNonEmpty("LIST "+firstArg, "LIST"))
+	case "rename":
+		return strings.TrimSpace("RNFR " + firstArg + "\r\nRNTO " + secondArg)
+	case "ascii":
+		return "TYPE A"
+	case "binary":
+		return "TYPE I"
+	case "site":
+		return strings.TrimSpace("SITE " + firstArg)
+	default:
+		return strings.ToUpper(strings.TrimSpace(networkCommandValue(fn)))
+	}
+}
+
+func mailCommandFromFunction(fn ParsedFunction) string {
+	name := strings.ToLower(strings.TrimSpace(fn.Name))
+	command := strings.TrimPrefix(strings.TrimPrefix(name, "pop3_"), "imap_")
+	args := loadRunnerControlArgs(fn)
+	arg := ""
+	if len(args) > 0 {
+		arg = args[0]
+	}
+	switch command {
+	case "retrieve", "fetch", "read":
+		if strings.HasPrefix(name, "imap_") {
+			return strings.TrimSpace("FETCH " + firstNonEmpty(arg, "1") + " BODY[]")
+		}
+		return strings.TrimSpace("RETR " + firstNonEmpty(arg, "1"))
+	case "delete", "del":
+		if strings.HasPrefix(name, "imap_") {
+			return strings.TrimSpace("STORE " + firstNonEmpty(arg, "1") + " +FLAGS (\\Deleted)")
+		}
+		return strings.TrimSpace("DELE " + firstNonEmpty(arg, "1"))
+	case "list", "dir":
+		if strings.HasPrefix(name, "imap_") {
+			return "LIST \"\" *"
+		}
+		return "LIST"
+	case "select":
+		return strings.TrimSpace("SELECT " + firstNonEmpty(arg, "INBOX"))
+	case "search":
+		return strings.TrimSpace("SEARCH " + firstNonEmpty(arg, "ALL"))
+	default:
+		return strings.ToUpper(strings.TrimSpace(networkCommandValue(fn)))
+	}
+}
+
+func splitNetworkList(value string) []string {
+	fields := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ';'
+	})
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field != "" {
+			out = append(out, field)
+		}
+	}
+	if len(out) == 0 && strings.TrimSpace(value) != "" {
+		return []string{strings.TrimSpace(value)}
+	}
+	return out
 }
 
 func detectNetworkSubprotocolFromActions(actions []*ParsedAction) string {
@@ -211,6 +512,11 @@ func networkArg(fn ParsedFunction, key string) string {
 	for argKey, value := range fn.Args {
 		if strings.EqualFold(argKey, key) {
 			return strings.TrimSpace(value)
+		}
+	}
+	for _, arg := range fn.CallArgs {
+		if strings.EqualFold(arg.Name, key) {
+			return strings.TrimSpace(arg.Value)
 		}
 	}
 	prefix := strings.ToLower(key) + "="

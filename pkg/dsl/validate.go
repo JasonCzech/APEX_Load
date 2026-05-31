@@ -101,7 +101,7 @@ func ValidateScriptIssues(script *Script) []string {
 
 func protocolAllowsEmptyBaseURL(protocolName string) bool {
 	switch strings.TrimSpace(protocolName) {
-	case "browser", "database", "network":
+	case "browser", "database", "network", "websocket":
 		return true
 	default:
 		return false
@@ -144,7 +144,8 @@ func isEngineActionType(actionType string) bool {
 	case "rendezvous", "error_message",
 		"loadrunner_message", "loadrunner_runtime", "loadrunner_transaction", "loadrunner_timer",
 		"loadrunner_metric", "loadrunner_parameter", "loadrunner_json", "loadrunner_xml",
-		"loadrunner_database", "loadrunner_secret", "loadrunner_external", "loadrunner_review",
+		"loadrunner_database", "loadrunner_network", "loadrunner_messaging", "loadrunner_secret",
+		"loadrunner_external", "loadrunner_review",
 		"custom_call":
 		return true
 	default:
@@ -458,6 +459,10 @@ func validateJMSScriptIssues(script *Script) []string {
 		if strings.TrimSpace(action.Name) == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d]: missing name", i))
 		}
+		if isEngineActionType(action.Type) {
+			issues = append(issues, validateEngineActionIssues(i, action)...)
+			continue
+		}
 		switch action.Type {
 		case "jms_publish", "jms_consume", "jms_request_reply", "jms_ack", "jms_commit", "jms_rollback":
 		case "":
@@ -765,7 +770,7 @@ func validateDatabaseActionIssues(index int, action Action) []string {
 	var issues []string
 	actionType := strings.ToLower(strings.TrimSpace(action.Type))
 	switch actionType {
-	case "db_begin", "database_begin", "begin", "db_commit", "database_commit", "commit", "db_rollback", "database_rollback", "rollback", "db_health", "database_health", "ping":
+	case "db_connect", "database_connect", "connect", "db_disconnect", "database_disconnect", "disconnect", "db_begin", "database_begin", "begin", "db_commit", "database_commit", "commit", "db_rollback", "database_rollback", "rollback", "db_health", "database_health", "ping":
 	case "db_query", "database_query", "query", "select", "db_exec", "database_exec", "exec", "execute", "insert", "update", "delete", "db_procedure", "stored_procedure":
 		if strings.TrimSpace(action.Target) == "" && strings.TrimSpace(action.Body) == "" {
 			issues = append(issues, fmt.Sprintf("%s: database action requires target or body SQL", label))

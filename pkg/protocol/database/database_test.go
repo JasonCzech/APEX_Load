@@ -53,6 +53,32 @@ func TestDatabaseProtocolExecutesQueryAndAssertions(t *testing.T) {
 	}
 }
 
+func TestDatabaseProtocolConnectAndDisconnectActions(t *testing.T) {
+	db := &Database{}
+	if err := db.Init(context.Background(), map[string]any{
+		"database_driver": "sqlite",
+		"database_dsn":    ":memory:",
+	}); err != nil {
+		t.Fatalf("init database: %v", err)
+	}
+
+	connect, err := db.Execute(context.Background(), &protocol.Action{Name: "connect", Type: "db_connect"})
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	if !connect.Success || !strings.Contains(connect.ResponseBody, `"connection":"open"`) {
+		t.Fatalf("connect result = %#v, want open connection", connect)
+	}
+
+	disconnect, err := db.Execute(context.Background(), &protocol.Action{Name: "disconnect", Type: "db_disconnect"})
+	if err != nil {
+		t.Fatalf("disconnect: %v", err)
+	}
+	if !disconnect.Success || !strings.Contains(disconnect.ResponseBody, `"connection":"closed"`) {
+		t.Fatalf("disconnect result = %#v, want closed connection", disconnect)
+	}
+}
+
 func TestDatabaseProtocolTransactionsAndRollback(t *testing.T) {
 	db := &Database{}
 	if err := db.Init(context.Background(), map[string]any{

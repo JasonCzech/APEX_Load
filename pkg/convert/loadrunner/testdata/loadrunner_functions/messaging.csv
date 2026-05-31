@@ -1,0 +1,34 @@
+# OpenText VuGen messaging/streaming protocol functions for JMS, WebSocket, and gRPC.
+# Functions with APEX Load protocol equivalents map to jms_*/ws_*/grpc_* actions; setup
+# calls with no replay-visible side effect are preserved as native no-ops.
+# Format: name,family,support_mode[,reason]
+jms_connect,jms,native_noop,JMS connection setup is preserved as a native no-op; broker config is supplied through script config.
+jms_disconnect,jms,native_noop,JMS disconnect is preserved as a native no-op; APEX Load tears down the JMS protocol at replay end.
+jms_create_connection,jms,native_noop,JMS connection creation is preserved as a native no-op; broker config is supplied through script config.
+jms_create_session,jms,native_noop,JMS session creation is preserved as a native no-op; APEX Load manages sessions internally.
+jms_send_message,jms,executable,JMS send maps to a native jms_publish action.
+jms_publish,jms,executable,JMS publish maps to a native jms_publish action.
+jms_receive_message,jms,executable,JMS receive maps to a native jms_consume action.
+jms_consume,jms,executable,JMS consume maps to a native jms_consume action.
+jms_request_reply,jms,executable,JMS request/reply maps to a native jms_request_reply action.
+jms_ack,jms,executable,JMS acknowledge maps to a native jms_ack action.
+jms_commit,jms,executable,JMS commit maps to a native jms_commit action.
+jms_rollback,jms,executable,JMS rollback maps to a native jms_rollback action.
+websocket_connect,websocket,executable,WebSocket connect maps to a native ws_connect action.
+websocket_send,websocket,executable,WebSocket send maps to a native ws_send action.
+websocket_receive,websocket,executable,WebSocket receive maps to a native ws_receive action.
+websocket_ping,websocket,executable,WebSocket ping maps to a native ws_ping action.
+websocket_close,websocket,executable,WebSocket close maps to a native ws_close action.
+ws_connect,websocket,executable,WebSocket connect maps to a native ws_connect action.
+ws_send,websocket,executable,WebSocket send maps to a native ws_send action.
+ws_receive,websocket,executable,WebSocket receive maps to a native ws_receive action.
+ws_ping,websocket,executable,WebSocket ping maps to a native ws_ping action.
+ws_close,websocket,executable,WebSocket close maps to a native ws_close action.
+grpc_connect,grpc,native_noop,gRPC connection setup is preserved as a native no-op; target config is supplied through script config.
+grpc_disconnect,grpc,native_noop,gRPC disconnect is preserved as a native no-op; APEX Load tears down the gRPC protocol at replay end.
+grpc_invoke,grpc,executable,gRPC invoke maps to a native grpc_unary action unless a stream variant is indicated.
+grpc_call,grpc,executable,gRPC call maps to a native grpc_unary action unless a stream variant is indicated.
+grpc_unary,grpc,executable,gRPC unary call maps to a native grpc_unary action.
+grpc_server_stream,grpc,executable,gRPC server stream maps to a native grpc_server_stream action.
+grpc_client_stream,grpc,executable,gRPC client stream maps to a native grpc_client_stream action.
+grpc_bidi_stream,grpc,executable,gRPC bidirectional stream maps to a native grpc_bidi_stream action.

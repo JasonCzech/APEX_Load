@@ -407,7 +407,7 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 	case "loadrunner_metric":
 		vu.handleLoadRunnerMetricAction(ctx, action)
 		return true, nil
-	case "loadrunner_parameter", "loadrunner_json", "loadrunner_xml", "loadrunner_database", "loadrunner_secret":
+	case "loadrunner_parameter", "loadrunner_json", "loadrunner_xml", "loadrunner_database", "loadrunner_network", "loadrunner_messaging", "loadrunner_secret":
 		vu.handleLoadRunnerStateAction(ctx, action)
 		return true, nil
 	case "loadrunner_external", "loadrunner_review", "custom_call":
@@ -552,6 +552,12 @@ func (vu *VUser) handleLoadRunnerStateAction(ctx context.Context, action dsl.Act
 		vu.handleLoadRunnerParameterAction(function, action)
 	case "loadrunner_json", "loadrunner_xml":
 		vu.handleLoadRunnerDocumentAction(function, action)
+	case "loadrunner_database":
+		vu.handleLoadRunnerDatabaseAction(ctx, function, action)
+	case "loadrunner_network":
+		vu.handleLoadRunnerNetworkAction(ctx, function, action)
+	case "loadrunner_messaging":
+		vu.logLoadRunnerReviewAction(ctx, action)
 	case "loadrunner_secret":
 		vu.handleLoadRunnerSecretAction(function, action)
 	default:
@@ -638,6 +644,44 @@ func (vu *VUser) handleLoadRunnerDocumentAction(function string, action dsl.Acti
 	case strings.Contains(function, "get_values"), strings.Contains(function, "extract"), strings.Contains(function, "stringify"), strings.Contains(function, "eval"):
 		vu.setLoadRunnerVariable(saveName, firstEngineValue("", args...))
 	}
+}
+
+func (vu *VUser) handleLoadRunnerDatabaseAction(ctx context.Context, function string, action dsl.Action) {
+	args := loadRunnerActionArgs(action)
+	vu.ensureVariables()
+	saveName := saveParamNameFromAction(action)
+	if saveName == "" {
+		switch function {
+		case "lrd_save_value", "lrd_save_col", "lr_db_getValue":
+			if len(args) > 0 {
+				saveName = args[len(args)-1]
+			}
+		}
+	}
+	if saveName != "" {
+		vu.setLoadRunnerVariable(saveName, firstEngineValue("", args...))
+		return
+	}
+	vu.logLoadRunnerReviewAction(ctx, action)
+}
+
+func (vu *VUser) handleLoadRunnerNetworkAction(ctx context.Context, function string, action dsl.Action) {
+	args := loadRunnerActionArgs(action)
+	vu.ensureVariables()
+	saveName := saveParamNameFromAction(action)
+	if saveName == "" {
+		switch function {
+		case "lrs_save_param", "lrs_save_param_ex", "lrs_save_searched_string":
+			if len(args) > 0 {
+				saveName = args[len(args)-1]
+			}
+		}
+	}
+	if saveName != "" {
+		vu.setLoadRunnerVariable(saveName, firstEngineValue("", args...))
+		return
+	}
+	vu.logLoadRunnerReviewAction(ctx, action)
 }
 
 func (vu *VUser) handleLoadRunnerSecretAction(function string, action dsl.Action) {

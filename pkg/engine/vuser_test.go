@@ -697,6 +697,29 @@ func TestVUser_Run_LoadRunnerUtilityActionsStayInEngine(t *testing.T) {
 					"support_mode": "custom_review",
 					"args":         []any{"42"},
 				},
+			}, {
+				Name: "DBSave",
+				Type: "loadrunner_database",
+				Params: map[string]any{
+					"function":   "lrd_save_value",
+					"args":       []any{"db-value", "DBParam"},
+					"save_param": "DBParam",
+				},
+			}, {
+				Name: "SocketSave",
+				Type: "loadrunner_network",
+				Params: map[string]any{
+					"function":   "lrs_save_param",
+					"args":       []any{"socket-value", "SocketParam"},
+					"save_param": "SocketParam",
+				},
+			}, {
+				Name: "JMSConnect",
+				Type: "loadrunner_messaging",
+				Params: map[string]any{
+					"function":     "jms_connect",
+					"support_mode": "native_noop",
+				},
 			}},
 		},
 		Metrics: NewMetricsCollector(16),
@@ -718,6 +741,12 @@ func TestVUser_Run_LoadRunnerUtilityActionsStayInEngine(t *testing.T) {
 	}
 	if got := vu.Variables[loadRunnerTransactionStatusKey("Checkout")]; got != "true" {
 		t.Fatalf("transaction status = %q, want true", got)
+	}
+	if got := vu.Variables["dbparam"]; got != "db-value" {
+		t.Fatalf("dbparam = %q, want db-value", got)
+	}
+	if got := vu.Variables["socketparam"]; got != "socket-value" {
+		t.Fatalf("socketparam = %q, want socket-value", got)
 	}
 }
 
