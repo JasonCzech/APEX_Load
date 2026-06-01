@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
+	gorillawebsocket "github.com/gorilla/websocket"
 )
 
 func TestNewRecorder(t *testing.T) {
@@ -284,6 +285,109 @@ func TestProxyIntegration(t *testing.T) {
 
 	if len(captured) != 2 {
 		t.Fatalf("expected 2 events, got %d", len(captured))
+	}
+}
+
+func TestProxyCapturesWebSocketFrames(t *testing.T) {
+	upgrader := gorillawebsocket.Upgrader{}
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Logf("websocket upgrade failed: %v", err)
+			return
+		}
+		defer conn.Close()
+		for {
+			messageType, payload, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			if err := conn.WriteMessage(messageType, payload); err != nil {
+				return
+			}
+		}
+	}))
+	defer backend.Close()
+
+	backendURL, err := url.Parse(backend.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backendURL.Scheme = "ws"
+	backendURL.Path = "/ws"
+	backendURL.RawQuery = "room=orders"
+
+	rec := New(":0")
+	if _, err := rec.StartSession("test", "WebSocket Test", SessionFilters{BodyCaptureLimitBytes: 64}, nil); err != nil {
+		t.Fatal(err)
+	}
+	proxy := httptest.NewServer(http.HandlerFunc(rec.handleProxy))
+	defer proxy.Close()
+	proxyURL, _ := url.Parse(proxy.URL)
+	dialer := gorillawebsocket.Dialer{
+		Proxy:            http.ProxyURL(proxyURL),
+		HandshakeTimeout: 2 * time.Second,
+	}
+
+	conn, resp, err := dialer.Dial(backendURL.String(), nil)
+	if err != nil {
+		if resp != nil {
+			t.Fatalf("websocket dial status=%d err=%v", resp.StatusCode, err)
+		}
+		t.Fatalf("websocket dial: %v", err)
+	}
+	defer conn.Close()
+	if resp == nil || resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("upgrade status = %#v, want 101", resp)
+	}
+
+	if err := conn.WriteMessage(gorillawebsocket.TextMessage, []byte("hello")); err != nil {
+		t.Fatalf("write text: %v", err)
+	}
+	if _, payload, err := conn.ReadMessage(); err != nil || string(payload) != "hello" {
+		t.Fatalf("read text echo payload=%q err=%v", payload, err)
+	}
+	binaryPayload := []byte{0x00, 0xff, 0x10}
+	if err := conn.WriteMessage(gorillawebsocket.BinaryMessage, binaryPayload); err != nil {
+		t.Fatalf("write binary: %v", err)
+	}
+	if _, payload, err := conn.ReadMessage(); err != nil || !bytes.Equal(payload, binaryPayload) {
+		t.Fatalf("read binary echo payload=%v err=%v", payload, err)
+	}
+
+	var recorded RecordedRequest
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		session, _ := rec.GetSession("test")
+		if len(session.Requests) == 1 && len(session.Requests[0].WebSocketMessages) >= 4 {
+			recorded = session.Requests[0]
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for websocket capture; session=%#v", session)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if recorded.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("recorded status = %d, want 101", recorded.StatusCode)
+	}
+	if recorded.Scheme != "ws" || recorded.Path != "/ws" || recorded.QueryString != "room=orders" {
+		t.Fatalf("recorded URL fields = scheme=%q path=%q query=%q", recorded.Scheme, recorded.Path, recorded.QueryString)
+	}
+	messages := recorded.WebSocketMessages
+	if messages[0].Direction != webSocketDirectionClientToServer || messages[0].Opcode != webSocketOpcodeText || messages[0].Payload != "hello" || messages[0].PayloadEncoding != "" {
+		t.Fatalf("first websocket message = %#v", messages[0])
+	}
+	if messages[1].Direction != webSocketDirectionServerToClient || messages[1].Payload != "hello" {
+		t.Fatalf("second websocket message = %#v", messages[1])
+	}
+	wantBinary := base64.StdEncoding.EncodeToString(binaryPayload)
+	if messages[2].Direction != webSocketDirectionClientToServer || messages[2].Opcode != webSocketOpcodeBinary || messages[2].Payload != wantBinary || messages[2].PayloadEncoding != "base64" {
+		t.Fatalf("third websocket message = %#v, want base64 binary", messages[2])
+	}
+	if messages[3].Direction != webSocketDirectionServerToClient || messages[3].Payload != wantBinary || messages[3].PayloadEncoding != "base64" {
+		t.Fatalf("fourth websocket message = %#v, want base64 binary echo", messages[3])
 	}
 }
 

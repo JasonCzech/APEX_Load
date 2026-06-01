@@ -285,13 +285,6 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 
 	slog.Debug("HTTPS CONNECT interception", "host", host, "hostname", hostname)
 
-	leafCert, err := r.generateLeafCert(hostname)
-	if err != nil {
-		slog.Error("failed to generate leaf cert", "hostname", hostname, "err", err)
-		http.Error(w, "TLS interception error: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-
 	// Respond 200 to the client to indicate the tunnel is established.
 	w.WriteHeader(http.StatusOK)
 
@@ -301,18 +294,41 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 		slog.Error("response writer does not support hijacking")
 		return
 	}
-	clientConn, _, err := hijacker.Hijack()
+	clientConn, clientRW, err := hijacker.Hijack()
 	if err != nil {
 		slog.Error("failed to hijack connection", "err", err)
 		return
 	}
 	defer clientConn.Close()
 
+	clientReader := clientRW.Reader
+	if clientReader == nil {
+		clientReader = bufio.NewReader(clientConn)
+	}
+	firstByte, err := peekConnectTunnelByte(clientConn, clientReader)
+	if err != nil {
+		if err != io.EOF {
+			slog.Debug("failed to inspect CONNECT tunnel", "host", host, "err", err)
+		}
+		return
+	}
+	if firstByte != 0x16 {
+		r.forwardPlainConnect(clientConn, clientReader, hostname, host)
+		return
+	}
+
+	leafCert, err := r.generateLeafCert(hostname)
+	if err != nil {
+		slog.Error("failed to generate leaf cert", "hostname", hostname, "err", err)
+		writeHTTPError(clientConn, http.StatusBadGateway, "TLS interception error: "+err.Error())
+		return
+	}
+
 	// Wrap the raw connection with TLS using the leaf cert.
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{*leafCert},
 	}
-	tlsConn := tls.Server(clientConn, tlsConfig)
+	tlsConn := tls.Server(&readBufferedConn{Conn: clientConn, reader: clientReader}, tlsConfig)
 	if err := tlsConn.Handshake(); err != nil {
 		slog.Debug("TLS handshake with client failed", "hostname", hostname, "err", err)
 		return
@@ -341,18 +357,67 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		r.forwardHTTPS(tlsConn, clientReq, hostname, host, client)
+		r.forwardHTTPS(tlsConn, reader, clientReq, hostname, host, client)
 	}
+}
+
+func peekConnectTunnelByte(conn net.Conn, reader *bufio.Reader) (byte, error) {
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	defer conn.SetReadDeadline(time.Time{})
+	peeked, err := reader.Peek(1)
+	if err != nil {
+		return 0, err
+	}
+	return peeked[0], nil
+}
+
+func (r *Recorder) forwardPlainConnect(clientConn net.Conn, clientReader *bufio.Reader, hostname, host string) {
+	for {
+		clientReq, err := http.ReadRequest(clientReader)
+		if err != nil {
+			if err != io.EOF {
+				slog.Debug("error reading plaintext CONNECT request", "hostname", hostname, "err", err)
+			}
+			return
+		}
+
+		r.mu.RLock()
+		session := r.active
+		r.mu.RUnlock()
+		start := time.Now()
+
+		if isWebSocketUpgrade(clientReq) {
+			r.forwardWebSocketPlainConnect(clientConn, clientReader, clientReq, hostname, host, session, start)
+			return
+		}
+
+		writeHTTPError(clientConn, http.StatusBadGateway, "unsupported plaintext CONNECT request")
+		return
+	}
+}
+
+type readBufferedConn struct {
+	net.Conn
+	reader *bufio.Reader
+}
+
+func (c *readBufferedConn) Read(p []byte) (int, error) {
+	return c.reader.Read(p)
 }
 
 // forwardHTTPS forwards a single HTTP request read from the intercepted TLS connection
 // to the real upstream server and writes the response back to the client.
-func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReq *http.Request, hostname, host string, client *http.Client) {
+func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReader *bufio.Reader, clientReq *http.Request, hostname, host string, client *http.Client) {
 	r.mu.RLock()
 	session := r.active
 	r.mu.RUnlock()
 
 	start := time.Now()
+
+	if isWebSocketUpgrade(clientReq) {
+		r.forwardWebSocketHTTPS(tlsConn, clientReader, clientReq, hostname, host, session, start)
+		return
+	}
 
 	// Read the request body.
 	var bodyBytes []byte

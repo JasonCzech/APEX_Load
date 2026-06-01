@@ -1,6 +1,7 @@
 package recorder
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -122,6 +123,60 @@ func TestConvertSession_CarriesBinaryBodyEncoding(t *testing.T) {
 	}
 	if action.BodyEncoding != "base64" {
 		t.Fatalf("body encoding = %q, want base64", action.BodyEncoding)
+	}
+}
+
+func TestConvertSession_WebSocketMessages(t *testing.T) {
+	s := &Session{
+		ID:      "test",
+		Name:    "Socket Flow",
+		BaseURL: "ws://stream.example.com",
+		Requests: []RecordedRequest{
+			{
+				Seq:        1,
+				Method:     "GET",
+				URL:        "ws://stream.example.com/orders?tenant=acme",
+				Path:       "/orders",
+				Host:       "stream.example.com",
+				StatusCode: http.StatusSwitchingProtocols,
+				Headers:    map[string]string{"Sec-WebSocket-Protocol": "json"},
+				WebSocketMessages: []RecordedWebSocketMessage{
+					{Direction: webSocketDirectionClientToServer, Opcode: webSocketOpcodeText, Payload: `{"type":"subscribe"}`},
+					{Direction: webSocketDirectionServerToClient, Opcode: webSocketOpcodeText, Payload: `{"type":"subscribed"}`},
+					{Direction: webSocketDirectionClientToServer, Opcode: webSocketOpcodeBinary, Payload: "AP8=", PayloadEncoding: "base64"},
+				},
+			},
+		},
+	}
+
+	result := ConvertSession(s, "")
+	if result.Script.Protocol != "websocket" {
+		t.Fatalf("protocol = %q, want websocket", result.Script.Protocol)
+	}
+	if result.Script.Config.BaseURL != "ws://stream.example.com" {
+		t.Fatalf("base_url = %q, want ws origin", result.Script.Config.BaseURL)
+	}
+	if len(result.Script.Actions) != 5 {
+		t.Fatalf("action count = %d, want connect + 3 messages + close", len(result.Script.Actions))
+	}
+	connect := result.Script.Actions[0]
+	if connect.Type != "ws_connect" || connect.Target != "/orders?tenant=acme" {
+		t.Fatalf("connect action = %#v", connect)
+	}
+	send := result.Script.Actions[1]
+	if send.Type != "ws_send" || send.Body != `{"type":"subscribe"}` || send.Params["type"] != "text" {
+		t.Fatalf("send action = %#v", send)
+	}
+	receive := result.Script.Actions[2]
+	if receive.Type != "ws_receive" || receive.Params["match"] != `{"type":"subscribed"}` {
+		t.Fatalf("receive action = %#v", receive)
+	}
+	binarySend := result.Script.Actions[3]
+	if binarySend.Type != "ws_send" || binarySend.Body != "AP8=" || binarySend.BodyEncoding != "base64" || binarySend.Params["type"] != "binary" {
+		t.Fatalf("binary send action = %#v", binarySend)
+	}
+	if result.Script.Actions[4].Type != "ws_close" {
+		t.Fatalf("final action type = %q, want ws_close", result.Script.Actions[4].Type)
 	}
 }
 

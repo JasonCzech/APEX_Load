@@ -34,36 +34,47 @@ const (
 )
 
 type RecordedRequest struct {
-	Seq                   int                 `json:"seq"`
-	Timestamp             time.Time           `json:"timestamp"`
-	Method                string              `json:"method"`
-	URL                   string              `json:"url"`
-	Scheme                string              `json:"scheme,omitempty"`
-	Path                  string              `json:"path"`
-	QueryString           string              `json:"query_string,omitempty"`
-	Host                  string              `json:"host"`
-	Headers               map[string]string   `json:"headers"`
-	HeadersMulti          map[string][]string `json:"headers_multi,omitempty"`
-	Body                  string              `json:"body,omitempty"`
-	BodyEncoding          string              `json:"body_encoding,omitempty"`
-	BodySizeBytes         int                 `json:"body_size_bytes,omitempty"`
-	BodyTruncated         bool                `json:"body_truncated,omitempty"`
-	ContentType           string              `json:"content_type,omitempty"`
-	StatusCode            int                 `json:"status_code"`
-	ResponseTimeMs        float64             `json:"response_time_ms"`
-	ResponseBody          string              `json:"response_body,omitempty"`
-	ResponseBodyEncoding  string              `json:"response_body_encoding,omitempty"`
-	ResponseBodySizeBytes int                 `json:"response_body_size_bytes,omitempty"`
-	ResponseBodyTruncated bool                `json:"response_body_truncated,omitempty"`
-	ResponseHeaders       map[string]string   `json:"response_headers,omitempty"`
-	ResponseHeadersMulti  map[string][]string `json:"response_headers_multi,omitempty"`
-	ThinkTimeMs           int64               `json:"think_time_ms"`
-	IsStatic              bool                `json:"is_static"`
-	ResourceType          string              `json:"resource_type,omitempty"`
-	StepName              string              `json:"step_name,omitempty"`
-	TransactionName       string              `json:"transaction_name,omitempty"`
-	Note                  string              `json:"note,omitempty"`
-	Excluded              bool                `json:"excluded,omitempty"`
+	Seq                   int                        `json:"seq"`
+	Timestamp             time.Time                  `json:"timestamp"`
+	Method                string                     `json:"method"`
+	URL                   string                     `json:"url"`
+	Scheme                string                     `json:"scheme,omitempty"`
+	Path                  string                     `json:"path"`
+	QueryString           string                     `json:"query_string,omitempty"`
+	Host                  string                     `json:"host"`
+	Headers               map[string]string          `json:"headers"`
+	HeadersMulti          map[string][]string        `json:"headers_multi,omitempty"`
+	Body                  string                     `json:"body,omitempty"`
+	BodyEncoding          string                     `json:"body_encoding,omitempty"`
+	BodySizeBytes         int                        `json:"body_size_bytes,omitempty"`
+	BodyTruncated         bool                       `json:"body_truncated,omitempty"`
+	ContentType           string                     `json:"content_type,omitempty"`
+	StatusCode            int                        `json:"status_code"`
+	ResponseTimeMs        float64                    `json:"response_time_ms"`
+	ResponseBody          string                     `json:"response_body,omitempty"`
+	ResponseBodyEncoding  string                     `json:"response_body_encoding,omitempty"`
+	ResponseBodySizeBytes int                        `json:"response_body_size_bytes,omitempty"`
+	ResponseBodyTruncated bool                       `json:"response_body_truncated,omitempty"`
+	ResponseHeaders       map[string]string          `json:"response_headers,omitempty"`
+	ResponseHeadersMulti  map[string][]string        `json:"response_headers_multi,omitempty"`
+	ThinkTimeMs           int64                      `json:"think_time_ms"`
+	IsStatic              bool                       `json:"is_static"`
+	ResourceType          string                     `json:"resource_type,omitempty"`
+	StepName              string                     `json:"step_name,omitempty"`
+	TransactionName       string                     `json:"transaction_name,omitempty"`
+	Note                  string                     `json:"note,omitempty"`
+	Excluded              bool                       `json:"excluded,omitempty"`
+	WebSocketMessages     []RecordedWebSocketMessage `json:"websocket_messages,omitempty"`
+}
+
+type RecordedWebSocketMessage struct {
+	Direction        string    `json:"direction"`
+	Opcode           int       `json:"opcode"`
+	Payload          string    `json:"payload,omitempty"`
+	PayloadEncoding  string    `json:"payload_encoding,omitempty"`
+	PayloadSizeBytes int       `json:"payload_size_bytes,omitempty"`
+	PayloadTruncated bool      `json:"payload_truncated,omitempty"`
+	Timestamp        time.Time `json:"timestamp"`
 }
 
 type Session struct {
@@ -374,6 +385,11 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 
 	start := time.Now()
 
+	if isWebSocketUpgrade(req) {
+		r.handleWebSocketProxy(w, req, session, start)
+		return
+	}
+
 	targetURL := req.URL.String()
 	if !req.URL.IsAbs() {
 		targetURL = "http://" + req.Host + req.URL.String()
@@ -539,12 +555,12 @@ func (r *Recorder) streamAndRecordResponse(w io.Writer, flush func(), session *S
 	}
 }
 
-func (r *Recorder) recordRequest(s *Session, req *http.Request, reqBody []byte, resp *http.Response, respBody []byte, elapsed time.Duration) {
-	r.recordRequestWithOptions(s, req, reqBody, resp, respBody, elapsed, recordOptions{requestStartedAt: time.Now()})
+func (r *Recorder) recordRequest(s *Session, req *http.Request, reqBody []byte, resp *http.Response, respBody []byte, elapsed time.Duration) int {
+	return r.recordRequestWithOptions(s, req, reqBody, resp, respBody, elapsed, recordOptions{requestStartedAt: time.Now()})
 }
 
-func (r *Recorder) recordRequestStarted(s *Session, req *http.Request, reqBody []byte, resp *http.Response, respBody []byte, elapsed time.Duration, requestStartedAt time.Time) {
-	r.recordRequestWithOptions(s, req, reqBody, resp, respBody, elapsed, recordOptions{requestStartedAt: requestStartedAt})
+func (r *Recorder) recordRequestStarted(s *Session, req *http.Request, reqBody []byte, resp *http.Response, respBody []byte, elapsed time.Duration, requestStartedAt time.Time) int {
+	return r.recordRequestWithOptions(s, req, reqBody, resp, respBody, elapsed, recordOptions{requestStartedAt: requestStartedAt})
 }
 
 type recordOptions struct {
@@ -552,12 +568,12 @@ type recordOptions struct {
 	forceResponseBodyTruncate bool
 }
 
-func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBody []byte, resp *http.Response, respBody []byte, elapsed time.Duration, opts recordOptions) {
+func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBody []byte, resp *http.Response, respBody []byte, elapsed time.Duration, opts recordOptions) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.Status != "recording" {
-		return
+		return 0
 	}
 
 	parsed, _ := url.Parse(req.URL.String())
@@ -567,7 +583,7 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 	}
 
 	if s.Filters.ExcludeStatic && isStaticResource(parsed) {
-		return
+		return 0
 	}
 
 	if len(s.Filters.IncludeHosts) > 0 {
@@ -579,13 +595,13 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 			}
 		}
 		if !matched {
-			return
+			return 0
 		}
 	}
 
 	for _, h := range s.Filters.ExcludeHosts {
 		if strings.Contains(host, h) {
-			return
+			return 0
 		}
 	}
 
@@ -668,6 +684,30 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 			SessionID: s.ID,
 			Request:   &rec,
 		})
+	}
+	return rec.Seq
+}
+
+func (r *Recorder) appendWebSocketMessage(s *Session, seq int, msg RecordedWebSocketMessage) {
+	if s == nil || seq == 0 {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Status != "recording" {
+		return
+	}
+	for i := range s.Requests {
+		if s.Requests[i].Seq != seq {
+			continue
+		}
+		s.Requests[i].WebSocketMessages = append(s.Requests[i].WebSocketMessages, msg)
+		updated := s.Requests[i]
+		if s.notify != nil {
+			s.notify(SessionEvent{Type: "request_updated", SessionID: s.ID, Request: &updated})
+		}
+		return
 	}
 }
 

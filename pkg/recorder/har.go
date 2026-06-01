@@ -32,14 +32,15 @@ type harPage struct {
 }
 
 type harEntry struct {
-	StartedDateTime time.Time   `json:"startedDateTime"`
-	Time            float64     `json:"time"`
-	Request         harRequest  `json:"request"`
-	Response        harResponse `json:"response"`
-	Cache           struct{}    `json:"cache"`
-	Timings         harTiming   `json:"timings"`
-	PageRef         string      `json:"pageref,omitempty"`
-	Comment         string      `json:"comment,omitempty"`
+	StartedDateTime   time.Time             `json:"startedDateTime"`
+	Time              float64               `json:"time"`
+	Request           harRequest            `json:"request"`
+	Response          harResponse           `json:"response"`
+	Cache             struct{}              `json:"cache"`
+	Timings           harTiming             `json:"timings"`
+	PageRef           string                `json:"pageref,omitempty"`
+	Comment           string                `json:"comment,omitempty"`
+	WebSocketMessages []harWebSocketMessage `json:"_webSocketMessages,omitempty"`
 }
 
 type harRequest struct {
@@ -95,6 +96,16 @@ type harTiming struct {
 type harNameVal struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
+}
+
+type harWebSocketMessage struct {
+	Time      time.Time `json:"time"`
+	Type      string    `json:"type"`
+	Opcode    int       `json:"opcode"`
+	Data      string    `json:"data,omitempty"`
+	Encoding  string    `json:"encoding,omitempty"`
+	Size      int       `json:"size,omitempty"`
+	Truncated bool      `json:"truncated,omitempty"`
 }
 
 func ExportHAR(session *Session, includeExcluded bool) ([]byte, error) {
@@ -165,6 +176,17 @@ func exportHAREntry(req RecordedRequest, pageID string) harEntry {
 		PageRef: pageID,
 		Comment: req.Note,
 	}
+	for _, msg := range req.WebSocketMessages {
+		entry.WebSocketMessages = append(entry.WebSocketMessages, harWebSocketMessage{
+			Time:      msg.Timestamp,
+			Type:      harWebSocketMessageType(msg.Direction),
+			Opcode:    msg.Opcode,
+			Data:      msg.Payload,
+			Encoding:  msg.PayloadEncoding,
+			Size:      msg.PayloadSizeBytes,
+			Truncated: msg.PayloadTruncated,
+		})
+	}
 	if req.BodyTruncated {
 		entry.Request.PostData = &harPostData{MimeType: req.ContentType, Text: req.Body, Encoding: req.BodyEncoding, Comment: "request body truncated by recorder capture limit"}
 	} else if req.Body != "" || req.BodySizeBytes > 0 {
@@ -174,6 +196,17 @@ func exportHAREntry(req RecordedRequest, pageID string) harEntry {
 		entry.Response.Content.Comment = "response body truncated by recorder capture limit"
 	}
 	return entry
+}
+
+func harWebSocketMessageType(direction string) string {
+	switch direction {
+	case webSocketDirectionClientToServer:
+		return "send"
+	case webSocketDirectionServerToClient:
+		return "receive"
+	default:
+		return direction
+	}
 }
 
 func (req RecordedRequest) responseMimeType() string {

@@ -49,6 +49,15 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 
 	result := &ConvertResult{}
 
+	webSocketRequests := includedWebSocketRequests(session.Requests)
+	if len(webSocketRequests) > 0 {
+		result.Script = convertWebSocketSession(session, name, webSocketRequests)
+		if hasIncludedHTTPRequests(session.Requests) {
+			result.Warnings = append(result.Warnings, "recording contains HTTP and WebSocket traffic; generated WebSocket script includes WebSocket exchanges only")
+		}
+		return result
+	}
+
 	correlations := detectCorrelations(session.Requests)
 	result.Correlations = correlations
 
@@ -183,6 +192,177 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 
 	result.Script = script
 	return result
+}
+
+func includedWebSocketRequests(requests []RecordedRequest) []RecordedRequest {
+	result := make([]RecordedRequest, 0)
+	for _, req := range requests {
+		if req.Excluded || req.IsStatic || len(req.WebSocketMessages) == 0 {
+			continue
+		}
+		result = append(result, req)
+	}
+	return result
+}
+
+func hasIncludedHTTPRequests(requests []RecordedRequest) bool {
+	for _, req := range requests {
+		if req.Excluded || req.IsStatic || len(req.WebSocketMessages) > 0 {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func convertWebSocketSession(session *Session, name string, requests []RecordedRequest) *dsl.Script {
+	baseURL := webSocketBaseURL(requests[0].URL, session.BaseURL)
+	script := &dsl.Script{
+		Name:        name,
+		Version:     "1.0",
+		Protocol:    "websocket",
+		GeneratedBy: "recorder",
+		Config: dsl.ScriptConfig{
+			BaseURL: baseURL,
+			ThinkTime: dsl.ThinkTimeConfig{
+				Type:   "recorded",
+				MeanMs: 0,
+			},
+			WebSocket: dsl.WebSocketConfig{
+				ReadTimeoutMs:  30000,
+				WriteTimeoutMs: 10000,
+			},
+		},
+		CreatedAt: time.Now(),
+	}
+
+	actionSeq := 1
+	for _, req := range requests {
+		target := webSocketActionTarget(req.URL, baseURL)
+		connect := dsl.Action{
+			Name:   numberedActionName(actionSeq, "WS Connect "+simplifyPath(req.Path)),
+			Type:   "ws_connect",
+			Target: target,
+		}
+		headers := filterRecordedHeaders(req.Headers, session.Filters.CaptureCookies)
+		if len(headers) > 0 {
+			connect.Headers = headers
+		}
+		if req.ThinkTimeMs > 500 {
+			connect.ThinkTimeAfter = true
+			connect.ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: float64(req.ThinkTimeMs)}
+		}
+		script.Actions = append(script.Actions, connect)
+		actionSeq++
+
+		for _, msg := range req.WebSocketMessages {
+			if msg.Opcode != webSocketOpcodeText && msg.Opcode != webSocketOpcodeBinary {
+				continue
+			}
+			switch msg.Direction {
+			case webSocketDirectionClientToServer:
+				action := dsl.Action{
+					Name:         numberedActionName(actionSeq, "WS Send"),
+					Type:         "ws_send",
+					Body:         msg.Payload,
+					BodyEncoding: msg.PayloadEncoding,
+					Params:       map[string]any{"type": webSocketDSLMessageType(msg)},
+				}
+				script.Actions = append(script.Actions, action)
+				actionSeq++
+			case webSocketDirectionServerToClient:
+				params := map[string]any{"timeout_ms": 1000}
+				if msg.PayloadEncoding == "" && !msg.PayloadTruncated && msg.Payload != "" {
+					params["match"] = msg.Payload
+				}
+				action := dsl.Action{
+					Name:         numberedActionName(actionSeq, "WS Receive"),
+					Type:         "ws_receive",
+					Body:         msg.Payload,
+					BodyEncoding: msg.PayloadEncoding,
+					Params:       params,
+				}
+				script.Actions = append(script.Actions, action)
+				actionSeq++
+			}
+		}
+
+		script.Actions = append(script.Actions, dsl.Action{
+			Name: numberedActionName(actionSeq, "WS Close"),
+			Type: "ws_close",
+		})
+		actionSeq++
+	}
+
+	return script
+}
+
+func numberedActionName(seq int, label string) string {
+	if seq < 10 {
+		return fmt.Sprintf("%02d - %s", seq, label)
+	}
+	return fmt.Sprintf("%d - %s", seq, label)
+}
+
+func webSocketDSLMessageType(msg RecordedWebSocketMessage) string {
+	if msg.Opcode == webSocketOpcodeBinary || msg.PayloadEncoding == "base64" {
+		return "binary"
+	}
+	return "text"
+}
+
+func webSocketBaseURL(rawURL, fallback string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsed.Host == "" {
+		parsed, err = url.Parse(strings.TrimSpace(fallback))
+	}
+	if err != nil || parsed.Host == "" {
+		return fallback
+	}
+	switch parsed.Scheme {
+	case "http":
+		parsed.Scheme = "ws"
+	case "https":
+		parsed.Scheme = "wss"
+	case "":
+		parsed.Scheme = "ws"
+	}
+	parsed.Path = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
+func webSocketActionTarget(rawURL, baseURL string) string {
+	raw := strings.TrimSpace(rawURL)
+	if raw == "" {
+		return "/"
+	}
+	if baseURL != "" && strings.HasPrefix(raw, baseURL) {
+		target := strings.TrimPrefix(raw, baseURL)
+		if target == "" {
+			return "/"
+		}
+		return target
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	if baseURL == "" || parsed.Host == "" {
+		if target := parsed.RequestURI(); target != "" {
+			return target
+		}
+		return "/"
+	}
+	baseParsed, err := url.Parse(baseURL)
+	if err == nil && strings.EqualFold(parsed.Host, baseParsed.Host) {
+		if target := parsed.RequestURI(); target != "" {
+			return target
+		}
+		return "/"
+	}
+	return raw
 }
 
 func detectCorrelations(requests []RecordedRequest) []Correlation {
