@@ -9,6 +9,12 @@
   position: sticky;
   top: 0;
   z-index: 100;
+  --wails-draggable: drag;
+}
+
+/* Push header contents on Mac desktop to avoid traffic light controls */
+body.is-desktop.is-mac .header {
+  padding-left: 80px;
 }
 
 .header-left {
@@ -16,6 +22,11 @@
   align-items: center;
   gap: 10px;
   cursor: pointer;
+  --wails-draggable: no-drag;
+}
+
+.header-right {
+  --wails-draggable: no-drag;
 }
 
 .header-title {

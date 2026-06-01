@@ -49,6 +49,10 @@ export function resolveApiOrigin(env: ApiEnvironment = getApiEnvironment(), loca
   if (envOrigin && envOrigin.trim()) {
     return trimTrailingSlash(envOrigin.trim())
   }
+  // Detect Wails desktop environment
+  if (location?.protocol === 'wails:' || location?.hostname === 'wails.localhost') {
+    return DEFAULT_LOCAL_API_ORIGIN
+  }
   if (location?.protocol === 'file:') {
     return DEFAULT_LOCAL_API_ORIGIN
   }

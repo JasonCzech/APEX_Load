@@ -409,6 +409,18 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
 }
 
 export default function App() {
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const isWails = window.location.protocol === 'wails:' || window.location.hostname === 'wails.localhost'
+    const isMac = navigator.userAgent.toLowerCase().includes('mac')
+    if (isWails) {
+      document.body.classList.add('is-desktop')
+      if (isMac) {
+        document.body.classList.add('is-mac')
+      }
+    }
+  }, [])
+
   return (
     <DevViewProvider>
       <AppContent />

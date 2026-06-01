@@ -17,7 +17,7 @@ import (
 )
 
 //go:embed static
-var staticFS embed.FS
+var StaticFS embed.FS
 
 type Server struct {
 	httpServer    *http.Server
@@ -435,7 +435,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	})))
 
 	// Dashboard static files — serve from embedded FS, fallback to index.html for SPA routing
-	staticSub, err := fs.Sub(staticFS, "static")
+	staticSub, err := fs.Sub(StaticFS, "static")
 	if err != nil {
 		slog.Warn("embedded static files not available, dashboard will 404")
 		s.mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
