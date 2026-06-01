@@ -1599,6 +1599,25 @@
   gap: 12px;
 }
 
+.script-create-import-groups {
+  display: grid;
+  gap: 18px;
+}
+
+.script-create-import-group {
+  display: grid;
+  gap: 10px;
+}
+
+.script-create-import-group h4 {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 .script-create-existing-toolbar {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) minmax(140px, 180px) minmax(140px, 180px) auto;

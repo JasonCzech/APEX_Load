@@ -105,7 +105,7 @@ export default function ScriptCreateOptions({
   const api = useApi()
   const [templates, setTemplates] = useState<AuthoringTemplate[]>([])
   const [components, setComponents] = useState<AuthoringComponent[]>([])
-  const [workflow, setWorkflow] = useState<'existing' | 'templates' | 'manual' | 'source' | 'record' | 'import'>('existing')
+  const [workflow, setWorkflow] = useState<'existing' | 'templates' | 'manual' | 'source' | 'record'>('existing')
   const [existingScriptQuery, setExistingScriptQuery] = useState('')
   const [existingScriptProtocol, setExistingScriptProtocol] = useState('all')
   const [existingScriptHealth, setExistingScriptHealth] = useState('all')
@@ -182,7 +182,7 @@ export default function ScriptCreateOptions({
       <div className="page-header">
         <div>
           <h2>Create Script</h2>
-          <p className="page-subtitle">Start from a template, build manually, record a browser flow, or import an existing asset.</p>
+          <p className="page-subtitle">Start from a template, build manually, record a browser flow, or import from a source asset.</p>
         </div>
         <PageViewToggle
           value="create-options"
@@ -221,13 +221,8 @@ export default function ScriptCreateOptions({
         </button>
         <button type="button" className={`script-workflow-card ${workflow === 'source' ? 'active' : ''}`} onClick={() => setWorkflow('source')}>
           <span>5</span>
-          <strong>Start From Source</strong>
-          <small>Generate drafts from OpenAPI, Postman, WSDL, HAR, DevWeb, or samples.</small>
-        </button>
-        <button type="button" className={`script-workflow-card ${workflow === 'import' ? 'active' : ''}`} onClick={() => setWorkflow('import')}>
-          <span>6</span>
-          <strong>Import Existing</strong>
-          <small>Bring forward LoadRunner, JMeter, Postman, DevWeb, HAR, or Java samples.</small>
+          <strong>Import From Source</strong>
+          <small>Generate or migrate scripts from contracts, collections, traffic captures, source archives, and legacy tool exports.</small>
         </button>
       </div>
 
@@ -440,104 +435,84 @@ export default function ScriptCreateOptions({
         )}
 
         {workflow === 'source' && (
-        <section className="script-create-lane api full">
-          <div className="script-create-lane-header">
-            <span className="script-create-kicker">Guided source authoring</span>
-            <h3>Start From Source</h3>
-            <p>Choose the source asset first, then review generated actions, data fit, auth placeholders, validation, replay, and approval evidence in one draft workflow.</p>
-          </div>
-          <div className="script-create-grid">
-            <button className="script-create-option primary" onClick={onOpenOpenAPIImport}>
-              <span className="script-create-type-badge">OAS</span>
-              <h3>OpenAPI / Swagger</h3>
-              <p>Generate grouped REST request flows with detected auth schemes, examples, variables, and candidate data pools.</p>
-            </button>
-            <button className="script-create-option primary" onClick={onOpenPostmanImport}>
-              <span className="script-create-type-badge">PM</span>
-              <h3>Postman Collection</h3>
-              <p>Convert collection folders, requests, variables, and auth placeholders into a reviewable HTTP script.</p>
-            </button>
-            <button className="script-create-option primary" onClick={onOpenWSDLImport}>
-              <span className="script-create-type-badge">WSDL</span>
-              <h3>WSDL / SOAP</h3>
-              <p>Generate SOAP operation actions with SOAPAction, namespaces, sample envelopes, and fault-review guidance.</p>
-            </button>
-            <button className="script-create-option" onClick={onOpenHARImport}>
-              <span className="script-create-type-badge import">HAR</span>
-              <h3>HAR Traffic</h3>
-              <p>Convert captured browser API traffic into HTTP actions with reviewable correlation and data-source suggestions.</p>
-            </button>
-            <button className="script-create-option" onClick={onOpenDevWebImport}>
-              <span className="script-create-type-badge import">DEV</span>
-              <h3>DevWeb Source</h3>
-              <p>Convert DevWeb JavaScript assets into HTTP, WebSocket, or gRPC script drafts for review.</p>
-            </button>
-            <button className="script-create-option" onClick={onOpenSampleImport}>
-              <span className="script-create-type-badge">API</span>
-              <h3>Request / Response Sample</h3>
-              <p>Build an API draft from raw HTTP, cURL, or payload examples when formal contracts are unavailable.</p>
-            </button>
-          </div>
-        </section>
-        )}
-
-        {workflow === 'import' && (
         <section className="script-create-lane import full">
           <div className="script-create-lane-header">
-            <span className="script-create-kicker">Migration</span>
-            <h3>Import Existing</h3>
-            <p>Bring existing LoadRunner, JMeter, Postman, and related assets forward while preserving source metadata and conversion notes for review.</p>
+            <span className="script-create-kicker">Source-driven authoring</span>
+            <h3>Import From Source</h3>
+            <p>Choose a source asset, then review generated actions, source comparisons, data fit, validation notes, and approval evidence in one draft workflow.</p>
           </div>
-          <div className="script-create-grid">
-            <button className="script-create-option primary" onClick={onOpenLoadRunnerImport}>
-              <span className="script-create-type-badge import">LR</span>
-              <h3>Import LoadRunner</h3>
-              <p>Convert a LoadRunner ZIP into a APEX Load script and keep unsupported functions visible for cleanup.</p>
-            </button>
-            <button className="script-create-option" type="button" disabled title="Use Import LoadRunner today for SOAP-style LoadRunner request assets.">
-              <span className="script-create-type-badge import">SOAP</span>
-              <h3>Import SOAP Assets</h3>
-              <p>Dedicated SOAP import remains staged. For now, use Import LoadRunner for SOAP-style request assets and review the converted draft.</p>
-            </button>
-            <button
-              className="script-create-option"
-              onClick={onOpenJavaHttpImport}
-              title="Import raw HTTP or cURL samples that already preserve base64-encoded serialized Java payloads."
-            >
-              <span className="script-create-type-badge import">JAVA</span>
-              <h3>Import Java over HTTP</h3>
-              <p>Build a Java-over-HTTP draft from raw HTTP or cURL samples that already carry opaque base64-encoded serialized payloads.</p>
-            </button>
-            <button className="script-create-option" onClick={onOpenJMeterImport}>
-              <span className="script-create-type-badge import">JMX</span>
-              <h3>Import JMeter</h3>
-              <p>Convert a JMeter .jmx plan into HTTP scripts with warnings, unsupported elements, and scenario draft context.</p>
-            </button>
-            <button className="script-create-option" onClick={onOpenDevWebImport}>
-              <span className="script-create-type-badge import">DEV</span>
-              <h3>Import DevWeb</h3>
-              <p>Convert DevWeb JavaScript assets into HTTP, WebSocket, or gRPC script drafts for review.</p>
-            </button>
-            <button className="script-create-option" onClick={onOpenHARImport}>
-              <span className="script-create-type-badge import">HAR</span>
-              <h3>Import HAR</h3>
-              <p>Convert Chrome DevTools HAR traffic into an HTTP script with detected base URL and correlations.</p>
-            </button>
-            <button className="script-create-option" onClick={onOpenOpenAPIImport}>
-              <span className="script-create-type-badge import">OAS</span>
-              <h3>Import OpenAPI</h3>
-              <p>Convert OpenAPI or Swagger contracts into a REST script draft with generated review sections.</p>
-            </button>
-            <button className="script-create-option" onClick={onOpenPostmanImport}>
-              <span className="script-create-type-badge import">PM</span>
-              <h3>Import Postman</h3>
-              <p>Convert a Postman collection into HTTP actions with request variables preserved as APEX parameters.</p>
-            </button>
-            <button className="script-create-option" onClick={onOpenWSDLImport}>
-              <span className="script-create-type-badge import">WSDL</span>
-              <h3>Import WSDL</h3>
-              <p>Convert WSDL contracts into SOAP request actions and payload review guidance.</p>
-            </button>
+          <div className="script-create-import-groups">
+            <div className="script-create-import-group">
+              <h4>Contracts & Collections</h4>
+              <div className="script-create-grid">
+                <button className="script-create-option primary" onClick={onOpenOpenAPIImport}>
+                  <span className="script-create-type-badge">OAS</span>
+                  <h3>OpenAPI / Swagger</h3>
+                  <p>Generate grouped REST request flows with detected auth schemes, examples, variables, and candidate data pools.</p>
+                </button>
+                <button className="script-create-option primary" onClick={onOpenPostmanImport}>
+                  <span className="script-create-type-badge">PM</span>
+                  <h3>Postman Collection</h3>
+                  <p>Convert collection folders, requests, variables, and auth placeholders into a reviewable HTTP script.</p>
+                </button>
+                <button className="script-create-option primary" onClick={onOpenWSDLImport}>
+                  <span className="script-create-type-badge">WSDL</span>
+                  <h3>WSDL / SOAP</h3>
+                  <p>Generate SOAP operation actions with SOAPAction, namespaces, sample envelopes, and fault-review guidance.</p>
+                </button>
+              </div>
+            </div>
+
+            <div className="script-create-import-group">
+              <h4>Traffic & Samples</h4>
+              <div className="script-create-grid">
+                <button className="script-create-option" onClick={onOpenHARImport}>
+                  <span className="script-create-type-badge import">HAR</span>
+                  <h3>HAR Traffic</h3>
+                  <p>Convert captured browser API traffic into HTTP actions with reviewable correlation and data-source suggestions.</p>
+                </button>
+                <button className="script-create-option" onClick={onOpenSampleImport}>
+                  <span className="script-create-type-badge">API</span>
+                  <h3>Request / Response Sample</h3>
+                  <p>Build an API draft from raw HTTP, cURL, or payload examples when formal contracts are unavailable.</p>
+                </button>
+                <button
+                  className="script-create-option"
+                  onClick={onOpenJavaHttpImport}
+                  title="Import raw HTTP or cURL samples that already preserve base64-encoded serialized Java payloads."
+                >
+                  <span className="script-create-type-badge import">JAVA</span>
+                  <h3>Import Java over HTTP</h3>
+                  <p>Build a Java-over-HTTP draft from raw HTTP or cURL samples that already carry opaque base64-encoded serialized payloads.</p>
+                </button>
+              </div>
+            </div>
+
+            <div className="script-create-import-group">
+              <h4>Legacy & Tool Exports</h4>
+              <div className="script-create-grid">
+                <button className="script-create-option primary" onClick={onOpenLoadRunnerImport}>
+                  <span className="script-create-type-badge import">LR</span>
+                  <h3>Import LoadRunner</h3>
+                  <p>Convert a LoadRunner ZIP into a APEX Load script and keep unsupported functions visible for cleanup.</p>
+                </button>
+                <button className="script-create-option" onClick={onOpenJMeterImport}>
+                  <span className="script-create-type-badge import">JMX</span>
+                  <h3>Import JMeter</h3>
+                  <p>Convert a JMeter .jmx plan into HTTP scripts with warnings, unsupported elements, and scenario draft context.</p>
+                </button>
+                <button className="script-create-option" onClick={onOpenDevWebImport}>
+                  <span className="script-create-type-badge import">DEV</span>
+                  <h3>DevWeb Source</h3>
+                  <p>Convert DevWeb JavaScript assets into HTTP, WebSocket, or gRPC script drafts for review.</p>
+                </button>
+                <button className="script-create-option" type="button" disabled title="Use Import LoadRunner today for SOAP-style LoadRunner request assets.">
+                  <span className="script-create-type-badge import">SOAP</span>
+                  <h3>Import SOAP Assets</h3>
+                  <p>Dedicated SOAP import remains staged. For now, use Import LoadRunner for SOAP-style request assets and review the converted draft.</p>
+                </button>
+              </div>
+            </div>
           </div>
         </section>
         )}

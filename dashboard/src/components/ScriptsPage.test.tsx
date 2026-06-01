@@ -350,6 +350,45 @@ describe('ScriptsPage', () => {
     expect(container.textContent).not.toContain('Model From Existing Script')
   })
 
+  it('consolidates source import choices under one create workflow', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+
+    await flushPromises()
+
+    const workflowCards = Array.from(container.querySelectorAll('.script-workflow-card')).map(button => button.textContent || '')
+    expect(workflowCards).toHaveLength(5)
+    expect(workflowCards.some(label => label.includes('Import From Source'))).toBe(true)
+    expect(workflowCards.some(label => label.includes('Start From Source'))).toBe(false)
+    expect(workflowCards.some(label => label.includes('Import Existing'))).toBe(false)
+
+    await clickButton('Import From Source')
+
+    expect(container.textContent).toContain('Contracts & Collections')
+    expect(container.textContent).toContain('Traffic & Samples')
+    expect(container.textContent).toContain('Legacy & Tool Exports')
+    expect(container.textContent).not.toContain('Import OpenAPI')
+    expect(container.textContent).not.toContain('Import Postman')
+    expect(container.textContent).not.toContain('Import WSDL')
+    expect(container.textContent).not.toContain('Import HAR')
+    expect(container.textContent).not.toContain('Import DevWeb')
+
+    const countImportOption = (label: string) =>
+      Array.from(container.querySelectorAll('.script-create-option h3')).filter(heading => heading.textContent === label).length
+
+    expect(countImportOption('OpenAPI / Swagger')).toBe(1)
+    expect(countImportOption('Postman Collection')).toBe(1)
+    expect(countImportOption('WSDL / SOAP')).toBe(1)
+    expect(countImportOption('HAR Traffic')).toBe(1)
+    expect(countImportOption('Request / Response Sample')).toBe(1)
+    expect(countImportOption('Import Java over HTTP')).toBe(1)
+    expect(countImportOption('Import LoadRunner')).toBe(1)
+    expect(countImportOption('Import JMeter')).toBe(1)
+    expect(countImportOption('DevWeb Source')).toBe(1)
+    expect(countImportOption('Import SOAP Assets')).toBe(1)
+  })
+
   it('models a new draft from an existing saved script without editing the original', async () => {
     apiMock.getScript.mockResolvedValueOnce({
       script: {
@@ -473,7 +512,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Start From Source')
+    await clickButton('Import From Source')
     await clickButton('OpenAPI / Swagger')
 
     expect(container.querySelector('[data-testid="protocol-import-openapi"]')).not.toBeNull()
@@ -491,7 +530,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Import Existing')
+    await clickButton('Import From Source')
 
     const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
     expect(jmeterButton).toBeDefined()
@@ -526,7 +565,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Import Existing')
+    await clickButton('Import From Source')
 
     const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
     expect(jmeterButton).toBeDefined()
@@ -564,7 +603,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Import Existing')
+    await clickButton('Import From Source')
 
     const loadRunnerButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import LoadRunner'))
     expect(loadRunnerButton).toBeDefined()
@@ -603,7 +642,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Import Existing')
+    await clickButton('Import From Source')
 
     const loadRunnerButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import LoadRunner'))
     expect(loadRunnerButton).toBeDefined()
@@ -630,7 +669,7 @@ describe('ScriptsPage', () => {
 
     expect(container.querySelector('[data-testid="loadrunner-import"]')).toBeNull()
     expect(container.textContent).toContain('Create Script')
-    await clickButton('Import Existing')
+    await clickButton('Import From Source')
     expect(container.textContent).toContain('Import JMeter')
   })
 
@@ -641,7 +680,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Import Existing')
+    await clickButton('Import From Source')
 
     const loadRunnerButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import LoadRunner'))
     expect(loadRunnerButton).toBeDefined()
@@ -683,7 +722,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Import Existing')
+    await clickButton('Import From Source')
 
     const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
     expect(jmeterButton).toBeDefined()
@@ -711,7 +750,7 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="jmeter-import"]')).toBeNull()
     expect(container.textContent).toContain('Create Script')
     expect(container.textContent).toContain('Model From Existing Script')
-    await clickButton('Import Existing')
+    await clickButton('Import From Source')
     expect(container.textContent).toContain('Import LoadRunner')
   })
 
@@ -1125,7 +1164,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Import Existing')
+    await clickButton('Import From Source')
 
     const javaImportButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import Java over HTTP'))
     expect(javaImportButton).toBeDefined()
