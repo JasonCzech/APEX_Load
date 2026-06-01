@@ -332,6 +332,43 @@ func TestRecordRequestRichMetadataRedactionAndTruncation(t *testing.T) {
 	}
 }
 
+func TestRecordRequestCaptureCookiesOptIn(t *testing.T) {
+	req, _ := http.NewRequest("GET", "http://example.com/api/session", nil)
+	req.Header.Set("Cookie", "session=sid-123; theme=dark")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Set-Cookie": []string{"session=sid-456; Path=/; HttpOnly"},
+		},
+	}
+
+	redactingRecorder := New(":0")
+	redactedSession, err := redactingRecorder.StartSession("redacted", "Redacted Cookies", SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redactingRecorder.recordRequest(redactedSession, req.Clone(req.Context()), nil, resp, []byte(`{}`), 10*time.Millisecond)
+	if got := redactedSession.Requests[0].Headers["Cookie"]; got != "[redacted]" {
+		t.Fatalf("default cookie header = %q, want redacted", got)
+	}
+	if got := redactedSession.Requests[0].ResponseHeaders["Set-Cookie"]; got != "[redacted]" {
+		t.Fatalf("default set-cookie header = %q, want redacted", got)
+	}
+
+	capturingRecorder := New(":0")
+	capturedSession, err := capturingRecorder.StartSession("captured", "Captured Cookies", SessionFilters{CaptureCookies: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capturingRecorder.recordRequest(capturedSession, req.Clone(req.Context()), nil, resp, []byte(`{}`), 10*time.Millisecond)
+	if got := capturedSession.Requests[0].Headers["Cookie"]; got != "session=sid-123; theme=dark" {
+		t.Fatalf("captured cookie header = %q", got)
+	}
+	if got := capturedSession.Requests[0].ResponseHeaders["Set-Cookie"]; got != "session=sid-456; Path=/; HttpOnly" {
+		t.Fatalf("captured set-cookie header = %q", got)
+	}
+}
+
 func TestRecordRequestCapturesBinaryBodiesAsBase64(t *testing.T) {
 	rec := New(":0")
 	session, err := rec.StartSession("test", "Binary Body Test", SessionFilters{

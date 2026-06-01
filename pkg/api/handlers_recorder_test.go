@@ -74,6 +74,31 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 	}
 }
 
+func TestHandleStartRecordingThreadsCaptureCookies(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewBufferString(`{
+		"name": "Cookie Capture",
+		"capture_cookies": true
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusCreated, resp.Body.String())
+	}
+	var payload struct {
+		Session recorder.Session `json:"session"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if !payload.Session.Filters.CaptureCookies {
+		t.Fatalf("capture_cookies = false, want true: %#v", payload.Session.Filters)
+	}
+}
+
 func TestHandleExportRecordingHAR(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	session, err := server.recorder.StartSession("rec-2", "Checkout HAR", recorder.SessionFilters{}, nil)

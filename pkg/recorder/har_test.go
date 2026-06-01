@@ -133,3 +133,60 @@ func TestExportHARCanIncludeExcludedRequests(t *testing.T) {
 		t.Fatalf("entry count = %d, want 2", len(archive.Log.Entries))
 	}
 }
+
+func TestExportHARPreservesBase64BodyEncoding(t *testing.T) {
+	session := &Session{
+		ID:        "rec-binary",
+		Name:      "Binary",
+		StartedAt: time.Now(),
+		Requests: []RecordedRequest{
+			{
+				Seq:                  1,
+				Timestamp:            time.Now(),
+				Method:               http.MethodPost,
+				URL:                  "https://example.com/upload",
+				Path:                 "/upload",
+				Body:                 "AP8QgA==",
+				BodyEncoding:         "base64",
+				BodySizeBytes:        5,
+				ContentType:          "application/octet-stream",
+				StatusCode:           http.StatusCreated,
+				ResponseBody:         "/wAB",
+				ResponseBodyEncoding: "base64",
+			},
+		},
+	}
+
+	data, err := ExportHAR(session, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var archive struct {
+		Log struct {
+			Entries []struct {
+				Request struct {
+					PostData *struct {
+						Text     string `json:"text"`
+						Encoding string `json:"encoding"`
+					} `json:"postData"`
+				} `json:"request"`
+				Response struct {
+					Content struct {
+						Text     string `json:"text"`
+						Encoding string `json:"encoding"`
+					} `json:"content"`
+				} `json:"response"`
+			} `json:"entries"`
+		} `json:"log"`
+	}
+	if err := json.Unmarshal(data, &archive); err != nil {
+		t.Fatal(err)
+	}
+	entry := archive.Log.Entries[0]
+	if entry.Request.PostData == nil || entry.Request.PostData.Text != "AP8QgA==" || entry.Request.PostData.Encoding != "base64" {
+		t.Fatalf("postData = %#v, want base64 payload", entry.Request.PostData)
+	}
+	if entry.Response.Content.Text != "/wAB" || entry.Response.Content.Encoding != "base64" {
+		t.Fatalf("response content = %#v, want base64 payload", entry.Response.Content)
+	}
+}

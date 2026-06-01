@@ -24,8 +24,10 @@ interface RecordedRequest {
   response_time_ms: number
   content_type: string
   body: string
+  body_encoding?: string
   body_size_bytes?: number
   body_truncated?: boolean
+  response_body_encoding?: string
   response_body_size_bytes?: number
   response_body_truncated?: boolean
   think_time_ms: number
@@ -49,6 +51,7 @@ interface RecordingSession {
     exclude_static: boolean
     exclude_hosts?: string[]
     include_hosts?: string[]
+    capture_cookies?: boolean
   }
 }
 
@@ -89,6 +92,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   const [sessionName, setSessionName] = useState('')
   const [includeHosts, setIncludeHosts] = useState('')
   const [excludeHosts, setExcludeHosts] = useState('')
+  const [captureCookies, setCaptureCookies] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [feedbackType, setFeedbackType] = useState<'success' | 'error'>('success')
   const [selectedSession, setSelectedSession] = useState<RecordingSession | null>(null)
@@ -180,6 +184,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
         name: sessionName || 'Recording Session',
         project_id: activeProject?.id,
         exclude_static: true,
+        capture_cookies: captureCookies,
       }
       if (includeHosts.trim()) {
         data.include_hosts = includeHosts.split(',').map((h: string) => h.trim()).filter(Boolean)
@@ -494,6 +499,14 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
                 placeholder="e.g. analytics.google.com, cdn.example.com"
               />
             </div>
+            <label className="rec-checkbox-row">
+              <input
+                type="checkbox"
+                checked={captureCookies}
+                onChange={e => setCaptureCookies(e.target.checked)}
+              />
+              <span>Capture cookies (may include secrets)</span>
+            </label>
             <button className="btn btn-primary rec-start-btn" onClick={handleStart}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" /></svg>
               Start Recording

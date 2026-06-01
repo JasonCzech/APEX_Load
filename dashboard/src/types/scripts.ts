@@ -33,6 +33,7 @@ export interface ScriptActionDefinition {
   value?: string
   headers?: Record<string, string>
   body?: string
+  body_encoding?: string
   params?: Record<string, unknown>
   metadata?: Record<string, unknown>
   wait_for?: ScriptWaitCondition

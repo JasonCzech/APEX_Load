@@ -293,6 +293,20 @@
   gap: 4px;
 }
 
+.rec-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.rec-checkbox-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
 .rec-label {
   font-size: 13px;
   font-weight: 500;

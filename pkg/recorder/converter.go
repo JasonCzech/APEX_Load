@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -18,6 +18,7 @@ type Correlation struct {
 	ExtractType string `json:"extract_type"`
 	FoundInSeq  int    `json:"found_in_seq"`
 	UsedInSeqs  []int  `json:"used_in_seqs"`
+	Value       string `json:"-"`
 	SampleValue string `json:"sample_value"`
 }
 
@@ -119,7 +120,10 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 			action.Metadata = map[string]any{"source_transaction": txn}
 		}
 
-		headers := filterRecordedHeaders(req.Headers)
+		headers := filterRecordedHeaders(req.Headers, session.Filters.CaptureCookies)
+		for key, value := range headers {
+			headers[key] = applyCorrelationVars(value, corrMap)
+		}
 		if len(headers) > 0 {
 			action.Headers = headers
 		}
@@ -182,194 +186,48 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 }
 
 func detectCorrelations(requests []RecordedRequest) []Correlation {
-	var correlations []Correlation
-	seen := make(map[string]bool)
-
-	for i, resp := range requests {
-		if resp.ResponseBody == "" {
-			continue
-		}
-
-		candidates := extractDynamicValues(resp)
-
-		for _, cand := range candidates {
-			if seen[cand.value] {
-				continue
-			}
-
-			var usedIn []int
-			for j := i + 1; j < len(requests); j++ {
-				later := requests[j]
-				if strings.Contains(later.URL, cand.value) ||
-					strings.Contains(later.Body, cand.value) ||
-					headerContains(later.Headers, cand.value) {
-					usedIn = append(usedIn, later.Seq)
-				}
-			}
-
-			if len(usedIn) > 0 {
-				seen[cand.value] = true
-				correlations = append(correlations, Correlation{
-					Name:        cand.name,
-					Source:      cand.source,
-					Expression:  cand.expression,
-					ExtractType: cand.extractType,
-					FoundInSeq:  resp.Seq,
-					UsedInSeqs:  usedIn,
-					SampleValue: truncate(cand.value, 80),
-				})
-			}
-		}
+	observations := make([]correlate.Observation, 0, len(requests))
+	for _, req := range requests {
+		observations = append(observations, correlate.Observation{
+			ID:              req.Seq,
+			RequestURL:      req.URL,
+			RequestBody:     req.Body,
+			RequestHeaders:  req.Headers,
+			ResponseBody:    req.ResponseBody,
+			ResponseHeaders: req.ResponseHeaders,
+		})
 	}
-
+	shared := correlate.Detect(observations)
+	correlations := make([]Correlation, 0, len(shared))
+	for _, corr := range shared {
+		correlations = append(correlations, Correlation{
+			Name:        corr.Name,
+			Source:      corr.Source,
+			Expression:  corr.Expression,
+			ExtractType: corr.ExtractType,
+			FoundInSeq:  corr.FoundInID,
+			UsedInSeqs:  corr.UsedInIDs,
+			Value:       corr.Value,
+			SampleValue: corr.SampleValue,
+		})
+	}
 	return correlations
 }
 
-type candidate struct {
-	name        string
-	value       string
-	source      string
-	extractType string
-	expression  string
-}
-
-var (
-	tokenPatterns = []*regexp.Regexp{
-		regexp.MustCompile(`"(?:token|access_token|id_token|refresh_token|session_id|sessionid|sid|csrf|_token|xsrf|auth)"\s*:\s*"([^"]{8,})"`),
-		regexp.MustCompile(`"(?:id|Id|ID)"\s*:\s*"([0-9a-f-]{8,})"`),
-		regexp.MustCompile(`"(?:id|Id|ID)"\s*:\s*(\d{4,})`),
-	}
-	headerTokenNames = []string{
-		"x-csrf-token", "x-xsrf-token", "set-cookie", "location",
-		"x-request-id", "x-correlation-id", "authorization",
-	}
-	// HTML hidden-field tokens (CSRF, ASP.NET __VIEWSTATE / __RequestVerificationToken,
-	// OAuth state, etc.) are a staple of recorded form flows that the JSON patterns miss.
-	// Group order differs between the two attribute orderings, tracked by nameGroup/valueGroup.
-	htmlInputPatterns = []struct {
-		re         *regexp.Regexp
-		nameGroup  int
-		valueGroup int
-	}{
-		{regexp.MustCompile(`(?i)<input[^>]*\bname="([A-Za-z0-9_.\-\[\]]*(?:csrf|xsrf|token|nonce|state|viewstate|authenticity)[A-Za-z0-9_.\-\[\]]*)"[^>]*\bvalue="([^"]{4,})"`), 1, 2},
-		{regexp.MustCompile(`(?i)<input[^>]*\bvalue="([^"]{4,})"[^>]*\bname="([A-Za-z0-9_.\-\[\]]*(?:csrf|xsrf|token|nonce|state|viewstate|authenticity)[A-Za-z0-9_.\-\[\]]*)"`), 2, 1},
-	}
-)
-
-func extractDynamicValues(req RecordedRequest) []candidate {
-	var candidates []candidate
-
-	for _, pat := range tokenPatterns {
-		matches := pat.FindAllStringSubmatch(req.ResponseBody, -1)
-		for _, m := range matches {
-			if len(m) < 2 {
-				continue
-			}
-			keyMatch := regexp.MustCompile(`"(\w+)"`).FindStringSubmatch(m[0])
-			name := "corr_value"
-			if len(keyMatch) >= 2 {
-				name = "corr_" + strings.ToLower(keyMatch[1])
-			}
-
-			jsonPath := fmt.Sprintf("$.%s", strings.ToLower(keyMatch[1]))
-			candidates = append(candidates, candidate{
-				name:        name,
-				value:       m[1],
-				source:      "body",
-				extractType: "jsonpath",
-				expression:  jsonPath,
-			})
-		}
-	}
-
-	for _, hdr := range headerTokenNames {
-		if val, ok := req.ResponseHeaders[hdr]; ok && len(val) > 4 {
-			candidates = append(candidates, candidate{
-				name:        "corr_" + strings.ReplaceAll(hdr, "-", "_"),
-				value:       val,
-				source:      "header",
-				extractType: "header",
-				expression:  hdr,
-			})
-		}
-		titleCase := strings.ReplaceAll(strings.Title(strings.ReplaceAll(hdr, "-", " ")), " ", "-")
-		if val, ok := req.ResponseHeaders[titleCase]; ok && len(val) > 4 {
-			candidates = append(candidates, candidate{
-				name:        "corr_" + strings.ReplaceAll(hdr, "-", "_"),
-				value:       val,
-				source:      "header",
-				extractType: "header",
-				expression:  titleCase,
-			})
-		}
-	}
-
-	// HTML hidden form tokens. Emit a regex extractor (robust to attribute
-	// spacing/ordering) that the HTTP protocol's body extractor understands.
-	for _, pat := range htmlInputPatterns {
-		matches := pat.re.FindAllStringSubmatch(req.ResponseBody, -1)
-		for _, m := range matches {
-			if len(m) <= pat.valueGroup || len(m) <= pat.nameGroup {
-				continue
-			}
-			field := m[pat.nameGroup]
-			value := m[pat.valueGroup]
-			if value == "" {
-				continue
-			}
-			var expression string
-			if pat.nameGroup < pat.valueGroup {
-				expression = fmt.Sprintf(`name="%s"[^>]*value="([^"]+)"`, regexp.QuoteMeta(field))
-			} else {
-				expression = fmt.Sprintf(`value="([^"]+)"[^>]*name="%s"`, regexp.QuoteMeta(field))
-			}
-			candidates = append(candidates, candidate{
-				name:        "corr_" + slugifyCorrelationName(field),
-				value:       value,
-				source:      "body",
-				extractType: "regex",
-				expression:  expression,
-			})
-		}
-	}
-
-	return candidates
-}
-
 func slugifyCorrelationName(field string) string {
-	slug := nonWordCorrelationChars.ReplaceAllString(strings.ToLower(field), "_")
-	slug = strings.Trim(slug, "_")
-	if slug == "" {
-		return "value"
-	}
-	return slug
+	return correlate.Slug(field)
 }
-
-var nonWordCorrelationChars = regexp.MustCompile(`[^a-z0-9]+`)
 
 func buildCorrelationMap(correlations []Correlation) map[string]string {
-	m := make(map[string]string)
+	shared := make([]correlate.Correlation, 0, len(correlations))
 	for _, c := range correlations {
-		m[c.SampleValue] = "{{var." + c.Name + "}}"
+		shared = append(shared, correlate.Correlation{Name: c.Name, Value: c.Value, SampleValue: c.SampleValue})
 	}
-	return m
+	return correlate.BuildVarMap(shared)
 }
 
 func applyCorrelationVars(s string, corrMap map[string]string) string {
-	// Replace longest values first so a short correlation value (e.g. a numeric
-	// id) can't clobber a substring of a longer one that shares a prefix.
-	values := make([]string, 0, len(corrMap))
-	for value := range corrMap {
-		if value == "" {
-			continue
-		}
-		values = append(values, value)
-	}
-	sort.Slice(values, func(i, j int) bool { return len(values[i]) > len(values[j]) })
-	for _, value := range values {
-		s = strings.ReplaceAll(s, value, corrMap[value])
-	}
-	return s
+	return correlate.ApplyVars(s, corrMap)
 }
 
 const parameterizedDataSourceName = "recorded_inputs"
@@ -456,7 +314,7 @@ func csvEscapeField(value string) string {
 	return value
 }
 
-func filterRecordedHeaders(headers map[string]string) map[string]string {
+func filterRecordedHeaders(headers map[string]string, captureCookies bool) map[string]string {
 	skip := map[string]bool{
 		"host": true, "content-length": true, "accept-encoding": true,
 		"connection": true, "proxy-connection": true, "user-agent": true,
@@ -465,7 +323,9 @@ func filterRecordedHeaders(headers map[string]string) map[string]string {
 		"sec-ch-ua-platform": true, "sec-fetch-dest": true,
 		"sec-fetch-mode": true, "sec-fetch-site": true,
 		"sec-fetch-user": true, "upgrade-insecure-requests": true,
-		"cookie": true,
+	}
+	if !captureCookies {
+		skip["cookie"] = true
 	}
 
 	filtered := make(map[string]string)
@@ -489,18 +349,6 @@ func simplifyPath(path string) string {
 	return result
 }
 
-func headerContains(headers map[string]string, value string) bool {
-	for _, v := range headers {
-		if strings.Contains(v, value) {
-			return true
-		}
-	}
-	return false
-}
-
 func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
+	return correlate.Truncate(s, maxLen)
 }

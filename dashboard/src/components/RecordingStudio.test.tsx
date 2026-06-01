@@ -254,6 +254,50 @@ describe('RecordingStudio', () => {
 
     expect(apiMock.convertRecording).toHaveBeenCalledWith('rec-1', 'Checkout Capture', true)
   })
+
+  it('threads the capture cookies option into the start request', async () => {
+    apiMock.startRecording.mockResolvedValue({
+      session: {
+        id: 'rec-cookie',
+        name: 'Recording Session',
+        status: 'recording',
+        started_at: '2026-05-12T20:00:00Z',
+        requests: [],
+        filters: { exclude_static: true, capture_cookies: true },
+      },
+      proxy_addr: ':8081',
+      ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    const captureToggle = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(
+      input => (input as HTMLInputElement).parentElement?.textContent?.includes('Capture cookies'),
+    ) as HTMLInputElement | undefined
+    expect(captureToggle).toBeDefined()
+    if (!captureToggle) return
+
+    await act(async () => {
+      captureToggle.click()
+    })
+
+    const startButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Start Recording')
+    expect(startButton).toBeDefined()
+    if (!startButton) return
+
+    await act(async () => {
+      startButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.startRecording).toHaveBeenCalledWith(expect.objectContaining({
+      capture_cookies: true,
+      exclude_static: true,
+    }))
+  })
 })
 
 async function flushPromises() {

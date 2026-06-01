@@ -89,6 +89,7 @@ type SessionFilters struct {
 	IncludeHosts          []string `json:"include_hosts,omitempty"`
 	BodyCaptureLimitBytes int      `json:"body_capture_limit_bytes,omitempty"`
 	RedactHeaders         []string `json:"redact_headers,omitempty"`
+	CaptureCookies        bool     `json:"capture_cookies,omitempty"`
 }
 
 type SessionEvent struct {
@@ -421,11 +422,20 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	if isStreamingResponse(resp) {
+		stopClientCloseWatch := make(chan struct{})
+		go func() {
+			select {
+			case <-req.Context().Done():
+				resp.Body.Close()
+			case <-stopClientCloseWatch:
+			}
+		}()
 		r.streamAndRecordResponse(w, func() {
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
 			}
 		}, session, req, bodyBytes, resp, start)
+		close(stopClientCloseWatch)
 		return
 	}
 
@@ -592,9 +602,9 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		s.lastReqTime = opts.requestStartedAt
 	}
 
-	headersMulti := sanitizeHeaders(req.Header, s.Filters.RedactHeaders, true)
+	headersMulti := sanitizeHeaders(req.Header, s.Filters.RedactHeaders, true, s.Filters.CaptureCookies)
 	headers := firstHeaderValues(headersMulti)
-	respHeadersMulti := sanitizeHeaders(resp.Header, s.Filters.RedactHeaders, false)
+	respHeadersMulti := sanitizeHeaders(resp.Header, s.Filters.RedactHeaders, false, s.Filters.CaptureCookies)
 
 	ct := resp.Header.Get("Content-Type")
 	// Decompress the captured response body so correlation/extraction works against
@@ -661,15 +671,17 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 	}
 }
 
-func sanitizeHeaders(headers http.Header, extraRedact []string, skipProxy bool) map[string][]string {
+func sanitizeHeaders(headers http.Header, extraRedact []string, skipProxy bool, captureCookies bool) map[string][]string {
 	redact := map[string]bool{
 		"authorization": true,
-		"cookie":        true,
-		"set-cookie":    true,
 		"x-api-key":     true,
 		"x-auth-token":  true,
 		"x-csrf-token":  true,
 		"x-xsrf-token":  true,
+	}
+	if !captureCookies {
+		redact["cookie"] = true
+		redact["set-cookie"] = true
 	}
 	for _, h := range extraRedact {
 		redact[strings.ToLower(strings.TrimSpace(h))] = true

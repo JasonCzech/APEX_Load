@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -49,6 +49,8 @@ type Correlation struct {
 	Name        string `json:"name"`
 	Source      string `json:"source"`
 	Expression  string `json:"expression"`
+	ExtractType string `json:"extract_type,omitempty"`
+	Value       string `json:"-"`
 	SampleValue string `json:"sample_value"`
 	FoundInStep int    `json:"found_in_step"`
 	UsedInSteps []int  `json:"used_in_steps"`
@@ -80,21 +82,6 @@ type response struct {
 	Status  int
 	Headers map[string]string
 	Body    string
-}
-
-type candidate struct {
-	name       string
-	value      string
-	source     string
-	expression string
-}
-
-var jsonCandidatePatterns = []struct {
-	namePattern string
-	regex       *regexp.Regexp
-}{
-	{namePattern: "corr_%s", regex: regexp.MustCompile(`(?i)"([A-Za-z0-9_]*(?:token|session|csrf|xsrf|auth|id))"\s*:\s*"([^\"]{6,})"`)},
-	{namePattern: "corr_%s", regex: regexp.MustCompile(`(?i)"([A-Za-z0-9_]*(?:id))"\s*:\s*(\d{4,})`)},
 }
 
 var sensitiveHeaders = map[string]bool{
@@ -164,7 +151,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if inferExtractors {
 		correlations = detectCorrelations(exchanges)
 		for _, corr := range correlations {
-			correlationVars[corr.SampleValue] = "{{var." + corr.Name + "}}"
+			value := corr.Value
+			if value == "" {
+				value = corr.SampleValue
+			}
+			correlationVars[value] = "{{var." + corr.Name + "}}"
 		}
 		if len(correlations) == 0 {
 			warnings = append(warnings, "no reusable correlation values were detected across the provided samples")
@@ -222,11 +213,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 
 		body := ex.Body
-		if sanitizeSensitive && ex.BodyEncoding == "" {
-			body = sanitizeBody(body)
-		}
 		if ex.BodyEncoding == "" {
 			body = applyCorrelationVars(body, correlationVars)
+			if sanitizeSensitive {
+				body = sanitizeBody(body)
+			}
 		}
 		target = applyCorrelationVars(target, correlationVars)
 		headers = applyCorrelationVarsToHeaders(headers, correlationVars)
@@ -283,7 +274,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 						action.Extractors = append(action.Extractors, dsl.Extractor{
 							Name:       corr.Name,
 							Source:     corr.Source,
-							Type:       extractorTypeForSource(corr.Source),
+							Type:       extractorTypeForCorrelation(corr),
 							Expression: corr.Expression,
 						})
 						if location := responseSourceLocation(sourceLocations, idx); location.SourceFile != "" {
@@ -1390,91 +1381,35 @@ func detectBaseURL(exchanges []exchange) string {
 }
 
 func detectCorrelations(exchanges []exchange) []Correlation {
-	seen := map[string]bool{}
-	correlations := []Correlation{}
+	observations := make([]correlate.Observation, 0, len(exchanges))
 	for index, ex := range exchanges {
-		if ex.Response == nil {
-			continue
+		observation := correlate.Observation{
+			ID:             index + 1,
+			RequestURL:     ex.URL,
+			RequestBody:    ex.Body,
+			RequestHeaders: ex.Headers,
 		}
-		candidates := responseCandidates(*ex.Response)
-		for _, candidate := range candidates {
-			if candidate.value == "" || seen[candidate.value] {
-				continue
-			}
-			usedIn := []int{}
-			for later := index + 1; later < len(exchanges); later++ {
-				if exchangeContains(exchanges[later], candidate.value) {
-					usedIn = append(usedIn, later+1)
-				}
-			}
-			if len(usedIn) == 0 {
-				continue
-			}
-			seen[candidate.value] = true
-			correlations = append(correlations, Correlation{
-				Name:        candidate.name,
-				Source:      candidate.source,
-				Expression:  candidate.expression,
-				SampleValue: candidate.value,
-				FoundInStep: index + 1,
-				UsedInSteps: usedIn,
-			})
+		if ex.Response != nil {
+			observation.ResponseBody = ex.Response.Body
+			observation.ResponseHeaders = ex.Response.Headers
 		}
+		observations = append(observations, observation)
 	}
-	sort.Slice(correlations, func(i, j int) bool {
-		if correlations[i].FoundInStep == correlations[j].FoundInStep {
-			return correlations[i].Name < correlations[j].Name
-		}
-		return correlations[i].FoundInStep < correlations[j].FoundInStep
-	})
-	return correlations
-}
-
-func responseCandidates(resp response) []candidate {
-	results := []candidate{}
-	for _, pattern := range jsonCandidatePatterns {
-		matches := pattern.regex.FindAllStringSubmatch(resp.Body, -1)
-		for _, match := range matches {
-			if len(match) < 3 {
-				continue
-			}
-			key := sanitizeIdentifier(match[1])
-			results = append(results, candidate{
-				name:       fmt.Sprintf(pattern.namePattern, key),
-				value:      match[2],
-				source:     "body",
-				expression: "$." + match[1],
-			})
-		}
-	}
-	for key, value := range resp.Headers {
-		lowerKey := strings.ToLower(key)
-		if !strings.Contains(lowerKey, "token") && !strings.Contains(lowerKey, "cookie") && !strings.Contains(lowerKey, "location") && !strings.Contains(lowerKey, "id") {
-			continue
-		}
-		if len(value) < 4 {
-			continue
-		}
-		results = append(results, candidate{
-			name:       "corr_" + sanitizeIdentifier(lowerKey),
-			value:      value,
-			source:     "header",
-			expression: key,
+	shared := correlate.Detect(observations)
+	correlations := make([]Correlation, 0, len(shared))
+	for _, corr := range shared {
+		correlations = append(correlations, Correlation{
+			Name:        corr.Name,
+			Source:      corr.Source,
+			Expression:  corr.Expression,
+			ExtractType: corr.ExtractType,
+			Value:       corr.Value,
+			SampleValue: corr.SampleValue,
+			FoundInStep: corr.FoundInID,
+			UsedInSteps: corr.UsedInIDs,
 		})
 	}
-	return results
-}
-
-func exchangeContains(ex exchange, value string) bool {
-	if strings.Contains(ex.URL, value) || strings.Contains(ex.Body, value) {
-		return true
-	}
-	for _, headerValue := range ex.Headers {
-		if strings.Contains(headerValue, value) {
-			return true
-		}
-	}
-	return false
+	return correlations
 }
 
 func actionName(index int, method, rawURL string) string {
@@ -1658,35 +1593,38 @@ func sanitizeBody(body string) string {
 	if trimmed == "" {
 		return body
 	}
-	replacements := []*regexp.Regexp{
-		regexp.MustCompile(`(?i)("(?:password|token|access_token|refresh_token|api_key)"\s*:\s*")([^"]+)(")`),
-		regexp.MustCompile(`(?i)((?:password|token|access_token|refresh_token|api_key)=)([^&\s]+)`),
-	}
-	result := body
-	for _, pattern := range replacements {
-		result = pattern.ReplaceAllString(result, `${1}{{secret.redacted}}${3}`)
-	}
+	jsonSensitive := regexp.MustCompile(`(?i)("(?:password|token|access_token|refresh_token|api_key)"\s*:\s*")([^"]+)(")`)
+	formSensitive := regexp.MustCompile(`(?i)((?:^|[&\s])(?:password|token|access_token|refresh_token|api_key)=)([^&\s]+)`)
+	result := jsonSensitive.ReplaceAllStringFunc(body, func(segment string) string {
+		match := jsonSensitive.FindStringSubmatch(segment)
+		if len(match) < 4 || strings.Contains(match[2], "{{") {
+			return segment
+		}
+		return match[1] + "{{secret.redacted}}" + match[3]
+	})
+	result = formSensitive.ReplaceAllStringFunc(result, func(segment string) string {
+		match := formSensitive.FindStringSubmatch(segment)
+		if len(match) < 3 || strings.Contains(match[2], "{{") {
+			return segment
+		}
+		return match[1] + "{{secret.redacted}}"
+	})
 	return result
 }
 
 func applyCorrelationVars(value string, vars map[string]string) string {
-	for raw, replacement := range vars {
-		if raw == "" {
-			continue
-		}
-		value = strings.ReplaceAll(value, raw, replacement)
-	}
-	return value
+	return correlate.ApplyVars(value, vars)
 }
 
 func applyCorrelationVarsToHeaders(headers map[string]string, vars map[string]string) map[string]string {
-	if len(headers) == 0 {
-		return headers
+	return correlate.ApplyVarsToHeaders(headers, vars)
+}
+
+func extractorTypeForCorrelation(corr Correlation) string {
+	if corr.ExtractType != "" {
+		return corr.ExtractType
 	}
-	for key, value := range headers {
-		headers[key] = applyCorrelationVars(value, vars)
-	}
-	return headers
+	return extractorTypeForSource(corr.Source)
 }
 
 func extractorTypeForSource(source string) string {

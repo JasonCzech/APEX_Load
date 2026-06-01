@@ -70,12 +70,14 @@ type harContent struct {
 	Size     int    `json:"size"`
 	MimeType string `json:"mimeType"`
 	Text     string `json:"text,omitempty"`
+	Encoding string `json:"encoding,omitempty"`
 	Comment  string `json:"comment,omitempty"`
 }
 
 type harPostData struct {
 	MimeType string       `json:"mimeType"`
 	Text     string       `json:"text,omitempty"`
+	Encoding string       `json:"encoding,omitempty"`
 	Params   []harNameVal `json:"params,omitempty"`
 	Comment  string       `json:"comment,omitempty"`
 }
@@ -149,6 +151,7 @@ func exportHAREntry(req RecordedRequest, pageID string) harEntry {
 				Size:     req.ResponseBodySizeBytes,
 				MimeType: req.responseMimeType(),
 				Text:     req.ResponseBody,
+				Encoding: req.ResponseBodyEncoding,
 			},
 			RedirectURL: firstHeaderValue(req.ResponseHeadersMulti, "Location"),
 			HeadersSize: -1,
@@ -163,9 +166,9 @@ func exportHAREntry(req RecordedRequest, pageID string) harEntry {
 		Comment: req.Note,
 	}
 	if req.BodyTruncated {
-		entry.Request.PostData = &harPostData{MimeType: req.ContentType, Text: req.Body, Comment: "request body truncated by recorder capture limit"}
+		entry.Request.PostData = &harPostData{MimeType: req.ContentType, Text: req.Body, Encoding: req.BodyEncoding, Comment: "request body truncated by recorder capture limit"}
 	} else if req.Body != "" || req.BodySizeBytes > 0 {
-		entry.Request.PostData = &harPostData{MimeType: req.ContentType, Text: req.Body}
+		entry.Request.PostData = &harPostData{MimeType: req.ContentType, Text: req.Body, Encoding: req.BodyEncoding}
 	}
 	if req.ResponseBodyTruncated {
 		entry.Response.Content.Comment = "response body truncated by recorder capture limit"

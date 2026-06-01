@@ -125,6 +125,54 @@ func TestConvertSession_CarriesBinaryBodyEncoding(t *testing.T) {
 	}
 }
 
+func TestConvertSession_CorrelatesCapturedCookies(t *testing.T) {
+	s := &Session{
+		ID:      "test",
+		Name:    "Cookie Flow",
+		BaseURL: "http://example.com",
+		Filters: SessionFilters{CaptureCookies: true},
+		Requests: []RecordedRequest{
+			{
+				Seq:        1,
+				Method:     "GET",
+				URL:        "http://example.com/login",
+				Path:       "/login",
+				Host:       "example.com",
+				StatusCode: 200,
+				ResponseHeaders: map[string]string{
+					"Set-Cookie": "session=sid-abcdef123456; Path=/; HttpOnly",
+				},
+			},
+			{
+				Seq:        2,
+				Method:     "GET",
+				URL:        "http://example.com/account",
+				Path:       "/account",
+				Host:       "example.com",
+				StatusCode: 200,
+				Headers: map[string]string{
+					"Cookie": "session=sid-abcdef123456; theme=dark",
+				},
+			},
+		},
+	}
+
+	result := ConvertSession(s, "")
+	if len(result.Correlations) != 1 {
+		t.Fatalf("correlations = %#v, want one cookie correlation", result.Correlations)
+	}
+	corr := result.Correlations[0]
+	if corr.Name != "corr_cookie_session" || corr.Source != "header" || corr.ExtractType != "regex" {
+		t.Fatalf("unexpected correlation: %#v", corr)
+	}
+	if len(result.Script.Actions[0].Extractors) != 1 {
+		t.Fatalf("first action extractors = %#v", result.Script.Actions[0].Extractors)
+	}
+	if got := result.Script.Actions[1].Headers["Cookie"]; got != "session={{var.corr_cookie_session}}; theme=dark" {
+		t.Fatalf("correlated cookie header = %q", got)
+	}
+}
+
 func TestConvertSession_StaticFiltered(t *testing.T) {
 	s := &Session{
 		ID:      "test",
@@ -431,7 +479,7 @@ func TestFilterRecordedHeaders(t *testing.T) {
 		"User-Agent":      "Mozilla/5.0",
 	}
 
-	filtered := filterRecordedHeaders(headers)
+	filtered := filterRecordedHeaders(headers, false)
 
 	if _, ok := filtered["Host"]; ok {
 		t.Fatal("Host should be filtered")
@@ -456,6 +504,11 @@ func TestFilterRecordedHeaders(t *testing.T) {
 	}
 	if v, ok := filtered["Authorization"]; !ok || v != "Bearer xyz" {
 		t.Fatal("Authorization should be kept")
+	}
+
+	withCookies := filterRecordedHeaders(headers, true)
+	if v, ok := withCookies["Cookie"]; !ok || v != "session=abc" {
+		t.Fatalf("Cookie should be kept when cookie capture is enabled, got %q", v)
 	}
 }
 

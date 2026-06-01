@@ -20,6 +20,7 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		IncludeHosts          []string `json:"include_hosts,omitempty"`
 		BodyCaptureLimitBytes int      `json:"body_capture_limit_bytes,omitempty"`
 		RedactHeaders         []string `json:"redact_headers,omitempty"`
+		CaptureCookies        bool     `json:"capture_cookies,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
@@ -46,6 +47,7 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		IncludeHosts:          req.IncludeHosts,
 		BodyCaptureLimitBytes: req.BodyCaptureLimitBytes,
 		RedactHeaders:         req.RedactHeaders,
+		CaptureCookies:        req.CaptureCookies,
 	}, notify)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
