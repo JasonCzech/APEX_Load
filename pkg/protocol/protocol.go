@@ -235,6 +235,7 @@ type Result struct {
 	DOMSummary        *DOMSummary
 	ClientMetrics     *ClientMetrics
 	ServerTelemetry   *ServerTelemetry
+	ProtocolEvidence  map[string]any
 	Snapshot          *ErrorSnapshot // populated when snapshot_on_error is enabled
 	SourceStepID      string
 	SourceStepIndex   int

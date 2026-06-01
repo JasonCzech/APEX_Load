@@ -143,6 +143,7 @@ type SOAPFaultHandlingConfig struct {
 type DatabaseConfig struct {
 	Driver             string `json:"driver,omitempty"`
 	DSN                string `json:"dsn,omitempty"`
+	DSNSecret          string `json:"dsn_secret,omitempty"`
 	MaxOpenConns       int    `json:"max_open_conns,omitempty"`
 	MaxIdleConns       int    `json:"max_idle_conns,omitempty"`
 	ConnMaxLifetimeMs  int    `json:"conn_max_lifetime_ms,omitempty"`

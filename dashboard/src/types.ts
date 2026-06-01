@@ -433,6 +433,7 @@ export interface TransactionEvent {
   dom_summary?: BrowserReplayDomSummary
   client_metrics?: ClientMetrics
   server_telemetry?: ServerTelemetry
+  protocol_evidence?: ProtocolEvidence
   snapshot?: {
     request_method: string
     request_url: string
@@ -1438,6 +1439,21 @@ export interface ReplayArtifactManifest {
   snapshots?: number
   html_captured?: boolean
   browser_evidence?: boolean
+  protocol_artifacts?: Record<string, number>
+}
+
+export interface ProtocolEvidence {
+  protocol?: string
+  operation?: string
+  target?: string
+  status?: string
+  timings?: Record<string, unknown>
+  messages?: Record<string, unknown>
+  metadata?: Record<string, unknown>
+  rows?: Record<string, unknown>
+  records?: Record<string, unknown>
+  transcript?: unknown[]
+  [key: string]: unknown
 }
 
 export interface ReplayDiagnosis {
@@ -1545,6 +1561,7 @@ export interface BrowserReplayEvent {
   dom_summary?: BrowserReplayDomSummary
   client_metrics?: ClientMetrics
   snapshot?: BrowserReplaySnapshot
+  protocol_evidence?: ProtocolEvidence
   diagnosis?: ReplayDiagnosis
   repair_suggestions?: ReplayRepairSuggestion[]
 }

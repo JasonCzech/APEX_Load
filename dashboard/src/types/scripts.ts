@@ -238,6 +238,33 @@ export interface JMSConfig {
   mock?: boolean
 }
 
+export interface DatabaseConfig {
+  driver?: string
+  dsn?: string
+  dsn_secret?: string
+  query_timeout_ms?: number
+  max_open_conns?: number
+  max_idle_conns?: number
+  conn_max_lifetime_ms?: number
+  max_rows?: number
+  read_only?: boolean
+  rollback_on_teardown?: boolean
+}
+
+export interface NetworkConfig {
+  subprotocol?: string
+  host?: string
+  address?: string
+  port?: number
+  timeout_ms?: number
+  tls?: boolean
+  username?: string
+  password?: string
+  from?: string
+  to?: string[]
+  base_dn?: string
+}
+
 export interface SOAPConfig {
   version?: string
   namespaces?: Record<string, string>
@@ -313,6 +340,8 @@ export interface ScriptConfig {
   soap?: SOAPConfig
   websocket?: WebSocketConfig
   grpc?: GRPCConfig
+  database?: DatabaseConfig
+  network?: NetworkConfig
   browser?: BrowserConfig
   jms?: JMSConfig
   observability?: ObservabilityConfig
@@ -429,6 +458,20 @@ export interface ScriptReplaySnapshot {
   dom_summary?: ScriptReplayDOMSummary
 }
 
+export interface ScriptProtocolEvidence {
+  protocol?: string
+  operation?: string
+  target?: string
+  status?: string
+  timings?: Record<string, unknown>
+  messages?: Record<string, unknown>
+  metadata?: Record<string, unknown>
+  rows?: Record<string, unknown>
+  records?: Record<string, unknown>
+  transcript?: unknown[]
+  [key: string]: unknown
+}
+
 export interface ScriptReplayActionEvent {
   event_id?: string
   action_index?: number
@@ -463,6 +506,7 @@ export interface ScriptReplayActionEvent {
   network_entries?: ScriptReplayNetworkEntry[]
   dom_summary?: ScriptReplayDOMSummary
   snapshot?: ScriptReplaySnapshot
+  protocol_evidence?: ScriptProtocolEvidence
   diagnosis?: {
     category: string
     severity: string

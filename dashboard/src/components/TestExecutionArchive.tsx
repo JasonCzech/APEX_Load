@@ -192,6 +192,17 @@ function formatServerTelemetryBlock(telemetry: NonNullable<TransactionEvent['ser
   return lines.length > 0 ? lines.join('\n') : 'No server telemetry captured'
 }
 
+function formatProtocolEvidenceSummary(evidence?: TransactionEvent['protocol_evidence']): string {
+  if (!evidence) return 'Protocol Evidence'
+  const parts = [
+    evidence.protocol,
+    evidence.operation,
+    evidence.status,
+    evidence.target,
+  ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+  return parts.length > 0 ? parts.join(' / ') : 'Protocol Evidence'
+}
+
 function buildArchiveStatsEntries(stats?: Record<string, RunArchiveActionStats>) {
   return Object.entries(stats || {}).sort((left, right) => right[1].transactions - left[1].transactions)
 }
@@ -1487,7 +1498,8 @@ export default function TestExecutionArchive({
                       {archiveTransactions.map((event, index) => {
                         const rowKey = `${event.timestamp}-${index}`
                         const hasSnapshot = Boolean(event.snapshot)
-                        const hasInspectDetails = hasSnapshot || Boolean(event.client_metrics) || Boolean(event.server_telemetry)
+                        const hasProtocolEvidence = Boolean(event.protocol_evidence)
+                        const hasInspectDetails = hasSnapshot || Boolean(event.client_metrics) || Boolean(event.server_telemetry) || hasProtocolEvidence
                         const browserWaterfall = formatBrowserWaterfall(event.client_metrics)
                         const isExpanded = expandedArchiveEvent === rowKey
                         const soapFault = extractSOAPFaultSummaryFromBody(event.snapshot?.response_body)
@@ -1577,6 +1589,20 @@ export default function TestExecutionArchive({
                                       </div>
                                       <SnapshotTextPreview
                                         text={formatServerTelemetryBlock(event.server_telemetry)}
+                                        preClassName="archive-event-detail-pre"
+                                      />
+                                    </div>
+                                  )}
+                                  {event.protocol_evidence && (
+                                    <div className="archive-event-detail-card">
+                                      <div className="archive-event-detail-header">
+                                        <span className="scenario-script-detail-label">Protocol Evidence</span>
+                                      </div>
+                                      <span className="scenario-script-detail-value">{formatProtocolEvidenceSummary(event.protocol_evidence)}</span>
+                                      <SnapshotBodyPreview
+                                        body={JSON.stringify(event.protocol_evidence, null, 2)}
+                                        headers={{ 'Content-Type': 'application/json' }}
+                                        emptyMessage="No protocol evidence captured"
                                         preClassName="archive-event-detail-pre"
                                       />
                                     </div>

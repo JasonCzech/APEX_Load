@@ -74,10 +74,29 @@ describe('scriptAuthoringAssist', () => {
   it('builds protocol starter blocks for browser and HTTP drafts', () => {
     const browserTemplates = buildProtocolStarterTemplates('browser', 2)
     const httpTemplates = buildProtocolStarterTemplates('http', 0)
+    const databaseTemplates = buildProtocolStarterTemplates('database', 0)
+    const networkTemplates = buildProtocolStarterTemplates('network', 0)
 
     expect(browserTemplates.map((template) => template.label)).toContain('Navigate')
     expect(browserTemplates.some((template) => template.action.type === 'browser_fill')).toBe(true)
     expect(httpTemplates.some((template) => template.action.type === 'POST')).toBe(true)
+    expect(databaseTemplates.some((template) => template.action.type === 'db_query')).toBe(true)
+    expect(networkTemplates.some((template) => template.action.type === 'dns_query')).toBe(true)
+  })
+
+  it('does not require explicit targets for transaction and health native actions', () => {
+    const script: ScriptDefinition = {
+      ...importedScript,
+      protocol: 'database',
+      actions: [
+        { name: 'Begin', type: 'db_begin', target: '', headers: {}, body: '' },
+        { name: 'Health', type: 'network_health', target: '', headers: {}, body: '' },
+      ],
+    }
+
+    const issues = collectAuthoringIssues(script)
+
+    expect(issues.some(issue => issue.message.includes('target is required'))).toBe(false)
   })
 
   it('normalizes imported action names and applies migration suggestions', () => {

@@ -11,12 +11,14 @@ import (
 	"net"
 	"net/textproto"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/go-ldap/ldap/v3"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jmespath/go-jmespath"
 )
 
 func init() {
@@ -77,6 +79,7 @@ func (n *Network) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		ActionName:     actionName(action),
 		StartTime:      start,
 		DependencyType: "network",
+		Extractions:    make(map[string]string),
 		Success:        true,
 		StatusCode:     200,
 	}
@@ -113,6 +116,22 @@ func (n *Network) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		result.StatusCode = 500
 		result.ErrorMessage = err.Error()
 	}
+	if result.Success {
+		if extractorErr := runNetworkExtractors(action.Extractors, result); extractorErr != "" {
+			result.Success = false
+			result.StatusCode = 500
+			result.ErrorMessage = extractorErr
+		}
+	}
+	if assertionErr := evaluateNetworkAssertions(action.Assertions, result); assertionErr != "" {
+		result.Success = false
+		result.StatusCode = 500
+		result.ErrorMessage = assertionErr
+	}
+	if !result.Success {
+		result.Snapshot = networkSnapshot(action, result)
+	}
+	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 	return result, nil
 }
 
@@ -1021,6 +1040,291 @@ func encodePayload(payload map[string]any) string {
 		return `{"error":"failed to encode network payload"}`
 	}
 	return string(encoded)
+}
+
+func runNetworkExtractors(extractors []protocol.Extractor, result *protocol.Result) string {
+	if len(extractors) == 0 {
+		return ""
+	}
+	payload, err := decodeNetworkPayload(result.ResponseBody)
+	if err != nil {
+		return err.Error()
+	}
+	for _, extractor := range extractors {
+		value, err := extractNetworkValue(extractor, payload, []byte(result.ResponseBody), result)
+		if err != nil {
+			return err.Error()
+		}
+		if extractor.Name != "" {
+			result.Extractions[extractor.Name] = value
+		}
+	}
+	return ""
+}
+
+func extractNetworkValue(extractor protocol.Extractor, payload map[string]any, body []byte, result *protocol.Result) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(extractor.Source)) {
+	case "", "body", "records":
+		return extractNetworkBodyValue(extractor, body)
+	case "response":
+		return stringifyNetworkExtraction(payload["response"]), nil
+	case "target":
+		return result.DependencyTarget, nil
+	case "record_count", "entry_count":
+		return stringifyNetworkExtraction(payload[strings.ToLower(strings.TrimSpace(extractor.Source))]), nil
+	default:
+		return "", fmt.Errorf("unsupported network extraction source: %s", extractor.Source)
+	}
+}
+
+func extractNetworkBodyValue(extractor protocol.Extractor, body []byte) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(extractor.Type)) {
+	case "", "json", "jsonpath":
+		return extractNetworkJSONPath(extractor.Expression, body)
+	case "jmespath":
+		return extractNetworkJMESPath(extractor.Expression, body)
+	case "regex", "regexp":
+		return extractNetworkRegex(extractor.Expression, body)
+	case "boundary":
+		return extractNetworkBoundary(extractor.Expression, body)
+	default:
+		return "", fmt.Errorf("unsupported network extraction type: %s", extractor.Type)
+	}
+}
+
+func evaluateNetworkAssertions(assertions []protocol.Assertion, result *protocol.Result) string {
+	if len(assertions) == 0 {
+		return ""
+	}
+	payload, _ := decodeNetworkPayload(result.ResponseBody)
+	for _, assertion := range assertions {
+		switch strings.ToLower(strings.TrimSpace(assertion.Type)) {
+		case "record_count":
+			actual := numericNetworkValue(payload["record_count"])
+			expected, ok := numericNetworkAssertionValue(assertion.Expected)
+			if ok && actual != expected {
+				return fmt.Sprintf("record_count assertion failed: got %d, want %d", actual, expected)
+			}
+			if assertion.Max > 0 && actual > assertion.Max {
+				return fmt.Sprintf("record_count assertion failed: got %d, max %d", actual, assertion.Max)
+			}
+		case "entry_count":
+			actual := numericNetworkValue(payload["entry_count"])
+			expected, ok := numericNetworkAssertionValue(assertion.Expected)
+			if ok && actual != expected {
+				return fmt.Sprintf("entry_count assertion failed: got %d, want %d", actual, expected)
+			}
+			if assertion.Max > 0 && actual > assertion.Max {
+				return fmt.Sprintf("entry_count assertion failed: got %d, max %d", actual, assertion.Max)
+			}
+		case "messages_received":
+			actual := 0
+			if result.ServerTelemetry != nil {
+				actual = result.ServerTelemetry.MessagesReceived
+			}
+			expected, ok := numericNetworkAssertionValue(assertion.Expected)
+			if ok && actual != expected {
+				return fmt.Sprintf("messages_received assertion failed: got %d, want %d", actual, expected)
+			}
+		case "body_contains":
+			if !strings.Contains(result.ResponseBody, assertion.Value) {
+				return fmt.Sprintf("body_contains assertion failed: %q not found", assertion.Value)
+			}
+		case "body_not_contains":
+			if strings.Contains(result.ResponseBody, assertion.Value) {
+				return fmt.Sprintf("body_not_contains assertion failed: %q found", assertion.Value)
+			}
+		case "response_time_ms":
+			if assertion.Max > 0 && result.Duration > time.Duration(assertion.Max)*time.Millisecond {
+				return fmt.Sprintf("response_time_ms assertion failed: got %.1f ms, max %d", float64(result.Duration.Microseconds())/1000, assertion.Max)
+			}
+		case "status_code":
+			expected, ok := numericNetworkAssertionValue(assertion.Expected)
+			if ok && result.StatusCode != expected {
+				return fmt.Sprintf("status_code assertion failed: got %d, want %d", result.StatusCode, expected)
+			}
+		}
+	}
+	return ""
+}
+
+func decodeNetworkPayload(body string) (map[string]any, error) {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		return nil, fmt.Errorf("decode network response: %w", err)
+	}
+	return payload, nil
+}
+
+func extractNetworkJSONPath(expr string, body []byte) (string, error) {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return "", fmt.Errorf("jsonpath expression is required")
+	}
+	expr = strings.TrimPrefix(expr, "$.")
+	expr = strings.TrimPrefix(expr, "$")
+	var current any
+	if err := json.Unmarshal(body, &current); err != nil {
+		return "", err
+	}
+	if expr == "" {
+		return stringifyNetworkExtraction(current), nil
+	}
+	for _, part := range strings.Split(expr, ".") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		key, indexes := splitNetworkPathToken(part)
+		if key != "" {
+			object, ok := current.(map[string]any)
+			if !ok {
+				return "", fmt.Errorf("jsonpath %q expected object", expr)
+			}
+			next, ok := object[key]
+			if !ok {
+				return "", fmt.Errorf("jsonpath %q not found", expr)
+			}
+			current = next
+		}
+		for _, index := range indexes {
+			items, ok := current.([]any)
+			if !ok || index < 0 || index >= len(items) {
+				return "", fmt.Errorf("jsonpath %q index out of range", expr)
+			}
+			current = items[index]
+		}
+	}
+	return stringifyNetworkExtraction(current), nil
+}
+
+func splitNetworkPathToken(token string) (string, []int) {
+	key := token
+	indexes := []int{}
+	if bracket := strings.Index(token, "["); bracket >= 0 {
+		key = token[:bracket]
+		rest := token[bracket:]
+		for strings.HasPrefix(rest, "[") {
+			end := strings.Index(rest, "]")
+			if end <= 1 {
+				break
+			}
+			var index int
+			if _, err := fmt.Sscanf(rest[1:end], "%d", &index); err == nil {
+				indexes = append(indexes, index)
+			}
+			rest = rest[end+1:]
+		}
+	}
+	return key, indexes
+}
+
+func extractNetworkJMESPath(expr string, body []byte) (string, error) {
+	var current any
+	if err := json.Unmarshal(body, &current); err != nil {
+		return "", err
+	}
+	value, err := jmespath.Search(expr, current)
+	if err != nil {
+		return "", err
+	}
+	return stringifyNetworkExtraction(value), nil
+}
+
+func extractNetworkRegex(expr string, body []byte) (string, error) {
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		return "", err
+	}
+	match := re.FindSubmatch(body)
+	if len(match) == 0 {
+		return "", fmt.Errorf("regex %q not found", expr)
+	}
+	if len(match) > 1 {
+		return string(match[1]), nil
+	}
+	return string(match[0]), nil
+}
+
+func extractNetworkBoundary(expr string, body []byte) (string, error) {
+	parts := strings.Split(expr, "|||")
+	if len(parts) != 2 {
+		return "", fmt.Errorf("boundary expression must be left|||right")
+	}
+	text := string(body)
+	start := strings.Index(text, parts[0])
+	if start < 0 {
+		return "", fmt.Errorf("left boundary not found")
+	}
+	start += len(parts[0])
+	end := strings.Index(text[start:], parts[1])
+	if end < 0 {
+		return "", fmt.Errorf("right boundary not found")
+	}
+	return text[start : start+end], nil
+}
+
+func stringifyNetworkExtraction(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return typed
+	case float64, bool, int, int64:
+		return fmt.Sprint(typed)
+	default:
+		data, err := json.Marshal(typed)
+		if err != nil {
+			return fmt.Sprint(typed)
+		}
+		return string(data)
+	}
+}
+
+func numericNetworkValue(value any) int {
+	out, _ := numericNetworkAssertionValue(value)
+	return out
+}
+
+func numericNetworkAssertionValue(value any) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		return int(typed), true
+	case json.Number:
+		parsed, err := typed.Int64()
+		return int(parsed), err == nil
+	default:
+		return 0, false
+	}
+}
+
+func networkSnapshot(action *protocol.Action, result *protocol.Result) *protocol.ErrorSnapshot {
+	if action == nil || result == nil {
+		return nil
+	}
+	return &protocol.ErrorSnapshot{
+		RequestMethod:  action.Type,
+		RequestURL:     firstNonEmpty(result.DependencyTarget, action.Target),
+		RequestHeaders: cloneActionHeaders(action.Headers),
+		RequestBody:    string(action.Body),
+		ResponseStatus: result.StatusCode,
+		ResponseBody:   result.ResponseBody,
+	}
+}
+
+func cloneActionHeaders(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(headers))
+	for key, value := range headers {
+		out[key] = value
+	}
+	return out
 }
 
 func recordCount(value any) int {

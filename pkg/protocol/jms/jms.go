@@ -190,6 +190,7 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 		}
 		result.ErrorMessage = err.Error()
 	}
+	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 	return result, nil
 }
 

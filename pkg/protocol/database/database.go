@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jmespath/go-jmespath"
 	_ "modernc.org/sqlite"
 )
 
@@ -80,6 +82,7 @@ func (d *Database) Execute(ctx context.Context, action *protocol.Action) (*proto
 		StartTime:        start,
 		DependencyType:   "database",
 		DependencyTarget: d.driver,
+		Extractions:      make(map[string]string),
 		Success:          true,
 	}
 	if action == nil {
@@ -133,16 +136,27 @@ func (d *Database) Execute(ctx context.Context, action *protocol.Action) (*proto
 		result.StatusCode = 500
 		result.ErrorMessage = err.Error()
 	}
-	if assertionErr := evaluateDatabaseAssertions(action.Assertions, result.ResponseBody); assertionErr != "" {
+	if result.Success {
+		if extractorErr := runDatabaseExtractors(action.Extractors, result); extractorErr != "" {
+			result.Success = false
+			result.StatusCode = 500
+			result.ErrorMessage = extractorErr
+		}
+	}
+	if assertionErr := evaluateDatabaseAssertions(action.Assertions, result, result.ResponseBody); assertionErr != "" {
 		result.Success = false
 		result.StatusCode = 500
 		result.ErrorMessage = assertionErr
+	}
+	if !result.Success {
+		result.Snapshot = databaseSnapshot(action, result)
 	}
 	result.ServerTelemetry = &protocol.ServerTelemetry{
 		ServerProcessingMs: float64(result.Duration.Microseconds()) / 1000,
 		RequestPayloadKB:   float64(result.BytesSent) / 1024,
 		ResponsePayloadKB:  float64(result.BytesReceived) / 1024,
 	}
+	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 	return result, nil
 }
 
@@ -238,11 +252,18 @@ func (d *Database) query(ctx context.Context, action *protocol.Action) (string, 
 	if err := rows.Err(); err != nil {
 		return "", err
 	}
-	return encodeDatabasePayload(map[string]any{
+	payload := map[string]any{
 		"columns":   columns,
 		"row_count": len(outRows),
 		"rows":      outRows,
-	})
+	}
+	if len(outRows) > 0 {
+		payload["first_row"] = outRows[0]
+		if len(columns) > 0 {
+			payload["scalar"] = outRows[0][columns[0]]
+		}
+	}
+	return encodeDatabasePayload(payload)
 }
 
 func (d *Database) exec(ctx context.Context, action *protocol.Action) (string, error) {
@@ -356,7 +377,56 @@ func encodeDatabasePayload(value map[string]any) (string, error) {
 	return string(data), nil
 }
 
-func evaluateDatabaseAssertions(assertions []protocol.Assertion, body string) string {
+func runDatabaseExtractors(extractors []protocol.Extractor, result *protocol.Result) string {
+	if len(extractors) == 0 {
+		return ""
+	}
+	payload, err := decodeDatabasePayload(result.ResponseBody)
+	if err != nil {
+		return err.Error()
+	}
+	for _, extractor := range extractors {
+		value, err := extractDatabaseValue(extractor, payload, []byte(result.ResponseBody))
+		if err != nil {
+			return err.Error()
+		}
+		if extractor.Name != "" {
+			result.Extractions[extractor.Name] = value
+		}
+	}
+	return ""
+}
+
+func extractDatabaseValue(extractor protocol.Extractor, payload map[string]any, body []byte) (string, error) {
+	source := strings.ToLower(strings.TrimSpace(extractor.Source))
+	switch source {
+	case "", "body", "result", "rows":
+		return extractDatabaseBodyValue(extractor, body)
+	case "scalar":
+		return stringifyDatabaseExtraction(payload["scalar"]), nil
+	case "row_count", "rows_affected", "last_insert_id":
+		return stringifyDatabaseExtraction(payload[source]), nil
+	default:
+		return "", fmt.Errorf("unsupported database extraction source: %s", extractor.Source)
+	}
+}
+
+func extractDatabaseBodyValue(extractor protocol.Extractor, body []byte) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(extractor.Type)) {
+	case "", "json", "jsonpath":
+		return extractDatabaseJSONPath(extractor.Expression, body)
+	case "jmespath":
+		return extractDatabaseJMESPath(extractor.Expression, body)
+	case "regex", "regexp":
+		return extractDatabaseRegex(extractor.Expression, body)
+	case "boundary":
+		return extractDatabaseBoundary(extractor.Expression, body)
+	default:
+		return "", fmt.Errorf("unsupported database extraction type: %s", extractor.Type)
+	}
+}
+
+func evaluateDatabaseAssertions(assertions []protocol.Assertion, result *protocol.Result, body string) string {
 	if len(assertions) == 0 {
 		return ""
 	}
@@ -382,9 +452,173 @@ func evaluateDatabaseAssertions(assertions []protocol.Assertion, body string) st
 			if assertion.Max > 0 && actual > assertion.Max {
 				return fmt.Sprintf("rows_affected assertion failed: got %d, max %d", actual, assertion.Max)
 			}
+		case "scalar_equals":
+			actual := stringifyDatabaseExtraction(payload["scalar"])
+			expected := strings.TrimSpace(fmt.Sprint(assertion.Expected))
+			if actual != expected {
+				return fmt.Sprintf("scalar_equals assertion failed: got %q, want %q", actual, expected)
+			}
+		case "body_contains":
+			if !strings.Contains(body, assertion.Value) {
+				return fmt.Sprintf("body_contains assertion failed: %q not found", assertion.Value)
+			}
+		case "body_not_contains":
+			if strings.Contains(body, assertion.Value) {
+				return fmt.Sprintf("body_not_contains assertion failed: %q found", assertion.Value)
+			}
+		case "response_time_ms":
+			if assertion.Max > 0 && result != nil && result.Duration > time.Duration(assertion.Max)*time.Millisecond {
+				return fmt.Sprintf("response_time_ms assertion failed: got %.1f ms, max %d", float64(result.Duration.Microseconds())/1000, assertion.Max)
+			}
 		}
 	}
 	return ""
+}
+
+func decodeDatabasePayload(body string) (map[string]any, error) {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		return nil, fmt.Errorf("decode database response: %w", err)
+	}
+	return payload, nil
+}
+
+func extractDatabaseJSONPath(expr string, body []byte) (string, error) {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return "", fmt.Errorf("jsonpath expression is required")
+	}
+	expr = strings.TrimPrefix(expr, "$.")
+	expr = strings.TrimPrefix(expr, "$")
+	var current any
+	if err := json.Unmarshal(body, &current); err != nil {
+		return "", err
+	}
+	if expr == "" {
+		return stringifyDatabaseExtraction(current), nil
+	}
+	for _, part := range strings.Split(expr, ".") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		key, indexes := splitDatabasePathToken(part)
+		if key != "" {
+			object, ok := current.(map[string]any)
+			if !ok {
+				return "", fmt.Errorf("jsonpath %q expected object", expr)
+			}
+			next, ok := object[key]
+			if !ok {
+				return "", fmt.Errorf("jsonpath %q not found", expr)
+			}
+			current = next
+		}
+		for _, index := range indexes {
+			items, ok := current.([]any)
+			if !ok || index < 0 || index >= len(items) {
+				return "", fmt.Errorf("jsonpath %q index out of range", expr)
+			}
+			current = items[index]
+		}
+	}
+	return stringifyDatabaseExtraction(current), nil
+}
+
+func splitDatabasePathToken(token string) (string, []int) {
+	key := token
+	indexes := []int{}
+	if bracket := strings.Index(token, "["); bracket >= 0 {
+		key = token[:bracket]
+		rest := token[bracket:]
+		for strings.HasPrefix(rest, "[") {
+			end := strings.Index(rest, "]")
+			if end <= 1 {
+				break
+			}
+			var index int
+			if _, err := fmt.Sscanf(rest[1:end], "%d", &index); err == nil {
+				indexes = append(indexes, index)
+			}
+			rest = rest[end+1:]
+		}
+	}
+	return key, indexes
+}
+
+func extractDatabaseJMESPath(expr string, body []byte) (string, error) {
+	var current any
+	if err := json.Unmarshal(body, &current); err != nil {
+		return "", err
+	}
+	value, err := jmespath.Search(expr, current)
+	if err != nil {
+		return "", err
+	}
+	return stringifyDatabaseExtraction(value), nil
+}
+
+func extractDatabaseRegex(expr string, body []byte) (string, error) {
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		return "", err
+	}
+	match := re.FindSubmatch(body)
+	if len(match) == 0 {
+		return "", fmt.Errorf("regex %q not found", expr)
+	}
+	if len(match) > 1 {
+		return string(match[1]), nil
+	}
+	return string(match[0]), nil
+}
+
+func extractDatabaseBoundary(expr string, body []byte) (string, error) {
+	parts := strings.Split(expr, "|||")
+	if len(parts) != 2 {
+		return "", fmt.Errorf("boundary expression must be left|||right")
+	}
+	text := string(body)
+	start := strings.Index(text, parts[0])
+	if start < 0 {
+		return "", fmt.Errorf("left boundary not found")
+	}
+	start += len(parts[0])
+	end := strings.Index(text[start:], parts[1])
+	if end < 0 {
+		return "", fmt.Errorf("right boundary not found")
+	}
+	return text[start : start+end], nil
+}
+
+func stringifyDatabaseExtraction(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return typed
+	case float64, bool, int, int64:
+		return fmt.Sprint(typed)
+	default:
+		data, err := json.Marshal(typed)
+		if err != nil {
+			return fmt.Sprint(typed)
+		}
+		return string(data)
+	}
+}
+
+func databaseSnapshot(action *protocol.Action, result *protocol.Result) *protocol.ErrorSnapshot {
+	if action == nil || result == nil {
+		return nil
+	}
+	return &protocol.ErrorSnapshot{
+		RequestMethod:  action.Type,
+		RequestURL:     sqlText(action),
+		RequestBody:    string(action.Body),
+		ResponseStatus: result.StatusCode,
+		ResponseBody:   result.ResponseBody,
+	}
 }
 
 func numericPayloadValue(payload map[string]any, key string) int {

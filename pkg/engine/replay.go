@@ -111,6 +111,7 @@ type ReplayActionEvent struct {
 	Network           []protocol.NetworkEntry  `json:"network_entries,omitempty"`
 	DOMSummary        *protocol.DOMSummary     `json:"dom_summary,omitempty"`
 	ClientMetrics     *protocol.ClientMetrics  `json:"client_metrics,omitempty"`
+	ProtocolEvidence  map[string]any           `json:"protocol_evidence,omitempty"`
 	Snapshot          *protocol.ErrorSnapshot  `json:"snapshot,omitempty"`
 	SourceStepID      string                   `json:"source_step_id,omitempty"`
 	SourceStepIndex   int                      `json:"source_step_index,omitempty"`
@@ -134,19 +135,20 @@ type ReplayRuntimeProfile struct {
 }
 
 type ReplayArtifactManifest struct {
-	ReplayID        string               `json:"replay_id,omitempty"`
-	ScriptHash      string               `json:"script_hash,omitempty"`
-	ScriptRevision  string               `json:"script_revision,omitempty"`
-	CreatedAt       time.Time            `json:"created_at,omitempty"`
-	RuntimeProfile  ReplayRuntimeProfile `json:"runtime_profile,omitempty"`
-	DataSources     []string             `json:"data_sources,omitempty"`
-	SeedVariables   []string             `json:"seed_variables,omitempty"`
-	Screenshots     int                  `json:"screenshots"`
-	NetworkEntries  int                  `json:"network_entries"`
-	ConsoleEntries  int                  `json:"console_entries"`
-	Snapshots       int                  `json:"snapshots"`
-	HTMLCaptured    bool                 `json:"html_captured,omitempty"`
-	BrowserEvidence bool                 `json:"browser_evidence,omitempty"`
+	ReplayID          string               `json:"replay_id,omitempty"`
+	ScriptHash        string               `json:"script_hash,omitempty"`
+	ScriptRevision    string               `json:"script_revision,omitempty"`
+	CreatedAt         time.Time            `json:"created_at,omitempty"`
+	RuntimeProfile    ReplayRuntimeProfile `json:"runtime_profile,omitempty"`
+	DataSources       []string             `json:"data_sources,omitempty"`
+	SeedVariables     []string             `json:"seed_variables,omitempty"`
+	Screenshots       int                  `json:"screenshots"`
+	NetworkEntries    int                  `json:"network_entries"`
+	ConsoleEntries    int                  `json:"console_entries"`
+	Snapshots         int                  `json:"snapshots"`
+	ProtocolArtifacts map[string]int       `json:"protocol_artifacts,omitempty"`
+	HTMLCaptured      bool                 `json:"html_captured,omitempty"`
+	BrowserEvidence   bool                 `json:"browser_evidence,omitempty"`
 }
 
 type ReplayDiagnosis struct {
@@ -436,6 +438,14 @@ func runReplayAction(
 		if event.ErrorMessage == "" {
 			event.ErrorMessage = fmt.Sprintf("%s %q failed", phase, action.Name)
 		}
+		event.ProtocolEvidence = protocol.BuildProtocolEvidence(resolved, &protocol.Result{
+			ActionName:     action.Name,
+			StartTime:      start,
+			Duration:       completedAt.Sub(start),
+			Success:        false,
+			ErrorMessage:   event.ErrorMessage,
+			DependencyType: inferReplayDependencyType(resolved),
+		})
 		attachReplayDiagnosis(&event)
 		return event, false
 	}
@@ -460,6 +470,10 @@ func runReplayAction(
 	event.Network = cloneNetworkEntries(result.NetworkEntries)
 	event.DOMSummary = cloneDOMSummary(result.DOMSummary)
 	event.ClientMetrics = cloneClientMetrics(result.ClientMetrics)
+	event.ProtocolEvidence = cloneAnyMap(result.ProtocolEvidence)
+	if len(event.ProtocolEvidence) == 0 {
+		event.ProtocolEvidence = protocol.BuildProtocolEvidence(resolved, result)
+	}
 	event.Snapshot = result.Snapshot
 	if result.Duration > 0 {
 		event.DurationMs = float64(result.Duration.Microseconds()) / 1000
@@ -635,6 +649,12 @@ func buildReplayArtifactManifest(
 		if event.PageURL != "" || event.PageTitle != "" || event.DOMSummary != nil || len(event.Console) > 0 || len(event.Network) > 0 || event.Screenshot != "" {
 			manifest.BrowserEvidence = true
 		}
+		if protocolName, ok := event.ProtocolEvidence["protocol"].(string); ok && strings.TrimSpace(protocolName) != "" {
+			if manifest.ProtocolArtifacts == nil {
+				manifest.ProtocolArtifacts = make(map[string]int)
+			}
+			manifest.ProtocolArtifacts[protocolName]++
+		}
 	}
 	return manifest
 }
@@ -720,6 +740,51 @@ func classifyReplayFailure(event ReplayActionEvent) ReplayDiagnosis {
 	case isBrowserAction && containsAny(lower, "timeout", "timed out", "wait", "navigation"):
 		category = "wait_timing"
 		addSignal("browser_wait")
+	case strings.HasPrefix(strings.ToLower(event.ActionType), "ws_") && containsAny(lower, "handshake", "bad status", "upgrade"):
+		category = "websocket_handshake"
+		addSignal("websocket_handshake")
+	case strings.HasPrefix(strings.ToLower(event.ActionType), "ws_") && containsAny(lower, "timeout", "deadline", "message does not contain"):
+		category = "websocket_receive_timeout"
+		addSignal("websocket_message")
+	case strings.HasPrefix(strings.ToLower(event.ActionType), "grpc_") && containsAny(lower, "reflection", "proto", "descriptor", "method", "service"):
+		category = "grpc_contract"
+		addSignal("grpc_contract")
+	case strings.HasPrefix(strings.ToLower(event.ActionType), "grpc_") && containsAny(lower, "code =", "status", "rpc error", "metadata", "authority", "deadline"):
+		category = "grpc_status"
+		addSignal("grpc_status")
+	case strings.HasPrefix(strings.ToLower(event.ActionType), "db_") || strings.HasPrefix(strings.ToLower(event.ActionType), "database_"):
+		switch {
+		case containsAny(lower, "dsn", "driver", "connect", "ping", "secret"):
+			category = "database_connection"
+			addSignal("database_connection")
+		case containsAny(lower, "read_only", "read only", "mutation"):
+			category = "database_guard"
+			addSignal("database_guard")
+		case containsAny(lower, "syntax", "sql", "query", "exec", "constraint"):
+			category = "database_sql"
+			addSignal("database_sql")
+		default:
+			category = "database_runtime"
+			addSignal("database")
+		}
+	case strings.HasPrefix(strings.ToLower(event.ActionType), "dns_") || strings.HasPrefix(strings.ToLower(event.ActionType), "tcp_") || strings.HasPrefix(strings.ToLower(event.ActionType), "udp_") || strings.HasPrefix(strings.ToLower(event.ActionType), "ftp_") || strings.HasPrefix(strings.ToLower(event.ActionType), "smtp_") || strings.HasPrefix(strings.ToLower(event.ActionType), "pop3_") || strings.HasPrefix(strings.ToLower(event.ActionType), "imap_") || strings.HasPrefix(strings.ToLower(event.ActionType), "ldap_") || strings.HasPrefix(strings.ToLower(event.ActionType), "winsock_"):
+		switch {
+		case containsAny(lower, "dns", "no such host", "lookup"):
+			category = "network_dns_resolution"
+			addSignal("dns")
+		case containsAny(lower, "tls", "certificate", "auth", "login", "bind"):
+			category = "network_auth_tls"
+			addSignal("network_auth_tls")
+		case containsAny(lower, "timeout", "deadline", "connection refused", "reset by peer"):
+			category = "network_connection"
+			addSignal("network_connection")
+		default:
+			category = "network_protocol"
+			addSignal("network_protocol")
+		}
+	case strings.HasPrefix(strings.ToLower(event.ActionType), "jms_") && containsAny(lower, "broker", "destination", "message received", "timeout", "dead_letter", "correlation", "ack"):
+		category = "jms_broker_message"
+		addSignal("jms")
 	case containsAny(lower, "assert", "expected", "mismatch", "check failed"):
 		category = "assertion"
 		addSignal("assertion")
@@ -773,6 +838,27 @@ func containsAny(value string, needles ...string) bool {
 	return false
 }
 
+func inferReplayDependencyType(action *protocol.Action) string {
+	if action == nil {
+		return ""
+	}
+	actionType := strings.ToLower(strings.TrimSpace(action.Type))
+	switch {
+	case strings.HasPrefix(actionType, "ws_"):
+		return "websocket"
+	case strings.HasPrefix(actionType, "grpc_"):
+		return "grpc"
+	case strings.HasPrefix(actionType, "db_") || strings.HasPrefix(actionType, "database_"):
+		return "database"
+	case strings.HasPrefix(actionType, "dns_"), strings.HasPrefix(actionType, "tcp_"), strings.HasPrefix(actionType, "udp_"), strings.HasPrefix(actionType, "ftp_"), strings.HasPrefix(actionType, "smtp_"), strings.HasPrefix(actionType, "pop3_"), strings.HasPrefix(actionType, "imap_"), strings.HasPrefix(actionType, "ldap_"), strings.HasPrefix(actionType, "winsock_"):
+		return "network"
+	case strings.HasPrefix(actionType, "jms_"):
+		return "jms_queue"
+	default:
+		return ""
+	}
+}
+
 func replayDiagnosisEvidence(event ReplayActionEvent, category string) string {
 	switch category {
 	case "selector":
@@ -791,6 +877,32 @@ func replayDiagnosisEvidence(event ReplayActionEvent, category string) string {
 		return "The protocol reported a transport or server-side availability failure."
 	case "protocol":
 		return "The protocol/runtime could not complete the action using the current script shape."
+	case "websocket_handshake":
+		return "The WebSocket connection did not complete the HTTP upgrade/handshake."
+	case "websocket_receive_timeout":
+		return "The WebSocket receive step timed out or received a message that did not match expectations."
+	case "grpc_contract":
+		return "The gRPC method, reflection data, or proto contract could not be resolved."
+	case "grpc_status":
+		return "The gRPC call returned a non-OK status or metadata/timeout failure."
+	case "database_connection":
+		return "The database adapter could not establish or validate the configured connection."
+	case "database_sql":
+		return "The SQL action failed during query, exec, constraint, or syntax processing."
+	case "database_guard":
+		return "A database safety guard blocked a mutating operation."
+	case "database_runtime":
+		return "The database action failed before producing approved result evidence."
+	case "network_dns_resolution":
+		return "The network adapter could not resolve the requested DNS target."
+	case "network_connection":
+		return "The network adapter could not establish or sustain the requested connection."
+	case "network_auth_tls":
+		return "The network adapter reported TLS, bind, login, or protocol authentication failure."
+	case "network_protocol":
+		return "The network protocol command failed or returned an unexpected response."
+	case "jms_broker_message":
+		return "The JMS adapter reported broker, destination, correlation, acknowledgement, timeout, or dead-letter evidence."
 	}
 	if event.StatusCode != 0 {
 		return fmt.Sprintf("Protocol status: %d", event.StatusCode)
@@ -816,6 +928,32 @@ func replayDiagnosisAction(category string) string {
 		return "Confirm target reachability, TLS, DNS, redirects, and environment-specific network controls."
 	case "protocol":
 		return "Inspect the protocol adapter and action fields for unsupported or malformed runtime input."
+	case "websocket_handshake":
+		return "Check endpoint URL, TLS, headers, origin, and subprotocol before rerunning the WebSocket connect step."
+	case "websocket_receive_timeout":
+		return "Tune receive timeout or match criteria, then verify the upstream event is published before this step waits."
+	case "grpc_contract":
+		return "Attach the correct proto files or enable reflection, then confirm the service/method path."
+	case "grpc_status":
+		return "Inspect gRPC status, metadata, authority, TLS/plaintext mode, and deadline settings."
+	case "database_connection":
+		return "Verify driver, DSN secret binding, network route, and fixture readiness before replay."
+	case "database_sql":
+		return "Review SQL text, bind values, fixture data, and row/affected-count assertions."
+	case "database_guard":
+		return "Move write-capable checks to an approved fixture or disable read-only mode only after review."
+	case "database_runtime":
+		return "Inspect query output, transaction state, and database evidence before drafting a repair."
+	case "network_dns_resolution":
+		return "Confirm DNS record type, resolver access, host spelling, and test-network policy."
+	case "network_connection":
+		return "Check endpoint, port, TLS mode, timeout, and local protocol fixture availability."
+	case "network_auth_tls":
+		return "Review TLS certificates, bind/login credentials, and protocol-specific authentication commands."
+	case "network_protocol":
+		return "Inspect the protocol transcript and adjust command, payload, or expected response."
+	case "jms_broker_message":
+		return "Verify broker settings, destination, reply-to, correlation ID, ack mode, and dead-letter routing."
 	default:
 		return "Inspect the raw log and action snapshot, then rerun with debug trace capture."
 	}
@@ -894,6 +1032,56 @@ func replayRepairSuggestionsForDiagnosis(event ReplayActionEvent, diagnosis Repl
 			DraftPatchType: "repair_auth_session",
 			Action:         event.ActionName,
 			Confidence:     0.58,
+		}}
+	case "websocket_handshake", "websocket_receive_timeout":
+		return []ReplayRepairSuggestion{{
+			ID:             baseID + ":tune-websocket",
+			Title:          "Tune WebSocket evidence",
+			Description:    "Draft a WebSocket repair for URL, headers, subprotocol, receive timeout, or message match criteria.",
+			DraftPatchType: "repair_websocket",
+			Action:         event.ActionName,
+			Confidence:     0.61,
+			Fields:         map[string]string{"target": event.Target},
+		}}
+	case "grpc_contract", "grpc_status":
+		return []ReplayRepairSuggestion{{
+			ID:             baseID + ":repair-grpc",
+			Title:          "Repair gRPC call shape",
+			Description:    "Draft a gRPC edit for proto/reflection, method target, metadata, TLS/plaintext mode, or deadline settings.",
+			DraftPatchType: "repair_grpc",
+			Action:         event.ActionName,
+			Confidence:     0.60,
+			Fields:         map[string]string{"target": event.Target},
+		}}
+	case "database_connection", "database_sql", "database_guard", "database_runtime":
+		return []ReplayRepairSuggestion{{
+			ID:             baseID + ":repair-database",
+			Title:          "Repair database action",
+			Description:    "Draft a database edit for DSN readiness, bind values, SQL text, read-only policy, or row assertions.",
+			DraftPatchType: "repair_database",
+			Action:         event.ActionName,
+			Confidence:     0.63,
+			Fields:         map[string]string{"target": event.Target},
+		}}
+	case "network_dns_resolution", "network_connection", "network_auth_tls", "network_protocol":
+		return []ReplayRepairSuggestion{{
+			ID:             baseID + ":repair-network",
+			Title:          "Repair network protocol step",
+			Description:    "Draft a network edit for endpoint, port, TLS/auth, protocol command, timeout, or response assertion.",
+			DraftPatchType: "repair_network",
+			Action:         event.ActionName,
+			Confidence:     0.59,
+			Fields:         map[string]string{"target": event.Target},
+		}}
+	case "jms_broker_message":
+		return []ReplayRepairSuggestion{{
+			ID:             baseID + ":repair-jms",
+			Title:          "Repair JMS message flow",
+			Description:    "Draft a JMS edit for broker settings, destination, reply-to, correlation ID, timeout, acknowledgement, or dead-letter routing.",
+			DraftPatchType: "repair_jms",
+			Action:         event.ActionName,
+			Confidence:     0.60,
+			Fields:         map[string]string{"target": event.Target},
 		}}
 	default:
 		return []ReplayRepairSuggestion{{
@@ -1052,6 +1240,17 @@ func cloneStringMap(input map[string]string) map[string]string {
 	return cloned
 }
 
+func cloneAnyMap(input map[string]any) map[string]any {
+	if len(input) == 0 {
+		return nil
+	}
+	cloned := make(map[string]any, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
+}
+
 func cloneReplayDebugAction(action ReplayDebugAction) *ReplayDebugAction {
 	cloned := action
 	return &cloned
@@ -1065,6 +1264,7 @@ func cloneReplayActionEvent(event ReplayActionEvent) *ReplayActionEvent {
 	cloned.Network = cloneNetworkEntries(event.Network)
 	cloned.DOMSummary = cloneDOMSummary(event.DOMSummary)
 	cloned.ClientMetrics = cloneClientMetrics(event.ClientMetrics)
+	cloned.ProtocolEvidence = cloneAnyMap(event.ProtocolEvidence)
 	cloned.Diagnosis = cloneReplayDiagnosis(event.Diagnosis)
 	cloned.RepairSuggestions = cloneReplayRepairSuggestions(event.RepairSuggestions)
 	if event.Snapshot != nil {
@@ -1133,6 +1333,12 @@ func cloneReplayArtifactManifest(manifest *ReplayArtifactManifest) *ReplayArtifa
 	}
 	if len(manifest.SeedVariables) > 0 {
 		cloned.SeedVariables = append([]string(nil), manifest.SeedVariables...)
+	}
+	if len(manifest.ProtocolArtifacts) > 0 {
+		cloned.ProtocolArtifacts = make(map[string]int, len(manifest.ProtocolArtifacts))
+		for key, value := range manifest.ProtocolArtifacts {
+			cloned.ProtocolArtifacts[key] = value
+		}
 	}
 	return &cloned
 }

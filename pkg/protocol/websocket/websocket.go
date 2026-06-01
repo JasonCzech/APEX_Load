@@ -98,9 +98,11 @@ func (w *WebSocket) Execute(ctx context.Context, action *protocol.Action) (*prot
 		result.Success = false
 		result.ErrorMessage = err.Error()
 		result.Snapshot = w.buildSnapshot(action, result)
+		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 		return result, nil
 	}
 	result.Success = true
+	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 	return result, nil
 }
 

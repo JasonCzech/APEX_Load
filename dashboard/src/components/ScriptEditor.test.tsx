@@ -3374,6 +3374,100 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('SOAPAction')
   })
 
+  it('renders native protocol editors and runtime settings without HTTP fallback panels', async () => {
+    const databaseScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'database',
+      config: {
+        ...initialScript.config,
+        database: {
+          driver: 'sqlite',
+          dsn: ':memory:',
+          query_timeout_ms: 30000,
+          max_rows: 25,
+          read_only: true,
+          rollback_on_teardown: true,
+        },
+      },
+      actions: [{
+        name: 'Lookup_User',
+        type: 'db_query',
+        target: 'select name from users where id = ?',
+        params: { binds: ['{{param.user_id}}'] },
+        headers: {},
+        body: '',
+        extractors: [{ name: 'user_name', source: 'body', type: 'jsonpath', expression: '$.rows[0].name' }],
+        assertions: [{ type: 'row_count', expected: 1 }, { type: 'scalar_equals', expected: 'Ada' }],
+      }],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={databaseScript} initialFocusedActionName="Lookup_User" />)
+    })
+
+    expect(container.textContent).toContain('Database scripts model secret-backed DSNs')
+    expect(container.textContent).toContain('SQL And Binds')
+    expect(container.textContent).toContain('Bind Parameters')
+    expect(container.textContent).toContain('Scalar Equals')
+
+    const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
+    expect(runtimeToggle).toBeDefined()
+    if (!runtimeToggle) return
+
+    await act(async () => {
+      runtimeToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const databaseToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Database Runtime'))
+    expect(databaseToggle).toBeDefined()
+    if (!databaseToggle) return
+
+    await act(async () => {
+      databaseToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Query Timeout (ms)')
+    expect(container.textContent).toContain('Read-only guard')
+    expect(container.textContent).not.toContain('HTTP Transport')
+  })
+
+  it('renders network protocol controls and protocol-specific assertion choices', async () => {
+    const networkScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'network',
+      config: {
+        ...initialScript.config,
+        network: {
+          subprotocol: 'tcp',
+          host: 'localhost',
+          port: 8080,
+          timeout_ms: 30000,
+          tls: false,
+        },
+      },
+      actions: [{
+        name: 'TCP_Check',
+        type: 'tcp_request',
+        target: 'localhost:8080',
+        headers: {},
+        body: 'ping',
+        params: { read: true, read_bytes: 4096 },
+        extractors: [{ name: 'tcp_response', source: 'response', type: 'jsonpath', expression: '$.response' }],
+        assertions: [{ type: 'body_contains', value: 'pong' }],
+      }],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={networkScript} initialFocusedActionName="TCP_Check" />)
+    })
+
+    expect(container.textContent).toContain('Network scripts model DNS, TCP, UDP')
+    expect(container.textContent).toContain('Protocol Controls')
+    expect(container.textContent).toContain('Read response')
+    expect(container.textContent).toContain('Transcript Contains')
+    expect(container.textContent).not.toContain('HTTP Transport')
+  })
+
   it('updates the default SOAP envelope namespace when the version changes and saves it', async () => {
     const soapScript: ScriptDefinition = {
       ...initialScript,
@@ -3823,6 +3917,91 @@ describe('ScriptEditor', () => {
     expect(container.querySelectorAll('.snapshot-code-token-key').length).toBeGreaterThan(0)
     expect(container.textContent).toContain('env:Body')
     expect(container.textContent).toContain('env:Fault')
+  })
+
+  it('renders native protocol replay evidence blocks', async () => {
+    const databaseScript: ScriptDefinition = {
+      ...initialScript,
+      name: 'Database Replay',
+      protocol: 'database',
+      config: {
+        ...initialScript.config,
+        database: {
+          driver: 'sqlite',
+          dsn: ':memory:',
+          query_timeout_ms: 30000,
+          max_rows: 10,
+        },
+      },
+      actions: [{
+        name: 'Lookup_User',
+        type: 'db_query',
+        target: 'select name from users',
+        headers: {},
+        body: '',
+        extractors: [],
+        assertions: [{ type: 'row_count', expected: 1 }],
+      }],
+    }
+
+    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+      group: 'Database Replay-debug',
+      protocol: 'database',
+      started_at: '2026-05-14T20:00:00Z',
+      completed_at: '2026-05-14T20:00:01Z',
+      success: false,
+      error: 'row_count assertion failed',
+      events: [{
+        phase: 'action',
+        action_name: 'Lookup_User',
+        action_type: 'db_query',
+        target: 'select name from users',
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:01Z',
+        duration_ms: 12,
+        status_code: 500,
+        success: false,
+        error_message: 'row_count assertion failed',
+        protocol_evidence: {
+          protocol: 'database',
+          operation: 'db_query',
+          target: 'sqlite',
+          status: 'failed',
+          rows: {
+            row_count: 0,
+            rows: [],
+          },
+          metadata: {
+            error: 'row_count assertion failed',
+          },
+        },
+      }],
+    }))
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={databaseScript} />)
+    })
+
+    const replayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Replay')
+    expect(replayButton).toBeDefined()
+    if (!replayButton) return
+
+    await act(async () => {
+      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    if (!container.textContent?.includes('Protocol Evidence')) {
+      const replayEventHeader = container.querySelector('.replay-event-header')
+      await act(async () => {
+        replayEventHeader?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+    }
+
+    expect(container.textContent).toContain('Protocol Evidence')
+    expect(container.textContent).toContain('database / db_query / failed / sqlite')
+    expect(container.textContent).toContain('row_count')
+    expect(container.textContent).toContain('row_count assertion failed')
   })
 
   it('renders browser replay DOM summary and fallback snapshot with highlighted JSON previews', async () => {

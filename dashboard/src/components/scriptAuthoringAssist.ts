@@ -120,7 +120,20 @@ function actionNeedsExplicitTarget(action: ScriptActionDefinition): boolean {
   if (action.type.startsWith('browser_')) {
     return action.type !== 'browser_screenshot'
   }
-  return !['jms_ack', 'jms_commit', 'jms_rollback'].includes(action.type)
+  return ![
+    'jms_ack',
+    'jms_commit',
+    'jms_rollback',
+    'db_begin',
+    'db_commit',
+    'db_rollback',
+    'db_health',
+    'database_begin',
+    'database_commit',
+    'database_rollback',
+    'database_health',
+    'network_health',
+  ].includes(action.type)
 }
 
 function deepMerge(base: Record<string, unknown>, patch?: Record<string, unknown>): Record<string, unknown> {
@@ -518,6 +531,48 @@ export function buildProtocolStarterTemplates(protocol: string, nextIndex: numbe
           label: 'Bidirectional Stream',
           description: 'Seed a bidirectional streaming call with one JSON message.',
           action: { name: `gRPC_Stream_${sequence}`, type: 'grpc_bidi_stream', target: 'package.Service/Stream', body: '', headers: {}, params: { max_messages: 1, messages: ['{}'] }, extractors: [], assertions: [{ type: 'grpc_status', expected: 0 }], think_time_after: true },
+        },
+      ]
+    case 'database':
+      return [
+        {
+          key: 'database-query',
+          label: 'Query Rows',
+          description: 'Run a parameterized SELECT and capture row/scalar evidence.',
+          action: { name: `DB_Query_${sequence}`, type: 'db_query', target: 'select id, name from users where id = ?', body: '', headers: {}, params: { binds: ['{{param.user_id}}'], max_rows: 10 }, extractors: [{ name: 'first_name', source: 'body', type: 'jsonpath', expression: '$.rows[0].name' }], assertions: [{ type: 'row_count', expected: 1 }], think_time_after: true },
+        },
+        {
+          key: 'database-transaction',
+          label: 'Transaction Block',
+          description: 'Seed a transaction boundary that can wrap later query/exec actions.',
+          action: { name: `DB_Begin_${sequence}`, type: 'db_begin', target: '', headers: {}, params: {}, extractors: [], assertions: [], think_time_after: true },
+        },
+        {
+          key: 'database-exec',
+          label: 'Exec Statement',
+          description: 'Execute a write with bind parameters and affected-row checks.',
+          action: { name: `DB_Exec_${sequence}`, type: 'db_exec', target: 'update users set last_seen = current_timestamp where id = ?', body: '', headers: {}, params: { binds: ['{{param.user_id}}'] }, extractors: [], assertions: [{ type: 'rows_affected', expected: 1 }], think_time_after: true },
+        },
+      ]
+    case 'network':
+      return [
+        {
+          key: 'network-dns',
+          label: 'DNS Lookup',
+          description: 'Resolve a deterministic host and retain record evidence.',
+          action: { name: `DNS_Query_${sequence}`, type: 'dns_query', target: 'localhost', headers: {}, params: { record_type: 'A' }, extractors: [{ name: 'record_count', source: 'record_count', type: 'jsonpath', expression: '$.record_count' }], assertions: [{ type: 'record_count', expected: 1 }], think_time_after: true },
+        },
+        {
+          key: 'network-tcp',
+          label: 'TCP Request',
+          description: 'Send bytes to an endpoint and capture the response transcript.',
+          action: { name: `TCP_Request_${sequence}`, type: 'tcp_request', target: 'localhost:8080', body: 'ping', headers: {}, params: { read: true, read_bytes: 4096 }, extractors: [{ name: 'tcp_response', source: 'response', type: 'jsonpath', expression: '$.response' }], assertions: [{ type: 'body_contains', value: 'pong' }], think_time_after: true },
+        },
+        {
+          key: 'network-ftp',
+          label: 'FTP Command',
+          description: 'Run a protocol command and preserve command/response evidence.',
+          action: { name: `FTP_Command_${sequence}`, type: 'ftp_command', target: 'localhost:21', body: 'NOOP', headers: {}, params: {}, extractors: [], assertions: [{ type: 'body_contains', value: 'ok' }], think_time_after: true },
         },
       ]
     case 'https':

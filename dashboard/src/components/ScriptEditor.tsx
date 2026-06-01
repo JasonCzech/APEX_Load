@@ -13,6 +13,7 @@ import {
   ScriptDebugLogLevel,
   ScriptDebugSession,
   BrowserReplaySnapshot,
+  type ProtocolEvidence,
   type AuthoringComponent,
   StoredScript,
   WSMessage,
@@ -58,11 +59,15 @@ import { createZipBlob, downloadBlob, type ZipFileEntry } from '../utils/fileUti
 import {
   EMPTY_ACTION,
   EMPTY_BROWSER_ACTION,
+  EMPTY_DATABASE_ACTION,
+  EMPTY_GRPC_ACTION,
   EMPTY_DATA_SOURCE,
   EMPTY_JMS_ACTION,
+  EMPTY_NETWORK_ACTION,
   EMPTY_PARAMETER,
   EMPTY_SCRIPT,
   EMPTY_SOAP_ACTION,
+  EMPTY_WEBSOCKET_ACTION,
   buildReplayStartPayload,
   buildReplayVariableDiffs,
   cloneDataSource,
@@ -129,6 +134,51 @@ const AUTHORING_COMPONENT_GROUPS = [
 
 const WEBKIT_INSTALL_ADVISORY = 'WebKit execution requires Playwright WebKit assets installed on the controller host. Run go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install webkit before running browser tests or replay sessions.'
 const DEBUG_LOG_LEVELS: ScriptDebugLogLevel[] = ['error', 'warn', 'info', 'debug', 'trace']
+
+function defaultExtractorForProtocol(protocol: string) {
+  switch (protocol) {
+    case 'database':
+      return { name: '', source: 'body', type: 'jsonpath', expression: '$.rows[0].id' }
+    case 'network':
+      return { name: '', source: 'body', type: 'jsonpath', expression: '$.response' }
+    case 'grpc':
+      return { name: '', source: 'body', type: 'jsonpath', expression: '$.id' }
+    case 'jms-solace':
+      return { name: '', source: 'body', type: 'jsonpath', expression: '$.id' }
+    case 'websocket':
+      return { name: '', source: 'body', type: 'jsonpath', expression: '$.id' }
+    default:
+      return { name: '', source: 'body', type: 'jsonpath', expression: '$.data.id' }
+  }
+}
+
+function defaultAssertionForProtocol(protocol: string) {
+  switch (protocol) {
+    case 'database':
+      return { type: 'row_count', expected: 1 }
+    case 'network':
+      return { type: 'body_contains', value: '' }
+    case 'grpc':
+      return { type: 'grpc_status', expected: 0 }
+    case 'jms-solace':
+      return { type: 'message_received' }
+    case 'websocket':
+      return { type: 'message_received' }
+    default:
+      return { type: 'status_code', expected: 200 }
+  }
+}
+
+function formatProtocolEvidenceSummary(evidence?: ProtocolEvidence): string {
+  if (!evidence) return ''
+  const parts = [
+    evidence.protocol,
+    evidence.operation,
+    evidence.status,
+    evidence.target,
+  ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+  return parts.join(' / ')
+}
 
 function lookupBrowserDeviceProfile(name?: string) {
   return BROWSER_DEVICE_PROFILES.find(profile => profile.name === name)
@@ -1096,6 +1146,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const isJmsScript = script.protocol === 'jms-solace'
   const isJavaHttpScript = script.protocol === 'java_http'
   const isSoapScript = script.protocol === 'soap'
+  const isWebSocketScript = script.protocol === 'websocket'
+  const isGrpcScript = script.protocol === 'grpc'
+  const isDatabaseScript = script.protocol === 'database'
+  const isNetworkScript = script.protocol === 'network'
+  const isHttpTransportScript = isHttpScript || script.protocol === 'https' || isJavaHttpScript || isSoapScript || isBrowserScript
   const httpProxyMode = script.config.http?.proxy_mode || 'none'
   const httpProxySummary = httpProxyMode === 'system'
     ? 'System proxy'
@@ -1892,7 +1947,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           reconnect: next.config.websocket?.reconnect ?? true,
         }
         if (next.actions.length === 0) {
-          next.actions = [{ ...JSON.parse(JSON.stringify(EMPTY_ACTION)), name: 'Connect_WebSocket', type: 'ws_connect', target: '/ws' }]
+          next.actions = [{ ...JSON.parse(JSON.stringify(EMPTY_WEBSOCKET_ACTION)), name: 'Connect_WebSocket' }]
           shouldSelectFirstAction = true
         }
       }
@@ -1906,7 +1961,44 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           authority: next.config.grpc?.authority || '',
         }
         if (next.actions.length === 0) {
-          next.actions = [{ ...JSON.parse(JSON.stringify(EMPTY_ACTION)), name: 'Unary_Call', type: 'grpc_unary', target: 'package.Service/Method', body: '{}' }]
+          next.actions = [{ ...JSON.parse(JSON.stringify(EMPTY_GRPC_ACTION)), name: 'Unary_Call' }]
+          shouldSelectFirstAction = true
+        }
+      }
+      if (protocol === 'database') {
+        next.config.database = {
+          driver: next.config.database?.driver || 'sqlite',
+          dsn: next.config.database?.dsn || ':memory:',
+          dsn_secret: next.config.database?.dsn_secret || '',
+          query_timeout_ms: next.config.database?.query_timeout_ms || 30000,
+          max_open_conns: next.config.database?.max_open_conns || 1,
+          max_idle_conns: next.config.database?.max_idle_conns,
+          conn_max_lifetime_ms: next.config.database?.conn_max_lifetime_ms,
+          max_rows: next.config.database?.max_rows || 100,
+          read_only: next.config.database?.read_only ?? true,
+          rollback_on_teardown: next.config.database?.rollback_on_teardown ?? true,
+        }
+        if (next.actions.length === 0) {
+          next.actions = [{ ...JSON.parse(JSON.stringify(EMPTY_DATABASE_ACTION)), name: 'Query_Database' }]
+          shouldSelectFirstAction = true
+        }
+      }
+      if (protocol === 'network') {
+        next.config.network = {
+          subprotocol: next.config.network?.subprotocol || 'tcp',
+          host: next.config.network?.host || 'localhost',
+          address: next.config.network?.address || '',
+          port: next.config.network?.port || 80,
+          timeout_ms: next.config.network?.timeout_ms || 30000,
+          tls: next.config.network?.tls ?? false,
+          username: next.config.network?.username || '',
+          password: next.config.network?.password || '',
+          from: next.config.network?.from || '',
+          to: next.config.network?.to || [],
+          base_dn: next.config.network?.base_dn || '',
+        }
+        if (next.actions.length === 0) {
+          next.actions = [{ ...JSON.parse(JSON.stringify(EMPTY_NETWORK_ACTION)), name: 'Network_Health' }]
           shouldSelectFirstAction = true
         }
       }
@@ -1920,7 +2012,21 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }
 
   const addAction = () => {
-    const template = isBrowserScript ? EMPTY_BROWSER_ACTION : isJmsScript ? EMPTY_JMS_ACTION : isSoapScript ? EMPTY_SOAP_ACTION : EMPTY_ACTION
+    const template = isBrowserScript
+      ? EMPTY_BROWSER_ACTION
+      : isJmsScript
+        ? EMPTY_JMS_ACTION
+        : isSoapScript
+          ? EMPTY_SOAP_ACTION
+          : isWebSocketScript
+            ? EMPTY_WEBSOCKET_ACTION
+            : isGrpcScript
+              ? EMPTY_GRPC_ACTION
+              : isDatabaseScript
+                ? EMPTY_DATABASE_ACTION
+                : isNetworkScript
+                  ? EMPTY_NETWORK_ACTION
+                  : EMPTY_ACTION
     const a = JSON.parse(JSON.stringify({
       ...template,
       name: `Action_${script.actions.length + 1}`,
@@ -1971,9 +2077,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setScript(prev => {
       const actions = [...prev.actions]
       const ext = [...(actions[actionIdx].extractors || [])]
-      ext.push(prev.protocol === 'jms-solace'
-        ? { name: '', source: 'body', type: 'jsonpath', expression: '' }
-        : { name: '', source: 'body', type: 'jsonpath', expression: '' })
+      ext.push(defaultExtractorForProtocol(prev.protocol))
       actions[actionIdx] = { ...actions[actionIdx], extractors: ext }
       return { ...prev, actions }
     })
@@ -2002,7 +2106,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setScript(prev => {
       const actions = [...prev.actions]
       const assertions = [...(actions[actionIdx].assertions || [])]
-      assertions.push(prev.protocol === 'jms-solace' ? { type: 'message_received' } : { type: 'status_code', expected: 200 })
+      assertions.push(defaultAssertionForProtocol(prev.protocol))
       actions[actionIdx] = { ...actions[actionIdx], assertions }
       return { ...prev, actions }
     })
@@ -3372,6 +3476,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         <option value="soap">Web Services (SOAP)</option>
                         <option value="websocket">WebSocket</option>
                         <option value="grpc">gRPC</option>
+                        <option value="database">Database</option>
+                        <option value="network">Network</option>
                         <option value="browser">Web/HTML Browser</option>
                         <option value="jms-solace">JMS Solace</option>
                       </select>
@@ -3381,11 +3487,54 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     <span>Version</span>
                     <input value={script.version} onChange={e => updateField('version', e.target.value)} placeholder="1.0.0" />
                   </label>
-                  {!isJmsScript && (
+                  {!isJmsScript && !isDatabaseScript && !isNetworkScript && (
                     <label>
-                      <span>Base URL</span>
-                      <input value={script.config.base_url} onChange={e => updateField('config.base_url', e.target.value)} placeholder="https://api.example.com" />
+                      <span>{isGrpcScript ? 'gRPC Target' : isWebSocketScript ? 'WebSocket Origin' : 'Base URL'}</span>
+                      <input value={script.config.base_url} onChange={e => updateField('config.base_url', e.target.value)} placeholder={isGrpcScript ? 'dns:///api.example.com:443' : isWebSocketScript ? 'wss://api.example.com' : 'https://api.example.com'} />
                     </label>
+                  )}
+                  {isDatabaseScript && (
+                    <>
+                      <label>
+                        <span>Driver</span>
+                        <select value={script.config.database?.driver || 'sqlite'} onChange={e => updateField('config.database.driver', e.target.value)}>
+                          <option value="sqlite">SQLite</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>DSN Secret</span>
+                        <input value={script.config.database?.dsn_secret || ''} onChange={e => updateField('config.database.dsn_secret', e.target.value)} placeholder="secret://perf/db-dsn" />
+                      </label>
+                      <label className="full-width">
+                        <span>DSN / Fixture</span>
+                        <input value={script.config.database?.dsn || ''} onChange={e => updateField('config.database.dsn', e.target.value)} placeholder=":memory: or file:test.db?mode=rw" />
+                      </label>
+                    </>
+                  )}
+                  {isNetworkScript && (
+                    <>
+                      <label>
+                        <span>Subprotocol</span>
+                        <select value={script.config.network?.subprotocol || 'tcp'} onChange={e => updateField('config.network.subprotocol', e.target.value)}>
+                          <option value="dns">DNS</option>
+                          <option value="tcp">TCP / Winsock</option>
+                          <option value="udp">UDP / Winsock</option>
+                          <option value="ftp">FTP</option>
+                          <option value="smtp">SMTP</option>
+                          <option value="pop3">POP3</option>
+                          <option value="imap">IMAP</option>
+                          <option value="ldap">LDAP</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>Host</span>
+                        <input value={script.config.network?.host || ''} onChange={e => updateField('config.network.host', e.target.value)} placeholder="localhost" />
+                      </label>
+                      <label>
+                        <span>Port</span>
+                        <input type="number" value={script.config.network?.port || 0} onChange={e => updateField('config.network.port', Number(e.target.value) || undefined)} placeholder="443" />
+                      </label>
+                    </>
                   )}
                   {isJmsScript && (
                     <>
@@ -3422,6 +3571,26 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 {isJavaHttpScript && (
                   <div className="parameter-empty-state" style={{ marginTop: 12 }}>
                     Java-over-HTTP scripts reuse the HTTP transport client, support embedded or sidecar helper modes, and currently ship with the `java_serialized_object_base64` codec where request bodies are base64-encoded serialized bytes.
+                  </div>
+                )}
+                {isWebSocketScript && (
+                  <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                    WebSocket scripts model connection lifecycle, message send/receive steps, handshake headers, subprotocol/origin settings, and transcript evidence for replay.
+                  </div>
+                )}
+                {isGrpcScript && (
+                  <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                    gRPC scripts model service/method calls, reflection or proto setup, metadata/TLS/authority, stream controls, and gRPC status evidence.
+                  </div>
+                )}
+                {isDatabaseScript && (
+                  <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                    Database scripts model secret-backed DSNs, query/exec/transaction actions, bind parameters, row/scalar assertions, extractors, and read-only replay guards.
+                  </div>
+                )}
+                {isNetworkScript && (
+                  <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                    Network scripts model DNS, TCP, UDP, Winsock-style sockets, FTP, SMTP, POP3, IMAP, and LDAP actions with transcript and record evidence.
                   </div>
                 )}
               </div>
@@ -3857,6 +4026,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                         ))}
                                       </div>
                                     )}
+                                  </div>
+                                )}
+                                {event.protocol_evidence && (
+                                  <div className="replay-code-block">
+                                    <span>Protocol Evidence{formatProtocolEvidenceSummary(event.protocol_evidence) ? ` · ${formatProtocolEvidenceSummary(event.protocol_evidence)}` : ''}</span>
+                                    <SnapshotBodyPreview
+                                      body={JSON.stringify(event.protocol_evidence, null, 2)}
+                                      headers={{ 'Content-Type': 'application/json' }}
+                                      emptyMessage="No protocol evidence captured"
+                                    />
                                   </div>
                                 )}
                                 {hasBrowserReplayArtifacts(event) && (
@@ -4833,13 +5012,174 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               </select></label>
                           </div>
                         </div>
+                        <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                          IBM MQ remains review-only until a registered runtime adapter is present. This editor executes the JMS Solace adapter and keeps IBM MQ imports visible for manual conversion.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {isWebSocketScript && (
+                  <div className={`settings-section ${openSections['websocket'] ? 'open' : ''}`}>
+                    <button className="section-toggle" onClick={() => toggleSection('websocket')}>
+                      <span className="section-icon">WS</span>
+                      <span className="section-label">WebSocket Runtime</span>
+                      <span className="section-summary">{script.config.websocket?.reconnect ? 'Reconnect enabled' : 'Single connection'}</span>
+                      <span className="chevron">{openSections['websocket'] ? '▾' : '▸'}</span>
+                    </button>
+                    {openSections['websocket'] && (
+                      <div className="section-body">
+                        <div className="form-grid">
+                          <label><span>Read Timeout (ms)</span>
+                            <input type="number" value={script.config.websocket?.read_timeout_ms || 30000}
+                              onChange={e => updateField('config.websocket', { ...script.config.websocket, read_timeout_ms: Number(e.target.value) })} /></label>
+                          <label><span>Write Timeout (ms)</span>
+                            <input type="number" value={script.config.websocket?.write_timeout_ms || 10000}
+                              onChange={e => updateField('config.websocket', { ...script.config.websocket, write_timeout_ms: Number(e.target.value) })} /></label>
+                          <label><span>Max Message Size</span>
+                            <input type="number" value={script.config.websocket?.max_message_size || 1048576}
+                              onChange={e => updateField('config.websocket', { ...script.config.websocket, max_message_size: Number(e.target.value) })} /></label>
+                          <label><span>Subprotocol</span>
+                            <input value={script.config.websocket?.subprotocol || ''}
+                              onChange={e => updateField('config.websocket', { ...script.config.websocket, subprotocol: e.target.value })} placeholder="graphql-transport-ws" /></label>
+                          <label><span>Origin</span>
+                            <input value={script.config.websocket?.origin || ''}
+                              onChange={e => updateField('config.websocket', { ...script.config.websocket, origin: e.target.value })} placeholder="https://app.example.com" /></label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.websocket?.compression ?? false}
+                              onChange={e => updateField('config.websocket', { ...script.config.websocket, compression: e.target.checked })} />
+                            <span>Compression</span>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.websocket?.reconnect ?? true}
+                              onChange={e => updateField('config.websocket', { ...script.config.websocket, reconnect: e.target.checked })} />
+                            <span>Reconnect on failure</span>
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {isGrpcScript && (
+                  <div className={`settings-section ${openSections['grpc'] ? 'open' : ''}`}>
+                    <button className="section-toggle" onClick={() => toggleSection('grpc')}>
+                      <span className="section-icon">gRPC</span>
+                      <span className="section-label">gRPC Runtime</span>
+                      <span className="section-summary">{script.config.grpc?.use_reflection ? 'Reflection' : script.config.grpc?.proto_files?.length ? 'Proto files' : 'Contract pending'}</span>
+                      <span className="chevron">{openSections['grpc'] ? '▾' : '▸'}</span>
+                    </button>
+                    {openSections['grpc'] && (
+                      <div className="section-body">
+                        <div className="form-grid">
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.grpc?.use_reflection ?? true}
+                              onChange={e => updateField('config.grpc', { ...script.config.grpc, use_reflection: e.target.checked })} />
+                            <span>Use reflection</span>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.grpc?.plain_text ?? false}
+                              onChange={e => updateField('config.grpc', { ...script.config.grpc, plain_text: e.target.checked })} />
+                            <span>Plaintext channel</span>
+                          </label>
+                          <label><span>Timeout (ms)</span>
+                            <input type="number" value={script.config.grpc?.timeout_ms || 30000}
+                              onChange={e => updateField('config.grpc', { ...script.config.grpc, timeout_ms: Number(e.target.value) })} /></label>
+                          <label><span>Max Receive Size</span>
+                            <input type="number" value={script.config.grpc?.max_recv_msg_size || 4194304}
+                              onChange={e => updateField('config.grpc', { ...script.config.grpc, max_recv_msg_size: Number(e.target.value) })} /></label>
+                          <label><span>Authority</span>
+                            <input value={script.config.grpc?.authority || ''}
+                              onChange={e => updateField('config.grpc', { ...script.config.grpc, authority: e.target.value })} placeholder="api.example.com" /></label>
+                          <label className="full-width"><span>Proto Files</span>
+                            <input value={(script.config.grpc?.proto_files || []).join(', ')}
+                              onChange={e => updateField('config.grpc', { ...script.config.grpc, proto_files: e.target.value.split(',').map(value => value.trim()).filter(Boolean) })}
+                              placeholder="contracts/orders.proto, contracts/common.proto" /></label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {isDatabaseScript && (
+                  <div className={`settings-section ${openSections['database'] ? 'open' : ''}`}>
+                    <button className="section-toggle" onClick={() => toggleSection('database')}>
+                      <span className="section-icon">DB</span>
+                      <span className="section-label">Database Runtime</span>
+                      <span className="section-summary">{script.config.database?.dsn_secret ? 'Secret-backed DSN' : script.config.database?.dsn ? 'DSN configured' : 'Not configured'}</span>
+                      <span className="chevron">{openSections['database'] ? '▾' : '▸'}</span>
+                    </button>
+                    {openSections['database'] && (
+                      <div className="section-body">
+                        <div className="form-grid">
+                          <label><span>Query Timeout (ms)</span>
+                            <input type="number" value={script.config.database?.query_timeout_ms || 30000}
+                              onChange={e => updateField('config.database', { ...script.config.database, query_timeout_ms: Number(e.target.value) })} /></label>
+                          <label><span>Max Rows</span>
+                            <input type="number" value={script.config.database?.max_rows || 100}
+                              onChange={e => updateField('config.database', { ...script.config.database, max_rows: Number(e.target.value) })} /></label>
+                          <label><span>Max Open Connections</span>
+                            <input type="number" value={script.config.database?.max_open_conns || 1}
+                              onChange={e => updateField('config.database', { ...script.config.database, max_open_conns: Number(e.target.value) })} /></label>
+                          <label><span>Max Idle Connections</span>
+                            <input type="number" value={script.config.database?.max_idle_conns || 0}
+                              onChange={e => updateField('config.database', { ...script.config.database, max_idle_conns: Number(e.target.value) || undefined })} /></label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.database?.read_only ?? true}
+                              onChange={e => updateField('config.database', { ...script.config.database, read_only: e.target.checked })} />
+                            <span>Read-only guard</span>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.database?.rollback_on_teardown ?? true}
+                              onChange={e => updateField('config.database', { ...script.config.database, rollback_on_teardown: e.target.checked })} />
+                            <span>Rollback open transaction on teardown</span>
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {isNetworkScript && (
+                  <div className={`settings-section ${openSections['network'] ? 'open' : ''}`}>
+                    <button className="section-toggle" onClick={() => toggleSection('network')}>
+                      <span className="section-icon">NET</span>
+                      <span className="section-label">Network Runtime</span>
+                      <span className="section-summary">{script.config.network?.subprotocol || 'tcp'} · {script.config.network?.host || script.config.network?.address || 'host pending'}</span>
+                      <span className="chevron">{openSections['network'] ? '▾' : '▸'}</span>
+                    </button>
+                    {openSections['network'] && (
+                      <div className="section-body">
+                        <div className="form-grid">
+                          <label><span>Timeout (ms)</span>
+                            <input type="number" value={script.config.network?.timeout_ms || 30000}
+                              onChange={e => updateField('config.network', { ...script.config.network, timeout_ms: Number(e.target.value) })} /></label>
+                          <label><span>Address Override</span>
+                            <input value={script.config.network?.address || ''}
+                              onChange={e => updateField('config.network', { ...script.config.network, address: e.target.value })} placeholder="127.0.0.1:2525" /></label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.network?.tls ?? false}
+                              onChange={e => updateField('config.network', { ...script.config.network, tls: e.target.checked })} />
+                            <span>TLS</span>
+                          </label>
+                          <label><span>Username</span>
+                            <input value={script.config.network?.username || ''}
+                              onChange={e => updateField('config.network', { ...script.config.network, username: e.target.value })} /></label>
+                          <label><span>Password</span>
+                            <input type="password" value={script.config.network?.password || ''}
+                              onChange={e => updateField('config.network', { ...script.config.network, password: e.target.value })} /></label>
+                          <label><span>LDAP Base DN</span>
+                            <input value={script.config.network?.base_dn || ''}
+                              onChange={e => updateField('config.network', { ...script.config.network, base_dn: e.target.value })} placeholder="dc=example,dc=com" /></label>
+                        </div>
                       </div>
                     )}
                   </div>
                 )}
 
                 {/* HTTP transport */}
-                {!isJmsScript && <div className={`settings-section ${openSections['http'] ? 'open' : ''}`}>
+                {isHttpTransportScript && <div className={`settings-section ${openSections['http'] ? 'open' : ''}`}>
                   <button className="section-toggle" onClick={() => toggleSection('http')}>
                     <span className="section-icon">{'\ud83c\udf10'}</span>
                     <span className="section-label">HTTP Transport</span>
@@ -5720,6 +6060,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     onRemoveMetadata={removeMetadata}
                     onBeginParameterEdit={beginParameterEditFromActionEditor}
                     methodColor={methodColor}
+                    protocol={script.protocol}
                     isBrowserScript={isBrowserScript}
                     isJmsScript={isJmsScript}
                     isSoapScript={isSoapScript}
@@ -8345,7 +8686,7 @@ function ParameterDataSourceRows({
 }
 
 /* Sub-component for editing a single action's details */
-function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, isBrowserScript, isJmsScript, isSoapScript, issues }: {
+function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, isBrowserScript, isJmsScript, isSoapScript, issues }: {
   action: Action; index: number
   parameters: ParameterConfig[]
   onUpdate: (i: number, f: keyof Action, v: unknown) => void
@@ -8363,11 +8704,16 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
   onRemoveMetadata: (ai: number, k: string) => void
   onBeginParameterEdit: (draft: ActionEditorParameterDraft) => void
   methodColor: (m: string) => string
+  protocol: string
   isBrowserScript: boolean
   isJmsScript: boolean
   isSoapScript: boolean
   issues: AuthoringIssue[]
 }) {
+  const isWebSocketScript = protocol === 'websocket'
+  const isGrpcScript = protocol === 'grpc'
+  const isDatabaseScript = protocol === 'database'
+  const isNetworkScript = protocol === 'network'
   const { selectionState, openSelectionMenu, openParameterEditor } = useActionParameterMenu({
     index,
     onBeginParameterEdit,
@@ -8381,6 +8727,7 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
       <ActionCoreFields
         action={action}
         index={index}
+        protocol={protocol}
         isBrowserScript={isBrowserScript}
         isJmsScript={isJmsScript}
         onUpdate={onUpdate}
@@ -8390,7 +8737,65 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
         <BrowserActionFields action={action} index={index} onUpdate={onUpdate} />
       )}
 
-      {isJmsScript ? (
+      {isWebSocketScript ? (
+        <WebSocketActionFields
+          action={action}
+          index={index}
+          onAddAssertion={onAddAssertion}
+          onAddExtractor={onAddExtractor}
+          onAddHeader={onAddHeader}
+          onRemoveAssertion={onRemoveAssertion}
+          onRemoveExtractor={onRemoveExtractor}
+          onRemoveHeader={onRemoveHeader}
+          onSelectionMenu={openSelectionMenu}
+          onUpdate={onUpdate}
+          onUpdateAssertion={onUpdateAssertion}
+          onUpdateExtractor={onUpdateExtractor}
+          onUpdateHeader={onUpdateHeader}
+        />
+      ) : isGrpcScript ? (
+        <GrpcActionFields
+          action={action}
+          index={index}
+          onAddAssertion={onAddAssertion}
+          onAddExtractor={onAddExtractor}
+          onAddHeader={onAddHeader}
+          onRemoveAssertion={onRemoveAssertion}
+          onRemoveExtractor={onRemoveExtractor}
+          onRemoveHeader={onRemoveHeader}
+          onSelectionMenu={openSelectionMenu}
+          onUpdate={onUpdate}
+          onUpdateAssertion={onUpdateAssertion}
+          onUpdateExtractor={onUpdateExtractor}
+          onUpdateHeader={onUpdateHeader}
+        />
+      ) : isDatabaseScript ? (
+        <DatabaseActionFields
+          action={action}
+          index={index}
+          onAddAssertion={onAddAssertion}
+          onAddExtractor={onAddExtractor}
+          onRemoveAssertion={onRemoveAssertion}
+          onRemoveExtractor={onRemoveExtractor}
+          onSelectionMenu={openSelectionMenu}
+          onUpdate={onUpdate}
+          onUpdateAssertion={onUpdateAssertion}
+          onUpdateExtractor={onUpdateExtractor}
+        />
+      ) : isNetworkScript ? (
+        <NetworkActionFields
+          action={action}
+          index={index}
+          onAddAssertion={onAddAssertion}
+          onAddExtractor={onAddExtractor}
+          onRemoveAssertion={onRemoveAssertion}
+          onRemoveExtractor={onRemoveExtractor}
+          onSelectionMenu={openSelectionMenu}
+          onUpdate={onUpdate}
+          onUpdateAssertion={onUpdateAssertion}
+          onUpdateExtractor={onUpdateExtractor}
+        />
+      ) : isJmsScript ? (
         <JmsActionFields
           action={action}
           index={index}
@@ -8438,6 +8843,10 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
 
 const BROWSER_ACTION_TYPES = ['browser_navigate', 'browser_click', 'browser_fill', 'browser_select', 'browser_wait', 'browser_screenshot', 'browser_tap', 'browser_long_press', 'browser_swipe']
 const JMS_ACTION_TYPES = ['jms_publish', 'jms_consume', 'jms_request_reply', 'jms_ack', 'jms_commit', 'jms_rollback']
+const WEBSOCKET_ACTION_TYPES = ['ws_connect', 'ws_send', 'ws_receive', 'ws_ping', 'ws_close']
+const GRPC_ACTION_TYPES = ['grpc_unary', 'grpc_server_stream', 'grpc_client_stream', 'grpc_bidi_stream']
+const DATABASE_ACTION_TYPES = ['db_health', 'db_begin', 'db_query', 'db_exec', 'db_procedure', 'db_commit', 'db_rollback']
+const NETWORK_ACTION_TYPES = ['network_health', 'dns_query', 'tcp_request', 'udp_request', 'ftp_command', 'smtp_send', 'pop3_command', 'imap_command', 'ldap_bind', 'ldap_search']
 const HTTP_ACTION_TYPES = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 
 interface ActionEditorHeaderProps {
@@ -8476,14 +8885,19 @@ function ActionEditorHeader({ action, issues, methodColor }: ActionEditorHeaderP
 interface ActionCoreFieldsProps {
   action: Action
   index: number
+  protocol: string
   isBrowserScript: boolean
   isJmsScript: boolean
   onUpdate: (i: number, f: keyof Action, v: unknown) => void
 }
 
-function ActionCoreFields({ action, index, isBrowserScript, isJmsScript, onUpdate }: ActionCoreFieldsProps) {
+function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScript, onUpdate }: ActionCoreFieldsProps) {
   const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_select', 'browser_wait', 'browser_screenshot', 'browser_tap', 'browser_long_press', 'browser_swipe'].includes(action.type)
   const showValue = isBrowserScript && ['browser_fill', 'browser_select'].includes(action.type)
+  const isWebSocketScript = protocol === 'websocket'
+  const isGrpcScript = protocol === 'grpc'
+  const isDatabaseScript = protocol === 'database'
+  const isNetworkScript = protocol === 'network'
   const targetLabel = isJmsScript
     ? 'Destination'
     : isBrowserScript
@@ -8492,6 +8906,14 @@ function ActionCoreFields({ action, index, isBrowserScript, isJmsScript, onUpdat
       : action.type === 'browser_wait'
         ? 'Wait Target or Duration'
         : 'Target Selector'
+    : isWebSocketScript
+      ? action.type === 'ws_connect' ? 'Endpoint' : 'Connection or Topic'
+      : isGrpcScript
+        ? 'Service / Method'
+        : isDatabaseScript
+          ? action.type === 'db_procedure' ? 'Procedure' : 'SQL'
+          : isNetworkScript
+            ? 'Endpoint / Host'
     : 'Target (path)'
   const targetPlaceholder = isJmsScript
     ? 'orders.in or {{data.destinations.queue}}'
@@ -8501,13 +8923,34 @@ function ActionCoreFields({ action, index, isBrowserScript, isJmsScript, onUpdat
       : action.type === 'browser_wait'
         ? '#ready, text, or 750ms'
         : '#submit'
+    : isWebSocketScript
+      ? action.type === 'ws_connect' ? '/ws or wss://example.com/ws' : 'Leave blank to use active connection'
+      : isGrpcScript
+        ? 'package.Service/Method'
+        : isDatabaseScript
+          ? 'select id from users where id = ?'
+          : isNetworkScript
+            ? 'localhost:8080, example.com, or dc=example,dc=com'
     : '/api/resource'
-  const actionTypes = isBrowserScript ? BROWSER_ACTION_TYPES : isJmsScript ? JMS_ACTION_TYPES : HTTP_ACTION_TYPES
+  const actionTypes = isBrowserScript
+    ? BROWSER_ACTION_TYPES
+    : isJmsScript
+      ? JMS_ACTION_TYPES
+      : isWebSocketScript
+        ? WEBSOCKET_ACTION_TYPES
+        : isGrpcScript
+          ? GRPC_ACTION_TYPES
+          : isDatabaseScript
+            ? DATABASE_ACTION_TYPES
+            : isNetworkScript
+              ? NETWORK_ACTION_TYPES
+              : HTTP_ACTION_TYPES
+  const actionTypeLabel = isBrowserScript || isJmsScript || isWebSocketScript || isGrpcScript || isDatabaseScript || isNetworkScript ? 'Action Type' : 'Method'
 
   return (
     <div className="form-grid">
       <label><span>Name</span><input value={action.name} onChange={e => onUpdate(index, 'name', e.target.value)} /></label>
-      <label><span>{isBrowserScript || isJmsScript ? 'Action Type' : 'Method'}</span>
+      <label><span>{actionTypeLabel}</span>
         <select value={action.type} onChange={e => onUpdate(index, 'type', e.target.value)}>
           {actionTypes.map(type => <option key={type}>{type}</option>)}
         </select>
@@ -9005,6 +9448,361 @@ function BrowserActionFields({ action, index, onUpdate }: BrowserActionFieldsPro
   )
 }
 
+function formatActionStringList(value: unknown): string {
+  if (Array.isArray(value)) return value.map(item => String(item ?? '')).join('\n')
+  if (typeof value === 'string') return value
+  return ''
+}
+
+function parseActionStringList(value: string): string[] {
+  return value.split(/\n|,/).map(item => item.trim()).filter(Boolean)
+}
+
+interface WebSocketActionFieldsProps {
+  action: Action
+  index: number
+  onAddAssertion: (i: number) => void
+  onAddExtractor: (i: number) => void
+  onAddHeader: (i: number) => void
+  onRemoveAssertion: (ai: number, ai2: number) => void
+  onRemoveExtractor: (ai: number, ei: number) => void
+  onRemoveHeader: (ai: number, k: string) => void
+  onSelectionMenu: (event: MouseEvent<HTMLTextAreaElement>) => void
+  onUpdate: (i: number, f: keyof Action, v: unknown) => void
+  onUpdateAssertion: (ai: number, ai2: number, f: keyof Assertion, v: unknown) => void
+  onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void
+  onUpdateHeader: (ai: number, ok: string, nk: string, v: string) => void
+}
+
+function WebSocketActionFields({
+  action,
+  index,
+  onAddAssertion,
+  onAddExtractor,
+  onAddHeader,
+  onRemoveAssertion,
+  onRemoveExtractor,
+  onRemoveHeader,
+  onSelectionMenu,
+  onUpdate,
+  onUpdateAssertion,
+  onUpdateExtractor,
+  onUpdateHeader,
+}: WebSocketActionFieldsProps) {
+  const params = action.params || {}
+  return (
+    <>
+      <div className="sub-section">
+        <div className="sub-header"><h4>WebSocket Operation</h4></div>
+        <div className="form-grid">
+          {(action.type === 'ws_send' || action.type === 'ws_receive') && (
+            <label>
+              <span>Message Type</span>
+              <select value={typeof params.type === 'string' ? params.type : 'text'} onChange={e => onUpdate(index, 'params', { ...params, type: e.target.value })}>
+                <option value="text">Text</option>
+                <option value="binary">Binary</option>
+                <option value="json">JSON</option>
+              </select>
+            </label>
+          )}
+          {(action.type === 'ws_receive' || action.type === 'ws_connect') && (
+            <label>
+              <span>Timeout (ms)</span>
+              <input type="number" value={typeof params.timeout_ms === 'number' ? params.timeout_ms : 30000}
+                onChange={e => onUpdate(index, 'params', { ...params, timeout_ms: Number(e.target.value) || undefined })} />
+            </label>
+          )}
+          {action.type === 'ws_receive' && (
+            <label className="full-width">
+              <span>Expected Message Text</span>
+              <input value={typeof params.expected === 'string' ? params.expected : ''} onChange={e => onUpdate(index, 'params', { ...params, expected: e.target.value })} placeholder="created, pong, or {{var.expected_event}}" />
+            </label>
+          )}
+          {action.type === 'ws_send' && (
+            <label className="full-width">
+              <span>Message Body</span>
+              <ActionBodyTextarea
+                onChange={value => onUpdate(index, 'body', value)}
+                onContextMenu={onSelectionMenu}
+                placeholder='{"type":"ping","id":"{{param.request_id}}"}'
+                rows={5}
+                value={action.body || ''}
+              />
+            </label>
+          )}
+        </div>
+      </div>
+
+      {action.type === 'ws_connect' && (
+        <ProtocolHeadersSection action={action} index={index} onAddHeader={onAddHeader} onRemoveHeader={onRemoveHeader} onUpdateHeader={onUpdateHeader} />
+      )}
+
+      <ProtocolExtractorsSection action={action} index={index} protocol="websocket" onAddExtractor={onAddExtractor} onRemoveExtractor={onRemoveExtractor} onUpdateExtractor={onUpdateExtractor} />
+      <ProtocolAssertionsSection action={action} index={index} protocol="websocket" onAddAssertion={onAddAssertion} onRemoveAssertion={onRemoveAssertion} onUpdateAssertion={onUpdateAssertion} />
+    </>
+  )
+}
+
+interface GrpcActionFieldsProps {
+  action: Action
+  index: number
+  onAddAssertion: (i: number) => void
+  onAddExtractor: (i: number) => void
+  onAddHeader: (i: number) => void
+  onRemoveAssertion: (ai: number, ai2: number) => void
+  onRemoveExtractor: (ai: number, ei: number) => void
+  onRemoveHeader: (ai: number, k: string) => void
+  onSelectionMenu: (event: MouseEvent<HTMLTextAreaElement>) => void
+  onUpdate: (i: number, f: keyof Action, v: unknown) => void
+  onUpdateAssertion: (ai: number, ai2: number, f: keyof Assertion, v: unknown) => void
+  onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void
+  onUpdateHeader: (ai: number, ok: string, nk: string, v: string) => void
+}
+
+function GrpcActionFields({
+  action,
+  index,
+  onAddAssertion,
+  onAddExtractor,
+  onAddHeader,
+  onRemoveAssertion,
+  onRemoveExtractor,
+  onRemoveHeader,
+  onSelectionMenu,
+  onUpdate,
+  onUpdateAssertion,
+  onUpdateExtractor,
+  onUpdateHeader,
+}: GrpcActionFieldsProps) {
+  const params = action.params || {}
+  return (
+    <>
+      <div className="sub-section">
+        <div className="sub-header"><h4>gRPC Message</h4></div>
+        <div className="form-grid">
+          <label>
+            <span>Timeout (ms)</span>
+            <input type="number" value={typeof params.timeout_ms === 'number' ? params.timeout_ms : 30000}
+              onChange={e => onUpdate(index, 'params', { ...params, timeout_ms: Number(e.target.value) || undefined })} />
+          </label>
+          {(action.type === 'grpc_server_stream' || action.type === 'grpc_bidi_stream') && (
+            <label>
+              <span>Max Messages</span>
+              <input type="number" value={typeof params.max_messages === 'number' ? params.max_messages : 1}
+                onChange={e => onUpdate(index, 'params', { ...params, max_messages: Number(e.target.value) || undefined })} />
+            </label>
+          )}
+          {(action.type === 'grpc_client_stream' || action.type === 'grpc_bidi_stream') && (
+            <label className="full-width">
+              <span>Stream Messages</span>
+              <textarea
+                rows={5}
+                value={formatActionStringList(params.messages)}
+                onChange={e => onUpdate(index, 'params', { ...params, messages: parseActionStringList(e.target.value) })}
+                placeholder={'{"id":"1"}\n{"id":"2"}'}
+              />
+            </label>
+          )}
+          {(action.type === 'grpc_unary' || action.type === 'grpc_server_stream') && (
+            <label className="full-width">
+              <span>Request Body</span>
+              <ActionBodyTextarea
+                onChange={value => onUpdate(index, 'body', value)}
+                onContextMenu={onSelectionMenu}
+                placeholder='{"id":"{{param.order_id}}"}'
+                rows={5}
+                value={action.body || ''}
+              />
+            </label>
+          )}
+        </div>
+      </div>
+
+      <ProtocolHeadersSection action={action} index={index} onAddHeader={onAddHeader} onRemoveHeader={onRemoveHeader} onUpdateHeader={onUpdateHeader} />
+      <ProtocolExtractorsSection action={action} index={index} protocol="grpc" onAddExtractor={onAddExtractor} onRemoveExtractor={onRemoveExtractor} onUpdateExtractor={onUpdateExtractor} />
+      <ProtocolAssertionsSection action={action} index={index} protocol="grpc" onAddAssertion={onAddAssertion} onRemoveAssertion={onRemoveAssertion} onUpdateAssertion={onUpdateAssertion} />
+    </>
+  )
+}
+
+interface DatabaseActionFieldsProps {
+  action: Action
+  index: number
+  onAddAssertion: (i: number) => void
+  onAddExtractor: (i: number) => void
+  onRemoveAssertion: (ai: number, ai2: number) => void
+  onRemoveExtractor: (ai: number, ei: number) => void
+  onSelectionMenu: (event: MouseEvent<HTMLTextAreaElement>) => void
+  onUpdate: (i: number, f: keyof Action, v: unknown) => void
+  onUpdateAssertion: (ai: number, ai2: number, f: keyof Assertion, v: unknown) => void
+  onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void
+}
+
+function DatabaseActionFields({
+  action,
+  index,
+  onAddAssertion,
+  onAddExtractor,
+  onRemoveAssertion,
+  onRemoveExtractor,
+  onSelectionMenu,
+  onUpdate,
+  onUpdateAssertion,
+  onUpdateExtractor,
+}: DatabaseActionFieldsProps) {
+  const params = action.params || {}
+  const isSQLAction = ['db_query', 'db_exec', 'db_procedure'].includes(action.type)
+  return (
+    <>
+      {isSQLAction && (
+        <div className="sub-section">
+          <div className="sub-header"><h4>SQL And Binds</h4></div>
+          <div className="form-grid">
+            <label className="full-width">
+              <span>{action.type === 'db_procedure' ? 'Procedure / Call' : 'SQL'}</span>
+              <ActionBodyTextarea
+                onChange={value => onUpdate(index, 'target', value)}
+                onContextMenu={onSelectionMenu}
+                placeholder={action.type === 'db_query' ? 'select id, name from users where id = ?' : 'update users set last_seen = current_timestamp where id = ?'}
+                rows={5}
+                value={action.target || ''}
+              />
+            </label>
+            <label className="full-width">
+              <span>Bind Parameters</span>
+              <textarea
+                rows={3}
+                value={formatActionStringList(params.binds)}
+                onChange={e => onUpdate(index, 'params', { ...params, binds: parseActionStringList(e.target.value) })}
+                placeholder={'{{param.user_id}}\n{{data.orders.id}}'}
+              />
+            </label>
+            <label>
+              <span>Max Rows</span>
+              <input type="number" value={typeof params.max_rows === 'number' ? params.max_rows : ''}
+                onChange={e => onUpdate(index, 'params', { ...params, max_rows: Number(e.target.value) || undefined })} placeholder="Use runtime default" />
+            </label>
+          </div>
+        </div>
+      )}
+
+      <ProtocolExtractorsSection action={action} index={index} protocol="database" onAddExtractor={onAddExtractor} onRemoveExtractor={onRemoveExtractor} onUpdateExtractor={onUpdateExtractor} />
+      <ProtocolAssertionsSection action={action} index={index} protocol="database" onAddAssertion={onAddAssertion} onRemoveAssertion={onRemoveAssertion} onUpdateAssertion={onUpdateAssertion} />
+    </>
+  )
+}
+
+interface NetworkActionFieldsProps {
+  action: Action
+  index: number
+  onAddAssertion: (i: number) => void
+  onAddExtractor: (i: number) => void
+  onRemoveAssertion: (ai: number, ai2: number) => void
+  onRemoveExtractor: (ai: number, ei: number) => void
+  onSelectionMenu: (event: MouseEvent<HTMLTextAreaElement>) => void
+  onUpdate: (i: number, f: keyof Action, v: unknown) => void
+  onUpdateAssertion: (ai: number, ai2: number, f: keyof Assertion, v: unknown) => void
+  onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void
+}
+
+function NetworkActionFields({
+  action,
+  index,
+  onAddAssertion,
+  onAddExtractor,
+  onRemoveAssertion,
+  onRemoveExtractor,
+  onSelectionMenu,
+  onUpdate,
+  onUpdateAssertion,
+  onUpdateExtractor,
+}: NetworkActionFieldsProps) {
+  const params = action.params || {}
+  const hasPayload = ['tcp_request', 'udp_request', 'smtp_send'].includes(action.type)
+  const hasCommand = ['ftp_command', 'pop3_command', 'imap_command'].includes(action.type)
+  return (
+    <>
+      <div className="sub-section">
+        <div className="sub-header"><h4>Protocol Controls</h4></div>
+        <div className="form-grid">
+          {action.type === 'dns_query' && (
+            <label>
+              <span>Record Type</span>
+              <select value={typeof params.record_type === 'string' ? params.record_type : 'A'} onChange={e => onUpdate(index, 'params', { ...params, record_type: e.target.value })}>
+                <option value="A">A</option>
+                <option value="AAAA">AAAA</option>
+                <option value="CNAME">CNAME</option>
+                <option value="MX">MX</option>
+                <option value="NS">NS</option>
+                <option value="TXT">TXT</option>
+              </select>
+            </label>
+          )}
+          {(action.type === 'tcp_request' || action.type === 'udp_request') && (
+            <>
+              <label className="checkbox-label">
+                <input type="checkbox" checked={Boolean(params.read)}
+                  onChange={e => onUpdate(index, 'params', { ...params, read: e.target.checked })} />
+                <span>Read response</span>
+              </label>
+              <label>
+                <span>Read Bytes</span>
+                <input type="number" value={typeof params.read_bytes === 'number' ? params.read_bytes : 4096}
+                  onChange={e => onUpdate(index, 'params', { ...params, read_bytes: Number(e.target.value) || undefined })} />
+              </label>
+            </>
+          )}
+          {hasCommand && (
+            <label className="full-width">
+              <span>Command</span>
+              <input value={typeof params.command === 'string' ? params.command : action.body || ''} onChange={e => onUpdate(index, 'params', { ...params, command: e.target.value })} placeholder="NOOP, STAT, CAPABILITY" />
+            </label>
+          )}
+          {(action.type === 'smtp_send' || action.type === 'ldap_bind' || action.type === 'ldap_search') && (
+            <>
+              <label>
+                <span>Username</span>
+                <input value={typeof params.username === 'string' ? params.username : ''} onChange={e => onUpdate(index, 'params', { ...params, username: e.target.value })} />
+              </label>
+              <label>
+                <span>Password</span>
+                <input type="password" value={typeof params.password === 'string' ? params.password : ''} onChange={e => onUpdate(index, 'params', { ...params, password: e.target.value })} />
+              </label>
+            </>
+          )}
+          {action.type === 'ldap_search' && (
+            <>
+              <label className="full-width">
+                <span>LDAP Filter</span>
+                <input value={typeof params.filter === 'string' ? params.filter : '(objectClass=*)'} onChange={e => onUpdate(index, 'params', { ...params, filter: e.target.value })} />
+              </label>
+              <label>
+                <span>Max Entries</span>
+                <input type="number" value={typeof params.max_entries === 'number' ? params.max_entries : 100} onChange={e => onUpdate(index, 'params', { ...params, max_entries: Number(e.target.value) || undefined })} />
+              </label>
+            </>
+          )}
+          {hasPayload && (
+            <label className="full-width">
+              <span>Payload</span>
+              <ActionBodyTextarea
+                onChange={value => onUpdate(index, 'body', value)}
+                onContextMenu={onSelectionMenu}
+                placeholder={action.type === 'smtp_send' ? 'Subject: Smoke\n\nHello' : 'ping'}
+                rows={5}
+                value={action.body || ''}
+              />
+            </label>
+          )}
+        </div>
+      </div>
+
+      <ProtocolExtractorsSection action={action} index={index} protocol="network" onAddExtractor={onAddExtractor} onRemoveExtractor={onRemoveExtractor} onUpdateExtractor={onUpdateExtractor} />
+      <ProtocolAssertionsSection action={action} index={index} protocol="network" onAddAssertion={onAddAssertion} onRemoveAssertion={onRemoveAssertion} onUpdateAssertion={onUpdateAssertion} />
+    </>
+  )
+}
+
 interface JmsActionFieldsProps {
   action: Action
   index: number
@@ -9119,7 +9917,7 @@ function JmsActionFields({
       <ProtocolExtractorsSection
         action={action}
         index={index}
-        isJmsScript={true}
+        protocol="jms-solace"
         onAddExtractor={onAddExtractor}
         onRemoveExtractor={onRemoveExtractor}
         onUpdateExtractor={onUpdateExtractor}
@@ -9128,7 +9926,7 @@ function JmsActionFields({
       <ProtocolAssertionsSection
         action={action}
         index={index}
-        isJmsScript={true}
+        protocol="jms-solace"
         onAddAssertion={onAddAssertion}
         onRemoveAssertion={onRemoveAssertion}
         onUpdateAssertion={onUpdateAssertion}
@@ -9205,7 +10003,7 @@ function HttpActionFields({
         <ProtocolExtractorsSection
           action={action}
           index={index}
-          isJmsScript={false}
+          protocol={isSoapScript ? 'soap' : 'http'}
           onAddExtractor={onAddExtractor}
           onRemoveExtractor={onRemoveExtractor}
           onUpdateExtractor={onUpdateExtractor}
@@ -9216,7 +10014,7 @@ function HttpActionFields({
         <ProtocolAssertionsSection
           action={action}
           index={index}
-          isJmsScript={false}
+          protocol={isSoapScript ? 'soap' : 'http'}
           onAddAssertion={onAddAssertion}
           onRemoveAssertion={onRemoveAssertion}
           onUpdateAssertion={onUpdateAssertion}
@@ -9283,13 +10081,51 @@ function ProtocolHeadersSection({ action, index, onAddHeader, onRemoveHeader, on
 interface ProtocolExtractorsSectionProps {
   action: Action
   index: number
-  isJmsScript: boolean
+  protocol: string
   onAddExtractor: (i: number) => void
   onRemoveExtractor: (ai: number, ei: number) => void
   onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void
 }
 
-function ProtocolExtractorsSection({ action, index, isJmsScript, onAddExtractor, onRemoveExtractor, onUpdateExtractor }: ProtocolExtractorsSectionProps) {
+function extractorSourceOptions(protocol: string): Array<[string, string]> {
+  switch (protocol) {
+    case 'jms-solace':
+      return [['body', 'Body'], ['header', 'Header'], ['property', 'Property'], ['message_id', 'Message ID'], ['correlation_id', 'Correlation ID']]
+    case 'database':
+      return [['body', 'Result Body'], ['rows', 'Rows'], ['scalar', 'Scalar'], ['row_count', 'Row Count'], ['rows_affected', 'Rows Affected'], ['last_insert_id', 'Last Insert ID']]
+    case 'network':
+      return [['body', 'Body'], ['response', 'Response'], ['records', 'Records'], ['record_count', 'Record Count'], ['entry_count', 'Entry Count'], ['target', 'Target']]
+    case 'grpc':
+      return [['body', 'Message Body'], ['metadata', 'Metadata'], ['trailer', 'Trailer'], ['status', 'Status']]
+    case 'websocket':
+      return [['body', 'Message Body'], ['header', 'Handshake Header'], ['message', 'Message'], ['close_code', 'Close Code']]
+    default:
+      return [['body', 'Body'], ['header', 'Header'], ['cookie', 'Cookie']]
+  }
+}
+
+function extractorTypeOptions(protocol: string): Array<[string, string]> {
+  if (protocol === 'database' || protocol === 'network' || protocol === 'grpc') {
+    return [['jsonpath', 'JSONPath'], ['jmespath', 'JMESPath'], ['regex', 'Regex'], ['boundary', 'Boundary']]
+  }
+  if (protocol === 'jms-solace' || protocol === 'websocket') {
+    return [['jsonpath', 'JSONPath'], ['regex', 'Regex'], ['boundary', 'Boundary']]
+  }
+  return [['jsonpath', 'JSONPath'], ['regex', 'Regex'], ['boundary', 'Boundary'], ['xpath', 'XPath']]
+}
+
+function extractorExpressionPlaceholder(protocol: string, source: string) {
+  if (protocol === 'database') return source === 'scalar' ? '$.scalar' : '$.rows[0].id'
+  if (protocol === 'network') return source === 'record_count' ? '$.record_count' : '$.response'
+  if (protocol === 'grpc') return '$.id'
+  if (protocol === 'websocket') return '$.type'
+  if (protocol === 'jms-solace') return '$.orderId'
+  return '$.data.id'
+}
+
+function ProtocolExtractorsSection({ action, index, protocol, onAddExtractor, onRemoveExtractor, onUpdateExtractor }: ProtocolExtractorsSectionProps) {
+  const sourceOptions = extractorSourceOptions(protocol)
+  const typeOptions = extractorTypeOptions(protocol)
   return (
     <div className="sub-section">
       <div className="sub-header"><h4>Extractors</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddExtractor(index)}>+ Add</button></div>
@@ -9297,13 +10133,12 @@ function ProtocolExtractorsSection({ action, index, isJmsScript, onAddExtractor,
         <div key={extractorIndex} className="extractor-row">
           <input value={extractor.name} onChange={e => onUpdateExtractor(index, extractorIndex, 'name', e.target.value)} placeholder="Variable name" />
           <select value={extractor.source} onChange={e => onUpdateExtractor(index, extractorIndex, 'source', e.target.value)}>
-            <option value="body">Body</option><option value="header">Header</option>
-            {isJmsScript ? <><option value="property">Property</option><option value="message_id">Message ID</option><option value="correlation_id">Correlation ID</option></> : <option value="cookie">Cookie</option>}
+            {sourceOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
           <select value={extractor.type} onChange={e => onUpdateExtractor(index, extractorIndex, 'type', e.target.value)}>
-            <option value="jsonpath">JSONPath</option><option value="regex">Regex</option>{!isJmsScript && <><option value="boundary">Boundary</option><option value="xpath">XPath</option></>}
+            {typeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
-          <input value={extractor.expression} onChange={e => onUpdateExtractor(index, extractorIndex, 'expression', e.target.value)} placeholder="$.data.id" className="ext-expr" />
+          <input value={extractor.expression} onChange={e => onUpdateExtractor(index, extractorIndex, 'expression', e.target.value)} placeholder={extractorExpressionPlaceholder(protocol, extractor.source)} className="ext-expr" />
           <button className="btn-icon danger" onClick={() => onRemoveExtractor(index, extractorIndex)}>✕</button>
         </div>
       ))}
@@ -9314,37 +10149,56 @@ function ProtocolExtractorsSection({ action, index, isJmsScript, onAddExtractor,
 interface ProtocolAssertionsSectionProps {
   action: Action
   index: number
-  isJmsScript: boolean
+  protocol: string
   onAddAssertion: (i: number) => void
   onRemoveAssertion: (ai: number, ai2: number) => void
   onUpdateAssertion: (ai: number, ai2: number, f: keyof Assertion, v: unknown) => void
 }
 
-function ProtocolAssertionsSection({ action, index, isJmsScript, onAddAssertion, onRemoveAssertion, onUpdateAssertion }: ProtocolAssertionsSectionProps) {
+function assertionOptions(protocol: string): Array<[string, string]> {
+  switch (protocol) {
+    case 'jms-solace':
+      return [['message_received', 'Message Received'], ['body_contains', 'Body Contains'], ['property_equals', 'Property Equals'], ['header_equals', 'Header Equals'], ['correlation_match', 'Correlation Match'], ['response_time_ms', 'Response Time (ms)']]
+    case 'websocket':
+      return [['message_received', 'Message Received'], ['body_contains', 'Message Contains'], ['close_code', 'Close Code'], ['response_time_ms', 'Response Time (ms)']]
+    case 'grpc':
+      return [['grpc_status', 'gRPC Status'], ['message_count', 'Message Count'], ['body_contains', 'Body Contains'], ['metadata_contains', 'Metadata Contains'], ['response_time_ms', 'Response Time (ms)']]
+    case 'database':
+      return [['row_count', 'Row Count'], ['rows_affected', 'Rows Affected'], ['scalar_equals', 'Scalar Equals'], ['body_contains', 'Result Contains'], ['body_not_contains', 'Result Excludes'], ['response_time_ms', 'Response Time (ms)']]
+    case 'network':
+      return [['record_count', 'Record Count'], ['entry_count', 'Entry Count'], ['messages_received', 'Messages Received'], ['body_contains', 'Transcript Contains'], ['body_not_contains', 'Transcript Excludes'], ['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)']]
+    default:
+      return [['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)'], ['body_contains', 'Body Contains'], ['header_contains', 'Header Contains']]
+  }
+}
+
+function assertionUsesNumericExpected(type: string) {
+  return ['status_code', 'grpc_status', 'row_count', 'rows_affected', 'record_count', 'entry_count', 'message_count', 'messages_received', 'close_code'].includes(type)
+}
+
+function assertionUsesTextValue(type: string) {
+  return ['body_contains', 'body_not_contains', 'header_contains', 'metadata_contains', 'correlation_match'].includes(type)
+}
+
+function assertionUsesNamedExpected(type: string) {
+  return ['property_equals', 'header_equals', 'scalar_equals'].includes(type)
+}
+
+function ProtocolAssertionsSection({ action, index, protocol, onAddAssertion, onRemoveAssertion, onUpdateAssertion }: ProtocolAssertionsSectionProps) {
+  const options = assertionOptions(protocol)
   return (
     <div className="sub-section">
       <div className="sub-header"><h4>Assertions</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddAssertion(index)}>+ Add</button></div>
       {(action.assertions || []).map((assertion, assertionIndex) => (
         <div key={assertionIndex} className="assertion-row">
           <select value={assertion.type} onChange={e => onUpdateAssertion(index, assertionIndex, 'type', e.target.value)}>
-            {isJmsScript ? (
-              <>
-                <option value="message_received">Message Received</option><option value="body_contains">Body Contains</option>
-                <option value="property_equals">Property Equals</option><option value="header_equals">Header Equals</option>
-                <option value="correlation_match">Correlation Match</option><option value="response_time_ms">Response Time (ms)</option>
-              </>
-            ) : (
-              <>
-                <option value="status_code">Status Code</option><option value="response_time_ms">Response Time (ms)</option>
-                <option value="body_contains">Body Contains</option><option value="header_contains">Header Contains</option>
-              </>
-            )}
+            {options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
-          {assertion.type === 'status_code' && <input type="number" value={typeof assertion.expected === 'number' ? assertion.expected : 200} onChange={e => onUpdateAssertion(index, assertionIndex, 'expected', Number(e.target.value))} />}
+          {assertionUsesNumericExpected(assertion.type) && <input type="number" value={typeof assertion.expected === 'number' ? assertion.expected : 0} onChange={e => onUpdateAssertion(index, assertionIndex, 'expected', Number(e.target.value))} />}
           {assertion.type === 'response_time_ms' && <input type="number" value={assertion.max ?? 5000} onChange={e => onUpdateAssertion(index, assertionIndex, 'max', Number(e.target.value))} placeholder="Max ms" />}
-          {(assertion.type === 'body_contains' || assertion.type === 'header_contains' || assertion.type === 'correlation_match') && <input value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder="Expected text" />}
-          {(assertion.type === 'property_equals' || assertion.type === 'header_equals') && <input value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder="Name" />}
-          {(assertion.type === 'property_equals' || assertion.type === 'header_equals') && <input value={typeof assertion.expected === 'string' || typeof assertion.expected === 'number' ? String(assertion.expected) : ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'expected', e.target.value)} placeholder="Expected value" />}
+          {assertionUsesTextValue(assertion.type) && <input value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder="Expected text" />}
+          {assertionUsesNamedExpected(assertion.type) && assertion.type !== 'scalar_equals' && <input value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder="Name" />}
+          {assertionUsesNamedExpected(assertion.type) && <input value={typeof assertion.expected === 'string' || typeof assertion.expected === 'number' ? String(assertion.expected) : ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'expected', e.target.value)} placeholder="Expected value" />}
           <button className="btn-icon danger" onClick={() => onRemoveAssertion(index, assertionIndex)}>✕</button>
         </div>
       ))}

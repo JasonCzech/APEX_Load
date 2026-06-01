@@ -118,10 +118,12 @@ func (g *GRPC) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.StatusCode = int(grpcstatus.Code(err))
 		result.ErrorMessage = err.Error()
 		result.Snapshot = g.buildSnapshot(action, result)
+		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 		return result, nil
 	}
 	result.Success = true
 	result.StatusCode = int(codes.OK)
+	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 	return result, nil
 }
 

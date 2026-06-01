@@ -1038,6 +1038,78 @@ describe('TestExecutionArchive', () => {
     expect(dialog?.textContent).toContain('Connection: new')
   })
 
+  it('shows native protocol evidence for archived events without requiring HTTP snapshots', async () => {
+    const transactions: TransactionEvent[] = [{
+      timestamp: '2026-05-14T20:00:45Z',
+      test_id: 'test-1',
+      test_name: 'Native Evidence Test',
+      group: 'Database',
+      action_name: 'Lookup User',
+      dependency_type: 'database',
+      dependency_target: 'sqlite',
+      duration_ms: 32,
+      status_code: 500,
+      success: false,
+      error_message: 'row_count assertion failed',
+      bytes_received: 64,
+      protocol_evidence: {
+        protocol: 'database',
+        operation: 'db_query',
+        target: 'sqlite',
+        status: 'failed',
+        rows: {
+          row_count: 0,
+          rows: [],
+        },
+        metadata: {
+          error: 'row_count assertion failed',
+        },
+      },
+    }]
+
+    await act(async () => {
+      root.render(
+        <TestExecutionArchive
+          hasArchive={true}
+          test={test}
+          archiveError=""
+          archiveLoading={false}
+          archiveReport={archiveReport}
+          onDownloadBrowserDiagnostics={vi.fn()}
+          onDownloadArchiveArtifact={vi.fn()}
+          archiveActionEntries={[]}
+          archiveSOAPOperationEntries={[]}
+          selectedArchiveAction=""
+          onSelectedArchiveActionChange={vi.fn()}
+          selectedArchiveSOAPOperation=""
+          onSelectedArchiveSOAPOperationChange={vi.fn()}
+          archiveGroups={[]}
+          selectedArchiveGroup=""
+          onSelectedArchiveGroupChange={vi.fn()}
+          archiveErrorsOnly={false}
+          onArchiveErrorsOnlyChange={vi.fn()}
+          archiveTransactionsLoading={false}
+          archiveTransactionsTotal={1}
+          archivePageStart={1}
+          archivePageEnd={1}
+          archiveTransactionsOffset={0}
+          archivePageSize={50}
+          onPageSizeChange={vi.fn()}
+          onPreviousPage={vi.fn()}
+          onNextPage={vi.fn()}
+          archiveTransactions={transactions}
+          expandedArchiveEvent="2026-05-14T20:00:45Z-0"
+          onExpandedArchiveEventChange={vi.fn()}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Protocol Evidence')
+    expect(container.textContent).toContain('database / db_query / failed / sqlite')
+    expect(container.textContent).toContain('row_count')
+    expect(container.textContent).toContain('row_count assertion failed')
+  })
+
   it('renders SOAP operation archive summaries when present', async () => {
     const operationReport: RunArchiveReport = {
       ...archiveReport,

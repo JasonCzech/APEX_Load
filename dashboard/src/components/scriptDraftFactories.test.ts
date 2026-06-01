@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { type AuthoringComponent } from '../types'
-import { composeComponentDraft, createApiDraft, createJavaHttpDraft, createJmsDraft, createSoapDraft, createWebDraft } from './scriptDraftFactories'
+import { composeComponentDraft, createApiDraft, createDatabaseDraft, createGrpcDraft, createJavaHttpDraft, createJmsDraft, createNetworkDraft, createSoapDraft, createWebDraft, createWebSocketDraft } from './scriptDraftFactories'
 
 describe('scriptDraftFactories', () => {
   it('creates the default API script draft', () => {
@@ -47,6 +47,37 @@ describe('scriptDraftFactories', () => {
           mock: true,
         }),
       }),
+    }))
+  })
+
+  it('creates first-class native protocol drafts', () => {
+    expect(createWebSocketDraft()).toEqual(expect.objectContaining({
+      protocol: 'websocket',
+      config: expect.objectContaining({
+        websocket: expect.objectContaining({ reconnect: true, read_timeout_ms: 30000 }),
+      }),
+      actions: [expect.objectContaining({ type: 'ws_connect' })],
+    }))
+    expect(createGrpcDraft()).toEqual(expect.objectContaining({
+      protocol: 'grpc',
+      config: expect.objectContaining({
+        grpc: expect.objectContaining({ use_reflection: true, timeout_ms: 30000 }),
+      }),
+      actions: [expect.objectContaining({ type: 'grpc_unary', target: 'package.Service/Method' })],
+    }))
+    expect(createDatabaseDraft()).toEqual(expect.objectContaining({
+      protocol: 'database',
+      config: expect.objectContaining({
+        database: expect.objectContaining({ driver: 'sqlite', read_only: true }),
+      }),
+      actions: [expect.objectContaining({ type: 'db_query', target: 'select 1 as ok' })],
+    }))
+    expect(createNetworkDraft()).toEqual(expect.objectContaining({
+      protocol: 'network',
+      config: expect.objectContaining({
+        network: expect.objectContaining({ subprotocol: 'tcp', host: 'localhost' }),
+      }),
+      actions: [expect.objectContaining({ type: 'network_health' })],
     }))
   })
 
@@ -179,6 +210,22 @@ describe('scriptDraftFactories', () => {
       }
 
       expect(composeComponentDraft(component).protocol).toBe('soap')
+    })
+
+    it('selects native protocol base drafts for native components', () => {
+      const component: AuthoringComponent = {
+        id: 'database-query',
+        kind: 'request_group',
+        name: 'Database Query',
+        protocols: ['database'],
+        summary: 'SQL query flow.',
+        actions: [{ name: 'Lookup', type: 'db_query', target: 'select 1' }],
+      }
+
+      const draft = composeComponentDraft(component)
+
+      expect(draft.protocol).toBe('database')
+      expect(draft.config).toHaveProperty('database')
     })
 
     it('falls back to the HTTP draft for all-protocol (*) components and omits empty data sources', () => {
