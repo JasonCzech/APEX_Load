@@ -71,6 +71,18 @@ interface Correlation {
   found_in_seq: number
   used_in_seqs: number[]
   sample_value: string
+  rule_id?: string
+  confidence?: number
+  reasons?: string[]
+}
+
+// confidenceTone buckets a 0..1 correlation confidence for badge styling.
+// >=0.8 is auto-applicable in the engine; the UI mirrors that threshold.
+function confidenceTone(confidence?: number): 'high' | 'medium' | 'low' | null {
+  if (typeof confidence !== 'number') return null
+  if (confidence >= 0.8) return 'high'
+  if (confidence >= 0.6) return 'medium'
+  return 'low'
 }
 
 interface RecorderStatus {
@@ -871,12 +883,23 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
                   <div key={i} className="rec-corr-item">
                     <div className="rec-corr-header">
                       <code className="rec-corr-name">{`{{var.${c.name}}}`}</code>
+                      {confidenceTone(c.confidence) && (
+                        <span
+                          className={`rec-corr-confidence tone-${confidenceTone(c.confidence)}`}
+                          title={c.rule_id ? `rule: ${c.rule_id}` : undefined}
+                        >
+                          {Math.round((c.confidence as number) * 100)}% confidence
+                        </span>
+                      )}
                       <span className="rec-corr-type">{c.extract_type} / {c.source}</span>
                     </div>
                     <div className="rec-corr-detail">
                       <span>Extracted from request #{c.found_in_seq}</span>
                       <span>Used in #{c.used_in_seqs.join(', #')}</span>
                     </div>
+                    {c.reasons && c.reasons.length > 0 && (
+                      <div className="rec-corr-reasons">Why: {c.reasons.join('; ')}</div>
+                    )}
                     <div className="rec-corr-sample">
                       Sample: <code>{c.sample_value}</code>
                     </div>

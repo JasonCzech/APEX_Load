@@ -99,6 +99,9 @@ describe('RecordingStudio', () => {
           found_in_seq: 1,
           used_in_seqs: [2],
           sample_value: 'abc123',
+          rule_id: 'json.session_id',
+          confidence: 0.85,
+          reasons: ['reused in a later request'],
         },
       ],
       warnings: ['review dynamic headers'],
@@ -215,6 +218,8 @@ describe('RecordingStudio', () => {
     expect(container.textContent).toContain('Checkout Preview')
     expect(container.textContent).toContain('review dynamic headers')
     expect(container.textContent).toContain('{{var.session_id}}')
+    expect(container.textContent).toContain('85% confidence')
+    expect(container.textContent).toContain('reused in a later request')
     expect(container.textContent).toContain('Save To Script Library')
     expect(container.textContent).toContain('Open In Visual Editor')
 

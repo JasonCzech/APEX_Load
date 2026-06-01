@@ -20,6 +20,12 @@ type Correlation struct {
 	UsedInSeqs  []int  `json:"used_in_seqs"`
 	Value       string `json:"-"`
 	SampleValue string `json:"sample_value"`
+	// RuleID, Confidence, and Reasons carry the rules-engine ranking through to
+	// the import-review UI so users can triage the highest-confidence
+	// correlations first.
+	RuleID     string   `json:"rule_id,omitempty"`
+	Confidence float64  `json:"confidence,omitempty"`
+	Reasons    []string `json:"reasons,omitempty"`
 }
 
 type ConvertResult struct {
@@ -389,6 +395,9 @@ func detectCorrelations(requests []RecordedRequest) []Correlation {
 			UsedInSeqs:  corr.UsedInIDs,
 			Value:       corr.Value,
 			SampleValue: corr.SampleValue,
+			RuleID:      corr.RuleID,
+			Confidence:  corr.Confidence,
+			Reasons:     corr.Reasons,
 		})
 	}
 	return correlations

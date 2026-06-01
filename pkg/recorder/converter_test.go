@@ -220,6 +220,16 @@ func TestConvertSession_CorrelatesCapturedCookies(t *testing.T) {
 	if corr.Name != "corr_cookie_session" || corr.Source != "header" || corr.ExtractType != "regex" {
 		t.Fatalf("unexpected correlation: %#v", corr)
 	}
+	// The rules-engine ranking metadata must flow through to the import-review UI.
+	if corr.RuleID == "" {
+		t.Fatalf("expected rule id on correlation, got %#v", corr)
+	}
+	if corr.Confidence <= 0 {
+		t.Fatalf("expected positive confidence, got %v", corr.Confidence)
+	}
+	if len(corr.Reasons) == 0 {
+		t.Fatalf("expected confidence reasons, got %#v", corr.Reasons)
+	}
 	if len(result.Script.Actions[0].Extractors) != 1 {
 		t.Fatalf("first action extractors = %#v", result.Script.Actions[0].Extractors)
 	}
