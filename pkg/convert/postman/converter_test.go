@@ -125,6 +125,77 @@ func TestConvertPostmanFormAndGraphQLBodies(t *testing.T) {
 	}
 }
 
+func TestConvertPostmanAuthDynamicVariablesAndPathVariables(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+		  "info": {"name": "Auth Collection"},
+		  "auth": {
+		    "type": "digest",
+		    "digest": [
+		      {"key": "username", "value": "digest-user"},
+		      {"key": "password", "value": "{{digest_password}}"}
+		    ]
+		  },
+		  "item": [
+		    {
+		      "name": "Get Order",
+		      "request": {
+		        "method": "GET",
+		        "url": {
+		          "raw": "https://api.example.com/orders/:orderId?requestId={{$guid}}&ts={{$timestamp}}",
+		          "variable": [{"key": "orderId", "value": "A-100"}]
+		        },
+		        "header": [{"key": "X-Request-Id", "value": "{{$guid}}"}]
+		      }
+		    },
+		    {
+		      "name": "Bearer Request",
+		      "request": {
+		        "method": "POST",
+		        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{token}}"}]},
+		        "url": "https://api.example.com/orders",
+		        "body": {"mode": "raw", "raw": "{\"id\":\"{{$guid}}\",\"created\":\"{{$isoTimestamp}}\",\"shard\":\"{{$randomInt}}\"}"}
+		      }
+		    },
+		    {
+		      "name": "Signed Request",
+		      "request": {
+		        "method": "GET",
+		        "auth": {"type": "awsv4", "awsv4": [{"key": "accessKey", "value": "AKIA"}]},
+		        "url": "https://api.example.com/signed"
+		      }
+		    }
+		  ]
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Script.Config.HTTP.Auth.Type != "digest" || result.Script.Config.HTTP.Auth.Username != "digest-user" || result.Script.Config.HTTP.Auth.Password != "{{var.digest_password}}" {
+		t.Fatalf("collection auth = %#v", result.Script.Config.HTTP.Auth)
+	}
+	first := result.Script.Actions[0]
+	if first.Target != "/orders/{{var.orderId}}?requestId={{fn.uuid()}}&ts={{fn.timestamp.unix}}" {
+		t.Fatalf("target = %q", first.Target)
+	}
+	if first.Headers["X-Request-Id"] != "{{fn.uuid()}}" {
+		t.Fatalf("dynamic header = %q", first.Headers["X-Request-Id"])
+	}
+	if !postmanParameterNames(result, "orderId") {
+		t.Fatalf("parameters = %#v, want orderId path variable", result.Script.Parameters)
+	}
+	second := result.Script.Actions[1]
+	if second.Auth == nil || second.Auth.Type != "bearer" || second.Auth.Token != "{{var.token}}" {
+		t.Fatalf("request auth = %#v", second.Auth)
+	}
+	if !strings.Contains(second.Body, "{{fn.uuid()}}") || !strings.Contains(second.Body, "{{fn.timestamp.iso8601}}") || !strings.Contains(second.Body, "{{fn.random(0,1000)}}") {
+		t.Fatalf("dynamic body = %s", second.Body)
+	}
+	if !containsPostmanDiagnostic(result, "Postman auth") {
+		t.Fatalf("diagnostics = %#v, want unsupported signing auth warning", result.Unsupported)
+	}
+}
+
 func TestConvertPostmanRejectsEmptyCollection(t *testing.T) {
 	if _, err := Convert(ImportRequest{Content: `{"info":{"name":"Empty"},"item":[]}`}); err == nil {
 		t.Fatal("Convert returned nil error for empty collection")

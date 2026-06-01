@@ -70,6 +70,7 @@ type exchange struct {
 	StartedAt    time.Time
 	HasStartedAt bool
 	DurationMs   float64
+	TimeoutMs    int
 }
 
 type response struct {
@@ -229,6 +230,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			Target:  target,
 			Headers: headers,
 			Body:    body,
+		}
+		if ex.TimeoutMs > 0 {
+			action.TimeoutMs = ex.TimeoutMs
 		}
 		if thinkTimeMs, ok := thinkTimeAfter(exchanges, idx); ok {
 			action.ThinkTimeAfter = true
@@ -590,6 +594,16 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 			}
 		case strings.HasPrefix(token, "-d") && token != "-d":
 			dataParts = append(dataParts, strings.TrimPrefix(token, "-d"))
+		case token == "--json":
+			index++
+			if index >= len(tokens) {
+				return nil, nil, errors.New("curl sample is missing a JSON value after --json")
+			}
+			dataParts = append(dataParts, tokens[index])
+			addCurlJSONHeaders(ex.Headers)
+		case strings.HasPrefix(token, "--json="):
+			dataParts = append(dataParts, strings.TrimPrefix(token, "--json="))
+			addCurlJSONHeaders(ex.Headers)
 		case token == "-G" || token == "--get":
 			dataAsQuery = true
 		case token == "-F" || token == "--form" || token == "--form-string":
@@ -621,6 +635,22 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 			ex.Headers["User-Agent"] = strings.TrimPrefix(token, "--user-agent=")
 		case strings.HasPrefix(token, "-A") && token != "-A":
 			ex.Headers["User-Agent"] = strings.TrimPrefix(token, "-A")
+		case token == "-e" || token == "--referer":
+			index++
+			if index < len(tokens) {
+				ex.Headers["Referer"] = tokens[index]
+			}
+		case strings.HasPrefix(token, "--referer="):
+			ex.Headers["Referer"] = strings.TrimPrefix(token, "--referer=")
+		case strings.HasPrefix(token, "-e") && token != "-e":
+			ex.Headers["Referer"] = strings.TrimPrefix(token, "-e")
+		case token == "--max-time":
+			index++
+			if index < len(tokens) {
+				ex.TimeoutMs = parseCurlSecondsMs(tokens[index])
+			}
+		case strings.HasPrefix(token, "--max-time="):
+			ex.TimeoutMs = parseCurlSecondsMs(strings.TrimPrefix(token, "--max-time="))
 		case token == "-b" || token == "--cookie":
 			index++
 			if index < len(tokens) {
@@ -706,6 +736,15 @@ func addCurlHeader(headers map[string]string, raw string) {
 	}
 }
 
+func addCurlJSONHeaders(headers map[string]string) {
+	if headerLookup(headers, "Content-Type") == "" {
+		headers["Content-Type"] = "application/json"
+	}
+	if headerLookup(headers, "Accept") == "" {
+		headers["Accept"] = "application/json"
+	}
+}
+
 func appendCurlData(ex *exchange, value string) {
 	if ex.Body == "" {
 		ex.Body = value
@@ -755,6 +794,14 @@ func addCurlQueryData(rawURL string, dataParts []string) string {
 		}
 	}
 	return rawURL + separator + strings.Join(dataParts, "&")
+}
+
+func parseCurlSecondsMs(value string) int {
+	seconds, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil || seconds <= 0 {
+		return 0
+	}
+	return int(seconds * 1000)
 }
 
 func isCurlDataFlagWithValue(token string) bool {

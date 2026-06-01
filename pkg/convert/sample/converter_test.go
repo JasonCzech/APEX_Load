@@ -129,6 +129,34 @@ func TestConvertCurlGetMovesDataToQueryAndURLEncodes(t *testing.T) {
 	}
 }
 
+func TestConvertCurlJSONRefererAndMaxTime(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format:  "curl",
+		Content: `curl https://api.example.com/v1/orders --json '{"sku":"ABC"}' -e https://shop.example.com/cart --max-time 2.5`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	if action.Method != "POST" {
+		t.Fatalf("method = %q, want POST", action.Method)
+	}
+	if action.Headers["Content-Type"] != "application/json" || action.Headers["Accept"] != "application/json" {
+		t.Fatalf("headers = %#v", action.Headers)
+	}
+	if action.Headers["Referer"] != "https://shop.example.com/cart" {
+		t.Fatalf("referer = %q", action.Headers["Referer"])
+	}
+	if action.TimeoutMs != 2500 {
+		t.Fatalf("timeout = %d, want 2500", action.TimeoutMs)
+	}
+	if action.Body != `{"sku":"ABC"}` {
+		t.Fatalf("body = %q", action.Body)
+	}
+}
+
 func TestConvertCurlSOAP(t *testing.T) {
 	result, err := Convert(ImportRequest{
 		Format:  "curl",

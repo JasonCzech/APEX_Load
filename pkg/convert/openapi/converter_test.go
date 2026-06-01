@@ -3,6 +3,8 @@ package openapi
 import (
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestConvertOpenAPIJSONBuildsExecutableHTTPScript(t *testing.T) {
@@ -79,6 +81,77 @@ func TestConvertOpenAPIJSONBuildsExecutableHTTPScript(t *testing.T) {
 	}
 	if result.Stats.ConvertedActions != 2 || result.Stats.Assertions != 2 {
 		t.Fatalf("stats = %+v, want 2 actions and 2 assertions", result.Stats)
+	}
+}
+
+func TestConvertOpenAPIServerVariablesStyleExplodeAndOperationSecurity(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "openapi": "3.0.3",
+  "info": {"title": "Search", "version": "1.0"},
+  "servers": [{
+    "url": "https://{env}.api.example.test/{basePath}",
+    "variables": {
+      "env": {"default": "prod", "enum": ["prod", "stage"]},
+      "basePath": {"default": "v2"}
+    }
+  }],
+  "components": {
+    "securitySchemes": {
+      "basicAuth": {"type": "http", "scheme": "basic"},
+      "bearerAuth": {"type": "http", "scheme": "bearer"}
+    }
+  },
+  "paths": {
+    "/search": {
+      "get": {
+        "operationId": "searchOrders",
+        "security": [{"basicAuth": []}],
+        "parameters": [
+          {"name": "tags", "in": "query", "style": "pipeDelimited", "explode": false, "schema": {"type": "array", "items": {"type": "string"}}},
+          {"name": "filter", "in": "query", "style": "deepObject", "explode": true, "schema": {"type": "object", "properties": {"status": {"type": "string"}, "owner": {"type": "string"}}}}
+        ],
+        "responses": {"200": {}}
+      }
+    },
+    "/public": {
+      "get": {
+        "operationId": "publicStatus",
+        "security": [],
+        "responses": {"200": {}}
+      }
+    }
+  }
+}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Script.Config.BaseURL != "https://prod.api.example.test/v2" {
+		t.Fatalf("base URL = %q", result.Script.Config.BaseURL)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(strings.Join(result.Warnings, "\n"), "server variable env used default prod") {
+		t.Fatalf("warnings = %#v, want server variable enum note", result.Warnings)
+	}
+	search := openAPIActionFull(result, "searchOrders")
+	if search.Auth == nil || search.Auth.Type != "basic" {
+		t.Fatalf("operation auth = %#v, want basic override", search.Auth)
+	}
+	for _, want := range []string{
+		"tags={{data.openapi.tags}}",
+		"filter[owner]={{data.openapi.filter_owner}}",
+		"filter[status]={{data.openapi.filter_status}}",
+	} {
+		if !strings.Contains(search.Target, want) {
+			t.Fatalf("target = %q, want %q", search.Target, want)
+		}
+	}
+	public := openAPIActionFull(result, "publicStatus")
+	if public.Auth != nil {
+		t.Fatalf("public auth = %#v, want no operation auth", public.Auth)
+	}
+	if !strings.Contains(result.Script.DataSources[0].InlineData, "filter_owner") || !strings.Contains(result.Script.DataSources[0].InlineData, "filter_status") {
+		t.Fatalf("data source = %q", result.Script.DataSources[0].InlineData)
 	}
 }
 
@@ -442,6 +515,15 @@ func openAPIAction(result *ConvertResult, name string) dslActionForTest {
 		}
 	}
 	return dslActionForTest{}
+}
+
+func openAPIActionFull(result *ConvertResult, name string) dsl.Action {
+	for _, action := range result.Script.Actions {
+		if action.Name == name {
+			return action
+		}
+	}
+	return dsl.Action{}
 }
 
 type dslActionForTest struct {
