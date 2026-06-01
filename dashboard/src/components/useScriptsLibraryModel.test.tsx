@@ -9,8 +9,8 @@ import { useScriptsLibraryModel } from './useScriptsLibraryModel'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-function LibraryHarness({ scripts, api }: { scripts: StoredScript[], api: { listTests: () => Promise<{ tests: TestSummary[] }> } }) {
-  const model = useScriptsLibraryModel({ api: api as never, scripts })
+function LibraryHarness({ scripts, api }: { scripts: StoredScript[], api: { listTests: (params?: unknown) => Promise<{ tests: TestSummary[] }> } }) {
+  const model = useScriptsLibraryModel({ api: api as never, scripts, projectId: 'project-1' })
 
   return (
     <div>
@@ -74,6 +74,7 @@ describe('useScriptsLibraryModel', () => {
     await flushPromises()
 
     expect(api.listTests).toHaveBeenCalledTimes(1)
+    expect(api.listTests).toHaveBeenCalledWith({ project_id: 'project-1' })
     expect(readTestId('expanded-script')).toBe('script-1')
     expect(readTestId('run-count')).toBe('2')
     expect(readTestId('first-run')).toBe('Newer Run')

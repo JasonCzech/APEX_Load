@@ -1,3 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
-  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="#6366f1"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <polygon points="200,40 350,280 50,280" fill="#9AB8D6" opacity="0.5"/>
+  <polygon points="240,80 360,280 120,280" fill="#C5DFF0" opacity="0.4"/>
+  <polygon points="200,100 310,280 90,280" fill="#7BA7CC"/>
+  <line x1="60" y1="290" x2="340" y2="290" stroke="#8CC4E8" stroke-width="2"/>
 </svg>

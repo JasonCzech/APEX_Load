@@ -13,15 +13,18 @@ function ChartHarness({
   test,
   history,
   localMetricsHistory,
+  archiveResourceHistory = [],
 }: {
   test: unknown
   history: MetricsHistoryPoint[]
   localMetricsHistory: MetricsHistoryPoint[]
+  archiveResourceHistory?: MetricsHistoryPoint[]
 }) {
   const model = useExecutionChartModel({
     test: test as never,
     history,
     localMetricsHistory,
+    archiveResourceHistory,
   })
 
   return (
@@ -29,6 +32,8 @@ function ChartHarness({
       <span data-testid="time-range">{model.timeRange}</span>
       <span data-testid="filtered-count">{model.filteredData.length}</span>
       <span data-testid="avg-tps">{model.summary?.avgTps ?? 0}</span>
+      <span data-testid="latest-cpu">{model.filteredData[model.filteredData.length - 1]?.cpuProcess ?? 'none'}</span>
+      <span data-testid="latest-net">{model.filteredData[model.filteredData.length - 1]?.netSent ?? 'none'}</span>
       <span data-testid="show-ref-area">{model.showRefArea ? 'yes' : 'no'}</span>
       <span data-testid="ref-left">{String(model.refAreaLeft)}</span>
       <span data-testid="ref-end">{String(model.refAreaEnd)}</span>
@@ -36,6 +41,7 @@ function ChartHarness({
       <button data-testid="begin" onClick={() => model.onChartMouseDown('10:00:00')}>begin</button>
       <button data-testid="move" onClick={() => model.onChartMouseMove('10:00:01')}>move</button>
       <button data-testid="zoom" onClick={() => model.onZoom()}>zoom</button>
+      <button data-testid="reset" onClick={() => model.onResetZoom()}>reset</button>
     </div>
   )
 }
@@ -128,6 +134,53 @@ describe('useExecutionChartModel', () => {
     expect(readTestId('filtered-count')).toBe('13')
   })
 
+  it('enriches completed backend history with archived resource samples', async () => {
+    await act(async () => {
+      root.render(
+        <ChartHarness
+          test={{
+            status: 'COMPLETE',
+            history: [
+              {
+                timestamp: '2026-05-12T20:00:00Z',
+                active_vusers: 10,
+                tps: 5,
+                avg_response_ms: 100,
+                error_pct: 1,
+                p50_ms: 90,
+                p90_ms: 120,
+                p95_ms: 140,
+                p99_ms: 180,
+              },
+            ],
+          }}
+          history={[]}
+          localMetricsHistory={[]}
+          archiveResourceHistory={[
+            {
+              time: '8:00:00 PM',
+              timestampMs: Date.parse('2026-05-12T20:00:00Z'),
+              vusers: 10,
+              tps: 0,
+              avgMs: 0,
+              errorPct: 0,
+              p50: 0,
+              p90: 0,
+              p99: 0,
+              cpuProcess: 42,
+              netSent: 128,
+            },
+          ]}
+        />,
+      )
+    })
+
+    expect(readTestId('filtered-count')).toBe('1')
+    expect(readTestId('avg-tps')).toBe('5')
+    expect(readTestId('latest-cpu')).toBe('42')
+    expect(readTestId('latest-net')).toBe('128')
+  })
+
   it('tracks drag selection and applies custom zoom', async () => {
     await act(async () => {
       root.render(
@@ -155,6 +208,11 @@ describe('useExecutionChartModel', () => {
     expect(readTestId('time-range')).toBe('custom')
     expect(readTestId('filtered-count')).toBe('2')
     expect(readTestId('show-ref-area')).toBe('no')
+
+    await click('reset')
+
+    expect(readTestId('time-range')).toBe('all')
+    expect(readTestId('filtered-count')).toBe('3')
   })
 
   it('filters by elapsed time instead of raw point count for 10m view', async () => {

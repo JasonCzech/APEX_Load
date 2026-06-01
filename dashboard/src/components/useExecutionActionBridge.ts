@@ -1,17 +1,19 @@
 import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } from 'react'
 
 import { ApiError, useApi } from '../hooks/useApi'
-import { CapacityAdvisory, TestSummary } from '../types'
+import { CapacityAdvisory, ScriptShakeoutReport, TestSummary } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 
 interface ExecutionActionBridgeModel {
   controlFeedback: string
   showControlFeedback: (message: string) => void
   startCapacityConflict: CapacityAdvisory | null
+  startShakeoutConflict: ScriptShakeoutReport | null
   startFeedback: string
   onDismissStartConflict: () => void
   onStart: () => Promise<void>
   onConfirmStartAnyway: () => Promise<void>
+  onContinueAfterShakeoutFailure: () => Promise<void>
   onStop: () => Promise<void>
   onAbort: () => Promise<void>
   onPause: () => Promise<void>
@@ -26,6 +28,7 @@ export function useExecutionActionBridge(
   const api = useApi()
   const [controlFeedback, setControlFeedback] = useState('')
   const [startCapacityConflict, setStartCapacityConflict] = useState<CapacityAdvisory | null>(null)
+  const [startShakeoutConflict, setStartShakeoutConflict] = useState<ScriptShakeoutReport | null>(null)
   const [startFeedback, setStartFeedback] = useState('')
   const clearFeedbackTimer = useRef<number | null>(null)
 
@@ -41,8 +44,9 @@ export function useExecutionActionBridge(
   }, [])
 
   useEffect(() => {
-    if (test?.status && test.status !== 'QUEUED') {
+    if (test?.status && test.status !== 'QUEUED' && test.status !== 'PENDING' && test.status !== 'SHAKEOUT' && test.status !== 'SHAKEOUT_REVIEW') {
       setStartCapacityConflict(null)
+      setStartShakeoutConflict(null)
       setStartFeedback('')
     }
   }, [test?.status])
@@ -55,11 +59,29 @@ export function useExecutionActionBridge(
     }
   }, [])
 
-  const runStart = useCallback(async (override = false) => {
+  const runStart = useCallback(async (options?: { overrideCapacity?: boolean; overrideShakeout?: boolean }) => {
     setStartFeedback('')
     try {
-      await api.startTest(testId, override ? { override_capacity_shortfall: true } : undefined)
+      const startOptions = options?.overrideCapacity || options?.overrideShakeout
+        ? {
+          ...(options.overrideCapacity ? { override_capacity_shortfall: true } : {}),
+          ...(options.overrideShakeout ? { override_script_shakeout_failure: true } : {}),
+        }
+        : undefined
+      const response = await api.startTest(testId, startOptions)
       setStartCapacityConflict(null)
+      setStartShakeoutConflict(null)
+      if (response.status === 'pending') {
+        setStartFeedback(response.message || 'Queued until project capacity is available.')
+        setTest((prev) => (prev ? {
+          ...prev,
+          status: 'PENDING',
+          pending_reason: response.message || prev.pending_reason,
+          pending_since: prev.pending_since || new Date().toISOString(),
+        } : null))
+        return
+      }
+      setTest((prev) => (prev ? { ...prev, status: 'INITIALIZING' } : null))
     } catch (error: unknown) {
       if (error instanceof ApiError && error.code === 'capacity_shortfall') {
         const capacityAdvisory = typeof error.payload === 'object' && error.payload !== null && 'capacity_advisory' in error.payload
@@ -69,9 +91,24 @@ export function useExecutionActionBridge(
         setStartFeedback(getErrorMessage(error, 'Capacity advisory requires an explicit override before starting.'))
         return
       }
+      if (error instanceof ApiError && error.code === 'script_shakeout_failed') {
+        const report = typeof error.payload === 'object' && error.payload !== null && 'script_shakeout' in error.payload
+          ? (error.payload as { script_shakeout?: ScriptShakeoutReport }).script_shakeout
+          : undefined
+        setStartShakeoutConflict(report || null)
+        const message = getErrorMessage(error, 'Script shakeout failed; full load test has not started.')
+        setStartFeedback(message)
+        setTest((prev) => (prev ? {
+          ...prev,
+          status: 'SHAKEOUT_REVIEW',
+          script_shakeout: true,
+          error: report?.summary || message,
+        } : null))
+        return
+      }
       setStartFeedback(getErrorMessage(error, 'Unable to start test'))
     }
-  }, [api, test?.capacity_advisory, testId])
+  }, [api, setTest, test?.capacity_advisory, testId])
 
   const onPause = useCallback(async () => {
     try {
@@ -115,10 +152,12 @@ export function useExecutionActionBridge(
     controlFeedback,
     showControlFeedback,
     startCapacityConflict,
+    startShakeoutConflict,
     startFeedback,
     onDismissStartConflict: () => setStartCapacityConflict(null),
-    onStart: () => runStart(false),
-    onConfirmStartAnyway: () => runStart(true),
+    onStart: () => runStart(),
+    onConfirmStartAnyway: () => runStart({ overrideCapacity: true }),
+    onContinueAfterShakeoutFailure: () => runStart({ overrideShakeout: true }),
     onStop,
     onAbort,
     onPause,

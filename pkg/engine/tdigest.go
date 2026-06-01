@@ -211,8 +211,6 @@ func (td *TDigest) compress() {
 			cumWeight += last.weight
 			result = append(result, c)
 		}
-
-		cumWeight = cumWeight // track position for next iteration
 	}
 
 	td.centroids = result

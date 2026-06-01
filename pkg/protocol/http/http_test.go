@@ -1,15 +1,20 @@
 package http
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func initHTTP(t *testing.T, config map[string]any) *HTTP {
@@ -116,13 +121,13 @@ func TestHTTP_Init_InsecureSkipVerify(t *testing.T) {
 
 func TestHTTP_Init_DefaultHeaders(t *testing.T) {
 	h := initHTTP(t, map[string]any{
-		"user_agent":      "StormRunner/1.0",
+		"user_agent":      "APEXLoad/1.0",
 		"accept_encoding": "gzip",
 		"accept_language": "en-US",
 		"default_headers": map[string]string{"X-Custom": "value"},
 	})
 
-	if h.defaultHeaders["User-Agent"] != "StormRunner/1.0" {
+	if h.defaultHeaders["User-Agent"] != "APEXLoad/1.0" {
 		t.Errorf("User-Agent = %q", h.defaultHeaders["User-Agent"])
 	}
 	if h.defaultHeaders["Accept-Encoding"] != "gzip" {
@@ -339,6 +344,163 @@ func TestHTTP_ExecuteCapturesDependencyAndCorrelationMetadata(t *testing.T) {
 	}
 }
 
+func TestHTTP_ExecuteInjectsTraceparentHeaderWhenMissing(t *testing.T) {
+	var receivedTraceparent string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedTraceparent = r.Header.Get("Traceparent")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "test-traceparent",
+		Method: "GET",
+		Target: "/trace",
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	pattern := regexp.MustCompile(`^00-[0-9a-f]{32}-[0-9a-f]{16}-01$`)
+	if !pattern.MatchString(receivedTraceparent) {
+		t.Fatalf("Traceparent header = %q, want W3C traceparent format", receivedTraceparent)
+	}
+	if result.CorrelationID != receivedTraceparent {
+		t.Fatalf("CorrelationID = %q, want generated traceparent %q", result.CorrelationID, receivedTraceparent)
+	}
+}
+
+func TestHTTP_ExecutePreservesExplicitTraceparentHeader(t *testing.T) {
+	const traceparent = "00-00000000000000000000000000000001-0000000000000001-01"
+	var receivedTraceparent string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedTraceparent = r.Header.Get("Traceparent")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "test-explicit-traceparent",
+		Method: "GET",
+		Target: "/trace",
+		Headers: map[string]string{
+			"Traceparent": traceparent,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if receivedTraceparent != traceparent {
+		t.Fatalf("Traceparent header = %q, want %q", receivedTraceparent, traceparent)
+	}
+	if result.CorrelationID != traceparent {
+		t.Fatalf("CorrelationID = %q, want %q", result.CorrelationID, traceparent)
+	}
+}
+
+func TestHTTP_ExecutePopulatesServerTelemetry(t *testing.T) {
+	responseBody := strings.Repeat("x", 2048)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(10 * time.Millisecond)
+		_, _ = w.Write([]byte(responseBody))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+
+	_, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "warm-connection",
+		Method: "GET",
+		Target: "/telemetry",
+	})
+	if err != nil {
+		t.Fatalf("warm Execute returned error: %v", err)
+	}
+
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "server-telemetry",
+		Method: "POST",
+		Target: "/telemetry",
+		Body:   []byte(strings.Repeat("a", 1024)),
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.ServerTelemetry == nil {
+		t.Fatal("ServerTelemetry = nil, want populated telemetry")
+	}
+	if result.ServerTelemetry.RequestPayloadKB < 0.99 || result.ServerTelemetry.RequestPayloadKB > 1.01 {
+		t.Fatalf("RequestPayloadKB = %v, want about 1.0", result.ServerTelemetry.RequestPayloadKB)
+	}
+	if result.ServerTelemetry.RequestSizeClass != "small" {
+		t.Fatalf("RequestSizeClass = %q, want small", result.ServerTelemetry.RequestSizeClass)
+	}
+	if result.ServerTelemetry.ResponsePayloadKB < 1.99 || result.ServerTelemetry.ResponsePayloadKB > 2.01 {
+		t.Fatalf("ResponsePayloadKB = %v, want about 2.0", result.ServerTelemetry.ResponsePayloadKB)
+	}
+	if result.ServerTelemetry.ResponseSizeClass != "small" {
+		t.Fatalf("ResponseSizeClass = %q, want small", result.ServerTelemetry.ResponseSizeClass)
+	}
+	if result.ServerTelemetry.ServerProcessingMs < 0 {
+		t.Fatalf("ServerProcessingMs = %v, want non-negative", result.ServerTelemetry.ServerProcessingMs)
+	}
+	if result.ServerTelemetry.TransferMs < 0 {
+		t.Fatalf("TransferMs = %v, want non-negative", result.ServerTelemetry.TransferMs)
+	}
+	if !result.ServerTelemetry.ConnectionReused {
+		t.Fatalf("ConnectionReused = %v, want true on warmed connection", result.ServerTelemetry.ConnectionReused)
+	}
+	if result.ServerTelemetry.RedirectCount != 0 {
+		t.Fatalf("RedirectCount = %d, want 0", result.ServerTelemetry.RedirectCount)
+	}
+	if result.ServerTelemetry.RedirectMs != 0 {
+		t.Fatalf("RedirectMs = %v, want 0", result.ServerTelemetry.RedirectMs)
+	}
+}
+
+func TestHTTP_ExecuteCapturesRedirectTelemetry(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/redirect":
+			time.Sleep(10 * time.Millisecond)
+			http.Redirect(w, r, "/final", http.StatusFound)
+		case "/final":
+			time.Sleep(5 * time.Millisecond)
+			_, _ = w.Write([]byte("ok"))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "redirect-telemetry",
+		Method: "GET",
+		Target: "/redirect",
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Success = false, error: %s", result.ErrorMessage)
+	}
+	if result.ServerTelemetry == nil {
+		t.Fatal("ServerTelemetry = nil, want redirect telemetry")
+	}
+	if result.ServerTelemetry.RedirectCount != 1 {
+		t.Fatalf("RedirectCount = %d, want 1", result.ServerTelemetry.RedirectCount)
+	}
+	if result.ServerTelemetry.RedirectMs <= 0 {
+		t.Fatalf("RedirectMs = %v, want > 0", result.ServerTelemetry.RedirectMs)
+	}
+	if result.StatusCode != http.StatusOK {
+		t.Fatalf("StatusCode = %d, want 200", result.StatusCode)
+	}
+}
+
 func TestHTTP_Execute_POST(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
@@ -372,6 +534,72 @@ func TestHTTP_Execute_POST(t *testing.T) {
 	}
 }
 
+func TestHTTP_Execute_DecodesBase64Body(t *testing.T) {
+	binaryBody := []byte{0x00, 0xff, 0x10, 0x80, 0x42}
+	var received []byte
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		received, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("ReadAll: %v", err)
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:         "binary-post",
+		Method:       "POST",
+		Target:       "/upload",
+		Body:         []byte(base64.StdEncoding.EncodeToString(binaryBody)),
+		BodyEncoding: "base64",
+	})
+
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Success = false, error: %s", result.ErrorMessage)
+	}
+	if !bytes.Equal(received, binaryBody) {
+		t.Fatalf("received body = %v, want %v", received, binaryBody)
+	}
+	if result.BytesSent != int64(len(binaryBody)) {
+		t.Fatalf("BytesSent = %d, want %d", result.BytesSent, len(binaryBody))
+	}
+}
+
+func TestHTTP_Execute_InvalidBase64BodyFailsBeforeSend(t *testing.T) {
+	called := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:         "bad-binary-post",
+		Method:       "POST",
+		Target:       "/upload",
+		Body:         []byte("not base64!"),
+		BodyEncoding: "base64",
+	})
+
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if called {
+		t.Fatal("server should not be called when base64 decoding fails")
+	}
+	if result.ErrorMessage == "" || !strings.Contains(result.ErrorMessage, "invalid base64 http body") {
+		t.Fatalf("ErrorMessage = %q, want invalid base64 error", result.ErrorMessage)
+	}
+}
+
 func TestHTTP_Execute_DefaultMethod(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
@@ -395,6 +623,7 @@ func TestHTTP_Execute_DefaultMethod(t *testing.T) {
 
 func TestHTTP_Execute_ServerError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(500)
 		w.Write([]byte("internal error"))
 	}))
@@ -414,6 +643,24 @@ func TestHTTP_Execute_ServerError(t *testing.T) {
 	if result.StatusCode != 500 {
 		t.Errorf("StatusCode = %d, want 500", result.StatusCode)
 	}
+	if result.Snapshot == nil {
+		t.Fatal("Snapshot = nil, want populated snapshot on HTTP failure")
+	}
+	if result.Snapshot.RequestMethod != http.MethodGet {
+		t.Fatalf("Snapshot.RequestMethod = %q, want GET", result.Snapshot.RequestMethod)
+	}
+	if result.Snapshot.RequestURL != ts.URL+"/fail" {
+		t.Fatalf("Snapshot.RequestURL = %q, want %q", result.Snapshot.RequestURL, ts.URL+"/fail")
+	}
+	if result.Snapshot.ResponseStatus != 500 {
+		t.Fatalf("Snapshot.ResponseStatus = %d, want 500", result.Snapshot.ResponseStatus)
+	}
+	if result.Snapshot.ResponseBody != "internal error" {
+		t.Fatalf("Snapshot.ResponseBody = %q, want internal error", result.Snapshot.ResponseBody)
+	}
+	if result.Snapshot.ResponseHeaders["Content-Type"] != "text/plain" {
+		t.Fatalf("Snapshot.ResponseHeaders[Content-Type] = %q, want text/plain", result.Snapshot.ResponseHeaders["Content-Type"])
+	}
 }
 
 func TestHTTP_Execute_HeadersApplied(t *testing.T) {
@@ -421,8 +668,8 @@ func TestHTTP_Execute_HeadersApplied(t *testing.T) {
 		if r.Header.Get("X-Custom") != "test-value" {
 			t.Errorf("X-Custom = %q, want %q", r.Header.Get("X-Custom"), "test-value")
 		}
-		if r.Header.Get("User-Agent") != "StormRunner/1.0" {
-			t.Errorf("User-Agent = %q, want %q", r.Header.Get("User-Agent"), "StormRunner/1.0")
+		if r.Header.Get("User-Agent") != "APEXLoad/1.0" {
+			t.Errorf("User-Agent = %q, want %q", r.Header.Get("User-Agent"), "APEXLoad/1.0")
 		}
 		w.Write([]byte("ok"))
 	}))
@@ -430,7 +677,7 @@ func TestHTTP_Execute_HeadersApplied(t *testing.T) {
 
 	h := initHTTP(t, map[string]any{
 		"base_url":   ts.URL,
-		"user_agent": "StormRunner/1.0",
+		"user_agent": "APEXLoad/1.0",
 	})
 
 	h.Execute(context.Background(), &protocol.Action{
@@ -486,6 +733,132 @@ func TestHTTP_Execute_WithExtractor(t *testing.T) {
 	}
 }
 
+func TestHTTP_Execute_AppliesDataFormattingChainBeforeExtractionAndAssertions(t *testing.T) {
+	encodedJSON := base64.StdEncoding.EncodeToString([]byte(`{"access_token":"abc123","expires_in":3600}`))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(encodedJSON))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url":                        ts.URL,
+		"web_data_formatting_auto_detect": true,
+		"web_data_formatting_chain": []map[string]any{
+			{"type": "base64"},
+			{"type": "json_to_xml"},
+		},
+	})
+
+	result, _ := h.Execute(context.Background(), &protocol.Action{
+		Name:   "formatted-response",
+		Method: "GET",
+		Target: "/formatted",
+		Extractors: []protocol.Extractor{
+			{Name: "token", Source: "body", Type: "xpath", Expression: "/json/value/access_token/text()"},
+		},
+		Assertions: []protocol.Assertion{
+			{Type: "body_contains", Value: "<access_token>abc123</access_token>"},
+		},
+	})
+
+	if !result.Success {
+		t.Fatalf("formatted response should pass, error: %s", result.ErrorMessage)
+	}
+	if result.Extractions["token"] != "abc123" {
+		t.Fatalf("extracted token = %q, want abc123", result.Extractions["token"])
+	}
+	if !strings.Contains(result.ResponseBody, "<expires_in>3600</expires_in>") {
+		t.Fatalf("response body = %q, want transformed xml", result.ResponseBody)
+	}
+}
+
+func TestHTTP_Execute_AutoDetectsBase64ResponseBeforeExtractionAndAssertions(t *testing.T) {
+	encodedJSON := base64.StdEncoding.EncodeToString([]byte(`{"access_token":"abc123","expires_in":3600}`))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(encodedJSON))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url":                        ts.URL,
+		"web_data_formatting_auto_detect": true,
+	})
+
+	result, _ := h.Execute(context.Background(), &protocol.Action{
+		Name:   "formatted-response-auto-detect",
+		Method: "GET",
+		Target: "/formatted",
+		Extractors: []protocol.Extractor{
+			{Name: "token", Source: "body", Type: "jsonpath", Expression: "$.access_token"},
+		},
+		Assertions: []protocol.Assertion{
+			{Type: "body_contains", Value: `"access_token":"abc123"`},
+		},
+	})
+
+	if !result.Success {
+		t.Fatalf("auto-detected formatted response should pass, error: %s", result.ErrorMessage)
+	}
+	if result.Extractions["token"] != "abc123" {
+		t.Fatalf("extracted token = %q, want abc123", result.Extractions["token"])
+	}
+	if result.ResponseBody != `{"access_token":"abc123","expires_in":3600}` {
+		t.Fatalf("response body = %q, want decoded json", result.ResponseBody)
+	}
+}
+
+func TestHTTP_Execute_AppliesGzipDataFormattingBeforeExtractionAndAssertions(t *testing.T) {
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write([]byte(`{"access_token":"abc123","expires_in":3600}`)); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(compressed.Bytes())
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url": ts.URL,
+		"web_data_formatting_chain": []map[string]any{{
+			"type": "gzip",
+			"options": map[string]any{
+				"mode": "decode",
+			},
+		}},
+	})
+
+	result, _ := h.Execute(context.Background(), &protocol.Action{
+		Name:   "formatted-response-gzip",
+		Method: "GET",
+		Target: "/formatted",
+		Extractors: []protocol.Extractor{{
+			Name:       "token",
+			Source:     "body",
+			Type:       "jsonpath",
+			Expression: "$.access_token",
+		}},
+		Assertions: []protocol.Assertion{{
+			Type:  "body_contains",
+			Value: `"access_token":"abc123"`,
+		}},
+	})
+
+	if !result.Success {
+		t.Fatalf("gzip formatted response should pass, error: %s", result.ErrorMessage)
+	}
+	if result.Extractions["token"] != "abc123" {
+		t.Fatalf("extracted token = %q, want abc123", result.Extractions["token"])
+	}
+	if result.ResponseBody != `{"access_token":"abc123","expires_in":3600}` {
+		t.Fatalf("response body = %q, want decoded json", result.ResponseBody)
+	}
+}
+
 func TestHTTP_Execute_WithAssertion(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
@@ -529,6 +902,63 @@ func TestHTTP_Execute_FailedAssertion(t *testing.T) {
 
 	if result.Success {
 		t.Error("assertion should fail for status 200 vs expected 201")
+	}
+	if result.Snapshot == nil {
+		t.Fatal("Snapshot = nil, want populated snapshot on assertion failure")
+	}
+	if result.Snapshot.ResponseStatus != 200 {
+		t.Fatalf("Snapshot.ResponseStatus = %d, want 200", result.Snapshot.ResponseStatus)
+	}
+	if result.Snapshot.ResponseBody != "ok" {
+		t.Fatalf("Snapshot.ResponseBody = %q, want ok", result.Snapshot.ResponseBody)
+	}
+}
+
+func TestBuildHTTPSnapshot_RedactsSecretRequestValues(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer super-secret")
+
+	snapshot := buildHTTPSnapshot(
+		http.MethodPost,
+		"https://api.example.test/login?token=super-secret",
+		headers,
+		[]byte("token=super-secret"),
+		"https://api.example.test/login?token=[REDACTED]",
+		map[string]string{"Authorization": "Bearer [REDACTED]"},
+		[]byte("token=[REDACTED]"),
+		500,
+		map[string]string{"Content-Type": "text/plain"},
+		[]byte("failure"),
+	)
+
+	if snapshot.RequestURL != "https://api.example.test/login?token=[REDACTED]" {
+		t.Fatalf("RequestURL = %q", snapshot.RequestURL)
+	}
+	if snapshot.RequestHeaders["Authorization"] != "Bearer [REDACTED]" {
+		t.Fatalf("RequestHeaders[Authorization] = %q", snapshot.RequestHeaders["Authorization"])
+	}
+	if snapshot.RequestBody != "token=[REDACTED]" {
+		t.Fatalf("RequestBody = %q", snapshot.RequestBody)
+	}
+}
+
+func TestBuildHTTPSnapshot_UsesEffectiveURLWhenRedactedTargetIsUnresolvedTemplate(t *testing.T) {
+	effectiveURL := "https://csi-gw-ext.att.com:443/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws"
+	snapshot := buildHTTPSnapshot(
+		http.MethodPost,
+		effectiveURL,
+		nil,
+		nil,
+		"{{var.url}}/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws",
+		nil,
+		nil,
+		0,
+		nil,
+		nil,
+	)
+
+	if snapshot.RequestURL != effectiveURL {
+		t.Fatalf("RequestURL = %q, want effective URL %q", snapshot.RequestURL, effectiveURL)
 	}
 }
 
@@ -627,6 +1057,13 @@ func TestHTTP_ResolveURL(t *testing.T) {
 		{"https://other.com/path", "https://other.com/path"},
 		{"http://other.com/path", "http://other.com/path"},
 		{"/", "https://api.example.com/"},
+		{" https://other.com:443/path ", "https://other.com:443/path"},
+		{"https://other.com:443 /path", "https://other.com:443/path"},
+		{"https://other.com:443\t/path", "https://other.com:443/path"},
+		{"https://other.com:443\r\n/path", "https://other.com:443/path"},
+		{"{{var.url}}/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws", "https://api.example.com/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws"},
+		{"{{var.url}} /Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws", "https://api.example.com/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws"},
+		{"{{param.URL}}/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws", "https://api.example.com/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws"},
 	}
 
 	for _, tt := range tests {

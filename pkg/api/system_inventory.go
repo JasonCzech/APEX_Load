@@ -4,12 +4,17 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"sort"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type SystemInventoryResponse struct {
 	ExecutionMode string                    `json:"execution_mode"`
 	Controller    ControllerInventoryEntry  `json:"controller"`
 	Generators    []GeneratorInventoryEntry `json:"generators"`
+	DataPlatform  DataPlatformInventory     `json:"data_platform,omitempty"`
 }
 
 type ControllerInventoryEntry struct {
@@ -21,17 +26,36 @@ type ControllerInventoryEntry struct {
 }
 
 type GeneratorInventoryEntry struct {
-	Target            string  `json:"target"`
-	GeneratorID       string  `json:"generator_id"`
-	Status            string  `json:"status"`
-	AvailableCapacity int32   `json:"available_capacity"`
-	ActiveVUsers      int32   `json:"active_vusers"`
-	CPUPercent        float64 `json:"cpu_percent"`
-	MemoryBytes       int64   `json:"memory_bytes"`
-	GoroutineCount    int32   `json:"goroutine_count"`
-	CPULimitCores     float64 `json:"cpu_limit_cores"`
-	MemoryLimitBytes  int64   `json:"memory_limit_bytes"`
-	MaxVUsers         int32   `json:"max_vusers"`
+	Target              string   `json:"target"`
+	GeneratorID         string   `json:"generator_id"`
+	Region              string   `json:"region,omitempty"`
+	Status              string   `json:"status"`
+	Version             string   `json:"version,omitempty"`
+	SupportedProtocols  []string `json:"supported_protocols,omitempty"`
+	CompatibleFeatures  []string `json:"compatible_features,omitempty"`
+	CompatibilityState  string   `json:"compatibility_state,omitempty"`
+	CompatibilityIssues []string `json:"compatibility_issues,omitempty"`
+	DrainState          string   `json:"drain_state"`
+	CapacityState       string   `json:"capacity_state"`
+	HealthScore         int      `json:"health_score"`
+	AvailableCapacity   int32    `json:"available_capacity"`
+	ActiveVUsers        int32    `json:"active_vusers"`
+	CPUPercent          float64  `json:"cpu_percent"`
+	MemoryBytes         int64    `json:"memory_bytes"`
+	GoroutineCount      int32    `json:"goroutine_count"`
+	CPULimitCores       float64  `json:"cpu_limit_cores"`
+	MemoryLimitBytes    int64    `json:"memory_limit_bytes"`
+	MaxVUsers           int32    `json:"max_vusers"`
+}
+
+type DataPlatformInventory struct {
+	MetadataStore    string `json:"metadata_store"`
+	ArchiveBackend   string `json:"archive_backend"`
+	ArchiveURIPrefix string `json:"archive_uri_prefix,omitempty"`
+	CacheBackend     string `json:"cache_backend"`
+	CacheKeyPrefix   string `json:"cache_key_prefix,omitempty"`
+	CacheFanout      string `json:"cache_fanout,omitempty"`
+	MetricsRetention string `json:"metrics_retention"`
 }
 
 func (s *Server) handleGetSystemInventory(w http.ResponseWriter, r *http.Request) {
@@ -39,9 +63,9 @@ func (s *Server) handleGetSystemInventory(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) systemInventory(ctx context.Context) SystemInventoryResponse {
-	controllerID := "controller"
-	if hostname, err := os.Hostname(); err == nil && hostname != "" {
-		controllerID = hostname
+	controllerID := s.controllerID
+	if controllerID == "" {
+		controllerID = controllerInstanceID()
 	}
 
 	executionMode := "local"
@@ -50,6 +74,10 @@ func (s *Server) systemInventory(ctx context.Context) SystemInventoryResponse {
 		executionMode = "distributed"
 		entries = backend.SystemInventory(ctx)
 	}
+	for i := range entries {
+		entries[i] = normalizeGeneratorInventoryEntry(entries[i])
+	}
+	s.cacheGeneratorInventory(ctx, entries)
 
 	return SystemInventoryResponse{
 		ExecutionMode: executionMode,
@@ -60,6 +88,115 @@ func (s *Server) systemInventory(ctx context.Context) SystemInventoryResponse {
 			Version:       "0.1.0",
 			ExecutionMode: executionMode,
 		},
-		Generators: entries,
+		Generators:   entries,
+		DataPlatform: s.dataPlatformInventory(),
+	}
+}
+
+func controllerInstanceID() string {
+	if hostname, err := os.Hostname(); err == nil && hostname != "" {
+		return hostname
+	}
+	return "controller"
+}
+
+func (s *Server) dataPlatformInventory() DataPlatformInventory {
+	metadataStore := "unknown"
+	if provider, ok := s.store.(storage.BackendInfoProvider); ok {
+		metadataStore = provider.BackendInfo().Type
+	}
+	archiveBackend := currentArchiveBackend()
+	cacheBackend := "memory"
+	cacheKeyPrefix := ""
+	cacheFanout := ""
+	if s != nil && s.cache != nil {
+		info := s.cache.Info()
+		cacheBackend = info.Backend
+		cacheKeyPrefix = info.KeyPrefix
+		cacheFanout = info.FanoutChannel
+	}
+	return DataPlatformInventory{
+		MetadataStore:    metadataStore,
+		ArchiveBackend:   archiveBackend.Backend,
+		ArchiveURIPrefix: archiveBackend.URIPrefix,
+		CacheBackend:     cacheBackend,
+		CacheKeyPrefix:   cacheKeyPrefix,
+		CacheFanout:      cacheFanout,
+		MetricsRetention: configuredMetricsRetention(),
+	}
+}
+
+func (s *Server) cacheGeneratorInventory(ctx context.Context, generators []GeneratorInventoryEntry) {
+	if s == nil || s.cache == nil {
+		return
+	}
+	writeCtx, cancel := context.WithTimeout(ctx, defaultCacheWriteTimeout)
+	defer cancel()
+	if err := s.cache.SetGeneratorInventory(writeCtx, generators, defaultGeneratorSnapshotTTL); err != nil {
+		return
+	}
+}
+
+func normalizeGeneratorInventoryEntry(entry GeneratorInventoryEntry) GeneratorInventoryEntry {
+	reachable := entry.Status == "connected" || entry.Status == "healthy" || entry.Status == "ready"
+	if entry.Version == "" {
+		entry.Version = "unknown"
+	}
+	if len(entry.SupportedProtocols) == 0 {
+		entry.SupportedProtocols = defaultSupportedProtocols()
+	}
+	if len(entry.CompatibleFeatures) == 0 {
+		entry.CompatibleFeatures = append([]string(nil), entry.SupportedProtocols...)
+	}
+	if entry.CompatibilityState == "" {
+		entry.CompatibilityState = "compatible"
+	}
+	if entry.DrainState == "" {
+		entry.DrainState = "active"
+	}
+	if entry.CapacityState == "" {
+		entry.CapacityState = generatorCapacityState(entry.AvailableCapacity, entry.MaxVUsers, reachable)
+	}
+	if entry.HealthScore == 0 && reachable {
+		entry.HealthScore = generatorHealthScore(reachable, entry.CapacityState)
+	}
+	return entry
+}
+
+func defaultSupportedProtocols() []string {
+	protocols := protocol.List()
+	sort.Strings(protocols)
+	return protocols
+}
+
+func generatorCapacityState(available int32, maxVUsers int32, reachable bool) string {
+	if !reachable {
+		return "unavailable"
+	}
+	if maxVUsers <= 0 {
+		return "unknown"
+	}
+	if available <= 0 {
+		return "saturated"
+	}
+	if float64(available)/float64(maxVUsers) <= 0.2 {
+		return "constrained"
+	}
+	return "available"
+}
+
+func generatorHealthScore(reachable bool, capacityState string) int {
+	if !reachable {
+		return 0
+	}
+	switch capacityState {
+	case "available":
+		return 100
+	case "constrained":
+		return 70
+	case "saturated":
+		return 40
+	default:
+		return 80
 	}
 }

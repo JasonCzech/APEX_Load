@@ -1,14 +1,5 @@
-import { type ScriptActionDefinition, type ScriptDefinition, type ScriptExtractorDefinition } from './scripts'
-
-export type ImportedExtractor = Partial<ScriptExtractorDefinition>
-
-export type ImportedAction = Omit<Partial<ScriptActionDefinition>, 'extractors'> & {
-  extractors?: ImportedExtractor[]
-}
-
-export type ImportedScript = Omit<Partial<ScriptDefinition>, 'actions'> & {
-  actions?: ImportedAction[]
-}
+import { type StoredScenario, type StoredScript } from '../types'
+import { type SourceReview, type ScriptDefinition } from './scripts'
 
 export interface SupportMatrix {
   supported: string[]
@@ -17,10 +8,30 @@ export interface SupportMatrix {
   notes?: string[]
 }
 
+export interface ImportReviewSection {
+  key: string
+  title: string
+  severity: 'info' | 'warning' | 'blocker' | string
+  summary: string
+  items: string[]
+}
+
+export interface ImportRepairSuggestion {
+  id: string
+  category: string
+  severity: 'info' | 'warning' | 'blocker' | string
+  title: string
+  description: string
+  action: string
+  target_action?: string
+  selector_stability_score?: number
+  selector_signals?: string[]
+}
+
 export interface ScriptImportResult<
   TStats = Record<string, unknown>,
   TCorrelation = unknown,
-  TScript extends ImportedScript = ImportedScript,
+  TScript extends ScriptDefinition = ScriptDefinition,
   TScenarioDraft = unknown,
   TSummary = Record<string, unknown>,
 > {
@@ -30,9 +41,42 @@ export interface ScriptImportResult<
   warnings: string[]
   unsupported_elements: string[]
   assumptions: string[]
+  review_sections: ImportReviewSection[]
+  repair_suggestions: ImportRepairSuggestion[]
   correlations: TCorrelation[]
   stats: TStats
   summary: TSummary
+  detected_protocol?: DetectedLoadRunnerProtocol
+  review_artifact?: LoadRunnerReviewArtifact
+  source_review?: SourceReview
+}
+
+export interface DetectedLoadRunnerProtocol {
+  canonical_loadrunner_protocol: string
+  apexload_protocol?: string
+  bundle?: string
+  import_mode: 'executable' | 'review_only' | 'external_runner_required' | 'unsupported' | string
+  confidence: 'high' | 'medium' | 'low' | string
+  display_name?: string
+  source_type?: string
+  signals?: string[]
+  conflicts?: string[]
+  warnings?: string[]
+  required_evidence?: string[]
+  runner_requirement?: string
+}
+
+export interface LoadRunnerReviewArtifact {
+  id: string
+  title: string
+  status: string
+  protocol: DetectedLoadRunnerProtocol
+  summary: string
+  source_files?: string[]
+  preserved_functions?: string[]
+  required_evidence?: string[]
+  next_actions?: string[]
+  metadata?: Record<string, unknown>
 }
 
 export interface LoadRunnerConvertStats {
@@ -51,12 +95,70 @@ export interface LoadRunnerImportSummary {
   project_sections?: string[]
   runtime_files?: string[]
   parameter_files?: string[]
+  runtime_settings_parity?: LoadRunnerRuntimeSettingParity[]
+  runtime_settings_status_counts?: Record<string, number>
+  migration_readiness?: LoadRunnerMigrationReadiness
+  detected_protocol?: DetectedLoadRunnerProtocol
+  review_artifact?: LoadRunnerReviewArtifact
+  source_review?: SourceReview
+  import_mode?: string
   unsupported_function_count: number
+}
+
+export interface LoadRunnerProtocolSupportEntry {
+  id: string
+  bundle?: string
+  bundle_id?: string
+  bundle_name?: string
+  protocol?: string
+  display_name?: string
+  status?: string
+  execution_posture?: string
+  apexload_runtime?: string
+  import_mode?: string
+  runner_class?: string
+  runner_requirement?: string
+  recommended_workflow?: string
+  notes?: string
+}
+
+export interface LoadRunnerSupportMatrixEntry {
+  id: string
+  area: string
+  concept: string
+  fields?: string[]
+  status: string
+  notes?: string
+}
+
+export interface LoadRunnerRuntimeSettingParity extends LoadRunnerSupportMatrixEntry {
+  runtime_files?: string[]
+}
+
+export interface LoadRunnerMigrationPolicy {
+  block_statuses?: string[]
+}
+
+export interface LoadRunnerMigrationReadiness {
+  score_pct: number
+  blocked: boolean
+  summary?: string
+  blocking_statuses?: string[]
+  blocking_settings?: LoadRunnerRuntimeSettingParity[]
+  policy?: LoadRunnerMigrationPolicy
+}
+
+export interface LoadRunnerSupportMatrixExample {
+  title: string
+  coverage: string
+  test: string
 }
 
 export interface JMeterConvertStats {
   thread_groups: number
   samplers: number
+  total_samplers?: number
+  skipped_samplers?: number
   converted_actions: number
   headers: number
   variables: number
@@ -94,9 +196,59 @@ export interface SampleImportStats {
   format: string
   total_requests: number
   converted_actions: number
+  filtered_assets?: number
   assertions: number
   extractors: number
   correlations_detected: number
+}
+
+export interface DevWebImportStats {
+  total_steps: number
+  converted_actions: number
+  http_requests: number
+  websocket_actions: number
+  grpc_calls: number
+  think_times: number
+  skipped: number
+  unsupported_calls?: string[]
+}
+
+export type HARImportStats = SampleImportStats
+
+export interface OpenAPIImportStats {
+  format: string
+  openapi_version?: string
+  total_paths: number
+  total_operations: number
+  converted_actions: number
+  request_bodies: number
+  assertions: number
+  parameters_detected: number
+  auth_schemes_detected?: string[]
+  skipped_operations?: string[]
+}
+
+export interface PostmanImportStats {
+  format: string
+  collection_version?: string
+  folders: number
+  total_requests: number
+  converted_actions: number
+  variables_detected: number
+  auth_schemes?: string[]
+  unsupported_bodies: number
+  assertions: number
+  skipped_items?: string[]
+}
+
+export interface WSDLImportStats {
+  format: string
+  services: number
+  port_types: number
+  bindings: number
+  operations_detected: number
+  converted_actions: number
+  soap_actions_detected?: string[]
 }
 
 export interface SampleCorrelation {
@@ -116,23 +268,39 @@ export interface RecorderCorrelation {
   found_in_seq: number
   used_in_seqs: number[]
   sample_value: string
+  rule_id?: string
+  confidence?: number
+  reasons?: string[]
 }
 
-export type LoadRunnerImportResult = ScriptImportResult<LoadRunnerConvertStats, unknown, ImportedScript, unknown, LoadRunnerImportSummary>
-export type JMeterImportResult = ScriptImportResult<JMeterConvertStats, unknown, ImportedScript, JMeterScenarioDraft, JMeterImportSummary>
+export type LoadRunnerImportResult = ScriptImportResult<LoadRunnerConvertStats, unknown, ScriptDefinition, unknown, LoadRunnerImportSummary>
+export type JMeterImportResult = ScriptImportResult<JMeterConvertStats, unknown, ScriptDefinition, JMeterScenarioDraft, JMeterImportSummary>
 export type SampleImportResult = ScriptImportResult<SampleImportStats, SampleCorrelation>
+export type DevWebImportResult = ScriptImportResult<DevWebImportStats, unknown>
+export type HARImportResult = ScriptImportResult<HARImportStats, SampleCorrelation>
+export type OpenAPIImportResult = ScriptImportResult<OpenAPIImportStats, unknown>
+export type PostmanImportResult = ScriptImportResult<PostmanImportStats, unknown>
+export type WSDLImportResult = ScriptImportResult<WSDLImportStats, unknown>
 export type RecorderImportResult = ScriptImportResult<Record<string, unknown>, RecorderCorrelation>
 
 export interface JMeterSupportMatrixResponse {
   support_matrix?: SupportMatrix
 }
 
+export interface LoadRunnerSupportMatrixResponse {
+  support_matrix?: LoadRunnerSupportMatrixEntry[]
+  notes?: string[]
+  tested_examples?: LoadRunnerSupportMatrixExample[]
+  protocol_support_matrix?: LoadRunnerProtocolSupportEntry[]
+}
+
 export interface SaveJMeterImportRequest {
-  scripts: ImportedScript[]
+  scripts: ScriptDefinition[]
   scenario_draft?: JMeterScenarioDraft
 }
 
 export interface SaveJMeterImportResponse {
+  scripts?: StoredScript[]
   count?: number
-  scenario?: JMeterScenarioDraft
+  scenario?: StoredScenario
 }

@@ -1,19 +1,27 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type iterationResetProtocol struct {
 	initCalls     int
 	teardownCalls int
 	executeCalls  int
+}
+
+type loggingProtocol struct {
+	result       *protocol.Result
+	executeCalls int
 }
 
 func (p *iterationResetProtocol) Name() string { return "browser" }
@@ -34,6 +42,17 @@ func (p *iterationResetProtocol) Teardown(_ context.Context) error {
 	return nil
 }
 func (p *iterationResetProtocol) HealthCheck(_ context.Context) error { return nil }
+
+func (p *loggingProtocol) Name() string                                   { return "http" }
+func (p *loggingProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
+func (p *loggingProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	p.executeCalls++
+	result := *p.result
+	result.ActionName = action.Name
+	return &result, nil
+}
+func (p *loggingProtocol) Teardown(_ context.Context) error    { return nil }
+func (p *loggingProtocol) HealthCheck(_ context.Context) error { return nil }
 
 func TestVUser_Interpolate(t *testing.T) {
 	vu := &VUser{
@@ -64,10 +83,11 @@ func TestVUser_Interpolate(t *testing.T) {
 }
 
 func TestVUser_Interpolate_EnvAndFn(t *testing.T) {
-	t.Setenv("STORMRUNNER_TEST_ENV", "env-value")
+	t.Setenv("APEXLOAD_TEST_ENV", "env-value")
+	t.Setenv("APEXLOAD_SECRET_DB_PASSWORD", "super-secret")
 	vu := &VUser{Variables: map[string]string{}}
 
-	if got := vu.interpolate("{{env.STORMRUNNER_TEST_ENV}}"); got != "env-value" {
+	if got := vu.interpolate("{{env.APEXLOAD_TEST_ENV}}"); got != "env-value" {
 		t.Fatalf("env interpolation = %q, want %q", got, "env-value")
 	}
 
@@ -77,8 +97,12 @@ func TestVUser_Interpolate_EnvAndFn(t *testing.T) {
 		t.Fatalf("fn.uuid() interpolation returned non-uuid value: %q", gotUUID)
 	}
 
-	if got := vu.interpolate("{{env.STORMRUNNER_MISSING_ENV}}"); got != "{{env.STORMRUNNER_MISSING_ENV}}" {
+	if got := vu.interpolate("{{env.APEXLOAD_MISSING_ENV}}"); got != "{{env.APEXLOAD_MISSING_ENV}}" {
 		t.Fatalf("missing env should remain unchanged, got %q", got)
+	}
+
+	if got := vu.interpolate("{{secret.db_password}}"); got != "super-secret" {
+		t.Fatalf("secret interpolation = %q, want %q", got, "super-secret")
 	}
 }
 
@@ -126,7 +150,7 @@ func TestVUser_MergeExtractions(t *testing.T) {
 }
 
 func TestVUser_ResolveAction(t *testing.T) {
-	t.Setenv("STORMRUNNER_ACTION_ENV", "env-action")
+	t.Setenv("APEXLOAD_ACTION_ENV", "env-action")
 
 	vu := &VUser{
 		Variables: map[string]string{
@@ -141,13 +165,13 @@ func TestVUser_ResolveAction(t *testing.T) {
 		Method:   "GET",
 		Target:   "{{var.base}}/users/1",
 		Selector: "#{{data.users.username}}",
-		Value:    "{{env.STORMRUNNER_ACTION_ENV}}",
+		Value:    "{{env.APEXLOAD_ACTION_ENV}}",
 		Headers:  map[string]string{"Accept": "application/json"},
 		Body:     `{"key": "{{var.base}}"}`,
 		Params: map[string]any{
 			"user": "{{data.users.username}}",
 			"auth": map[string]any{
-				"token": "{{env.STORMRUNNER_ACTION_ENV}}",
+				"token": "{{env.APEXLOAD_ACTION_ENV}}",
 			},
 			"labels": []any{"{{var.base}}", 123},
 		},
@@ -351,6 +375,121 @@ func TestVUser_HandleSnapshot(t *testing.T) {
 	}
 }
 
+func TestVUser_Run_LogsExtendedOptions(t *testing.T) {
+	t.Setenv("APEXLOAD_LOG_HOST", "api.example.test")
+	t.Setenv("APEXLOAD_LOG_TOKEN", "abc123")
+
+	protoStub := &loggingProtocol{result: &protocol.Result{
+		Success:          true,
+		StatusCode:       200,
+		Duration:         25 * time.Millisecond,
+		BytesReceived:    128,
+		ResponseBody:     `{"status":"ok"}`,
+		DependencyTarget: "api.example.test",
+		CorrelationID:    "corr-123",
+		DNSTime:          2 * time.Millisecond,
+		ConnectTime:      3 * time.Millisecond,
+		TLSTime:          4 * time.Millisecond,
+		TTFB:             5 * time.Millisecond,
+	}}
+
+	var logBuf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(prev)
+
+	vu := &VUser{
+		ID:    1,
+		Group: "Checkout",
+		Proto: protoStub,
+		Script: &dsl.Script{
+			Protocol: "http",
+			Config: dsl.ScriptConfig{
+				RunLogic: dsl.RunLogicConfig{Iterations: 1},
+				Log: dsl.LogConfig{
+					Level:           "extended",
+					ExtendedOptions: []string{"parameter_substitution", "data_returned", "advanced_trace"},
+				},
+			},
+			Actions: []dsl.Action{{
+				Name:   "Checkout",
+				Type:   "request",
+				Method: "POST",
+				Target: "https://{{env.APEXLOAD_LOG_HOST}}/checkout",
+				Body:   "token={{env.APEXLOAD_LOG_TOKEN}}",
+			}},
+		},
+		Metrics: NewMetricsCollector(16),
+	}
+
+	vu.Run(context.Background())
+
+	logOutput := logBuf.String()
+	for _, expected := range []string{
+		"msg=\"action ok\"",
+		"target=https://api.example.test/checkout",
+		"request_body=\"token=abc123\"",
+		"response_body=\"{\\\"status\\\":\\\"ok\\\"}\"",
+		"dependency_target=api.example.test",
+		"correlation_id=corr-123",
+		"dns_ms=2",
+		"ttfb_ms=5",
+	} {
+		if !strings.Contains(logOutput, expected) {
+			t.Fatalf("log output missing %q: %s", expected, logOutput)
+		}
+	}
+}
+
+func TestVUser_Run_RedactsSecretValuesFromLogs(t *testing.T) {
+	t.Setenv("APEXLOAD_SECRET_LOG_TOKEN", "super-secret")
+
+	protoStub := &loggingProtocol{result: &protocol.Result{
+		Success:       true,
+		StatusCode:    200,
+		Duration:      10 * time.Millisecond,
+		BytesReceived: 64,
+	}}
+
+	var logBuf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(prev)
+
+	vu := &VUser{
+		ID:    1,
+		Group: "Checkout",
+		Proto: protoStub,
+		Script: &dsl.Script{
+			Protocol: "http",
+			Config: dsl.ScriptConfig{
+				RunLogic: dsl.RunLogicConfig{Iterations: 1},
+				Log:      dsl.LogConfig{Level: "extended", ExtendedOptions: []string{"parameter_substitution"}},
+			},
+			Actions: []dsl.Action{{
+				Name:   "Checkout",
+				Type:   "request",
+				Method: "POST",
+				Target: "https://example.test/login?token={{secret.log_token}}",
+				Body:   "token={{secret.log_token}}",
+			}},
+		},
+		Metrics: NewMetricsCollector(16),
+	}
+
+	vu.Run(context.Background())
+
+	logOutput := logBuf.String()
+	if strings.Contains(logOutput, "super-secret") {
+		t.Fatalf("expected secret value to be redacted from logs, got %s", logOutput)
+	}
+	for _, expected := range []string{"target=\"https://example.test/login?token=[REDACTED]\"", "request_body=\"token=[REDACTED]\""} {
+		if !strings.Contains(logOutput, expected) {
+			t.Fatalf("log output missing %q: %s", expected, logOutput)
+		}
+	}
+}
+
 func TestVUser_Run_ResetsBrowserProtocolPerIteration(t *testing.T) {
 	newUserPerIteration := true
 	protoStub := &iterationResetProtocol{}
@@ -382,5 +521,271 @@ func TestVUser_Run_ResetsBrowserProtocolPerIteration(t *testing.T) {
 	}
 	if protoStub.teardownCalls != 1 {
 		t.Fatalf("teardownCalls = %d, want 1 between iterations", protoStub.teardownCalls)
+	}
+}
+
+func TestVUser_Run_ErrorMessageActionLogsWhenScriptLoggingDisabled(t *testing.T) {
+	protoStub := &loggingProtocol{result: &protocol.Result{
+		Success:       true,
+		StatusCode:    200,
+		Duration:      time.Millisecond,
+		BytesReceived: 16,
+	}}
+
+	var logBuf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(prev)
+
+	vu := &VUser{
+		ID:        7,
+		Group:     "Login",
+		Proto:     protoStub,
+		Variables: map[string]string{"userid": "qa-user"},
+		Script: &dsl.Script{
+			Protocol: "http",
+			Config: dsl.ScriptConfig{
+				RunLogic: dsl.RunLogicConfig{Iterations: 1},
+				Log:      dsl.LogConfig{Level: "disabled"},
+			},
+			Actions: []dsl.Action{{
+				Name:  "LR_Error_Message_12",
+				Type:  "error_message",
+				Value: "Login failed for User: %s with status %d",
+				Params: map[string]any{
+					"args": []any{"{{var.userid}}", "500"},
+				},
+			}, {
+				Name:   "Home",
+				Type:   "request",
+				Method: "GET",
+				Target: "/home",
+			}},
+		},
+		Metrics: NewMetricsCollector(16),
+	}
+
+	vu.Run(context.Background())
+
+	if protoStub.executeCalls != 1 {
+		t.Fatalf("executeCalls = %d, want only the HTTP request to reach protocol", protoStub.executeCalls)
+	}
+	logOutput := logBuf.String()
+	for _, expected := range []string{
+		"msg=\"loadrunner error message\"",
+		"vuser=7",
+		"group=Login",
+		"action=LR_Error_Message_12",
+		"message=\"Login failed for User: qa-user with status 500\"",
+	} {
+		if !strings.Contains(logOutput, expected) {
+			t.Fatalf("log output missing %q: %s", expected, logOutput)
+		}
+	}
+	if strings.Contains(logOutput, "msg=\"action ok\"") {
+		t.Fatalf("disabled script logging emitted request logs: %s", logOutput)
+	}
+}
+
+func TestRenderPrintfLikeMessageSupportsLoadRunnerFormatting(t *testing.T) {
+	tests := []struct {
+		name   string
+		format string
+		args   []any
+		want   string
+	}{
+		{
+			name:   "numeric flags precision and escaped percent",
+			format: "HTML error %03d was triggered. Value #1 is %s (%.1f%%)",
+			args:   []any{"7", "Param1", "12.34"},
+			want:   "HTML error 007 was triggered. Value #1 is Param1 (12.3%)",
+		},
+		{
+			name:   "c integer length modifiers",
+			format: "total=%ld unsigned=%u",
+			args:   []any{"42", "9"},
+			want:   "total=42 unsigned=9",
+		},
+		{
+			name:   "missing arguments keep specifier visible",
+			format: "HTML error %d was triggered",
+			args:   nil,
+			want:   "HTML error %d was triggered",
+		},
+		{
+			name:   "literal percent text does not consume arguments",
+			format: "Progress was 100% complete for %s",
+			args:   []any{"UserID"},
+			want:   "Progress was 100% complete for UserID",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := renderPrintfLikeMessage(tt.format, tt.args); got != tt.want {
+				t.Fatalf("renderPrintfLikeMessage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVUser_Run_LoadRunnerUtilityActionsStayInEngine(t *testing.T) {
+	vu := &VUser{
+		ID:        3,
+		Group:     "Checkout",
+		Variables: map[string]string{},
+		Script: &dsl.Script{
+			Protocol: "http",
+			Config:   dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+			Actions: []dsl.Action{{
+				Name: "SaveUser",
+				Type: "loadrunner_parameter",
+				Params: map[string]any{
+					"function": "lr_save_string",
+					"args":     []any{"ada", "UserID"},
+				},
+			}, {
+				Name: "Greeting",
+				Type: "loadrunner_parameter",
+				Params: map[string]any{
+					"function": "lr_param_sprintf",
+					"args":     []any{"Greeting", "Hello %s", "{{var.userid}}"},
+				},
+			}, {
+				Name: "Timer1",
+				Type: "loadrunner_timer",
+				Params: map[string]any{
+					"function": "lr_start_timer",
+					"args":     []any{"Timer1"},
+				},
+			}, {
+				Name: "Timer1",
+				Type: "loadrunner_timer",
+				Params: map[string]any{
+					"function": "lr_end_timer",
+					"args":     []any{"Timer1"},
+				},
+			}, {
+				Name: "Checkout",
+				Type: "loadrunner_transaction",
+				Params: map[string]any{
+					"function": "lr_start_transaction",
+					"args":     []any{"Checkout"},
+				},
+			}, {
+				Name: "Checkout",
+				Type: "loadrunner_transaction",
+				Params: map[string]any{
+					"function": "lr_end_transaction",
+					"args":     []any{"Checkout", "LR_PASS"},
+				},
+			}, {
+				Name:  "Status",
+				Type:  "loadrunner_message",
+				Value: "Working as %s",
+				Params: map[string]any{
+					"function":       "lr_vuser_status_message",
+					"format":         "Working as %s",
+					"args":           []any{"{{var.userid}}"},
+					"status_message": true,
+				},
+			}, {
+				Name: "helper",
+				Type: "custom_call",
+				Params: map[string]any{
+					"function":     "helper",
+					"support_mode": "custom_review",
+					"args":         []any{"42"},
+				},
+			}},
+		},
+		Metrics: NewMetricsCollector(16),
+	}
+
+	vu.Run(context.Background())
+
+	if got := vu.Variables["userid"]; got != "ada" {
+		t.Fatalf("userid = %q, want ada", got)
+	}
+	if got := vu.Variables["greeting"]; got != "Hello ada" {
+		t.Fatalf("greeting = %q, want Hello ada", got)
+	}
+	if got := vu.Variables["vuser_status"]; got != "Working as ada" {
+		t.Fatalf("vuser_status = %q, want rendered status", got)
+	}
+	if got := vu.Variables[loadRunnerTimerDurationKey("Timer1")]; got == "" {
+		t.Fatalf("timer duration variable missing: %#v", vu.Variables)
+	}
+	if got := vu.Variables[loadRunnerTransactionStatusKey("Checkout")]; got != "true" {
+		t.Fatalf("transaction status = %q, want true", got)
+	}
+}
+
+type rendezvousTestProtocol struct {
+	executeTimes chan time.Time
+}
+
+func (p *rendezvousTestProtocol) Name() string                               { return "rendezvous-test" }
+func (p *rendezvousTestProtocol) Init(context.Context, map[string]any) error { return nil }
+func (p *rendezvousTestProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	p.executeTimes <- time.Now()
+	return &protocol.Result{ActionName: action.Name, Success: true, Duration: time.Millisecond}, nil
+}
+func (p *rendezvousTestProtocol) Teardown(context.Context) error    { return nil }
+func (p *rendezvousTestProtocol) HealthCheck(context.Context) error { return nil }
+
+func TestVUser_Run_RendezvousSynchronizesStaggeredVUsers(t *testing.T) {
+	executeTimes := make(chan time.Time, 2)
+	script := &dsl.Script{
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions: []dsl.Action{{
+			Name:   "sync-buyers",
+			Type:   "rendezvous",
+			Params: map[string]any{"count": 2, "timeout_ms": 500},
+		}, {
+			Name:   "checkout",
+			Type:   "request",
+			Target: "/checkout",
+		}},
+	}
+	coordinator := NewRendezvousCoordinator()
+
+	makeVU := func(id int) *VUser {
+		return &VUser{
+			ID:          id,
+			TotalVUsers: 2,
+			Proto:       &rendezvousTestProtocol{executeTimes: executeTimes},
+			Script:      script,
+			Metrics:     NewMetricsCollector(16),
+			Rendezvous:  coordinator,
+		}
+	}
+
+	vuOne := makeVU(0)
+	vuTwo := makeVU(1)
+
+	done := make(chan struct{}, 2)
+	go func() {
+		vuOne.Run(context.Background())
+		done <- struct{}{}
+	}()
+	time.Sleep(150 * time.Millisecond)
+	go func() {
+		vuTwo.Run(context.Background())
+		done <- struct{}{}
+	}()
+
+	first := <-executeTimes
+	second := <-executeTimes
+	<-done
+	<-done
+
+	delta := first.Sub(second)
+	if delta < 0 {
+		delta = -delta
+	}
+	if delta > 60*time.Millisecond {
+		t.Fatalf("execute delta = %v, want rendezvous to release both VUsers together", delta)
 	}
 }

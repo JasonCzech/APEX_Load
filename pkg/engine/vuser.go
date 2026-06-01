@@ -3,28 +3,38 @@ package engine
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type VUser struct {
-	ID            int
-	Group         string
-	Proto         protocol.Protocol
-	Script        *dsl.Script
-	Metrics       *MetricsCollector
-	ResultSink    ResultSink
-	Variables     map[string]string
-	DataProvider  *DataProvider
-	Parameters    *ParameterRuntime
-	SnapshotStore *SnapshotStore
-	PauseControl  PauseController
+	ID                   int
+	TotalVUsers          int
+	Group                string
+	Proto                protocol.Protocol
+	Script               *dsl.Script
+	Metrics              *MetricsCollector
+	ResultSink           ResultSink
+	Variables            map[string]string
+	DataProvider         *DataProvider
+	Parameters           *ParameterRuntime
+	SecretResolver       SecretResolver
+	RedactionConfig      *RedactionConfig
+	SnapshotStore        *SnapshotStore
+	PauseControl         PauseController
+	IterationRateLimiter *TokenBucket
+	Rendezvous           *RendezvousCoordinator
+	ExecutionGoals       *ExecutionGoalLimiter
+	SkipInit             bool
+	SkipTeardown         bool
 }
 
 type PauseController interface {
@@ -67,39 +77,11 @@ func (vu *VUser) Run(ctx context.Context) {
 	logCfg := cfg.Log
 	logger := vu.makeLogger(logCfg)
 
-	vu.Variables = make(map[string]string)
-	vu.Parameters = NewParameterRuntime(vu.Script.Parameters, vu.DataProvider, vu.ID)
-	if vu.Parameters != nil {
-		vu.Parameters.Prime()
-	}
-
-	// Load initial data source row
-	vu.loadDataRow()
+	vu.prepareRuntimeState()
 
 	// --- Init phase ---
-	for _, action := range vu.Script.Init {
-		if vu.PauseControl != nil {
-			if err := vu.PauseControl.WaitIfPaused(ctx); err != nil {
-				return
-			}
-		}
-		if ctx.Err() != nil {
-			return
-		}
-		resolved := vu.resolveAction(action)
-		result, err := vu.executeWithRetry(ctx, resolved, cfg.ErrorHandling)
-		if err != nil {
-			logger.Error("init action failed", "action", action.Name, "err", err)
-			return
-		}
-		vu.recordResult(result, cfg.ErrorHandling)
-
-		if !result.Success {
-			if logCfg.OnErrorOnly || logCfg.Level == "extended" {
-				logger.Error("init action unsuccessful", "action", action.Name, "status", result.StatusCode, "error", result.ErrorMessage)
-			} else {
-				logger.Warn("init action unsuccessful", "action", action.Name, "error", result.ErrorMessage)
-			}
+	if !vu.SkipInit {
+		if ok := vu.runLifecycleActions(ctx, vu.Script.Init, "init", false, logger, logCfg, cfg.ErrorHandling); !ok {
 			return
 		}
 	}
@@ -113,6 +95,8 @@ func (vu *VUser) Run(ctx context.Context) {
 		IntervalMs:    cfg.Pacing.IntervalMs,
 		MinIntervalMs: cfg.Pacing.MinIntervalMs,
 		MaxIntervalMs: cfg.Pacing.MaxIntervalMs,
+		TPS:           cfg.Pacing.TPS,
+		RateLimiter:   vu.IterationRateLimiter,
 	}
 
 	// --- Build think time config ---
@@ -138,7 +122,13 @@ func (vu *VUser) Run(ctx context.Context) {
 		if maxIter > 0 && iteration >= maxIter {
 			break
 		}
+		if vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartIteration() {
+			break
+		}
 		if ctx.Err() != nil {
+			break
+		}
+		if pacingCfg.Type == "tps" && !pacingCfg.RateLimiter.WaitContext(ctx) {
 			break
 		}
 
@@ -175,8 +165,21 @@ func (vu *VUser) Run(ctx context.Context) {
 			if ctx.Err() != nil {
 				goto teardown
 			}
+			if handled, err := vu.handleEngineAction(ctx, action); handled {
+				if err != nil {
+					logger.Error("action error", "action", action.Name, "err", err)
+					iterSuccess = false
+					if !continueOnError {
+						goto teardown
+					}
+				}
+				continue
+			}
 
 			resolved := vu.resolveAction(action)
+			if vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartTransaction() {
+				goto teardown
+			}
 
 			// Track action-level transaction
 			var actionTxStart time.Time
@@ -204,15 +207,13 @@ func (vu *VUser) Run(ctx context.Context) {
 			if !result.Success {
 				iterSuccess = false
 				if logCfg.OnErrorOnly || logCfg.Level == "extended" {
-					logger.Error("action failed", "action", action.Name, "status", result.StatusCode,
-						"duration_ms", result.Duration.Milliseconds(), "error", result.ErrorMessage)
+					logger.Error("action failed", actionLogAttrs(action.Name, resolved, result, logCfg, true)...)
 				}
 				if !continueOnError {
 					goto teardown
 				}
 			} else if logCfg.Level == "extended" {
-				logger.Info("action ok", "action", action.Name, "status", result.StatusCode,
-					"duration_ms", result.Duration.Milliseconds(), "bytes", result.BytesReceived)
+				logger.Info("action ok", actionLogAttrs(action.Name, resolved, result, logCfg, false)...)
 			}
 
 			// Apply think time
@@ -257,13 +258,73 @@ func (vu *VUser) Run(ctx context.Context) {
 	}
 
 teardown:
-	for _, action := range vu.Script.Teardown {
+	if !vu.SkipTeardown {
+		vu.runLifecycleActions(context.Background(), vu.Script.Teardown, "teardown", true, logger, logCfg, cfg.ErrorHandling)
+	}
+}
+
+func (vu *VUser) RunLifecycleBlock(ctx context.Context, actions []dsl.Action, phase string) bool {
+	if vu == nil || vu.Script == nil {
+		return true
+	}
+	cfg := vu.Script.Config
+	logCfg := cfg.Log
+	vu.prepareRuntimeState()
+	return vu.runLifecycleActions(ctx, actions, phase, false, vu.makeLogger(logCfg), logCfg, cfg.ErrorHandling)
+}
+
+func (vu *VUser) prepareRuntimeState() {
+	if vu.Variables == nil {
+		vu.Variables = make(map[string]string)
+	}
+	vu.Parameters = NewParameterRuntime(vu.Script.Parameters, vu.DataProvider, vu.ID)
+	if vu.Parameters != nil {
+		vu.Parameters.Prime()
+	}
+	vu.loadDataRow()
+}
+
+func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, phase string, ignoreErrors bool, logger *slog.Logger, logCfg dsl.LogConfig, errCfg dsl.ErrorHandlingConfig) bool {
+	for _, action := range actions {
+		if vu.PauseControl != nil {
+			if err := vu.PauseControl.WaitIfPaused(ctx); err != nil {
+				return false
+			}
+		}
+		if ctx.Err() != nil {
+			return false
+		}
+		if handled, err := vu.handleEngineAction(ctx, action); handled {
+			if err != nil {
+				logger.Error(phase+" action failed", "action", action.Name, "err", err)
+				if !ignoreErrors {
+					return false
+				}
+			}
+			continue
+		}
 		resolved := vu.resolveAction(action)
-		result, _ := vu.Proto.Execute(context.Background(), resolved)
-		if result != nil {
-			vu.recordResult(result, cfg.ErrorHandling)
+		result, err := vu.executeWithRetry(ctx, resolved, errCfg)
+		if err != nil {
+			logger.Error(phase+" action failed", "action", action.Name, "err", err)
+			if !ignoreErrors {
+				return false
+			}
+			continue
+		}
+		vu.recordResult(result, errCfg)
+		if result != nil && !result.Success {
+			if logCfg.OnErrorOnly || logCfg.Level == "extended" {
+				logger.Error(phase+" action unsuccessful", "action", action.Name, "status", result.StatusCode, "error", result.ErrorMessage)
+			} else {
+				logger.Warn(phase+" action unsuccessful", "action", action.Name, "error", result.ErrorMessage)
+			}
+			if !ignoreErrors {
+				return false
+			}
 		}
 	}
+	return true
 }
 
 func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingConfig) {
@@ -271,11 +332,47 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 		return
 	}
 	result.Group = vu.Group
+	if result.NetworkProfile == "" && vu.Script != nil {
+		result.NetworkProfile = networkProfileLabel(vu.Script.Config.WebRuntime.NetworkSimulation)
+	}
 	vu.Metrics.Record(result)
 	vu.mergeExtractions(result)
+	scrubSensitiveResult(result, vu.RedactionConfig)
 	vu.handleSnapshot(result, errCfg)
 	if vu.ResultSink != nil {
 		_ = vu.ResultSink.RecordResult(result)
+	}
+}
+
+func networkProfileLabel(config dsl.NetworkSimulationConfig) string {
+	switch strings.TrimSpace(config.Mode) {
+	case "preset":
+		if config.Preset != "" {
+			return "preset:" + config.Preset
+		}
+		return "preset"
+	case "custom":
+		parts := make([]string, 0, 4)
+		if config.BandwidthKbps > 0 {
+			parts = append(parts, fmt.Sprintf("bandwidth=%dkbps", config.BandwidthKbps))
+		}
+		if config.LatencyMs > 0 {
+			parts = append(parts, fmt.Sprintf("latency=%dms", config.LatencyMs))
+		}
+		if config.JitterMs > 0 {
+			parts = append(parts, fmt.Sprintf("jitter=%dms", config.JitterMs))
+		}
+		if config.PacketLossPct > 0 {
+			parts = append(parts, fmt.Sprintf("loss=%.2g%%", config.PacketLossPct))
+		}
+		if len(parts) == 0 {
+			return "custom"
+		}
+		return "custom:" + strings.Join(parts, ",")
+	case "max":
+		return "max"
+	default:
+		return ""
 	}
 }
 
@@ -287,6 +384,831 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 		return err
 	}
 	return vu.Proto.Init(ctx, buildProtoConfig(vu.Script))
+}
+
+func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (bool, error) {
+	switch action.Type {
+	case "rendezvous":
+		return true, vu.waitAtRendezvous(ctx, action)
+	case "error_message":
+		vu.logErrorMessageAction(ctx, action)
+		return true, nil
+	case "loadrunner_message":
+		vu.handleLoadRunnerMessageAction(ctx, action)
+		return true, nil
+	case "loadrunner_runtime":
+		return true, vu.handleLoadRunnerRuntimeAction(ctx, action)
+	case "loadrunner_transaction":
+		vu.handleLoadRunnerTransactionAction(action)
+		return true, nil
+	case "loadrunner_timer":
+		vu.handleLoadRunnerTimerAction(action)
+		return true, nil
+	case "loadrunner_metric":
+		vu.handleLoadRunnerMetricAction(ctx, action)
+		return true, nil
+	case "loadrunner_parameter", "loadrunner_json", "loadrunner_xml", "loadrunner_database", "loadrunner_secret":
+		vu.handleLoadRunnerStateAction(ctx, action)
+		return true, nil
+	case "loadrunner_external", "loadrunner_review", "custom_call":
+		vu.logLoadRunnerReviewAction(ctx, action)
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
+func (vu *VUser) handleLoadRunnerMessageAction(ctx context.Context, action dsl.Action) {
+	message := vu.renderErrorMessage(action)
+	level, _ := actionParamString(action.Params, "level")
+	attrs := []any{
+		"vuser", vu.ID,
+		"group", vu.Group,
+		"action", action.Name,
+		"function", loadRunnerActionFunction(action),
+		"message", message,
+	}
+	if status, _ := actionParamBool(action.Params, "status_message"); status {
+		vu.ensureVariables()
+		vu.Variables["vuser_status"] = message
+	}
+	switch level {
+	case "debug":
+		slog.Default().DebugContext(ctx, "loadrunner message", attrs...)
+	case "error":
+		slog.Default().ErrorContext(ctx, "loadrunner message", attrs...)
+	default:
+		slog.Default().InfoContext(ctx, "loadrunner message", attrs...)
+	}
+}
+
+func (vu *VUser) handleLoadRunnerRuntimeAction(ctx context.Context, action dsl.Action) error {
+	function := loadRunnerActionFunction(action)
+	vu.ensureVariables()
+	switch function {
+	case "lr_abort":
+		return fmt.Errorf("loadrunner abort requested by %s", action.Name)
+	case "lr_exit":
+		vu.Variables["__lr_exit_requested"] = strings.Join(loadRunnerActionArgs(action), ",")
+	case "lr_disable_ip_spoofing":
+		vu.Variables["__lr_ip_spoofing"] = "disabled"
+	case "lr_enable_ip_spoofing":
+		vu.Variables["__lr_ip_spoofing"] = "enabled"
+	case "lr_load_dll":
+		vu.logLoadRunnerReviewAction(ctx, action)
+	default:
+		slog.Default().DebugContext(ctx, "loadrunner runtime action",
+			"vuser", vu.ID,
+			"group", vu.Group,
+			"action", action.Name,
+			"function", function,
+		)
+	}
+	return nil
+}
+
+func (vu *VUser) handleLoadRunnerTransactionAction(action dsl.Action) {
+	function := loadRunnerActionFunction(action)
+	args := loadRunnerActionArgs(action)
+	name := firstEngineValue(action.Name, args...)
+	vu.ensureVariables()
+	switch {
+	case strings.Contains(function, "start"):
+		vu.Variables[loadRunnerTransactionStartKey(name)] = strconv.FormatInt(time.Now().UnixNano(), 10)
+	case strings.Contains(function, "end"), strings.Contains(function, "stop"), function == "lr_fail_trans_with_error":
+		success := !strings.Contains(function, "fail")
+		if len(args) > 1 {
+			status := strings.ToLower(args[len(args)-1])
+			if strings.Contains(status, "fail") {
+				success = false
+			}
+		}
+		start := time.Now()
+		if raw := vu.Variables[loadRunnerTransactionStartKey(name)]; raw != "" {
+			if nanos, err := strconv.ParseInt(raw, 10, 64); err == nil {
+				start = time.Unix(0, nanos)
+			}
+		}
+		if vu.Metrics != nil {
+			vu.Metrics.RecordTransaction(name, time.Since(start), success, vu.Group)
+		}
+		vu.Variables[loadRunnerTransactionStatusKey(name)] = strconv.FormatBool(success)
+	case strings.Contains(function, "status"):
+		if len(args) > 1 {
+			vu.Variables[loadRunnerTransactionStatusKey(args[0])] = args[1]
+		}
+	}
+}
+
+func (vu *VUser) handleLoadRunnerTimerAction(action dsl.Action) {
+	function := loadRunnerActionFunction(action)
+	args := loadRunnerActionArgs(action)
+	name := firstEngineValue(action.Name, args...)
+	vu.ensureVariables()
+	switch function {
+	case "lr_start_timer":
+		vu.Variables[loadRunnerTimerStartKey(name)] = strconv.FormatInt(time.Now().UnixNano(), 10)
+	case "lr_end_timer":
+		if raw := vu.Variables[loadRunnerTimerStartKey(name)]; raw != "" {
+			if nanos, err := strconv.ParseInt(raw, 10, 64); err == nil {
+				durationMs := time.Since(time.Unix(0, nanos)).Milliseconds()
+				vu.Variables[loadRunnerTimerDurationKey(name)] = strconv.FormatInt(durationMs, 10)
+			}
+		}
+	}
+}
+
+func (vu *VUser) handleLoadRunnerMetricAction(ctx context.Context, action dsl.Action) {
+	args := loadRunnerActionArgs(action)
+	name := firstEngineValue(action.Name, args...)
+	value := ""
+	if len(args) > 1 {
+		value = args[1]
+	}
+	slog.Default().InfoContext(ctx, "loadrunner metric",
+		"vuser", vu.ID,
+		"group", vu.Group,
+		"action", action.Name,
+		"function", loadRunnerActionFunction(action),
+		"name", name,
+		"value", value,
+	)
+}
+
+func (vu *VUser) handleLoadRunnerStateAction(ctx context.Context, action dsl.Action) {
+	function := loadRunnerActionFunction(action)
+	switch action.Type {
+	case "loadrunner_parameter":
+		vu.handleLoadRunnerParameterAction(function, action)
+	case "loadrunner_json", "loadrunner_xml":
+		vu.handleLoadRunnerDocumentAction(function, action)
+	case "loadrunner_secret":
+		vu.handleLoadRunnerSecretAction(function, action)
+	default:
+		vu.logLoadRunnerReviewAction(ctx, action)
+	}
+}
+
+func (vu *VUser) handleLoadRunnerParameterAction(function string, action dsl.Action) {
+	args := loadRunnerActionArgs(action)
+	vu.ensureVariables()
+	switch function {
+	case "lr_save_string", "lr_save_int":
+		if len(args) >= 2 {
+			vu.setLoadRunnerVariable(args[1], args[0])
+		}
+	case "lr_save_var":
+		if len(args) >= 4 {
+			vu.setLoadRunnerVariable(args[3], args[0])
+		}
+	case "lr_param_sprintf":
+		if len(args) >= 2 {
+			values := make([]any, 0, len(args)-2)
+			for _, arg := range args[2:] {
+				values = append(values, arg)
+			}
+			vu.setLoadRunnerVariable(args[0], renderPrintfLikeMessage(args[1], values))
+		}
+	case "lr_param_increment":
+		if len(args) >= 1 {
+			delta := 1
+			if len(args) > 1 {
+				if parsed, err := strconv.Atoi(strings.TrimSpace(args[1])); err == nil {
+					delta = parsed
+				}
+			}
+			current, _ := strconv.Atoi(strings.TrimSpace(vu.Variables[strings.ToLower(args[0])]))
+			vu.setLoadRunnerVariable(args[0], strconv.Itoa(current+delta))
+		}
+	case "lr_free_parameter":
+		if len(args) >= 1 {
+			delete(vu.Variables, args[0])
+			delete(vu.Variables, strings.ToLower(args[0]))
+		}
+	case "lr_save_timestamp":
+		name := firstEngineValue("timestamp", args...)
+		vu.setLoadRunnerVariable(name, strconv.FormatInt(time.Now().Unix(), 10))
+	case "lr_save_datetime":
+		name := firstEngineValue("datetime", args...)
+		format := defaultDateTimeLayout
+		if len(args) > 1 {
+			format = loadRunnerDateTimeLayout(args[0])
+			name = args[len(args)-1]
+		}
+		vu.setLoadRunnerVariable(name, time.Now().Format(format))
+	case "lr_whoami":
+		vu.setLoadRunnerVariable("vuser_id", strconv.Itoa(vu.ID))
+		vu.setLoadRunnerVariable("vuser_group", vu.Group)
+	case "lr_get_host_name", "lr_get_master_host_name":
+		if host, err := os.Hostname(); err == nil {
+			vu.setLoadRunnerVariable(firstEngineValue("host_name", args...), host)
+		}
+	case "lr_get_vuser_ip":
+		vu.setLoadRunnerVariable(firstEngineValue("vuser_ip", args...), "127.0.0.1")
+	default:
+		if saveName := saveParamNameFromAction(action); saveName != "" {
+			vu.setLoadRunnerVariable(saveName, firstEngineValue("", args...))
+		}
+	}
+}
+
+func (vu *VUser) handleLoadRunnerDocumentAction(function string, action dsl.Action) {
+	args := loadRunnerActionArgs(action)
+	vu.ensureVariables()
+	saveName := saveParamNameFromAction(action)
+	if saveName == "" && len(args) > 0 {
+		saveName = args[len(args)-1]
+	}
+	if saveName == "" {
+		return
+	}
+	switch {
+	case strings.Contains(function, "find"):
+		vu.setLoadRunnerVariable(saveName, "0")
+	case strings.Contains(function, "get_values"), strings.Contains(function, "extract"), strings.Contains(function, "stringify"), strings.Contains(function, "eval"):
+		vu.setLoadRunnerVariable(saveName, firstEngineValue("", args...))
+	}
+}
+
+func (vu *VUser) handleLoadRunnerSecretAction(function string, action dsl.Action) {
+	args := loadRunnerActionArgs(action)
+	saveName := saveParamNameFromAction(action)
+	if saveName == "" && len(args) > 0 {
+		saveName = args[len(args)-1]
+	}
+	if saveName == "" {
+		saveName = strings.TrimPrefix(function, "lr_")
+	}
+	vu.setLoadRunnerVariable(saveName, "{{secret."+strings.ToLower(saveName)+"}}")
+}
+
+func (vu *VUser) logLoadRunnerReviewAction(ctx context.Context, action dsl.Action) {
+	slog.Default().InfoContext(ctx, "loadrunner review action",
+		"vuser", vu.ID,
+		"group", vu.Group,
+		"action", action.Name,
+		"function", loadRunnerActionFunction(action),
+		"support_mode", loadRunnerActionSupportMode(action),
+	)
+}
+
+func (vu *VUser) ensureVariables() {
+	if vu.Variables == nil {
+		vu.Variables = make(map[string]string)
+	}
+}
+
+func (vu *VUser) setLoadRunnerVariable(name string, value string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	vu.ensureVariables()
+	resolved := vu.interpolate(value)
+	vu.Variables[name] = resolved
+	vu.Variables[strings.ToLower(name)] = resolved
+}
+
+func loadRunnerActionFunction(action dsl.Action) string {
+	if value, ok := actionParamString(action.Params, "function"); ok {
+		return value
+	}
+	if value, ok := action.Metadata["source_function"].(string); ok {
+		return value
+	}
+	return action.Type
+}
+
+func loadRunnerActionSupportMode(action dsl.Action) string {
+	if value, ok := actionParamString(action.Params, "support_mode"); ok {
+		return value
+	}
+	if value, ok := action.Metadata["support_mode"].(string); ok {
+		return value
+	}
+	return ""
+}
+
+func loadRunnerActionArgs(action dsl.Action) []string {
+	if action.Params == nil {
+		return nil
+	}
+	raw, ok := action.Params["args"]
+	if !ok {
+		return nil
+	}
+	values := anySlice(raw)
+	args := make([]string, 0, len(values))
+	for _, value := range values {
+		args = append(args, strings.TrimSpace(fmt.Sprint(value)))
+	}
+	return args
+}
+
+func anySlice(value any) []any {
+	switch typed := value.(type) {
+	case []any:
+		return typed
+	case []string:
+		out := make([]any, len(typed))
+		for i, value := range typed {
+			out[i] = value
+		}
+		return out
+	case nil:
+		return nil
+	default:
+		return []any{typed}
+	}
+}
+
+func firstEngineValue(fallback string, values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return fallback
+}
+
+func loadRunnerTransactionStartKey(name string) string {
+	return "__lr_transaction." + strings.ToLower(strings.TrimSpace(name)) + ".start"
+}
+
+func loadRunnerTransactionStatusKey(name string) string {
+	return "__lr_transaction." + strings.ToLower(strings.TrimSpace(name)) + ".status"
+}
+
+func loadRunnerTimerStartKey(name string) string {
+	return "__lr_timer." + strings.ToLower(strings.TrimSpace(name)) + ".start"
+}
+
+func loadRunnerTimerDurationKey(name string) string {
+	return "__lr_timer." + strings.ToLower(strings.TrimSpace(name)) + ".duration_ms"
+}
+
+func saveParamNameFromAction(action dsl.Action) string {
+	for _, key := range []string{"save_param", "saveparam", "save_param_name", "param", "parameter", "name"} {
+		if value, ok := actionParamString(action.Params, key); ok {
+			return value
+		}
+	}
+	for _, entry := range structuredCallArgs(action) {
+		name, _ := entry["name"].(string)
+		value, _ := entry["value"].(string)
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "saveparam", "save_param", "param", "parameter", "name":
+			return value
+		}
+	}
+	return ""
+}
+
+func structuredCallArgs(action dsl.Action) []map[string]any {
+	if action.Params == nil {
+		return nil
+	}
+	raw, ok := action.Params["call_args"]
+	if !ok {
+		return nil
+	}
+	switch typed := raw.(type) {
+	case []map[string]any:
+		return typed
+	case []any:
+		out := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			if entry, ok := item.(map[string]any); ok {
+				out = append(out, entry)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func loadRunnerDateTimeLayout(format string) string {
+	switch strings.TrimSpace(format) {
+	case "", "%Y-%m-%d %H:%M:%S":
+		return defaultDateTimeLayout
+	case "%H:%M:%S":
+		return defaultTimeLayout
+	default:
+		layout := strings.TrimSpace(format)
+		replacements := []struct {
+			old string
+			new string
+		}{
+			{"%Y", "2006"},
+			{"%m", "01"},
+			{"%d", "02"},
+			{"%H", "15"},
+			{"%M", "04"},
+			{"%S", "05"},
+		}
+		for _, replacement := range replacements {
+			layout = strings.ReplaceAll(layout, replacement.old, replacement.new)
+		}
+		return layout
+	}
+}
+
+func (vu *VUser) logErrorMessageAction(ctx context.Context, action dsl.Action) {
+	message := vu.renderErrorMessage(action)
+	slog.Default().ErrorContext(ctx, "loadrunner error message",
+		"vuser", vu.ID,
+		"group", vu.Group,
+		"action", action.Name,
+		"message", message,
+	)
+}
+
+func (vu *VUser) renderErrorMessage(action dsl.Action) string {
+	format := action.Value
+	if format == "" {
+		if paramsFormat, ok := actionParamString(action.Params, "format"); ok {
+			format = paramsFormat
+		}
+	}
+	format = vu.interpolate(format)
+
+	args := errorMessageArgs(action.Params)
+	if len(args) == 0 {
+		if format != "" {
+			return format
+		}
+		return action.Name
+	}
+	values := make([]any, 0, len(args))
+	for _, arg := range args {
+		values = append(values, vu.interpolateAny(arg))
+	}
+	return renderPrintfLikeMessage(format, values)
+}
+
+func errorMessageArgs(params map[string]any) []any {
+	if params == nil {
+		return nil
+	}
+	raw, ok := params["args"]
+	if !ok {
+		return nil
+	}
+	switch typed := raw.(type) {
+	case []any:
+		return typed
+	case []string:
+		args := make([]any, len(typed))
+		for i, value := range typed {
+			args[i] = value
+		}
+		return args
+	default:
+		return []any{typed}
+	}
+}
+
+func renderPrintfLikeMessage(format string, args []any) string {
+	if format == "" {
+		parts := make([]string, 0, len(args))
+		for _, arg := range args {
+			parts = append(parts, fmt.Sprint(arg))
+		}
+		return strings.Join(parts, " ")
+	}
+
+	var out strings.Builder
+	argIndex := 0
+	for i := 0; i < len(format); i++ {
+		ch := format[i]
+		if ch != '%' || i == len(format)-1 {
+			out.WriteByte(ch)
+			continue
+		}
+		next := format[i+1]
+		if next == '%' {
+			out.WriteByte('%')
+			i++
+			continue
+		}
+		specEnd := printfSpecEnd(format, i+1)
+		if specEnd < 0 {
+			out.WriteByte(ch)
+			continue
+		}
+		if argIndex < len(args) {
+			out.WriteString(formatPrintfArg(format[i:specEnd+1], args[argIndex]))
+			argIndex++
+			i = specEnd
+			continue
+		}
+		out.WriteByte(ch)
+	}
+	if argIndex < len(args) {
+		for _, arg := range args[argIndex:] {
+			if out.Len() > 0 {
+				out.WriteByte(' ')
+			}
+			out.WriteString(fmt.Sprint(arg))
+		}
+	}
+	return out.String()
+}
+
+func printfSpecEnd(format string, start int) int {
+	for i := start; i < len(format); i++ {
+		ch := format[i]
+		if isPrintfModifier(ch) {
+			continue
+		}
+		if isPrintfVerb(ch) {
+			return i
+		}
+		return -1
+	}
+	return -1
+}
+
+func isPrintfModifier(ch byte) bool {
+	if ch >= '0' && ch <= '9' {
+		return true
+	}
+	return strings.ContainsRune("#0+-.hlLjztI", rune(ch))
+}
+
+func formatPrintfArg(spec string, arg any) string {
+	if spec == "" {
+		return fmt.Sprint(arg)
+	}
+	verb := spec[len(spec)-1]
+	goSpec := normalizePrintfSpec(spec)
+	value, ok := normalizePrintfValue(verb, arg)
+	if !ok {
+		return fmt.Sprint(arg)
+	}
+	return fmt.Sprintf(goSpec, value)
+}
+
+func normalizePrintfSpec(spec string) string {
+	if len(spec) < 2 {
+		return spec
+	}
+	verb := spec[len(spec)-1]
+	body := stripCPrintfLengthModifiers(spec[1 : len(spec)-1])
+	switch verb {
+	case 'i', 'u':
+		verb = 'd'
+	}
+	return "%" + body + string(verb)
+}
+
+func stripCPrintfLengthModifiers(body string) string {
+	for {
+		switch {
+		case strings.HasSuffix(body, "I64"):
+			body = strings.TrimSuffix(body, "I64")
+		case strings.HasSuffix(body, "ll"), strings.HasSuffix(body, "hh"):
+			body = body[:len(body)-2]
+		case body != "" && strings.ContainsRune("hlLjzt", rune(body[len(body)-1])):
+			body = body[:len(body)-1]
+		default:
+			return body
+		}
+	}
+}
+
+func normalizePrintfValue(verb byte, arg any) (any, bool) {
+	switch verb {
+	case 'v', 'T':
+		return arg, true
+	case 's', 'q':
+		return fmt.Sprint(arg), true
+	case 't':
+		return printfBoolValue(arg)
+	case 'c':
+		return printfRuneValue(arg)
+	case 'd', 'i':
+		return printfSignedValue(arg)
+	case 'u', 'b', 'o', 'O', 'x', 'X', 'U':
+		return printfUnsignedValue(arg)
+	case 'e', 'E', 'f', 'F', 'g', 'G':
+		return printfFloatValue(arg)
+	case 'p':
+		return fmt.Sprint(arg), false
+	default:
+		return fmt.Sprint(arg), false
+	}
+}
+
+func printfBoolValue(arg any) (any, bool) {
+	switch value := arg.(type) {
+	case bool:
+		return value, true
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+		return parsed, err == nil
+	default:
+		return arg, false
+	}
+}
+
+func printfRuneValue(arg any) (any, bool) {
+	switch value := arg.(type) {
+	case rune:
+		return value, true
+	case byte:
+		return rune(value), true
+	case string:
+		if value == "" {
+			return arg, false
+		}
+		return []rune(value)[0], true
+	default:
+		return printfSignedValue(arg)
+	}
+}
+
+func printfSignedValue(arg any) (any, bool) {
+	switch value := arg.(type) {
+	case int:
+		return value, true
+	case int8:
+		return value, true
+	case int16:
+		return value, true
+	case int32:
+		return value, true
+	case int64:
+		return value, true
+	case uint:
+		return value, true
+	case uint8:
+		return value, true
+	case uint16:
+		return value, true
+	case uint32:
+		return value, true
+	case uint64:
+		return value, true
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		return parsed, err == nil
+	default:
+		return arg, false
+	}
+}
+
+func printfUnsignedValue(arg any) (any, bool) {
+	switch value := arg.(type) {
+	case uint:
+		return value, true
+	case uint8:
+		return value, true
+	case uint16:
+		return value, true
+	case uint32:
+		return value, true
+	case uint64:
+		return value, true
+	case int:
+		return value, true
+	case int8:
+		return value, true
+	case int16:
+		return value, true
+	case int32:
+		return value, true
+	case int64:
+		return value, true
+	case string:
+		trimmed := strings.TrimSpace(value)
+		parsed, err := strconv.ParseUint(trimmed, 10, 64)
+		if err == nil {
+			return parsed, true
+		}
+		signed, signedErr := strconv.ParseInt(trimmed, 10, 64)
+		return signed, signedErr == nil
+	default:
+		return arg, false
+	}
+}
+
+func printfFloatValue(arg any) (any, bool) {
+	switch value := arg.(type) {
+	case float32:
+		return value, true
+	case float64:
+		return value, true
+	case int:
+		return float64(value), true
+	case int8:
+		return float64(value), true
+	case int16:
+		return float64(value), true
+	case int32:
+		return float64(value), true
+	case int64:
+		return float64(value), true
+	case uint:
+		return float64(value), true
+	case uint8:
+		return float64(value), true
+	case uint16:
+		return float64(value), true
+	case uint32:
+		return float64(value), true
+	case uint64:
+		return float64(value), true
+	case string:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		return parsed, err == nil
+	default:
+		return arg, false
+	}
+}
+
+func isPrintfVerb(ch byte) bool {
+	return strings.ContainsRune("vTtbcdiuoOqxXUeEfFgGsp", rune(ch))
+}
+
+func (vu *VUser) waitAtRendezvous(ctx context.Context, action dsl.Action) error {
+	participants := vu.TotalVUsers
+	if participants <= 0 {
+		participants = 1
+	}
+	if count, ok := actionParamInt(action.Params, "count"); ok {
+		participants = count
+	}
+	timeout := time.Duration(0)
+	if timeoutMs, ok := actionParamInt(action.Params, "timeout_ms"); ok && timeoutMs > 0 {
+		timeout = time.Duration(timeoutMs) * time.Millisecond
+	}
+	key := action.Name
+	if configuredKey, ok := actionParamString(action.Params, "key"); ok {
+		key = configuredKey
+	}
+	return vu.Rendezvous.Wait(ctx, key, participants, timeout)
+}
+
+func actionParamInt(params map[string]any, key string) (int, bool) {
+	if params == nil {
+		return 0, false
+	}
+	value, ok := params[key]
+	if !ok {
+		return 0, false
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		return int(typed), true
+	case float32:
+		return int(typed), true
+	default:
+		return 0, false
+	}
+}
+
+func actionParamString(params map[string]any, key string) (string, bool) {
+	if params == nil {
+		return "", false
+	}
+	value, ok := params[key]
+	if !ok {
+		return "", false
+	}
+	typed, ok := value.(string)
+	if !ok {
+		return "", false
+	}
+	trimmed := strings.TrimSpace(typed)
+	if trimmed == "" {
+		return "", false
+	}
+	return trimmed, true
+}
+
+func actionParamBool(params map[string]any, key string) (bool, bool) {
+	if params == nil {
+		return false, false
+	}
+	value, ok := params[key]
+	if !ok {
+		return false, false
+	}
+	switch typed := value.(type) {
+	case bool:
+		return typed, true
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(typed))
+		return parsed, err == nil
+	default:
+		return false, false
+	}
 }
 
 // executeWithRetry wraps a single action execution with retry logic.
@@ -320,6 +1242,7 @@ func (vu *VUser) executeWithRetry(ctx context.Context, action *protocol.Action, 
 		if err != nil {
 			return nil, err
 		}
+		applyProtocolResultSourceMetadata(result, action.Metadata)
 		lastResult = result
 
 		if result.Success {
@@ -333,6 +1256,18 @@ func (vu *VUser) executeWithRetry(ctx context.Context, action *protocol.Action, 
 	}
 
 	return lastResult, nil
+}
+
+func applyProtocolResultSourceMetadata(result *protocol.Result, metadata map[string]any) {
+	if result == nil || len(metadata) == 0 {
+		return
+	}
+	result.SourceStepID = sourceMetadataString(metadata, "source_step_id")
+	result.SourceStepIndex = sourceMetadataInt(metadata, "source_step_index")
+	result.SourceAction = sourceMetadataString(metadata, "source_action")
+	result.SourceActionName = sourceMetadataString(metadata, "source_action_name")
+	result.SourceTransaction = sourceMetadataString(metadata, "source_transaction")
+	result.SourceProfile = sourceMetadataString(metadata, "source_profile")
 }
 
 // loadDataRow populates VUser variables from configured data sources.
@@ -362,7 +1297,7 @@ func (vu *VUser) makeLogger(cfg dsl.LogConfig) *slog.Logger {
 	switch cfg.Level {
 	case "disabled":
 		// Use a no-op handler by setting level extremely high
-		return slog.New(slog.NewTextHandler(nil, &slog.HandlerOptions{
+		return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
 			Level: slog.Level(100),
 		}))
 	default:
@@ -370,43 +1305,122 @@ func (vu *VUser) makeLogger(cfg dsl.LogConfig) *slog.Logger {
 	}
 }
 
+func actionLogAttrs(actionName string, resolved *protocol.Action, result *protocol.Result, cfg dsl.LogConfig, includeError bool) []any {
+	attrs := []any{
+		"action", actionName,
+		"status", result.StatusCode,
+		"duration_ms", result.Duration.Milliseconds(),
+	}
+	if !includeError {
+		attrs = append(attrs, "bytes", result.BytesReceived)
+	} else {
+		attrs = append(attrs, "error", result.ErrorMessage)
+	}
+
+	options := make(map[string]struct{}, len(cfg.ExtendedOptions))
+	for _, option := range cfg.ExtendedOptions {
+		options[strings.TrimSpace(option)] = struct{}{}
+	}
+
+	if _, ok := options["parameter_substitution"]; ok {
+		target := resolved.Target
+		if resolved.RedactedTarget != "" {
+			target = resolved.RedactedTarget
+		}
+		requestBody := string(resolved.Body)
+		if len(resolved.RedactedBody) > 0 {
+			requestBody = string(resolved.RedactedBody)
+		}
+		attrs = append(attrs,
+			"target", target,
+			"request_body", requestBody,
+		)
+	}
+	if _, ok := options["data_returned"]; ok {
+		attrs = append(attrs, "response_body", result.ResponseBody)
+	}
+	if _, ok := options["advanced_trace"]; ok {
+		attrs = append(attrs,
+			"dependency_target", result.DependencyTarget,
+			"correlation_id", result.CorrelationID,
+			"dns_ms", result.DNSTime.Milliseconds(),
+			"connect_ms", result.ConnectTime.Milliseconds(),
+			"tls_ms", result.TLSTime.Milliseconds(),
+			"ttfb_ms", result.TTFB.Milliseconds(),
+		)
+	}
+
+	return attrs
+}
+
 func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
+	target, redactedTarget := vu.interpolateWithSecrets(action.Target)
+	selector, _ := vu.interpolateWithSecrets(action.Selector)
+	value, _ := vu.interpolateWithSecrets(action.Value)
+	headers, redactedHeaders := vu.interpolateMapWithSecrets(action.Headers)
+	body, redactedBody := vu.interpolateWithSecrets(action.Body)
+	soapAction, redactedSOAPAction := toProtocolSOAPActions(action.SOAP, vu)
 	return &protocol.Action{
-		Name:       action.Name,
-		Type:       action.Type,
-		Method:     action.Method,
-		Target:     vu.interpolate(action.Target),
-		Selector:   vu.interpolate(action.Selector),
-		Value:      vu.interpolate(action.Value),
-		Headers:    vu.interpolateMap(action.Headers),
-		Body:       []byte(vu.interpolate(action.Body)),
-		Params:     vu.interpolateAnyMap(action.Params),
-		WaitFor:    toProtocolWaitCondition(action.WaitFor, vu),
-		Capture:    toProtocolCaptureOptions(action.Capture),
-		Metadata:   vu.interpolateAnyMap(action.Metadata),
-		Extractors: toProtocolExtractors(action.Extractors),
-		Assertions: toProtocolAssertions(action.Assertions),
-		SOAP:       toProtocolSOAPAction(action.SOAP, vu),
+		Name:            action.Name,
+		Type:            action.Type,
+		Method:          action.Method,
+		Target:          target,
+		RedactedTarget:  redactedTarget,
+		Selector:        selector,
+		Value:           value,
+		Headers:         headers,
+		RedactedHeaders: redactedHeaders,
+		Body:            []byte(body),
+		BodyEncoding:    action.BodyEncoding,
+		RedactedBody:    []byte(redactedBody),
+		Params:          vu.interpolateAnyMap(action.Params),
+		WaitFor:         toProtocolWaitCondition(action.WaitFor, vu),
+		Capture:         toProtocolCaptureOptions(action.Capture),
+		Metadata:        vu.interpolateAnyMap(action.Metadata),
+		Extractors:      toProtocolExtractors(action.Extractors),
+		Assertions:      toProtocolAssertions(action.Assertions),
+		SOAP:            soapAction,
+		RedactedSOAP:    redactedSOAPAction,
 	}
 }
 
 func toProtocolSOAPAction(action *dsl.SOAPActionConfig, vu *VUser) *protocol.SOAPActionConfig {
+	resolved, _ := toProtocolSOAPActions(action, vu)
+	return resolved
+}
+
+func toProtocolSOAPActions(action *dsl.SOAPActionConfig, vu *VUser) (*protocol.SOAPActionConfig, *protocol.SOAPActionConfig) {
 	if action == nil {
-		return nil
+		return nil, nil
 	}
+	resolvedAction, redactedAction := vu.interpolateWithSecrets(action.Action)
+	resolvedOperation, redactedOperation := vu.interpolateWithSecrets(action.Operation)
+	resolvedBodyMode, redactedBodyMode := vu.interpolateWithSecrets(action.BodyMode)
 	return &protocol.SOAPActionConfig{
-		Action:    vu.interpolate(action.Action),
-		Operation: vu.interpolate(action.Operation),
-		BodyMode:  vu.interpolate(action.BodyMode),
-	}
+			Action:    resolvedAction,
+			Operation: resolvedOperation,
+			BodyMode:  resolvedBodyMode,
+		}, &protocol.SOAPActionConfig{
+			Action:    redactedAction,
+			Operation: redactedOperation,
+			BodyMode:  redactedBodyMode,
+		}
 }
 
 func (vu *VUser) interpolate(s string) string {
 	if s == "" {
 		return s
 	}
-	return templatePattern.ReplaceAllStringFunc(s, func(token string) string {
-		// token is always {{...}} from the regex.
+	resolved, _ := vu.interpolateWithSecrets(s)
+	return resolved
+}
+
+func (vu *VUser) interpolateWithSecrets(s string) (string, string) {
+	if s == "" {
+		return s, s
+	}
+	hasSecret := false
+	resolved := templatePattern.ReplaceAllStringFunc(s, func(token string) string {
 		expr := strings.TrimSpace(token[2 : len(token)-2])
 		if expr == "" {
 			return token
@@ -416,17 +1430,46 @@ func (vu *VUser) interpolate(s string) string {
 		}
 		return token
 	})
+	redacted := templatePattern.ReplaceAllStringFunc(s, func(token string) string {
+		expr := strings.TrimSpace(token[2 : len(token)-2])
+		if expr == "" {
+			return token
+		}
+		if strings.HasPrefix(expr, "secret.") {
+			hasSecret = true
+			return "[REDACTED]"
+		}
+		if value, ok := vu.resolveTemplateValue(expr); ok {
+			return value
+		}
+		return token
+	})
+	if !hasSecret {
+		return resolved, resolved
+	}
+	return resolved, redacted
 }
 
 func (vu *VUser) interpolateMap(m map[string]string) map[string]string {
 	if m == nil {
 		return nil
 	}
-	out := make(map[string]string, len(m))
-	for k, v := range m {
-		out[k] = vu.interpolate(v)
+	resolved, _ := vu.interpolateMapWithSecrets(m)
+	return resolved
+}
+
+func (vu *VUser) interpolateMapWithSecrets(m map[string]string) (map[string]string, map[string]string) {
+	if m == nil {
+		return nil, nil
 	}
-	return out
+	out := make(map[string]string, len(m))
+	redacted := make(map[string]string, len(m))
+	for k, v := range m {
+		resolvedValue, redactedValue := vu.interpolateWithSecrets(v)
+		out[k] = resolvedValue
+		redacted[k] = redactedValue
+	}
+	return out, redacted
 }
 
 func (vu *VUser) interpolateAnyMap(m map[string]any) map[string]any {
@@ -485,11 +1528,21 @@ func (vu *VUser) resolveTemplateValue(expr string) (string, bool) {
 		key := strings.TrimSpace(strings.TrimPrefix(expr, "env."))
 		value, ok := os.LookupEnv(key)
 		return value, ok
-	case strings.HasPrefix(expr, "fn."):
+	case strings.HasPrefix(expr, "secret."):
+		key := strings.TrimSpace(strings.TrimPrefix(expr, "secret."))
+		return resolveSecretTemplateValue(key, vu.secretResolver())
+	case strings.HasPrefix(expr, "fn."), strings.HasPrefix(expr, "fake."):
 		return resolveBuiltinFunction(expr, time.Now)
 	default:
 		return "", false
 	}
+}
+
+func (vu *VUser) secretResolver() SecretResolver {
+	if vu.SecretResolver == nil {
+		vu.SecretResolver = newDefaultSecretResolver()
+	}
+	return vu.SecretResolver
 }
 
 func (vu *VUser) mergeExtractions(r *protocol.Result) {

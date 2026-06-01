@@ -6,14 +6,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestApplicationReleaseAndScenarioHandlers(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -49,17 +50,107 @@ func TestApplicationReleaseAndScenarioHandlers(t *testing.T) {
 		Actions:  []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}},
 	}
 	server.runner.StoreScript(script)
-	createScenario := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios", bytes.NewBufferString(`{"name":"Smoke","duration":"1m","groups":[{"script_id":"`+script.ID+`","vusers":5}]}`))
+	createScenario := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios", bytes.NewBufferString(`{
+		"name":"Smoke",
+		"duration":"1m",
+		"groups":[{"script_id":"`+script.ID+`","vusers":5}],
+		"runtime_settings":{
+			"iterations":4,
+			"pacing":{"type":"fixed_delay","delay_ms":1500},
+			"think_time":{"type":"fixed","mean_ms":750},
+			"browser":{"headless":false,"device_profile":"iphone_se","touch_mode":true,"orientation":"portrait"},
+			"log_level":"extended",
+			"auto_transactions":"per_iteration",
+			"error_handling":{"continue_on_error":true,"snapshot_on_error":true}
+		}
+	}`))
 	createScenario.Header.Set("Content-Type", "application/json")
 	scenarioResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(scenarioResp, createScenario)
 	if scenarioResp.Code != http.StatusCreated {
 		t.Fatalf("create scenario status = %d body=%s", scenarioResp.Code, scenarioResp.Body.String())
 	}
+	var scenario StoredScenario
+	if err := json.Unmarshal(scenarioResp.Body.Bytes(), &scenario); err != nil {
+		t.Fatalf("unmarshal scenario: %v", err)
+	}
+	if scenario.RuntimeSettings == nil {
+		t.Fatal("expected runtime settings on stored scenario")
+	}
+	if scenario.RuntimeSettings.Iterations == nil || *scenario.RuntimeSettings.Iterations != 4 {
+		t.Fatalf("scenario iterations = %#v, want 4", scenario.RuntimeSettings.Iterations)
+	}
+	if scenario.RuntimeSettings.Pacing == nil || scenario.RuntimeSettings.Pacing.Type != "fixed_delay" || scenario.RuntimeSettings.Pacing.DelayMs != 1500 {
+		t.Fatalf("scenario pacing = %#v, want fixed_delay 1500ms", scenario.RuntimeSettings.Pacing)
+	}
+	if scenario.RuntimeSettings.ThinkTime == nil || scenario.RuntimeSettings.ThinkTime.Type != "fixed" || scenario.RuntimeSettings.ThinkTime.MeanMs != 750 {
+		t.Fatalf("scenario think_time = %#v, want fixed 750ms", scenario.RuntimeSettings.ThinkTime)
+	}
+	if scenario.RuntimeSettings.Browser == nil || scenario.RuntimeSettings.Browser.Headless == nil || *scenario.RuntimeSettings.Browser.Headless != false {
+		t.Fatalf("scenario browser override = %#v, want headless false", scenario.RuntimeSettings.Browser)
+	}
+	if scenario.RuntimeSettings.Browser.DeviceProfile != "iphone_se" {
+		t.Fatalf("scenario browser device_profile = %q, want iphone_se", scenario.RuntimeSettings.Browser.DeviceProfile)
+	}
+	if scenario.RuntimeSettings.Browser.TouchMode == nil || *scenario.RuntimeSettings.Browser.TouchMode != true {
+		t.Fatalf("scenario browser touch_mode = %#v, want true", scenario.RuntimeSettings.Browser.TouchMode)
+	}
+	if scenario.RuntimeSettings.Browser.Orientation != "portrait" {
+		t.Fatalf("scenario browser orientation = %q, want portrait", scenario.RuntimeSettings.Browser.Orientation)
+	}
+	if scenario.RuntimeSettings.LogLevel != "extended" {
+		t.Fatalf("scenario log level = %q, want extended", scenario.RuntimeSettings.LogLevel)
+	}
+	if scenario.RuntimeSettings.AutoTransactions != "per_iteration" {
+		t.Fatalf("scenario auto transactions = %q, want per_iteration", scenario.RuntimeSettings.AutoTransactions)
+	}
+	if scenario.RuntimeSettings.ErrorHandling == nil || !scenario.RuntimeSettings.ErrorHandling.ContinueOnError || !scenario.RuntimeSettings.ErrorHandling.SnapshotOnError {
+		t.Fatalf("scenario error handling = %#v, want continue_on_error and snapshot_on_error", scenario.RuntimeSettings.ErrorHandling)
+	}
+}
+
+func TestScenarioCreateRejectsIncompatibleBrowserRuntimeOverride(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store})
+
+	script := &dsl.Script{
+		ID:       "script-browser",
+		Name:     "Browser Script",
+		Protocol: "browser",
+		Version:  "1.0",
+		Config: dsl.ScriptConfig{
+			Browser: dsl.BrowserConfig{Engine: "chromium"},
+		},
+		Actions: []dsl.Action{{Name: "Capture current page", Type: "browser_screenshot"}},
+	}
+	server.runner.StoreScript(script)
+
+	createScenario := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios", bytes.NewBufferString(`{
+		"name":"Smoke",
+		"duration":"1m",
+		"groups":[{"script_id":"`+script.ID+`","vusers":5}],
+		"runtime_settings":{
+			"browser":{"device_profile":"iphone_15_pro"}
+		}
+	}`))
+	createScenario.Header.Set("Content-Type", "application/json")
+	scenarioResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(scenarioResp, createScenario)
+
+	if scenarioResp.Code != http.StatusBadRequest {
+		t.Fatalf("create scenario status = %d, want %d body=%s", scenarioResp.Code, http.StatusBadRequest, scenarioResp.Body.String())
+	}
+	if !strings.Contains(scenarioResp.Body.String(), "incompatible with device_profile") || !strings.Contains(scenarioResp.Body.String(), "requires webkit") {
+		t.Fatalf("create scenario body = %s, want incompatible browser override issue", scenarioResp.Body.String())
+	}
 }
 
 func TestArchiveReleaseRequiresNoAssociatedResults(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}

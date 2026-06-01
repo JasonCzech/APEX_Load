@@ -1,4 +1,5 @@
-import { LiveMetrics, MetricsHistoryPoint, TestStatus } from '../types'
+import { IntervalSummaryRecord, LiveMetrics, MetricsHistoryPoint, ResourceSample, TestStatus } from '../types'
+import { latencySeriesKeyForTarget } from './latencySeries'
 
 export interface ExecutionChartSummary {
   avgTps: number
@@ -17,6 +18,7 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
     errorPct: metric.error_pct || 0,
     p50: metric.p50_ms,
     p90: metric.p90_ms,
+    p95: metric.p95_ms,
     p99: metric.p99_ms,
     cpuProcess: metric.resources?.cpu_process_pct,
     cpuFree: metric.resources?.cpu_free_pct,
@@ -26,6 +28,33 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
     netRecv: metric.resources?.net_recv_kbps,
     diskRead: metric.resources?.disk_read_kbps,
     diskWrite: metric.resources?.disk_write_kbps,
+  }
+
+  const jmsTransactions = Object.values(metric.transactions ?? {}).filter((tx) => tx.dependency_type?.startsWith('jms_') && tx.server_telemetry)
+  if (jmsTransactions.length > 0) {
+    let lagSamples = 0
+    let lagSum = 0
+    let lagPeak = 0
+
+    jmsTransactions.forEach((tx) => {
+      const samples = tx.server_telemetry?.samples ?? 0
+      const avgLag = tx.server_telemetry?.avg_consumer_lag_ms ?? 0
+      if (samples > 0 && avgLag > 0) {
+        lagSamples += samples
+        lagSum += avgLag * samples
+      }
+      const maxLag = tx.server_telemetry?.max_consumer_lag_ms ?? 0
+      if (maxLag > lagPeak) {
+        lagPeak = maxLag
+      }
+    })
+
+    if (lagSamples > 0) {
+      point.jmsConsumerLagMs = lagSum / lagSamples
+    }
+    if (lagPeak > 0) {
+      point.jmsPeakConsumerLagMs = lagPeak
+    }
   }
 
   if (metric.groups) {
@@ -38,7 +67,7 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
 
   if (metric.latency?.targets) {
     metric.latency.targets.forEach((target) => {
-      point[`latency_${target.name}`] = target.latency_ms
+      point[latencySeriesKeyForTarget(target)] = target.latency_ms
     })
   }
 
@@ -53,10 +82,127 @@ export function mapExecutionHistory(history: LiveMetrics[] | undefined): Metrics
   return history.map(mapExecutionMetricToHistoryPoint)
 }
 
+export function mapArchiveResourceSamples(samples: ResourceSample[] | undefined): MetricsHistoryPoint[] {
+  if (!samples?.length) {
+    return []
+  }
+
+  return samples
+    .map((sample) => {
+      const timestampMs = Date.parse(sample.timestamp)
+      return {
+        time: new Date(sample.timestamp).toLocaleTimeString(),
+        timestampMs: Number.isNaN(timestampMs) ? undefined : timestampMs,
+        vusers: sample.active_vusers ?? 0,
+        tps: 0,
+        avgMs: 0,
+        errorPct: 0,
+        p50: 0,
+        p90: 0,
+        p95: 0,
+        p99: 0,
+        resourceSampleOnly: 1,
+        cpuProcess: sample.cpu_process_pct,
+        cpuFree: sample.cpu_free_pct,
+        memProcess: sample.mem_process_mb,
+        memFree: sample.mem_free_mb,
+        netSent: sample.net_sent_kbps,
+        netRecv: sample.net_recv_kbps,
+        diskRead: sample.disk_read_kbps,
+        diskWrite: sample.disk_write_kbps,
+      }
+    })
+    .filter(point => typeof point.timestampMs === 'number')
+}
+
+export function mapArchiveSummarySamples(summaries: IntervalSummaryRecord[] | undefined): MetricsHistoryPoint[] {
+  if (!summaries?.length) {
+    return []
+  }
+
+  return summaries
+    .map((summary) => {
+      const timestampMs = Date.parse(summary.timestamp)
+      return {
+        time: new Date(summary.timestamp).toLocaleTimeString(),
+        timestampMs: Number.isNaN(timestampMs) ? undefined : timestampMs,
+        vusers: summary.active_vusers,
+        tps: summary.tps,
+        avgMs: summary.avg_response_ms,
+        errorPct: summary.error_pct || 0,
+        p50: summary.p50_ms,
+        p90: summary.p90_ms,
+        p95: summary.p95_ms,
+        p99: summary.p99_ms,
+      }
+    })
+    .filter(point => typeof point.timestampMs === 'number')
+}
+
+export function mergeArchiveResourceHistory(
+  chartHistory: MetricsHistoryPoint[],
+  archiveResourceHistory: MetricsHistoryPoint[] | undefined,
+): MetricsHistoryPoint[] {
+  if (!archiveResourceHistory?.length) {
+    return chartHistory
+  }
+
+  if (chartHistory.length === 0) {
+    return [...archiveResourceHistory]
+  }
+
+  const resourcesByTimestamp = new Map<number, MetricsHistoryPoint>()
+  archiveResourceHistory.forEach((point) => {
+    if (typeof point.timestampMs === 'number') {
+      resourcesByTimestamp.set(point.timestampMs, point)
+    }
+  })
+
+  const matchedResourceTimestamps = new Set<number>()
+  const merged = chartHistory.map((point) => {
+    if (typeof point.timestampMs !== 'number') {
+      return point
+    }
+    const resourcePoint = resourcesByTimestamp.get(point.timestampMs)
+    if (!resourcePoint) {
+      return point
+    }
+    matchedResourceTimestamps.add(point.timestampMs)
+    return {
+      ...point,
+      vusers: point.vusers || resourcePoint.vusers,
+      cpuProcess: resourcePoint.cpuProcess,
+      cpuFree: resourcePoint.cpuFree,
+      memProcess: resourcePoint.memProcess,
+      memFree: resourcePoint.memFree,
+      netSent: resourcePoint.netSent,
+      netRecv: resourcePoint.netRecv,
+      diskRead: resourcePoint.diskRead,
+      diskWrite: resourcePoint.diskWrite,
+    }
+  })
+
+  const resourceOnlyPoints = archiveResourceHistory.filter(point => (
+    typeof point.timestampMs === 'number' && !matchedResourceTimestamps.has(point.timestampMs)
+  ))
+
+  if (resourceOnlyPoints.length === 0) {
+    return merged
+  }
+
+  return [...merged, ...resourceOnlyPoints].sort((left, right) => {
+    if (typeof left.timestampMs === 'number' && typeof right.timestampMs === 'number') {
+      return left.timestampMs - right.timestampMs
+    }
+    return 0
+  })
+}
+
 interface BuildExecutionChartDataOptions {
   mappedBackendHistory: MetricsHistoryPoint[]
   localMetricsHistory: MetricsHistoryPoint[]
   fallbackHistory: MetricsHistoryPoint[]
+  archiveResourceHistory?: MetricsHistoryPoint[]
   status?: TestStatus
 }
 
@@ -64,6 +210,7 @@ export function buildExecutionChartData({
   mappedBackendHistory,
   localMetricsHistory,
   fallbackHistory,
+  archiveResourceHistory,
   status,
 }: BuildExecutionChartDataOptions): MetricsHistoryPoint[] {
   let combined: MetricsHistoryPoint[] = []
@@ -92,24 +239,40 @@ export function buildExecutionChartData({
     }
   }
 
-  if (status === 'PAUSED' && deduped.length > 0) {
-    const lastPoint = deduped[deduped.length - 1]
+  const resourceEnrichedPoints = mergeArchiveResourceHistory(deduped, archiveResourceHistory)
+  const pointsWithRelativeRunTime = addRelativeRunTime(resourceEnrichedPoints)
+
+  if (status === 'PAUSED' && pointsWithRelativeRunTime.length > 0) {
+    const lastPoint = pointsWithRelativeRunTime[pointsWithRelativeRunTime.length - 1]
     if (lastPoint.tps < 0.1) {
       let lastNonZeroIndex = -1
-      for (let index = deduped.length - 1; index >= 0; index -= 1) {
-        if (deduped[index].tps > 0.1) {
+      for (let index = pointsWithRelativeRunTime.length - 1; index >= 0; index -= 1) {
+        if (pointsWithRelativeRunTime[index].tps > 0.1) {
           lastNonZeroIndex = index
           break
         }
       }
 
       if (lastNonZeroIndex !== -1) {
-        return deduped.slice(0, lastNonZeroIndex + 6)
+        return pointsWithRelativeRunTime.slice(0, lastNonZeroIndex + 6)
       }
     }
   }
 
-  return deduped
+  return pointsWithRelativeRunTime
+}
+
+function addRelativeRunTime(points: MetricsHistoryPoint[]): MetricsHistoryPoint[] {
+  if (points.length === 0) {
+    return points
+  }
+  const firstTimestamp = points.find(point => typeof point.timestampMs === 'number')?.timestampMs
+  return points.map((point, index) => ({
+    ...point,
+    relativeMs: typeof firstTimestamp === 'number' && typeof point.timestampMs === 'number'
+      ? Math.max(0, point.timestampMs - firstTimestamp)
+      : index * 1000,
+  }))
 }
 
 export function filterExecutionChartData(

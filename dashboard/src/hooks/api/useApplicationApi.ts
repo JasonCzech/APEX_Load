@@ -1,17 +1,29 @@
 import { useCallback, useMemo } from 'react'
 
 import { Application, Release } from '../../types'
-import { request } from '../apiClient'
+import { apiFetch, request } from '../apiClient'
 
 type DeleteEntityResponse = {
   deleted: string
 }
 
+async function fetchBlob(path: string): Promise<Blob> {
+  const res = await apiFetch(path)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(body.error || res.statusText)
+  }
+  return res.blob()
+}
+
 export function useApplicationApi() {
-  const listApplications = useCallback(() => request<{ applications: Application[]; count: number }>('/applications'), [])
+  const listApplications = useCallback((projectId?: string) => {
+    const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''
+    return request<{ applications: Application[]; count: number }>(`/applications${query}`)
+  }, [])
 
   const createApplication = useCallback(
-    (data: { name: string }) => request<Application>('/applications', { method: 'POST', body: JSON.stringify(data) }),
+    (data: { name: string; project_id?: string }) => request<Application>('/applications', { method: 'POST', body: JSON.stringify(data) }),
     [],
   )
 
@@ -41,6 +53,8 @@ export function useApplicationApi() {
 
   const archiveRelease = useCallback((id: string) => request<Release>(`/releases/${id}/archive`, { method: 'POST' }), [])
 
+  const downloadReleaseTrend = useCallback((id: string) => fetchBlob(`/releases/${id}/trend/export`), [])
+
   const deleteRelease = useCallback((id: string) => request<DeleteEntityResponse>(`/releases/${id}`, { method: 'DELETE' }), [])
 
   return useMemo(
@@ -53,8 +67,9 @@ export function useApplicationApi() {
       createRelease,
       updateRelease,
       archiveRelease,
+      downloadReleaseTrend,
       deleteRelease,
     }),
-    [listApplications, createApplication, updateApplication, deleteApplication, listReleases, createRelease, updateRelease, archiveRelease, deleteRelease],
+    [listApplications, createApplication, updateApplication, deleteApplication, listReleases, createRelease, updateRelease, archiveRelease, downloadReleaseTrend, deleteRelease],
   )
 }

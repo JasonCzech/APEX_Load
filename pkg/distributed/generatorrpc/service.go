@@ -8,14 +8,15 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
-	pb "github.com/jasonczech/stormrunner/api/proto"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/engine"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -60,6 +61,10 @@ func (b *transactionBuffer) RecordResult(result *protocol.Result) error {
 	b.transactions = append(b.transactions, TransactionMetric{
 		Name:             result.ActionName,
 		DurationMs:       float64(result.Duration) / float64(time.Millisecond),
+		DNSMs:            float64(result.DNSTime) / float64(time.Millisecond),
+		ConnectMs:        float64(result.ConnectTime) / float64(time.Millisecond),
+		TLSMs:            float64(result.TLSTime) / float64(time.Millisecond),
+		TTFBMs:           float64(result.TTFB) / float64(time.Millisecond),
 		StatusCode:       int32(result.StatusCode),
 		Success:          result.Success,
 		ErrorMessage:     result.ErrorMessage,
@@ -68,6 +73,8 @@ func (b *transactionBuffer) RecordResult(result *protocol.Result) error {
 		CorrelationID:    result.CorrelationID,
 		DependencyType:   result.DependencyType,
 		DependencyTarget: result.DependencyTarget,
+		SOAPOperation:    strings.TrimSpace(result.Extractions["soap_operation"]),
+		ServerTelemetry:  cloneServerTelemetry(result.ServerTelemetry),
 	})
 	if len(b.transactions) > 1024 {
 		b.transactions = append([]TransactionMetric(nil), b.transactions[len(b.transactions)-1024:]...)
@@ -113,7 +120,7 @@ func WithExecution() ServiceOption {
 
 func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Service {
 	if generatorID == "" {
-		generatorID = "stormrunner-generator"
+		generatorID = "apexload-generator"
 	}
 	if maxVUsers <= 0 {
 		maxVUsers = 10000
@@ -455,18 +462,27 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		}
 
 		if err := stream.Send(&pb.HeartbeatPong{
-			GeneratorId:       s.generatorID,
-			TimestampUnixMs:   maxInt64(time.Now().UnixMilli(), ping.GetTimestampUnixMs()),
-			ActiveTestIds:     s.activeTestIDs(),
-			Stats:             toProtoStats(GeneratorStats{ActiveVUsers: s.activeVUsersLocked(), GoroutineCount: int32(runtime.NumGoroutine())}),
-			AvailableCapacity: s.availableCapacityLocked(),
-			CpuLimitCores:     s.podResources.CPULimitCores,
-			MemoryLimitBytes:  s.podResources.MemoryLimitBytes,
-			MaxVusers:         s.podResources.MaxVUsers,
+			GeneratorId:        s.generatorID,
+			TimestampUnixMs:    maxInt64(time.Now().UnixMilli(), ping.GetTimestampUnixMs()),
+			ActiveTestIds:      s.activeTestIDs(),
+			Stats:              toProtoStats(GeneratorStats{ActiveVUsers: s.activeVUsersLocked(), GoroutineCount: int32(runtime.NumGoroutine())}),
+			AvailableCapacity:  s.availableCapacityLocked(),
+			CpuLimitCores:      s.podResources.CPULimitCores,
+			MemoryLimitBytes:   s.podResources.MemoryLimitBytes,
+			MaxVusers:          s.podResources.MaxVUsers,
+			Version:            "0.1.0",
+			SupportedProtocols: supportedProtocolNames(),
+			CompatibleFeatures: supportedProtocolNames(),
 		}); err != nil {
 			return err
 		}
 	}
+}
+
+func supportedProtocolNames() []string {
+	names := protocol.List()
+	sort.Strings(names)
+	return names
 }
 
 func (s *Service) activeTestIDs() []string {
@@ -727,9 +743,31 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 	}
 	protoTransactions := make([]*pb.TransactionMetric, 0, len(transactions))
 	for _, tx := range transactions {
+		var protoServerTelemetry *pb.ServerTelemetry
+		if tx.ServerTelemetry != nil {
+			protoServerTelemetry = &pb.ServerTelemetry{
+				ServerProcessingMs:     tx.ServerTelemetry.ServerProcessingMs,
+				TransferMs:             tx.ServerTelemetry.TransferMs,
+				RequestPayloadKb:       tx.ServerTelemetry.RequestPayloadKB,
+				ResponsePayloadKb:      tx.ServerTelemetry.ResponsePayloadKB,
+				ConnectionReused:       tx.ServerTelemetry.ConnectionReused,
+				RequestSizeClass:       tx.ServerTelemetry.RequestSizeClass,
+				ResponseSizeClass:      tx.ServerTelemetry.ResponseSizeClass,
+				MessageLatencyMs:       tx.ServerTelemetry.MessageLatencyMs,
+				MessagesSent:           tx.ServerTelemetry.MessagesSent,
+				MessagesReceived:       tx.ServerTelemetry.MessagesReceived,
+				MessagesSentPerSec:     tx.ServerTelemetry.MessagesSentPerSec,
+				MessagesReceivedPerSec: tx.ServerTelemetry.MessagesReceivedPerSec,
+				ConsumerLagMs:          tx.ServerTelemetry.ConsumerLagMs,
+			}
+		}
 		protoTransactions = append(protoTransactions, &pb.TransactionMetric{
 			Name:             tx.Name,
 			DurationMs:       tx.DurationMs,
+			DnsMs:            tx.DNSMs,
+			ConnectMs:        tx.ConnectMs,
+			TlsMs:            tx.TLSMs,
+			TtfbMs:           tx.TTFBMs,
 			StatusCode:       tx.StatusCode,
 			Success:          tx.Success,
 			ErrorMessage:     tx.ErrorMessage,
@@ -738,6 +776,8 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 			CorrelationId:    tx.CorrelationID,
 			DependencyType:   tx.DependencyType,
 			DependencyTarget: tx.DependencyTarget,
+			SoapOperation:    tx.SOAPOperation,
+			ServerTelemetry:  protoServerTelemetry,
 		})
 	}
 	var protoTelemetry *pb.MetricsBatchTelemetry
@@ -784,6 +824,27 @@ func mergeMetricsTelemetry(values map[string]MetricsTelemetry) *MetricsTelemetry
 		}
 	}
 	return combined
+}
+
+func cloneServerTelemetry(input *protocol.ServerTelemetry) *ServerTelemetry {
+	if input == nil {
+		return nil
+	}
+	return &ServerTelemetry{
+		ServerProcessingMs:     input.ServerProcessingMs,
+		TransferMs:             input.TransferMs,
+		RequestPayloadKB:       input.RequestPayloadKB,
+		ResponsePayloadKB:      input.ResponsePayloadKB,
+		ConnectionReused:       input.ConnectionReused,
+		RequestSizeClass:       input.RequestSizeClass,
+		ResponseSizeClass:      input.ResponseSizeClass,
+		MessageLatencyMs:       input.MessageLatencyMs,
+		MessagesSent:           int32(input.MessagesSent),
+		MessagesReceived:       int32(input.MessagesReceived),
+		MessagesSentPerSec:     input.MessagesSentPerSec,
+		MessagesReceivedPerSec: input.MessagesReceivedPerSec,
+		ConsumerLagMs:          input.ConsumerLagMs,
+	}
 }
 
 func (s *Service) scheduleCompletionLocked(testID string, duration time.Duration) {
@@ -911,6 +972,9 @@ func (s *Service) publishExecutionSnapshot(testID string, groupName string, exec
 	snapshot, ok := exec.engine.LatestSnapshot()
 	transactions := exec.results.Drain()
 	if !ok && len(transactions) == 0 {
+		return
+	}
+	if ok && snapshot.Transactions == 0 && len(transactions) == 0 {
 		return
 	}
 	stats := GeneratorStats{GoroutineCount: int32(runtime.NumGoroutine())}

@@ -1,0 +1,348 @@
+package api
+
+import (
+	"fmt"
+	"math"
+	"sort"
+	"strings"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/storage"
+)
+
+type LoadModelValidationReport struct {
+	Status                   string                    `json:"status"`
+	StatusCounts             map[string]int            `json:"status_counts"`
+	Items                    []LoadModelValidationItem `json:"items"`
+	TotalVUsers              int                       `json:"total_vusers"`
+	PeakTargetTPS            float64                   `json:"peak_target_tps,omitempty"`
+	CapacityAdvisory         *CapacityAdvisory         `json:"capacity_advisory,omitempty"`
+	AssignmentRecommendation *AssignmentRecommendation `json:"assignment_recommendation,omitempty"`
+	RuntimeSettingsReview    *RuntimeSettingsReview    `json:"runtime_settings_review,omitempty"`
+}
+
+type LoadModelValidationItem struct {
+	Dimension     string  `json:"dimension"`
+	Group         string  `json:"group,omitempty"`
+	Status        string  `json:"status"`
+	Summary       string  `json:"summary"`
+	RequiredRows  int     `json:"required_rows,omitempty"`
+	AvailableRows int     `json:"available_rows,omitempty"`
+	TargetVUsers  int     `json:"target_vusers,omitempty"`
+	TargetTPS     float64 `json:"target_tps,omitempty"`
+}
+
+func (tr *TestRunner) ValidateScenarioLoadModel(req CreateScenarioRequest) (*LoadModelValidationReport, error) {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+
+	testReq := createTestRequestFromScenarioDraft(req)
+	preview, err := tr.buildManagedTestLocked(testReq, "draft-load-model-validation", "DRAFT")
+	if err != nil {
+		return nil, err
+	}
+
+	recommendation := tr.buildAssignmentRecommendation(preview)
+	report := &LoadModelValidationReport{
+		Items:                    make([]LoadModelValidationItem, 0, 8),
+		TotalVUsers:              preview.TotalVUsers,
+		CapacityAdvisory:         cloneCapacityAdvisory(preview.CapacityAdvisory),
+		AssignmentRecommendation: recommendation,
+		RuntimeSettingsReview:    cloneRuntimeSettingsReview(preview.RuntimeSettingsReview),
+	}
+
+	report.Items = append(report.Items, validateModeledDemand(preview.Groups)...)
+	report.Items = append(report.Items, validateRuntimeSettingsReview(preview.RuntimeSettingsReview)...)
+	report.Items = append(report.Items, validateRendezvousDemand(preview.Groups)...)
+	report.Items = append(report.Items, validateCapacityAdvisory(preview.CapacityAdvisory)...)
+	report.Items = append(report.Items, validateBrowserCanaryDemand(preview.CapacityAdvisory)...)
+	report.Items = append(report.Items, validateAssignmentPlacement(preview, recommendation)...)
+	dataSourceItems, peakTPS := tr.validateLoadModelDataSourcesLocked(req.DataPools, preview.Groups)
+	report.PeakTargetTPS = peakTPS
+	report.Items = append(report.Items, dataSourceItems...)
+
+	finalizeLoadModelValidationReport(report)
+	return report, nil
+}
+
+func createTestRequestFromScenarioDraft(req CreateScenarioRequest) CreateTestRequest {
+	return CreateTestRequest{
+		Name:             req.Name,
+		Duration:         req.Duration,
+		StartDelay:       req.StartDelay,
+		ScenarioMode:     req.ScenarioMode,
+		ScriptShakeout:   req.ScriptShakeout,
+		ResourceBaseline: req.ResourceBaseline,
+		Assignment:       cloneGeneratorAssignmentSettings(req.Assignment),
+		GoalConfig:       cloneGoalConfig(req.GoalConfig),
+		RuntimeSettings:  cloneRuntimeSettings(req.RuntimeSettings),
+		Groups:           append([]CreateGroupEntry(nil), req.Groups...),
+	}
+}
+
+func validateModeledDemand(groups []TestGroup) []LoadModelValidationItem {
+	items := make([]LoadModelValidationItem, 0, len(groups))
+	for _, group := range groups {
+		maxStageVUsers := 0
+		maxStageTPS := 0.0
+		for _, stage := range group.Stages {
+			if stage.TargetVUsers > maxStageVUsers {
+				maxStageVUsers = stage.TargetVUsers
+			}
+			if stage.TargetTPS != nil && *stage.TargetTPS > maxStageTPS {
+				maxStageTPS = *stage.TargetTPS
+			}
+		}
+		if len(group.Stages) == 0 {
+			items = append(items, LoadModelValidationItem{
+				Dimension:    "modeled_demand",
+				Group:        group.Name,
+				Status:       "ready",
+				Summary:      fmt.Sprintf("Closed workload uses %d VUser%s.", group.VUsers, pluralSuffix(group.VUsers)),
+				TargetVUsers: group.VUsers,
+			})
+			continue
+		}
+		summary := fmt.Sprintf("Staged workload preserves %d segment%s with peak %d VUser%s.", len(group.Stages), pluralSuffix(len(group.Stages)), maxStageVUsers, pluralSuffix(maxStageVUsers))
+		if maxStageTPS > 0 {
+			summary = fmt.Sprintf("%s Peak target throughput is %.2f TPS.", summary, maxStageTPS)
+		}
+		items = append(items, LoadModelValidationItem{
+			Dimension:    "modeled_demand",
+			Group:        group.Name,
+			Status:       "ready",
+			Summary:      summary,
+			TargetVUsers: maxStageVUsers,
+			TargetTPS:    roundCapacityValue(maxStageTPS),
+		})
+	}
+	return items
+}
+
+func validateRuntimeSettingsReview(review *RuntimeSettingsReview) []LoadModelValidationItem {
+	if review == nil {
+		return []LoadModelValidationItem{{
+			Dimension: "runtime_settings",
+			Status:    "ready",
+			Summary:   "No non-default runtime settings require review.",
+		}}
+	}
+	status := "ready"
+	switch review.Status {
+	case "blocked":
+		status = "blocked"
+	case "needs_review":
+		status = "needs_review"
+	}
+	summary := review.Summary
+	if strings.TrimSpace(summary) == "" {
+		summary = "Runtime settings are executable for the selected scripts and overrides."
+	}
+	return []LoadModelValidationItem{{
+		Dimension: "runtime_settings",
+		Status:    status,
+		Summary:   summary,
+	}}
+}
+
+func validateRendezvousDemand(groups []TestGroup) []LoadModelValidationItem {
+	items := make([]LoadModelValidationItem, 0)
+	for _, group := range groups {
+		if group.script == nil {
+			continue
+		}
+		count := 0
+		for _, action := range group.script.Actions {
+			if strings.EqualFold(strings.TrimSpace(action.Type), "rendezvous") {
+				count++
+			}
+		}
+		if count == 0 {
+			continue
+		}
+		items = append(items, LoadModelValidationItem{
+			Dimension:    "rendezvous",
+			Group:        group.Name,
+			Status:       "ready",
+			Summary:      fmt.Sprintf("Script contains %d rendezvous point%s for synchronized VUser release.", count, pluralSuffix(count)),
+			TargetVUsers: group.VUsers,
+		})
+	}
+	return items
+}
+
+func validateCapacityAdvisory(advisory *CapacityAdvisory) []LoadModelValidationItem {
+	if advisory == nil {
+		return []LoadModelValidationItem{{Dimension: "capacity", Status: "needs_review", Summary: "Capacity advisory could not be computed for this scenario draft."}}
+	}
+	status := "ready"
+	summary := fmt.Sprintf("Recommended %d generator%s with %d available.", advisory.RecommendedGenerators, pluralSuffix(advisory.RecommendedGenerators), advisory.AvailableGenerators)
+	if advisory.RequiresOverride {
+		status = "blocked"
+		summary = fmt.Sprintf("Capacity shortfall of %d generator%s requires override before execution.", advisory.ShortfallGenerators, pluralSuffix(advisory.ShortfallGenerators))
+	}
+	return []LoadModelValidationItem{{Dimension: "capacity", Status: status, Summary: summary}}
+}
+
+func validateBrowserCanaryDemand(advisory *CapacityAdvisory) []LoadModelValidationItem {
+	if advisory == nil || advisory.BrowserVUsers == 0 {
+		return nil
+	}
+	status := "ready"
+	availableBrowserSlots := advisory.AvailableGenerators * advisory.MaxBrowserVUsersPerGenerator
+	summary := fmt.Sprintf("Browser canary demand uses %d VUser%s across a %d VUser/generator density envelope.", advisory.BrowserVUsers, pluralSuffix(advisory.BrowserVUsers), advisory.MaxBrowserVUsersPerGenerator)
+	if advisory.MaxBrowserVUsersPerGenerator == 0 {
+		status = "needs_review"
+		summary = "Browser canary density could not be resolved; verify generator host class before execution."
+	} else if advisory.BrowserVUsers > availableBrowserSlots {
+		status = "blocked"
+		summary = fmt.Sprintf("Browser canary demand needs %d browser slot%s but current placement exposes %d.", advisory.BrowserVUsers, pluralSuffix(advisory.BrowserVUsers), availableBrowserSlots)
+	}
+	return []LoadModelValidationItem{{Dimension: "browser_canary", Status: status, Summary: summary, TargetVUsers: advisory.BrowserVUsers}}
+}
+
+func validateAssignmentPlacement(test *ManagedTest, recommendation *AssignmentRecommendation) []LoadModelValidationItem {
+	if recommendation == nil {
+		return nil
+	}
+	status := "ready"
+	summary := recommendation.Summary
+	if strings.TrimSpace(summary) == "" {
+		summary = "Generator placement can be resolved automatically."
+	}
+	if len(recommendation.Warnings) > 0 {
+		status = "needs_review"
+		summary = strings.Join(recommendation.Warnings, " ")
+	}
+	if test != nil && test.CapacityAdvisory != nil && test.CapacityAdvisory.RequiresOverride {
+		status = "blocked"
+	}
+	return []LoadModelValidationItem{{Dimension: "generator_placement", Status: status, Summary: summary}}
+}
+
+func (tr *TestRunner) validateLoadModelDataSourcesLocked(bindings []storage.ScenarioDataPoolBinding, groups []TestGroup) ([]LoadModelValidationItem, float64) {
+	items := make([]LoadModelValidationItem, 0)
+	sharedSources, poolItems := tr.validateLoadModelDataPoolBindingsLocked(bindings)
+	items = append(items, poolItems...)
+
+	peakTPS := 0.0
+	for _, group := range groups {
+		for _, stage := range group.Stages {
+			if stage.TargetTPS != nil {
+				peakTPS = math.Max(peakTPS, *stage.TargetTPS)
+			}
+		}
+		if group.script == nil {
+			continue
+		}
+		scriptCopy := *group.script
+		if len(sharedSources) > 0 {
+			scriptCopy.DataSources = append(cloneDataSources(scriptCopy.DataSources), sharedSources...)
+		}
+		maxVUsers := group.VUsers
+		scriptCopy.GoalConfig = cloneDSLGoalConfig(scriptCopy.GoalConfig)
+		if scriptCopy.GoalConfig == nil {
+			scriptCopy.GoalConfig = &dsl.GoalConfig{}
+		}
+		if scriptCopy.GoalConfig.MaxVUsers == nil || *scriptCopy.GoalConfig.MaxVUsers < maxVUsers {
+			scriptCopy.GoalConfig.MaxVUsers = &maxVUsers
+		}
+		report := buildDataSourceFitReport(&scriptCopy)
+		if report == nil {
+			continue
+		}
+		for _, item := range report.Items {
+			items = append(items, LoadModelValidationItem{
+				Dimension:     "data_source_fit",
+				Group:         group.Name,
+				Status:        item.Status,
+				Summary:       item.Summary,
+				RequiredRows:  item.RequiredRows,
+				AvailableRows: item.AvailableRows,
+			})
+		}
+	}
+	if len(bindings) == 0 && !hasDataSourceFitItem(items) {
+		items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Status: "ready", Summary: "No shared data pools are bound to this scenario."})
+	}
+	return items, roundCapacityValue(peakTPS)
+}
+
+func (tr *TestRunner) validateLoadModelDataPoolBindingsLocked(bindings []storage.ScenarioDataPoolBinding) ([]dsl.DataSource, []LoadModelValidationItem) {
+	if len(bindings) == 0 {
+		return nil, nil
+	}
+	sources := make([]dsl.DataSource, 0, len(bindings))
+	items := make([]LoadModelValidationItem, 0, len(bindings))
+	if tr.dataPoolStore == nil {
+		return nil, []LoadModelValidationItem{{Dimension: "data_pool_rows", Status: "blocked", Summary: "Data pool storage is not configured for this controller."}}
+	}
+	for _, binding := range bindings {
+		alias := strings.TrimSpace(binding.Alias)
+		if alias == "" {
+			alias = strings.TrimSpace(binding.PoolID)
+		}
+		rows, err := tr.dataPoolStore.ListDataPoolRows(binding.PoolID)
+		if err != nil {
+			items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "blocked", Summary: fmt.Sprintf("Could not load data pool rows: %v", err)})
+			continue
+		}
+		if len(rows) == 0 {
+			items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "blocked", Summary: "Data pool has no rows available for scenario execution."})
+			continue
+		}
+		inlineData, columns, err := inlineCSVFromDataPoolRows(rows)
+		if err != nil {
+			items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "blocked", Summary: fmt.Sprintf("Could not prepare data pool rows: %v", err), AvailableRows: len(rows)})
+			continue
+		}
+		strategy := binding.SelectionStrategy
+		if strategy == "" {
+			strategy = "sequential"
+		}
+		sources = append(sources, dsl.DataSource{Name: alias, Type: "csv", InlineData: inlineData, Strategy: strategy, FirstRowHeader: true, Columns: columns})
+		items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "ready", Summary: fmt.Sprintf("Data pool exposes %d row%s for load-model validation.", len(rows), pluralSuffix(len(rows))), AvailableRows: len(rows)})
+	}
+	return sources, items
+}
+
+func cloneDSLGoalConfig(in *dsl.GoalConfig) *dsl.GoalConfig {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	return &out
+}
+
+func hasDataSourceFitItem(items []LoadModelValidationItem) bool {
+	for _, item := range items {
+		if item.Dimension == "data_source_fit" {
+			return true
+		}
+	}
+	return false
+}
+
+func finalizeLoadModelValidationReport(report *LoadModelValidationReport) {
+	counts := map[string]int{"ready": 0, "needs_review": 0, "blocked": 0}
+	for _, item := range report.Items {
+		status := strings.TrimSpace(item.Status)
+		if status == "" {
+			status = "needs_review"
+		}
+		counts[status]++
+	}
+	report.StatusCounts = counts
+	report.Status = "ready"
+	if counts["blocked"] > 0 {
+		report.Status = "blocked"
+	} else if counts["needs_review"] > 0 {
+		report.Status = "needs_review"
+	}
+	sort.SliceStable(report.Items, func(i, j int) bool {
+		if report.Items[i].Dimension == report.Items[j].Dimension {
+			return report.Items[i].Group < report.Items[j].Group
+		}
+		return report.Items[i].Dimension < report.Items[j].Dimension
+	})
+}

@@ -1,10 +1,24 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { downloadBlob } from '../utils/fileUtils'
-import { Application, IntervalSummaryRecord, Release, RunArchiveReport, TestSummary } from '../types'
+import { Application, BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserPlatformLiveMetrics, ExternalResultImport, IntervalSummaryRecord, Release, ReleaseSLAGovernanceResponse, RunArchiveReport, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
+import BrowserBreakdownChart from './BrowserBreakdownChart'
+import {
+  BrowserBreakdown,
+  BrowserBreakdownDatum,
+  buildBrowserBreakdownData,
+  buildComparisonBrowserBreakdownSeries,
+  formatBrowserEngineLabel,
+  formatDevicePlatformLabel,
+  getBrowserBreakdownChartCopy,
+  getBrowserBreakdownSegmentLabel,
+  getBrowserBreakdownTitle,
+} from './browserBreakdownModel'
+import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import StatusBadge from './StatusBadge'
 
 interface Props {
@@ -17,6 +31,50 @@ interface Props {
 type SortField = 'name' | 'status' | 'total_vusers' | 'groups' | 'started' | 'duration' | 'archive'
 type StatusFilter = 'all' | 'complete' | 'failed' | 'aborted'
 type ArchiveFilter = 'all' | 'ready' | 'pending'
+type ComparisonBreakdown = BrowserBreakdown
+type RefreshOptions = {
+  initial?: boolean
+}
+type ComparisonChartMetric = 'tps' | 'art' | 'p50' | 'p90' | 'p95' | 'p99' | 'errors'
+type ComparisonChartDataKey =
+  | 'leftTps'
+  | 'rightTps'
+  | 'leftArt'
+  | 'rightArt'
+  | 'leftP50'
+  | 'rightP50'
+  | 'leftP90'
+  | 'rightP90'
+  | 'leftP95'
+  | 'rightP95'
+  | 'leftP99'
+  | 'rightP99'
+  | 'leftErrorPct'
+  | 'rightErrorPct'
+type ComparisonSummaryLineConfig = {
+  dataKey: ComparisonChartDataKey
+  name: string
+  stroke: string
+  yAxisId: 'value'
+}
+export type ComparisonChartMetricConfig = {
+  id: ComparisonChartMetric
+  label: string
+  leftKey: ComparisonChartDataKey
+  rightKey: ComparisonChartDataKey
+  description: string
+  valueFormat: 'count' | 'ms' | 'percent'
+}
+
+const COMPARISON_CHART_METRICS: ComparisonChartMetricConfig[] = [
+  { id: 'tps', label: 'TPS', leftKey: 'leftTps', rightKey: 'rightTps', description: 'transactions per second', valueFormat: 'count' },
+  { id: 'art', label: 'ART', leftKey: 'leftArt', rightKey: 'rightArt', description: 'average response time', valueFormat: 'ms' },
+  { id: 'p50', label: 'P50', leftKey: 'leftP50', rightKey: 'rightP50', description: 'median response time', valueFormat: 'ms' },
+  { id: 'p90', label: 'P90', leftKey: 'leftP90', rightKey: 'rightP90', description: '90th percentile response time', valueFormat: 'ms' },
+  { id: 'p95', label: 'P95', leftKey: 'leftP95', rightKey: 'rightP95', description: '95th percentile response time', valueFormat: 'ms' },
+  { id: 'p99', label: 'P99', leftKey: 'leftP99', rightKey: 'rightP99', description: '99th percentile response time', valueFormat: 'ms' },
+  { id: 'errors', label: 'Errors', leftKey: 'leftErrorPct', rightKey: 'rightErrorPct', description: 'error percentage', valueFormat: 'percent' },
+]
 
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleString() : 'Never'
@@ -26,12 +84,220 @@ function formatShortDate(value?: string) {
   return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'
 }
 
+function runStartedAt(test: TestSummary) {
+  return new Date(test.start_time || test.created_at || 0).getTime()
+}
+
+function formatBrowserMetric(value?: number, suffix = '', digits = 1) {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(digits)}${suffix}` : 'n/a'
+}
+
+function hasBrowserOverview(report?: RunArchiveReport) {
+  return Boolean(report?.overview.browser)
+}
+
+function formatBrowserScore(value?: number) {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3) : 'n/a'
+}
+
+function getBrowserDeviceEntries(report?: RunArchiveReport): Array<[string, BrowserDeviceLiveMetrics]> {
+  return Object.entries(report?.browser_by_device ?? {}).sort(([left], [right]) => left.localeCompare(right))
+}
+
+function getBrowserPlatformEntries(report?: RunArchiveReport): BrowserPlatformLiveMetrics[] {
+  const archivedEntries = Object.values(report?.browser_by_platform ?? {})
+  if (archivedEntries.length > 0) {
+    return archivedEntries.sort((left, right) => formatDevicePlatformLabel(left.device_platform).localeCompare(formatDevicePlatformLabel(right.device_platform)))
+  }
+
+  const entries = Object.values(report?.browser_by_device ?? {})
+  if (entries.length === 0) return []
+
+  const grouped = new Map<string, {
+    platform: string
+    engine?: string
+    samples: number
+    lcpTotal: number
+    clsTotal: number
+    inpTotal: number
+  }>()
+
+  for (const metrics of entries) {
+    if (!metrics) continue
+    const platform = metrics.device_platform || 'unknown'
+    const current = grouped.get(platform) ?? {
+      platform,
+      engine: metrics.browser_engine,
+      samples: 0,
+      lcpTotal: 0,
+      clsTotal: 0,
+      inpTotal: 0,
+    }
+    const samples = metrics.samples || 0
+    current.samples += samples
+    current.lcpTotal += (metrics.avg_lcp_ms ?? 0) * samples
+    current.clsTotal += (metrics.avg_cls_score ?? 0) * samples
+    current.inpTotal += (metrics.avg_inp_ms ?? 0) * samples
+    if (current.engine && metrics.browser_engine && current.engine !== metrics.browser_engine) {
+      current.engine = 'multiple'
+    } else if (!current.engine) {
+      current.engine = metrics.browser_engine
+    }
+    grouped.set(platform, current)
+  }
+
+  return Array.from(grouped.values())
+    .map(entry => ({
+      device_platform: entry.platform,
+      browser_engine: entry.engine,
+      samples: entry.samples,
+      avg_lcp_ms: entry.samples > 0 ? entry.lcpTotal / entry.samples : undefined,
+      avg_cls_score: entry.samples > 0 ? entry.clsTotal / entry.samples : undefined,
+      avg_inp_ms: entry.samples > 0 ? entry.inpTotal / entry.samples : undefined,
+    }))
+    .sort((left, right) => formatDevicePlatformLabel(left.device_platform).localeCompare(formatDevicePlatformLabel(right.device_platform)))
+}
+
+function getBrowserEngineEntries(report?: RunArchiveReport): BrowserEngineLiveMetrics[] {
+  const archivedEntries = Object.values(report?.browser_by_engine ?? {})
+  if (archivedEntries.length > 0) {
+    return archivedEntries.sort((left, right) => formatBrowserEngineLabel(left.browser_engine).localeCompare(formatBrowserEngineLabel(right.browser_engine)))
+  }
+
+  const entries = Object.values(report?.browser_by_device ?? {})
+  if (entries.length === 0) return []
+
+  const grouped = new Map<string, {
+    browserEngine: string
+    samples: number
+    lcpTotal: number
+    clsTotal: number
+    inpTotal: number
+  }>()
+
+  for (const metrics of entries) {
+    if (!metrics) continue
+    const browserEngine = metrics.browser_engine || 'browser'
+    const current = grouped.get(browserEngine) ?? {
+      browserEngine,
+      samples: 0,
+      lcpTotal: 0,
+      clsTotal: 0,
+      inpTotal: 0,
+    }
+    const samples = metrics.samples || 0
+    current.samples += samples
+    current.lcpTotal += (metrics.avg_lcp_ms ?? 0) * samples
+    current.clsTotal += (metrics.avg_cls_score ?? 0) * samples
+    current.inpTotal += (metrics.avg_inp_ms ?? 0) * samples
+    grouped.set(browserEngine, current)
+  }
+
+  return Array.from(grouped.values())
+    .map(entry => ({
+      browser_engine: entry.browserEngine,
+      samples: entry.samples,
+      avg_lcp_ms: entry.samples > 0 ? entry.lcpTotal / entry.samples : undefined,
+      avg_cls_score: entry.samples > 0 ? entry.clsTotal / entry.samples : undefined,
+      avg_inp_ms: entry.samples > 0 ? entry.inpTotal / entry.samples : undefined,
+    }))
+    .sort((left, right) => formatBrowserEngineLabel(left.browser_engine).localeCompare(formatBrowserEngineLabel(right.browser_engine)))
+}
+
 function resolveStatus(test: TestSummary, testStatuses: Record<string, string>) {
   return testStatuses[test.id] || test.status
 }
 
 function isCompletedStatus(status?: string) {
   return status === 'COMPLETE' || status === 'FAILED' || status === 'ABORTED'
+}
+
+function buildTestReportHref(testId: string) {
+  return `/api/v1/tests/${encodeURIComponent(testId)}/report`
+}
+
+function formatShortRunId(id: string) {
+  return id.length > 12 ? id.slice(0, 8) : id
+}
+
+function formatComparisonRunLabel(test: TestSummary) {
+  const name = test.name || 'Unnamed run'
+  return `${name} (${formatShortRunId(test.id)})`
+}
+
+function getComparisonChartMetricConfig(metric: ComparisonChartMetric): ComparisonChartMetricConfig {
+  return COMPARISON_CHART_METRICS.find(item => item.id === metric) || COMPARISON_CHART_METRICS[0]
+}
+
+function formatComparisonChartValue(value: unknown, format: ComparisonChartMetricConfig['valueFormat']) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 'n/a'
+  }
+  if (format === 'ms') return `${value.toFixed(1)} ms`
+  if (format === 'percent') return `${value.toFixed(2)}%`
+  return value.toFixed(1)
+}
+
+export function comparisonChartYAxisLabel(metric: ComparisonChartMetricConfig) {
+  if (metric.valueFormat === 'ms') return `${metric.label} (ms)`
+  if (metric.valueFormat === 'percent') return 'Error rate (%)'
+  return metric.label
+}
+
+export function buildComparisonSummarySeries(leftRunLabel: string, rightRunLabel: string, metric: ComparisonChartMetric = 'tps'): ComparisonSummaryLineConfig[] {
+  const config = getComparisonChartMetricConfig(metric)
+  const leftStroke = 'var(--chart-1)'
+  const rightStroke = 'var(--chart-2)'
+  return [
+    { dataKey: config.leftKey, name: `${leftRunLabel} ${config.label}`, stroke: leftStroke, yAxisId: 'value' },
+    { dataKey: config.rightKey, name: `${rightRunLabel} ${config.label}`, stroke: rightStroke, yAxisId: 'value' },
+  ]
+}
+
+function formatBaselinePin(value?: string) {
+  return value ? new Date(value).toLocaleString() : 'Pinned baseline'
+}
+
+function formatGovernanceStatus(status?: string) {
+  const labels: Record<string, string> = {
+    passed: 'Passed',
+    failed: 'Failed',
+    waived: 'Waived',
+    no_runs: 'No Runs',
+  }
+  return labels[status || ''] || status || 'Checking'
+}
+
+function governanceStatusClass(status?: string) {
+  if (status === 'failed') return 'text-danger'
+  if (status === 'waived') return 'telemetry-text-warning'
+  if (status === 'passed') return 'text-success'
+  return ''
+}
+
+function summaryNumber(summary: Record<string, unknown> | undefined, key: string) {
+  const value = summary?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function formatExternalImportSummary(result: ExternalResultImport) {
+  const transactions = summaryNumber(result.summary, 'transactions')
+  const errorPct = summaryNumber(result.summary, 'error_pct')
+  if (transactions !== undefined && errorPct !== undefined) {
+    return `${transactions.toLocaleString()} tx / ${errorPct.toFixed(2)}% errors`
+  }
+  if (transactions !== undefined) {
+    return `${transactions.toLocaleString()} tx`
+  }
+  return String(result.summary?.status || 'imported')
+}
+
+function safeApiCall<T>(request: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return request().catch(() => fallback)
+  } catch {
+    return Promise.resolve(fallback)
+  }
 }
 
 function SortIcon({ active, direction }: { active: boolean; direction: 'asc' | 'desc' }) {
@@ -45,33 +311,68 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [comparisonReports, setComparisonReports] = useState<Record<string, RunArchiveReport>>({})
   const [comparisonSummaries, setComparisonSummaries] = useState<Record<string, IntervalSummaryRecord[]>>({})
+  const [slaGovernance, setSlaGovernance] = useState<ReleaseSLAGovernanceResponse | null>(null)
+  const [externalImports, setExternalImports] = useState<ExternalResultImport[]>([])
   const [comparisonLoading, setComparisonLoading] = useState(false)
   const [comparisonError, setComparisonError] = useState('')
+  const [comparisonBreakdown, setComparisonBreakdown] = useState<ComparisonBreakdown>('device')
+  const [comparisonChartMetric, setComparisonChartMetric] = useState<ComparisonChartMetric>('tps')
   const [error, setError] = useState('')
+  const [resultsLoading, setResultsLoading] = useState(true)
+  const [resultsRefreshing, setResultsRefreshing] = useState(false)
   const [sortField, setSortField] = useState<SortField>('started')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('all')
+  const refreshRequestRef = useRef(0)
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options: RefreshOptions = {}) => {
+    const requestId = ++refreshRequestRef.current
+    const initial = Boolean(options.initial)
     if (!activeApplication?.id || !activeRelease?.id) {
       setTests([])
+      setSlaGovernance(null)
+      setExternalImports([])
       setError('')
+      setResultsLoading(false)
+      setResultsRefreshing(false)
       return
     }
+    if (initial) {
+      setResultsLoading(true)
+      setResultsRefreshing(false)
+      setTests([])
+      setSlaGovernance(null)
+      setExternalImports([])
+    } else {
+      setResultsRefreshing(true)
+    }
     try {
-      const res = await api.listTests({ application_id: activeApplication.id, release_id: activeRelease.id })
+      const [res, governanceRes, importsRes] = await Promise.all([
+        api.listTests({ application_id: activeApplication.id, release_id: activeRelease.id }),
+        safeApiCall(() => api.getReleaseSLAGovernance(activeRelease.id), null),
+        safeApiCall(() => api.listExternalResultImports({ release_id: activeRelease.id }), { imports: [], count: 0, limit: 0, offset: 0 }),
+      ])
+      if (requestId !== refreshRequestRef.current) return
       setTests(res.tests || [])
+      setSlaGovernance(governanceRes)
+      setExternalImports(importsRes.imports || [])
       setError('')
     } catch (error: unknown) {
+      if (requestId !== refreshRequestRef.current) return
       setError(getErrorMessage(error, 'Unable to load results'))
+    } finally {
+      if (requestId === refreshRequestRef.current) {
+        setResultsLoading(false)
+        setResultsRefreshing(false)
+      }
     }
   }, [api, activeApplication?.id, activeRelease?.id])
 
   useEffect(() => {
-    refresh()
-    const interval = setInterval(refresh, 10000)
+    refresh({ initial: true })
+    const interval = setInterval(() => refresh(), 10000)
     return () => clearInterval(interval)
   }, [refresh])
 
@@ -94,7 +395,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
     const aborted = completed.filter(test => resolveStatus(test, testStatuses) === 'ABORTED').length
     const archivesReady = completed.filter(test => Boolean(test.archive)).length
     const latestRun = [...completed]
-      .sort((a, b) => new Date(b.start_time || b.created_at || 0).getTime() - new Date(a.start_time || a.created_at || 0).getTime())[0]
+      .sort((a, b) => runStartedAt(b) - runStartedAt(a))[0]
     return { complete, failed, aborted, archivesReady, latestRun }
   }, [completed, testStatuses])
 
@@ -138,8 +439,8 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
           bValue = b.groups?.length || 1
           break
         case 'started':
-          aValue = new Date(a.start_time || a.created_at || 0).getTime()
-          bValue = new Date(b.start_time || b.created_at || 0).getTime()
+          aValue = runStartedAt(a)
+          bValue = runStartedAt(b)
           break
         case 'duration':
           aValue = a.duration || ''
@@ -224,6 +525,29 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
     return comparableTests.map(test => ({ test, report: comparisonReports[test.id] }))
   }, [comparableTests, comparisonReports])
 
+  const comparisonHasBrowserBreakdowns = useMemo(
+    () => comparisonCards.some(({ report }) => getBrowserDeviceEntries(report).length > 0 || getBrowserPlatformEntries(report).length > 0 || getBrowserEngineEntries(report).length > 0),
+    [comparisonCards],
+  )
+
+  const exportComparison = useCallback(async () => {
+    if (comparisonCards.length !== 2 || !comparisonCards.every(item => item.report)) {
+      return
+    }
+
+    const [first, second] = comparisonCards
+    const [current, baseline] = runStartedAt(first.test) >= runStartedAt(second.test)
+      ? [first, second]
+      : [second, first]
+    try {
+      const blob = await api.downloadTestArchiveComparison(current.test.id, baseline.test.id, comparisonBreakdown)
+      downloadBlob(blob, `archive-comparison-${current.test.id}-${baseline.test.id}-${comparisonBreakdown}.csv`)
+      setComparisonError('')
+    } catch (error: unknown) {
+      setComparisonError(getErrorMessage(error, 'Unable to export comparison CSV'))
+    }
+  }, [api, comparisonBreakdown, comparisonCards])
+
   const comparisonActionRows = useMemo(() => {
     if (comparisonCards.length !== 2 || !comparisonCards[0].report || !comparisonCards[1].report) return []
     const [left, right] = comparisonCards
@@ -252,10 +576,80 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
       sample: index + 1,
       leftTps: leftSeries[index]?.tps,
       rightTps: rightSeries[index]?.tps,
+      leftArt: leftSeries[index]?.avg_response_ms,
+      rightArt: rightSeries[index]?.avg_response_ms,
+      leftP50: leftSeries[index]?.p50_ms,
+      rightP50: rightSeries[index]?.p50_ms,
+      leftP90: leftSeries[index]?.p90_ms,
+      rightP90: rightSeries[index]?.p90_ms,
       leftP95: leftSeries[index]?.p95_ms,
       rightP95: rightSeries[index]?.p95_ms,
+      leftP99: leftSeries[index]?.p99_ms,
+      rightP99: rightSeries[index]?.p99_ms,
+      leftErrorPct: leftSeries[index]?.error_pct,
+      rightErrorPct: rightSeries[index]?.error_pct,
     }))
   }, [comparisonCards, comparisonSummaries])
+
+  const comparisonChartMetricConfig = useMemo(
+    () => getComparisonChartMetricConfig(comparisonChartMetric),
+    [comparisonChartMetric],
+  )
+
+  const comparisonSummarySeries = useMemo(() => {
+    if (comparisonCards.length !== 2) return []
+    return buildComparisonSummarySeries(
+      formatComparisonRunLabel(comparisonCards[0].test),
+      formatComparisonRunLabel(comparisonCards[1].test),
+      comparisonChartMetric,
+    )
+  }, [comparisonCards, comparisonChartMetric])
+
+  const browserBreakdownChartData = useMemo(() => {
+    if (comparisonCards.length !== 2 || !comparisonCards.every(item => item.report)) {
+      return [] as BrowserBreakdownDatum[]
+    }
+
+    const segmentMap = new Map<string, BrowserBreakdownDatum>()
+
+    for (const { test, report } of comparisonCards) {
+      if (!report) continue
+
+      for (const metrics of buildBrowserBreakdownData(comparisonBreakdown, {
+        summary: report.overview.browser,
+        devices: report.browser_by_device,
+        platforms: report.browser_by_platform,
+        engines: report.browser_by_engine,
+      })) {
+        const current = segmentMap.get(metrics.segment) ?? { segment: metrics.segment }
+        current[test.id] = metrics.lcp
+        current[`${test.id}_inp`] = metrics.inp
+        segmentMap.set(metrics.segment, current)
+      }
+    }
+
+    return Array.from(segmentMap.values()).sort((left, right) => String(left.segment).localeCompare(String(right.segment)))
+  }, [comparisonBreakdown, comparisonCards])
+
+  const browserBreakdownChartSeries = useMemo(
+    () => buildComparisonBrowserBreakdownSeries(comparisonCards.map(({ test }) => ({ id: test.id, name: formatComparisonRunLabel(test) }))),
+    [comparisonCards],
+  )
+
+  const browserBreakdownChartTitle = useMemo(
+    () => getBrowserBreakdownTitle(comparisonBreakdown, 'Comparison', 'LCP / INP'),
+    [comparisonBreakdown],
+  )
+
+  const browserBreakdownChartCopy = useMemo(
+    () => getBrowserBreakdownChartCopy(browserBreakdownChartSeries),
+    [browserBreakdownChartSeries],
+  )
+
+  const browserBreakdownSegmentLabel = useMemo(
+    () => getBrowserBreakdownSegmentLabel(comparisonBreakdown),
+    [comparisonBreakdown],
+  )
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -311,6 +705,24 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
     downloadBlob(blob, filename)
   }
 
+  const applyUpdatedTest = useCallback((updated: TestSummary) => {
+    setTests(prev => prev.map(test => (test.id === updated.id ? { ...test, ...updated } : test)))
+  }, [])
+
+  const toggleBaselinePin = useCallback(async (test: TestSummary, event: React.MouseEvent) => {
+    event.stopPropagation()
+    try {
+      const updated = test.baseline_pinned
+        ? await api.unpinComparisonBaseline(test.id)
+        : await api.pinComparisonBaseline(test.id)
+      applyUpdatedTest(updated)
+      setError('')
+      await refresh()
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, 'Unable to update pinned comparison baseline'))
+    }
+  }, [api, applyUpdatedTest, refresh])
+
   if (!activeApplication?.id || !activeRelease?.id) {
     return (
       <div className="page">
@@ -338,6 +750,8 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
           </p>
         </div>
         <div className="results-actions">
+          {resultsLoading && <span className="results-load-status">Loading results...</span>}
+          {!resultsLoading && resultsRefreshing && <span className="results-load-status">Refreshing...</span>}
           {selectedIds.size === 2 && comparableTests.length === 2 && (
             <span className="results-compare-hint">Comparing 2 archived runs</span>
           )}
@@ -354,28 +768,102 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
       <div className="results-overview">
         <div>
           <span>Completed</span>
-          <strong>{completed.length}</strong>
+          <strong>{resultsLoading ? '...' : completed.length}</strong>
         </div>
         <div>
           <span>Successful</span>
-          <strong>{summary.complete}</strong>
+          <strong>{resultsLoading ? '...' : summary.complete}</strong>
         </div>
         <div>
           <span>Failed</span>
-          <strong>{summary.failed}</strong>
+          <strong>{resultsLoading ? '...' : summary.failed}</strong>
         </div>
         <div>
           <span>Aborted</span>
-          <strong>{summary.aborted}</strong>
+          <strong>{resultsLoading ? '...' : summary.aborted}</strong>
         </div>
         <div>
           <span>Archives Ready</span>
-          <strong>{summary.archivesReady}</strong>
+          <strong>{resultsLoading ? '...' : summary.archivesReady}</strong>
         </div>
         <div>
           <span>Latest Run</span>
-          <strong>{summary.latestRun ? formatShortDate(summary.latestRun.start_time || summary.latestRun.created_at) : 'None yet'}</strong>
+          <strong>{resultsLoading ? '...' : summary.latestRun ? formatShortDate(summary.latestRun.start_time || summary.latestRun.created_at) : 'None yet'}</strong>
         </div>
+      </div>
+
+      <div className="results-governance-grid">
+        <section className="results-governance-card">
+          <div className="results-governance-header">
+            <div>
+              <h3>Release SLA Gate</h3>
+              <p>{slaGovernance?.owner.display_name || 'Project administrators'}</p>
+            </div>
+            <strong className={governanceStatusClass(slaGovernance?.status)}>{resultsLoading ? 'Loading' : formatGovernanceStatus(slaGovernance?.status)}</strong>
+          </div>
+          <div className="results-governance-metrics">
+            <div>
+              <span>Runs</span>
+              <strong>{resultsLoading ? '...' : slaGovernance?.summary.total_runs ?? completed.length}</strong>
+            </div>
+            <div>
+              <span>Breaches</span>
+              <strong className={(slaGovernance?.summary.unwaived_breaches || 0) > 0 ? 'text-danger' : ''}>{resultsLoading ? '...' : slaGovernance?.summary.failed_runs ?? 0}</strong>
+            </div>
+            <div>
+              <span>Waivers</span>
+              <strong className={(slaGovernance?.waivers?.length || 0) > 0 ? 'telemetry-text-warning' : ''}>{resultsLoading ? '...' : slaGovernance?.waivers?.length ?? 0}</strong>
+            </div>
+          </div>
+          {resultsLoading ? (
+            <p className="results-governance-hint">Loading SLA governance...</p>
+          ) : slaGovernance?.breach_history?.length ? (
+            <div className="results-governance-list">
+              {slaGovernance.breach_history.slice(0, 3).map(run => (
+                <p key={run.test_id}>
+                  {run.test_name || run.test_id}: {run.sla_details?.[0] || 'SLA breached'}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <p className="results-governance-hint">No release SLA breaches are currently recorded for this release.</p>
+          )}
+          {slaGovernance?.waivers?.length ? (
+            <div className="results-governance-list">
+              {slaGovernance.waivers.slice(0, 2).map(waiver => (
+                <p key={waiver.id}>
+                  Waiver: {waiver.reason}
+                </p>
+              ))}
+            </div>
+          ) : null}
+          {slaGovernance?.audit_trail?.length ? (
+            <p className="results-governance-hint">{slaGovernance.audit_trail.length} SLA audit event{slaGovernance.audit_trail.length === 1 ? '' : 's'} recorded.</p>
+          ) : null}
+        </section>
+
+        <section className="results-governance-card">
+          <div className="results-governance-header">
+            <div>
+              <h3>External Results</h3>
+              <p>k6, JMeter, and Gatling trend inputs</p>
+            </div>
+            <strong>{resultsLoading ? '...' : externalImports.length}</strong>
+          </div>
+          {resultsLoading ? (
+            <p className="results-governance-hint">Loading external result imports...</p>
+          ) : externalImports.length === 0 ? (
+            <p className="results-governance-hint">No external result imports are attached to this release.</p>
+          ) : (
+            <div className="results-governance-list">
+              {externalImports.slice(0, 4).map(result => (
+                <p key={result.id}>
+                  {result.provider.toUpperCase()} / {result.name}: {formatExternalImportSummary(result)}
+                </p>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
 
       <div className="results-filter-bar">
@@ -432,6 +920,27 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                 <h3 className="section-title">Run Comparison</h3>
                 <p className="page-subtitle">Side-by-side view of two archived runs from this release.</p>
               </div>
+              {comparisonCards.length === 2 && comparisonCards.every(item => item.report) && comparisonHasBrowserBreakdowns && (
+                <div className="results-compare-controls">
+                  <div className="results-breakdown-toggle" role="tablist" aria-label="Comparison breakdown mode">
+                    {(['overall', 'platform', 'engine', 'device'] as ComparisonBreakdown[]).map(mode => (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="tab"
+                        aria-selected={comparisonBreakdown === mode}
+                        className={`results-breakdown-button${comparisonBreakdown === mode ? ' active' : ''}`}
+                        onClick={() => setComparisonBreakdown(mode)}
+                      >
+                        {mode === 'overall' ? 'Overall' : mode === 'platform' ? 'Platform' : mode === 'engine' ? 'Engine' : 'Device'}
+                      </button>
+                    ))}
+                  </div>
+                  <button type="button" className="btn btn-secondary" onClick={exportComparison}>
+                    Export CSV
+                  </button>
+                </div>
+              )}
             </div>
 
             {comparisonLoading && <p className="results-compare-status">Loading comparison...</p>}
@@ -442,10 +951,19 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                 <div className="results-compare-grid">
                   {comparisonCards.map(({ test, report }) => (
                     <div key={test.id} className="results-compare-panel">
+                      {(() => {
+                        const deviceEntries = getBrowserDeviceEntries(report)
+                        const platformEntries = getBrowserPlatformEntries(report)
+                        const engineEntries = getBrowserEngineEntries(report)
+                        const browserRuntimeSummary = formatBrowserRuntimeSummary(report?.manifest.provenance?.runtime_settings?.browser)
+
+                        return (
+                          <>
                       <div className="results-compare-panel-header">
                         <div>
                           <h4>{test.name}</h4>
                           <p>{formatDate(test.start_time || test.created_at)}</p>
+                          <span className="results-run-id" title={test.id}>Run ID {formatShortRunId(test.id)}</span>
                         </div>
                         <StatusBadge status={resolveStatus(test, testStatuses)} />
                       </div>
@@ -474,31 +992,165 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                           <span className="results-compare-label">CPU Peak</span>
                           <span className="results-compare-value">{report!.resource_peaks.cpu_process_pct.toFixed(1)}%</span>
                         </div>
+                        {(hasBrowserOverview(report) || comparisonCards.some(item => hasBrowserOverview(item.report))) && (
+                          <>
+                            {browserRuntimeSummary && (
+                              <div className="results-compare-metric">
+                                <span className="results-compare-label">Browser Runtime</span>
+                                <span className="results-compare-value">{browserRuntimeSummary}</span>
+                              </div>
+                            )}
+                            <div className="results-compare-metric">
+                              <span className="results-compare-label">Avg LCP</span>
+                              <span className="results-compare-value">{formatBrowserMetric(report!.overview.browser?.avg_lcp_ms, ' ms')}</span>
+                            </div>
+                            <div className="results-compare-metric">
+                              <span className="results-compare-label">Avg INP</span>
+                              <span className="results-compare-value">{formatBrowserMetric(report!.overview.browser?.avg_inp_ms, ' ms')}</span>
+                            </div>
+                          </>
+                        )}
                       </div>
+                      {comparisonBreakdown === 'platform' && platformEntries.length > 0 && (
+                        <>
+                          <span className="results-compare-label">Platform Rollup</span>
+                          <div className="browser-device-grid archive-browser-device-grid">
+                            {platformEntries.map(metrics => (
+                              <div key={metrics.device_platform || 'unknown'} className="browser-device-card">
+                                <div className="browser-device-header">
+                                  <span className="browser-device-name">{formatDevicePlatformLabel(metrics.device_platform)}</span>
+                                  <span className="browser-device-tier">{formatBrowserEngineLabel(metrics.browser_engine)} · {metrics.samples} samples</span>
+                                </div>
+                                <div className="browser-device-stats">
+                                  <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
+                                  <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
+                                  <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                      {comparisonBreakdown === 'engine' && engineEntries.length > 0 && (
+                        <>
+                          <span className="results-compare-label">Engine Rollup</span>
+                          <div className="browser-device-grid archive-browser-device-grid">
+                            {engineEntries.map(metrics => (
+                              <div key={metrics.browser_engine || 'browser'} className="browser-device-card">
+                                <div className="browser-device-header">
+                                  <span className="browser-device-name">{formatBrowserEngineLabel(metrics.browser_engine)}</span>
+                                  <span className="browser-device-tier">{metrics.samples} samples</span>
+                                </div>
+                                <div className="browser-device-stats">
+                                  <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
+                                  <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
+                                  <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                      {comparisonBreakdown === 'device' && deviceEntries.length > 0 && (
+                        <>
+                          <span className="results-compare-label">Devices</span>
+                          <div className="browser-device-grid archive-browser-device-grid">
+                            {deviceEntries.map(([profile, metrics]) => (
+                              <div key={profile} className="browser-device-card">
+                                <div className="browser-device-header">
+                                  <span className="browser-device-name">{profile}</span>
+                                  <span className="browser-device-tier">{formatDevicePlatformLabel(metrics.device_platform)} · {formatBrowserEngineLabel(metrics.browser_engine)} · {metrics.device_tier || 'unknown'} tier</span>
+                                </div>
+                                <div className="browser-device-stats">
+                                  <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
+                                  <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
+                                  <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                          </>
+                        )
+                      })()}
                     </div>
                   ))}
                 </div>
 
                 <div className="results-compare-table-wrap">
+                  {browserBreakdownChartData.length > 0 && comparisonCards.length === 2 && (
+                    <BrowserBreakdownChart
+                      title={browserBreakdownChartTitle}
+                      copy={browserBreakdownChartCopy}
+                      data={browserBreakdownChartData}
+                      series={browserBreakdownChartSeries}
+                      height={280}
+                      segmentLabel={browserBreakdownSegmentLabel}
+                    />
+                  )}
+
                   {comparisonChartData.length > 0 && (
                     <div className="results-compare-chart-card">
-                      <h4 className="results-compare-chart-title">Archived Summary Curves</h4>
+                      <div className="results-compare-chart-header">
+                        <div>
+                          <h4 className="results-compare-chart-title">Archived Summary Curves</h4>
+                          <p className="results-compare-chart-copy">
+                            Showing {comparisonChartMetricConfig.description}; color identifies the run.
+                          </p>
+                        </div>
+                        <div className="results-compare-metric-tabs" role="tablist" aria-label="Comparison metric">
+                          {COMPARISON_CHART_METRICS.map(metric => (
+                            <button
+                              key={metric.id}
+                              type="button"
+                              role="tab"
+                              aria-selected={comparisonChartMetric === metric.id}
+                              className={`results-compare-metric-tab${comparisonChartMetric === metric.id ? ' active' : ''}`}
+                              onClick={() => setComparisonChartMetric(metric.id)}
+                            >
+                              {metric.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <ResponsiveContainer width="100%" height={260}>
-                        <LineChart data={comparisonChartData}>
+                        <LineChart data={comparisonChartData} margin={{ top: 10, right: 16, bottom: 12, left: 24 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                          <XAxis dataKey="sample" stroke="var(--text-muted)" fontSize={11} />
-                          <YAxis yAxisId="tps" stroke="var(--text-muted)" fontSize={11} />
-                          <YAxis yAxisId="p95" orientation="right" stroke="var(--text-muted)" fontSize={11} />
+                          <XAxis
+                            dataKey="sample"
+                            stroke="var(--text-muted)"
+                            fontSize={11}
+                            height={42}
+                            label={{ value: 'Sample', position: 'insideBottom', offset: -4, fill: 'var(--text-muted)', fontSize: 11 }}
+                          />
+                          <YAxis
+                            yAxisId="value"
+                            stroke="var(--text-muted)"
+                            fontSize={11}
+                            width={86}
+                            label={{ value: comparisonChartYAxisLabel(comparisonChartMetricConfig), angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 11 }}
+                          />
                           <Tooltip
-                            contentStyle={{ background: 'rgba(33, 36, 47, 0.94)', border: '1px solid var(--border)', borderRadius: 10 }}
+                            contentStyle={chartTooltipContentStyle}
+                            labelStyle={chartTooltipLabelStyle}
                             labelFormatter={value => `Sample ${value}`}
+                            formatter={(value) => formatComparisonChartValue(value, comparisonChartMetricConfig.valueFormat)}
                             isAnimationActive={false}
                           />
                           <Legend />
-                          <Line yAxisId="tps" type="monotone" dataKey="leftTps" name={`${comparisonCards[0].test.name} TPS`} stroke="var(--chart-1)" dot={false} isAnimationActive={false} />
-                          <Line yAxisId="tps" type="monotone" dataKey="rightTps" name={`${comparisonCards[1].test.name} TPS`} stroke="var(--chart-2)" dot={false} isAnimationActive={false} />
-                          <Line yAxisId="p95" type="monotone" dataKey="leftP95" name={`${comparisonCards[0].test.name} P95`} stroke="var(--chart-4)" dot={false} strokeDasharray="4 2" isAnimationActive={false} />
-                          <Line yAxisId="p95" type="monotone" dataKey="rightP95" name={`${comparisonCards[1].test.name} P95`} stroke="var(--chart-5)" dot={false} strokeDasharray="4 2" isAnimationActive={false} />
+                          {comparisonSummarySeries.map(series => (
+                            <Line
+                              key={series.dataKey}
+                              yAxisId={series.yAxisId}
+                              type="monotone"
+                              dataKey={series.dataKey}
+                              name={series.name}
+                              stroke={series.stroke}
+                              dot={false}
+                              isAnimationActive={false}
+                            />
+                          ))}
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
@@ -507,26 +1159,42 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                     <thead>
                       <tr>
                         <th>Action</th>
-                        <th>{comparisonCards[0].test.name} Avg</th>
-                        <th>{comparisonCards[1].test.name} Avg</th>
-                        <th>Latency Delta</th>
-                        <th>{comparisonCards[0].test.name} Errors</th>
-                        <th>{comparisonCards[1].test.name} Errors</th>
+                        <th>Run</th>
+                        <th>Avg ART</th>
+                        <th>Errors</th>
+                        <th>Delta vs First</th>
                       </tr>
                     </thead>
                     <tbody>
                       {comparisonActionRows.map(row => (
-                        <tr key={row.name}>
-                          <td className="cell-name">{row.name}</td>
-                          <td>{row.left?.avg_response_ms?.toFixed(1) || '0.0'} ms</td>
-                          <td>{row.right?.avg_response_ms?.toFixed(1) || '0.0'} ms</td>
-                          <td className={row.deltaMs > 0 ? 'text-danger' : row.deltaMs < 0 ? 'text-success' : 'cell-muted'}>
-                            {row.deltaMs >= 0 ? '+' : ''}
-                            {row.deltaMs.toFixed(1)} ms
-                          </td>
-                          <td>{row.left?.errors || 0}</td>
-                          <td>{row.right?.errors || 0}</td>
-                        </tr>
+                        <Fragment key={row.name}>
+                          <tr className="results-compare-action-start">
+                            <td className="cell-name" rowSpan={2}>{row.name}</td>
+                            <td>
+                              <span className="results-compare-run-label results-compare-run-label-inline">
+                                <span className="results-run-dot results-run-dot-left" aria-hidden="true" />
+                                {formatComparisonRunLabel(comparisonCards[0].test)}
+                              </span>
+                            </td>
+                            <td>{row.left?.avg_response_ms?.toFixed(1) || '0.0'} ms</td>
+                            <td>{row.left?.errors || 0}</td>
+                            <td className="cell-muted">Reference</td>
+                          </tr>
+                          <tr>
+                            <td>
+                              <span className="results-compare-run-label results-compare-run-label-inline">
+                                <span className="results-run-dot results-run-dot-right" aria-hidden="true" />
+                                {formatComparisonRunLabel(comparisonCards[1].test)}
+                              </span>
+                            </td>
+                            <td>{row.right?.avg_response_ms?.toFixed(1) || '0.0'} ms</td>
+                            <td>{row.right?.errors || 0}</td>
+                            <td className={row.deltaMs > 0 ? 'text-danger' : row.deltaMs < 0 ? 'text-success' : 'cell-muted'}>
+                              {row.deltaMs >= 0 ? '+' : ''}
+                              {row.deltaMs.toFixed(1)} ms
+                            </td>
+                          </tr>
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>
@@ -538,8 +1206,16 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
       )}
 
       <div className="page-section">
-        <h3 className="section-title">Release Results ({filteredCompleted.length})</h3>
-        {completed.length === 0 ? (
+        <h3 className="section-title">Release Results ({resultsLoading ? '...' : filteredCompleted.length})</h3>
+        {resultsLoading ? (
+          <div className="empty-card results-loading-card" role="status" aria-live="polite" aria-busy="true">
+            <span className="results-loading-spinner" aria-hidden="true" />
+            <div>
+              <p>Loading release results...</p>
+              <p className="empty-hint">Fetching completed scenarios, archives, and external imports for this release.</p>
+            </div>
+          </div>
+        ) : completed.length === 0 ? (
           <div className="empty-card">
             <p>No completed scenarios yet.</p>
             <p className="empty-hint">Run a scenario in this release to see archives, summaries, and comparisons here.</p>
@@ -568,7 +1244,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                   <th onClick={() => handleSort('started')} className="sortable">Started <SortIcon active={sortField === 'started'} direction={sortDirection} /></th>
                   <th onClick={() => handleSort('duration')} className="sortable">Duration <SortIcon active={sortField === 'duration'} direction={sortDirection} /></th>
                   <th onClick={() => handleSort('archive')} className="sortable">Archive <SortIcon active={sortField === 'archive'} direction={sortDirection} /></th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
+                  <th className="results-actions-column">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -588,19 +1264,40 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                     <td>{test.groups?.length || 1}</td>
                     <td className="cell-muted">{formatDate(test.start_time || test.created_at)}</td>
                     <td className="cell-muted">{test.duration}</td>
-                    <td className="cell-muted">{test.archive ? `${test.archive.transaction_count} tx` : 'Pending'}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      {test.archive && (
-                        <button className="btn btn-sm btn-secondary" onClick={event => downloadArchive(test, event)}>
-                          Archive
-                        </button>
+                    <td className="cell-muted">
+                      {test.archive ? `${test.archive.transaction_count} tx` : 'Pending'}
+                      {test.baseline_pinned && (
+                        <>
+                          <br />
+                          <span title={formatBaselinePin(test.baseline_pinned_at)}>Pinned baseline</span>
+                        </>
                       )}
-                      <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); onSelectTest(test.id) }}>
-                        Open
-                      </button>
-                      <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={event => handleDelete(test.id, event)}>
-                        Delete
-                      </button>
+                    </td>
+                    <td>
+                      <div className="results-row-actions">
+                        <button className="btn btn-sm btn-ghost" onClick={event => toggleBaselinePin(test, event)}>
+                          {test.baseline_pinned ? 'Unpin Baseline' : 'Pin Baseline'}
+                        </button>
+                        {test.archive && (
+                          <>
+                            <button className="btn btn-sm btn-secondary" onClick={event => downloadArchive(test, event)}>
+                              Archive
+                            </button>
+                            <a className="btn btn-sm btn-ghost" href={buildTestReportHref(test.id)} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>
+                              Download Report
+                            </a>
+                            <a className="btn btn-sm btn-ghost" href={`/api/v1/tests/${encodeURIComponent(test.id)}/archive/root-cause`} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>
+                              Root Cause
+                            </a>
+                          </>
+                        )}
+                        <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); onSelectTest(test.id) }}>
+                          Open
+                        </button>
+                        <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={event => handleDelete(test.id, event)}>
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

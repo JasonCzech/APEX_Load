@@ -1,0 +1,46 @@
+{
+  "script": {
+    "name": "Simple_Java_HTTP_Embedded",
+    "version": "1.0.0",
+    "protocol": "java_http",
+
+    "config": {
+      "base_url": "https://orders.example.test",
+      "think_time": { "type": "fixed", "mean_ms": 1000 },
+      "java_http": {
+        "codec": "java_serialized_object_base64",
+        "helper_mode": "embedded",
+        "content_type": "application/x-java-serialized-object",
+        "accept": "application/x-java-serialized-object",
+        "body_encoding": "base64",
+        "object_schema": "com.example.orders.OrderLookupRequest",
+        "request_mapping": {
+          "customerId": "principal",
+          "correlationId": "requestId"
+        },
+        "response_mapping": {
+          "sessionToken": "token"
+        },
+        "extractor_type": "opaque",
+        "preserve_binary_result": true
+      }
+    },
+
+    "actions": [
+      {
+        "name": "Lookup_Order_Snapshot",
+        "type": "POST",
+        "method": "POST",
+        "target": "/java/order/lookup",
+        "headers": {
+          "X-Trace-Id": "{{fn.uuid()}}"
+        },
+        "body": "rO0ABXQAEW9yZGVyLWxvb2t1cC1kdW1teQ==",
+        "assertions": [
+          { "type": "status_code", "expected": 200 }
+        ],
+        "think_time_after": true
+      }
+    ]
+  }
+}

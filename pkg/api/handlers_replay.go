@@ -5,16 +5,17 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 type ReplayScriptRequest struct {
-	GroupName       string            `json:"group_name,omitempty"`
-	ReplaySessionID string            `json:"replay_session_id,omitempty"`
-	Variables       map[string]string `json:"variables,omitempty"`
-	IgnoreThinkTime *bool             `json:"ignore_think_time,omitempty"`
-	Script          *dsl.Script       `json:"script,omitempty"`
+	GroupName       string                 `json:"group_name,omitempty"`
+	ReplaySessionID string                 `json:"replay_session_id,omitempty"`
+	Variables       map[string]string      `json:"variables,omitempty"`
+	RedactionRules  []engine.RedactionRule `json:"redaction_rules,omitempty"`
+	IgnoreThinkTime *bool                  `json:"ignore_think_time,omitempty"`
+	Script          *dsl.Script            `json:"script,omitempty"`
 }
 
 func (s *Server) handleReplayDraftScript(w http.ResponseWriter, r *http.Request) {
@@ -62,11 +63,15 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 	}
 
 	issues := validateScript(script)
+	warnings := validationWarnings(script)
+	preflight := buildReplayPreflight(script, req.Variables, issues, warnings)
 	if len(issues) > 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"script_id": id,
 			"valid":     false,
 			"issues":    issues,
+			"warnings":  warnings,
+			"preflight": preflight,
 		})
 		return
 	}
@@ -75,11 +80,15 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *dsl.Script, req ReplayScriptRequest) {
 	issues := validateScript(script)
+	warnings := validationWarnings(script)
+	preflight := buildReplayPreflight(script, req.Variables, issues, warnings)
 	if len(issues) > 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"script_id": id,
 			"valid":     false,
 			"issues":    issues,
+			"warnings":  warnings,
+			"preflight": preflight,
 		})
 		return
 	}
@@ -94,11 +103,14 @@ func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *d
 	}
 
 	report, err := s.runner.ReplayScriptDefinition(script, engine.ReplayOptions{
+		ReplaySessionID: replaySessionID,
 		GroupName:       req.GroupName,
+		RuntimeProfile:  &engine.ReplayRuntimeProfile{Name: "classic replay", CaptureMode: "diagnostic", LogLevel: "info", IgnoreThinkTime: ignoreThinkTime},
 		Variables:       req.Variables,
+		RedactionRules:  req.RedactionRules,
 		IgnoreThinkTime: ignoreThinkTime,
 		OnProgress: func(event engine.ReplayProgressEvent) {
-			s.broadcastReplayProgress(replaySessionID, id, event)
+			s.broadcastReplayProgress(replaySessionID, id, normalizeProjectID(script.ProjectID), event)
 		},
 	})
 	if err != nil {
@@ -109,15 +121,19 @@ func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *d
 	writeJSON(w, http.StatusOK, map[string]any{
 		"script_id":         id,
 		"replay_session_id": replaySessionID,
+		"preflight":         preflight,
 		"report":            report,
+		"warnings":          warnings,
 	})
 }
 
-func (s *Server) broadcastReplayProgress(replaySessionID string, scriptID string, event engine.ReplayProgressEvent) {
+func (s *Server) broadcastReplayProgress(replaySessionID string, scriptID string, projectID string, event engine.ReplayProgressEvent) {
 	message := map[string]any{
 		"type":              event.Type,
+		"event_id":          event.EventID,
 		"replay_session_id": replaySessionID,
 		"script_id":         scriptID,
+		"project_id":        projectID,
 		"timestamp":         event.Timestamp,
 	}
 	if event.EventIndex >= 0 {
@@ -125,6 +141,9 @@ func (s *Server) broadcastReplayProgress(replaySessionID string, scriptID string
 	}
 	if event.Event != nil {
 		message["event"] = event.Event
+	}
+	if event.Action != nil {
+		message["action"] = event.Action
 	}
 	if event.Report != nil {
 		message["report"] = event.Report

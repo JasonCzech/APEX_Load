@@ -4,31 +4,80 @@
 
 ### Authentication
 
-Currently, Stormrunner uses project-based scoping without user authentication. APIs are protected by project ID.
+Currently, APEX Load uses project-based scoping without user authentication. APIs are protected by project ID.
 
 ### Tests
 
 #### Create and queue a test
 
-```
+```http
 POST /api/v1/tests
 Content-Type: application/json
+```
 
+```json
 {
   "name": "Homepage Load Test",
   "project_id": "proj-123",
+  "duration": "5m",
+  "assignment": {
+    "mode": "region_weighted",
+    "region_weights": {
+      "us-east": 2,
+      "eu-west": 1
+    }
+  },
+  "groups": [
+    {
+      "name": "buyers-east",
+      "script_id": "script-456",
+      "vusers": 50,
+      "ramp_up": "30s"
+    },
+    {
+      "name": "buyers-west",
+      "script_id": "script-456",
+      "vusers": 50,
+      "ramp_up": "30s"
+    }
+  ]
+}
+```
+
+**Assignment modes:**
+- `auto`: controller chooses from all configured generators.
+- `specific_hosts`: request includes `selected_targets` with explicit hostnames.
+- `region_weighted`: request includes `region_weights` and the controller distributes groups across generators tagged with `APEXLOAD_GENERATORS=host:9090|region=<name>`.
+
 **Response:**
 ```json
 {
-  "status": "started",
-  "test_id": "test-789"
+  "id": "test-789",
+  "name": "Homepage Load Test",
+  "status": "QUEUED",
+  "duration": "5m",
+  "assignment": {
+    "mode": "region_weighted",
+    "region_weights": {
+      "us-east": 2,
+      "eu-west": 1
+    }
+  }
 }
 ```
-  "vusers": 100,
-  "duration_seconds": 300,
-  "ramp_up_seconds": 30,
-  "notes": "Peak hour simulation"
-}
+
+#### Start a queued test
+
+```http
+POST /api/v1/tests/test-789/start
+```
+
+**Response:** `204 No Content`
+
+#### Stop test gracefully
+
+```http
+POST /api/v1/tests/test-789/stop
 ```
 
 Allows VUsers to complete the current action and cleanup while transitioning the run into `STOPPING`.
@@ -40,13 +89,13 @@ Allows VUsers to complete the current action and cleanup while transitioning the
   "test_id": "test-789"
 }
 ```
-```json
-{
-  "id": "test-789",
-  "name": "Homepage Load Test",
-  "script_id": "script-456",
-  "status": "queued",
-  "vusers": 100,
+
+#### Abort test immediately
+
+```http
+POST /api/v1/tests/test-789/abort
+```
+
 Terminates the run through the same immediate-stop control path exposed by the current controller.
 
 **Response:**
@@ -262,6 +311,125 @@ GET /api/v1/tests/test-789/metrics
 WS /api/v1/tests/test-789/stream
 ```
 
+## Browser and Mobile DSL
+
+APEX Load keeps mobile emulation under the `browser` protocol rather than introducing a separate mobile protocol. Use browser config to apply named device presets, touch behavior, orientation, and client-side UX telemetry.
+
+### Browser Config
+
+```json
+{
+  "protocol": "browser",
+  "config": {
+    "base_url": "https://www.example.com",
+    "browser": {
+      "engine": "webkit",
+      "device_profile": "ipad_air",
+      "touch_mode": true,
+      "orientation": "landscape",
+      "client_metrics": true,
+      "user_agent": "Mozilla/5.0 (...) Safari/601.1",
+      "viewport": {
+        "width": 1180,
+        "height": 820
+      }
+    }
+  }
+}
+```
+
+Supported browser config keys:
+- `config.browser.engine`: `chromium` or `webkit` (`webkit` executes through Playwright WebKit and requires Playwright WebKit assets installed on the controller host)
+- `config.browser.device_profile`: named preset from the built-in device registry such as `pixel_8`, `iphone_15_pro`, or `ipad_air`
+- `config.browser.touch_mode`: optional boolean override for touch emulation
+- `config.browser.orientation`: `portrait` or `landscape`
+- `config.browser.client_metrics`: enables browser UX metrics collection
+- `config.browser.user_agent`: custom UA override layered on top of the chosen device profile
+- `config.browser.viewport`: explicit viewport override
+
+### Supported Browser Actions
+
+APEX Load validates and executes these browser action types:
+- `browser_navigate`
+- `browser_click`
+- `browser_fill`
+- `browser_select`
+- `browser_wait`
+- `browser_screenshot`
+- `browser_tap`
+- `browser_long_press`
+- `browser_swipe`
+
+Browser action value requirements:
+- `browser_fill.value`: text to enter into the targeted field
+- `browser_select.value`: option value, visible text, or label to choose from the targeted `<select>` element
+
+Gesture action parameters:
+- `browser_long_press.params.duration_ms`: positive integer hold time
+- `browser_swipe.params.direction`: `left`, `right`, `up`, or `down`
+- `browser_swipe.params.distance`: positive integer swipe distance in pixels
+
+### Browser Metrics In Live And Archived Results
+
+When `config.browser.client_metrics` is enabled, browser actions can populate `client_metrics` on archived transaction events and browser summary blocks on live and archived metrics payloads.
+
+Summary metrics fields:
+- `avg_fcp_ms`
+- `avg_lcp_ms`
+- `avg_cls_score`
+- `avg_inp_ms`
+- `avg_blocking_resources`
+- `avg_long_task_count`
+- `avg_js_heap_used_mb`
+- `avg_browser_process_cpu_pct`
+- `avg_browser_process_mem_mb`
+
+Per-action browser client metrics can also include `browser_process_cpu_pct` and `browser_process_mem_mb` for Chromium-backed browser runs. WebKit runs currently keep browser process attribution empty because the Playwright WebKit integration does not expose stable process IDs for OS-level sampling.
+
+Response surfaces carrying these summaries:
+- live test details and `/api/v1/tests/{id}/metrics` via `browser` and `browser_by_device`
+- interval summary history records via `browser` and `browser_by_device`
+- archive reports via `overview.browser` and `browser_by_device`
+- archived transaction events via `client_metrics`
+- browser evidence bundles via `GET /api/v1/tests/{id}/archive/browser-diagnostics`
+
+Browser diagnostics downloads are zip files. Each bundle contains `browser_diagnostics.json` as an index plus `screenshots/*.b64` and `html/*.html` artifacts when archived browser snapshots include screenshots or HTML.
+
+Example archive report excerpt:
+
+```json
+{
+  "overview": {
+    "transactions": 1280,
+    "avg_response_ms": 142.6,
+    "browser": {
+      "samples": 1280,
+      "avg_fcp_ms": 811.4,
+      "avg_lcp_ms": 1420.8,
+      "avg_cls_score": 0.031,
+      "avg_inp_ms": 88.7,
+      "avg_long_task_count": 1.4
+    }
+  },
+  "browser_by_device": {
+    "iphone_15_pro": {
+      "samples": 640,
+      "device_profile": "iphone_15_pro",
+      "device_tier": "high",
+      "avg_lcp_ms": 1488.2,
+      "avg_inp_ms": 92.1
+    },
+    "ipad_air": {
+      "samples": 640,
+      "device_profile": "ipad_air",
+      "device_tier": "mid",
+      "avg_lcp_ms": 1353.5,
+      "avg_inp_ms": 79.4
+    }
+  }
+}
+```
+
 Emits JSON messages:
 - `metrics_update`: Periodic snapshot (every 1-5 seconds)
 - `test_complete`: Test finished successfully
@@ -281,6 +449,62 @@ Emits JSON messages:
     "latency_p95": 482.5
   }
 }
+```
+
+### Scenario Schedules
+
+Scenario schedules bind a reusable scenario to a five-field cron expression. The controller evaluates these schedules on its background loop and creates queued runs through the same scenario execution path used by manual launches.
+
+#### List schedules for a scenario
+
+```
+GET /api/v1/scenarios/scenario-123/schedules
+```
+
+**Response:**
+```json
+{
+  "schedules": [
+    {
+      "id": "schedule-456",
+      "scenario_id": "scenario-123",
+      "name": "Weekday smoke",
+      "cron_expr": "0 9 * * 1-5",
+      "release_id": "release-22",
+      "run_name_template": "Checkout Smoke",
+      "enabled": true,
+      "next_run_at": "2026-05-18T09:00:00Z",
+      "last_run_at": "2026-05-17T09:00:12Z",
+      "created_at": "2026-05-12T10:00:00Z",
+      "updated_at": "2026-05-17T09:00:12Z"
+    }
+  ],
+  "count": 1
+}
+```
+
+#### Create or update a schedule
+
+```
+POST /api/v1/scenarios/scenario-123/schedules
+PUT /api/v1/scenarios/scenario-123/schedules/schedule-456
+Content-Type: application/json
+
+{
+  "name": "Weekday smoke",
+  "cron_expr": "0 9 * * 1-5",
+  "release_id": "release-22",
+  "run_name_template": "Checkout Smoke",
+  "enabled": true
+}
+```
+
+The `PUT` variant updates the targeted schedule in place. Setting `enabled` to `false` keeps the schedule persisted while preventing future launches.
+
+#### Delete a schedule
+
+```
+DELETE /api/v1/scenarios/scenario-123/schedules/schedule-456
 ```
 
 ### Scripts
@@ -361,6 +585,14 @@ Content-Type: multipart/form-data
 [file: loadrunner_project.zip]
 ```
 
+Converts a LoadRunner project archive into APEX Load JSON DSL. The importer supports C-based web request archives and the TruClient Mobile Web MVP path for browser scripts. Legacy desktop-style `TruClient` archives are reported as out of scope with explicit guidance.
+
+For `TruClientMobileWeb` archives, APEX Load reads the `.usr` file plus UTF-16 `default.xml`, maps common navigate, click, fill, select, wait, transaction, conservative verify assertions, and simple JavaScript-derived fill/click steps into browser DSL actions, and carries supported mobile browser runtime settings into `config.browser`.
+
+Import responses include a shared `review_sections` array. Each section has a stable `key`, `title`, `severity`, `summary`, and `items` list so clients can render warnings, unsupported elements, preserved metadata, and browser import assumptions consistently.
+
+They also include `repair_suggestions`, a deterministic list of suggested cleanup actions with `id`, `category`, `severity`, `title`, `description`, `action`, and optional `target_action` fields. LoadRunner and TruClient imports use this to call out unsupported constructs, selector validation, wait refinement, runtime-setting review, and browser replay validation.
+
 **Response:**
 ```json
 {
@@ -395,8 +627,64 @@ Content-Type: application/json
 
 **Notes:**
 - `format` may be `raw_http`, `curl`, `rest_json`, or `har`.
+- HAR imports preserve inter-request pauses as `think_time` blocks when `startedDateTime` metadata is present on consecutive entries.
+- When sample or recorder conversion detects reusable correlations, the dashboard preserves those mappings in imported script metadata so the Script Editor can show them during visual review.
 - SOAP-oriented samples can be promoted onto the `soap` protocol surface when the import set is consistently SOAP-shaped.
 - Java-over-HTTP imports are intentionally narrower: use raw HTTP or cURL samples whose opaque request bodies are already base64-encoded serialized Java bytes. The dashboard then promotes the reviewed draft to `protocol: "java_http"`.
+
+#### Web/API support matrix
+
+```
+GET /api/v1/scripts/web-api/support-matrix
+```
+
+Returns the code-owned Web/API execution support matrix, benchmark envelopes, protocol diagnostics, and first-party sample project references. See `docs/WEB_API_EXECUTION_SUPPORT_MATRIX.md` for the current W1 parity evidence.
+
+#### Convert OpenAPI to HTTP DSL
+
+```
+POST /api/v1/scripts/import/openapi
+Content-Type: application/json
+
+{
+  "name": "Orders API",
+  "project_id": "checkout",
+  "content": "{ \"openapi\": \"3.0.3\", \"info\": {\"title\": \"Orders\"}, \"paths\": {} }",
+  "options": {
+    "base_url": "https://api.example.com",
+    "include_assertions": true
+  }
+}
+```
+
+The importer accepts OpenAPI 3.x and Swagger 2.0 JSON/YAML. It generates HTTP request actions, auth placeholders, path/query parameter data-source seeds, simple request-body templates, status assertions, and review sections.
+
+#### Convert WSDL to SOAP DSL
+
+```
+POST /api/v1/scripts/import/wsdl
+Content-Type: application/json
+
+{
+  "name": "Account SOAP",
+  "project_id": "checkout",
+  "content": "<definitions ...>...</definitions>",
+  "options": {
+    "base_url": "https://soap.example.com/account",
+    "soap_version": "1.1"
+  }
+}
+```
+
+The importer extracts SOAP operations, endpoint addresses, target namespace, SOAPAction values, and generated envelope scaffolds. Complex XSD payloads remain a review step before replay.
+
+#### DevWeb construct support matrix
+
+```
+GET /api/v1/scripts/import/devweb/support-matrix
+```
+
+Returns construct-by-construct DevWeb import support for `load.WebRequest`, `load.WebSocket`, gRPC unary calls, think time, action grouping, dynamic JavaScript, and correlation review requirements.
 
 ### Projects and Folders
 
@@ -520,6 +808,82 @@ GET /api/v1/recorder/har?har_id=har-001
 
 Returns HAR file with `Content-Type: application/json`.
 
+### Correlation Intelligence
+
+The correlation engine detects dynamic values that must be correlated (auth/CSRF
+tokens, session cookies, ASP.NET state fields, dynamic headers, redirects) and
+ranks them by confidence. Recorder/import flows run detection automatically; the
+endpoints below expose the rule catalog and a record-vs-replay diagnosis.
+
+#### List correlation rules
+
+```
+GET /api/v1/correlations/rules
+```
+
+Returns the detection rule catalog so a UI can show "what we detect":
+
+```json
+{
+  "rules": [
+    { "id": "html.aspnet_state", "family": "html", "title": "ASP.NET state field",
+      "description": "WebForms __VIEWSTATE / __EVENTVALIDATION style hidden fields…",
+      "base_confidence": 0.95 }
+  ]
+}
+```
+
+#### Diagnose replay correlation failures
+
+```
+POST /api/v1/correlations/diagnose
+```
+
+Compares a recording against a replay of the same flow (steps matched by `id`)
+and returns ranked repair suggestions: stale values that will break (severity
+`error`) and correlation sources that vanished on replay (severity `warning`),
+each with the exact extractor to add.
+
+Request:
+
+```json
+{
+  "recorded": [
+    { "id": 1, "response_body": "{\"csrf_token\":\"AAA-recorded\"}" },
+    { "id": 2, "request_body": "csrf=AAA-recorded" }
+  ],
+  "replay": [
+    { "id": 1, "response_body": "{\"csrf_token\":\"BBB-replayed\"}" },
+    { "id": 2, "request_body": "csrf=AAA-recorded" }
+  ]
+}
+```
+
+Each step accepts `id`, `request_url`, `request_body`, `request_headers`,
+`response_body`, `response_headers`. Response:
+
+```json
+{
+  "suggestions": [
+    {
+      "rule_id": "json.csrf_token",
+      "severity": "error",
+      "title": "Stale value replayed (missing correlation)",
+      "detail": "Step 2 replays the recorded value for corr_csrf_token, but step 1 now returns a different value…",
+      "source_step_id": 1,
+      "failing_step_id": 2,
+      "recorded_value": "AAA-recorded",
+      "replay_value": "BBB-replayed",
+      "suggestion": "Capture corr_csrf_token from step 1 and substitute {{var.corr_csrf_token}} in step 2.",
+      "extractor": { "name": "corr_csrf_token", "source": "body", "extract_type": "jsonpath", "expression": "$.csrf_token" },
+      "confidence": 0.94
+    }
+  ],
+  "blocking": true,
+  "counts": { "errors": 1, "warnings": 0 }
+}
+```
+
 ### System
 
 #### Health check
@@ -537,6 +901,14 @@ GET /api/v1/system/health
   "version": "1.0.0"
 }
 ```
+
+#### Parity status
+
+```
+GET /api/v1/system/parity-status
+```
+
+Returns the release-gate parity checklist for platform areas plus a competitive parity section for k6 and NeoLoad dimensions. Each competitive item includes status, competitors, evidence pointers, remaining work, product decision, and evidence level so release reviews can separate supported claims from partial, bounded, or demand-gated gaps.
 
 #### Global WebSocket stream
 
@@ -589,7 +961,7 @@ Emits JSON messages for all test events:
     "follow_redirects": true,
     "ssl_verify": true,
     "headers": {
-      "User-Agent": "Stormrunner/1.0",
+      "User-Agent": "APEX Load/1.0",
       "Accept": "application/json"
     }
   }
@@ -615,6 +987,17 @@ Emits JSON messages for all test events:
 - `config.java_http.extractor_type`: Defaults to `opaque`
 - `config.java_http.preserve_binary_result`: When `true`, response bodies stay base64-encoded in replay output
 
+**SOAP config keys:**
+- `config.soap.version`: `1.1` or `1.2`
+- `config.soap.namespaces`: Prefix-to-URI map used for generated envelopes and namespace-aware SOAP authoring
+- `config.soap.ws_security.username_token.username`: WS-Security UsernameToken username
+- `config.soap.ws_security.username_token.password`: WS-Security UsernameToken password
+- `config.soap.ws_security.username_token.password_type`: `text` or `digest`
+- `config.soap.ws_security.username_token.nonce`: Include a nonce when `true`
+- `config.soap.ws_security.username_token.created`: Include a created timestamp when `true`
+- `config.soap.ws_security.timestamp.ttl_seconds`: Optional WS-Security Timestamp TTL in seconds
+- `config.soap.fault_handling.fail_on_fault`: When `true`, SOAP Fault envelopes fail the action even if the HTTP status is 200; fault responses also populate action snapshots for `snapshot_on_error` workflows
+
 **JMS Solace config keys:**
 - `config.jms.broker_url`: Solace broker URL, for example `tcps://broker.example.com:55443`
 - `config.jms.message_vpn`: Solace message VPN
@@ -623,6 +1006,53 @@ Emits JSON messages for all test events:
 - `config.jms.reply_to`: Default reply destination for request/reply
 - `config.jms.timeout_ms`: Default consume/request timeout
 - `config.jms.mock`: Use the local in-memory broker for replay. Real Solace broker execution requires the Solace adapter build.
+
+**Browser config keys:**
+- `config.browser.engine`: Browser engine identifier: `chromium` or `webkit` (`webkit` requires Playwright WebKit assets on the controller host)
+- `config.browser.headless`: Run the browser headlessly when `true`
+- `config.browser.slow_mo_ms`: Add fixed browser-action delay in milliseconds
+- `config.browser.user_agent`: Override browser user agent string
+- `config.browser.capture_screenshots`: Screenshot capture policy, for example `per_action`
+- `config.browser.cache_enabled`: Enable browser cache when `true`
+- `config.browser.cache_content_urls`: When `false`, APEX Load forces content-bearing browser requests to revalidate instead of using cached content responses
+- `config.browser.check_newer_versions`: Force browser cache revalidation with `Cache-Control: no-cache` / `Pragma: no-cache`
+- `config.browser.new_user_per_iteration`: Reset the browser protocol between iterations when `true`
+- `config.browser.download_resources`: `all`, `none`, or `recorded` (`recorded` executes in browser replay when preserved recorded-resource metadata is available)
+- `config.browser.viewport.width`, `config.browser.viewport.height`: Browser viewport dimensions
+
+**Web HTTP/HTML compatibility keys:**
+- `config.web_runtime.additional_attributes`: Arbitrary preserved RTS name/value pairs
+- `config.web_runtime.download_filters.mode`: `none`, `allow_list`, or `block_list`
+- `config.web_runtime.download_filters.hosts`: Hostnames matched by the selected download-filter mode
+- `config.web_runtime.content_checks[]`: Global response content checks with `text`, `scope`, and `fail_if_found`
+- `config.web_runtime.network_simulation.mode`: `max`, `preset`, or `custom`
+- `config.web_runtime.network_simulation.preset`: `56k`, `dsl`, `t1`, or `10mbps`
+- `config.web_runtime.network_simulation.bandwidth_kbps`, `config.web_runtime.network_simulation.latency_ms`: Custom transport shaping values
+- `config.web_runtime.network_simulation.jitter_ms`, `config.web_runtime.network_simulation.packet_loss_pct`: Optional jitter and packet-loss simulation values for custom HTTP transport shaping
+- `config.web_runtime.streaming.mode`: `adaptive` or `fixed` media-response pacing mode
+- `config.web_runtime.streaming.buffer_size_seconds`: Startup buffering delay for media-like HTTP responses
+- `config.web_runtime.streaming.fixed_bitrate_kbps`: Fixed-bitrate media-response shaping value
+- `config.web_runtime.streaming.bandwidth_estimation`: `rolling` or `instant` adaptive bitrate estimator
+- `config.web_runtime.data_formatting.auto_detect`: Preserve or enable automatic DFE detection behavior
+- `config.web_runtime.data_formatting.chain[]`: Ordered DFE transform chain
+
+### Web HTTP/HTML RTS Support
+
+| Surface | APEX Load field(s) | Current support |
+| --- | --- | --- |
+| Browser cache toggle | `config.browser.cache_enabled` | Executed in browser runtime |
+| Cache content URLs | `config.browser.cache_content_urls` | Executed in browser runtime |
+| Check newer versions | `config.browser.check_newer_versions` | Executed in browser runtime |
+| New user each iteration | `config.browser.new_user_per_iteration` | Executed in browser runtime |
+| Download resources | `config.browser.download_resources` | Partial: `all` and `none` execute directly; `recorded` executes when preserved recorded-resource metadata is available |
+| Download filters | `config.web_runtime.download_filters.*` | Executed in browser runtime |
+| Global content checks | `config.web_runtime.content_checks[]` | Executed in HTTP runtime |
+| Network emulation | `config.web_runtime.network_simulation.*` | Executed in browser runtime and HTTP-family transport shaping |
+| Data formatting | `config.web_runtime.data_formatting.*` | Partial: HTTP runtime executes configured DFE chains and auto-detects obvious base64-encoded text payloads; browser/runtime-wide DFE parity is still incomplete |
+| Streaming | `config.web_runtime.streaming.*` | Executed in HTTP runtime for media-like responses using buffer and bitrate pacing |
+| Additional attributes | `config.web_runtime.additional_attributes` | Compatibility-only metadata |
+
+See [docs/LOADRUNNER_RTS_REFERENCE.md](docs/LOADRUNNER_RTS_REFERENCE.md) for the broader Web HTTP/HTML mapping, including compatibility-only and non-applicable RTS concepts.
 
 ### Data Sources Section
 
@@ -645,7 +1075,8 @@ Emits JSON messages for all test events:
 - `type`: `csv` or `dat`
 - `path`: File path when inline data is not used
 - `inline_data`: Optional inline CSV or DAT content
-- `strategy`: `sequential`, `random`, or `unique`
+- `strategy`: `sequential`, `random`, `unique`, or `pop`
+- `pop`: consume each row once globally and return no more rows after exhaustion
 - `delimiter`: Optional column delimiter
 - `first_row_header`: Whether the first row contains column names
 - `columns`: Explicit column names when the file has no header row
@@ -671,6 +1102,24 @@ Emits JSON messages for all test events:
       "timezone": "UTC"
     },
     {
+      "name": "iteration_no",
+      "type": "current_iteration",
+      "update": "each_iteration",
+      "pad_width": 4
+    },
+    {
+      "name": "lg_name",
+      "type": "host",
+      "update": "once"
+    },
+    {
+      "name": "request_time",
+      "type": "time",
+      "update": "each_iteration",
+      "format": "15:04:05",
+      "timezone": "UTC"
+    },
+    {
       "name": "username",
       "type": "file",
       "update": "each_iteration",
@@ -685,7 +1134,7 @@ Emits JSON messages for all test events:
 
 **Parameter options:**
 - `name`: Parameter name used in templates
-- `type`: `file`, `list`, `random_number`, `date_time`, `timestamp`, `counter`, `uuid`, or `random_string`
+- `type`: `file`, `list`, `random_number`, `date_time`, `timestamp`, `counter`, `current_iteration`, `host`, `time`, `uuid`, or `random_string`
 - `update`: `once`, `each_iteration`, or `each_occurrence`
 - `selection`: For `file` and `list`, `sequential`, `random`, or `unique`
 - `on_exhaustion`: For `file` and `list`, `wrap`, `empty`, or `error`
@@ -693,9 +1142,14 @@ Emits JSON messages for all test events:
 - `values`: Inline list values for `list`
 - `min`, `max`: Bounds for `random_number`
 - `start`, `end`, `step`: Counter configuration
-- `format`, `timezone`, `offset_seconds`: Date/time and timestamp configuration
+- `current_iteration`: LoadRunner-compatible current iteration value, starting at `1` by default and honoring `start`, `step`, `pad_width`, and `pad_char`
+- `host`: LoadRunner-compatible load-generator host value, using the controller/generator hostname by default or `values[0]` as an explicit override
+- `time`: LoadRunner-compatible formatted wall-clock time, using `format`, `timezone`, and `offset_seconds`
+- `format`, `timezone`, `offset_seconds`: Date/time, time, and timestamp configuration
 - `length`, `charset`: Random string configuration
 - `pad_width`, `pad_char`: Left-padding for numeric outputs
+
+APEX uses snake_case canonical parameter types, but script validation and runtime resolution also accept the LoadRunner spellings `CurrentIteration`, `Host`, and `Time` for migration parity.
 
 **Usage in templates:**
 ```json
@@ -746,6 +1200,7 @@ Emits JSON messages for all test events:
 
 **Java-over-HTTP action note:**
 - Use normal HTTP-style request actions with `protocol: "java_http"`, but keep request bodies as opaque base64-encoded serialized bytes when using the current MVP codec.
+- Use `type: "rendezvous"` for engine-level synchronization points. Set `params.count` to the number of VUsers that must arrive before the barrier releases, and `params.timeout_ms` to bound how long a VUser waits.
 
 ```json
 {
@@ -784,6 +1239,14 @@ Emits JSON messages for all test events:
           "expected": null
         }
       ]
+    },
+    {
+      "name": "sync_buyers",
+      "type": "rendezvous",
+      "params": {
+        "count": 50,
+        "timeout_ms": 15000
+      }
     },
     {
       "name": "add_to_cart",
@@ -847,6 +1310,8 @@ Imported LoadRunner `{ParamName}` references are also resolved through `{{var.Pa
 {{fn.uuid()}}                  — Generate UUID
 {{fn.uuid}}                    — Generate UUID
 {{fn.uuid.v4}}                 — Generate UUID v4
+{{fake.uuid}}                  — Generate UUID using faker-style alias
+{{fake.email}}                 — Generate a synthetic email address
 {{fn.random(1,100)}}           — Random integer 1-100
 {{fn.timestamp.unix}}          — Current Unix timestamp
 {{fn.timestamp.unix_ms}}       — Current Unix timestamp in milliseconds

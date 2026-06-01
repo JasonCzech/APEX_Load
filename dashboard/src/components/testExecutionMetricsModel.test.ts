@@ -3,9 +3,13 @@ import { describe, expect, it } from 'vitest'
 import {
   buildExecutionChartData,
   filterExecutionChartData,
+  mapArchiveResourceSamples,
+  mapArchiveSummarySamples,
   mapExecutionHistory,
+  mergeArchiveResourceHistory,
   summarizeExecutionChartData,
 } from './testExecutionMetricsModel'
+import { latencySeriesKeyForTarget } from './latencySeries'
 
 describe('testExecutionMetricsModel', () => {
   it('maps backend execution history into chart points with group and latency metrics', () => {
@@ -21,6 +25,38 @@ describe('testExecutionMetricsModel', () => {
       p90_ms: 150,
       p95_ms: 160,
       p99_ms: 220,
+      transactions: {
+        PublishOrder: {
+          name: 'PublishOrder',
+          dependency_type: 'jms_queue',
+          count: 3,
+          errors: 0,
+          avg_ms: 90,
+          p50_ms: 80,
+          p90_ms: 100,
+          p99_ms: 120,
+          server_telemetry: {
+            samples: 3,
+            avg_consumer_lag_ms: 20,
+            max_consumer_lag_ms: 28,
+          },
+        },
+        RequestReply: {
+          name: 'RequestReply',
+          dependency_type: 'jms_queue',
+          count: 2,
+          errors: 0,
+          avg_ms: 110,
+          p50_ms: 100,
+          p90_ms: 130,
+          p99_ms: 150,
+          server_telemetry: {
+            samples: 2,
+            avg_consumer_lag_ms: 50,
+            max_consumer_lag_ms: 65,
+          },
+        },
+      },
       groups: {
         Checkout: {
           name: 'Checkout',
@@ -56,16 +92,21 @@ describe('testExecutionMetricsModel', () => {
     }])
 
     expect(mapped).toHaveLength(1)
+    const endpointKey = latencySeriesKeyForTarget({ name: 'edge', endpoint: 'https://example.test' })
+
     expect(mapped[0]).toMatchObject({
       vusers: 12,
       tps: 4.5,
       avgMs: 123,
+      p95: 160,
       Checkout_tps: 4.5,
       Checkout_avgMs: 123,
       Checkout_vusers: 12,
-      latency_edge: 42,
+      [endpointKey]: 42,
       cpuProcess: 10,
       memProcess: 256,
+      jmsConsumerLagMs: 32,
+      jmsPeakConsumerLagMs: 65,
     })
   })
 
@@ -89,6 +130,157 @@ describe('testExecutionMetricsModel', () => {
     })
 
     expect(chartData.map((point) => point.time)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8'])
+  })
+
+  it('adds relative run time offsets from chart timestamps', () => {
+    const chartData = buildExecutionChartData({
+      mappedBackendHistory: [],
+      localMetricsHistory: [],
+      fallbackHistory: [
+        { time: '10:00:00', timestampMs: 1_000, vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p99: 130 },
+        { time: '10:00:05', timestampMs: 6_000, vusers: 4, tps: 2, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p99: 135 },
+      ],
+    })
+
+    expect(chartData.map((point) => point.relativeMs)).toEqual([0, 5_000])
+  })
+
+  it('maps archived resource samples into resource chart points', () => {
+    const mapped = mapArchiveResourceSamples([{
+      timestamp: '2026-05-12T20:00:01.123Z',
+      active_vusers: 8,
+      cpu_process_pct: 11,
+      cpu_free_pct: 70,
+      mem_process_mb: 256,
+      mem_free_mb: 4096,
+      net_sent_kbps: 12,
+      net_recv_kbps: 18,
+      disk_read_kbps: 2,
+      disk_write_kbps: 4,
+    }])
+
+    expect(mapped[0]).toMatchObject({
+      timestampMs: Date.parse('2026-05-12T20:00:01.123Z'),
+      vusers: 8,
+      tps: 0,
+      p95: 0,
+      resourceSampleOnly: 1,
+      cpuProcess: 11,
+      memProcess: 256,
+      netSent: 12,
+      diskWrite: 4,
+    })
+  })
+
+  it('maps archived interval summaries into performance chart points', () => {
+    const mapped = mapArchiveSummarySamples([{
+      timestamp: '2026-05-12T20:00:01.123Z',
+      test_id: 'test-1',
+      test_name: 'Checkout',
+      active_vusers: 12,
+      tps: 8.5,
+      avg_response_ms: 140,
+      error_pct: 1.25,
+      total_transactions: 20,
+      total_errors: 1,
+      p50_ms: 90,
+      p90_ms: 130,
+      p95_ms: 155,
+      p99_ms: 220,
+    }])
+
+    expect(mapped[0]).toMatchObject({
+      timestampMs: Date.parse('2026-05-12T20:00:01.123Z'),
+      vusers: 12,
+      tps: 8.5,
+      avgMs: 140,
+      errorPct: 1.25,
+      p50: 90,
+      p90: 130,
+      p95: 155,
+      p99: 220,
+    })
+  })
+
+  it('merges archived resource samples into matching interval chart points', () => {
+    const baseHistory = [{
+      time: '8:00:01 PM',
+      timestampMs: Date.parse('2026-05-12T20:00:01.123Z'),
+      vusers: 8,
+      tps: 6,
+      avgMs: 120,
+      errorPct: 1,
+      p50: 90,
+      p90: 120,
+      p99: 180,
+    }]
+    const resourceHistory = mapArchiveResourceSamples([{
+      timestamp: '2026-05-12T20:00:01.123Z',
+      active_vusers: 8,
+      cpu_process_pct: 11,
+      cpu_free_pct: 70,
+      mem_process_mb: 256,
+      mem_free_mb: 4096,
+      net_sent_kbps: 12,
+      net_recv_kbps: 18,
+      disk_read_kbps: 2,
+      disk_write_kbps: 4,
+    }])
+
+    const merged = mergeArchiveResourceHistory(baseHistory, resourceHistory)
+
+    expect(merged).toHaveLength(1)
+    expect(merged[0]).toMatchObject({
+      tps: 6,
+      avgMs: 120,
+      cpuProcess: 11,
+      cpuFree: 70,
+      memProcess: 256,
+      netSent: 12,
+      diskRead: 2,
+    })
+  })
+
+  it('enriches completed chart data with archived resources before adding relative run time', () => {
+    const archiveResourceHistory = mapArchiveResourceSamples([{
+      timestamp: '2026-05-12T20:00:00Z',
+      active_vusers: 10,
+      cpu_process_pct: 20,
+      cpu_free_pct: 65,
+      mem_process_mb: 512,
+      mem_free_mb: 2048,
+      net_sent_kbps: 80,
+      net_recv_kbps: 96,
+      disk_read_kbps: 7,
+      disk_write_kbps: 9,
+    }])
+
+    const chartData = buildExecutionChartData({
+      mappedBackendHistory: [{
+        time: '8:00:00 PM',
+        timestampMs: Date.parse('2026-05-12T20:00:00Z'),
+        vusers: 10,
+        tps: 5,
+        avgMs: 100,
+        errorPct: 0,
+        p50: 80,
+        p90: 100,
+        p99: 130,
+      }],
+      localMetricsHistory: [],
+      fallbackHistory: [],
+      archiveResourceHistory,
+      status: 'COMPLETE',
+    })
+
+    expect(chartData[0]).toMatchObject({
+      relativeMs: 0,
+      tps: 5,
+      cpuProcess: 20,
+      memProcess: 512,
+      netRecv: 96,
+      diskWrite: 9,
+    })
   })
 
   it('filters custom zoom ranges and summarizes the resulting slice', () => {

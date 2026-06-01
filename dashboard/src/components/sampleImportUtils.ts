@@ -1,7 +1,7 @@
 export type SampleFormat = 'raw_http' | 'curl' | 'rest_json' | 'har'
 
-export const RAW_HTTP_REQUEST_DELIMITER = '\n\n### STORMRUNNER REQUEST ###\n\n'
-export const RAW_HTTP_RESPONSE_DELIMITER = '\n\n### STORMRUNNER RESPONSE ###\n\n'
+export const RAW_HTTP_REQUEST_DELIMITER = '\n\n### APEXLOAD REQUEST ###\n\n'
+export const RAW_HTTP_RESPONSE_DELIMITER = '\n\n### APEXLOAD RESPONSE ###\n\n'
 
 export interface LoadedSample {
   name: string

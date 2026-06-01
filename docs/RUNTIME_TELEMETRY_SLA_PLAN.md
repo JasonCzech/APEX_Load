@@ -1,12 +1,12 @@
 # Runtime Telemetry SLA Plan
 
 ## Objective
-Harden Stormrunner's runtime telemetry so the platform can meet the documented target of under 2 seconds from collection to dashboard display while also improving the quality of data retained for post-run analysis.
+Harden APEX Load's runtime telemetry so the platform can meet the documented target of under 2 seconds from collection to dashboard display while also improving the quality of data retained for post-run analysis.
 
 The key design rule is that not all captured data should travel through the same path. Summary metrics belong in the hot path. Diagnostic samples belong in a bounded near-real-time path. Full-fidelity records belong in durable archive storage.
 
 ## Current Runtime Data
-Stormrunner already captures a solid synthetic-load baseline:
+APEX Load already captures a solid synthetic-load baseline:
 
 - Transaction timings, bytes, status, success, and error details
 - HTTP timing phases such as DNS, connect, TLS, and TTFB
@@ -103,6 +103,30 @@ The eighth implementation slice now decomposes distributed freshness into genera
 - The controller stamps batch receipt time, computes generator processing lag plus transport lag before websocket fan-out, and then records controller fan-out lag at publish time.
 - Typed SQLite interval summaries now persist the additional lag-stage timestamps and metrics under a new interval-summary schema version so stored history matches the live execution telemetry card.
 
+The ninth implementation slice now turns those measured stages into configurable SLA budgets:
+
+- System settings include explicit telemetry thresholds for sample age, generator processing lag, generator-to-controller transport lag, controller fan-out lag, and dashboard browser-render lag.
+- Existing persisted settings are normalized with defaults of 2000 ms end-to-end sample age and 500 ms per stage so upgraded controllers enforce the live monitoring budget without manual migration.
+- Live `telemetry_diagnostic` events now use the configured thresholds instead of a hard-coded sample-age check, and the Settings page exposes the budgets alongside the existing performance thresholds.
+
+The tenth implementation slice now adds run-level telemetry health transitions:
+
+- Active runs carry a `telemetry_health` summary and every live metrics payload carries `telemetry_status` so operators can separate application failures from APEX Load monitoring health.
+- Telemetry warnings enter `degraded` first and transition to `breached` only when they remain active for the sustained breach window; data-loss conditions such as collector drops still breach immediately.
+- Recovery clears the breach timer and emits a healthy transition through the existing diagnostic sampling path.
+
+The eleventh implementation slice now connects telemetry health transitions to alert hooks:
+
+- Webhooks can subscribe to `telemetry_degraded`, `telemetry_breached`, and `telemetry_recovered` events in the existing notification settings.
+- Slack, Teams, and Dynatrace notification payloads now carry telemetry severity, summary, and condition metadata so freshness, dropped-sample, websocket, and generator-lag alerts remain actionable.
+- Live websocket consumers also receive `telemetry_health_changed` events when the run-level monitoring state transitions.
+
+The twelfth implementation slice now keeps telemetry confidence evidence in run archives:
+
+- Interval summaries persist telemetry lag counters and run-level telemetry health status alongside the performance timeline.
+- Archive reports aggregate telemetry status, healthy/degraded/breached interval counts, sustained breach counts, dropped samples, websocket drops, maximum lag by stage, breach timestamps, and condition counts.
+- HTML reports include a Telemetry Health overview metric so archived results can explain whether monitoring stayed trustworthy during the run.
+
 ## Recommended Next Steps
 1. Expand correlation and dependency metadata coverage to the remaining protocols so distributed telemetry diagnostics stay consistent outside HTTP and JMS.
-2. Turn the documented stage budgets into explicit diagnostic thresholds and sustained-breach reporting so the under-2-second SLA is enforced, not just observed.
+2. Expand live operator monitoring with dependency maps and error-pattern cards now that telemetry health is measurable, alertable, and retained.

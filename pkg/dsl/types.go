@@ -7,6 +7,7 @@ type Script struct {
 	Name          string          `json:"name"`
 	Version       string          `json:"version"`
 	Protocol      string          `json:"protocol"`
+	GoalConfig    *GoalConfig     `json:"goal_config,omitempty"`
 	ProjectID     string          `json:"project_id,omitempty"`
 	FolderID      *string         `json:"folder_id,omitempty"`
 	GeneratedBy   string          `json:"generated_by,omitempty"`
@@ -20,6 +21,20 @@ type Script struct {
 	Teardown      []Action        `json:"teardown,omitempty"`
 	CreatedAt     time.Time       `json:"created_at,omitempty"`
 	UpdatedAt     time.Time       `json:"updated_at,omitempty"`
+}
+
+type GoalConfig struct {
+	TargetAverageTPS         *float64 `json:"target_average_tps,omitempty"`
+	P95LatencyMs             *float64 `json:"p95_latency_ms,omitempty"`
+	MaxErrorPct              *float64 `json:"max_error_pct,omitempty"`
+	MaxAvgServerProcessingMs *float64 `json:"max_avg_server_processing_ms,omitempty"`
+	MaxAvgTransferMs         *float64 `json:"max_avg_transfer_ms,omitempty"`
+	MaxErrorCount            *int     `json:"max_error_count,omitempty"`
+	MinVUsers                *int     `json:"min_vusers,omitempty"`
+	MaxVUsers                *int     `json:"max_vusers,omitempty"`
+	StopOnSLABreach          bool     `json:"stop_on_sla_breach,omitempty"`
+	StopOnMaxErrors          bool     `json:"stop_on_max_errors,omitempty"`
+	SLABreachWindow          string   `json:"sla_breach_window,omitempty"`
 }
 
 type ScriptMetadata struct {
@@ -38,13 +53,30 @@ type ScriptConfig struct {
 	Pacing        PacingConfig        `json:"pacing,omitempty"`
 	HTTP          HTTPConfig          `json:"http,omitempty"`
 	WebRuntime    WebRuntimeConfig    `json:"web_runtime,omitempty"`
+	WebSocket     WebSocketConfig     `json:"websocket,omitempty"`
+	GRPC          GRPCConfig          `json:"grpc,omitempty"`
 	JavaHTTP      JavaHTTPConfig      `json:"java_http,omitempty"`
 	SOAP          SOAPConfig          `json:"soap,omitempty"`
+	Database      DatabaseConfig      `json:"database,omitempty"`
+	Network       NetworkConfig       `json:"network,omitempty"`
 	Browser       BrowserConfig       `json:"browser,omitempty"`
 	JMS           JMSConfig           `json:"jms,omitempty"`
 	ErrorHandling ErrorHandlingConfig `json:"error_handling,omitempty"`
 	RunLogic      RunLogicConfig      `json:"run_logic,omitempty"`
+	Observability ObservabilityConfig `json:"observability,omitempty"`
 	Log           LogConfig           `json:"log,omitempty"`
+}
+
+type ObservabilityConfig struct {
+	ExternalMetrics []ExternalMetricConfig `json:"external_metrics,omitempty"`
+}
+
+type ExternalMetricConfig struct {
+	Name       string            `json:"name,omitempty"`
+	URL        string            `json:"url,omitempty"`
+	Format     string            `json:"format,omitempty"`
+	MetricName string            `json:"metric_name,omitempty"`
+	Labels     map[string]string `json:"labels,omitempty"`
 }
 
 type JavaHTTPConfig struct {
@@ -58,6 +90,26 @@ type JavaHTTPConfig struct {
 	ResponseMapping      map[string]string `json:"response_mapping,omitempty"`
 	ExtractorType        string            `json:"extractor_type,omitempty"`
 	PreserveBinaryResult bool              `json:"preserve_binary_result,omitempty"`
+}
+
+type WebSocketConfig struct {
+	ReadTimeoutMs  int    `json:"read_timeout_ms,omitempty"`
+	WriteTimeoutMs int    `json:"write_timeout_ms,omitempty"`
+	MaxMessageSize int64  `json:"max_message_size,omitempty"`
+	Subprotocol    string `json:"subprotocol,omitempty"`
+	Origin         string `json:"origin,omitempty"`
+	Compression    bool   `json:"compression,omitempty"`
+	Reconnect      bool   `json:"reconnect,omitempty"`
+}
+
+type GRPCConfig struct {
+	ProtoFiles     []string          `json:"proto_files,omitempty"`
+	UseReflection  bool              `json:"use_reflection,omitempty"`
+	PlainText      bool              `json:"plain_text,omitempty"`
+	MaxRecvMsgSize int               `json:"max_recv_msg_size,omitempty"`
+	TimeoutMs      int               `json:"timeout_ms,omitempty"`
+	Metadata       map[string]string `json:"metadata,omitempty"`
+	Authority      string            `json:"authority,omitempty"`
 }
 
 type SOAPConfig struct {
@@ -88,6 +140,33 @@ type SOAPFaultHandlingConfig struct {
 	FailOnFault bool `json:"fail_on_fault,omitempty"`
 }
 
+type DatabaseConfig struct {
+	Driver             string `json:"driver,omitempty"`
+	DSN                string `json:"dsn,omitempty"`
+	DSNSecret          string `json:"dsn_secret,omitempty"`
+	MaxOpenConns       int    `json:"max_open_conns,omitempty"`
+	MaxIdleConns       int    `json:"max_idle_conns,omitempty"`
+	ConnMaxLifetimeMs  int    `json:"conn_max_lifetime_ms,omitempty"`
+	QueryTimeoutMs     int    `json:"query_timeout_ms,omitempty"`
+	MaxRows            int    `json:"max_rows,omitempty"`
+	ReadOnly           bool   `json:"read_only,omitempty"`
+	RollbackOnTeardown bool   `json:"rollback_on_teardown,omitempty"`
+}
+
+type NetworkConfig struct {
+	Subprotocol string   `json:"subprotocol,omitempty"`
+	Host        string   `json:"host,omitempty"`
+	Port        int      `json:"port,omitempty"`
+	Address     string   `json:"address,omitempty"`
+	TimeoutMs   int      `json:"timeout_ms,omitempty"`
+	TLS         bool     `json:"tls,omitempty"`
+	Username    string   `json:"username,omitempty"`
+	Password    string   `json:"password,omitempty"`
+	From        string   `json:"from,omitempty"`
+	To          []string `json:"to,omitempty"`
+	BaseDN      string   `json:"base_dn,omitempty"`
+}
+
 // JMSConfig holds broker, destination, and reliability settings for JMS scripts.
 type JMSConfig struct {
 	Provider        string            `json:"provider,omitempty"`         // "solace"
@@ -111,6 +190,10 @@ type BrowserConfig struct {
 	Headless           *bool           `json:"headless,omitempty"`
 	SlowMoMs           int             `json:"slow_mo_ms,omitempty"`
 	UserAgent          string          `json:"user_agent,omitempty"`
+	DeviceProfile      string          `json:"device_profile,omitempty"`
+	TouchMode          *bool           `json:"touch_mode,omitempty"`
+	Orientation        string          `json:"orientation,omitempty"`
+	ClientMetrics      *bool           `json:"client_metrics,omitempty"`
 	CaptureScreenshots string          `json:"capture_screenshots,omitempty"`
 	CacheEnabled       *bool           `json:"cache_enabled,omitempty"`
 	CacheContentURLs   *bool           `json:"cache_content_urls,omitempty"`
@@ -121,12 +204,12 @@ type BrowserConfig struct {
 }
 
 type WebRuntimeConfig struct {
-	AdditionalAttributes map[string]string        `json:"additional_attributes,omitempty"`
-	DownloadFilters      DownloadFiltersConfig    `json:"download_filters,omitempty"`
-	ContentChecks        []ContentCheckConfig     `json:"content_checks,omitempty"`
-	NetworkSimulation    NetworkSimulationConfig  `json:"network_simulation,omitempty"`
-	Streaming            StreamingConfig          `json:"streaming,omitempty"`
-	DataFormatting       DataFormattingConfig     `json:"data_formatting,omitempty"`
+	AdditionalAttributes map[string]string       `json:"additional_attributes,omitempty"`
+	DownloadFilters      DownloadFiltersConfig   `json:"download_filters,omitempty"`
+	ContentChecks        []ContentCheckConfig    `json:"content_checks,omitempty"`
+	NetworkSimulation    NetworkSimulationConfig `json:"network_simulation,omitempty"`
+	Streaming            StreamingConfig         `json:"streaming,omitempty"`
+	DataFormatting       DataFormattingConfig    `json:"data_formatting,omitempty"`
 }
 
 type DownloadFiltersConfig struct {
@@ -141,10 +224,12 @@ type ContentCheckConfig struct {
 }
 
 type NetworkSimulationConfig struct {
-	Mode          string `json:"mode,omitempty"`
-	Preset        string `json:"preset,omitempty"`
-	BandwidthKbps int    `json:"bandwidth_kbps,omitempty"`
-	LatencyMs     int    `json:"latency_ms,omitempty"`
+	Mode          string  `json:"mode,omitempty"`
+	Preset        string  `json:"preset,omitempty"`
+	BandwidthKbps int     `json:"bandwidth_kbps,omitempty"`
+	LatencyMs     int     `json:"latency_ms,omitempty"`
+	JitterMs      int     `json:"jitter_ms,omitempty"`
+	PacketLossPct float64 `json:"packet_loss_pct,omitempty"`
 }
 
 type StreamingConfig struct {
@@ -184,6 +269,9 @@ type BrowserCaptureOptions struct {
 // RunLogicConfig controls iteration behavior and automatic transaction wrapping.
 type RunLogicConfig struct {
 	Iterations       int      `json:"iterations,omitempty"`        // 0 = run until duration (default)
+	GlobalIterations int      `json:"global_iterations,omitempty"` // 0 = no shared iteration cap across VUsers
+	MaxTransactions  int64    `json:"max_transactions,omitempty"`  // 0 = no shared transaction cap across VUsers
+	WorkloadModel    string   `json:"workload_model,omitempty"`    // "closed" (default), "open"
 	AutoTransactions string   `json:"auto_transactions,omitempty"` // "none" (default), "per_action", "per_iteration"
 	BlockScheduling  string   `json:"block_scheduling,omitempty"`  // "sequential", "random", "percentage"
 	ActionSequence   []string `json:"action_sequence,omitempty"`   // e.g. ["init", "action", "teardown"]
@@ -216,7 +304,7 @@ type HTTPConfig struct {
 
 	// Proxy
 	ProxyMode string      `json:"proxy_mode,omitempty"` // "none", "system", "custom"
-	Proxy ProxyConfig `json:"proxy,omitempty"`
+	Proxy     ProxyConfig `json:"proxy,omitempty"`
 
 	// Authentication
 	Auth AuthConfig `json:"auth,omitempty"`
@@ -298,18 +386,19 @@ type DataSource struct {
 	Type           string   `json:"type"` // "csv", "dat"
 	Path           string   `json:"path,omitempty"`
 	InlineData     string   `json:"inline_data,omitempty"` // optional inline CSV/DAT content
-	Strategy       string   `json:"strategy"`              // "sequential", "random", "unique"
-	Delimiter      string   `json:"delimiter,omitempty"`   // default ","
+	Strategy       string   `json:"strategy"`              // "sequential", "random", "unique", "pop"
+	Delimiter      string   `json:"delimiter,omitempty"`   // default ","; accepts "auto", "comma", "tab"
 	FirstRowHeader bool     `json:"first_row_header,omitempty"`
 	Columns        []string `json:"columns,omitempty"` // explicit column names if no header
 }
 
 type Parameter struct {
 	Name          string   `json:"name"`
-	Type          string   `json:"type"` // "file", "list", "random_number", "date_time", "timestamp", "counter", "uuid", "random_string"
+	Type          string   `json:"type"` // "file", "list", "random_number", "date_time", "timestamp", "counter", "current_iteration", "host", "time", "uuid", "random_string"
 	Update        string   `json:"update,omitempty"`
 	Selection     string   `json:"selection,omitempty"`
 	OnExhaustion  string   `json:"on_exhaustion,omitempty"`
+	SameLineAs    string   `json:"same_line_as,omitempty"`
 	DataSource    string   `json:"data_source,omitempty"`
 	Column        string   `json:"column,omitempty"`
 	Format        string   `json:"format,omitempty"`
@@ -337,6 +426,7 @@ type Action struct {
 	Value          string                 `json:"value,omitempty"`
 	Headers        map[string]string      `json:"headers,omitempty"`
 	Body           string                 `json:"body,omitempty"`
+	BodyEncoding   string                 `json:"body_encoding,omitempty"`
 	Params         map[string]any         `json:"params,omitempty"`
 	WaitFor        *WaitCondition         `json:"wait_for,omitempty"`
 	Capture        *BrowserCaptureOptions `json:"capture,omitempty"`

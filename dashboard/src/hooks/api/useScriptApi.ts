@@ -1,9 +1,20 @@
 import { useCallback, useMemo } from 'react'
 
 import {
+  AuthoringComponent,
   BrowserReplayStartRequest,
   BrowserReplayStartResponse,
   BrowserReplaySessionResponse,
+  AuthoringHealth,
+  AuthoringCorrelationPreviewRequest,
+  AuthoringCorrelationPreviewResponse,
+  AuthoringSession,
+  BrowserReplayNetworkEntry,
+  ScriptDebugBreakpoint,
+  ScriptDebugSessionResponse,
+  ScriptDebugStartRequest,
+  ScriptDebugStartResponse,
+  GeneratorAssignmentSettings,
   GoalConfig,
   RuntimeSettingsOverride,
   ScenarioDataPoolBinding,
@@ -14,9 +25,10 @@ import {
   StoredScript,
   TestSummary,
 } from '../../types'
+import { type AuthoringTemplate } from '../../types'
 import { type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
-import { type ImportedScript, type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse } from '../../types/scriptImports'
-import { BASE, request } from '../apiClient'
+import { type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type LoadRunnerSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { apiFetch, request } from '../apiClient'
 
 type ScriptListResponse = {
   scripts: StoredScript[]
@@ -52,6 +64,13 @@ type ScenarioGroupPayload = {
   vusers: number
   ramp_up?: string
   ramp_down?: string
+  stages?: Array<{
+    name?: string
+    type: string
+    duration: string
+    target_vusers?: number
+    target_tps?: number
+  }>
   initialization?: 'at_runtime' | 'at_once'
 }
 
@@ -61,10 +80,7 @@ type ScenarioUpsertRequest = {
   scenario_mode?: ScenarioMode
   script_shakeout?: boolean
   resource_baseline?: boolean
-  assignment?: {
-    mode?: 'auto' | 'specific_hosts'
-    selected_targets?: string[]
-  }
+  assignment?: GeneratorAssignmentSettings
   goal_config?: GoalConfig
   runtime_settings?: RuntimeSettingsOverride
   groups: ScenarioGroupPayload[]
@@ -85,13 +101,80 @@ type DataPoolDeleteResponse = {
   deleted: string
 }
 
-type DataPoolUpsertRequest = Pick<SharedDataPool, 'name'> & Partial<Pick<SharedDataPool, 'description' | 'schema' | 'archived_at'>>
+type DataPoolUpsertRequest = Pick<SharedDataPool, 'name'> & Partial<Pick<SharedDataPool, 'description' | 'schema' | 'archived_at' | 'project_id'>>
 
 type DataPoolRowUpsertRequest = Pick<SharedDataPoolRow, 'data'> & Partial<Pick<SharedDataPoolRow, 'status' | 'version'>>
 
 type ScenarioDataPoolResponse = {
   data_pools: ScenarioDataPoolBinding[]
   count: number
+}
+
+type AuthoringTemplatesResponse = {
+  templates: AuthoringTemplate[]
+  count: number
+}
+
+type AuthoringComponentsResponse = {
+  components: AuthoringComponent[]
+  count: number
+}
+
+type AuthoringSessionsResponse = {
+  sessions: AuthoringSession[]
+  count: number
+}
+
+type CreateAuthoringSessionRequest = {
+  project_id?: string
+  source: string
+  name: string
+  status?: string
+  draft: ScriptDefinition
+  review_state?: Record<string, unknown>
+}
+
+type AuthoringSessionApprovalResponse = {
+  session: AuthoringSession
+  script: StoredScript
+  authoring_health: AuthoringHealth
+}
+
+export type BrowserToHTTPPreviewRequest = {
+  name?: string
+  project_id?: string
+  replay_session_id?: string
+  source_browser_script?: ScriptDefinition
+  network_entries?: BrowserReplayNetworkEntry[]
+  include_static_assets?: boolean
+}
+
+export type BrowserToHTTPPreviewResponse = {
+  schema_version: string
+  generated_at: string
+  replay_session_id?: string
+  source_browser_script?: ScriptDefinition
+  generated_script?: ScriptDefinition
+  warnings?: string[]
+  review: {
+    status: string
+    source_browser_actions: number
+    captured_requests: number
+    generated_http_actions: number
+    skipped_static_assets: number
+    correlation_candidates?: Array<{ name: string; source: string; value?: string; evidence?: string; action?: string }>
+    data_source_candidates?: Array<{ name: string; source: string; value?: string; evidence?: string; action?: string }>
+    auth_findings?: Array<{ severity: string; summary: string; evidence?: string; action?: string }>
+    cookie_findings?: Array<{ severity: string; summary: string; evidence?: string; action?: string }>
+    blocking_findings?: Array<{ severity: string; summary: string; evidence?: string; action?: string }>
+    findings?: string[]
+  }
+  scenario_template: {
+    name: string
+    duration: string
+    groups: Array<{ name: string; script_id: string; protocol: string; vusers: number; purpose: string; claim_policy?: string }>
+    notes?: string[]
+  }
 }
 
 function buildScriptQuery(projectId?: string, folderId?: string | null) {
@@ -102,6 +185,13 @@ function buildScriptQuery(projectId?: string, folderId?: string | null) {
   return suffix ? `?${suffix}` : ''
 }
 
+function buildScenarioQuery(projectId?: string) {
+  if (!projectId) return ''
+  const query = new URLSearchParams()
+  query.set('project_id', projectId)
+  return `?${query.toString()}`
+}
+
 export function useScriptApi() {
   const listScripts = useCallback(
     (projectId?: string, folderId?: string | null) =>
@@ -110,7 +200,7 @@ export function useScriptApi() {
   )
 
   const createScript = useCallback(
-    (script: ScriptDefinition | ImportedScript, projectId?: string, folderId?: string | null) =>
+    (script: ScriptDefinition, projectId?: string, folderId?: string | null) =>
       request<StoredScript>('/scripts', { method: 'POST', body: JSON.stringify({ script, project_id: projectId, folder_id: folderId }) }),
     [],
   )
@@ -118,7 +208,7 @@ export function useScriptApi() {
   const getScript = useCallback((id: string) => request<StoredScript>(`/scripts/${id}`), [])
 
   const updateScript = useCallback(
-    (id: string, script: ScriptDefinition | ImportedScript) =>
+    (id: string, script: ScriptDefinition) =>
       request<StoredScript>(`/scripts/${id}`, { method: 'PUT', body: JSON.stringify({ script }) }),
     [],
   )
@@ -132,6 +222,60 @@ export function useScriptApi() {
   )
 
   const validateScript = useCallback((id: string) => request<ScriptValidationResponse>(`/scripts/${id}/validate`, { method: 'POST' }), [])
+
+  const validateDraftScript = useCallback(
+    (script: ScriptDefinition, projectId?: string, folderId?: string | null) =>
+      request<ScriptValidationResponse>('/scripts/validate', { method: 'POST', body: JSON.stringify({ script, project_id: projectId, folder_id: folderId }) }),
+    [],
+  )
+
+  const listAuthoringTemplates = useCallback(
+    (params?: { protocol?: string; use_case?: string }) => {
+      const query = new URLSearchParams()
+      if (params?.protocol) query.set('protocol', params.protocol)
+      if (params?.use_case) query.set('use_case', params.use_case)
+      const suffix = query.toString()
+      return request<AuthoringTemplatesResponse>(`/scripts/authoring/templates${suffix ? `?${suffix}` : ''}`)
+    },
+    [],
+  )
+
+  const listAuthoringComponents = useCallback(
+    (params?: { kind?: string; protocol?: string }) => {
+      const query = new URLSearchParams()
+      if (params?.kind) query.set('kind', params.kind)
+      if (params?.protocol) query.set('protocol', params.protocol)
+      const suffix = query.toString()
+      return request<AuthoringComponentsResponse>(`/scripts/authoring/components${suffix ? `?${suffix}` : ''}`)
+    },
+    [],
+  )
+
+  const listAuthoringSessions = useCallback(
+    (projectId?: string) => request<AuthoringSessionsResponse>(`/scripts/authoring/sessions${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`),
+    [],
+  )
+
+  const createAuthoringSession = useCallback(
+    (payload: CreateAuthoringSessionRequest) => request<AuthoringSession>('/scripts/authoring/sessions', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
+  const approveAuthoringSession = useCallback(
+    (id: string) => request<AuthoringSessionApprovalResponse>(`/scripts/authoring/sessions/${id}/approve`, { method: 'POST' }),
+    [],
+  )
+
+  const deleteAuthoringSession = useCallback(
+    (id: string) => request<{ deleted: string }>(`/scripts/authoring/sessions/${id}`, { method: 'DELETE' }),
+    [],
+  )
+
+  const previewAuthoringCorrelation = useCallback(
+    (id: string, payload: AuthoringCorrelationPreviewRequest) =>
+      request<AuthoringCorrelationPreviewResponse>(`/scripts/authoring/sessions/${id}/correlations/preview`, { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
 
   const replayScript = useCallback(
 		(id: string, payload?: { group_name?: string; replay_session_id?: string; variables?: Record<string, string>; ignore_think_time?: boolean; script?: ScriptDefinition }) =>
@@ -157,6 +301,24 @@ export function useScriptApi() {
     [],
   )
 
+  const startScriptDebugSession = useCallback(
+    (id: string, payload?: ScriptDebugStartRequest) =>
+      request<ScriptDebugStartResponse>(`/scripts/${id}/debug/sessions`, { method: 'POST', body: JSON.stringify(payload || {}) }),
+    [],
+  )
+
+  const startDraftScriptDebugSession = useCallback(
+    (payload: ScriptDebugStartRequest & { script: ScriptDefinition }) =>
+      request<ScriptDebugStartResponse>('/scripts/debug/sessions', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
+  const previewBrowserToHTTP = useCallback(
+    (payload: BrowserToHTTPPreviewRequest) =>
+      request<BrowserToHTTPPreviewResponse>('/scripts/browser-to-http/preview', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
   const getBrowserReplaySession = useCallback(
     (sessionId: string) => request<BrowserReplaySessionResponse>(`/browser-replay/sessions/${sessionId}`),
     [],
@@ -177,6 +339,48 @@ export function useScriptApi() {
     [],
   )
 
+  const getScriptDebugSession = useCallback(
+    (sessionId: string) => request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}`),
+    [],
+  )
+
+  const stopScriptDebugSession = useCallback(
+    (sessionId: string) => request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/stop`, { method: 'POST' }),
+    [],
+  )
+
+  const pauseScriptDebugSession = useCallback(
+    (sessionId: string) => request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/pause`, { method: 'POST' }),
+    [],
+  )
+
+  const resumeScriptDebugSession = useCallback(
+    (sessionId: string) => request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/resume`, { method: 'POST' }),
+    [],
+  )
+
+  const stepScriptDebugSession = useCallback(
+    (sessionId: string) => request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/step`, { method: 'POST' }),
+    [],
+  )
+
+  const updateScriptDebugBreakpoints = useCallback(
+    (sessionId: string, breakpoints: ScriptDebugBreakpoint[]) =>
+      request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/breakpoints`, { method: 'PATCH', body: JSON.stringify({ breakpoints }) }),
+    [],
+  )
+
+  const exportScriptDebugSession = useCallback(
+    async (sessionId: string, format: 'json' | 'log' = 'json') => {
+      const res = await apiFetch(`/script-debug/sessions/${sessionId}/export?format=${encodeURIComponent(format)}`)
+      if (!res.ok) {
+        throw new Error(res.statusText || 'Failed to export script debugger session')
+      }
+      return format === 'log' ? res.text() : res.blob()
+    },
+    [],
+  )
+
   const exportScript = useCallback(
     (id: string, outputDir?: string, filename?: string) =>
       request<ScriptExportResponse>(`/scripts/${id}/export`, {
@@ -187,15 +391,17 @@ export function useScriptApi() {
   )
 
   const importLoadRunner = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; preserve_transactions?: boolean }): Promise<LoadRunnerImportResult> => {
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; preserve_transactions?: boolean; migration_block_statuses?: string[]; project_id?: string }): Promise<LoadRunnerImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.preserve_transactions !== undefined) formData.append('preserve_transactions', String(options.preserve_transactions))
+      if (options?.migration_block_statuses?.length) formData.append('migration_block_statuses', options.migration_block_statuses.join(','))
 
-      const res = await fetch(`${BASE}/scripts/import/loadrunner`, {
+      const res = await apiFetch('/scripts/import/loadrunner', {
         method: 'POST',
         body: formData,
       })
@@ -209,15 +415,17 @@ export function useScriptApi() {
   )
 
   const validateLoadRunnerImport = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; preserve_transactions?: boolean }): Promise<LoadRunnerImportResult> => {
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; preserve_transactions?: boolean; migration_block_statuses?: string[]; project_id?: string }): Promise<LoadRunnerImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.preserve_transactions !== undefined) formData.append('preserve_transactions', String(options.preserve_transactions))
+      if (options?.migration_block_statuses?.length) formData.append('migration_block_statuses', options.migration_block_statuses.join(','))
 
-      const res = await fetch(`${BASE}/scripts/import/loadrunner/validate`, {
+      const res = await apiFetch('/scripts/import/loadrunner/validate', {
         method: 'POST',
         body: formData,
       })
@@ -230,16 +438,22 @@ export function useScriptApi() {
     [],
   )
 
+  const getLoadRunnerSupportMatrix = useCallback(
+		() => request<LoadRunnerSupportMatrixResponse>('/scripts/import/loadrunner/support-matrix'),
+		[],
+	)
+
   const importJMeter = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean }): Promise<JMeterImportResult> => {
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean; project_id?: string }): Promise<JMeterImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.scenario_draft) formData.append('scenario_draft', 'true')
 
-      const res = await fetch(`${BASE}/scripts/import/jmeter`, {
+      const res = await apiFetch('/scripts/import/jmeter', {
         method: 'POST',
         body: formData,
       })
@@ -253,15 +467,16 @@ export function useScriptApi() {
   )
 
   const validateJMeterImport = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean }): Promise<JMeterImportResult> => {
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean; project_id?: string }): Promise<JMeterImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.scenario_draft) formData.append('scenario_draft', 'true')
 
-      const res = await fetch(`${BASE}/scripts/import/jmeter/validate`, {
+      const res = await apiFetch('/scripts/import/jmeter/validate', {
         method: 'POST',
         body: formData,
       })
@@ -288,6 +503,7 @@ export function useScriptApi() {
   const importSample = useCallback(
     (data: {
       name?: string
+      project_id?: string
       format: string
       content: string
       response_content?: string
@@ -296,12 +512,105 @@ export function useScriptApi() {
         include_assertions?: boolean
         infer_extractors?: boolean
         sanitize_sensitive?: boolean
+        include_static_assets?: boolean
       }
     }) => request<SampleImportResult>('/scripts/import/sample', { method: 'POST', body: JSON.stringify(data) }),
     [],
   )
 
-  const listScenarios = useCallback(() => request<ScenarioListResponse>('/scenarios'), [])
+  const importDevWeb = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<DevWebImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+
+      const res = await apiFetch('/scripts/import/devweb', { method: 'POST', body: formData })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error || res.statusText)
+      }
+      return res.json() as Promise<DevWebImportResult>
+    },
+    [],
+  )
+
+  const importHAR = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string; include_static_assets?: boolean }): Promise<HARImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+      if (options?.include_static_assets) formData.append('include_static_assets', 'true')
+
+      const res = await apiFetch('/scripts/import/har', { method: 'POST', body: formData })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error || res.statusText)
+      }
+      return res.json() as Promise<HARImportResult>
+    },
+    [],
+  )
+
+  const importOpenAPI = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<OpenAPIImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('script_name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+
+      const res = await apiFetch('/scripts/import/openapi', { method: 'POST', body: formData })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error || res.statusText)
+      }
+      return res.json() as Promise<OpenAPIImportResult>
+    },
+    [],
+  )
+
+  const importPostman = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<PostmanImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('script_name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+
+      const res = await apiFetch('/scripts/import/postman', { method: 'POST', body: formData })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error || res.statusText)
+      }
+      return res.json() as Promise<PostmanImportResult>
+    },
+    [],
+  )
+
+  const importWSDL = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; soap_version?: string; project_id?: string }): Promise<WSDLImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('script_name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+      if (options?.soap_version) formData.append('soap_version', options.soap_version)
+
+      const res = await apiFetch('/scripts/import/wsdl', { method: 'POST', body: formData })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error || res.statusText)
+      }
+      return res.json() as Promise<WSDLImportResult>
+    },
+    [],
+  )
+
+  const listScenarios = useCallback((projectId?: string) => request<ScenarioListResponse>(`/scenarios${buildScenarioQuery(projectId)}`), [])
 
   const createScenario = useCallback(
     (data: ScenarioUpsertRequest) => request<StoredScenario>('/scenarios', { method: 'POST', body: JSON.stringify(data) }),
@@ -329,7 +638,13 @@ export function useScriptApi() {
   )
 
   const listDataPools = useCallback(
-    (includeArchived = false) => request<DataPoolListResponse>(`/data-pools${includeArchived ? '?include_archived=true' : ''}`),
+    (projectId?: string, includeArchived = false) => {
+      const query = new URLSearchParams()
+      if (projectId) query.set('project_id', projectId)
+      if (includeArchived) query.set('include_archived', 'true')
+      const suffix = query.toString()
+      return request<DataPoolListResponse>(`/data-pools${suffix ? `?${suffix}` : ''}`)
+    },
     [],
   )
 
@@ -375,22 +690,46 @@ export function useScriptApi() {
       deleteScript,
       moveScript,
       validateScript,
-  		replayScript,
+      validateDraftScript,
+      listAuthoringTemplates,
+      listAuthoringComponents,
+      listAuthoringSessions,
+      createAuthoringSession,
+      approveAuthoringSession,
+      deleteAuthoringSession,
+      previewAuthoringCorrelation,
+      replayScript,
   		replayDraftScript,
       startBrowserReplaySession,
       startDraftBrowserReplaySession,
+      startScriptDebugSession,
+      startDraftScriptDebugSession,
+      previewBrowserToHTTP,
       getBrowserReplaySession,
       stopBrowserReplaySession,
       pauseBrowserReplaySession,
       resumeBrowserReplaySession,
+      getScriptDebugSession,
+      stopScriptDebugSession,
+      pauseScriptDebugSession,
+      resumeScriptDebugSession,
+      stepScriptDebugSession,
+      updateScriptDebugBreakpoints,
+      exportScriptDebugSession,
       exportScript,
       importLoadRunner,
       validateLoadRunnerImport,
+      getLoadRunnerSupportMatrix,
       importJMeter,
       validateJMeterImport,
       getJMeterSupportMatrix,
       saveJMeterImport,
       importSample,
+      importDevWeb,
+      importHAR,
+      importOpenAPI,
+      importPostman,
+      importWSDL,
       listScenarios,
       createScenario,
       getScenario,
@@ -416,22 +755,46 @@ export function useScriptApi() {
       deleteScript,
       moveScript,
       validateScript,
-  		replayScript,
+      validateDraftScript,
+      listAuthoringTemplates,
+      listAuthoringComponents,
+      listAuthoringSessions,
+      createAuthoringSession,
+      approveAuthoringSession,
+      deleteAuthoringSession,
+      previewAuthoringCorrelation,
+      replayScript,
   		replayDraftScript,
       startBrowserReplaySession,
       startDraftBrowserReplaySession,
+      startScriptDebugSession,
+      startDraftScriptDebugSession,
+      previewBrowserToHTTP,
       getBrowserReplaySession,
       stopBrowserReplaySession,
       pauseBrowserReplaySession,
       resumeBrowserReplaySession,
+      getScriptDebugSession,
+      stopScriptDebugSession,
+      pauseScriptDebugSession,
+      resumeScriptDebugSession,
+      stepScriptDebugSession,
+      updateScriptDebugBreakpoints,
+      exportScriptDebugSession,
       exportScript,
       importLoadRunner,
       validateLoadRunnerImport,
+      getLoadRunnerSupportMatrix,
       importJMeter,
       validateJMeterImport,
       getJMeterSupportMatrix,
       saveJMeterImport,
       importSample,
+      importDevWeb,
+      importHAR,
+      importOpenAPI,
+      importPostman,
+      importWSDL,
       listScenarios,
       createScenario,
       getScenario,

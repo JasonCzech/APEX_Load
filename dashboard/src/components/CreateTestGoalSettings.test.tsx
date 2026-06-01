@@ -25,7 +25,7 @@ describe('CreateTestGoalSettings', () => {
     container.remove()
   })
 
-  it('renders max error count controls and dispatches updates', async () => {
+  it('renders goal telemetry controls and dispatches updates', async () => {
     const onGoalConfigChange = vi.fn()
 
     await act(async () => {
@@ -43,16 +43,30 @@ describe('CreateTestGoalSettings', () => {
     })
 
     const maxErrorCountInput = container.querySelector('input[placeholder="e.g. 25"]') as HTMLInputElement | null
+    const serverProcessingInput = container.querySelector('input[placeholder="e.g. 450"]') as HTMLInputElement | null
+    const transferInput = container.querySelector('input[placeholder="e.g. 120"]') as HTMLInputElement | null
     expect(maxErrorCountInput).not.toBeNull()
+    expect(serverProcessingInput).not.toBeNull()
+    expect(transferInput).not.toBeNull()
     expect(maxErrorCountInput?.value).toBe('8')
 
     const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[]
     expect(checkboxes).toHaveLength(2)
     expect(checkboxes[1]?.checked).toBe(false)
 
-    if (!maxErrorCountInput || !checkboxes[1]) {
+    if (!maxErrorCountInput || !serverProcessingInput || !transferInput || !checkboxes[1]) {
       return
     }
+
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      valueSetter?.call(serverProcessingInput, '450')
+      serverProcessingInput.dispatchEvent(new Event('input', { bubbles: true }))
+      serverProcessingInput.dispatchEvent(new Event('change', { bubbles: true }))
+      valueSetter?.call(transferInput, '120')
+      transferInput.dispatchEvent(new Event('input', { bubbles: true }))
+      transferInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
 
     await act(async () => {
       const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
@@ -65,6 +79,8 @@ describe('CreateTestGoalSettings', () => {
       checkboxes[1].dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    expect(onGoalConfigChange).toHaveBeenCalledWith('max_avg_server_processing_ms', 450)
+    expect(onGoalConfigChange).toHaveBeenCalledWith('max_avg_transfer_ms', 120)
     expect(onGoalConfigChange).toHaveBeenCalledWith('max_error_count', 15)
     expect(onGoalConfigChange).toHaveBeenCalledWith('stop_on_max_errors', true)
   })

@@ -8,4 +8,4 @@ dashboard/node_modules/
 dashboard/dist/
 coverage.out
 coverage.html
-stormrunner.db
+apexload.db

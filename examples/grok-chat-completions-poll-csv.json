@@ -12,7 +12,7 @@
       "http": {
         "connect_timeout_ms": 30000,
         "request_timeout_ms": 120000,
-        "user_agent": "Stormrunner-Grok-CSV-Example/1.0"
+        "user_agent": "APEX Load-Grok-CSV-Example/1.0"
       }
     },
     "data_sources": [

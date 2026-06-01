@@ -3,16 +3,21 @@ import {
   Tooltip, ResponsiveContainer, Legend, ReferenceArea,
 } from 'recharts'
 
-import { CapacityAdvisory, TestSummary } from '../types'
+import { CapacityAdvisory, RuntimeSettingsOverride, ScriptShakeoutReport, TestSummary } from '../types'
+import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import { QueuedScenarioPreview, QueuedScenarioRow, ScenarioScriptDetail } from './testExecutionScenarioModel'
 import { formatTimeCompact } from '../utils/timeUtils'
 
 interface Props {
   test: TestSummary
   startCapacityConflict: CapacityAdvisory | null
+  startShakeoutConflict: ScriptShakeoutReport | null
   startFeedback: string
   onDismissStartConflict: () => void
   onConfirmStartAnyway: () => void
+  onContinueAfterShakeoutFailure: () => void
+  onCancelShakeoutRun: () => void
   queuedScenarioPreview: QueuedScenarioPreview
   queuedScenarioRows: QueuedScenarioRow[]
   scriptDetailsLoading: boolean
@@ -81,7 +86,62 @@ function formatPacingLabel(scriptDetail?: ScenarioScriptDetail): string {
   return pacing.type.replace(/_/g, ' ')
 }
 
+function formatOverridePacing(test: TestSummary): string {
+  const pacing = test.runtime_settings?.pacing
+  if (!pacing?.type) return 'Script default'
+  if (pacing.type === 'none') return 'None'
+  if (pacing.type === 'fixed_delay') return `Fixed delay · ${pacing.delay_ms || 0}ms`
+  if (pacing.type === 'fixed_interval') return `Fixed interval · ${pacing.interval_ms || 0}ms`
+  if (pacing.type === 'tps') return `Target TPS · ${pacing.tps || 0}`
+  return pacing.type.replace(/_/g, ' ')
+}
+
+function formatOverrideThinkTime(test: TestSummary): string {
+  const thinkTime = test.runtime_settings?.think_time
+  if (!thinkTime) return 'Script default'
+  if (thinkTime.ignore) return 'Disabled'
+  return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
+}
+
+function formatRuntimePacingOverride(pacing?: RuntimeSettingsOverride['pacing']): string | null {
+  if (!pacing?.type) return null
+  if (pacing.type === 'none') return 'None'
+  if (pacing.type === 'fixed_delay') return `Fixed delay · ${pacing.delay_ms || 0}ms`
+  if (pacing.type === 'fixed_interval') return `Fixed interval · ${pacing.interval_ms || 0}ms`
+  if (pacing.type === 'tps') return `Target TPS · ${pacing.tps || 0}`
+  return pacing.type.replace(/_/g, ' ')
+}
+
+function formatRuntimeThinkTimeOverride(thinkTime?: RuntimeSettingsOverride['think_time']): string | null {
+  if (!thinkTime) return null
+  if (thinkTime.ignore) return 'Disabled'
+  return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
+}
+
+function formatEffectivePacing(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+  const groupOverride = formatRuntimePacingOverride(group.runtime_settings?.pacing)
+  if (groupOverride) return `${groupOverride} (group override)`
+  const testOverride = formatRuntimePacingOverride(test.runtime_settings?.pacing)
+  if (testOverride) return `${testOverride} (scenario override)`
+  return formatPacingLabel(scriptDetail)
+}
+
+function formatEffectiveThinkTime(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+  const groupOverride = formatRuntimeThinkTimeOverride(group.runtime_settings?.think_time)
+  if (groupOverride) return `${groupOverride} (group override)`
+  const testOverride = formatRuntimeThinkTimeOverride(test.runtime_settings?.think_time)
+  if (testOverride) return `${testOverride} (scenario override)`
+  return formatThinkTimeLabel(scriptDetail)
+}
+
+function formatContinueOnError(test: TestSummary): string {
+  const override = test.runtime_settings?.error_handling?.continue_on_error
+  if (override === undefined) return 'Script default'
+  return override ? 'Enabled' : 'Disabled'
+}
+
 function formatEffectiveIterations(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+  if (group.runtime_settings?.iterations !== undefined) return `${group.runtime_settings.iterations} (group override)`
   if (group.iterations !== undefined) return `${group.iterations} (group override)`
   const override = test.runtime_settings?.iterations
   if (override !== undefined) return `${override} (scenario override)`
@@ -90,19 +150,25 @@ function formatEffectiveIterations(group: TestSummary['groups'][number], scriptD
   return `${iterations}`
 }
 
-function formatEffectiveAutoTransactions(scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+function formatEffectiveAutoTransactions(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+  const groupOverride = group.runtime_settings?.auto_transactions
+  if (groupOverride) return `${groupOverride} (group override)`
   const override = test.runtime_settings?.auto_transactions
   if (override) return `${override} (scenario override)`
   return scriptDetail?.script?.config?.run_logic?.auto_transactions || 'none'
 }
 
-function formatEffectiveLogLevel(scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+function formatEffectiveLogLevel(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+  const groupOverride = group.runtime_settings?.log_level
+  if (groupOverride) return `${groupOverride} (group override)`
   const override = test.runtime_settings?.log_level
   if (override) return `${override} (scenario override)`
   return scriptDetail?.script?.config?.log?.level || 'standard'
 }
 
-function formatSnapshotOnError(scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+function formatSnapshotOnError(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+  const groupOverride = group.runtime_settings?.error_handling?.snapshot_on_error
+  if (groupOverride !== undefined) return groupOverride ? 'Enabled (group override)' : 'Disabled (group override)'
   const override = test.runtime_settings?.error_handling?.snapshot_on_error
   if (override !== undefined) return override ? 'Enabled (scenario override)' : 'Disabled (scenario override)'
   return scriptDetail?.script?.config?.error_handling?.snapshot_on_error ? 'Enabled' : 'Disabled'
@@ -115,9 +181,12 @@ function formatGoalNumber(value: number, suffix = ''): string {
 export default function TestExecutionScenarioPreview({
   test,
   startCapacityConflict,
+  startShakeoutConflict,
   startFeedback,
   onDismissStartConflict,
   onConfirmStartAnyway,
+  onContinueAfterShakeoutFailure,
+  onCancelShakeoutRun,
   queuedScenarioPreview,
   queuedScenarioRows,
   scriptDetailsLoading,
@@ -127,12 +196,69 @@ export default function TestExecutionScenarioPreview({
   onEditScript,
   groupColors,
 }: Props) {
-  if (test.status !== 'QUEUED') {
+  if (test.status !== 'QUEUED' && test.status !== 'PENDING' && test.status !== 'SHAKEOUT' && test.status !== 'SHAKEOUT_REVIEW') {
     return null
   }
+  const browserRuntimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
+  const shakeoutReviewRequired = test.status === 'SHAKEOUT_REVIEW' || Boolean(startShakeoutConflict)
+  const shakeoutEvidence = startShakeoutConflict?.results?.filter(result => result.status === 'failed') || []
 
   return (
     <>
+      {test.status === 'SHAKEOUT' && (
+        <div className="scenario-alert-banner scenario-alert-info" role="status">
+          <div>
+            <h3 className="scenario-alert-title">Running script shakeout</h3>
+            <p className="scenario-alert-message">APEX Load is executing a one-pass canary for each script group before the full load starts.</p>
+          </div>
+        </div>
+      )}
+
+      {shakeoutReviewRequired && (
+        <div className="scenario-alert-banner scenario-alert-warning" role="alert">
+          <div>
+            <h3 className="scenario-alert-title">Script shakeout needs review</h3>
+            <p className="scenario-alert-message">{startShakeoutConflict?.summary || test.error || 'Script shakeout returned errors; the full load test has not started.'}</p>
+            {shakeoutEvidence.length > 0 ? (
+              <div className="scenario-alert-evidence">
+                {shakeoutEvidence.map(result => (
+                  <div key={`${result.group_name}-${result.script_id || result.script_name || result.error}`}>
+                    <strong>{result.group_name}{result.script_name ? ` · ${result.script_name}` : ''}</strong>
+                    <span>{result.error || 'Shakeout failed without an error message.'}</span>
+                  </div>
+                ))}
+              </div>
+            ) : test.error ? (
+              <pre className="scenario-alert-evidence-text">{test.error}</pre>
+            ) : null}
+            {startFeedback && <p className="scenario-alert-message secondary">{startFeedback}</p>}
+          </div>
+          <div className="scenario-alert-actions">
+            <button className="btn btn-secondary" onClick={onCancelShakeoutRun}>
+              Cancel Run
+            </button>
+            <button className="btn btn-warning" onClick={onContinueAfterShakeoutFailure}>
+              Continue Full Load
+            </button>
+          </div>
+        </div>
+      )}
+
+      {test.status === 'PENDING' && (
+        <div className="scenario-alert-banner scenario-alert-info" role="status">
+          <div>
+            <h3 className="scenario-alert-title">Queued for project capacity</h3>
+            <p className="scenario-alert-message">
+              {test.queue_position ? `Queue position #${test.queue_position}. ` : ''}
+              {test.pending_reason || 'Waiting for an available project slot.'}
+            </p>
+            {test.pending_since && (
+              <p className="scenario-alert-message secondary">Waiting since {new Date(test.pending_since).toLocaleString()}.</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {startCapacityConflict && (
         <div className="scenario-alert-banner scenario-alert-warning" role="alert">
           <div>
@@ -259,24 +385,29 @@ export default function TestExecutionScenarioPreview({
 
           <div className="scenario-preview-chart">
             <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={queuedScenarioPreview.points} margin={{ top: 8, right: 12, left: -18, bottom: 4 }}>
+              <AreaChart data={queuedScenarioPreview.points} margin={{ top: 8, right: 12, left: 24, bottom: 14 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                 <XAxis
                   dataKey="second"
                   stroke="var(--text-muted)"
                   fontSize={11}
+                  height={42}
                   tickLine={false}
                   tickFormatter={(value) => formatTimeCompact(Number(value))}
+                  label={{ value: 'Elapsed time', position: 'insideBottom', offset: -4, fill: 'var(--text-muted)', fontSize: 11 }}
                 />
                 <YAxis
                   stroke="var(--text-muted)"
                   fontSize={11}
+                  width={76}
                   tickLine={false}
                   allowDecimals={false}
+                  label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 11 }}
                 />
                 <Tooltip
-                  labelFormatter={(value) => `T+${formatTimeCompact(Number(value))}`}
-                  contentStyle={{ background: 'rgba(33, 36, 47, 0.92)', border: '1px solid var(--border)', borderRadius: 10 }}
+                  labelFormatter={(value) => formatTimeCompact(Number(value))}
+                  contentStyle={chartTooltipContentStyle}
+                  labelStyle={chartTooltipLabelStyle}
                   formatter={(value: number, name: string) => [value, name === 'total' ? 'Total' : name]}
                 />
                 <Legend verticalAlign="top" height={32} />
@@ -354,6 +485,22 @@ export default function TestExecutionScenarioPreview({
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Auto Transactions</span>
               <span className="scenario-setting-value">{test.runtime_settings?.auto_transactions || 'Script default'}</span>
+            </div>
+            <div className="scenario-setting-card">
+              <span className="scenario-setting-label">Pacing</span>
+              <span className="scenario-setting-value">{formatOverridePacing(test)}</span>
+            </div>
+            <div className="scenario-setting-card">
+              <span className="scenario-setting-label">Think Time</span>
+              <span className="scenario-setting-value">{formatOverrideThinkTime(test)}</span>
+            </div>
+            <div className="scenario-setting-card">
+              <span className="scenario-setting-label">Browser Runtime</span>
+              <span className="scenario-setting-value">{browserRuntimeSummary || 'Script default'}</span>
+            </div>
+            <div className="scenario-setting-card">
+              <span className="scenario-setting-label">Continue On Error</span>
+              <span className="scenario-setting-value">{formatContinueOnError(test)}</span>
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Snapshot On Error</span>
@@ -480,11 +627,11 @@ export default function TestExecutionScenarioPreview({
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Think Time</span>
-                            <span className="scenario-script-detail-value">{formatThinkTimeLabel(detail)}</span>
+                            <span className="scenario-script-detail-value">{formatEffectiveThinkTime(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Pacing</span>
-                            <span className="scenario-script-detail-value">{formatPacingLabel(detail)}</span>
+                            <span className="scenario-script-detail-value">{formatEffectivePacing(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Iterations</span>
@@ -492,15 +639,15 @@ export default function TestExecutionScenarioPreview({
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Auto Transactions</span>
-                            <span className="scenario-script-detail-value">{formatEffectiveAutoTransactions(detail, test)}</span>
+                            <span className="scenario-script-detail-value">{formatEffectiveAutoTransactions(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Log Level</span>
-                            <span className="scenario-script-detail-value">{formatEffectiveLogLevel(detail, test)}</span>
+                            <span className="scenario-script-detail-value">{formatEffectiveLogLevel(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Snapshot On Error</span>
-                            <span className="scenario-script-detail-value">{formatSnapshotOnError(detail, test)}</span>
+                            <span className="scenario-script-detail-value">{formatSnapshotOnError(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">HTTP Runtime</span>

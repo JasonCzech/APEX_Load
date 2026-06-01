@@ -11,16 +11,18 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/engine"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type scriptPersistence interface {
@@ -44,12 +46,32 @@ type scenarioPersistence interface {
 	GetScenario(id string) (*storage.Scenario, []storage.ScenarioScript, error)
 	ListScenarios() ([]*storage.Scenario, error)
 	DeleteScenario(id string) error
+	SaveScenarioSchedule(schedule *storage.ScenarioSchedule) error
+	GetScenarioSchedule(id string) (*storage.ScenarioSchedule, error)
+	ListScenarioSchedules(scenarioID string) ([]*storage.ScenarioSchedule, error)
+	ListAllScenarioSchedules() ([]*storage.ScenarioSchedule, error)
+	DeleteScenarioSchedule(id string) error
+	SaveScenarioScheduleOccurrence(occurrence *storage.ScenarioScheduleOccurrence) error
+	GetScenarioScheduleOccurrence(id string) (*storage.ScenarioScheduleOccurrence, error)
+	GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*storage.ScenarioScheduleOccurrence, error)
+	ListScenarioScheduleOccurrences(scheduleID string) ([]*storage.ScenarioScheduleOccurrence, error)
+	ListAllScenarioScheduleOccurrences() ([]*storage.ScenarioScheduleOccurrence, error)
+	SaveScenarioScheduleApproval(approval *storage.ScenarioScheduleApproval) error
+	GetScenarioScheduleApproval(id string) (*storage.ScenarioScheduleApproval, error)
+	ListScenarioScheduleApprovals(scheduleID string) ([]*storage.ScenarioScheduleApproval, error)
+	TryAcquireSchedulerLease(name string, ownerID string, now time.Time, ttl time.Duration) (bool, error)
+	GetSchedulerLease(name string) (*storage.SchedulerLease, error)
 	SaveScenarioDataPoolBindings(scenarioID string, bindings []storage.ScenarioDataPoolBinding) error
 	ListScenarioDataPoolBindings(scenarioID string) ([]storage.ScenarioDataPoolBinding, error)
+	SaveAuditEvent(event *storage.AuditEvent) error
 }
 
 type dataPoolPersistence interface {
 	ListDataPoolRows(poolID string) ([]*storage.SharedDataPoolRow, error)
+}
+
+type projectPersistence interface {
+	GetProject(id string) (*storage.Project, error)
 }
 
 type releasePersistence interface {
@@ -71,6 +93,10 @@ type settingsPersistence interface {
 	GetSetting(key string) (string, error)
 }
 
+type usageSnapshotPersistence interface {
+	SaveUsageAccountingSnapshot(snapshot *storage.UsageAccountingSnapshot) error
+}
+
 type TestRunner struct {
 	tests         map[string]*ManagedTest
 	scripts       map[string]*StoredScript
@@ -84,41 +110,60 @@ type TestRunner struct {
 	testStore     testPersistence
 	scenarioStore scenarioPersistence
 	dataPoolStore dataPoolPersistence
+	projectStore  projectPersistence
 	releaseStore  releasePersistence
 	historyStore  historyPersistence
 	archiveStore  archivePersistence
 	settingsStore settingsPersistence
+	usageStore    usageSnapshotPersistence
+	liveState     LiveStateStore
 	execution     testExecutionBackend
+	notifier      *notificationDispatcher
+	notifications atomic.Value
 }
 
 type ManagedTest struct {
-	ID               string                       `json:"id"`
-	Name             string                       `json:"name"`
-	Status           string                       `json:"status"`
-	ApplicationID    string                       `json:"application_id,omitempty"`
-	ReleaseID        string                       `json:"release_id,omitempty"`
-	ScenarioID       string                       `json:"scenario_id,omitempty"`
-	ProjectID        string                       `json:"project_id,omitempty"`
-	FolderID         *string                      `json:"folder_id,omitempty"`
-	Groups           []TestGroup                  `json:"groups"`
-	CapacityAdvisory *CapacityAdvisory            `json:"capacity_advisory,omitempty"`
-	Assignment       *GeneratorAssignmentSettings `json:"assignment,omitempty"`
-	ScenarioMode     string                       `json:"scenario_mode,omitempty"`
-	ScriptShakeout   bool                         `json:"script_shakeout,omitempty"`
-	ResourceBaseline bool                         `json:"resource_baseline,omitempty"`
-	StartDelay       string                       `json:"start_delay,omitempty"`
-	GoalConfig       *GoalConfig                  `json:"goal_config,omitempty"`
-	RuntimeSettings  *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
-	TotalVUsers      int                          `json:"total_vusers"`
-	Duration         time.Duration                `json:"duration_ns"`
-	DurationStr      string                       `json:"duration"`
-	CreatedAt        time.Time                    `json:"created_at"`
-	StartedAt        *time.Time                   `json:"started_at,omitempty"`
-	EndedAt          *time.Time                   `json:"ended_at,omitempty"`
-	LiveMetrics      *LiveMetrics                 `json:"live_metrics,omitempty"`
-	History          []*LiveMetrics               `json:"history,omitempty"`
-	Archive          *storage.RunArchiveRecord    `json:"archive,omitempty"`
-	Error            string                       `json:"error,omitempty"`
+	ID                    string                       `json:"id"`
+	Name                  string                       `json:"name"`
+	Status                string                       `json:"status"`
+	ApplicationID         string                       `json:"application_id,omitempty"`
+	ReleaseID             string                       `json:"release_id,omitempty"`
+	ScenarioID            string                       `json:"scenario_id,omitempty"`
+	ProjectID             string                       `json:"project_id,omitempty"`
+	FolderID              *string                      `json:"folder_id,omitempty"`
+	Groups                []TestGroup                  `json:"groups"`
+	CapacityAdvisory      *CapacityAdvisory            `json:"capacity_advisory,omitempty"`
+	RuntimeSettingsReview *RuntimeSettingsReview       `json:"runtime_settings_review,omitempty"`
+	Assignment            *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	ScenarioMode          string                       `json:"scenario_mode,omitempty"`
+	ScriptShakeout        bool                         `json:"script_shakeout,omitempty"`
+	ResourceBaseline      bool                         `json:"resource_baseline,omitempty"`
+	StartDelay            string                       `json:"start_delay,omitempty"`
+	GoalConfig            *GoalConfig                  `json:"goal_config,omitempty"`
+	RuntimeSettings       *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	TotalVUsers           int                          `json:"total_vusers"`
+	GeneratorShards       []GeneratorShardSummary      `json:"generator_shards,omitempty"`
+	Duration              time.Duration                `json:"duration_ns"`
+	DurationStr           string                       `json:"duration"`
+	CreatedAt             time.Time                    `json:"created_at"`
+	PendingSince          *time.Time                   `json:"pending_since,omitempty"`
+	PendingReason         string                       `json:"pending_reason,omitempty"`
+	QueuePosition         int                          `json:"queue_position,omitempty"`
+	BaselinePinned        bool                         `json:"baseline_pinned,omitempty"`
+	BaselinePinnedAt      *time.Time                   `json:"baseline_pinned_at,omitempty"`
+	StartedAt             *time.Time                   `json:"started_at,omitempty"`
+	EndedAt               *time.Time                   `json:"ended_at,omitempty"`
+	CreatedBySubject      string                       `json:"created_by_subject,omitempty"`
+	CreatedByDisplayName  string                       `json:"created_by_display_name,omitempty"`
+	StartedBySubject      string                       `json:"started_by_subject,omitempty"`
+	StartedByDisplayName  string                       `json:"started_by_display_name,omitempty"`
+	VUserRamps            map[string]VUserRampStatus   `json:"vuser_ramps,omitempty"`
+	LiveMetrics           *LiveMetrics                 `json:"live_metrics,omitempty"`
+	History               []*LiveMetrics               `json:"history,omitempty"`
+	ComparisonBaseline    *RunComparisonBaseline       `json:"comparison_baseline,omitempty"`
+	Archive               *storage.RunArchiveRecord    `json:"archive,omitempty"`
+	TelemetryHealth       *TelemetryRunHealth          `json:"telemetry_health,omitempty"`
+	Error                 string                       `json:"error,omitempty"`
 
 	// deprecated single-script fields kept for backwards compat in JSON
 	ScriptID   string `json:"script_id,omitempty"`
@@ -129,50 +174,169 @@ type ManagedTest struct {
 	groupSpecs                   []engine.GroupConfig
 	goalControl                  *goalControllerState
 	executionBackend             testExecutionBackend
+	lastNetworkLatency           *NetworkLatency
 	remoteTarget                 string
 	remoteClient                 generatorClient
 	remoteMetricsStream          *generatorrpc.MetricsStream
 	remoteGroupTargets           map[string]string
+	remoteGroupShards            map[string][]GeneratorShardSummary
 	remoteClientsByTarget        map[string]generatorClient
 	remoteMetricsStreamsByTarget map[string]*generatorrpc.MetricsStream
 	remoteMetricsBatchesByTarget map[string]generatorrpc.MetricsBatch
 	remoteTargetStates           map[string]string
 	remoteFinalizing             bool
 	telemetryDiagnostic          telemetryDiagnosticState
+	errorPatterns                map[string]*LiveErrorPattern
+	vuserScaleRamps              map[string]*vuserScaleRamp
+}
+
+type ScaleVUsersOptions struct {
+	RampDuration time.Duration
+}
+
+type vuserScaleRamp struct {
+	cancel context.CancelFunc
+	status VUserRampStatus
+}
+
+type VUserRampStatus struct {
+	Group               string    `json:"group"`
+	StartVUsers         int       `json:"start_vusers"`
+	TargetVUsers        int       `json:"target_vusers"`
+	StartedAt           time.Time `json:"started_at"`
+	RampDuration        string    `json:"ramp_duration"`
+	RampDurationSeconds int64     `json:"ramp_duration_seconds"`
 }
 
 type TestGroup struct {
-	Name           string `json:"name"`
-	ScriptID       string `json:"script_id"`
-	ScriptName     string `json:"script_name"`
-	Protocol       string `json:"protocol"`
-	VUsers         int    `json:"vusers"`
-	RampUp         string `json:"ramp_up,omitempty"`
-	RampDown       string `json:"ramp_down,omitempty"`
-	Iterations     *int   `json:"iterations,omitempty"`
-	Initialization string `json:"initialization,omitempty"`
-	rampUpDur      time.Duration
-	script         *dsl.Script
+	Name            string                       `json:"name"`
+	ScriptID        string                       `json:"script_id"`
+	ScriptName      string                       `json:"script_name"`
+	Protocol        string                       `json:"protocol"`
+	VUsers          int                          `json:"vusers"`
+	RampUp          string                       `json:"ramp_up,omitempty"`
+	RampDown        string                       `json:"ramp_down,omitempty"`
+	Stages          []storage.LoadStage          `json:"stages,omitempty"`
+	Iterations      *int                         `json:"iterations,omitempty"`
+	RuntimeSettings *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	Assignment      *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	RunLogicGoals   *RunLogicGoalSnapshot        `json:"run_logic_goals,omitempty"`
+	Initialization  string                       `json:"initialization,omitempty"`
+	rampUpDur       time.Duration
+	script          *dsl.Script
+}
+
+type GeneratorShardSummary struct {
+	Group         string `json:"group"`
+	Target        string `json:"target"`
+	VUsers        int    `json:"vusers"`
+	ShardStrategy string `json:"shard_strategy,omitempty"`
+}
+
+type RunLogicGoalSnapshot struct {
+	GlobalIterations int   `json:"global_iterations,omitempty"`
+	MaxTransactions  int64 `json:"max_transactions,omitempty"`
 }
 
 type LiveMetrics struct {
-	Timestamp     time.Time                    `json:"timestamp"`
-	ActiveVUsers  int64                        `json:"active_vusers"`
-	TPS           float64                      `json:"tps"`
-	AvgResponseMs float64                      `json:"avg_response_ms"`
-	ErrorPct      float64                      `json:"error_pct"`
-	TotalTx       int64                        `json:"total_transactions"`
-	TotalErrors   int64                        `json:"total_errors"`
-	P50Ms         float64                      `json:"p50_ms"`
-	P90Ms         float64                      `json:"p90_ms"`
-	P95Ms         float64                      `json:"p95_ms"`
-	P99Ms         float64                      `json:"p99_ms"`
-	Transactions  map[string]*TxMetrics        `json:"transactions,omitempty"`
-	GroupMetrics  map[string]*GroupLiveMetrics `json:"groups,omitempty"`
-	GoalStatus    *GoalStatus                  `json:"goal_status,omitempty"`
-	Telemetry     *TelemetryHealth             `json:"telemetry,omitempty"`
-	Resources     *engine.SystemResources      `json:"resources,omitempty"`
-	Latency       *NetworkLatency              `json:"latency,omitempty"`
+	Timestamp              time.Time                            `json:"timestamp"`
+	ActiveVUsers           int64                                `json:"active_vusers"`
+	TPS                    float64                              `json:"tps"`
+	TargetTPS              float64                              `json:"target_tps,omitempty"`
+	ThroughputGapPct       float64                              `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed bool                                 `json:"throughput_target_missed,omitempty"`
+	AvgResponseMs          float64                              `json:"avg_response_ms"`
+	ErrorPct               float64                              `json:"error_pct"`
+	TotalTx                int64                                `json:"total_transactions"`
+	TotalErrors            int64                                `json:"total_errors"`
+	P50Ms                  float64                              `json:"p50_ms"`
+	P90Ms                  float64                              `json:"p90_ms"`
+	P95Ms                  float64                              `json:"p95_ms"`
+	P99Ms                  float64                              `json:"p99_ms"`
+	Transactions           map[string]*TxMetrics                `json:"transactions,omitempty"`
+	DependencyHealth       map[string]*TxMetrics                `json:"dependency_health,omitempty"`
+	DependencyMap          *LiveDependencyMap                   `json:"dependency_map,omitempty"`
+	ErrorPatterns          []LiveErrorPattern                   `json:"error_patterns,omitempty"`
+	SOAPOperations         map[string]*TxMetrics                `json:"soap_operations,omitempty"`
+	NetworkProfiles        map[string]*TxMetrics                `json:"network_profiles,omitempty"`
+	GroupMetrics           map[string]*GroupLiveMetrics         `json:"groups,omitempty"`
+	Browser                *BrowserLiveMetrics                  `json:"browser,omitempty"`
+	BrowserByDevice        map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
+	GoalStatus             *GoalStatus                          `json:"goal_status,omitempty"`
+	CapacityStatus         *LiveCapacityStatus                  `json:"capacity_status,omitempty"`
+	TelemetryStatus        *TelemetryRunHealth                  `json:"telemetry_status,omitempty"`
+	Telemetry              *TelemetryHealth                     `json:"telemetry,omitempty"`
+	Resources              *engine.SystemResources              `json:"resources,omitempty"`
+	Latency                *NetworkLatency                      `json:"latency,omitempty"`
+}
+
+type LiveCapacityStatus struct {
+	AllocatedVUsers       int                               `json:"allocated_vusers"`
+	AvailableGenerators   int                               `json:"available_generators"`
+	RecommendedGenerators int                               `json:"recommended_generators"`
+	Saturated             bool                              `json:"saturated"`
+	QueuedVUsers          int                               `json:"queued_vusers"`
+	RejectedVUsers        int                               `json:"rejected_vusers"`
+	ByProtocol            map[string]*LiveCapacityBreakdown `json:"by_protocol,omitempty"`
+	ByRegion              map[string]*LiveCapacityBreakdown `json:"by_region,omitempty"`
+}
+
+type LiveCapacityBreakdown struct {
+	AllocatedVUsers int `json:"allocated_vusers,omitempty"`
+	QueuedVUsers    int `json:"queued_vusers,omitempty"`
+	RejectedVUsers  int `json:"rejected_vusers,omitempty"`
+}
+
+type BrowserLiveMetrics struct {
+	Samples              int64   `json:"samples"`
+	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
+	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
+	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
+	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
+	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
+	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+	AvgBrowserProcessCPU float64 `json:"avg_browser_process_cpu_pct,omitempty"`
+	AvgBrowserProcessMem float64 `json:"avg_browser_process_mem_mb,omitempty"`
+}
+
+type BrowserDeviceLiveMetrics struct {
+	DeviceProfile        string  `json:"device_profile,omitempty"`
+	DevicePlatform       string  `json:"device_platform,omitempty"`
+	DeviceTier           string  `json:"device_tier,omitempty"`
+	BrowserEngine        string  `json:"browser_engine,omitempty"`
+	Samples              int64   `json:"samples"`
+	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
+	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
+	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
+	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
+	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
+	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+	AvgBrowserProcessCPU float64 `json:"avg_browser_process_cpu_pct,omitempty"`
+	AvgBrowserProcessMem float64 `json:"avg_browser_process_mem_mb,omitempty"`
+}
+
+type ServerTelemetrySummary struct {
+	Samples                   int64            `json:"samples"`
+	AvgServerProcessingMs     float64          `json:"avg_server_processing_ms,omitempty"`
+	AvgTransferMs             float64          `json:"avg_transfer_ms,omitempty"`
+	AvgRequestPayloadKB       float64          `json:"avg_request_payload_kb,omitempty"`
+	AvgResponsePayloadKB      float64          `json:"avg_response_payload_kb,omitempty"`
+	RequestPayloadHistogram   map[string]int64 `json:"request_payload_histogram,omitempty"`
+	ResponsePayloadHistogram  map[string]int64 `json:"response_payload_histogram,omitempty"`
+	AvgMessageLatencyMs       float64          `json:"avg_message_latency_ms,omitempty"`
+	MaxMessageLatencyMs       float64          `json:"max_message_latency_ms,omitempty"`
+	MessagesSent              int64            `json:"messages_sent,omitempty"`
+	MessagesReceived          int64            `json:"messages_received,omitempty"`
+	AvgMessagesSentPerSec     float64          `json:"avg_messages_sent_per_sec,omitempty"`
+	AvgMessagesReceivedPerSec float64          `json:"avg_messages_received_per_sec,omitempty"`
+	AvgConsumerLagMs          float64          `json:"avg_consumer_lag_ms,omitempty"`
+	MaxConsumerLagMs          float64          `json:"max_consumer_lag_ms,omitempty"`
+	RequestSizeClasses        map[string]int64 `json:"request_size_classes,omitempty"`
+	ResponseSizeClasses       map[string]int64 `json:"response_size_classes,omitempty"`
+	ConnectionReusedCount     int64            `json:"connection_reused_count,omitempty"`
+	ConnectionReusedPct       float64          `json:"connection_reused_pct,omitempty"`
 }
 
 type TelemetryHealth struct {
@@ -188,7 +352,22 @@ type TelemetryHealth struct {
 	GeneratorProcessingLagMs float64   `json:"generator_processing_lag_ms,omitempty"`
 	TransportLagMs           float64   `json:"transport_lag_ms,omitempty"`
 	ControllerFanoutLagMs    float64   `json:"controller_fanout_lag_ms,omitempty"`
+	BrowserRenderLagMs       float64   `json:"browser_render_lag_ms,omitempty"`
 	SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
+}
+
+type TelemetryRunHealth struct {
+	Status            string     `json:"status"`
+	Severity          string     `json:"severity"`
+	Summary           string     `json:"summary,omitempty"`
+	CurrentSignature  string     `json:"current_signature,omitempty"`
+	Conditions        []string   `json:"conditions,omitempty"`
+	BreachActive      bool       `json:"breach_active,omitempty"`
+	SustainedBreach   bool       `json:"sustained_breach,omitempty"`
+	BreachDurationSec int        `json:"breach_duration_sec,omitempty"`
+	BreachStartedAt   *time.Time `json:"breach_started_at,omitempty"`
+	LastObservedAt    time.Time  `json:"last_observed_at"`
+	LastTransitionAt  time.Time  `json:"last_transition_at,omitempty"`
 }
 
 type NetworkLatency struct {
@@ -206,24 +385,35 @@ type LatencyTarget struct {
 }
 
 type GoalStatus struct {
-	Mode                 string     `json:"mode"`
-	CurrentTPS           float64    `json:"current_tps"`
-	CurrentTotalVUsers   int        `json:"current_total_vusers"`
-	TargetAverageTPS     *float64   `json:"target_average_tps,omitempty"`
-	MaxErrorCount        *int       `json:"max_error_count,omitempty"`
-	MinVUsers            *int       `json:"min_vusers,omitempty"`
-	MaxVUsers            *int       `json:"max_vusers,omitempty"`
-	SuggestedTotalVUsers int        `json:"suggested_total_vusers,omitempty"`
-	LastScaleDirection   string     `json:"last_scale_direction,omitempty"`
-	LastScaleReason      string     `json:"last_scale_reason,omitempty"`
-	LastScaleAt          *time.Time `json:"last_scale_at,omitempty"`
-	LatencyBreached      bool       `json:"latency_breached,omitempty"`
-	ErrorBreached        bool       `json:"error_breached,omitempty"`
-	ErrorCountBreached   bool       `json:"error_count_breached,omitempty"`
-	BreachActive         bool       `json:"breach_active,omitempty"`
-	BreachDurationSec    int        `json:"breach_duration_sec,omitempty"`
-	StopTriggered        bool       `json:"stop_triggered,omitempty"`
-	StopReason           string     `json:"stop_reason,omitempty"`
+	Mode                     string     `json:"mode"`
+	CurrentTPS               float64    `json:"current_tps"`
+	CurrentTotalVUsers       int        `json:"current_total_vusers"`
+	TargetAverageTPS         *float64   `json:"target_average_tps,omitempty"`
+	MaxErrorCount            *int       `json:"max_error_count,omitempty"`
+	MinVUsers                *int       `json:"min_vusers,omitempty"`
+	MaxVUsers                *int       `json:"max_vusers,omitempty"`
+	SuggestedTotalVUsers     int        `json:"suggested_total_vusers,omitempty"`
+	LastScaleDirection       string     `json:"last_scale_direction,omitempty"`
+	LastScaleReason          string     `json:"last_scale_reason,omitempty"`
+	LastScaleAt              *time.Time `json:"last_scale_at,omitempty"`
+	LatencyBreached          bool       `json:"latency_breached,omitempty"`
+	ErrorBreached            bool       `json:"error_breached,omitempty"`
+	ServerProcessingBreached bool       `json:"server_processing_breached,omitempty"`
+	TransferBreached         bool       `json:"transfer_breached,omitempty"`
+	ErrorCountBreached       bool       `json:"error_count_breached,omitempty"`
+	BreachActive             bool       `json:"breach_active,omitempty"`
+	BreachDurationSec        int        `json:"breach_duration_sec,omitempty"`
+	StopTriggered            bool       `json:"stop_triggered,omitempty"`
+	StopReason               string     `json:"stop_reason,omitempty"`
+}
+
+type RunComparisonBaseline struct {
+	SourceTestID     string                `json:"source_test_id"`
+	SourceTestName   string                `json:"source_test_name"`
+	Policy           string                `json:"policy,omitempty"`
+	CompletedAt      time.Time             `json:"completed_at,omitempty"`
+	Transactions     map[string]*TxMetrics `json:"transactions,omitempty"`
+	DependencyHealth map[string]*TxMetrics `json:"dependency_health,omitempty"`
 }
 
 type TelemetryDiagnostic struct {
@@ -235,16 +425,20 @@ type TelemetryDiagnostic struct {
 }
 
 type DiagnosticSample struct {
-	Issue            string   `json:"issue"`
-	Transaction      string   `json:"transaction"`
-	DependencyType   string   `json:"dependency_type,omitempty"`
-	DependencyTarget string   `json:"dependency_target,omitempty"`
-	CorrelationIDs   []string `json:"correlation_ids,omitempty"`
-	Count            int64    `json:"count,omitempty"`
-	Errors           int64    `json:"errors,omitempty"`
-	ErrorPct         float64  `json:"error_pct,omitempty"`
-	AvgMs            float64  `json:"avg_ms,omitempty"`
-	P99Ms            float64  `json:"p99_ms,omitempty"`
+	Issue                     string   `json:"issue"`
+	Transaction               string   `json:"transaction"`
+	DependencyType            string   `json:"dependency_type,omitempty"`
+	DependencyTarget          string   `json:"dependency_target,omitempty"`
+	CorrelationIDs            []string `json:"correlation_ids,omitempty"`
+	Count                     int64    `json:"count,omitempty"`
+	Errors                    int64    `json:"errors,omitempty"`
+	ErrorPct                  float64  `json:"error_pct,omitempty"`
+	AvgMs                     float64  `json:"avg_ms,omitempty"`
+	P99Ms                     float64  `json:"p99_ms,omitempty"`
+	AvgMessageLatencyMs       float64  `json:"avg_message_latency_ms,omitempty"`
+	AvgConsumerLagMs          float64  `json:"avg_consumer_lag_ms,omitempty"`
+	AvgMessagesSentPerSec     float64  `json:"avg_messages_sent_per_sec,omitempty"`
+	AvgMessagesReceivedPerSec float64  `json:"avg_messages_received_per_sec,omitempty"`
 }
 
 type goalControllerState struct {
@@ -257,6 +451,8 @@ type goalControllerState struct {
 type telemetryDiagnosticState struct {
 	LastSignature   string
 	LastPublishedAt time.Time
+	Health          *TelemetryRunHealth
+	BreachStartedAt *time.Time
 }
 
 type goalControllerUpdate struct {
@@ -270,49 +466,103 @@ type goalControllerUpdate struct {
 }
 
 type TxMetrics struct {
-	Name             string   `json:"name"`
-	DependencyType   string   `json:"dependency_type,omitempty"`
-	DependencyTarget string   `json:"dependency_target,omitempty"`
-	CorrelationIDs   []string `json:"correlation_ids,omitempty"`
-	CorrelationCount int64    `json:"correlation_count,omitempty"`
-	Count            int64    `json:"count"`
-	Errors           int64    `json:"errors"`
-	AvgMs            float64  `json:"avg_ms"`
-	P50Ms            float64  `json:"p50_ms"`
-	P90Ms            float64  `json:"p90_ms"`
-	P99Ms            float64  `json:"p99_ms"`
+	Name             string                  `json:"name"`
+	DependencyType   string                  `json:"dependency_type,omitempty"`
+	DependencyTarget string                  `json:"dependency_target,omitempty"`
+	LastErrorMessage string                  `json:"last_error_message,omitempty"`
+	LastStatusCode   int                     `json:"last_status_code,omitempty"`
+	LastErrorAt      time.Time               `json:"last_error_at,omitempty"`
+	ServerTelemetry  *ServerTelemetrySummary `json:"server_telemetry,omitempty"`
+	AvgDNSMs         float64                 `json:"avg_dns_ms,omitempty"`
+	AvgConnectMs     float64                 `json:"avg_connect_ms,omitempty"`
+	AvgTLSMs         float64                 `json:"avg_tls_ms,omitempty"`
+	AvgTTFBMs        float64                 `json:"avg_ttfb_ms,omitempty"`
+	CorrelationIDs   []string                `json:"correlation_ids,omitempty"`
+	CorrelationCount int64                   `json:"correlation_count,omitempty"`
+	Count            int64                   `json:"count"`
+	Errors           int64                   `json:"errors"`
+	AvgMs            float64                 `json:"avg_ms"`
+	P50Ms            float64                 `json:"p50_ms"`
+	P90Ms            float64                 `json:"p90_ms"`
+	P95Ms            float64                 `json:"p95_ms,omitempty"`
+	P99Ms            float64                 `json:"p99_ms"`
+}
+
+type LiveErrorPattern struct {
+	Signature      string    `json:"signature"`
+	Sample         string    `json:"sample"`
+	Count          int64     `json:"count"`
+	FirstSeen      time.Time `json:"first_seen"`
+	LatestSeen     time.Time `json:"latest_seen"`
+	Actions        []string  `json:"actions,omitempty"`
+	AffectedGroups []string  `json:"affected_groups,omitempty"`
+	StatusCode     int       `json:"status_code,omitempty"`
+	ErrorPct       float64   `json:"error_pct,omitempty"`
+	SnapshotURL    string    `json:"snapshot_url,omitempty"`
+}
+
+type LiveDependencyMap struct {
+	Nodes []LiveDependencyNode `json:"nodes"`
+	Edges []LiveDependencyEdge `json:"edges"`
+}
+
+type LiveDependencyNode struct {
+	ID             string  `json:"id"`
+	Label          string  `json:"label"`
+	Kind           string  `json:"kind"`
+	DependencyType string  `json:"dependency_type,omitempty"`
+	Status         string  `json:"status,omitempty"`
+	Transactions   int64   `json:"transactions,omitempty"`
+	Errors         int64   `json:"errors,omitempty"`
+	ErrorPct       float64 `json:"error_pct,omitempty"`
+	P95Ms          float64 `json:"p95_ms,omitempty"`
+}
+
+type LiveDependencyEdge struct {
+	Source         string  `json:"source"`
+	Target         string  `json:"target"`
+	DependencyType string  `json:"dependency_type,omitempty"`
+	Transactions   int64   `json:"transactions,omitempty"`
+	Errors         int64   `json:"errors,omitempty"`
+	ErrorPct       float64 `json:"error_pct,omitempty"`
+	P95Ms          float64 `json:"p95_ms,omitempty"`
 }
 
 type GroupLiveMetrics struct {
-	Name          string  `json:"name"`
-	VUsers        int     `json:"vusers"`
-	Transactions  int64   `json:"transactions"`
-	Errors        int64   `json:"errors"`
-	TPS           float64 `json:"tps"`
-	AvgResponseMs float64 `json:"avg_response_ms"`
-	P50Ms         float64 `json:"p50_ms"`
-	P90Ms         float64 `json:"p90_ms"`
-	P99Ms         float64 `json:"p99_ms"`
+	Name                   string  `json:"name"`
+	VUsers                 int     `json:"vusers"`
+	Transactions           int64   `json:"transactions"`
+	Errors                 int64   `json:"errors"`
+	TPS                    float64 `json:"tps"`
+	TargetTPS              float64 `json:"target_tps,omitempty"`
+	ThroughputGapPct       float64 `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed bool    `json:"throughput_target_missed,omitempty"`
+	AvgResponseMs          float64 `json:"avg_response_ms"`
+	P50Ms                  float64 `json:"p50_ms"`
+	P90Ms                  float64 `json:"p90_ms"`
+	P99Ms                  float64 `json:"p99_ms"`
 }
 
 type StoredScript struct {
-	ID                  string       `json:"id"`
-	Name                string       `json:"name"`
-	Protocol            string       `json:"protocol"`
-	Version             string       `json:"version"`
-	ProjectID           string       `json:"project_id,omitempty"`
-	FolderID            *string      `json:"folder_id,omitempty"`
-	CreatedAt           time.Time    `json:"created_at"`
-	ScenarioCount       int          `json:"scenario_count,omitempty"`
-	AssociatedReleases  []ReleaseRef `json:"associated_releases,omitempty"`
-	ScenarioRunReleases []ReleaseRef `json:"scenario_run_releases,omitempty"`
-	LastRunAt           *time.Time   `json:"last_run_at,omitempty"`
-	Script              *dsl.Script  `json:"script"`
+	ID                  string           `json:"id"`
+	Name                string           `json:"name"`
+	Protocol            string           `json:"protocol"`
+	Version             string           `json:"version"`
+	ProjectID           string           `json:"project_id,omitempty"`
+	FolderID            *string          `json:"folder_id,omitempty"`
+	CreatedAt           time.Time        `json:"created_at"`
+	ScenarioCount       int              `json:"scenario_count,omitempty"`
+	AssociatedReleases  []ReleaseRef     `json:"associated_releases,omitempty"`
+	ScenarioRunReleases []ReleaseRef     `json:"scenario_run_releases,omitempty"`
+	LastRunAt           *time.Time       `json:"last_run_at,omitempty"`
+	AuthoringHealth     *AuthoringHealth `json:"authoring_health,omitempty"`
+	Script              *dsl.Script      `json:"script"`
 }
 
 type StoredScenario struct {
 	ID                 string                            `json:"id"`
 	Name               string                            `json:"name"`
+	ProjectID          string                            `json:"project_id,omitempty"`
 	Duration           string                            `json:"duration"`
 	StartDelay         string                            `json:"start_delay,omitempty"`
 	ScenarioMode       string                            `json:"scenario_mode,omitempty"`
@@ -322,6 +572,7 @@ type StoredScenario struct {
 	GoalConfig         *GoalConfig                       `json:"goal_config,omitempty"`
 	RuntimeSettings    *RuntimeSettingsOverride          `json:"runtime_settings,omitempty"`
 	Scripts            []ScenarioScriptRef               `json:"scripts"`
+	Schedules          []*storage.ScenarioSchedule       `json:"schedules,omitempty"`
 	DataPools          []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
 	CreatedAt          time.Time                         `json:"created_at"`
 	UpdatedAt          time.Time                         `json:"updated_at"`
@@ -332,30 +583,41 @@ type StoredScenario struct {
 }
 
 type ScenarioScriptRef struct {
-	Order          int    `json:"order"`
-	Name           string `json:"name,omitempty"`
-	ScriptID       string `json:"script_id"`
-	ScriptName     string `json:"script_name,omitempty"`
-	Protocol       string `json:"protocol,omitempty"`
-	VUsers         int    `json:"vusers"`
-	RampUp         string `json:"ramp_up,omitempty"`
-	RampDown       string `json:"ramp_down,omitempty"`
-	Iterations     *int   `json:"iterations,omitempty"`
-	Initialization string `json:"initialization,omitempty"`
+	Order          int                 `json:"order"`
+	Name           string              `json:"name,omitempty"`
+	ScriptID       string              `json:"script_id"`
+	ScriptName     string              `json:"script_name,omitempty"`
+	Protocol       string              `json:"protocol,omitempty"`
+	VUsers         int                 `json:"vusers"`
+	RampUp         string              `json:"ramp_up,omitempty"`
+	RampDown       string              `json:"ramp_down,omitempty"`
+	Stages         []storage.LoadStage `json:"stages,omitempty"`
+	Iterations     *int                `json:"iterations,omitempty"`
+	Initialization string              `json:"initialization,omitempty"`
 }
 
 const (
-	generatorAssignmentModeAuto          = "auto"
-	generatorAssignmentModeSpecificHosts = "specific_hosts"
-	maxManagedTestHistory                = 3600
-	telemetryDiagnosticSampleInterval    = 5 * time.Second
-	maxTelemetryDiagnosticSamples        = 3
-	slowTransactionDiagnosticThresholdMs = 1000.0
+	generatorAssignmentModeAuto            = "auto"
+	generatorAssignmentModeSpecificHosts   = "specific_hosts"
+	generatorAssignmentModeRegionWeighted  = "region_weighted"
+	generatorShardStrategyCapacityWeighted = "capacity_weighted"
+	maxManagedTestHistory                  = 3600
+	telemetryDiagnosticSampleInterval      = 5 * time.Second
+	telemetrySustainedBreachWindow         = 15 * time.Second
+	maxTelemetryDiagnosticSamples          = 3
+	slowTransactionDiagnosticThresholdMs   = 1000.0
+	jmsBrokerPressureMinLagMs              = 200.0
+	jmsBrokerPressureLagMultiplier         = 2.0
+	jmsBrokerPressureSendRecvRatio         = 1.5
 )
 
+var runtimeOverrideEnvPattern = regexp.MustCompile(`\{\{\s*env\.([^{}\s]+)\s*\}\}`)
+
 type GeneratorAssignmentSettings struct {
-	Mode            string   `json:"mode,omitempty"`
-	SelectedTargets []string `json:"selected_targets,omitempty"`
+	Mode            string         `json:"mode,omitempty"`
+	SelectedTargets []string       `json:"selected_targets,omitempty"`
+	RegionWeights   map[string]int `json:"region_weights,omitempty"`
+	ShardStrategy   string         `json:"shard_strategy,omitempty"`
 }
 
 type ScenarioFootprint struct {
@@ -370,6 +632,7 @@ type ScenarioFootprint struct {
 type AssignmentRecommendation struct {
 	Mode               string   `json:"mode"`
 	AvailableTargets   []string `json:"available_targets,omitempty"`
+	AvailableRegions   []string `json:"available_regions,omitempty"`
 	RecommendedTargets []string `json:"recommended_targets,omitempty"`
 	Summary            string   `json:"summary,omitempty"`
 	Warnings           []string `json:"warnings,omitempty"`
@@ -385,12 +648,13 @@ type archiveRecorder interface {
 	engine.ResultSink
 	RecordResourceSample(timestamp time.Time, activeVUsers int64, resources *engine.SystemResources) error
 	RecordIntervalSummary(live *LiveMetrics) error
-	Finalize(status string, completedAt time.Time, errStr string) (*storage.RunArchiveRecord, error)
+	Finalize(status string, completedAt time.Time, errStr string, slaBreached bool, slaDetails []string) (*storage.RunArchiveRecord, error)
 }
 
 type runArtifacts struct {
-	recorder   archiveRecorder
-	saveRecord func(record *storage.RunArchiveRecord) error
+	recorder        archiveRecorder
+	saveRecord      func(record *storage.RunArchiveRecord) error
+	externalMetrics *externalMetricCollector
 }
 
 func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
@@ -405,16 +669,20 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 		testStore:     store,
 		scenarioStore: store,
 		dataPoolStore: store,
+		projectStore:  store,
 		releaseStore:  store,
 		historyStore:  store,
 		archiveStore:  store,
 		settingsStore: store,
+		usageStore:    store,
 		execution:     localExecutionBackend{},
+		notifier:      newNotificationDispatcher(nil),
 	}
 	tr.loadSystemSettings(maxTests)
 	tr.loadStoredScripts()
 	tr.loadStoredScenarios()
 	tr.loadStoredTests()
+	tr.ReconcilePendingTests()
 
 	return tr
 }
@@ -426,6 +694,12 @@ func (tr *TestRunner) setExecutionBackend(backend testExecutionBackend) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	tr.execution = backend
+}
+
+func (tr *TestRunner) setLiveStateStore(store LiveStateStore) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.liveState = store
 }
 
 func (tr *TestRunner) getExecutionBackend() testExecutionBackend {
@@ -444,14 +718,15 @@ func (tr *TestRunner) loadStoredScripts() {
 	}
 	for _, script := range scripts {
 		tr.scripts[script.ID] = &StoredScript{
-			ID:        script.ID,
-			Name:      script.Name,
-			Protocol:  script.Protocol,
-			Version:   script.Version,
-			ProjectID: script.ProjectID,
-			FolderID:  script.FolderID,
-			CreatedAt: script.CreatedAt,
-			Script:    script,
+			ID:              script.ID,
+			Name:            script.Name,
+			Protocol:        script.Protocol,
+			Version:         script.Version,
+			ProjectID:       script.ProjectID,
+			FolderID:        script.FolderID,
+			CreatedAt:       script.CreatedAt,
+			AuthoringHealth: buildStoredScriptAuthoringHealth(script),
+			Script:          script,
 		}
 	}
 }
@@ -478,6 +753,7 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 		return nil
 	}
 	refs := make([]ScenarioScriptRef, 0, len(scripts))
+	projectID, singleProject := tr.scenarioProjectIDFromScriptsLocked(scripts)
 	for _, script := range scripts {
 		ref := ScenarioScriptRef{
 			Order:          script.Order,
@@ -486,6 +762,7 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 			VUsers:         script.VUsers,
 			RampUp:         script.RampUp,
 			RampDown:       script.RampDown,
+			Stages:         cloneLoadStages(script.Stages),
 			Iterations:     script.Iterations,
 			Initialization: script.Initialization,
 		}
@@ -504,9 +781,22 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 			dataPools = bindings
 		}
 	}
+	schedules := []*storage.ScenarioSchedule{}
+	if tr.scenarioStore != nil {
+		if storedSchedules, err := tr.scenarioStore.ListScenarioSchedules(scenario.ID); err == nil {
+			for _, schedule := range storedSchedules {
+				schedules = append(schedules, cloneScenarioSchedule(schedule))
+			}
+		}
+	}
+	derivedProjectID := ""
+	if singleProject {
+		derivedProjectID = projectID
+	}
 	return &StoredScenario{
 		ID:               scenario.ID,
 		Name:             scenario.Name,
+		ProjectID:        derivedProjectID,
 		Duration:         scenario.Duration,
 		StartDelay:       scenario.StartDelay,
 		ScenarioMode:     normalizeScenarioMode(scenario.ScenarioMode),
@@ -516,11 +806,34 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 		GoalConfig:       decodeStoredGoalConfig(scenario.GoalConfig),
 		RuntimeSettings:  decodeStoredRuntimeSettings(scenario.RuntimeSettings),
 		Scripts:          refs,
+		Schedules:        schedules,
 		DataPools:        dataPools,
 		CreatedAt:        scenario.CreatedAt,
 		UpdatedAt:        scenario.UpdatedAt,
 		ScriptCount:      len(refs),
 	}
+}
+
+func (tr *TestRunner) scenarioProjectIDFromScriptsLocked(scripts []storage.ScenarioScript) (string, bool) {
+	projectID := ""
+	for _, scenarioScript := range scripts {
+		stored, ok := tr.scripts[scenarioScript.ScriptID]
+		if !ok || stored == nil {
+			continue
+		}
+		candidate := normalizeProjectID(stored.ProjectID)
+		if projectID == "" {
+			projectID = candidate
+			continue
+		}
+		if candidate != projectID {
+			return "", false
+		}
+	}
+	if projectID == "" {
+		return "", false
+	}
+	return projectID, true
 }
 
 func (tr *TestRunner) loadStoredTests() {
@@ -541,27 +854,34 @@ func (tr *TestRunner) loadStoredTests() {
 
 func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 	managedTest := &ManagedTest{
-		ID:               record.ID,
-		Name:             record.Name,
-		Status:           record.Status,
-		ApplicationID:    record.ApplicationID,
-		ReleaseID:        record.ReleaseID,
-		ScenarioID:       record.ScenarioID,
-		ProjectID:        record.ProjectID,
-		FolderID:         record.FolderID,
-		Groups:           decodeStoredGroups(record.Groups),
-		Assignment:       decodeStoredGeneratorAssignment(record.Assignment),
-		ScenarioMode:     normalizeScenarioMode(record.ScenarioMode),
-		ScriptShakeout:   record.ScriptShakeout,
-		ResourceBaseline: record.ResourceBaseline,
-		StartDelay:       record.StartDelay,
-		GoalConfig:       decodeStoredGoalConfig(record.GoalConfig),
-		RuntimeSettings:  decodeStoredRuntimeSettings(record.RuntimeSettings),
-		TotalVUsers:      record.TotalVUsers,
-		Duration:         time.Duration(record.Duration),
-		DurationStr:      time.Duration(record.Duration).String(),
-		CreatedAt:        record.StartTime,
-		Error:            record.Error,
+		ID:                   record.ID,
+		Name:                 record.Name,
+		Status:               record.Status,
+		ApplicationID:        record.ApplicationID,
+		ReleaseID:            record.ReleaseID,
+		ScenarioID:           record.ScenarioID,
+		ProjectID:            record.ProjectID,
+		FolderID:             record.FolderID,
+		Groups:               decodeStoredGroups(record.Groups),
+		Assignment:           decodeStoredGeneratorAssignment(record.Assignment),
+		ScenarioMode:         normalizeScenarioMode(record.ScenarioMode),
+		ScriptShakeout:       record.ScriptShakeout,
+		ResourceBaseline:     record.ResourceBaseline,
+		StartDelay:           record.StartDelay,
+		GoalConfig:           decodeStoredGoalConfig(record.GoalConfig),
+		RuntimeSettings:      decodeStoredRuntimeSettings(record.RuntimeSettings),
+		TotalVUsers:          record.TotalVUsers,
+		Duration:             time.Duration(record.Duration),
+		DurationStr:          time.Duration(record.Duration).String(),
+		CreatedAt:            record.StartTime,
+		PendingSince:         record.PendingSince,
+		BaselinePinned:       record.BaselinePinned,
+		BaselinePinnedAt:     record.BaselinePinnedAt,
+		CreatedBySubject:     record.CreatedBySubject,
+		CreatedByDisplayName: record.CreatedByDisplayName,
+		StartedBySubject:     record.StartedBySubject,
+		StartedByDisplayName: record.StartedByDisplayName,
+		Error:                record.Error,
 	}
 	if record.EndTime != nil {
 		managedTest.EndedAt = record.EndTime
@@ -607,6 +927,9 @@ func (tr *TestRunner) loadStoredTestArchive(test *ManagedTest) {
 	if err != nil {
 		return
 	}
+	if !runArchiveRecordAvailable(archive) {
+		return
+	}
 	test.Archive = archive
 	tr.archives[test.ID] = archive
 }
@@ -627,17 +950,20 @@ func mapToLiveMetrics(m map[string]any) *LiveMetrics {
 
 func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *LiveMetrics {
 	live := &LiveMetrics{
-		Timestamp:     record.Timestamp,
-		ActiveVUsers:  record.ActiveVUsers,
-		TPS:           record.TPS,
-		AvgResponseMs: record.AvgResponseMs,
-		ErrorPct:      record.ErrorPct,
-		TotalTx:       record.TotalTx,
-		TotalErrors:   record.TotalErrors,
-		P50Ms:         record.P50Ms,
-		P90Ms:         record.P90Ms,
-		P95Ms:         record.P95Ms,
-		P99Ms:         record.P99Ms,
+		Timestamp:       record.Timestamp,
+		ActiveVUsers:    record.ActiveVUsers,
+		TPS:             record.TPS,
+		AvgResponseMs:   record.AvgResponseMs,
+		ErrorPct:        record.ErrorPct,
+		TotalTx:         record.TotalTx,
+		TotalErrors:     record.TotalErrors,
+		P50Ms:           record.P50Ms,
+		P90Ms:           record.P90Ms,
+		P95Ms:           record.P95Ms,
+		P99Ms:           record.P99Ms,
+		Browser:         browserSummaryRecordToLiveMetrics(record.Browser),
+		BrowserByDevice: browserDeviceSummaryRecordToLiveMetrics(record.BrowserByDevice),
+		Latency:         networkLatencyRecordToLiveMetrics(record.Latency),
 	}
 	if record.DroppedResults > 0 || record.WebsocketClients > 0 || record.WebsocketDroppedMessages > 0 || record.WebsocketDroppedEvents > 0 || !record.CollectedAt.IsZero() || !record.GeneratorPublishedAt.IsZero() || !record.ControllerReceivedAt.IsZero() || !record.PublishedAt.IsZero() || record.SampleAgeMs > 0 || record.GeneratorProcessingLagMs > 0 || record.TransportLagMs > 0 || record.ControllerFanoutLagMs > 0 {
 		live.Telemetry = &TelemetryHealth{
@@ -658,6 +984,75 @@ func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *L
 	return live
 }
 
+func browserSummaryRecordToLiveMetrics(record *storage.BrowserMetricsSummaryRecord) *BrowserLiveMetrics {
+	if record == nil {
+		return nil
+	}
+	return &BrowserLiveMetrics{
+		Samples:              record.Samples,
+		AvgFCPMs:             record.AvgFCPMs,
+		AvgLCPMs:             record.AvgLCPMs,
+		AvgCLSScore:          record.AvgCLSScore,
+		AvgINPMs:             record.AvgINPMs,
+		AvgBlockingResources: record.AvgBlockingResources,
+		AvgLongTaskCount:     record.AvgLongTaskCount,
+		AvgJSHeapUsedMB:      record.AvgJSHeapUsedMB,
+		AvgBrowserProcessCPU: record.AvgBrowserProcessCPU,
+		AvgBrowserProcessMem: record.AvgBrowserProcessMem,
+	}
+}
+
+func browserDeviceSummaryRecordToLiveMetrics(records map[string]*storage.BrowserDeviceMetricsRecord) map[string]*BrowserDeviceLiveMetrics {
+	if len(records) == 0 {
+		return nil
+	}
+	result := make(map[string]*BrowserDeviceLiveMetrics, len(records))
+	for name, record := range records {
+		if record == nil {
+			continue
+		}
+		result[name] = &BrowserDeviceLiveMetrics{
+			DeviceProfile:        record.DeviceProfile,
+			DevicePlatform:       record.DevicePlatform,
+			DeviceTier:           record.DeviceTier,
+			BrowserEngine:        record.BrowserEngine,
+			Samples:              record.Samples,
+			AvgFCPMs:             record.AvgFCPMs,
+			AvgLCPMs:             record.AvgLCPMs,
+			AvgCLSScore:          record.AvgCLSScore,
+			AvgINPMs:             record.AvgINPMs,
+			AvgBlockingResources: record.AvgBlockingResources,
+			AvgLongTaskCount:     record.AvgLongTaskCount,
+			AvgJSHeapUsedMB:      record.AvgJSHeapUsedMB,
+			AvgBrowserProcessCPU: record.AvgBrowserProcessCPU,
+			AvgBrowserProcessMem: record.AvgBrowserProcessMem,
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func networkLatencyRecordToLiveMetrics(record *storage.NetworkLatencySummaryRecord) *NetworkLatency {
+	if record == nil {
+		return nil
+	}
+	latency := &NetworkLatency{Targets: make([]LatencyTarget, 0, len(record.Targets))}
+	for _, target := range record.Targets {
+		latency.Targets = append(latency.Targets, LatencyTarget{
+			Name:        target.Name,
+			Endpoint:    target.Endpoint,
+			LatencyMs:   target.LatencyMs,
+			IP:          target.IP,
+			Hops:        target.Hops,
+			LastSuccess: target.LastSuccess,
+			Timestamp:   target.Timestamp,
+		})
+	}
+	return latency
+}
+
 func (tr *TestRunner) StoreScript(script *dsl.Script) *StoredScript {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
@@ -668,14 +1063,15 @@ func (tr *TestRunner) StoreScript(script *dsl.Script) *StoredScript {
 	script.ProjectID = normalizeProjectID(script.ProjectID)
 
 	stored := &StoredScript{
-		ID:        script.ID,
-		Name:      script.Name,
-		Protocol:  script.Protocol,
-		Version:   script.Version,
-		ProjectID: script.ProjectID,
-		FolderID:  script.FolderID,
-		CreatedAt: time.Now(),
-		Script:    script,
+		ID:              script.ID,
+		Name:            script.Name,
+		Protocol:        script.Protocol,
+		Version:         script.Version,
+		ProjectID:       script.ProjectID,
+		FolderID:        script.FolderID,
+		CreatedAt:       time.Now(),
+		AuthoringHealth: buildStoredScriptAuthoringHealth(script),
+		Script:          script,
 	}
 
 	tr.saveStoredScript(script)
@@ -705,6 +1101,11 @@ func (tr *TestRunner) ReplayScriptDefinition(script *dsl.Script, opts engine.Rep
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
+	effectiveRedactionRules, err := tr.resolveEffectiveRedactionRules(script.ProjectID, opts.RedactionRules)
+	if err != nil {
+		return nil, err
+	}
+	opts.RedactionRules = effectiveRedactionRules
 	return engine.ReplayScript(context.Background(), script, opts)
 }
 
@@ -736,7 +1137,7 @@ func (tr *TestRunner) ListScriptsFiltered(projectID string, folderID *string) []
 				continue
 			}
 		}
-		out = append(out, s)
+		out = append(out, tr.enrichScriptSummaryLocked(s))
 	}
 	return out
 }
@@ -765,6 +1166,7 @@ func (tr *TestRunner) UpdateScript(id string, script *dsl.Script) (*StoredScript
 	if !ok {
 		return nil, false
 	}
+	script.ID = existing.ID
 	existing.Name = script.Name
 	existing.Protocol = script.Protocol
 	existing.Version = script.Version
@@ -774,8 +1176,12 @@ func (tr *TestRunner) UpdateScript(id string, script *dsl.Script) (*StoredScript
 	if script.FolderID == nil {
 		script.FolderID = existing.FolderID
 	}
+	if script.CreatedAt.IsZero() && existing.Script != nil {
+		script.CreatedAt = existing.Script.CreatedAt
+	}
 	existing.ProjectID = script.ProjectID
 	existing.FolderID = script.FolderID
+	existing.AuthoringHealth = buildStoredScriptAuthoringHealth(script)
 	existing.Script = script
 	tr.saveStoredScript(script)
 	return existing, true
@@ -827,8 +1233,12 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 	if err != nil {
 		return nil, err
 	}
-	if _, _, _, err := tr.compileManagedTestGroupsLocked(groups, req.RuntimeSettings); err != nil {
+	testGroups, engineGroups, _, err := tr.compileManagedTestGroupsLocked(groups, req.RuntimeSettings)
+	if err != nil {
 		return nil, err
+	}
+	if runtimeSettingsReview := buildRuntimeSettingsScenarioReview(testGroups, engineGroups); runtimeSettingsReview != nil && runtimeSettingsReview.Status == "blocked" {
+		return nil, fmt.Errorf("runtime settings blocked: %s", runtimeSettingsReview.Summary)
 	}
 	now := time.Now()
 	existing := tr.scenarios[id]
@@ -860,6 +1270,7 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 			VUsers:         group.VUsers,
 			RampUp:         group.RampUp,
 			RampDown:       group.RampDown,
+			Stages:         cloneLoadStages(group.Stages),
 			Iterations:     group.Iterations,
 			Initialization: group.InitStrategy,
 		})
@@ -918,7 +1329,7 @@ func normalizeScenarioDataPoolBindings(scenarioID string, bindings []storage.Sce
 			binding.SelectionStrategy = "sequential"
 		}
 		switch binding.SelectionStrategy {
-		case "sequential", "random", "unique":
+		case "sequential", "random", "unique", "pop":
 		default:
 			return nil, fmt.Errorf("unsupported data pool selection strategy %q", binding.SelectionStrategy)
 		}
@@ -951,6 +1362,21 @@ func (tr *TestRunner) ListScenarios() []*StoredScenario {
 	return out
 }
 
+func (tr *TestRunner) ListScenariosFiltered(projectID string) []*StoredScenario {
+	projectID = normalizeProjectID(projectID)
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	out := make([]*StoredScenario, 0, len(tr.scenarios))
+	for _, scenario := range tr.scenarios {
+		enriched := tr.enrichScenarioSummaryLocked(scenario)
+		if enriched.ProjectID != projectID {
+			continue
+		}
+		out = append(out, enriched)
+	}
+	return out
+}
+
 func (tr *TestRunner) DeleteScenario(id string) bool {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
@@ -967,6 +1393,179 @@ func (tr *TestRunner) DeleteScenario(id string) bool {
 		_ = tr.scenarioStore.DeleteScenario(id)
 	}
 	return true
+}
+
+func (tr *TestRunner) saveScenarioScheduleLocked(schedule *storage.ScenarioSchedule) error {
+	if schedule == nil {
+		return fmt.Errorf("schedule is required")
+	}
+	scenario, ok := tr.scenarios[schedule.ScenarioID]
+	if !ok {
+		return fmt.Errorf("scenario not found: %s", schedule.ScenarioID)
+	}
+	if tr.scenarioStore != nil {
+		if err := tr.scenarioStore.SaveScenarioSchedule(schedule); err != nil {
+			return err
+		}
+	}
+	for index, existing := range scenario.Schedules {
+		if existing != nil && existing.ID == schedule.ID {
+			scenario.Schedules[index] = cloneScenarioSchedule(schedule)
+			return nil
+		}
+	}
+	scenario.Schedules = append(scenario.Schedules, cloneScenarioSchedule(schedule))
+	return nil
+}
+
+func (tr *TestRunner) saveScenarioScheduleOccurrenceLocked(occurrence *storage.ScenarioScheduleOccurrence) error {
+	if occurrence == nil {
+		return fmt.Errorf("schedule occurrence is required")
+	}
+	if tr.scenarioStore != nil {
+		if existing, err := tr.scenarioStore.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(occurrence.ScheduleID, occurrence.PlannedAt); err != nil {
+			return err
+		} else if existing != nil && existing.ID != "" {
+			occurrence.ID = existing.ID
+			occurrence.CreatedAt = existing.CreatedAt
+		}
+		if err := tr.scenarioStore.SaveScenarioScheduleOccurrence(occurrence); err != nil {
+			return err
+		}
+		tr.recordScenarioScheduleOccurrenceAuditLocked(occurrence)
+		return nil
+	}
+	return nil
+}
+
+func (tr *TestRunner) recordScenarioScheduleOccurrenceAuditLocked(occurrence *storage.ScenarioScheduleOccurrence) {
+	if tr == nil || tr.scenarioStore == nil || occurrence == nil {
+		return
+	}
+	action, status, ok := scenarioScheduleOccurrenceAuditAction(occurrence.Status)
+	if !ok {
+		return
+	}
+	details := map[string]any{
+		"schedule_id":       occurrence.ScheduleID,
+		"scenario_id":       occurrence.ScenarioID,
+		"schedule_revision": occurrence.ScheduleRevision,
+		"planned_at":        occurrence.PlannedAt.UTC().Format(time.RFC3339),
+		"occurrence_status": occurrence.Status,
+		"reason_code":       occurrence.ReasonCode,
+	}
+	if occurrence.MaterializedAt != nil {
+		details["materialized_at"] = occurrence.MaterializedAt.UTC().Format(time.RFC3339)
+	}
+	if occurrence.TestID != "" {
+		details["test_id"] = occurrence.TestID
+	}
+	if occurrence.ApprovalID != "" {
+		details["approval_id"] = occurrence.ApprovalID
+	}
+	if occurrence.ConflictSummary != "" {
+		details["conflict_summary"] = occurrence.ConflictSummary
+	}
+	_ = tr.scenarioStore.SaveAuditEvent(&storage.AuditEvent{
+		ID:               uuid.New().String(),
+		Action:           action,
+		ActorType:        "system",
+		ActorSubject:     "scenario-scheduler",
+		ActorDisplayName: "Scenario Scheduler",
+		ProjectID:        normalizeProjectID(occurrence.ProjectID),
+		ResourceType:     "scenario_schedule_occurrence",
+		ResourceID:       occurrence.ID,
+		Status:           status,
+		Details:          details,
+		CreatedAt:        time.Now().UTC(),
+	})
+}
+
+func scenarioScheduleOccurrenceAuditAction(occurrenceStatus string) (string, string, bool) {
+	switch strings.TrimSpace(occurrenceStatus) {
+	case "materialized", "queued", "completed", "approved":
+		return "scenario.schedule.occurrence.materialized", "success", true
+	case "blocked":
+		return "scenario.schedule.occurrence.blocked", "blocked", true
+	case "skipped":
+		return "scenario.schedule.occurrence.skipped", "success", true
+	case "failed":
+		return "scenario.schedule.occurrence.failed", "failure", true
+	default:
+		return "", "", false
+	}
+}
+
+func (tr *TestRunner) ListScenarioScheduleOccurrences(scenarioID string, scheduleID string) ([]*storage.ScenarioScheduleOccurrence, bool) {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	scenario, ok := tr.scenarios[scenarioID]
+	if !ok {
+		return nil, false
+	}
+	found := false
+	for _, schedule := range scenario.Schedules {
+		if schedule != nil && schedule.ID == scheduleID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, false
+	}
+	if tr.scenarioStore == nil {
+		return []*storage.ScenarioScheduleOccurrence{}, true
+	}
+	occurrences, err := tr.scenarioStore.ListScenarioScheduleOccurrences(scheduleID)
+	if err != nil {
+		return []*storage.ScenarioScheduleOccurrence{}, true
+	}
+	out := make([]*storage.ScenarioScheduleOccurrence, 0, len(occurrences))
+	for _, occurrence := range occurrences {
+		out = append(out, cloneScenarioScheduleOccurrence(occurrence))
+	}
+	return out, true
+}
+
+func (tr *TestRunner) ScenarioScheduleHealth(now time.Time) ScenarioScheduleHealth {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	health := ScenarioScheduleHealth{StatusCounts: map[string]int{}}
+	for _, schedule := range tr.listAllScenarioSchedulesLocked() {
+		if schedule == nil {
+			continue
+		}
+		health.Total++
+		if schedule.Enabled {
+			health.Enabled++
+		}
+		if schedule.NextRunAt != nil && !schedule.NextRunAt.After(now) {
+			health.Due++
+		}
+		if strings.TrimSpace(schedule.ConflictSummary) != "" {
+			health.Blocked++
+		}
+		if strings.TrimSpace(schedule.LastError) != "" {
+			health.Failed++
+		}
+		if schedule.NextRequiredAction == "approval_required" {
+			health.PendingApproval++
+		}
+	}
+	if tr.scenarioStore != nil {
+		if occurrences, err := tr.scenarioStore.ListAllScenarioScheduleOccurrences(); err == nil {
+			for _, occurrence := range occurrences {
+				if occurrence != nil {
+					health.StatusCounts[occurrence.Status]++
+				}
+			}
+		}
+	}
+	health.Queued = health.StatusCounts["queued"]
+	health.Materialized = health.StatusCounts["materialized"]
+	health.Skipped = health.StatusCounts["skipped"]
+	health.Completed = health.StatusCounts["completed"]
+	return health
 }
 
 func (tr *TestRunner) ListScriptsWithUsage() []*StoredScript {
@@ -1096,6 +1695,25 @@ type CreateTestRequest struct {
 	RampUp   string `json:"ramp_up,omitempty"`
 	// Test-level runtime overrides (mirrors LR Controller override behavior)
 	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
+
+	scriptShakeoutProvided   bool
+	resourceBaselineProvided bool
+}
+
+func (req *CreateTestRequest) UnmarshalJSON(data []byte) error {
+	type createTestRequestAlias CreateTestRequest
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	var decoded createTestRequestAlias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*req = CreateTestRequest(decoded)
+	_, req.scriptShakeoutProvided = raw["script_shakeout"]
+	_, req.resourceBaselineProvided = raw["resource_baseline"]
+	return nil
 }
 
 type CreateScenarioRequest struct {
@@ -1113,40 +1731,57 @@ type CreateScenarioRequest struct {
 }
 
 type GoalConfig struct {
-	TargetAverageTPS *float64 `json:"target_average_tps,omitempty"`
-	P95LatencyMs     *float64 `json:"p95_latency_ms,omitempty"`
-	MaxErrorPct      *float64 `json:"max_error_pct,omitempty"`
-	MaxErrorCount    *int     `json:"max_error_count,omitempty"`
-	MinVUsers        *int     `json:"min_vusers,omitempty"`
-	MaxVUsers        *int     `json:"max_vusers,omitempty"`
-	StopOnSLABreach  bool     `json:"stop_on_sla_breach,omitempty"`
-	StopOnMaxErrors  bool     `json:"stop_on_max_errors,omitempty"`
-	SLABreachWindow  string   `json:"sla_breach_window,omitempty"`
+	TargetAverageTPS         *float64 `json:"target_average_tps,omitempty"`
+	P95LatencyMs             *float64 `json:"p95_latency_ms,omitempty"`
+	MaxErrorPct              *float64 `json:"max_error_pct,omitempty"`
+	MaxAvgServerProcessingMs *float64 `json:"max_avg_server_processing_ms,omitempty"`
+	MaxAvgTransferMs         *float64 `json:"max_avg_transfer_ms,omitempty"`
+	MaxErrorCount            *int     `json:"max_error_count,omitempty"`
+	MinVUsers                *int     `json:"min_vusers,omitempty"`
+	MaxVUsers                *int     `json:"max_vusers,omitempty"`
+	StopOnSLABreach          bool     `json:"stop_on_sla_breach,omitempty"`
+	StopOnMaxErrors          bool     `json:"stop_on_max_errors,omitempty"`
+	SLABreachWindow          string   `json:"sla_breach_window,omitempty"`
 }
 
 // RuntimeSettingsOverride allows overriding script-level runtime settings at test time,
 // mirroring LoadRunner Controller's override capability.
+type RuntimeBrowserOverride struct {
+	Headless      *bool  `json:"headless,omitempty"`
+	DeviceProfile string `json:"device_profile,omitempty"`
+	TouchMode     *bool  `json:"touch_mode,omitempty"`
+	Orientation   string `json:"orientation,omitempty"`
+}
+
 type RuntimeSettingsOverride struct {
 	Iterations       *int                     `json:"iterations,omitempty"`
 	Pacing           *dsl.PacingConfig        `json:"pacing,omitempty"`
 	ThinkTime        *dsl.ThinkTimeConfig     `json:"think_time,omitempty"`
 	ErrorHandling    *dsl.ErrorHandlingConfig `json:"error_handling,omitempty"`
+	Browser          *RuntimeBrowserOverride  `json:"browser,omitempty"`
 	LogLevel         string                   `json:"log_level,omitempty"`
 	AutoTransactions string                   `json:"auto_transactions,omitempty"`
+	BaseURL          string                   `json:"base_url,omitempty"`
+	Env              map[string]string        `json:"env,omitempty"`
+	RedactionRules   []engine.RedactionRule   `json:"redaction_rules,omitempty"`
 }
 
 type CreateGroupEntry struct {
-	Name         string `json:"name"`
-	ScriptID     string `json:"script_id"`
-	VUsers       int    `json:"vusers"`
-	RampUp       string `json:"ramp_up,omitempty"`
-	RampDown     string `json:"ramp_down,omitempty"`
-	Iterations   *int   `json:"iterations,omitempty"`
-	InitStrategy string `json:"initialization,omitempty"` // "at_runtime", "at_once"
+	Name            string                       `json:"name"`
+	ScriptID        string                       `json:"script_id"`
+	VUsers          int                          `json:"vusers"`
+	RampUp          string                       `json:"ramp_up,omitempty"`
+	RampDown        string                       `json:"ramp_down,omitempty"`
+	Stages          []storage.LoadStage          `json:"stages,omitempty"`
+	Iterations      *int                         `json:"iterations,omitempty"`
+	RuntimeSettings *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	Assignment      *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	InitStrategy    string                       `json:"initialization,omitempty"` // "at_runtime", "at_once"
 }
 
 type StartTestOptions struct {
-	OverrideCapacityShortfall bool `json:"override_capacity_shortfall,omitempty"`
+	OverrideCapacityShortfall   bool `json:"override_capacity_shortfall,omitempty"`
+	OverrideScriptShakeoutError bool `json:"override_script_shakeout_failure,omitempty"`
 }
 
 type CapacityShortfallError struct {
@@ -1155,59 +1790,45 @@ type CapacityShortfallError struct {
 	Message  string
 }
 
+type ScriptShakeoutGateError struct {
+	TestID string
+	Report *ScriptShakeoutReport
+}
+
+func (e *ScriptShakeoutGateError) Error() string {
+	if e == nil || e.Report == nil || e.Report.Summary == "" {
+		return "script shakeout failed; full load test has not started"
+	}
+	return e.Report.Summary
+}
+
+type ScriptShakeoutReport struct {
+	Passed    bool                   `json:"passed"`
+	Summary   string                 `json:"summary"`
+	StartedAt time.Time              `json:"started_at"`
+	EndedAt   time.Time              `json:"ended_at"`
+	Results   []ScriptShakeoutResult `json:"results"`
+}
+
+type ScriptShakeoutResult struct {
+	GroupName  string `json:"group_name"`
+	ScriptID   string `json:"script_id,omitempty"`
+	ScriptName string `json:"script_name,omitempty"`
+	Status     string `json:"status"`
+	Error      string `json:"error,omitempty"`
+}
+
 type DraftCapacityEstimate struct {
-	ScenarioMode     string                       `json:"scenario_mode,omitempty"`
-	TotalVUsers      int                          `json:"total_vusers"`
-	Duration         string                       `json:"duration"`
-	ResourceBaseline bool                         `json:"resource_baseline,omitempty"`
-	Groups           []TestGroup                  `json:"groups"`
-	Assignment       *GeneratorAssignmentSettings `json:"assignment,omitempty"`
-	Footprint        *ScenarioFootprint           `json:"footprint,omitempty"`
-	Recommendation   *AssignmentRecommendation    `json:"assignment_recommendation,omitempty"`
-	CapacityAdvisory *CapacityAdvisory            `json:"capacity_advisory,omitempty"`
-}
-
-func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*GeneratorAssignmentSettings, error) {
-	if in == nil {
-		return nil, nil
-	}
-	out := &GeneratorAssignmentSettings{Mode: strings.TrimSpace(in.Mode)}
-	if out.Mode == "" {
-		out.Mode = generatorAssignmentModeAuto
-	}
-	switch out.Mode {
-	case generatorAssignmentModeAuto:
-		out.SelectedTargets = nil
-		return out, nil
-	case generatorAssignmentModeSpecificHosts:
-		seen := make(map[string]struct{})
-		for _, raw := range in.SelectedTargets {
-			target := strings.TrimSpace(raw)
-			if target == "" {
-				continue
-			}
-			if _, exists := seen[target]; exists {
-				continue
-			}
-			seen[target] = struct{}{}
-			out.SelectedTargets = append(out.SelectedTargets, target)
-		}
-		if len(out.SelectedTargets) == 0 {
-			return nil, fmt.Errorf("assignment.selected_targets must include at least one hostname when mode is specific_hosts")
-		}
-		return out, nil
-	default:
-		return nil, fmt.Errorf("assignment.mode must be auto or specific_hosts")
-	}
-}
-
-func cloneGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) *GeneratorAssignmentSettings {
-	if in == nil {
-		return nil
-	}
-	out := *in
-	out.SelectedTargets = append([]string(nil), in.SelectedTargets...)
-	return &out
+	ScenarioMode          string                       `json:"scenario_mode,omitempty"`
+	TotalVUsers           int                          `json:"total_vusers"`
+	Duration              string                       `json:"duration"`
+	ResourceBaseline      bool                         `json:"resource_baseline,omitempty"`
+	Groups                []TestGroup                  `json:"groups"`
+	Assignment            *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	Footprint             *ScenarioFootprint           `json:"footprint,omitempty"`
+	Recommendation        *AssignmentRecommendation    `json:"assignment_recommendation,omitempty"`
+	CapacityAdvisory      *CapacityAdvisory            `json:"capacity_advisory,omitempty"`
+	RuntimeSettingsReview *RuntimeSettingsReview       `json:"runtime_settings_review,omitempty"`
 }
 
 func buildScenarioFootprint(test *ManagedTest) *ScenarioFootprint {
@@ -1239,7 +1860,93 @@ func (tr *TestRunner) assignmentTargets() []string {
 	return provider.configuredTargets()
 }
 
-func adjustCapacityAdvisoryForAssignment(advisory *CapacityAdvisory, assignment *GeneratorAssignmentSettings, availableTargets int) *CapacityAdvisory {
+func (tr *TestRunner) assignmentTargetSpecs() []generatorTargetSpec {
+	provider, ok := tr.execution.(interface{ configuredTargetSpecs() []generatorTargetSpec })
+	if !ok {
+		return nil
+	}
+	return provider.configuredTargetSpecs()
+}
+
+func assignmentAvailableRegions(specs []generatorTargetSpec) []string {
+	set := make(map[string]struct{})
+	for _, spec := range specs {
+		if spec.Region == "" {
+			continue
+		}
+		set[spec.Region] = struct{}{}
+	}
+	regions := make([]string, 0, len(set))
+	for region := range set {
+		regions = append(regions, region)
+	}
+	sort.Strings(regions)
+	return regions
+}
+
+func matchingRegionWeightedTargets(specs []generatorTargetSpec, weights map[string]int) int {
+	if len(specs) == 0 || len(weights) == 0 {
+		return 0
+	}
+	count := 0
+	for _, spec := range specs {
+		if spec.Region == "" {
+			continue
+		}
+		if weights[spec.Region] > 0 {
+			count++
+		}
+	}
+	return count
+}
+
+func missingWeightedRegions(specs []generatorTargetSpec, weights map[string]int) []string {
+	if len(weights) == 0 {
+		return nil
+	}
+	available := make(map[string]struct{})
+	for _, spec := range specs {
+		if spec.Region == "" {
+			continue
+		}
+		available[spec.Region] = struct{}{}
+	}
+	missing := make([]string, 0)
+	for region := range weights {
+		if _, ok := available[region]; ok {
+			continue
+		}
+		missing = append(missing, region)
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+func formatRegionWeightSummary(weights map[string]int) string {
+	if len(weights) == 0 {
+		return ""
+	}
+	total := 0
+	regions := make([]string, 0, len(weights))
+	for region, weight := range weights {
+		if weight <= 0 {
+			continue
+		}
+		total += weight
+		regions = append(regions, region)
+	}
+	if total <= 0 || len(regions) == 0 {
+		return ""
+	}
+	sort.Strings(regions)
+	parts := make([]string, 0, len(regions))
+	for _, region := range regions {
+		parts = append(parts, fmt.Sprintf("%s %d%%", region, int(math.Round(float64(weights[region])*100/float64(total)))))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func adjustCapacityAdvisoryForAssignment(advisory *CapacityAdvisory, assignment *GeneratorAssignmentSettings, targetSpecs []generatorTargetSpec) *CapacityAdvisory {
 	if advisory == nil {
 		return nil
 	}
@@ -1250,12 +1957,29 @@ func adjustCapacityAdvisoryForAssignment(advisory *CapacityAdvisory, assignment 
 		cloned.Warnings = append(cloned.Warnings, err.Error())
 		return cloned
 	}
-	if assignment == nil || assignment.Mode != generatorAssignmentModeSpecificHosts {
+	if assignment == nil {
 		return advisory
 	}
-	selected := len(assignment.SelectedTargets)
-	if selected == 0 {
+	availableTargets := len(targetSpecs)
+	selected := 0
+	warning := ""
+	switch assignment.Mode {
+	case generatorAssignmentModeSpecificHosts:
+		selected = len(assignment.SelectedTargets)
+		warning = fmt.Sprintf("Selected hosts provide %d generator slot%s, but the scenario footprint recommends %%d.", selected, pluralSuffix(selected))
+	case generatorAssignmentModeRegionWeighted:
+		selected = matchingRegionWeightedTargets(targetSpecs, assignment.RegionWeights)
+		warning = fmt.Sprintf("Configured region weights match %d generator slot%s, but the scenario footprint recommends %%d.", selected, pluralSuffix(selected))
+	default:
 		return advisory
+	}
+	if selected == 0 {
+		cloned := cloneCapacityAdvisory(advisory)
+		cloned.RequiresOverride = true
+		if assignment.Mode == generatorAssignmentModeRegionWeighted {
+			cloned.Warnings = append(cloned.Warnings, "No configured generators match the requested region weights on this controller.")
+		}
+		return cloned
 	}
 	cloned := cloneCapacityAdvisory(advisory)
 	if availableTargets > 0 && selected > availableTargets {
@@ -1268,16 +1992,26 @@ func adjustCapacityAdvisoryForAssignment(advisory *CapacityAdvisory, assignment 
 	if cloned.RecommendedGenerators > selected {
 		cloned.ShortfallGenerators = cloned.RecommendedGenerators - selected
 		cloned.RequiresOverride = true
-		cloned.Warnings = append(cloned.Warnings, fmt.Sprintf("Selected hosts provide %d generator slot%s, but the scenario footprint recommends %d.", selected, pluralSuffix(selected), cloned.RecommendedGenerators))
+		cloned.Warnings = append(cloned.Warnings, fmt.Sprintf(warning, cloned.RecommendedGenerators))
+		if assignment.Mode == generatorAssignmentModeRegionWeighted {
+			if missing := missingWeightedRegions(targetSpecs, assignment.RegionWeights); len(missing) > 0 {
+				cloned.Warnings = append(cloned.Warnings, fmt.Sprintf("No connected generator targets are tagged for region%s %s.", pluralSuffix(len(missing)), strings.Join(missing, ", ")))
+			}
+		}
 		return cloned
 	}
 	cloned.RequiresOverride = false
+	if assignment.Mode == generatorAssignmentModeRegionWeighted {
+		if missing := missingWeightedRegions(targetSpecs, assignment.RegionWeights); len(missing) > 0 {
+			cloned.Warnings = append(cloned.Warnings, fmt.Sprintf("No connected generator targets are tagged for region%s %s.", pluralSuffix(len(missing)), strings.Join(missing, ", ")))
+		}
+	}
 	return cloned
 }
 
-func (tr *TestRunner) estimateCapacityAdvisoryForAssignment(groups []TestGroup, totalVUsers int, duration time.Duration, resourceBaseline bool, runtimeSettings *RuntimeSettingsOverride, assignment *GeneratorAssignmentSettings) *CapacityAdvisory {
-	advisory := estimateCapacityAdvisory(tr.settings, groups, totalVUsers, duration, resourceBaseline, runtimeSettings)
-	return adjustCapacityAdvisoryForAssignment(advisory, assignment, len(tr.assignmentTargets()))
+func (tr *TestRunner) estimateCapacityAdvisoryForAssignment(projectID string, groups []TestGroup, totalVUsers int, duration time.Duration, resourceBaseline bool, runtimeSettings *RuntimeSettingsOverride, assignment *GeneratorAssignmentSettings) *CapacityAdvisory {
+	advisory := estimateCapacityAdvisoryForProject(tr.settings, projectID, groups, totalVUsers, duration, resourceBaseline, runtimeSettings)
+	return adjustCapacityAdvisoryForAssignment(advisory, assignment, tr.assignmentTargetSpecs())
 }
 
 func (tr *TestRunner) buildAssignmentRecommendation(test *ManagedTest) *AssignmentRecommendation {
@@ -1285,6 +2019,7 @@ func (tr *TestRunner) buildAssignmentRecommendation(test *ManagedTest) *Assignme
 		return nil
 	}
 	availableTargets := tr.assignmentTargets()
+	availableRegions := assignmentAvailableRegions(tr.assignmentTargetSpecs())
 	assignment := cloneGeneratorAssignmentSettings(test.Assignment)
 	if assignment == nil {
 		assignment = &GeneratorAssignmentSettings{Mode: generatorAssignmentModeAuto}
@@ -1300,10 +2035,18 @@ func (tr *TestRunner) buildAssignmentRecommendation(test *ManagedTest) *Assignme
 	recommendation := &AssignmentRecommendation{
 		Mode:               assignment.Mode,
 		AvailableTargets:   availableTargets,
+		AvailableRegions:   availableRegions,
 		RecommendedTargets: recommendedTargets,
 	}
 	if assignment.Mode == generatorAssignmentModeSpecificHosts {
 		recommendation.Summary = fmt.Sprintf("Manual host selection uses %d configured host%s for this scenario footprint.", len(assignment.SelectedTargets), pluralSuffix(len(assignment.SelectedTargets)))
+		if test.CapacityAdvisory.RequiresOverride {
+			recommendation.Warnings = append(recommendation.Warnings, test.CapacityAdvisory.Warnings...)
+		}
+		return recommendation
+	}
+	if assignment.Mode == generatorAssignmentModeRegionWeighted {
+		recommendation.Summary = fmt.Sprintf("Region-weighted assignment will place groups across tagged generators using %s.", formatRegionWeightSummary(assignment.RegionWeights))
 		if test.CapacityAdvisory.RequiresOverride {
 			recommendation.Warnings = append(recommendation.Warnings, test.CapacityAdvisory.Warnings...)
 		}
@@ -1333,32 +2076,22 @@ func (tr *TestRunner) EstimateDraftCapacity(req CreateTestRequest) (*DraftCapaci
 	}
 
 	return &DraftCapacityEstimate{
-		ScenarioMode:     preview.ScenarioMode,
-		TotalVUsers:      preview.TotalVUsers,
-		Duration:         preview.DurationStr,
-		ResourceBaseline: preview.ResourceBaseline,
-		Groups:           preview.Groups,
-		Assignment:       cloneGeneratorAssignmentSettings(preview.Assignment),
-		Footprint:        buildScenarioFootprint(preview),
-		Recommendation:   tr.buildAssignmentRecommendation(preview),
-		CapacityAdvisory: cloneCapacityAdvisory(preview.CapacityAdvisory),
+		ScenarioMode:          preview.ScenarioMode,
+		TotalVUsers:           preview.TotalVUsers,
+		Duration:              preview.DurationStr,
+		ResourceBaseline:      preview.ResourceBaseline,
+		Groups:                preview.Groups,
+		Assignment:            cloneGeneratorAssignmentSettings(preview.Assignment),
+		Footprint:             buildScenarioFootprint(preview),
+		Recommendation:        tr.buildAssignmentRecommendation(preview),
+		CapacityAdvisory:      cloneCapacityAdvisory(preview.CapacityAdvisory),
+		RuntimeSettingsReview: cloneRuntimeSettingsReview(preview.RuntimeSettingsReview),
 	}, nil
 }
 
 func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-
-	running := 0
-	for _, t := range tr.tests {
-		if t.Status == "RUNNING" || t.Status == "INITIALIZING" {
-			running++
-		}
-	}
-	maxConcurrent := tr.settings.General.MaxConcurrentTests
-	if running >= maxConcurrent {
-		return nil, fmt.Errorf("max concurrent tests (%d) reached", maxConcurrent)
-	}
 
 	test, err := tr.buildManagedTestLocked(req, uuid.New().String(), "QUEUED")
 	if err != nil {
@@ -1406,8 +2139,21 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	runtimeSettingsReview := buildRuntimeSettingsScenarioReview(testGroups, engineGroups)
+	if status != "DRAFT" && runtimeSettingsReview != nil && runtimeSettingsReview.Status == "blocked" {
+		return nil, fmt.Errorf("runtime settings blocked: %s", runtimeSettingsReview.Summary)
+	}
 
 	testName := deriveManagedTestName(req.Name, testGroups)
+
+	projectID, err := tr.resolveCreateTestProjectID(req.ProjectID, groups)
+	if err != nil {
+		return nil, err
+	}
+	effectiveRuntimeSettings, err := tr.resolveEffectiveRuntimeSettings(projectID, req.RuntimeSettings)
+	if err != nil {
+		return nil, err
+	}
 
 	if req.ReleaseID == "" && status != "DRAFT" {
 		req.ReleaseID = storage.LegacyReleaseID
@@ -1421,31 +2167,30 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if applicationID == "" && req.ReleaseID != "" {
 		applicationID = storage.LegacyApplicationID
 	}
-	projectID := normalizeProjectID(req.ProjectID)
-
 	test := &ManagedTest{
-		ID:               id,
-		Name:             testName,
-		Status:           status,
-		ApplicationID:    applicationID,
-		ReleaseID:        req.ReleaseID,
-		ScenarioID:       req.ScenarioID,
-		ProjectID:        projectID,
-		FolderID:         req.FolderID,
-		Groups:           testGroups,
-		Assignment:       cloneGeneratorAssignmentSettings(req.Assignment),
-		CapacityAdvisory: tr.estimateCapacityAdvisoryForAssignment(testGroups, totalVUsers, dur, req.ResourceBaseline, req.RuntimeSettings, req.Assignment),
-		ScenarioMode:     scenarioMode,
-		ScriptShakeout:   req.ScriptShakeout,
-		ResourceBaseline: req.ResourceBaseline,
-		StartDelay:       req.StartDelay,
-		GoalConfig:       cloneGoalConfig(req.GoalConfig),
-		RuntimeSettings:  cloneRuntimeSettings(req.RuntimeSettings),
-		TotalVUsers:      totalVUsers,
-		Duration:         dur,
-		DurationStr:      req.Duration,
-		CreatedAt:        time.Now(),
-		groupSpecs:       engineGroups,
+		ID:                    id,
+		Name:                  testName,
+		Status:                status,
+		ApplicationID:         applicationID,
+		ReleaseID:             req.ReleaseID,
+		ScenarioID:            req.ScenarioID,
+		ProjectID:             projectID,
+		FolderID:              req.FolderID,
+		Groups:                testGroups,
+		Assignment:            cloneGeneratorAssignmentSettings(req.Assignment),
+		CapacityAdvisory:      tr.estimateCapacityAdvisoryForAssignment(projectID, testGroups, totalVUsers, dur, req.ResourceBaseline, effectiveRuntimeSettings, req.Assignment),
+		RuntimeSettingsReview: cloneRuntimeSettingsReview(runtimeSettingsReview),
+		ScenarioMode:          scenarioMode,
+		ScriptShakeout:        req.ScriptShakeout,
+		ResourceBaseline:      req.ResourceBaseline,
+		StartDelay:            req.StartDelay,
+		GoalConfig:            cloneGoalConfig(req.GoalConfig),
+		RuntimeSettings:       cloneRuntimeSettings(effectiveRuntimeSettings),
+		TotalVUsers:           totalVUsers,
+		Duration:              dur,
+		DurationStr:           req.Duration,
+		CreatedAt:             time.Now(),
+		groupSpecs:            engineGroups,
 	}
 
 	if len(testGroups) == 1 {
@@ -1460,10 +2205,10 @@ func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenar
 	req.Name = firstNonEmpty(req.Name, scenario.Name)
 	req.Duration = firstNonEmpty(req.Duration, scenario.Duration)
 	req.ScenarioMode = firstNonEmpty(req.ScenarioMode, scenario.ScenarioMode)
-	if !req.ScriptShakeout {
+	if !req.scriptShakeoutProvided && !req.ScriptShakeout {
 		req.ScriptShakeout = scenario.ScriptShakeout
 	}
-	if !req.ResourceBaseline {
+	if !req.resourceBaselineProvided && !req.ResourceBaseline {
 		req.ResourceBaseline = scenario.ResourceBaseline
 	}
 	if req.StartDelay == "" {
@@ -1490,6 +2235,7 @@ func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenar
 				VUsers:       script.VUsers,
 				RampUp:       script.RampUp,
 				RampDown:     script.RampDown,
+				Stages:       cloneLoadStages(script.Stages),
 				Iterations:   script.Iterations,
 				InitStrategy: script.Initialization,
 			})
@@ -1528,6 +2274,12 @@ func validateScenarioRequest(req CreateTestRequest) (string, error) {
 	if req.GoalConfig.MaxErrorPct != nil && (*req.GoalConfig.MaxErrorPct < 0 || *req.GoalConfig.MaxErrorPct > 100) {
 		return "", fmt.Errorf("goal-oriented scenarios require max_error_pct to be between 0 and 100")
 	}
+	if req.GoalConfig.MaxAvgServerProcessingMs != nil && *req.GoalConfig.MaxAvgServerProcessingMs <= 0 {
+		return "", fmt.Errorf("goal-oriented scenarios require max_avg_server_processing_ms to be greater than 0")
+	}
+	if req.GoalConfig.MaxAvgTransferMs != nil && *req.GoalConfig.MaxAvgTransferMs <= 0 {
+		return "", fmt.Errorf("goal-oriented scenarios require max_avg_transfer_ms to be greater than 0")
+	}
 	if req.GoalConfig.MinVUsers != nil && *req.GoalConfig.MinVUsers < 1 {
 		return "", fmt.Errorf("goal-oriented scenarios require min_vusers to be greater than 0")
 	}
@@ -1545,8 +2297,8 @@ func validateScenarioRequest(req CreateTestRequest) (string, error) {
 			return "", fmt.Errorf("invalid sla_breach_window: %w", err)
 		}
 	}
-	if req.GoalConfig.StopOnSLABreach && req.GoalConfig.P95LatencyMs == nil && req.GoalConfig.MaxErrorPct == nil {
-		return "", fmt.Errorf("goal-oriented scenarios require p95_latency_ms or max_error_pct when stop_on_sla_breach is enabled")
+	if req.GoalConfig.StopOnSLABreach && req.GoalConfig.P95LatencyMs == nil && req.GoalConfig.MaxErrorPct == nil && req.GoalConfig.MaxAvgServerProcessingMs == nil && req.GoalConfig.MaxAvgTransferMs == nil {
+		return "", fmt.Errorf("goal-oriented scenarios require a latency, error, server processing, or transfer threshold when stop_on_sla_breach is enabled")
 	}
 	if req.GoalConfig.StopOnMaxErrors && req.GoalConfig.MaxErrorCount == nil {
 		return "", fmt.Errorf("goal-oriented scenarios require max_error_count when stop_on_max_errors is enabled")
@@ -1597,18 +2349,37 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 	}
 
 	vusers := group.VUsers
+	derivedRampUp, derivedRampDown, derivedVUsers, err := loadStageCompatibility(group.Stages, index)
+	if err != nil {
+		return TestGroup{}, engine.GroupConfig{}, err
+	}
+	if vusers <= 0 && derivedVUsers > 0 {
+		vusers = derivedVUsers
+	}
 	if vusers <= 0 {
 		vusers = 10
+	}
+	rampUpValue := firstNonEmpty(group.RampUp, derivedRampUp)
+	rampDownValue := firstNonEmpty(group.RampDown, derivedRampDown)
+	if len(group.Stages) > 0 && derivedVUsers > 0 && vusers != derivedVUsers {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: vusers must match the maximum target_vusers from stages (%d)", index, derivedVUsers)
 	}
 	if group.Iterations != nil && *group.Iterations < 1 {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: iterations must be greater than 0", index)
 	}
+	if group.RuntimeSettings != nil && group.RuntimeSettings.Iterations != nil && *group.RuntimeSettings.Iterations < 1 {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: runtime_settings.iterations must be greater than 0", index)
+	}
+	assignment, err := normalizeGroupGeneratorAssignmentSettings(group.Assignment)
+	if err != nil {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %w", index, err)
+	}
 
-	rampUp, err := parseOptionalGroupDuration(group.RampUp, index, "ramp_up")
+	rampUp, err := parseOptionalGroupDuration(rampUpValue, index, "ramp_up")
 	if err != nil {
 		return TestGroup{}, engine.GroupConfig{}, err
 	}
-	rampDown, err := parseOptionalGroupDuration(group.RampDown, index, "ramp_down")
+	rampDown, err := parseOptionalGroupDuration(rampDownValue, index, "ramp_down")
 	if err != nil {
 		return TestGroup{}, engine.GroupConfig{}, err
 	}
@@ -1621,48 +2392,83 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 		}
 	}
 
-	initStrategy := group.InitStrategy
+	initStrategy := strings.ToLower(strings.TrimSpace(group.InitStrategy))
 	if initStrategy == "" {
 		initStrategy = "at_runtime"
 	}
-
-	testGroup := TestGroup{
-		Name:           name,
-		ScriptID:       group.ScriptID,
-		ScriptName:     script.Name,
-		Protocol:       script.Protocol,
-		VUsers:         vusers,
-		RampUp:         group.RampUp,
-		RampDown:       group.RampDown,
-		Iterations:     group.Iterations,
-		Initialization: initStrategy,
-		rampUpDur:      rampUp,
-		script:         script.Script,
+	switch initStrategy {
+	case "at_runtime", "at_once":
+	default:
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: initialization must be at_runtime or at_once", index)
 	}
 
-	scriptCopy := *script.Script
-	if len(sharedDataSources) > 0 {
-		scriptCopy.DataSources = append(cloneDataSources(scriptCopy.DataSources), sharedDataSources...)
-	}
-	effectiveRuntimeSettings := cloneRuntimeSettings(runtimeSettings)
-	if group.Iterations != nil {
+	effectiveRuntimeSettings := mergeRuntimeSettings(runtimeSettings, group.RuntimeSettings)
+	if group.Iterations != nil && (group.RuntimeSettings == nil || group.RuntimeSettings.Iterations == nil) {
 		if effectiveRuntimeSettings == nil {
 			effectiveRuntimeSettings = &RuntimeSettingsOverride{}
 		}
 		iterations := *group.Iterations
 		effectiveRuntimeSettings.Iterations = &iterations
 	}
-	if effectiveRuntimeSettings != nil {
-		applyRuntimeOverrides(&scriptCopy, effectiveRuntimeSettings)
+	effectiveIterations := group.Iterations
+	if effectiveRuntimeSettings != nil && effectiveRuntimeSettings.Iterations != nil {
+		iterations := *effectiveRuntimeSettings.Iterations
+		effectiveIterations = &iterations
 	}
 
+	testGroup := TestGroup{
+		Name:            name,
+		ScriptID:        group.ScriptID,
+		ScriptName:      script.Name,
+		Protocol:        script.Protocol,
+		VUsers:          vusers,
+		RampUp:          rampUpValue,
+		RampDown:        rampDownValue,
+		Stages:          cloneLoadStages(group.Stages),
+		Iterations:      effectiveIterations,
+		RuntimeSettings: cloneRuntimeSettings(group.RuntimeSettings),
+		Assignment:      cloneGeneratorAssignmentSettings(assignment),
+		RunLogicGoals:   runLogicGoalSnapshot(script.Script),
+		Initialization:  initStrategy,
+		rampUpDur:       rampUp,
+	}
+
+	scriptCopy := *script.Script
+	if len(sharedDataSources) > 0 {
+		scriptCopy.DataSources = append(cloneDataSources(scriptCopy.DataSources), sharedDataSources...)
+	}
+	if effectiveRuntimeSettings != nil {
+		if err := applyRuntimeOverrides(&scriptCopy, effectiveRuntimeSettings); err != nil {
+			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: apply runtime overrides: %w", index, err)
+		}
+		if issues := dsl.ValidateScriptIssues(&scriptCopy); len(issues) > 0 {
+			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %s", index, strings.Join(issues, "; "))
+		}
+	}
+	if len(scriptCopy.Actions) == 0 {
+		if issues := dsl.ValidateScriptIssues(&scriptCopy); len(issues) > 0 {
+			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %s", index, strings.Join(issues, "; "))
+		}
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: script must have at least one action", index)
+	}
+	effectiveRuntimeSettings, err = tr.resolveEffectiveRuntimeSettings(script.ProjectID, effectiveRuntimeSettings)
+	if err != nil {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: resolve redaction rules: %w", index, err)
+	}
+	redactionConfig, err := buildRuntimeRedactionConfig(effectiveRuntimeSettings)
+	if err != nil {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: build redaction config: %w", index, err)
+	}
+	testGroup.script = &scriptCopy
+
 	engineGroup := engine.GroupConfig{
-		Name:         name,
-		Script:       &scriptCopy,
-		VUsers:       vusers,
-		RampUp:       rampUp,
-		RampDown:     rampDown,
-		InitStrategy: initStrategy,
+		Name:            name,
+		Script:          &scriptCopy,
+		VUsers:          vusers,
+		RampUp:          rampUp,
+		RampDown:        rampDown,
+		InitStrategy:    initStrategy,
+		RedactionConfig: redactionConfig,
 	}
 
 	return testGroup, engineGroup, nil
@@ -1758,7 +2564,7 @@ func cloneDataSources(sources []dsl.DataSource) []dsl.DataSource {
 }
 
 func parseOptionalGroupDuration(value string, index int, fieldName string) (time.Duration, error) {
-	if value == "" {
+	if strings.TrimSpace(value) == "" {
 		return 0, nil
 	}
 	duration, err := time.ParseDuration(value)
@@ -1766,6 +2572,72 @@ func parseOptionalGroupDuration(value string, index int, fieldName string) (time
 		return 0, fmt.Errorf("group[%d]: invalid %s: %w", index, fieldName, err)
 	}
 	return duration, nil
+}
+
+func loadStageCompatibility(stages []storage.LoadStage, groupIndex int) (string, string, int, error) {
+	if len(stages) == 0 {
+		return "", "", 0, nil
+	}
+	var rampUp time.Duration
+	var rampDown time.Duration
+	maxVUsers := 0
+	for index, stage := range stages {
+		stageType := strings.ToLower(strings.TrimSpace(stage.Type))
+		if stageType == "" {
+			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: type is required", groupIndex, index)
+		}
+		if stageType != "ramp_up" && stageType != "hold" && stageType != "ramp_down" {
+			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: type must be ramp_up, hold, or ramp_down", groupIndex, index)
+		}
+		duration, err := time.ParseDuration(stage.Duration)
+		if err != nil {
+			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: duration is invalid: %w", groupIndex, index, err)
+		}
+		if duration <= 0 {
+			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: duration must be greater than zero", groupIndex, index)
+		}
+		if stage.TargetVUsers < 0 {
+			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: target_vusers must be zero or greater", groupIndex, index)
+		}
+		if stage.TargetTPS != nil && *stage.TargetTPS <= 0 {
+			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: target_tps must be greater than zero", groupIndex, index)
+		}
+		if stage.TargetVUsers == 0 && stage.TargetTPS == nil {
+			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: target_vusers or target_tps is required", groupIndex, index)
+		}
+		if stage.TargetVUsers > maxVUsers {
+			maxVUsers = stage.TargetVUsers
+		}
+		switch stageType {
+		case "ramp_up":
+			rampUp += duration
+		case "ramp_down":
+			rampDown += duration
+		}
+	}
+	return durationStringOrEmpty(rampUp), durationStringOrEmpty(rampDown), maxVUsers, nil
+}
+
+func durationStringOrEmpty(duration time.Duration) string {
+	if duration <= 0 {
+		return ""
+	}
+	return duration.String()
+}
+
+func cloneLoadStages(stages []storage.LoadStage) []storage.LoadStage {
+	if len(stages) == 0 {
+		return nil
+	}
+	out := make([]storage.LoadStage, len(stages))
+	copy(out, stages)
+	for index := range out {
+		if stages[index].TargetTPS != nil {
+			value := *stages[index].TargetTPS
+			out[index].TargetTPS = &value
+		}
+	}
+	return out
 }
 
 func deriveManagedTestName(requestName string, groups []TestGroup) string {
@@ -1781,19 +2653,263 @@ func deriveManagedTestName(requestName string, groups []TestGroup) string {
 func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.refreshPendingQueueMetadataLocked()
 	t, ok := tr.tests[id]
 	if ok && t.Status == "QUEUED" {
 		tr.refreshCapacityAdvisoryLocked(t)
 	}
-	return t, ok
+	if ok && t.Status == "PENDING" {
+		tr.refreshCapacityAdvisoryLocked(t)
+	}
+	if !ok {
+		return nil, false
+	}
+	cloned := *t
+	cloned.VUserRamps = cloneVUserRampStatusMap(t.VUserRamps)
+	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(t)
+	return &cloned, true
+}
+
+func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunComparisonBaseline {
+	if test == nil {
+		return nil
+	}
+	referenceTime := test.CreatedAt
+	if test.StartedAt != nil && !test.StartedAt.IsZero() {
+		referenceTime = *test.StartedAt
+	}
+	var pinned *ManagedTest
+	var pinnedMarkedAt time.Time
+	var pinnedCompletedAt time.Time
+	var latestSuccessful *ManagedTest
+	var latestSuccessfulCompletedAt time.Time
+	var latestFinished *ManagedTest
+	var latestFinishedCompletedAt time.Time
+	for _, candidate := range tr.tests {
+		if !isComparableBaselineCandidate(test, candidate) {
+			continue
+		}
+		completedAt, ok := baselineCandidateCompletedAt(candidate)
+		if !ok || (!referenceTime.IsZero() && !completedAt.Before(referenceTime)) {
+			continue
+		}
+		if candidate.BaselinePinned {
+			markedAt := completedAt
+			if candidate.BaselinePinnedAt != nil && !candidate.BaselinePinnedAt.IsZero() {
+				markedAt = *candidate.BaselinePinnedAt
+			}
+			if pinned == nil || markedAt.After(pinnedMarkedAt) || (markedAt.Equal(pinnedMarkedAt) && completedAt.After(pinnedCompletedAt)) {
+				pinned = candidate
+				pinnedMarkedAt = markedAt
+				pinnedCompletedAt = completedAt
+			}
+			continue
+		}
+		if candidate.Status == "COMPLETE" {
+			if latestSuccessful == nil || completedAt.After(latestSuccessfulCompletedAt) {
+				latestSuccessful = candidate
+				latestSuccessfulCompletedAt = completedAt
+			}
+			continue
+		}
+		if latestFinished == nil || completedAt.After(latestFinishedCompletedAt) {
+			latestFinished = candidate
+			latestFinishedCompletedAt = completedAt
+		}
+	}
+	policy := "latest_successful"
+	selected := latestSuccessful
+	selectedCompletedAt := latestSuccessfulCompletedAt
+	if pinned != nil {
+		selected = pinned
+		selectedCompletedAt = pinnedCompletedAt
+		policy = "pinned"
+	} else if selected == nil {
+		selected = latestFinished
+		selectedCompletedAt = latestFinishedCompletedAt
+		policy = "latest_finished"
+	}
+	if selected == nil {
+		return nil
+	}
+	metrics := latestMetricsWithComparableBreakdown(selected)
+	if metrics == nil {
+		return nil
+	}
+	return &RunComparisonBaseline{
+		SourceTestID:     selected.ID,
+		SourceTestName:   selected.Name,
+		Policy:           policy,
+		CompletedAt:      selectedCompletedAt,
+		Transactions:     cloneTxMetricsMap(metrics.Transactions),
+		DependencyHealth: cloneTxMetricsMap(metrics.DependencyHealth),
+	}
+}
+
+func isComparableBaselineCandidate(current *ManagedTest, candidate *ManagedTest) bool {
+	if current == nil || candidate == nil || current.ID == candidate.ID {
+		return false
+	}
+	switch candidate.Status {
+	case "COMPLETE", "FAILED", "ABORTED":
+	default:
+		return false
+	}
+	if current.ScenarioID != "" || candidate.ScenarioID != "" {
+		return current.ScenarioID != "" && current.ScenarioID == candidate.ScenarioID
+	}
+	if current.ReleaseID != "" || candidate.ReleaseID != "" {
+		return current.ReleaseID != "" && current.ReleaseID == candidate.ReleaseID && current.Name == candidate.Name
+	}
+	if current.ApplicationID != "" || candidate.ApplicationID != "" {
+		return current.ApplicationID != "" && current.ApplicationID == candidate.ApplicationID && current.Name == candidate.Name
+	}
+	return current.Name != "" && current.Name == candidate.Name
+}
+
+func sharesComparisonScope(left *ManagedTest, right *ManagedTest) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	if left.ScenarioID != "" || right.ScenarioID != "" {
+		return left.ScenarioID != "" && left.ScenarioID == right.ScenarioID
+	}
+	if left.ReleaseID != "" || right.ReleaseID != "" {
+		return left.ReleaseID != "" && left.ReleaseID == right.ReleaseID && left.Name == right.Name
+	}
+	if left.ApplicationID != "" || right.ApplicationID != "" {
+		return left.ApplicationID != "" && left.ApplicationID == right.ApplicationID && left.Name == right.Name
+	}
+	return left.Name != "" && left.Name == right.Name
+}
+
+func canPinComparisonBaseline(test *ManagedTest) bool {
+	if test == nil {
+		return false
+	}
+	switch test.Status {
+	case "COMPLETE", "FAILED", "ABORTED":
+		return true
+	default:
+		return false
+	}
+}
+
+func (tr *TestRunner) PinComparisonBaseline(id string) (*ManagedTest, error) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	test, ok := tr.tests[id]
+	if !ok {
+		return nil, fmt.Errorf("test not found: %s", id)
+	}
+	if !canPinComparisonBaseline(test) {
+		return nil, fmt.Errorf("comparison baseline pinning requires a completed, failed, or aborted test")
+	}
+	pinnedAt := time.Now().UTC()
+	for _, candidate := range tr.tests {
+		if !sharesComparisonScope(test, candidate) {
+			continue
+		}
+		if candidate.ID == test.ID {
+			candidate.BaselinePinned = true
+			candidate.BaselinePinnedAt = &pinnedAt
+		} else if candidate.BaselinePinned || candidate.BaselinePinnedAt != nil {
+			candidate.BaselinePinned = false
+			candidate.BaselinePinnedAt = nil
+		}
+		tr.saveManagedTestRecord(candidate)
+	}
+	cloned := *test
+	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(test)
+	return &cloned, nil
+}
+
+func (tr *TestRunner) UnpinComparisonBaseline(id string) (*ManagedTest, error) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	test, ok := tr.tests[id]
+	if !ok {
+		return nil, fmt.Errorf("test not found: %s", id)
+	}
+	test.BaselinePinned = false
+	test.BaselinePinnedAt = nil
+	tr.saveManagedTestRecord(test)
+	cloned := *test
+	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(test)
+	return &cloned, nil
+}
+
+func baselineCandidateCompletedAt(candidate *ManagedTest) (time.Time, bool) {
+	if candidate == nil {
+		return time.Time{}, false
+	}
+	if candidate.EndedAt != nil && !candidate.EndedAt.IsZero() {
+		return *candidate.EndedAt, true
+	}
+	for index := len(candidate.History) - 1; index >= 0; index-- {
+		if candidate.History[index] != nil && !candidate.History[index].Timestamp.IsZero() {
+			return candidate.History[index].Timestamp, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func latestMetricsWithComparableBreakdown(test *ManagedTest) *LiveMetrics {
+	if test == nil {
+		return nil
+	}
+	if test.LiveMetrics != nil && (len(test.LiveMetrics.Transactions) > 0 || len(test.LiveMetrics.DependencyHealth) > 0) {
+		return test.LiveMetrics
+	}
+	for index := len(test.History) - 1; index >= 0; index-- {
+		if test.History[index] != nil && (len(test.History[index].Transactions) > 0 || len(test.History[index].DependencyHealth) > 0) {
+			return test.History[index]
+		}
+	}
+	return nil
+}
+
+func cloneTxMetricsMap(in map[string]*TxMetrics) map[string]*TxMetrics {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]*TxMetrics, len(in))
+	for key, tx := range in {
+		if tx == nil {
+			continue
+		}
+		clone := *tx
+		if tx.ServerTelemetry != nil {
+			telemetry := *tx.ServerTelemetry
+			telemetry.RequestSizeClasses = cloneTelemetryClassCounts(tx.ServerTelemetry.RequestSizeClasses)
+			telemetry.ResponseSizeClasses = cloneTelemetryClassCounts(tx.ServerTelemetry.ResponseSizeClasses)
+			telemetry.RequestPayloadHistogram = cloneTelemetryClassCounts(tx.ServerTelemetry.RequestPayloadHistogram)
+			telemetry.ResponsePayloadHistogram = cloneTelemetryClassCounts(tx.ServerTelemetry.ResponsePayloadHistogram)
+			clone.ServerTelemetry = &telemetry
+		}
+		if len(tx.CorrelationIDs) > 0 {
+			clone.CorrelationIDs = append([]string(nil), tx.CorrelationIDs...)
+		}
+		out[key] = &clone
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (tr *TestRunner) ListTests() []*ManagedTest {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.refreshPendingQueueMetadataLocked()
 	out := make([]*ManagedTest, 0, len(tr.tests))
 	for _, t := range tr.tests {
 		if t.Status == "QUEUED" {
+			tr.refreshCapacityAdvisoryLocked(t)
+		}
+		if t.Status == "PENDING" {
 			tr.refreshCapacityAdvisoryLocked(t)
 		}
 		out = append(out, t)
@@ -1805,6 +2921,7 @@ func (tr *TestRunner) ListTestsFiltered(projectID string, folderID *string) []*M
 	projectID = normalizeProjectID(projectID)
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.refreshPendingQueueMetadataLocked()
 	out := make([]*ManagedTest, 0, len(tr.tests))
 	for _, t := range tr.tests {
 		if t.ProjectID != projectID {
@@ -1822,6 +2939,9 @@ func (tr *TestRunner) ListTestsFiltered(projectID string, folderID *string) []*M
 		if t.Status == "QUEUED" {
 			tr.refreshCapacityAdvisoryLocked(t)
 		}
+		if t.Status == "PENDING" {
+			tr.refreshCapacityAdvisoryLocked(t)
+		}
 		out = append(out, t)
 	}
 	return out
@@ -1830,6 +2950,7 @@ func (tr *TestRunner) ListTestsFiltered(projectID string, folderID *string) []*M
 func (tr *TestRunner) ListTestsByContext(applicationID string, releaseID string, scenarioID string) []*ManagedTest {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.refreshPendingQueueMetadataLocked()
 	out := make([]*ManagedTest, 0, len(tr.tests))
 	for _, t := range tr.tests {
 		if applicationID != "" && t.ApplicationID != applicationID {
@@ -1842,6 +2963,9 @@ func (tr *TestRunner) ListTestsByContext(applicationID string, releaseID string,
 			continue
 		}
 		if t.Status == "QUEUED" {
+			tr.refreshCapacityAdvisoryLocked(t)
+		}
+		if t.Status == "PENDING" {
 			tr.refreshCapacityAdvisoryLocked(t)
 		}
 		out = append(out, t)
@@ -1874,6 +2998,14 @@ func (tr *TestRunner) GetRunArchive(id string) (*storage.RunArchiveRecord, bool)
 	if !ok {
 		return nil, false
 	}
+	if !runArchiveRecordAvailable(record) {
+		tr.mu.Lock()
+		if test, exists := tr.tests[id]; exists {
+			test.Archive = nil
+		}
+		tr.mu.Unlock()
+		return nil, false
+	}
 	tr.mu.Lock()
 	tr.archives[id] = record
 	if test, exists := tr.tests[id]; exists {
@@ -1883,10 +3015,24 @@ func (tr *TestRunner) GetRunArchive(id string) (*storage.RunArchiveRecord, bool)
 	return record, true
 }
 
+func runArchiveRecordAvailable(record *storage.RunArchiveRecord) bool {
+	if record == nil || record.ManifestPath == "" {
+		return false
+	}
+	if err := ensureArchiveMaterialized(record); err != nil {
+		return false
+	}
+	_, err := os.Stat(record.ManifestPath)
+	return err == nil
+}
+
 func (tr *TestRunner) GetRunArchiveManifest(id string) (*RunArchiveManifest, error) {
 	record, ok := tr.GetRunArchive(id)
 	if !ok {
 		return nil, fmt.Errorf("archive not found: %s", id)
+	}
+	if err := ensureArchiveMaterialized(record); err != nil {
+		return nil, err
 	}
 	return loadRunArchiveManifest(record.ManifestPath)
 }
@@ -1924,40 +3070,171 @@ func (tr *TestRunner) StartTest(id string) error {
 
 func (tr *TestRunner) StartTestWithOptions(id string, opts StartTestOptions) error {
 	tr.mu.Lock()
+	blocked, err := tr.preflightStartBlocksLocked(id, opts)
+	tr.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if blocked {
+		return nil
+	}
+
+	shakeoutTest, err := tr.beginScriptShakeoutIfNeeded(id, opts)
+	if err != nil {
+		return err
+	}
+	if shakeoutTest != nil {
+		report := tr.runScriptShakeoutReport(shakeoutTest)
+		if !report.Passed {
+			return tr.markScriptShakeoutReview(id, report)
+		}
+		tr.markScriptShakeoutPassed(id, report)
+	}
+
+	tr.mu.Lock()
 	test, err := tr.prepareTestStartLocked(id, opts)
 	tr.mu.Unlock()
 	if err != nil {
 		return err
+	}
+	if test == nil {
+		return nil
 	}
 
 	go tr.runTest(test)
 	return nil
 }
 
-func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (*ManagedTest, error) {
-	maxConcurrent := tr.settings.General.MaxConcurrentTests
-	if tr.countActiveTestsLocked() >= maxConcurrent {
-		return nil, fmt.Errorf("max concurrent tests (%d) reached", maxConcurrent)
+func (tr *TestRunner) preflightStartBlocksLocked(id string, opts StartTestOptions) (bool, error) {
+	test, ok := tr.tests[id]
+	if !ok {
+		return false, fmt.Errorf("test not found: %s", id)
 	}
+	if test.Status != "QUEUED" && test.Status != "PENDING" && test.Status != "SHAKEOUT_REVIEW" {
+		return false, fmt.Errorf("test is %s, must be QUEUED, PENDING, or SHAKEOUT_REVIEW to start", test.Status)
+	}
+
+	tr.refreshCapacityAdvisoryLocked(test)
+	if err := buildCapacityShortfallStartError(id, test.CapacityAdvisory, opts); err != nil {
+		return false, err
+	}
+	if blocked, reason := tr.evaluateQuotaBlockLocked(test, ""); blocked {
+		now := time.Now()
+		test.Status = "PENDING"
+		if test.PendingSince == nil || test.PendingSince.IsZero() {
+			test.PendingSince = &now
+		}
+		test.PendingReason = reason
+		test.QueuePosition = 0
+		test.Error = ""
+		tr.saveManagedTestRecord(test)
+		tr.broadcastEvent("test_pending", test)
+		return true, nil
+	}
+	return false, nil
+}
+
+func (tr *TestRunner) beginScriptShakeoutIfNeeded(id string, opts StartTestOptions) (*ManagedTest, error) {
+	if opts.OverrideScriptShakeoutError {
+		return nil, nil
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
 
 	test, ok := tr.tests[id]
 	if !ok {
 		return nil, fmt.Errorf("test not found: %s", id)
 	}
-	if test.Status != "QUEUED" {
-		return nil, fmt.Errorf("test is %s, must be QUEUED to start", test.Status)
+	if !test.ScriptShakeout {
+		return nil, nil
+	}
+	if test.Status != "QUEUED" && test.Status != "PENDING" && test.Status != "SHAKEOUT_REVIEW" {
+		return nil, fmt.Errorf("test is %s, must be QUEUED, PENDING, or SHAKEOUT_REVIEW to start", test.Status)
+	}
+
+	test.Status = "SHAKEOUT"
+	test.PendingSince = nil
+	test.PendingReason = ""
+	test.QueuePosition = 0
+	test.Error = ""
+	tr.saveManagedTestRecord(test)
+	tr.broadcastEvent("script_shakeout_started", test)
+
+	return test, nil
+}
+
+func (tr *TestRunner) markScriptShakeoutPassed(id string, _ ScriptShakeoutReport) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	test, ok := tr.tests[id]
+	if !ok {
+		return
+	}
+	if test.Status != "SHAKEOUT" {
+		return
+	}
+	test.Status = "QUEUED"
+	test.Error = ""
+	tr.saveManagedTestRecord(test)
+	tr.broadcastEvent("script_shakeout_passed", test)
+}
+
+func (tr *TestRunner) markScriptShakeoutReview(id string, report ScriptShakeoutReport) error {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	test, ok := tr.tests[id]
+	if !ok {
+		return fmt.Errorf("test not found: %s", id)
+	}
+	if test.Status != "SHAKEOUT" {
+		return fmt.Errorf("test is %s, shakeout review no longer applies", test.Status)
+	}
+	test.Status = "SHAKEOUT_REVIEW"
+	test.Error = formatScriptShakeoutEvidence(report)
+	tr.saveManagedTestRecord(test)
+	tr.broadcastEvent("script_shakeout_failed", test)
+	return &ScriptShakeoutGateError{TestID: id, Report: &report}
+}
+
+func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (*ManagedTest, error) {
+	test, ok := tr.tests[id]
+	if !ok {
+		return nil, fmt.Errorf("test not found: %s", id)
+	}
+	if test.Status != "QUEUED" && test.Status != "PENDING" && test.Status != "SHAKEOUT_REVIEW" {
+		return nil, fmt.Errorf("test is %s, must be QUEUED, PENDING, or SHAKEOUT_REVIEW to start", test.Status)
 	}
 
 	tr.refreshCapacityAdvisoryLocked(test)
 	if err := buildCapacityShortfallStartError(id, test.CapacityAdvisory, opts); err != nil {
 		return nil, err
 	}
+	if blocked, reason := tr.evaluateQuotaBlockLocked(test, ""); blocked {
+		now := time.Now()
+		test.Status = "PENDING"
+		if test.PendingSince == nil || test.PendingSince.IsZero() {
+			test.PendingSince = &now
+		}
+		test.PendingReason = reason
+		test.QueuePosition = 0
+		test.Error = ""
+		tr.saveManagedTestRecord(test)
+		tr.broadcastEvent("test_pending", test)
+		return nil, nil
+	}
 
 	test.Status = "INITIALIZING"
+	test.PendingSince = nil
+	test.PendingReason = ""
+	test.QueuePosition = 0
+	test.Error = ""
 	test.executionBackend = tr.execution
 	if test.executionBackend == nil {
 		test.executionBackend = localExecutionBackend{}
 	}
+	tr.saveManagedTestRecord(test)
 	return test, nil
 }
 
@@ -1969,6 +3246,247 @@ func (tr *TestRunner) countActiveTestsLocked() int {
 		}
 	}
 	return active
+}
+
+func (tr *TestRunner) countActiveTestsForProjectLocked(projectID string) int {
+	projectID = normalizeProjectID(projectID)
+	active := 0
+	for _, test := range tr.tests {
+		if normalizeProjectID(test.ProjectID) != projectID {
+			continue
+		}
+		if test.Status == "RUNNING" || test.Status == "INITIALIZING" {
+			active++
+		}
+	}
+	return active
+}
+
+func (tr *TestRunner) countActiveVUsersLocked() int {
+	total := 0
+	for _, test := range tr.tests {
+		if test.Status == "RUNNING" || test.Status == "INITIALIZING" {
+			total += test.TotalVUsers
+		}
+	}
+	return total
+}
+
+func (tr *TestRunner) countActiveVUsersForProjectLocked(projectID string) int {
+	projectID = normalizeProjectID(projectID)
+	total := 0
+	for _, test := range tr.tests {
+		if normalizeProjectID(test.ProjectID) != projectID {
+			continue
+		}
+		if test.Status == "RUNNING" || test.Status == "INITIALIZING" {
+			total += test.TotalVUsers
+		}
+	}
+	return total
+}
+
+func (tr *TestRunner) validateConcurrencyLimitsLocked(projectID string) error {
+	maxConcurrent := tr.settings.General.MaxConcurrentTests
+	if tr.countActiveTestsLocked() >= maxConcurrent {
+		return fmt.Errorf("max concurrent tests (%d) reached", maxConcurrent)
+	}
+	projectMaxConcurrent := tr.projectMaxConcurrentTests(projectID)
+	if projectMaxConcurrent > 0 && tr.countActiveTestsForProjectLocked(projectID) >= projectMaxConcurrent {
+		return fmt.Errorf("project max concurrent tests (%d) reached", projectMaxConcurrent)
+	}
+	return nil
+}
+
+func (tr *TestRunner) evaluateQuotaBlockLocked(test *ManagedTest, excludeTestID string) (bool, string) {
+	if test == nil {
+		return false, ""
+	}
+	globalActiveTests := tr.countActiveTestsLocked()
+	projectActiveTests := tr.countActiveTestsForProjectLocked(test.ProjectID)
+	globalActiveVUsers := tr.countActiveVUsersLocked()
+	projectActiveVUsers := tr.countActiveVUsersForProjectLocked(test.ProjectID)
+	if excludeTestID != "" {
+		if existing, ok := tr.tests[excludeTestID]; ok && (existing.Status == "RUNNING" || existing.Status == "INITIALIZING") {
+			globalActiveTests--
+			projectActiveTests--
+			globalActiveVUsers -= existing.TotalVUsers
+			projectActiveVUsers -= existing.TotalVUsers
+		}
+	}
+	maxConcurrent := tr.settings.General.MaxConcurrentTests
+	if globalActiveTests >= maxConcurrent {
+		return true, fmt.Sprintf("waiting for a global test slot (%d max concurrent tests)", maxConcurrent)
+	}
+	projectMaxConcurrent := tr.projectMaxConcurrentTests(test.ProjectID)
+	if projectMaxConcurrent > 0 && projectActiveTests >= projectMaxConcurrent {
+		return true, fmt.Sprintf("waiting for a project test slot (%d max concurrent tests)", projectMaxConcurrent)
+	}
+	projectMaxVUsers := tr.projectMaxVUsers(test.ProjectID)
+	if projectMaxVUsers > 0 && projectActiveVUsers+test.TotalVUsers > projectMaxVUsers {
+		return true, fmt.Sprintf("waiting for project VUser capacity (%d max vusers)", projectMaxVUsers)
+	}
+	return false, ""
+}
+
+func (tr *TestRunner) projectMaxConcurrentTests(projectID string) int {
+	if tr.projectStore == nil {
+		return 0
+	}
+	projectID = normalizeProjectID(projectID)
+	project, err := tr.projectStore.GetProject(projectID)
+	if err != nil || project == nil {
+		return 0
+	}
+	if project.Settings.MaxConcurrentTests < 1 {
+		return 0
+	}
+	return project.Settings.MaxConcurrentTests
+}
+
+func (tr *TestRunner) projectMaxVUsers(projectID string) int {
+	if tr.projectStore == nil {
+		return 0
+	}
+	projectID = normalizeProjectID(projectID)
+	project, err := tr.projectStore.GetProject(projectID)
+	if err != nil || project == nil {
+		return 0
+	}
+	if project.Settings.MaxVUsers < 1 {
+		return 0
+	}
+	return project.Settings.MaxVUsers
+}
+
+func pendingAnchor(test *ManagedTest) time.Time {
+	if test != nil && test.PendingSince != nil && !test.PendingSince.IsZero() {
+		return *test.PendingSince
+	}
+	if test != nil {
+		return test.CreatedAt
+	}
+	return time.Time{}
+}
+
+type pendingFairShareRank struct {
+	reservationTier int
+	activeTests     int
+	activeVUsers    int
+	anchor          time.Time
+	createdAt       time.Time
+	id              string
+}
+
+func (tr *TestRunner) sortPendingTestsForFairShareLocked(pending []*ManagedTest) {
+	sort.Slice(pending, func(i, j int) bool {
+		left := tr.pendingFairShareRankLocked(pending[i])
+		right := tr.pendingFairShareRankLocked(pending[j])
+		if left.reservationTier != right.reservationTier {
+			return left.reservationTier < right.reservationTier
+		}
+		if left.activeTests != right.activeTests {
+			return left.activeTests < right.activeTests
+		}
+		if left.activeVUsers != right.activeVUsers {
+			return left.activeVUsers < right.activeVUsers
+		}
+		if !left.anchor.Equal(right.anchor) {
+			return left.anchor.Before(right.anchor)
+		}
+		if !left.createdAt.Equal(right.createdAt) {
+			return left.createdAt.Before(right.createdAt)
+		}
+		return left.id < right.id
+	})
+}
+
+func (tr *TestRunner) pendingFairShareRankLocked(test *ManagedTest) pendingFairShareRank {
+	if test == nil {
+		return pendingFairShareRank{reservationTier: 1, id: ""}
+	}
+	projectID := normalizeProjectID(test.ProjectID)
+	reservationTier := 1
+	_, projectReserved := capacityReservationTotals(tr.settings, projectID)
+	if projectReserved > 0 && tr.countActiveRecommendedGeneratorsForProjectLocked(projectID) < projectReserved {
+		reservationTier = 0
+	}
+	return pendingFairShareRank{
+		reservationTier: reservationTier,
+		activeTests:     tr.countActiveTestsForProjectLocked(projectID),
+		activeVUsers:    tr.countActiveVUsersForProjectLocked(projectID),
+		anchor:          pendingAnchor(test),
+		createdAt:       test.CreatedAt,
+		id:              test.ID,
+	}
+}
+
+func (tr *TestRunner) countActiveRecommendedGeneratorsForProjectLocked(projectID string) int {
+	projectID = normalizeProjectID(projectID)
+	total := 0
+	for _, test := range tr.tests {
+		if test == nil || normalizeProjectID(test.ProjectID) != projectID {
+			continue
+		}
+		if test.Status != "RUNNING" && test.Status != "INITIALIZING" && test.Status != "PAUSED" {
+			continue
+		}
+		total += recommendedGeneratorCountForTest(test)
+	}
+	return total
+}
+
+func recommendedGeneratorCountForTest(test *ManagedTest) int {
+	if test == nil {
+		return 0
+	}
+	if test.CapacityAdvisory != nil && test.CapacityAdvisory.RecommendedGenerators > 0 {
+		return test.CapacityAdvisory.RecommendedGenerators
+	}
+	if test.TotalVUsers > 0 {
+		return 1
+	}
+	return 0
+}
+
+func runLogicGoalSnapshot(script *dsl.Script) *RunLogicGoalSnapshot {
+	if script == nil {
+		return nil
+	}
+	goals := RunLogicGoalSnapshot{
+		GlobalIterations: script.Config.RunLogic.GlobalIterations,
+		MaxTransactions:  script.Config.RunLogic.MaxTransactions,
+	}
+	if goals.GlobalIterations <= 0 && goals.MaxTransactions <= 0 {
+		return nil
+	}
+	return &goals
+}
+
+func (tr *TestRunner) refreshPendingQueueMetadataLocked() {
+	pending := make([]*ManagedTest, 0)
+	for _, test := range tr.tests {
+		if test.Status != "PENDING" {
+			test.PendingReason = ""
+			test.QueuePosition = 0
+			continue
+		}
+		if test.PendingSince == nil || test.PendingSince.IsZero() {
+			pendingSince := test.CreatedAt
+			test.PendingSince = &pendingSince
+		}
+		pending = append(pending, test)
+	}
+	tr.sortPendingTestsForFairShareLocked(pending)
+	for index, test := range pending {
+		test.QueuePosition = index + 1
+		blocked, reason := tr.evaluateQuotaBlockLocked(test, "")
+		if blocked {
+			test.PendingReason = reason
+		} else {
+			test.PendingReason = "ready to start when the queue advances"
+		}
+	}
 }
 
 func buildCapacityShortfallStartError(id string, advisory *CapacityAdvisory, opts StartTestOptions) error {
@@ -1988,7 +3506,7 @@ func (tr *TestRunner) refreshCapacityAdvisoryLocked(test *ManagedTest) {
 		return
 	}
 	groups := tr.hydrateCapacityGroupsLocked(test.Groups)
-	test.CapacityAdvisory = estimateCapacityAdvisory(tr.settings, groups, test.TotalVUsers, test.Duration, test.ResourceBaseline, test.RuntimeSettings)
+	test.CapacityAdvisory = tr.estimateCapacityAdvisoryForAssignment(test.ProjectID, groups, test.TotalVUsers, test.Duration, test.ResourceBaseline, test.RuntimeSettings, test.Assignment)
 }
 
 func (tr *TestRunner) loadRunArchiveFromStore(id string) (*storage.RunArchiveRecord, bool) {
@@ -2019,26 +3537,40 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		return nil
 	}
 	return &storage.TestRecord{
-		ID:               test.ID,
-		Name:             test.Name,
-		Status:           test.Status,
-		ApplicationID:    test.ApplicationID,
-		ReleaseID:        test.ReleaseID,
-		ScenarioID:       test.ScenarioID,
-		ProjectID:        normalizeProjectID(test.ProjectID),
-		FolderID:         test.FolderID,
-		ScenarioMode:     test.ScenarioMode,
-		ScriptShakeout:   test.ScriptShakeout,
-		ResourceBaseline: test.ResourceBaseline,
-		StartDelay:       test.StartDelay,
-		Assignment:       test.Assignment,
-		TotalVUsers:      test.TotalVUsers,
-		Duration:         int64(test.Duration),
-		StartTime:        test.CreatedAt,
-		Groups:           test.Groups,
-		GoalConfig:       test.GoalConfig,
-		RuntimeSettings:  test.RuntimeSettings,
+		ID:                   test.ID,
+		Name:                 test.Name,
+		Status:               test.Status,
+		ApplicationID:        test.ApplicationID,
+		ReleaseID:            test.ReleaseID,
+		ScenarioID:           test.ScenarioID,
+		ProjectID:            normalizeProjectID(test.ProjectID),
+		FolderID:             test.FolderID,
+		ScenarioMode:         test.ScenarioMode,
+		ScriptShakeout:       test.ScriptShakeout,
+		ResourceBaseline:     test.ResourceBaseline,
+		StartDelay:           test.StartDelay,
+		Assignment:           test.Assignment,
+		TotalVUsers:          test.TotalVUsers,
+		Duration:             int64(test.Duration),
+		StartTime:            test.CreatedAt,
+		PendingSince:         test.PendingSince,
+		BaselinePinned:       test.BaselinePinned,
+		BaselinePinnedAt:     test.BaselinePinnedAt,
+		CreatedBySubject:     test.CreatedBySubject,
+		CreatedByDisplayName: test.CreatedByDisplayName,
+		StartedBySubject:     test.StartedBySubject,
+		StartedByDisplayName: test.StartedByDisplayName,
+		Groups:               test.Groups,
+		GoalConfig:           test.GoalConfig,
+		RuntimeSettings:      test.RuntimeSettings,
 	}
+}
+
+func (tr *TestRunner) ReconcilePendingTests() {
+	tr.promotePendingTests()
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.refreshPendingQueueMetadataLocked()
 }
 
 func normalizeProjectID(projectID string) string {
@@ -2052,6 +3584,30 @@ func (tr *TestRunner) saveManagedTestRecord(test *ManagedTest) {
 	if tr.testStore != nil {
 		tr.testStore.SaveTest(buildManagedTestRecord(test))
 	}
+}
+
+func (tr *TestRunner) AttributeTestCreated(id string, subject string, displayName string) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	test, ok := tr.tests[id]
+	if !ok {
+		return
+	}
+	test.CreatedBySubject = strings.TrimSpace(subject)
+	test.CreatedByDisplayName = strings.TrimSpace(displayName)
+	tr.saveManagedTestRecord(test)
+}
+
+func (tr *TestRunner) AttributeTestStarted(id string, subject string, displayName string) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	test, ok := tr.tests[id]
+	if !ok {
+		return
+	}
+	test.StartedBySubject = strings.TrimSpace(subject)
+	test.StartedByDisplayName = strings.TrimSpace(displayName)
+	tr.saveManagedTestRecord(test)
 }
 
 func (tr *TestRunner) deleteStoredTest(id string) {
@@ -2109,6 +3665,27 @@ func (tr *TestRunner) StopTest(id string) error {
 	if !ok {
 		return fmt.Errorf("test not found: %s", id)
 	}
+	if test.Status == "QUEUED" || test.Status == "PENDING" || test.Status == "SHAKEOUT" || test.Status == "SHAKEOUT_REVIEW" {
+		tr.mu.Lock()
+		if current, ok := tr.tests[id]; ok {
+			now := time.Now().UTC()
+			current.Status = "ABORTED"
+			current.PendingSince = nil
+			current.PendingReason = ""
+			current.QueuePosition = 0
+			current.EndedAt = &now
+			if current.Error == "" {
+				current.Error = "test cancelled before start"
+			}
+			tr.saveManagedTestRecord(current)
+			tr.broadcastEvent("test_aborted", current)
+		}
+		tr.mu.Unlock()
+		return nil
+	}
+	tr.mu.Lock()
+	tr.cancelAllVUserScaleRampsLocked(test)
+	tr.mu.Unlock()
 	if test.multiEngine == nil {
 		backend := test.executionBackend
 		if backend == nil {
@@ -2138,23 +3715,151 @@ func (tr *TestRunner) AbortTest(id string) error {
 }
 
 func (tr *TestRunner) ScaleVUsers(id string, groupName string, targetVUsers int) error {
-	tr.mu.RLock()
-	test, ok := tr.tests[id]
-	tr.mu.RUnlock()
-	if !ok {
-		return fmt.Errorf("test not found: %s", id)
+	return tr.ScaleVUsersWithOptions(id, groupName, targetVUsers, ScaleVUsersOptions{})
+}
+
+func (tr *TestRunner) ScaleVUsersWithOptions(id string, groupName string, targetVUsers int, opts ScaleVUsersOptions) error {
+	if opts.RampDuration <= 0 {
+		return tr.scaleVUsersNow(id, groupName, targetVUsers, true)
 	}
-	if test.Status != "RUNNING" {
-		return fmt.Errorf("test is %s, must be RUNNING to scale", test.Status)
-	}
+	return tr.scheduleVUserScaleRamp(id, groupName, targetVUsers, opts.RampDuration)
+}
+
+func (tr *TestRunner) scheduleVUserScaleRamp(id string, groupName string, targetVUsers int, rampDuration time.Duration) error {
 	if targetVUsers < 0 {
 		return fmt.Errorf("target vusers must be non-negative")
 	}
-	if test.multiEngine == nil {
-		backend := test.executionBackend
-		if backend == nil {
-			backend = tr.execution
+	if rampDuration <= 0 {
+		return fmt.Errorf("ramp duration must be positive")
+	}
+
+	tr.mu.Lock()
+	test, ok := tr.tests[id]
+	if !ok {
+		tr.mu.Unlock()
+		return fmt.Errorf("test not found: %s", id)
+	}
+	if test.Status != "RUNNING" {
+		tr.mu.Unlock()
+		return fmt.Errorf("test is %s, must be RUNNING to scale", test.Status)
+	}
+
+	currentVUsers, found := testGroupVUsers(test, groupName)
+	if !found {
+		tr.mu.Unlock()
+		return fmt.Errorf("group not found: %s", groupName)
+	}
+	tr.cancelVUserScaleRampLocked(test, groupName)
+	if currentVUsers == targetVUsers {
+		tr.mu.Unlock()
+		return nil
+	}
+
+	startedAt := time.Now()
+	rampStatus := VUserRampStatus{
+		Group:               groupName,
+		StartVUsers:         currentVUsers,
+		TargetVUsers:        targetVUsers,
+		StartedAt:           startedAt,
+		RampDuration:        rampDuration.String(),
+		RampDurationSeconds: int64(rampDuration / time.Second),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	ramp := &vuserScaleRamp{cancel: cancel, status: rampStatus}
+	if test.vuserScaleRamps == nil {
+		test.vuserScaleRamps = make(map[string]*vuserScaleRamp)
+	}
+	if test.VUserRamps == nil {
+		test.VUserRamps = make(map[string]VUserRampStatus)
+	}
+	test.vuserScaleRamps[groupName] = ramp
+	test.VUserRamps[groupName] = rampStatus
+	projectID := normalizeProjectID(test.ProjectID)
+	tr.mu.Unlock()
+
+	tr.hub.BroadcastJSON(map[string]any{
+		"type":                  "vusers_ramp_started",
+		"test_id":               id,
+		"project_id":            projectID,
+		"group":                 rampStatus.Group,
+		"current_vusers":        rampStatus.StartVUsers,
+		"target_vusers":         rampStatus.TargetVUsers,
+		"ramp_duration":         rampStatus.RampDuration,
+		"ramp_duration_seconds": rampStatus.RampDurationSeconds,
+		"timestamp":             startedAt,
+	})
+
+	go tr.runVUserScaleRamp(ctx, ramp, id, groupName, currentVUsers, targetVUsers, rampDuration)
+	return nil
+}
+
+func (tr *TestRunner) runVUserScaleRamp(ctx context.Context, ramp *vuserScaleRamp, id string, groupName string, currentVUsers int, targetVUsers int, rampDuration time.Duration) {
+	defer tr.finishVUserScaleRamp(id, groupName, ramp)
+
+	delta := targetVUsers - currentVUsers
+	steps := absInt(delta)
+	if steps == 0 {
+		return
+	}
+	direction := 1
+	if delta < 0 {
+		direction = -1
+	}
+	interval := rampDuration / time.Duration(steps)
+	if interval <= 0 {
+		interval = time.Nanosecond
+	}
+
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+	for step := 1; step <= steps; step++ {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
 		}
+
+		nextTarget := currentVUsers + direction*step
+		if err := tr.scaleVUsersNow(id, groupName, nextTarget, false); err != nil {
+			slog.Warn("gradual vuser scale stopped", "test_id", id, "group", groupName, "target_vusers", nextTarget, "error", err)
+			return
+		}
+		if step < steps {
+			timer.Reset(interval)
+		}
+	}
+}
+
+func (tr *TestRunner) scaleVUsersNow(id string, groupName string, targetVUsers int, cancelExistingRamp bool) error {
+	tr.mu.Lock()
+	test, ok := tr.tests[id]
+	if !ok {
+		tr.mu.Unlock()
+		return fmt.Errorf("test not found: %s", id)
+	}
+	if test.Status != "RUNNING" {
+		tr.mu.Unlock()
+		return fmt.Errorf("test is %s, must be RUNNING to scale", test.Status)
+	}
+	if targetVUsers < 0 {
+		tr.mu.Unlock()
+		return fmt.Errorf("target vusers must be non-negative")
+	}
+	if _, found := testGroupVUsers(test, groupName); !found {
+		tr.mu.Unlock()
+		return fmt.Errorf("group not found: %s", groupName)
+	}
+	if cancelExistingRamp {
+		tr.cancelVUserScaleRampLocked(test, groupName)
+	}
+	multiEngine := test.multiEngine
+	backend := test.executionBackend
+	if backend == nil {
+		backend = tr.execution
+	}
+	tr.mu.Unlock()
+
+	if multiEngine == nil {
 		scalable, ok := backend.(scalableExecutionBackend)
 		if !ok {
 			return fmt.Errorf("test backend does not support scaling vusers")
@@ -2163,13 +3868,33 @@ func (tr *TestRunner) ScaleVUsers(id string, groupName string, targetVUsers int)
 			return err
 		}
 	} else {
-		if err := test.multiEngine.ScaleVUsers(groupName, targetVUsers); err != nil {
+		if err := multiEngine.ScaleVUsers(groupName, targetVUsers); err != nil {
 			return err
 		}
 	}
 
-	// Update the test's group metadata
+	totalVUsers, projectID := tr.updateTestGroupVUsers(id, groupName, targetVUsers)
+	tr.hub.BroadcastJSON(map[string]any{
+		"type":          "vusers_changed",
+		"test_id":       id,
+		"project_id":    projectID,
+		"group":         groupName,
+		"target_vusers": targetVUsers,
+		"total_vusers":  totalVUsers,
+		"timestamp":     time.Now(),
+	})
+
+	return nil
+}
+
+func (tr *TestRunner) updateTestGroupVUsers(id string, groupName string, targetVUsers int) (int, string) {
 	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	test, ok := tr.tests[id]
+	if !ok {
+		return 0, ""
+	}
 	totalVUsers := 0
 	for i := range test.Groups {
 		if test.Groups[i].Name == groupName {
@@ -2178,18 +3903,90 @@ func (tr *TestRunner) ScaleVUsers(id string, groupName string, targetVUsers int)
 		totalVUsers += test.Groups[i].VUsers
 	}
 	test.TotalVUsers = totalVUsers
-	tr.mu.Unlock()
+	return totalVUsers, normalizeProjectID(test.ProjectID)
+}
 
-	tr.hub.BroadcastJSON(map[string]any{
-		"type":          "vusers_changed",
-		"test_id":       id,
-		"group":         groupName,
-		"target_vusers": targetVUsers,
-		"total_vusers":  totalVUsers,
-		"timestamp":     time.Now(),
-	})
+func (tr *TestRunner) cancelVUserScaleRampLocked(test *ManagedTest, groupName string) {
+	if test == nil || test.vuserScaleRamps == nil {
+		return
+	}
+	if ramp, ok := test.vuserScaleRamps[groupName]; ok {
+		ramp.cancel()
+		delete(test.vuserScaleRamps, groupName)
+	}
+	if test.VUserRamps != nil {
+		delete(test.VUserRamps, groupName)
+		if len(test.VUserRamps) == 0 {
+			test.VUserRamps = nil
+		}
+	}
+	if len(test.vuserScaleRamps) == 0 {
+		test.vuserScaleRamps = nil
+	}
+}
 
-	return nil
+func (tr *TestRunner) cancelAllVUserScaleRampsLocked(test *ManagedTest) {
+	if test == nil || test.vuserScaleRamps == nil {
+		return
+	}
+	for groupName, ramp := range test.vuserScaleRamps {
+		ramp.cancel()
+		delete(test.vuserScaleRamps, groupName)
+	}
+	test.vuserScaleRamps = nil
+	test.VUserRamps = nil
+}
+
+func (tr *TestRunner) finishVUserScaleRamp(id string, groupName string, ramp *vuserScaleRamp) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	test, ok := tr.tests[id]
+	if !ok || test.vuserScaleRamps == nil {
+		return
+	}
+	if test.vuserScaleRamps[groupName] == ramp {
+		delete(test.vuserScaleRamps, groupName)
+		if test.VUserRamps != nil {
+			delete(test.VUserRamps, groupName)
+			if len(test.VUserRamps) == 0 {
+				test.VUserRamps = nil
+			}
+		}
+	}
+	if len(test.vuserScaleRamps) == 0 {
+		test.vuserScaleRamps = nil
+	}
+}
+
+func cloneVUserRampStatusMap(in map[string]VUserRampStatus) map[string]VUserRampStatus {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]VUserRampStatus, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func testGroupVUsers(test *ManagedTest, groupName string) (int, bool) {
+	if test == nil {
+		return 0, false
+	}
+	for _, group := range test.Groups {
+		if group.Name == groupName {
+			return group.VUsers, true
+		}
+	}
+	return 0, false
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error {
@@ -2228,6 +4025,7 @@ func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error
 	tr.hub.BroadcastJSON(map[string]any{
 		"type":         "duration_changed",
 		"test_id":      id,
+		"project_id":   normalizeProjectID(test.ProjectID),
 		"new_duration": newDuration.String(),
 		"timestamp":    time.Now(),
 	})
@@ -2361,19 +4159,60 @@ func startDelayWindow(raw string) time.Duration {
 
 func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[string]int) *LiveMetrics {
 	live := &LiveMetrics{
-		Timestamp:     snap.Timestamp,
-		ActiveVUsers:  snap.ActiveVUsers,
-		TPS:           snap.TPS,
-		AvgResponseMs: float64(snap.AvgDuration.Microseconds()) / 1000.0,
-		TotalTx:       snap.Transactions,
-		TotalErrors:   snap.Errors,
-		P50Ms:         float64(snap.P50.Microseconds()) / 1000.0,
-		P90Ms:         float64(snap.P90.Microseconds()) / 1000.0,
-		P95Ms:         float64(snap.P95.Microseconds()) / 1000.0,
-		P99Ms:         float64(snap.P99.Microseconds()) / 1000.0,
-		Transactions:  make(map[string]*TxMetrics),
-		GroupMetrics:  make(map[string]*GroupLiveMetrics),
-		Resources:     snap.Resources,
+		Timestamp:              snap.Timestamp,
+		ActiveVUsers:           snap.ActiveVUsers,
+		TPS:                    snap.TPS,
+		TargetTPS:              snap.TargetTPS,
+		ThroughputGapPct:       snap.ThroughputGapPct,
+		ThroughputTargetMissed: snap.ThroughputTargetMissed,
+		AvgResponseMs:          float64(snap.AvgDuration.Microseconds()) / 1000.0,
+		TotalTx:                snap.Transactions,
+		TotalErrors:            snap.Errors,
+		P50Ms:                  float64(snap.P50.Microseconds()) / 1000.0,
+		P90Ms:                  float64(snap.P90.Microseconds()) / 1000.0,
+		P95Ms:                  float64(snap.P95.Microseconds()) / 1000.0,
+		P99Ms:                  float64(snap.P99.Microseconds()) / 1000.0,
+		Transactions:           make(map[string]*TxMetrics),
+		DependencyHealth:       make(map[string]*TxMetrics),
+		SOAPOperations:         make(map[string]*TxMetrics),
+		GroupMetrics:           make(map[string]*GroupLiveMetrics),
+		NetworkProfiles:        make(map[string]*TxMetrics),
+		Resources:              snap.Resources,
+	}
+	if snap.Browser != nil {
+		live.Browser = &BrowserLiveMetrics{
+			Samples:              snap.Browser.Samples,
+			AvgFCPMs:             snap.Browser.AvgFCPMs,
+			AvgLCPMs:             snap.Browser.AvgLCPMs,
+			AvgCLSScore:          snap.Browser.AvgCLSScore,
+			AvgINPMs:             snap.Browser.AvgINPMs,
+			AvgBlockingResources: snap.Browser.AvgBlockingResources,
+			AvgLongTaskCount:     snap.Browser.AvgLongTaskCount,
+			AvgJSHeapUsedMB:      snap.Browser.AvgJSHeapUsedMB,
+			AvgBrowserProcessCPU: snap.Browser.AvgBrowserProcessCPU,
+			AvgBrowserProcessMem: snap.Browser.AvgBrowserProcessMem,
+		}
+	}
+	if len(snap.BrowserByDevice) > 0 {
+		live.BrowserByDevice = make(map[string]*BrowserDeviceLiveMetrics, len(snap.BrowserByDevice))
+		for name, metrics := range snap.BrowserByDevice {
+			live.BrowserByDevice[name] = &BrowserDeviceLiveMetrics{
+				DeviceProfile:        metrics.DeviceProfile,
+				DevicePlatform:       metrics.DevicePlatform,
+				DeviceTier:           metrics.DeviceTier,
+				BrowserEngine:        metrics.BrowserEngine,
+				Samples:              metrics.Samples,
+				AvgFCPMs:             metrics.AvgFCPMs,
+				AvgLCPMs:             metrics.AvgLCPMs,
+				AvgCLSScore:          metrics.AvgCLSScore,
+				AvgINPMs:             metrics.AvgINPMs,
+				AvgBlockingResources: metrics.AvgBlockingResources,
+				AvgLongTaskCount:     metrics.AvgLongTaskCount,
+				AvgJSHeapUsedMB:      metrics.AvgJSHeapUsedMB,
+				AvgBrowserProcessCPU: metrics.AvgBrowserProcessCPU,
+				AvgBrowserProcessMem: metrics.AvgBrowserProcessMem,
+			}
+		}
 	}
 	if snap.Telemetry != nil {
 		live.Telemetry = &TelemetryHealth{
@@ -2387,36 +4226,274 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 	}
 
 	for name, am := range snap.ByAction {
-		live.Transactions[name] = &TxMetrics{
-			Name:             name,
-			DependencyType:   am.DependencyType,
-			DependencyTarget: am.DependencyTarget,
-			CorrelationIDs:   append([]string(nil), am.CorrelationIDs...),
-			CorrelationCount: am.CorrelationCount,
-			Count:            am.Count,
-			Errors:           am.Errors,
-			AvgMs:            float64(am.AvgDuration.Microseconds()) / 1000.0,
-			P50Ms:            float64(am.P50.Microseconds()) / 1000.0,
-			P90Ms:            float64(am.P90.Microseconds()) / 1000.0,
-			P99Ms:            float64(am.P99.Microseconds()) / 1000.0,
-		}
+		live.Transactions[name] = buildTxMetricsFromAction(name, am)
+	}
+
+	for name, am := range snap.ByDependencyTarget {
+		live.DependencyHealth[name] = buildTxMetricsFromAction(name, am)
+	}
+	live.DependencyMap = buildLiveDependencyMap(live.DependencyHealth)
+
+	for name, am := range snap.BySOAPOperation {
+		live.SOAPOperations[name] = buildTxMetricsFromAction(name, am)
+	}
+
+	for name, am := range snap.ByNetworkProfile {
+		live.NetworkProfiles[name] = buildTxMetricsFromAction(name, am)
 	}
 
 	for name, gm := range snap.ByGroup {
 		live.GroupMetrics[name] = &GroupLiveMetrics{
-			Name:          name,
-			VUsers:        groupVUsers[name],
-			Transactions:  gm.Transactions,
-			Errors:        gm.Errors,
-			TPS:           gm.TPS,
-			AvgResponseMs: float64(gm.AvgDuration.Microseconds()) / 1000.0,
-			P50Ms:         float64(gm.P50.Microseconds()) / 1000.0,
-			P90Ms:         float64(gm.P90.Microseconds()) / 1000.0,
-			P99Ms:         float64(gm.P99.Microseconds()) / 1000.0,
+			Name:                   name,
+			VUsers:                 groupVUsers[name],
+			Transactions:           gm.Transactions,
+			Errors:                 gm.Errors,
+			TPS:                    gm.TPS,
+			TargetTPS:              gm.TargetTPS,
+			ThroughputGapPct:       gm.ThroughputGapPct,
+			ThroughputTargetMissed: gm.ThroughputTargetMissed,
+			AvgResponseMs:          float64(gm.AvgDuration.Microseconds()) / 1000.0,
+			P50Ms:                  float64(gm.P50.Microseconds()) / 1000.0,
+			P90Ms:                  float64(gm.P90.Microseconds()) / 1000.0,
+			P99Ms:                  float64(gm.P99.Microseconds()) / 1000.0,
 		}
 	}
 
 	return live
+}
+
+func buildLiveDependencyMap(dependencies map[string]*TxMetrics) *LiveDependencyMap {
+	if len(dependencies) == 0 {
+		return nil
+	}
+	targets := make([]string, 0, len(dependencies))
+	for target, tx := range dependencies {
+		if tx == nil {
+			continue
+		}
+		targets = append(targets, target)
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	sort.Strings(targets)
+	nodes := []LiveDependencyNode{{
+		ID:     "apexload",
+		Label:  "APEX Load VUsers",
+		Kind:   "source",
+		Status: "healthy",
+	}}
+	edges := make([]LiveDependencyEdge, 0, len(targets))
+	for _, target := range targets {
+		tx := dependencies[target]
+		nodeID := "dependency:" + target
+		status := dependencyHealthStatus(tx)
+		errorPct := txErrorPct(tx)
+		nodes = append(nodes, LiveDependencyNode{
+			ID:             nodeID,
+			Label:          target,
+			Kind:           "dependency",
+			DependencyType: firstNonEmpty(tx.DependencyType, "unknown"),
+			Status:         status,
+			Transactions:   tx.Count,
+			Errors:         tx.Errors,
+			ErrorPct:       errorPct,
+			P95Ms:          tx.P95Ms,
+		})
+		edges = append(edges, LiveDependencyEdge{
+			Source:         "apexload",
+			Target:         nodeID,
+			DependencyType: firstNonEmpty(tx.DependencyType, "unknown"),
+			Transactions:   tx.Count,
+			Errors:         tx.Errors,
+			ErrorPct:       errorPct,
+			P95Ms:          tx.P95Ms,
+		})
+	}
+	return &LiveDependencyMap{Nodes: nodes, Edges: edges}
+}
+
+func dependencyHealthStatus(tx *TxMetrics) string {
+	if tx == nil {
+		return "unknown"
+	}
+	if tx.Errors > 0 {
+		return "danger"
+	}
+	if tx.P95Ms >= slowTransactionDiagnosticThresholdMs {
+		return "warning"
+	}
+	return "healthy"
+}
+
+func txErrorPct(tx *TxMetrics) float64 {
+	if tx == nil || tx.Count <= 0 {
+		return 0
+	}
+	return float64(tx.Errors) / float64(tx.Count) * 100
+}
+
+func updateLiveErrorPatterns(existing map[string]*LiveErrorPattern, live *LiveMetrics, testID string) map[string]*LiveErrorPattern {
+	if existing == nil {
+		existing = make(map[string]*LiveErrorPattern)
+	}
+	if live == nil || len(live.Transactions) == 0 {
+		return existing
+	}
+
+	affectedGroups := groupsWithErrors(live.GroupMetrics)
+	actions := make([]string, 0, len(live.Transactions))
+	for action, tx := range live.Transactions {
+		if tx == nil || tx.Errors <= 0 {
+			continue
+		}
+		actions = append(actions, action)
+	}
+	sort.Strings(actions)
+	for _, action := range actions {
+		tx := live.Transactions[action]
+		source := liveErrorPatternSource(tx)
+		signature := normalizeArchiveErrorSignature(source)
+		observedAt := tx.LastErrorAt
+		if observedAt.IsZero() {
+			observedAt = live.Timestamp
+		}
+		pattern, ok := existing[signature]
+		if !ok {
+			pattern = &LiveErrorPattern{
+				Signature: signature,
+				Sample:    source,
+				FirstSeen: observedAt,
+			}
+			existing[signature] = pattern
+		}
+		pattern.Count += tx.Errors
+		pattern.LatestSeen = observedAt
+		if pattern.FirstSeen.IsZero() || observedAt.Before(pattern.FirstSeen) {
+			pattern.FirstSeen = observedAt
+		}
+		if pattern.StatusCode == 0 {
+			pattern.StatusCode = tx.LastStatusCode
+		}
+		pattern.ErrorPct = txErrorPct(tx)
+		pattern.Actions = appendUniqueSorted(pattern.Actions, action)
+		pattern.AffectedGroups = mergeStringSets(pattern.AffectedGroups, affectedGroups)
+		pattern.SnapshotURL = liveErrorPatternSnapshotURL(testID, pattern.Actions)
+	}
+	return existing
+}
+
+func liveErrorPatternSource(tx *TxMetrics) string {
+	if tx == nil {
+		return "transaction failed"
+	}
+	if message := strings.TrimSpace(tx.LastErrorMessage); message != "" {
+		return message
+	}
+	if tx.LastStatusCode > 0 {
+		return fmt.Sprintf("request failed with status %d", tx.LastStatusCode)
+	}
+	return "transaction failed"
+}
+
+func groupsWithErrors(groups map[string]*GroupLiveMetrics) []string {
+	if len(groups) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(groups))
+	for name, group := range groups {
+		if group != nil && group.Errors > 0 {
+			result = append(result, name)
+		}
+	}
+	sort.Strings(result)
+	return result
+}
+
+func appendUniqueSorted(values []string, value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return values
+	}
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	values = append(values, value)
+	sort.Strings(values)
+	return values
+}
+
+func mergeStringSets(left []string, right []string) []string {
+	for _, value := range right {
+		left = appendUniqueSorted(left, value)
+	}
+	return left
+}
+
+func liveErrorPatternSnapshotURL(testID string, actions []string) string {
+	if strings.TrimSpace(testID) == "" {
+		return ""
+	}
+	query := url.Values{}
+	query.Set("success", "false")
+	query.Set("limit", "20")
+	if len(actions) == 1 {
+		query.Set("action", actions[0])
+	}
+	return fmt.Sprintf("/api/v1/tests/%s/archive/transactions?%s", url.PathEscape(testID), query.Encode())
+}
+
+func liveErrorPatternsList(patterns map[string]*LiveErrorPattern) []LiveErrorPattern {
+	if len(patterns) == 0 {
+		return nil
+	}
+	result := make([]LiveErrorPattern, 0, len(patterns))
+	for _, pattern := range patterns {
+		if pattern == nil {
+			continue
+		}
+		clone := *pattern
+		clone.Actions = append([]string(nil), pattern.Actions...)
+		clone.AffectedGroups = append([]string(nil), pattern.AffectedGroups...)
+		result = append(result, clone)
+	}
+	sort.Slice(result, func(left, right int) bool {
+		if result[left].Count == result[right].Count {
+			return result[left].FirstSeen.Before(result[right].FirstSeen)
+		}
+		return result[left].Count > result[right].Count
+	})
+	return result
+}
+
+func buildTxMetricsFromAction(name string, am *engine.ActionMetrics) *TxMetrics {
+	if am == nil {
+		return nil
+	}
+	return &TxMetrics{
+		Name:             name,
+		DependencyType:   am.DependencyType,
+		DependencyTarget: am.DependencyTarget,
+		LastErrorMessage: am.LastErrorMessage,
+		LastStatusCode:   am.LastStatusCode,
+		LastErrorAt:      am.LastErrorAt,
+		ServerTelemetry:  cloneEngineServerTelemetrySummary(am.ServerTelemetry),
+		AvgDNSMs:         am.AvgDNSMs,
+		AvgConnectMs:     am.AvgConnectMs,
+		AvgTLSMs:         am.AvgTLSMs,
+		AvgTTFBMs:        am.AvgTTFBMs,
+		CorrelationIDs:   append([]string(nil), am.CorrelationIDs...),
+		CorrelationCount: am.CorrelationCount,
+		Count:            am.Count,
+		Errors:           am.Errors,
+		AvgMs:            float64(am.AvgDuration.Microseconds()) / 1000.0,
+		P50Ms:            float64(am.P50.Microseconds()) / 1000.0,
+		P90Ms:            float64(am.P90.Microseconds()) / 1000.0,
+		P95Ms:            float64(am.P95.Microseconds()) / 1000.0,
+		P99Ms:            float64(am.P99.Microseconds()) / 1000.0,
+	}
 }
 
 func buildLiveMetricsForBroadcast(snap engine.MetricsSnapshot, groupVUsers map[string]int, now time.Time) *LiveMetrics {
@@ -2435,10 +4512,11 @@ func buildLiveMetricsForBroadcast(snap engine.MetricsSnapshot, groupVUsers map[s
 	return live
 }
 
-func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics) (*TelemetryDiagnostic, string) {
+func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds ThresholdSettings) (*TelemetryDiagnostic, string) {
 	if live == nil {
 		return nil, "healthy"
 	}
+	thresholds = normalizeThresholdSettings(thresholds)
 
 	conditions := make([]string, 0, 5)
 	summaries := make([]string, 0, 5)
@@ -2458,12 +4536,11 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics) (*TelemetryD
 			signatureParts = append(signatureParts, "websocket_drops")
 			severity = maxDiagnosticSeverity(severity, "danger")
 		}
-		if live.Telemetry.SampleAgeMs > 2000 {
-			conditions = append(conditions, "stale_sample")
-			summaries = append(summaries, fmt.Sprintf("sample age %.0f ms exceeds the 2000 ms SLA budget", live.Telemetry.SampleAgeMs))
-			signatureParts = append(signatureParts, "stale_sample")
-			severity = maxDiagnosticSeverity(severity, "warning")
-		}
+		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "stale_sample", "sample age", live.Telemetry.SampleAgeMs, thresholds.MaxTelemetrySampleAgeMs)
+		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "generator_lag", "generator processing lag", live.Telemetry.GeneratorProcessingLagMs, thresholds.MaxTelemetryGeneratorLagMs)
+		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "transport_lag", "transport lag", live.Telemetry.TransportLagMs, thresholds.MaxTelemetryTransportLagMs)
+		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "controller_fanout_lag", "controller fan-out lag", live.Telemetry.ControllerFanoutLagMs, thresholds.MaxTelemetryControllerFanoutMs)
+		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "browser_render_lag", "browser render lag", live.Telemetry.BrowserRenderLagMs, thresholds.MaxTelemetryBrowserRenderLagMs)
 	}
 
 	samples, sampleConditions, sampleSummaries, sampleSeverity, sampleSignature := sampleTransactionDiagnostics(test, live)
@@ -2472,6 +4549,24 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics) (*TelemetryD
 		summaries = append(summaries, sampleSummaries...)
 		signatureParts = append(signatureParts, sampleSignature...)
 		severity = maxDiagnosticSeverity(severity, sampleSeverity)
+	}
+
+	jmsSamples, jmsConditions, jmsSummaries, jmsSeverity, jmsSignature := sampleJMSBrokerDiagnostics(live)
+	if len(jmsConditions) > 0 {
+		samples = append(samples, jmsSamples...)
+		conditions = append(conditions, jmsConditions...)
+		summaries = append(summaries, jmsSummaries...)
+		signatureParts = append(signatureParts, jmsSignature...)
+		severity = maxDiagnosticSeverity(severity, jmsSeverity)
+	}
+
+	dlqSamples, dlqConditions, dlqSummaries, dlqSeverity, dlqSignature := sampleJMSDeadLetterDiagnostics(live)
+	if len(dlqConditions) > 0 {
+		samples = append(samples, dlqSamples...)
+		conditions = append(conditions, dlqConditions...)
+		summaries = append(summaries, dlqSummaries...)
+		signatureParts = append(signatureParts, dlqSignature...)
+		severity = maxDiagnosticSeverity(severity, dlqSeverity)
 	}
 
 	if len(conditions) == 0 {
@@ -2491,6 +4586,16 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics) (*TelemetryD
 		Samples:    samples,
 		Telemetry:  live.Telemetry,
 	}, signature
+}
+
+func appendTelemetryBudgetDiagnostic(conditions *[]string, summaries *[]string, signatureParts *[]string, severity *string, condition string, label string, value float64, threshold *float64) {
+	if threshold == nil || value <= 0 || value <= *threshold {
+		return
+	}
+	*conditions = append(*conditions, condition)
+	*summaries = append(*summaries, fmt.Sprintf("%s %.0f ms exceeds the %.0f ms telemetry budget", label, value, *threshold))
+	*signatureParts = append(*signatureParts, condition)
+	*severity = maxDiagnosticSeverity(*severity, "warning")
 }
 
 func sampleTransactionDiagnostics(test *ManagedTest, live *LiveMetrics) ([]DiagnosticSample, []string, []string, string, []string) {
@@ -2627,6 +4732,155 @@ func countSlowSamples(samples []DiagnosticSample, latencyThreshold float64) int 
 	return count
 }
 
+func sampleJMSBrokerDiagnostics(live *LiveMetrics) ([]DiagnosticSample, []string, []string, string, []string) {
+	if live == nil || len(live.Transactions) == 0 {
+		return nil, nil, nil, "healthy", nil
+	}
+
+	type candidate struct {
+		sample DiagnosticSample
+		key    string
+	}
+
+	candidates := make([]candidate, 0, len(live.Transactions))
+	for name, tx := range live.Transactions {
+		if tx == nil || !strings.HasPrefix(tx.DependencyType, "jms_") || tx.ServerTelemetry == nil {
+			continue
+		}
+		telemetry := tx.ServerTelemetry
+		if telemetry.AvgConsumerLagMs < jmsBrokerPressureMinLagMs {
+			continue
+		}
+		baselineLatency := telemetry.AvgMessageLatencyMs
+		if baselineLatency <= 0 {
+			baselineLatency = telemetry.AvgTransferMs
+		}
+		if baselineLatency <= 0 {
+			baselineLatency = jmsBrokerPressureMinLagMs / jmsBrokerPressureLagMultiplier
+		}
+		if telemetry.AvgConsumerLagMs < baselineLatency*jmsBrokerPressureLagMultiplier {
+			continue
+		}
+		sendRate := telemetry.AvgMessagesSentPerSec
+		recvRate := telemetry.AvgMessagesReceivedPerSec
+		if recvRate > 0 && sendRate < recvRate*jmsBrokerPressureSendRecvRatio {
+			continue
+		}
+		if sendRate == 0 && recvRate == 0 && telemetry.MessagesSent == 0 && telemetry.MessagesReceived == 0 {
+			continue
+		}
+		candidates = append(candidates, candidate{
+			sample: DiagnosticSample{
+				Issue:                     "broker",
+				Transaction:               name,
+				DependencyType:            tx.DependencyType,
+				DependencyTarget:          tx.DependencyTarget,
+				CorrelationIDs:            append([]string(nil), tx.CorrelationIDs...),
+				Count:                     tx.Count,
+				AvgMs:                     tx.AvgMs,
+				P99Ms:                     tx.P99Ms,
+				AvgMessageLatencyMs:       telemetry.AvgMessageLatencyMs,
+				AvgConsumerLagMs:          telemetry.AvgConsumerLagMs,
+				AvgMessagesSentPerSec:     sendRate,
+				AvgMessagesReceivedPerSec: recvRate,
+			},
+			key: name,
+		})
+	}
+
+	if len(candidates) == 0 {
+		return nil, nil, nil, "healthy", nil
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].sample.AvgConsumerLagMs != candidates[j].sample.AvgConsumerLagMs {
+			return candidates[i].sample.AvgConsumerLagMs > candidates[j].sample.AvgConsumerLagMs
+		}
+		if candidates[i].sample.AvgMessagesSentPerSec != candidates[j].sample.AvgMessagesSentPerSec {
+			return candidates[i].sample.AvgMessagesSentPerSec > candidates[j].sample.AvgMessagesSentPerSec
+		}
+		return strings.Compare(candidates[i].key, candidates[j].key) < 0
+	})
+
+	limit := maxTelemetryDiagnosticSamples
+	if len(candidates) < limit {
+		limit = len(candidates)
+	}
+	samples := make([]DiagnosticSample, 0, limit)
+	signatureParts := make([]string, 0, limit+1)
+	for _, candidate := range candidates[:limit] {
+		samples = append(samples, candidate.sample)
+		signatureParts = append(signatureParts, fmt.Sprintf("broker:%s:%.0f:%.1f:%.1f", candidate.sample.Transaction, candidate.sample.AvgConsumerLagMs, candidate.sample.AvgMessagesSentPerSec, candidate.sample.AvgMessagesReceivedPerSec))
+	}
+
+	conditions := []string{"jms_broker_pressure"}
+	summaries := []string{fmt.Sprintf("sampled %d JMS broker pressure hotspots where consumer lag materially exceeds request-reply latency", len(samples))}
+	signatureParts = append(signatureParts, "condition:jms_broker_pressure")
+	return samples, conditions, summaries, "warning", signatureParts
+}
+
+func sampleJMSDeadLetterDiagnostics(live *LiveMetrics) ([]DiagnosticSample, []string, []string, string, []string) {
+	if live == nil || len(live.Transactions) == 0 {
+		return nil, nil, nil, "healthy", nil
+	}
+
+	type candidate struct {
+		sample DiagnosticSample
+		key    string
+	}
+
+	candidates := make([]candidate, 0, len(live.Transactions))
+	for name, tx := range live.Transactions {
+		if tx == nil || !strings.HasPrefix(tx.DependencyType, "jms_dead_letter_") || tx.Count == 0 {
+			continue
+		}
+		candidates = append(candidates, candidate{
+			sample: DiagnosticSample{
+				Issue:            "dead_letter",
+				Transaction:      name,
+				DependencyType:   tx.DependencyType,
+				DependencyTarget: tx.DependencyTarget,
+				CorrelationIDs:   append([]string(nil), tx.CorrelationIDs...),
+				Count:            tx.Count,
+				Errors:           tx.Errors,
+				AvgMs:            tx.AvgMs,
+				P99Ms:            tx.P99Ms,
+			},
+			key: name,
+		})
+	}
+
+	if len(candidates) == 0 {
+		return nil, nil, nil, "healthy", nil
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].sample.Count != candidates[j].sample.Count {
+			return candidates[i].sample.Count > candidates[j].sample.Count
+		}
+		if candidates[i].sample.Errors != candidates[j].sample.Errors {
+			return candidates[i].sample.Errors > candidates[j].sample.Errors
+		}
+		return strings.Compare(candidates[i].key, candidates[j].key) < 0
+	})
+
+	limit := maxTelemetryDiagnosticSamples
+	if len(candidates) < limit {
+		limit = len(candidates)
+	}
+	samples := make([]DiagnosticSample, 0, limit)
+	signatureParts := make([]string, 0, limit+1)
+	for _, candidate := range candidates[:limit] {
+		samples = append(samples, candidate.sample)
+		signatureParts = append(signatureParts, fmt.Sprintf("dead_letter:%s:%d:%d", candidate.sample.Transaction, candidate.sample.Count, candidate.sample.Errors))
+	}
+
+	conditions := []string{"jms_dead_letter_activity"}
+	summaries := []string{fmt.Sprintf("observed %d JMS dead-letter destinations with live traffic", len(samples))}
+	signatureParts = append(signatureParts, "condition:jms_dead_letter_activity")
+	return samples, conditions, summaries, "warning", signatureParts
+}
+
 func maxDiagnosticSeverity(current string, next string) string {
 	if diagnosticSeverityRank(next) > diagnosticSeverityRank(current) {
 		return next
@@ -2665,8 +4919,97 @@ func shouldPublishTelemetryDiagnostic(state *telemetryDiagnosticState, signature
 	return false
 }
 
+func updateTelemetryRunHealth(state *telemetryDiagnosticState, diagnostic *TelemetryDiagnostic, signature string, now time.Time) *TelemetryRunHealth {
+	if state == nil {
+		return nil
+	}
+	if diagnostic == nil {
+		diagnostic = &TelemetryDiagnostic{Severity: "healthy", Summary: "live telemetry healthy"}
+		signature = "healthy"
+	}
+	if signature == "" {
+		signature = "healthy"
+	}
+
+	status := "healthy"
+	sustained := false
+	breachActive := false
+	breachDurationSec := 0
+	if diagnostic.Severity != "" && diagnostic.Severity != "healthy" {
+		breachActive = true
+		if state.BreachStartedAt == nil {
+			startedAt := now
+			state.BreachStartedAt = &startedAt
+		}
+		breachDurationSec = int(now.Sub(*state.BreachStartedAt).Seconds())
+		if diagnostic.Severity == "danger" || now.Sub(*state.BreachStartedAt) >= telemetrySustainedBreachWindow {
+			status = "breached"
+			sustained = diagnostic.Severity != "danger"
+		} else {
+			status = "degraded"
+		}
+	} else {
+		state.BreachStartedAt = nil
+	}
+
+	lastTransitionAt := now
+	if state.Health != nil && state.Health.Status == status && !state.Health.LastTransitionAt.IsZero() {
+		lastTransitionAt = state.Health.LastTransitionAt
+	}
+	health := &TelemetryRunHealth{
+		Status:            status,
+		Severity:          normalizedTelemetrySeverity(diagnostic.Severity),
+		Summary:           diagnostic.Summary,
+		CurrentSignature:  signature,
+		Conditions:        append([]string(nil), diagnostic.Conditions...),
+		BreachActive:      breachActive,
+		SustainedBreach:   sustained,
+		BreachDurationSec: breachDurationSec,
+		LastObservedAt:    now,
+		LastTransitionAt:  lastTransitionAt,
+	}
+	if state.BreachStartedAt != nil {
+		startedAt := *state.BreachStartedAt
+		health.BreachStartedAt = &startedAt
+	}
+	state.Health = health
+	return cloneTelemetryRunHealth(health)
+}
+
+func normalizedTelemetrySeverity(severity string) string {
+	switch severity {
+	case "danger", "warning":
+		return severity
+	default:
+		return "healthy"
+	}
+}
+
+func cloneTelemetryRunHealth(in *TelemetryRunHealth) *TelemetryRunHealth {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	if in.Conditions != nil {
+		out.Conditions = append([]string(nil), in.Conditions...)
+	}
+	if in.BreachStartedAt != nil {
+		startedAt := *in.BreachStartedAt
+		out.BreachStartedAt = &startedAt
+	}
+	return &out
+}
+
+func cloneTelemetryHealth(in *TelemetryHealth) *TelemetryHealth {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	return &out
+}
+
 func buildThresholdAlerts(test *ManagedTest, live *LiveMetrics, thresholds ThresholdSettings) []map[string]any {
-	alerts := make([]map[string]any, 0, 2)
+	alerts := make([]map[string]any, 0, 5)
 	if thresholds.MaxP99LatencyMs != nil && live.P99Ms > *thresholds.MaxP99LatencyMs {
 		alerts = append(alerts, map[string]any{
 			"type":      "threshold_alert",
@@ -2690,7 +5033,70 @@ func buildThresholdAlerts(test *ManagedTest, live *LiveMetrics, thresholds Thres
 			"action":    "stop_requested",
 		})
 	}
+	if live != nil && live.TargetTPS > 0 && live.ThroughputTargetMissed {
+		alerts = append(alerts, map[string]any{
+			"type":       "threshold_alert",
+			"test_id":    test.ID,
+			"test_name":  test.Name,
+			"timestamp":  live.Timestamp,
+			"metric":     "throughput_gap_pct",
+			"value":      live.TPS,
+			"threshold":  live.TargetTPS,
+			"target_tps": live.TargetTPS,
+			"gap_pct":    live.ThroughputGapPct,
+		})
+	}
+	if alert := buildServerTelemetryThresholdAlert(test, live, thresholds.MaxAvgServerProcessingMs, "avg_server_processing_ms", func(summary *ServerTelemetrySummary) float64 {
+		return summary.AvgServerProcessingMs
+	}); alert != nil {
+		alerts = append(alerts, alert)
+	}
+	if alert := buildServerTelemetryThresholdAlert(test, live, thresholds.MaxAvgTransferMs, "avg_transfer_ms", func(summary *ServerTelemetrySummary) float64 {
+		return summary.AvgTransferMs
+	}); alert != nil {
+		alerts = append(alerts, alert)
+	}
 	return alerts
+}
+
+func buildServerTelemetryThresholdAlert(test *ManagedTest, live *LiveMetrics, threshold *float64, metric string, pickValue func(summary *ServerTelemetrySummary) float64) map[string]any {
+	if threshold == nil || live == nil || len(live.Transactions) == 0 {
+		return nil
+	}
+
+	var hotTx *TxMetrics
+	hotValue := 0.0
+	hotName := ""
+	for name, tx := range live.Transactions {
+		if tx == nil || tx.ServerTelemetry == nil {
+			continue
+		}
+		value := pickValue(tx.ServerTelemetry)
+		if value <= *threshold {
+			continue
+		}
+		if hotTx == nil || value > hotValue {
+			hotTx = tx
+			hotValue = value
+			hotName = name
+		}
+	}
+	if hotTx == nil {
+		return nil
+	}
+
+	return map[string]any{
+		"type":              "threshold_alert",
+		"test_id":           test.ID,
+		"test_name":         test.Name,
+		"timestamp":         live.Timestamp,
+		"metric":            metric,
+		"value":             hotValue,
+		"threshold":         *threshold,
+		"transaction":       hotName,
+		"dependency_type":   hotTx.DependencyType,
+		"dependency_target": hotTx.DependencyTarget,
+	}
 }
 
 func shouldStopForErrorThreshold(live *LiveMetrics, thresholds ThresholdSettings) bool {
@@ -2699,6 +5105,151 @@ func shouldStopForErrorThreshold(live *LiveMetrics, thresholds ThresholdSettings
 
 func shouldStopForGoalStatus(live *LiveMetrics) bool {
 	return live.GoalStatus != nil && live.GoalStatus.StopTriggered
+}
+
+func buildLiveCapacityStatus(current *ManagedTest, live *LiveMetrics, tests []*ManagedTest) *LiveCapacityStatus {
+	if current == nil || current.CapacityAdvisory == nil {
+		return nil
+	}
+	status := &LiveCapacityStatus{
+		AllocatedVUsers:       int(liveActiveVUsers(live, current)),
+		AvailableGenerators:   current.CapacityAdvisory.AvailableGenerators,
+		RecommendedGenerators: current.CapacityAdvisory.RecommendedGenerators,
+		Saturated:             current.CapacityAdvisory.RequiresOverride || current.CapacityAdvisory.ShortfallGenerators > 0 || current.CapacityAdvisory.RecommendedGenerators >= current.CapacityAdvisory.AvailableGenerators,
+		ByProtocol:            make(map[string]*LiveCapacityBreakdown),
+		ByRegion:              make(map[string]*LiveCapacityBreakdown),
+	}
+	for _, test := range tests {
+		if test == nil {
+			continue
+		}
+		switch test.Status {
+		case "INITIALIZING", "RUNNING", "PAUSED":
+			addCapacityDemand(status, test, "allocated")
+		case "QUEUED", "PENDING":
+			status.QueuedVUsers += test.TotalVUsers
+			addCapacityDemand(status, test, "queued")
+		}
+		if test.CapacityAdvisory != nil && test.CapacityAdvisory.RequiresOverride {
+			status.RejectedVUsers += test.TotalVUsers
+			addCapacityDemand(status, test, "rejected")
+		}
+	}
+	if len(status.ByProtocol) == 0 {
+		status.ByProtocol = nil
+	}
+	if len(status.ByRegion) == 0 {
+		status.ByRegion = nil
+	}
+	return status
+}
+
+func liveActiveVUsers(live *LiveMetrics, test *ManagedTest) int64 {
+	if live != nil && live.ActiveVUsers > 0 {
+		return live.ActiveVUsers
+	}
+	if test != nil && (test.Status == "INITIALIZING" || test.Status == "RUNNING" || test.Status == "PAUSED") {
+		return int64(test.TotalVUsers)
+	}
+	return 0
+}
+
+func addCapacityDemand(status *LiveCapacityStatus, test *ManagedTest, bucket string) {
+	for protocol, vusers := range capacityDemandByProtocol(test.Groups) {
+		addCapacityBreakdown(status.ByProtocol, protocol, bucket, vusers)
+	}
+	for region, vusers := range capacityDemandByRegion(test) {
+		addCapacityBreakdown(status.ByRegion, region, bucket, vusers)
+	}
+}
+
+func addCapacityBreakdown(target map[string]*LiveCapacityBreakdown, key string, bucket string, vusers int) {
+	if vusers <= 0 {
+		return
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		key = "unknown"
+	}
+	breakdown := target[key]
+	if breakdown == nil {
+		breakdown = &LiveCapacityBreakdown{}
+		target[key] = breakdown
+	}
+	switch bucket {
+	case "allocated":
+		breakdown.AllocatedVUsers += vusers
+	case "queued":
+		breakdown.QueuedVUsers += vusers
+	case "rejected":
+		breakdown.RejectedVUsers += vusers
+	}
+}
+
+func capacityDemandByProtocol(groups []TestGroup) map[string]int {
+	out := make(map[string]int)
+	for _, group := range groups {
+		protocol := strings.TrimSpace(group.Protocol)
+		if protocol == "" {
+			protocol = "unknown"
+		}
+		out[protocol] += group.VUsers
+	}
+	return out
+}
+
+func capacityDemandByRegion(test *ManagedTest) map[string]int {
+	out := make(map[string]int)
+	if test == nil || test.TotalVUsers <= 0 {
+		return out
+	}
+	assignment := test.Assignment
+	if assignment == nil || assignment.Mode == "" || assignment.Mode == generatorAssignmentModeAuto {
+		out["auto"] = test.TotalVUsers
+		return out
+	}
+	if assignment.Mode == generatorAssignmentModeSpecificHosts {
+		if len(assignment.SelectedTargets) == 0 {
+			out["selected_hosts"] = test.TotalVUsers
+			return out
+		}
+		for _, target := range assignment.SelectedTargets {
+			out[firstNonEmpty(strings.TrimSpace(target), "selected_hosts")] += test.TotalVUsers / len(assignment.SelectedTargets)
+		}
+		remainder := test.TotalVUsers % len(assignment.SelectedTargets)
+		if remainder > 0 {
+			out[firstNonEmpty(strings.TrimSpace(assignment.SelectedTargets[0]), "selected_hosts")] += remainder
+		}
+		return out
+	}
+	if assignment.Mode == generatorAssignmentModeRegionWeighted && len(assignment.RegionWeights) > 0 {
+		totalWeight := 0
+		regions := make([]string, 0, len(assignment.RegionWeights))
+		for region, weight := range assignment.RegionWeights {
+			if weight <= 0 {
+				continue
+			}
+			regions = append(regions, region)
+			totalWeight += weight
+		}
+		sort.Strings(regions)
+		allocated := 0
+		for index, region := range regions {
+			vusers := 0
+			if index == len(regions)-1 {
+				vusers = test.TotalVUsers - allocated
+			} else {
+				vusers = test.TotalVUsers * assignment.RegionWeights[region] / totalWeight
+				allocated += vusers
+			}
+			out[firstNonEmpty(strings.TrimSpace(region), "unassigned")] += vusers
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	out["unassigned"] = test.TotalVUsers
+	return out
 }
 
 func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, artifacts *runArtifacts) {
@@ -2726,10 +5277,32 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	live.Telemetry.WebsocketClients = hubStats.ConnectedClients
 	live.Telemetry.WebsocketDroppedMessages = hubStats.DroppedClientMessages
 	live.Telemetry.WebsocketDroppedEvents = hubStats.DroppedBroadcasts
-	diagnostic, diagnosticSignature := buildTelemetryDiagnostic(test, live)
+	artifacts.enrichLiveMetrics(test, live)
+	diagnostic, diagnosticSignature := buildTelemetryDiagnostic(test, live, tr.GetSystemSettings().Thresholds)
 	publishDiagnostic := false
+	var telemetryRunHealth *TelemetryRunHealth
+	var previousTelemetryRunHealth *TelemetryRunHealth
 
 	tr.mu.Lock()
+	tests := make([]*ManagedTest, 0, len(tr.tests))
+	for _, candidate := range tr.tests {
+		tests = append(tests, candidate)
+	}
+	previousTelemetryRunHealth = cloneTelemetryRunHealth(test.TelemetryHealth)
+	telemetryRunHealth = updateTelemetryRunHealth(&test.telemetryDiagnostic, diagnostic, diagnosticSignature, now)
+	live.TelemetryStatus = cloneTelemetryRunHealth(telemetryRunHealth)
+	live.CapacityStatus = buildLiveCapacityStatus(test, live, tests)
+	test.errorPatterns = updateLiveErrorPatterns(test.errorPatterns, live, test.ID)
+	live.ErrorPatterns = liveErrorPatternsList(test.errorPatterns)
+	test.TelemetryHealth = cloneTelemetryRunHealth(telemetryRunHealth)
+	if live.Latency == nil {
+		live.Latency = cloneNetworkLatency(test.lastNetworkLatency)
+		if live.Latency == nil && test.LiveMetrics != nil {
+			live.Latency = cloneNetworkLatency(test.LiveMetrics.Latency)
+		}
+	} else {
+		test.lastNetworkLatency = cloneNetworkLatency(live.Latency)
+	}
 	test.LiveMetrics = live
 	test.History = append(test.History, live)
 	if len(test.History) > maxManagedTestHistory {
@@ -2739,25 +5312,120 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	if diagnostic != nil {
 		publishDiagnostic = shouldPublishTelemetryDiagnostic(&test.telemetryDiagnostic, diagnosticSignature, now)
 	}
+	snapshot := buildRunLiveStateSnapshotLocked(test, now)
 	tr.mu.Unlock()
 
+	tr.cacheRunSnapshot(snapshot)
 	tr.saveLiveMetricsHistory(test.ID, live.Timestamp, live)
 	artifacts.recordLiveMetrics(test, live)
 
 	tr.hub.BroadcastJSON(map[string]any{
-		"type":      "metrics_update",
-		"test_id":   test.ID,
-		"test_name": test.Name,
-		"timestamp": live.Timestamp,
-		"data":      live,
+		"type":       "metrics_update",
+		"test_id":    test.ID,
+		"project_id": normalizeProjectID(test.ProjectID),
+		"test_name":  test.Name,
+		"timestamp":  live.Timestamp,
+		"data":       live,
 	})
 	if publishDiagnostic {
 		tr.hub.BroadcastJSON(map[string]any{
-			"type":      "telemetry_diagnostic",
-			"test_id":   test.ID,
-			"test_name": test.Name,
-			"timestamp": now,
-			"data":      diagnostic,
+			"type":       "telemetry_diagnostic",
+			"test_id":    test.ID,
+			"project_id": normalizeProjectID(test.ProjectID),
+			"test_name":  test.Name,
+			"timestamp":  now,
+			"data":       diagnostic,
+		})
+	}
+	tr.broadcastTelemetryHealthTransition(test, previousTelemetryRunHealth, telemetryRunHealth, now)
+}
+
+func buildRunLiveStateSnapshotLocked(test *ManagedTest, updatedAt time.Time) RunLiveStateSnapshot {
+	if test == nil {
+		return RunLiveStateSnapshot{UpdatedAt: updatedAt}
+	}
+	return RunLiveStateSnapshot{
+		TestID:        test.ID,
+		TestName:      test.Name,
+		ProjectID:     normalizeProjectID(test.ProjectID),
+		Status:        test.Status,
+		UpdatedAt:     updatedAt.UTC(),
+		StartedAt:     test.StartedAt,
+		EndedAt:       test.EndedAt,
+		LiveMetrics:   test.LiveMetrics,
+		HistoryPoints: len(test.History),
+	}
+}
+
+func (tr *TestRunner) cacheRunSnapshot(snapshot RunLiveStateSnapshot) {
+	if tr == nil || strings.TrimSpace(snapshot.TestID) == "" {
+		return
+	}
+	tr.mu.RLock()
+	store := tr.liveState
+	tr.mu.RUnlock()
+	if store == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), defaultCacheWriteTimeout)
+		defer cancel()
+		if err := store.SetRunSnapshot(ctx, snapshot, defaultRunSnapshotTTL); err != nil {
+			slog.Warn("failed to cache live run snapshot", "test_id", snapshot.TestID, "err", err)
+		}
+	}()
+}
+
+func (tr *TestRunner) broadcastTelemetryHealthTransition(test *ManagedTest, previous *TelemetryRunHealth, current *TelemetryRunHealth, now time.Time) {
+	if tr == nil || test == nil || current == nil {
+		return
+	}
+	previousStatus := ""
+	if previous != nil {
+		previousStatus = previous.Status
+	}
+	if previousStatus == current.Status {
+		return
+	}
+
+	eventType := ""
+	switch current.Status {
+	case "degraded":
+		eventType = "telemetry_degraded"
+	case "breached":
+		eventType = "telemetry_breached"
+	case "healthy":
+		if previousStatus == "" || previousStatus == "healthy" {
+			return
+		}
+		eventType = "telemetry_recovered"
+	default:
+		return
+	}
+
+	message := map[string]any{
+		"type":       "telemetry_health_changed",
+		"event_type": eventType,
+		"test_id":    test.ID,
+		"project_id": normalizeProjectID(test.ProjectID),
+		"test_name":  test.Name,
+		"timestamp":  now,
+		"data":       current,
+	}
+	if tr.hub != nil {
+		tr.hub.BroadcastJSON(message)
+	}
+	if tr.notifier != nil {
+		tr.notifier.Dispatch(tr.currentNotificationSettings(), NotificationEvent{
+			Type:       eventType,
+			TestID:     test.ID,
+			ProjectID:  normalizeProjectID(test.ProjectID),
+			TestName:   test.Name,
+			Status:     current.Status,
+			Severity:   current.Severity,
+			Summary:    current.Summary,
+			Conditions: append([]string(nil), current.Conditions...),
+			Timestamp:  now,
 		})
 	}
 }
@@ -2836,29 +5504,214 @@ func (tr *TestRunner) failTestBeforeRun(test *ManagedTest, message string) {
 	now := time.Now()
 	tr.mu.Lock()
 	test.Status = "FAILED"
+	test.PendingSince = nil
+	test.PendingReason = ""
+	test.QueuePosition = 0
 	test.Error = message
 	test.EndedAt = &now
 	tr.mu.Unlock()
 	tr.updateStoredTestStatus(test.ID, "FAILED", &now, message)
 	tr.broadcastEvent("test_failed", test)
+	tr.promotePendingTests()
 }
 
 func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, endTime time.Time, finalError string, archiveRecord *storage.RunArchiveRecord) {
 	tr.mu.Lock()
+	tr.cancelAllVUserScaleRampsLocked(test)
 	test.Status = finalStatus
+	test.PendingSince = nil
+	test.PendingReason = ""
+	test.QueuePosition = 0
 	test.Error = finalError
 	test.EndedAt = &endTime
 	test.Archive = archiveRecord
 	if archiveRecord != nil {
 		tr.archives[test.ID] = archiveRecord
 	}
+	tr.captureUsageSnapshotForTerminalRunLocked(test.ID, test.ProjectID)
 	tr.mu.Unlock()
 	tr.updateStoredTestStatus(test.ID, finalStatus, &endTime, finalError)
 	if finalStatus == "FAILED" {
 		tr.broadcastEvent("test_failed", test)
+		tr.promotePendingTests()
 		return
 	}
 	tr.broadcastEvent("test_complete", test)
+	tr.promotePendingTests()
+}
+
+func (tr *TestRunner) captureUsageSnapshotForTerminalRunLocked(testID string, projectID string) {
+	if tr == nil || tr.usageStore == nil {
+		return
+	}
+	projectID = normalizeProjectID(projectID)
+	tests := make([]*ManagedTest, 0, len(tr.tests))
+	for _, test := range tr.tests {
+		tests = append(tests, test)
+	}
+	if _, err := tr.saveUsageAccountingSnapshotFromTests(projectID, tests); err != nil {
+		slog.Warn("failed to save usage accounting snapshot", "test_id", testID, "project_id", projectID, "error", err)
+	}
+}
+
+func (tr *TestRunner) captureUsageSnapshotForCadence(projectID string) (*storage.UsageAccountingSnapshot, error) {
+	if tr == nil || tr.usageStore == nil {
+		return nil, nil
+	}
+	projectID = strings.TrimSpace(projectID)
+	if projectID != "" {
+		projectID = normalizeProjectID(projectID)
+	}
+	tr.mu.RLock()
+	tests := make([]*ManagedTest, 0, len(tr.tests))
+	for _, test := range tr.tests {
+		tests = append(tests, test)
+	}
+	tr.mu.RUnlock()
+	return tr.saveUsageAccountingSnapshotFromTests(projectID, tests)
+}
+
+func (tr *TestRunner) saveUsageAccountingSnapshotFromTests(projectID string, tests []*ManagedTest) (*storage.UsageAccountingSnapshot, error) {
+	usage := usageAccountingFromTests(projectID, tests)
+	payload, err := json.Marshal(usage)
+	if err != nil {
+		return nil, fmt.Errorf("encode usage accounting snapshot: %w", err)
+	}
+	now := time.Now().UTC()
+	snapshot := &storage.UsageAccountingSnapshot{
+		ID:          uuid.NewString(),
+		ProjectID:   projectID,
+		GeneratedAt: usage.GeneratedAt,
+		PayloadJSON: string(payload),
+		CreatedAt:   now,
+	}
+	if err := tr.usageStore.SaveUsageAccountingSnapshot(snapshot); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
+}
+
+func (tr *TestRunner) UsageAccountingSnapshotInterval() time.Duration {
+	if tr == nil {
+		return 0
+	}
+	seconds := tr.GetSystemSettings().General.UsageSnapshotIntervalSeconds
+	if seconds <= 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func (tr *TestRunner) RunUsageAccountingSnapshotCadence(ctx context.Context, ticks <-chan time.Time) {
+	if tr == nil || ticks == nil {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticks:
+			if _, err := tr.captureUsageSnapshotForCadence(""); err != nil {
+				slog.Warn("failed to save cadence usage accounting snapshot", "error", err)
+			}
+		}
+	}
+}
+
+func (tr *TestRunner) promotePendingTests() {
+	for {
+		tr.mu.Lock()
+		pending := tr.nextPromotablePendingTestLocked()
+		if pending == nil {
+			tr.mu.Unlock()
+			return
+		}
+		if pending.ScriptShakeout {
+			pending.Status = "SHAKEOUT"
+			pending.PendingSince = nil
+			pending.PendingReason = ""
+			pending.QueuePosition = 0
+			pending.Error = ""
+			tr.saveManagedTestRecord(pending)
+			tr.broadcastEvent("script_shakeout_started", pending)
+			tr.mu.Unlock()
+
+			report := tr.runScriptShakeoutReport(pending)
+			if !report.Passed {
+				_ = tr.markScriptShakeoutReview(pending.ID, report)
+				tr.recordSystemTestAudit("test.script_shakeout.review", "blocked", pending, map[string]any{"report": report})
+				continue
+			}
+
+			tr.mu.Lock()
+			current, ok := tr.tests[pending.ID]
+			if !ok || current.Status != "SHAKEOUT" {
+				tr.mu.Unlock()
+				continue
+			}
+			pending = current
+		}
+		pending.Status = "INITIALIZING"
+		pending.PendingSince = nil
+		pending.PendingReason = ""
+		pending.QueuePosition = 0
+		pending.Error = ""
+		pending.executionBackend = tr.execution
+		if pending.executionBackend == nil {
+			pending.executionBackend = localExecutionBackend{}
+		}
+		tr.mu.Unlock()
+		tr.saveManagedTestRecord(pending)
+		tr.recordSystemTestAudit("test.pending.promote", "success", pending, map[string]any{
+			"status": pending.Status,
+			"reason": "fair_share_capacity_available",
+		})
+		tr.broadcastEvent("test_started", pending)
+		go tr.runTest(pending)
+	}
+}
+
+func (tr *TestRunner) recordSystemTestAudit(action string, status string, test *ManagedTest, details map[string]any) {
+	if tr == nil || tr.scenarioStore == nil || test == nil {
+		return
+	}
+	_ = tr.scenarioStore.SaveAuditEvent(&storage.AuditEvent{
+		ID:               uuid.New().String(),
+		Action:           action,
+		ActorType:        "system",
+		ActorSubject:     "test-runner",
+		ActorDisplayName: "Test Runner",
+		ProjectID:        normalizeProjectID(test.ProjectID),
+		ResourceType:     "test",
+		ResourceID:       test.ID,
+		Status:           status,
+		Details:          details,
+		CreatedAt:        time.Now().UTC(),
+	})
+}
+
+func (tr *TestRunner) nextPromotablePendingTestLocked() *ManagedTest {
+	pending := make([]*ManagedTest, 0)
+	for _, test := range tr.tests {
+		if test.Status == "PENDING" {
+			pending = append(pending, test)
+		}
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	tr.sortPendingTestsForFairShareLocked(pending)
+	for _, test := range pending {
+		tr.refreshCapacityAdvisoryLocked(test)
+		if buildCapacityShortfallStartError(test.ID, test.CapacityAdvisory, StartTestOptions{}) != nil {
+			continue
+		}
+		if blocked, _ := tr.evaluateQuotaBlockLocked(test, ""); blocked {
+			continue
+		}
+		return test
+	}
+	return nil
 }
 
 func appendRunError(existing string, prefix string, err error) string {
@@ -2872,11 +5725,26 @@ func appendRunError(existing string, prefix string, err error) string {
 	return existing + "; " + message
 }
 
-func (tr *TestRunner) runScriptShakeout(test *ManagedTest) error {
+func (tr *TestRunner) runScriptShakeoutReport(test *ManagedTest) ScriptShakeoutReport {
+	report := ScriptShakeoutReport{
+		Passed:    true,
+		StartedAt: time.Now().UTC(),
+		Results:   make([]ScriptShakeoutResult, 0, len(test.groupSpecs)),
+	}
 	for _, group := range test.groupSpecs {
-		if group.Script == nil {
-			return fmt.Errorf("script shakeout failed for %s: script is missing", group.Name)
+		result := ScriptShakeoutResult{
+			GroupName: group.Name,
+			Status:    "passed",
 		}
+		if group.Script == nil {
+			result.Status = "failed"
+			result.Error = "script is missing"
+			report.Passed = false
+			report.Results = append(report.Results, result)
+			continue
+		}
+		result.ScriptID = group.Script.ID
+		result.ScriptName = group.Script.Name
 
 		shakeoutScript := *group.Script
 		shakeoutScript.Config.RunLogic.Iterations = 1
@@ -2885,11 +5753,38 @@ func (tr *TestRunner) runScriptShakeout(test *ManagedTest) error {
 		err := engine.RunScriptShakeout(ctx, group.Name, &shakeoutScript)
 		cancel()
 		if err != nil {
-			return fmt.Errorf("script shakeout failed for %s: %w", group.Name, err)
+			result.Status = "failed"
+			result.Error = err.Error()
+			report.Passed = false
 		}
+		report.Results = append(report.Results, result)
 	}
 
-	return nil
+	report.EndedAt = time.Now().UTC()
+	if report.Passed {
+		report.Summary = fmt.Sprintf("Script shakeout passed for %d group%s; full load can start.", len(report.Results), pluralSuffix(len(report.Results)))
+	} else {
+		report.Summary = "Script shakeout failed; full load test has not started. Review the evidence and choose Continue or Cancel."
+	}
+	return report
+}
+
+func formatScriptShakeoutEvidence(report ScriptShakeoutReport) string {
+	if report.Passed {
+		return report.Summary
+	}
+	lines := []string{report.Summary}
+	for _, result := range report.Results {
+		if result.Status != "failed" {
+			continue
+		}
+		label := result.GroupName
+		if result.ScriptName != "" {
+			label = fmt.Sprintf("%s (%s)", result.GroupName, result.ScriptName)
+		}
+		lines = append(lines, fmt.Sprintf("- %s: %s", label, result.Error))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts, done chan struct{}) {
@@ -2952,6 +5847,7 @@ func (tr *TestRunner) processMetricsSnapshot(test *ManagedTest, snap engine.Metr
 
 	settings := tr.GetSystemSettings()
 	for _, alert := range buildThresholdAlerts(test, live, settings.Thresholds) {
+		alert["project_id"] = normalizeProjectID(test.ProjectID)
 		tr.hub.BroadcastJSON(alert)
 	}
 
@@ -2965,20 +5861,44 @@ func (tr *TestRunner) processMetricsSnapshot(test *ManagedTest, snap engine.Metr
 }
 
 func (tr *TestRunner) broadcastEvent(eventType string, test *ManagedTest) {
-	tr.hub.BroadcastJSON(map[string]any{
-		"type":      eventType,
-		"test_id":   test.ID,
-		"test_name": test.Name,
-		"status":    test.Status,
-		"timestamp": time.Now(),
-	})
+	now := time.Now()
+	if tr.hub != nil {
+		tr.hub.BroadcastJSON(map[string]any{
+			"type":       eventType,
+			"test_id":    test.ID,
+			"project_id": normalizeProjectID(test.ProjectID),
+			"test_name":  test.Name,
+			"status":     test.Status,
+			"timestamp":  now,
+		})
+	}
+	if tr.notifier != nil {
+		tr.notifier.Dispatch(tr.currentNotificationSettings(), NotificationEvent{
+			Type:      eventType,
+			TestID:    test.ID,
+			ProjectID: normalizeProjectID(test.ProjectID),
+			TestName:  test.Name,
+			Status:    test.Status,
+			Timestamp: now,
+		})
+	}
 }
 
 // applyRuntimeOverrides merges test-level runtime settings into a script config,
 // mirroring LoadRunner Controller's override behavior (test-level wins where specified).
-func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverride) {
-	if overrides == nil {
-		return
+func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverride) error {
+	if script == nil || overrides == nil {
+		return nil
+	}
+	if len(overrides.Env) > 0 {
+		overridden, err := applyRuntimeEnvOverrides(script, overrides.Env)
+		if err != nil {
+			return err
+		}
+		*script = *overridden
+	}
+	if overrides.BaseURL != "" {
+		script.Config.BaseURL = overrides.BaseURL
 	}
 	if overrides.Iterations != nil {
 		script.Config.RunLogic.Iterations = *overrides.Iterations
@@ -2992,11 +5912,80 @@ func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverrid
 	if overrides.ErrorHandling != nil {
 		script.Config.ErrorHandling = *overrides.ErrorHandling
 	}
+	if overrides.Browser != nil {
+		if overrides.Browser.Headless != nil {
+			headless := *overrides.Browser.Headless
+			script.Config.Browser.Headless = &headless
+		}
+		if overrides.Browser.DeviceProfile != "" {
+			script.Config.Browser.DeviceProfile = overrides.Browser.DeviceProfile
+		}
+		if overrides.Browser.TouchMode != nil {
+			touchMode := *overrides.Browser.TouchMode
+			script.Config.Browser.TouchMode = &touchMode
+		}
+		if overrides.Browser.Orientation != "" {
+			script.Config.Browser.Orientation = overrides.Browser.Orientation
+		}
+	}
 	if overrides.LogLevel != "" {
 		script.Config.Log.Level = overrides.LogLevel
 	}
 	if overrides.AutoTransactions != "" {
 		script.Config.RunLogic.AutoTransactions = overrides.AutoTransactions
+	}
+	return nil
+}
+
+func applyRuntimeEnvOverrides(script *dsl.Script, overrides map[string]string) (*dsl.Script, error) {
+	payload, err := json.Marshal(script)
+	if err != nil {
+		return nil, fmt.Errorf("marshal runtime env overrides: %w", err)
+	}
+	var generic any
+	if err := json.Unmarshal(payload, &generic); err != nil {
+		return nil, fmt.Errorf("decode runtime env overrides: %w", err)
+	}
+	generic = replaceRuntimeEnvTemplates(generic, overrides)
+	payload, err = json.Marshal(generic)
+	if err != nil {
+		return nil, fmt.Errorf("marshal overridden runtime script: %w", err)
+	}
+	var overridden dsl.Script
+	if err := json.Unmarshal(payload, &overridden); err != nil {
+		return nil, fmt.Errorf("decode overridden runtime script: %w", err)
+	}
+	return &overridden, nil
+}
+
+func replaceRuntimeEnvTemplates(value any, overrides map[string]string) any {
+	switch typed := value.(type) {
+	case string:
+		return runtimeOverrideEnvPattern.ReplaceAllStringFunc(typed, func(token string) string {
+			match := runtimeOverrideEnvPattern.FindStringSubmatch(token)
+			if len(match) != 2 {
+				return token
+			}
+			key := strings.TrimSpace(match[1])
+			if replacement, ok := overrides[key]; ok {
+				return replacement
+			}
+			return token
+		})
+	case []any:
+		resolved := make([]any, len(typed))
+		for i := range typed {
+			resolved[i] = replaceRuntimeEnvTemplates(typed[i], overrides)
+		}
+		return resolved
+	case map[string]any:
+		resolved := make(map[string]any, len(typed))
+		for key, item := range typed {
+			resolved[key] = replaceRuntimeEnvTemplates(item, overrides)
+		}
+		return resolved
+	default:
+		return value
 	}
 }
 
@@ -3021,7 +6010,184 @@ func cloneRuntimeSettings(overrides *RuntimeSettingsOverride) *RuntimeSettingsOv
 		errorHandling := *overrides.ErrorHandling
 		clone.ErrorHandling = &errorHandling
 	}
+	if overrides.Browser != nil {
+		browser := *overrides.Browser
+		if overrides.Browser.Headless != nil {
+			headless := *overrides.Browser.Headless
+			browser.Headless = &headless
+		}
+		if overrides.Browser.TouchMode != nil {
+			touchMode := *overrides.Browser.TouchMode
+			browser.TouchMode = &touchMode
+		}
+		clone.Browser = &browser
+	}
+	if len(overrides.Env) > 0 {
+		clone.Env = make(map[string]string, len(overrides.Env))
+		for key, value := range overrides.Env {
+			clone.Env[key] = value
+		}
+	}
+	if len(overrides.RedactionRules) > 0 {
+		clone.RedactionRules = make([]engine.RedactionRule, len(overrides.RedactionRules))
+		copy(clone.RedactionRules, overrides.RedactionRules)
+	}
 	return &clone
+}
+
+func mergeRuntimeSettings(base *RuntimeSettingsOverride, group *RuntimeSettingsOverride) *RuntimeSettingsOverride {
+	if base == nil {
+		return cloneRuntimeSettings(group)
+	}
+	merged := cloneRuntimeSettings(base)
+	if group == nil {
+		return merged
+	}
+	if merged == nil {
+		merged = &RuntimeSettingsOverride{}
+	}
+	if group.Iterations != nil {
+		iterations := *group.Iterations
+		merged.Iterations = &iterations
+	}
+	if group.Pacing != nil {
+		pacing := *group.Pacing
+		merged.Pacing = &pacing
+	}
+	if group.ThinkTime != nil {
+		thinkTime := *group.ThinkTime
+		merged.ThinkTime = &thinkTime
+	}
+	if group.ErrorHandling != nil {
+		errorHandling := *group.ErrorHandling
+		merged.ErrorHandling = &errorHandling
+	}
+	if group.Browser != nil {
+		browser := RuntimeBrowserOverride{}
+		if merged.Browser != nil {
+			browser = *merged.Browser
+			if merged.Browser.Headless != nil {
+				headless := *merged.Browser.Headless
+				browser.Headless = &headless
+			}
+			if merged.Browser.TouchMode != nil {
+				touchMode := *merged.Browser.TouchMode
+				browser.TouchMode = &touchMode
+			}
+		}
+		if group.Browser.Headless != nil {
+			headless := *group.Browser.Headless
+			browser.Headless = &headless
+		}
+		if group.Browser.DeviceProfile != "" {
+			browser.DeviceProfile = group.Browser.DeviceProfile
+		}
+		if group.Browser.TouchMode != nil {
+			touchMode := *group.Browser.TouchMode
+			browser.TouchMode = &touchMode
+		}
+		if group.Browser.Orientation != "" {
+			browser.Orientation = group.Browser.Orientation
+		}
+		merged.Browser = &browser
+	}
+	if group.LogLevel != "" {
+		merged.LogLevel = group.LogLevel
+	}
+	if group.AutoTransactions != "" {
+		merged.AutoTransactions = group.AutoTransactions
+	}
+	if group.BaseURL != "" {
+		merged.BaseURL = group.BaseURL
+	}
+	if len(group.Env) > 0 {
+		if merged.Env == nil {
+			merged.Env = make(map[string]string, len(group.Env))
+		}
+		for key, value := range group.Env {
+			merged.Env[key] = value
+		}
+	}
+	if len(group.RedactionRules) > 0 {
+		merged.RedactionRules = make([]engine.RedactionRule, len(group.RedactionRules))
+		copy(merged.RedactionRules, group.RedactionRules)
+	}
+	return merged
+}
+
+func buildRuntimeRedactionConfig(runtimeSettings *RuntimeSettingsOverride) (*engine.RedactionConfig, error) {
+	if runtimeSettings == nil || len(runtimeSettings.RedactionRules) == 0 {
+		return nil, nil
+	}
+	return engine.NewRedactionConfig(runtimeSettings.RedactionRules)
+}
+
+func cloneRedactionRules(rules []engine.RedactionRule) []engine.RedactionRule {
+	if len(rules) == 0 {
+		return nil
+	}
+	clone := make([]engine.RedactionRule, len(rules))
+	copy(clone, rules)
+	return clone
+}
+
+func (tr *TestRunner) resolveCreateTestProjectID(requestProjectID string, groups []CreateGroupEntry) (string, error) {
+	if requestProjectID != "" {
+		return normalizeProjectID(requestProjectID), nil
+	}
+	projectID := ""
+	for _, group := range groups {
+		script, ok := tr.scripts[group.ScriptID]
+		if !ok {
+			continue
+		}
+		candidate := normalizeProjectID(script.ProjectID)
+		if projectID == "" {
+			projectID = candidate
+			continue
+		}
+		if candidate != projectID {
+			return storage.DefaultProjectID, nil
+		}
+	}
+	return normalizeProjectID(projectID), nil
+}
+
+func (tr *TestRunner) resolveEffectiveRuntimeSettings(projectID string, runtimeSettings *RuntimeSettingsOverride) (*RuntimeSettingsOverride, error) {
+	effective := cloneRuntimeSettings(runtimeSettings)
+	rules, err := tr.resolveEffectiveRedactionRules(projectID, nilIfNoRules(runtimeSettings))
+	if err != nil {
+		return nil, err
+	}
+	if len(rules) == 0 {
+		return effective, nil
+	}
+	if effective == nil {
+		effective = &RuntimeSettingsOverride{}
+	}
+	effective.RedactionRules = rules
+	return effective, nil
+}
+
+func nilIfNoRules(runtimeSettings *RuntimeSettingsOverride) []engine.RedactionRule {
+	if runtimeSettings == nil {
+		return nil
+	}
+	return runtimeSettings.RedactionRules
+}
+
+func (tr *TestRunner) resolveEffectiveRedactionRules(projectID string, explicit []engine.RedactionRule) ([]engine.RedactionRule, error) {
+	merged := cloneRedactionRules(explicit)
+	if tr.projectStore == nil {
+		return merged, nil
+	}
+	projectID = normalizeProjectID(projectID)
+	project, err := tr.projectStore.GetProject(projectID)
+	if err != nil || project == nil || len(project.Settings.RedactionRules) == 0 {
+		return merged, nil
+	}
+	merged = append(merged, cloneRedactionRules(project.Settings.RedactionRules)...)
+	return merged, nil
 }
 
 func cloneGoalConfig(config *GoalConfig) *GoalConfig {
@@ -3040,6 +6206,14 @@ func cloneGoalConfig(config *GoalConfig) *GoalConfig {
 	if config.MaxErrorPct != nil {
 		value := *config.MaxErrorPct
 		clone.MaxErrorPct = &value
+	}
+	if config.MaxAvgServerProcessingMs != nil {
+		value := *config.MaxAvgServerProcessingMs
+		clone.MaxAvgServerProcessingMs = &value
+	}
+	if config.MaxAvgTransferMs != nil {
+		value := *config.MaxAvgTransferMs
+		clone.MaxAvgTransferMs = &value
 	}
 	if config.MaxErrorCount != nil {
 		value := *config.MaxErrorCount
@@ -3070,6 +6244,8 @@ func hasGoalConfig(config *GoalConfig) bool {
 	return config.TargetAverageTPS != nil ||
 		config.P95LatencyMs != nil ||
 		config.MaxErrorPct != nil ||
+		config.MaxAvgServerProcessingMs != nil ||
+		config.MaxAvgTransferMs != nil ||
 		config.MaxErrorCount != nil ||
 		config.MinVUsers != nil ||
 		config.MaxVUsers != nil ||
@@ -3097,11 +6273,19 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 
 	latencyBreached := config.P95LatencyMs != nil && live.P95Ms > *config.P95LatencyMs
 	errorBreached := config.MaxErrorPct != nil && live.ErrorPct > *config.MaxErrorPct
+	serverProcessingBreached := hasServerTelemetryBreach(live, config.MaxAvgServerProcessingMs, func(summary *ServerTelemetrySummary) float64 {
+		return summary.AvgServerProcessingMs
+	})
+	transferBreached := hasServerTelemetryBreach(live, config.MaxAvgTransferMs, func(summary *ServerTelemetrySummary) float64 {
+		return summary.AvgTransferMs
+	})
 	errorCountBreached := config.MaxErrorCount != nil && live.TotalErrors > int64(*config.MaxErrorCount)
 	status.LatencyBreached = latencyBreached
 	status.ErrorBreached = errorBreached
+	status.ServerProcessingBreached = serverProcessingBreached
+	status.TransferBreached = transferBreached
 	status.ErrorCountBreached = errorCountBreached
-	status.BreachActive = latencyBreached || errorBreached
+	status.BreachActive = latencyBreached || errorBreached || serverProcessingBreached || transferBreached
 
 	if status.BreachActive {
 		if state != nil && state.breachStartedAt == nil {
@@ -3117,7 +6301,7 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 
 	if config.StopOnMaxErrors && errorCountBreached {
 		status.StopTriggered = true
-		status.StopReason = goalStopReason(latencyBreached, errorBreached, errorCountBreached)
+		status.StopReason = goalStopReason(latencyBreached, errorBreached, serverProcessingBreached, transferBreached, errorCountBreached)
 		return goalControllerUpdate{
 			Status:     status,
 			ShouldStop: true,
@@ -3129,7 +6313,7 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 		window := goalBreachWindow(config)
 		if time.Duration(status.BreachDurationSec)*time.Second >= window {
 			status.StopTriggered = true
-			status.StopReason = goalStopReason(latencyBreached, errorBreached, errorCountBreached)
+			status.StopReason = goalStopReason(latencyBreached, errorBreached, serverProcessingBreached, transferBreached, errorCountBreached)
 			return goalControllerUpdate{
 				Status:     status,
 				ShouldStop: true,
@@ -3173,6 +6357,21 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 	}
 
 	return goalControllerUpdate{Status: status}
+}
+
+func hasServerTelemetryBreach(live *LiveMetrics, threshold *float64, pickValue func(summary *ServerTelemetrySummary) float64) bool {
+	if live == nil || threshold == nil || len(live.Transactions) == 0 {
+		return false
+	}
+	for _, tx := range live.Transactions {
+		if tx == nil || tx.ServerTelemetry == nil {
+			continue
+		}
+		if pickValue(tx.ServerTelemetry) > *threshold {
+			return true
+		}
+	}
+	return false
 }
 
 func shouldEvaluateScale(now time.Time, state *goalControllerState) bool {
@@ -3224,16 +6423,22 @@ func goalBreachWindow(config *GoalConfig) time.Duration {
 	return window
 }
 
-func goalStopReason(latencyBreached bool, errorBreached bool, errorCountBreached bool) string {
+func goalStopReason(latencyBreached bool, errorBreached bool, serverProcessingBreached bool, transferBreached bool, errorCountBreached bool) string {
 	switch {
 	case errorCountBreached:
 		return "max error count reached"
 	case latencyBreached && errorBreached:
 		return "latency and error SLA breached"
+	case serverProcessingBreached && transferBreached:
+		return "server processing and transfer SLA breached"
 	case latencyBreached:
 		return "p95 latency SLA breached"
 	case errorBreached:
 		return "error rate SLA breached"
+	case serverProcessingBreached:
+		return "server processing SLA breached"
+	case transferBreached:
+		return "transfer SLA breached"
 	default:
 		return "SLA breached"
 	}
@@ -3373,15 +6578,7 @@ func decodeStoredGeneratorAssignment(value any) *GeneratorAssignmentSettings {
 
 func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, live *LiveMetrics) {
 	// Identify unique base URLs across all groups
-	endpoints := make(map[string]string)
-	for _, g := range test.Groups {
-		if g.script != nil && g.script.Config.BaseURL != "" {
-			u, err := url.Parse(g.script.Config.BaseURL)
-			if err == nil {
-				endpoints[u.Host] = g.script.Config.BaseURL
-			}
-		}
-	}
+	endpoints := tr.latencyEndpointsForTest(test)
 
 	if len(endpoints) == 0 {
 		return
@@ -3406,16 +6603,248 @@ func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, live *LiveMetrics
 	wg.Wait()
 
 	tr.mu.Lock()
-	live.Latency = latency
+	live.Latency = cloneNetworkLatency(latency)
+	test.lastNetworkLatency = cloneNetworkLatency(latency)
+	if test.LiveMetrics != nil {
+		test.LiveMetrics.Latency = cloneNetworkLatency(latency)
+	}
 	tr.mu.Unlock()
 
 	// Broadcast the latency update specifically if needed,
 	// though it will be part of the next metrics broadcast too.
 	tr.hub.BroadcastJSON(map[string]any{
-		"type":    "latency_update",
-		"test_id": test.ID,
-		"latency": latency,
+		"type":       "latency_update",
+		"test_id":    test.ID,
+		"project_id": normalizeProjectID(test.ProjectID),
+		"latency":    latency,
 	})
+}
+
+func (tr *TestRunner) latencyEndpointsForTest(test *ManagedTest) map[string]string {
+	endpoints := make(map[string]string)
+	for _, g := range test.Groups {
+		script := g.script
+		if script == nil && g.ScriptID != "" {
+			tr.mu.RLock()
+			if stored, ok := tr.scripts[g.ScriptID]; ok {
+				script = stored.Script
+			}
+			tr.mu.RUnlock()
+		}
+		addLatencyEndpoint(endpoints, script)
+	}
+	return endpoints
+}
+
+func addLatencyEndpoint(endpoints map[string]string, script *dsl.Script) {
+	if script == nil {
+		return
+	}
+	if addParameterizedLatencyEndpoints(endpoints, script) {
+		return
+	}
+	raw := strings.TrimSpace(script.Config.BaseURL)
+	if raw == "" {
+		return
+	}
+	addLatencyEndpointValue(endpoints, raw)
+}
+
+func addParameterizedLatencyEndpoints(endpoints map[string]string, script *dsl.Script) bool {
+	added := false
+	for _, action := range script.Actions {
+		raw := strings.TrimSpace(action.Target)
+		if raw == "" {
+			continue
+		}
+		if endpoint, ok := resolveLatencyEndpointTemplatePrefix(raw, script); ok {
+			addLatencyEndpointValue(endpoints, endpoint)
+			added = true
+		}
+	}
+	return added
+}
+
+var latencyTemplatePrefixPattern = regexp.MustCompile(`^\{\{([^{}]+)\}\}`)
+
+func resolveLatencyEndpointTemplatePrefix(raw string, script *dsl.Script) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	match := latencyTemplatePrefixPattern.FindStringSubmatchIndex(raw)
+	if len(match) != 4 {
+		return "", false
+	}
+	expr := strings.TrimSpace(raw[match[2]:match[3]])
+	if !strings.HasPrefix(expr, "var.") {
+		return "", false
+	}
+	name := strings.TrimSpace(strings.TrimPrefix(expr, "var."))
+	value, ok := firstScriptParameterValue(script, name)
+	if !ok {
+		return "", false
+	}
+	value = strings.TrimRight(strings.TrimSpace(value), "/")
+	if !strings.HasPrefix(strings.ToLower(value), "http://") && !strings.HasPrefix(strings.ToLower(value), "https://") {
+		return "", false
+	}
+	suffix := strings.TrimLeft(raw[match[1]:], " \t\r\n")
+	return normalizeLatencyEndpointValue(value + suffix), true
+}
+
+func addLatencyEndpointValue(endpoints map[string]string, raw string) {
+	raw = normalizeLatencyEndpointValue(raw)
+	host, ok := latencyHostFromEndpoint(raw)
+	if !ok {
+		return
+	}
+	endpoints[host] = raw
+}
+
+var latencyEndpointBoundaryWhitespacePattern = regexp.MustCompile(`^(https?://[^/?#\s]+)\s+([/?#].*)$`)
+
+func normalizeLatencyEndpointValue(raw string) string {
+	raw = strings.TrimSpace(raw)
+	return latencyEndpointBoundaryWhitespacePattern.ReplaceAllString(raw, "$1$2")
+}
+
+func firstScriptParameterValue(script *dsl.Script, name string) (string, bool) {
+	for _, param := range script.Parameters {
+		if param.Name != name {
+			continue
+		}
+		for _, value := range param.Values {
+			if strings.TrimSpace(value) != "" {
+				return value, true
+			}
+		}
+		if param.DataSource != "" && param.Column != "" {
+			return firstScriptDataSourceValue(script.DataSources, param.DataSource, param.Column)
+		}
+	}
+	return "", false
+}
+
+func firstScriptDataSourceValue(sources []dsl.DataSource, sourceName, column string) (string, bool) {
+	for _, source := range sources {
+		if source.Name != sourceName || strings.TrimSpace(source.InlineData) == "" {
+			continue
+		}
+		for _, delimiter := range latencyDataSourceDelimiters(source.Delimiter) {
+			if value, ok := firstScriptDataSourceValueWithDelimiter(source, column, delimiter); ok {
+				return value, true
+			}
+		}
+	}
+	return "", false
+}
+
+func latencyDataSourceDelimiters(delimiter string) []rune {
+	if delimiter == "\t" {
+		return []rune{'\t'}
+	}
+	if strings.TrimSpace(delimiter) == "" {
+		return []rune{',', '\t', ';', '|'}
+	}
+	if strings.EqualFold(strings.TrimSpace(delimiter), "auto") {
+		return []rune{',', '\t', ';', '|'}
+	}
+	if strings.EqualFold(strings.TrimSpace(delimiter), `\t`) || strings.EqualFold(strings.TrimSpace(delimiter), "tab") {
+		return []rune{'\t'}
+	}
+	if strings.EqualFold(strings.TrimSpace(delimiter), "comma") {
+		return []rune{','}
+	}
+	return []rune{[]rune(delimiter)[0]}
+}
+
+func firstScriptDataSourceValueWithDelimiter(source dsl.DataSource, column string, delimiter rune) (string, bool) {
+	rows := parseInlineDataRows(source.InlineData, delimiter)
+	if len(rows) == 0 {
+		return "", false
+	}
+	rowIndex := 0
+	columnIndex := 0
+	if source.FirstRowHeader {
+		if len(rows) < 2 {
+			return "", false
+		}
+		index, ok := indexScriptDataSourceColumn(rows[0], column)
+		if !ok {
+			return "", false
+		}
+		columnIndex = index
+		rowIndex = 1
+	} else if len(source.Columns) > 0 {
+		index, ok := indexScriptDataSourceColumn(source.Columns, column)
+		if !ok {
+			return "", false
+		}
+		columnIndex = index
+	}
+	if columnIndex >= len(rows[rowIndex]) {
+		return "", false
+	}
+	value := strings.TrimSpace(rows[rowIndex][columnIndex])
+	return value, value != ""
+}
+
+func parseInlineDataRows(content string, delimiter rune) [][]string {
+	reader := csv.NewReader(strings.NewReader(content))
+	reader.Comma = delimiter
+	reader.FieldsPerRecord = -1
+	reader.LazyQuotes = true
+	reader.TrimLeadingSpace = true
+	rows, err := reader.ReadAll()
+	if err != nil {
+		return nil
+	}
+	filtered := rows[:0]
+	for _, row := range rows {
+		nonEmpty := false
+		for index := range row {
+			row[index] = strings.TrimSpace(strings.TrimPrefix(row[index], "\ufeff"))
+			if row[index] != "" {
+				nonEmpty = true
+			}
+		}
+		if nonEmpty {
+			filtered = append(filtered, row)
+		}
+	}
+	return filtered
+}
+
+func indexScriptDataSourceColumn(columns []string, column string) (int, bool) {
+	for index, candidate := range columns {
+		if strings.EqualFold(strings.TrimSpace(candidate), strings.TrimSpace(column)) {
+			return index, true
+		}
+	}
+	return 0, false
+}
+
+func latencyHostFromEndpoint(raw string) (string, bool) {
+	parsed, err := url.Parse(raw)
+	if err == nil && parsed.Host != "" {
+		return parsed.Host, true
+	}
+	if !strings.Contains(raw, "://") {
+		parsed, err = url.Parse("//" + raw)
+		if err == nil && parsed.Host != "" {
+			return parsed.Host, true
+		}
+	}
+	return "", false
+}
+
+func cloneNetworkLatency(in *NetworkLatency) *NetworkLatency {
+	if in == nil {
+		return nil
+	}
+	out := &NetworkLatency{}
+	if len(in.Targets) > 0 {
+		out.Targets = append([]LatencyTarget(nil), in.Targets...)
+	}
+	return out
 }
 
 func (tr *TestRunner) measureEndpointLatency(host, endpoint string) LatencyTarget {

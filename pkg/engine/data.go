@@ -10,7 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 // DataProvider loads and serves rows from CSV/DAT parameter files.
@@ -24,8 +24,7 @@ type dataSource struct {
 	rows     [][]string
 	strategy string
 	seqIdx   atomic.Int64
-	mu       sync.Mutex // for unique strategy
-	used     map[int]bool
+	mu       sync.Mutex
 }
 
 // NewDataProvider creates a provider from DSL DataSource definitions.
@@ -52,15 +51,13 @@ func loadDataSource(src dsl.DataSource) (*dataSource, error) {
 	}
 	defer readerSource.Close()
 
-	delimiter := ','
-	if src.Delimiter != "" {
-		delimiter = rune(src.Delimiter[0])
+	content, err := io.ReadAll(readerSource)
+	if err != nil {
+		return nil, fmt.Errorf("read data source: %w", err)
 	}
-	if src.Type == "dat" && src.Delimiter == "" {
-		delimiter = '\t'
-	}
+	delimiter := resolveDataSourceDelimiter(src, string(content))
 
-	reader := csv.NewReader(readerSource)
+	reader := csv.NewReader(strings.NewReader(string(content)))
 	reader.Comma = delimiter
 	reader.LazyQuotes = true
 	reader.TrimLeadingSpace = true
@@ -77,7 +74,6 @@ func loadDataSource(src dsl.DataSource) (*dataSource, error) {
 	ds := &dataSource{
 		name:     src.Name,
 		strategy: src.Strategy,
-		used:     make(map[int]bool),
 	}
 
 	if src.FirstRowHeader {
@@ -110,8 +106,74 @@ func loadDataSource(src dsl.DataSource) (*dataSource, error) {
 	if ds.strategy == "" {
 		ds.strategy = "sequential"
 	}
+	switch ds.strategy {
+	case "sequential", "random", "unique", "pop":
+	default:
+		return nil, fmt.Errorf("unsupported data source strategy %q", ds.strategy)
+	}
 
 	return ds, nil
+}
+
+func resolveDataSourceDelimiter(src dsl.DataSource, content string) rune {
+	if src.Delimiter == "\t" {
+		return '\t'
+	}
+	delimiter := strings.TrimSpace(src.Delimiter)
+	switch strings.ToLower(delimiter) {
+	case "":
+		if src.Type == "dat" {
+			return '\t'
+		}
+		if detected := detectDataSourceDelimiter(content); detected != 0 {
+			return detected
+		}
+		return ','
+	case "auto":
+		if detected := detectDataSourceDelimiter(content); detected != 0 {
+			return detected
+		}
+		if src.Type == "dat" {
+			return '\t'
+		}
+		return ','
+	case `\t`, "tab":
+		return '\t'
+	case "comma":
+		return ','
+	default:
+		return []rune(delimiter)[0]
+	}
+}
+
+func detectDataSourceDelimiter(content string) rune {
+	commaScore := scoreDataSourceDelimiter(content, ',')
+	tabScore := scoreDataSourceDelimiter(content, '\t')
+	if tabScore == 0 && commaScore == 0 {
+		return 0
+	}
+	if tabScore > commaScore {
+		return '\t'
+	}
+	return ','
+}
+
+func scoreDataSourceDelimiter(content string, delimiter rune) int {
+	score := 0
+	for index, line := range strings.Split(content, "\n") {
+		if index >= 20 {
+			break
+		}
+		line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		if line == "" {
+			continue
+		}
+		count := strings.Count(line, string(delimiter))
+		if count > 0 {
+			score += count + 1
+		}
+	}
+	return score
 }
 
 func openDataSourceReader(src dsl.DataSource) (io.ReadCloser, error) {
@@ -133,6 +195,7 @@ func openDataSourceReader(src dsl.DataSource) (io.ReadCloser, error) {
 //   - sequential: round-robin through rows
 //   - random: pick a random row each time
 //   - unique: each VUser gets a distinct row (wraps if more VUsers than rows)
+//   - pop: globally consume rows in order and stop returning rows after exhaustion
 func (dp *DataProvider) GetRow(sourceName string, vuserID int) map[string]string {
 	ds, ok := dp.sources[sourceName]
 	if !ok || len(ds.rows) == 0 {
@@ -152,6 +215,16 @@ func (dp *DataProvider) GetRow(sourceName string, vuserID int) map[string]string
 	case "unique":
 		// Each VUser gets its own row; wraps around if needed
 		rowIdx = vuserID % len(ds.rows)
+
+	case "pop":
+		ds.mu.Lock()
+		defer ds.mu.Unlock()
+		idx := int(ds.seqIdx.Load())
+		if idx >= len(ds.rows) {
+			return nil
+		}
+		rowIdx = idx
+		ds.seqIdx.Add(1)
 
 	default:
 		rowIdx = 0

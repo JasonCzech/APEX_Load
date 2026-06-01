@@ -1,23 +1,55 @@
 package api
 
 import (
+	"context"
+	"encoding/csv"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+type archiveRedactionProtocol struct{}
+
+func (p *archiveRedactionProtocol) Name() string                                   { return "archive-redaction" }
+func (p *archiveRedactionProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
+func (p *archiveRedactionProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	return &protocol.Result{
+		ActionName:       action.Name,
+		StartTime:        time.Now(),
+		Duration:         5 * time.Millisecond,
+		BytesSent:        128,
+		BytesReceived:    512,
+		StatusCode:       200,
+		Success:          true,
+		CorrelationID:    "corr-archive-redaction-1",
+		DependencyType:   "http",
+		DependencyTarget: "archive.example.test",
+		Snapshot: &protocol.ErrorSnapshot{
+			RequestURL:      "https://archive.example.test/customers/customer-1234",
+			RequestHeaders:  map[string]string{"X-Customer": "customer-1234"},
+			RequestBody:     "customer=customer-1234",
+			ResponseHeaders: map[string]string{"X-Customer": "customer-1234"},
+			ResponseBody:    `{"customer":"customer-1234"}`,
+		},
+	}, nil
+}
+func (p *archiveRedactionProtocol) Teardown(_ context.Context) error    { return nil }
+func (p *archiveRedactionProtocol) HealthCheck(_ context.Context) error { return nil }
 
 func TestArchiveQueryEndpoints(t *testing.T) {
 	archiveDir := t.TempDir()
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)
 
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -54,6 +86,20 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 	if completed.Archive == nil {
 		t.Fatal("expected archive metadata after completion")
 	}
+	baselineID := "baseline-" + testRun.ID
+	baselineArchive := *completed.Archive
+	baselineArchive.TestID = baselineID
+	server.runner.mu.Lock()
+	server.runner.tests[baselineID] = &ManagedTest{
+		ID:        baselineID,
+		Name:      "Archive API Baseline",
+		Status:    "COMPLETE",
+		CreatedAt: completed.CreatedAt.Add(-time.Minute),
+		EndedAt:   completed.EndedAt,
+		Archive:   &baselineArchive,
+	}
+	server.runner.archives[baselineID] = &baselineArchive
+	server.runner.mu.Unlock()
 
 	t.Run("manifest", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/manifest", nil)
@@ -91,8 +137,27 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("browser diagnostics download", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/browser-diagnostics", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("browser diagnostics status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		if got := resp.Header().Get("Content-Type"); !strings.Contains(got, "application/zip") {
+			t.Fatalf("browser diagnostics content type = %q, want application/zip", got)
+		}
+		if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "browser-diagnostics.zip") {
+			t.Fatalf("browser diagnostics content disposition = %q, want browser-diagnostics.zip", got)
+		}
+		if resp.Body.Len() == 0 {
+			t.Fatal("expected browser diagnostics download to return zip content")
+		}
+	})
+
 	t.Run("transactions", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/transactions?limit=5&offset=0&action=step-1&success=true&correlation_id=corr-archive-1&dependency_type=http&dependency_target=archive.example.test", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/transactions?limit=5&offset=0&action=step-1&success=true&trace_id=4bf92f3577b34da6a3ce929d0e0e4736&dependency_type=http&dependency_target=archive.example.test&soap_operation=CreateOrder", nil)
 		resp := httptest.NewRecorder()
 		server.mux.ServeHTTP(resp, req)
 
@@ -115,11 +180,37 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		if !payload.Transactions[0].Success {
 			t.Fatal("expected filtered transaction to be successful")
 		}
-		if payload.Transactions[0].CorrelationID != "corr-archive-1" {
-			t.Fatalf("transaction correlation_id = %q, want corr-archive-1", payload.Transactions[0].CorrelationID)
+		if payload.Transactions[0].CorrelationID != "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01" {
+			t.Fatalf("transaction correlation_id = %q, want W3C traceparent", payload.Transactions[0].CorrelationID)
+		}
+		if payload.Transactions[0].TraceID != "4bf92f3577b34da6a3ce929d0e0e4736" || payload.Transactions[0].SpanID != "00f067aa0ba902b7" {
+			t.Fatalf("transaction APM IDs = (%q, %q), want trace/span ids", payload.Transactions[0].TraceID, payload.Transactions[0].SpanID)
 		}
 		if payload.Transactions[0].DependencyType != "http" || payload.Transactions[0].DependencyTarget != "archive.example.test" {
 			t.Fatalf("unexpected transaction dependency metadata: %#v", payload.Transactions[0])
+		}
+		if payload.Transactions[0].Extractions["soap_operation"] != "CreateOrder" {
+			t.Fatalf("transaction soap_operation = %q, want CreateOrder", payload.Transactions[0].Extractions["soap_operation"])
+		}
+	})
+
+	t.Run("transactions csv", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/transactions?format=csv&limit=5&action=step-1", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("transactions csv status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read transactions csv: %v", err)
+		}
+		if len(rows) < 2 || rows[0][4] != "action_name" || rows[1][4] != "step-1" {
+			t.Fatalf("transactions csv rows = %#v, want action_name step-1", rows)
+		}
+		if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "archive-transactions") {
+			t.Fatalf("transactions csv content disposition = %q, want archive-transactions", got)
 		}
 	})
 
@@ -143,6 +234,23 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("summaries csv", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/summaries?format=csv&limit=5", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("summaries csv status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read summaries csv: %v", err)
+		}
+		if len(rows) < 2 || rows[0][4] != "tps" {
+			t.Fatalf("summaries csv rows = %#v, want tps header", rows)
+		}
+	})
+
 	t.Run("resources", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/resources?limit=5", nil)
 		resp := httptest.NewRecorder()
@@ -160,6 +268,23 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 		if payload.Total == 0 || len(payload.Resources) == 0 {
 			t.Fatal("expected at least one resource sample")
+		}
+	})
+
+	t.Run("resources csv", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/resources?format=csv&limit=5", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("resources csv status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read resources csv: %v", err)
+		}
+		if len(rows) < 2 || rows[0][3] != "active_vusers" {
+			t.Fatalf("resources csv rows = %#v, want active_vusers header", rows)
 		}
 	})
 
@@ -188,5 +313,287 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		if stats.Transactions == 0 {
 			t.Fatal("expected action breakdown to include transactions")
 		}
+		if payload.BySOAPOperation["CreateOrder"].Transactions == 0 {
+			t.Fatalf("expected SOAP operation breakdown, got %#v", payload.BySOAPOperation)
+		}
+		if len(payload.SummaryTimeline) == 0 {
+			t.Fatal("expected report to include summary timeline")
+		}
 	})
+
+	t.Run("csv report", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=csv", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("csv report status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		if got := resp.Header().Get("Content-Type"); !strings.Contains(got, "text/csv") {
+			t.Fatalf("csv report content type = %q, want text/csv", got)
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read csv report: %v", err)
+		}
+		if len(rows) < 4 {
+			t.Fatalf("csv rows = %#v, want header and report rows", rows)
+		}
+		if strings.Join(rows[0], "|") != "section|key|metric|value" {
+			t.Fatalf("csv header = %#v", rows[0])
+		}
+		if !archiveReportCSVHasRow(rows, "overview", "", "transactions") {
+			t.Fatalf("csv rows missing overview transactions: %#v", rows)
+		}
+		if !archiveReportCSVHasRow(rows, "action", "step-1", "transactions") {
+			t.Fatalf("csv rows missing action transactions: %#v", rows)
+		}
+	})
+
+	t.Run("executive csv report omits drilldown", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=csv&profile=executive", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("executive csv report status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read executive csv report: %v", err)
+		}
+		if !archiveReportCSVHasRow(rows, "overview", "", "transactions") {
+			t.Fatalf("executive csv rows missing overview transactions: %#v", rows)
+		}
+		if archiveReportCSVHasRow(rows, "action", "step-1", "transactions") {
+			t.Fatalf("executive csv rows should omit action drilldown: %#v", rows)
+		}
+	})
+
+	t.Run("audit csv report includes evidence inventory", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=csv&profile=audit", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("audit csv report status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read audit csv report: %v", err)
+		}
+		if !archiveReportCSVHasRow(rows, "schema_compatibility", "", "status") {
+			t.Fatalf("audit csv rows missing schema compatibility: %#v", rows)
+		}
+		if !archiveReportCSVHasRow(rows, "artifact_inventory", "transactions.jsonl", "count") {
+			t.Fatalf("audit csv rows missing artifact inventory: %#v", rows)
+		}
+		if archiveReportCSVHasRow(rows, "action", "step-1", "transactions") {
+			t.Fatalf("audit csv rows should omit action drilldown: %#v", rows)
+		}
+	})
+
+	t.Run("unknown csv report profile", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=csv&profile=unknown", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("unknown csv profile status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+		}
+	})
+
+	t.Run("comparison csv", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/comparison?format=csv&baseline_id="+baselineID+"&breakdown=overall", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("comparison csv status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read comparison csv: %v", err)
+		}
+		if len(rows) != 3 {
+			t.Fatalf("comparison csv rows = %#v, want header plus two runs", rows)
+		}
+		if rows[0][0] != "run_id" || rows[0][2] != "breakdown" || rows[1][2] != "overall" || rows[2][2] != "overall" {
+			t.Fatalf("comparison csv rows = %#v, want overall comparison rows", rows)
+		}
+		if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "archive-comparison") {
+			t.Fatalf("comparison csv content disposition = %q, want archive-comparison", got)
+		}
+	})
+
+	t.Run("comparison csv rejects invalid breakdown", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/comparison?format=csv&baseline_id="+baselineID+"&breakdown=unknown", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("invalid comparison breakdown status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+		}
+	})
+
+	t.Run("html report", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/report?profile=executive", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("html report status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		if got := resp.Header().Get("Content-Type"); !strings.Contains(got, "text/html") {
+			t.Fatalf("html report content type = %q, want text/html", got)
+		}
+		body := resp.Body.String()
+		if !strings.Contains(body, "<!DOCTYPE html>") {
+			t.Fatalf("expected HTML document, got %q", body)
+		}
+		if !strings.Contains(body, testRun.Name) {
+			t.Fatalf("expected report to contain test name %q", testRun.Name)
+		}
+		if !strings.Contains(body, "Executive profile") {
+			t.Fatalf("expected report to contain executive profile label, got %q", body)
+		}
+		if !strings.Contains(body, "Action Summary") {
+			t.Fatalf("expected report to contain action summary, got %q", body)
+		}
+		if !strings.Contains(body, "Summary Timeline") {
+			t.Fatalf("expected report to contain summary timeline, got %q", body)
+		}
+	})
+
+	t.Run("unknown html report profile", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/report?profile=unknown", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("unknown profile status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+		}
+	})
+}
+
+func TestArchiveReportReturnsNotFoundWhenManifestMissing(t *testing.T) {
+	archiveDir := t.TempDir()
+	store := &metricsStoreSpy{
+		listedTests: []*storage.TestRecord{{
+			ID:          "test-missing-archive",
+			Name:        "Recovered Run",
+			Status:      "COMPLETE",
+			ProjectID:   storage.DefaultProjectID,
+			TotalVUsers: 1,
+		}},
+		archiveByTestID: map[string]*storage.RunArchiveRecord{
+			"test-missing-archive": {
+				TestID:       "test-missing-archive",
+				ArchivePath:  archiveDir,
+				ManifestPath: filepath.Join(archiveDir, "manifest.json"),
+			},
+		},
+	}
+	server := NewServer(ServerConfig{Store: store})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/test-missing-archive/archive/report", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("report status = %d, want %d body=%s", resp.Code, http.StatusNotFound, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "archive not found") {
+		t.Fatalf("expected archive not found error, got %q", resp.Body.String())
+	}
+}
+
+func archiveReportCSVHasRow(rows [][]string, section string, key string, metric string) bool {
+	for _, row := range rows {
+		if len(row) >= 4 && row[0] == section && row[1] == key && row[2] == metric {
+			return true
+		}
+	}
+	return false
+}
+
+func TestArchiveTransactionsApplyConfiguredRedactionRules(t *testing.T) {
+	archiveDir := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)
+
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{Store: store})
+	protocolName := "archive-redaction-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
+	protocol.Register(protocolName, func() protocol.Protocol {
+		return &archiveRedactionProtocol{}
+	})
+
+	server.runner.StoreScript(&dsl.Script{
+		ID:       "script-archive-redaction",
+		Name:     "Archive Redaction Script",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "lookup", Type: "request", Target: "/"}},
+	})
+
+	testRun, err := server.runner.CreateTest(CreateTestRequest{
+		Name:     "Archive Redaction Run",
+		Duration: "2200ms",
+		ScriptID: "script-archive-redaction",
+		VUsers:   1,
+		RuntimeSettings: &RuntimeSettingsOverride{
+			RedactionRules: []engine.RedactionRule{{Name: "customer id", Pattern: `customer-[0-9]+`}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	if err := server.runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	completed := waitForTestStatus(t, server.runner, testRun.ID, "COMPLETE")
+	if completed.Archive == nil {
+		t.Fatal("expected archive metadata after completion")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/transactions?limit=5&offset=0", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("transactions status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload struct {
+		Transactions []TransactionEvent `json:"transactions"`
+		Total        int                `json:"total"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal transactions: %v", err)
+	}
+	if payload.Total == 0 || len(payload.Transactions) == 0 {
+		t.Fatal("expected at least one transaction event")
+	}
+	snapshot := payload.Transactions[0].Snapshot
+	if snapshot == nil {
+		t.Fatal("expected archived transaction snapshot")
+	}
+	if snapshot.RequestURL != "https://archive.example.test/customers/[REDACTED]" {
+		t.Fatalf("request url = %q, want redacted customer id", snapshot.RequestURL)
+	}
+	if snapshot.RequestHeaders["X-Customer"] != "[REDACTED]" {
+		t.Fatalf("request header X-Customer = %q, want [REDACTED]", snapshot.RequestHeaders["X-Customer"])
+	}
+	if snapshot.RequestBody != "customer=[REDACTED]" {
+		t.Fatalf("request body = %q, want customer=[REDACTED]", snapshot.RequestBody)
+	}
+	if snapshot.ResponseBody != `{"customer":"[REDACTED]"}` {
+		t.Fatalf("response body = %q, want custom rule redaction", snapshot.ResponseBody)
+	}
 }

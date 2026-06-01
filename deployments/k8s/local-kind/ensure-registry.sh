@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-reg_name="stormrunner-kind-registry"
+reg_name="apexload-kind-registry"
 reg_port="5001"
 kind_network="kind"
 

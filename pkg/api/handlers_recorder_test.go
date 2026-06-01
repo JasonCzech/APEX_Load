@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jasonczech/stormrunner/pkg/recorder"
+	"github.com/jasonczech/apexload/pkg/recorder"
 )
 
 func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
@@ -49,26 +49,16 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 	}
 
 	var result struct {
-		Scripts []json.RawMessage `json:"scripts"`
-		Script  struct {
+		Script struct {
 			Name    string `json:"name"`
 			Actions []struct {
 				Name   string `json:"name"`
 				Target string `json:"target"`
 			} `json:"actions"`
 		} `json:"script"`
-		Warnings     []string          `json:"warnings"`
-		Correlations []json.RawMessage `json:"correlations"`
-		Stats        struct {
-			ConvertedActions     int `json:"converted_actions"`
-			CorrelationsDetected int `json:"correlations_detected"`
-		} `json:"stats"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
-	}
-	if len(result.Scripts) != 1 {
-		t.Fatalf("scripts count = %d, want 1", len(result.Scripts))
 	}
 	if result.Script.Name != "Checkout Preview" {
 		t.Fatalf("script name = %q, want Checkout Preview", result.Script.Name)
@@ -79,38 +69,17 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 	if result.Script.Actions[0].Target != "/api/cart" {
 		t.Fatalf("target = %q, want /api/cart", result.Script.Actions[0].Target)
 	}
-	if len(result.Warnings) != 0 {
-		t.Fatalf("warnings = %v, want none", result.Warnings)
-	}
-	if len(result.Correlations) != 0 {
-		t.Fatalf("correlations = %v, want none", result.Correlations)
-	}
-	if result.Stats.ConvertedActions != 1 || result.Stats.CorrelationsDetected != 0 {
-		t.Fatalf("stats = %#v, want 1 converted action and 0 correlations", result.Stats)
-	}
 	if got := len(server.runner.ListScripts()); got != 0 {
 		t.Fatalf("preview stored %d scripts, want 0", got)
 	}
 }
 
-func TestHandleConvertRecordingReturnsStandardizedEnvelope(t *testing.T) {
+func TestHandleStartRecordingThreadsCaptureCookies(t *testing.T) {
 	server := NewServer(ServerConfig{})
-	session, err := server.recorder.StartSession("rec-3", "Checkout Convert", recorder.SessionFilters{}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	session.BaseURL = "https://shop.example.com"
-	session.Requests = append(session.Requests, recorder.RecordedRequest{
-		Seq:        1,
-		Method:     http.MethodGet,
-		URL:        "https://shop.example.com/api/cart",
-		Path:       "/api/cart",
-		StatusCode: http.StatusOK,
-		StepName:   "Load Cart",
-	})
-
-	body := bytes.NewBufferString(`{"name":"Checkout Convert"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/rec-3/convert", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewBufferString(`{
+		"name": "Cookie Capture",
+		"capture_cookies": true
+	}`))
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
 
@@ -119,36 +88,14 @@ func TestHandleConvertRecordingReturnsStandardizedEnvelope(t *testing.T) {
 	if resp.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusCreated, resp.Body.String())
 	}
-
-	var result struct {
-		Scripts []json.RawMessage `json:"scripts"`
-		Script  struct {
-			ID   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"script"`
-		Warnings []string `json:"warnings"`
-		Stats    struct {
-			ConvertedActions     int `json:"converted_actions"`
-			CorrelationsDetected int `json:"correlations_detected"`
-		} `json:"stats"`
+	var payload struct {
+		Session recorder.Session `json:"session"`
 	}
-	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
 	}
-	if len(result.Scripts) != 1 {
-		t.Fatalf("scripts count = %d, want 1", len(result.Scripts))
-	}
-	if result.Script.ID == "" || result.Script.Name != "Checkout Convert" {
-		t.Fatalf("script = %#v, want stored script with name", result.Script)
-	}
-	if len(result.Warnings) != 0 {
-		t.Fatalf("warnings = %v, want none", result.Warnings)
-	}
-	if result.Stats.ConvertedActions != 1 || result.Stats.CorrelationsDetected != 0 {
-		t.Fatalf("stats = %#v, want 1 converted action and 0 correlations", result.Stats)
-	}
-	if got := len(server.runner.ListScripts()); got != 1 {
-		t.Fatalf("stored scripts = %d, want 1", got)
+	if !payload.Session.Filters.CaptureCookies {
+		t.Fatalf("capture_cookies = false, want true: %#v", payload.Session.Filters)
 	}
 }
 

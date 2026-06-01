@@ -12,7 +12,7 @@
       "http": {
         "connect_timeout_ms": 30000,
         "request_timeout_ms": 120000,
-        "user_agent": "Stormrunner-OpenAI-CSV-Example/1.0"
+        "user_agent": "APEX Load-OpenAI-CSV-Example/1.0"
       }
     },
     "data_sources": [

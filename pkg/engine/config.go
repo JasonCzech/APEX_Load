@@ -1,15 +1,27 @@
 package engine
 
-import "github.com/jasonczech/stormrunner/pkg/dsl"
+import (
+	"strings"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
+)
 
 func buildProtoConfig(script *dsl.Script) map[string]any {
+	return buildProtoConfigWithSecretResolver(script, newDefaultSecretResolver())
+}
+
+func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResolver) map[string]any {
 	cfg := map[string]any{
 		"base_url": script.Config.BaseURL,
 	}
 
 	httpCfg := script.Config.HTTP
 	javaHTTPCfg := script.Config.JavaHTTP
+	webSocketCfg := script.Config.WebSocket
+	grpcCfg := script.Config.GRPC
 	soapCfg := script.Config.SOAP
+	databaseCfg := script.Config.Database
+	networkCfg := script.Config.Network
 
 	// Timeouts
 	if httpCfg.ConnectTimeoutMs > 0 {
@@ -61,6 +73,20 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 	if len(script.Config.WebRuntime.ContentChecks) > 0 {
 		cfg["web_content_checks"] = flattenContentChecks(script.Config.WebRuntime.ContentChecks)
 	}
+	if filters := script.Config.WebRuntime.DownloadFilters; filters.Mode != "" {
+		cfg["web_download_filters_mode"] = filters.Mode
+		if len(filters.Hosts) > 0 {
+			cfg["web_download_filters_hosts"] = filters.Hosts
+		}
+	}
+	if dataFormatting := script.Config.WebRuntime.DataFormatting; dataFormatting.AutoDetect || len(dataFormatting.Chain) > 0 {
+		if dataFormatting.AutoDetect {
+			cfg["web_data_formatting_auto_detect"] = true
+		}
+		if len(dataFormatting.Chain) > 0 {
+			cfg["web_data_formatting_chain"] = flattenDFEChain(dataFormatting.Chain)
+		}
+	}
 	if networkCfg := script.Config.WebRuntime.NetworkSimulation; networkCfg.Mode != "" {
 		cfg["web_network_simulation_mode"] = networkCfg.Mode
 		if networkCfg.Preset != "" {
@@ -72,6 +98,68 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 		if networkCfg.LatencyMs > 0 {
 			cfg["web_network_simulation_latency_ms"] = float64(networkCfg.LatencyMs)
 		}
+		if networkCfg.JitterMs > 0 {
+			cfg["web_network_simulation_jitter_ms"] = float64(networkCfg.JitterMs)
+		}
+		if networkCfg.PacketLossPct > 0 {
+			cfg["web_network_simulation_packet_loss_pct"] = networkCfg.PacketLossPct
+		}
+	}
+	if streamingCfg := script.Config.WebRuntime.Streaming; streamingCfg.Mode != "" || streamingCfg.BufferSizeSeconds > 0 || streamingCfg.FixedBitrateKbps > 0 || streamingCfg.BandwidthEstimation != "" {
+		if streamingCfg.Mode != "" {
+			cfg["web_streaming_mode"] = streamingCfg.Mode
+		}
+		if streamingCfg.BufferSizeSeconds > 0 {
+			cfg["web_streaming_buffer_size_seconds"] = float64(streamingCfg.BufferSizeSeconds)
+		}
+		if streamingCfg.FixedBitrateKbps > 0 {
+			cfg["web_streaming_fixed_bitrate_kbps"] = float64(streamingCfg.FixedBitrateKbps)
+		}
+		if streamingCfg.BandwidthEstimation != "" {
+			cfg["web_streaming_bandwidth_estimation"] = streamingCfg.BandwidthEstimation
+		}
+	}
+	if webSocketCfg.ReadTimeoutMs > 0 {
+		cfg["websocket_read_timeout_ms"] = float64(webSocketCfg.ReadTimeoutMs)
+	}
+	if webSocketCfg.WriteTimeoutMs > 0 {
+		cfg["websocket_write_timeout_ms"] = float64(webSocketCfg.WriteTimeoutMs)
+	}
+	if webSocketCfg.MaxMessageSize > 0 {
+		cfg["websocket_max_message_size"] = float64(webSocketCfg.MaxMessageSize)
+	}
+	if webSocketCfg.Subprotocol != "" {
+		cfg["websocket_subprotocol"] = webSocketCfg.Subprotocol
+	}
+	if webSocketCfg.Origin != "" {
+		cfg["websocket_origin"] = webSocketCfg.Origin
+	}
+	if webSocketCfg.Compression {
+		cfg["websocket_compression"] = true
+	}
+	if webSocketCfg.Reconnect {
+		cfg["websocket_reconnect"] = true
+	}
+	if len(grpcCfg.ProtoFiles) > 0 {
+		cfg["grpc_proto_files"] = grpcCfg.ProtoFiles
+	}
+	if grpcCfg.UseReflection {
+		cfg["grpc_use_reflection"] = true
+	}
+	if grpcCfg.PlainText {
+		cfg["grpc_plain_text"] = true
+	}
+	if grpcCfg.MaxRecvMsgSize > 0 {
+		cfg["grpc_max_recv_msg_size"] = float64(grpcCfg.MaxRecvMsgSize)
+	}
+	if grpcCfg.TimeoutMs > 0 {
+		cfg["grpc_timeout_ms"] = float64(grpcCfg.TimeoutMs)
+	}
+	if len(grpcCfg.Metadata) > 0 {
+		cfg["grpc_metadata"] = grpcCfg.Metadata
+	}
+	if grpcCfg.Authority != "" {
+		cfg["grpc_authority"] = grpcCfg.Authority
 	}
 	if javaHTTPCfg.Codec != "" {
 		cfg["java_http_codec"] = javaHTTPCfg.Codec
@@ -134,6 +222,69 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 	if soapCfg.FaultHandling.FailOnFault {
 		cfg["soap_fault_fail_on_fault"] = true
 	}
+	if databaseCfg.Driver != "" {
+		cfg["database_driver"] = databaseCfg.Driver
+	}
+	if databaseCfg.DSN != "" {
+		cfg["database_dsn"] = databaseCfg.DSN
+	}
+	if databaseCfg.DSNSecret != "" {
+		cfg["database_dsn_secret"] = databaseCfg.DSNSecret
+	}
+	if databaseCfg.MaxOpenConns > 0 {
+		cfg["database_max_open_conns"] = float64(databaseCfg.MaxOpenConns)
+	}
+	if databaseCfg.MaxIdleConns > 0 {
+		cfg["database_max_idle_conns"] = float64(databaseCfg.MaxIdleConns)
+	}
+	if databaseCfg.ConnMaxLifetimeMs > 0 {
+		cfg["database_conn_max_lifetime_ms"] = float64(databaseCfg.ConnMaxLifetimeMs)
+	}
+	if databaseCfg.QueryTimeoutMs > 0 {
+		cfg["database_query_timeout_ms"] = float64(databaseCfg.QueryTimeoutMs)
+	}
+	if databaseCfg.MaxRows > 0 {
+		cfg["database_max_rows"] = float64(databaseCfg.MaxRows)
+	}
+	if databaseCfg.ReadOnly {
+		cfg["database_read_only"] = true
+	}
+	if databaseCfg.RollbackOnTeardown {
+		cfg["database_rollback_on_teardown"] = true
+	}
+	if networkCfg.Subprotocol != "" {
+		cfg["network_subprotocol"] = networkCfg.Subprotocol
+	}
+	if networkCfg.Host != "" {
+		cfg["network_host"] = networkCfg.Host
+	}
+	if networkCfg.Address != "" {
+		cfg["network_address"] = networkCfg.Address
+	}
+	if networkCfg.Port > 0 {
+		cfg["network_port"] = float64(networkCfg.Port)
+	}
+	if networkCfg.TimeoutMs > 0 {
+		cfg["network_timeout_ms"] = float64(networkCfg.TimeoutMs)
+	}
+	if networkCfg.TLS {
+		cfg["network_tls"] = true
+	}
+	if networkCfg.Username != "" {
+		cfg["network_username"] = networkCfg.Username
+	}
+	if networkCfg.Password != "" {
+		cfg["network_password"] = networkCfg.Password
+	}
+	if networkCfg.From != "" {
+		cfg["network_from"] = networkCfg.From
+	}
+	if len(networkCfg.To) > 0 {
+		cfg["network_to"] = networkCfg.To
+	}
+	if networkCfg.BaseDN != "" {
+		cfg["network_base_dn"] = networkCfg.BaseDN
+	}
 
 	browserCfg := script.Config.Browser
 	if browserCfg.Engine != "" {
@@ -145,17 +296,38 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 	if browserCfg.CacheEnabled != nil {
 		cfg["browser_cache_enabled"] = *browserCfg.CacheEnabled
 	}
+	if browserCfg.CacheContentURLs != nil {
+		cfg["browser_cache_content_urls"] = *browserCfg.CacheContentURLs
+	}
 	if browserCfg.CheckNewerVersions != nil {
 		cfg["browser_check_newer_versions"] = *browserCfg.CheckNewerVersions
 	}
 	if browserCfg.DownloadResources != "" {
 		cfg["browser_download_resources"] = browserCfg.DownloadResources
 	}
+	if browserCfg.DownloadResources == "recorded" {
+		if recordedResources, ok := recordedResourceURLs(script); ok {
+			cfg["browser_recorded_resources_available"] = true
+			cfg["browser_recorded_resources"] = recordedResources
+		}
+	}
 	if browserCfg.SlowMoMs > 0 {
 		cfg["browser_slow_mo_ms"] = float64(browserCfg.SlowMoMs)
 	}
 	if browserCfg.UserAgent != "" {
 		cfg["browser_user_agent"] = browserCfg.UserAgent
+	}
+	if browserCfg.DeviceProfile != "" {
+		cfg["browser_device_profile"] = browserCfg.DeviceProfile
+	}
+	if browserCfg.TouchMode != nil {
+		cfg["browser_touch_mode"] = *browserCfg.TouchMode
+	}
+	if browserCfg.Orientation != "" {
+		cfg["browser_orientation"] = browserCfg.Orientation
+	}
+	if browserCfg.ClientMetrics != nil {
+		cfg["browser_client_metrics"] = *browserCfg.ClientMetrics
 	}
 	if browserCfg.CaptureScreenshots != "" {
 		cfg["browser_capture_screenshots"] = browserCfg.CaptureScreenshots
@@ -268,7 +440,7 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 		cfg["auth_domain"] = auth.Domain
 	}
 
-	return cfg
+	return resolveProtoConfigSecrets(cfg, resolver).(map[string]any)
 }
 
 func flattenContentChecks(checks []dsl.ContentCheckConfig) []map[string]any {
@@ -284,4 +456,53 @@ func flattenContentChecks(checks []dsl.ContentCheckConfig) []map[string]any {
 		flattened = append(flattened, item)
 	}
 	return flattened
+}
+
+func flattenDFEChain(chain []dsl.DFETransform) []map[string]any {
+	flattened := make([]map[string]any, 0, len(chain))
+	for _, transform := range chain {
+		item := map[string]any{
+			"type": transform.Type,
+		}
+		if len(transform.Options) > 0 {
+			item["options"] = transform.Options
+		}
+		flattened = append(flattened, item)
+	}
+	return flattened
+}
+
+func recordedResourceURLs(script *dsl.Script) ([]string, bool) {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved == nil {
+		return nil, false
+	}
+	preserved := script.Metadata.Import.Preserved
+	rawAvailable, ok := preserved["recorded_resource_urls_available"]
+	if !ok {
+		return nil, false
+	}
+	available, ok := rawAvailable.(bool)
+	if !ok || !available {
+		return nil, false
+	}
+	rawURLs, ok := preserved["recorded_resource_urls"]
+	if !ok {
+		return []string{}, true
+	}
+	switch urls := rawURLs.(type) {
+	case []string:
+		return append([]string(nil), urls...), true
+	case []any:
+		result := make([]string, 0, len(urls))
+		for _, value := range urls {
+			text, ok := value.(string)
+			if !ok || strings.TrimSpace(text) == "" {
+				continue
+			}
+			result = append(result, text)
+		}
+		return result, true
+	default:
+		return []string{}, true
+	}
 }

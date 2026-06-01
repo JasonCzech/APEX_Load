@@ -8,25 +8,35 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 )
 
-// ConvertResult holds the output of a LoadRunner to Stormrunner DSL conversion.
+// ConvertResult holds the output of a LoadRunner to APEX Load DSL conversion.
 type ConvertResult struct {
-	Script   *dsl.Script  `json:"script"`
-	Warnings []string     `json:"warnings,omitempty"`
-	Stats    ConvertStats `json:"stats"`
+	Script                       *dsl.Script       `json:"script"`
+	Warnings                     []string          `json:"warnings,omitempty"`
+	Stats                        ConvertStats      `json:"stats"`
+	DetectedProtocol             *DetectedProtocol `json:"detected_protocol,omitempty"`
+	ReviewArtifact               *ReviewArtifact   `json:"review_artifact,omitempty"`
+	SourceReview                 *SourceReview     `json:"source_review,omitempty"`
+	RecordedResourceURLs         []string          `json:"recorded_resource_urls,omitempty"`
+	RecordedResourceURLsCaptured bool              `json:"recorded_resource_urls_captured,omitempty"`
 }
 
 // ConvertStats provides conversion statistics for reporting.
 type ConvertStats struct {
-	TotalFunctions   int      `json:"total_functions"`
-	ConvertedActions int      `json:"converted_actions"`
-	Extractors       int      `json:"extractors"`
-	ThinkTimes       int      `json:"think_times"`
-	Transactions     int      `json:"transactions"`
-	Skipped          int      `json:"skipped"`
-	UnsupportedFuncs []string `json:"unsupported_funcs,omitempty"`
+	TotalFunctions            int      `json:"total_functions"`
+	ConvertedActions          int      `json:"converted_actions"`
+	Extractors                int      `json:"extractors"`
+	ThinkTimes                int      `json:"think_times"`
+	Transactions              int      `json:"transactions"`
+	NativeFunctions           int      `json:"native_functions,omitempty"`
+	ReviewOnlyFunctions       int      `json:"review_only_functions,omitempty"`
+	ExternalRequiredFunctions int      `json:"external_required_functions,omitempty"`
+	CustomCallFunctions       int      `json:"custom_call_functions,omitempty"`
+	Skipped                   int      `json:"skipped"`
+	UnsupportedFuncs          []string `json:"unsupported_funcs,omitempty"`
 }
 
 // ConvertOptions controls the conversion behavior.
@@ -38,18 +48,18 @@ type ConvertOptions struct {
 	PreserveTransactions bool    // Wrap actions in transaction markers (as comments in name)
 
 	// HTTP runtime settings (mapped from VuGen runtime config)
-	HTTPConfig      *dsl.HTTPConfig  // Pre-built HTTP config to embed in script
+	HTTPConfig      *dsl.HTTPConfig   // Pre-built HTTP config to embed in script
 	RuntimeSettings *dsl.ScriptConfig // Broader runtime settings mapped from default.cfg
 }
 
-// Convert transforms parsed LoadRunner action files into a Stormrunner DSL Script.
+// Convert transforms parsed LoadRunner action files into a APEX Load DSL Script.
 func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, error) {
 	result := &ConvertResult{
 		Warnings: make([]string, 0),
 		Script: &dsl.Script{
 			Version:       "1.0.0",
 			Protocol:      "http",
-			GeneratedBy:   "stormrunner-loadrunner-converter",
+			GeneratedBy:   "apexload-loadrunner-converter",
 			GeneratedFrom: "loadrunner",
 			Config:        dsl.ScriptConfig{},
 			Actions:       make([]dsl.Action, 0),
@@ -82,6 +92,8 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		baseURL = detectBaseURL(allFunctions)
 	}
 	result.Script.Config.BaseURL = baseURL
+	result.RecordedResourceURLs = collectRecordedResourceURLs(allFunctions)
+	result.RecordedResourceURLsCaptured = true
 
 	// Set script name
 	if opts.ScriptName != "" {
@@ -94,8 +106,10 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	var pendingExtractors []dsl.Extractor
 	var pendingAssertions []dsl.Assertion
 	var pendingHeaders map[string]string
+	var pendingSourceMappings []SourceReviewMapping
 	var currentTransaction string
 	var thinkTimes []float64
+	var loadRunnerRuntimeControls []ParsedFunction
 
 	actionNameCounts := make(map[string]int)
 
@@ -105,13 +119,17 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			ext := convertExtractor(fn)
 			if ext != nil {
 				pendingExtractors = append(pendingExtractors, *ext)
+				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", ext.Name, "extractor", "contributor", "Applied to the next converted request action.", LoadRunnerSupportExecutable))
 				result.Stats.Extractors++
+				recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 			}
 
 		case "web_reg_find":
 			assertion, warning := convertFindAssertion(fn)
 			if assertion != nil {
 				pendingAssertions = append(pendingAssertions, *assertion)
+				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", assertion.Type, "assertion", "contributor", "Applied to the next converted request action.", LoadRunnerSupportExecutable))
+				recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 			}
 			if warning != "" {
 				result.Warnings = append(result.Warnings, warning)
@@ -124,24 +142,89 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			for k, v := range fn.Headers {
 				pendingHeaders[k] = v
 			}
+			pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", firstNonEmpty(fn.StepName, fn.Name), "headers", "contributor", "Applied to the next converted request action.", LoadRunnerSupportExecutable))
+			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
 		case "lr_start_transaction":
+			if action, mode, ok := convertLoadRunnerFunctionAction(fn); ok {
+				appendLoadRunnerAction(result, fn, action, mode, "Converted to a native LoadRunner transaction action.")
+			}
 			currentTransaction = fn.StepName
+			pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", fn.StepName, "transaction", "contributor", "Applied to generated action names until the transaction ends.", LoadRunnerSupportExecutable))
 			result.Stats.Transactions++
 
 		case "lr_end_transaction":
+			if action, mode, ok := convertLoadRunnerFunctionAction(fn); ok {
+				appendLoadRunnerAction(result, fn, action, mode, "Converted to a native LoadRunner transaction action.")
+			}
 			currentTransaction = ""
 
 		case "lr_think_time":
 			sec, ok := ExtractThinkTimeSeconds(fn)
 			if ok {
 				thinkTimes = append(thinkTimes, sec)
+				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.think_time", "Think Time", "config", "converted", "Contributes to generated think-time distribution.", LoadRunnerSupportExecutable))
 				result.Stats.ThinkTimes++
+				recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 			}
+
+		case "lr_continue_on_error":
+			loadRunnerRuntimeControls = append(loadRunnerRuntimeControls, fn)
+			applyLoadRunnerContinueOnError(result, fn)
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.error_handling.continue_on_error", "Continue On Error", "config", "converted", "Mapped from LoadRunner runtime control.", LoadRunnerSupportExecutable))
+			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
+
+		case "lr_error_message":
+			action := convertLRErrorMessageAction(fn)
+			if def, ok := lookupLoadRunnerFunction(fn.Name); ok {
+				annotateLoadRunnerAction(&action, fn, def)
+			}
+			appendLoadRunnerAction(result, fn, action, LoadRunnerSupportExecutable, "Converted to a native error-message action.")
+
+		case "lr_exit":
+			preserveLoadRunnerRuntimeControl(result.Script, "loadrunner_exit_controls", fn, nil)
+			if action, mode, ok := convertLoadRunnerFunctionAction(fn); ok {
+				appendLoadRunnerAction(result, fn, action, mode, "Converted to a native LoadRunner runtime action.")
+			}
+
+		case "web_cache_cleanup":
+			loadRunnerRuntimeControls = append(loadRunnerRuntimeControls, fn)
+			setLoadRunnerWebRuntimeAttribute(result.Script, "web_cache_cleanup", "true")
+			preserveLoadRunnerRuntimeControl(result.Script, "loadrunner_runtime_controls", fn, map[string]any{
+				"mapped_to": "config.web_runtime.additional_attributes.web_cache_cleanup",
+			})
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.web_runtime.additional_attributes.web_cache_cleanup", "Web Cache Cleanup", "config", "converted", "Mapped from LoadRunner runtime control.", LoadRunnerSupportExecutable))
+			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
+
+		case "web_cleanup_cookies":
+			loadRunnerRuntimeControls = append(loadRunnerRuntimeControls, fn)
+			setLoadRunnerWebRuntimeAttribute(result.Script, "web_cleanup_cookies", "true")
+			preserveLoadRunnerRuntimeControl(result.Script, "loadrunner_runtime_controls", fn, map[string]any{
+				"mapped_to": "config.web_runtime.additional_attributes.web_cleanup_cookies",
+			})
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.web_runtime.additional_attributes.web_cleanup_cookies", "Web Cleanup Cookies", "config", "converted", "Mapped from LoadRunner runtime control.", LoadRunnerSupportExecutable))
+			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
+
+		case "web_set_sockets_option":
+			loadRunnerRuntimeControls = append(loadRunnerRuntimeControls, fn)
+			details := applyLoadRunnerSocketOption(result, fn)
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, stringMapValue(details, "mapped_to", "config.web_runtime.additional_attributes.web_set_sockets_option"), firstNonEmpty(stringMapValue(details, "option", ""), "Socket Option"), "config", "converted", "Mapped from LoadRunner runtime control.", LoadRunnerSupportExecutable))
+			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
+
+		case "web_set_timeout":
+			loadRunnerRuntimeControls = append(loadRunnerRuntimeControls, fn)
+			details := applyLoadRunnerTimeout(result, fn)
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, stringMapValue(details, "mapped_to", "config.web_runtime.additional_attributes.web_set_timeout"), firstNonEmpty(stringMapValue(details, "timeout", ""), "Timeout"), "config", "converted", "Mapped from LoadRunner runtime control.", LoadRunnerSupportExecutable))
+			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
 		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_service_call":
 			action, warnings := convertAction(fn, baseURL, currentTransaction, opts)
 			if action != nil {
+				// Capture pre-attach counts so contributor mappings can point at the
+				// exact extractor/assertion index they land on in the generated action.
+				baseExtractorCount := len(action.Extractors)
+				baseAssertionCount := len(action.Assertions)
+
 				if len(pendingAssertions) > 0 {
 					action.Assertions = append(action.Assertions, pendingAssertions...)
 					pendingAssertions = nil
@@ -182,14 +265,46 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					action.Name = fmt.Sprintf("%s_%d", action.Name, actionNameCounts[action.Name])
 				}
 
+				actionIndex := len(result.Script.Actions)
+				targetPath := fmt.Sprintf("actions[%d]", actionIndex)
+				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, targetPath, action.Name, "action", "converted", "Converted to a generated APEX Load action.", LoadRunnerSupportExecutable))
+				// Contributors (extractors, assertions, headers) were collected in source
+				// order ahead of this request, so the Nth extractor/assertion mapping lines
+				// up with the Nth attached extractor/assertion.
+				extractorIndex := baseExtractorCount
+				assertionIndex := baseAssertionCount
+				for _, pendingMapping := range pendingSourceMappings {
+					contributorIndex := -1
+					switch pendingMapping.TargetKind {
+					case "extractor":
+						contributorIndex = extractorIndex
+						extractorIndex++
+					case "assertion":
+						contributorIndex = assertionIndex
+						assertionIndex++
+					}
+					pendingMapping.TargetPath = sourceReviewContributorTargetPath(targetPath, pendingMapping.TargetKind, contributorIndex)
+					if pendingMapping.TargetName == "" {
+						pendingMapping.TargetName = action.Name
+					}
+					appendSourceReviewMapping(result, pendingMapping)
+				}
+				pendingSourceMappings = nil
+
 				result.Script.Actions = append(result.Script.Actions, *action)
 				result.Stats.ConvertedActions++
+				recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 			}
 			result.Warnings = append(result.Warnings, warnings...)
 
 		default:
+			if action, mode, ok := convertLoadRunnerFunctionAction(fn); ok {
+				appendLoadRunnerAction(result, fn, action, mode, loadRunnerSupportNotes(fn, mode))
+				continue
+			}
 			result.Stats.Skipped++
 			result.Stats.UnsupportedFuncs = append(result.Stats.UnsupportedFuncs, fn.Name)
+			appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, "metadata.import.preserved.unsupported_functions", fn.Name, "unsupported", "review_only", "No executable APEX Load mapping exists for this LoadRunner function yet."))
 		}
 	}
 
@@ -228,8 +343,351 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	if opts.RuntimeSettings != nil {
 		mergeScriptConfig(&result.Script.Config, opts.RuntimeSettings)
 	}
+	for _, fn := range loadRunnerRuntimeControls {
+		reapplyLoadRunnerRuntimeControlConfig(result, fn)
+	}
 
 	return result, nil
+}
+
+func applyLoadRunnerContinueOnError(result *ConvertResult, fn ParsedFunction) {
+	value := firstLoadRunnerControlArg(fn)
+	details := map[string]any{
+		"value":     value,
+		"mapped_to": "config.error_handling.continue_on_error",
+	}
+	if enabled, ok := parseLoadRunnerBool(value); ok {
+		result.Script.Config.ErrorHandling.ContinueOnError = enabled
+		details["enabled"] = enabled
+	}
+	preserveLoadRunnerRuntimeControl(result.Script, "loadrunner_runtime_controls", fn, details)
+}
+
+func applyLoadRunnerSocketOption(result *ConvertResult, fn ParsedFunction) map[string]any {
+	details := applyLoadRunnerSocketOptionConfig(result, fn)
+	preserveLoadRunnerRuntimeControl(result.Script, "loadrunner_socket_options", fn, details)
+	return details
+}
+
+func applyLoadRunnerTimeout(result *ConvertResult, fn ParsedFunction) map[string]any {
+	details := applyLoadRunnerTimeoutConfig(result, fn)
+	preserveLoadRunnerRuntimeControl(result.Script, "loadrunner_timeouts", fn, details)
+	return details
+}
+
+func convertLRErrorMessageAction(fn ParsedFunction) dsl.Action {
+	args := loadRunnerControlArgs(fn)
+	format := ""
+	if len(args) > 0 {
+		format = convertLoadRunnerMessageExpression(args[0])
+	}
+	messageArgs := make([]any, 0, max(0, len(args)-1))
+	for _, arg := range args[1:] {
+		messageArgs = append(messageArgs, convertLoadRunnerMessageExpression(arg))
+	}
+
+	name := "LR_Error_Message"
+	if fn.LineNumber > 0 {
+		name = fmt.Sprintf("%s_%d", name, fn.LineNumber)
+	}
+	action := dsl.Action{
+		Name:     name,
+		Type:     "error_message",
+		Value:    format,
+		Metadata: sourceFunctionMetadata(fn),
+		Params: map[string]any{
+			"level":  "error",
+			"format": format,
+			"always": true,
+		},
+	}
+	if len(messageArgs) > 0 {
+		action.Params["args"] = messageArgs
+	}
+	return action
+}
+
+func convertLoadRunnerMessageExpression(value string) string {
+	cleaned := strings.TrimSpace(cleanConfigValue(value))
+	if cleaned == "" {
+		return ""
+	}
+	if param, ok := unwrapLoadRunnerEvalString(cleaned); ok {
+		return convertParamReferences(param)
+	}
+	return convertParamReferences(cleaned)
+}
+
+func unwrapLoadRunnerEvalString(value string) (string, bool) {
+	trimmed := strings.TrimSpace(value)
+	if !strings.HasPrefix(trimmed, "lr_eval_string") {
+		return "", false
+	}
+	open := strings.Index(trimmed, "(")
+	close := strings.LastIndex(trimmed, ")")
+	if open < 0 || close <= open {
+		return "", false
+	}
+	args := splitCFunctionArgs(trimmed[open+1 : close])
+	if len(args) == 0 {
+		return "", false
+	}
+	return cleanConfigValue(args[0]), true
+}
+
+func applyLoadRunnerTimeoutConfig(result *ConvertResult, fn ParsedFunction) map[string]any {
+	args := loadRunnerControlArgs(fn)
+	timeoutType := ""
+	value := ""
+	if len(args) > 0 {
+		timeoutType = args[0]
+	}
+	if len(args) > 1 {
+		value = args[1]
+	}
+
+	attributeKey := "web_set_timeout"
+	if timeoutType != "" {
+		attributeKey += "." + timeoutType
+	}
+	setLoadRunnerWebRuntimeAttribute(result.Script, attributeKey, value)
+
+	details := map[string]any{
+		"timeout":   timeoutType,
+		"value":     value,
+		"mapped_to": "config.web_runtime.additional_attributes." + attributeKey,
+	}
+	timeoutMs, ok := parseLoadRunnerTimeoutMs(value)
+	if !ok {
+		return details
+	}
+	details["mapped_value"] = timeoutMs
+
+	switch normalizeEnum(timeoutType) {
+	case "connect":
+		result.Script.Config.HTTP.ConnectTimeoutMs = timeoutMs
+		details["mapped_to"] = "config.http.connect_timeout_ms"
+	case "receive", "response", "download":
+		result.Script.Config.HTTP.RequestTimeoutMs = timeoutMs
+		details["mapped_to"] = "config.http.request_timeout_ms"
+	case "step", "step_download", "stepdownload":
+		if result.Script.Config.HTTP.RequestTimeoutMs == 0 {
+			result.Script.Config.HTTP.RequestTimeoutMs = timeoutMs
+			details["mapped_to"] = "config.http.request_timeout_ms"
+		}
+	case "ssl", "tls", "secure":
+		result.Script.Config.HTTP.TLSTimeoutMs = timeoutMs
+		details["mapped_to"] = "config.http.tls_timeout_ms"
+	}
+
+	return details
+}
+
+func applyLoadRunnerSocketOptionConfig(result *ConvertResult, fn ParsedFunction) map[string]any {
+	args := loadRunnerControlArgs(fn)
+	option := ""
+	value := ""
+	if len(args) > 0 {
+		option = args[0]
+	}
+	if len(args) > 1 {
+		value = args[1]
+	}
+
+	attributeKey := "web_set_sockets_option"
+	if option != "" {
+		attributeKey += "." + option
+	}
+	setLoadRunnerWebRuntimeAttribute(result.Script, attributeKey, value)
+
+	details := map[string]any{
+		"option":    option,
+		"value":     value,
+		"mapped_to": "config.web_runtime.additional_attributes." + attributeKey,
+	}
+
+	switch normalizeEnum(option) {
+	case "ssl_version", "tls_version":
+		mapped := mapSSLVersion(value)
+		result.Script.Config.HTTP.TLS.MinVersion = mapped
+		details["mapped_to"] = "config.http.tls.min_version"
+		details["mapped_value"] = mapped
+	case "close_keepalive_connections", "close_keep_alive_connections":
+		if closeConnections, ok := parseLoadRunnerBool(value); ok && closeConnections {
+			keepAlive := false
+			result.Script.Config.HTTP.KeepAlive = &keepAlive
+			details["mapped_to"] = "config.http.keep_alive"
+			details["mapped_value"] = false
+		}
+	case "max_connections_per_host", "max_connections":
+		if maxConnections := parseInt(value); maxConnections > 0 {
+			result.Script.Config.HTTP.MaxConnsPerHost = maxConnections
+			details["mapped_to"] = "config.http.max_conns_per_host"
+			details["mapped_value"] = maxConnections
+		}
+	}
+
+	return details
+}
+
+func reapplyLoadRunnerRuntimeControlConfig(result *ConvertResult, fn ParsedFunction) {
+	if result == nil || result.Script == nil {
+		return
+	}
+	switch fn.Name {
+	case "lr_continue_on_error":
+		if enabled, ok := parseLoadRunnerBool(firstLoadRunnerControlArg(fn)); ok {
+			result.Script.Config.ErrorHandling.ContinueOnError = enabled
+		}
+	case "web_cache_cleanup":
+		setLoadRunnerWebRuntimeAttribute(result.Script, "web_cache_cleanup", "true")
+	case "web_cleanup_cookies":
+		setLoadRunnerWebRuntimeAttribute(result.Script, "web_cleanup_cookies", "true")
+	case "web_set_sockets_option":
+		applyLoadRunnerSocketOptionConfig(result, fn)
+	case "web_set_timeout":
+		applyLoadRunnerTimeoutConfig(result, fn)
+	}
+}
+
+func setLoadRunnerWebRuntimeAttribute(script *dsl.Script, key, value string) {
+	if script == nil {
+		return
+	}
+	if script.Config.WebRuntime.AdditionalAttributes == nil {
+		script.Config.WebRuntime.AdditionalAttributes = make(map[string]string)
+	}
+	script.Config.WebRuntime.AdditionalAttributes[key] = value
+}
+
+func sourceReviewContributorTargetPath(actionPath string, targetKind string, index int) string {
+	switch targetKind {
+	case "extractor":
+		return fmt.Sprintf("%s.extractors[%d]", actionPath, index)
+	case "assertion":
+		return fmt.Sprintf("%s.assertions[%d]", actionPath, index)
+	case "headers":
+		return actionPath + ".headers"
+	case "transaction":
+		return actionPath + ".name"
+	default:
+		return actionPath
+	}
+}
+
+func stringMapValue(values map[string]any, key string, fallback string) string {
+	if values == nil {
+		return fallback
+	}
+	if value, ok := values[key].(string); ok && strings.TrimSpace(value) != "" {
+		return value
+	}
+	return fallback
+}
+
+func preserveLoadRunnerRuntimeControl(script *dsl.Script, key string, fn ParsedFunction, details map[string]any) {
+	if script == nil || key == "" {
+		return
+	}
+	entry := map[string]any{
+		"function": fn.Name,
+		"line":     fn.LineNumber,
+	}
+	if args := loadRunnerControlArgs(fn); len(args) > 0 {
+		entry["args"] = args
+	}
+	for detailKey, detailValue := range details {
+		switch value := detailValue.(type) {
+		case string:
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+		case nil:
+			continue
+		}
+		entry[detailKey] = detailValue
+	}
+
+	preserved := ensureLoadRunnerImportPreserved(script)
+	switch existing := preserved[key].(type) {
+	case []map[string]any:
+		preserved[key] = append(existing, entry)
+	case []any:
+		preserved[key] = append(existing, entry)
+	default:
+		preserved[key] = []map[string]any{entry}
+	}
+}
+
+func ensureLoadRunnerImportPreserved(script *dsl.Script) map[string]any {
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{Source: "loadrunner"}
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = make(map[string]any)
+	}
+	return script.Metadata.Import.Preserved
+}
+
+func firstLoadRunnerControlArg(fn ParsedFunction) string {
+	args := loadRunnerControlArgs(fn)
+	if len(args) == 0 {
+		return ""
+	}
+	return args[0]
+}
+
+func loadRunnerControlArgs(fn ParsedFunction) []string {
+	args := make([]string, 0, len(fn.Args))
+	for index := 1; ; index++ {
+		value, ok := fn.Args[fmt.Sprintf("arg%d", index)]
+		if !ok {
+			break
+		}
+		if strings.TrimSpace(value) != "" {
+			args = append(args, value)
+		}
+	}
+	if len(args) == 0 && len(fn.CallArgs) > 0 {
+		for _, arg := range fn.CallArgs {
+			if arg.Kind == "macro" {
+				continue
+			}
+			value := arg.Value
+			if arg.Kind == "key_value" && arg.Name != "" {
+				value = arg.Name + "=" + arg.Value
+			}
+			if strings.TrimSpace(value) != "" {
+				args = append(args, value)
+			}
+		}
+	}
+	if len(args) == 0 {
+		args = append(args, fn.RawArgs...)
+	}
+	return args
+}
+
+func parseLoadRunnerBool(value string) (bool, bool) {
+	switch normalizeEnum(cleanConfigValue(value)) {
+	case "lr_on", "lr_true", "continue", "continue_on_error":
+		return true, true
+	case "lr_off", "lr_false", "abort", "stop":
+		return false, true
+	default:
+		return parseBoolExplicit(value)
+	}
+}
+
+func parseLoadRunnerTimeoutMs(value string) (int, bool) {
+	seconds, err := strconv.ParseFloat(cleanConfigValue(value), 64)
+	if err != nil || seconds <= 0 {
+		return 0, false
+	}
+	return int(math.Round(seconds * 1000)), true
 }
 
 func mergeScriptConfig(dst *dsl.ScriptConfig, src *dsl.ScriptConfig) {
@@ -302,7 +760,7 @@ func isEmptyHTTPConfig(cfg dsl.HTTPConfig) bool {
 }
 
 func isEmptyBrowserConfig(cfg dsl.BrowserConfig) bool {
-	return cfg.Engine == "" && cfg.Headless == nil && cfg.SlowMoMs == 0 && cfg.UserAgent == "" && cfg.CaptureScreenshots == "" && cfg.CacheEnabled == nil && cfg.CacheContentURLs == nil && cfg.CheckNewerVersions == nil && cfg.NewUserPerIter == nil && cfg.DownloadResources == "" && cfg.Viewport.Width == 0 && cfg.Viewport.Height == 0
+	return cfg.Engine == "" && cfg.Headless == nil && cfg.SlowMoMs == 0 && cfg.UserAgent == "" && cfg.DeviceProfile == "" && cfg.TouchMode == nil && cfg.Orientation == "" && cfg.ClientMetrics == nil && cfg.CaptureScreenshots == "" && cfg.CacheEnabled == nil && cfg.CacheContentURLs == nil && cfg.CheckNewerVersions == nil && cfg.NewUserPerIter == nil && cfg.DownloadResources == "" && cfg.Viewport.Width == 0 && cfg.Viewport.Height == 0
 }
 
 func isEmptyErrorHandlingConfig(cfg dsl.ErrorHandlingConfig) bool {
@@ -458,7 +916,8 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, opts ConvertO
 	var warnings []string
 
 	action := &dsl.Action{
-		Headers: make(map[string]string),
+		Headers:  make(map[string]string),
+		Metadata: sourceFunctionMetadata(fn),
 	}
 
 	// Determine name
@@ -494,7 +953,8 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, opts ConvertO
 	// Apply body
 	if fn.Body != "" {
 		action.Body = fn.Body
-		// Convert LoadRunner parameter syntax {ParamName} → template syntax {{var.ParamName}}
+		// Convert LoadRunner parameter syntax {ParamName} to template syntax.
+		// Known .prm-backed parameters are rewritten from var to param after all archive files are parsed.
 		action.Body = convertParamReferences(action.Body)
 	}
 
@@ -633,6 +1093,29 @@ func makeRelative(rawURL, baseURL string) string {
 	return path
 }
 
+func collectRecordedResourceURLs(functions []ParsedFunction) []string {
+	urls := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, fn := range functions {
+		if !isRequestFunction(fn.Name) || firstNonEmptyArg(fn, "Resource") != "1" {
+			continue
+		}
+		rawURL := strings.TrimSpace(fn.URL)
+		if rawURL == "" {
+			rawURL = strings.TrimSpace(fn.Action)
+		}
+		if rawURL == "" {
+			continue
+		}
+		if _, ok := seen[rawURL]; ok {
+			continue
+		}
+		seen[rawURL] = struct{}{}
+		urls = append(urls, rawURL)
+	}
+	return urls
+}
+
 // sanitizeName converts a LoadRunner step name to a valid DSL action name.
 func sanitizeName(name string) string {
 	if name == "" {
@@ -673,11 +1156,23 @@ func sanitizeName(name string) string {
 	return result
 }
 
-// convertParamReferences converts LoadRunner {ParamName} to Stormrunner {{var.ParamName}}.
+// convertParamReferences converts LoadRunner {ParamName} to APEX Load {{var.paramname}}.
+// Archive-level post-processing rewrites known .prm-backed parameters to {{param.name}},
+// leaving web_reg_save_param and other dynamic values as {{var.name}}.
 func convertParamReferences(s string) string {
 	// Match {ParamName} but not {{already.converted}}
 	re := regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_]*)\}`)
-	return re.ReplaceAllString(s, "{{var.$1}}")
+	return re.ReplaceAllStringFunc(s, func(token string) string {
+		match := re.FindStringSubmatch(token)
+		if len(match) != 2 {
+			return token
+		}
+		name := canonicalLoadRunnerParameterName(match[1])
+		if name == "" {
+			return token
+		}
+		return "{{var." + name + "}}"
+	})
 }
 
 // computeThinkTimeStats calculates mean and standard deviation for think times.
@@ -709,69 +1204,77 @@ func computeThinkTimeStats(times []float64) (mean, std float64) {
 
 // RuntimeConfig holds parsed VuGen runtime settings from a .cfg file.
 type RuntimeConfig struct {
-	ConnectTimeoutSec int
-	ReceiveTimeoutSec int
-	StepTimeoutSec    int
-	HTTPVersion       string // "1.0" or "1.1"
-	KeepAlive         bool
-	MaxConnsPerHost   int
-	ProxyMode         string
-	ProxyURL          string
-	ProxyUser         string
-	ProxyPass         string
-	UserAgent         string
-	AcceptLanguage    string
-	UseGzip           bool
-	SSLVersion        string
-	AuthUser          string
-	AuthPass          string
-	MaxRedirects      int
-	Iterations        int
-	AutoTransactions  string
-	BlockScheduling   string
-	ActionSequence    []string
-	PacingType        string
-	DelayMs           int
-	MinDelayMs        int
-	MaxDelayMs        int
-	IntervalMs        int
-	MinIntervalMs     int
-	MaxIntervalMs     int
-	ThinkTimeIgnore   bool
-	ThinkTimeMultiplier float64
-	ThinkTimeLimitMs  float64
-	LogLevel          string
-	OnErrorOnly       bool
-	LogExtendedOptions []string
-	ContinueOnError   bool
-	SnapshotOnError   bool
-	CacheEnabled      bool
-	CacheContentURLs  bool
-	CheckNewerVersions bool
-	NewUserPerIteration bool
-	DownloadResources string
-	AdditionalAttributes map[string]string
-	DownloadFilterMode string
-	DownloadFilterHosts []string
-	ContentChecks []dsl.ContentCheckConfig
-	NetworkSimulationMode string
-	NetworkSimulationPreset string
-	NetworkBandwidthKbps int
-	NetworkLatencyMs int
-	StreamingMode string
-	StreamingBufferSizeSeconds int
-	StreamingFixedBitrateKbps int
+	ConnectTimeoutSec            int
+	ReceiveTimeoutSec            int
+	StepTimeoutSec               int
+	HTTPVersion                  string // "1.0" or "1.1"
+	KeepAlive                    bool
+	MaxConnsPerHost              int
+	ProxyMode                    string
+	ProxyURL                     string
+	ProxyUser                    string
+	ProxyPass                    string
+	UserAgent                    string
+	AcceptLanguage               string
+	UseGzip                      bool
+	SSLVersion                   string
+	AuthUser                     string
+	AuthPass                     string
+	MaxRedirects                 int
+	Iterations                   int
+	AutoTransactions             string
+	BlockScheduling              string
+	ActionSequence               []string
+	PacingType                   string
+	DelayMs                      int
+	MinDelayMs                   int
+	MaxDelayMs                   int
+	IntervalMs                   int
+	MinIntervalMs                int
+	MaxIntervalMs                int
+	ThinkTimeIgnore              bool
+	ThinkTimeMultiplier          float64
+	ThinkTimeLimitMs             float64
+	LogLevel                     string
+	OnErrorOnly                  bool
+	LogExtendedOptions           []string
+	ContinueOnError              bool
+	SnapshotOnError              bool
+	CacheEnabled                 bool
+	CacheContentURLs             bool
+	CheckNewerVersions           bool
+	NewUserPerIteration          bool
+	BrowserEngine                string
+	BrowserDeviceProfile         string
+	BrowserTouchMode             bool
+	BrowserOrientation           string
+	BrowserClientMetrics         bool
+	BrowserSlowMoMs              int
+	BrowserViewportWidth         int
+	BrowserViewportHeight        int
+	DownloadResources            string
+	AdditionalAttributes         map[string]string
+	DownloadFilterMode           string
+	DownloadFilterHosts          []string
+	ContentChecks                []dsl.ContentCheckConfig
+	NetworkSimulationMode        string
+	NetworkSimulationPreset      string
+	NetworkBandwidthKbps         int
+	NetworkLatencyMs             int
+	StreamingMode                string
+	StreamingBufferSizeSeconds   int
+	StreamingFixedBitrateKbps    int
 	StreamingBandwidthEstimation string
-	DataFormattingAutoDetect bool
-	DataFormattingChain []dsl.DFETransform
+	DataFormattingAutoDetect     bool
+	DataFormattingChain          []dsl.DFETransform
 }
 
 // ParseRuntimeCfg parses a VuGen default.cfg / runtime settings .cfg file.
 func ParseRuntimeCfg(content string) *RuntimeConfig {
 	rc := &RuntimeConfig{
-		KeepAlive:    true,
-		HTTPVersion:  "1.1",
-		MaxRedirects: 10,
+		KeepAlive:            true,
+		HTTPVersion:          "1.1",
+		MaxRedirects:         10,
 		AdditionalAttributes: make(map[string]string),
 	}
 
@@ -805,6 +1308,14 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	rc.CacheContentURLs = parseBool(firstNonBlank(browserSection["CacheContentURLs"], browserSection["CacheURLsRequiringContent"]))
 	rc.CheckNewerVersions = parseBool(firstNonBlank(browserSection["CheckNewerVersions"], browserSection["CheckForNewerPages"]))
 	rc.NewUserPerIteration = parseBool(firstNonBlank(browserSection["NewUserPerIteration"], browserSection["SimulateNewUser"]))
+	rc.BrowserEngine = normalizeEnum(strings.TrimSpace(firstNonBlank(browserSection["Engine"], browserSection["BrowserEngine"])))
+	rc.BrowserDeviceProfile = normalizeEnum(strings.TrimSpace(firstNonBlank(browserSection["DeviceProfile"], browserSection["MobileProfile"], browserSection["EmulatedDevice"])))
+	rc.BrowserTouchMode = parseBool(firstNonBlank(browserSection["TouchMode"], browserSection["TouchEnabled"]))
+	rc.BrowserOrientation = normalizeEnum(strings.TrimSpace(browserSection["Orientation"]))
+	rc.BrowserClientMetrics = parseBool(firstNonBlank(browserSection["ClientMetrics"], browserSection["CollectClientMetrics"]))
+	rc.BrowserSlowMoMs = firstNonZeroInt(browserSection["SlowMoMs"], browserSection["SlowMotionMs"])
+	rc.BrowserViewportWidth = firstNonZeroInt(browserSection["ViewportWidth"], browserSection["ScreenWidth"])
+	rc.BrowserViewportHeight = firstNonZeroInt(browserSection["ViewportHeight"], browserSection["ScreenHeight"])
 	rc.DownloadResources = normalizeEnum(strings.TrimSpace(firstNonBlank(browserSection["DownloadResources"], browserSection["DownloadNonHtmlResources"])))
 
 	sslSection := findSection(sections, "SSL", "Security")
@@ -849,7 +1360,7 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	}
 
 	miscSection := findSection(sections, "Misc", "Miscellaneous")
-	rc.ContinueOnError = parseBool(firstNonBlank(miscSection["ContinueOnError"], miscSection["ErrorContinue"] ))
+	rc.ContinueOnError = parseBool(firstNonBlank(miscSection["ContinueOnError"], miscSection["ErrorContinue"]))
 	rc.SnapshotOnError = parseBool(firstNonBlank(miscSection["SnapshotOnError"], miscSection["GenerateSnapshotOnError"]))
 
 	attrsSection := findSection(sections, "Additional Attributes", "Attributes")
@@ -889,8 +1400,12 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 
 	dataFormattingSection := findSection(sections, "Data Formatting", "DataFormatting")
 	rc.DataFormattingAutoDetect = parseBool(firstNonBlank(dataFormattingSection["AutoDetect"], dataFormattingSection["DFEAutoDetect"]))
-	for _, item := range splitList(firstNonBlank(dataFormattingSection["Chain"], dataFormattingSection["DFEChain"])) {
-		rc.DataFormattingChain = append(rc.DataFormattingChain, dsl.DFETransform{Type: item})
+	for _, item := range splitDelimitedItems(firstNonBlank(dataFormattingSection["Chain"], dataFormattingSection["DFEChain"])) {
+		transform := parseDFETransform(item)
+		if transform.Type == "" {
+			continue
+		}
+		rc.DataFormattingChain = append(rc.DataFormattingChain, transform)
 	}
 
 	return rc
@@ -943,17 +1458,34 @@ func (rc *RuntimeConfig) ToScriptConfig() *dsl.ScriptConfig {
 			SnapshotOnError: rc.SnapshotOnError,
 		}
 	}
-	if rc.CacheEnabled || rc.CacheContentURLs || rc.CheckNewerVersions || rc.NewUserPerIteration || rc.DownloadResources != "" {
+	if rc.CacheEnabled || rc.CacheContentURLs || rc.CheckNewerVersions || rc.NewUserPerIteration || rc.BrowserEngine != "" || rc.BrowserDeviceProfile != "" || rc.BrowserTouchMode || rc.BrowserOrientation != "" || rc.BrowserClientMetrics || rc.BrowserSlowMoMs != 0 || rc.BrowserViewportWidth != 0 || rc.BrowserViewportHeight != 0 || rc.DownloadResources != "" {
 		cacheEnabled := rc.CacheEnabled
 		cacheContentURLs := rc.CacheContentURLs
 		checkNewerVersions := rc.CheckNewerVersions
 		newUserPerIter := rc.NewUserPerIteration
+		touchMode := rc.BrowserTouchMode
+		clientMetrics := rc.BrowserClientMetrics
+		resolvedProfile, profileEngine := resolveImportedBrowserProfile(rc.BrowserDeviceProfile)
+		resolvedEngine := rc.BrowserEngine
+		if profileEngine != "" {
+			resolvedEngine = profileEngine
+		}
 		config.Browser = dsl.BrowserConfig{
+			Engine:             resolvedEngine,
+			SlowMoMs:           rc.BrowserSlowMoMs,
+			DeviceProfile:      resolvedProfile,
+			TouchMode:          &touchMode,
+			Orientation:        rc.BrowserOrientation,
+			ClientMetrics:      &clientMetrics,
 			CacheEnabled:       &cacheEnabled,
 			CacheContentURLs:   &cacheContentURLs,
 			CheckNewerVersions: &checkNewerVersions,
 			NewUserPerIter:     &newUserPerIter,
 			DownloadResources:  rc.DownloadResources,
+			Viewport: dsl.BrowserViewport{
+				Width:  rc.BrowserViewportWidth,
+				Height: rc.BrowserViewportHeight,
+			},
 		}
 	}
 	if len(rc.AdditionalAttributes) > 0 || rc.DownloadFilterMode != "" || len(rc.DownloadFilterHosts) > 0 || len(rc.ContentChecks) > 0 || rc.NetworkSimulationMode != "" || rc.NetworkSimulationPreset != "" || rc.NetworkBandwidthKbps != 0 || rc.NetworkLatencyMs != 0 || rc.StreamingMode != "" || rc.StreamingBufferSizeSeconds != 0 || rc.StreamingFixedBitrateKbps != 0 || rc.StreamingBandwidthEstimation != "" || rc.DataFormattingAutoDetect || len(rc.DataFormattingChain) > 0 {
@@ -985,7 +1517,26 @@ func (rc *RuntimeConfig) ToScriptConfig() *dsl.ScriptConfig {
 	return config
 }
 
-// ToHTTPConfig converts parsed VuGen runtime settings into a Stormrunner HTTPConfig.
+var loadRunnerBrowserDeviceAliases = map[string]string{
+	"ipad_pro": "ipad_air",
+}
+
+func resolveImportedBrowserProfile(profile string) (string, string) {
+	normalized := normalizeEnum(profile)
+	if normalized == "" {
+		return "", ""
+	}
+	if alias, ok := loadRunnerBrowserDeviceAliases[normalized]; ok {
+		normalized = alias
+	}
+	device, ok := browserprotocol.LookupDevice(normalized)
+	if !ok {
+		return normalized, ""
+	}
+	return normalized, device.BrowserFamily
+}
+
+// ToHTTPConfig converts parsed VuGen runtime settings into a APEX Load HTTPConfig.
 func (rc *RuntimeConfig) ToHTTPConfig() *dsl.HTTPConfig {
 	cfg := &dsl.HTTPConfig{}
 
@@ -1117,6 +1668,46 @@ func splitList(value string) []string {
 		}
 	}
 	return result
+}
+
+func splitDelimitedItems(value string) []string {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r'
+	})
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+func parseDFETransform(value string) dsl.DFETransform {
+	tokens := strings.Fields(strings.TrimSpace(value))
+	if len(tokens) == 0 {
+		return dsl.DFETransform{}
+	}
+
+	transform := dsl.DFETransform{Type: normalizeEnum(tokens[0])}
+	options := make(map[string]string)
+	for _, token := range tokens[1:] {
+		key, optionValue, found := strings.Cut(token, "=")
+		if !found {
+			continue
+		}
+		key = normalizeEnum(key)
+		optionValue = strings.TrimSpace(optionValue)
+		if key == "" || optionValue == "" {
+			continue
+		}
+		options[key] = optionValue
+	}
+	if len(options) > 0 {
+		transform.Options = options
+	}
+	return transform
 }
 
 func normalizeEnum(value string) string {

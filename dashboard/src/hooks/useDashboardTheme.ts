@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react'
 
-export type DashboardTheme = 'dark' | 'light'
+export type DashboardTheme = 'dark' | 'light' | 'sepia'
 
-const THEME_STORAGE_KEY = 'stormrunner.theme'
+const THEME_STORAGE_KEY = 'apexload.theme'
+const DASHBOARD_THEMES = new Set<DashboardTheme>(['dark', 'light', 'sepia'])
+
+function isDashboardTheme(value: string | null): value is DashboardTheme {
+  return value !== null && DASHBOARD_THEMES.has(value as DashboardTheme)
+}
 
 function readStoredTheme(): DashboardTheme {
   if (typeof window === 'undefined') {
@@ -10,7 +15,7 @@ function readStoredTheme(): DashboardTheme {
   }
 
   const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
-  return stored === 'light' ? 'light' : 'dark'
+  return isDashboardTheme(stored) ? stored : 'dark'
 }
 
 export function useDashboardTheme() {
@@ -19,7 +24,7 @@ export function useDashboardTheme() {
   useEffect(() => {
     if (typeof document !== 'undefined') {
       document.documentElement.dataset.theme = theme
-      document.documentElement.style.colorScheme = theme
+      document.documentElement.style.colorScheme = theme === 'dark' ? 'dark' : 'light'
     }
 
     if (typeof window !== 'undefined') {

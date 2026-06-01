@@ -3,6 +3,8 @@ package sample
 import (
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 )
 
 func TestConvertRESTJSON(t *testing.T) {
@@ -71,6 +73,14 @@ func TestConvertRESTJSON(t *testing.T) {
 	if result.Stats.CorrelationsDetected == 0 {
 		t.Fatal("expected correlation stats to be populated")
 	}
+	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) == 0 || len(result.SourceReview.Mappings) == 0 {
+		t.Fatalf("source review = %#v, want files and mappings", result.SourceReview)
+	}
+	assertSampleSourceMapping(t, result.SourceReview.Mappings, "rest_json_request", "actions[0]", "converted")
+	assertSampleSourceMapping(t, result.SourceReview.Mappings, "response_status", "actions[0].assertions[0]", "contributor")
+	if strings.Contains(result.SourceReview.SourceFiles[0].Content, "top-secret") || strings.Contains(result.SourceReview.SourceFiles[0].Content, "secret\"") {
+		t.Fatalf("source review leaked sensitive content: %s", result.SourceReview.SourceFiles[0].Content)
+	}
 }
 
 func TestConvertCurl(t *testing.T) {
@@ -105,11 +115,75 @@ func TestConvertCurl(t *testing.T) {
 	if result.Stats.ConvertedActions != 1 {
 		t.Fatalf("converted actions = %d, want 1", result.Stats.ConvertedActions)
 	}
+	if result.SourceReview == nil {
+		t.Fatal("expected source review")
+	}
+	assertSampleSourceMapping(t, result.SourceReview.Mappings, "curl_command", "actions[0]", "converted")
+}
+
+func assertSampleSourceMapping(t *testing.T, mappings []sourceview.Mapping, function string, targetPath string, status string) {
+	t.Helper()
+	for _, mapping := range mappings {
+		if mapping.Function == function && mapping.TargetPath == targetPath && mapping.Status == status {
+			return
+		}
+	}
+	t.Fatalf("missing source mapping function=%s target=%s status=%s in %#v", function, targetPath, status, mappings)
+}
+
+func TestConvertCurlGetMovesDataToQueryAndURLEncodes(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format:  "curl",
+		Content: `curl -G https://api.example.com/search --data-urlencode 'q=red widgets' --data-urlencode 'sort=created desc'`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	if action.Method != "GET" {
+		t.Fatalf("method = %q, want GET", action.Method)
+	}
+	if action.Body != "" {
+		t.Fatalf("body = %q, want empty body for -G", action.Body)
+	}
+	if action.Target != "/search?q=red+widgets&sort=created+desc" {
+		t.Fatalf("target = %q", action.Target)
+	}
+}
+
+func TestConvertCurlJSONRefererAndMaxTime(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format:  "curl",
+		Content: `curl https://api.example.com/v1/orders --json '{"sku":"ABC"}' -e https://shop.example.com/cart --max-time 2.5`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	if action.Method != "POST" {
+		t.Fatalf("method = %q, want POST", action.Method)
+	}
+	if action.Headers["Content-Type"] != "application/json" || action.Headers["Accept"] != "application/json" {
+		t.Fatalf("headers = %#v", action.Headers)
+	}
+	if action.Headers["Referer"] != "https://shop.example.com/cart" {
+		t.Fatalf("referer = %q", action.Headers["Referer"])
+	}
+	if action.TimeoutMs != 2500 {
+		t.Fatalf("timeout = %d, want 2500", action.TimeoutMs)
+	}
+	if action.Body != `{"sku":"ABC"}` {
+		t.Fatalf("body = %q", action.Body)
+	}
 }
 
 func TestConvertCurlSOAP(t *testing.T) {
 	result, err := Convert(ImportRequest{
-		Format: "curl",
+		Format:  "curl",
 		Content: `curl -X POST https://example.com/services/quotes -H 'Content-Type: text/xml; charset=utf-8' -H 'SOAPAction: urn:GetQuote' -d '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><GetQuote xmlns="urn:quotes"><Symbol>STORM</Symbol></GetQuote></soapenv:Body></soapenv:Envelope>'`,
 	})
 	if err != nil {
@@ -136,6 +210,46 @@ func TestConvertCurlSOAP(t *testing.T) {
 	}
 	if action.Target != "/services/quotes" {
 		t.Fatalf("target = %q, want /services/quotes", action.Target)
+	}
+}
+
+func TestConvertCurlMultipartFormReportsFileAndUnsupportedFlags(t *testing.T) {
+	sanitizeSensitive := false
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format:  "curl",
+		Content: `curl --compressed -F 'description=quarterly report' -F 'file=@/tmp/report.pdf;type=application/pdf' https://api.example.com/upload`,
+		Options: ConvertOptions{SanitizeSensitive: &sanitizeSensitive, InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
+	}
+	action := result.Script.Actions[0]
+	if action.Method != "POST" {
+		t.Fatalf("method = %q, want POST", action.Method)
+	}
+	if action.Headers["Content-Type"] != "multipart/form-data; boundary=----apexload-curl-boundary" {
+		t.Fatalf("content type = %q", action.Headers["Content-Type"])
+	}
+	for _, want := range []string{
+		`name="description"`,
+		"quarterly report",
+		`name="file"; filename="report.pdf"`,
+		"Content-Type: application/pdf",
+		"{{file.file}}",
+	} {
+		if !strings.Contains(action.Body, want) {
+			t.Fatalf("multipart body = %q, want %q", action.Body, want)
+		}
+	}
+	if !containsSampleDiagnostic(result, "cURL multipart file") {
+		t.Fatalf("diagnostics = %#v, want cURL multipart file warning", result.Unsupported)
+	}
+	if !containsSampleDiagnostic(result, "cURL option") {
+		t.Fatalf("diagnostics = %#v, want unsupported cURL option warning", result.Unsupported)
 	}
 }
 
@@ -166,4 +280,369 @@ func TestConvertBatchRawHTTP(t *testing.T) {
 	if result.Stats.CorrelationsDetected != 1 {
 		t.Fatalf("correlations = %d, want 1", result.Stats.CorrelationsDetected)
 	}
+}
+
+func TestConvertHARWithThinkTime(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {
+				"entries": [
+					{
+						"startedDateTime": "2026-05-17T10:00:00.000Z",
+						"time": 200,
+						"request": {
+							"method": "GET",
+							"url": "https://api.example.com/v1/session",
+							"headers": []
+						},
+						"response": {
+							"status": 200,
+							"headers": [],
+							"content": {"text": "{}"}
+						}
+					},
+					{
+						"startedDateTime": "2026-05-17T10:00:03.700Z",
+						"time": 150,
+						"request": {
+							"method": "GET",
+							"url": "https://api.example.com/v1/orders",
+							"headers": []
+						},
+						"response": {
+							"status": 200,
+							"headers": [],
+							"content": {"text": "{}"}
+						}
+					}
+				]
+			}
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("action count = %d, want 2", len(result.Script.Actions))
+	}
+	first := result.Script.Actions[0]
+	if !first.ThinkTimeAfter {
+		t.Fatal("expected first HAR action to preserve think time after the request")
+	}
+	if first.ThinkTime.Type != "fixed" || first.ThinkTime.MeanMs != 3500 {
+		t.Fatalf("first action think time = %#v, want fixed 3500ms", first.ThinkTime)
+	}
+	if result.Script.Actions[1].ThinkTimeAfter {
+		t.Fatal("expected final HAR action to omit trailing think time")
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "think time") {
+		t.Fatalf("warnings = %#v, want think time guidance", result.Warnings)
+	}
+}
+
+func TestConvertHARFiltersStaticAssetsByDefault(t *testing.T) {
+	inferExtractors := false
+	content := `{
+		"log": {
+			"entries": [
+				{
+					"request": {"method": "GET", "url": "https://shop.example.com/app.js", "headers": []},
+					"response": {"status": 200, "headers": [], "content": {"mimeType": "application/javascript", "text": "console.log(1)"}}
+				},
+				{
+					"request": {"method": "GET", "url": "https://shop.example.com/api/orders", "headers": []},
+					"response": {"status": 200, "headers": [], "content": {"mimeType": "application/json", "text": "{}"}}
+				}
+			]
+		}
+	}`
+	result, err := Convert(ImportRequest{
+		Format:  "har",
+		Content: content,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Stats.TotalRequests != 2 || result.Stats.FilteredAssets != 1 || result.Stats.ConvertedActions != 1 {
+		t.Fatalf("stats = %#v", result.Stats)
+	}
+	if result.Script.Actions[0].Target != "/api/orders" {
+		t.Fatalf("target = %q, want API request retained", result.Script.Actions[0].Target)
+	}
+	if !containsSampleDiagnostic(result, "HAR static asset filter") {
+		t.Fatalf("diagnostics = %#v, want static filter info", result.Unsupported)
+	}
+
+	includeStaticAssets := true
+	included, err := Convert(ImportRequest{
+		Format:  "har",
+		Content: content,
+		Options: ConvertOptions{InferExtractors: &inferExtractors, IncludeStaticAssets: &includeStaticAssets},
+	})
+	if err != nil {
+		t.Fatalf("Convert with static assets returned error: %v", err)
+	}
+	if included.Stats.FilteredAssets != 0 || included.Stats.ConvertedActions != 2 {
+		t.Fatalf("included stats = %#v", included.Stats)
+	}
+}
+
+func TestConvertHARDecodesBase64Bodies(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {
+				"entries": [
+					{
+						"request": {
+							"method": "POST",
+							"url": "https://api.example.com/v1/session",
+							"headers": [],
+							"postData": {
+								"mimeType": "application/json",
+								"encoding": "base64",
+								"text": "eyJ1c2VyIjoiYWxpY2UifQ=="
+							}
+						},
+						"response": {
+							"status": 200,
+							"headers": [],
+							"content": {
+								"encoding": "base64",
+								"text": "eyJvayI6dHJ1ZX0="
+							}
+						}
+					},
+					{
+						"request": {
+							"method": "GET",
+							"url": "https://api.example.com/v1/blob",
+							"headers": []
+						},
+						"response": {
+							"status": 200,
+							"headers": [],
+							"content": {
+								"encoding": "base64",
+								"text": "//79"
+							}
+						}
+					}
+				]
+			}
+		}`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Script.Actions[0].Body != `{"user":"alice"}` {
+		t.Fatalf("request body = %q", result.Script.Actions[0].Body)
+	}
+	if !containsSampleDiagnostic(result, "HAR base64 content") {
+		t.Fatalf("diagnostics = %#v, want binary base64 info", result.Unsupported)
+	}
+}
+
+func TestConvertHARPreservesBinaryPostDataAsBase64(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {
+				"entries": [
+					{
+						"request": {
+							"method": "POST",
+							"url": "https://api.example.com/v1/upload",
+							"headers": [{"name":"Content-Type","value":"application/octet-stream"}],
+							"postData": {
+								"mimeType": "application/octet-stream",
+								"encoding": "base64",
+								"text": "//79AA=="
+							}
+						},
+						"response": {
+							"status": 201,
+							"headers": [],
+							"content": {"text": "{}"}
+						}
+					}
+				]
+			}
+		}`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
+	}
+	action := result.Script.Actions[0]
+	if action.BodyEncoding != "base64" {
+		t.Fatalf("body encoding = %q, want base64", action.BodyEncoding)
+	}
+	if action.Body != "//79AA==" {
+		t.Fatalf("body = %q, want preserved base64 payload", action.Body)
+	}
+	if strings.Contains(action.Body, "{{binary.") {
+		t.Fatalf("body = %q, should not use binary placeholder", action.Body)
+	}
+}
+
+func TestConvertHARDetectsHTMLHiddenTokenCorrelation(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {
+				"entries": [
+					{
+						"request": {
+							"method": "GET",
+							"url": "https://shop.example.com/login",
+							"headers": []
+						},
+						"response": {
+							"status": 200,
+							"headers": [{"name":"Content-Type","value":"text/html"}],
+							"content": {
+								"mimeType": "text/html",
+								"text": "<form><input type=\"hidden\" name=\"csrf_token\" value=\"tok-9f8e7d6c5b4a\"></form>"
+							}
+						}
+					},
+					{
+						"request": {
+							"method": "POST",
+							"url": "https://shop.example.com/login",
+							"headers": [{"name":"Content-Type","value":"application/x-www-form-urlencoded"}],
+							"postData": {
+								"mimeType": "application/x-www-form-urlencoded",
+								"text": "csrf_token=tok-9f8e7d6c5b4a&user=demo"
+							}
+						},
+						"response": {
+							"status": 302,
+							"headers": [],
+							"content": {"text": ""}
+						}
+					}
+				]
+			}
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Stats.CorrelationsDetected != 1 {
+		t.Fatalf("correlations = %d, want 1: %#v", result.Stats.CorrelationsDetected, result.Correlations)
+	}
+	if len(result.Script.Actions[0].Extractors) != 1 {
+		t.Fatalf("first action extractors = %#v", result.Script.Actions[0].Extractors)
+	}
+	ext := result.Script.Actions[0].Extractors[0]
+	if ext.Name != "corr_csrf_token" || ext.Type != "regex" || ext.Source != "body" {
+		t.Fatalf("unexpected extractor: %#v", ext)
+	}
+	if !strings.Contains(result.Script.Actions[1].Body, "{{var.corr_csrf_token}}") {
+		t.Fatalf("second action body = %q, want correlated token", result.Script.Actions[1].Body)
+	}
+}
+
+func TestConvertHARPreservesFormParamsCookiesAndDuplicateHeaders(t *testing.T) {
+	sanitizeSensitive := false
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {
+				"entries": [
+					{
+						"request": {
+							"method": "POST",
+							"url": "https://api.example.com/search",
+							"headers": [],
+							"cookies": [
+								{"name": "sid", "value": "abc"},
+								{"name": "theme", "value": "dark"}
+							],
+							"postData": {
+								"mimeType": "application/x-www-form-urlencoded",
+								"params": [
+									{"name": "q", "value": "widgets"},
+									{"name": "page", "value": "1"}
+								]
+							}
+						},
+						"response": {
+							"status": 200,
+							"headers": [
+								{"name": "Set-Cookie", "value": "a=1"},
+								{"name": "Set-Cookie", "value": "b=2"}
+							],
+							"content": {"text": "{}"}
+						}
+					},
+					{
+						"request": {
+							"method": "POST",
+							"url": "https://api.example.com/upload",
+							"headers": [],
+							"postData": {
+								"mimeType": "multipart/form-data",
+								"params": [
+									{"name": "description", "value": "quarterly report"},
+									{"name": "file", "fileName": "report.pdf", "contentType": "application/pdf"}
+								]
+							}
+						},
+						"response": {"status": 201, "headers": [], "content": {"text": "{}"}}
+					}
+				]
+			}
+		}`,
+		Options: ConvertOptions{SanitizeSensitive: &sanitizeSensitive, InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %d, want 2", len(result.Script.Actions))
+	}
+	first := result.Script.Actions[0]
+	if first.Body != "page=1&q=widgets" {
+		t.Fatalf("urlencoded body = %q", first.Body)
+	}
+	if first.Headers["Content-Type"] != "application/x-www-form-urlencoded" {
+		t.Fatalf("content type = %q", first.Headers["Content-Type"])
+	}
+	if first.Headers["Cookie"] != "sid=abc; theme=dark" {
+		t.Fatalf("cookie header = %q", first.Headers["Cookie"])
+	}
+	second := result.Script.Actions[1]
+	if !strings.Contains(second.Body, `filename="report.pdf"`) || !strings.Contains(second.Body, "{{file.file}}") {
+		t.Fatalf("multipart body did not preserve file placeholder: %s", second.Body)
+	}
+	if !containsSampleDiagnostic(result, "HAR multipart file") {
+		t.Fatalf("diagnostics = %#v, want multipart file warning", result.Unsupported)
+	}
+	if !containsSampleDiagnostic(result, "duplicate Set-Cookie headers") {
+		t.Fatalf("diagnostics = %#v, want duplicate Set-Cookie info", result.Unsupported)
+	}
+	if !containsSampleDiagnostic(result, "HAR cookies[]") {
+		t.Fatalf("diagnostics = %#v, want cookies[] info", result.Unsupported)
+	}
+}
+
+func containsSampleDiagnostic(result *ConvertResult, element string) bool {
+	for _, item := range result.Unsupported {
+		if strings.Contains(item.Element, element) || strings.Contains(item.String(), element) {
+			return true
+		}
+	}
+	return false
 }

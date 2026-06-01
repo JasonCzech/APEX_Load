@@ -1,18 +1,21 @@
 package storage
 
 import (
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 func TestSQLiteStoreSaveScriptPreservesMetadata(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -26,10 +29,24 @@ func TestSQLiteStoreSaveScriptPreservesMetadata(t *testing.T) {
 		Config: dsl.ScriptConfig{
 			BaseURL: "https://example.com",
 		},
+		DataSources: []dsl.DataSource{{
+			Name:           "url",
+			Type:           "dat",
+			InlineData:     "URL\nhttps://csi-gw-ext.att.com:443\n",
+			Strategy:       "sequential",
+			FirstRowHeader: true,
+		}},
+		Parameters: []dsl.Parameter{{
+			Name:       "url",
+			Type:       "file",
+			DataSource: "url",
+			Column:     "URL",
+			Update:     "each_iteration",
+		}},
 		Actions: []dsl.Action{{
 			Name:   "Homepage",
 			Type:   "GET",
-			Target: "/",
+			Target: "{{var.url}}/",
 		}},
 		Metadata: &dsl.ScriptMetadata{
 			Import: &dsl.ImportMetadata{
@@ -69,10 +86,79 @@ func TestSQLiteStoreSaveScriptPreservesMetadata(t *testing.T) {
 			t.Fatalf("expected metadata JSON to contain %q, got %s", want, text)
 		}
 	}
+	if len(roundTrip.Parameters) != 1 || roundTrip.Parameters[0].Name != "url" || roundTrip.Parameters[0].Column != "URL" {
+		t.Fatalf("expected parameters to round-trip through sqlite, got %#v", roundTrip.Parameters)
+	}
+	if len(roundTrip.DataSources) != 1 || !strings.Contains(roundTrip.DataSources[0].InlineData, "https://csi-gw-ext.att.com:443") {
+		t.Fatalf("expected data source to round-trip through sqlite, got %#v", roundTrip.DataSources)
+	}
+	listed, err := store.ListScripts("", nil)
+	if err != nil {
+		t.Fatalf("ListScripts returned error: %v", err)
+	}
+	if len(listed) != 1 || len(listed[0].Parameters) != 1 || listed[0].Parameters[0].Name != "url" {
+		t.Fatalf("expected listed script parameters to round-trip through sqlite, got %#v", listed)
+	}
+}
+
+func TestSQLiteStoreAuthoringSessionsRoundTrip(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	session := &AuthoringSession{
+		ID:        "session-1",
+		ProjectID: "project-1",
+		Source:    "loadrunner",
+		Name:      "Checkout migration",
+		Status:    "editing",
+		Draft: &dsl.Script{
+			Name:     "Checkout",
+			Version:  "1.0.0",
+			Protocol: "http",
+			Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
+			Actions:  []dsl.Action{{Name: "Home", Type: "request", Target: "/"}},
+		},
+		ReviewState: map[string]any{"active_tab": "runtime", "blockers": []any{"correlation"}},
+		CreatedAt:   time.Now().Add(-time.Hour),
+	}
+	if err := store.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("SaveAuthoringSession returned error: %v", err)
+	}
+
+	roundTrip, err := store.GetAuthoringSession(session.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession returned error: %v", err)
+	}
+	if roundTrip.ProjectID != "project-1" || roundTrip.Source != "loadrunner" || roundTrip.Name != "Checkout migration" {
+		t.Fatalf("roundTrip metadata = %#v", roundTrip)
+	}
+	if roundTrip.Draft == nil || roundTrip.Draft.Name != "Checkout" || roundTrip.Draft.Config.BaseURL != "https://example.test" {
+		t.Fatalf("roundTrip draft = %#v", roundTrip.Draft)
+	}
+	if roundTrip.ReviewState["active_tab"] != "runtime" {
+		t.Fatalf("review state = %#v, want active_tab runtime", roundTrip.ReviewState)
+	}
+
+	listed, err := store.ListAuthoringSessions("project-1")
+	if err != nil {
+		t.Fatalf("ListAuthoringSessions returned error: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != session.ID {
+		t.Fatalf("listed sessions = %#v, want session-1", listed)
+	}
+	if err := store.DeleteAuthoringSession(session.ID); err != nil {
+		t.Fatalf("DeleteAuthoringSession returned error: %v", err)
+	}
+	if _, err := store.GetAuthoringSession(session.ID); err == nil {
+		t.Fatal("expected deleted authoring session lookup to fail")
+	}
 }
 
 func TestSQLiteStoreProjectsFoldersAndFiltering(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -86,9 +172,31 @@ func TestSQLiteStoreProjectsFoldersAndFiltering(t *testing.T) {
 		t.Fatalf("expected default project, got %#v", projects)
 	}
 
-	project := &Project{ID: "project-1", Name: "Payments", CreatedAt: time.Now()}
+	project := &Project{
+		ID:   "project-1",
+		Name: "Payments",
+		Settings: ProjectSettings{
+			RedactionRules:     []engine.RedactionRule{{Name: "customer id", Pattern: `customer-[0-9]+`}},
+			MaxConcurrentTests: 2,
+			MaxVUsers:          250,
+		},
+		CreatedAt: time.Now(),
+	}
 	if err := store.SaveProject(project); err != nil {
 		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	roundTripProject, err := store.GetProject(project.ID)
+	if err != nil {
+		t.Fatalf("GetProject returned error: %v", err)
+	}
+	if len(roundTripProject.Settings.RedactionRules) != 1 || roundTripProject.Settings.RedactionRules[0].Pattern != `customer-[0-9]+` {
+		t.Fatalf("expected persisted project settings, got %#v", roundTripProject.Settings)
+	}
+	if roundTripProject.Settings.MaxConcurrentTests != 2 {
+		t.Fatalf("expected persisted project max concurrent tests, got %#v", roundTripProject.Settings)
+	}
+	if roundTripProject.Settings.MaxVUsers != 250 {
+		t.Fatalf("expected persisted project max vusers, got %#v", roundTripProject.Settings)
 	}
 	folder := &Folder{ID: "folder-1", ProjectID: project.ID, Name: "Checkout", Category: "scripts", CreatedAt: time.Now()}
 	if err := store.SaveFolder(folder); err != nil {
@@ -128,8 +236,456 @@ func TestSQLiteStoreProjectsFoldersAndFiltering(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreDomainRepositoryHierarchyAndProjectReleases(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	domains, err := store.ListDomains()
+	if err != nil {
+		t.Fatalf("ListDomains returned error: %v", err)
+	}
+	if len(domains) != 1 || domains[0].ID != DefaultDomainID {
+		t.Fatalf("default domains = %#v, want default domain", domains)
+	}
+	repository, err := store.GetApplicationRepository(DefaultDomainID)
+	if err != nil {
+		t.Fatalf("GetApplicationRepository returned error: %v", err)
+	}
+	if repository.ID != DefaultApplicationRepositoryID {
+		t.Fatalf("default repository = %#v, want %s", repository, DefaultApplicationRepositoryID)
+	}
+	categories, err := store.ListRepositoryCategories(DefaultDomainID)
+	if err != nil {
+		t.Fatalf("ListRepositoryCategories returned error: %v", err)
+	}
+	if len(categories) != 1 || categories[0].ID != DefaultRepositoryCategoryID {
+		t.Fatalf("default categories = %#v, want uncategorized", categories)
+	}
+
+	project, err := store.GetProject(DefaultProjectID)
+	if err != nil {
+		t.Fatalf("GetProject default returned error: %v", err)
+	}
+	if project.DomainID != DefaultDomainID || project.CategoryID != DefaultRepositoryCategoryID {
+		t.Fatalf("default project placement = %#v", project)
+	}
+	legacyRelease, err := store.GetRelease(LegacyReleaseID)
+	if err != nil {
+		t.Fatalf("GetRelease legacy returned error: %v", err)
+	}
+	if legacyRelease.ProjectID != DefaultProjectID {
+		t.Fatalf("legacy release project_id = %q, want default project", legacyRelease.ProjectID)
+	}
+
+	now := time.Now()
+	domain := &Domain{ID: "domain-payments", Name: "Payments Domain", CreatedAt: now}
+	if err := store.SaveDomain(domain); err != nil {
+		t.Fatalf("SaveDomain returned error: %v", err)
+	}
+	repo := &ApplicationRepository{ID: "repo-payments", DomainID: domain.ID, Name: "Payments Repository", CreatedAt: now}
+	if err := store.SaveApplicationRepository(repo); err != nil {
+		t.Fatalf("SaveApplicationRepository returned error: %v", err)
+	}
+	category := &RepositoryCategory{ID: "category-core", DomainID: domain.ID, RepositoryID: repo.ID, Name: "Core", SortOrder: 1, CreatedAt: now}
+	if err := store.SaveRepositoryCategory(category); err != nil {
+		t.Fatalf("SaveRepositoryCategory returned error: %v", err)
+	}
+	project = &Project{ID: "project-payments", DomainID: domain.ID, CategoryID: category.ID, Name: "Payments", CreatedAt: now}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	app := &Application{ID: "app-payments", ProjectID: project.ID, Name: "Payments App", CreatedAt: now}
+	if err := store.SaveApplication(app); err != nil {
+		t.Fatalf("SaveApplication returned error: %v", err)
+	}
+	release := &Release{ID: "release-payments", ApplicationID: app.ID, Name: "2026.05", CreatedAt: now}
+	if err := store.SaveRelease(release); err != nil {
+		t.Fatalf("SaveRelease returned error: %v", err)
+	}
+	releases, err := store.ListReleasesByProject(project.ID, false)
+	if err != nil {
+		t.Fatalf("ListReleasesByProject returned error: %v", err)
+	}
+	if len(releases) != 1 || releases[0].ProjectID != project.ID {
+		t.Fatalf("project releases = %#v, want release scoped to project", releases)
+	}
+}
+
+func TestSQLiteStoreServiceAccountsAndAuditEvents(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	sum := sha256.Sum256([]byte("apexload-key"))
+	now := time.Now().UTC().Truncate(time.Second)
+	expiresAt := now.Add(24 * time.Hour)
+	keyRotatedAt := now.Add(-24 * time.Hour)
+	account := &ServiceAccount{
+		ID:          "svc-1",
+		Name:        "CI Pipeline",
+		Description: "Runs nightly tests",
+		KeyHash:     fmt.Sprintf("%x", sum[:]),
+		Active:      true,
+		GlobalRoles: []string{"system_admin"},
+		ProjectRoles: map[string][]string{
+			"project-a": {"editor"},
+		},
+		CreatedAt:            now,
+		UpdatedAt:            now,
+		LastUsedAt:           &now,
+		ExpiresAt:            &expiresAt,
+		KeyRotatedAt:         &keyRotatedAt,
+		RotationIntervalDays: 30,
+	}
+	if err := store.SaveServiceAccount(account); err != nil {
+		t.Fatalf("SaveServiceAccount returned error: %v", err)
+	}
+
+	byID, err := store.GetServiceAccount(account.ID)
+	if err != nil {
+		t.Fatalf("GetServiceAccount returned error: %v", err)
+	}
+	if byID.Name != account.Name || byID.KeyHash != account.KeyHash {
+		t.Fatalf("service account round trip = %#v, want name/hash preserved", byID)
+	}
+	if !byID.Active {
+		t.Fatalf("expected service account to be active, got %#v", byID)
+	}
+	if got := byID.ProjectRoles["project-a"]; len(got) != 1 || got[0] != "editor" {
+		t.Fatalf("project roles = %#v, want editor for project-a", byID.ProjectRoles)
+	}
+	if byID.ExpiresAt == nil || !byID.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("expires_at = %#v, want %v", byID.ExpiresAt, expiresAt)
+	}
+	wantRotationDue := keyRotatedAt.AddDate(0, 0, 30)
+	if byID.KeyRotatedAt == nil || !byID.KeyRotatedAt.Equal(keyRotatedAt) || byID.RotationDueAt == nil || !byID.RotationDueAt.Equal(wantRotationDue) {
+		t.Fatalf("rotation metadata = key_rotated_at %#v due %#v, want %v/%v", byID.KeyRotatedAt, byID.RotationDueAt, keyRotatedAt, wantRotationDue)
+	}
+
+	byHash, err := store.GetServiceAccountByKeyHash(account.KeyHash)
+	if err != nil {
+		t.Fatalf("GetServiceAccountByKeyHash returned error: %v", err)
+	}
+	if byHash.ID != account.ID {
+		t.Fatalf("service account by hash = %#v, want id %q", byHash, account.ID)
+	}
+
+	accounts, err := store.ListServiceAccounts()
+	if err != nil {
+		t.Fatalf("ListServiceAccounts returned error: %v", err)
+	}
+	if len(accounts) != 1 || accounts[0].ID != account.ID {
+		t.Fatalf("service account list = %#v, want one account", accounts)
+	}
+
+	rotatedSum := sha256.Sum256([]byte("apexload-key-rotated"))
+	if err := store.RotateServiceAccountKey(account.ID, fmt.Sprintf("%x", rotatedSum[:]), now.Add(time.Minute)); err != nil {
+		t.Fatalf("RotateServiceAccountKey returned error: %v", err)
+	}
+	if err := store.UpdateServiceAccountActive(account.ID, false, now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("UpdateServiceAccountActive returned error: %v", err)
+	}
+	if _, err := store.GetServiceAccountByKeyHash(fmt.Sprintf("%x", rotatedSum[:])); err != sql.ErrNoRows {
+		t.Fatalf("expected inactive service account lookup to miss, got %v", err)
+	}
+	if err := store.UpdateServiceAccountActive(account.ID, true, now.Add(3*time.Minute)); err != nil {
+		t.Fatalf("UpdateServiceAccountActive returned error: %v", err)
+	}
+	lastUsedAt := now.Add(4 * time.Minute)
+	if err := store.UpdateServiceAccountLastUsed(account.ID, lastUsedAt); err != nil {
+		t.Fatalf("UpdateServiceAccountLastUsed returned error: %v", err)
+	}
+	rotatedAccount, err := store.GetServiceAccountByKeyHash(fmt.Sprintf("%x", rotatedSum[:]))
+	if err != nil {
+		t.Fatalf("GetServiceAccountByKeyHash after rotate returned error: %v", err)
+	}
+	if rotatedAccount.LastUsedAt == nil || !rotatedAccount.LastUsedAt.Equal(lastUsedAt) {
+		t.Fatalf("last used at = %#v, want %v", rotatedAccount.LastUsedAt, lastUsedAt)
+	}
+	wantRotatedAt := now.Add(time.Minute)
+	wantRotatedDue := wantRotatedAt.AddDate(0, 0, 30)
+	if rotatedAccount.KeyRotatedAt == nil || !rotatedAccount.KeyRotatedAt.Equal(wantRotatedAt) || rotatedAccount.RotationDueAt == nil || !rotatedAccount.RotationDueAt.Equal(wantRotatedDue) {
+		t.Fatalf("rotated metadata = key_rotated_at %#v due %#v, want %v/%v", rotatedAccount.KeyRotatedAt, rotatedAccount.RotationDueAt, wantRotatedAt, wantRotatedDue)
+	}
+
+	expiredHash := sha256.Sum256([]byte("expired-key"))
+	expiredAt := now.Add(-time.Minute)
+	if err := store.SaveServiceAccount(&ServiceAccount{
+		ID:                   "svc-expired",
+		Name:                 "Expired",
+		KeyHash:              fmt.Sprintf("%x", expiredHash[:]),
+		Active:               true,
+		GlobalRoles:          []string{"viewer"},
+		ProjectRoles:         map[string][]string{},
+		CreatedAt:            now,
+		UpdatedAt:            now,
+		ExpiresAt:            &expiredAt,
+		KeyRotatedAt:         &now,
+		RotationIntervalDays: 30,
+	}); err != nil {
+		t.Fatalf("SaveServiceAccount expired returned error: %v", err)
+	}
+	if _, err := store.GetServiceAccountByKeyHash(fmt.Sprintf("%x", expiredHash[:])); err != sql.ErrNoRows {
+		t.Fatalf("expected expired service account lookup to miss, got %v", err)
+	}
+
+	event := &AuditEvent{
+		ID:               "audit-1",
+		Action:           "system.settings.update",
+		ActorType:        "service_account",
+		ActorSubject:     "service-account:svc-1",
+		ActorDisplayName: "CI Pipeline",
+		ProjectID:        "project-a",
+		ResourceType:     "system_settings",
+		ResourceID:       "global",
+		Status:           "success",
+		Details:          map[string]any{"mode": "trusted_headers"},
+		CreatedAt:        now,
+	}
+	if err := store.SaveAuditEvent(event); err != nil {
+		t.Fatalf("SaveAuditEvent returned error: %v", err)
+	}
+	if err := store.SaveAuditEvent(&AuditEvent{
+		ID:           "audit-2",
+		Action:       "project.update",
+		ActorType:    "user",
+		ActorSubject: "alice",
+		ProjectID:    "project-b",
+		ResourceType: "project",
+		ResourceID:   "project-b",
+		Status:       "success",
+		CreatedAt:    now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveAuditEvent returned error: %v", err)
+	}
+
+	events, err := store.ListAuditEvents(AuditEventFilter{Limit: 10, ProjectID: "project-a", ActorType: "service_account"})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(events) != 1 || events[0].Action != event.Action {
+		t.Fatalf("audit events = %#v, want one saved event", events)
+	}
+	if got := events[0].Details["mode"]; got != "trusted_headers" {
+		t.Fatalf("audit details = %#v, want mode trusted_headers", events[0].Details)
+	}
+	secondPage, err := store.ListAuditEvents(AuditEventFilter{Limit: 1, Offset: 1})
+	if err != nil {
+		t.Fatalf("ListAuditEvents second page returned error: %v", err)
+	}
+	if len(secondPage) != 1 || secondPage[0].ID != "audit-1" {
+		t.Fatalf("audit event page 2 = %#v, want audit-1", secondPage)
+	}
+}
+
+func TestSQLiteStoreUsersRoleBindingsAndAuditFilters(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	user := &User{
+		ID:          "user-1",
+		Subject:     "oidc|alice",
+		Email:       "alice@example.com",
+		DisplayName: "Alice Admin",
+		Active:      true,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := store.SaveUser(user); err != nil {
+		t.Fatalf("SaveUser returned error: %v", err)
+	}
+	if err := store.SaveUserRoleBinding(&UserRoleBinding{
+		ID:        "binding-1",
+		UserID:    user.ID,
+		ScopeType: "project",
+		ScopeID:   "project-a",
+		Role:      "project_admin",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveUserRoleBinding returned error: %v", err)
+	}
+	if err := store.SaveUserRoleBinding(&UserRoleBinding{
+		ID:        "binding-duplicate",
+		UserID:    user.ID,
+		ScopeType: "project",
+		ScopeID:   "project-a",
+		Role:      "project_admin",
+		CreatedAt: now,
+		UpdatedAt: now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveUserRoleBinding duplicate returned error: %v", err)
+	}
+
+	roundTrip, err := store.GetUserBySubject("oidc|alice")
+	if err != nil {
+		t.Fatalf("GetUserBySubject returned error: %v", err)
+	}
+	if roundTrip.Email != user.Email || len(roundTrip.Bindings) != 1 || roundTrip.Bindings[0].Role != "project_admin" {
+		t.Fatalf("round-trip user = %#v, want one project_admin binding", roundTrip)
+	}
+
+	filtered, err := store.ListUsers(UserFilter{Query: "alice", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListUsers returned error: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].ID != user.ID {
+		t.Fatalf("filtered users = %#v, want alice", filtered)
+	}
+
+	disabledAt := now.Add(2 * time.Minute)
+	if err := store.UpdateUserActive(user.ID, false, disabledAt); err != nil {
+		t.Fatalf("UpdateUserActive disable returned error: %v", err)
+	}
+	active := false
+	inactiveUsers, err := store.ListUsers(UserFilter{Active: &active, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListUsers inactive returned error: %v", err)
+	}
+	if len(inactiveUsers) != 1 || inactiveUsers[0].DisabledAt == nil {
+		t.Fatalf("inactive users = %#v, want disabled alice", inactiveUsers)
+	}
+	if err := store.UpdateUserActive(user.ID, true, disabledAt.Add(time.Minute)); err != nil {
+		t.Fatalf("UpdateUserActive enable returned error: %v", err)
+	}
+	enabled, err := store.GetUser(user.ID)
+	if err != nil {
+		t.Fatalf("GetUser enabled returned error: %v", err)
+	}
+	if !enabled.Active || enabled.DisabledAt != nil {
+		t.Fatalf("enabled user = %#v, want active without disabled_at", enabled)
+	}
+
+	if err := store.SaveAuditEvent(&AuditEvent{
+		ID:           "audit-user-1",
+		Action:       "auth.user.create",
+		ActorType:    "user",
+		ActorSubject: "oidc|alice",
+		DomainID:     "domain-a",
+		ProjectID:    "project-a",
+		ResourceType: "user",
+		ResourceID:   user.ID,
+		Status:       "success",
+		CreatedAt:    now,
+	}); err != nil {
+		t.Fatalf("SaveAuditEvent user create returned error: %v", err)
+	}
+	if err := store.SaveAuditEvent(&AuditEvent{
+		ID:           "audit-user-2",
+		Action:       "auth.user.disable",
+		ActorType:    "user",
+		ActorSubject: "oidc|bob",
+		DomainID:     "domain-b",
+		ProjectID:    "project-b",
+		ResourceType: "user",
+		ResourceID:   "user-2",
+		Status:       "success",
+		CreatedAt:    now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("SaveAuditEvent user disable returned error: %v", err)
+	}
+
+	createdBefore := now.Add(time.Minute)
+	events, err := store.ListAuditEvents(AuditEventFilter{
+		ActorSubject:  "oidc|alice",
+		DomainID:      "domain-a",
+		CreatedBefore: &createdBefore,
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("ListAuditEvents user filters returned error: %v", err)
+	}
+	if len(events) != 1 || events[0].ID != "audit-user-1" || events[0].DomainID != "domain-a" {
+		t.Fatalf("filtered audit events = %#v, want audit-user-1", events)
+	}
+}
+
+func TestSQLiteStorePersistsPendingSince(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	pendingSince := time.Now().UTC().Truncate(time.Second)
+	record := &TestRecord{
+		ID:           "test-pending",
+		Name:         "Queued Checkout",
+		Status:       "PENDING",
+		ProjectID:    DefaultProjectID,
+		TotalVUsers:  25,
+		Duration:     int64(30 * time.Second),
+		StartTime:    time.Now().UTC(),
+		PendingSince: &pendingSince,
+		Groups: []map[string]any{{
+			"name": "Checkout",
+		}},
+	}
+
+	if err := store.SaveTest(record); err != nil {
+		t.Fatalf("SaveTest returned error: %v", err)
+	}
+	roundTrip, err := store.GetTest(record.ID)
+	if err != nil {
+		t.Fatalf("GetTest returned error: %v", err)
+	}
+	if roundTrip.PendingSince == nil {
+		t.Fatal("expected pending_since to round-trip through sqlite")
+	}
+	if !roundTrip.PendingSince.Equal(pendingSince) {
+		t.Fatalf("pending_since = %v, want %v", roundTrip.PendingSince, pendingSince)
+	}
+}
+
+func TestSQLiteStorePersistsBaselinePin(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	pinnedAt := time.Now().UTC().Truncate(time.Second)
+	record := &TestRecord{
+		ID:               "test-baseline-pin",
+		Name:             "Checkout Baseline",
+		Status:           "COMPLETE",
+		ProjectID:        DefaultProjectID,
+		TotalVUsers:      25,
+		Duration:         int64(30 * time.Second),
+		StartTime:        time.Now().UTC(),
+		BaselinePinned:   true,
+		BaselinePinnedAt: &pinnedAt,
+		Groups: []map[string]any{{
+			"name": "Checkout",
+		}},
+	}
+
+	if err := store.SaveTest(record); err != nil {
+		t.Fatalf("SaveTest returned error: %v", err)
+	}
+	roundTrip, err := store.GetTest(record.ID)
+	if err != nil {
+		t.Fatalf("GetTest returned error: %v", err)
+	}
+	if !roundTrip.BaselinePinned {
+		t.Fatal("expected baseline_pinned to round-trip through sqlite")
+	}
+	if roundTrip.BaselinePinnedAt == nil || !roundTrip.BaselinePinnedAt.Equal(pinnedAt) {
+		t.Fatalf("baseline_pinned_at = %v, want %v", roundTrip.BaselinePinnedAt, pinnedAt)
+	}
+}
+
 func TestSQLiteStoreBackfillsDefaultProject(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "stormrunner.db")
+	path := filepath.Join(t.TempDir(), "apexload.db")
 	store, err := NewSQLiteStore(path)
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
@@ -159,18 +715,43 @@ func TestSQLiteStoreBackfillsDefaultProject(t *testing.T) {
 	if roundTrip.ProjectID != DefaultProjectID {
 		t.Fatalf("project id = %q, want %q", roundTrip.ProjectID, DefaultProjectID)
 	}
+	application := &Application{ID: "legacy-application", Name: "Legacy App", CreatedAt: time.Now()}
+	if err := reopened.SaveApplication(application); err != nil {
+		t.Fatalf("SaveApplication returned error: %v", err)
+	}
+	applicationRoundTrip, err := reopened.GetApplication(application.ID)
+	if err != nil {
+		t.Fatalf("GetApplication returned error: %v", err)
+	}
+	if applicationRoundTrip.ProjectID != DefaultProjectID {
+		t.Fatalf("application project id = %q, want %q", applicationRoundTrip.ProjectID, DefaultProjectID)
+	}
+	pool := &SharedDataPool{ID: "legacy-pool", Name: "Legacy Pool", CreatedAt: time.Now()}
+	if err := reopened.SaveDataPool(pool); err != nil {
+		t.Fatalf("SaveDataPool returned error: %v", err)
+	}
+	poolRoundTrip, err := reopened.GetDataPool(pool.ID)
+	if err != nil {
+		t.Fatalf("GetDataPool returned error: %v", err)
+	}
+	if poolRoundTrip.ProjectID != DefaultProjectID {
+		t.Fatalf("data pool project id = %q, want %q", poolRoundTrip.ProjectID, DefaultProjectID)
+	}
 }
 
 func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
 
-	app := &Application{ID: "app-1", Name: "Payments", CreatedAt: time.Now()}
+	app := &Application{ID: "app-1", ProjectID: DefaultProjectID, Name: "Payments", CreatedAt: time.Now()}
 	if err := store.SaveApplication(app); err != nil {
 		t.Fatalf("SaveApplication returned error: %v", err)
+	}
+	if app.ProjectID != DefaultProjectID {
+		t.Fatalf("saved application project id = %q, want %q", app.ProjectID, DefaultProjectID)
 	}
 	release := &Release{ID: "rel-1", ApplicationID: app.ID, Name: "2026.05", CreatedAt: time.Now()}
 	if err := store.SaveRelease(release); err != nil {
@@ -196,7 +777,16 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 		ScenarioMode: "vuser_driven",
 		CreatedAt:    time.Now(),
 	}
-	groups := []ScenarioScript{{Order: 0, ScriptID: script.ID, VUsers: 25, Initialization: "at_runtime"}}
+	groups := []ScenarioScript{{
+		Order:          0,
+		ScriptID:       script.ID,
+		VUsers:         25,
+		Initialization: "at_runtime",
+		Stages: []LoadStage{
+			{Name: "Warmup", Type: "ramp_up", Duration: "30s", TargetVUsers: 25},
+			{Name: "Hold", Type: "hold", Duration: "2m", TargetVUsers: 25},
+		},
+	}}
 	if err := store.SaveScenario(scenario, groups); err != nil {
 		t.Fatalf("SaveScenario returned error: %v", err)
 	}
@@ -206,6 +796,9 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 	}
 	if roundTrip.Name != scenario.Name || len(scripts) != 1 || scripts[0].ScriptID != script.ID {
 		t.Fatalf("unexpected scenario round trip: %#v scripts=%#v", roundTrip, scripts)
+	}
+	if len(scripts[0].Stages) != 2 || scripts[0].Stages[0].Type != "ramp_up" || scripts[0].Stages[0].TargetVUsers != 25 {
+		t.Fatalf("scenario stages = %#v, want persisted staged load model", scripts[0].Stages)
 	}
 
 	record := &TestRecord{
@@ -240,7 +833,7 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 }
 
 func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -248,17 +841,51 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 
 	timestamp := time.Date(2026, time.May, 13, 17, 0, 0, 0, time.UTC)
 	metrics := map[string]any{
-		"timestamp":        timestamp,
-		"active_vusers":    12,
-		"tps":              48.5,
-		"avg_response_ms":  220.5,
-		"error_pct":        1.25,
+		"timestamp":          timestamp,
+		"active_vusers":      12,
+		"tps":                48.5,
+		"avg_response_ms":    220.5,
+		"error_pct":          1.25,
 		"total_transactions": 120,
-		"total_errors":     2,
-		"p50_ms":           150.0,
-		"p90_ms":           300.0,
-		"p95_ms":           350.0,
-		"p99_ms":           420.0,
+		"total_errors":       2,
+		"p50_ms":             150.0,
+		"p90_ms":             300.0,
+		"p95_ms":             350.0,
+		"p99_ms":             420.0,
+		"browser": map[string]any{
+			"samples":                2,
+			"avg_fcp_ms":             120.0,
+			"avg_lcp_ms":             240.0,
+			"avg_cls_score":          0.031,
+			"avg_inp_ms":             55.0,
+			"avg_blocking_resources": 2.0,
+			"avg_long_task_count":    1.5,
+			"avg_js_heap_used_mb":    18.0,
+		},
+		"browser_by_device": map[string]any{
+			"iphone_se": map[string]any{
+				"device_profile":         "iphone_se",
+				"device_tier":            "low",
+				"samples":                2,
+				"avg_fcp_ms":             120.0,
+				"avg_lcp_ms":             240.0,
+				"avg_cls_score":          0.031,
+				"avg_inp_ms":             55.0,
+				"avg_blocking_resources": 2.0,
+				"avg_long_task_count":    1.5,
+				"avg_js_heap_used_mb":    18.0,
+			},
+		},
+		"latency": map[string]any{
+			"targets": []map[string]any{{
+				"name":         "edge",
+				"endpoint":     "https://example.test",
+				"latency_ms":   42.5,
+				"ip":           "192.0.2.10",
+				"last_success": true,
+				"timestamp":    timestamp.Add(-100 * time.Millisecond),
+			}},
+		},
 		"telemetry": map[string]any{
 			"dropped_results":             3,
 			"websocket_clients":           2,
@@ -309,6 +936,15 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 	if record.ActiveVUsers != 12 || record.TotalTx != 120 || record.DroppedResults != 3 || record.WebsocketDroppedMessages != 4 {
 		t.Fatalf("unexpected typed interval summary: %#v", record)
 	}
+	if record.Browser == nil || record.Browser.Samples != 2 || record.Browser.AvgCLSScore != 0.031 {
+		t.Fatalf("unexpected browser summary: %#v", record.Browser)
+	}
+	if record.BrowserByDevice == nil || record.BrowserByDevice["iphone_se"] == nil || record.BrowserByDevice["iphone_se"].DeviceTier != "low" {
+		t.Fatalf("unexpected browser by device summary: %#v", record.BrowserByDevice)
+	}
+	if record.Latency == nil || len(record.Latency.Targets) != 1 || record.Latency.Targets[0].LatencyMs != 42.5 {
+		t.Fatalf("unexpected latency summary: %#v", record.Latency)
+	}
 	if !record.GeneratorPublishedAt.Equal(timestamp.Add(-400 * time.Millisecond)) {
 		t.Fatalf("generator_published_at = %s, want %s", record.GeneratorPublishedAt, timestamp.Add(-400*time.Millisecond))
 	}
@@ -332,7 +968,7 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 }
 
 func TestSQLiteStoreMigratesTelemetrySchemaVersionsForExistingRows(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "stormrunner.db")
+	dbPath := filepath.Join(t.TempDir(), "apexload.db")
 	rawDB, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		t.Fatalf("sql.Open returned error: %v", err)
@@ -409,7 +1045,7 @@ func TestSQLiteStoreMigratesTelemetrySchemaVersionsForExistingRows(t *testing.T)
 }
 
 func TestSQLiteStoreSharedDataPoolsAndScenarioBindings(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
@@ -436,10 +1072,18 @@ func TestSQLiteStoreSharedDataPoolsAndScenarioBindings(t *testing.T) {
 		Name:        "Customers",
 		Description: "Reusable customer identities",
 		Schema:      map[string]string{"customer_id": "string", "zip": "string"},
+		ProjectID:   DefaultProjectID,
 		CreatedAt:   time.Now(),
 	}
 	if err := store.SaveDataPool(pool); err != nil {
 		t.Fatalf("SaveDataPool returned error: %v", err)
+	}
+	roundTripPool, err := store.GetDataPool(pool.ID)
+	if err != nil {
+		t.Fatalf("GetDataPool returned error: %v", err)
+	}
+	if roundTripPool.ProjectID != DefaultProjectID {
+		t.Fatalf("data pool project id = %q, want %q", roundTripPool.ProjectID, DefaultProjectID)
 	}
 	if err := store.SaveDataPoolRow(&SharedDataPoolRow{
 		ID:     "row-1",
@@ -489,5 +1133,50 @@ func TestSQLiteStoreSharedDataPoolsAndScenarioBindings(t *testing.T) {
 	}
 	if err := store.DeleteDataPool(pool.ID); err != nil {
 		t.Fatalf("DeleteDataPool returned error after unbinding: %v", err)
+	}
+}
+
+func TestSQLiteStoreUsageAccountingSnapshots(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	firstGeneratedAt := time.Date(2026, 5, 18, 10, 0, 0, 0, time.UTC)
+	secondGeneratedAt := firstGeneratedAt.Add(time.Hour)
+	if err := store.SaveUsageAccountingSnapshot(&UsageAccountingSnapshot{
+		ID:          "usage-snapshot-1",
+		ProjectID:   "project-a",
+		GeneratedAt: firstGeneratedAt,
+		PayloadJSON: `{"project_id":"project-a","totals":{"run_count":1}}`,
+		CreatedAt:   firstGeneratedAt,
+	}); err != nil {
+		t.Fatalf("SaveUsageAccountingSnapshot first returned error: %v", err)
+	}
+	if err := store.SaveUsageAccountingSnapshot(&UsageAccountingSnapshot{
+		ID:          "usage-snapshot-2",
+		ProjectID:   "project-b",
+		GeneratedAt: secondGeneratedAt,
+		PayloadJSON: `{"project_id":"project-b","totals":{"run_count":2}}`,
+		CreatedAt:   secondGeneratedAt,
+	}); err != nil {
+		t.Fatalf("SaveUsageAccountingSnapshot second returned error: %v", err)
+	}
+
+	projectSnapshots, err := store.ListUsageAccountingSnapshots("project-a", 10, 0)
+	if err != nil {
+		t.Fatalf("ListUsageAccountingSnapshots project returned error: %v", err)
+	}
+	if len(projectSnapshots) != 1 || projectSnapshots[0].ID != "usage-snapshot-1" || projectSnapshots[0].PayloadJSON == "" {
+		t.Fatalf("project snapshots = %#v, want project-a snapshot", projectSnapshots)
+	}
+
+	allSnapshots, err := store.ListUsageAccountingSnapshots("", 10, 0)
+	if err != nil {
+		t.Fatalf("ListUsageAccountingSnapshots all returned error: %v", err)
+	}
+	if len(allSnapshots) != 2 || allSnapshots[0].ID != "usage-snapshot-2" || allSnapshots[1].ID != "usage-snapshot-1" {
+		t.Fatalf("all snapshots = %#v, want newest first", allSnapshots)
 	}
 }

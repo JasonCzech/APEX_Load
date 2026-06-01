@@ -14,7 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/convert/tmpl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type ConvertOptions struct {
@@ -26,19 +29,23 @@ type ConvertOptions struct {
 }
 
 type ConvertResult struct {
-	Scripts             []*dsl.Script  `json:"scripts"`
-	Script              *dsl.Script    `json:"script,omitempty"`
-	ScenarioDraft       *ScenarioDraft `json:"scenario_draft,omitempty"`
-	Warnings            []string       `json:"warnings,omitempty"`
-	UnsupportedElements []string       `json:"unsupported_elements,omitempty"`
-	Assumptions         []string       `json:"assumptions,omitempty"`
-	Stats               ConvertStats   `json:"stats"`
-	Summary             ImportSummary  `json:"summary"`
+	Scripts             []*dsl.Script      `json:"scripts"`
+	Script              *dsl.Script        `json:"script,omitempty"`
+	ScenarioDraft       *ScenarioDraft     `json:"scenario_draft,omitempty"`
+	Warnings            []string           `json:"warnings,omitempty"`
+	UnsupportedElements []string           `json:"unsupported_elements,omitempty"`
+	Unsupported         diag.Diagnostics   `json:"unsupported,omitempty"`
+	Assumptions         []string           `json:"assumptions,omitempty"`
+	Stats               ConvertStats       `json:"stats"`
+	Summary             ImportSummary      `json:"summary"`
+	SourceReview        *sourceview.Review `json:"source_review,omitempty"`
 }
 
 type ConvertStats struct {
 	ThreadGroups     int `json:"thread_groups"`
 	Samplers         int `json:"samplers"`
+	TotalSamplers    int `json:"total_samplers,omitempty"`
+	SkippedSamplers  int `json:"skipped_samplers,omitempty"`
 	ConvertedActions int `json:"converted_actions"`
 	Headers          int `json:"headers"`
 	Variables        int `json:"variables"`
@@ -80,10 +87,12 @@ type SupportMatrix struct {
 }
 
 type xmlNode struct {
-	Name     string
-	Attrs    map[string]string
-	Text     string
-	Children []*xmlNode
+	Name      string
+	Attrs     map[string]string
+	Text      string
+	Children  []*xmlNode
+	StartLine int
+	EndLine   int
 }
 
 type treeNode struct {
@@ -101,6 +110,17 @@ type convertContext struct {
 	csvSources      []dsl.DataSource
 	timerMs         int
 	assertions      []dsl.Assertion
+	auths           []jmeterAuth
+	transaction     string
+}
+
+type jmeterAuth struct {
+	URL       string
+	Username  string
+	Password  string
+	Domain    string
+	Mechanism string
+	Config    dsl.AuthConfig
 }
 
 func GetSupportMatrix() SupportMatrix {
@@ -130,7 +150,7 @@ func GetSupportMatrix() SupportMatrix {
 			"Scenario drafts derived from thread groups",
 			"Timer behavior approximated as fixed think time when necessary",
 			"SOAP-shaped HTTP Request samplers are promoted to the SOAP protocol when an imported thread group is entirely SOAP-oriented",
-			"XPath2 Extractor mapped into Stormrunner XPath when queries fit the shared runtime, including fragment output and custom namespace bindings",
+			"XPath2 Extractor mapped into APEX Load XPath when queries fit the shared runtime, including fragment output and custom namespace bindings",
 		},
 		Unsupported: []string{
 			"JSR223 / BeanShell / Groovy scripting",
@@ -142,7 +162,7 @@ func GetSupportMatrix() SupportMatrix {
 			"Distributed engine/controller orchestration settings",
 		},
 		Notes: []string{
-			"Phase 1 targets HTTP-oriented JMX plans and can promote SOAP-shaped HTTP samplers into native Stormrunner SOAP scripts.",
+			"Phase 1 targets HTTP-oriented JMX plans and can promote SOAP-shaped HTTP samplers into native APEX Load SOAP scripts.",
 			"Unsupported constructs are reported in the import review instead of being silently ignored.",
 		},
 	}
@@ -172,6 +192,9 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	unsupported := map[string]struct{}{}
 	variableNames := map[string]struct{}{}
 	csvNames := map[string]struct{}{}
+	var diagnostics diag.Collector
+	sourceFileName := firstNonEmpty(opts.FileName, "import.jmx")
+	sourceMappings := make([]sourceview.Mapping, 0)
 
 	threadGroups := findTreeNodes(trees, "ThreadGroup")
 	if len(threadGroups) == 0 {
@@ -179,6 +202,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		result.Assumptions = append(result.Assumptions, "No Thread Group was found; the whole plan was converted into a single script.")
 	}
 	result.Stats.ThreadGroups = len(threadGroups)
+	result.Stats.TotalSamplers, result.Stats.SkippedSamplers = countJMeterSamplerElements(trees)
 	result.Summary.ThreadGroupCount = len(threadGroups)
 
 	for i, tg := range threadGroups {
@@ -213,7 +237,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			}},
 		}
 
-		walkThreadGroup(tg, &ctx, script, opts, result, unsupported, variableNames, csvNames)
+		walkThreadGroup(tg, &ctx, script, opts, result, unsupported, variableNames, csvNames, &diagnostics, sourceFileName, &sourceMappings)
 		if script.Config.BaseURL == "" {
 			script.Config.BaseURL = opts.BaseURL
 		}
@@ -250,6 +274,10 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	result.Summary.SamplerCount = result.Stats.Samplers
 	result.Summary.VariablesDiscovered = sortedKeys(variableNames)
 	result.Summary.CSVSourcesDiscovered = sortedKeys(csvNames)
+	if gap := result.Stats.TotalSamplers - result.Stats.ConvertedActions - result.Stats.SkippedSamplers; gap > 0 {
+		diagnostics.Add(diag.Warning, "JMeter completeness guard", firstNonEmpty(opts.FileName, "JMX plan"), fmt.Sprintf("%d sampler(s) were detected but not converted or explicitly skipped", gap))
+	}
+	result.Unsupported = diagnostics.Items()
 	for _, script := range result.Scripts {
 		if script.Metadata == nil {
 			script.Metadata = &dsl.ScriptMetadata{}
@@ -269,10 +297,11 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if opts.ScenarioDraft && len(result.Scripts) > 0 {
 		result.ScenarioDraft = buildScenarioDraft(threadGroups, result.Scripts)
 	}
+	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: string(data)}, sourceMappings)
 	return result, nil
 }
 
-func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, opts ConvertOptions, result *ConvertResult, unsupported map[string]struct{}, variableNames map[string]struct{}, csvNames map[string]struct{}) {
+func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, opts ConvertOptions, result *ConvertResult, unsupported map[string]struct{}, variableNames map[string]struct{}, csvNames map[string]struct{}, diagnostics *diag.Collector, sourceFileName string, sourceMappings *[]sourceview.Mapping) {
 	for _, child := range node.Children {
 		switch child.Element.Name {
 		case "ConfigTestElement":
@@ -286,6 +315,14 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 		case "CookieManager":
 			enabled := true
 			script.Config.HTTP.CookiesEnabled = &enabled
+		case "AuthManager":
+			auths := parseAuthManager(child.Element, diagnostics)
+			ctx.auths = append(ctx.auths, auths...)
+			for _, auth := range auths {
+				if auth.URL == "" && script.Config.HTTP.Auth.Type == "" {
+					script.Config.HTTP.Auth = auth.Config
+				}
+			}
 		case "Arguments":
 			vars := parseArguments(child.Element)
 			for k, v := range vars {
@@ -300,47 +337,241 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 				csvNames[ds.Name] = struct{}{}
 				result.Stats.CSVSources++
 			}
-		case "ConstantTimer", "UniformRandomTimer":
+		case "ConstantTimer", "UniformRandomTimer", "GaussianRandomTimer", "PoissonRandomTimer", "ConstantThroughputTimer", "PreciseThroughputTimer":
 			ctx.timerMs = parseTimerMs(child.Element, child.Element.Name)
+			if isThroughputTimer(child.Element.Name) {
+				diagnostics.Add(diag.Info, "JMeter "+child.Element.Name, jmeterElementLocation(child.Element), "throughput timer was approximated as fixed think time")
+			}
 			result.Stats.Timers++
 		case "ResponseAssertion":
-			assertions := parseResponseAssertions(child.Element)
+			assertions := parseResponseAssertions(child.Element, diagnostics)
 			ctx.assertions = append(ctx.assertions, assertions...)
 			result.Stats.Assertions += len(assertions)
 		case "HTTPSamplerProxy":
-			action, warnings := convertHTTPSampler(child, ctx, opts)
+			action, warnings := convertHTTPSampler(child, ctx, opts, diagnostics)
 			result.Warnings = append(result.Warnings, warnings...)
 			result.Stats.Samplers++
 			if action != nil {
+				actionIndex := len(script.Actions)
 				script.Actions = append(script.Actions, *action)
+				appendJMeterActionSourceMappings(sourceMappings, sourceFileName, child, actionIndex, action)
 				result.Stats.ConvertedActions++
 			}
+			diagnoseJMeterChildren(child.Children, diagnostics, unsupported)
 		case "ThreadGroup", "TestPlan":
-			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames)
+			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
 			continue
+		case "TransactionController":
+			next := *ctx
+			txName := attrOr(child.Element, "testname", "Transaction")
+			if ctx.transaction != "" {
+				txName = ctx.transaction + " / " + txName
+			}
+			next.transaction = txName
+			walkThreadGroup(child, &next, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
+			continue
+		case "IfController", "WhileController", "ForeachController", "ForEachController", "LoopController", "InterleaveControl", "RandomController", "ThroughputController":
+			diagnostics.Add(diag.Warning, "JMeter "+child.Element.Name, jmeterElementLocation(child.Element), "controller logic was flattened; child requests are imported in source order without original conditions or transaction semantics")
+			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", "JMeter controller logic was flattened; child requests are imported in source order without original conditions."))
 		case "hashTree":
 		default:
 			if strings.TrimSpace(child.Element.Name) != "" {
 				unsupported[child.Element.Name] = struct{}{}
+				diagnoseJMeterElement(child.Element, diagnostics)
+				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "unsupported", "review_only", "JMeter element was not converted into executable APEX Load DSL."))
 			}
 		}
 		if len(child.Children) > 0 && child.Element.Name != "HTTPSamplerProxy" {
-			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames)
+			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
 		}
 	}
 }
 
-func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions) (*dsl.Action, []string) {
+func countJMeterSamplerElements(nodes []*treeNode) (int, int) {
+	total := 0
+	skipped := 0
+	for _, node := range nodes {
+		if node == nil || node.Element == nil {
+			continue
+		}
+		if isJMeterSamplerElement(node.Element.Name) {
+			total++
+			if node.Element.Name != "HTTPSamplerProxy" {
+				skipped++
+			}
+		}
+		childTotal, childSkipped := countJMeterSamplerElements(node.Children)
+		total += childTotal
+		skipped += childSkipped
+	}
+	return total, skipped
+}
+
+func appendJMeterActionSourceMappings(mappings *[]sourceview.Mapping, sourceFile string, node *treeNode, actionIndex int, action *dsl.Action) {
+	if mappings == nil || node == nil || node.Element == nil || action == nil {
+		return
+	}
+	*mappings = append(*mappings, jmeterSourceMapping(
+		sourceFile,
+		node.Element,
+		node.Element.Name,
+		fmt.Sprintf("actions[%d]", actionIndex),
+		action.Name,
+		"action",
+		"converted",
+		"JMeter HTTP sampler was converted into a generated APEX Load action.",
+	))
+	for index, extractor := range action.Extractors {
+		*mappings = append(*mappings, jmeterSourceMapping(
+			sourceFile,
+			node.Element,
+			"jmeter_extractor",
+			fmt.Sprintf("actions[%d].extractors[%d]", actionIndex, index),
+			extractor.Name,
+			"extractor",
+			"contributor",
+			"JMeter post-processor was converted into a generated extractor.",
+		))
+	}
+	for index, assertion := range action.Assertions {
+		*mappings = append(*mappings, jmeterSourceMapping(
+			sourceFile,
+			node.Element,
+			"jmeter_assertion",
+			fmt.Sprintf("actions[%d].assertions[%d]", actionIndex, index),
+			assertion.Type,
+			"assertion",
+			"contributor",
+			"JMeter assertion or default assertion contributed to this generated assertion.",
+		))
+	}
+	if action.ThinkTimeAfter {
+		*mappings = append(*mappings, jmeterSourceMapping(
+			sourceFile,
+			node.Element,
+			"jmeter_timer",
+			fmt.Sprintf("actions[%d].think_time", actionIndex),
+			"Think Time",
+			"config",
+			"contributor",
+			"JMeter timer contributed to this generated think-time setting.",
+		))
+	}
+}
+
+func jmeterSourceMapping(sourceFile string, element *xmlNode, function string, targetPath string, targetName string, targetKind string, status string, notes string) sourceview.Mapping {
+	startLine := 1
+	endLine := 1
+	if element != nil {
+		startLine = element.StartLine
+		endLine = element.EndLine
+		if endLine == 0 {
+			endLine = startLine
+		}
+	}
+	return sourceview.Mapping{
+		SourceFile: sourceFile,
+		StartLine:  startLine,
+		EndLine:    endLine,
+		Function:   function,
+		TargetPath: targetPath,
+		TargetName: targetName,
+		TargetKind: targetKind,
+		Status:     status,
+		Notes:      notes,
+	}
+}
+
+func isJMeterSamplerElement(name string) bool {
+	if name == "HTTPSamplerProxy" || strings.HasSuffix(name, "Sampler") {
+		return true
+	}
+	switch name {
+	case "JMSPublisher", "JMSSubscriber", "JavaSampler", "TCPSampler", "FTPSampler":
+		return true
+	default:
+		return false
+	}
+}
+
+func diagnoseJMeterChildren(nodes []*treeNode, diagnostics *diag.Collector, unsupported map[string]struct{}) {
+	for _, child := range nodes {
+		if diagnoseJMeterElement(child.Element, diagnostics) {
+			unsupported[child.Element.Name] = struct{}{}
+		}
+		diagnoseJMeterChildren(child.Children, diagnostics, unsupported)
+	}
+}
+
+func diagnoseJMeterElement(element *xmlNode, diagnostics *diag.Collector) bool {
+	if element == nil || strings.TrimSpace(element.Name) == "" {
+		return false
+	}
+	name := element.Name
+	location := jmeterElementLocation(element)
+	switch {
+	case isJMeterScriptElement(name):
+		diagnostics.Add(diag.Warning, "JMeter "+name, location, "JSR223/BeanShell/Groovy scripting is not executed by the importer; translate script logic before replay")
+		return true
+	case isKnownJMeterUnsupported(name):
+		diagnostics.Add(diag.Warning, "JMeter "+name, location, "element is not converted by the HTTP importer and was preserved for import review")
+		return true
+	case isKnownJMeterSupported(name):
+		return false
+	default:
+		diagnostics.Add(diag.Warning, "JMeter "+name, location, "unrecognized JMX element was not converted; review the source plan before replay")
+		return true
+	}
+}
+
+func isJMeterScriptElement(name string) bool {
+	lower := strings.ToLower(name)
+	return strings.Contains(lower, "jsr223") || strings.Contains(lower, "beanshell") || strings.Contains(lower, "bsh") || strings.Contains(lower, "groovy")
+}
+
+func isKnownJMeterUnsupported(name string) bool {
+	switch name {
+	case "JSR223Sampler", "BeanShellSampler", "BSFSampler", "JDBCSampler", "JMSSampler", "JMSPublisher", "JMSSubscriber", "FTPSampler", "JavaSampler", "TCPSampler", "DebugSampler", "JSR223PreProcessor", "JSR223PostProcessor", "BeanShellPreProcessor", "BeanShellPostProcessor":
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownJMeterSupported(name string) bool {
+	switch name {
+	case "TestPlan", "ThreadGroup", "hashTree", "ConfigTestElement", "HeaderManager", "CookieManager", "AuthManager", "Arguments", "CSVDataSet", "ConstantTimer", "UniformRandomTimer", "GaussianRandomTimer", "PoissonRandomTimer", "ConstantThroughputTimer", "PreciseThroughputTimer", "ResponseAssertion", "HTTPSamplerProxy", "RegexExtractor", "JSONPostProcessor", "JMESPathExtractor", "HtmlExtractor", "XPathExtractor", "XPath2Extractor", "BoundaryExtractor":
+		return true
+	default:
+		return false
+	}
+}
+
+func jmeterElementLocation(element *xmlNode) string {
+	if element == nil {
+		return "JMX element"
+	}
+	name := attrOr(element, "testname", "")
+	if name == "" {
+		name = element.Name
+	}
+	return name
+}
+
+func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions, diagnostics *diag.Collector) (*dsl.Action, []string) {
 	element := node.Element
 	name := sanitizeName(attrOr(element, "testname", "HTTP Request"))
+	location := jmeterElementLocation(element)
 	method := firstNonEmpty(prop(element, "HTTPSampler.method"), "GET")
-	rawPath := convertVariables(firstNonEmpty(prop(element, "HTTPSampler.path"), ctx.defaultPath, "/"))
+	rawPath := convertVariablesWithDiagnostics(firstNonEmpty(prop(element, "HTTPSampler.path"), ctx.defaultPath, "/"), diagnostics, location)
 	protocol := firstNonEmpty(prop(element, "HTTPSampler.protocol"), ctx.defaultProtocol)
-	domain := convertVariables(firstNonEmpty(prop(element, "HTTPSampler.domain"), ctx.defaultDomain))
+	domain := convertVariablesWithDiagnostics(firstNonEmpty(prop(element, "HTTPSampler.domain"), ctx.defaultDomain), diagnostics, location)
 	port := firstNonEmpty(prop(element, "HTTPSampler.port"), ctx.defaultPort)
 	target := rawPath
+	absoluteURL := rawPath
 	if domain != "" {
 		absolute := buildURL(protocol, domain, port, rawPath)
+		absoluteURL = absolute
 		target = makeRelative(absolute, firstNonEmpty(opts.BaseURL, buildBaseURL(protocol, domain, port)))
 	}
 	action := &dsl.Action{
@@ -353,16 +584,33 @@ func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions
 	}
 	var warnings []string
 	for k, v := range ctx.headers {
-		action.Headers[k] = convertVariables(v)
+		action.Headers[k] = convertVariablesWithDiagnostics(v, diagnostics, location)
 	}
-	body, params := parseSamplerArguments(element)
+	body, params := parseSamplerArguments(element, diagnostics, location)
 	if body != "" {
-		action.Body = convertVariables(body)
+		action.Body = convertVariablesWithDiagnostics(body, diagnostics, location)
 	}
 	if len(params) > 0 {
 		action.Params = params
 	}
-	if extractors, extractorWarnings := parseSamplerExtractors(node); len(extractors) > 0 {
+	applySamplerFiles(action, element, diagnostics, location)
+	if auth, ok := authForSampler(ctx.auths, absoluteURL, rawPath); ok {
+		action.Auth = &auth
+	}
+	if timeout := samplerTimeoutMs(element); timeout > 0 {
+		action.TimeoutMs = timeout
+	}
+	if redirects, ok := samplerRedirects(element); ok {
+		action.MaxRedirects = &redirects
+	}
+	if ctx.transaction != "" {
+		action.Name = sanitizeName(ctx.transaction + " " + action.Name)
+		if action.Metadata == nil {
+			action.Metadata = map[string]any{}
+		}
+		action.Metadata["transaction"] = ctx.transaction
+	}
+	if extractors, extractorWarnings := parseSamplerExtractors(node, diagnostics); len(extractors) > 0 {
 		action.Extractors = extractors
 		warnings = append(warnings, extractorWarnings...)
 	} else if len(extractorWarnings) > 0 {
@@ -500,9 +748,10 @@ func firstHeaderValue(headers map[string]string, key string) string {
 	return ""
 }
 
-func parseSamplerExtractors(node *treeNode) ([]dsl.Extractor, []string) {
+func parseSamplerExtractors(node *treeNode, diagnostics *diag.Collector) ([]dsl.Extractor, []string) {
 	var out []dsl.Extractor
 	var warnings []string
+	location := jmeterElementLocation(node.Element)
 	for _, child := range node.Children {
 		switch child.Element.Name {
 		case "RegexExtractor":
@@ -527,6 +776,9 @@ func parseSamplerExtractors(node *treeNode) ([]dsl.Extractor, []string) {
 			ext, warning := parseXPath2Extractor(child.Element)
 			if warning != "" {
 				warnings = append(warnings, warning)
+				if diagnostics != nil {
+					diagnostics.Add(diag.Warning, "JMeter XPath2Extractor", location, warning)
+				}
 			}
 			if ext.Name != "" && ext.Expression != "" {
 				out = append(out, ext)
@@ -651,9 +903,9 @@ func parseHTMLExtractor(node *xmlNode) dsl.Extractor {
 	}
 }
 
-const xpathFragmentExpressionPrefix = "__stormrunner_xpath_fragment__:"
+const xpathFragmentExpressionPrefix = "__apexload_xpath_fragment__:"
 
-const xpathExpressionConfigPrefix = "__stormrunner_xpath_config__:"
+const xpathExpressionConfigPrefix = "__apexload_xpath_config__:"
 
 type xpathExpressionConfig struct {
 	Expression string            `json:"expression"`
@@ -745,6 +997,7 @@ func parseXPathNamespaces(raw string) (map[string]string, error) {
 
 func parseXML(data []byte) (*xmlNode, error) {
 	decoder := xml.NewDecoder(bytes.NewReader(data))
+	content := string(data)
 	var stack []*xmlNode
 	for {
 		tok, err := decoder.Token()
@@ -756,7 +1009,7 @@ func parseXML(data []byte) (*xmlNode, error) {
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
-			node := &xmlNode{Name: t.Name.Local, Attrs: map[string]string{}}
+			node := &xmlNode{Name: t.Name.Local, Attrs: map[string]string{}, StartLine: sourceview.LineForOffset(content, int(decoder.InputOffset()))}
 			for _, attr := range t.Attr {
 				node.Attrs[attr.Name.Local] = attr.Value
 			}
@@ -773,6 +1026,7 @@ func parseXML(data []byte) (*xmlNode, error) {
 			if len(stack) == 0 {
 				continue
 			}
+			stack[len(stack)-1].EndLine = sourceview.LineForOffset(content, int(decoder.InputOffset()))
 			if len(stack) == 1 {
 				return stack[0], nil
 			}
@@ -865,6 +1119,71 @@ func parseHeaders(node *xmlNode) map[string]string {
 	return headers
 }
 
+func parseAuthManager(node *xmlNode, diagnostics *diag.Collector) []jmeterAuth {
+	var auths []jmeterAuth
+	location := jmeterElementLocation(node)
+	for _, element := range descendantsByAttr(node, "elementType", "Authorization") {
+		username := convertVariablesWithDiagnostics(firstNonEmpty(prop(element, "Authorization.username"), prop(element, "username")), diagnostics, location)
+		password := convertVariablesWithDiagnostics(firstNonEmpty(prop(element, "Authorization.password"), prop(element, "password")), diagnostics, location)
+		mechanism := strings.TrimSpace(firstNonEmpty(prop(element, "Authorization.mechanism"), prop(element, "Authorization.Mechanism"), prop(element, "mechanism")))
+		auth := jmeterAuth{
+			URL:       convertVariablesWithDiagnostics(firstNonEmpty(prop(element, "Authorization.url"), prop(element, "url")), diagnostics, location),
+			Username:  username,
+			Password:  password,
+			Domain:    convertVariablesWithDiagnostics(firstNonEmpty(prop(element, "Authorization.domain"), prop(element, "domain")), diagnostics, location),
+			Mechanism: mechanism,
+		}
+		auth.Config = authConfigFromJMeterAuth(auth, diagnostics, location)
+		if auth.Config.Type == "" {
+			continue
+		}
+		auths = append(auths, auth)
+	}
+	return auths
+}
+
+func authConfigFromJMeterAuth(auth jmeterAuth, diagnostics *diag.Collector, location string) dsl.AuthConfig {
+	mechanism := strings.ToLower(strings.TrimSpace(auth.Mechanism))
+	switch {
+	case strings.Contains(mechanism, "bearer") || strings.Contains(mechanism, "token"):
+		return dsl.AuthConfig{Type: "bearer", Token: firstNonEmpty(auth.Password, auth.Username, "{{env.API_TOKEN}}")}
+	case strings.Contains(mechanism, "digest"):
+		return dsl.AuthConfig{Type: "digest", Username: firstNonEmpty(auth.Username, "{{env.API_USERNAME}}"), Password: firstNonEmpty(auth.Password, "{{env.API_PASSWORD}}"), Domain: auth.Domain}
+	case mechanism == "" || strings.Contains(mechanism, "basic") || strings.Contains(mechanism, "kerberos"):
+		if strings.Contains(mechanism, "kerberos") && diagnostics != nil {
+			diagnostics.Add(diag.Warning, "JMeter AuthManager", location, "Kerberos auth was approximated as basic credentials; configure native auth before replay")
+		}
+		return dsl.AuthConfig{Type: "basic", Username: firstNonEmpty(auth.Username, "{{env.API_USERNAME}}"), Password: firstNonEmpty(auth.Password, "{{env.API_PASSWORD}}")}
+	default:
+		if diagnostics != nil {
+			diagnostics.Add(diag.Warning, "JMeter AuthManager", location, "auth mechanism "+auth.Mechanism+" was not converted")
+		}
+		return dsl.AuthConfig{}
+	}
+}
+
+func authForSampler(auths []jmeterAuth, absoluteURL string, rawPath string) (dsl.AuthConfig, bool) {
+	for _, auth := range auths {
+		if auth.Config.Type == "" || strings.TrimSpace(auth.URL) == "" {
+			continue
+		}
+		if authMatchesURL(auth.URL, absoluteURL) || authMatchesURL(auth.URL, rawPath) {
+			config := auth.Config
+			return config, true
+		}
+	}
+	return dsl.AuthConfig{}, false
+}
+
+func authMatchesURL(authURL string, candidate string) bool {
+	authURL = strings.TrimRight(strings.TrimSpace(authURL), "/")
+	candidate = strings.TrimRight(strings.TrimSpace(candidate), "/")
+	if authURL == "" || candidate == "" {
+		return false
+	}
+	return strings.HasPrefix(candidate, authURL)
+}
+
 func parseArguments(node *xmlNode) map[string]string {
 	vars := map[string]string{}
 	for _, arg := range descendantsByAttr(node, "elementType", "Argument") {
@@ -897,40 +1216,150 @@ func parseCSVDataSet(node *xmlNode) dsl.DataSource {
 }
 
 func parseTimerMs(node *xmlNode, elementName string) int {
-	delay := parseInt(firstNonEmpty(prop(node, "ConstantTimer.delay"), prop(node, "RandomTimer.delay")))
+	delay := parseInt(firstNonEmpty(
+		prop(node, "ConstantTimer.delay"),
+		prop(node, "RandomTimer.delay"),
+		prop(node, "GaussianRandomTimer.delay"),
+		prop(node, "PoissonRandomTimer.delay"),
+	))
 	if elementName == "UniformRandomTimer" {
 		rangeMs := parseInt(prop(node, "RandomTimer.range"))
 		if rangeMs > 0 {
 			return delay + rangeMs/2
 		}
 	}
+	if elementName == "GaussianRandomTimer" {
+		rangeMs := parseInt(prop(node, "GaussianRandomTimer.range"))
+		if rangeMs > 0 {
+			return delay + rangeMs/2
+		}
+	}
+	if elementName == "PoissonRandomTimer" {
+		rangeMs := parseInt(prop(node, "PoissonRandomTimer.range"))
+		if rangeMs > 0 {
+			return delay + rangeMs/2
+		}
+	}
+	if isThroughputTimer(elementName) {
+		if throughput := parseFloat(firstNonEmpty(prop(node, "throughput"), jmeterNamedValue(node, "throughput"), prop(node, "ConstantThroughputTimer.throughput"), prop(node, "PreciseThroughputTimer.throughput"))); throughput > 0 {
+			period := parseInt(firstNonEmpty(prop(node, "throughputPeriod"), jmeterNamedValue(node, "throughputPeriod"), prop(node, "PreciseThroughputTimer.throughputPeriod")))
+			if period <= 0 {
+				period = 60
+			}
+			return int((float64(period) * 1000) / throughput)
+		}
+	}
 	return delay
 }
 
-func parseResponseAssertions(node *xmlNode) []dsl.Assertion {
-	var out []dsl.Assertion
-	for _, valueNode := range childProps(node, "") {
-		text := strings.TrimSpace(valueNode.Text)
-		if text != "" {
-			out = append(out, dsl.Assertion{Type: "body_contains", Value: convertVariables(text)})
-		}
+func isThroughputTimer(elementName string) bool {
+	return elementName == "ConstantThroughputTimer" || elementName == "PreciseThroughputTimer"
+}
+
+func jmeterNamedValue(node *xmlNode, key string) string {
+	if node == nil {
+		return ""
 	}
-	if len(out) == 0 {
-		for _, child := range node.Children {
-			if child.Name == "collectionProp" {
-				for _, grand := range child.Children {
-					text := strings.TrimSpace(grand.Text)
-					if text != "" {
-						out = append(out, dsl.Assertion{Type: "body_contains", Value: convertVariables(text)})
-					}
+	for _, child := range node.Children {
+		if child.Name == "name" && strings.TrimSpace(child.Text) == key {
+			for _, sibling := range node.Children {
+				if sibling.Name == "value" {
+					return strings.TrimSpace(sibling.Text)
 				}
 			}
 		}
+		if value := jmeterNamedValue(child, key); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func parseResponseAssertions(node *xmlNode, diagnostics *diag.Collector) []dsl.Assertion {
+	field := strings.TrimSpace(prop(node, "Assertion.test_field"))
+	if field == "" {
+		field = "Assertion.response_data"
+	}
+	testType := parseInt(prop(node, "Assertion.test_type"))
+	location := jmeterElementLocation(node)
+	values := assertionTestStrings(node)
+	if len(values) == 0 {
+		return nil
+	}
+	if field == "Assertion.response_message" || field == "Assertion.response_headers" {
+		if diagnostics != nil {
+			diagnostics.Add(diag.Warning, "JMeter ResponseAssertion", location, "assertion field "+field+" has no native APEX Load assertion mapping and was not converted")
+		}
+		return nil
+	}
+	negated := testType&4 != 0
+	if strings.EqualFold(field, "Assertion.response_code") {
+		out := make([]dsl.Assertion, 0, len(values))
+		for _, value := range values {
+			if negated {
+				if diagnostics != nil {
+					diagnostics.Add(diag.Warning, "JMeter ResponseAssertion", location, "negative response-code assertion "+value+" cannot be represented natively and was skipped")
+				}
+				continue
+			}
+			status, err := strconv.Atoi(strings.TrimSpace(value))
+			if err != nil {
+				if diagnostics != nil {
+					diagnostics.Add(diag.Warning, "JMeter ResponseAssertion", location, "response-code assertion "+value+" is not an integer and was skipped")
+				}
+				continue
+			}
+			out = append(out, dsl.Assertion{Type: "status_code", Expected: status})
+		}
+		return out
+	}
+	switch field {
+	case "Assertion.response_data", "Assertion.response_data_as_document":
+	default:
+		if diagnostics != nil {
+			diagnostics.Add(diag.Warning, "JMeter ResponseAssertion", location, "assertion field "+field+" was approximated as a response body assertion")
+		}
+	}
+	assertionType := "body_contains"
+	if negated {
+		assertionType = "body_not_contains"
+	}
+	if testType&(1|8) != 0 && diagnostics != nil {
+		diagnostics.Add(diag.Info, "JMeter ResponseAssertion", location, "regex or equality assertion semantics were approximated with body contains checks")
+	}
+	var out []dsl.Assertion
+	for _, text := range values {
+		out = append(out, dsl.Assertion{Type: assertionType, Value: convertVariablesWithDiagnostics(text, diagnostics, location)})
 	}
 	return out
 }
 
-func parseSamplerArguments(node *xmlNode) (string, map[string]any) {
+func assertionTestStrings(node *xmlNode) []string {
+	var values []string
+	for _, child := range node.Children {
+		if child.Name != "collectionProp" || !strings.Contains(strings.ToLower(child.Attrs["name"]), "test_strings") {
+			continue
+		}
+		for _, grand := range child.Children {
+			text := strings.TrimSpace(grand.Text)
+			if text != "" {
+				values = append(values, text)
+			}
+		}
+	}
+	if len(values) > 0 {
+		return values
+	}
+	for _, valueNode := range childProps(node, "") {
+		text := strings.TrimSpace(valueNode.Text)
+		if text != "" {
+			values = append(values, text)
+		}
+	}
+	return values
+}
+
+func parseSamplerArguments(node *xmlNode, diagnostics *diag.Collector, location string) (string, map[string]any) {
 	rawBody := strings.EqualFold(prop(node, "HTTPSampler.postBodyRaw"), "true")
 	args := descendantsByAttr(node, "elementType", "HTTPArgument")
 	if len(args) == 0 {
@@ -948,13 +1377,88 @@ func parseSamplerArguments(node *xmlNode) (string, map[string]any) {
 		name := prop(arg, "Argument.name")
 		value := prop(arg, "Argument.value")
 		if name != "" {
-			params[name] = convertVariables(value)
+			params[name] = convertVariablesWithDiagnostics(value, diagnostics, location)
 		}
 	}
 	if len(params) == 0 {
 		return "", nil
 	}
 	return "", params
+}
+
+func applySamplerFiles(action *dsl.Action, node *xmlNode, diagnostics *diag.Collector, location string) {
+	files := descendantsByAttr(node, "elementType", "HTTPFileArg")
+	if len(files) == 0 {
+		return
+	}
+	if action.Params == nil {
+		action.Params = map[string]any{}
+	}
+	if action.Headers == nil {
+		action.Headers = map[string]string{}
+	}
+	if firstHeaderValue(action.Headers, "Content-Type") == "" {
+		action.Headers["Content-Type"] = "multipart/form-data"
+	}
+	for _, file := range files {
+		paramName := firstNonEmpty(prop(file, "File.paramname"), prop(file, "HTTPFileArg.paramname"), "file")
+		filePath := convertVariablesWithDiagnostics(firstNonEmpty(prop(file, "File.path"), prop(file, "HTTPFileArg.path")), diagnostics, location)
+		mimeType := firstNonEmpty(prop(file, "File.mimetype"), prop(file, "HTTPFileArg.mimetype"), "application/octet-stream")
+		placeholder := "{{file." + sanitizeName(paramName) + "}}"
+		entry := map[string]any{
+			"value":        placeholder,
+			"content_type": mimeType,
+		}
+		if filePath != "" {
+			entry["file_name"] = jmeterBaseName(filePath)
+			entry["source_path"] = filePath
+		}
+		action.Params[paramName] = entry
+		if diagnostics != nil {
+			diagnostics.Add(diag.Warning, "JMeter HTTPFileArg", location, "file upload parameter "+paramName+" uses placeholder "+placeholder+"; provide governed file data before replay")
+		}
+	}
+}
+
+func samplerTimeoutMs(node *xmlNode) int {
+	connectTimeout := parseInt(prop(node, "HTTPSampler.connect_timeout"))
+	responseTimeout := parseInt(prop(node, "HTTPSampler.response_timeout"))
+	if responseTimeout > 0 {
+		return responseTimeout
+	}
+	return connectTimeout
+}
+
+func samplerRedirects(node *xmlNode) (int, bool) {
+	follow, followOK := parseOptionalBool(prop(node, "HTTPSampler.follow_redirects"))
+	auto, autoOK := parseOptionalBool(prop(node, "HTTPSampler.auto_redirects"))
+	if !followOK && !autoOK {
+		return 0, false
+	}
+	if follow || auto {
+		return 10, true
+	}
+	return 0, true
+}
+
+func parseOptionalBool(value string) (bool, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false, false
+	}
+	return strings.EqualFold(value, "true"), true
+}
+
+func jmeterBaseName(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.TrimRight(value, `/\`)
+	if value == "" {
+		return ""
+	}
+	if idx := strings.LastIndexAny(value, `/\`); idx >= 0 {
+		return value[idx+1:]
+	}
+	return value
 }
 
 func parentElement(root *xmlNode, target *xmlNode) *xmlNode {
@@ -992,6 +1496,11 @@ func firstChild(node *xmlNode, name string) *xmlNode {
 var jmeterVarPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_.-]*)\}`)
 
 func convertVariables(value string) string {
+	return convertVariablesWithDiagnostics(value, nil, "")
+}
+
+func convertVariablesWithDiagnostics(value string, diagnostics *diag.Collector, location string) string {
+	value = tmpl.TranslateDynamic(value, diagnostics, location)
 	return jmeterVarPattern.ReplaceAllString(value, "{{var.$1}}")
 }
 
@@ -1155,6 +1664,11 @@ func firstNonEmpty(values ...string) string {
 
 func parseInt(value string) int {
 	n, _ := strconv.Atoi(strings.TrimSpace(value))
+	return n
+}
+
+func parseFloat(value string) float64 {
+	n, _ := strconv.ParseFloat(strings.TrimSpace(value), 64)
 	return n
 }
 

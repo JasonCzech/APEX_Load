@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package stormrunner.v1;
+package apexload.v1;
 
-option go_package = "github.com/jasonczech/stormrunner/api/proto";
+option go_package = "github.com/jasonczech/apexload/api/proto";
 
 // GeneratorControl is the gRPC service between the controller and generator pods.
 // Phase 1 uses direct in-process execution; this proto is defined for Phase 2 distribution.
@@ -112,6 +112,22 @@ message GroupMetric {
   int32 active_vusers = 2;
 }
 
+message ServerTelemetry {
+  double server_processing_ms = 1;
+  double transfer_ms = 2;
+  double request_payload_kb = 3;
+  double response_payload_kb = 4;
+  bool connection_reused = 5;
+  string request_size_class = 6;
+  string response_size_class = 7;
+  double consumer_lag_ms = 8;
+  double message_latency_ms = 9;
+  int32 messages_sent = 10;
+  int32 messages_received = 11;
+  double messages_sent_per_sec = 12;
+  double messages_received_per_sec = 13;
+}
+
 message TransactionMetric {
   string name = 1;
   int64 start_time_unix_ms = 2;
@@ -128,6 +144,8 @@ message TransactionMetric {
   string correlation_id = 13;
   string dependency_type = 14;
   string dependency_target = 15;
+  ServerTelemetry server_telemetry = 16;
+  string soap_operation = 17;
 }
 
 message GeneratorStats {
@@ -165,6 +183,9 @@ message HeartbeatPong {
   double cpu_limit_cores = 6;
   int64 memory_limit_bytes = 7;
   int32 max_vusers = 8;
+  string version = 9;
+  repeated string supported_protocols = 10;
+  repeated string compatible_features = 11;
 }
 
 message ScriptPayload {

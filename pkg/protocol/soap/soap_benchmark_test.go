@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	httpproto "github.com/jasonczech/stormrunner/pkg/protocol/http"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	httpproto "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 func BenchmarkSOAPExecuteComparison(b *testing.B) {
@@ -27,9 +27,9 @@ func BenchmarkSOAPExecuteComparison(b *testing.B) {
 
 	soapProto := &SOAP{}
 	if err := soapProto.Init(context.Background(), map[string]any{
-		"base_url":         ts.URL,
-		"soap_version":     "1.1",
-		"soap_namespaces":  map[string]string{"auth": "urn:auth"},
+		"base_url":        ts.URL,
+		"soap_version":    "1.1",
+		"soap_namespaces": map[string]string{"auth": "urn:auth"},
 	}); err != nil {
 		b.Fatalf("soap Init returned error: %v", err)
 	}

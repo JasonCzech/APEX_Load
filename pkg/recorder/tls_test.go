@@ -41,7 +41,7 @@ func TestInitCA(t *testing.T) {
 	if !r.caCert.IsCA {
 		t.Fatal("expected certificate to be a CA")
 	}
-	if r.caCert.Subject.CommonName != "Stormrunner Recording Proxy CA" {
+	if r.caCert.Subject.CommonName != "APEX Load Recording Proxy CA" {
 		t.Fatalf("unexpected CA CN: %s", r.caCert.Subject.CommonName)
 	}
 
@@ -182,7 +182,7 @@ func TestHandleCACert(t *testing.T) {
 	if ct := rr.Header().Get("Content-Type"); ct != "application/x-x509-ca-cert" {
 		t.Fatalf("expected Content-Type application/x-x509-ca-cert, got %s", ct)
 	}
-	if cd := rr.Header().Get("Content-Disposition"); !strings.Contains(cd, "stormrunner-ca.crt") {
+	if cd := rr.Header().Get("Content-Disposition"); !strings.Contains(cd, "apexload-ca.crt") {
 		t.Fatalf("expected Content-Disposition with .crt filename, got %s", cd)
 	}
 	_, err := x509.ParseCertificate(rr.Body.Bytes())

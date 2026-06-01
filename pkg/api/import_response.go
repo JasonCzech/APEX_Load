@@ -1,5 +1,7 @@
 package api
 
+import "reflect"
+
 type scriptImportResponseOptions struct {
 	Result              any
 	Scripts             any
@@ -9,14 +11,39 @@ type scriptImportResponseOptions struct {
 	Correlations        any
 	Assumptions         []string
 	UnsupportedElements []string
+	ReviewSections      []scriptImportReviewSection
+	RepairSuggestions   []scriptImportRepairSuggestion
 	ScenarioDraft       any
 	Summary             any
+	DetectedProtocol    any
+	ReviewArtifact      any
+	SourceReview        any
+}
+
+type scriptImportReviewSection struct {
+	Key      string   `json:"key"`
+	Title    string   `json:"title"`
+	Severity string   `json:"severity"`
+	Summary  string   `json:"summary"`
+	Items    []string `json:"items"`
+}
+
+type scriptImportRepairSuggestion struct {
+	ID                     string   `json:"id"`
+	Category               string   `json:"category"`
+	Severity               string   `json:"severity"`
+	Title                  string   `json:"title"`
+	Description            string   `json:"description"`
+	Action                 string   `json:"action"`
+	TargetAction           string   `json:"target_action,omitempty"`
+	SelectorStabilityScore int      `json:"selector_stability_score,omitempty"`
+	SelectorSignals        []string `json:"selector_signals,omitempty"`
 }
 
 func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	scripts := opts.Scripts
-	if scripts == nil {
-		if opts.Script != nil {
+	if isNilImportValue(scripts) {
+		if !isNilImportValue(opts.Script) {
 			scripts = []any{opts.Script}
 		} else {
 			scripts = []any{}
@@ -34,6 +61,14 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	unsupported := opts.UnsupportedElements
 	if unsupported == nil {
 		unsupported = []string{}
+	}
+	reviewSections := opts.ReviewSections
+	if reviewSections == nil {
+		reviewSections = []scriptImportReviewSection{}
+	}
+	repairSuggestions := opts.RepairSuggestions
+	if repairSuggestions == nil {
+		repairSuggestions = []scriptImportRepairSuggestion{}
 	}
 	correlations := opts.Correlations
 	if correlations == nil {
@@ -56,14 +91,32 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		"correlations":         correlations,
 		"assumptions":          assumptions,
 		"unsupported_elements": unsupported,
+		"review_sections":      reviewSections,
+		"repair_suggestions":   repairSuggestions,
 		"scenario_draft":       opts.ScenarioDraft,
 		"summary":              summary,
+		"detected_protocol":    opts.DetectedProtocol,
+		"review_artifact":      opts.ReviewArtifact,
+		"source_review":        opts.SourceReview,
 	}
 	if opts.Result != nil {
 		response["result"] = opts.Result
 	}
 
 	return response
+}
+
+func isNilImportValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	v := reflect.ValueOf(value)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
 }
 
 func newRecorderImportStats(actionCount int, correlationCount int) map[string]int {

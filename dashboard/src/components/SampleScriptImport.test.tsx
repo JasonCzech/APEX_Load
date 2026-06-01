@@ -17,6 +17,12 @@ vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
 
+vi.mock('./LinkedCodePane', () => ({
+  default: ({ value, ariaLabel }: { value: string; ariaLabel?: string }) => (
+    <pre aria-label={ariaLabel}>{value}</pre>
+  ),
+}))
+
 describe('SampleScriptImport', () => {
   let container: HTMLDivElement
   let root: Root
@@ -59,8 +65,18 @@ describe('SampleScriptImport', () => {
         extractors: 1,
         correlations_detected: 1,
       },
+      source_review: {
+        source_files: [{ path: 'sample.json', language: 'json', content: '{"requests":[]}' }],
+        mappings: [{ id: 'sample-request', source_file: 'sample.json', start_line: 1, function: 'rest_json_request', target_path: 'actions[0]', target_name: '01 - POST v1 session', target_kind: 'action', status: 'converted' }],
+      },
     })
-    apiMock.createScript.mockResolvedValue({ id: 'script-1' })
+    apiMock.createScript.mockImplementation(async (script: { name?: string; protocol?: string; version?: string }) => ({
+      id: 'script-1',
+      name: script.name || 'Saved Script',
+      protocol: script.protocol || 'http',
+      version: script.version || '1.0.0',
+      created_at: '2026-05-17T00:00:00Z',
+    }))
   })
 
   afterEach(async () => {
@@ -94,6 +110,7 @@ describe('SampleScriptImport', () => {
     await flushPromises()
 
     expect(apiMock.importSample).toHaveBeenCalledWith(expect.objectContaining({
+      project_id: undefined,
       format: 'rest_json',
       options: expect.objectContaining({
         include_assertions: true,
@@ -103,6 +120,9 @@ describe('SampleScriptImport', () => {
     }))
     expect(container.textContent).toContain('Review Generated Script')
     expect(container.textContent).toContain('POST_v1_session')
+    expect(container.textContent).toContain('Source Comparison')
+    expect(container.textContent).toContain('rest_json_request')
+    expect(container.textContent).toContain('actions[0]')
     expect(container.textContent).toContain('session_id')
     expect(container.textContent).toContain('no reusable correlation values were detected across the provided samples')
 
@@ -121,14 +141,101 @@ describe('SampleScriptImport', () => {
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       name: 'POST_v1_session',
       protocol: 'http',
+      metadata: expect.objectContaining({
+        import: expect.objectContaining({
+          source: 'sample-import',
+          preserved: expect.objectContaining({
+            correlation_suggestions: [expect.objectContaining({
+              name: 'session_id',
+              found_at: 'Step 1',
+              used_at: ['Step 2'],
+            })],
+          }),
+        }),
+      }),
       config: expect.objectContaining({
         base_url: 'https://api.example.com',
       }),
-    }))
+    }), undefined)
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'POST_v1_session',
-      protocol: 'http',
+      scripts: [expect.objectContaining({
+        id: 'script-1',
+        name: 'POST_v1_session',
+        protocol: 'http',
+        script: expect.objectContaining({
+          metadata: expect.objectContaining({
+            import: expect.objectContaining({
+              source: 'sample-import',
+            }),
+          }),
+        }),
+      })],
     }))
+  })
+
+  it('sends the HAR static asset option and surfaces filtered asset counts', async () => {
+    apiMock.importSample.mockResolvedValueOnce({
+      script: {
+        name: 'Imported_HAR_Script',
+        protocol: 'http',
+        config: { base_url: 'https://shop.example.com' },
+        actions: [{ name: 'GET api orders', type: 'request', method: 'GET', target: '/api/orders' }],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: {
+        format: 'har',
+        total_requests: 3,
+        converted_actions: 1,
+        filtered_assets: 2,
+        assertions: 1,
+        extractors: 0,
+        correlations_detected: 0,
+      },
+    })
+
+    await act(async () => {
+      root.render(<SampleScriptImport />)
+    })
+
+    const formatSelect = container.querySelector('select') as HTMLSelectElement | null
+    expect(formatSelect).not.toBeNull()
+    if (!formatSelect) return
+
+    await act(async () => {
+      formatSelect.value = 'har'
+      formatSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const includeStatic = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes('Include static assets')) as HTMLInputElement | undefined
+    expect(includeStatic).toBeDefined()
+    if (!includeStatic) return
+
+    await act(async () => {
+      includeStatic.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importSample).toHaveBeenCalledWith(expect.objectContaining({
+      format: 'har',
+      options: expect.objectContaining({
+        include_static_assets: true,
+      }),
+    }))
+    expect(container.textContent).toContain('Filtered assets')
+    expect(container.textContent).toContain('2')
   })
 
   it('promotes Java-over-HTTP sample imports into java_http drafts with bounded warnings', async () => {
@@ -141,7 +248,8 @@ describe('SampleScriptImport', () => {
     expect(container.textContent).toContain('Import Java over HTTP Samples')
     expect(container.textContent).toContain('base64-encoded serialized Java payloads')
     expect(container.textContent).not.toContain('REST JSON')
-    expect(container.textContent).not.toContain('HAR / HAR Entry')
+    // HAR is now an accepted Java-over-HTTP source format.
+    expect(container.textContent).toContain('HAR / HAR Entry')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
     expect(convertButton).toBeDefined()
@@ -156,6 +264,7 @@ describe('SampleScriptImport', () => {
     await flushPromises()
 
     expect(apiMock.importSample).toHaveBeenCalledWith(expect.objectContaining({
+      project_id: undefined,
       format: 'raw_http',
     }))
     expect(container.textContent).toContain('Java-over-HTTP imports assume request and response payloads are already base64-encoded serialized Java bytes')
@@ -180,10 +289,64 @@ describe('SampleScriptImport', () => {
           body_encoding: 'base64',
         }),
       }),
-    }))
+    }), undefined)
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
-      protocol: 'java_http',
+      scripts: [expect.objectContaining({
+        protocol: 'java_http',
+      })],
     }))
+  })
+
+  it('warns when a Java-over-HTTP body is base64 but not a serialized object stream', async () => {
+    apiMock.importSample.mockResolvedValueOnce({
+      script: {
+        name: 'java_call',
+        protocol: 'http',
+        config: { base_url: 'https://api.example.com' },
+        actions: [
+          // Valid base64, but decodes to "hello world!" — not a Java serialized stream.
+          { name: '01 - POST java session', body: 'aGVsbG8gd29ybGQh', extractors: [] },
+        ],
+      },
+      warnings: [],
+      correlations: [],
+      stats: { format: 'raw_http', total_requests: 1, converted_actions: 1, assertions: 0, extractors: 0, correlations_detected: 0 },
+    })
+
+    await act(async () => {
+      root.render(<SampleScriptImport preset="java-http" />)
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('do not decode to a Java serialized object stream')
+  })
+
+  it('passes the active project id into sample conversion previews', async () => {
+    await act(async () => {
+      root.render(<SampleScriptImport projectId="project-1" />)
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.importSample).toHaveBeenCalledWith(expect.objectContaining({ project_id: 'project-1' }))
   })
 })
 

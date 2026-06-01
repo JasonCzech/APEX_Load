@@ -1,4 +1,4 @@
-.PHONY: all build test clean generator controller stormctl proto lint docker-generator docker-controller k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-smoke-test
+.PHONY: all build test clean generator controller apexctl proto lint docker-generator docker-controller k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-smoke-test
 
 VERSION ?= 0.1.0
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
@@ -6,7 +6,7 @@ GOFLAGS := -trimpath
 
 all: build
 
-build: generator controller stormctl
+build: generator controller apexctl
 
 generator:
 	go build $(GOFLAGS) $(LDFLAGS) -o bin/generator ./cmd/generator
@@ -14,8 +14,8 @@ generator:
 controller:
 	go build $(GOFLAGS) $(LDFLAGS) -o bin/controller ./cmd/controller
 
-stormctl:
-	go build $(GOFLAGS) $(LDFLAGS) -o bin/stormctl ./cmd/stormctl
+apexctl:
+	go build $(GOFLAGS) $(LDFLAGS) -o bin/apexctl ./cmd/apexctl
 
 test:
 	go test -race -count=1 ./...
@@ -34,10 +34,10 @@ clean:
 	rm -rf bin/ coverage.out coverage.html
 
 docker-generator:
-	docker build --build-arg BINARY=generator -t stormrunner-generator:$(VERSION) -f Dockerfile .
+	docker build --build-arg BINARY=generator -t apexload-generator:$(VERSION) -f Dockerfile .
 
 docker-controller:
-	docker build --build-arg BINARY=controller -t stormrunner-controller:$(VERSION) -f Dockerfile .
+	docker build --build-arg BINARY=controller -t apexload-controller:$(VERSION) -f Dockerfile .
 
 k8s-local-preflight:
 	./deployments/k8s/local/preflight.sh
@@ -46,7 +46,7 @@ k8s-local-apply: k8s-local-preflight
 	kubectl apply -k deployments/k8s/local
 
 k8s-local-status:
-	kubectl -n stormrunner-local get pods,svc,pvc
+	kubectl -n apexload-local get pods,svc,pvc
 
 k8s-local-delete:
 	kubectl delete -k deployments/k8s/local --ignore-not-found=true
@@ -61,7 +61,7 @@ k8s-kind-apply: k8s-kind-registry-setup k8s-kind-push-images
 	kubectl apply -k deployments/k8s/local-kind
 
 k8s-kind-status:
-	kubectl -n stormrunner-local get pods,svc,pvc
+	kubectl -n apexload-local get pods,svc,pvc
 
 k8s-kind-delete:
 	kubectl delete -k deployments/k8s/local-kind --ignore-not-found=true

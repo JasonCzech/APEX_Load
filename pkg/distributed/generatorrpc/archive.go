@@ -10,15 +10,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/engine"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 	local "github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/writer"
 )
 
-const archiveSchemaVersion = "stormrunner.archive.v1"
+const archiveSchemaVersion = "apexload.archive.v1"
 
 type archiveManifest struct {
 	SchemaVersion                string    `json:"schema_version"`
@@ -349,7 +349,7 @@ func archiveArtifactNames(manifest *archiveManifest) []string {
 }
 
 func resolveArchiveRoot() string {
-	if dir := os.Getenv("STORMRUNNER_ARCHIVE_DIR"); dir != "" {
+	if dir := os.Getenv("APEXLOAD_ARCHIVE_DIR"); dir != "" {
 		return dir
 	}
 	return filepath.Join("artifacts", "archives")

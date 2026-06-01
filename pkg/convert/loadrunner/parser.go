@@ -14,12 +14,25 @@ type ParsedFunction struct {
 	StepName   string            // The first string argument (step name)
 	Args       map[string]string // Named key-value arguments extracted from ITEMDATA/LAST pairs
 	RawArgs    []string          // Raw string arguments in order
+	CallArgs   []ParsedArgument  // Structured top-level C call arguments in order
 	Headers    map[string]string // Extracted header key-value pairs
 	Body       string            // Request body if present
 	Method     string            // HTTP method (for web_custom_request)
 	URL        string            // Target URL
 	Action     string            // Action/target URL for form submissions
 	LineNumber int               // Source line number for diagnostics
+	Filename   string            // Source file containing the function
+	EndLine    int               // Source line where the function call ends
+	RawBlock   string            // Original source block for source review
+}
+
+// ParsedArgument represents a single top-level C function call argument.
+type ParsedArgument struct {
+	Raw        string `json:"raw,omitempty"`
+	Value      string `json:"value,omitempty"`
+	Kind       string `json:"kind,omitempty"` // string, key_value, number, identifier, macro, nested_call, expression
+	Name       string `json:"name,omitempty"`
+	NestedCall string `json:"nested_call,omitempty"`
 }
 
 // ParsedAction represents a parsed .c action file.
@@ -41,8 +54,8 @@ type ProjectConfig struct {
 
 // regex patterns for LoadRunner C function parsing
 var (
-	// Matches function calls like: web_url("StepName", ...)
-	reFuncCall = regexp.MustCompile(`^\s*((?:web|lr)_[A-Za-z0-9_]+)\s*\(`)
+	// Matches VuGen C function calls such as web_url, lrd_stmt, ftp_command, or sapgui_*.
+	reFuncCall = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 
 	// Matches key=value patterns inside ITEMDATA sections
 	reKeyValue = regexp.MustCompile(`"([^"]+)=([^"]*)"`)
@@ -85,6 +98,7 @@ func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	lineNum := 0
 	var currentBlock strings.Builder
+	var rawBlock strings.Builder
 	inBlock := false
 	blockStartLine := 0
 
@@ -107,26 +121,30 @@ func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 			}
 		}
 
-		// Check if this line starts a recognized function call
-		if !inBlock && reFuncCall.MatchString(trimmed) {
+		// Check if this line starts a recognized VuGen function call.
+		if !inBlock && reFuncCall.MatchString(trimmed) && !isCControlCall(trimmed) {
 			inBlock = true
 			blockStartLine = lineNum
 			currentBlock.Reset()
+			rawBlock.Reset()
 		}
 
 		if inBlock {
 			currentBlock.WriteString(trimmed)
 			currentBlock.WriteString(" ")
+			rawBlock.WriteString(line)
+			rawBlock.WriteString("\n")
 
 			// Check if the block is complete (ends with ");")
 			blockStr := currentBlock.String()
 			if strings.Contains(blockStr, ");") {
-				fn, err := parseFunctionBlock(blockStr, blockStartLine)
+				fn, err := parseFunctionBlock(blockStr, filename, blockStartLine, lineNum, rawBlock.String())
 				if err == nil {
 					parsed.Functions = append(parsed.Functions, fn)
 				}
 				inBlock = false
 				currentBlock.Reset()
+				rawBlock.Reset()
 			}
 		}
 	}
@@ -134,12 +152,28 @@ func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 	return parsed, nil
 }
 
+func isCControlCall(line string) bool {
+	match := reFuncCall.FindStringSubmatch(line)
+	if len(match) < 2 {
+		return false
+	}
+	switch strings.ToLower(match[1]) {
+	case "if", "for", "while", "switch", "return", "sizeof":
+		return true
+	default:
+		return false
+	}
+}
+
 // parseFunctionBlock parses a complete function call block.
-func parseFunctionBlock(block string, lineNum int) (ParsedFunction, error) {
+func parseFunctionBlock(block string, filename string, lineNum int, endLine int, rawBlock string) (ParsedFunction, error) {
 	fn := ParsedFunction{
 		Args:       make(map[string]string),
 		Headers:    make(map[string]string),
 		LineNumber: lineNum,
+		Filename:   filename,
+		EndLine:    endLine,
+		RawBlock:   strings.TrimRight(rawBlock, "\n"),
 	}
 
 	// Extract function name
@@ -157,10 +191,11 @@ func parseFunctionBlock(block string, lineNum int) (ParsedFunction, error) {
 		inner = inner[:endIdx]
 	}
 
-	// Extract all string arguments
-	allStrings := reStringArg.FindAllStringSubmatch(inner, -1)
-	for _, m := range allStrings {
-		fn.RawArgs = append(fn.RawArgs, m[1])
+	fn.CallArgs = parseCFunctionArguments(inner)
+	for _, arg := range fn.CallArgs {
+		if arg.Kind == "string" || arg.Kind == "key_value" {
+			fn.RawArgs = append(fn.RawArgs, arg.Value)
+		}
 	}
 
 	switch fn.Name {
@@ -182,6 +217,8 @@ func parseFunctionBlock(block string, lineNum int) (ParsedFunction, error) {
 		if len(fn.RawArgs) > 0 {
 			fn.StepName = fn.RawArgs[0]
 		}
+	case "lr_continue_on_error", "lr_error_message", "lr_exit", "web_cache_cleanup", "web_cleanup_cookies", "web_set_sockets_option", "web_set_timeout":
+		parseLoadRunnerRuntimeControl(&fn, inner)
 	case "web_add_header", "web_add_auto_header":
 		parseWebAddHeader(&fn, inner)
 	default:
@@ -191,6 +228,165 @@ func parseFunctionBlock(block string, lineNum int) (ParsedFunction, error) {
 	}
 
 	return fn, nil
+}
+
+func parseLoadRunnerRuntimeControl(fn *ParsedFunction, inner string) {
+	if len(fn.RawArgs) > 0 {
+		fn.StepName = fn.RawArgs[0]
+	}
+	extractNamedArgs(fn, inner)
+
+	for index, arg := range splitCFunctionArgs(inner) {
+		cleaned := cleanCArgument(arg)
+		if cleaned == "" {
+			continue
+		}
+		fn.Args[fmt.Sprintf("arg%d", index+1)] = cleaned
+		if fn.Args["value"] == "" {
+			fn.Args["value"] = cleaned
+		}
+	}
+}
+
+func parseCFunctionArguments(inner string) []ParsedArgument {
+	rawArgs := splitCFunctionArgs(inner)
+	args := make([]ParsedArgument, 0, len(rawArgs))
+	for _, raw := range rawArgs {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue
+		}
+		arg := ParsedArgument{Raw: trimmed}
+		cleaned := cleanConfigValue(trimmed)
+		arg.Value = cleaned
+		switch {
+		case isQuotedCString(trimmed):
+			arg.Kind = "string"
+			if key, value, ok := splitLoadRunnerKeyValue(cleaned); ok {
+				arg.Kind = "key_value"
+				arg.Name = key
+				arg.Value = value
+			}
+		case strings.EqualFold(cleaned, "LAST") || strings.EqualFold(cleaned, "ITEMDATA") || strings.EqualFold(cleaned, "ENDITEM"):
+			arg.Kind = "macro"
+		case looksLikeNestedCCall(cleaned):
+			arg.Kind = "nested_call"
+			arg.NestedCall = cleaned[:strings.Index(cleaned, "(")]
+		case isNumericCArgument(cleaned):
+			arg.Kind = "number"
+		case isIdentifierCArgument(cleaned):
+			arg.Kind = "identifier"
+		default:
+			arg.Kind = "expression"
+		}
+		args = append(args, arg)
+	}
+	return args
+}
+
+func isQuotedCString(value string) bool {
+	if len(value) < 2 {
+		return false
+	}
+	first := value[0]
+	last := value[len(value)-1]
+	return (first == '"' && last == '"') || (first == '\'' && last == '\'')
+}
+
+func splitLoadRunnerKeyValue(value string) (string, string, bool) {
+	parts := strings.SplitN(value, "=", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	key := strings.TrimSpace(parts[0])
+	if key == "" || strings.ContainsAny(key, " \t\r\n") {
+		return "", "", false
+	}
+	return key, strings.TrimSpace(parts[1]), true
+}
+
+func looksLikeNestedCCall(value string) bool {
+	open := strings.Index(value, "(")
+	close := strings.LastIndex(value, ")")
+	if open <= 0 || close <= open {
+		return false
+	}
+	return isIdentifierCArgument(strings.TrimSpace(value[:open]))
+}
+
+func isNumericCArgument(value string) bool {
+	if value == "" {
+		return false
+	}
+	if _, err := strconv.ParseFloat(value, 64); err == nil {
+		return true
+	}
+	return false
+}
+
+func isIdentifierCArgument(value string) bool {
+	if value == "" {
+		return false
+	}
+	for i, r := range value {
+		if i == 0 {
+			if r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') {
+				return false
+			}
+			continue
+		}
+		if r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func splitCFunctionArgs(inner string) []string {
+	args := make([]string, 0)
+	var current strings.Builder
+	inString := false
+	escaped := false
+	depth := 0
+
+	for _, r := range inner {
+		switch {
+		case escaped:
+			current.WriteRune(r)
+			escaped = false
+			continue
+		case inString && r == '\\':
+			current.WriteRune(r)
+			escaped = true
+			continue
+		case r == '"':
+			inString = !inString
+			current.WriteRune(r)
+			continue
+		case !inString && (r == '(' || r == '[' || r == '{'):
+			depth++
+		case !inString && (r == ')' || r == ']' || r == '}') && depth > 0:
+			depth--
+		case !inString && depth == 0 && r == ',':
+			args = append(args, current.String())
+			current.Reset()
+			continue
+		}
+		current.WriteRune(r)
+	}
+
+	if strings.TrimSpace(current.String()) != "" {
+		args = append(args, current.String())
+	}
+	return args
+}
+
+func cleanCArgument(value string) string {
+	cleaned := cleanConfigValue(value)
+	if strings.EqualFold(cleaned, "LAST") {
+		return ""
+	}
+	return cleaned
 }
 
 func parseWebURL(fn *ParsedFunction, inner string) {
@@ -369,7 +565,7 @@ func ParseConfigSections(content string) map[string]map[string]string {
 		if _, ok := sections[section]; !ok {
 			sections[section] = make(map[string]string)
 		}
-		sections[section][strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+		sections[section][strings.TrimSpace(parts[0])] = cleanConfigValue(parts[1])
 	}
 
 	if len(sections[""]) == 0 {
@@ -405,7 +601,7 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 			continue
 		}
 		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
+		value := cleanConfigValue(parts[1])
 		if cfg.RuntimeFile == "" && strings.HasSuffix(strings.ToLower(value), ".cfg") {
 			cfg.RuntimeFile = value
 		}
@@ -441,6 +637,18 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 	}
 
 	return cfg, nil
+}
+
+func cleanConfigValue(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) >= 2 {
+		first := trimmed[0]
+		last := trimmed[len(trimmed)-1]
+		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+			trimmed = trimmed[1 : len(trimmed)-1]
+		}
+	}
+	return strings.TrimSpace(trimmed)
 }
 
 // extractThinkTime extracts think time value in seconds from an lr_think_time call.

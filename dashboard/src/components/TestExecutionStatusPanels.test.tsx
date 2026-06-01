@@ -39,6 +39,8 @@ describe('TestExecutionStatusPanels', () => {
             target_average_tps: 150,
             suggested_total_vusers: 36,
             max_error_count: 25,
+            server_processing_breached: true,
+            transfer_breached: false,
             breach_active: true,
             breach_duration_sec: 45,
             stop_triggered: true,
@@ -57,6 +59,8 @@ describe('TestExecutionStatusPanels', () => {
               target_average_tps: 150,
               p95_latency_ms: 800,
               max_error_pct: 2.5,
+              max_avg_server_processing_ms: 450,
+              max_avg_transfer_ms: 120,
               max_error_count: 25,
               min_vusers: 20,
               max_vusers: 50,
@@ -77,12 +81,18 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('800 ms')
     expect(container.textContent).toContain('Max Error %')
     expect(container.textContent).toContain('2.5%')
+    expect(container.textContent).toContain('Server Processing Ceiling')
+    expect(container.textContent).toContain('450 ms')
+    expect(container.textContent).toContain('Transfer Ceiling')
+    expect(container.textContent).toContain('120 ms')
     expect(container.textContent).toContain('Max Error Count')
     expect(container.textContent).toContain('25')
     expect(container.textContent).toContain('Breach Duration')
     expect(container.textContent).toContain('45s')
     expect(container.textContent).toContain('Stop Reason')
     expect(container.textContent).toContain('sla breach')
+    expect(container.textContent).toContain('Server processing breached')
+    expect(container.textContent).toContain('Transfer healthy')
   })
 
   it('renders telemetry freshness and websocket health details when available', async () => {
@@ -147,5 +157,247 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('3')
     expect(container.textContent).toContain('WS Drops')
     expect(container.textContent).toContain('Degraded')
+  })
+
+  it('renders browser UX signals and per-device summaries when available', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionStatusPanels
+          isGoalOriented={false}
+          goalDescription=""
+          test={{
+            id: 'test-1',
+            name: 'Browser Run',
+            status: 'RUNNING',
+            total_vusers: 4,
+            duration: '5m',
+            created_at: '2026-05-12T20:00:00Z',
+            groups: [],
+          } as never}
+          metrics={{
+            browser: {
+              samples: 3,
+              avg_fcp_ms: 120,
+              avg_lcp_ms: 240,
+              avg_cls_score: 0.034,
+              avg_inp_ms: 52,
+              avg_long_task_count: 1.3,
+              avg_blocking_resources: 2,
+              avg_js_heap_used_mb: 18,
+            },
+            browser_by_device: {
+              iphone_se: {
+                device_profile: 'iphone_se',
+                device_platform: 'ios',
+                device_tier: 'low',
+                browser_engine: 'webkit',
+                samples: 2,
+                avg_fcp_ms: 130,
+                avg_lcp_ms: 260,
+                avg_cls_score: 0.041,
+                avg_inp_ms: 58,
+              },
+            },
+          }}
+          isMultiGroup={false}
+          groupMetrics={[]}
+          groupColors={[]}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Browser UX Signals')
+    expect(container.textContent).toContain('Avg FCP')
+    expect(container.textContent).toContain('120.0 ms')
+    expect(container.textContent).toContain('Avg CLS')
+    expect(container.textContent).toContain('0.034')
+    expect(container.textContent).toContain('iphone_se')
+    expect(container.textContent).toContain('iOS · WebKit · low tier')
+    const deviceTierTexts = Array.from(container.querySelectorAll('.browser-device-tier')).map(node => node.textContent)
+    expect(deviceTierTexts).toEqual(['iOS · WebKit · low tier'])
+    expect(container.textContent).toContain('FCP 130.0 ms')
+  })
+
+  it('renders throughput tracking and group target miss details when throughput targets are available', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionStatusPanels
+          isGoalOriented={false}
+          goalDescription=""
+          test={{
+            id: 'test-1',
+            name: 'Throughput Run',
+            status: 'RUNNING',
+            total_vusers: 8,
+            duration: '5m',
+            created_at: '2026-05-12T20:00:00Z',
+            groups: [],
+          } as never}
+          metrics={{
+            tps: 180,
+            target_tps: 250,
+            throughput_gap_pct: 28,
+            throughput_target_missed: true,
+            active_vusers: 8,
+          }}
+          isMultiGroup={true}
+          groupMetrics={[
+            {
+              name: 'buyers',
+              vusers: 4,
+              transactions: 25,
+              errors: 1,
+              tps: 90,
+              target_tps: 120,
+              throughput_gap_pct: 25,
+              throughput_target_missed: true,
+              avg_response_ms: 220,
+              p50_ms: 180,
+              p90_ms: 310,
+              p99_ms: 480,
+            },
+          ]}
+          groupColors={['#f59e0b']}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Throughput Tracking')
+    expect(container.textContent).toContain('Configured arrival target versus delivered live throughput for this run.')
+    expect(container.textContent).toContain('Target TPS')
+    expect(container.textContent).toContain('250.0')
+    expect(container.textContent).toContain('Actual TPS')
+    expect(container.textContent).toContain('180.0')
+    expect(container.textContent).toContain('Gap')
+    expect(container.textContent).toContain('28.0%')
+    expect(container.textContent).toContain('Behind Target')
+    expect(container.textContent).toContain('Target 120.0 TPS')
+    expect(container.textContent).toContain('Gap 25.0%')
+  })
+
+  it('renders live capacity allocation, saturation, queue, and placement signals', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionStatusPanels
+          isGoalOriented={false}
+          goalDescription=""
+          test={{
+            id: 'test-1',
+            name: 'Capacity Run',
+            status: 'PENDING',
+            total_vusers: 1200,
+            duration: '15m',
+            created_at: '2026-05-12T20:00:00Z',
+            assignment: {
+              mode: 'region_weighted',
+              region_weights: { east: 2, west: 1 },
+            },
+            groups: [
+              { name: 'buyers', script_id: 'script-1', script_name: 'HTTP', protocol: 'http', vusers: 900 },
+              { name: 'canaries', script_id: 'script-2', script_name: 'Browser', protocol: 'browser', vusers: 300 },
+            ],
+            capacity_advisory: {
+              total_vusers: 1200,
+              duration_seconds: 900,
+              baseline_window_enabled: false,
+              workload_class: 'mixed',
+              headroom_pct: 20,
+              complexity_score: 1.4,
+              bottleneck: 'vusers',
+              recommended_generators: 4,
+              available_generators: 3,
+              shortfall_generators: 1,
+              requires_override: true,
+              estimated_per_vuser: { cpu_cores: 0.001, memory_mb: 0.5, network_mbps: 0.01 },
+              estimated_total: { cpu_cores: 1.2, memory_mb: 600, network_mbps: 12 },
+              usable_per_generator: { cpu_cores: 3.2, memory_mb: 6400, network_mbps: 800 },
+              dimension_recommendations: { cpu: 1, memory: 1, network: 1, vusers: 4 },
+            },
+          } as never}
+          metrics={{ active_vusers: 0 }}
+          isMultiGroup={false}
+          groupMetrics={[]}
+          groupColors={[]}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Live Capacity')
+    expect(container.textContent).toContain('Rejected Demand')
+    expect(container.textContent).toContain('Allocated VUsers')
+    expect(container.textContent).toContain('Available Generators')
+    expect(container.textContent).toContain('Recommended')
+    expect(container.textContent).toContain('Saturated')
+    expect(container.textContent).toContain('Queued Demand')
+    expect(container.textContent).toContain('Rejected Demand')
+    expect(container.textContent).toContain('http: 900 VUsers')
+    expect(container.textContent).toContain('browser: 300 VUsers')
+    expect(container.textContent).toContain('east: 800 VUsers')
+    expect(container.textContent).toContain('west: 400 VUsers')
+  })
+
+  it('prefers live capacity status breakdowns when metrics provide them', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionStatusPanels
+          isGoalOriented={false}
+          goalDescription=""
+          test={{
+            id: 'test-1',
+            name: 'Live Capacity Run',
+            status: 'RUNNING',
+            total_vusers: 900,
+            duration: '15m',
+            created_at: '2026-05-12T20:00:00Z',
+            groups: [],
+            capacity_advisory: {
+              total_vusers: 900,
+              duration_seconds: 900,
+              baseline_window_enabled: false,
+              headroom_pct: 20,
+              complexity_score: 1,
+              bottleneck: 'vusers',
+              recommended_generators: 2,
+              available_generators: 4,
+              estimated_per_vuser: { cpu_cores: 0.001, memory_mb: 0.5, network_mbps: 0.01 },
+              estimated_total: { cpu_cores: 0.9, memory_mb: 450, network_mbps: 9 },
+              usable_per_generator: { cpu_cores: 3.2, memory_mb: 6400, network_mbps: 800 },
+              dimension_recommendations: { cpu: 1, memory: 1, network: 1, vusers: 2 },
+            },
+          } as never}
+          metrics={{
+            active_vusers: 900,
+            capacity_status: {
+              allocated_vusers: 900,
+              available_generators: 4,
+              recommended_generators: 2,
+              saturated: false,
+              queued_vusers: 300,
+              rejected_vusers: 100,
+              by_protocol: {
+                http: { allocated_vusers: 900, queued_vusers: 200 },
+                browser: { rejected_vusers: 100 },
+              },
+              by_region: {
+                east: { allocated_vusers: 600, queued_vusers: 200 },
+                west: { allocated_vusers: 300, rejected_vusers: 100 },
+              },
+            },
+          }}
+          isMultiGroup={false}
+          groupMetrics={[]}
+          groupColors={[]}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Queued Demand')
+    expect(container.textContent).toContain('300')
+    expect(container.textContent).toContain('Rejected Demand')
+    expect(container.textContent).toContain('100')
+    expect(container.textContent).toContain('http: 1,100 VUsers')
+    expect(container.textContent).toContain('browser: 100 VUsers')
+    expect(container.textContent).toContain('east: 800 VUsers')
+    expect(container.textContent).toContain('west: 400 VUsers')
   })
 })

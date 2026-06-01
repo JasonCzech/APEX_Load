@@ -2,6 +2,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 import { DraftCapacityEstimate } from '../types'
 import { formatTimeCompact } from '../utils/timeUtils'
+import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 
 interface PreviewGroup {
   name: string
@@ -41,25 +42,28 @@ export default function CreateTestCapacityPreview({ chartData, groups, draftEsti
     <div className="load-profile-preview">
       <div className="chart-container">
         <ResponsiveContainer width="100%" height={160}>
-          <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 18, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
             <XAxis
               dataKey="time"
               tickFormatter={(value) => formatTimeCompact(value)}
               stroke="var(--text-muted)"
               fontSize={10}
+              height={36}
               tickLine={false}
-              label={{ value: 'Time', position: 'insideBottomRight', offset: -5, fontSize: 10, fill: 'var(--text-muted)' }}
+              label={{ value: 'Elapsed time', position: 'insideBottom', offset: -4, fontSize: 10, fill: 'var(--text-muted)' }}
             />
             <YAxis
               stroke="var(--text-muted)"
               fontSize={10}
+              width={64}
               tickLine={false}
-              label={{ value: 'VUsers', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fill: 'var(--text-muted)' }}
+              label={{ value: 'VUsers', angle: -90, position: 'left', fontSize: 10, fill: 'var(--text-muted)' }}
             />
             <Tooltip
               labelFormatter={(value) => `Time: ${formatTimeCompact(value)}`}
-              contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', fontSize: '12px' }}
+              contentStyle={{ ...chartTooltipContentStyle, fontSize: '12px' }}
+              labelStyle={chartTooltipLabelStyle}
               itemStyle={{ padding: '2px 0' }}
             />
             {groups.map((group, index) => (

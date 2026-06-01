@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestParameterRuntime_CounterUpdateModes(t *testing.T) {
@@ -39,6 +39,40 @@ func TestParameterRuntime_CounterUpdateModes(t *testing.T) {
 	}
 }
 
+func TestParameterRuntime_LoadRunnerNativeParameters(t *testing.T) {
+	runtime := NewParameterRuntime([]dsl.Parameter{
+		{Name: "iteration", Type: "current_iteration", Update: "each_iteration", PadWidth: 4},
+		{Name: "lr_iteration_alias", Type: "CurrentIteration", Update: "each_iteration"},
+		{Name: "lg_name", Type: "host", Update: "once", Values: []string{"lg-01"}},
+		{Name: "fallback_lg_name", Type: "Host", Update: "once"},
+		{Name: "clock", Type: "time", Update: "each_occurrence", Format: "15:04:05", Timezone: "UTC"},
+	}, nil, 0)
+	runtime.now = func() time.Time {
+		return time.Date(2024, 3, 4, 5, 6, 7, 0, time.UTC)
+	}
+	runtime.Prime()
+
+	if got, _ := runtime.ResolveNamed("iteration"); got != "0001" {
+		t.Fatalf("iteration initial = %q, want 0001", got)
+	}
+	runtime.RefreshIteration()
+	if got, _ := runtime.ResolveNamed("iteration"); got != "0002" {
+		t.Fatalf("iteration second = %q, want 0002", got)
+	}
+	if got, _ := runtime.ResolveNamed("lr_iteration_alias"); got != "2" {
+		t.Fatalf("lr_iteration_alias after refresh = %q, want 2", got)
+	}
+	if got, _ := runtime.ResolveNamed("lg_name"); got != "lg-01" {
+		t.Fatalf("lg_name = %q, want lg-01", got)
+	}
+	if got, ok := runtime.ResolveNamed("fallback_lg_name"); !ok || got == "" {
+		t.Fatalf("fallback_lg_name = %q, %v; want non-empty host value", got, ok)
+	}
+	if got, _ := runtime.ResolveNamed("clock"); got != "05:06:07" {
+		t.Fatalf("clock = %q, want 05:06:07", got)
+	}
+}
+
 func TestParameterRuntime_DataSourceParameter(t *testing.T) {
 	provider, err := NewDataProvider([]dsl.DataSource{{
 		Name:           "users",
@@ -66,6 +100,92 @@ func TestParameterRuntime_DataSourceParameter(t *testing.T) {
 	runtime.RefreshIteration()
 	if got, _ := runtime.ResolveNamed("username"); got != "bob" {
 		t.Fatalf("username second iteration = %q, want bob", got)
+	}
+}
+
+func TestParameterRuntime_SameLineParameterUsesReferencedRow(t *testing.T) {
+	seed := int64(17)
+	provider, err := NewDataProvider([]dsl.DataSource{{
+		Name:           "users",
+		Type:           "csv",
+		InlineData:     "username,password\nalice,a-pass\nbob,b-pass\ncarol,c-pass\n",
+		FirstRowHeader: true,
+	}})
+	if err != nil {
+		t.Fatalf("NewDataProvider: %v", err)
+	}
+
+	runtime := NewParameterRuntime([]dsl.Parameter{
+		{
+			Name:       "password",
+			Type:       "file",
+			DataSource: "users",
+			Column:     "password",
+			Selection:  "random",
+			SameLineAs: "username",
+			Update:     "each_iteration",
+		},
+		{
+			Name:       "username",
+			Type:       "file",
+			DataSource: "users",
+			Column:     "username",
+			Selection:  "random",
+			Update:     "each_iteration",
+			Seed:       &seed,
+		},
+	}, provider, 0)
+	runtime.Prime()
+
+	expectedPassword := map[string]string{
+		"alice": "a-pass",
+		"bob":   "b-pass",
+		"carol": "c-pass",
+	}
+	for iteration := 0; iteration < 6; iteration++ {
+		username, userOK := runtime.ResolveNamed("username")
+		password, passwordOK := runtime.ResolveNamed("password")
+		if !userOK || !passwordOK {
+			t.Fatalf("iteration %d ResolveNamed ok = %v/%v, want both true", iteration, userOK, passwordOK)
+		}
+		if password != expectedPassword[username] {
+			t.Fatalf("iteration %d password = %q for username %q, want %q", iteration, password, username, expectedPassword[username])
+		}
+		runtime.RefreshIteration()
+	}
+}
+
+func TestParameterRuntime_TrimsFileParameterValuesBeforeInterpolation(t *testing.T) {
+	vu := &VUser{
+		Variables: map[string]string{},
+		Script: &dsl.Script{
+			Parameters: []dsl.Parameter{{
+				Name:      "url",
+				Type:      "file",
+				Values:    []string{"https://csi-gw-ext.att.com:443 \r\n"},
+				Selection: "sequential",
+				Update:    "each_iteration",
+			}},
+		},
+	}
+	vu.Parameters = NewParameterRuntime(vu.Script.Parameters, nil, 0)
+	vu.Parameters.Prime()
+
+	if got := vu.interpolate("{{var.url}}/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws"); got != "https://csi-gw-ext.att.com:443/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws" {
+		t.Fatalf("interpolated URL = %q", got)
+	}
+}
+
+func TestParameterRuntime_ResolvesParameterNamesCaseInsensitively(t *testing.T) {
+	runtime := NewParameterRuntime([]dsl.Parameter{{
+		Name:   "url",
+		Type:   "list",
+		Values: []string{"https://csi-gw-ext.att.com:443"},
+	}}, nil, 0)
+	runtime.Prime()
+
+	if got, ok := runtime.ResolveNamed("URL"); !ok || got != "https://csi-gw-ext.att.com:443" {
+		t.Fatalf("ResolveNamed(\"URL\") = %q, %v", got, ok)
 	}
 }
 
@@ -108,5 +228,16 @@ func TestVUser_Interpolate_ParametersAndFunctions(t *testing.T) {
 	uuidPattern := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 	if !uuidPattern.MatchString(uuidValue) {
 		t.Fatalf("fn.uuid() interpolation returned non-uuid value: %q", uuidValue)
+	}
+
+	fakeUUIDValue := vu.interpolate("{{fake.uuid}}")
+	if !uuidPattern.MatchString(fakeUUIDValue) {
+		t.Fatalf("fake.uuid interpolation returned non-uuid value: %q", fakeUUIDValue)
+	}
+
+	fakeEmailValue := vu.interpolate("{{fake.email}}")
+	fakeEmailPattern := regexp.MustCompile(`^[a-z0-9]{12}@example\.test$`)
+	if !fakeEmailPattern.MatchString(fakeEmailValue) {
+		t.Fatalf("fake.email interpolation returned unexpected value: %q", fakeEmailValue)
 	}
 }

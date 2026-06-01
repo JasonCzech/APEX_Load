@@ -1,0 +1,49 @@
+name: APEX Load Performance Test
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      vusers:
+        description: 'Number of Virtual Users'
+        required: true
+        default: '50'
+      duration:
+        description: 'Test Duration'
+        required: true
+        default: '5m'
+
+jobs:
+  performance-test:
+    if: github.event.deployment_status.state == 'success' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Pre-build apexctl (if needed)
+      run: go build -o bin/apexctl ./cmd/apexctl
+
+    - name: Run APEX Load Load Test
+      env:
+        APEXLOAD_URL: ${{ secrets.APEXLOAD_URL }}
+      run: |
+        ./bin/apexctl run \
+          --api "$APEXLOAD_URL" \
+          --script tests/performance/primary-flow.json \
+          --vusers ${{ github.event.inputs.vusers || 50 }} \
+          --duration ${{ github.event.inputs.duration || '5m' }} \
+          --format json > results.json
+
+    - name: Upload Test Results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: apexload-results
+        path: results.json

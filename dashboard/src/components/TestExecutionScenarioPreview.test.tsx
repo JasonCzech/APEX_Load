@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, useState } from 'react'
+import { act, type ReactNode, useState } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -9,14 +9,15 @@ import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('recharts', () => {
-  const Mock = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>
+  const Mock = ({ children }: { children?: ReactNode }) => <div>{children}</div>
+  const labelText = (label?: string | { value?: string }) => (typeof label === 'string' ? label : label?.value ?? '')
 
   return {
     ResponsiveContainer: Mock,
     AreaChart: Mock,
     Area: () => null,
-    XAxis: () => null,
-    YAxis: () => null,
+    XAxis: ({ label }: { label?: string | { value?: string } }) => <div data-testid="mock-x-axis" data-label={labelText(label)} />,
+    YAxis: ({ label }: { label?: string | { value?: string } }) => <div data-testid="mock-y-axis" data-label={labelText(label)} />,
     CartesianGrid: () => null,
     Tooltip: () => null,
     Legend: () => null,
@@ -73,6 +74,17 @@ describe('TestExecutionScenarioPreview', () => {
               stop_on_max_errors: true,
               sla_breach_window: '45s',
             },
+            runtime_settings: {
+              pacing: { type: 'fixed_delay', delay_ms: 1200 },
+              think_time: { type: 'fixed', mean_ms: 900 },
+              browser: {
+                device_profile: 'iphone_se',
+                orientation: 'portrait',
+                touch_mode: true,
+                headless: false,
+              },
+              error_handling: { continue_on_error: true, snapshot_on_error: true },
+            },
             created_at: '2026-05-12T20:00:00Z',
             groups: [{
               name: 'Checkout',
@@ -87,9 +99,12 @@ describe('TestExecutionScenarioPreview', () => {
             }],
           } as never}
           startCapacityConflict={null}
+          startShakeoutConflict={null}
           startFeedback=""
           onDismissStartConflict={vi.fn()}
           onConfirmStartAnyway={vi.fn()}
+          onContinueAfterShakeoutFailure={vi.fn()}
+          onCancelShakeoutRun={vi.fn()}
           queuedScenarioPreview={{
             points: [{ second: 0, group0: 10, total: 10 }],
             totalVUsers: 10,
@@ -159,6 +174,16 @@ describe('TestExecutionScenarioPreview', () => {
     expect(container.textContent).toContain('45s')
     expect(container.textContent).toContain('Stop On SLA Breach')
     expect(container.textContent).toContain('Stop On Max Errors')
+    expect(container.textContent).toContain('Pacing')
+    expect(container.textContent).toContain('Fixed delay · 1200ms')
+    expect(container.textContent).toContain('Think Time')
+    expect(container.textContent).toContain('fixed · 900ms')
+    expect(container.textContent).toContain('Browser Runtime')
+    expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
+    expect(container.textContent).toContain('Continue On Error')
+    expect(container.textContent).toContain('Enabled')
+    expect(container.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('Elapsed time')
+    expect(container.querySelector('[data-testid="mock-y-axis"]')?.getAttribute('data-label')).toBe('VUsers')
 
     const nestingWarning = consoleErrorSpy.mock.calls.some(([message]) =>
       typeof message === 'string' && message.includes('validateDOMNesting'),
@@ -183,5 +208,139 @@ describe('TestExecutionScenarioPreview', () => {
 
     expect(onEditScript).toHaveBeenCalledWith('script-1')
     expect(onExpandedScenarioScriptChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows pending queue metadata for queued starts waiting on capacity', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionScenarioPreview
+          test={{
+            id: 'test-pending',
+            name: 'Pending Scenario',
+            status: 'PENDING',
+            total_vusers: 10,
+            duration: '5m',
+            created_at: '2026-05-12T20:00:00Z',
+            pending_since: '2026-05-12T20:01:00Z',
+            queue_position: 2,
+            pending_reason: 'waiting for project test slot (1 max concurrent tests)',
+            groups: [{
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'http',
+              vusers: 10,
+            }],
+          } as never}
+          startCapacityConflict={null}
+          startShakeoutConflict={null}
+          startFeedback=""
+          onDismissStartConflict={vi.fn()}
+          onConfirmStartAnyway={vi.fn()}
+          onContinueAfterShakeoutFailure={vi.fn()}
+          onCancelShakeoutRun={vi.fn()}
+          queuedScenarioPreview={{
+            points: [],
+            totalVUsers: 10,
+            totalSeconds: 300,
+            steadySeconds: 300,
+            startDelaySeconds: 0,
+            preBaselineSeconds: 0,
+            postBaselineSeconds: 0,
+          }}
+          queuedScenarioRows={[]}
+          scriptDetailsLoading={false}
+          scriptDetailsError=""
+          expandedScenarioScript={null}
+          onExpandedScenarioScriptChange={vi.fn()}
+          onEditScript={vi.fn()}
+          groupColors={['#0a84ff']}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Queued for project capacity')
+    expect(container.textContent).toContain('Queue position #2')
+    expect(container.textContent).toContain('waiting for project test slot')
+    expect(container.textContent).toContain('Waiting since')
+  })
+
+  it('shows script shakeout evidence and routes continue or cancel actions', async () => {
+    const onContinueAfterShakeoutFailure = vi.fn()
+    const onCancelShakeoutRun = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <TestExecutionScenarioPreview
+          test={{
+            id: 'test-shakeout',
+            name: 'Shakeout Scenario',
+            status: 'SHAKEOUT_REVIEW',
+            script_shakeout: true,
+            total_vusers: 10,
+            duration: '5m',
+            created_at: '2026-05-12T20:00:00Z',
+            error: 'Script shakeout failed',
+            groups: [{
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'http',
+              vusers: 10,
+            }],
+          } as never}
+          startCapacityConflict={null}
+          startShakeoutConflict={{
+            passed: false,
+            summary: 'Script shakeout failed; full load test has not started.',
+            results: [{
+              group_name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              status: 'failed',
+              error: 'request Login returned 500',
+            }],
+          }}
+          startFeedback="Review the evidence before continuing."
+          onDismissStartConflict={vi.fn()}
+          onConfirmStartAnyway={vi.fn()}
+          onContinueAfterShakeoutFailure={onContinueAfterShakeoutFailure}
+          onCancelShakeoutRun={onCancelShakeoutRun}
+          queuedScenarioPreview={{
+            points: [],
+            totalVUsers: 10,
+            totalSeconds: 300,
+            steadySeconds: 300,
+            startDelaySeconds: 0,
+            preBaselineSeconds: 0,
+            postBaselineSeconds: 0,
+          }}
+          queuedScenarioRows={[]}
+          scriptDetailsLoading={false}
+          scriptDetailsError=""
+          expandedScenarioScript={null}
+          onExpandedScenarioScriptChange={vi.fn()}
+          onEditScript={vi.fn()}
+          groupColors={['#0a84ff']}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Script shakeout needs review')
+    expect(container.textContent).toContain('Checkout · Checkout Script')
+    expect(container.textContent).toContain('request Login returned 500')
+
+    const cancelButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Cancel Run'))
+    const continueButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Continue Full Load'))
+    expect(cancelButton).toBeDefined()
+    expect(continueButton).toBeDefined()
+
+    await act(async () => {
+      cancelButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      continueButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onCancelShakeoutRun).toHaveBeenCalledTimes(1)
+    expect(onContinueAfterShakeoutFailure).toHaveBeenCalledTimes(1)
   })
 })

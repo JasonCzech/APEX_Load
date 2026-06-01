@@ -3,19 +3,19 @@ package config
 import "time"
 
 type GeneratorConfig struct {
-	ListenAddr     string        `json:"listen_addr"`
-	MaxVUsers      int           `json:"max_vusers"`
-	MetricsBuffer  int           `json:"metrics_buffer"`
-	ControllerAddr string        `json:"controller_addr"`
+	ListenAddr        string        `json:"listen_addr"`
+	MaxVUsers         int           `json:"max_vusers"`
+	MetricsBuffer     int           `json:"metrics_buffer"`
+	ControllerAddr    string        `json:"controller_addr"`
 	HeartbeatInterval time.Duration `json:"heartbeat_interval"`
 }
 
 type ControllerConfig struct {
-	ListenAddr     string `json:"listen_addr"`
-	APIAddr        string `json:"api_addr"`
-	PostgresDSN    string `json:"postgres_dsn"`
-	RedisAddr      string `json:"redis_addr"`
-	MaxConcurrent  int    `json:"max_concurrent_tests"`
+	ListenAddr    string `json:"listen_addr"`
+	APIAddr       string `json:"api_addr"`
+	PostgresDSN   string `json:"postgres_dsn"`
+	RedisAddr     string `json:"redis_addr"`
+	MaxConcurrent int    `json:"max_concurrent_tests"`
 }
 
 func DefaultGeneratorConfig() GeneratorConfig {

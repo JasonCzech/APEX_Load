@@ -1,0 +1,118 @@
+package database
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
+)
+
+func TestDatabaseProtocolExecutesQueryAndAssertions(t *testing.T) {
+	db := &Database{}
+	if err := db.Init(context.Background(), map[string]any{
+		"database_driver":   "sqlite",
+		"database_dsn":      ":memory:",
+		"database_max_rows": float64(10),
+	}); err != nil {
+		t.Fatalf("init database: %v", err)
+	}
+	defer db.Teardown(context.Background())
+
+	for _, action := range []*protocol.Action{
+		{Name: "create", Type: "db_exec", Target: "create table users (id integer primary key, name text)"},
+		{Name: "insert", Type: "db_exec", Target: "insert into users(name) values (?)", Params: map[string]any{"binds": []any{"Ada"}}, Assertions: []protocol.Assertion{{Type: "rows_affected", Expected: 1}}},
+	} {
+		result, err := db.Execute(context.Background(), action)
+		if err != nil {
+			t.Fatalf("execute %s: %v", action.Name, err)
+		}
+		if !result.Success {
+			t.Fatalf("execute %s success = false: %s", action.Name, result.ErrorMessage)
+		}
+	}
+
+	result, err := db.Execute(context.Background(), &protocol.Action{
+		Name:       "query",
+		Type:       "db_query",
+		Target:     "select name from users where name = ?",
+		Params:     map[string]any{"binds": []any{"Ada"}},
+		Extractors: []protocol.Extractor{{Name: "selected_name", Source: "scalar", Type: "jsonpath", Expression: "$.scalar"}},
+		Assertions: []protocol.Assertion{{Type: "row_count", Expected: 1}, {Type: "scalar_equals", Expected: "Ada"}},
+	})
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("query failed: %s", result.ErrorMessage)
+	}
+	if result.DependencyType != "database" || result.DependencyTarget != "sqlite" {
+		t.Fatalf("dependency = %s/%s, want database/sqlite", result.DependencyType, result.DependencyTarget)
+	}
+	if !strings.Contains(result.ResponseBody, `"name":"Ada"`) || !strings.Contains(result.ResponseBody, `"row_count":1`) {
+		t.Fatalf("response body = %s, want Ada row", result.ResponseBody)
+	}
+	if result.Extractions["selected_name"] != "Ada" {
+		t.Fatalf("selected_name extraction = %q, want Ada", result.Extractions["selected_name"])
+	}
+	if result.ProtocolEvidence["protocol"] != "database" {
+		t.Fatalf("protocol evidence = %#v, want database", result.ProtocolEvidence)
+	}
+	rows, ok := result.ProtocolEvidence["rows"].(map[string]any)
+	if !ok || rows["row_count"] == nil || rows["scalar"] != "Ada" {
+		t.Fatalf("protocol evidence rows = %#v, want row_count and scalar Ada", result.ProtocolEvidence["rows"])
+	}
+}
+
+func TestDatabaseProtocolTransactionsAndRollback(t *testing.T) {
+	db := &Database{}
+	if err := db.Init(context.Background(), map[string]any{
+		"database_driver":         "sqlite",
+		"database_dsn":            "file:apexload_tx_test?mode=memory&cache=shared",
+		"database_max_open_conns": float64(1),
+	}); err != nil {
+		t.Fatalf("init database: %v", err)
+	}
+	defer db.Teardown(context.Background())
+
+	_, _ = db.Execute(context.Background(), &protocol.Action{Name: "create", Type: "db_exec", Target: "create table items (id integer)"})
+	if result, _ := db.Execute(context.Background(), &protocol.Action{Name: "begin", Type: "db_begin"}); !result.Success {
+		t.Fatalf("begin failed: %s", result.ErrorMessage)
+	}
+	if result, _ := db.Execute(context.Background(), &protocol.Action{Name: "insert", Type: "db_exec", Target: "insert into items(id) values (1)"}); !result.Success {
+		t.Fatalf("insert failed: %s", result.ErrorMessage)
+	}
+	if result, _ := db.Execute(context.Background(), &protocol.Action{Name: "rollback", Type: "db_rollback"}); !result.Success {
+		t.Fatalf("rollback failed: %s", result.ErrorMessage)
+	}
+	result, _ := db.Execute(context.Background(), &protocol.Action{Name: "query", Type: "db_query", Target: "select id from items"})
+	if !result.Success || !strings.Contains(result.ResponseBody, `"row_count":0`) {
+		t.Fatalf("query after rollback = success %v body %s err %s, want zero rows", result.Success, result.ResponseBody, result.ErrorMessage)
+	}
+}
+
+func TestDatabaseProtocolReadOnlyBlocksMutations(t *testing.T) {
+	db := &Database{}
+	if err := db.Init(context.Background(), map[string]any{
+		"database_driver":    "sqlite",
+		"database_dsn":       ":memory:",
+		"database_read_only": true,
+	}); err != nil {
+		t.Fatalf("init database: %v", err)
+	}
+	defer db.Teardown(context.Background())
+
+	result, err := db.Execute(context.Background(), &protocol.Action{Name: "create", Type: "db_exec", Target: "create table blocked (id integer)"})
+	if err != nil {
+		t.Fatalf("execute readonly mutation: %v", err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "read_only") {
+		t.Fatalf("result = %#v, want read_only block", result)
+	}
+	if result.Snapshot == nil || !strings.Contains(result.Snapshot.RequestURL, "create table blocked") {
+		t.Fatalf("snapshot = %#v, want failed SQL evidence", result.Snapshot)
+	}
+	if result.ProtocolEvidence["protocol"] != "database" || result.ProtocolEvidence["status"] != "failed" {
+		t.Fatalf("protocol evidence = %#v, want failed database evidence", result.ProtocolEvidence)
+	}
+}

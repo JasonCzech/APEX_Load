@@ -1,11 +1,12 @@
 package engine
 
 import (
+	"context"
 	"math"
 	"math/rand"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 // applyThinkTime sleeps for a computed think time duration, respecting
@@ -120,6 +121,8 @@ type PacingRuntimeConfig struct {
 	IntervalMs    int
 	MinIntervalMs int
 	MaxIntervalMs int
+	TPS           float64
+	RateLimiter   *TokenBucket
 }
 
 type TokenBucket struct {
@@ -129,6 +132,9 @@ type TokenBucket struct {
 }
 
 func NewTokenBucket(tps float64) *TokenBucket {
+	if tps <= 0 || math.IsNaN(tps) || math.IsInf(tps, 0) {
+		return nil
+	}
 	tb := &TokenBucket{
 		tokens:   make(chan struct{}, int(tps*2)+1),
 		interval: time.Duration(float64(time.Second) / tps),
@@ -142,7 +148,24 @@ func (tb *TokenBucket) Wait() {
 	<-tb.tokens
 }
 
+func (tb *TokenBucket) WaitContext(ctx context.Context) bool {
+	if tb == nil {
+		return true
+	}
+	select {
+	case <-ctx.Done():
+		return false
+	case <-tb.done:
+		return false
+	case <-tb.tokens:
+		return true
+	}
+}
+
 func (tb *TokenBucket) Stop() {
+	if tb == nil {
+		return
+	}
 	close(tb.done)
 }
 

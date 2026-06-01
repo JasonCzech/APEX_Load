@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
-	httpproto "github.com/jasonczech/stormrunner/pkg/protocol/http"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	httpproto "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 func init() {
@@ -25,6 +25,7 @@ func init() {
 
 type SOAP struct {
 	http           *httpproto.HTTP
+	baseURL        string
 	version        string
 	failOnFault    bool
 	defaultCharset string
@@ -45,6 +46,9 @@ type soapSecurityConfig struct {
 }
 
 var envelopePrefixPattern = regexp.MustCompile(`<([A-Za-z_][A-Za-z0-9_.-]*):Envelope\b`)
+var soapNamespaceDeclPattern = regexp.MustCompile(`xmlns:([A-Za-z_][A-Za-z0-9_.-]*)\s*=\s*['"][^'"]+['"]`)
+var soapElementPrefixPattern = regexp.MustCompile(`</?([A-Za-z_][A-Za-z0-9_.-]*):[A-Za-z_][A-Za-z0-9_.-]*\b`)
+var soapAttributePrefixPattern = regexp.MustCompile(`\s([A-Za-z_][A-Za-z0-9_.-]*):[A-Za-z_][A-Za-z0-9_.-]*\s*=`)
 
 func (s *SOAP) Name() string { return "soap" }
 
@@ -61,6 +65,9 @@ func (s *SOAP) Init(ctx context.Context, config map[string]any) error {
 	}
 	s.failOnFault, _ = config["soap_fault_fail_on_fault"].(bool)
 	s.defaultCharset = "utf-8"
+	if baseURL, ok := config["base_url"].(string); ok {
+		s.baseURL = strings.TrimSpace(baseURL)
+	}
 	s.namespaces = readNamespaces(config)
 	s.security = readSecurityConfig(config)
 	s.http = &httpproto.HTTP{}
@@ -78,27 +85,98 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	prepared := *action
 	prepared.Method = stdhttp.MethodPost
 	prepared.Headers = cloneHeaders(action.Headers)
-	prepared.Body = shapeSOAPBody(action, s.version, s.namespaces)
+	prepared.RedactedTarget = action.RedactedTarget
+	prepared.RedactedHeaders = cloneHeaders(action.RedactedHeaders)
+	prepared.RedactedSOAP = action.RedactedSOAP
+	preparedBody, namespaceConflict := shapeSOAPBody(action, s.version, s.namespaces)
+	prepared.Body = preparedBody
 	prepared.Body = s.applySecurity(prepared.Body)
 	applySOAPDefaults(&prepared, s.version, s.defaultCharset)
+	if len(prepared.RedactedBody) == 0 {
+		redactedPrepared := *action
+		redactedPrepared.Method = stdhttp.MethodPost
+		redactedPrepared.Headers = cloneHeaders(action.Headers)
+		if len(action.RedactedHeaders) > 0 {
+			redactedPrepared.Headers = cloneHeaders(action.RedactedHeaders)
+		}
+		redactedPrepared.SOAP = action.SOAP
+		if action.RedactedSOAP != nil {
+			redactedPrepared.SOAP = action.RedactedSOAP
+		}
+		redactedPreparedBody, _ := shapeSOAPBody(&redactedPrepared, s.version, s.namespaces)
+		redactedPrepared.Body = redactedPreparedBody
+		applySOAPDefaults(&redactedPrepared, s.version, s.defaultCharset)
+		prepared.RedactedBody = redactedPreparedBody
+		prepared.RedactedHeaders = cloneHeaders(redactedPrepared.Headers)
+	}
+	targetURL := resolveSOAPURL(s.baseURL, prepared.Target)
+	envelopeOverheadKB := soapEnvelopeOverheadKB(action, prepared.Body)
 
 	result, err := s.http.Execute(ctx, &prepared)
 	if err != nil || result == nil {
 		return result, err
 	}
+	result.DependencyType = "soap"
+	if envelopeOverheadKB > 0 {
+		if result.ServerTelemetry == nil {
+			result.ServerTelemetry = &protocol.ServerTelemetry{}
+		}
+		result.ServerTelemetry.EnvelopeOverheadKB = envelopeOverheadKB
+	}
+	if namespaceConflict != "" {
+		if result.ServerTelemetry == nil {
+			result.ServerTelemetry = &protocol.ServerTelemetry{}
+		}
+		result.ServerTelemetry.SOAPNamespaceConflict = namespaceConflict
+		result.Extractions["soap_namespace_conflict"] = namespaceConflict
+	}
+	if operation := resolveSOAPOperation(action, prepared.Body); operation != "" {
+		result.DependencyTarget = appendSOAPOperationTarget(result.DependencyTarget, operation)
+		result.Extractions["soap_operation"] = operation
+	}
 
-	if s.failOnFault {
-		if fault, ok := detectSOAPFault(result.ResponseBody); ok {
+	if faultCode, faultCategory, fault, ok := detectSOAPFault(result.ResponseBody); ok {
+		if result.ServerTelemetry == nil {
+			result.ServerTelemetry = &protocol.ServerTelemetry{}
+		}
+		result.ServerTelemetry.SOAPFaultCode = faultCode
+		result.ServerTelemetry.SOAPFaultCategory = faultCategory
+		result.Extractions["soap_fault_code"] = faultCode
+		result.Extractions["soap_fault_category"] = faultCategory
+		if s.failOnFault {
 			result.Success = false
 			if result.ErrorMessage == "" {
 				result.ErrorMessage = fault
 			}
-		} else if result.StatusCode >= 500 && result.ErrorMessage == "" {
-			result.ErrorMessage = "soap fault response"
+			if result.Snapshot == nil {
+				result.Snapshot = buildSOAPSnapshot(&prepared, targetURL, result)
+			}
 		}
+	} else if s.failOnFault && result.StatusCode >= 500 && result.ErrorMessage == "" {
+		result.ErrorMessage = "soap fault response"
 	}
 
 	return result, nil
+}
+
+func soapEnvelopeOverheadKB(action *protocol.Action, preparedBody []byte) float64 {
+	preparedText := strings.TrimSpace(string(preparedBody))
+	if preparedText != "" && looksLikeSOAPEnvelope(preparedText) {
+		innerBody := strings.TrimSpace(firstSOAPTagInnerXML(preparedText, "Body"))
+		overheadBytes := len(preparedText) - len(innerBody)
+		if overheadBytes > 0 {
+			return float64(overheadBytes) / 1024.0
+		}
+	}
+	if action == nil {
+		return 0
+	}
+	payloadBytes := len(action.Body)
+	overheadBytes := len(preparedBody) - payloadBytes
+	if overheadBytes <= 0 {
+		return 0
+	}
+	return float64(overheadBytes) / 1024.0
 }
 
 func (s *SOAP) Teardown(ctx context.Context) error {
@@ -124,6 +202,120 @@ func cloneHeaders(headers map[string]string) map[string]string {
 		cloned[key] = value
 	}
 	return cloned
+}
+
+func resolveSOAPURL(baseURL, target string) string {
+	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
+		return target
+	}
+	return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(target, "/")
+}
+
+func resolveSOAPOperation(action *protocol.Action, body []byte) string {
+	if action == nil {
+		return ""
+	}
+	if action.SOAP != nil {
+		if operation := strings.TrimSpace(action.SOAP.Operation); operation != "" {
+			return operation
+		}
+		if operation := soapOperationFromAction(strings.TrimSpace(action.SOAP.Action)); operation != "" {
+			return operation
+		}
+	}
+	return soapOperationFromBody(body)
+}
+
+func soapOperationFromAction(action string) string {
+	if action == "" {
+		return ""
+	}
+	for _, separator := range []string{"#", "/", ":"} {
+		if idx := strings.LastIndex(action, separator); idx >= 0 && idx < len(action)-1 {
+			return strings.TrimSpace(action[idx+1:])
+		}
+	}
+	return strings.TrimSpace(action)
+}
+
+func soapOperationFromBody(body []byte) string {
+	text := string(body)
+	bodyStart := strings.Index(strings.ToLower(text), "<body")
+	if bodyStart == -1 {
+		return ""
+	}
+	segment := text[bodyStart:]
+	gt := strings.Index(segment, ">")
+	if gt == -1 || gt == len(segment)-1 {
+		return ""
+	}
+	segment = segment[gt+1:]
+	start := strings.Index(segment, "<")
+	if start == -1 || start == len(segment)-1 {
+		return ""
+	}
+	segment = segment[start+1:]
+	end := strings.IndexAny(segment, " >/\t\r\n")
+	if end == -1 {
+		end = len(segment)
+	}
+	name := strings.TrimSpace(segment[:end])
+	if idx := strings.Index(name, ":"); idx >= 0 && idx < len(name)-1 {
+		name = name[idx+1:]
+	}
+	return name
+}
+
+func appendSOAPOperationTarget(target string, operation string) string {
+	if operation == "" {
+		return target
+	}
+	if target == "" {
+		return operation
+	}
+	return target + "#" + operation
+}
+
+func classifySOAPFaultCategory(fault string) string {
+	lower := strings.ToLower(fault)
+	switch {
+	case strings.Contains(lower, "client") || strings.Contains(lower, "sender"):
+		return "client"
+	case strings.Contains(lower, "server") || strings.Contains(lower, "receiver"):
+		return "server"
+	case strings.Contains(lower, "version"):
+		return "version"
+	case strings.Contains(lower, "mustunderstand"):
+		return "mustunderstand"
+	default:
+		return "unknown"
+	}
+}
+
+func buildSOAPSnapshot(action *protocol.Action, targetURL string, result *protocol.Result) *protocol.ErrorSnapshot {
+	if action == nil || result == nil {
+		return nil
+	}
+	requestURL := targetURL
+	if action.RedactedTarget != "" {
+		requestURL = action.RedactedTarget
+	}
+	headers := cloneHeaders(action.Headers)
+	if len(action.RedactedHeaders) > 0 {
+		headers = cloneHeaders(action.RedactedHeaders)
+	}
+	body := string(action.Body)
+	if len(action.RedactedBody) > 0 {
+		body = string(action.RedactedBody)
+	}
+	return &protocol.ErrorSnapshot{
+		RequestMethod:  action.Method,
+		RequestURL:     requestURL,
+		RequestHeaders: headers,
+		RequestBody:    body,
+		ResponseStatus: result.StatusCode,
+		ResponseBody:   result.ResponseBody,
+	}
 }
 
 func readSecurityConfig(config map[string]any) soapSecurityConfig {
@@ -175,21 +367,27 @@ func readNamespaces(config map[string]any) map[string]string {
 	return cloned
 }
 
-func shapeSOAPBody(action *protocol.Action, version string, namespaces map[string]string) []byte {
+func shapeSOAPBody(action *protocol.Action, version string, namespaces map[string]string) ([]byte, string) {
 	if action == nil || action.SOAP == nil {
-		return action.Body
+		if action == nil {
+			return nil, ""
+		}
+		return action.Body, ""
 	}
 	if strings.TrimSpace(action.SOAP.BodyMode) != "generated" {
-		return action.Body
+		return action.Body, ""
 	}
 
 	body := strings.TrimSpace(string(action.Body))
 	if body == "" || looksLikeSOAPEnvelope(body) {
-		return action.Body
+		return action.Body, ""
 	}
 
-	envelopePrefix, allNamespaces := mergeSOAPNamespaces(version, namespaces)
+	envelopePrefix, allNamespaces, namespaceConflict := mergeSOAPNamespaces(version, namespaces)
 	body = wrapSOAPOperation(body, action.SOAP.Operation)
+	if bodyConflict := detectSOAPBodyNamespaceConflict(body, allNamespaces); bodyConflict != "" {
+		namespaceConflict = joinSOAPNamespaceConflicts(namespaceConflict, bodyConflict)
+	}
 
 	var attrs []string
 	keys := make([]string, 0, len(allNamespaces))
@@ -207,7 +405,7 @@ func shapeSOAPBody(action *protocol.Action, version string, namespaces map[strin
 		strings.Join(attrs, " "),
 		body,
 	)
-	return []byte(envelope)
+	return []byte(envelope), namespaceConflict
 }
 
 func (s *SOAP) applySecurity(body []byte) []byte {
@@ -254,19 +452,75 @@ func detectEnvelopePrefix(body string) string {
 	return ""
 }
 
-func mergeSOAPNamespaces(version string, namespaces map[string]string) (string, map[string]string) {
+func mergeSOAPNamespaces(version string, namespaces map[string]string) (string, map[string]string, string) {
 	allNamespaces := make(map[string]string, len(namespaces)+1)
 	for key, value := range namespaces {
 		allNamespaces[key] = value
 	}
 	envelopeURI := soapEnvelopeURI(version)
+	namespaceConflict := ""
+	if configuredURI, ok := allNamespaces["soapenv"]; ok && configuredURI != envelopeURI {
+		namespaceConflict = fmt.Sprintf("prefix soapenv already mapped to %s", configuredURI)
+	}
 	for key, value := range allNamespaces {
 		if value == envelopeURI {
-			return key, allNamespaces
+			return key, allNamespaces, namespaceConflict
 		}
 	}
 	allNamespaces["soapenv"] = envelopeURI
-	return "soapenv", allNamespaces
+	return "soapenv", allNamespaces, namespaceConflict
+}
+
+func detectSOAPBodyNamespaceConflict(body string, namespaces map[string]string) string {
+	declared := map[string]struct{}{"xml": {}}
+	for key := range namespaces {
+		declared[key] = struct{}{}
+	}
+	for _, match := range soapNamespaceDeclPattern.FindAllStringSubmatch(body, -1) {
+		if len(match) == 2 {
+			declared[match[1]] = struct{}{}
+		}
+	}
+
+	missing := make(map[string]struct{})
+	for _, match := range soapElementPrefixPattern.FindAllStringSubmatch(body, -1) {
+		if len(match) == 2 {
+			prefix := match[1]
+			if _, ok := declared[prefix]; !ok {
+				missing[prefix] = struct{}{}
+			}
+		}
+	}
+	for _, match := range soapAttributePrefixPattern.FindAllStringSubmatch(body, -1) {
+		if len(match) == 2 {
+			prefix := match[1]
+			if prefix == "xmlns" {
+				continue
+			}
+			if _, ok := declared[prefix]; !ok {
+				missing[prefix] = struct{}{}
+			}
+		}
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	prefixes := make([]string, 0, len(missing))
+	for prefix := range missing {
+		prefixes = append(prefixes, prefix)
+	}
+	sort.Strings(prefixes)
+	return "undeclared prefixes: " + strings.Join(prefixes, ", ")
+}
+
+func joinSOAPNamespaceConflicts(existing string, next string) string {
+	if existing == "" {
+		return next
+	}
+	if next == "" {
+		return existing
+	}
+	return existing + "; " + next
 }
 
 func soapEnvelopeURI(version string) string {
@@ -365,9 +619,9 @@ func xmlEscape(value string) string {
 	return replacer.Replace(value)
 }
 
-func detectSOAPFault(body string) (string, bool) {
+func detectSOAPFault(body string) (string, string, string, bool) {
 	if !looksLikeSOAPEnvelope(body) {
-		return "", false
+		return "", "", "", false
 	}
 	reason := firstSOAPTagText(body, "faultstring")
 	if reason == "" {
@@ -378,7 +632,7 @@ func detectSOAPFault(body string) (string, bool) {
 		code = firstSOAPTagText(body, "Value")
 	}
 	if reason == "" && code == "" {
-		return "", false
+		return "", "", "", false
 	}
 	message := "soap fault"
 	if code != "" && reason != "" {
@@ -388,21 +642,29 @@ func detectSOAPFault(body string) (string, bool) {
 	} else {
 		message = fmt.Sprintf("soap fault: %s", code)
 	}
-	return message, true
+	return code, classifySOAPFaultCategory(code), message, true
 }
 
 func firstSOAPTagText(body, tag string) string {
+	inner := firstSOAPTagInnerXML(body, tag)
+	if inner == "" {
+		return ""
+	}
+	text := strings.TrimSpace(stripXMLTags(inner))
+	if text == "" {
+		return ""
+	}
+	return html.UnescapeString(text)
+}
+
+func firstSOAPTagInnerXML(body, tag string) string {
 	pattern := fmt.Sprintf(`(?is)<(?:[A-Za-z_][A-Za-z0-9_.-]*:)?%s\b[^>]*>(.*?)</(?:[A-Za-z_][A-Za-z0-9_.-]*:)?%s>`, regexp.QuoteMeta(tag), regexp.QuoteMeta(tag))
 	re := regexp.MustCompile(pattern)
 	matches := re.FindStringSubmatch(body)
 	if len(matches) != 2 {
 		return ""
 	}
-	text := strings.TrimSpace(stripXMLTags(matches[1]))
-	if text == "" {
-		return ""
-	}
-	return html.UnescapeString(text)
+	return matches[1]
 }
 
 func stripXMLTags(value string) string {

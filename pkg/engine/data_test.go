@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func writeCSV(t *testing.T, dir, name, content string) string {
@@ -98,6 +98,40 @@ func TestDataProvider_Unique(t *testing.T) {
 	}
 }
 
+func TestDataProvider_Pop(t *testing.T) {
+	dir := t.TempDir()
+	path := writeCSV(t, dir, "data.csv", "id\n1\n2\n3\n")
+
+	dp, err := NewDataProvider([]dsl.DataSource{{
+		Name:           "data",
+		Type:           "csv",
+		Path:           path,
+		FirstRowHeader: true,
+		Strategy:       "pop",
+	}})
+	if err != nil {
+		t.Fatalf("NewDataProvider: %v", err)
+	}
+
+	row1 := dp.GetRow("data", 0)
+	row2 := dp.GetRow("data", 99)
+	row3 := dp.GetRow("data", 1)
+	row4 := dp.GetRow("data", 2)
+
+	if row1["data.id"] != "1" {
+		t.Fatalf("first pop row id = %q, want 1", row1["data.id"])
+	}
+	if row2["data.id"] != "2" {
+		t.Fatalf("second pop row id = %q, want 2", row2["data.id"])
+	}
+	if row3["data.id"] != "3" {
+		t.Fatalf("third pop row id = %q, want 3", row3["data.id"])
+	}
+	if row4 != nil {
+		t.Fatalf("expected pop source exhaustion to return nil, got %#v", row4)
+	}
+}
+
 func TestDataProvider_Random(t *testing.T) {
 	dir := t.TempDir()
 	path := writeCSV(t, dir, "data.csv", "val\na\nb\nc\n")
@@ -177,6 +211,48 @@ func TestDataProvider_CustomDelimiter(t *testing.T) {
 	row := dp.GetRow("data", 0)
 	if row["data.id"] != "1" || row["data.name"] != "alice" {
 		t.Errorf("custom delimiter row = %v", row)
+	}
+}
+
+func TestDataProvider_AutoDelimiter(t *testing.T) {
+	dp, err := NewDataProvider([]dsl.DataSource{
+		{
+			Name:           "users",
+			Type:           "csv",
+			InlineData:     "username\tpassword\nalice\tpass1\nbob\tpass2\n",
+			Delimiter:      "auto",
+			FirstRowHeader: true,
+			Strategy:       "sequential",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewDataProvider auto delimiter: %v", err)
+	}
+
+	row := dp.GetRow("users", 0)
+	if row["users.username"] != "alice" || row["users.password"] != "pass1" {
+		t.Fatalf("auto delimiter row = %#v", row)
+	}
+}
+
+func TestDataProvider_DelimiterAliases(t *testing.T) {
+	dp, err := NewDataProvider([]dsl.DataSource{
+		{
+			Name:           "users",
+			Type:           "csv",
+			InlineData:     "username,password\nalice,pass1\n",
+			Delimiter:      "comma",
+			FirstRowHeader: true,
+			Strategy:       "sequential",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewDataProvider comma delimiter: %v", err)
+	}
+
+	row := dp.GetRow("users", 0)
+	if row["users.username"] != "alice" || row["users.password"] != "pass1" {
+		t.Fatalf("comma delimiter row = %#v", row)
 	}
 }
 
@@ -292,5 +368,21 @@ func TestDataProvider_MissingPathAndInlineData(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for missing path and inline_data")
+	}
+}
+
+func TestDataProvider_RejectsUnsupportedStrategy(t *testing.T) {
+	dir := t.TempDir()
+	path := writeCSV(t, dir, "users.csv", "username\nalice\n")
+
+	_, err := NewDataProvider([]dsl.DataSource{{
+		Name:           "users",
+		Type:           "csv",
+		Path:           path,
+		FirstRowHeader: true,
+		Strategy:       "mystery",
+	}})
+	if err == nil {
+		t.Fatal("expected unsupported strategy to fail")
 	}
 }

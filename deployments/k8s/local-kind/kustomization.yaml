@@ -3,11 +3,11 @@ kind: Kustomization
 resources:
   - ../local
 images:
-  - name: stormrunner-controller
-    newName: localhost:5001/stormrunner-controller
+  - name: apexload-controller
+    newName: localhost:5001/apexload-controller
     newTag: 0.1.0
-  - name: stormrunner-generator
-    newName: localhost:5001/stormrunner-generator
+  - name: apexload-generator
+    newName: localhost:5001/apexload-generator
     newTag: 0.1.0
 patches:
   - path: controller-image-policy.yaml

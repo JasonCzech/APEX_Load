@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func TestSOAPProtocolRegistered(t *testing.T) {
@@ -66,6 +66,18 @@ func TestSOAPExecuteAddsSOAP11Defaults(t *testing.T) {
 	}
 	if seenSOAPAction != "urn:auth#Login" {
 		t.Fatalf("SOAPAction = %q, want urn:auth#Login", seenSOAPAction)
+	}
+	if result.DependencyType != "soap" {
+		t.Fatalf("DependencyType = %q, want soap", result.DependencyType)
+	}
+	if result.DependencyTarget != "127.0.0.1#Login" && !strings.HasSuffix(result.DependencyTarget, "#Login") {
+		t.Fatalf("DependencyTarget = %q, want operation-tagged target", result.DependencyTarget)
+	}
+	if result.Extractions["soap_operation"] != "Login" {
+		t.Fatalf("soap_operation = %q, want Login", result.Extractions["soap_operation"])
+	}
+	if result.ServerTelemetry == nil || result.ServerTelemetry.EnvelopeOverheadKB <= 0 {
+		t.Fatalf("EnvelopeOverheadKB = %#v, want > 0", result.ServerTelemetry)
 	}
 }
 
@@ -155,6 +167,64 @@ func TestSOAPExecuteWrapsGeneratedBodyInEnvelope(t *testing.T) {
 	}
 	if !strings.Contains(seenBody, `<soapenv:Body><Login><username>alice</username></Login></soapenv:Body>`) {
 		t.Fatalf("body = %q, want wrapped login body", seenBody)
+	}
+}
+
+func TestSOAPExecuteCapturesNamespaceConflictTelemetry(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<Envelope><Body><ok/></Body></Envelope>`))
+	}))
+	defer ts.Close()
+
+	s := &SOAP{}
+	if err := s.Init(context.Background(), map[string]any{
+		"base_url":     ts.URL,
+		"soap_version": "1.1",
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	result, err := s.Execute(context.Background(), &protocol.Action{
+		Name:   "login",
+		Target: "/AuthService",
+		Body:   []byte(`<auth:username>alice</auth:username>`),
+		SOAP: &protocol.SOAPActionConfig{
+			Operation: "Login",
+			BodyMode:  "generated",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.ServerTelemetry == nil {
+		t.Fatal("ServerTelemetry = nil, want namespace conflict telemetry")
+	}
+	if result.ServerTelemetry.SOAPNamespaceConflict != "undeclared prefixes: auth" {
+		t.Fatalf("SOAPNamespaceConflict = %q, want undeclared prefixes: auth", result.ServerTelemetry.SOAPNamespaceConflict)
+	}
+	if result.Extractions["soap_namespace_conflict"] != "undeclared prefixes: auth" {
+		t.Fatalf("soap_namespace_conflict = %q, want undeclared prefixes: auth", result.Extractions["soap_namespace_conflict"])
+	}
+	if !result.Success {
+		t.Fatalf("result.Success = false, want namespace conflict to be non-fatal")
+	}
+}
+
+func TestShapeSOAPBodyDetectsReservedEnvelopePrefixConflict(t *testing.T) {
+	body, conflict := shapeSOAPBody(&protocol.Action{
+		Body: []byte(`<username>alice</username>`),
+		SOAP: &protocol.SOAPActionConfig{
+			Operation: "Login",
+			BodyMode:  "generated",
+		},
+	}, "1.1", map[string]string{"soapenv": "urn:auth"})
+
+	if conflict != "prefix soapenv already mapped to urn:auth" {
+		t.Fatalf("conflict = %q, want reserved soapenv prefix conflict", conflict)
+	}
+	if !strings.Contains(string(body), `xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"`) {
+		t.Fatalf("body = %q, want SOAP envelope namespace to win", string(body))
 	}
 }
 
@@ -253,8 +323,68 @@ func TestSOAPExecuteFlagsSOAP11FaultEnvelope(t *testing.T) {
 	if result.ErrorMessage != "soap fault: soapenv:Client: Invalid login" {
 		t.Fatalf("ErrorMessage = %q, want SOAP fault details", result.ErrorMessage)
 	}
+	if result.Extractions["soap_fault_category"] != "client" {
+		t.Fatalf("soap_fault_category = %q, want client", result.Extractions["soap_fault_category"])
+	}
+	if result.Extractions["soap_fault_code"] != "soapenv:Client" {
+		t.Fatalf("soap_fault_code = %q, want soapenv:Client", result.Extractions["soap_fault_code"])
+	}
+	if result.ServerTelemetry == nil {
+		t.Fatal("ServerTelemetry = nil, want SOAP fault telemetry")
+	}
+	if result.ServerTelemetry.SOAPFaultCode != "soapenv:Client" {
+		t.Fatalf("SOAPFaultCode = %q, want soapenv:Client", result.ServerTelemetry.SOAPFaultCode)
+	}
+	if result.ServerTelemetry.SOAPFaultCategory != "client" {
+		t.Fatalf("SOAPFaultCategory = %q, want client", result.ServerTelemetry.SOAPFaultCategory)
+	}
 	if !strings.Contains(result.ResponseBody, `<faultstring>Invalid login</faultstring>`) {
 		t.Fatalf("ResponseBody = %q, want original fault payload", result.ResponseBody)
+	}
+	if result.Snapshot == nil {
+		t.Fatal("Snapshot = nil, want SOAP fault snapshot")
+	}
+	if result.Snapshot.RequestMethod != http.MethodPost {
+		t.Fatalf("Snapshot.RequestMethod = %q, want POST", result.Snapshot.RequestMethod)
+	}
+	if result.Snapshot.RequestURL != ts.URL+"/AuthService" {
+		t.Fatalf("Snapshot.RequestURL = %q, want %q", result.Snapshot.RequestURL, ts.URL+"/AuthService")
+	}
+	if result.Snapshot.RequestHeaders["SOAPAction"] != "urn:auth#Login" {
+		t.Fatalf("Snapshot.RequestHeaders SOAPAction = %q, want urn:auth#Login", result.Snapshot.RequestHeaders["SOAPAction"])
+	}
+	if !strings.Contains(result.Snapshot.RequestHeaders["Content-Type"], "text/xml") {
+		t.Fatalf("Snapshot.RequestHeaders Content-Type = %q, want text/xml", result.Snapshot.RequestHeaders["Content-Type"])
+	}
+	if result.Snapshot.RequestBody != `<Envelope><Body><Login/></Body></Envelope>` {
+		t.Fatalf("Snapshot.RequestBody = %q, want original request body", result.Snapshot.RequestBody)
+	}
+	if !strings.Contains(result.Snapshot.ResponseBody, `<faultstring>Invalid login</faultstring>`) {
+		t.Fatalf("Snapshot.ResponseBody = %q, want fault payload", result.Snapshot.ResponseBody)
+	}
+}
+
+func TestBuildSOAPSnapshot_RedactsSecretRequestValues(t *testing.T) {
+	action := &protocol.Action{
+		Method:          http.MethodPost,
+		Headers:         map[string]string{"SOAPAction": "urn:auth#super-secret"},
+		RedactedHeaders: map[string]string{"SOAPAction": "urn:auth#[REDACTED]"},
+		Body:            []byte(`<Envelope><Body><Token>super-secret</Token></Body></Envelope>`),
+		RedactedBody:    []byte(`<Envelope><Body><Token>[REDACTED]</Token></Body></Envelope>`),
+		RedactedTarget:  "https://soap.example.test/AuthService?token=[REDACTED]",
+	}
+	result := &protocol.Result{StatusCode: 500, ResponseBody: "fault"}
+
+	snapshot := buildSOAPSnapshot(action, "https://soap.example.test/AuthService?token=super-secret", result)
+
+	if snapshot.RequestURL != "https://soap.example.test/AuthService?token=[REDACTED]" {
+		t.Fatalf("RequestURL = %q", snapshot.RequestURL)
+	}
+	if snapshot.RequestHeaders["SOAPAction"] != "urn:auth#[REDACTED]" {
+		t.Fatalf("RequestHeaders[SOAPAction] = %q", snapshot.RequestHeaders["SOAPAction"])
+	}
+	if snapshot.RequestBody != `<Envelope><Body><Token>[REDACTED]</Token></Body></Envelope>` {
+		t.Fatalf("RequestBody = %q", snapshot.RequestBody)
 	}
 }
 
@@ -288,5 +418,8 @@ func TestSOAPExecuteFlagsSOAP12FaultEnvelope(t *testing.T) {
 	}
 	if result.ErrorMessage != "soap fault: env:Sender: Request validation failed" {
 		t.Fatalf("ErrorMessage = %q, want SOAP 1.2 fault details", result.ErrorMessage)
+	}
+	if result.ServerTelemetry == nil || result.ServerTelemetry.SOAPFaultCode != "env:Sender" {
+		t.Fatalf("ServerTelemetry = %#v, want SOAP 1.2 fault code", result.ServerTelemetry)
 	}
 }

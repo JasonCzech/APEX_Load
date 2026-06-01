@@ -177,6 +177,70 @@ func TestParse_FullConfig(t *testing.T) {
 	}
 }
 
+func TestParse_GoalConfig(t *testing.T) {
+	input := `{
+		"script": {
+			"name": "goal-config",
+			"protocol": "http",
+			"goal_config": {
+				"p95_latency_ms": 800,
+				"max_error_pct": 2.5,
+				"max_error_count": 4,
+				"stop_on_max_errors": true
+			},
+			"config": {
+				"base_url": "https://example.com"
+			},
+			"actions": [
+				{"name": "homepage", "type": "request", "method": "GET", "target": "/"}
+			]
+		}
+	}`
+
+	script, err := Parse([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if script.GoalConfig == nil {
+		t.Fatal("GoalConfig = nil, want parsed goal config")
+	}
+	if script.GoalConfig.P95LatencyMs == nil || *script.GoalConfig.P95LatencyMs != 800 {
+		t.Fatalf("P95LatencyMs = %#v, want 800", script.GoalConfig.P95LatencyMs)
+	}
+	if script.GoalConfig.MaxErrorPct == nil || *script.GoalConfig.MaxErrorPct != 2.5 {
+		t.Fatalf("MaxErrorPct = %#v, want 2.5", script.GoalConfig.MaxErrorPct)
+	}
+	if script.GoalConfig.MaxErrorCount == nil || *script.GoalConfig.MaxErrorCount != 4 {
+		t.Fatalf("MaxErrorCount = %#v, want 4", script.GoalConfig.MaxErrorCount)
+	}
+	if !script.GoalConfig.StopOnMaxErrors {
+		t.Fatal("StopOnMaxErrors = false, want true")
+	}
+}
+
+func TestParse_InvalidGoalConfig(t *testing.T) {
+	input := `{
+		"script": {
+			"name": "goal-config",
+			"protocol": "http",
+			"goal_config": {
+				"max_error_pct": 120
+			},
+			"config": {
+				"base_url": "https://example.com"
+			},
+			"actions": [
+				{"name": "homepage", "type": "request", "method": "GET", "target": "/"}
+			]
+		}
+	}`
+
+	_, err := Parse([]byte(input))
+	if err == nil {
+		t.Fatal("expected validation error for invalid goal_config")
+	}
+}
+
 func TestParse_SOAPConfigAndActionFields(t *testing.T) {
 	input := `{
 		"script": {
@@ -295,7 +359,7 @@ func TestParse_WithExtractorsAndAssertions(t *testing.T) {
 	}
 }
 
-func TestParse_BrowserActionsAllowSelectorWaitAndScreenshot(t *testing.T) {
+func TestParse_BrowserActionsAllowSelectWaitAndScreenshot(t *testing.T) {
 	input := `{
 		"script": {
 			"name": "browser-flow",
@@ -306,6 +370,7 @@ func TestParse_BrowserActionsAllowSelectorWaitAndScreenshot(t *testing.T) {
 			"actions": [
 				{"name": "open", "type": "browser_navigate", "target": "/login"},
 				{"name": "fill", "type": "browser_fill", "selector": "#email", "value": "user@example.com"},
+				{"name": "select-country", "type": "browser_select", "selector": "#country", "value": "United States"},
 				{"name": "wait", "type": "browser_wait", "wait_for": {"type": "text", "value": "Welcome", "timeout_ms": 5000}},
 				{"name": "shot", "type": "browser_screenshot", "capture": {"screenshot": true, "html": true}}
 			]
@@ -319,11 +384,14 @@ func TestParse_BrowserActionsAllowSelectorWaitAndScreenshot(t *testing.T) {
 	if got := script.Actions[1].Selector; got != "#email" {
 		t.Fatalf("selector = %q, want #email", got)
 	}
-	if script.Actions[2].WaitFor == nil || script.Actions[2].WaitFor.TimeoutMs != 5000 {
-		t.Fatalf("wait_for = %#v, want timeout", script.Actions[2].WaitFor)
+	if action := script.Actions[2]; action.Type != "browser_select" || action.Selector != "#country" || action.Value != "United States" {
+		t.Fatalf("action = %#v, want browser_select with selector/value", action)
 	}
-	if script.Actions[3].Capture == nil || !script.Actions[3].Capture.HTML {
-		t.Fatalf("capture = %#v, want html capture", script.Actions[3].Capture)
+	if script.Actions[3].WaitFor == nil || script.Actions[3].WaitFor.TimeoutMs != 5000 {
+		t.Fatalf("wait_for = %#v, want timeout", script.Actions[3].WaitFor)
+	}
+	if script.Actions[4].Capture == nil || !script.Actions[4].Capture.HTML {
+		t.Fatalf("capture = %#v, want html capture", script.Actions[4].Capture)
 	}
 }
 
@@ -412,6 +480,43 @@ func TestParseFile_NotFound(t *testing.T) {
 	_, err := ParseFile("/nonexistent/path.json")
 	if err == nil {
 		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestParse_JavaHTTPExampleFiles(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		helperMode string
+	}{
+		{
+			name:       "embedded helper example",
+			path:       filepath.Join("..", "..", "examples", "simple-java-http-embedded.json"),
+			helperMode: "embedded",
+		},
+		{
+			name:       "sidecar helper example",
+			path:       filepath.Join("..", "..", "examples", "simple-java-http-sidecar.json"),
+			helperMode: "sidecar",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			script, err := ParseFile(tt.path)
+			if err != nil {
+				t.Fatalf("unexpected error parsing %s: %v", tt.path, err)
+			}
+			if script.Protocol != "java_http" {
+				t.Fatalf("protocol = %q, want java_http", script.Protocol)
+			}
+			if script.Config.JavaHTTP.HelperMode != tt.helperMode {
+				t.Fatalf("helper_mode = %q, want %q", script.Config.JavaHTTP.HelperMode, tt.helperMode)
+			}
+			if len(script.Actions) != 1 {
+				t.Fatalf("actions count = %d, want 1", len(script.Actions))
+			}
+		})
 	}
 }
 

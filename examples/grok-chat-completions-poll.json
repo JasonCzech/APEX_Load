@@ -12,7 +12,7 @@
       "http": {
         "connect_timeout_ms": 30000,
         "request_timeout_ms": 120000,
-        "user_agent": "Stormrunner-Grok-Example/1.0"
+        "user_agent": "APEX Load-Grok-Example/1.0"
       }
     },
     "parameters": [
@@ -34,7 +34,7 @@
           "Content-Type": "application/json",
           "Accept": "application/json"
         },
-        "body": "{\"model\":\"{{env.XAI_MODEL}}\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a terse assistant used for Stormrunner load testing.\"},{\"role\":\"user\",\"content\":\"Reply with the single word pong. Request suffix: {{param.request_suffix}}\"}],\"max_tokens\":16,\"temperature\":0}",
+        "body": "{\"model\":\"{{env.XAI_MODEL}}\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a terse assistant used for APEX Load load testing.\"},{\"role\":\"user\",\"content\":\"Reply with the single word pong. Request suffix: {{param.request_suffix}}\"}],\"max_tokens\":16,\"temperature\":0}",
         "extractors": [
           {
             "name": "grok_response_id",

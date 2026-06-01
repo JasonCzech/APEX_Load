@@ -2,35 +2,39 @@ package engine
 
 import (
 	"math/rand"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 const defaultDateTimeLayout = "2006-01-02 15:04:05"
+const defaultTimeLayout = "15:04:05"
 
 type ParameterRuntime struct {
-	params    map[string]dsl.Parameter
-	order     []string
-	states    map[string]*parameterState
-	provider  *DataProvider
-	vuserID   int
-	now       func() time.Time
+	params   map[string]dsl.Parameter
+	order    []string
+	states   map[string]*parameterState
+	provider *DataProvider
+	vuserID  int
+	now      func() time.Time
 }
 
 type parameterState struct {
-	hasCached bool
-	cached    string
-	nextIndex int
-	used      map[int]bool
-	counter   int
-	seeded    bool
-	random    *rand.Rand
-	values    []string
-	loaded    bool
+	hasCached  bool
+	cached     string
+	nextIndex  int
+	used       map[int]bool
+	counter    int
+	seeded     bool
+	random     *rand.Rand
+	values     []string
+	loaded     bool
+	lastIndex  int
+	hasRowPick bool
 }
 
 func NewParameterRuntime(parameters []dsl.Parameter, provider *DataProvider, vuserID int) *ParameterRuntime {
@@ -67,10 +71,19 @@ func (pr *ParameterRuntime) Prime() {
 	}
 	for _, name := range pr.order {
 		param := pr.params[name]
-		if effectiveParameterUpdate(param) == "each_occurrence" {
+		if effectiveParameterUpdate(param) == "each_occurrence" || hasSameLineReference(param) {
 			continue
 		}
 		pr.refresh(name)
+	}
+	for _, name := range pr.order {
+		param := pr.params[name]
+		if effectiveParameterUpdate(param) == "each_occurrence" {
+			continue
+		}
+		if hasSameLineReference(param) {
+			pr.refresh(name)
+		}
 	}
 }
 
@@ -80,7 +93,13 @@ func (pr *ParameterRuntime) RefreshIteration() {
 	}
 	for _, name := range pr.order {
 		param := pr.params[name]
-		if effectiveParameterUpdate(param) == "each_iteration" {
+		if effectiveParameterUpdate(param) == "each_iteration" && !hasSameLineReference(param) {
+			pr.refresh(name)
+		}
+	}
+	for _, name := range pr.order {
+		param := pr.params[name]
+		if effectiveParameterUpdate(param) == "each_iteration" && hasSameLineReference(param) {
 			pr.refresh(name)
 		}
 	}
@@ -90,16 +109,27 @@ func (pr *ParameterRuntime) ResolveNamed(name string) (string, bool) {
 	if pr == nil {
 		return "", false
 	}
-	param, ok := pr.params[name]
+	paramName := name
+	param, ok := pr.params[paramName]
 	if !ok {
-		return "", false
+		for candidate, candidateParam := range pr.params {
+			if strings.EqualFold(candidate, name) {
+				paramName = candidate
+				param = candidateParam
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return "", false
+		}
 	}
-	state := pr.states[name]
+	state := pr.states[paramName]
 	if effectiveParameterUpdate(param) == "each_occurrence" {
-		return pr.generate(param, state)
+		return pr.generate(param, state, nil)
 	}
 	if !state.hasCached {
-		pr.refresh(name)
+		pr.refresh(paramName)
 	}
 	if !state.hasCached {
 		return "", false
@@ -128,27 +158,46 @@ func effectiveOnExhaustion(param dsl.Parameter) string {
 	return "wrap"
 }
 
+func hasSameLineReference(param dsl.Parameter) bool {
+	return strings.TrimSpace(param.SameLineAs) != ""
+}
+
 func (pr *ParameterRuntime) refresh(name string) {
+	pr.refreshWithStack(name, nil)
+}
+
+func (pr *ParameterRuntime) refreshWithStack(name string, visiting map[string]bool) {
 	param := pr.params[name]
 	state := pr.states[name]
-	value, ok := pr.generate(param, state)
+	value, ok := pr.generate(param, state, visiting)
 	if !ok {
 		state.cached = ""
 		state.hasCached = false
+		state.hasRowPick = false
 		return
 	}
 	state.cached = value
 	state.hasCached = true
 }
 
-func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState) (string, bool) {
-	switch param.Type {
+func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState, visiting map[string]bool) (string, bool) {
+	switch dsl.CanonicalParameterType(param.Type) {
 	case "file", "list":
+		if hasSameLineReference(param) {
+			return pr.generateSameLineValue(param, state, visiting)
+		}
 		values, ok := pr.valuesForParameter(param, state)
 		if !ok || len(values) == 0 {
 			return "", false
 		}
-		return generateSelectedValue(values, param, state)
+		value, index, ok := generateSelectedValue(values, param, state)
+		if ok && index >= 0 {
+			state.lastIndex = index
+			state.hasRowPick = true
+		} else if ok {
+			state.hasRowPick = false
+		}
+		return value, ok
 	case "random_number":
 		return formatNumericValue(state.random.Intn(param.Max-param.Min+1)+param.Min, param), true
 	case "date_time":
@@ -159,6 +208,16 @@ func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState)
 		layout := param.Format
 		if layout == "" {
 			layout = defaultDateTimeLayout
+		}
+		return now.Format(layout), true
+	case "time":
+		now, ok := resolveParameterTime(pr.now, param)
+		if !ok {
+			return "", false
+		}
+		layout := param.Format
+		if layout == "" {
+			layout = defaultTimeLayout
 		}
 		return now.Format(layout), true
 	case "timestamp":
@@ -179,23 +238,18 @@ func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState)
 			return now.Format(param.Format), true
 		}
 	case "counter":
-		if !state.seeded {
-			state.counter = param.Start
-			state.seeded = true
+		return generateCounterValue(param, state)
+	case "current_iteration":
+		iterationParam := param
+		if iterationParam.Start == 0 {
+			iterationParam.Start = 1
 		}
-		current := state.counter
-		if isCounterExhausted(current, param) {
-			handled, ok := handleCounterExhaustion(param, state)
-			if !ok {
-				return "", false
-			}
-			if handled == "" && effectiveOnExhaustion(param) == "empty" {
-				return "", true
-			}
-			current = state.counter
+		if iterationParam.Step == 0 {
+			iterationParam.Step = 1
 		}
-		state.counter += param.Step
-		return formatNumericValue(current, param), true
+		return generateCounterValue(iterationParam, state)
+	case "host":
+		return generateHostValue(param)
 	case "uuid":
 		return uuid.NewString(), true
 	case "random_string":
@@ -203,6 +257,86 @@ func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState)
 	default:
 		return "", false
 	}
+}
+
+func (pr *ParameterRuntime) generateSameLineValue(param dsl.Parameter, state *parameterState, visiting map[string]bool) (string, bool) {
+	referenceName, _, referenceState, ok := pr.findParameter(param.SameLineAs)
+	if !ok || referenceState == state {
+		return "", false
+	}
+	if !referenceState.hasRowPick {
+		if visiting == nil {
+			visiting = make(map[string]bool)
+		}
+		if visiting[referenceName] {
+			return "", false
+		}
+		visiting[referenceName] = true
+		pr.refreshWithStack(referenceName, visiting)
+		delete(visiting, referenceName)
+	}
+	if !referenceState.hasRowPick {
+		return "", false
+	}
+	values, ok := pr.valuesForParameter(param, state)
+	if !ok || len(values) == 0 {
+		return "", false
+	}
+	if referenceState.lastIndex < 0 || referenceState.lastIndex >= len(values) {
+		return "", false
+	}
+	state.lastIndex = referenceState.lastIndex
+	state.hasRowPick = true
+	return values[referenceState.lastIndex], true
+}
+
+func (pr *ParameterRuntime) findParameter(name string) (string, dsl.Parameter, *parameterState, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", dsl.Parameter{}, nil, false
+	}
+	if param, ok := pr.params[name]; ok {
+		return name, param, pr.states[name], true
+	}
+	for candidate, param := range pr.params {
+		if strings.EqualFold(candidate, name) {
+			return candidate, param, pr.states[candidate], true
+		}
+	}
+	return "", dsl.Parameter{}, nil, false
+}
+
+func generateCounterValue(param dsl.Parameter, state *parameterState) (string, bool) {
+	if !state.seeded {
+		state.counter = param.Start
+		state.seeded = true
+	}
+	current := state.counter
+	if isCounterExhausted(current, param) {
+		handled, ok := handleCounterExhaustion(param, state)
+		if !ok {
+			return "", false
+		}
+		if handled == "" && effectiveOnExhaustion(param) == "empty" {
+			return "", true
+		}
+		current = state.counter
+	}
+	state.counter += param.Step
+	return formatNumericValue(current, param), true
+}
+
+func generateHostValue(param dsl.Parameter) (string, bool) {
+	for _, value := range param.Values {
+		if strings.TrimSpace(value) != "" {
+			return value, true
+		}
+	}
+	hostname, err := os.Hostname()
+	if err == nil && strings.TrimSpace(hostname) != "" {
+		return hostname, true
+	}
+	return "localhost", true
 }
 
 func resolveParameterTime(now func() time.Time, param dsl.Parameter) (time.Time, bool) {
@@ -220,13 +354,14 @@ func resolveParameterTime(now func() time.Time, param dsl.Parameter) (time.Time,
 	return current, true
 }
 
-func generateSelectedValue(values []string, param dsl.Parameter, state *parameterState) (string, bool) {
+func generateSelectedValue(values []string, param dsl.Parameter, state *parameterState) (string, int, bool) {
 	if len(values) == 0 {
-		return "", false
+		return "", -1, false
 	}
 	switch effectiveParameterSelection(param) {
 	case "random":
-		return values[state.random.Intn(len(values))], true
+		index := state.random.Intn(len(values))
+		return values[index], index, true
 	case "unique":
 		if len(state.used) >= len(values) {
 			switch effectiveOnExhaustion(param) {
@@ -234,9 +369,9 @@ func generateSelectedValue(values []string, param dsl.Parameter, state *paramete
 				state.used = make(map[int]bool)
 				state.nextIndex = 0
 			case "empty":
-				return "", true
+				return "", -1, true
 			default:
-				return "", false
+				return "", -1, false
 			}
 		}
 		for attempts := 0; attempts < len(values); attempts++ {
@@ -246,23 +381,24 @@ func generateSelectedValue(values []string, param dsl.Parameter, state *paramete
 			}
 			state.used[idx] = true
 			state.nextIndex = idx + 1
-			return values[idx], true
+			return values[idx], idx, true
 		}
-		return "", false
+		return "", -1, false
 	default:
 		if state.nextIndex >= len(values) {
 			switch effectiveOnExhaustion(param) {
 			case "wrap":
 				state.nextIndex = 0
 			case "empty":
-				return "", true
+				return "", -1, true
 			default:
-				return "", false
+				return "", -1, false
 			}
 		}
-		value := values[state.nextIndex]
+		index := state.nextIndex
+		value := values[index]
 		state.nextIndex++
-		return value, true
+		return value, index, true
 	}
 }
 
@@ -320,7 +456,7 @@ func (pr *ParameterRuntime) valuesForParameter(param dsl.Parameter, state *param
 		return state.values, len(state.values) > 0
 	}
 	if len(param.Values) > 0 {
-		state.values = append([]string(nil), param.Values...)
+		state.values = normalizeParameterValues(param.Values)
 		state.loaded = true
 		return state.values, true
 	}
@@ -336,10 +472,24 @@ func (pr *ParameterRuntime) valuesForParameter(param dsl.Parameter, state *param
 	return state.values, true
 }
 
+func normalizeParameterValues(values []string) []string {
+	normalized := make([]string, len(values))
+	for index, value := range values {
+		normalized[index] = strings.TrimSpace(value)
+	}
+	return normalized
+}
+
 func resolveBuiltinFunction(expr string, now func() time.Time) (string, bool) {
 	switch expr {
 	case "fn.uuid()", "fn.uuid", "fn.uuid.v4":
 		return uuid.NewString(), true
+	case "fake.uuid", "fake.uuid()":
+		return uuid.NewString(), true
+	case "fake.email", "fake.email()":
+		generator := rand.New(rand.NewSource(time.Now().UnixNano()))
+		localPart := strings.ToLower(generateRandomString(generator, 12, "abcdefghijklmnopqrstuvwxyz0123456789"))
+		return localPart + "@example.test", true
 	case "fn.timestamp.unix":
 		return strconv.FormatInt(now().Unix(), 10), true
 	case "fn.timestamp.unix_ms":

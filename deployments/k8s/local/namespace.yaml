@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: stormrunner-local
+  name: apexload-local
   labels:
-    app.kubernetes.io/name: stormrunner
+    app.kubernetes.io/name: apexload
     app.kubernetes.io/environment: local

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -10,29 +11,72 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jasonczech/stormrunner/pkg/convert/jmeter"
-	"github.com/jasonczech/stormrunner/pkg/convert/loadrunner"
-	"github.com/jasonczech/stormrunner/pkg/convert/sample"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/convert/devweb"
+	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/convert/jmeter"
+	"github.com/jasonczech/apexload/pkg/convert/loadrunner"
+	"github.com/jasonczech/apexload/pkg/convert/sample"
+	"github.com/jasonczech/apexload/pkg/convert/trueclient"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type jmeterImportRequest struct {
-	Data []byte
-	Opts jmeter.ConvertOptions
+	Data      []byte
+	ProjectID string
+	Opts      jmeter.ConvertOptions
 }
 
 type loadRunnerImportRequest struct {
-	Data []byte
-	Opts loadrunner.ConvertOptions
+	Data            []byte
+	ProjectID       string
+	Opts            loadrunner.ConvertOptions
+	ReadinessPolicy loadrunner.RuntimeSettingMigrationPolicy
+}
+
+type devWebImportRequest struct {
+	Data      []byte
+	ProjectID string
+	Name      string
+	IsZip     bool
+	Opts      devweb.ConvertOptions
+}
+
+type harImportRequest struct {
+	Data      []byte
+	ProjectID string
+	Opts      har.ConvertOptions
 }
 
 type loadRunnerImportSummary struct {
-	ProjectFile              string   `json:"project_file,omitempty"`
-	MappedRuntimeFile        string   `json:"mapped_runtime_file,omitempty"`
-	ProjectSections          []string `json:"project_sections,omitempty"`
-	RuntimeFiles             []string `json:"runtime_files,omitempty"`
-	ParameterFiles           []string `json:"parameter_files,omitempty"`
-	UnsupportedFunctionCount int      `json:"unsupported_function_count"`
+	ProjectFile                 string                                       `json:"project_file,omitempty"`
+	MappedRuntimeFile           string                                       `json:"mapped_runtime_file,omitempty"`
+	ProjectSections             []string                                     `json:"project_sections,omitempty"`
+	RuntimeFiles                []string                                     `json:"runtime_files,omitempty"`
+	ParameterFiles              []string                                     `json:"parameter_files,omitempty"`
+	RuntimeSettingsParity       []loadrunner.RuntimeSettingParityEntry       `json:"runtime_settings_parity,omitempty"`
+	RuntimeSettingsStatusCounts map[string]int                               `json:"runtime_settings_status_counts,omitempty"`
+	MigrationReadiness          *loadrunner.RuntimeSettingMigrationReadiness `json:"migration_readiness,omitempty"`
+	TrueClientInspection        *trueclient.ArchiveInspection                `json:"trueclient_archive_inspection,omitempty"`
+	SourceScriptType            string                                       `json:"source_script_type,omitempty"`
+	SourceProfile               string                                       `json:"source_profile,omitempty"`
+	Web2MigrationReadiness      *web2MigrationReadinessReport                `json:"web2_migration_readiness,omitempty"`
+	DetectedProtocol            *loadrunner.DetectedProtocol                 `json:"detected_protocol,omitempty"`
+	ReviewArtifact              *loadrunner.ReviewArtifact                   `json:"review_artifact,omitempty"`
+	SourceReview                *loadrunner.SourceReview                     `json:"source_review,omitempty"`
+	ImportMode                  string                                       `json:"import_mode,omitempty"`
+	UnsupportedFunctionCount    int                                          `json:"unsupported_function_count"`
+}
+
+type web2MigrationReadinessReport struct {
+	ImportedSteps             int      `json:"imported_steps"`
+	ConvertedSteps            int      `json:"converted_steps"`
+	SkippedReviewSteps        int      `json:"skipped_review_steps"`
+	SelectorConfidencePct     int      `json:"selector_confidence_pct"`
+	ReplayStatus              string   `json:"replay_status"`
+	RuntimeParityStatus       string   `json:"runtime_parity_status"`
+	ConversionToHTTPReadiness string   `json:"conversion_to_http_readiness"`
+	Findings                  []string `json:"findings,omitempty"`
+	NextActions               []string `json:"next_actions,omitempty"`
 }
 
 // handleImportLoadRunner handles POST /api/v1/scripts/import/loadrunner
@@ -49,8 +93,11 @@ func (s *Server) handleImportLoadRunner(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
 
-	writeLoadRunnerImportResponse(w, http.StatusOK, result)
+	writeLoadRunnerImportResponse(w, http.StatusOK, result, importReq.ReadinessPolicy)
 }
 
 // handleValidateLoadRunnerImport handles POST /api/v1/scripts/import/loadrunner/validate.
@@ -66,8 +113,11 @@ func (s *Server) handleValidateLoadRunnerImport(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusUnprocessableEntity, "validation failed: "+err.Error())
 		return
 	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
 
-	writeLoadRunnerImportResponse(w, http.StatusOK, result)
+	writeLoadRunnerImportResponse(w, http.StatusOK, result, importReq.ReadinessPolicy)
 }
 
 // handleImportJMeter handles POST /api/v1/scripts/import/jmeter.
@@ -83,6 +133,13 @@ func (s *Server) handleImportJMeter(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
+	for index := range result.Scripts {
+		result.Scripts[index].ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
+	attachSourceReviewToScripts(result.Scripts, "jmeter", result.Summary.FileName, result.SourceReview)
 
 	writeJMeterImportResponse(w, http.StatusOK, result)
 }
@@ -101,6 +158,13 @@ func (s *Server) handleValidateJMeterImport(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusUnprocessableEntity, "validation failed: "+err.Error())
 		return
 	}
+	for index := range result.Scripts {
+		result.Scripts[index].ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
+	attachSourceReviewToScripts(result.Scripts, "jmeter", result.Summary.FileName, result.SourceReview)
 
 	writeJMeterImportResponse(w, http.StatusOK, result)
 }
@@ -109,6 +173,225 @@ func (s *Server) handleJMeterSupportMatrix(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]any{
 		"support_matrix": jmeter.GetSupportMatrix(),
 	})
+}
+
+func (s *Server) handleLoadRunnerSupportMatrix(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"support_matrix":            loadrunner.GetRTSSupportMatrix(),
+		"notes":                     loadrunner.GetRTSSupportMatrixNotes(),
+		"tested_examples":           loadrunner.GetRTSSupportMatrixExamples(),
+		"trueclient_script_types":   trueclient.ScriptTypeScopes(),
+		"trueclient_step_matrix":    trueclient.StepScopes(),
+		"web2_profile_capabilities": trueclient.Web2ProfileCapabilityScopes(),
+		"web2_fixture_contract":     trueclient.Web2FixtureContracts(),
+		"protocol_support_matrix":   protocolBundleSupportMatrix(),
+	})
+}
+
+func (s *Server) handleAuthoringCapabilities(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, authoringCapabilityResponse())
+}
+
+// handleImportDevWeb handles POST /api/v1/scripts/import/devweb.
+// Accepts JSON, raw .js, raw .zip, or multipart uploads and returns a generated script preview.
+func (s *Server) handleImportDevWeb(w http.ResponseWriter, r *http.Request) {
+	importReq, ok := readDevWebImportRequest(w, r)
+	if !ok {
+		return
+	}
+
+	var (
+		result *devweb.ConvertResult
+		err    error
+	)
+	if importReq.IsZip {
+		result, err = devweb.ConvertZip(importReq.Data, importReq.Opts)
+	} else {
+		result, err = devweb.Convert(devweb.ImportRequest{
+			Name:      importReq.Name,
+			ProjectID: importReq.ProjectID,
+			Content:   string(importReq.Data),
+			Options:   importReq.Opts,
+		})
+	}
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
+		return
+	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
+	attachSourceReviewToScript(result.Script, "devweb", importReq.Name, result.SourceReview)
+	issues := validateScript(result.Script)
+	if len(issues) > 0 {
+		result.Warnings = append(result.Warnings, issues...)
+	}
+
+	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+		Result:              result,
+		Script:              result.Script,
+		Warnings:            result.Warnings,
+		Stats:               result.Stats,
+		UnsupportedElements: result.Unsupported.Strings(),
+		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
+		SourceReview:        result.SourceReview,
+	}))
+}
+
+// handleImportHAR handles POST /api/v1/scripts/import/har.
+// Accepts JSON, raw HAR, or multipart uploads and returns a generated HTTP script preview.
+func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
+	importReq, ok := readHARImportRequest(w, r)
+	if !ok {
+		return
+	}
+
+	result, err := har.Convert(importReq.Data, importReq.Opts)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
+		return
+	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
+	attachSourceReviewToScript(result.Script, "har", importReq.Opts.ScriptName, result.SourceReview)
+	issues := validateScript(result.Script)
+	if len(issues) > 0 {
+		result.Warnings = append(result.Warnings, issues...)
+	}
+
+	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+		Result:              result,
+		Script:              result.Script,
+		Warnings:            result.Warnings,
+		Stats:               result.Stats,
+		Correlations:        result.Correlations,
+		UnsupportedElements: result.Unsupported.Strings(),
+		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
+		SourceReview:        result.SourceReview,
+	}))
+}
+
+func readHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportRequest, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
+	contentType := r.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/json") {
+		var req struct {
+			Name      string             `json:"name,omitempty"`
+			ProjectID string             `json:"project_id,omitempty"`
+			Content   string             `json:"content"`
+			Options   har.ConvertOptions `json:"options,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return nil, false
+		}
+		req.Options.ScriptName = firstNonEmpty(req.Options.ScriptName, req.Name)
+		return &harImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Opts: req.Options}, true
+	}
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		if err := r.ParseMultipartForm(50 << 20); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
+			return nil, false
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "file field is required")
+			return nil, false
+		}
+		defer file.Close()
+		data, err := io.ReadAll(file)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
+			return nil, false
+		}
+		return &harImportRequest{
+			Data:      data,
+			ProjectID: r.FormValue("project_id"),
+			Opts: har.ConvertOptions{
+				ScriptName:          firstNonEmpty(r.FormValue("name"), strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename))),
+				BaseURL:             r.FormValue("base_url"),
+				IncludeStaticAssets: parseOptionalBool(r.FormValue("include_static_assets")),
+			},
+		}, true
+	}
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+		return nil, false
+	}
+	filename := r.URL.Query().Get("filename")
+	return &harImportRequest{
+		Data:      data,
+		ProjectID: r.URL.Query().Get("project_id"),
+		Opts: har.ConvertOptions{
+			ScriptName:          strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
+			BaseURL:             r.URL.Query().Get("base_url"),
+			IncludeStaticAssets: parseOptionalBool(r.URL.Query().Get("include_static_assets")),
+		},
+	}, true
+}
+
+func readDevWebImportRequest(w http.ResponseWriter, r *http.Request) (*devWebImportRequest, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, 20<<20)
+	contentType := r.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/json") {
+		var req devweb.ImportRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return nil, false
+		}
+		return &devWebImportRequest{
+			Data:      []byte(req.Content),
+			ProjectID: req.ProjectID,
+			Name:      req.Name,
+			Opts:      req.Options,
+		}, true
+	}
+
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		if err := r.ParseMultipartForm(20 << 20); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
+			return nil, false
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "file field is required")
+			return nil, false
+		}
+		defer file.Close()
+		data, err := io.ReadAll(file)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
+			return nil, false
+		}
+		opts := devweb.ConvertOptions{
+			BaseURL: r.FormValue("base_url"),
+		}
+		return &devWebImportRequest{
+			Data:      data,
+			ProjectID: r.FormValue("project_id"),
+			Name:      strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename)),
+			IsZip:     strings.EqualFold(filepath.Ext(header.Filename), ".zip"),
+			Opts:      opts,
+		}, true
+	}
+
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+		return nil, false
+	}
+	filename := r.URL.Query().Get("filename")
+	return &devWebImportRequest{
+		Data:      data,
+		ProjectID: r.URL.Query().Get("project_id"),
+		Name:      strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
+		IsZip:     strings.EqualFold(filepath.Ext(filename), ".zip") || strings.HasPrefix(contentType, "application/zip"),
+		Opts: devweb.ConvertOptions{
+			BaseURL: r.URL.Query().Get("base_url"),
+		},
+	}, true
 }
 
 func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImportRequest, bool) {
@@ -153,7 +436,8 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 	}
 
 	return &jmeterImportRequest{
-		Data: data,
+		Data:      data,
+		ProjectID: firstNonEmpty(r.FormValue("project_id"), r.URL.Query().Get("project_id")),
 		Opts: jmeter.ConvertOptions{
 			ScriptName:        r.FormValue("name"),
 			BaseURL:           r.FormValue("base_url"),
@@ -204,13 +488,15 @@ func readLoadRunnerImportRequest(w http.ResponseWriter, r *http.Request) (*loadR
 	}
 
 	return &loadRunnerImportRequest{
-		Data: data,
+		Data:      data,
+		ProjectID: firstNonEmpty(r.FormValue("project_id"), r.URL.Query().Get("project_id")),
 		Opts: loadrunner.ConvertOptions{
 			ScriptName:           r.FormValue("name"),
 			BaseURL:              r.FormValue("base_url"),
 			IncludeAssertions:    r.FormValue("include_assertions") == "true",
 			PreserveTransactions: parseBoolDefault(r.FormValue("preserve_transactions"), true),
 		},
+		ReadinessPolicy: loadrunner.ParseRuntimeSettingMigrationPolicy(r.FormValue("migration_block_statuses")),
 	}, true
 }
 
@@ -229,23 +515,751 @@ func parseBoolDefault(value string, defaultValue bool) bool {
 	}
 }
 
-func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *loadrunner.ConvertResult) {
+func parseOptionalBool(value string) *bool {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parsed := parseBoolDefault(value, false)
+	return &parsed
+}
+
+func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *loadrunner.ConvertResult, readinessPolicy loadrunner.RuntimeSettingMigrationPolicy) {
+	if result == nil {
+		writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{}))
+		return
+	}
 	unsupportedElements := uniqueSortedStrings(result.Stats.UnsupportedFuncs)
-	summary := buildLoadRunnerImportSummary(result, unsupportedElements)
+	warnings := loadRunnerImportWarnings(result)
+	summary := buildLoadRunnerImportSummary(result, unsupportedElements, readinessPolicy)
+	persistLoadRunnerImportSummary(result, summary)
+	reviewSections := buildLoadRunnerImportReviewSections(warnings, result, unsupportedElements, summary)
+	repairSuggestions := buildLoadRunnerImportRepairSuggestions(result, unsupportedElements, summary)
 
 	writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
-		Warnings:            result.Warnings,
+		Warnings:            warnings,
 		Stats:               result.Stats,
 		UnsupportedElements: unsupportedElements,
+		ReviewSections:      reviewSections,
+		RepairSuggestions:   repairSuggestions,
 		Summary:             summary,
+		DetectedProtocol:    result.DetectedProtocol,
+		ReviewArtifact:      result.ReviewArtifact,
+		SourceReview:        summary.SourceReview,
 	}))
 }
 
-func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedElements []string) loadRunnerImportSummary {
+func loadRunnerImportWarnings(result *loadrunner.ConvertResult) []string {
+	if result == nil {
+		return nil
+	}
+	warnings := append([]string(nil), result.Warnings...)
+	return uniqueSortedStrings(warnings)
+}
+
+func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, unsupportedElements []string, summary loadRunnerImportSummary) []scriptImportRepairSuggestion {
+	suggestions := make([]scriptImportRepairSuggestion, 0)
+	if result == nil {
+		return suggestions
+	}
+
+	for _, element := range unsupportedElements {
+		normalized := strings.ToLower(element)
+		description := "Review the preserved source construct and replace it with equivalent APEX Load DSL behavior before relying on this script."
+		action := "Open the generated script in the visual editor, inspect preserved metadata, and either remove the unsupported construct or model it with supported actions."
+		if strings.Contains(normalized, "evaluate javascript") {
+			description = "This TruClient JavaScript statement could not be decomposed into a supported browser action."
+			action = "Replace the JavaScript with browser_click, browser_fill, browser_select, browser_wait, browser_swipe, or a supported assertion, then validate with browser replay."
+			if loadRunnerWarningsContain(result, "window.scrollto(") {
+				description = "This TruClient JavaScript scroll statement could not be decomposed safely into a supported browser action."
+				action = "Replace the JavaScript with browser_swipe and any required browser_wait actions, then validate the resulting scroll behavior with browser replay."
+			}
+		}
+		suggestions = append(suggestions, scriptImportRepairSuggestion{
+			ID:          "unsupported:" + stableReviewKey(element),
+			Category:    "unsupported",
+			Severity:    "blocker",
+			Title:       "Replace unsupported " + element,
+			Description: description,
+			Action:      action,
+		})
+	}
+
+	if result.Script != nil && result.Script.Protocol == "browser" {
+		suggestions = append(suggestions, browserImportRepairSuggestions(result.Script)...)
+	}
+
+	if isWeb2TrueClientInspection(summary.TrueClientInspection) {
+		suggestions = append(suggestions, trueClientWeb2RepairSuggestions(summary)...)
+	}
+
+	if result.DetectedProtocol != nil && result.DetectedProtocol.ImportMode != loadrunner.ImportModeExecutable {
+		suggestions = append(suggestions, scriptImportRepairSuggestion{
+			ID:          "protocol:review-artifact",
+			Category:    "protocol",
+			Severity:    "blocker",
+			Title:       "Resolve protocol import gate",
+			Description: fmt.Sprintf("%s was classified as %s and is not ready to save as an executable APEX Load script.", firstNonEmpty(result.DetectedProtocol.DisplayName, result.DetectedProtocol.CanonicalLoadRunnerProtocol), result.DetectedProtocol.ImportMode),
+			Action:      "Save the review artifact, collect the required protocol evidence, and rerun import after the protocol is confirmed or a runner bridge is available.",
+		})
+	}
+
+	if len(summary.RuntimeFiles) > 0 || summary.MappedRuntimeFile != "" {
+		suggestions = append(suggestions, scriptImportRepairSuggestion{
+			ID:          "runtime:review-preserved-settings",
+			Category:    "runtime",
+			Severity:    "info",
+			Title:       "Review preserved runtime settings",
+			Description: "The source archive included LoadRunner runtime metadata that may not all execute natively in APEX Load yet.",
+			Action:      "Compare the preserved runtime file and project settings against the generated APEX Load config before promoting the script.",
+		})
+	}
+
+	if summary.MigrationReadiness != nil && summary.MigrationReadiness.Blocked {
+		suggestions = append(suggestions, scriptImportRepairSuggestion{
+			ID:          "runtime:migration-readiness",
+			Category:    "runtime",
+			Severity:    "blocker",
+			Title:       "Resolve blocking runtime settings before promotion",
+			Description: "The selected migration block policy matched imported runtime settings that are not fully executable in APEX Load yet.",
+			Action:      "Review the blocking runtime settings, adjust the generated APEX Load config where possible, or relax the migration block policy before saving the script.",
+		})
+	}
+
+	return suggestions
+}
+
+func trueClientWeb2RepairSuggestions(summary loadRunnerImportSummary) []scriptImportRepairSuggestion {
+	inspection := summary.TrueClientInspection
+	if inspection == nil {
+		return nil
+	}
+	suggestions := []scriptImportRepairSuggestion{
+		{
+			ID:          "web2:replay-evidence",
+			Category:    "replay",
+			Severity:    "warning",
+			Title:       "Attach browser replay evidence",
+			Description: "TruClient Web 2.0 imports are review-only until selector, wait, runtime, and screenshot evidence is captured.",
+			Action:      "Run browser replay from the visual editor and attach the replay report before approving the imported draft.",
+		},
+		{
+			ID:          "web2:object-identification",
+			Category:    "selector",
+			Severity:    "warning",
+			Title:       "Review Web 2.0 object identification",
+			Description: fmt.Sprintf("%d object repository file(s), %d descriptor(s), and %d replay diagnostic(s) were preserved for selector repair.", len(inspection.ObjectRepositories), len(inspection.ObjectDescriptors), trueClientReplayDiagnosticCount(inspection)),
+			Action:      "Open the object-identification review section, compare ranked selector candidates with replay evidence, and stabilize brittle selectors before promotion.",
+		},
+		{
+			ID:          "web2:http-conversion",
+			Category:    "conversion",
+			Severity:    "info",
+			Title:       "Gate browser-to-HTTP conversion",
+			Description: "Web 2.0 browser drafts should not be promoted to high-density HTTP load until network capture and correlation findings are reviewed.",
+			Action:      "Capture replay traffic, review conversion blockers and correlation candidates, then generate an HTTP draft only for eligible flows.",
+		},
+	}
+	if len(inspection.ParameterFiles) > 0 {
+		suggestions = append(suggestions, scriptImportRepairSuggestion{
+			ID:          "web2:parameter-fit",
+			Category:    "data",
+			Severity:    "info",
+			Title:       "Verify Web 2.0 parameter data fit",
+			Description: fmt.Sprintf("%d parameter file(s) were discovered for the imported Web 2.0 flow.", len(inspection.ParameterFiles)),
+			Action:      "Open parameter data in the script editor, confirm row strategy and exhaustion behavior, and replay with representative data.",
+		})
+	}
+	if len(inspection.UnsupportedFragments) > 0 {
+		severity := "warning"
+		for _, fragment := range inspection.UnsupportedFragments {
+			if fragment.Status == trueclient.ScopeOutOfScope {
+				severity = "blocker"
+				break
+			}
+		}
+		suggestions = append(suggestions, scriptImportRepairSuggestion{
+			ID:          "web2:source-fragments",
+			Category:    "unsupported",
+			Severity:    severity,
+			Title:       "Resolve Web 2.0 source fragments",
+			Description: fmt.Sprintf("%d review-only or unsupported TruClient fragment(s) were preserved from the source archive.", len(inspection.UnsupportedFragments)),
+			Action:      "Use the Web 2.0 source-fragment review section to replace unsupported JavaScript/API behavior with supported browser actions or documented manual steps.",
+		})
+	}
+	return suggestions
+}
+
+func loadRunnerWarningsContain(result *loadrunner.ConvertResult, needle string) bool {
+	if result == nil {
+		return false
+	}
+	needle = strings.ToLower(strings.TrimSpace(needle))
+	if needle == "" {
+		return false
+	}
+	for _, warning := range result.Warnings {
+		if strings.Contains(strings.ToLower(warning), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func trueClientWeb2ReviewSections(summary loadRunnerImportSummary) []scriptImportReviewSection {
+	inspection := summary.TrueClientInspection
+	if inspection == nil {
+		return nil
+	}
+	sourceType := firstNonEmpty(summary.SourceScriptType, inspection.ScriptType)
+	sourceProfile := summary.SourceProfile
+	if sourceProfile == "" && inspection.ScriptTypeScope != nil {
+		sourceProfile = inspection.ScriptTypeScope.APEXLoadShape
+	}
+	items := []string{
+		fmt.Sprintf("Source script type: %s", firstNonEmpty(sourceType, "TruClient archive")),
+		fmt.Sprintf("Source profile: %s", firstNonEmpty(sourceProfile, "browser profile")),
+		fmt.Sprintf("Executable steps inspected: %d", inspection.StepInventory.Total),
+		fmt.Sprintf("Supported step families: %d", len(inspection.StepInventory.Supported)),
+	}
+	if len(inspection.StepInventory.ReviewOnly) > 0 {
+		items = append(items, fmt.Sprintf("Review-only step families: %d", len(inspection.StepInventory.ReviewOnly)))
+	}
+	if len(inspection.StepInventory.Unsupported) > 0 {
+		items = append(items, fmt.Sprintf("Unsupported step families: %d", len(inspection.StepInventory.Unsupported)))
+	}
+	sections := []scriptImportReviewSection{{
+		Key:      "web2_profile_summary",
+		Title:    "VuGen Web 2.0 Profile Summary",
+		Severity: "warning",
+		Summary:  "This TruClient Web 2.0 archive was converted into a review-only browser draft.",
+		Items:    items,
+	}}
+
+	if len(inspection.UnsupportedFragments) > 0 {
+		fragmentItems := make([]string, 0, len(inspection.UnsupportedFragments))
+		severity := "warning"
+		for _, fragment := range inspection.UnsupportedFragments {
+			if fragment.Status == trueclient.ScopeOutOfScope {
+				severity = "blocker"
+			}
+			label := fragment.Action
+			if fragment.Index != "" {
+				label += " #" + fragment.Index
+			}
+			fragmentItems = append(fragmentItems, fmt.Sprintf("%s: %s", label, fragment.Reason))
+		}
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "web2_unsupported_source_fragments",
+			Title:    "Web 2.0 Source Fragments",
+			Severity: severity,
+			Summary:  "Review-only or unsupported TruClient fragments were preserved for repair before approval.",
+			Items:    fragmentItems,
+		})
+	}
+
+	objectItems := make([]string, 0, len(inspection.ObjectRepositories)+1)
+	for _, file := range inspection.ObjectRepositories {
+		objectItems = append(objectItems, "Object repository: "+file.Path)
+	}
+	if len(inspection.ObjectDescriptors) > 0 {
+		objectItems = append(objectItems, fmt.Sprintf("Object descriptors parsed: %d", len(inspection.ObjectDescriptors)))
+	}
+	if candidateCount := trueClientSelectorCandidateCount(inspection); candidateCount > 0 {
+		objectItems = append(objectItems, fmt.Sprintf("Selector candidates extracted: %d", candidateCount))
+	}
+	if diagnosticCount := trueClientReplayDiagnosticCount(inspection); diagnosticCount > 0 {
+		objectItems = append(objectItems, fmt.Sprintf("Replay diagnostics prepared: %d", diagnosticCount))
+	}
+	objectItems = append(objectItems, "Imported selectors are ranked from step arguments and object repositories; replay remains required before promotion.")
+	sections = append(sections, scriptImportReviewSection{
+		Key:      "web2_object_identification",
+		Title:    "Object Identification",
+		Severity: "warning",
+		Summary:  fmt.Sprintf("%d object repository file(s) were preserved for selector review.", len(inspection.ObjectRepositories)),
+		Items:    objectItems,
+	})
+
+	if len(inspection.ParameterFiles) > 0 {
+		parameterItems := make([]string, 0, len(inspection.ParameterFiles))
+		for _, file := range inspection.ParameterFiles {
+			parameterItems = append(parameterItems, "Parameter data: "+file.Path)
+		}
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "web2_parameter_mapping",
+			Title:    "Parameter Mapping",
+			Severity: "info",
+			Summary:  "Parameter files were discovered and preserved for data-source fit review.",
+			Items:    parameterItems,
+		})
+	}
+
+	sections = append(sections, scriptImportReviewSection{
+		Key:      "web2_replay_readiness",
+		Title:    "Replay Readiness",
+		Severity: "warning",
+		Summary:  "Browser replay evidence is required before this review-only Web 2.0 draft is approved.",
+		Items: []string{
+			"Run browser replay against the target application.",
+			"Review screenshots, selector failures, wait behavior, and runtime settings parity.",
+			"Do not promote to a reusable production asset until replay evidence is attached.",
+		},
+	})
+	sections = append(sections, scriptImportReviewSection{
+		Key:      "web2_http_conversion_eligibility",
+		Title:    "HTTP Conversion Eligibility",
+		Severity: "info",
+		Summary:  "Browser-to-HTTP conversion remains a governed follow-up flow for Web 2.0 imports.",
+		Items: []string{
+			"Capture network requests during replay before generating an HTTP draft.",
+			"Review correlation candidates and conversion blockers before using HTTP for density load.",
+		},
+	})
+	return sections
+}
+
+func isWeb2TrueClientInspection(inspection *trueclient.ArchiveInspection) bool {
+	if inspection == nil || inspection.ScriptTypeScope == nil {
+		return false
+	}
+	return inspection.ScriptTypeScope.CanonicalName == "truclient2_web" || inspection.ScriptTypeScope.CanonicalName == "truclient_web"
+}
+
+func trueClientSelectorCandidateCount(inspection *trueclient.ArchiveInspection) int {
+	if inspection == nil {
+		return 0
+	}
+	count := 0
+	for _, step := range inspection.Steps {
+		count += len(step.SelectorCandidates)
+	}
+	return count
+}
+
+func trueClientReplayDiagnosticCount(inspection *trueclient.ArchiveInspection) int {
+	if inspection == nil {
+		return 0
+	}
+	count := 0
+	for _, step := range inspection.Steps {
+		count += len(step.ReplayDiagnostics)
+	}
+	return count
+}
+
+func buildWeb2MigrationReadinessReport(result *loadrunner.ConvertResult, summary loadRunnerImportSummary) *web2MigrationReadinessReport {
+	inspection := summary.TrueClientInspection
+	if inspection == nil {
+		return nil
+	}
+	converted := 0
+	skipped := 0
+	if result != nil {
+		converted = result.Stats.ConvertedActions
+		skipped = result.Stats.Skipped
+	}
+	reviewSteps := skipped + len(inspection.UnsupportedFragments)
+	for _, count := range inspection.StepInventory.ReviewOnly {
+		reviewSteps += count
+	}
+	for _, count := range inspection.StepInventory.Unsupported {
+		reviewSteps += count
+	}
+	runtimeStatus := "ready"
+	if summary.MigrationReadiness != nil {
+		if summary.MigrationReadiness.Blocked {
+			runtimeStatus = "blocked"
+		} else if summary.MigrationReadiness.ScorePct < 100 {
+			runtimeStatus = "needs_review"
+		}
+	} else if len(summary.RuntimeSettingsParity) > 0 {
+		runtimeStatus = "needs_review"
+	}
+
+	report := &web2MigrationReadinessReport{
+		ImportedSteps:             inspection.StepInventory.Total,
+		ConvertedSteps:            converted,
+		SkippedReviewSteps:        reviewSteps,
+		SelectorConfidencePct:     averageTrueClientSelectorConfidence(inspection),
+		ReplayStatus:              "required",
+		RuntimeParityStatus:       runtimeStatus,
+		ConversionToHTTPReadiness: "needs_replay_network",
+		Findings: []string{
+			fmt.Sprintf("%d imported TruClient Web 2.0 step(s), %d converted browser action(s), %d skipped or review step(s).", inspection.StepInventory.Total, converted, reviewSteps),
+			"Browser replay evidence is required before approval.",
+			"Browser-to-HTTP conversion requires replay network capture and generated HTTP validation.",
+		},
+		NextActions: []string{
+			"Run browser replay and review screenshots, DOM, console, network, and Core Web Vitals evidence.",
+			"Open object descriptors and repair low-confidence selectors before promotion.",
+			"Use /api/v1/scripts/browser-to-http/preview after replay network evidence is available.",
+		},
+	}
+	if runtimeStatus == "blocked" {
+		report.Findings = append(report.Findings, "Runtime parity blockers must be resolved or the import policy relaxed before saving.")
+	}
+	if report.SelectorConfidencePct == 0 {
+		report.Findings = append(report.Findings, "No selector confidence evidence was available in the imported object descriptors.")
+	} else if report.SelectorConfidencePct < 70 {
+		report.Findings = append(report.Findings, "Average selector confidence is below the recommended migration threshold.")
+	}
+	return report
+}
+
+func averageTrueClientSelectorConfidence(inspection *trueclient.ArchiveInspection) int {
+	if inspection == nil {
+		return 0
+	}
+	total := 0
+	count := 0
+	for _, step := range inspection.Steps {
+		for _, candidate := range step.SelectorCandidates {
+			total += candidate.Confidence
+			count++
+		}
+	}
+	if count == 0 {
+		return 0
+	}
+	return int(float64(total)/float64(count) + 0.5)
+}
+
+func browserImportRepairSuggestions(script *dsl.Script) []scriptImportRepairSuggestion {
+	suggestions := []scriptImportRepairSuggestion{
+		{
+			ID:          "browser:replay-validation",
+			Category:    "replay",
+			Severity:    "warning",
+			Title:       "Run browser replay before saving as production-ready",
+			Description: "Imported browser scripts depend on source selectors, waits, and device assumptions that should be verified against a live page.",
+			Action:      "Open the imported draft in the visual editor and run browser replay. Update selectors or waits for any failed action.",
+		},
+	}
+
+	for index, action := range script.Actions {
+		actionID := firstNonEmpty(action.Name, fmt.Sprintf("action_%d", index+1))
+		switch action.Type {
+		case "browser_click", "browser_fill", "browser_select", "browser_tap", "browser_long_press", "browser_swipe":
+			selector := firstNonEmpty(action.Selector, action.Target)
+			if selector != "" {
+				score, signals := browserSelectorStabilityScore(selector)
+				suggestions = append(suggestions, scriptImportRepairSuggestion{
+					ID:                     fmt.Sprintf("selector:%d:%s", index+1, stableReviewKey(actionID)),
+					Category:               "selector",
+					Severity:               "warning",
+					Title:                  "Validate selector for " + actionID,
+					Description:            fmt.Sprintf("Imported selector stability score is %d/100. Recorder object metadata and decomposed JavaScript selectors should be checked before promotion.", score),
+					Action:                 browserSelectorRepairAction(score),
+					TargetAction:           actionID,
+					SelectorStabilityScore: score,
+					SelectorSignals:        signals,
+				})
+			}
+			if action.WaitFor == nil {
+				suggestions = append(suggestions, scriptImportRepairSuggestion{
+					ID:           fmt.Sprintf("wait-after:%d:%s", index+1, stableReviewKey(actionID)),
+					Category:     "wait",
+					Severity:     "info",
+					Title:        "Add readiness wait after " + actionID,
+					Description:  "Browser interaction steps imported without a readiness condition can race dynamic pages during replay.",
+					Action:       "Attach a wait_for visible/text/url condition to the action or insert a browser_wait step using the page-ready signal seen in replay.",
+					TargetAction: actionID,
+				})
+			}
+		case "browser_wait":
+			waitType := ""
+			if action.WaitFor != nil {
+				waitType = action.WaitFor.Type
+			}
+			suggestions = append(suggestions, scriptImportRepairSuggestion{
+				ID:           fmt.Sprintf("wait:%d:%s", index+1, stableReviewKey(actionID)),
+				Category:     "wait",
+				Severity:     "info",
+				Title:        "Review wait condition for " + actionID,
+				Description:  "Imported waits may represent timing intent rather than the most stable page-ready condition.",
+				Action:       "Prefer visible selector or text waits over fixed durations when the application exposes a reliable readiness signal.",
+				TargetAction: firstNonEmpty(actionID, waitType),
+			})
+		}
+	}
+
+	return suggestions
+}
+
+func browserSelectorRepairAction(score int) string {
+	if score >= 80 {
+		return "Keep the selector if replay is stable; prefer data-testid or aria attributes for future recorder output."
+	}
+	if score >= 60 {
+		return "Prefer stable attributes such as data-testid, aria labels, or unique form names; confirm the selector with browser replay."
+	}
+	return "Replace this selector with a stable data-testid, aria label, role/name, or unique form-name selector before approving the migrated script."
+}
+
+func browserSelectorStabilityScore(selector string) (int, []string) {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return 0, []string{"empty selector"}
+	}
+	lower := strings.ToLower(selector)
+	score := 45
+	signals := make([]string, 0, 5)
+
+	if strings.Contains(lower, "data-testid") || strings.Contains(lower, "data-test") || strings.Contains(lower, "data-qa") {
+		score += 35
+		signals = append(signals, "stable test attribute")
+	}
+	if strings.Contains(lower, "aria-label") || strings.Contains(lower, "role=") {
+		score += 25
+		signals = append(signals, "accessible selector")
+	}
+	if strings.Contains(lower, "[name=") || strings.Contains(lower, "[name'") || strings.Contains(lower, "[name\"") {
+		score += 20
+		signals = append(signals, "named form field")
+	}
+	if strings.HasPrefix(selector, "#") && !looksGeneratedSelectorToken(selector) {
+		score += 20
+		signals = append(signals, "simple id selector")
+	}
+	if strings.Contains(lower, ":nth-child") || strings.Contains(lower, ":nth-of-type") {
+		score -= 30
+		signals = append(signals, "positional selector")
+	}
+	if strings.HasPrefix(lower, "/html") || strings.HasPrefix(lower, "html > body") || strings.HasPrefix(lower, "body >") {
+		score -= 25
+		signals = append(signals, "absolute DOM path")
+	}
+	if looksGeneratedSelectorToken(selector) {
+		score -= 20
+		signals = append(signals, "generated-looking token")
+	}
+	if strings.Contains(selector, " ") || strings.Contains(selector, ">") {
+		score -= 5
+		signals = append(signals, "composite selector")
+	}
+	if len(signals) == 0 {
+		signals = append(signals, "generic selector")
+	}
+	if score < 0 {
+		score = 0
+	}
+	if score > 100 {
+		score = 100
+	}
+	return score, signals
+}
+
+func looksGeneratedSelectorToken(selector string) bool {
+	token := strings.ToLower(selector)
+	digitCount := 0
+	separatorCount := 0
+	for _, r := range token {
+		switch {
+		case r >= '0' && r <= '9':
+			digitCount++
+		case r == '-' || r == '_' || r == ':':
+			separatorCount++
+		}
+	}
+	if digitCount >= 4 && separatorCount >= 1 {
+		return true
+	}
+	return strings.Contains(token, "ember") || strings.Contains(token, "react-select") || strings.Contains(token, "generated")
+}
+
+func stableReviewKey(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "unknown"
+	}
+	var b strings.Builder
+	lastDash := false
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+func buildLoadRunnerImportReviewSections(warnings []string, result *loadrunner.ConvertResult, unsupportedElements []string, summary loadRunnerImportSummary) []scriptImportReviewSection {
+	sections := make([]scriptImportReviewSection, 0, 4)
+	if result == nil {
+		return sections
+	}
+
+	if result.DetectedProtocol != nil {
+		items := []string{
+			"LoadRunner protocol: " + firstNonEmpty(result.DetectedProtocol.DisplayName, result.DetectedProtocol.CanonicalLoadRunnerProtocol),
+			"Import mode: " + string(result.DetectedProtocol.ImportMode),
+			"Confidence: " + string(result.DetectedProtocol.Confidence),
+		}
+		if result.DetectedProtocol.APEXLoadProtocol != "" {
+			items = append(items, "APEX Load protocol: "+result.DetectedProtocol.APEXLoadProtocol)
+		}
+		if result.DetectedProtocol.Bundle != "" {
+			items = append(items, "Bundle: "+result.DetectedProtocol.Bundle)
+		}
+		for _, signal := range result.DetectedProtocol.Signals {
+			items = append(items, "Signal: "+signal)
+		}
+		for _, conflict := range result.DetectedProtocol.Conflicts {
+			items = append(items, "Conflict: "+conflict)
+		}
+		severity := "info"
+		if result.DetectedProtocol.ImportMode != loadrunner.ImportModeExecutable || len(result.DetectedProtocol.Conflicts) > 0 {
+			severity = "warning"
+		}
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "detected_protocol",
+			Title:    "Detected LoadRunner Protocol",
+			Severity: severity,
+			Summary:  "Protocol-aware routing classified this archive before conversion.",
+			Items:    items,
+		})
+	}
+
+	if result.ReviewArtifact != nil {
+		items := []string{
+			"Artifact ID: " + result.ReviewArtifact.ID,
+			"Status: " + result.ReviewArtifact.Status,
+		}
+		for _, evidence := range result.ReviewArtifact.RequiredEvidence {
+			items = append(items, "Required evidence: "+evidence)
+		}
+		for _, action := range result.ReviewArtifact.NextActions {
+			items = append(items, "Next action: "+action)
+		}
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "review_artifact",
+			Title:    "Protocol Review Artifact",
+			Severity: "warning",
+			Summary:  result.ReviewArtifact.Summary,
+			Items:    items,
+		})
+	}
+
+	if len(warnings) > 0 {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "warnings",
+			Title:    "Conversion Warnings",
+			Severity: "warning",
+			Summary:  "Review converter warnings before saving or replaying the imported draft.",
+			Items:    warnings,
+		})
+	}
+
+	if len(unsupportedElements) > 0 {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "unsupported_elements",
+			Title:    "Unsupported LoadRunner Elements",
+			Severity: "blocker",
+			Summary:  "These source constructs were preserved for review but were not converted into executable APEX Load actions.",
+			Items:    unsupportedElements,
+		})
+	}
+
+	preservedItems := make([]string, 0)
+	if summary.ProjectFile != "" {
+		preservedItems = append(preservedItems, "Project file: "+summary.ProjectFile)
+	}
+	if summary.MappedRuntimeFile != "" {
+		preservedItems = append(preservedItems, "Mapped runtime file: "+summary.MappedRuntimeFile)
+	}
+	for _, parameterFile := range summary.ParameterFiles {
+		preservedItems = append(preservedItems, "Parameter file: "+parameterFile)
+	}
+	for _, runtimeFile := range summary.RuntimeFiles {
+		preservedItems = append(preservedItems, "Runtime file: "+runtimeFile)
+	}
+	for _, projectSection := range summary.ProjectSections {
+		preservedItems = append(preservedItems, "Project section: "+projectSection)
+	}
+	if len(preservedItems) > 0 {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "preserved_metadata",
+			Title:    "Preserved LoadRunner Metadata",
+			Severity: "info",
+			Summary:  "Source project metadata was saved with the generated script for audit and repair workflows.",
+			Items:    preservedItems,
+		})
+	}
+
+	if len(summary.RuntimeSettingsParity) > 0 {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "runtime_settings_parity",
+			Title:    "Runtime Settings Parity",
+			Severity: runtimeSettingsParitySeverity(summary.RuntimeSettingsParity),
+			Summary:  runtimeSettingsParitySummary(summary.RuntimeSettingsStatusCounts),
+			Items:    runtimeSettingsParityItems(summary.RuntimeSettingsParity),
+		})
+	}
+
+	if summary.MigrationReadiness != nil {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "runtime_settings_migration_readiness",
+			Title:    "Migration Readiness",
+			Severity: migrationReadinessSeverity(summary.MigrationReadiness),
+			Summary:  summary.MigrationReadiness.Summary,
+			Items:    migrationReadinessItems(summary.MigrationReadiness),
+		})
+	}
+
+	if isWeb2TrueClientInspection(summary.TrueClientInspection) {
+		sections = append(sections, trueClientWeb2ReviewSections(summary)...)
+	}
+
+	if result.Script != nil && result.Script.Protocol == "browser" {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "browser_import_assumptions",
+			Title:    "Browser Import Assumptions",
+			Severity: "info",
+			Summary:  "TruClient Mobile Web imports map supported steps into browser DSL and require replay validation for selectors, waits, and device behavior; TruClient Web and Web 2.0 are tracked as separate planned profiles.",
+			Items: []string{
+				"Legacy desktop TruClient remains out of scope; TruClient - Web and TruClient 2.0 - Web are planned under the VuGen Web 2.0 profile.",
+				"Simple JavaScript fill/click statements are decomposed when possible; other JavaScript is preserved as review guidance.",
+				"Selector fidelity should be checked with browser replay before production use.",
+			},
+		})
+	}
+
+	if result.DetectedProtocol != nil && (result.DetectedProtocol.CanonicalLoadRunnerProtocol == "oracle_web" || result.DetectedProtocol.CanonicalLoadRunnerProtocol == "siebel_web") {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "oracle_ebusiness_review",
+			Title:    "Oracle E-Business Review Pack",
+			Severity: "warning",
+			Summary:  "Oracle-Web and Siebel-Web imports execute through HTTP but require enterprise correlation and session-state review before promotion.",
+			Items: []string{
+				"Review ICX/OA Framework or Siebel session identifiers and correlation candidates.",
+				"Validate login, navigation, and form-post replay evidence against the target environment.",
+				"Confirm Oracle E-Business runtime settings, data fit, and environment-specific tokens before saving reusable assets.",
+			},
+		})
+	}
+
+	return sections
+}
+
+func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedElements []string, readinessPolicy loadrunner.RuntimeSettingMigrationPolicy) loadRunnerImportSummary {
 	summary := loadRunnerImportSummary{
 		UnsupportedFunctionCount: len(unsupportedElements),
+	}
+	if result != nil && result.DetectedProtocol != nil {
+		summary.DetectedProtocol = result.DetectedProtocol
+		summary.ImportMode = string(result.DetectedProtocol.ImportMode)
+	}
+	if result != nil && result.ReviewArtifact != nil {
+		summary.ReviewArtifact = result.ReviewArtifact
+	}
+	if result != nil && result.SourceReview != nil {
+		summary.SourceReview = result.SourceReview
 	}
 
 	if result == nil || result.Script == nil || result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
@@ -262,8 +1276,390 @@ func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedE
 	summary.ProjectSections = sortedRecordKeys(preserved["project_settings"])
 	summary.RuntimeFiles = sortedRecordKeys(preserved["runtime_files"])
 	summary.ParameterFiles = stringSliceValue(preserved["parameter_files"])
+	summary.RuntimeSettingsParity = runtimeSettingsParityValue(preserved["runtime_settings_parity"])
+	summary.RuntimeSettingsStatusCounts = intMapValue(preserved["runtime_settings_status_counts"])
+	summary.MigrationReadiness = loadRunnerMigrationReadinessValue(preserved["runtime_settings_migration_readiness"])
+	summary.TrueClientInspection = trueClientArchiveInspectionValue(preserved["trueclient_archive_inspection"])
+	summary.SourceScriptType = stringValue(preserved["source_script_type"])
+	summary.SourceProfile = stringValue(preserved["source_profile"])
+	if summary.SourceReview == nil {
+		summary.SourceReview = sourceReviewValue(preserved["source_review"])
+	}
+	if summary.MigrationReadiness == nil && len(summary.RuntimeSettingsParity) > 0 {
+		summary.MigrationReadiness = loadrunner.BuildRTSMigrationReadiness(summary.RuntimeSettingsParity, readinessPolicy)
+	}
+	if isWeb2TrueClientInspection(summary.TrueClientInspection) {
+		summary.Web2MigrationReadiness = buildWeb2MigrationReadinessReport(result, summary)
+	}
 
 	return summary
+}
+
+func persistLoadRunnerImportSummary(result *loadrunner.ConvertResult, summary loadRunnerImportSummary) {
+	if result == nil || result.Script == nil || result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
+		return
+	}
+	if result.Script.Metadata.Import.Preserved == nil {
+		result.Script.Metadata.Import.Preserved = make(map[string]any)
+	}
+	if summary.MigrationReadiness != nil {
+		result.Script.Metadata.Import.Preserved["runtime_settings_migration_readiness"] = summary.MigrationReadiness
+	}
+	if summary.Web2MigrationReadiness != nil {
+		result.Script.Metadata.Import.Preserved["web2_migration_readiness"] = summary.Web2MigrationReadiness
+	}
+	if summary.SourceReview != nil {
+		result.Script.Metadata.Import.Preserved["source_review"] = summary.SourceReview
+	}
+}
+
+func runtimeSettingsParityValue(value any) []loadrunner.RuntimeSettingParityEntry {
+	switch typed := value.(type) {
+	case []loadrunner.RuntimeSettingParityEntry:
+		return append([]loadrunner.RuntimeSettingParityEntry(nil), typed...)
+	case []any:
+		entries := make([]loadrunner.RuntimeSettingParityEntry, 0, len(typed))
+		for _, item := range typed {
+			mapping, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			entry := loadrunner.RuntimeSettingParityEntry{
+				ID:           stringValue(mapping["id"]),
+				Area:         stringValue(mapping["area"]),
+				Concept:      stringValue(mapping["concept"]),
+				Fields:       stringSliceValue(mapping["fields"]),
+				Status:       loadrunner.RuntimeSettingStatus(stringValue(mapping["status"])),
+				Notes:        stringValue(mapping["notes"]),
+				RuntimeFiles: stringSliceValue(mapping["runtime_files"]),
+			}
+			if entry.ID == "" {
+				continue
+			}
+			entries = append(entries, entry)
+		}
+		return entries
+	default:
+		return nil
+	}
+}
+
+func loadRunnerMigrationReadinessValue(value any) *loadrunner.RuntimeSettingMigrationReadiness {
+	switch typed := value.(type) {
+	case *loadrunner.RuntimeSettingMigrationReadiness:
+		return typed
+	case loadrunner.RuntimeSettingMigrationReadiness:
+		clone := typed
+		return &clone
+	case map[string]any:
+		readiness := &loadrunner.RuntimeSettingMigrationReadiness{
+			ScorePct:         intValue(typed["score_pct"]),
+			Blocked:          boolValue(typed["blocked"]),
+			Summary:          stringValue(typed["summary"]),
+			BlockingStatuses: runtimeSettingStatusSliceValue(typed["blocking_statuses"]),
+			BlockingSettings: runtimeSettingsParityValue(typed["blocking_settings"]),
+			Policy: loadrunner.RuntimeSettingMigrationPolicy{
+				BlockStatuses: runtimeSettingPolicyStatuses(typed["policy"]),
+			},
+		}
+		if readiness.ScorePct == 0 && !readiness.Blocked && readiness.Summary == "" && len(readiness.BlockingStatuses) == 0 && len(readiness.BlockingSettings) == 0 && len(readiness.Policy.BlockStatuses) == 0 {
+			return nil
+		}
+		return readiness
+	default:
+		return nil
+	}
+}
+
+func trueClientArchiveInspectionValue(value any) *trueclient.ArchiveInspection {
+	switch typed := value.(type) {
+	case *trueclient.ArchiveInspection:
+		return typed
+	case trueclient.ArchiveInspection:
+		return &typed
+	default:
+		return nil
+	}
+}
+
+func sourceReviewValue(value any) *loadrunner.SourceReview {
+	switch typed := value.(type) {
+	case *loadrunner.SourceReview:
+		return typed
+	case loadrunner.SourceReview:
+		clone := typed
+		return &clone
+	case map[string]any:
+		review := &loadrunner.SourceReview{
+			SourceFiles: sourceReviewFilesValue(typed["source_files"]),
+			Mappings:    sourceReviewMappingsValue(typed["mappings"]),
+		}
+		if len(review.SourceFiles) == 0 && len(review.Mappings) == 0 {
+			return nil
+		}
+		return review
+	default:
+		return nil
+	}
+}
+
+func sourceReviewFilesValue(value any) []loadrunner.SourceReviewFile {
+	switch typed := value.(type) {
+	case []loadrunner.SourceReviewFile:
+		return append([]loadrunner.SourceReviewFile(nil), typed...)
+	case []any:
+		files := make([]loadrunner.SourceReviewFile, 0, len(typed))
+		for _, item := range typed {
+			mapping, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			file := loadrunner.SourceReviewFile{
+				Path:          stringValue(mapping["path"]),
+				Language:      stringValue(mapping["language"]),
+				Content:       stringValue(mapping["content"]),
+				OriginalBytes: intValue(mapping["original_bytes"]),
+				Truncated:     boolValue(mapping["truncated"]),
+				Redacted:      boolValue(mapping["redacted"]),
+			}
+			if file.Path == "" {
+				continue
+			}
+			files = append(files, file)
+		}
+		return files
+	default:
+		return nil
+	}
+}
+
+func sourceReviewMappingsValue(value any) []loadrunner.SourceReviewMapping {
+	switch typed := value.(type) {
+	case []loadrunner.SourceReviewMapping:
+		return append([]loadrunner.SourceReviewMapping(nil), typed...)
+	case []any:
+		mappings := make([]loadrunner.SourceReviewMapping, 0, len(typed))
+		for _, item := range typed {
+			raw, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			mapping := loadrunner.SourceReviewMapping{
+				ID:          stringValue(raw["id"]),
+				SourceFile:  stringValue(raw["source_file"]),
+				StartLine:   intValue(raw["start_line"]),
+				EndLine:     intValue(raw["end_line"]),
+				Function:    stringValue(raw["function"]),
+				TargetPath:  stringValue(raw["target_path"]),
+				TargetName:  stringValue(raw["target_name"]),
+				TargetKind:  stringValue(raw["target_kind"]),
+				Status:      stringValue(raw["status"]),
+				SupportMode: stringValue(raw["support_mode"]),
+				Notes:       stringValue(raw["notes"]),
+			}
+			if mapping.ID == "" && mapping.SourceFile == "" && mapping.TargetPath == "" {
+				continue
+			}
+			mappings = append(mappings, mapping)
+		}
+		return mappings
+	default:
+		return nil
+	}
+}
+
+func intMapValue(value any) map[string]int {
+	switch typed := value.(type) {
+	case map[string]int:
+		if len(typed) == 0 {
+			return nil
+		}
+		clone := make(map[string]int, len(typed))
+		for key, count := range typed {
+			clone[key] = count
+		}
+		return clone
+	case map[string]any:
+		if len(typed) == 0 {
+			return nil
+		}
+		clone := make(map[string]int, len(typed))
+		for key, raw := range typed {
+			switch count := raw.(type) {
+			case int:
+				clone[key] = count
+			case float64:
+				clone[key] = int(count)
+			}
+		}
+		if len(clone) == 0 {
+			return nil
+		}
+		return clone
+	default:
+		return nil
+	}
+}
+
+func intValue(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case float64:
+		return int(typed)
+	default:
+		return 0
+	}
+}
+
+func boolValue(value any) bool {
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		return parseBoolDefault(typed, false)
+	default:
+		return false
+	}
+}
+
+func runtimeSettingStatusSliceValue(value any) []loadrunner.RuntimeSettingStatus {
+	switch typed := value.(type) {
+	case []loadrunner.RuntimeSettingStatus:
+		return append([]loadrunner.RuntimeSettingStatus(nil), typed...)
+	case []any:
+		statuses := make([]loadrunner.RuntimeSettingStatus, 0, len(typed))
+		for _, item := range typed {
+			status := loadrunner.RuntimeSettingStatus(stringValue(item))
+			if status == "" {
+				continue
+			}
+			statuses = append(statuses, status)
+		}
+		return statuses
+	default:
+		return nil
+	}
+}
+
+func runtimeSettingPolicyStatuses(value any) []loadrunner.RuntimeSettingStatus {
+	mapping, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return runtimeSettingStatusSliceValue(mapping["block_statuses"])
+}
+
+func runtimeSettingsParitySeverity(entries []loadrunner.RuntimeSettingParityEntry) string {
+	severity := "info"
+	for _, entry := range entries {
+		switch entry.Status {
+		case loadrunner.RuntimeSettingStatusBlocked:
+			return "blocker"
+		case loadrunner.RuntimeSettingStatusPartial, loadrunner.RuntimeSettingStatusCompatibilityOnly:
+			severity = "warning"
+		}
+	}
+	return severity
+}
+
+func runtimeSettingsParitySummary(counts map[string]int) string {
+	if len(counts) == 0 {
+		return "Imported runtime settings were classified against APEX Load's code-owned LoadRunner RTS matrix."
+	}
+	parts := make([]string, 0, 5)
+	for _, status := range []string{
+		string(loadrunner.RuntimeSettingStatusExecuted),
+		string(loadrunner.RuntimeSettingStatusPartial),
+		string(loadrunner.RuntimeSettingStatusCompatibilityOnly),
+		string(loadrunner.RuntimeSettingStatusBlocked),
+		string(loadrunner.RuntimeSettingStatusNonApplicable),
+	} {
+		if counts[status] == 0 {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", counts[status], strings.ReplaceAll(status, "_", "-")))
+	}
+	if len(parts) == 0 {
+		return "Imported runtime settings were classified against APEX Load's code-owned LoadRunner RTS matrix."
+	}
+	return "Imported runtime settings were classified against APEX Load's code-owned LoadRunner RTS matrix: " + strings.Join(parts, ", ") + "."
+}
+
+func runtimeSettingsParityItems(entries []loadrunner.RuntimeSettingParityEntry) []string {
+	items := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		item := fmt.Sprintf("%s: %s / %s", runtimeSettingStatusLabel(entry.Status), entry.Area, entry.Concept)
+		if len(entry.RuntimeFiles) > 0 {
+			item += " [" + strings.Join(entry.RuntimeFiles, ", ") + "]"
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+func migrationReadinessSeverity(readiness *loadrunner.RuntimeSettingMigrationReadiness) string {
+	if readiness == nil {
+		return "info"
+	}
+	if readiness.Blocked {
+		return "blocker"
+	}
+	if readiness.ScorePct < 85 {
+		return "warning"
+	}
+	return "info"
+}
+
+func migrationReadinessItems(readiness *loadrunner.RuntimeSettingMigrationReadiness) []string {
+	if readiness == nil {
+		return nil
+	}
+	items := []string{
+		fmt.Sprintf("Score: %d%%", readiness.ScorePct),
+		"Block policy: " + runtimeSettingStatusLabels(readiness.Policy.BlockStatuses),
+	}
+	if readiness.Blocked {
+		items = append(items, "Matched blocking statuses: "+runtimeSettingStatusLabels(readiness.BlockingStatuses))
+		for _, entry := range readiness.BlockingSettings {
+			items = append(items, fmt.Sprintf("Blocking setting: %s / %s", entry.Area, entry.Concept))
+		}
+	} else {
+		items = append(items, "No imported runtime settings matched the selected block statuses.")
+	}
+	return items
+}
+
+func runtimeSettingStatusLabels(statuses []loadrunner.RuntimeSettingStatus) string {
+	if len(statuses) == 0 {
+		return "None"
+	}
+	labels := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		labels = append(labels, runtimeSettingStatusLabel(status))
+	}
+	return strings.Join(labels, ", ")
+}
+
+func runtimeSettingStatusLabel(status loadrunner.RuntimeSettingStatus) string {
+	switch status {
+	case loadrunner.RuntimeSettingStatusExecuted:
+		return "Executed"
+	case loadrunner.RuntimeSettingStatusPartial:
+		return "Partial"
+	case loadrunner.RuntimeSettingStatusCompatibilityOnly:
+		return "Compatibility-only"
+	case loadrunner.RuntimeSettingStatusBlocked:
+		return "Blocked"
+	case loadrunner.RuntimeSettingStatusNonApplicable:
+		return "Non-applicable"
+	default:
+		label := strings.ReplaceAll(string(status), "_", " ")
+		if label == "" {
+			return "Unknown"
+		}
+		return strings.ToUpper(label[:1]) + label[1:]
+	}
 }
 
 func stringSliceValue(value any) []string {
@@ -319,17 +1715,51 @@ func stringValue(value any) string {
 	return text
 }
 
+func attachSourceReviewToScripts(scripts []*dsl.Script, source string, sourceScriptName string, review any) {
+	if isNilImportValue(review) {
+		return
+	}
+	for _, script := range scripts {
+		attachSourceReviewToScript(script, source, sourceScriptName, review)
+	}
+}
+
+func attachSourceReviewToScript(script *dsl.Script, source string, sourceScriptName string, review any) {
+	if script == nil || isNilImportValue(review) {
+		return
+	}
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{}
+	}
+	if script.Metadata.Import.Source == "" {
+		script.Metadata.Import.Source = source
+	}
+	if script.Metadata.Import.SourceScriptName == "" {
+		script.Metadata.Import.SourceScriptName = sourceScriptName
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = map[string]any{}
+	}
+	script.Metadata.Import.Preserved["source_review"] = review
+}
+
 func writeJMeterImportResponse(w http.ResponseWriter, status int, result *jmeter.ConvertResult) {
+	unsupportedElements := uniqueSortedStrings(append(append([]string{}, result.UnsupportedElements...), result.Unsupported.Strings()...))
 	writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
 		Scripts:             result.Scripts,
 		Script:              result.Script,
 		ScenarioDraft:       result.ScenarioDraft,
 		Warnings:            result.Warnings,
-		UnsupportedElements: result.UnsupportedElements,
+		UnsupportedElements: unsupportedElements,
+		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
 		Assumptions:         result.Assumptions,
 		Stats:               result.Stats,
 		Summary:             result.Summary,
+		SourceReview:        result.SourceReview,
 	}))
 }
 
@@ -414,6 +1844,10 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "sample conversion failed: "+err.Error())
 		return
 	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(req.ProjectID)
+	}
+	attachSourceReviewToScript(result.Script, req.Format, req.Name, result.SourceReview)
 
 	issues := validateScript(result.Script)
 	if len(issues) > 0 {
@@ -421,11 +1855,14 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
-		Result:       result,
-		Script:       result.Script,
-		Warnings:     result.Warnings,
-		Stats:        result.Stats,
-		Correlations: result.Correlations,
+		Result:              result,
+		Script:              result.Script,
+		Warnings:            result.Warnings,
+		Stats:               result.Stats,
+		Correlations:        result.Correlations,
+		UnsupportedElements: result.Unsupported.Strings(),
+		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
+		SourceReview:        result.SourceReview,
 	}))
 }
 
@@ -540,6 +1977,7 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	s.recordAuditEvent(r, "script.update", "success", "script", updated.ID, updated.ProjectID, map[string]any{"name": updated.Name, "folder_id": updated.FolderID})
 
 	writeJSON(w, http.StatusOK, updated)
 }
@@ -547,10 +1985,16 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 // handleDeleteScript handles DELETE /api/v1/scripts/{id}
 func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	stored, ok := s.runner.GetScript(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "script not found")
+		return
+	}
 	if !s.runner.DeleteScript(id) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	s.recordAuditEvent(r, "script.delete", "success", "script", id, stored.ProjectID, map[string]any{"name": stored.Name, "folder_id": stored.FolderID})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }
 

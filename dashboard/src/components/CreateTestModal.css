@@ -1,7 +1,7 @@
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--modal-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -18,7 +18,7 @@
   max-width: 95vw;
   max-height: 85vh;
   overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-md);
 }
 
 .modal.modal-wide {
@@ -39,7 +39,7 @@
 .total-vusers {
   font-size: 14px;
   color: var(--accent);
-  background: rgba(0, 163, 255, 0.1);
+  background: var(--info-bg);
   padding: 4px 12px;
   border-radius: 20px;
   font-weight: 600;
@@ -154,18 +154,18 @@
   gap: 12px;
   padding: 14px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle);
+  background: var(--subtle-fill);
 }
 
 .draft-capacity-card.ready {
-  border-color: rgba(34, 197, 94, 0.18);
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.08), rgba(255, 255, 255, 0.03));
+  border-color: var(--success-border);
+  background: linear-gradient(135deg, var(--success-bg), var(--subtle-fill));
 }
 
 .draft-capacity-card.warning {
-  border-color: rgba(245, 158, 11, 0.24);
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(255, 255, 255, 0.03));
+  border-color: var(--warning-border);
+  background: linear-gradient(135deg, var(--warning-bg), var(--subtle-fill));
 }
 
 .draft-capacity-header {
@@ -200,8 +200,8 @@
   gap: 4px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--subtle-fill);
+  border: 1px solid var(--border-subtle);
 }
 
 .draft-capacity-label {
@@ -272,7 +272,7 @@
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--subtle-fill);
 }
 
 .assignment-settings-header h4 {
@@ -519,22 +519,24 @@
 .group-fields {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 1.5fr 100px 100px 100px 140px;
+  grid-template-columns: 1fr 1.5fr 100px 130px 130px 140px;
   gap: 16px;
   align-items: end;
 }
 
-.group-fields label.narrow {
-  width: 100px;
+.group-fields label.narrow,
+.group-fields .narrow {
+  width: 130px;
 }
 
-.group-fields label.medium {
+.group-fields label.medium,
+.group-fields .medium {
   width: 140px;
 }
 
 .runtime-overrides {
   padding: 20px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--subtle-fill);
   border: 1px solid var(--border);
   border-radius: 12px;
 }
@@ -572,7 +574,7 @@
   height: 32px;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--subtle-fill-strong);
   color: var(--text-muted);
   font-size: 16px;
   cursor: pointer;

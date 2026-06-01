@@ -3,7 +3,11 @@ import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useApi } from '../hooks/useApi'
 import { useApplication } from '../hooks/useApplication'
+import { useProject } from '../hooks/useProject'
 import { TestSummary, MetricsHistoryPoint, RunArchiveReport, SystemInventoryResponse } from '../types'
+import { downloadBlob } from '../utils/fileUtils'
+import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { chartTooltipContentStyle } from './chartTooltipTheme'
 import { type NavPage } from './Sidebar'
 import StatusBadge from './StatusBadge'
 import './DashboardPage.css'
@@ -36,6 +40,12 @@ interface GraphCardSettings {
   showGraph: boolean
 }
 
+interface PerformanceTrendEntry {
+  test: TestSummary
+  report: RunArchiveReport
+  runtimeSummary: string | null
+}
+
 const defaultGraphCardSettings: GraphCardSettings = {
   metric: 'tps',
   showGraph: true,
@@ -52,12 +62,43 @@ function formatNumber(value: number, digits = 0) {
   return Number.isFinite(value) ? value.toFixed(digits) : digits > 0 ? '0.0' : '0'
 }
 
+function formatOptionalNumber(value?: number, digits = 0) {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '—'
+}
+
 function formatDateTime(value?: string) {
   return value ? new Date(value).toLocaleString() : 'Never'
 }
 
 function completionTime(test: TestSummary) {
   return new Date(test.ended_at || test.start_time || test.created_at || 0).getTime()
+}
+
+function buildReleaseTrendStats(entries: PerformanceTrendEntry[]) {
+  if (entries.length === 0) {
+    return {
+      slaBreaches: 0,
+      avgCompleteness: 0,
+      peakVUsers: 0,
+      maxCPU: 0,
+      maxMemoryMB: 0,
+      telemetryBreached: 0,
+    }
+  }
+  const completenessScores = entries
+    .map(entry => entry.report.completeness?.score_pct)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  const avgCompleteness = completenessScores.length
+    ? completenessScores.reduce((sum, value) => sum + value, 0) / completenessScores.length
+    : 0
+  return {
+    slaBreaches: entries.filter(entry => entry.report.manifest?.sla_breached).length,
+    avgCompleteness,
+    peakVUsers: Math.max(...entries.map(entry => entry.report.overview.peak_active_vusers || 0)),
+    maxCPU: Math.max(...entries.map(entry => entry.report.resource_peaks?.cpu_process_pct || 0)),
+    maxMemoryMB: Math.max(...entries.map(entry => entry.report.resource_peaks?.mem_process_mb || 0)),
+    telemetryBreached: entries.filter(entry => entry.report.overview.telemetry?.status === 'breached').length,
+  }
 }
 
 function getHistoryMetric(point: MetricsHistoryPoint, metric: CardMetricKey) {
@@ -104,25 +145,31 @@ function loadJson<T>(key: string, fallback: T): T {
 export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest, onNavigate }: Props) {
   const api = useApi()
   const { activeApplication, activeRelease } = useApplication()
+  const { activeProject } = useProject()
+  const dashboardScopeReady = Boolean(activeProject?.id && activeApplication?.id)
   const [tests, setTests] = useState<TestSummary[]>([])
   const [health, setHealth] = useState<HealthData | null>(null)
   const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
   const [archiveReports, setArchiveReports] = useState<Record<string, RunArchiveReport | null>>({})
   const [customizingCards, setCustomizingCards] = useState(false)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
-  const [activeCardOrder, setActiveCardOrder] = useState<string[]>(() => loadJson<string[]>('stormrunner.dashboard.activeCardOrder', []))
+  const [activeCardOrder, setActiveCardOrder] = useState<string[]>(() => loadJson<string[]>('apexload.dashboard.activeCardOrder', []))
   const [activeCardSettings, setActiveCardSettings] = useState<Record<string, GraphCardSettings>>(() =>
-    loadJson<Record<string, GraphCardSettings>>('stormrunner.dashboard.activeCardSettings', {}),
+    loadJson<Record<string, GraphCardSettings>>('apexload.dashboard.activeCardSettings', {}),
   )
 
   useEffect(() => {
+    if (!dashboardScopeReady) {
+      return
+    }
+
     const load = async () => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
         return
       }
       try {
         const [testRes, healthRes, inventoryRes] = await Promise.all([
-          api.listTests(activeApplication?.id ? { application_id: activeApplication.id } : undefined),
+          api.listTests({ application_id: activeApplication!.id, project_id: activeProject!.id }),
           api.getHealth().catch(() => null),
           api.getSystemInventory().catch(() => null),
         ])
@@ -151,7 +198,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         document.removeEventListener('visibilitychange', handleVisibilityChange)
       }
     }
-  }, [api, activeApplication?.id])
+  }, [api, activeApplication?.id, activeProject?.id, dashboardScopeReady])
 
   const resolvedTests = useMemo(() =>
     tests.map(t => ({
@@ -166,6 +213,18 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     [resolvedTests],
   )
 
+  const pendingTests = useMemo(() =>
+    resolvedTests
+      .filter(t => t.status === 'PENDING')
+      .sort((a, b) => {
+        const aPosition = a.queue_position ?? Number.MAX_SAFE_INTEGER
+        const bPosition = b.queue_position ?? Number.MAX_SAFE_INTEGER
+        if (aPosition !== bPosition) return aPosition - bPosition
+        return Date.parse(a.pending_since || a.created_at || '') - Date.parse(b.pending_since || b.created_at || '')
+      }),
+    [resolvedTests],
+  )
+
   useEffect(() => {
     const activeIds = activeTests.map(test => test.id)
     setActiveCardOrder(prev => {
@@ -177,12 +236,12 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    window.localStorage.setItem('stormrunner.dashboard.activeCardOrder', JSON.stringify(activeCardOrder))
+    window.localStorage.setItem('apexload.dashboard.activeCardOrder', JSON.stringify(activeCardOrder))
   }, [activeCardOrder])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    window.localStorage.setItem('stormrunner.dashboard.activeCardSettings', JSON.stringify(activeCardSettings))
+    window.localStorage.setItem('apexload.dashboard.activeCardSettings', JSON.stringify(activeCardSettings))
   }, [activeCardSettings])
 
   const orderedActiveTests = useMemo(() => {
@@ -258,11 +317,17 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       .map(test => {
         const report = archiveReports[test.id]
         if (!report) return null
-        return { test, report }
+        return {
+          test,
+          report,
+          runtimeSummary: formatBrowserRuntimeSummary(report.manifest?.provenance?.runtime_settings?.browser ?? test.runtime_settings?.browser),
+        }
       })
-      .filter((entry): entry is { test: TestSummary; report: RunArchiveReport } => Boolean(entry)),
+      .filter((entry): entry is PerformanceTrendEntry => Boolean(entry)),
     [archivedReleaseRuns, archiveReports],
   )
+
+  const releaseTrendStats = useMemo(() => buildReleaseTrendStats(performanceTrend), [performanceTrend])
 
   const stats = useMemo(() => {
     const completed = resolvedTests.filter(t => t.status === 'COMPLETE').length
@@ -277,7 +342,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       ? activeLiveMetrics.reduce((sum, metrics) => sum + (metrics?.error_pct || 0), 0) / activeLiveMetrics.length
       : 0
     return { total: resolvedTests.length, completed, failed, aborted, active: activeTests.length, activeVUsers, activeTps, avgLatency, avgError }
-  }, [resolvedTests, activeTests])
+  }, [resolvedTests, activeTests, activeLiveMetrics])
 
   const releaseStats = useMemo(() => {
     const completed = releaseCompleted.filter(t => t.status === 'COMPLETE').length
@@ -312,8 +377,17 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     if (health?.capacity_availability?.warnings?.length) {
       items.push({ tone: 'warning', title: 'Capacity warning', detail: health.capacity_availability.warnings[0] })
     }
+    pendingTests.slice(0, 3).forEach(test => {
+      const queuePrefix = test.queue_position ? `Queue #${test.queue_position}` : 'Queued'
+      items.push({
+        tone: 'info',
+        title: `${test.name} waiting`,
+        detail: `${queuePrefix} · ${test.pending_reason || 'waiting for capacity'}${test.pending_since ? ` · since ${formatDateTime(test.pending_since)}` : ''}`,
+        testId: test.id,
+      })
+    })
     return items.slice(0, 6)
-  }, [activeTests, releaseCompleted, health])
+  }, [activeTests, health, pendingTests, releaseCompleted])
 
   const statusColor = connectionState === 'connected'
     ? health?.status === 'healthy' ? 'healthy' : 'degraded'
@@ -372,6 +446,13 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const navigateToMonitoring = () => onNavigate('monitoring')
   const navigateToTests = () => onNavigate('tests')
   const navigateToResults = () => onNavigate('results')
+  const navigateToApiGuide = () => onNavigate('docs')
+  const downloadTrendCsv = async () => {
+    if (!activeRelease?.id) return
+    const blob = await api.downloadReleaseTrend(activeRelease.id)
+    const filename = `${(activeRelease.name || 'release').replace(/\s+/g, '-').toLowerCase()}-${activeRelease.id}-trend.csv`
+    downloadBlob(blob, filename)
+  }
   const navigateToLatestResult = () => {
     if (latestReleaseRun) {
       onSelectTest(latestReleaseRun.id)
@@ -386,6 +467,8 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     }
     onNavigate('tests')
   }
+  const trendPreviewRows = performanceTrend.slice(0, 5)
+  const aggregateHistory = Object.values(metricsHistory).flat().slice(-60)
 
   return (
     <div className="page dash">
@@ -397,6 +480,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           </p>
         </div>
         <div className="dash-customize-actions">
+          <button className="btn btn-secondary btn-sm" onClick={navigateToApiGuide} type="button">
+            API Guide
+          </button>
           {customizingCards && (
             <button className="btn btn-secondary btn-sm" onClick={resetCardLayout} type="button">
               Reset Cards
@@ -497,51 +583,113 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
             <span className="release-metric-label">Current Error Rate</span>
           </button>
         </div>
+        <div className="release-status-strip" aria-label="Run status summary">
+          <button type="button" className="release-status-stat dash-card-button" onClick={navigateToResults}>
+            <span className="release-status-value text-success">{stats.completed}</span>
+            <span className="release-status-label">Completed</span>
+          </button>
+          <button type="button" className="release-status-stat dash-card-button" onClick={navigateToResults}>
+            <span className="release-status-value" style={{ color: 'var(--chart-3)' }}>{stats.aborted}</span>
+            <span className="release-status-label">Aborted</span>
+          </button>
+          <button type="button" className="release-status-stat dash-card-button" onClick={navigateToTests}>
+            <span className="release-status-value" style={{ color: 'var(--accent)' }}>{stats.active}</span>
+            <span className="release-status-label">Active Now</span>
+          </button>
+        </div>
       </section>
 
       <section className="dash-section dash-performance-trend">
         <div className="dash-section-heading-row">
           <h3 className="dash-section-title">Performance Trend</h3>
-          <span className="dash-context-chip">Last {archivedReleaseRuns.length || 0} archived runs</span>
+          <div className="dash-section-heading-actions">
+            {activeRelease?.id && performanceTrend.length > 0 && (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={downloadTrendCsv}>
+                Export CSV
+              </button>
+            )}
+            {performanceTrend.length > 0 && (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={navigateToResults}>
+                View Results
+              </button>
+            )}
+            <span className="dash-context-chip">Last {archivedReleaseRuns.length || 0} archived runs</span>
+          </div>
         </div>
         {performanceTrend.length === 0 ? (
           <div className="dash-empty small">
             <span>No archived performance reports yet</span>
           </div>
         ) : (
-          <div className="trend-table-wrap">
-            <table className="trend-table">
-              <thead>
-                <tr>
-                  <th>Run</th>
-                  <th>Completed</th>
-                  <th className="num">Peak TPS</th>
-                  <th className="num">Avg ms</th>
-                  <th className="num">Errors</th>
-                  <th className="num">Peak VUsers</th>
-                  <th className="num">Transactions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {performanceTrend.map(({ test, report }) => (
-                  <tr key={test.id} onClick={() => onSelectTest(test.id)}>
-                    <td>
-                      <span className="trend-run-name">{test.name}</span>
-                      <span className="trend-run-meta">{test.script_name || `${test.total_vusers} VUsers`}</span>
-                    </td>
-                    <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
-                    <td className="num strong">{formatNumber(report.overview.peak_tps, 1)}</td>
-                    <td className="num">{formatNumber(report.overview.avg_response_ms)}</td>
-                    <td className={`num ${report.overview.error_pct > 0 ? 'text-danger strong' : ''}`}>
-                      {formatNumber(report.overview.error_pct, 2)}%
-                    </td>
-                    <td className="num">{report.overview.peak_active_vusers.toLocaleString()}</td>
-                    <td className="num">{report.overview.transactions.toLocaleString()}</td>
+          <>
+            <div className="trend-signal-grid">
+              <div className="trend-signal-card">
+                <span className="trend-signal-value">{releaseTrendStats.slaBreaches}</span>
+                <span className="trend-signal-label">SLA Breaches</span>
+              </div>
+              <div className="trend-signal-card">
+                <span className="trend-signal-value">{formatNumber(releaseTrendStats.avgCompleteness, 0)}%</span>
+                <span className="trend-signal-label">Avg Completeness</span>
+              </div>
+              <div className="trend-signal-card">
+                <span className="trend-signal-value">{releaseTrendStats.peakVUsers.toLocaleString()}</span>
+                <span className="trend-signal-label">Peak VUsers</span>
+              </div>
+              <div className="trend-signal-card">
+                <span className="trend-signal-value">{formatNumber(releaseTrendStats.maxCPU, 1)}%</span>
+                <span className="trend-signal-label">Max CPU</span>
+              </div>
+              <div className="trend-signal-card">
+                <span className="trend-signal-value">{formatNumber(releaseTrendStats.maxMemoryMB, 0)} MB</span>
+                <span className="trend-signal-label">Max Memory</span>
+              </div>
+              <div className="trend-signal-card">
+                <span className="trend-signal-value">{releaseTrendStats.telemetryBreached}</span>
+                <span className="trend-signal-label">Telemetry Breaches</span>
+              </div>
+            </div>
+            <div className="trend-table-wrap">
+              <table className="trend-table">
+                <thead>
+                  <tr>
+                    <th>Run</th>
+                    <th>Completed</th>
+                    <th className="num">Peak TPS</th>
+                    <th className="num">Avg ms</th>
+                    <th className="num">Errors</th>
+                    <th className="num">SLA</th>
+                    <th className="num">Complete</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {trendPreviewRows.map(({ test, report, runtimeSummary }) => (
+                    <tr key={test.id} onClick={() => onSelectTest(test.id)}>
+                      <td>
+                        <span className="trend-run-name">{test.name}</span>
+                        <span className="trend-run-meta">{test.script_name || `${test.total_vusers} VUsers`}</span>
+                        {runtimeSummary && <span className="trend-run-meta">{runtimeSummary}</span>}
+                      </td>
+                      <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
+                      <td className="num strong">{formatNumber(report.overview.peak_tps, 1)}</td>
+                      <td className="num">{formatNumber(report.overview.avg_response_ms)}</td>
+                      <td className={`num ${report.overview.error_pct > 0 ? 'text-danger strong' : ''}`}>
+                        {formatNumber(report.overview.error_pct, 2)}%
+                      </td>
+                      <td className={`num ${report.manifest?.sla_breached ? 'text-danger strong' : 'text-success'}`}>
+                        {report.manifest?.sla_breached ? 'Breached' : 'Passed'}
+                      </td>
+                      <td className="num">{formatOptionalNumber(report.completeness?.score_pct, 0)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {performanceTrend.length > trendPreviewRows.length && (
+              <button type="button" className="trend-preview-footer dash-card-button" onClick={navigateToResults}>
+                View {performanceTrend.length - trendPreviewRows.length} more archived run{performanceTrend.length - trendPreviewRows.length === 1 ? '' : 's'} in Results
+              </button>
+            )}
+          </>
         )}
       </section>
 
@@ -552,20 +700,21 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           {stats.active > 0 && <span className="dash-badge pulse">{stats.active}</span>}
         </h3>
         {activeTests.length === 0 ? (
-          <div className="dash-empty">
+          <div className="dash-empty compact">
             <span className="dash-empty-icon">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
               </svg>
             </span>
             <span>No tests currently running</span>
-            <span className="dash-empty-hint">Start a scenario from the Scenarios page</span>
+            <span className="dash-empty-hint">{pendingTests.length > 0 ? `${pendingTests.length} test${pendingTests.length === 1 ? '' : 's'} waiting on project capacity.` : 'Start a scenario from the Scenarios page'}</span>
           </div>
         ) : (
           <div className={`dash-active-grid ${customizingCards ? 'is-customizing' : ''}`}>
             {orderedActiveTests.map(test => {
               const history = metricsHistory[test.id] || []
               const latest = test.live_metrics
+              const runtimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
               const cardSettings = { ...defaultGraphCardSettings, ...activeCardSettings[test.id] }
               const metricOption = graphMetricOptions.find(option => option.key === cardSettings.metric) || graphMetricOptions[0]
               const chartData = history.slice(-60).map(point => ({
@@ -658,12 +807,29 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                   )}
                   <div className="dac-footer">
                     <span className="dac-detail">{test.total_vusers} VUsers · {test.groups?.length || 1} group{(test.groups?.length || 1) > 1 ? 's' : ''}</span>
-                    <span className="dac-detail">{test.duration}</span>
+                    <span className="dac-detail">{test.duration}{runtimeSummary ? ` · ${runtimeSummary}` : ''}</span>
                   </div>
                 </div>
               )
             })}
           </div>
+        )}
+        {activeTests.length > 0 && aggregateHistory.length > 1 && (
+          <button type="button" className="dash-aggregate-chart dash-card-button" onClick={navigateToTests}>
+            <span className="aggregate-label">Aggregate TPS (active tests)</span>
+            <ResponsiveContainer width="100%" height={70}>
+              <AreaChart data={aggregateHistory}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="time" hide />
+                <YAxis hide />
+                <Tooltip
+                  contentStyle={{ ...chartTooltipContentStyle, borderRadius: 6, fontSize: 12 }}
+                  labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
+                />
+                <Area type="monotone" dataKey="tps" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.15} strokeWidth={1.5} isAnimationActive={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </button>
         )}
       </section>
 
@@ -686,6 +852,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                     <span className="feed-meta">
                       {test.total_vusers} VUsers · {test.duration} · {test.archive ? `${test.archive.transaction_count.toLocaleString()} tx` : 'archive pending'}
                     </span>
+                    {formatBrowserRuntimeSummary(test.runtime_settings?.browser) && (
+                      <span className="feed-meta">Browser runtime · {formatBrowserRuntimeSummary(test.runtime_settings?.browser)}</span>
+                    )}
                     <span className="feed-meta">
                       {formatDateTime(test.ended_at || test.start_time || test.created_at)}
                     </span>
@@ -716,65 +885,6 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
               ))}
             </div>
           )}
-        </section>
-
-        {/* Test Summary Breakdown */}
-        <section className="dash-section dash-summary">
-          <h3 className="dash-section-title">Test Summary</h3>
-          <div className="dash-summary-cards">
-            <button type="button" className="summary-stat dash-card-button" onClick={navigateToResults}>
-              <span className="summary-stat-value text-success">{stats.completed}</span>
-              <span className="summary-stat-label">Completed</span>
-              <div className="summary-bar">
-                <div className="summary-bar-fill success" style={{ width: stats.total ? `${(stats.completed / stats.total) * 100}%` : '0%' }} />
-              </div>
-            </button>
-            <button type="button" className="summary-stat dash-card-button" onClick={navigateToResults}>
-              <span className="summary-stat-value text-danger">{stats.failed}</span>
-              <span className="summary-stat-label">Failed</span>
-              <div className="summary-bar">
-                <div className="summary-bar-fill danger" style={{ width: stats.total ? `${(stats.failed / stats.total) * 100}%` : '0%' }} />
-              </div>
-            </button>
-            <button type="button" className="summary-stat dash-card-button" onClick={navigateToResults}>
-              <span className="summary-stat-value" style={{ color: 'var(--chart-3)' }}>{stats.aborted}</span>
-              <span className="summary-stat-label">Aborted</span>
-              <div className="summary-bar">
-                <div className="summary-bar-fill warning" style={{ width: stats.total ? `${(stats.aborted / stats.total) * 100}%` : '0%' }} />
-              </div>
-            </button>
-            <button type="button" className="summary-stat dash-card-button" onClick={navigateToTests}>
-              <span className="summary-stat-value" style={{ color: 'var(--accent)' }}>{stats.active}</span>
-              <span className="summary-stat-label">Active Now</span>
-              <div className="summary-bar">
-                <div className="summary-bar-fill active" style={{ width: stats.total ? `${(stats.active / stats.total) * 100}%` : '0%' }} />
-              </div>
-            </button>
-          </div>
-
-          {/* Aggregate sparkline if we have any active test history */}
-          {activeTests.length > 0 && (() => {
-            const allHistory = Object.values(metricsHistory).flat()
-            if (allHistory.length < 2) return null
-            const aggregated = allHistory.slice(-60)
-            return (
-              <button type="button" className="dash-aggregate-chart dash-card-button" onClick={navigateToTests}>
-                <span className="aggregate-label">Aggregate TPS (active tests)</span>
-                <ResponsiveContainer width="100%" height={80}>
-                  <AreaChart data={aggregated}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="time" hide />
-                    <YAxis hide />
-                    <Tooltip
-                      contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }}
-                      labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
-                    />
-                    <Area type="monotone" dataKey="tps" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.15} strokeWidth={1.5} isAnimationActive={false} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </button>
-            )
-          })()}
         </section>
       </div>
     </div>

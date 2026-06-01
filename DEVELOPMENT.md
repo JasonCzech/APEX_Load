@@ -3,11 +3,11 @@
 ## Project Structure
 
 ```
-stormrunner/
+apexload/
 ├── cmd/                     # Executable entry points
 │   ├── controller/          # REST API + dashboard server (port 8080)
 │   ├── generator/           # Distributed load generator (Kubernetes pod)
-│   └── stormctl/           # CLI for local script execution
+│   └── apexctl/           # CLI for local script execution
 ├── pkg/                    # Reusable packages
 │   ├── engine/            # Core VUser engine, pacing, metrics
 │   ├── protocol/          # Protocol interface + implementations (HTTP, JMS)
@@ -142,7 +142,7 @@ type Protocol interface {
 
 **Distributed Execution Notes:**
 - The controller stays on the same HTTP/WebSocket contract in both local and distributed modes.
-- Distributed mode is enabled by passing `GeneratorTargets` into `api.NewServer`, which `cmd/controller` currently sources from `STORMRUNNER_GENERATORS`.
+- Distributed mode is enabled by passing `GeneratorTargets` into `api.NewServer`, which `cmd/controller` currently sources from `APEXLOAD_GENERATORS`.
 - Group fan-out, remote control routing, and remote archive staging all live behind the `testExecutionBackend` seam so handlers do not branch on local vs distributed execution.
 - Synthetic distributed transport tests and real remote execution tests both live in `pkg/api/execution_backend_test.go`.
 
@@ -241,8 +241,8 @@ dashboard/
 go run ./cmd/controller
 
 # Controller in distributed mode
-STORMRUNNER_GENERATORS=127.0.0.1:9090,127.0.0.1:9091 \
-STORMRUNNER_GENERATOR_TIMEOUT=10s \
+APEXLOAD_GENERATORS=127.0.0.1:9090,127.0.0.1:9091 \
+APEXLOAD_GENERATOR_TIMEOUT=10s \
 go run ./cmd/controller
 
 # Generator
@@ -326,7 +326,15 @@ go run ./cmd/controller
 cd dashboard
 npm install
 npm run dev
-# Starts Vite dev server on :5173 with API proxy to :8080
+# Starts Vite dev server on :3000 with API proxy to :8080
+```
+
+**Windows local helper** (optional)
+```powershell
+.\scripts\start-local-windows.ps1
+
+# Open directly to recorder authoring and manage Windows recorder proxy state
+.\scripts\start-local-windows.ps1 -ConfigureRecorderProxy -DashboardRoute '#/scripts?mode=create'
 ```
 
 ### 2. Making Changes
@@ -369,7 +377,7 @@ npm run test
 **Build Go binaries:**
 ```bash
 make build
-# Outputs to ./bin/controller, ./bin/generator, ./bin/stormctl
+# Outputs to ./bin/controller, ./bin/generator, ./bin/apexctl
 ```
 
 **Build dashboard for embedding:**

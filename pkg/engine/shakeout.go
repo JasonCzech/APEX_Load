@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 // RunScriptShakeout executes one init-and-action pass for a single script instance.
@@ -61,6 +61,9 @@ func RunScriptShakeout(ctx context.Context, groupName string, script *dsl.Script
 }
 
 func runShakeoutAction(ctx context.Context, vu *VUser, action dsl.Action, phase string) error {
+	if handled, err := vu.handleEngineAction(ctx, action); handled {
+		return err
+	}
 	resolved := vu.resolveAction(action)
 	result, err := vu.executeWithRetry(ctx, resolved, vu.Script.Config.ErrorHandling)
 	if err != nil {

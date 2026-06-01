@@ -33,6 +33,7 @@ export interface ScriptActionDefinition {
   value?: string
   headers?: Record<string, string>
   body?: string
+  body_encoding?: string
   params?: Record<string, unknown>
   metadata?: Record<string, unknown>
   wait_for?: ScriptWaitCondition
@@ -71,6 +72,9 @@ export interface PacingConfig {
 
 export interface RunLogicConfig {
   iterations?: number
+  global_iterations?: number
+  max_transactions?: number
+  workload_model?: string
   auto_transactions?: string
   block_scheduling?: string
   action_sequence?: string[]
@@ -115,6 +119,7 @@ export interface HTTPConfig {
     url?: string
     username?: string
     password?: string
+    no_proxy?: string[]
   }
   auth?: {
     type?: string
@@ -129,6 +134,10 @@ export interface BrowserConfig {
   headless?: boolean
   slow_mo_ms?: number
   user_agent?: string
+  device_profile?: string
+  touch_mode?: boolean
+  orientation?: string
+  client_metrics?: boolean
   capture_screenshots?: string
   cache_enabled?: boolean
   cache_content_urls?: boolean
@@ -157,6 +166,8 @@ export interface NetworkSimulationConfig {
   preset?: string
   bandwidth_kbps?: number
   latency_ms?: number
+  jitter_ms?: number
+  packet_loss_pct?: number
 }
 
 export interface StreamingConfig {
@@ -174,6 +185,18 @@ export interface DFETransform {
 export interface DataFormattingConfig {
   auto_detect?: boolean
   chain?: DFETransform[]
+}
+
+export interface ExternalMetricConfig {
+  name?: string
+  url?: string
+  format?: 'prometheus'
+  metric_name?: string
+  labels?: Record<string, string>
+}
+
+export interface ObservabilityConfig {
+  external_metrics?: ExternalMetricConfig[]
 }
 
 export interface WebRuntimeConfig {
@@ -215,6 +238,33 @@ export interface JMSConfig {
   mock?: boolean
 }
 
+export interface DatabaseConfig {
+  driver?: string
+  dsn?: string
+  dsn_secret?: string
+  query_timeout_ms?: number
+  max_open_conns?: number
+  max_idle_conns?: number
+  conn_max_lifetime_ms?: number
+  max_rows?: number
+  read_only?: boolean
+  rollback_on_teardown?: boolean
+}
+
+export interface NetworkConfig {
+  subprotocol?: string
+  host?: string
+  address?: string
+  port?: number
+  timeout_ms?: number
+  tls?: boolean
+  username?: string
+  password?: string
+  from?: string
+  to?: string[]
+  base_dn?: string
+}
+
 export interface SOAPConfig {
   version?: string
   namespaces?: Record<string, string>
@@ -241,6 +291,38 @@ export interface ScriptImportMetadata {
   preserved?: Record<string, unknown>
 }
 
+export interface SourceReviewFile {
+  path: string
+  language?: string
+  content: string
+  original_bytes?: number
+  truncated?: boolean
+  redacted?: boolean
+}
+
+export interface SourceReviewMapping {
+  id: string
+  source_file: string
+  start_line: number
+  end_line?: number
+  function?: string
+  target_path?: string
+  target_name?: string
+  target_kind?: string
+  status: string
+  support_mode?: string
+  notes?: string
+}
+
+export interface SourceReview {
+  source_files?: SourceReviewFile[]
+  mappings?: SourceReviewMapping[]
+}
+
+export type LoadRunnerSourceReviewFile = SourceReviewFile
+export type LoadRunnerSourceReviewMapping = SourceReviewMapping
+export type LoadRunnerSourceReview = SourceReview
+
 export interface ScriptMetadata {
   import?: ScriptImportMetadata
 }
@@ -256,8 +338,33 @@ export interface ScriptConfig {
   web_runtime?: WebRuntimeConfig
   java_http?: JavaHTTPConfig
   soap?: SOAPConfig
+  websocket?: WebSocketConfig
+  grpc?: GRPCConfig
+  database?: DatabaseConfig
+  network?: NetworkConfig
   browser?: BrowserConfig
   jms?: JMSConfig
+  observability?: ObservabilityConfig
+}
+
+export interface WebSocketConfig {
+  read_timeout_ms?: number
+  write_timeout_ms?: number
+  max_message_size?: number
+  subprotocol?: string
+  origin?: string
+  compression?: boolean
+  reconnect?: boolean
+}
+
+export interface GRPCConfig {
+  proto_files?: string[]
+  use_reflection?: boolean
+  plain_text?: boolean
+  max_recv_msg_size?: number
+  timeout_ms?: number
+  metadata?: Record<string, string>
+  authority?: string
 }
 
 export interface ScriptDataSource {
@@ -277,6 +384,7 @@ export interface ScriptParameterDefinition {
   update?: string
   selection?: string
   on_exhaustion?: string
+  same_line_as?: string
   data_source?: string
   column?: string
   format?: string
@@ -350,10 +458,33 @@ export interface ScriptReplaySnapshot {
   dom_summary?: ScriptReplayDOMSummary
 }
 
+export interface ScriptProtocolEvidence {
+  protocol?: string
+  operation?: string
+  target?: string
+  status?: string
+  timings?: Record<string, unknown>
+  messages?: Record<string, unknown>
+  metadata?: Record<string, unknown>
+  rows?: Record<string, unknown>
+  records?: Record<string, unknown>
+  transcript?: unknown[]
+  [key: string]: unknown
+}
+
 export interface ScriptReplayActionEvent {
+  event_id?: string
+  action_index?: number
+  event_index?: number
   phase: string
   action_name: string
   action_type: string
+  source_profile?: string
+  source_step_id?: string
+  source_step_index?: number
+  source_action?: string
+  source_action_name?: string
+  source_transaction?: string
   method?: string
   target: string
   selector?: string
@@ -375,9 +506,41 @@ export interface ScriptReplayActionEvent {
   network_entries?: ScriptReplayNetworkEntry[]
   dom_summary?: ScriptReplayDOMSummary
   snapshot?: ScriptReplaySnapshot
+  protocol_evidence?: ScriptProtocolEvidence
+  diagnosis?: {
+    category: string
+    severity: string
+    cause: string
+    evidence?: string
+    action?: string
+    signals?: string[]
+    frame_context?: string
+    suggested_locator?: string
+  }
+  repair_suggestions?: Array<{
+    id: string
+    title: string
+    description: string
+    draft_patch_type: string
+    action?: string
+    confidence?: number
+    fields?: Record<string, string>
+  }>
 }
 
 export interface ScriptReplayReport {
+  replay_session_id?: string
+  script_hash?: string
+  script_revision?: string
+  artifact_manifest?: Record<string, unknown>
+  diagnosis_summary?: {
+    failure_count: number
+    categories?: Record<string, number>
+    first_failure_event_id?: string
+    first_failure_action?: string
+    first_failure_cause?: string
+  }
+  repair_suggestions?: ScriptReplayActionEvent['repair_suggestions']
   group: string
   protocol: string
   started_at: string
@@ -392,13 +555,84 @@ export interface ScriptReplayReport {
 export interface ScriptReplayResponse {
   script_id: string
   replay_session_id: string
+  preflight?: Record<string, unknown>
+  warnings?: string[]
   report: ScriptReplayReport
+}
+
+export interface ScriptValidationRuntimeSettingParity {
+  id: string
+  area: string
+  concept: string
+  fields?: string[]
+  status: string
+  notes?: string
+  runtime_files?: string[]
+}
+
+export interface ScriptValidationMigrationPolicy {
+  block_statuses?: string[]
+}
+
+export interface ScriptValidationMigrationReadiness {
+  score_pct: number
+  blocked: boolean
+  summary?: string
+  blocking_statuses?: string[]
+  blocking_settings?: ScriptValidationRuntimeSettingParity[]
+  policy?: ScriptValidationMigrationPolicy
+}
+
+export interface DataSourceFitItem {
+  data_source?: string
+  parameter?: string
+  column?: string
+  status: string
+  required_rows?: number
+  available_rows?: number
+  summary: string
+}
+
+export interface DataSourceFitReport {
+  status: string
+  status_counts?: Record<string, number>
+  items: DataSourceFitItem[]
+}
+
+export interface AIGuardrailItem {
+  key: string
+  status: string
+  summary: string
+}
+
+export interface AIGuardrailReport {
+  status: string
+  status_counts?: Record<string, number>
+  items: AIGuardrailItem[]
+}
+
+export interface ScriptValidationAuthoringHealth {
+  score: number
+  status: string
+  inputs?: Array<{
+    key: string
+    status: string
+    count?: number
+    summary?: string
+  }>
 }
 
 export interface ScriptValidationResponse {
   script_id: string
   valid: boolean
   issues: string[]
+  warnings?: string[]
+  runtime_settings_parity?: ScriptValidationRuntimeSettingParity[]
+  runtime_settings_status_counts?: Record<string, number>
+  migration_readiness?: ScriptValidationMigrationReadiness
+  data_source_fit?: DataSourceFitReport
+  ai_guardrails?: AIGuardrailReport
+  authoring_health?: ScriptValidationAuthoringHealth
 }
 
 export interface ScriptExportResponse {

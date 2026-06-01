@@ -1,0 +1,148 @@
+package correlate
+
+import (
+	"math"
+	"regexp"
+	"strings"
+)
+
+// Rule identifiers. Each correlation candidate is tagged with the rule that
+// produced it so the dashboard, migration review, and replay-repair surfaces can
+// explain and group findings by response family.
+const (
+	RuleJSONAuthToken    = "json.auth_token"
+	RuleJSONCSRFToken    = "json.csrf_token"
+	RuleJSONSessionID    = "json.session_id"
+	RuleJSONNumericID    = "json.numeric_id"
+	RuleJSONDynamicID    = "json.dynamic_id"
+	RuleHTMLHiddenToken  = "html.hidden_token"
+	RuleASPNetState      = "html.aspnet_state"
+	RuleSetCookieSession = "cookie.session"
+	RuleSetCookieOther   = "cookie.other"
+	RuleDynamicHeader    = "header.dynamic"
+	RuleLocationRedirect = "header.location"
+)
+
+// ResponseFamily groups rules by the kind of response they inspect.
+type ResponseFamily string
+
+const (
+	FamilyJSON   ResponseFamily = "json"
+	FamilyHTML   ResponseFamily = "html"
+	FamilyHeader ResponseFamily = "header"
+	FamilyCookie ResponseFamily = "cookie"
+)
+
+// RuleInfo documents a detection rule for UX/catalog surfaces (e.g. an API that
+// lists what the correlation engine can detect). It is descriptive metadata, not
+// the executable matcher.
+type RuleInfo struct {
+	ID             string         `json:"id"`
+	Family         ResponseFamily `json:"family"`
+	Title          string         `json:"title"`
+	Description    string         `json:"description"`
+	BaseConfidence float64        `json:"base_confidence"`
+}
+
+// RuleCatalog returns the rule set the engine applies, ordered by family then
+// confidence. Exposed so the dashboard can show "what we detect" and so docs
+// stay in sync with behavior.
+func RuleCatalog() []RuleInfo {
+	return []RuleInfo{
+		{RuleASPNetState, FamilyHTML, "ASP.NET state field", "WebForms __VIEWSTATE / __EVENTVALIDATION style hidden fields that change every request.", 0.95},
+		{RuleHTMLHiddenToken, FamilyHTML, "Hidden anti-CSRF/state token", "Hidden form inputs named like csrf, xsrf, token, nonce, state, viewstate, authenticity.", 0.9},
+		{RuleJSONCSRFToken, FamilyJSON, "JSON CSRF token", "JSON fields whose name contains csrf/xsrf.", 0.9},
+		{RuleJSONAuthToken, FamilyJSON, "JSON auth token", "JSON fields named like access_token, id_token, refresh_token, token.", 0.85},
+		{RuleJSONSessionID, FamilyJSON, "JSON session id", "JSON fields named like session_id, sid.", 0.85},
+		{RuleSetCookieSession, FamilyCookie, "Session cookie", "Set-Cookie values for session/auth/csrf cookies.", 0.8},
+		{RuleDynamicHeader, FamilyHeader, "Dynamic response header", "Response headers that look dynamic (token/auth/id/csrf).", 0.8},
+		{RuleJSONDynamicID, FamilyJSON, "JSON dynamic id", "JSON token-shaped string fields ending in id.", 0.6},
+		{RuleLocationRedirect, FamilyHeader, "Redirect target", "Location header that may carry a one-time code/state.", 0.6},
+		{RuleSetCookieOther, FamilyCookie, "Other cookie", "Set-Cookie values that are not obviously session-scoped.", 0.55},
+		{RuleJSONNumericID, FamilyJSON, "JSON numeric id", "JSON numeric id fields with 4+ digits.", 0.5},
+	}
+}
+
+var (
+	highEntropyChars = regexp.MustCompile(`[^A-Za-z0-9]`)
+	allDigits        = regexp.MustCompile(`^\d+$`)
+)
+
+// scoreConfidence combines a candidate's rule base confidence with runtime
+// signals — how many later requests reuse the value, and how "dynamic" the value
+// looks — into a final 0..1 ranking, along with the reasons that moved it.
+func scoreConfidence(candidate Candidate, usageCount int) (float64, []string) {
+	score := candidate.BaseConfidence
+	if score == 0 {
+		score = 0.5
+	}
+	reasons := make([]string, 0, 4)
+	if candidate.Reason != "" {
+		reasons = append(reasons, candidate.Reason)
+	}
+
+	// Reuse is the strongest real-world signal: a value echoed back by the client
+	// in several later requests is almost certainly a value that must correlate.
+	switch {
+	case usageCount >= 3:
+		score += 0.12
+		reasons = append(reasons, "reused in 3+ later requests")
+	case usageCount == 2:
+		score += 0.08
+		reasons = append(reasons, "reused in 2 later requests")
+	case usageCount == 1:
+		score += 0.04
+		reasons = append(reasons, "reused in a later request")
+	}
+
+	// Value shape: long, mixed-character values are more likely opaque dynamic
+	// tokens; short all-digit values are weaker signals (could be static ids).
+	value := candidate.Value
+	switch {
+	case len(value) >= 24 && highEntropyChars.MatchString(value):
+		score += 0.06
+		reasons = append(reasons, "long, high-entropy value")
+	case len(value) >= 16:
+		score += 0.03
+		reasons = append(reasons, "long value")
+	case allDigits.MatchString(value) && len(value) <= 4:
+		score -= 0.15
+		reasons = append(reasons, "short numeric value (may be static)")
+	}
+
+	return clampConfidence(score), reasons
+}
+
+func clampConfidence(score float64) float64 {
+	if score < 0.05 {
+		return 0.05
+	}
+	if score > 0.99 {
+		return 0.99
+	}
+	// Round to 2 decimals for stable, readable output.
+	return math.Round(score*100) / 100
+}
+
+// HighConfidence reports whether a correlation is confident enough to apply
+// automatically vs. merely suggest for review. The threshold is intentionally
+// conservative — auto-applying a wrong correlation is worse than suggesting it.
+func HighConfidence(c Correlation) bool {
+	return c.Confidence >= 0.8
+}
+
+// FamilyForRule maps a rule ID back to its response family (best-effort).
+func FamilyForRule(ruleID string) ResponseFamily {
+	switch {
+	case strings.HasPrefix(ruleID, "json."):
+		return FamilyJSON
+	case strings.HasPrefix(ruleID, "html."):
+		return FamilyHTML
+	case strings.HasPrefix(ruleID, "cookie."):
+		return FamilyCookie
+	case strings.HasPrefix(ruleID, "header."):
+		return FamilyHeader
+	default:
+		return ""
+	}
+}

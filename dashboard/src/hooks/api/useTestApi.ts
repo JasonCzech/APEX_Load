@@ -3,25 +3,44 @@ import { useCallback, useMemo } from 'react'
 import {
   ArchivePage,
   DraftCapacityEstimate,
+  GeneratorAssignmentSettings,
   GoalConfig,
   IntervalSummaryRecord,
+  LoadModelSupportMatrixResponse,
+  LoadModelTemplatesResponse,
+  LoadModelValidationReport,
   LiveMetrics,
+  ResourceSample,
   RunArchiveManifest,
   RunArchiveReport,
   RuntimeSettingsOverride,
+  ScenarioSchedule,
+  ScenarioScheduleOccurrence,
+  ScenarioScheduleHealth,
   ScenarioDataPoolBinding,
   ScenarioMode,
   TestSummary,
   TransactionEvent,
 } from '../../types'
-import { BASE, request } from '../apiClient'
+import { apiFetch, request } from '../apiClient'
 
 type ArchiveTransactionsParams = {
   limit?: number
   offset?: number
   action?: string
+  soap_operation?: string
   group?: string
   success?: boolean
+  time_from?: string
+  time_to?: string
+  status?: string
+  min_duration_ms?: number
+  max_duration_ms?: number
+  min_bytes?: number
+  max_bytes?: number
+  error_contains?: string
+  sort_by?: string
+  sort_dir?: 'asc' | 'desc'
 }
 
 type ArchiveListParams = {
@@ -36,6 +55,7 @@ type TestListResponse = {
 
 type StartTestOptions = {
   override_capacity_shortfall?: boolean
+  override_script_shakeout_failure?: boolean
 }
 
 type TestCreateGroupEntry = {
@@ -44,7 +64,17 @@ type TestCreateGroupEntry = {
   vusers?: number
   ramp_up?: string
   ramp_down?: string
+  stages?: Array<{
+    name?: string
+    type: string
+    duration: string
+    target_vusers?: number
+    target_tps?: number
+  }>
+  iterations?: number
+  runtime_settings?: RuntimeSettingsOverride
   initialization?: 'at_runtime' | 'at_once'
+  assignment?: GeneratorAssignmentSettings
 }
 
 type TestCreateRequest = {
@@ -58,10 +88,7 @@ type TestCreateRequest = {
   scenario_mode?: ScenarioMode
   script_shakeout?: boolean
   resource_baseline?: boolean
-  assignment?: {
-    mode?: 'auto' | 'specific_hosts'
-    selected_targets?: string[]
-  }
+  assignment?: GeneratorAssignmentSettings
   goal_config?: GoalConfig
   groups?: TestCreateGroupEntry[]
   data_pools?: ScenarioDataPoolBinding[]
@@ -75,6 +102,35 @@ type TestCreateRequest = {
 type TestActionResponse = {
   status: string
   test_id: string
+  message?: string
+}
+
+type ScenarioScheduleRequest = {
+  name: string
+  cron_expr: string
+  timezone?: string
+  release_id?: string
+  run_name_template?: string
+  enabled?: boolean
+  approval_policy?: string
+  missed_run_policy?: string
+  blackout_windows?: Array<{ name?: string, days_of_week?: number[], start_time: string, end_time: string, timezone?: string }>
+  availability_windows?: Array<{ name?: string, days_of_week?: number[], start_time: string, end_time: string, timezone?: string }>
+}
+
+type ScenarioScheduleListResponse = {
+  schedules: ScenarioSchedule[]
+  count: number
+}
+
+type ScenarioScheduleOccurrencesResponse = {
+  occurrences: ScenarioScheduleOccurrence[]
+  count: number
+}
+
+type ScenarioScheduleApprovalResponse = {
+  approval: unknown
+  schedule: ScenarioSchedule
 }
 
 type DeleteTestResponse = {
@@ -97,8 +153,15 @@ type TestMetricsResponse = {
 type ScaleVUsersResponse = {
   test_id: string
   group: string
+  action?: 'run' | 'pause' | 'stop'
   target_vusers: number
+  ramp_duration?: string
   status: string
+}
+
+type ScaleVUsersOptions = {
+  action?: 'run' | 'pause' | 'stop'
+  ramp_duration?: string
 }
 
 type AdjustDurationResponse = {
@@ -108,7 +171,7 @@ type AdjustDurationResponse = {
 }
 
 type ArchiveTransactionsResponse = ArchivePage<TransactionEvent>
-type ArchiveResourcesResponse = ArchivePage<unknown>
+type ArchiveResourcesResponse = ArchivePage<ResourceSample>
 type ArchiveSummariesResponse = ArchivePage<IntervalSummaryRecord>
 
 function buildQuery(params?: Record<string, string | number | boolean | undefined>) {
@@ -125,7 +188,7 @@ function buildQuery(params?: Record<string, string | number | boolean | undefine
 }
 
 async function fetchBlob(path: string): Promise<Blob> {
-  const res = await fetch(`${BASE}${path}`)
+  const res = await apiFetch(path)
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(body.error || res.statusText)
@@ -162,12 +225,38 @@ export function useTestApi() {
     [],
   )
 
+  const listLoadModelTemplates = useCallback(
+    (params?: { shape_id?: string }) =>
+      request<LoadModelTemplatesResponse>(`/scenarios/load-models/templates${buildQuery({ shape_id: params?.shape_id })}`),
+    [],
+  )
+
+  const getLoadModelSupportMatrix = useCallback(
+    () => request<LoadModelSupportMatrixResponse>('/scenarios/load-models/support-matrix'),
+    [],
+  )
+
+  const validateScenarioLoadModel = useCallback(
+    (data: unknown) => request<LoadModelValidationReport>('/scenarios/validate-load-model', { method: 'POST', body: JSON.stringify(data) }),
+    [],
+  )
+
   const startTest = useCallback(
     (id: string, options?: StartTestOptions) =>
       request<TestActionResponse>(`/tests/${id}/start`, {
         method: 'POST',
         body: options ? JSON.stringify(options) : undefined,
       }),
+    [],
+  )
+
+  const pinComparisonBaseline = useCallback(
+    (id: string) => request<TestSummary>(`/tests/${id}/comparison-baseline/pin`, { method: 'POST' }),
+    [],
+  )
+
+  const unpinComparisonBaseline = useCallback(
+    (id: string) => request<TestSummary>(`/tests/${id}/comparison-baseline/pin`, { method: 'DELETE' }),
     [],
   )
 
@@ -180,6 +269,51 @@ export function useTestApi() {
   const pauseTest = useCallback((id: string) => request<TestActionResponse>(`/tests/${id}/pause`, { method: 'POST' }), [])
   
   const resumeTest = useCallback((id: string) => request<TestActionResponse>(`/tests/${id}/resume`, { method: 'POST' }), [])
+
+  const listScenarioSchedules = useCallback(
+    (scenarioId: string) => request<ScenarioScheduleListResponse>(`/scenarios/${scenarioId}/schedules`),
+    [],
+  )
+
+  const createScenarioSchedule = useCallback(
+    (scenarioId: string, data: ScenarioScheduleRequest) => request<ScenarioSchedule>(`/scenarios/${scenarioId}/schedules`, { method: 'POST', body: JSON.stringify(data) }),
+    [],
+  )
+
+  const updateScenarioSchedule = useCallback(
+    (scenarioId: string, scheduleId: string, data: ScenarioScheduleRequest) => request<ScenarioSchedule>(`/scenarios/${scenarioId}/schedules/${scheduleId}`, { method: 'PUT', body: JSON.stringify(data) }),
+    [],
+  )
+
+  const deleteScenarioSchedule = useCallback(
+    (scenarioId: string, scheduleId: string) => request<{ deleted: string }>(`/scenarios/${scenarioId}/schedules/${scheduleId}`, { method: 'DELETE' }),
+    [],
+  )
+
+  const listScenarioScheduleOccurrences = useCallback(
+    (scenarioId: string, scheduleId: string) => request<ScenarioScheduleOccurrencesResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/occurrences`),
+    [],
+  )
+
+  const getScheduleHealth = useCallback(() => request<ScenarioScheduleHealth>('/schedules/health'), [])
+
+  const approveScenarioScheduleApproval = useCallback(
+    (scenarioId: string, scheduleId: string, approvalId: string, reason?: string) =>
+      request<ScenarioScheduleApprovalResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/approvals/${approvalId}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason || '' }),
+      }),
+    [],
+  )
+
+  const rejectScenarioScheduleApproval = useCallback(
+    (scenarioId: string, scheduleId: string, approvalId: string, reason?: string) =>
+      request<ScenarioScheduleApprovalResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/approvals/${approvalId}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason || '' }),
+      }),
+    [],
+  )
 
   const moveTest = useCallback(
     (id: string, folderId: string | null) =>
@@ -197,8 +331,19 @@ export function useTestApi() {
         limit: params?.limit,
         offset: params?.offset,
         action: params?.action,
+        soap_operation: params?.soap_operation,
         group: params?.group,
         success: params?.success,
+        time_from: params?.time_from,
+        time_to: params?.time_to,
+        status: params?.status,
+        min_duration_ms: params?.min_duration_ms,
+        max_duration_ms: params?.max_duration_ms,
+        min_bytes: params?.min_bytes,
+        max_bytes: params?.max_bytes,
+        error_contains: params?.error_contains,
+        sort_by: params?.sort_by,
+        sort_dir: params?.sort_dir,
       })
       return request<ArchiveTransactionsResponse>(`/tests/${id}/archive/transactions${suffix}`)
     },
@@ -225,16 +370,27 @@ export function useTestApi() {
 
   const downloadTestArchive = useCallback((id: string) => fetchBlob(`/tests/${id}/archive`), [])
 
+  const downloadTestArchiveComparison = useCallback(
+    (id: string, baselineId: string, breakdown: 'overall' | 'platform' | 'engine' | 'device') =>
+      fetchBlob(`/tests/${id}/archive/comparison${buildQuery({ format: 'csv', baseline_id: baselineId, breakdown })}`),
+    [],
+  )
+
+  const downloadTestArchiveBrowserDiagnostics = useCallback(
+    (id: string) => fetchBlob(`/tests/${id}/archive/browser-diagnostics`),
+    [],
+  )
+
   const downloadTestArchiveArtifact = useCallback(
     (id: string, name: string) => fetchBlob(`/tests/${id}/archive/files/${encodeURIComponent(name)}`),
     [],
   )
 
   const scaleVUsers = useCallback(
-    (testId: string, group: string, targetVUsers: number) =>
+    (testId: string, group: string, targetVUsers: number, options?: ScaleVUsersOptions) =>
       request<ScaleVUsersResponse>(`/tests/${testId}/vusers`, {
         method: 'PATCH',
-        body: JSON.stringify({ group, target_vusers: targetVUsers }),
+        body: JSON.stringify({ group, target_vusers: targetVUsers, action: options?.action, ramp_duration: options?.ramp_duration }),
       }),
     [],
   )
@@ -254,7 +410,12 @@ export function useTestApi() {
       getTest,
       createTest,
       estimateTest,
+      getLoadModelSupportMatrix,
+      listLoadModelTemplates,
+      validateScenarioLoadModel,
       startTest,
+      pinComparisonBaseline,
+      unpinComparisonBaseline,
       stopTest,
       abortTest,
       deleteTest,
@@ -266,23 +427,46 @@ export function useTestApi() {
       getTestArchiveSummaries,
       getTestArchiveReport,
       downloadTestArchive,
+      downloadTestArchiveComparison,
+      downloadTestArchiveBrowserDiagnostics,
       downloadTestArchiveArtifact,
       scaleVUsers,
       adjustDuration,
       pauseTest,
       resumeTest,
+      listScenarioSchedules,
+      createScenarioSchedule,
+      updateScenarioSchedule,
+      deleteScenarioSchedule,
+      listScenarioScheduleOccurrences,
+      getScheduleHealth,
+      approveScenarioScheduleApproval,
+      rejectScenarioScheduleApproval,
     }),
     [
       listTests,
       getTest,
       createTest,
       estimateTest,
+      getLoadModelSupportMatrix,
+      listLoadModelTemplates,
+      validateScenarioLoadModel,
       startTest,
+      pinComparisonBaseline,
+      unpinComparisonBaseline,
       stopTest,
       abortTest,
       deleteTest,
       pauseTest,
       resumeTest,
+      listScenarioSchedules,
+      createScenarioSchedule,
+      updateScenarioSchedule,
+      deleteScenarioSchedule,
+      listScenarioScheduleOccurrences,
+      getScheduleHealth,
+      approveScenarioScheduleApproval,
+      rejectScenarioScheduleApproval,
       moveTest,
       getMetrics,
       getTestArchiveManifest,
@@ -291,6 +475,8 @@ export function useTestApi() {
       getTestArchiveSummaries,
       getTestArchiveReport,
       downloadTestArchive,
+      downloadTestArchiveComparison,
+      downloadTestArchiveBrowserDiagnostics,
       downloadTestArchiveArtifact,
       scaleVUsers,
       adjustDuration,

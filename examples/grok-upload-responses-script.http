@@ -16,7 +16,7 @@ Content-Type: application/json
       "http": {
         "connect_timeout_ms": 30000,
         "request_timeout_ms": 120000,
-        "user_agent": "Stormrunner-Grok-Responses-Example/1.0"
+        "user_agent": "APEX Load-Grok-Responses-Example/1.0"
       }
     },
     "parameters": [

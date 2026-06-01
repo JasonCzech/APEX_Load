@@ -1,4 +1,5 @@
 import {
+  type BrowserReplayStartRequest,
   BrowserReplayConsoleEntry,
   BrowserReplayEvent,
   BrowserReplayNetworkEntry,
@@ -10,6 +11,10 @@ import {
   type ScriptImportMetadata,
   type ScriptParameterDefinition,
 } from '../types/scripts'
+import {
+  type RecorderCorrelation,
+  type SampleCorrelation,
+} from '../types/scriptImports'
 
 type Action = ScriptActionDefinition
 type DataSourceConfig = ScriptDataSource
@@ -17,6 +22,38 @@ type ParameterConfig = ScriptParameterDefinition
 type ConsoleEntry = BrowserReplayConsoleEntry
 type NetworkEntry = BrowserReplayNetworkEntry
 type ReplayActionEvent = BrowserReplayEvent
+export type ReplayStartPayload = BrowserReplayStartRequest & { script: ScriptDefinition }
+
+type ImportCorrelationSuggestion = {
+  name: string
+  source: string
+  expression: string
+  sample_value?: string
+  found_at: string
+  used_at: string[]
+}
+
+type ImportRuntimeSettingParity = {
+  id: string
+  area: string
+  concept: string
+  status: string
+  runtime_files: string[]
+}
+
+type ImportRuntimeSettingReadiness = {
+  score_pct: number
+  blocked: boolean
+  summary: string
+  blocking_statuses: string[]
+  blocking_settings: ImportRuntimeSettingParity[]
+}
+
+type ImportParameterFileSection = {
+	file: string
+	name: string
+	values: Record<string, string>
+}
 
 export const EMPTY_SCRIPT: ScriptDefinition = {
   name: '', version: '1.0.0', protocol: 'http',
@@ -36,7 +73,7 @@ export const EMPTY_DATA_SOURCE: DataSourceConfig = {
   type: 'csv',
   path: '',
   strategy: 'sequential',
-  delimiter: ',',
+  delimiter: 'auto',
   first_row_header: true,
   columns: [],
   inline_data: '',
@@ -72,6 +109,30 @@ export const EMPTY_JMS_ACTION: Action = {
   think_time_after: true,
 }
 
+export const EMPTY_WEBSOCKET_ACTION: Action = {
+  name: '', type: 'ws_connect', target: '/ws', headers: {}, body: '',
+  params: { timeout_ms: 30000 }, metadata: {}, extractors: [], assertions: [],
+  think_time_after: true,
+}
+
+export const EMPTY_GRPC_ACTION: Action = {
+  name: '', type: 'grpc_unary', target: 'package.Service/Method', headers: {}, body: '{}',
+  params: { timeout_ms: 30000 }, metadata: {}, extractors: [], assertions: [{ type: 'grpc_status', expected: 0 }],
+  think_time_after: true,
+}
+
+export const EMPTY_DATABASE_ACTION: Action = {
+  name: '', type: 'db_query', target: 'select 1 as ok', headers: {}, body: '',
+  params: { binds: [] }, metadata: {}, extractors: [], assertions: [{ type: 'row_count', expected: 1 }],
+  think_time_after: true,
+}
+
+export const EMPTY_NETWORK_ACTION: Action = {
+  name: '', type: 'network_health', target: 'localhost:80', headers: {}, body: '',
+  params: {}, metadata: {}, extractors: [], assertions: [],
+  think_time_after: true,
+}
+
 export const EMPTY_SOAP_ACTION: Action = {
   name: '', type: 'POST', method: 'POST', target: '', headers: {}, body: '',
   extractors: [], assertions: [{ type: 'status_code', expected: 200 }], think_time_after: true,
@@ -80,17 +141,300 @@ export const EMPTY_SOAP_ACTION: Action = {
 
 export function getImportSummary(metadata?: ScriptImportMetadata | null) {
   const preserved = metadata?.preserved || {}
+  const correlationSuggestions = Array.isArray(preserved.correlation_suggestions)
+    ? preserved.correlation_suggestions
+      .map(normalizeImportCorrelationSuggestion)
+      .filter((suggestion): suggestion is ImportCorrelationSuggestion => suggestion !== null)
+    : []
+  const runtimeSettingsParity = Array.isArray(preserved.runtime_settings_parity)
+    ? preserved.runtime_settings_parity
+      .map(normalizeImportRuntimeSettingParity)
+      .filter((entry): entry is ImportRuntimeSettingParity => entry !== null)
+    : []
+  const parameterFiles = normalizeStringArray(preserved.parameter_files)
+  const parameterFileSections = normalizeImportParameterFileSections(preserved.parameter_file_sections)
+  const runtimeSettingStatusCounts = normalizeRuntimeSettingStatusCounts(preserved.runtime_settings_status_counts)
+  const runtimeSettingReadiness = normalizeImportRuntimeSettingReadiness(preserved.runtime_settings_migration_readiness)
 
   return {
     runtimeFiles: Object.keys(preserved.runtime_files || {}),
+    parameterFiles,
+    parameterFileSections,
     projectSections: Object.keys(preserved.project_settings || {}),
     unsupportedFunctions: Array.isArray(preserved.unsupported_functions) ? preserved.unsupported_functions : [],
+    correlationSuggestions,
+    runtimeSettingsParity,
+    runtimeSettingStatusCounts,
+    runtimeSettingReadiness,
   }
 }
 
+export function attachImportCorrelationSuggestions(
+  script: ScriptDefinition,
+  source: string,
+  correlations?: Array<SampleCorrelation | RecorderCorrelation> | null,
+): ScriptDefinition {
+  if (!Array.isArray(correlations) || correlations.length === 0) {
+    return script
+  }
+
+  const suggestions = correlations
+    .map(buildImportCorrelationSuggestion)
+    .filter((suggestion): suggestion is ImportCorrelationSuggestion => suggestion !== null)
+
+  if (suggestions.length === 0) {
+    return script
+  }
+
+  return {
+    ...script,
+    metadata: {
+      ...(script.metadata || {}),
+      import: {
+        ...(script.metadata?.import || {}),
+        source: script.metadata?.import?.source || source,
+        source_script_name: script.metadata?.import?.source_script_name || script.name,
+        preserved: {
+          ...(script.metadata?.import?.preserved || {}),
+          correlation_suggestions: suggestions,
+        },
+      },
+    },
+  }
+}
+
+function buildImportCorrelationSuggestion(correlation: SampleCorrelation | RecorderCorrelation): ImportCorrelationSuggestion | null {
+  const name = normalizeString(correlation.name)
+  const source = normalizeString(correlation.source)
+  const expression = normalizeString(correlation.expression)
+  if (!name || !source || !expression) {
+    return null
+  }
+
+  if ('found_in_step' in correlation) {
+    const foundAt = labelIndexedLocation('Step', correlation.found_in_step)
+    if (!foundAt) {
+      return null
+    }
+    return {
+      name,
+      source,
+      expression,
+      sample_value: normalizeOptionalString(correlation.sample_value),
+      found_at: foundAt,
+      used_at: normalizeIndexedLocations('Step', correlation.used_in_steps),
+    }
+  }
+
+  const foundAt = labelIndexedLocation('Request', correlation.found_in_seq)
+  if (!foundAt) {
+    return null
+  }
+  return {
+    name,
+    source,
+    expression,
+    sample_value: normalizeOptionalString(correlation.sample_value),
+    found_at: foundAt,
+    used_at: normalizeIndexedLocations('Request', correlation.used_in_seqs),
+  }
+}
+
+function normalizeImportRuntimeSettingParity(value: unknown): ImportRuntimeSettingParity | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const entry = value as Record<string, unknown>
+  const id = normalizeString(entry.id)
+  const area = normalizeString(entry.area)
+  const concept = normalizeString(entry.concept)
+  const status = normalizeString(entry.status)
+  if (!id || !area || !concept || !status) {
+    return null
+  }
+
+  return {
+    id,
+    area,
+    concept,
+    status,
+    runtime_files: normalizeStringArray(entry.runtime_files),
+  }
+}
+
+function normalizeImportRuntimeSettingReadiness(value: unknown): ImportRuntimeSettingReadiness | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const readiness = value as Record<string, unknown>
+  const scorePct = typeof readiness.score_pct === 'number' ? readiness.score_pct : 0
+  const blocked = readiness.blocked === true
+  const summary = normalizeString(readiness.summary) || ''
+
+  return {
+    score_pct: scorePct,
+    blocked,
+    summary,
+    blocking_statuses: normalizeStringArray(readiness.blocking_statuses),
+    blocking_settings: Array.isArray(readiness.blocking_settings)
+      ? readiness.blocking_settings
+        .map(normalizeImportRuntimeSettingParity)
+        .filter((entry): entry is ImportRuntimeSettingParity => entry !== null)
+      : [],
+  }
+}
+
+function normalizeImportParameterFileSections(value: unknown): ImportParameterFileSection[] {
+  if (!value || typeof value !== 'object') {
+    return []
+  }
+
+  const sections: ImportParameterFileSection[] = []
+  for (const [fileName, rawFileSections] of Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))) {
+    if (!rawFileSections || typeof rawFileSections !== 'object') {
+      continue
+    }
+    for (const [sectionName, rawSectionValues] of Object.entries(rawFileSections as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))) {
+      const values = normalizeStringRecord(rawSectionValues)
+      if (!sectionName.trim() && Object.keys(values).length === 0) {
+        continue
+      }
+      sections.push({
+        file: fileName,
+        name: sectionName,
+        values,
+      })
+    }
+  }
+
+  return sections
+}
+
+function normalizeRuntimeSettingStatusCounts(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object') {
+    return {}
+  }
+
+  const counts: Record<string, number> = {}
+  for (const [key, rawCount] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof rawCount === 'number' && Number.isFinite(rawCount)) {
+      counts[key] = rawCount
+    }
+  }
+  return counts
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value
+    .map(item => normalizeString(item))
+    .filter((item): item is string => item.length > 0)
+}
+
+function normalizeStringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object') {
+    return {}
+  }
+
+  const normalized: Record<string, string> = {}
+  for (const [key, rawValue] of Object.entries(value as Record<string, unknown>)) {
+    const normalizedKey = normalizeString(key)
+    const normalizedValue = normalizeString(rawValue)
+    if (normalizedKey && normalizedValue) {
+      normalized[normalizedKey] = normalizedValue
+    }
+  }
+  return normalized
+}
+
+function normalizeImportCorrelationSuggestion(value: unknown): ImportCorrelationSuggestion | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const candidate = value as Record<string, unknown>
+  const name = normalizeString(candidate.name)
+  const source = normalizeString(candidate.source)
+  const expression = normalizeString(candidate.expression)
+  const foundAt = normalizeString(candidate.found_at)
+  const usedAt = Array.isArray(candidate.used_at)
+    ? candidate.used_at.map(normalizeString).filter(Boolean)
+    : []
+
+  if (!name || !source || !expression || !foundAt) {
+    return null
+  }
+
+  return {
+    name,
+    source,
+    expression,
+    sample_value: normalizeOptionalString(candidate.sample_value),
+    found_at: foundAt,
+    used_at: usedAt,
+  }
+}
+
+function normalizeIndexedLocations(prefix: string, values: unknown): string[] {
+  if (!Array.isArray(values)) {
+    return []
+  }
+
+  return values
+    .map(value => labelIndexedLocation(prefix, value))
+    .filter((value): value is string => Boolean(value))
+}
+
+function labelIndexedLocation(prefix: string, value: unknown): string {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return ''
+  }
+
+  return `${prefix} ${Math.trunc(value)}`
+}
+
+function normalizeString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function normalizeOptionalString(value: unknown): string | undefined {
+  const normalized = normalizeString(value)
+  return normalized || undefined
+}
+
 export function inferDelimiter(source: DataSourceConfig): string {
-  if (source.delimiter && source.delimiter.length > 0) return source.delimiter
-  return source.type === 'dat' ? '\t' : ','
+  const detected = detectInlineDataDelimiter(source.inline_data || '')
+  const rawDelimiter = source.delimiter || ''
+  const delimiter = rawDelimiter === '\t' ? '\t' : rawDelimiter.trim()
+  if (delimiter.length > 0) {
+    const normalized = delimiter.toLowerCase()
+    if (normalized === 'auto') return detected || (source.type === 'dat' ? '\t' : ',')
+    if (delimiter === '\t' || delimiter === '\\t' || normalized === 'tab') return '\t'
+    if (normalized === 'comma') return ','
+    if (delimiter === ',' && detected === '\t') return '\t'
+    return delimiter
+  }
+  return detected || (source.type === 'dat' ? '\t' : ',')
+}
+
+export function detectInlineDataDelimiter(raw: string): string | null {
+  const lines = raw.split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(0, 20)
+  if (lines.length === 0) return null
+
+  const score = (delimiter: string) => lines.reduce((total, line) => {
+    const count = line.split(delimiter).length - 1
+    return total + (count > 0 ? count + 1 : 0)
+  }, 0)
+
+  const commaScore = score(',')
+  const tabScore = score('\t')
+  if (tabScore === 0 && commaScore === 0) return null
+  if (tabScore > commaScore) return '\t'
+  return ','
 }
 
 export function summarizeInlineData(source: DataSourceConfig): { rows: number; columns: number } {
@@ -309,13 +653,16 @@ export function formatNetworkEntries(entries?: NetworkEntry[]): string {
 
 export function hasBrowserReplayArtifacts(event: ReplayActionEvent): boolean {
   return !!(
-    event.page_url ||
-    event.page_title ||
     event.dom_summary ||
+    event.snapshot?.dom_summary ||
     event.console_entries?.length ||
+    event.snapshot?.console_entries?.length ||
     event.network_entries?.length ||
+    event.snapshot?.network_entries?.length ||
     event.html ||
-    event.screenshot_base64
+    event.snapshot?.html ||
+    event.screenshot_base64 ||
+    event.snapshot?.screenshot_base64
   )
 }
 
@@ -324,6 +671,74 @@ export function createReplaySessionId(): string {
     return crypto.randomUUID()
   }
   return `replay-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+export function parseReplayVariablesText(text: string): Record<string, string> | undefined {
+  const trimmed = text.trim()
+  if (!trimmed || trimmed === '{}' || trimmed === '{\n  \n}') {
+    return undefined
+  }
+
+  const parsed = JSON.parse(trimmed)
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new Error('Replay variables must be a JSON object')
+  }
+
+  return Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value ?? '')]))
+}
+
+export function buildReplayStartPayload(
+  script: ScriptDefinition,
+  options: {
+    projectId?: string
+    groupName?: string
+    replaySessionId?: string
+    variables?: Record<string, string>
+    ignoreThinkTime?: boolean
+    startPaused?: boolean
+  } = {},
+): ReplayStartPayload {
+  const groupName = options.groupName?.trim() || `${script.name || 'script'}-replay`
+  const replayScript = options.projectId && !script.project_id
+    ? { ...script, project_id: options.projectId }
+    : script
+
+  return {
+    group_name: groupName,
+    replay_session_id: options.replaySessionId,
+    ignore_think_time: options.ignoreThinkTime,
+    start_paused: script.protocol === 'browser' ? options.startPaused : undefined,
+    variables: options.variables,
+    script: replayScript,
+    browser: script.protocol === 'browser' ? buildBrowserReplayConfig(script) : undefined,
+  }
+}
+
+function buildBrowserReplayConfig(script: ScriptDefinition): BrowserReplayStartRequest['browser'] {
+  const browser = script.config.browser
+  const viewport = browser?.viewport?.width || browser?.viewport?.height
+    ? {
+        width: browser?.viewport?.width || 1440,
+        height: browser?.viewport?.height || 900,
+      }
+    : undefined
+
+  return {
+    engine: browser?.engine || 'chromium',
+    headless: browser?.headless ?? true,
+    slow_mo_ms: browser?.slow_mo_ms,
+    user_agent: browser?.user_agent,
+    device_profile: browser?.device_profile,
+    touch_mode: browser?.touch_mode,
+    orientation: browser?.orientation,
+    client_metrics: browser?.client_metrics,
+    capture_screenshots: normalizeBrowserCaptureScreenshots(browser?.capture_screenshots),
+    viewport,
+  }
+}
+
+function normalizeBrowserCaptureScreenshots(value?: string): 'off' | 'on_error' | 'per_action' {
+  return value === 'off' || value === 'on_error' || value === 'per_action' ? value : 'per_action'
 }
 
 export function getErrorMessage(error: unknown, fallback: string): string {
@@ -341,6 +756,14 @@ export function getErrorIssues(error: unknown): string[] {
   if (typeof payload !== 'object' || payload === null || !('issues' in payload)) return []
   const issues = (payload as { issues?: unknown }).issues
   return Array.isArray(issues) ? issues.filter((issue): issue is string => typeof issue === 'string') : []
+}
+
+export function getErrorWarnings(error: unknown): string[] {
+  if (typeof error !== 'object' || error === null || !('payload' in error)) return []
+  const payload = (error as { payload?: unknown }).payload
+  if (typeof payload !== 'object' || payload === null || !('warnings' in payload)) return []
+  const warnings = (payload as { warnings?: unknown }).warnings
+  return Array.isArray(warnings) ? warnings.filter((warning): warning is string => typeof warning === 'string') : []
 }
 
 export function mergeReplayVariables(

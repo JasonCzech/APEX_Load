@@ -1,7 +1,7 @@
 # Script Authoring Consolidation Roadmap
 
 ## Objective
-Consolidate Stormrunner's script-building system around shared contracts and lifecycle behavior without collapsing distinct user entry points into one monolithic UI.
+Consolidate APEX Load's script-building system around shared contracts and lifecycle behavior without collapsing distinct user entry points into one monolithic UI.
 
 The goal is to keep the current acquisition paths that matter:
 
@@ -217,10 +217,22 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - The scripts library now drives table sorting, linked-run expansion, cached run loading, and inner-run sorting through a dedicated library-model hook instead of keeping that state and fetch logic inline in `ScriptsPage`.
 - The scripts library table and linked-run drill-down markup now render through a dedicated table component instead of keeping the entire sortable library table inline in `ScriptsPage`.
 - The scripts library now sources protocol-specific starter drafts from a dedicated factory module instead of keeping HTTP, browser, and JMS default draft definitions inline in `ScriptsPage`.
+- The scripts library now renders list, create-options, and active authoring subviews through a dedicated `ScriptsAuthoringShell`, leaving `ScriptsPage` focused on library fetch, refresh, delete, and table callbacks.
+- Editor replay and LoadRunner browser-import replay validation now build replay requests through one shared helper, so draft, saved, and imported browser paths agree on project binding, group names, variables, browser defaults, viewport fallback, and screenshot-capture behavior.
+- Draft script validation now has a first-class API endpoint and the script editor uses one validation action for both unsaved drafts and stored scripts, keeping browser compatibility warnings and validation issues aligned before save.
+- The script editor now returns the API's stored-script payload through the shared save callback, giving the authoring shell a concrete persisted-script handoff for both create and update saves.
+- Saving a draft script now advances the shared authoring state into persisted edit mode instead of dropping back to the library immediately, so create/edit/save flows stay in one continuous editor lifecycle while the script library refreshes in parallel.
+- LoadRunner, JMeter, sample-import, Java-over-HTTP sample-import, and recorder save actions now use that same persisted-script handoff, so saved import review flows reopen in the canonical editor instead of ending at the library list.
+- Multi-script import saves now preserve that lifecycle context too: the shared shell reopens the first persisted script in edit mode and surfaces a follow-on notice when the import also saved additional scripts and/or a scenario draft.
+- Import save handoffs now also backfill the reviewed draft payload when the save API returns a thin stored-script response, so persisted reopen stays hydrated for import-review flows even without an embedded script body from the backend.
+- Import and recorder subviews now share one create-options frame in `ScriptsAuthoringSurface`, which removes the remaining per-surface back-navigation drift and starts trimming duplicated wrapper orchestration as the contracts stabilize.
+- The remaining JMeter response adapter has been removed from the dashboard. `JMeterImport` now trusts the backend's shared import envelope directly, so A1.5 cleanup has started by deleting one of the last temporary normalization seams rather than keeping it alive out of habit.
+- Imported script types are now aligned with the real DSL contract instead of a weaker partial shape, which let the dashboard delete several `ImportedScript -> ScriptDefinition` bridge casts and keep edit/save flows on one canonical script model.
+- The shared dashboard API and review surfaces no longer preserve a separate imported-script branch in their type contracts, so the remaining A1.5 cleanup can focus on behavior-specific helpers instead of duplicate script-shape plumbing.
 
 ### Remaining High-Value Work
 - Finish the scenario assembly path by tightening `TestExecution` adjacencies and shared execution/result models now that `CreateTestModal` is aligned on one shared draft state owner.
-- Complete the shared authoring-shell consolidation so the script hub stops owning the remaining route-level create/import state transitions.
+- Continue shared authoring lifecycle work by tightening any remaining reopen-after-save inconsistencies beyond the current multi-script import and scenario-draft follow-on coverage.
 - Run the end-to-end parity pass, then remove any temporary normalization or migration adapters that remain after validation.
 
 ### Current Cleanup Note
@@ -267,7 +279,7 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 ## Verification Checklist
 
 1. Completed: confirm that only live dashboard pages are referenced before deleting duplicate page files.
-2. Build a validation matrix and verify that parser, create, update, replay, browser replay, and import save all return the same validation outcome for the same scripts.
+2. In progress: build a validation matrix and verify that parser, create, update, draft validation, stored validation, replay, browser replay, and import save all return the same validation outcome for the same scripts.
 3. Snapshot current import payloads before standardization, then verify that every builder emits the shared envelope afterward.
 4. Verify that each authoring path supports the same lifecycle after consolidation: acquire input, review warnings and stats, edit if needed, save, and reopen the saved script.
 5. Verify that scenario editing still works both from new test creation and execution-time editing after scenario assembly extraction.

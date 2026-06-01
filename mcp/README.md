@@ -1,41 +1,81 @@
-# Stormrunner MCP Server
+# APEX Load MCP Server
 
-This directory contains a Model Context Protocol (MCP) server that allows AI agents to interface directly with the Stormrunner Performance Testing Platform.
+The APEX Load MCP server lets AI agents operate the APEX Load REST API through the Model Context Protocol. It is an automation and control-plane bridge only; load generators and test execution never depend on this Python process.
 
-## Features
+## Capabilities
 
-Provides the following tools to an AI agent:
-- `list_tests`: List all scenarios and their status.
-- `get_test_details`: Retrieve live metrics and detailed status for a test.
-- `start_test` / `stop_test`: Lifecycle controls for tests.
-- `pause_test` / `resume_test`: Robust execution controls.
-- `list_scripts`: Browse the script library.
-- `get_system_health`: Monitor controller health.
+The server exposes structured tools for the documented API surface:
+
+- `system_*`: health, readiness, inventory, usage, fleet, parity, support matrices, and settings.
+- `auth_*`: identity, effective access, access matrix, diagnostics, service accounts, and audit exports.
+- `project_*`, `application_*`, `release_*`, `folder_*`: project and release organization.
+- `script_*`: library CRUD, validation, replay, imports, authoring sessions, runtime reports, and support matrices.
+- `scenario_*`, `schedule_*`, `data_pool_*`: scenario assembly, load model validation, schedules, and shared data.
+- `run_*`, `archive_*`: run lifecycle, live metrics, archive reports, comparisons, and retention.
+- `ai_*`, `integrations_*`, `monitoring_*`, `report_*`, `results_*`: AI assistance, integrations, monitoring packs, report profiles, and external imports.
+
+Stable resources are also available:
+
+- `apexload://api-guide`
+- `apexload://auth/access-matrix`
+- `apexload://system/parity-status`
+- `apexload://runtime-settings/support-matrix`
+- `apexload://protocol-bundles/support-matrix`
 
 ## Installation
 
-1. Ensure you have Python 3.10+ installed.
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+Use Python 3.10 or newer.
+
+```bash
+cd /path/to/Project_APEX Load/mcp
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
 ## Configuration
 
-The server connects to the Stormrunner API at `http://localhost:8080/api/v1` by default. You can override this using the `STORMRUNNER_URL` environment variable.
+Service-account authentication is the recommended mode for agents and CI/CD automation.
 
-### Usage with Claude Desktop
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `APEXLOAD_URL` | `http://localhost:8080/api/v1` | Controller API base URL. |
+| `APEXLOAD_API_KEY` | empty | Preferred service-account key header. |
+| `APEXLOAD_BEARER_TOKEN` | empty | Alternate bearer token if no API key is set. |
+| `APEXLOAD_PROJECT_ID` | empty | Optional default project scope for list/read tools. |
+| `APEXLOAD_TIMEOUT_SECONDS` | `30` | HTTP request timeout. |
 
-Add the following to your `claude_desktop_config.json`:
+When both `APEXLOAD_API_KEY` and `APEXLOAD_BEARER_TOKEN` are set, the API key is used.
+
+## Safety Model
+
+APEX Load RBAC remains the source of authorization truth. The MCP server adds an agent-facing guardrail before requests reach the API:
+
+- Mutating tools require `confirm: true`.
+- Destructive/admin tools require both `confirm: true` and a non-empty `reason`.
+- Validate and preview tools do not require confirmation unless they mutate controller state.
+- File import tools require paths that are visible to the machine running the MCP server.
+
+All tool responses use a compact JSON shape:
+
+```json
+{"ok":true,"status_code":200,"data":{},"error":null}
+```
+
+Errors use the same top-level shape with `ok:false`, normalized `error.code`, `error.message`, `error.path`, and `error.remediation` fields.
+
+## Usage With Claude Desktop
 
 ```json
 {
   "mcpServers": {
-    "stormrunner": {
-      "command": "python",
-      "args": ["/path/to/Project_Stormrunner/mcp/server.py"],
+    "apexload": {
+      "command": "python3",
+      "args": ["/path/to/Project_APEX Load/mcp/server.py"],
       "env": {
-        "STORMRUNNER_URL": "http://localhost:8080/api/v1"
+        "APEXLOAD_URL": "http://localhost:8080/api/v1",
+        "APEXLOAD_API_KEY": "srk_...",
+        "APEXLOAD_PROJECT_ID": "project-id"
       }
     }
   }
@@ -44,7 +84,25 @@ Add the following to your `claude_desktop_config.json`:
 
 ## Running Manually
 
-To test the server manually:
 ```bash
-python server.py
+cd /path/to/Project_APEX Load/mcp
+APEXLOAD_URL=http://localhost:8080/api/v1 python3 server.py
 ```
+
+## Testing
+
+Run the mocked unit suite:
+
+```bash
+python3 -m pytest mcp
+```
+
+Run live integration smoke tests against a controller:
+
+```bash
+APEXLOAD_MCP_INTEGRATION=1 \
+APEXLOAD_URL=http://localhost:8080/api/v1 \
+python3 -m pytest mcp/tests/test_integration_smoke.py
+```
+
+Integration tests are intentionally read/validate-only and are skipped unless `APEXLOAD_MCP_INTEGRATION=1` is set.

@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func TestJavaHTTPProtocolRegistered(t *testing.T) {
@@ -41,11 +41,11 @@ func TestJavaHTTPExecuteDecodesRequestAndEncodesResponse(t *testing.T) {
 	p := &JavaHTTP{}
 	if err := p.Init(context.Background(), map[string]any{
 		"base_url":                         ts.URL,
-		"java_http_codec":                 supportedCodec,
-		"java_http_helper_mode":           "embedded",
-		"java_http_content_type":          "application/x-java-serialized-object",
-		"java_http_accept":                "application/x-java-serialized-object",
-		"java_http_body_encoding":         "base64",
+		"java_http_codec":                  supportedCodec,
+		"java_http_helper_mode":            "embedded",
+		"java_http_content_type":           "application/x-java-serialized-object",
+		"java_http_accept":                 "application/x-java-serialized-object",
+		"java_http_body_encoding":          "base64",
 		"java_http_preserve_binary_result": true,
 	}); err != nil {
 		t.Fatalf("Init returned error: %v", err)
@@ -78,12 +78,30 @@ func TestJavaHTTPExecuteDecodesRequestAndEncodesResponse(t *testing.T) {
 	if result.BytesSent != int64(len(requestPayload)) {
 		t.Fatalf("bytes sent = %d, want %d", result.BytesSent, len(requestPayload))
 	}
+	if result.DependencyType != "java_http" {
+		t.Fatalf("dependency type = %q, want java_http", result.DependencyType)
+	}
+	if result.ServerTelemetry == nil {
+		t.Fatal("ServerTelemetry = nil, want Java HTTP telemetry")
+	}
+	if result.ServerTelemetry.SerializationMs <= 0 {
+		t.Fatalf("SerializationMs = %v, want > 0", result.ServerTelemetry.SerializationMs)
+	}
+	if result.ServerTelemetry.DeserializationMs <= 0 {
+		t.Fatalf("DeserializationMs = %v, want > 0", result.ServerTelemetry.DeserializationMs)
+	}
+	if result.Extractions["java_http_codec"] != supportedCodec {
+		t.Fatalf("java_http_codec = %q, want %q", result.Extractions["java_http_codec"], supportedCodec)
+	}
+	if result.Extractions["java_http_helper_mode"] != "embedded" {
+		t.Fatalf("java_http_helper_mode = %q, want embedded", result.Extractions["java_http_helper_mode"])
+	}
 }
 
 func TestJavaHTTPExecuteRejectsInvalidBase64(t *testing.T) {
 	p := &JavaHTTP{}
 	if err := p.Init(context.Background(), map[string]any{
-		"base_url":                 "https://example.com",
+		"base_url":                "https://example.com",
 		"java_http_codec":         supportedCodec,
 		"java_http_helper_mode":   "embedded",
 		"java_http_body_encoding": "base64",
@@ -91,11 +109,140 @@ func TestJavaHTTPExecuteRejectsInvalidBase64(t *testing.T) {
 		t.Fatalf("Init returned error: %v", err)
 	}
 
-	result, err := p.Execute(context.Background(), &protocol.Action{Name: "bad", Target: "/", Body: []byte("not-base64%%")})
+	result, err := p.Execute(context.Background(), &protocol.Action{
+		Name:   "bad",
+		Method: "POST",
+		Target: "/invoke",
+		Headers: map[string]string{
+			"X-Request-ID": "req-123",
+		},
+		Body: []byte("not-base64%%"),
+	})
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	if result == nil || result.ErrorMessage == "" {
 		t.Fatalf("result = %#v, want validation error", result)
+	}
+	if result.DependencyType != "java_http" {
+		t.Fatalf("DependencyType = %q, want java_http", result.DependencyType)
+	}
+	if result.ServerTelemetry == nil {
+		t.Fatalf("ServerTelemetry = %#v, want serialization timing", result.ServerTelemetry)
+	}
+	if result.Snapshot == nil {
+		t.Fatal("Snapshot = nil, want retained Java HTTP preflight request")
+	}
+	if result.Snapshot.RequestMethod != "POST" {
+		t.Fatalf("Snapshot.RequestMethod = %q, want POST", result.Snapshot.RequestMethod)
+	}
+	if result.Snapshot.RequestURL != "https://example.com/invoke" {
+		t.Fatalf("Snapshot.RequestURL = %q, want https://example.com/invoke", result.Snapshot.RequestURL)
+	}
+	if result.Snapshot.RequestHeaders["Content-Type"] != "application/x-java-serialized-object" {
+		t.Fatalf("Snapshot.RequestHeaders Content-Type = %q, want application/x-java-serialized-object", result.Snapshot.RequestHeaders["Content-Type"])
+	}
+	if result.Snapshot.RequestHeaders["X-Request-ID"] != "req-123" {
+		t.Fatalf("Snapshot.RequestHeaders X-Request-ID = %q, want req-123", result.Snapshot.RequestHeaders["X-Request-ID"])
+	}
+	if result.Snapshot.RequestBody != "not-base64%%" {
+		t.Fatalf("Snapshot.RequestBody = %q, want original encoded body", result.Snapshot.RequestBody)
+	}
+}
+
+func TestResolveJavaHTTPURLNormalizesAbsoluteURLBoundaryWhitespace(t *testing.T) {
+	got := resolveJavaHTTPURL("https://example.com", "https://service.example.com:443 /invoke")
+	if got != "https://service.example.com:443/invoke" {
+		t.Fatalf("resolveJavaHTTPURL returned %q", got)
+	}
+}
+
+func TestResolveJavaHTTPURLTrimsUnresolvedLeadingTemplateBase(t *testing.T) {
+	got := resolveJavaHTTPURL("https://service.example.com:443", "{{var.url}}/invoke")
+	if got != "https://service.example.com:443/invoke" {
+		t.Fatalf("resolveJavaHTTPURL returned %q", got)
+	}
+}
+
+func TestJavaHTTPResponseMappingExtractsFromRawPayload(t *testing.T) {
+	// A Java serialized stream carries its string fields as ASCII, so a regex
+	// mapping can pull a named value out of the opaque payload for correlation.
+	responsePayload := append([]byte{0xac, 0xed, 0x00, 0x05}, []byte(`sessionId=sess-abc-987;ok`)...)
+	requestBase64 := base64.StdEncoding.EncodeToString([]byte{0xac, 0xed, 0x00, 0x05})
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(responsePayload)
+	}))
+	defer ts.Close()
+
+	p := &JavaHTTP{}
+	if err := p.Init(context.Background(), map[string]any{
+		"base_url":                         ts.URL,
+		"java_http_codec":                  supportedCodec,
+		"java_http_helper_mode":            "embedded",
+		"java_http_body_encoding":          "base64",
+		"java_http_preserve_binary_result": true,
+		"java_http_response_mapping": map[string]string{
+			"session_id": `sessionId=([^;]+)`,
+		},
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	result, err := p.Execute(context.Background(), &protocol.Action{
+		Name:   "java-call",
+		Method: "POST",
+		Target: "/invoke",
+		Body:   []byte(requestBase64),
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if got := result.Extractions["session_id"]; got != "sess-abc-987" {
+		t.Fatalf("session_id extraction = %q, want sess-abc-987", got)
+	}
+	// Response body is still preserved as opaque base64.
+	if result.ResponseBody != base64.StdEncoding.EncodeToString(responsePayload) {
+		t.Fatalf("response body not preserved as base64: %q", result.ResponseBody)
+	}
+}
+
+func TestJavaHTTPResponseMappingEmptyIsNoop(t *testing.T) {
+	responsePayload := []byte{0xac, 0xed, 0x00, 0x05, 'o', 'k'}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(responsePayload)
+	}))
+	defer ts.Close()
+
+	p := &JavaHTTP{}
+	if err := p.Init(context.Background(), map[string]any{
+		"base_url":                ts.URL,
+		"java_http_codec":         supportedCodec,
+		"java_http_body_encoding": "base64",
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	result, err := p.Execute(context.Background(), &protocol.Action{Name: "c", Method: "POST", Target: "/x", Body: []byte(base64.StdEncoding.EncodeToString([]byte{0xac, 0xed}))})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	// Only the standard codec/helper extractions are present.
+	if len(result.Extractions) != 2 {
+		t.Fatalf("expected only the 2 standard extractions, got %#v", result.Extractions)
+	}
+}
+
+func TestJavaHTTPInitAllowsSidecarHelperMode(t *testing.T) {
+	p := &JavaHTTP{}
+	if err := p.Init(context.Background(), map[string]any{
+		"base_url":                "https://example.com",
+		"java_http_codec":         supportedCodec,
+		"java_http_helper_mode":   "sidecar",
+		"java_http_body_encoding": "base64",
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	if p.helperMode != "sidecar" {
+		t.Fatalf("helperMode = %q, want sidecar", p.helperMode)
 	}
 }

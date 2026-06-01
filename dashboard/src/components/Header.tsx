@@ -9,10 +9,8 @@ export default function Header({ connected, onNavigate }: Props) {
   return (
     <header className="header">
       <div className="header-left" onClick={onNavigate}>
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="header-logo">
-          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="var(--accent)" />
-        </svg>
-        <h1 className="header-title">Stormrunner</h1>
+        <img src="/apex-load-logo.png" alt="APEX Load" width="28" height="28" className="header-logo" />
+        <h1 className="header-title">APEX Load</h1>
       </div>
       <div className="header-right">
         <span className={`connection-badge ${connected ? 'connected' : 'disconnected'}`}>

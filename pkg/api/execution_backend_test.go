@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/jasonczech/stormrunner/api/proto"
-	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
+	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	_ "github.com/jasonczech/apexload/pkg/protocol/http"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
@@ -198,6 +198,143 @@ func TestDistributedExecutionBackendAssignsWorkToGenerator(t *testing.T) {
 	}
 	if err := heartbeat.CloseSend(); err != nil {
 		t.Fatalf("Heartbeat CloseSend: %v", err)
+	}
+}
+
+func TestPlanDistributedGroupTargetsUsesRegionWeights(t *testing.T) {
+	groups := []TestGroup{
+		{Name: "buyers-east-1", VUsers: 10},
+		{Name: "buyers-east-2", VUsers: 10},
+		{Name: "buyers-west", VUsers: 10},
+	}
+	loadByTarget := map[string]generatorLoadSnapshot{
+		"gen-a": {Target: "gen-a", AvailableCapacity: 50},
+		"gen-b": {Target: "gen-b", AvailableCapacity: 50},
+		"gen-c": {Target: "gen-c", AvailableCapacity: 50},
+	}
+	assignment := &GeneratorAssignmentSettings{
+		Mode: generatorAssignmentModeRegionWeighted,
+		RegionWeights: map[string]int{
+			"us-east": 2,
+			"eu-west": 1,
+		},
+	}
+	targetSpecs := []generatorTargetSpec{
+		{Address: "gen-a", Region: "us-east"},
+		{Address: "gen-b", Region: "eu-west"},
+		{Address: "gen-c", Region: "us-east"},
+	}
+
+	assignments := planDistributedGroupTargets(groups, loadByTarget, []string{"gen-a", "gen-b", "gen-c"}, assignment, targetSpecs)
+
+	assignedByRegion := map[string]int{}
+	regionByTarget := map[string]string{
+		"gen-a": "us-east",
+		"gen-b": "eu-west",
+		"gen-c": "us-east",
+	}
+	for _, target := range assignments {
+		assignedByRegion[regionByTarget[target]]++
+	}
+	if assignedByRegion["us-east"] != 2 {
+		t.Fatalf("us-east assignments = %d, want 2 (%v)", assignedByRegion["us-east"], assignments)
+	}
+	if assignedByRegion["eu-west"] != 1 {
+		t.Fatalf("eu-west assignments = %d, want 1 (%v)", assignedByRegion["eu-west"], assignments)
+	}
+}
+
+func TestPlanDistributedGroupTargetsUsesNegotiatedGeneratorProtocols(t *testing.T) {
+	groups := []TestGroup{{Name: "grpc-callers", Protocol: "grpc", VUsers: 5}}
+	loadByTarget := map[string]generatorLoadSnapshot{
+		"gen-a": {Target: "gen-a", AvailableCapacity: 50, SupportedProtocols: []string{"http"}},
+		"gen-b": {Target: "gen-b", AvailableCapacity: 20, SupportedProtocols: []string{"grpc"}},
+	}
+	targetSpecs := []generatorTargetSpec{
+		{Address: "gen-a", Protocols: []string{"http", "grpc"}},
+		{Address: "gen-b", Protocols: []string{"http"}},
+	}
+
+	assignments := planDistributedGroupTargets(groups, loadByTarget, []string{"gen-a", "gen-b"}, nil, targetSpecs)
+
+	if assignments["grpc-callers"] != "gen-b" {
+		t.Fatalf("grpc group assigned to %q, want negotiated grpc-capable gen-b", assignments["grpc-callers"])
+	}
+}
+
+func TestPlanDistributedGroupShardsSplitsSpecificHostsByCapacity(t *testing.T) {
+	groups := []TestGroup{{
+		Name:     "buyers",
+		Protocol: "http",
+		VUsers:   10,
+		Assignment: &GeneratorAssignmentSettings{
+			Mode:            generatorAssignmentModeSpecificHosts,
+			SelectedTargets: []string{"gen-a", "gen-b"},
+			ShardStrategy:   generatorShardStrategyCapacityWeighted,
+		},
+	}}
+	loadByTarget := map[string]generatorLoadSnapshot{
+		"gen-a": {Target: "gen-a", AvailableCapacity: 90, SupportedProtocols: []string{"http"}},
+		"gen-b": {Target: "gen-b", AvailableCapacity: 10, SupportedProtocols: []string{"http"}},
+	}
+
+	shards := planDistributedGroupShards(groups, loadByTarget, []string{"gen-a", "gen-b"}, nil, nil)
+
+	if len(shards["buyers"]) != 2 {
+		t.Fatalf("buyer shards = %#v, want two host shards", shards["buyers"])
+	}
+	got := map[string]int{}
+	for _, shard := range shards["buyers"] {
+		got[shard.Target] = shard.VUsers
+		if shard.Group != "buyers" || shard.ShardStrategy != generatorShardStrategyCapacityWeighted {
+			t.Fatalf("unexpected shard metadata: %#v", shard)
+		}
+	}
+	if got["gen-a"] != 8 || got["gen-b"] != 2 {
+		t.Fatalf("shard vusers = %#v, want gen-a=8 gen-b=2", got)
+	}
+}
+
+func TestPlanDistributedGroupShardsRejectsIncompatibleSpecificHost(t *testing.T) {
+	groups := []TestGroup{{
+		Name:     "grpc-callers",
+		Protocol: "grpc",
+		VUsers:   5,
+		Assignment: &GeneratorAssignmentSettings{
+			Mode:            generatorAssignmentModeSpecificHosts,
+			SelectedTargets: []string{"gen-a"},
+		},
+	}}
+	loadByTarget := map[string]generatorLoadSnapshot{
+		"gen-a": {Target: "gen-a", AvailableCapacity: 50, SupportedProtocols: []string{"http"}},
+	}
+
+	shards := planDistributedGroupShards(groups, loadByTarget, []string{"gen-a"}, nil, []generatorTargetSpec{{Address: "gen-a", Protocols: []string{"http"}}})
+
+	if len(shards["grpc-callers"]) != 0 {
+		t.Fatalf("grpc-callers shards = %#v, want no compatible placement", shards["grpc-callers"])
+	}
+}
+
+func TestAggregateDistributedMetricsBatchesSumsDuplicateGroupMetrics(t *testing.T) {
+	batch := aggregateDistributedMetricsBatches("test-1", map[string]generatorrpc.MetricsBatch{
+		"gen-a": {
+			TestID: "test-1",
+			Stats:  generatorrpc.GeneratorStats{ActiveVUsers: 8},
+			Groups: []generatorrpc.GroupMetric{{Name: "buyers", ActiveVUsers: 8}},
+		},
+		"gen-b": {
+			TestID: "test-1",
+			Stats:  generatorrpc.GeneratorStats{ActiveVUsers: 2},
+			Groups: []generatorrpc.GroupMetric{{Name: "buyers", ActiveVUsers: 2}},
+		},
+	})
+
+	if batch.Stats.ActiveVUsers != 10 {
+		t.Fatalf("active vusers = %d, want 10", batch.Stats.ActiveVUsers)
+	}
+	if len(batch.Groups) != 1 || batch.Groups[0].Name != "buyers" || batch.Groups[0].ActiveVUsers != 10 {
+		t.Fatalf("group metrics = %#v, want one aggregated buyers group with 10 vusers", batch.Groups)
 	}
 }
 
@@ -514,6 +651,24 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 		CorrelationID:    "corr-home-1",
 		DependencyType:   "http",
 		DependencyTarget: "api.example.test",
+		DNSMs:            9,
+		ConnectMs:        14,
+		TLSMs:            6,
+		TTFBMs:           74,
+		ServerTelemetry: &generatorrpc.ServerTelemetry{
+			ServerProcessingMs: 40,
+			TransferMs:         20,
+			RequestPayloadKB:   1.5,
+			RequestSizeClass:   "small",
+			ResponsePayloadKB:  3,
+			ResponseSizeClass:  "medium",
+			MessageLatencyMs:   35,
+			MessagesSent:       1,
+			MessagesReceived:   0,
+			MessagesSentPerSec: 10,
+			ConsumerLagMs:      30,
+			ConnectionReused:   false,
+		},
 	}, {
 		Name:             "Home",
 		DurationMs:       300,
@@ -525,6 +680,25 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 		CorrelationID:    "corr-home-2",
 		DependencyType:   "http",
 		DependencyTarget: "api.example.test",
+		DNSMs:            3,
+		ConnectMs:        6,
+		TLSMs:            0,
+		TTFBMs:           60,
+		ServerTelemetry: &generatorrpc.ServerTelemetry{
+			ServerProcessingMs:     60,
+			TransferMs:             40,
+			RequestPayloadKB:       2.5,
+			RequestSizeClass:       "medium",
+			ResponsePayloadKB:      5,
+			ResponseSizeClass:      "large",
+			MessageLatencyMs:       55,
+			MessagesSent:           1,
+			MessagesReceived:       1,
+			MessagesSentPerSec:     5,
+			MessagesReceivedPerSec: 5,
+			ConsumerLagMs:          60,
+			ConnectionReused:       true,
+		},
 	}, {
 		Name:             "Search",
 		DurationMs:       200,
@@ -607,8 +781,56 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 	if updated.LiveMetrics.Transactions["Home"].DependencyType != "http" || updated.LiveMetrics.Transactions["Home"].DependencyTarget != "api.example.test" {
 		t.Fatalf("unexpected Home dependency metadata: %#v", updated.LiveMetrics.Transactions["Home"])
 	}
+	if updated.LiveMetrics.Transactions["Home"].AvgDNSMs != 6 || updated.LiveMetrics.Transactions["Home"].AvgConnectMs != 10 || updated.LiveMetrics.Transactions["Home"].AvgTLSMs != 3 || updated.LiveMetrics.Transactions["Home"].AvgTTFBMs != 67 {
+		t.Fatalf("unexpected Home timing phase averages: %#v", updated.LiveMetrics.Transactions["Home"])
+	}
 	if updated.LiveMetrics.Transactions["Home"].CorrelationCount != 2 {
 		t.Fatalf("unexpected Home correlation count: %#v", updated.LiveMetrics.Transactions["Home"])
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry == nil {
+		t.Fatalf("expected Home server telemetry summary, got %#v", updated.LiveMetrics.Transactions["Home"])
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgServerProcessingMs != 50 {
+		t.Fatalf("Home avg_server_processing_ms = %v, want 50", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgServerProcessingMs)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgTransferMs != 30 {
+		t.Fatalf("Home avg_transfer_ms = %v, want 30", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgTransferMs)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ConnectionReusedCount != 1 {
+		t.Fatalf("Home connection_reused_count = %d, want 1", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ConnectionReusedCount)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ConnectionReusedPct != 50 {
+		t.Fatalf("Home connection_reused_pct = %v, want 50", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ConnectionReusedPct)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgMessageLatencyMs != 45 {
+		t.Fatalf("Home avg_message_latency_ms = %v, want 45", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgMessageLatencyMs)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.MaxMessageLatencyMs != 55 {
+		t.Fatalf("Home max_message_latency_ms = %v, want 55", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.MaxMessageLatencyMs)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.MessagesSent != 2 || updated.LiveMetrics.Transactions["Home"].ServerTelemetry.MessagesReceived != 1 {
+		t.Fatalf("Home message totals = %#v", updated.LiveMetrics.Transactions["Home"].ServerTelemetry)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgMessagesSentPerSec != 7.5 || updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgMessagesReceivedPerSec != 2.5 {
+		t.Fatalf("Home message rates = %#v", updated.LiveMetrics.Transactions["Home"].ServerTelemetry)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgConsumerLagMs != 45 {
+		t.Fatalf("Home avg_consumer_lag_ms = %v, want 45", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgConsumerLagMs)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.MaxConsumerLagMs != 60 {
+		t.Fatalf("Home max_consumer_lag_ms = %v, want 60", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.MaxConsumerLagMs)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.RequestSizeClasses["small"] != 1 || updated.LiveMetrics.Transactions["Home"].ServerTelemetry.RequestSizeClasses["medium"] != 1 {
+		t.Fatalf("Home request_size_classes = %#v", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.RequestSizeClasses)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ResponseSizeClasses["medium"] != 1 || updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ResponseSizeClasses["large"] != 1 {
+		t.Fatalf("Home response_size_classes = %#v", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ResponseSizeClasses)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.RequestPayloadHistogram["1-4 KB"] != 2 {
+		t.Fatalf("Home request_payload_histogram = %#v", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.RequestPayloadHistogram)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ResponsePayloadHistogram["1-4 KB"] != 1 || updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ResponsePayloadHistogram["4-16 KB"] != 1 {
+		t.Fatalf("Home response_payload_histogram = %#v", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ResponsePayloadHistogram)
 	}
 }
 
@@ -643,6 +865,83 @@ func TestBuildLiveMetricsFromDistributedBatchUsesBatchTelemetry(t *testing.T) {
 	}
 	if live.Telemetry.SampleAgeMs != 600 {
 		t.Fatalf("sample_age_ms = %v, want 600", live.Telemetry.SampleAgeMs)
+	}
+}
+
+func TestBuildLiveMetricsFromDistributedBatchAggregatesSOAPOperations(t *testing.T) {
+	live := buildLiveMetricsFromDistributedBatch(&ManagedTest{}, generatorrpc.MetricsBatch{
+		Transactions: []generatorrpc.TransactionMetric{
+			{
+				Name:             "SOAPRequest",
+				DurationMs:       120,
+				Success:          true,
+				DependencyType:   "soap",
+				DependencyTarget: "checkout.example.test#CreateOrder",
+				SOAPOperation:    "CreateOrder",
+				ServerTelemetry:  &generatorrpc.ServerTelemetry{ServerProcessingMs: 40, TransferMs: 20},
+			},
+			{
+				Name:             "SOAPRequest",
+				DurationMs:       180,
+				Success:          false,
+				DependencyType:   "soap",
+				DependencyTarget: "checkout.example.test#CreateOrder",
+				SOAPOperation:    "CreateOrder",
+				ServerTelemetry:  &generatorrpc.ServerTelemetry{ServerProcessingMs: 60, TransferMs: 10},
+			},
+		},
+	})
+
+	if live.SOAPOperations == nil || live.SOAPOperations["CreateOrder"] == nil {
+		t.Fatalf("expected live SOAP operations, got %#v", live.SOAPOperations)
+	}
+	operation := live.SOAPOperations["CreateOrder"]
+	if operation.Count != 2 || operation.Errors != 1 {
+		t.Fatalf("unexpected operation metrics %#v", operation)
+	}
+	if operation.ServerTelemetry == nil || operation.ServerTelemetry.AvgServerProcessingMs != 50 {
+		t.Fatalf("unexpected SOAP operation server telemetry %#v", operation.ServerTelemetry)
+	}
+}
+
+func TestBuildLiveMetricsFromDistributedBatchAggregatesDependencyHealth(t *testing.T) {
+	live := buildLiveMetricsFromDistributedBatch(&ManagedTest{}, generatorrpc.MetricsBatch{
+		Transactions: []generatorrpc.TransactionMetric{
+			{
+				Name:             "GET /",
+				DurationMs:       90,
+				Success:          true,
+				DNSMs:            6,
+				ConnectMs:        12,
+				DependencyType:   "http",
+				DependencyTarget: "api.example.test",
+				ServerTelemetry:  &generatorrpc.ServerTelemetry{ServerProcessingMs: 35, TransferMs: 10},
+			},
+			{
+				Name:             "POST /checkout",
+				DurationMs:       180,
+				Success:          false,
+				DNSMs:            10,
+				ConnectMs:        18,
+				DependencyType:   "http",
+				DependencyTarget: "api.example.test",
+				ServerTelemetry:  &generatorrpc.ServerTelemetry{ServerProcessingMs: 55, TransferMs: 14},
+			},
+		},
+	})
+
+	if live.DependencyHealth == nil || live.DependencyHealth["api.example.test"] == nil {
+		t.Fatalf("expected dependency health aggregate, got %#v", live.DependencyHealth)
+	}
+	dep := live.DependencyHealth["api.example.test"]
+	if dep.Count != 2 || dep.Errors != 1 {
+		t.Fatalf("unexpected dependency health counts %#v", dep)
+	}
+	if dep.AvgMs != 135 || dep.P95Ms <= 0 || dep.P99Ms <= 0 {
+		t.Fatalf("expected dependency health latency stats, got %#v", dep)
+	}
+	if dep.ServerTelemetry == nil || dep.ServerTelemetry.AvgServerProcessingMs != 45 || dep.ServerTelemetry.AvgTransferMs != 12 {
+		t.Fatalf("unexpected dependency health telemetry %#v", dep.ServerTelemetry)
 	}
 }
 
@@ -870,7 +1169,7 @@ func TestDistributedExecutionBackendRunsRemoteMultiGroupEngine(t *testing.T) {
 func TestDistributedExecutionBackendDistributesGroupsAcrossMultipleGenerators(t *testing.T) {
 	const bufSize = 1024 * 1024
 
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/buyers", "/admins":
@@ -1175,8 +1474,8 @@ func TestDistributedExecutionBackendPrefersHigherCapacityGenerator(t *testing.T)
 		Name:     "Checkout",
 		Protocol: "http",
 		Version:  "1.0.0",
-		Config: dsl.ScriptConfig{BaseURL: "https://example.com", RunLogic: dsl.RunLogicConfig{Iterations: 1}},
-		Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com", RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions:  []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
 	})
 
 	testRun, err := runner.CreateTest(CreateTestRequest{
@@ -1389,6 +1688,174 @@ func TestDistributedExecutionBackendHonorsExplicitHostSelection(t *testing.T) {
 	}
 	if stopB.Acknowledged {
 		t.Fatalf("expected generator B to not own explicit-host test")
+	}
+}
+
+func TestDistributedExecutionBackendShardsGroupAcrossSpecificHostsAndRescales(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	listenerA := bufconn.Listen(bufSize)
+	serverA := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(serverA, generatorrpc.NewService("generator-a", 100))
+	go func() {
+		_ = serverA.Serve(listenerA)
+	}()
+	t.Cleanup(func() {
+		serverA.Stop()
+		_ = listenerA.Close()
+	})
+
+	listenerB := bufconn.Listen(bufSize)
+	serverB := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(serverB, generatorrpc.NewService("generator-b", 100))
+	go func() {
+		_ = serverB.Serve(listenerB)
+	}()
+	t.Cleanup(func() {
+		serverB.Stop()
+		_ = listenerB.Close()
+	})
+
+	dialTarget := func(ctx context.Context, target string) (*generatorrpc.Client, error) {
+		switch target {
+		case "bufnet-a":
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listenerA.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		case "bufnet-b":
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listenerB.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		default:
+			return nil, context.DeadlineExceeded
+		}
+	}
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet-a", "bufnet-b"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			return dialTarget(ctx, target)
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-sharded-host",
+		Name:     "Sharded Host",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com", RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions:  []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Group host sharding",
+		Duration: "30s",
+		Groups: []CreateGroupEntry{{
+			Name:     "Group A",
+			ScriptID: "script-sharded-host",
+			VUsers:   30,
+			RampUp:   "0s",
+			Assignment: &GeneratorAssignmentSettings{
+				Mode:            generatorAssignmentModeSpecificHosts,
+				SelectedTargets: []string{"bufnet-a", "bufnet-b"},
+				ShardStrategy:   generatorShardStrategyCapacityWeighted,
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		started, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if started.Status == "RUNNING" && started.LiveMetrics != nil {
+			shards := started.remoteGroupShards["Group A"]
+			if len(shards) != 2 {
+				t.Fatalf("remote group shards = %#v, want two shards", shards)
+			}
+			byTarget := map[string]int{}
+			for _, shard := range shards {
+				byTarget[shard.Target] = shard.VUsers
+			}
+			if byTarget["bufnet-a"] != 15 || byTarget["bufnet-b"] != 15 {
+				t.Fatalf("initial shard vusers = %#v, want 15/15", byTarget)
+			}
+			if len(started.GeneratorShards) != 2 {
+				t.Fatalf("generator shard summary = %#v, want two entries", started.GeneratorShards)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected distributed backend to start sharded test, got status %q", started.Status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if err := runner.ScaleVUsers(testRun.ID, "Group A", 60); err != nil {
+		t.Fatalf("ScaleVUsers returned error: %v", err)
+	}
+
+	scaled, ok := runner.GetTest(testRun.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to exist after scale", testRun.ID)
+	}
+	scaledByTarget := map[string]int{}
+	for _, shard := range scaled.remoteGroupShards["Group A"] {
+		scaledByTarget[shard.Target] = shard.VUsers
+	}
+	if scaledByTarget["bufnet-a"] != 30 || scaledByTarget["bufnet-b"] != 30 {
+		t.Fatalf("scaled shard vusers = %#v, want 30/30", scaledByTarget)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	clientA, err := dialTarget(ctx, "bufnet-a")
+	if err != nil {
+		t.Fatalf("Dial generator A: %v", err)
+	}
+	defer clientA.Close()
+	clientB, err := dialTarget(ctx, "bufnet-b")
+	if err != nil {
+		t.Fatalf("Dial generator B: %v", err)
+	}
+	defer clientB.Close()
+
+	stopA, err := clientA.StopTest(ctx, testRun.ID, true)
+	if err != nil {
+		t.Fatalf("StopTest generator A: %v", err)
+	}
+	stopB, err := clientB.StopTest(ctx, testRun.ID, true)
+	if err != nil {
+		t.Fatalf("StopTest generator B: %v", err)
+	}
+	if !stopA.Acknowledged || !stopB.Acknowledged {
+		t.Fatalf("expected both generators to own sharded work, got stopA=%#v stopB=%#v", stopA, stopB)
+	}
+	if stopA.PendingVUsers != 30 || stopB.PendingVUsers != 30 {
+		t.Fatalf("pending vusers after scale = %d/%d, want 30/30", stopA.PendingVUsers, stopB.PendingVUsers)
 	}
 }
 
@@ -1781,7 +2248,7 @@ func TestDistributedExecutionBackendPausesRealRemoteEngine(t *testing.T) {
 func TestDistributedExecutionBackendStagesRemoteArchiveOnCompletion(t *testing.T) {
 	const bufSize = 1024 * 1024
 
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			t.Fatalf("unexpected request path %q", r.URL.Path)
@@ -1995,8 +2462,11 @@ func TestNewServerConfiguresDistributedExecutionBackend(t *testing.T) {
 	if !ok {
 		t.Fatalf("runner execution backend = %T, want *distributedExecutionBackend", server.runner.execution)
 	}
-	if !reflect.DeepEqual(backend.targets, []string{"127.0.0.1:9090"}) {
-		t.Fatalf("backend targets = %v, want [127.0.0.1:9090]", backend.targets)
+	if !reflect.DeepEqual(backend.configuredTargets(), []string{"127.0.0.1:9090"}) {
+		t.Fatalf("backend configured targets = %v, want [127.0.0.1:9090]", backend.configuredTargets())
+	}
+	if len(backend.targets) != 1 || backend.targets[0].Address != "127.0.0.1:9090" || backend.targets[0].Region != "" {
+		t.Fatalf("backend target specs = %#v, want address-only spec", backend.targets)
 	}
 	if backend.timeout != 3*time.Second {
 		t.Fatalf("backend timeout = %v, want 3s", backend.timeout)

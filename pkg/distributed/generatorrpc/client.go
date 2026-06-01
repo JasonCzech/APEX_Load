@@ -3,7 +3,7 @@ package generatorrpc
 import (
 	"context"
 
-	pb "github.com/jasonczech/stormrunner/api/proto"
+	pb "github.com/jasonczech/apexload/api/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -83,9 +83,29 @@ type GroupMetric struct {
 	ActiveVUsers int32
 }
 
+type ServerTelemetry struct {
+	ServerProcessingMs     float64
+	TransferMs             float64
+	RequestPayloadKB       float64
+	ResponsePayloadKB      float64
+	ConnectionReused       bool
+	RequestSizeClass       string
+	ResponseSizeClass      string
+	MessageLatencyMs       float64
+	MessagesSent           int32
+	MessagesReceived       int32
+	MessagesSentPerSec     float64
+	MessagesReceivedPerSec float64
+	ConsumerLagMs          float64
+}
+
 type TransactionMetric struct {
 	Name             string
 	DurationMs       float64
+	DNSMs            float64
+	ConnectMs        float64
+	TLSMs            float64
+	TTFBMs           float64
 	StatusCode       int32
 	Success          bool
 	ErrorMessage     string
@@ -94,6 +114,8 @@ type TransactionMetric struct {
 	CorrelationID    string
 	DependencyType   string
 	DependencyTarget string
+	SOAPOperation    string
+	ServerTelemetry  *ServerTelemetry
 }
 
 type StopResult struct {
@@ -124,14 +146,17 @@ type Heartbeat struct {
 }
 
 type HeartbeatResponse struct {
-	GeneratorID       string
-	TimestampUnixMs   int64
-	ActiveTestIDs     []string
-	Stats             GeneratorStats
-	AvailableCapacity int32
-	CPULimitCores     float64
-	MemoryLimitBytes  int64
-	MaxVUsers         int32
+	GeneratorID        string
+	TimestampUnixMs    int64
+	ActiveTestIDs      []string
+	Stats              GeneratorStats
+	AvailableCapacity  int32
+	CPULimitCores      float64
+	MemoryLimitBytes   int64
+	MaxVUsers          int32
+	Version            string
+	SupportedProtocols []string
+	CompatibleFeatures []string
 }
 
 type GeneratorStats struct {
@@ -307,14 +332,17 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 	}
 
 	return HeartbeatResponse{
-		GeneratorID:       pong.GetGeneratorId(),
-		TimestampUnixMs:   pong.GetTimestampUnixMs(),
-		ActiveTestIDs:     pong.GetActiveTestIds(),
-		Stats:             stats,
-		AvailableCapacity: pong.GetAvailableCapacity(),
-		CPULimitCores:     pong.GetCpuLimitCores(),
-		MemoryLimitBytes:  pong.GetMemoryLimitBytes(),
-		MaxVUsers:         pong.GetMaxVusers(),
+		GeneratorID:        pong.GetGeneratorId(),
+		TimestampUnixMs:    pong.GetTimestampUnixMs(),
+		ActiveTestIDs:      pong.GetActiveTestIds(),
+		Stats:              stats,
+		AvailableCapacity:  pong.GetAvailableCapacity(),
+		CPULimitCores:      pong.GetCpuLimitCores(),
+		MemoryLimitBytes:   pong.GetMemoryLimitBytes(),
+		MaxVUsers:          pong.GetMaxVusers(),
+		Version:            pong.GetVersion(),
+		SupportedProtocols: append([]string(nil), pong.GetSupportedProtocols()...),
+		CompatibleFeatures: append([]string(nil), pong.GetCompatibleFeatures()...),
 	}, nil
 }
 
@@ -345,9 +373,31 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 
 	transactions := make([]TransactionMetric, 0, len(batch.GetTransactions()))
 	for _, tx := range batch.GetTransactions() {
+		var serverTelemetry *ServerTelemetry
+		if tx.GetServerTelemetry() != nil {
+			serverTelemetry = &ServerTelemetry{
+				ServerProcessingMs:     tx.GetServerTelemetry().GetServerProcessingMs(),
+				TransferMs:             tx.GetServerTelemetry().GetTransferMs(),
+				RequestPayloadKB:       tx.GetServerTelemetry().GetRequestPayloadKb(),
+				ResponsePayloadKB:      tx.GetServerTelemetry().GetResponsePayloadKb(),
+				ConnectionReused:       tx.GetServerTelemetry().GetConnectionReused(),
+				RequestSizeClass:       tx.GetServerTelemetry().GetRequestSizeClass(),
+				ResponseSizeClass:      tx.GetServerTelemetry().GetResponseSizeClass(),
+				MessageLatencyMs:       tx.GetServerTelemetry().GetMessageLatencyMs(),
+				MessagesSent:           tx.GetServerTelemetry().GetMessagesSent(),
+				MessagesReceived:       tx.GetServerTelemetry().GetMessagesReceived(),
+				MessagesSentPerSec:     tx.GetServerTelemetry().GetMessagesSentPerSec(),
+				MessagesReceivedPerSec: tx.GetServerTelemetry().GetMessagesReceivedPerSec(),
+				ConsumerLagMs:          tx.GetServerTelemetry().GetConsumerLagMs(),
+			}
+		}
 		transactions = append(transactions, TransactionMetric{
 			Name:             tx.GetName(),
 			DurationMs:       tx.GetDurationMs(),
+			DNSMs:            tx.GetDnsMs(),
+			ConnectMs:        tx.GetConnectMs(),
+			TLSMs:            tx.GetTlsMs(),
+			TTFBMs:           tx.GetTtfbMs(),
 			StatusCode:       tx.GetStatusCode(),
 			Success:          tx.GetSuccess(),
 			ErrorMessage:     tx.GetErrorMessage(),
@@ -356,6 +406,8 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 			CorrelationID:    tx.GetCorrelationId(),
 			DependencyType:   tx.GetDependencyType(),
 			DependencyTarget: tx.GetDependencyTarget(),
+			SOAPOperation:    tx.GetSoapOperation(),
+			ServerTelemetry:  serverTelemetry,
 		})
 	}
 

@@ -1,0 +1,9 @@
+[General]
+Type=Web HTTP/HTML
+RuntimeSettings=default.cfg
+
+[Parameters]
+Parameter1=WikipediaRandomLinks.prm
+
+[Actions]
+Action1=Action.c

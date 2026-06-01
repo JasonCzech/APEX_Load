@@ -4,18 +4,21 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 type BrowserReplayStartRequest struct {
-	GroupName       string             `json:"group_name,omitempty"`
-	ReplaySessionID string             `json:"replay_session_id,omitempty"`
-	Variables       map[string]string  `json:"variables,omitempty"`
-	StartPaused     bool               `json:"start_paused,omitempty"`
-	Breakpoints     []int              `json:"breakpoints,omitempty"`
-	Browser         *dsl.BrowserConfig `json:"browser,omitempty"`
-	IgnoreThinkTime *bool              `json:"ignore_think_time,omitempty"`
-	Script          *dsl.Script        `json:"script,omitempty"`
+	GroupName       string                 `json:"group_name,omitempty"`
+	ReplaySessionID string                 `json:"replay_session_id,omitempty"`
+	Variables       map[string]string      `json:"variables,omitempty"`
+	RedactionRules  []engine.RedactionRule `json:"redaction_rules,omitempty"`
+	StartPaused     bool                   `json:"start_paused,omitempty"`
+	Breakpoints     []int                  `json:"breakpoints,omitempty"`
+	Browser         *dsl.BrowserConfig     `json:"browser,omitempty"`
+	IgnoreThinkTime *bool                  `json:"ignore_think_time,omitempty"`
+	Script          *dsl.Script            `json:"script,omitempty"`
+	Preflight       *ReplayPreflight       `json:"-"`
 }
 
 func (s *Server) handleStartBrowserReplayDraftScript(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +35,7 @@ func (s *Server) handleStartBrowserReplayDraftScript(w http.ResponseWriter, r *h
 		writeError(w, http.StatusBadRequest, "script is required")
 		return
 	}
-	s.handleStartBrowserReplayRequest(w, "", req.Script, req)
+	s.handleStartBrowserReplayRequest(w, r, "", req.Script, req)
 }
 
 func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.Request) {
@@ -62,17 +65,21 @@ func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	s.handleStartBrowserReplayRequest(w, id, script, req)
+	s.handleStartBrowserReplayRequest(w, r, id, script, req)
 }
 
-func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, id string, script *dsl.Script, req BrowserReplayStartRequest) {
+func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.Request, id string, script *dsl.Script, req BrowserReplayStartRequest) {
 	script = applyBrowserReplayOverrides(script, req)
 	issues := validateScript(script)
+	warnings := validationWarnings(script)
+	preflight := buildReplayPreflight(script, req.Variables, issues, warnings)
 	if len(issues) > 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"script_id": id,
 			"valid":     false,
 			"issues":    issues,
+			"warnings":  warnings,
+			"preflight": preflight,
 		})
 		return
 	}
@@ -81,11 +88,15 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, id strin
 		return
 	}
 
+	req.Preflight = preflight
 	session := s.browserReplay.Start(id, script, req)
+	s.recordAuditEvent(r, "browser_replay.session.start", "success", "browser_replay_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "script_name": script.Name, "status": session.Status, "start_paused": req.StartPaused})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"script_id":         id,
 		"replay_session_id": session.ID,
 		"session":           session,
+		"preflight":         preflight,
+		"warnings":          warnings,
 	})
 }
 
@@ -96,6 +107,9 @@ func applyBrowserReplayOverrides(script *dsl.Script, req BrowserReplayStartReque
 	clone := *script
 	clone.Config = script.Config
 	browserCfg := clone.Config.Browser
+	if req.Browser.Engine != "" {
+		browserCfg.Engine = req.Browser.Engine
+	}
 	if req.Browser.Headless != nil {
 		browserCfg.Headless = req.Browser.Headless
 	}
@@ -104,6 +118,18 @@ func applyBrowserReplayOverrides(script *dsl.Script, req BrowserReplayStartReque
 	}
 	if req.Browser.UserAgent != "" {
 		browserCfg.UserAgent = req.Browser.UserAgent
+	}
+	if req.Browser.DeviceProfile != "" {
+		browserCfg.DeviceProfile = req.Browser.DeviceProfile
+	}
+	if req.Browser.TouchMode != nil {
+		browserCfg.TouchMode = req.Browser.TouchMode
+	}
+	if req.Browser.Orientation != "" {
+		browserCfg.Orientation = req.Browser.Orientation
+	}
+	if req.Browser.ClientMetrics != nil {
+		browserCfg.ClientMetrics = req.Browser.ClientMetrics
 	}
 	if req.Browser.CaptureScreenshots != "" {
 		browserCfg.CaptureScreenshots = req.Browser.CaptureScreenshots
@@ -125,6 +151,7 @@ func (s *Server) handleGetBrowserReplaySession(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusNotFound, "browser replay session not found")
 		return
 	}
+	s.recordAuditEvent(r, "browser_replay.session.stop", "success", "browser_replay_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "status": session.Status})
 	writeJSON(w, http.StatusOK, map[string]any{"session": session})
 }
 
@@ -149,6 +176,7 @@ func (s *Server) handlePauseBrowserReplaySession(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusConflict, "browser replay session is not running")
 		return
 	}
+	s.recordAuditEvent(r, "browser_replay.session.pause", "success", "browser_replay_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "status": session.Status})
 	writeJSON(w, http.StatusOK, map[string]any{"session": session})
 }
 
@@ -163,5 +191,6 @@ func (s *Server) handleResumeBrowserReplaySession(w http.ResponseWriter, r *http
 		writeError(w, http.StatusConflict, "browser replay session is not paused")
 		return
 	}
+	s.recordAuditEvent(r, "browser_replay.session.resume", "success", "browser_replay_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "status": session.Status})
 	writeJSON(w, http.StatusOK, map[string]any{"session": session})
 }

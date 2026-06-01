@@ -1,7 +1,7 @@
 # Browser Client Metrics Plan
 
 ## Objective
-Add a browser-client metrics capability that serves as Stormrunner's practical equivalent to LoadRunner TrueClient for web applications. The first release should focus on real browser sessions for web apps and capture user-perceived action latency, browser process CPU and memory, and screenshots or related artifacts.
+Add a browser-client metrics capability that serves as APEX Load's practical equivalent to LoadRunner TrueClient for web applications. The current implementation already covers the browser-side timing and artifact portion of that goal; the remaining gap is mainly browser-process sampling, benchmark publication, and some comparison UX.
 
 This is intentionally not a full TrueClient clone. The current architecture is well suited for browser-side synthetic UX telemetry, but not for native desktop UI automation parity.
 
@@ -47,37 +47,71 @@ Primary seams:
 - `pkg/api/archive.go` for archived per-action browser metric persistence
 - `dashboard/src/types.ts` and browser replay UI surfaces for presentation
 
+## Status Snapshot (May 2026)
+
+### Implemented
+- Product scope is locked to browser web applications running through the existing `browser` protocol.
+- The DSL and result model are in place: `config.browser.client_metrics` exists, browser scripts can opt in explicitly, and `protocol.Result` carries optional `ClientMetrics`.
+- Runtime collection is in place for browser timing and page-performance telemetry: FCP, LCP, CLS, INP, DOM timing, blocking-resource counts, long-task counts, JS heap, layout/style/task duration, screenshots, HTML, console, and network evidence.
+- Aggregation and APIs are in place: live `browser` and `browser_by_device` summaries stream through the API, archive reports expose canonical `browser_by_engine`, `browser_by_platform`, and `browser_by_device` rollups, and archived transaction events persist per-action `client_metrics`.
+- Core dashboard and authoring support are in place: script-editor controls, replay/debug drilldown, archive views, run comparison breakdowns, CSV export, and warning flows for WebKit/browser prerequisites.
+- Browser metadata presentation has been normalized in the live and archive UI: device cards now show a single canonical `Platform · Engine · Tier` label instead of duplicating partial browser metadata.
+
+### Remaining
+- Chromium browser-process CPU and OS-memory sampling are now captured through CDP process information plus OS RSS lookup when `browser.client_metrics` is enabled. WebKit process attribution remains open because the current Playwright WebKit runtime does not expose stable browser process IDs through the public integration path.
+- Dedicated comparison charts beyond the current overall/platform/engine/device card breakdowns are still open. Archive event drilldown now includes a richer navigation/resource waterfall summary from persisted client metrics, including DOM/load phase gaps and blocking-resource pressure; per-resource waterfall UX remains open until the archive stores resource-level timing rows.
+- Benchmark collection and final positioning guidance now have an opt-in Go harness plus `docs/MOBILE_BROWSER_BENCHMARK_RUNBOOK.md`; measured density/overhead publication from controlled hardware is still open.
+
 ## Implementation Phases
 
 ### Phase 0: Lock Product Boundaries
+Status: complete.
+
 - Confirm this feature targets browser web apps first.
 - Define the metric contract for v1.
 - Set non-goals explicitly so the work does not expand into desktop automation.
 
 ### Phase 1: DSL And Result Model
+Status: complete.
+
 - Add browser metric capture settings to the DSL.
 - Extend protocol results with optional browser client metric fields.
 - Preserve backward compatibility for existing browser and non-browser scripts.
 
 ### Phase 2: Runtime Collection
+Status: mostly complete.
+
 - Reuse the existing browser protocol runtime.
 - Capture post-action timing using browser performance APIs and CDP.
 - Sample browser process CPU and memory conservatively.
 - Attach screenshots and other artifacts using the current snapshot model.
 
+Remaining in this phase:
+- extend process attribution to WebKit if a stable Playwright process discovery path is added, or keep WebKit explicitly scoped to page/runtime metrics plus JS heap where available.
+
 ### Phase 3: Aggregation And APIs
+Status: complete for the current metric contract.
+
 - Add summarized browser KPIs to live metrics.
 - Extend archive transaction records for per-action browser client detail.
 - Keep payload size controlled so live streaming remains practical.
 
 ### Phase 4: Dashboard And Authoring
+Status: partially complete.
+
 - Add browser-specific execution cards and charts.
 - Reuse browser replay drilldown for screenshots, console, network, and DOM detail.
 - Expose capture settings in authoring and validation flows.
 
+Remaining in this phase:
+- add charted comparison views and per-resource waterfall diagnostics where the current archive/debug surfaces still emphasize summary cards and event-level waterfall summaries.
+
 ### Phase 5: Benchmark And Positioning
+Status: implementation complete, evidence pending.
+
 - Benchmark browser density and overhead with client metrics disabled and enabled.
-- Document this as a low-concurrency diagnostic mode, not a replacement for Stormrunner's high-scale HTTP engine.
+- Document this as a low-concurrency diagnostic mode, not a replacement for APEX Load's high-scale HTTP engine.
+- Use `APEXLOAD_BROWSER_BENCHMARKS=1 go test ./pkg/protocol/browser -run '^$' -bench 'BenchmarkBrowser' -benchmem -count 5` to collect launch, action-latency, and Chromium RSS evidence before publishing higher density claims.
 
 ## Tradeoffs And Challenges
 
@@ -94,12 +128,12 @@ Primary seams:
 ## Alternatives
 
 ### Hybrid Model
-Run Stormrunner HTTP or JMS load at scale and a small number of browser canaries with client metrics in parallel.
+Run APEX Load HTTP or JMS load at scale and a small number of browser canaries with client metrics in parallel.
 
 This is the recommended operational model for most teams because it combines backend pressure with user-experience visibility.
 
 ### Application Instrumentation
-Add browser-side telemetry through OpenTelemetry or RUM-style instrumentation and correlate it with Stormrunner test runs.
+Add browser-side telemetry through OpenTelemetry or RUM-style instrumentation and correlate it with APEX Load test runs.
 
 This scales better, but it depends on application changes and is not a self-contained synthetic browser capability.
 
@@ -111,4 +145,4 @@ This can increase capability, but it introduces a second execution model and mor
 ## Recommendation
 Pursue a browser-client metrics mode first, using the existing browser protocol as the implementation seam.
 
-This keeps the work aligned with Stormrunner's current architecture, reuses existing browser replay and telemetry surfaces, and creates a practical browser-side client metrics feature without promising unsupported desktop automation scope.
+This keeps the work aligned with APEX Load's current architecture, reuses existing browser replay and telemetry surfaces, and creates a practical browser-side client metrics feature without promising unsupported desktop automation scope.

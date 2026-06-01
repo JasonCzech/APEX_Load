@@ -9,45 +9,45 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/api"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/browser"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/java_http"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/jms"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/soap"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/api"
+	_ "github.com/jasonczech/apexload/pkg/protocol/browser"
+	_ "github.com/jasonczech/apexload/pkg/protocol/database"
+	_ "github.com/jasonczech/apexload/pkg/protocol/grpc"
+	_ "github.com/jasonczech/apexload/pkg/protocol/http"
+	_ "github.com/jasonczech/apexload/pkg/protocol/java_http"
+	_ "github.com/jasonczech/apexload/pkg/protocol/jms"
+	_ "github.com/jasonczech/apexload/pkg/protocol/network"
+	_ "github.com/jasonczech/apexload/pkg/protocol/soap"
+	_ "github.com/jasonczech/apexload/pkg/protocol/websocket"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	// Controller HTTP bind address (for API + embedded dashboard).
-	addr := os.Getenv("STORMRUNNER_ADDR")
+	addr := os.Getenv("APEXLOAD_ADDR")
 	if addr == "" {
 		addr = ":8080"
 	}
 
-	// SQLite backing store path for scripts, tests, and archived run metadata.
-	dbPath := os.Getenv("STORMRUNNER_DB")
-	if dbPath == "" {
-		dbPath = "stormrunner.db"
-	}
-
-	store, err := storage.NewSQLiteStore(dbPath)
+	store, err := storage.NewStoreFromEnv()
 	if err != nil {
 		slog.Error("failed to initialize storage", "err", err)
 		os.Exit(1)
 	}
 	defer store.Close()
 
-	generatorTargets := parseGeneratorTargets(os.Getenv("STORMRUNNER_GENERATORS"))
-	generatorTimeout := parseGeneratorTimeout(os.Getenv("STORMRUNNER_GENERATOR_TIMEOUT"))
+	generatorTargets := parseGeneratorTargets(os.Getenv("APEXLOAD_GENERATORS"))
+	generatorTimeout := parseGeneratorTimeout(os.Getenv("APEXLOAD_GENERATOR_TIMEOUT"))
+	recorderProxyAddr := recorderProxyAddrFromEnv()
 	if len(generatorTargets) > 0 {
 		slog.Info("distributed execution enabled", "generators", generatorTargets, "timeout", generatorTimeout)
 	}
 
 	server := api.NewServer(api.ServerConfig{
 		Addr:             addr,
+		ProxyAddr:        recorderProxyAddr,
 		MaxConcurrent:    10,
 		Store:            store,
 		GeneratorTargets: generatorTargets,
@@ -56,6 +56,20 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := server.RunDueSchedules(); err != nil {
+					slog.Error("scheduled test evaluator failed", "err", err)
+				}
+			}
+		}
+	}()
 
 	// Run server in background so the main goroutine can handle shutdown signals.
 	go func() {
@@ -92,8 +106,12 @@ func parseGeneratorTimeout(raw string) time.Duration {
 	}
 	duration, err := time.ParseDuration(raw)
 	if err != nil || duration <= 0 {
-		slog.Warn("invalid STORMRUNNER_GENERATOR_TIMEOUT, falling back to default", "value", raw)
+		slog.Warn("invalid APEXLOAD_GENERATOR_TIMEOUT, falling back to default", "value", raw)
 		return 10 * time.Second
 	}
 	return duration
+}
+
+func recorderProxyAddrFromEnv() string {
+	return strings.TrimSpace(os.Getenv("APEXLOAD_RECORDER_PROXY_ADDR"))
 }

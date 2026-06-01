@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState } from 'react'
+import { useCallback, useEffect, useReducer, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { DraftCapacityEstimate, ScenarioDraft, ScenarioDraftGroup, StoredScript, TestSummary } from '../types'
 import './CreateTestModal.css'
@@ -10,6 +10,7 @@ import CreateTestRuntimeOverrides from './CreateTestRuntimeOverrides'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildDefaultScenarioGroup, buildInitialScenarioDraft, scenarioDraftReducer, ScenarioDraftField, ScenarioDraftState } from './scenarioDraftUtils'
 import { buildCreateTestPayload } from './scenarioPayloadUtils'
+import DurationField from './DurationField'
 
 interface Props {
   scripts: StoredScript[]
@@ -37,6 +38,12 @@ function validateGoalConfig(goalConfig: ScenarioDraftState['goalConfig']): strin
   if (goalConfig.max_error_pct !== undefined && (goalConfig.max_error_pct < 0 || goalConfig.max_error_pct > 100)) {
     return 'Goal-oriented scenarios require max error % to be between 0 and 100'
   }
+  if (goalConfig.max_avg_server_processing_ms !== undefined && goalConfig.max_avg_server_processing_ms <= 0) {
+    return 'Goal-oriented scenarios require max average server processing to be greater than 0 ms'
+  }
+  if (goalConfig.max_avg_transfer_ms !== undefined && goalConfig.max_avg_transfer_ms <= 0) {
+    return 'Goal-oriented scenarios require max average transfer time to be greater than 0 ms'
+  }
   if (goalConfig.min_vusers !== undefined && goalConfig.min_vusers < 1) {
     return 'Goal-oriented scenarios require min VUsers to be greater than 0'
   }
@@ -56,8 +63,14 @@ function validateGoalConfig(goalConfig: ScenarioDraftState['goalConfig']): strin
   if (goalConfig.sla_breach_window && !isValidDurationInput(goalConfig.sla_breach_window)) {
     return 'Goal-oriented scenarios require a valid SLA breach window duration'
   }
-  if (goalConfig.stop_on_sla_breach && goalConfig.p95_latency_ms === undefined && goalConfig.max_error_pct === undefined) {
-    return 'Goal-oriented scenarios require a P95 latency ceiling or max error % when stop on sustained SLA breach is enabled'
+  if (
+    goalConfig.stop_on_sla_breach &&
+    goalConfig.p95_latency_ms === undefined &&
+    goalConfig.max_error_pct === undefined &&
+    goalConfig.max_avg_server_processing_ms === undefined &&
+    goalConfig.max_avg_transfer_ms === undefined
+  ) {
+    return 'Goal-oriented scenarios require a latency, error, server processing, or transfer threshold when stop on sustained SLA breach is enabled'
   }
   if (goalConfig.stop_on_max_errors && goalConfig.max_error_count === undefined) {
     return 'Goal-oriented scenarios require max error count when stop on max errors is enabled'
@@ -135,6 +148,8 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     goalConfig.target_average_tps ||
     goalConfig.p95_latency_ms ||
     goalConfig.max_error_pct ||
+    goalConfig.max_avg_server_processing_ms ||
+    goalConfig.max_avg_transfer_ms ||
     goalConfig.max_error_count ||
     goalConfig.min_vusers ||
     goalConfig.max_vusers ||
@@ -210,7 +225,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     folderId,
   })
 
-  const buildEstimatePayload = () => buildCreateTestPayload({
+  const buildEstimatePayload = useCallback(() => buildCreateTestPayload({
     name,
     duration,
     startDelay,
@@ -225,7 +240,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
       : assignment,
     projectId,
     folderId,
-  })
+  }), [assignment, duration, folderId, goalConfig, groups, name, projectId, resourceBaseline, runtimeSettings, scenarioMode, scriptShakeout, startDelay])
 
   useEffect(() => {
     const canEstimate = Boolean(duration.trim()) && groups.every((group) => group.scriptId)
@@ -261,7 +276,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [api, assignment, duration, goalConfig, groups, name, resourceBaseline, runtimeSettings, scenarioMode, scriptShakeout, startDelay])
+  }, [api, buildEstimatePayload, groups, duration])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -327,25 +342,20 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
                   placeholder="Optional — auto-generated if empty"
                 />
               </label>
-              <label>
-                <span>Steady State Duration</span>
-                <input
-                  type="text"
-                  value={duration}
-                  onChange={(e) => updateScenarioField('duration', e.target.value)}
-                  placeholder="e.g. 5m, 1h"
-                  required
-                />
-              </label>
-              <label>
-                <span>Global Start Delay</span>
-                <input
-                  type="text"
-                  value={startDelay}
-                  onChange={(e) => updateScenarioField('startDelay', e.target.value)}
-                  placeholder="Optional, e.g. 30s"
-                />
-              </label>
+              <DurationField
+                label="Steady State Duration"
+                value={duration}
+                required
+                showPresets
+                onChange={(value) => updateScenarioField('duration', value)}
+              />
+              <DurationField
+                label="Global Start Delay"
+                value={startDelay}
+                allowEmpty
+                showPresets
+                onChange={(value) => updateScenarioField('startDelay', value)}
+              />
               <label className="setting-checkbox-row">
                 <span>Pre-Run Script Shakeout</span>
                 <div className="setting-checkbox-control">

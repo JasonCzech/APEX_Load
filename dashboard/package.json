@@ -1,5 +1,5 @@
 {
-  "name": "stormrunner-dashboard",
+  "name": "apexload-dashboard",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -11,14 +11,25 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@codemirror/lang-cpp": "^6.0.3",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-xml": "^6.1.0",
+    "@codemirror/language": "^6.12.3",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.43.0",
+    "@lezer/highlight": "^1.2.3",
+    "@uiw/react-codemirror": "^4.25.10",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "recharts": "^2.12.7"
+    "recharts": "^2.12.7",
+    "three": "^0.184.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
+    "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^4.3.1",
     "eslint": "^9.27.0",
     "eslint-plugin-react-hooks": "^5.2.0",

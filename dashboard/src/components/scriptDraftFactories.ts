@@ -1,3 +1,4 @@
+import { type AuthoringComponent } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 
 function createBaseDraft(): ScriptDefinition {
@@ -105,7 +106,9 @@ export function createWebDraft(): ScriptDefinition {
       browser: {
         engine: 'chromium',
         headless: true,
+        client_metrics: true,
         capture_screenshots: 'per_action',
+        download_resources: 'recorded',
         viewport: { width: 1440, height: 900 },
       },
     },
@@ -141,4 +144,171 @@ export function createJmsDraft(): ScriptDefinition {
     },
     actions: [],
   }
+}
+
+export function createWebSocketDraft(): ScriptDefinition {
+  return {
+    ...createBaseDraft(),
+    protocol: 'websocket',
+    config: {
+      ...createBaseDraft().config,
+      websocket: {
+        read_timeout_ms: 30000,
+        write_timeout_ms: 10000,
+        max_message_size: 1048576,
+        subprotocol: '',
+        origin: '',
+        compression: false,
+        reconnect: true,
+      },
+    },
+    actions: [
+      {
+        name: 'Connect_WebSocket',
+        type: 'ws_connect',
+        target: '/ws',
+        headers: {},
+        body: '',
+        params: { timeout_ms: 30000 },
+        extractors: [],
+        assertions: [],
+        think_time_after: true,
+      },
+    ],
+  }
+}
+
+export function createGrpcDraft(): ScriptDefinition {
+  return {
+    ...createBaseDraft(),
+    protocol: 'grpc',
+    config: {
+      ...createBaseDraft().config,
+      grpc: {
+        use_reflection: true,
+        plain_text: false,
+        timeout_ms: 30000,
+        max_recv_msg_size: 4194304,
+        metadata: {},
+        authority: '',
+      },
+    },
+    actions: [
+      {
+        name: 'Unary_Call',
+        type: 'grpc_unary',
+        target: 'package.Service/Method',
+        headers: {},
+        body: '{}',
+        params: { timeout_ms: 30000 },
+        extractors: [],
+        assertions: [{ type: 'grpc_status', expected: 0 }],
+        think_time_after: true,
+      },
+    ],
+  }
+}
+
+export function createDatabaseDraft(): ScriptDefinition {
+  return {
+    ...createBaseDraft(),
+    protocol: 'database',
+    config: {
+      ...createBaseDraft().config,
+      database: {
+        driver: 'sqlite',
+        dsn: ':memory:',
+        query_timeout_ms: 30000,
+        max_open_conns: 1,
+        max_rows: 100,
+        read_only: true,
+        rollback_on_teardown: true,
+      },
+    },
+    actions: [
+      {
+        name: 'Query_Database',
+        type: 'db_query',
+        target: 'select 1 as ok',
+        headers: {},
+        body: '',
+        params: { binds: [] },
+        extractors: [{ name: 'ok', source: 'scalar', type: 'jsonpath', expression: '$.scalar' }],
+        assertions: [{ type: 'row_count', expected: 1 }],
+        think_time_after: true,
+      },
+    ],
+  }
+}
+
+export function createNetworkDraft(): ScriptDefinition {
+  return {
+    ...createBaseDraft(),
+    protocol: 'network',
+    config: {
+      ...createBaseDraft().config,
+      network: {
+        subprotocol: 'tcp',
+        host: 'localhost',
+        port: 80,
+        timeout_ms: 30000,
+        tls: false,
+      },
+    },
+    actions: [
+      {
+        name: 'Network_Health',
+        type: 'network_health',
+        target: 'localhost:80',
+        headers: {},
+        body: '',
+        params: {},
+        extractors: [],
+        assertions: [],
+        think_time_after: true,
+      },
+    ],
+  }
+}
+
+function baseDraftForComponent(component: AuthoringComponent): ScriptDefinition {
+  for (const protocol of component.protocols) {
+    const normalized = protocol.toLowerCase()
+    if (normalized === 'soap') return createSoapDraft()
+    if (normalized === 'java_http') return createJavaHttpDraft()
+    if (normalized === 'websocket') return createWebSocketDraft()
+    if (normalized === 'grpc') return createGrpcDraft()
+    if (normalized === 'database') return createDatabaseDraft()
+    if (normalized === 'network') return createNetworkDraft()
+    if (normalized === 'browser' || normalized === 'trueclient_mobile_web' || normalized === 'trueclient2_web') {
+      return createWebDraft()
+    }
+    if (normalized.startsWith('jms')) return createJmsDraft()
+  }
+  return createApiDraft()
+}
+
+// composeComponentDraft seeds a new draft script from a Component Library entry.
+// The dashboard ScriptDefinition has no init/teardown phases, so the component's
+// init, actions, and teardown fragments are folded into a single actions array in
+// that order, keeping everything visible and editable in the draft editor.
+export function composeComponentDraft(component: AuthoringComponent): ScriptDefinition {
+  const base = baseDraftForComponent(component)
+  const draft: ScriptDefinition = {
+    ...base,
+    name: component.name,
+    config: { ...base.config, ...(component.config ?? {}) } as ScriptDefinition['config'],
+    actions: [
+      ...(component.init ?? []),
+      ...(component.actions ?? []),
+      ...(component.teardown ?? []),
+    ],
+  }
+  if (component.data_sources?.length) {
+    draft.data_sources = component.data_sources
+  }
+  if (component.parameters?.length) {
+    draft.parameters = component.parameters
+  }
+  return draft
 }

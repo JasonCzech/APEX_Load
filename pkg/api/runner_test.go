@@ -2,18 +2,23 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/engine"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
-	"github.com/jasonczech/stormrunner/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type metricsStoreSpy struct {
@@ -27,8 +32,52 @@ type metricsStoreSpy struct {
 	deletedTestIDs        []string
 	listedScripts         []*dsl.Script
 	listedTests           []*storage.TestRecord
+	projectsByID          map[string]*storage.Project
+	releasesByID          map[string]*storage.Release
 	historyByTestID       map[string][]any
 	archiveByTestID       map[string]*storage.RunArchiveRecord
+	schedulesByID         map[string]*storage.ScenarioSchedule
+	occurrencesByID       map[string]*storage.ScenarioScheduleOccurrence
+	approvalsByID         map[string]*storage.ScenarioScheduleApproval
+	leasesByName          map[string]*storage.SchedulerLease
+	auditEvents           []*storage.AuditEvent
+	usageSnapshots        []*storage.UsageAccountingSnapshot
+}
+
+var runnerTestProtocolCounter atomic.Uint64
+
+type provenanceInventoryBackend struct{}
+
+type scheduleExecutionBackend struct {
+	started chan string
+}
+
+type scaleBackendCall struct {
+	group  string
+	target int
+}
+
+type scalableExecutionBackendSpy struct {
+	calls chan scaleBackendCall
+}
+
+func (provenanceInventoryBackend) Run(_ *TestRunner, _ *ManagedTest) {}
+
+func (provenanceInventoryBackend) SystemInventory(_ context.Context) []GeneratorInventoryEntry {
+	return []GeneratorInventoryEntry{{Target: "generator-1", Status: "healthy", AvailableCapacity: 50}}
+}
+
+func (b *scheduleExecutionBackend) Run(_ *TestRunner, test *ManagedTest) {
+	if b != nil && b.started != nil {
+		b.started <- test.ID
+	}
+}
+
+func (b *scalableExecutionBackendSpy) Run(_ *TestRunner, _ *ManagedTest) {}
+
+func (b *scalableExecutionBackendSpy) ScaleVUsers(_ *TestRunner, _ *ManagedTest, groupName string, targetVUsers int) error {
+	b.calls <- scaleBackendCall{group: groupName, target: targetVUsers}
+	return nil
 }
 
 func (s *metricsStoreSpy) SaveScript(script *dsl.Script) error {
@@ -63,6 +112,28 @@ func (s *metricsStoreSpy) MoveTest(id string, folderID *string) error { return n
 func (s *metricsStoreSpy) ListTestsByContext(applicationID string, releaseID string, scenarioID string) ([]*storage.TestRecord, error) {
 	return s.listedTests, nil
 }
+func (s *metricsStoreSpy) SaveDomain(domain *storage.Domain) error { return nil }
+func (s *metricsStoreSpy) GetDomain(id string) (*storage.Domain, error) {
+	return &storage.Domain{ID: id, Name: id}, nil
+}
+func (s *metricsStoreSpy) ListDomains() ([]*storage.Domain, error) { return nil, nil }
+func (s *metricsStoreSpy) DeleteDomain(id string) error            { return nil }
+func (s *metricsStoreSpy) SaveApplicationRepository(repository *storage.ApplicationRepository) error {
+	return nil
+}
+func (s *metricsStoreSpy) GetApplicationRepository(domainID string) (*storage.ApplicationRepository, error) {
+	return &storage.ApplicationRepository{ID: storage.DefaultApplicationRepositoryID, DomainID: domainID, Name: "Application Repository"}, nil
+}
+func (s *metricsStoreSpy) SaveRepositoryCategory(category *storage.RepositoryCategory) error {
+	return nil
+}
+func (s *metricsStoreSpy) GetRepositoryCategory(id string) (*storage.RepositoryCategory, error) {
+	return &storage.RepositoryCategory{ID: id, DomainID: storage.DefaultDomainID, RepositoryID: storage.DefaultApplicationRepositoryID, Name: id}, nil
+}
+func (s *metricsStoreSpy) ListRepositoryCategories(domainID string) ([]*storage.RepositoryCategory, error) {
+	return []*storage.RepositoryCategory{{ID: storage.DefaultRepositoryCategoryID, DomainID: domainID, RepositoryID: storage.DefaultApplicationRepositoryID, Name: "Uncategorized"}}, nil
+}
+func (s *metricsStoreSpy) DeleteRepositoryCategory(id string) error               { return nil }
 func (s *metricsStoreSpy) SaveApplication(application *storage.Application) error { return nil }
 func (s *metricsStoreSpy) GetApplication(id string) (*storage.Application, error) {
 	return nil, nil
@@ -71,9 +142,19 @@ func (s *metricsStoreSpy) ListApplications() ([]*storage.Application, error) { r
 func (s *metricsStoreSpy) DeleteApplication(id string) error                 { return nil }
 func (s *metricsStoreSpy) SaveRelease(release *storage.Release) error        { return nil }
 func (s *metricsStoreSpy) GetRelease(id string) (*storage.Release, error) {
+	if s.releasesByID != nil {
+		release, ok := s.releasesByID[id]
+		if !ok {
+			return nil, errors.New("release not found")
+		}
+		return release, nil
+	}
 	return &storage.Release{ID: id, ApplicationID: storage.LegacyApplicationID, Name: id}, nil
 }
 func (s *metricsStoreSpy) ListReleases(applicationID string, includeArchived bool) ([]*storage.Release, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListReleasesByProject(projectID string, includeArchived bool) ([]*storage.Release, error) {
 	return nil, nil
 }
 func (s *metricsStoreSpy) ArchiveRelease(id string) error { return nil }
@@ -86,6 +167,133 @@ func (s *metricsStoreSpy) GetScenario(id string) (*storage.Scenario, []storage.S
 }
 func (s *metricsStoreSpy) ListScenarios() ([]*storage.Scenario, error) { return nil, nil }
 func (s *metricsStoreSpy) DeleteScenario(id string) error              { return nil }
+func (s *metricsStoreSpy) SaveScenarioSchedule(schedule *storage.ScenarioSchedule) error {
+	if s.schedulesByID == nil {
+		s.schedulesByID = make(map[string]*storage.ScenarioSchedule)
+	}
+	clone := *schedule
+	if schedule.LastRunAt != nil {
+		lastRunAt := *schedule.LastRunAt
+		clone.LastRunAt = &lastRunAt
+	}
+	if schedule.NextRunAt != nil {
+		nextRunAt := *schedule.NextRunAt
+		clone.NextRunAt = &nextRunAt
+	}
+	s.schedulesByID[schedule.ID] = &clone
+	return nil
+}
+func (s *metricsStoreSpy) GetScenarioSchedule(id string) (*storage.ScenarioSchedule, error) {
+	if s.schedulesByID == nil {
+		return nil, nil
+	}
+	return s.schedulesByID[id], nil
+}
+func (s *metricsStoreSpy) ListScenarioSchedules(scenarioID string) ([]*storage.ScenarioSchedule, error) {
+	out := []*storage.ScenarioSchedule{}
+	for _, schedule := range s.schedulesByID {
+		if schedule.ScenarioID == scenarioID {
+			out = append(out, schedule)
+		}
+	}
+	return out, nil
+}
+func (s *metricsStoreSpy) ListAllScenarioSchedules() ([]*storage.ScenarioSchedule, error) {
+	out := make([]*storage.ScenarioSchedule, 0, len(s.schedulesByID))
+	for _, schedule := range s.schedulesByID {
+		out = append(out, schedule)
+	}
+	return out, nil
+}
+func (s *metricsStoreSpy) DeleteScenarioSchedule(id string) error {
+	delete(s.schedulesByID, id)
+	return nil
+}
+func (s *metricsStoreSpy) SaveScenarioScheduleOccurrence(occurrence *storage.ScenarioScheduleOccurrence) error {
+	if s.occurrencesByID == nil {
+		s.occurrencesByID = make(map[string]*storage.ScenarioScheduleOccurrence)
+	}
+	clone := *occurrence
+	if occurrence.MaterializedAt != nil {
+		materializedAt := *occurrence.MaterializedAt
+		clone.MaterializedAt = &materializedAt
+	}
+	s.occurrencesByID[occurrence.ID] = &clone
+	return nil
+}
+func (s *metricsStoreSpy) GetScenarioScheduleOccurrence(id string) (*storage.ScenarioScheduleOccurrence, error) {
+	if s.occurrencesByID == nil {
+		return nil, nil
+	}
+	return s.occurrencesByID[id], nil
+}
+func (s *metricsStoreSpy) GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*storage.ScenarioScheduleOccurrence, error) {
+	for _, occurrence := range s.occurrencesByID {
+		if occurrence.ScheduleID == scheduleID && occurrence.PlannedAt.Equal(plannedAt) {
+			return occurrence, nil
+		}
+	}
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListScenarioScheduleOccurrences(scheduleID string) ([]*storage.ScenarioScheduleOccurrence, error) {
+	out := []*storage.ScenarioScheduleOccurrence{}
+	for _, occurrence := range s.occurrencesByID {
+		if occurrence.ScheduleID == scheduleID {
+			out = append(out, occurrence)
+		}
+	}
+	return out, nil
+}
+func (s *metricsStoreSpy) ListAllScenarioScheduleOccurrences() ([]*storage.ScenarioScheduleOccurrence, error) {
+	out := make([]*storage.ScenarioScheduleOccurrence, 0, len(s.occurrencesByID))
+	for _, occurrence := range s.occurrencesByID {
+		out = append(out, occurrence)
+	}
+	return out, nil
+}
+func (s *metricsStoreSpy) SaveScenarioScheduleApproval(approval *storage.ScenarioScheduleApproval) error {
+	if s.approvalsByID == nil {
+		s.approvalsByID = make(map[string]*storage.ScenarioScheduleApproval)
+	}
+	clone := *approval
+	if approval.ResolvedAt != nil {
+		resolvedAt := *approval.ResolvedAt
+		clone.ResolvedAt = &resolvedAt
+	}
+	s.approvalsByID[approval.ID] = &clone
+	return nil
+}
+func (s *metricsStoreSpy) GetScenarioScheduleApproval(id string) (*storage.ScenarioScheduleApproval, error) {
+	if s.approvalsByID == nil {
+		return nil, nil
+	}
+	return s.approvalsByID[id], nil
+}
+func (s *metricsStoreSpy) ListScenarioScheduleApprovals(scheduleID string) ([]*storage.ScenarioScheduleApproval, error) {
+	out := []*storage.ScenarioScheduleApproval{}
+	for _, approval := range s.approvalsByID {
+		if approval.ScheduleID == scheduleID {
+			out = append(out, approval)
+		}
+	}
+	return out, nil
+}
+func (s *metricsStoreSpy) TryAcquireSchedulerLease(name string, ownerID string, now time.Time, ttl time.Duration) (bool, error) {
+	if s.leasesByName == nil {
+		s.leasesByName = make(map[string]*storage.SchedulerLease)
+	}
+	if existing, ok := s.leasesByName[name]; ok && existing.ExpiresAt.After(now) && existing.OwnerID != ownerID {
+		return false, nil
+	}
+	s.leasesByName[name] = &storage.SchedulerLease{Name: name, OwnerID: ownerID, AcquiredAt: now, ExpiresAt: now.Add(ttl), UpdatedAt: now}
+	return true, nil
+}
+func (s *metricsStoreSpy) GetSchedulerLease(name string) (*storage.SchedulerLease, error) {
+	if s.leasesByName == nil {
+		return nil, nil
+	}
+	return s.leasesByName[name], nil
+}
 func (s *metricsStoreSpy) SaveScenarioDataPoolBindings(scenarioID string, bindings []storage.ScenarioDataPoolBinding) error {
 	return nil
 }
@@ -109,10 +317,31 @@ func (s *metricsStoreSpy) SaveDataPoolRow(row *storage.SharedDataPoolRow) error 
 func (s *metricsStoreSpy) ListDataPoolRows(poolID string) ([]*storage.SharedDataPoolRow, error) {
 	return nil, nil
 }
-func (s *metricsStoreSpy) DeleteDataPoolRow(id string) error          { return nil }
-func (s *metricsStoreSpy) SaveProject(project *storage.Project) error { return nil }
+func (s *metricsStoreSpy) DeleteDataPoolRow(id string) error { return nil }
+func (s *metricsStoreSpy) SaveProject(project *storage.Project) error {
+	if s.projectsByID == nil {
+		s.projectsByID = make(map[string]*storage.Project)
+	}
+	clone := *project
+	if len(project.Settings.RedactionRules) > 0 {
+		clone.Settings.RedactionRules = append([]engine.RedactionRule(nil), project.Settings.RedactionRules...)
+	}
+	s.projectsByID[project.ID] = &clone
+	return nil
+}
 func (s *metricsStoreSpy) GetProject(id string) (*storage.Project, error) {
-	return nil, nil
+	if s.projectsByID == nil {
+		return nil, nil
+	}
+	project, ok := s.projectsByID[id]
+	if !ok {
+		return nil, nil
+	}
+	clone := *project
+	if len(project.Settings.RedactionRules) > 0 {
+		clone.Settings.RedactionRules = append([]engine.RedactionRule(nil), project.Settings.RedactionRules...)
+	}
+	return &clone, nil
 }
 func (s *metricsStoreSpy) ListProjects() ([]*storage.Project, error) { return nil, nil }
 func (s *metricsStoreSpy) DeleteProject(id string) error             { return nil }
@@ -147,7 +376,96 @@ func (s *metricsStoreSpy) GetRunArchive(testID string) (*storage.RunArchiveRecor
 }
 func (s *metricsStoreSpy) SaveSetting(key string, value string) error { return nil }
 func (s *metricsStoreSpy) GetSetting(key string) (string, error)      { return "", nil }
-func (s *metricsStoreSpy) Close() error                               { return nil }
+func (s *metricsStoreSpy) SaveServiceAccount(account *storage.ServiceAccount) error {
+	return nil
+}
+func (s *metricsStoreSpy) GetServiceAccount(id string) (*storage.ServiceAccount, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) GetServiceAccountByKeyHash(keyHash string) (*storage.ServiceAccount, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListServiceAccounts() ([]*storage.ServiceAccount, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) RotateServiceAccountKey(id string, keyHash string, updatedAt time.Time) error {
+	return nil
+}
+func (s *metricsStoreSpy) UpdateServiceAccountLastUsed(id string, lastUsedAt time.Time) error {
+	return nil
+}
+func (s *metricsStoreSpy) UpdateServiceAccountActive(id string, active bool, updatedAt time.Time) error {
+	return nil
+}
+func (s *metricsStoreSpy) DeleteServiceAccount(id string) error { return nil }
+func (s *metricsStoreSpy) SaveUser(user *storage.User) error    { return nil }
+func (s *metricsStoreSpy) GetUser(id string) (*storage.User, error) {
+	return nil, sql.ErrNoRows
+}
+func (s *metricsStoreSpy) GetUserBySubject(subject string) (*storage.User, error) {
+	return nil, sql.ErrNoRows
+}
+func (s *metricsStoreSpy) ListUsers(filter storage.UserFilter) ([]*storage.User, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) UpdateUserActive(id string, active bool, updatedAt time.Time) error {
+	return nil
+}
+func (s *metricsStoreSpy) DeleteUser(id string) error { return nil }
+func (s *metricsStoreSpy) SaveUserRoleBinding(binding *storage.UserRoleBinding) error {
+	return nil
+}
+func (s *metricsStoreSpy) DeleteUserRoleBinding(id string) error { return nil }
+func (s *metricsStoreSpy) ListUserRoleBindings(userID string) ([]*storage.UserRoleBinding, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) SaveAuditEvent(event *storage.AuditEvent) error {
+	if event != nil {
+		clone := *event
+		if event.Details != nil {
+			clone.Details = map[string]any{}
+			for key, value := range event.Details {
+				clone.Details[key] = value
+			}
+		}
+		s.auditEvents = append(s.auditEvents, &clone)
+	}
+	return nil
+}
+func (s *metricsStoreSpy) ListAuditEvents(filter storage.AuditEventFilter) ([]*storage.AuditEvent, error) {
+	out := make([]*storage.AuditEvent, 0, len(s.auditEvents))
+	for _, event := range s.auditEvents {
+		if event == nil {
+			continue
+		}
+		if filter.ProjectID != "" && event.ProjectID != filter.ProjectID {
+			continue
+		}
+		if filter.Action != "" && event.Action != filter.Action {
+			continue
+		}
+		out = append(out, event)
+	}
+	return out, nil
+}
+func (s *metricsStoreSpy) SaveUsageAccountingSnapshot(snapshot *storage.UsageAccountingSnapshot) error {
+	if snapshot != nil {
+		clone := *snapshot
+		s.usageSnapshots = append(s.usageSnapshots, &clone)
+	}
+	return nil
+}
+func (s *metricsStoreSpy) ListUsageAccountingSnapshots(projectID string, limit int, offset int) ([]*storage.UsageAccountingSnapshot, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) Close() error { return nil }
+
+func registerRunnerTestProtocol(t *testing.T, prefix string, factory func() protocol.Protocol) string {
+	t.Helper()
+	name := prefix + "-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-") + "-" + strconv.FormatUint(runnerTestProtocolCounter.Add(1), 10)
+	protocol.Register(name, factory)
+	return name
+}
 
 type archiveStubProtocol struct{}
 
@@ -162,9 +480,10 @@ func (p *archiveStubProtocol) Execute(_ context.Context, action *protocol.Action
 		BytesReceived:    512,
 		StatusCode:       200,
 		Success:          true,
-		CorrelationID:    "corr-archive-1",
+		CorrelationID:    "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
 		DependencyType:   "http",
 		DependencyTarget: "archive.example.test",
+		Extractions:      map[string]string{"soap_operation": "CreateOrder"},
 	}, nil
 }
 func (p *archiveStubProtocol) Teardown(_ context.Context) error    { return nil }
@@ -194,7 +513,7 @@ func (s *archiveRecorderStub) RecordIntervalSummary(live *LiveMetrics) error {
 	s.recordedLive = live
 	return nil
 }
-func (s *archiveRecorderStub) Finalize(status string, completedAt time.Time, errStr string) (*storage.RunArchiveRecord, error) {
+func (s *archiveRecorderStub) Finalize(status string, completedAt time.Time, errStr string, slaBreached bool, slaDetails []string) (*storage.RunArchiveRecord, error) {
 	return s.finalizeRecord, s.finalizeErr
 }
 
@@ -221,6 +540,7 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	p95LatencyMs := 850.0
 	minVUsers := 15
 	maxVUsers := 120
+	pacingDelay := 1500
 	test, err := runner.CreateTest(CreateTestRequest{
 		Name:             "Checkout Replay",
 		Duration:         "90s",
@@ -247,9 +567,15 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 		}},
 		RuntimeSettings: &RuntimeSettingsOverride{
 			Iterations:       &iterations,
+			Pacing:           &dsl.PacingConfig{Type: "fixed_delay", DelayMs: pacingDelay},
+			ThinkTime:        &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 750},
 			LogLevel:         "extended",
 			AutoTransactions: "per_iteration",
+			BaseURL:          "https://pr-123.example.com",
+			Env:              map[string]string{"target_namespace": "pr-123"},
+			RedactionRules:   []engine.RedactionRule{{Name: "customer id", Pattern: `customer-[0-9]+`}},
 			ErrorHandling: &dsl.ErrorHandlingConfig{
+				ContinueOnError: true,
 				SnapshotOnError: true,
 			},
 		},
@@ -267,11 +593,26 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	if test.RuntimeSettings.LogLevel != "extended" {
 		t.Fatalf("expected log level extended, got %q", test.RuntimeSettings.LogLevel)
 	}
+	if test.RuntimeSettings.Pacing == nil || test.RuntimeSettings.Pacing.Type != "fixed_delay" || test.RuntimeSettings.Pacing.DelayMs != pacingDelay {
+		t.Fatalf("expected pacing fixed_delay 1500ms, got %#v", test.RuntimeSettings.Pacing)
+	}
+	if test.RuntimeSettings.ThinkTime == nil || test.RuntimeSettings.ThinkTime.Type != "fixed" || test.RuntimeSettings.ThinkTime.MeanMs != 750 {
+		t.Fatalf("expected think time fixed 750ms, got %#v", test.RuntimeSettings.ThinkTime)
+	}
 	if test.RuntimeSettings.AutoTransactions != "per_iteration" {
 		t.Fatalf("expected auto transactions per_iteration, got %q", test.RuntimeSettings.AutoTransactions)
 	}
-	if test.RuntimeSettings.ErrorHandling == nil || !test.RuntimeSettings.ErrorHandling.SnapshotOnError {
-		t.Fatal("expected snapshot_on_error override to be preserved")
+	if test.RuntimeSettings.BaseURL != "https://pr-123.example.com" {
+		t.Fatalf("expected base_url override, got %q", test.RuntimeSettings.BaseURL)
+	}
+	if test.RuntimeSettings.Env["target_namespace"] != "pr-123" {
+		t.Fatalf("expected env override target_namespace=pr-123, got %#v", test.RuntimeSettings.Env)
+	}
+	if test.RuntimeSettings.ErrorHandling == nil || !test.RuntimeSettings.ErrorHandling.SnapshotOnError || !test.RuntimeSettings.ErrorHandling.ContinueOnError {
+		t.Fatal("expected continue_on_error and snapshot_on_error overrides to be preserved")
+	}
+	if len(test.RuntimeSettings.RedactionRules) != 1 || test.RuntimeSettings.RedactionRules[0].Pattern != `customer-[0-9]+` {
+		t.Fatalf("expected redaction rule to be preserved, got %#v", test.RuntimeSettings.RedactionRules)
 	}
 	if test.ScenarioMode != "goal_oriented" {
 		t.Fatalf("expected scenario mode goal_oriented, got %q", test.ScenarioMode)
@@ -323,6 +664,625 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	}
 }
 
+func TestCreateTestRequestFromScenarioHonorsExplicitFalseBooleans(t *testing.T) {
+	scenario := &StoredScenario{
+		ID:               "scenario-1",
+		Name:             "Scenario Defaults",
+		Duration:         "1m",
+		ScriptShakeout:   true,
+		ResourceBaseline: true,
+		Scripts: []ScenarioScriptRef{{
+			Order:    1,
+			ScriptID: "script-1",
+			VUsers:   1,
+		}},
+	}
+
+	var explicit CreateTestRequest
+	if err := json.Unmarshal([]byte(`{"scenario_id":"scenario-1","script_shakeout":false,"resource_baseline":false}`), &explicit); err != nil {
+		t.Fatalf("unmarshal explicit request: %v", err)
+	}
+	got := createTestRequestFromScenario(explicit, scenario)
+	if got.ScriptShakeout {
+		t.Fatal("expected explicit script_shakeout=false to override scenario default")
+	}
+	if got.ResourceBaseline {
+		t.Fatal("expected explicit resource_baseline=false to override scenario default")
+	}
+
+	var inherited CreateTestRequest
+	if err := json.Unmarshal([]byte(`{"scenario_id":"scenario-1"}`), &inherited); err != nil {
+		t.Fatalf("unmarshal inherited request: %v", err)
+	}
+	got = createTestRequestFromScenario(inherited, scenario)
+	if !got.ScriptShakeout {
+		t.Fatal("expected omitted script_shakeout to inherit scenario default")
+	}
+	if !got.ResourceBaseline {
+		t.Fatal("expected omitted resource_baseline to inherit scenario default")
+	}
+}
+
+func TestCreateTestInheritsProjectRedactionRules(t *testing.T) {
+	hub := NewHub()
+	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
+		"project-1": {
+			ID:   "project-1",
+			Name: "Payments",
+			Settings: storage.ProjectSettings{
+				RedactionRules: []engine.RedactionRule{{Name: "customer id", Pattern: `customer-[0-9]+`}},
+			},
+		},
+	}}
+	runner := NewTestRunner(1, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-project-redaction",
+		Name:      "Project Redaction Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-1",
+		Actions:   []dsl.Action{{Name: "lookup", Type: "GET", Target: "/orders/customer-1234"}},
+	})
+
+	test, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Project Rules",
+		Duration: "30s",
+		ScriptID: "script-project-redaction",
+		VUsers:   3,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	if test.ProjectID != "project-1" {
+		t.Fatalf("project id = %q, want project-1", test.ProjectID)
+	}
+	if test.RuntimeSettings == nil || len(test.RuntimeSettings.RedactionRules) != 1 {
+		t.Fatalf("runtime settings = %#v, want inherited project redaction rule", test.RuntimeSettings)
+	}
+	if len(test.groupSpecs) != 1 || test.groupSpecs[0].RedactionConfig == nil {
+		t.Fatalf("group specs = %#v, want redaction config", test.groupSpecs)
+	}
+	if got := test.groupSpecs[0].RedactionConfig.ScrubText("customer-1234 ok"); got != "[REDACTED] ok" {
+		t.Fatalf("scrubbed text = %q, want inherited project rule applied", got)
+	}
+}
+
+func TestScenarioAndTestRejectStoredScriptWithoutActions(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-empty",
+		Name:     "Empty Import",
+		Protocol: "http",
+		Version:  "1.0.0",
+	})
+
+	_, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Broken Scenario",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{{
+			ScriptID: "script-empty",
+			VUsers:   1,
+		}},
+	})
+	if err == nil {
+		t.Fatal("expected StoreScenario to reject a script without actions")
+	}
+	if !strings.Contains(err.Error(), "group[0]: script must have at least one action") || !strings.Contains(err.Error(), "config.base_url is empty") {
+		t.Fatalf("StoreScenario error = %q, want missing action and base_url details", err.Error())
+	}
+
+	_, err = runner.CreateTest(CreateTestRequest{
+		Name:     "Broken Run",
+		Duration: "1m",
+		ScriptID: "script-empty",
+		VUsers:   1,
+	})
+	if err == nil {
+		t.Fatal("expected CreateTest to reject a script without actions")
+	}
+	if !strings.Contains(err.Error(), "group[0]: script must have at least one action") || !strings.Contains(err.Error(), "config.base_url is empty") {
+		t.Fatalf("CreateTest error = %q, want missing action and base_url details", err.Error())
+	}
+}
+
+func TestListScriptsFilteredIncludesUsageMetadata(t *testing.T) {
+	store := &metricsStoreSpy{
+		releasesByID: map[string]*storage.Release{
+			"release-1": {ID: "release-1", ApplicationID: "app-1", Name: "PI29"},
+		},
+	}
+	runner := NewTestRunner(1, NewHub(), store)
+	stored := runner.StoreScript(&dsl.Script{
+		ID:        "script-repository-scope",
+		Name:      "Checkout Smoke",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-1",
+		Config:    dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions:   []dsl.Action{{Name: "home", Type: "GET", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Checkout Peak",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{{
+			ScriptID: stored.ID,
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	if _, err := runner.CreateTest(CreateTestRequest{
+		Name:          "Checkout Run",
+		Duration:      "1m",
+		ApplicationID: "app-1",
+		ReleaseID:     "release-1",
+		ScenarioID:    scenario.ID,
+		ProjectID:     "project-1",
+	}); err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	scripts := runner.ListScriptsFiltered("project-1", nil)
+	if len(scripts) != 1 {
+		t.Fatalf("ListScriptsFiltered returned %d scripts, want 1", len(scripts))
+	}
+	got := scripts[0]
+	if got.ScenarioCount != 1 {
+		t.Fatalf("ScenarioCount = %d, want 1", got.ScenarioCount)
+	}
+	if len(got.AssociatedReleases) != 1 || got.AssociatedReleases[0].ApplicationID != "app-1" || got.AssociatedReleases[0].Name != "PI29" {
+		t.Fatalf("AssociatedReleases = %#v, want release metadata for app-1", got.AssociatedReleases)
+	}
+	if len(got.ScenarioRunReleases) != 1 || got.ScenarioRunReleases[0].ApplicationID != "app-1" {
+		t.Fatalf("ScenarioRunReleases = %#v, want scenario run release metadata for app-1", got.ScenarioRunReleases)
+	}
+	if got.LastRunAt == nil {
+		t.Fatal("LastRunAt is nil, want run activity timestamp")
+	}
+}
+
+func TestApplyRuntimeOverridesAppliesExtendedOverrideFields(t *testing.T) {
+	headless := false
+	touchMode := true
+	defaultHeadless := true
+	defaultTouchMode := false
+	iterations := 4
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			BaseURL:       "https://default.example.com",
+			Browser:       dsl.BrowserConfig{Headless: &defaultHeadless, DeviceProfile: "desktop_1080p", TouchMode: &defaultTouchMode, Orientation: "landscape"},
+			RunLogic:      dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "none"},
+			Pacing:        dsl.PacingConfig{Type: "none"},
+			ThinkTime:     dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 1000},
+			ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false, SnapshotOnError: false},
+			Log:           dsl.LogConfig{Level: "standard"},
+		},
+		Actions: []dsl.Action{{
+			Name:    "runtime-step",
+			Type:    "GET",
+			Target:  "/namespaces/{{env.target_namespace}}/orders",
+			Body:    "namespace={{env.target_namespace}}",
+			Headers: map[string]string{"X-Namespace": "{{env.target_namespace}}"},
+		}},
+	}
+
+	err := applyRuntimeOverrides(script, &RuntimeSettingsOverride{
+		Iterations:       &iterations,
+		Pacing:           &dsl.PacingConfig{Type: "fixed_interval", IntervalMs: 2500},
+		ThinkTime:        &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 750},
+		Browser:          &RuntimeBrowserOverride{Headless: &headless, DeviceProfile: "iphone_se", TouchMode: &touchMode, Orientation: "portrait"},
+		LogLevel:         "extended",
+		AutoTransactions: "per_iteration",
+		BaseURL:          "https://pr-123.example.com",
+		Env:              map[string]string{"target_namespace": "pr-123"},
+		ErrorHandling:    &dsl.ErrorHandlingConfig{ContinueOnError: true, SnapshotOnError: true},
+	})
+	if err != nil {
+		t.Fatalf("applyRuntimeOverrides returned error: %v", err)
+	}
+
+	if script.Config.RunLogic.Iterations != 4 {
+		t.Fatalf("iterations = %d, want 4", script.Config.RunLogic.Iterations)
+	}
+	if script.Config.BaseURL != "https://pr-123.example.com" {
+		t.Fatalf("base_url = %q, want https://pr-123.example.com", script.Config.BaseURL)
+	}
+	if script.Config.Pacing.Type != "fixed_interval" || script.Config.Pacing.IntervalMs != 2500 {
+		t.Fatalf("pacing = %#v, want fixed_interval 2500ms", script.Config.Pacing)
+	}
+	if script.Config.ThinkTime.Type != "fixed" || script.Config.ThinkTime.MeanMs != 750 {
+		t.Fatalf("think_time = %#v, want fixed 750ms", script.Config.ThinkTime)
+	}
+	if script.Config.Browser.Headless == nil || *script.Config.Browser.Headless != false {
+		t.Fatalf("browser.headless = %#v, want false", script.Config.Browser.Headless)
+	}
+	if script.Config.Browser.DeviceProfile != "iphone_se" {
+		t.Fatalf("browser.device_profile = %q, want iphone_se", script.Config.Browser.DeviceProfile)
+	}
+	if script.Config.Browser.TouchMode == nil || *script.Config.Browser.TouchMode != true {
+		t.Fatalf("browser.touch_mode = %#v, want true", script.Config.Browser.TouchMode)
+	}
+	if script.Config.Browser.Orientation != "portrait" {
+		t.Fatalf("browser.orientation = %q, want portrait", script.Config.Browser.Orientation)
+	}
+	if script.Config.Log.Level != "extended" {
+		t.Fatalf("log level = %q, want extended", script.Config.Log.Level)
+	}
+	if script.Config.RunLogic.AutoTransactions != "per_iteration" {
+		t.Fatalf("auto transactions = %q, want per_iteration", script.Config.RunLogic.AutoTransactions)
+	}
+	if !script.Config.ErrorHandling.ContinueOnError || !script.Config.ErrorHandling.SnapshotOnError {
+		t.Fatalf("error handling = %#v, want continue_on_error and snapshot_on_error", script.Config.ErrorHandling)
+	}
+	if len(script.Actions) != 1 {
+		t.Fatalf("expected 1 action, got %d", len(script.Actions))
+	}
+	if script.Actions[0].Target != "/namespaces/pr-123/orders" {
+		t.Fatalf("target = %q, want /namespaces/pr-123/orders", script.Actions[0].Target)
+	}
+	if script.Actions[0].Body != "namespace=pr-123" {
+		t.Fatalf("body = %q, want namespace=pr-123", script.Actions[0].Body)
+	}
+	if script.Actions[0].Headers["X-Namespace"] != "pr-123" {
+		t.Fatalf("header X-Namespace = %q, want pr-123", script.Actions[0].Headers["X-Namespace"])
+	}
+}
+
+func TestCompileManagedTestGroupLockedAppliesEphemeralTargetOverridesWithoutMutatingStoredScript(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-ephemeral-target",
+		Name:     "Ephemeral Target Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://default.example.com",
+		},
+		Actions: []dsl.Action{{
+			Name:    "runtime-step",
+			Type:    "GET",
+			Target:  "/namespaces/{{env.target_namespace}}/orders",
+			Body:    "namespace={{env.target_namespace}}",
+			Headers: map[string]string{"X-Namespace": "{{env.target_namespace}}"},
+		}},
+	})
+
+	_, engineGroup, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		ScriptID: "script-ephemeral-target",
+		VUsers:   5,
+	}, &RuntimeSettingsOverride{
+		BaseURL: "https://pr-123.example.com",
+		Env:     map[string]string{"target_namespace": "pr-123"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("compileManagedTestGroupLocked returned error: %v", err)
+	}
+
+	if engineGroup.Script == nil {
+		t.Fatal("expected engine group script")
+	}
+	if engineGroup.Script.Config.BaseURL != "https://pr-123.example.com" {
+		t.Fatalf("compiled base_url = %q, want https://pr-123.example.com", engineGroup.Script.Config.BaseURL)
+	}
+	if engineGroup.Script.Actions[0].Target != "/namespaces/pr-123/orders" {
+		t.Fatalf("compiled target = %q, want /namespaces/pr-123/orders", engineGroup.Script.Actions[0].Target)
+	}
+	if engineGroup.Script.Actions[0].Body != "namespace=pr-123" {
+		t.Fatalf("compiled body = %q, want namespace=pr-123", engineGroup.Script.Actions[0].Body)
+	}
+	if engineGroup.Script.Actions[0].Headers["X-Namespace"] != "pr-123" {
+		t.Fatalf("compiled header X-Namespace = %q, want pr-123", engineGroup.Script.Actions[0].Headers["X-Namespace"])
+	}
+
+	stored, ok := runner.GetScript("script-ephemeral-target")
+	if !ok {
+		t.Fatal("expected stored script to remain available")
+	}
+	if stored.Script.Config.BaseURL != "https://default.example.com" {
+		t.Fatalf("stored base_url = %q, want https://default.example.com", stored.Script.Config.BaseURL)
+	}
+	if stored.Script.Actions[0].Target != "/namespaces/{{env.target_namespace}}/orders" {
+		t.Fatalf("stored target = %q, want template to remain intact", stored.Script.Actions[0].Target)
+	}
+	if stored.Script.Actions[0].Body != "namespace={{env.target_namespace}}" {
+		t.Fatalf("stored body = %q, want template to remain intact", stored.Script.Actions[0].Body)
+	}
+	if stored.Script.Actions[0].Headers["X-Namespace"] != "{{env.target_namespace}}" {
+		t.Fatalf("stored header X-Namespace = %q, want template to remain intact", stored.Script.Actions[0].Headers["X-Namespace"])
+	}
+}
+
+func TestCompileManagedTestGroupLockedAppliesGroupRuntimeOverridesWithPrecedence(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-group-runtime",
+		Name:     "Group Runtime Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL:  "https://example.com",
+			RunLogic: dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_iteration"},
+			Pacing:   dsl.PacingConfig{Type: "none"},
+			Log:      dsl.LogConfig{Level: "standard"},
+		},
+		Actions: []dsl.Action{{Name: "runtime-step", Type: "GET", Target: "/orders"}},
+	})
+
+	groupIterations := 4
+	groupRuntimeIterations := 9
+	topLevelIterations := 2
+	testGroup, engineGroup, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		Name:       "Checkout group",
+		ScriptID:   "script-group-runtime",
+		VUsers:     5,
+		Iterations: &groupIterations,
+		RuntimeSettings: &RuntimeSettingsOverride{
+			Iterations:       &groupRuntimeIterations,
+			LogLevel:         "extended",
+			AutoTransactions: "per_action",
+			Pacing:           &dsl.PacingConfig{Type: "fixed_delay", DelayMs: 750},
+		},
+	}, &RuntimeSettingsOverride{
+		Iterations:       &topLevelIterations,
+		LogLevel:         "standard",
+		AutoTransactions: "per_iteration",
+		Pacing:           &dsl.PacingConfig{Type: "fixed_interval", IntervalMs: 2500},
+	}, nil)
+	if err != nil {
+		t.Fatalf("compileManagedTestGroupLocked returned error: %v", err)
+	}
+	if testGroup.Iterations == nil || *testGroup.Iterations != groupRuntimeIterations {
+		t.Fatalf("test group iterations = %#v, want runtime_settings.iterations %d", testGroup.Iterations, groupRuntimeIterations)
+	}
+	if testGroup.RuntimeSettings == nil || testGroup.RuntimeSettings.LogLevel != "extended" {
+		t.Fatalf("test group runtime settings = %#v, want group override", testGroup.RuntimeSettings)
+	}
+	if engineGroup.Script.Config.RunLogic.Iterations != groupRuntimeIterations {
+		t.Fatalf("engine iterations = %d, want %d", engineGroup.Script.Config.RunLogic.Iterations, groupRuntimeIterations)
+	}
+	if engineGroup.Script.Config.Log.Level != "extended" {
+		t.Fatalf("engine log level = %q, want extended", engineGroup.Script.Config.Log.Level)
+	}
+	if engineGroup.Script.Config.RunLogic.AutoTransactions != "per_action" {
+		t.Fatalf("engine auto transactions = %q, want per_action", engineGroup.Script.Config.RunLogic.AutoTransactions)
+	}
+	if engineGroup.Script.Config.Pacing.Type != "fixed_delay" || engineGroup.Script.Config.Pacing.DelayMs != 750 {
+		t.Fatalf("engine pacing = %#v, want group fixed_delay 750ms", engineGroup.Script.Config.Pacing)
+	}
+
+	stored, ok := runner.GetScript("script-group-runtime")
+	if !ok {
+		t.Fatal("expected stored script to remain available")
+	}
+	if stored.Script.Config.RunLogic.Iterations != 1 || stored.Script.Config.Log.Level != "standard" {
+		t.Fatalf("stored script config mutated: %#v", stored.Script.Config)
+	}
+}
+
+func TestCreateTestWithGroupRuntimeOverridesDoesNotMutateScenarioDefaults(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-scenario-group-runtime",
+		Name:     "Scenario Group Runtime Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL:  "https://example.com",
+			RunLogic: dsl.RunLogicConfig{Iterations: 1},
+			Log:      dsl.LogConfig{Level: "standard"},
+		},
+		Actions: []dsl.Action{{Name: "runtime-step", Type: "GET", Target: "/orders"}},
+	})
+	scenarioIterations := 3
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Scenario Defaults",
+		Duration: "10m",
+		Groups: []CreateGroupEntry{{
+			Name:       "Checkout",
+			ScriptID:   "script-scenario-group-runtime",
+			VUsers:     10,
+			RampUp:     "1m",
+			Iterations: &scenarioIterations,
+		}},
+		RuntimeSettings: &RuntimeSettingsOverride{LogLevel: "standard"},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+
+	runIterations := 8
+	test, err := runner.CreateTest(CreateTestRequest{
+		ScenarioID: scenario.ID,
+		Groups: []CreateGroupEntry{{
+			Name:     "Checkout",
+			ScriptID: "script-scenario-group-runtime",
+			VUsers:   25,
+			RampUp:   "30s",
+			RuntimeSettings: &RuntimeSettingsOverride{
+				Iterations: &runIterations,
+				LogLevel:   "extended",
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	if len(test.Groups) != 1 {
+		t.Fatalf("test groups = %#v, want one group", test.Groups)
+	}
+	if test.Groups[0].VUsers != 25 || test.Groups[0].RampUp != "30s" {
+		t.Fatalf("test group workload = %#v, want run-only workload overrides", test.Groups[0])
+	}
+	if test.Groups[0].RuntimeSettings == nil || test.Groups[0].RuntimeSettings.LogLevel != "extended" {
+		t.Fatalf("test group runtime settings = %#v, want run-only runtime overrides", test.Groups[0].RuntimeSettings)
+	}
+	if test.Groups[0].Iterations == nil || *test.Groups[0].Iterations != runIterations {
+		t.Fatalf("test group iterations = %#v, want %d", test.Groups[0].Iterations, runIterations)
+	}
+
+	storedScenario := runner.scenarios[scenario.ID]
+	if storedScenario.Scripts[0].VUsers != 10 || storedScenario.Scripts[0].RampUp != "1m" {
+		t.Fatalf("stored scenario script mutated: %#v", storedScenario.Scripts[0])
+	}
+	if storedScenario.Scripts[0].Iterations == nil || *storedScenario.Scripts[0].Iterations != scenarioIterations {
+		t.Fatalf("stored scenario iterations = %#v, want %d", storedScenario.Scripts[0].Iterations, scenarioIterations)
+	}
+	if storedScenario.RuntimeSettings == nil || storedScenario.RuntimeSettings.LogLevel != "standard" {
+		t.Fatalf("stored scenario runtime settings mutated: %#v", storedScenario.RuntimeSettings)
+	}
+}
+
+func TestCompileManagedTestGroupLockedDerivesRampFromStages(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-staged-load",
+		Name:     "Staged Load Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "step", Type: "GET", Target: "/orders"}},
+	})
+
+	testGroup, engineGroup, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		ScriptID: "script-staged-load",
+		Stages: []storage.LoadStage{
+			{Name: "Warmup", Type: "ramp_up", Duration: "30s", TargetVUsers: 20},
+			{Name: "Hold", Type: "hold", Duration: "2m", TargetVUsers: 20},
+			{Name: "Cooldown", Type: "ramp_down", Duration: "15s", TargetVUsers: 1},
+		},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("compileManagedTestGroupLocked returned error: %v", err)
+	}
+	if testGroup.VUsers != 20 || testGroup.RampUp != "30s" || testGroup.RampDown != "15s" {
+		t.Fatalf("test group = %#v, want stage-derived vusers/ramp", testGroup)
+	}
+	if len(testGroup.Stages) != 3 {
+		t.Fatalf("stages = %#v, want preserved staged model", testGroup.Stages)
+	}
+	if engineGroup.VUsers != 20 || engineGroup.RampUp != 30*time.Second || engineGroup.RampDown != 15*time.Second {
+		t.Fatalf("engine group = %#v, want compatibility ramp durations", engineGroup)
+	}
+}
+
+func TestCompileManagedTestGroupLockedAppliesHeadlessOverrideWithoutMutatingStoredScript(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	defaultHeadless := true
+	defaultTouchMode := false
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-browser-headless-override",
+		Name:     "Browser Script",
+		Protocol: "browser",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.com",
+			Browser: dsl.BrowserConfig{Headless: &defaultHeadless, DeviceProfile: "desktop_1080p", TouchMode: &defaultTouchMode, Orientation: "landscape"},
+		},
+		Actions: []dsl.Action{{Name: "open-home", Type: "browser_navigate", Target: "/"}},
+	})
+
+	headless := false
+	touchMode := true
+	_, engineGroup, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		ScriptID: "script-browser-headless-override",
+		VUsers:   2,
+	}, &RuntimeSettingsOverride{
+		Browser: &RuntimeBrowserOverride{Headless: &headless, DeviceProfile: "iphone_se", TouchMode: &touchMode, Orientation: "portrait"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("compileManagedTestGroupLocked returned error: %v", err)
+	}
+	if engineGroup.Script == nil {
+		t.Fatal("expected engine group script")
+	}
+	if engineGroup.Script.Config.Browser.Headless == nil || *engineGroup.Script.Config.Browser.Headless != false {
+		t.Fatalf("compiled browser.headless = %#v, want false", engineGroup.Script.Config.Browser.Headless)
+	}
+	if engineGroup.Script.Config.Browser.DeviceProfile != "iphone_se" {
+		t.Fatalf("compiled browser.device_profile = %q, want iphone_se", engineGroup.Script.Config.Browser.DeviceProfile)
+	}
+	if engineGroup.Script.Config.Browser.TouchMode == nil || *engineGroup.Script.Config.Browser.TouchMode != true {
+		t.Fatalf("compiled browser.touch_mode = %#v, want true", engineGroup.Script.Config.Browser.TouchMode)
+	}
+	if engineGroup.Script.Config.Browser.Orientation != "portrait" {
+		t.Fatalf("compiled browser.orientation = %q, want portrait", engineGroup.Script.Config.Browser.Orientation)
+	}
+
+	stored, ok := runner.GetScript("script-browser-headless-override")
+	if !ok {
+		t.Fatal("expected stored script to remain available")
+	}
+	if stored.Script.Config.Browser.Headless == nil || *stored.Script.Config.Browser.Headless != true {
+		t.Fatalf("stored browser.headless = %#v, want true", stored.Script.Config.Browser.Headless)
+	}
+	if stored.Script.Config.Browser.DeviceProfile != "desktop_1080p" {
+		t.Fatalf("stored browser.device_profile = %q, want desktop_1080p", stored.Script.Config.Browser.DeviceProfile)
+	}
+	if stored.Script.Config.Browser.TouchMode == nil || *stored.Script.Config.Browser.TouchMode != false {
+		t.Fatalf("stored browser.touch_mode = %#v, want false", stored.Script.Config.Browser.TouchMode)
+	}
+	if stored.Script.Config.Browser.Orientation != "landscape" {
+		t.Fatalf("stored browser.orientation = %q, want landscape", stored.Script.Config.Browser.Orientation)
+	}
+}
+
+func TestCompileManagedTestGroupLockedBuildsCustomRedactionConfig(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-redaction-rules",
+		Name:     "Redaction Rule Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "runtime-step", Type: "GET", Target: "/orders"}},
+	})
+
+	_, engineGroup, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		ScriptID: "script-redaction-rules",
+		VUsers:   2,
+	}, &RuntimeSettingsOverride{
+		RedactionRules: []engine.RedactionRule{{Name: "customer id", Pattern: `customer-[0-9]+`}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("compileManagedTestGroupLocked returned error: %v", err)
+	}
+	if engineGroup.RedactionConfig == nil {
+		t.Fatal("expected engine redaction config")
+	}
+	if got := engineGroup.RedactionConfig.ScrubText(`customer-1234 ok`); got != `[REDACTED] ok` {
+		t.Fatalf("scrubbed text = %q, want custom rule applied", got)
+	}
+}
+
+func TestCompileManagedTestGroupLockedRejectsInvalidRedactionRule(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-invalid-redaction-rules",
+		Name:     "Invalid Redaction Rule Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "runtime-step", Type: "GET", Target: "/orders"}},
+	})
+
+	_, _, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		ScriptID: "script-invalid-redaction-rules",
+		VUsers:   2,
+	}, &RuntimeSettingsOverride{
+		RedactionRules: []engine.RedactionRule{{Name: "broken", Pattern: `[`}},
+	}, nil)
+	if err == nil {
+		t.Fatal("expected invalid redaction rule to fail")
+	}
+}
+
 func TestRunArtifactsFinalizePersistsArchiveRecord(t *testing.T) {
 	record := &storage.RunArchiveRecord{TestID: "test-1", ArchivePath: "/tmp/archive"}
 	recorder := &archiveRecorderStub{finalizeRecord: record}
@@ -338,7 +1298,7 @@ func TestRunArtifactsFinalizePersistsArchiveRecord(t *testing.T) {
 		},
 	}
 
-	archiveRecord, finalStatus, finalError := artifacts.finalize("COMPLETE", time.Now(), "")
+	archiveRecord, finalStatus, finalError := artifacts.finalize(nil, "COMPLETE", time.Now(), "")
 
 	if archiveRecord != record {
 		t.Fatalf("expected archive record %p, got %p", record, archiveRecord)
@@ -418,35 +1378,138 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	resources := &engine.SystemResources{CPUProcessPct: 12.5, MemProcessMb: 256}
 
 	live := buildLiveMetricsFromSnapshot(engine.MetricsSnapshot{
-		Timestamp:    timestamp,
-		ActiveVUsers: 18,
-		TPS:          24.5,
-		Transactions: 40,
-		Errors:       5,
-		AvgDuration:  250 * time.Millisecond,
-		P50:          200 * time.Millisecond,
-		P90:          350 * time.Millisecond,
-		P95:          400 * time.Millisecond,
-		P99:          600 * time.Millisecond,
+		Timestamp:              timestamp,
+		ActiveVUsers:           18,
+		TPS:                    24.5,
+		TargetTPS:              30,
+		ThroughputGapPct:       18.3333333333,
+		ThroughputTargetMissed: true,
+		Transactions:           40,
+		Errors:                 5,
+		AvgDuration:            250 * time.Millisecond,
+		P50:                    200 * time.Millisecond,
+		P90:                    350 * time.Millisecond,
+		P95:                    400 * time.Millisecond,
+		P99:                    600 * time.Millisecond,
 		ByAction: map[string]*engine.ActionMetrics{
 			"login": {
-				Count:       10,
-				Errors:      1,
-				AvgDuration: 150 * time.Millisecond,
-				P50:         120 * time.Millisecond,
-				P90:         240 * time.Millisecond,
-				P99:         500 * time.Millisecond,
+				Name:             "login",
+				DependencyType:   "http",
+				DependencyTarget: "api.example.test",
+				LastErrorMessage: "HTTP 503: backend timeout 12345",
+				LastStatusCode:   503,
+				LastErrorAt:      timestamp.Add(2 * time.Second),
+				AvgDNSMs:         8,
+				AvgConnectMs:     14,
+				AvgTLSMs:         6,
+				AvgTTFBMs:        74,
+				Count:            10,
+				Errors:           1,
+				AvgDuration:      150 * time.Millisecond,
+				P50:              120 * time.Millisecond,
+				P90:              240 * time.Millisecond,
+				P95:              320 * time.Millisecond,
+				P99:              500 * time.Millisecond,
+			},
+		},
+		ByDependencyTarget: map[string]*engine.ActionMetrics{
+			"api.example.test": {
+				Name:             "api.example.test",
+				DependencyType:   "http",
+				DependencyTarget: "api.example.test",
+				Count:            12,
+				Errors:           2,
+				AvgDuration:      180 * time.Millisecond,
+				P50:              140 * time.Millisecond,
+				P90:              260 * time.Millisecond,
+				P95:              330 * time.Millisecond,
+				P99:              470 * time.Millisecond,
+				ServerTelemetry: &engine.ServerTelemetrySummary{
+					Samples:               12,
+					AvgServerProcessingMs: 58,
+					AvgTransferMs:         16,
+				},
+			},
+		},
+		BySOAPOperation: map[string]*engine.ActionMetrics{
+			"CreateOrder": {
+				DependencyType:   "soap",
+				DependencyTarget: "checkout.example.test#CreateOrder",
+				Count:            8,
+				Errors:           1,
+				AvgDuration:      190 * time.Millisecond,
+				P50:              170 * time.Millisecond,
+				P90:              230 * time.Millisecond,
+				P99:              310 * time.Millisecond,
+				ServerTelemetry: &engine.ServerTelemetrySummary{
+					Samples:               8,
+					AvgServerProcessingMs: 55,
+					AvgTransferMs:         15,
+					RequestPayloadHistogram: map[string]int64{
+						"1-4 KB": 3,
+					},
+					ResponsePayloadHistogram: map[string]int64{
+						"4-16 KB": 8,
+					},
+					AvgMessageLatencyMs:       42,
+					MaxMessageLatencyMs:       61,
+					MessagesSent:              8,
+					MessagesReceived:          6,
+					AvgMessagesSentPerSec:     11,
+					AvgMessagesReceivedPerSec: 8.5,
+					AvgConsumerLagMs:          12,
+					MaxConsumerLagMs:          18,
+					RequestSizeClasses: map[string]int64{
+						"small": 6,
+					},
+					ResponseSizeClasses: map[string]int64{
+						"medium": 8,
+					},
+				},
 			},
 		},
 		ByGroup: map[string]*engine.GroupMetrics{
 			"buyers": {
-				Transactions: 25,
-				Errors:       3,
-				TPS:          15.5,
-				AvgDuration:  300 * time.Millisecond,
-				P50:          210 * time.Millisecond,
-				P90:          420 * time.Millisecond,
-				P99:          900 * time.Millisecond,
+				Transactions:           25,
+				Errors:                 3,
+				TPS:                    15.5,
+				TargetTPS:              20,
+				ThroughputGapPct:       22.5,
+				ThroughputTargetMissed: true,
+				AvgDuration:            300 * time.Millisecond,
+				P50:                    210 * time.Millisecond,
+				P90:                    420 * time.Millisecond,
+				P99:                    900 * time.Millisecond,
+			},
+		},
+		Browser: &engine.BrowserMetricsSummary{
+			Samples:              2,
+			AvgFCPMs:             120,
+			AvgLCPMs:             240,
+			AvgCLSScore:          0.03,
+			AvgINPMs:             55,
+			AvgBlockingResources: 2,
+			AvgLongTaskCount:     1.5,
+			AvgJSHeapUsedMB:      18,
+			AvgBrowserProcessCPU: 22,
+			AvgBrowserProcessMem: 256,
+		},
+		BrowserByDevice: map[string]*engine.BrowserDeviceMetrics{
+			"iphone_se": {
+				DeviceProfile:        "iphone_se",
+				DevicePlatform:       "ios",
+				DeviceTier:           "low",
+				BrowserEngine:        "webkit",
+				Samples:              2,
+				AvgFCPMs:             120,
+				AvgLCPMs:             240,
+				AvgCLSScore:          0.03,
+				AvgINPMs:             55,
+				AvgBlockingResources: 2,
+				AvgLongTaskCount:     1.5,
+				AvgJSHeapUsedMB:      18,
+				AvgBrowserProcessCPU: 22,
+				AvgBrowserProcessMem: 256,
 			},
 		},
 		Resources: resources,
@@ -458,6 +1521,12 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	if live.ActiveVUsers != 18 {
 		t.Fatalf("expected 18 active vusers, got %d", live.ActiveVUsers)
 	}
+	if live.TargetTPS != 30 {
+		t.Fatalf("expected target TPS 30, got %v", live.TargetTPS)
+	}
+	if !live.ThroughputTargetMissed {
+		t.Fatal("expected throughput target miss to be mapped")
+	}
 	if live.AvgResponseMs != 250 {
 		t.Fatalf("expected avg response 250ms, got %v", live.AvgResponseMs)
 	}
@@ -467,6 +1536,42 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	if live.Resources != resources {
 		t.Fatal("expected resources pointer to be preserved")
 	}
+	if live.Browser == nil || live.Browser.Samples != 2 {
+		t.Fatalf("expected browser summary to be mapped, got %#v", live.Browser)
+	}
+	if live.Browser.AvgBrowserProcessCPU != 22 || live.Browser.AvgBrowserProcessMem != 256 {
+		t.Fatalf("expected browser process metrics to be mapped, got %#v", live.Browser)
+	}
+	if live.BrowserByDevice == nil || live.BrowserByDevice["iphone_se"] == nil {
+		t.Fatalf("expected browser-by-device metrics to be mapped, got %#v", live.BrowserByDevice)
+	}
+	if live.BrowserByDevice["iphone_se"].BrowserEngine != "webkit" {
+		t.Fatalf("expected browser engine to be mapped, got %#v", live.BrowserByDevice["iphone_se"])
+	}
+	if live.BrowserByDevice["iphone_se"].DevicePlatform != "ios" {
+		t.Fatalf("expected device platform to be mapped, got %#v", live.BrowserByDevice["iphone_se"])
+	}
+	if live.SOAPOperations == nil || live.SOAPOperations["CreateOrder"] == nil {
+		t.Fatalf("expected SOAP operations to be mapped, got %#v", live.SOAPOperations)
+	}
+	if live.SOAPOperations["CreateOrder"].DependencyTarget != "checkout.example.test#CreateOrder" {
+		t.Fatalf("expected SOAP operation dependency target to be mapped, got %#v", live.SOAPOperations["CreateOrder"])
+	}
+	if live.SOAPOperations["CreateOrder"].ServerTelemetry == nil || live.SOAPOperations["CreateOrder"].ServerTelemetry.AvgConsumerLagMs != 12 {
+		t.Fatalf("expected SOAP operation consumer lag telemetry to be mapped, got %#v", live.SOAPOperations["CreateOrder"].ServerTelemetry)
+	}
+	if live.SOAPOperations["CreateOrder"].ServerTelemetry.AvgMessageLatencyMs != 42 || live.SOAPOperations["CreateOrder"].ServerTelemetry.MessagesSent != 8 {
+		t.Fatalf("expected SOAP operation messaging telemetry to be mapped, got %#v", live.SOAPOperations["CreateOrder"].ServerTelemetry)
+	}
+	if live.SOAPOperations["CreateOrder"].ServerTelemetry.RequestSizeClasses["small"] != 6 {
+		t.Fatalf("expected SOAP operation request size classes to be mapped, got %#v", live.SOAPOperations["CreateOrder"].ServerTelemetry.RequestSizeClasses)
+	}
+	if live.SOAPOperations["CreateOrder"].ServerTelemetry.RequestPayloadHistogram["1-4 KB"] != 3 {
+		t.Fatalf("expected SOAP operation request payload histogram to be mapped, got %#v", live.SOAPOperations["CreateOrder"].ServerTelemetry.RequestPayloadHistogram)
+	}
+	if live.SOAPOperations["CreateOrder"].ServerTelemetry.ResponsePayloadHistogram["4-16 KB"] != 8 {
+		t.Fatalf("expected SOAP operation response payload histogram to be mapped, got %#v", live.SOAPOperations["CreateOrder"].ServerTelemetry.ResponsePayloadHistogram)
+	}
 
 	login, ok := live.Transactions["login"]
 	if !ok {
@@ -475,8 +1580,37 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	if login.Count != 10 || login.Errors != 1 {
 		t.Fatalf("unexpected login metrics: %+v", login)
 	}
-	if login.AvgMs != 150 || login.P50Ms != 120 || login.P90Ms != 240 || login.P99Ms != 500 {
+	if login.LastErrorMessage != "HTTP 503: backend timeout 12345" || login.LastStatusCode != 503 || !login.LastErrorAt.Equal(timestamp.Add(2*time.Second)) {
+		t.Fatalf("expected login last error metadata, got %+v", login)
+	}
+	if login.AvgDNSMs != 8 || login.AvgConnectMs != 14 || login.AvgTLSMs != 6 || login.AvgTTFBMs != 74 {
+		t.Fatalf("expected login timing phases to be mapped, got %+v", login)
+	}
+	if login.AvgMs != 150 || login.P50Ms != 120 || login.P90Ms != 240 || login.P95Ms != 320 || login.P99Ms != 500 {
 		t.Fatalf("unexpected converted login percentiles: %+v", login)
+	}
+	if live.DependencyHealth == nil || live.DependencyHealth["api.example.test"] == nil {
+		t.Fatalf("expected dependency health metrics to be mapped, got %#v", live.DependencyHealth)
+	}
+	if live.DependencyHealth["api.example.test"].P95Ms != 330 || live.DependencyHealth["api.example.test"].ServerTelemetry == nil || live.DependencyHealth["api.example.test"].ServerTelemetry.AvgServerProcessingMs != 58 {
+		t.Fatalf("expected dependency health p95 and telemetry to be mapped, got %#v", live.DependencyHealth["api.example.test"])
+	}
+	if live.DependencyMap == nil {
+		t.Fatal("expected live dependency map")
+	}
+	if len(live.DependencyMap.Nodes) != 2 || len(live.DependencyMap.Edges) != 1 {
+		t.Fatalf("dependency map = %#v, want source and one dependency edge", live.DependencyMap)
+	}
+	dependencyNode := live.DependencyMap.Nodes[1]
+	if dependencyNode.ID != "dependency:api.example.test" || dependencyNode.DependencyType != "http" || dependencyNode.Status != "danger" {
+		t.Fatalf("dependency node = %#v, want HTTP danger node", dependencyNode)
+	}
+	if dependencyNode.Transactions != 12 || dependencyNode.Errors != 2 || dependencyNode.ErrorPct != float64(2)/12*100 {
+		t.Fatalf("dependency node metrics = %#v", dependencyNode)
+	}
+	dependencyEdge := live.DependencyMap.Edges[0]
+	if dependencyEdge.Source != "apexload" || dependencyEdge.Target != dependencyNode.ID || dependencyEdge.P95Ms != 330 {
+		t.Fatalf("dependency edge = %#v, want source-to-dependency edge", dependencyEdge)
 	}
 
 	buyers, ok := live.GroupMetrics["buyers"]
@@ -486,6 +1620,12 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	if buyers.VUsers != 12 {
 		t.Fatalf("expected buyers vusers 12, got %d", buyers.VUsers)
 	}
+	if buyers.TargetTPS != 20 {
+		t.Fatalf("expected buyers target TPS 20, got %v", buyers.TargetTPS)
+	}
+	if !buyers.ThroughputTargetMissed {
+		t.Fatal("expected buyers throughput target miss to be mapped")
+	}
 	if buyers.Transactions != 25 || buyers.Errors != 3 {
 		t.Fatalf("unexpected buyers counts: %+v", buyers)
 	}
@@ -494,22 +1634,160 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	}
 }
 
+func TestUpdateLiveErrorPatternsTracksFirstLatestAndSnapshotQuery(t *testing.T) {
+	firstSeen := time.Date(2026, time.May, 18, 10, 0, 0, 0, time.UTC)
+	latestSeen := firstSeen.Add(30 * time.Second)
+	state := updateLiveErrorPatterns(nil, &LiveMetrics{
+		Timestamp: firstSeen,
+		Transactions: map[string]*TxMetrics{
+			"GET /orders/123": {
+				Name:             "GET /orders/123",
+				Count:            10,
+				Errors:           2,
+				LastErrorMessage: "HTTP 503 backend timeout order 123",
+				LastStatusCode:   503,
+				LastErrorAt:      firstSeen,
+			},
+		},
+		GroupMetrics: map[string]*GroupLiveMetrics{
+			"buyers": {Name: "buyers", Errors: 2},
+		},
+	}, "test/error run")
+	state = updateLiveErrorPatterns(state, &LiveMetrics{
+		Timestamp: latestSeen,
+		Transactions: map[string]*TxMetrics{
+			"GET /orders/456": {
+				Name:             "GET /orders/456",
+				Count:            5,
+				Errors:           1,
+				LastErrorMessage: "HTTP 503 backend timeout order 456",
+				LastStatusCode:   503,
+				LastErrorAt:      latestSeen,
+			},
+		},
+		GroupMetrics: map[string]*GroupLiveMetrics{
+			"buyers": {Name: "buyers", Errors: 1},
+			"admins": {Name: "admins", Errors: 1},
+		},
+	}, "test/error run")
+
+	patterns := liveErrorPatternsList(state)
+	if len(patterns) != 1 {
+		t.Fatalf("patterns = %#v, want one normalized pattern", patterns)
+	}
+	pattern := patterns[0]
+	if pattern.Count != 3 || !pattern.FirstSeen.Equal(firstSeen) || !pattern.LatestSeen.Equal(latestSeen) {
+		t.Fatalf("pattern timeline/count = %#v", pattern)
+	}
+	if pattern.StatusCode != 503 || pattern.ErrorPct != 20 {
+		t.Fatalf("pattern status/error pct = %#v", pattern)
+	}
+	if strings.Join(pattern.Actions, ",") != "GET /orders/123,GET /orders/456" {
+		t.Fatalf("pattern actions = %#v", pattern.Actions)
+	}
+	if strings.Join(pattern.AffectedGroups, ",") != "admins,buyers" {
+		t.Fatalf("pattern groups = %#v", pattern.AffectedGroups)
+	}
+	if pattern.SnapshotURL != "/api/v1/tests/test%2Ferror%20run/archive/transactions?limit=20&success=false" {
+		t.Fatalf("snapshot url = %q", pattern.SnapshotURL)
+	}
+}
+
+func TestBuildLiveCapacityStatusAggregatesDemandByProtocolAndRegion(t *testing.T) {
+	current := &ManagedTest{
+		ID:          "active",
+		Status:      "RUNNING",
+		TotalVUsers: 1200,
+		Groups: []TestGroup{
+			{Name: "buyers", Protocol: "http", VUsers: 900},
+			{Name: "canaries", Protocol: "browser", VUsers: 300},
+		},
+		Assignment: &GeneratorAssignmentSettings{
+			Mode:          generatorAssignmentModeRegionWeighted,
+			RegionWeights: map[string]int{"east": 2, "west": 1},
+		},
+		CapacityAdvisory: &CapacityAdvisory{
+			RecommendedGenerators: 4,
+			AvailableGenerators:   3,
+			ShortfallGenerators:   1,
+			RequiresOverride:      true,
+		},
+	}
+	queued := &ManagedTest{
+		ID:          "queued",
+		Status:      "PENDING",
+		TotalVUsers: 200,
+		Groups:      []TestGroup{{Name: "workers", Protocol: "grpc", VUsers: 200}},
+		Assignment:  &GeneratorAssignmentSettings{Mode: generatorAssignmentModeAuto},
+	}
+	rejected := &ManagedTest{
+		ID:          "rejected",
+		Status:      "QUEUED",
+		TotalVUsers: 100,
+		Groups:      []TestGroup{{Name: "publishers", Protocol: "jms", VUsers: 100}},
+		Assignment:  &GeneratorAssignmentSettings{Mode: generatorAssignmentModeSpecificHosts, SelectedTargets: []string{"gen-a", "gen-b"}},
+		CapacityAdvisory: &CapacityAdvisory{
+			RequiresOverride: true,
+		},
+	}
+
+	status := buildLiveCapacityStatus(current, &LiveMetrics{ActiveVUsers: 1000}, []*ManagedTest{current, queued, rejected})
+	if status == nil {
+		t.Fatal("expected live capacity status")
+	}
+	if status.AllocatedVUsers != 1000 || status.AvailableGenerators != 3 || status.RecommendedGenerators != 4 || !status.Saturated {
+		t.Fatalf("capacity status headline = %#v", status)
+	}
+	if status.QueuedVUsers != 300 || status.RejectedVUsers != 1300 {
+		t.Fatalf("queued/rejected = %d/%d, want 300/1300", status.QueuedVUsers, status.RejectedVUsers)
+	}
+	if status.ByProtocol["http"].AllocatedVUsers != 900 || status.ByProtocol["browser"].AllocatedVUsers != 300 || status.ByProtocol["grpc"].QueuedVUsers != 200 || status.ByProtocol["jms"].RejectedVUsers != 100 {
+		t.Fatalf("protocol breakdown = %#v", status.ByProtocol)
+	}
+	if status.ByRegion["east"].AllocatedVUsers != 800 || status.ByRegion["west"].AllocatedVUsers != 400 || status.ByRegion["auto"].QueuedVUsers != 200 {
+		t.Fatalf("region breakdown = %#v", status.ByRegion)
+	}
+	if status.ByRegion["gen-a"].RejectedVUsers != 50 || status.ByRegion["gen-b"].RejectedVUsers != 50 {
+		t.Fatalf("specific-host rejected breakdown = %#v", status.ByRegion)
+	}
+}
+
 func TestBuildThresholdAlerts(t *testing.T) {
 	p99Threshold := 750.0
 	errorThreshold := 2.5
+	serverThreshold := 200.0
+	transferThreshold := 90.0
 	timestamp := time.Date(2026, time.May, 10, 9, 0, 0, 0, time.UTC)
 
 	alerts := buildThresholdAlerts(&ManagedTest{ID: "test-1", Name: "Checkout"}, &LiveMetrics{
-		Timestamp: timestamp,
-		P99Ms:     900,
-		ErrorPct:  4.2,
+		Timestamp:              timestamp,
+		P99Ms:                  900,
+		ErrorPct:               4.2,
+		TPS:                    180,
+		TargetTPS:              250,
+		ThroughputGapPct:       28,
+		ThroughputTargetMissed: true,
+		Transactions: map[string]*TxMetrics{
+			"POST /checkout": {
+				Name:             "POST /checkout",
+				DependencyType:   "soap",
+				DependencyTarget: "checkout.example.com#SubmitOrder",
+				ServerTelemetry: &ServerTelemetrySummary{
+					Samples:               8,
+					AvgServerProcessingMs: 245,
+					AvgTransferMs:         110,
+				},
+			},
+		},
 	}, ThresholdSettings{
-		MaxP99LatencyMs: &p99Threshold,
-		MaxErrorRatePct: &errorThreshold,
+		MaxP99LatencyMs:          &p99Threshold,
+		MaxErrorRatePct:          &errorThreshold,
+		MaxAvgServerProcessingMs: &serverThreshold,
+		MaxAvgTransferMs:         &transferThreshold,
 	})
 
-	if len(alerts) != 2 {
-		t.Fatalf("expected 2 threshold alerts, got %d", len(alerts))
+	if len(alerts) != 5 {
+		t.Fatalf("expected 5 threshold alerts, got %d", len(alerts))
 	}
 
 	alertsByMetric := make(map[string]map[string]any, len(alerts))
@@ -535,6 +1813,27 @@ func TestBuildThresholdAlerts(t *testing.T) {
 	}
 	if errorAlert["action"] != "stop_requested" {
 		t.Fatalf("expected stop_requested action, got %#v", errorAlert["action"])
+	}
+	throughputAlert := alertsByMetric["throughput_gap_pct"]
+	if throughputAlert["threshold"] != 250.0 {
+		t.Fatalf("expected throughput target 250, got %#v", throughputAlert["threshold"])
+	}
+	if throughputAlert["value"] != 180.0 {
+		t.Fatalf("expected actual throughput 180, got %#v", throughputAlert["value"])
+	}
+	if throughputAlert["gap_pct"] != 28.0 {
+		t.Fatalf("expected throughput gap 28, got %#v", throughputAlert["gap_pct"])
+	}
+	serverAlert := alertsByMetric["avg_server_processing_ms"]
+	if serverAlert["threshold"] != serverThreshold {
+		t.Fatalf("expected server threshold %v, got %#v", serverThreshold, serverAlert["threshold"])
+	}
+	if serverAlert["transaction"] != "POST /checkout" {
+		t.Fatalf("expected server alert to identify POST /checkout, got %#v", serverAlert["transaction"])
+	}
+	transferAlert := alertsByMetric["avg_transfer_ms"]
+	if transferAlert["threshold"] != transferThreshold {
+		t.Fatalf("expected transfer threshold %v, got %#v", transferThreshold, transferAlert["threshold"])
 	}
 	if !shouldStopForErrorThreshold(&LiveMetrics{ErrorPct: 4.2}, ThresholdSettings{MaxErrorRatePct: &errorThreshold}) {
 		t.Fatal("expected error threshold helper to request stop")
@@ -570,6 +1869,24 @@ func TestInlineCSVFromDataPoolRowsRequiresColumns(t *testing.T) {
 	_, _, err := inlineCSVFromDataPoolRows([]*storage.SharedDataPoolRow{{ID: "row-1", PoolID: "pool-1"}})
 	if err == nil {
 		t.Fatal("expected empty data pool rows to fail")
+	}
+}
+
+func TestNormalizeScenarioDataPoolBindingsAcceptsPopStrategy(t *testing.T) {
+	bindings, err := normalizeScenarioDataPoolBindings("scenario-1", []storage.ScenarioDataPoolBinding{{
+		PoolID:            "pool-1",
+		Alias:             "customers",
+		AccessMode:        "consume",
+		SelectionStrategy: "pop",
+	}})
+	if err != nil {
+		t.Fatalf("normalizeScenarioDataPoolBindings returned error: %v", err)
+	}
+	if len(bindings) != 1 {
+		t.Fatalf("binding count = %d, want 1", len(bindings))
+	}
+	if bindings[0].SelectionStrategy != "pop" {
+		t.Fatalf("selection strategy = %q, want pop", bindings[0].SelectionStrategy)
 	}
 }
 
@@ -625,6 +1942,52 @@ func TestPublishLiveMetricsUpdatesStatePersistsHistoryAndBroadcasts(t *testing.T
 		}
 		if payload.Data.Telemetry.PublishedAt.IsZero() {
 			t.Fatal("expected published timestamp in telemetry payload")
+		}
+	default:
+		t.Fatal("expected metrics_update broadcast")
+	}
+}
+
+func TestPublishLiveMetricsCarriesPreviousNetworkLatency(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	previous := &NetworkLatency{Targets: []LatencyTarget{{
+		Name:        "edge",
+		Endpoint:    "https://example.test",
+		LatencyMs:   42,
+		LastSuccess: true,
+		Timestamp:   time.Date(2026, time.May, 10, 10, 14, 55, 0, time.UTC),
+	}}}
+	testRun := &ManagedTest{
+		ID:                 "test-1",
+		Name:               "Checkout",
+		lastNetworkLatency: previous,
+	}
+	live := &LiveMetrics{Timestamp: time.Date(2026, time.May, 10, 10, 15, 0, 0, time.UTC), ActiveVUsers: 12}
+
+	runner.publishLiveMetrics(testRun, live, nil)
+
+	if live.Latency == nil || len(live.Latency.Targets) != 1 {
+		t.Fatalf("expected previous network latency on live metrics, got %#v", live.Latency)
+	}
+	if live.Latency == previous {
+		t.Fatal("expected carried latency to be cloned")
+	}
+
+	select {
+	case msg := <-hub.broadcast:
+		var payload struct {
+			Type string       `json:"type"`
+			Data *LiveMetrics `json:"data"`
+		}
+		if err := json.Unmarshal(msg, &payload); err != nil {
+			t.Fatalf("failed to decode broadcast payload: %v", err)
+		}
+		if payload.Type != "metrics_update" || payload.Data == nil || payload.Data.Latency == nil {
+			t.Fatalf("expected metrics_update with latency payload, got %#v", payload)
+		}
+		if got := payload.Data.Latency.Targets[0].LatencyMs; got != 42 {
+			t.Fatalf("latency = %v, want 42", got)
 		}
 	default:
 		t.Fatal("expected metrics_update broadcast")
@@ -718,6 +2081,208 @@ func TestPublishLiveMetricsBroadcastsTelemetryDiagnosticOnDegradation(t *testing
 	}
 }
 
+func TestPublishLiveMetricsUsesConfiguredTelemetryBudgets(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	settings := runner.GetSystemSettings()
+	sampleAgeBudget := 100.0
+	generatorBudget := 50.0
+	transportBudget := 60.0
+	fanoutBudget := 70.0
+	browserBudget := 80.0
+	settings.Thresholds.MaxTelemetrySampleAgeMs = &sampleAgeBudget
+	settings.Thresholds.MaxTelemetryGeneratorLagMs = &generatorBudget
+	settings.Thresholds.MaxTelemetryTransportLagMs = &transportBudget
+	settings.Thresholds.MaxTelemetryControllerFanoutMs = &fanoutBudget
+	settings.Thresholds.MaxTelemetryBrowserRenderLagMs = &browserBudget
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	now := time.Now()
+	testRun := &ManagedTest{ID: "test-1", Name: "Telemetry Budget"}
+	live := &LiveMetrics{
+		Timestamp: now,
+		Telemetry: &TelemetryHealth{
+			CollectedAt:              now.Add(-250 * time.Millisecond),
+			ControllerReceivedAt:     now.Add(-200 * time.Millisecond),
+			GeneratorProcessingLagMs: 75,
+			TransportLagMs:           90,
+			BrowserRenderLagMs:       120,
+		},
+	}
+
+	runner.publishLiveMetrics(testRun, live, nil)
+
+	select {
+	case <-hub.broadcast:
+	default:
+		t.Fatal("expected metrics_update broadcast")
+	}
+
+	var diagnosticPayload struct {
+		Type string               `json:"type"`
+		Data *TelemetryDiagnostic `json:"data"`
+	}
+	select {
+	case msg := <-hub.broadcast:
+		if err := json.Unmarshal(msg, &diagnosticPayload); err != nil {
+			t.Fatalf("failed to decode diagnostic payload: %v", err)
+		}
+	default:
+		t.Fatal("expected telemetry_diagnostic broadcast payload")
+	}
+	if diagnosticPayload.Type != "telemetry_diagnostic" {
+		t.Fatalf("expected telemetry_diagnostic, got %#v", diagnosticPayload)
+	}
+	if diagnosticPayload.Data == nil || diagnosticPayload.Data.Severity != "warning" {
+		t.Fatalf("expected warning diagnostic, got %#v", diagnosticPayload.Data)
+	}
+	expectedConditions := []string{"stale_sample", "generator_lag", "transport_lag", "controller_fanout_lag", "browser_render_lag"}
+	if strings.Join(diagnosticPayload.Data.Conditions, ",") != strings.Join(expectedConditions, ",") {
+		t.Fatalf("conditions = %#v, want %#v", diagnosticPayload.Data.Conditions, expectedConditions)
+	}
+	if !strings.Contains(diagnosticPayload.Data.Summary, "sample age") || !strings.Contains(diagnosticPayload.Data.Summary, "browser render lag") {
+		t.Fatalf("unexpected diagnostic summary: %s", diagnosticPayload.Data.Summary)
+	}
+	if testRun.TelemetryHealth == nil || testRun.TelemetryHealth.Status != "degraded" || !testRun.TelemetryHealth.BreachActive {
+		t.Fatalf("expected degraded run telemetry health, got %#v", testRun.TelemetryHealth)
+	}
+	if testRun.LiveMetrics == nil || testRun.LiveMetrics.TelemetryStatus == nil || testRun.LiveMetrics.TelemetryStatus.Status != "degraded" {
+		t.Fatalf("expected live metrics telemetry status, got %#v", testRun.LiveMetrics)
+	}
+}
+
+func TestPublishLiveMetricsDispatchesTelemetryBreachNotifications(t *testing.T) {
+	received := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode webhook payload: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		received <- payload
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	runner.notifier = newNotificationDispatcher(server.Client())
+	settings := runner.GetSystemSettings()
+	settings.Notifications = NotificationsSettings{
+		Webhooks: []NotificationWebhookSettings{{
+			Name:    "Telemetry Alerts",
+			Enabled: true,
+			URL:     server.URL,
+			Format:  notificationFormatSlack,
+			Events:  []string{"telemetry_breached"},
+		}},
+	}
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	testRun := &ManagedTest{ID: "test-1", Name: "Telemetry Breach", ProjectID: "project-7"}
+	runner.publishLiveMetrics(testRun, &LiveMetrics{
+		Timestamp: time.Now(),
+		Telemetry: &TelemetryHealth{DroppedResults: 3},
+	}, nil)
+
+	messageTypes := make([]string, 0, 3)
+	for i := 0; i < 3; i++ {
+		select {
+		case msg := <-hub.broadcast:
+			var envelope struct {
+				Type      string              `json:"type"`
+				EventType string              `json:"event_type"`
+				Data      *TelemetryRunHealth `json:"data"`
+			}
+			if err := json.Unmarshal(msg, &envelope); err != nil {
+				t.Fatalf("failed to decode broadcast payload: %v", err)
+			}
+			messageTypes = append(messageTypes, envelope.Type)
+			if envelope.Type == "telemetry_health_changed" {
+				if envelope.EventType != "telemetry_breached" || envelope.Data == nil || envelope.Data.Status != "breached" {
+					t.Fatalf("unexpected telemetry health event: %#v", envelope)
+				}
+			}
+		default:
+			t.Fatalf("expected telemetry health broadcast, got %#v", messageTypes)
+		}
+	}
+	if strings.Join(messageTypes, ",") != "metrics_update,telemetry_diagnostic,telemetry_health_changed" {
+		t.Fatalf("message types = %#v, want metrics/diagnostic/health change", messageTypes)
+	}
+
+	select {
+	case payload := <-received:
+		text, _ := payload["text"].(string)
+		if !strings.Contains(text, "APEX Load Telemetry Breached") || !strings.Contains(text, "Telemetry Breach") {
+			t.Fatalf("payload text = %#v", payload["text"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected telemetry breach webhook delivery")
+	}
+}
+
+func TestUpdateTelemetryRunHealthTracksSustainedBreachAndRecovery(t *testing.T) {
+	now := time.Date(2026, 5, 18, 10, 0, 0, 0, time.UTC)
+	state := telemetryDiagnosticState{}
+	warningDiagnostic := &TelemetryDiagnostic{
+		Severity:   "warning",
+		Summary:    "sample age 250 ms exceeds the 100 ms telemetry budget",
+		Conditions: []string{"stale_sample"},
+	}
+
+	first := updateTelemetryRunHealth(&state, warningDiagnostic, "stale_sample", now)
+	if first == nil || first.Status != "degraded" || first.SustainedBreach || first.BreachDurationSec != 0 {
+		t.Fatalf("first health = %#v, want degraded unsustained breach", first)
+	}
+	if first.BreachStartedAt == nil || !first.BreachStartedAt.Equal(now) {
+		t.Fatalf("breach started at = %#v, want %s", first.BreachStartedAt, now)
+	}
+
+	sustainedAt := now.Add(telemetrySustainedBreachWindow + time.Second)
+	sustained := updateTelemetryRunHealth(&state, warningDiagnostic, "stale_sample", sustainedAt)
+	if sustained == nil || sustained.Status != "breached" || !sustained.SustainedBreach {
+		t.Fatalf("sustained health = %#v, want sustained breach", sustained)
+	}
+	if sustained.BreachDurationSec != int((telemetrySustainedBreachWindow + time.Second).Seconds()) {
+		t.Fatalf("breach duration = %d, want sustained window plus one second", sustained.BreachDurationSec)
+	}
+	if !sustained.LastTransitionAt.Equal(sustainedAt) {
+		t.Fatalf("last transition at = %s, want %s", sustained.LastTransitionAt, sustainedAt)
+	}
+
+	recoveredAt := sustainedAt.Add(time.Second)
+	recovered := updateTelemetryRunHealth(&state, &TelemetryDiagnostic{Severity: "healthy", Summary: "live telemetry healthy"}, "healthy", recoveredAt)
+	if recovered == nil || recovered.Status != "healthy" || recovered.BreachActive || recovered.BreachStartedAt != nil {
+		t.Fatalf("recovered health = %#v, want healthy with cleared breach", recovered)
+	}
+	if !recovered.LastTransitionAt.Equal(recoveredAt) {
+		t.Fatalf("recovery transition at = %s, want %s", recovered.LastTransitionAt, recoveredAt)
+	}
+}
+
+func TestUpdateTelemetryRunHealthBreachesImmediatelyOnDanger(t *testing.T) {
+	now := time.Date(2026, 5, 18, 11, 0, 0, 0, time.UTC)
+	health := updateTelemetryRunHealth(&telemetryDiagnosticState{}, &TelemetryDiagnostic{
+		Severity:   "danger",
+		Summary:    "collector dropped 3 metric samples",
+		Conditions: []string{"collector_drops"},
+	}, "collector_drops", now)
+
+	if health == nil || health.Status != "breached" || health.SustainedBreach {
+		t.Fatalf("health = %#v, want immediate unsustained breach for danger", health)
+	}
+	if health.BreachStartedAt == nil || !health.BreachStartedAt.Equal(now) {
+		t.Fatalf("breach started at = %#v, want %s", health.BreachStartedAt, now)
+	}
+}
+
 func TestPublishLiveMetricsBroadcastsSampledTransactionDiagnostics(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(2, hub, nil)
@@ -800,6 +2365,135 @@ func TestPublishLiveMetricsBroadcastsSampledTransactionDiagnostics(t *testing.T)
 	}
 }
 
+func TestPublishLiveMetricsBroadcastsJMSBrokerPressureDiagnostic(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	testRun := &ManagedTest{ID: "test-1", Name: "JMS Checkout"}
+	live := &LiveMetrics{
+		Timestamp: time.Now(),
+		TotalTx:   12,
+		Transactions: map[string]*TxMetrics{
+			"RequestReplyQuote": {
+				Name:             "RequestReplyQuote",
+				DependencyType:   "jms_queue",
+				DependencyTarget: "quotes.rpc",
+				CorrelationIDs:   []string{"corr-quote-1"},
+				Count:            6,
+				AvgMs:            320,
+				P99Ms:            540,
+				ServerTelemetry: &ServerTelemetrySummary{
+					Samples:                   6,
+					AvgMessageLatencyMs:       60,
+					AvgConsumerLagMs:          280,
+					AvgMessagesSentPerSec:     30,
+					AvgMessagesReceivedPerSec: 12,
+				},
+			},
+		},
+		Telemetry: &TelemetryHealth{},
+	}
+
+	runner.publishLiveMetrics(testRun, live, nil)
+
+	select {
+	case <-hub.broadcast:
+	default:
+		t.Fatal("expected metrics_update broadcast")
+	}
+
+	var diagnosticPayload struct {
+		Type string               `json:"type"`
+		Data *TelemetryDiagnostic `json:"data"`
+	}
+	select {
+	case msg := <-hub.broadcast:
+		if err := json.Unmarshal(msg, &diagnosticPayload); err != nil {
+			t.Fatalf("failed to decode diagnostic payload: %v", err)
+		}
+		if diagnosticPayload.Type != "telemetry_diagnostic" {
+			t.Fatalf("expected telemetry_diagnostic second, got %#v", diagnosticPayload)
+		}
+		if diagnosticPayload.Data == nil || diagnosticPayload.Data.Severity != "warning" {
+			t.Fatalf("expected warning severity, got %#v", diagnosticPayload.Data)
+		}
+		if !strings.Contains(diagnosticPayload.Data.Summary, "JMS broker pressure hotspots") {
+			t.Fatalf("unexpected diagnostic summary: %#v", diagnosticPayload.Data)
+		}
+		if len(diagnosticPayload.Data.Conditions) != 1 || diagnosticPayload.Data.Conditions[0] != "jms_broker_pressure" {
+			t.Fatalf("unexpected diagnostic conditions: %#v", diagnosticPayload.Data)
+		}
+		if len(diagnosticPayload.Data.Samples) != 1 || diagnosticPayload.Data.Samples[0].Issue != "broker" {
+			t.Fatalf("unexpected diagnostic samples: %#v", diagnosticPayload.Data)
+		}
+		if diagnosticPayload.Data.Samples[0].AvgConsumerLagMs != 280 || diagnosticPayload.Data.Samples[0].AvgMessagesSentPerSec != 30 {
+			t.Fatalf("unexpected broker sample metrics: %#v", diagnosticPayload.Data.Samples[0])
+		}
+	default:
+		t.Fatal("expected telemetry_diagnostic broadcast payload")
+	}
+}
+
+func TestPublishLiveMetricsBroadcastsJMSDeadLetterDiagnostic(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	testRun := &ManagedTest{ID: "test-1", Name: "JMS DLQ Monitor"}
+	live := &LiveMetrics{
+		Timestamp: time.Now(),
+		TotalTx:   7,
+		Transactions: map[string]*TxMetrics{
+			"ConsumeOrderDLQ": {
+				Name:             "ConsumeOrderDLQ",
+				DependencyType:   "jms_dead_letter_queue",
+				DependencyTarget: "orders.dlq",
+				CorrelationIDs:   []string{"corr-dlq-1"},
+				Count:            7,
+				AvgMs:            185,
+				P99Ms:            300,
+			},
+		},
+		Telemetry: &TelemetryHealth{},
+	}
+
+	runner.publishLiveMetrics(testRun, live, nil)
+
+	select {
+	case <-hub.broadcast:
+	default:
+		t.Fatal("expected metrics_update broadcast")
+	}
+
+	var diagnosticPayload struct {
+		Type string               `json:"type"`
+		Data *TelemetryDiagnostic `json:"data"`
+	}
+	select {
+	case msg := <-hub.broadcast:
+		if err := json.Unmarshal(msg, &diagnosticPayload); err != nil {
+			t.Fatalf("failed to decode diagnostic payload: %v", err)
+		}
+		if diagnosticPayload.Type != "telemetry_diagnostic" {
+			t.Fatalf("expected telemetry_diagnostic second, got %#v", diagnosticPayload)
+		}
+		if diagnosticPayload.Data == nil || diagnosticPayload.Data.Severity != "warning" {
+			t.Fatalf("expected warning severity, got %#v", diagnosticPayload.Data)
+		}
+		if !strings.Contains(diagnosticPayload.Data.Summary, "dead-letter destinations") {
+			t.Fatalf("unexpected diagnostic summary: %#v", diagnosticPayload.Data)
+		}
+		if len(diagnosticPayload.Data.Conditions) != 1 || diagnosticPayload.Data.Conditions[0] != "jms_dead_letter_activity" {
+			t.Fatalf("unexpected diagnostic conditions: %#v", diagnosticPayload.Data)
+		}
+		if len(diagnosticPayload.Data.Samples) != 1 || diagnosticPayload.Data.Samples[0].Issue != "dead_letter" {
+			t.Fatalf("unexpected diagnostic samples: %#v", diagnosticPayload.Data)
+		}
+		if diagnosticPayload.Data.Samples[0].DependencyTarget != "orders.dlq" || diagnosticPayload.Data.Samples[0].Count != 7 {
+			t.Fatalf("unexpected dead-letter sample metrics: %#v", diagnosticPayload.Data.Samples[0])
+		}
+	default:
+		t.Fatal("expected telemetry_diagnostic broadcast payload")
+	}
+}
+
 func TestPublishLiveMetricsSamplesTelemetryDiagnosticUntilStateChanges(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(2, hub, nil)
@@ -818,31 +2512,51 @@ func TestPublishLiveMetricsSamplesTelemetryDiagnosticUntilStateChanges(t *testin
 		Telemetry: &TelemetryHealth{},
 	}, nil)
 
-	messageTypes := make([]string, 0, 5)
-	var recovery struct {
+	messageTypes := make([]string, 0, 7)
+	var recoveryDiagnostic struct {
 		Type string               `json:"type"`
 		Data *TelemetryDiagnostic `json:"data"`
 	}
-	for i := 0; i < 5; i++ {
+	var recoveryHealth struct {
+		Type string              `json:"type"`
+		Data *TelemetryRunHealth `json:"data"`
+	}
+	for i := 0; i < 7; i++ {
 		select {
 		case msg := <-hub.broadcast:
-			if err := json.Unmarshal(msg, &recovery); err != nil {
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(msg, &envelope); err != nil {
 				t.Fatalf("failed to decode diagnostic payload: %v", err)
 			}
-			messageTypes = append(messageTypes, recovery.Type)
+			messageTypes = append(messageTypes, envelope.Type)
+			if envelope.Type == "telemetry_diagnostic" {
+				if err := json.Unmarshal(msg, &recoveryDiagnostic); err != nil {
+					t.Fatalf("failed to decode diagnostic payload: %v", err)
+				}
+			}
+			if envelope.Type == "telemetry_health_changed" {
+				if err := json.Unmarshal(msg, &recoveryHealth); err != nil {
+					t.Fatalf("failed to decode telemetry health payload: %v", err)
+				}
+			}
 		default:
-			t.Fatalf("expected 5 broadcast messages, got %d", len(messageTypes))
+			t.Fatalf("expected 7 broadcast messages, got %d", len(messageTypes))
 		}
 	}
-	if len(messageTypes) != 5 {
-		t.Fatalf("expected 5 broadcast messages, got %#v", messageTypes)
+	if len(messageTypes) != 7 {
+		t.Fatalf("expected 7 broadcast messages, got %#v", messageTypes)
 	}
 	joined := strings.Join(messageTypes, ",")
-	if joined != "metrics_update,telemetry_diagnostic,metrics_update,metrics_update,telemetry_diagnostic" {
+	if joined != "metrics_update,telemetry_diagnostic,telemetry_health_changed,metrics_update,metrics_update,telemetry_diagnostic,telemetry_health_changed" {
 		t.Fatalf("unexpected broadcast sequence: %s", joined)
 	}
-	if recovery.Type != "telemetry_diagnostic" || recovery.Data == nil || recovery.Data.Severity != "healthy" {
-		t.Fatalf("expected final recovery diagnostic, got %#v", recovery)
+	if recoveryDiagnostic.Type != "telemetry_diagnostic" || recoveryDiagnostic.Data == nil || recoveryDiagnostic.Data.Severity != "healthy" {
+		t.Fatalf("expected final recovery diagnostic, got %#v", recoveryDiagnostic)
+	}
+	if recoveryHealth.Type != "telemetry_health_changed" || recoveryHealth.Data == nil || recoveryHealth.Data.Status != "healthy" {
+		t.Fatalf("expected final recovery health transition, got %#v", recoveryHealth)
 	}
 }
 
@@ -873,17 +2587,57 @@ func TestLoadStoredTestHistoryBuildsLiveMetricsFromTypedIntervalSummaries(t *tes
 	store := &metricsStoreSpy{historyByTestID: map[string][]any{
 		"test-1": {
 			storage.IntervalSummaryRecord{
-				Timestamp:                time.Date(2026, time.May, 13, 17, 15, 0, 0, time.UTC),
-				ActiveVUsers:             9,
-				TPS:                      22.5,
-				AvgResponseMs:            180.5,
-				ErrorPct:                 2.5,
-				TotalTx:                  90,
-				TotalErrors:              2,
-				P50Ms:                    140,
-				P90Ms:                    260,
-				P95Ms:                    310,
-				P99Ms:                    400,
+				Timestamp:     time.Date(2026, time.May, 13, 17, 15, 0, 0, time.UTC),
+				ActiveVUsers:  9,
+				TPS:           22.5,
+				AvgResponseMs: 180.5,
+				ErrorPct:      2.5,
+				TotalTx:       90,
+				TotalErrors:   2,
+				P50Ms:         140,
+				P90Ms:         260,
+				P95Ms:         310,
+				P99Ms:         400,
+				Browser: &storage.BrowserMetricsSummaryRecord{
+					Samples:              2,
+					AvgFCPMs:             120,
+					AvgLCPMs:             240,
+					AvgCLSScore:          0.031,
+					AvgINPMs:             55,
+					AvgBlockingResources: 2,
+					AvgLongTaskCount:     1.5,
+					AvgJSHeapUsedMB:      18,
+					AvgBrowserProcessCPU: 22,
+					AvgBrowserProcessMem: 256,
+				},
+				BrowserByDevice: map[string]*storage.BrowserDeviceMetricsRecord{
+					"iphone_se": {
+						DeviceProfile:        "iphone_se",
+						DevicePlatform:       "ios",
+						DeviceTier:           "low",
+						BrowserEngine:        "webkit",
+						Samples:              2,
+						AvgFCPMs:             120,
+						AvgLCPMs:             240,
+						AvgCLSScore:          0.031,
+						AvgINPMs:             55,
+						AvgBlockingResources: 2,
+						AvgLongTaskCount:     1.5,
+						AvgJSHeapUsedMB:      18,
+						AvgBrowserProcessCPU: 22,
+						AvgBrowserProcessMem: 256,
+					},
+				},
+				Latency: &storage.NetworkLatencySummaryRecord{
+					Targets: []storage.NetworkLatencyTargetRecord{{
+						Name:        "edge",
+						Endpoint:    "https://example.test",
+						LatencyMs:   42.5,
+						IP:          "192.0.2.10",
+						LastSuccess: true,
+						Timestamp:   time.Date(2026, time.May, 13, 17, 14, 59, 900000000, time.UTC),
+					}},
+				},
 				DroppedResults:           5,
 				WebsocketDroppedMessages: 2,
 				CollectedAt:              time.Date(2026, time.May, 13, 17, 14, 59, 0, time.UTC),
@@ -908,6 +2662,24 @@ func TestLoadStoredTestHistoryBuildsLiveMetricsFromTypedIntervalSummaries(t *tes
 	}
 	if testRun.LiveMetrics.Telemetry == nil || testRun.LiveMetrics.Telemetry.DroppedResults != 5 || testRun.LiveMetrics.Telemetry.WebsocketDroppedMessages != 2 {
 		t.Fatalf("expected telemetry to round-trip from typed history, got %#v", testRun.LiveMetrics.Telemetry)
+	}
+	if testRun.LiveMetrics.Browser == nil || testRun.LiveMetrics.Browser.AvgCLSScore != 0.031 {
+		t.Fatalf("expected browser summary to round-trip from typed history, got %#v", testRun.LiveMetrics.Browser)
+	}
+	if testRun.LiveMetrics.Browser.AvgBrowserProcessCPU != 22 || testRun.LiveMetrics.Browser.AvgBrowserProcessMem != 256 {
+		t.Fatalf("expected browser process metrics to round-trip from typed history, got %#v", testRun.LiveMetrics.Browser)
+	}
+	if testRun.LiveMetrics.BrowserByDevice == nil || testRun.LiveMetrics.BrowserByDevice["iphone_se"] == nil || testRun.LiveMetrics.BrowserByDevice["iphone_se"].DeviceTier != "low" {
+		t.Fatalf("expected browser-by-device summary to round-trip from typed history, got %#v", testRun.LiveMetrics.BrowserByDevice)
+	}
+	if testRun.LiveMetrics.BrowserByDevice["iphone_se"].BrowserEngine != "webkit" {
+		t.Fatalf("expected browser engine to round-trip from typed history, got %#v", testRun.LiveMetrics.BrowserByDevice["iphone_se"])
+	}
+	if testRun.LiveMetrics.BrowserByDevice["iphone_se"].DevicePlatform != "ios" {
+		t.Fatalf("expected device platform to round-trip from typed history, got %#v", testRun.LiveMetrics.BrowserByDevice["iphone_se"])
+	}
+	if testRun.LiveMetrics.Latency == nil || len(testRun.LiveMetrics.Latency.Targets) != 1 || testRun.LiveMetrics.Latency.Targets[0].LatencyMs != 42.5 {
+		t.Fatalf("expected network latency to round-trip from typed history, got %#v", testRun.LiveMetrics.Latency)
 	}
 }
 
@@ -946,6 +2718,145 @@ func TestBuildLiveMetricsForBroadcastOverridesTimestamp(t *testing.T) {
 	if live.Telemetry.SampleAgeMs != 4000 {
 		t.Fatalf("expected sample age ms 4000, got %v", live.Telemetry.SampleAgeMs)
 	}
+}
+
+func TestScaleVUsersWithOptionsRampsGradually(t *testing.T) {
+	cases := []struct {
+		name       string
+		current    int
+		target     int
+		wantSteps  []int
+		wantTotal  int
+		wantGroup  int
+		wantStatus string
+	}{
+		{
+			name:       "add vusers",
+			current:    1,
+			target:     4,
+			wantSteps:  []int{2, 3, 4},
+			wantTotal:  4,
+			wantGroup:  4,
+			wantStatus: "RUNNING",
+		},
+		{
+			name:       "remove vusers",
+			current:    4,
+			target:     1,
+			wantSteps:  []int{3, 2, 1},
+			wantTotal:  1,
+			wantGroup:  1,
+			wantStatus: "RUNNING",
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := NewTestRunner(1, NewHub(), nil)
+			backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 8)}
+			runner.setExecutionBackend(backend)
+			runner.tests["test-1"] = &ManagedTest{
+				ID:          "test-1",
+				Name:        "Gradual scale test",
+				Status:      "RUNNING",
+				ProjectID:   storage.DefaultProjectID,
+				TotalVUsers: tt.current,
+				Groups:      []TestGroup{{Name: "buyers", VUsers: tt.current}},
+			}
+
+			if err := runner.ScaleVUsersWithOptions("test-1", "buyers", tt.target, ScaleVUsersOptions{RampDuration: 60 * time.Millisecond}); err != nil {
+				t.Fatalf("ScaleVUsersWithOptions returned error: %v", err)
+			}
+
+			gotSteps := make([]int, 0, len(tt.wantSteps))
+			deadline := time.After(2 * time.Second)
+			for len(gotSteps) < len(tt.wantSteps) {
+				select {
+				case call := <-backend.calls:
+					if call.group != "buyers" {
+						t.Fatalf("scale group = %q, want buyers", call.group)
+					}
+					gotSteps = append(gotSteps, call.target)
+				case <-deadline:
+					t.Fatalf("timed out waiting for ramp steps, got %v want %v", gotSteps, tt.wantSteps)
+				}
+			}
+			if !intSlicesEqual(gotSteps, tt.wantSteps) {
+				t.Fatalf("ramp steps = %v, want %v", gotSteps, tt.wantSteps)
+			}
+
+			configDeadline := time.Now().Add(2 * time.Second)
+			for {
+				scaled, ok := runner.GetTest("test-1")
+				if !ok {
+					t.Fatal("expected test to exist after gradual scale")
+				}
+				if scaled.Status == tt.wantStatus && scaled.TotalVUsers == tt.wantTotal && scaled.Groups[0].VUsers == tt.wantGroup {
+					break
+				}
+				if time.Now().After(configDeadline) {
+					t.Fatalf("scaled config = groups=%#v total=%d status=%s, want group=%d total=%d status=%s", scaled.Groups, scaled.TotalVUsers, scaled.Status, tt.wantGroup, tt.wantTotal, tt.wantStatus)
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		})
+	}
+}
+
+func TestScaleVUsersWithOptionsExposesActiveRampStatus(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 8)}
+	runner.setExecutionBackend(backend)
+	runner.tests["test-1"] = &ManagedTest{
+		ID:          "test-1",
+		Name:        "Active ramp status test",
+		Status:      "RUNNING",
+		ProjectID:   storage.DefaultProjectID,
+		TotalVUsers: 2,
+		Groups:      []TestGroup{{Name: "buyers", VUsers: 2}},
+	}
+
+	if err := runner.ScaleVUsersWithOptions("test-1", "buyers", 5, ScaleVUsersOptions{RampDuration: time.Second}); err != nil {
+		t.Fatalf("ScaleVUsersWithOptions returned error: %v", err)
+	}
+
+	scaled, ok := runner.GetTest("test-1")
+	if !ok {
+		t.Fatal("expected test to exist after gradual scale")
+	}
+	ramp, ok := scaled.VUserRamps["buyers"]
+	if !ok {
+		t.Fatalf("expected active ramp status, got %#v", scaled.VUserRamps)
+	}
+	if ramp.Group != "buyers" || ramp.StartVUsers != 2 || ramp.TargetVUsers != 5 || ramp.RampDuration != "1s" || ramp.RampDurationSeconds != 1 {
+		t.Fatalf("active ramp status = %#v, want buyers 2->5 over 1s", ramp)
+	}
+	if ramp.StartedAt.IsZero() {
+		t.Fatal("expected active ramp status to include started_at")
+	}
+
+	if err := runner.ScaleVUsers("test-1", "buyers", 2); err != nil {
+		t.Fatalf("ScaleVUsers returned error: %v", err)
+	}
+	scaled, ok = runner.GetTest("test-1")
+	if !ok {
+		t.Fatal("expected test to exist after immediate scale")
+	}
+	if len(scaled.VUserRamps) != 0 {
+		t.Fatalf("expected immediate scale to clear active ramps, got %#v", scaled.VUserRamps)
+	}
+}
+
+func intSlicesEqual(a []int, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestApplyGoalControllerUpdateScalesGroupsAndUpdatesStatus(t *testing.T) {
@@ -1082,7 +2993,6 @@ func TestScriptAndTestCrudPersistThroughStoreHelpers(t *testing.T) {
 	}
 
 	updatedScript := &dsl.Script{
-		ID:       "script-1",
 		Name:     "Checkout v2",
 		Protocol: "http",
 		Version:  "1.1.0",
@@ -1092,6 +3002,9 @@ func TestScriptAndTestCrudPersistThroughStoreHelpers(t *testing.T) {
 	}
 	if len(store.savedScripts) != 2 || store.savedScripts[1] != updatedScript {
 		t.Fatalf("expected SaveScript to be called for update, got %#v", store.savedScripts)
+	}
+	if store.savedScripts[1].ID != "script-1" {
+		t.Fatalf("expected update save to preserve existing script ID, got %q", store.savedScripts[1].ID)
 	}
 	if !runner.DeleteScript("script-1") {
 		t.Fatal("expected DeleteScript to succeed")
@@ -1108,6 +3021,7 @@ func TestScriptAndTestCrudPersistThroughStoreHelpers(t *testing.T) {
 		Config: dsl.ScriptConfig{
 			BaseURL: "https://example.com",
 		},
+		Actions: []dsl.Action{{Name: "Search", Type: "request", Target: "/search"}},
 	})
 	testRun, err := runner.CreateTest(CreateTestRequest{
 		Name:     "Queued Test",
@@ -1133,7 +3047,12 @@ func TestScriptAndTestCrudPersistThroughStoreHelpers(t *testing.T) {
 }
 
 func TestNewTestRunnerLoadsPersistedScriptsAndTests(t *testing.T) {
-	archive := &storage.RunArchiveRecord{TestID: "test-1", ArchivePath: "/tmp/archive", ManifestPath: "/tmp/archive/manifest.json"}
+	archiveDir := t.TempDir()
+	manifestPath := filepath.Join(archiveDir, "manifest.json")
+	if err := os.WriteFile(manifestPath, []byte(`{"test_id":"test-1"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	archive := &storage.RunArchiveRecord{TestID: "test-1", ArchivePath: archiveDir, ManifestPath: manifestPath}
 	store := &metricsStoreSpy{
 		listedScripts: []*dsl.Script{{
 			ID:        "script-1",
@@ -1199,6 +3118,60 @@ func TestNewTestRunnerLoadsPersistedScriptsAndTests(t *testing.T) {
 	}
 }
 
+func TestNewTestRunnerSkipsPersistedArchiveWhenManifestMissing(t *testing.T) {
+	archiveDir := t.TempDir()
+	archive := &storage.RunArchiveRecord{
+		TestID:       "test-1",
+		ArchivePath:  archiveDir,
+		ManifestPath: filepath.Join(archiveDir, "manifest.json"),
+	}
+	store := &metricsStoreSpy{
+		listedTests: []*storage.TestRecord{{
+			ID:          "test-1",
+			Name:        "Recovered Run",
+			Status:      "COMPLETE",
+			TotalVUsers: 1,
+		}},
+		archiveByTestID: map[string]*storage.RunArchiveRecord{"test-1": archive},
+	}
+
+	runner := NewTestRunner(2, NewHub(), store)
+
+	testRun, ok := runner.GetTest("test-1")
+	if !ok {
+		t.Fatal("expected persisted test to be loaded")
+	}
+	if testRun.Archive != nil {
+		t.Fatalf("expected missing manifest archive to be skipped, got %#v", testRun.Archive)
+	}
+	if cachedArchive, ok := runner.GetRunArchive("test-1"); ok || cachedArchive != nil {
+		t.Fatalf("expected GetRunArchive to report missing archive, got %#v ok=%v", cachedArchive, ok)
+	}
+}
+
+func TestBroadcastEventDoesNotDeadlockWhenHoldingRunnerLock(t *testing.T) {
+	runner := NewTestRunner(2, NewHub(), nil)
+	done := make(chan struct{})
+
+	go func() {
+		runner.mu.Lock()
+		defer runner.mu.Unlock()
+		runner.broadcastEvent("test_created", &ManagedTest{
+			ID:        "test-1",
+			Name:      "Checkout",
+			Status:    "QUEUED",
+			ProjectID: storage.DefaultProjectID,
+		})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("broadcastEvent deadlocked while runner lock was held")
+	}
+}
+
 func TestProcessMetricsSnapshotBroadcastsAlertAndStopRequest(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(2, hub, nil)
@@ -1225,8 +3198,8 @@ func TestProcessMetricsSnapshotBroadcastsAlertAndStopRequest(t *testing.T) {
 		t.Fatalf("expected live metrics with 10%% error rate, got %#v", testRun.LiveMetrics)
 	}
 
-	messageTypes := make([]string, 0, 4)
-	for i := 0; i < 4; i++ {
+	messageTypes := make([]string, 0, 5)
+	for i := 0; i < 5; i++ {
 		select {
 		case msg := <-hub.broadcast:
 			var payload struct {
@@ -1237,11 +3210,11 @@ func TestProcessMetricsSnapshotBroadcastsAlertAndStopRequest(t *testing.T) {
 			}
 			messageTypes = append(messageTypes, payload.Type)
 		default:
-			t.Fatalf("expected 4 broadcast messages, got %d", len(messageTypes))
+			t.Fatalf("expected 5 broadcast messages, got %d", len(messageTypes))
 		}
 	}
 
-	if messageTypes[0] != "metrics_update" || messageTypes[1] != "telemetry_diagnostic" || messageTypes[2] != "threshold_alert" || messageTypes[3] != "test_stopping" {
+	if messageTypes[0] != "metrics_update" || messageTypes[1] != "telemetry_diagnostic" || messageTypes[2] != "telemetry_health_changed" || messageTypes[3] != "threshold_alert" || messageTypes[4] != "test_stopping" {
 		t.Fatalf("unexpected broadcast order: %#v", messageTypes)
 	}
 }
@@ -1313,6 +3286,260 @@ func TestEvaluateGoalControllerStopsOnSustainedSLABreach(t *testing.T) {
 	}
 	if update.ShouldScale {
 		t.Fatal("did not expect scaling decision to take precedence over stop")
+	}
+}
+
+func TestEvaluateGoalControllerStopsOnServerTelemetrySLABreach(t *testing.T) {
+	maxServerProcessingMs := 300.0
+	maxTransferMs := 100.0
+	now := time.Date(2026, time.May, 9, 12, 0, 45, 0, time.UTC)
+	breachStarted := now.Add(-31 * time.Second)
+
+	update := evaluateGoalController(now, 55, &LiveMetrics{
+		TPS: 260,
+		Transactions: map[string]*TxMetrics{
+			"POST /checkout": {
+				Name: "POST /checkout",
+				ServerTelemetry: &ServerTelemetrySummary{
+					AvgServerProcessingMs: 420,
+					AvgTransferMs:         140,
+				},
+			},
+		},
+	}, &GoalConfig{
+		MaxAvgServerProcessingMs: &maxServerProcessingMs,
+		MaxAvgTransferMs:         &maxTransferMs,
+		StopOnSLABreach:          true,
+		SLABreachWindow:          "30s",
+	}, &goalControllerState{breachStartedAt: &breachStarted})
+
+	if !update.ShouldStop {
+		t.Fatal("expected sustained server telemetry SLA breach to trigger stop")
+	}
+	if update.Status == nil || !update.Status.ServerProcessingBreached || !update.Status.TransferBreached {
+		t.Fatalf("expected goal status to mark server telemetry breaches, got %#v", update.Status)
+	}
+	if update.StopReason != "server processing and transfer SLA breached" {
+		t.Fatalf("expected server telemetry stop reason, got %q", update.StopReason)
+	}
+}
+
+func TestGetTestIncludesPreviousRunComparisonBaseline(t *testing.T) {
+	runner := NewTestRunner(2, NewHub(), nil)
+	baselineCompletedAt := time.Date(2026, time.May, 10, 10, 0, 0, 0, time.UTC)
+	runner.tests["baseline"] = &ManagedTest{
+		ID:         "baseline",
+		Name:       "Checkout Run",
+		Status:     "COMPLETE",
+		ScenarioID: "scenario-1",
+		CreatedAt:  baselineCompletedAt.Add(-5 * time.Minute),
+		EndedAt:    &baselineCompletedAt,
+		History: []*LiveMetrics{{
+			Timestamp: baselineCompletedAt,
+			Transactions: map[string]*TxMetrics{
+				"POST /checkout": {
+					Name: "POST /checkout",
+					ServerTelemetry: &ServerTelemetrySummary{
+						AvgServerProcessingMs: 220,
+						AvgTransferMs:         85,
+					},
+				},
+			},
+			DependencyHealth: map[string]*TxMetrics{
+				"api.example.test": {
+					Name:             "api.example.test",
+					DependencyType:   "http",
+					DependencyTarget: "api.example.test",
+					Count:            12,
+					Errors:           1,
+					AvgMs:            180,
+					P50Ms:            150,
+					P90Ms:            240,
+					P95Ms:            300,
+					P99Ms:            360,
+				},
+			},
+		}},
+	}
+	currentCreatedAt := baselineCompletedAt.Add(10 * time.Minute)
+	runner.tests["current"] = &ManagedTest{
+		ID:         "current",
+		Name:       "Checkout Run",
+		Status:     "RUNNING",
+		ScenarioID: "scenario-1",
+		CreatedAt:  currentCreatedAt,
+	}
+
+	testRun, ok := runner.GetTest("current")
+	if !ok {
+		t.Fatal("expected current test to be found")
+	}
+	if testRun.ComparisonBaseline == nil {
+		t.Fatal("expected comparison baseline to be populated")
+	}
+	if testRun.ComparisonBaseline.SourceTestID != "baseline" {
+		t.Fatalf("expected baseline source test id baseline, got %q", testRun.ComparisonBaseline.SourceTestID)
+	}
+	if testRun.ComparisonBaseline.Policy != "latest_successful" {
+		t.Fatalf("expected latest_successful baseline policy, got %q", testRun.ComparisonBaseline.Policy)
+	}
+	if testRun.ComparisonBaseline.Transactions["POST /checkout"] == nil {
+		t.Fatal("expected baseline transaction metrics to be available")
+	}
+	if testRun.ComparisonBaseline.DependencyHealth["api.example.test"] == nil {
+		t.Fatal("expected baseline dependency health metrics to be available")
+	}
+}
+
+func TestGetTestPrefersPinnedComparisonBaseline(t *testing.T) {
+	runner := NewTestRunner(2, NewHub(), nil)
+	olderCompletedAt := time.Date(2026, time.May, 10, 9, 0, 0, 0, time.UTC)
+	newerCompletedAt := olderCompletedAt.Add(30 * time.Minute)
+	pinnedAt := newerCompletedAt.Add(5 * time.Minute)
+	runner.tests["baseline-pinned"] = &ManagedTest{
+		ID:               "baseline-pinned",
+		Name:             "Checkout Run",
+		Status:           "COMPLETE",
+		ScenarioID:       "scenario-1",
+		CreatedAt:        olderCompletedAt.Add(-5 * time.Minute),
+		EndedAt:          &olderCompletedAt,
+		BaselinePinned:   true,
+		BaselinePinnedAt: &pinnedAt,
+		History: []*LiveMetrics{{
+			Timestamp: olderCompletedAt,
+			Transactions: map[string]*TxMetrics{
+				"POST /checkout": {Name: "POST /checkout", Count: 10, AvgMs: 150, P50Ms: 130, P90Ms: 180, P99Ms: 220},
+			},
+		}},
+	}
+	runner.tests["baseline-latest"] = &ManagedTest{
+		ID:         "baseline-latest",
+		Name:       "Checkout Run",
+		Status:     "COMPLETE",
+		ScenarioID: "scenario-1",
+		CreatedAt:  newerCompletedAt.Add(-5 * time.Minute),
+		EndedAt:    &newerCompletedAt,
+		History: []*LiveMetrics{{
+			Timestamp: newerCompletedAt,
+			Transactions: map[string]*TxMetrics{
+				"POST /checkout": {Name: "POST /checkout", Count: 10, AvgMs: 120, P50Ms: 100, P90Ms: 140, P99Ms: 180},
+			},
+		}},
+	}
+	runner.tests["current"] = &ManagedTest{
+		ID:         "current",
+		Name:       "Checkout Run",
+		Status:     "RUNNING",
+		ScenarioID: "scenario-1",
+		CreatedAt:  newerCompletedAt.Add(10 * time.Minute),
+	}
+
+	testRun, ok := runner.GetTest("current")
+	if !ok {
+		t.Fatal("expected current test to be found")
+	}
+	if testRun.ComparisonBaseline == nil {
+		t.Fatal("expected comparison baseline to be populated")
+	}
+	if testRun.ComparisonBaseline.SourceTestID != "baseline-pinned" {
+		t.Fatalf("expected pinned baseline to win, got %q", testRun.ComparisonBaseline.SourceTestID)
+	}
+	if testRun.ComparisonBaseline.Policy != "pinned" {
+		t.Fatalf("expected pinned baseline policy, got %q", testRun.ComparisonBaseline.Policy)
+	}
+}
+
+func TestGetTestPrefersLatestSuccessfulComparisonBaselineOverFailedRun(t *testing.T) {
+	runner := NewTestRunner(2, NewHub(), nil)
+	successCompletedAt := time.Date(2026, time.May, 10, 9, 0, 0, 0, time.UTC)
+	failedCompletedAt := successCompletedAt.Add(30 * time.Minute)
+	runner.tests["baseline-success"] = &ManagedTest{
+		ID:         "baseline-success",
+		Name:       "Checkout Run",
+		Status:     "COMPLETE",
+		ScenarioID: "scenario-1",
+		CreatedAt:  successCompletedAt.Add(-5 * time.Minute),
+		EndedAt:    &successCompletedAt,
+		History: []*LiveMetrics{{
+			Timestamp: successCompletedAt,
+			Transactions: map[string]*TxMetrics{
+				"POST /checkout": {Name: "POST /checkout", Count: 10, AvgMs: 120},
+			},
+		}},
+	}
+	runner.tests["baseline-failed"] = &ManagedTest{
+		ID:         "baseline-failed",
+		Name:       "Checkout Run",
+		Status:     "FAILED",
+		ScenarioID: "scenario-1",
+		CreatedAt:  failedCompletedAt.Add(-5 * time.Minute),
+		EndedAt:    &failedCompletedAt,
+		History: []*LiveMetrics{{
+			Timestamp: failedCompletedAt,
+			Transactions: map[string]*TxMetrics{
+				"POST /checkout": {Name: "POST /checkout", Count: 10, AvgMs: 250},
+			},
+		}},
+	}
+	runner.tests["current"] = &ManagedTest{
+		ID:         "current",
+		Name:       "Checkout Run",
+		Status:     "RUNNING",
+		ScenarioID: "scenario-1",
+		CreatedAt:  failedCompletedAt.Add(10 * time.Minute),
+	}
+
+	testRun, ok := runner.GetTest("current")
+	if !ok {
+		t.Fatal("expected current test to be found")
+	}
+	if testRun.ComparisonBaseline == nil {
+		t.Fatal("expected comparison baseline to be populated")
+	}
+	if testRun.ComparisonBaseline.SourceTestID != "baseline-success" {
+		t.Fatalf("expected latest successful baseline to win, got %q", testRun.ComparisonBaseline.SourceTestID)
+	}
+	if testRun.ComparisonBaseline.Policy != "latest_successful" {
+		t.Fatalf("expected latest_successful baseline policy, got %q", testRun.ComparisonBaseline.Policy)
+	}
+}
+
+func TestPinComparisonBaselineUnpinsComparableRuns(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	baselineCompletedAt := time.Date(2026, time.May, 10, 10, 0, 0, 0, time.UTC)
+	otherPinnedAt := baselineCompletedAt.Add(-time.Minute)
+	failedEndedAt := baselineCompletedAt.Add(10 * time.Minute)
+	runner.tests["baseline-a"] = &ManagedTest{ID: "baseline-a", Name: "Checkout Run", Status: "COMPLETE", ScenarioID: "scenario-1", CreatedAt: baselineCompletedAt.Add(-5 * time.Minute), EndedAt: &baselineCompletedAt}
+	runner.tests["baseline-b"] = &ManagedTest{ID: "baseline-b", Name: "Checkout Run", Status: "FAILED", ScenarioID: "scenario-1", CreatedAt: baselineCompletedAt.Add(5 * time.Minute), EndedAt: &failedEndedAt, BaselinePinned: true, BaselinePinnedAt: &otherPinnedAt}
+	runner.tests["other-scope"] = &ManagedTest{ID: "other-scope", Name: "Search Run", Status: "COMPLETE", ScenarioID: "scenario-2", CreatedAt: baselineCompletedAt, EndedAt: &baselineCompletedAt, BaselinePinned: true, BaselinePinnedAt: &otherPinnedAt}
+
+	pinned, err := runner.PinComparisonBaseline("baseline-a")
+	if err != nil {
+		t.Fatalf("PinComparisonBaseline returned error: %v", err)
+	}
+	if !pinned.BaselinePinned || pinned.BaselinePinnedAt == nil {
+		t.Fatalf("expected pinned baseline metadata, got %#v", pinned)
+	}
+	if !runner.tests["baseline-a"].BaselinePinned {
+		t.Fatal("expected target baseline to remain pinned")
+	}
+	if runner.tests["baseline-b"].BaselinePinned || runner.tests["baseline-b"].BaselinePinnedAt != nil {
+		t.Fatalf("expected comparable baseline to be unpinned, got %#v", runner.tests["baseline-b"])
+	}
+	if !runner.tests["other-scope"].BaselinePinned {
+		t.Fatal("expected other scope baseline pin to remain intact")
+	}
+	if len(store.savedTests) != 2 {
+		t.Fatalf("expected comparable runs to be persisted, got %d saves", len(store.savedTests))
+	}
+
+	updated, err := runner.UnpinComparisonBaseline("baseline-a")
+	if err != nil {
+		t.Fatalf("UnpinComparisonBaseline returned error: %v", err)
+	}
+	if updated.BaselinePinned || updated.BaselinePinnedAt != nil {
+		t.Fatalf("expected baseline to be unpinned, got %#v", updated)
 	}
 }
 
@@ -1482,6 +3709,28 @@ func TestCompileManagedTestGroupsRejectsInvalidGroupIterations(t *testing.T) {
 	}
 }
 
+func TestCompileManagedTestGroupsRejectsInvalidInitializationStrategy(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-init-strategy",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{},
+	})
+
+	_, _, _, err := runner.compileManagedTestGroupsLocked([]CreateGroupEntry{{
+		ScriptID:     "script-init-strategy",
+		VUsers:       10,
+		InitStrategy: "before_all",
+	}}, nil)
+
+	if err == nil {
+		t.Fatal("expected invalid initialization strategy to fail compilation")
+	}
+}
+
 func TestDistributeTargetVUsersPreservesTotal(t *testing.T) {
 	targets := distributeTargetVUsers([]TestGroup{
 		{Name: "buyers", VUsers: 20},
@@ -1499,7 +3748,7 @@ func TestDistributeTargetVUsersPreservesTotal(t *testing.T) {
 	}
 }
 
-func TestStartTestFailsWhenScriptShakeoutFails(t *testing.T) {
+func TestStartTestPausesForReviewWhenScriptShakeoutFails(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(2, hub, nil)
 	runner.StoreScript(&dsl.Script{
@@ -1507,6 +3756,8 @@ func TestStartTestFailsWhenScriptShakeoutFails(t *testing.T) {
 		Name:     "Broken Script",
 		Protocol: "definitely-not-supported",
 		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "Broken", Type: "request", Target: "/"}},
 	})
 
 	test, err := runner.CreateTest(CreateTestRequest{
@@ -1520,19 +3771,41 @@ func TestStartTestFailsWhenScriptShakeoutFails(t *testing.T) {
 		t.Fatalf("CreateTest returned error: %v", err)
 	}
 
-	if err := runner.StartTest(test.ID); err != nil {
-		t.Fatalf("StartTest returned error: %v", err)
+	err = runner.StartTest(test.ID)
+	if err == nil {
+		t.Fatal("expected StartTest to return shakeout review gate error")
+	}
+	var shakeoutErr *ScriptShakeoutGateError
+	if !errors.As(err, &shakeoutErr) {
+		t.Fatalf("expected ScriptShakeoutGateError, got %T", err)
+	}
+	if shakeoutErr.Report == nil || shakeoutErr.Report.Passed {
+		t.Fatalf("expected failing shakeout report, got %#v", shakeoutErr.Report)
 	}
 
-	failed := waitForTestStatus(t, runner, test.ID, "FAILED")
-	if failed.Error == "" {
+	blocked, ok := runner.GetTest(test.ID)
+	if !ok {
+		t.Fatalf("expected test %s to remain in runner", test.ID)
+	}
+	if blocked.Status != "SHAKEOUT_REVIEW" {
+		t.Fatalf("test status = %s, want SHAKEOUT_REVIEW", blocked.Status)
+	}
+	if blocked.Error == "" {
 		t.Fatal("expected shakeout failure to populate test error")
 	}
-	if !strings.Contains(strings.ToLower(failed.Error), "shakeout") {
-		t.Fatalf("expected shakeout failure error, got %q", failed.Error)
+	if !strings.Contains(strings.ToLower(blocked.Error), "shakeout") {
+		t.Fatalf("expected shakeout failure error, got %q", blocked.Error)
 	}
-	if failed.StartedAt != nil {
+	if blocked.StartedAt != nil {
 		t.Fatal("expected failed shakeout to halt before the main run starts")
+	}
+
+	if err := runner.StartTestWithOptions(test.ID, StartTestOptions{OverrideScriptShakeoutError: true}); err != nil {
+		t.Fatalf("StartTestWithOptions override returned error: %v", err)
+	}
+	started := waitForStatusAny(t, runner, test.ID, 5*time.Second, "INITIALIZING", "RUNNING", "FAILED")
+	if started.Status == "SHAKEOUT_REVIEW" {
+		t.Fatalf("expected override to leave shakeout review state, got %s", started.Status)
 	}
 }
 
@@ -1622,7 +3895,7 @@ func TestStartTestAllowsOverrideOnCapacityShortfall(t *testing.T) {
 	}
 }
 
-func TestStartTestFailsWhenMaxConcurrentTestsReached(t *testing.T) {
+func TestStartTestQueuesWhenMaxConcurrentTestsReached(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(1, hub, nil)
 	runner.StoreScript(&dsl.Script{
@@ -1657,18 +3930,440 @@ func TestStartTestFailsWhenMaxConcurrentTestsReached(t *testing.T) {
 	runner.mu.Unlock()
 
 	err = runner.StartTest(second.ID)
-	if err == nil {
-		t.Fatal("expected StartTest to fail when max concurrent tests is reached")
-	}
-	if err.Error() != "max concurrent tests (1) reached" {
-		t.Fatalf("expected max concurrent error, got %q", err.Error())
+	if err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
 	}
 	queued, ok := runner.GetTest(second.ID)
 	if !ok {
 		t.Fatalf("expected queued test %s to remain in runner", second.ID)
 	}
-	if queued.Status != "QUEUED" {
-		t.Fatalf("test status = %s, want QUEUED", queued.Status)
+	if queued.Status != "PENDING" {
+		t.Fatalf("test status = %s, want PENDING", queued.Status)
+	}
+}
+
+func TestCreateTestFailsWhenProjectMaxConcurrentTestsReached(t *testing.T) {
+	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
+		"project-1": {
+			ID:   "project-1",
+			Name: "Payments",
+			Settings: storage.ProjectSettings{
+				MaxConcurrentTests: 1,
+			},
+		},
+	}}
+	hub := NewHub()
+	runner := NewTestRunner(10, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-project-create-limit",
+		Name:      "Project Create Limit Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-1",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	first, err := runner.CreateTest(CreateTestRequest{
+		Name:     "First Project Scenario",
+		Duration: "30s",
+		ScriptID: "script-project-create-limit",
+		VUsers:   10,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(first) returned error: %v", err)
+	}
+
+	runner.mu.Lock()
+	runner.tests[first.ID].Status = "RUNNING"
+	runner.mu.Unlock()
+
+	second, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Second Project Scenario",
+		Duration: "30s",
+		ScriptID: "script-project-create-limit",
+		VUsers:   10,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(second) returned error: %v", err)
+	}
+	if second.Status != "QUEUED" {
+		t.Fatalf("second status = %s, want QUEUED", second.Status)
+	}
+}
+
+func TestStartTestFailsWhenProjectMaxConcurrentTestsReached(t *testing.T) {
+	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
+		"project-1": {
+			ID:   "project-1",
+			Name: "Payments",
+			Settings: storage.ProjectSettings{
+				MaxConcurrentTests: 1,
+			},
+		},
+		"project-2": {
+			ID:   "project-2",
+			Name: "Orders",
+			Settings: storage.ProjectSettings{
+				MaxConcurrentTests: 1,
+			},
+		},
+	}}
+	hub := NewHub()
+	runner := NewTestRunner(10, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-project-start-limit",
+		Name:      "Project Start Limit Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-1",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-other-project",
+		Name:      "Other Project Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-2",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	first, err := runner.CreateTest(CreateTestRequest{
+		Name:     "First Project Scenario",
+		Duration: "30s",
+		ScriptID: "script-project-start-limit",
+		VUsers:   10,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(first) returned error: %v", err)
+	}
+	second, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Second Project Scenario",
+		Duration: "30s",
+		ScriptID: "script-project-start-limit",
+		VUsers:   10,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(second) returned error: %v", err)
+	}
+	other, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Other Project Scenario",
+		Duration: "30s",
+		ScriptID: "script-other-project",
+		VUsers:   10,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(other) returned error: %v", err)
+	}
+
+	runner.mu.Lock()
+	runner.tests[first.ID].Status = "RUNNING"
+	runner.mu.Unlock()
+
+	err = runner.StartTest(second.ID)
+	if err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+	queued, ok := runner.GetTest(second.ID)
+	if !ok {
+		t.Fatalf("expected queued test %s to remain in runner", second.ID)
+	}
+	if queued.Status != "PENDING" {
+		t.Fatalf("test status = %s, want PENDING", queued.Status)
+	}
+
+	runner.mu.Lock()
+	prepared, err := runner.prepareTestStartLocked(other.ID, StartTestOptions{})
+	runner.mu.Unlock()
+	if err != nil {
+		t.Fatalf("prepareTestStartLocked(other) returned error: %v", err)
+	}
+	if prepared.Status != "INITIALIZING" {
+		t.Fatalf("other project status = %s, want INITIALIZING", prepared.Status)
+	}
+}
+
+func TestStartTestQueuesWhenProjectVUserLimitReached(t *testing.T) {
+	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
+		"project-1": {
+			ID:   "project-1",
+			Name: "Payments",
+			Settings: storage.ProjectSettings{
+				MaxVUsers: 15,
+			},
+		},
+	}}
+	hub := NewHub()
+	runner := NewTestRunner(10, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-project-vuser-limit",
+		Name:      "Project VUser Limit Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-1",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	first, err := runner.CreateTest(CreateTestRequest{Name: "First", Duration: "30s", ScriptID: "script-project-vuser-limit", VUsers: 10})
+	if err != nil {
+		t.Fatalf("CreateTest(first) returned error: %v", err)
+	}
+	second, err := runner.CreateTest(CreateTestRequest{Name: "Second", Duration: "30s", ScriptID: "script-project-vuser-limit", VUsers: 10})
+	if err != nil {
+		t.Fatalf("CreateTest(second) returned error: %v", err)
+	}
+
+	runner.mu.Lock()
+	runner.tests[first.ID].Status = "RUNNING"
+	runner.mu.Unlock()
+
+	if err := runner.StartTest(second.ID); err != nil {
+		t.Fatalf("StartTest(second) returned error: %v", err)
+	}
+	pending, ok := runner.GetTest(second.ID)
+	if !ok {
+		t.Fatalf("expected pending test %s", second.ID)
+	}
+	if pending.Status != "PENDING" {
+		t.Fatalf("second status = %s, want PENDING", pending.Status)
+	}
+	if pending.PendingSince == nil || pending.PendingSince.IsZero() {
+		t.Fatal("expected pending_since to be recorded")
+	}
+	if pending.QueuePosition != 1 {
+		t.Fatalf("queue position = %d, want 1", pending.QueuePosition)
+	}
+	if !strings.Contains(pending.PendingReason, "project VUser capacity") {
+		t.Fatalf("pending reason = %q, want project VUser capacity detail", pending.PendingReason)
+	}
+}
+
+func TestNextPromotablePendingTestPrefersUnusedReservedProjectShare(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(10, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-regular-fair-share",
+		Name:      "Regular Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "regular-project",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-critical-fair-share",
+		Name:      "Critical Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "critical-project",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	settings := runner.GetSystemSettings()
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 3
+	settings.CapacityPlanning.Reservations = []CapacityReservation{{ProjectID: "critical-project", ReservedGenerators: 1}}
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	regular, err := runner.CreateTest(CreateTestRequest{Name: "Regular", Duration: "30s", ScriptID: "script-regular-fair-share", VUsers: 10})
+	if err != nil {
+		t.Fatalf("CreateTest(regular) returned error: %v", err)
+	}
+	critical, err := runner.CreateTest(CreateTestRequest{Name: "Critical", Duration: "30s", ScriptID: "script-critical-fair-share", VUsers: 10})
+	if err != nil {
+		t.Fatalf("CreateTest(critical) returned error: %v", err)
+	}
+
+	older := time.Now().Add(-5 * time.Minute)
+	newer := time.Now().Add(-1 * time.Minute)
+	runner.mu.Lock()
+	runner.tests[regular.ID].Status = "PENDING"
+	runner.tests[regular.ID].PendingSince = &older
+	runner.tests[critical.ID].Status = "PENDING"
+	runner.tests[critical.ID].PendingSince = &newer
+	next := runner.nextPromotablePendingTestLocked()
+	runner.mu.Unlock()
+
+	if next == nil || next.ID != critical.ID {
+		t.Fatalf("next promotable pending test = %#v, want reserved project test %s", next, critical.ID)
+	}
+}
+
+func TestPromotePendingTestsWritesSystemAuditEvent(t *testing.T) {
+	store := &metricsStoreSpy{}
+	hub := NewHub()
+	runner := NewTestRunner(10, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-promotion-audit",
+		Name:      "Promotion Audit Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-promotion",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{Name: "Pending Promotion", Duration: "1ms", ScriptID: "script-promotion-audit", VUsers: 1})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	runner.mu.Lock()
+	runner.tests[testRun.ID].Status = "PENDING"
+	runner.tests[testRun.ID].PendingReason = "ready to start when the queue advances"
+	runner.mu.Unlock()
+
+	runner.promotePendingTests()
+
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "test.pending.promote", ProjectID: "project-promotion", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("audit event count = %d, want 1", len(events))
+	}
+	if events[0].ActorType != "system" || events[0].ResourceID != testRun.ID || events[0].Status != "success" {
+		t.Fatalf("audit event = %#v, want system promotion success for pending test", events[0])
+	}
+	if events[0].Details["reason"] != "fair_share_capacity_available" {
+		t.Fatalf("audit details = %#v, want promotion reason", events[0].Details)
+	}
+}
+
+func TestNextPromotablePendingTestBalancesActiveProjectLoad(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(10, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-project-a-fair-share",
+		Name:      "Project A Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-a",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-project-b-fair-share",
+		Name:      "Project B Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-b",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	active, err := runner.CreateTest(CreateTestRequest{Name: "Active A", Duration: "30s", ScriptID: "script-project-a-fair-share", VUsers: 10})
+	if err != nil {
+		t.Fatalf("CreateTest(active) returned error: %v", err)
+	}
+	pendingA, err := runner.CreateTest(CreateTestRequest{Name: "Pending A", Duration: "30s", ScriptID: "script-project-a-fair-share", VUsers: 10})
+	if err != nil {
+		t.Fatalf("CreateTest(pendingA) returned error: %v", err)
+	}
+	pendingB, err := runner.CreateTest(CreateTestRequest{Name: "Pending B", Duration: "30s", ScriptID: "script-project-b-fair-share", VUsers: 10})
+	if err != nil {
+		t.Fatalf("CreateTest(pendingB) returned error: %v", err)
+	}
+
+	older := time.Now().Add(-5 * time.Minute)
+	newer := time.Now().Add(-1 * time.Minute)
+	runner.mu.Lock()
+	runner.tests[active.ID].Status = "RUNNING"
+	runner.tests[pendingA.ID].Status = "PENDING"
+	runner.tests[pendingA.ID].PendingSince = &older
+	runner.tests[pendingB.ID].Status = "PENDING"
+	runner.tests[pendingB.ID].PendingSince = &newer
+	next := runner.nextPromotablePendingTestLocked()
+	runner.mu.Unlock()
+
+	if next == nil || next.ID != pendingB.ID {
+		t.Fatalf("next promotable pending test = %#v, want less-loaded project test %s", next, pendingB.ID)
+	}
+}
+
+func TestReconcilePendingTestsPromotesQueuedWork(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(10, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-reconcile-pending",
+		Name:     "Reconcile Pending Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	pendingSince := time.Now().Add(-2 * time.Minute)
+	pending := &ManagedTest{
+		ID:           "pending-1",
+		Name:         "Pending Scenario",
+		Status:       "PENDING",
+		TotalVUsers:  1,
+		Duration:     30 * time.Second,
+		DurationStr:  "30s",
+		CreatedAt:    time.Now().Add(-5 * time.Minute),
+		PendingSince: &pendingSince,
+		Groups: []TestGroup{{
+			Name:       "g1",
+			ScriptID:   "script-reconcile-pending",
+			ScriptName: "Reconcile Pending Script",
+			Protocol:   "http",
+			VUsers:     1,
+		}},
+	}
+	runner.mu.Lock()
+	runner.tests[pending.ID] = pending
+	runner.mu.Unlock()
+
+	runner.ReconcilePendingTests()
+
+	promoted := waitForStatusAny(t, runner, pending.ID, 5*time.Second, "INITIALIZING", "RUNNING", "COMPLETE")
+	if promoted.Status == "PENDING" {
+		t.Fatalf("expected reconcile to promote pending test, got %s", promoted.Status)
+	}
+}
+
+func TestCompleteTestRunPromotesPendingTests(t *testing.T) {
+	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
+		"project-1": {
+			ID:   "project-1",
+			Name: "Payments",
+			Settings: storage.ProjectSettings{
+				MaxConcurrentTests: 1,
+			},
+		},
+	}}
+	hub := NewHub()
+	runner := NewTestRunner(10, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-project-promotion",
+		Name:      "Project Promotion Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-1",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	first, err := runner.CreateTest(CreateTestRequest{Name: "First", Duration: "30s", ScriptID: "script-project-promotion", VUsers: 1})
+	if err != nil {
+		t.Fatalf("CreateTest(first) returned error: %v", err)
+	}
+	second, err := runner.CreateTest(CreateTestRequest{Name: "Second", Duration: "30s", ScriptID: "script-project-promotion", VUsers: 1})
+	if err != nil {
+		t.Fatalf("CreateTest(second) returned error: %v", err)
+	}
+
+	runner.mu.Lock()
+	runner.tests[first.ID].Status = "RUNNING"
+	runner.mu.Unlock()
+
+	if err := runner.StartTest(second.ID); err != nil {
+		t.Fatalf("StartTest(second) returned error: %v", err)
+	}
+	pending, _ := runner.GetTest(second.ID)
+	if pending.Status != "PENDING" {
+		t.Fatalf("pending status = %s, want PENDING", pending.Status)
+	}
+
+	endTime := time.Now()
+	runner.completeTestRun(first, "COMPLETE", endTime, "", nil)
+
+	promoted := waitForStatusAny(t, runner, second.ID, 5*time.Second, "INITIALIZING", "RUNNING", "COMPLETE")
+	if promoted.Status == "PENDING" || promoted.Status == "QUEUED" {
+		t.Fatalf("expected pending test to be promoted, got %s", promoted.Status)
 	}
 }
 
@@ -1691,7 +4386,7 @@ func TestGetTestRefreshesCapacityAdvisoryUsingLiveAvailability(t *testing.T) {
 		t.Fatalf("UpdateSystemSettings returned error: %v", err)
 	}
 
-	t.Setenv("STORMRUNNER_LIVE_AVAILABLE_GENERATORS", "5")
+	t.Setenv("APEXLOAD_LIVE_AVAILABLE_GENERATORS", "5")
 	test, err := runner.CreateTest(CreateTestRequest{
 		Name:     "Refresh Advisory Scenario",
 		Duration: "30s",
@@ -1705,7 +4400,7 @@ func TestGetTestRefreshesCapacityAdvisoryUsingLiveAvailability(t *testing.T) {
 		t.Fatalf("initial available generators = %#v, want 5", test.CapacityAdvisory)
 	}
 
-	t.Setenv("STORMRUNNER_LIVE_AVAILABLE_GENERATORS", "1")
+	t.Setenv("APEXLOAD_LIVE_AVAILABLE_GENERATORS", "1")
 	refreshed, ok := runner.GetTest(test.ID)
 	if !ok {
 		t.Fatalf("expected test %s", test.ID)
@@ -1723,21 +4418,29 @@ func TestGetTestRefreshesCapacityAdvisoryUsingLiveAvailability(t *testing.T) {
 
 func TestRunTestCreatesArchiveBundle(t *testing.T) {
 	archiveDir := t.TempDir()
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)
+	t.Setenv("APEXLOAD_SAMPLE_FLAG", "enabled")
+	t.Setenv("APEXLOAD_SECRET_TOKEN", "hidden")
 
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
 
-	protocolName := "archive-stub-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
-	protocol.Register(protocolName, func() protocol.Protocol {
+	protocolName := registerRunnerTestProtocol(t, "archive-stub", func() protocol.Protocol {
 		return &archiveStubProtocol{}
 	})
 
 	hub := NewHub()
 	runner := NewTestRunner(1, hub, store)
+	settings := runner.GetSystemSettings()
+	settings.General.MetricsIntervalSeconds = 1
+	maxErrorPct := 2.5
+	settings.Thresholds.MaxErrorRatePct = &maxErrorPct
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
 	runner.StoreScript(&dsl.Script{
 		ID:       "script-archive",
 		Name:     "Archive Script",
@@ -1748,10 +4451,11 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 	})
 
 	test, err := runner.CreateTest(CreateTestRequest{
-		Name:     "Archive Run",
-		Duration: "2200ms",
-		ScriptID: "script-archive",
-		VUsers:   1,
+		Name:       "Archive Run",
+		Duration:   "2200ms",
+		ScriptID:   "script-archive",
+		VUsers:     1,
+		StartDelay: "150ms",
 	})
 	if err != nil {
 		t.Fatalf("CreateTest returned error: %v", err)
@@ -1761,7 +4465,7 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 		t.Fatalf("StartTest returned error: %v", err)
 	}
 
-	completed := waitForTestStatus(t, runner, test.ID, "COMPLETE")
+	completed := waitForTestStatusWithin(t, runner, test.ID, 20*time.Second, "COMPLETE")
 	if completed.Archive == nil {
 		t.Fatal("expected completed test to include archive metadata")
 	}
@@ -1782,6 +4486,24 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 	if manifest.TransactionsParquetFile == "" || manifest.ResourceSamplesParquetFile == "" || manifest.IntervalSummariesParquetFile == "" {
 		t.Fatalf("expected manifest parquet files to be populated, got %#v", manifest)
 	}
+	if manifest.Provenance.ProjectID != storage.DefaultProjectID {
+		t.Fatalf("manifest provenance project_id = %q, want %q", manifest.Provenance.ProjectID, storage.DefaultProjectID)
+	}
+	if manifest.Provenance.StartDelay != "150ms" {
+		t.Fatalf("unexpected provenance timing flags: %#v", manifest.Provenance)
+	}
+	if manifest.Provenance.ExecutionSettings.General.MetricsIntervalSeconds != 1 {
+		t.Fatalf("manifest execution settings = %#v, want metrics interval 1", manifest.Provenance.ExecutionSettings)
+	}
+	if manifest.Provenance.ControllerEnv["APEXLOAD_SAMPLE_FLAG"] != "enabled" {
+		t.Fatalf("manifest controller env = %#v, want APEXLOAD_SAMPLE_FLAG", manifest.Provenance.ControllerEnv)
+	}
+	if _, found := manifest.Provenance.ControllerEnv["APEXLOAD_SECRET_TOKEN"]; found {
+		t.Fatalf("expected secret-like env vars to be excluded, got %#v", manifest.Provenance.ControllerEnv)
+	}
+	if manifest.Provenance.Groups[0].ScriptID != "script-archive" {
+		t.Fatalf("manifest groups = %#v, want script-archive", manifest.Provenance.Groups)
+	}
 
 	for _, name := range []string{"manifest.json", "transactions.jsonl", "interval_summaries.jsonl", "transactions.parquet", "resources.parquet", "interval_summaries.parquet"} {
 		if _, err := os.Stat(filepath.Join(completed.Archive.ArchivePath, name)); err != nil {
@@ -1790,18 +4512,71 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 	}
 }
 
+func TestBuildRunArchiveProvenanceCapturesExecutionSnapshots(t *testing.T) {
+	t.Setenv("APEXLOAD_SAMPLE_FLAG", "enabled")
+	t.Setenv("APEXLOAD_API_TOKEN", "hidden")
+
+	runner := NewTestRunner(2, NewHub(), nil)
+	settings := runner.GetSystemSettings()
+	settings.General.MetricsIntervalSeconds = 5
+	maxErrorPct := 1.5
+	settings.Thresholds.MaxErrorRatePct = &maxErrorPct
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+	backend := provenanceInventoryBackend{}
+	test := &ManagedTest{
+		ID:               "test-provenance",
+		Name:             "Checkout",
+		Status:           "RUNNING",
+		ProjectID:        storage.DefaultProjectID,
+		ScenarioID:       "scenario-1",
+		ScenarioMode:     "goal_oriented",
+		ScriptShakeout:   true,
+		ResourceBaseline: true,
+		StartDelay:       "3s",
+		TotalVUsers:      25,
+		DurationStr:      "1m0s",
+		Groups:           []TestGroup{{Name: "buyers", ScriptID: "script-1", ScriptName: "Checkout", Protocol: "http", VUsers: 25, RunLogicGoals: &RunLogicGoalSnapshot{GlobalIterations: 4, MaxTransactions: 40}}},
+		Assignment:       &GeneratorAssignmentSettings{Mode: "specific_hosts", SelectedTargets: []string{"generator-1"}},
+		GoalConfig:       &GoalConfig{MaxErrorPct: &maxErrorPct},
+		CreatedAt:        time.Date(2026, time.May, 13, 12, 0, 0, 0, time.UTC),
+		StartedAt:        func() *time.Time { ts := time.Date(2026, time.May, 13, 12, 0, 3, 0, time.UTC); return &ts }(),
+		executionBackend: backend,
+	}
+
+	provenance := buildRunArchiveProvenance(runner, test)
+	if !provenance.ResourceBaseline || provenance.StartDelay != "3s" {
+		t.Fatalf("unexpected provenance timing fields: %#v", provenance)
+	}
+	if provenance.ExecutionSettings.General.MetricsIntervalSeconds != 5 {
+		t.Fatalf("execution settings = %#v, want metrics interval 5", provenance.ExecutionSettings)
+	}
+	if len(provenance.GeneratorInventory) != 1 || provenance.GeneratorInventory[0].Target != "generator-1" {
+		t.Fatalf("generator inventory = %#v, want generator-1", provenance.GeneratorInventory)
+	}
+	if len(provenance.Groups) != 1 || provenance.Groups[0].RunLogicGoals == nil || provenance.Groups[0].RunLogicGoals.GlobalIterations != 4 || provenance.Groups[0].RunLogicGoals.MaxTransactions != 40 {
+		t.Fatalf("provenance groups = %#v, want run logic goal snapshot", provenance.Groups)
+	}
+	if provenance.ControllerEnv["APEXLOAD_SAMPLE_FLAG"] != "enabled" {
+		t.Fatalf("controller env = %#v, want APEXLOAD_SAMPLE_FLAG", provenance.ControllerEnv)
+	}
+	if _, found := provenance.ControllerEnv["APEXLOAD_API_TOKEN"]; found {
+		t.Fatalf("expected secret-like env vars to be filtered, got %#v", provenance.ControllerEnv)
+	}
+}
+
 func TestRunTestIncludesConfiguredStartDelay(t *testing.T) {
 	archiveDir := t.TempDir()
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)
 
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
 
-	protocolName := "start-delay-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
-	protocol.Register(protocolName, func() protocol.Protocol {
+	protocolName := registerRunnerTestProtocol(t, "start-delay", func() protocol.Protocol {
 		return &archiveStubProtocol{}
 	})
 
@@ -1844,18 +4619,793 @@ func TestRunTestIncludesConfiguredStartDelay(t *testing.T) {
 	}
 }
 
+func TestNextScenarioScheduleRun(t *testing.T) {
+	schedule := &storage.ScenarioSchedule{CronExpr: "*/15 * * * *"}
+	next, err := nextScenarioScheduleRun(schedule, time.Date(2026, time.May, 16, 10, 7, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("nextScenarioScheduleRun returned error: %v", err)
+	}
+	want := time.Date(2026, time.May, 16, 10, 15, 0, 0, time.UTC)
+	if next == nil || !next.Equal(want) {
+		t.Fatalf("next run = %v, want %s", next, want)
+	}
+}
+
+func TestNextScenarioScheduleRunHonorsBlackoutAndAvailabilityWindows(t *testing.T) {
+	schedule := &storage.ScenarioSchedule{
+		CronExpr: "0 * * * *",
+		Timezone: "UTC",
+		BlackoutWindows: []storage.ScenarioScheduleWindow{{
+			Name:       "maintenance",
+			DaysOfWeek: []int{int(time.Saturday)},
+			StartTime:  "10:00",
+			EndTime:    "12:00",
+		}},
+		AvailabilityWindows: []storage.ScenarioScheduleWindow{{
+			Name:       "business-hours",
+			DaysOfWeek: []int{int(time.Saturday)},
+			StartTime:  "09:00",
+			EndTime:    "17:00",
+		}},
+	}
+	next, err := nextScenarioScheduleRun(schedule, time.Date(2026, time.May, 16, 9, 30, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("nextScenarioScheduleRun returned error: %v", err)
+	}
+	want := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	if next == nil || !next.Equal(want) {
+		t.Fatalf("next run = %v, want %s", next, want)
+	}
+}
+
+func TestScenarioSchedulerRunDueSchedulesCreatesAndStartsRun(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-schedule",
+		Name:     "Scheduled Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Scheduled Checkout",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{{
+			ScriptID: "script-schedule",
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	schedule := &storage.ScenarioSchedule{
+		ID:              "schedule-1",
+		ScenarioID:      scenario.ID,
+		Name:            "Lunch Run",
+		CronExpr:        "*/5 * * * *",
+		RunNameTemplate: "Daily Smoke",
+		Enabled:         true,
+		NextRunAt:       &due,
+		CreatedAt:       now.Add(-time.Hour),
+		UpdatedAt:       now.Add(-time.Hour),
+	}
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules returned error: %v", err)
+	}
+
+	select {
+	case testID := <-backend.started:
+		if testID == "" {
+			t.Fatal("expected scheduled run to start a test")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for scheduled test to start")
+	}
+
+	runner.mu.RLock()
+	defer runner.mu.RUnlock()
+	if len(runner.tests) != 1 {
+		t.Fatalf("runner.tests length = %d, want 1", len(runner.tests))
+	}
+	storedScenario, ok := runner.scenarios[scenario.ID]
+	if !ok || len(storedScenario.Schedules) != 1 {
+		t.Fatalf("scenario schedules = %#v, want 1 stored schedule", storedScenario)
+	}
+	updated := storedScenario.Schedules[0]
+	if updated.LastRunTestID == "" {
+		t.Fatal("expected LastRunTestID to be recorded")
+	}
+	if updated.LastRunAt == nil || !updated.LastRunAt.Equal(now) {
+		t.Fatalf("LastRunAt = %v, want %s", updated.LastRunAt, now)
+	}
+	if updated.NextRunAt == nil || !updated.NextRunAt.After(now) {
+		t.Fatalf("NextRunAt = %v, want value after %s", updated.NextRunAt, now)
+	}
+	if updated.LastError != "" {
+		t.Fatalf("LastError = %q, want empty", updated.LastError)
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].Status != "materialized" || occurrences[0].TestID != updated.LastRunTestID {
+		t.Fatalf("occurrences = %#v, want one materialized occurrence for %s", occurrences, updated.LastRunTestID)
+	}
+	auditEvents, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "scenario.schedule.occurrence.materialized", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(auditEvents) != 1 || auditEvents[0].ResourceID != occurrences[0].ID || auditEvents[0].Details["reason_code"] != "started" {
+		t.Fatalf("audit events = %#v, want materialized occurrence audit", auditEvents)
+	}
+}
+
+func TestScenarioSchedulerReconcilesMaterializedOccurrenceAfterRestart(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-schedule-restart",
+		Name:     "Scheduled Restart Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Restart Scenario",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{{
+			ScriptID: "script-schedule-restart",
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	materializedAt := now.Add(-30 * time.Second)
+	schedule := &storage.ScenarioSchedule{
+		ID:              "schedule-restart",
+		ScenarioID:      scenario.ID,
+		Revision:        1,
+		Name:            "Restart Safe Run",
+		CronExpr:        "*/5 * * * *",
+		RunNameTemplate: "Restart Smoke",
+		Enabled:         true,
+		NextRunAt:       &due,
+		CreatedAt:       now.Add(-time.Hour),
+		UpdatedAt:       now.Add(-time.Hour),
+	}
+	if err := store.SaveScenarioScheduleOccurrence(&storage.ScenarioScheduleOccurrence{
+		ID:               "occurrence-restart",
+		ScheduleID:       schedule.ID,
+		ScenarioID:       scenario.ID,
+		ScheduleRevision: 1,
+		PlannedAt:        due,
+		MaterializedAt:   &materializedAt,
+		Status:           "materialized",
+		ReasonCode:       "started",
+		TestID:           "test-already-started",
+		CreatedAt:        materializedAt,
+		UpdatedAt:        materializedAt,
+	}); err != nil {
+		t.Fatalf("SaveScenarioScheduleOccurrence returned error: %v", err)
+	}
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules returned error: %v", err)
+	}
+
+	select {
+	case testID := <-backend.started:
+		t.Fatalf("unexpected duplicate scheduled test start: %s", testID)
+	default:
+	}
+	storedSchedules, ok := runner.ListScenarioSchedules(scenario.ID)
+	if !ok || len(storedSchedules) != 1 {
+		t.Fatalf("stored schedules = %#v ok=%v, want one", storedSchedules, ok)
+	}
+	updated := storedSchedules[0]
+	if updated.LastRunTestID != "test-already-started" {
+		t.Fatalf("LastRunTestID = %q, want existing test", updated.LastRunTestID)
+	}
+	if updated.NextRunAt == nil || !updated.NextRunAt.After(now) {
+		t.Fatalf("NextRunAt = %v, want advanced after restart reconciliation", updated.NextRunAt)
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].ID != "occurrence-restart" {
+		t.Fatalf("occurrences = %#v, want original materialized occurrence only", occurrences)
+	}
+}
+
+func TestScenarioSchedulerLeasePreventsStandbyControllerMaterialization(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-schedule-lease",
+		Name:     "Scheduled Lease Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Lease Scenario",
+		Duration: "1m",
+		Groups:   []CreateGroupEntry{{ScriptID: "script-schedule-lease", VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	schedule := &storage.ScenarioSchedule{
+		ID:              "schedule-lease",
+		ScenarioID:      scenario.ID,
+		Name:            "Lease Run",
+		CronExpr:        "*/5 * * * *",
+		RunNameTemplate: "Lease Smoke",
+		Enabled:         true,
+		MissedRunPolicy: "catch_up_once",
+		NextRunAt:       &due,
+		CreatedAt:       now.Add(-time.Hour),
+		UpdatedAt:       now.Add(-time.Hour),
+	}
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+	if acquired, err := store.TryAcquireSchedulerLease("scenario-scheduler", "controller-a", now, time.Minute); err != nil || !acquired {
+		t.Fatalf("pre-acquire lease acquired=%v err=%v, want active controller-a lease", acquired, err)
+	}
+
+	standby := newScenarioScheduler(runner)
+	standby.ownerID = "controller-b"
+	standby.leaseTTL = time.Minute
+	standby.now = func() time.Time { return now.Add(10 * time.Second) }
+	if err := standby.RunDueSchedules(); err != nil {
+		t.Fatalf("standby RunDueSchedules returned error: %v", err)
+	}
+	select {
+	case testID := <-backend.started:
+		t.Fatalf("unexpected standby materialization: %s", testID)
+	default:
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 0 {
+		t.Fatalf("occurrences = %#v, want none while standby lacks lease", occurrences)
+	}
+
+	active := newScenarioScheduler(runner)
+	active.ownerID = "controller-b"
+	active.leaseTTL = time.Minute
+	active.now = func() time.Time { return now.Add(2 * time.Minute) }
+	if err := active.RunDueSchedules(); err != nil {
+		t.Fatalf("active RunDueSchedules returned error: %v", err)
+	}
+	occurrences, err = store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].Status != "materialized" || occurrences[0].TestID == "" {
+		t.Fatalf("occurrence = %+v, want one materialized occurrence after lease takeover", occurrences[0])
+	}
+}
+
+func TestScenarioSchedulerBlocksDueSchedulePendingApproval(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-schedule-approval",
+		Name:     "Scheduled Approval Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Approval Scenario",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{{
+			ScriptID: "script-schedule-approval",
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	schedule := &storage.ScenarioSchedule{
+		ID:                 "schedule-approval",
+		ScenarioID:         scenario.ID,
+		Name:               "Production Run",
+		CronExpr:           "*/5 * * * *",
+		RunNameTemplate:    "Production Smoke",
+		Enabled:            true,
+		ApprovalPolicy:     "production",
+		NextRequiredAction: "approval_required",
+		PendingApprovalID:  "approval-1",
+		NextRunAt:          &due,
+		CreatedAt:          now.Add(-time.Hour),
+		UpdatedAt:          now.Add(-time.Hour),
+	}
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules returned error: %v", err)
+	}
+
+	select {
+	case testID := <-backend.started:
+		t.Fatalf("unexpected scheduled test start: %s", testID)
+	default:
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].Status != "blocked" || occurrences[0].ReasonCode != "approval_required" || occurrences[0].ApprovalID != "approval-1" {
+		t.Fatalf("occurrences = %#v, want approval-blocked occurrence", occurrences)
+	}
+	auditEvents, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "scenario.schedule.occurrence.blocked", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(auditEvents) != 1 || auditEvents[0].Status != "blocked" || auditEvents[0].Details["approval_id"] != "approval-1" {
+		t.Fatalf("audit events = %#v, want blocked approval occurrence audit", auditEvents)
+	}
+}
+
+func TestScenarioSchedulerAppliesMissedRunPolicies(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		policy             string
+		wantStatus         string
+		wantReason         string
+		wantRequiredAction string
+	}{
+		{name: "skip", policy: "skip", wantStatus: "skipped", wantReason: "missed_run_skipped"},
+		{name: "operator-decision", policy: "require_operator_decision", wantStatus: "blocked", wantReason: "missed_run_requires_decision", wantRequiredAction: "operator_decision_required"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &metricsStoreSpy{}
+			runner := NewTestRunner(2, NewHub(), store)
+			backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+			runner.setExecutionBackend(backend)
+			runner.StoreScript(&dsl.Script{
+				ID:       "script-missed-" + tc.name,
+				Name:     "Missed Policy Script",
+				Protocol: "http",
+				Version:  "1.0.0",
+				Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+			})
+			scenario, err := runner.StoreScenario(CreateScenarioRequest{
+				Name:     "Missed Policy Scenario",
+				Duration: "1m",
+				Groups: []CreateGroupEntry{{
+					ScriptID: "script-missed-" + tc.name,
+					VUsers:   1,
+				}},
+			})
+			if err != nil {
+				t.Fatalf("StoreScenario returned error: %v", err)
+			}
+			now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+			missed := now.Add(-10 * time.Minute)
+			schedule := &storage.ScenarioSchedule{
+				ID:              "schedule-missed-" + tc.name,
+				ScenarioID:      scenario.ID,
+				Name:            "Missed Run",
+				CronExpr:        "*/5 * * * *",
+				RunNameTemplate: "Missed Smoke",
+				Enabled:         true,
+				MissedRunPolicy: tc.policy,
+				NextRunAt:       &missed,
+				CreatedAt:       now.Add(-time.Hour),
+				UpdatedAt:       now.Add(-time.Hour),
+			}
+			runner.mu.Lock()
+			if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+				runner.mu.Unlock()
+				t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+			}
+			runner.mu.Unlock()
+
+			scheduler := newScenarioScheduler(runner)
+			scheduler.now = func() time.Time { return now }
+			if err := scheduler.RunDueSchedules(); err != nil {
+				t.Fatalf("RunDueSchedules returned error: %v", err)
+			}
+			select {
+			case testID := <-backend.started:
+				t.Fatalf("unexpected scheduled test start: %s", testID)
+			default:
+			}
+			occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+			if err != nil {
+				t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+			}
+			if len(occurrences) != 1 || occurrences[0].Status != tc.wantStatus || occurrences[0].ReasonCode != tc.wantReason {
+				t.Fatalf("occurrences = %#v, want %s/%s", occurrences, tc.wantStatus, tc.wantReason)
+			}
+			storedSchedules, ok := runner.ListScenarioSchedules(scenario.ID)
+			if !ok || len(storedSchedules) != 1 {
+				t.Fatalf("stored schedules = %#v ok=%v, want one", storedSchedules, ok)
+			}
+			if storedSchedules[0].NextRequiredAction != tc.wantRequiredAction {
+				t.Fatalf("next required action = %q, want %q", storedSchedules[0].NextRequiredAction, tc.wantRequiredAction)
+			}
+		})
+	}
+}
+
+func TestScenarioSchedulerCatchUpAllMaterializesEachMissedOccurrence(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(8, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 10)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-catch-up-all",
+		Name:     "Catch Up Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Catch Up Scenario",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{{
+			ScriptID: "script-catch-up-all",
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	now := time.Date(2026, time.May, 16, 12, 20, 0, 0, time.UTC)
+	firstMissed := time.Date(2026, time.May, 16, 12, 5, 0, 0, time.UTC)
+	schedule := &storage.ScenarioSchedule{
+		ID:              "schedule-catch-up-all",
+		ScenarioID:      scenario.ID,
+		Revision:        1,
+		Name:            "Catch Up All",
+		CronExpr:        "*/5 * * * *",
+		RunNameTemplate: "Catch Up Smoke",
+		Enabled:         true,
+		MissedRunPolicy: "catch_up_all",
+		NextRunAt:       &firstMissed,
+		CreatedAt:       now.Add(-time.Hour),
+		UpdatedAt:       now.Add(-time.Hour),
+	}
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules returned error: %v", err)
+	}
+
+	started := map[string]bool{}
+	for len(started) < 4 {
+		select {
+		case testID := <-backend.started:
+			started[testID] = true
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for catch-up starts, got %d", len(started))
+		}
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 4 {
+		t.Fatalf("occurrences = %#v, want four materialized catch-up occurrences", occurrences)
+	}
+	for _, occurrence := range occurrences {
+		if occurrence.Status != "materialized" || occurrence.ReasonCode != "started" || occurrence.TestID == "" {
+			t.Fatalf("occurrence = %#v, want materialized started occurrence", occurrence)
+		}
+	}
+	storedSchedules, ok := runner.ListScenarioSchedules(scenario.ID)
+	if !ok || len(storedSchedules) != 1 {
+		t.Fatalf("stored schedules = %#v ok=%v, want one", storedSchedules, ok)
+	}
+	if storedSchedules[0].NextRunAt == nil || !storedSchedules[0].NextRunAt.After(now) {
+		t.Fatalf("NextRunAt = %v, want catch-up advanced beyond now", storedSchedules[0].NextRunAt)
+	}
+	auditEvents, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "scenario.schedule.occurrence.materialized", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(auditEvents) != 4 {
+		t.Fatalf("audit events = %#v, want four materialized audits", auditEvents)
+	}
+}
+
+func TestScenarioScheduleConflictDetectionBlocksMaterialization(t *testing.T) {
+	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
+		"project-schedule-conflict": {
+			ID:   "project-schedule-conflict",
+			Name: "Schedule Conflict",
+			Settings: storage.ProjectSettings{
+				MaxVUsers: 5,
+			},
+		},
+	}}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-schedule-conflict",
+		Name:      "Schedule Conflict Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-schedule-conflict",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Conflict Scenario",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{{
+			ScriptID: "script-schedule-conflict",
+			VUsers:   10,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	created, err := runner.CreateScenarioSchedule(scenario.ID, CreateScenarioScheduleRequest{Name: "Conflict Schedule", CronExpr: "*/5 * * * *"})
+	if err != nil {
+		t.Fatalf("CreateScenarioSchedule returned error: %v", err)
+	}
+	if created.ConflictSummary == "" || created.NextRequiredAction != "resolve_conflict" {
+		t.Fatalf("created conflict = %q action=%q, want conflict resolution required", created.ConflictSummary, created.NextRequiredAction)
+	}
+	now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	created.NextRunAt = &due
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(created); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules returned error: %v", err)
+	}
+	select {
+	case testID := <-backend.started:
+		t.Fatalf("unexpected scheduled test start: %s", testID)
+	default:
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(created.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].Status != "blocked" || occurrences[0].ReasonCode != "schedule_conflict" {
+		t.Fatalf("occurrences = %#v, want schedule_conflict block", occurrences)
+	}
+}
+
+func TestScenarioScheduleConflictDetectionBlocksArchivedRelease(t *testing.T) {
+	archivedAt := time.Date(2026, time.May, 16, 8, 0, 0, 0, time.UTC)
+	store := &metricsStoreSpy{releasesByID: map[string]*storage.Release{
+		"rel-archived": {
+			ID:            "rel-archived",
+			ApplicationID: storage.LegacyApplicationID,
+			Name:          "Archived Release",
+			ArchivedAt:    &archivedAt,
+		},
+	}}
+	runner := NewTestRunner(2, NewHub(), store)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-release-conflict",
+		Name:     "Release Conflict Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Release Conflict Scenario",
+		Duration: "1m",
+		Groups:   []CreateGroupEntry{{ScriptID: "script-release-conflict", VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+
+	created, err := runner.CreateScenarioSchedule(scenario.ID, CreateScenarioScheduleRequest{Name: "Archived Release Schedule", CronExpr: "*/5 * * * *", ReleaseID: "rel-archived"})
+	if err != nil {
+		t.Fatalf("CreateScenarioSchedule returned error: %v", err)
+	}
+	if !strings.Contains(created.ConflictSummary, "Release conflict") || created.NextRequiredAction != "resolve_conflict" {
+		t.Fatalf("created conflict = %q action=%q, want archived release conflict", created.ConflictSummary, created.NextRequiredAction)
+	}
+}
+
+func TestScenarioScheduleMaterializationBlocksEnvironmentUnavailable(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-env-conflict",
+		Name:     "Environment Conflict Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Environment Conflict Scenario",
+		Duration: "1m",
+		Groups:   []CreateGroupEntry{{ScriptID: "script-env-conflict", VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	created, err := runner.CreateScenarioSchedule(scenario.ID, CreateScenarioScheduleRequest{Name: "Environment Schedule", CronExpr: "*/5 * * * *"})
+	if err != nil {
+		t.Fatalf("CreateScenarioSchedule returned error: %v", err)
+	}
+	now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	created.NextRunAt = &due
+	created.AvailabilityWindows = []storage.ScenarioScheduleWindow{{Name: "overnight", StartTime: "00:00", EndTime: "01:00", Timezone: "UTC"}}
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(created); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules returned error: %v", err)
+	}
+	select {
+	case testID := <-backend.started:
+		t.Fatalf("unexpected scheduled test start: %s", testID)
+	default:
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(created.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].Status != "blocked" || occurrences[0].ReasonCode != "environment_unavailable" {
+		t.Fatalf("occurrences = %#v, want environment_unavailable block", occurrences)
+	}
+	if !strings.Contains(occurrences[0].ConflictSummary, "Environment availability conflict") {
+		t.Fatalf("conflict summary = %q, want environment availability conflict", occurrences[0].ConflictSummary)
+	}
+}
+
+func TestScenarioScheduleMaintenanceWindowBlocksMaterialization(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-maintenance-conflict",
+		Name:     "Maintenance Conflict Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Maintenance Conflict Scenario",
+		Duration: "1m",
+		Groups:   []CreateGroupEntry{{ScriptID: "script-maintenance-conflict", VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	schedule := &storage.ScenarioSchedule{
+		ID:                 "schedule-maintenance-conflict",
+		ScenarioID:         scenario.ID,
+		Name:               "Maintenance Schedule",
+		CronExpr:           "*/5 * * * *",
+		RunNameTemplate:    "Maintenance Smoke",
+		Enabled:            true,
+		MissedRunPolicy:    "catch_up_once",
+		MaintenanceWindows: []storage.ScenarioScheduleWindow{{Name: "shared-maintenance", StartTime: "11:00", EndTime: "13:00", Timezone: "UTC"}},
+		NextRunAt:          &due,
+		CreatedAt:          now.Add(-time.Hour),
+		UpdatedAt:          now.Add(-time.Hour),
+	}
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules returned error: %v", err)
+	}
+	select {
+	case testID := <-backend.started:
+		t.Fatalf("unexpected scheduled test start: %s", testID)
+	default:
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].Status != "blocked" || occurrences[0].ReasonCode != "environment_unavailable" {
+		t.Fatalf("occurrences = %#v, want maintenance window environment_unavailable block", occurrences)
+	}
+}
+
 func TestDeleteTestRemovesArchiveBundle(t *testing.T) {
 	archiveDir := t.TempDir()
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)
 
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
 
-	protocolName := "archive-delete-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
-	protocol.Register(protocolName, func() protocol.Protocol {
+	protocolName := registerRunnerTestProtocol(t, "archive-delete", func() protocol.Protocol {
 		return &archiveStubProtocol{}
 	})
 
@@ -1908,16 +5458,15 @@ func TestDeleteTestRemovesArchiveBundle(t *testing.T) {
 
 func TestDeleteTestRejectsPausedRuns(t *testing.T) {
 	archiveDir := t.TempDir()
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)
 
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
 
-	protocolName := "archive-delete-paused-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
-	protocol.Register(protocolName, func() protocol.Protocol {
+	protocolName := registerRunnerTestProtocol(t, "archive-delete-paused", func() protocol.Protocol {
 		return &archiveStubProtocol{}
 	})
 
@@ -1983,9 +5532,93 @@ func TestDeleteTestRejectsPausedRuns(t *testing.T) {
 	}
 }
 
+func TestRunnerCapturesUsageSnapshotWhenRunCompletes(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	test := &ManagedTest{
+		ID:          "usage-terminal",
+		Name:        "Usage Terminal",
+		Status:      "RUNNING",
+		ProjectID:   "project-a",
+		TotalVUsers: 4,
+		Duration:    time.Minute,
+		Groups:      []TestGroup{{Name: "buyers", Protocol: "http", VUsers: 4}},
+	}
+	runner.mu.Lock()
+	runner.tests[test.ID] = test
+	runner.mu.Unlock()
+
+	runner.completeTestRun(test, "COMPLETE", time.Now().UTC(), "", nil)
+
+	if len(store.usageSnapshots) != 1 {
+		t.Fatalf("usage snapshots = %#v, want one terminal-run snapshot", store.usageSnapshots)
+	}
+	snapshot := store.usageSnapshots[0]
+	if snapshot.ProjectID != "project-a" || snapshot.ID == "" || snapshot.PayloadJSON == "" {
+		t.Fatalf("snapshot = %#v, want project-scoped persisted payload", snapshot)
+	}
+	var usage UsageAccountingResponse
+	if err := json.Unmarshal([]byte(snapshot.PayloadJSON), &usage); err != nil {
+		t.Fatalf("unmarshal snapshot usage: %v", err)
+	}
+	if usage.ProjectID != "project-a" || usage.Totals.RunCount != 1 || usage.Totals.VUserSeconds != 240 {
+		t.Fatalf("usage snapshot payload = %#v, want completed project usage", usage)
+	}
+}
+
+func TestRunnerCapturesUsageSnapshotOnCadenceTick(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	test := &ManagedTest{
+		ID:          "usage-cadence",
+		Name:        "Usage Cadence",
+		Status:      "COMPLETE",
+		ProjectID:   "project-b",
+		TotalVUsers: 3,
+		Duration:    2 * time.Minute,
+		Groups:      []TestGroup{{Name: "grpc", Protocol: "grpc", VUsers: 3}},
+	}
+	runner.mu.Lock()
+	runner.tests[test.ID] = test
+	runner.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ticks := make(chan time.Time, 1)
+	done := make(chan struct{})
+	go func() {
+		runner.RunUsageAccountingSnapshotCadence(ctx, ticks)
+		close(done)
+	}()
+
+	ticks <- time.Now()
+
+	deadline := time.Now().Add(time.Second)
+	for len(store.usageSnapshots) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+
+	if len(store.usageSnapshots) != 1 {
+		t.Fatalf("usage snapshots = %#v, want one cadence snapshot", store.usageSnapshots)
+	}
+	var usage UsageAccountingResponse
+	if err := json.Unmarshal([]byte(store.usageSnapshots[0].PayloadJSON), &usage); err != nil {
+		t.Fatalf("unmarshal snapshot usage: %v", err)
+	}
+	if usage.ProjectID != "" || usage.Totals.RunCount != 1 || usage.Totals.VUserSeconds != 360 {
+		t.Fatalf("cadence snapshot usage = %#v, want all-project usage", usage)
+	}
+}
+
 func waitForTestStatus(t *testing.T, runner *TestRunner, testID string, want string) *ManagedTest {
+	return waitForTestStatusWithin(t, runner, testID, 12*time.Second, want)
+}
+
+func waitForTestStatusWithin(t *testing.T, runner *TestRunner, testID string, timeout time.Duration, want string) *ManagedTest {
 	t.Helper()
-	deadline := time.Now().Add(12 * time.Second)
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		test, ok := runner.GetTest(testID)
 		if !ok {

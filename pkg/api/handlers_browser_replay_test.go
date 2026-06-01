@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestHandleStartBrowserReplayDraftScriptReturnsSession(t *testing.T) {
@@ -151,8 +154,146 @@ func TestBrowserReplayManagerRetainsStreamedEvents(t *testing.T) {
 	}
 }
 
+func TestBrowserReplaySessionSnapshotReturnsDetachedCopy(t *testing.T) {
+	now := time.Now()
+	session := &BrowserReplaySession{
+		ID:                "session-detached",
+		Status:            BrowserReplayRunning,
+		StartedAt:         &now,
+		CurrentEventIndex: 0,
+		CurrentEvent: &engine.ReplayActionEvent{
+			ActionName:    "step-1",
+			Headers:       map[string]string{"Authorization": "Bearer original"},
+			ClientMetrics: &protocol.ClientMetrics{LCPMs: 240},
+		},
+		Events: []engine.ReplayActionEvent{{
+			ActionName:    "step-1",
+			Headers:       map[string]string{"Authorization": "Bearer original"},
+			ClientMetrics: &protocol.ClientMetrics{LCPMs: 240},
+		}},
+		FinalReport: &engine.ReplayReport{
+			Group:          "browser",
+			FinalVariables: map[string]string{"token": "original"},
+			Events: []engine.ReplayActionEvent{{
+				ActionName:    "step-1",
+				Headers:       map[string]string{"Authorization": "Bearer original"},
+				ClientMetrics: &protocol.ClientMetrics{LCPMs: 240},
+			}},
+		},
+	}
+
+	snapshot := session.snapshot()
+	if snapshot == nil {
+		t.Fatal("snapshot returned nil")
+	}
+
+	session.CurrentEvent.Headers["Authorization"] = "Bearer updated"
+	session.CurrentEvent.ClientMetrics.LCPMs = 999
+	session.Events[0].Headers["Authorization"] = "Bearer updated"
+	session.Events[0].ClientMetrics.LCPMs = 999
+	session.FinalReport.FinalVariables["token"] = "updated"
+	session.FinalReport.Events[0].Headers["Authorization"] = "Bearer updated"
+	session.FinalReport.Events[0].ClientMetrics.LCPMs = 999
+
+	if got := snapshot.CurrentEvent.Headers["Authorization"]; got != "Bearer original" {
+		t.Fatalf("snapshot current event header = %q, want original value", got)
+	}
+	if got := snapshot.Events[0].Headers["Authorization"]; got != "Bearer original" {
+		t.Fatalf("snapshot event header = %q, want original value", got)
+	}
+	if got := snapshot.FinalReport.FinalVariables["token"]; got != "original" {
+		t.Fatalf("snapshot final variable = %q, want original value", got)
+	}
+	if got := snapshot.FinalReport.Events[0].Headers["Authorization"]; got != "Bearer original" {
+		t.Fatalf("snapshot final report header = %q, want original value", got)
+	}
+	if snapshot.CurrentEvent.ClientMetrics == nil || snapshot.CurrentEvent.ClientMetrics.LCPMs != 240 {
+		t.Fatalf("snapshot current event client metrics = %#v, want detached LCP 240", snapshot.CurrentEvent.ClientMetrics)
+	}
+	if snapshot.Events[0].ClientMetrics == nil || snapshot.Events[0].ClientMetrics.LCPMs != 240 {
+		t.Fatalf("snapshot event client metrics = %#v, want detached LCP 240", snapshot.Events[0].ClientMetrics)
+	}
+	if snapshot.FinalReport.Events[0].ClientMetrics == nil || snapshot.FinalReport.Events[0].ClientMetrics.LCPMs != 240 {
+		t.Fatalf("snapshot report client metrics = %#v, want detached LCP 240", snapshot.FinalReport.Events[0].ClientMetrics)
+	}
+}
+
+func TestBrowserReplayManagerStopCancelsPausedSession(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		time.Sleep(150 * time.Millisecond)
+		return &protocol.Result{
+			ActionName: action.Name,
+			Success:    true,
+		}, nil
+	})
+
+	manager := NewBrowserReplayManager(NewHub())
+	session := manager.Start("", &dsl.Script{
+		Name:     "Browser Session",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions: []dsl.Action{
+			{Name: "first", Type: "browser_wait_for_timeout", Value: "25"},
+			{Name: "second", Type: "browser_wait_for_timeout", Value: "25"},
+		},
+	}, BrowserReplayStartRequest{ReplaySessionID: "session-paused-stop"})
+	if session.ID != "session-paused-stop" {
+		t.Fatalf("session.ID = %q, want session-paused-stop", session.ID)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		current, ok := manager.Get("session-paused-stop")
+		if !ok {
+			t.Fatal("session not found")
+		}
+		if current.CurrentEventIndex >= 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	paused, ok, changed := manager.Pause("session-paused-stop")
+	if !ok {
+		t.Fatal("session not found while pausing")
+	}
+	if !changed {
+		t.Fatalf("expected pause to change state, got %#v", paused)
+	}
+	if paused.Status != BrowserReplayPaused {
+		t.Fatalf("paused status = %q, want paused", paused.Status)
+	}
+
+	stopped, ok := manager.Stop("session-paused-stop")
+	if !ok {
+		t.Fatal("session not found while stopping")
+	}
+	if stopped.Status != BrowserReplayStopped {
+		t.Fatalf("stopped status = %q, want stopped", stopped.Status)
+	}
+
+	for time.Now().Before(deadline) {
+		current, ok := manager.Get("session-paused-stop")
+		if !ok {
+			t.Fatal("session not found after stop")
+		}
+		if current.Status == BrowserReplayStopped && current.CompletedAt != nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	current, ok := manager.Get("session-paused-stop")
+	if !ok {
+		t.Fatal("session not found after stop deadline")
+	}
+	t.Fatalf("session = %#v, want stopped session with completion timestamp", current)
+}
+
 func TestApplyBrowserReplayOverrides(t *testing.T) {
 	headless := false
+	touchMode := true
+	clientMetrics := true
 	script := &dsl.Script{
 		Name:     "Browser Script",
 		Protocol: "browser",
@@ -165,8 +306,14 @@ func TestApplyBrowserReplayOverrides(t *testing.T) {
 
 	updated := applyBrowserReplayOverrides(script, BrowserReplayStartRequest{
 		Browser: &dsl.BrowserConfig{
+			Engine:             "webkit",
 			Headless:           &headless,
 			SlowMoMs:           125,
+			UserAgent:          "Mozilla/5.0 Test Browser",
+			DeviceProfile:      "iphone_15_pro",
+			TouchMode:          &touchMode,
+			Orientation:        "portrait",
+			ClientMetrics:      &clientMetrics,
 			CaptureScreenshots: "per_action",
 			Viewport:           dsl.BrowserViewport{Width: 1280, Height: 720},
 		},
@@ -175,11 +322,29 @@ func TestApplyBrowserReplayOverrides(t *testing.T) {
 	if updated == script {
 		t.Fatal("expected copy, got original script pointer")
 	}
+	if updated.Config.Browser.Engine != "webkit" {
+		t.Fatalf("engine = %q, want webkit", updated.Config.Browser.Engine)
+	}
 	if updated.Config.Browser.Headless == nil || *updated.Config.Browser.Headless != false {
 		t.Fatalf("headless = %#v, want false", updated.Config.Browser.Headless)
 	}
 	if updated.Config.Browser.SlowMoMs != 125 {
 		t.Fatalf("slow_mo_ms = %d, want 125", updated.Config.Browser.SlowMoMs)
+	}
+	if updated.Config.Browser.UserAgent != "Mozilla/5.0 Test Browser" {
+		t.Fatalf("user_agent = %q, want test browser UA", updated.Config.Browser.UserAgent)
+	}
+	if updated.Config.Browser.DeviceProfile != "iphone_15_pro" {
+		t.Fatalf("device_profile = %q, want iphone_15_pro", updated.Config.Browser.DeviceProfile)
+	}
+	if updated.Config.Browser.TouchMode == nil || *updated.Config.Browser.TouchMode != true {
+		t.Fatalf("touch_mode = %#v, want true", updated.Config.Browser.TouchMode)
+	}
+	if updated.Config.Browser.Orientation != "portrait" {
+		t.Fatalf("orientation = %q, want portrait", updated.Config.Browser.Orientation)
+	}
+	if updated.Config.Browser.ClientMetrics == nil || *updated.Config.Browser.ClientMetrics != true {
+		t.Fatalf("client_metrics = %#v, want true", updated.Config.Browser.ClientMetrics)
 	}
 	if updated.Config.Browser.CaptureScreenshots != "per_action" {
 		t.Fatalf("capture_screenshots = %q, want per_action", updated.Config.Browser.CaptureScreenshots)
@@ -189,6 +354,43 @@ func TestApplyBrowserReplayOverrides(t *testing.T) {
 	}
 	if script.Config.Browser.CaptureScreenshots != "off" {
 		t.Fatalf("original script was mutated: %#v", script.Config.Browser)
+	}
+}
+
+func TestHandleStartBrowserReplayDraftScriptAcceptsMobileBrowserOverrides(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body, _ := json.Marshal(map[string]any{
+		"script": map[string]any{
+			"name":     "Browser Draft",
+			"version":  "1.0.0",
+			"protocol": "browser",
+			"config": map[string]any{
+				"browser": map[string]any{
+					"engine": "webkit",
+				},
+			},
+			"actions": []map[string]any{{
+				"name": "Capture current page",
+				"type": "browser_screenshot",
+			}},
+		},
+		"browser": map[string]any{
+			"engine":              "webkit",
+			"device_profile":      "iphone_15_pro",
+			"touch_mode":          true,
+			"orientation":         "portrait",
+			"client_metrics":      true,
+			"capture_screenshots": "per_action",
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
 	}
 }
 
@@ -211,48 +413,50 @@ func TestHandlePauseResumeBrowserReplaySessionNotFound(t *testing.T) {
 }
 
 func TestHandleResumeBrowserReplaySessionFromStartPaused(t *testing.T) {
-	server := NewServer(ServerConfig{})
-	body, _ := json.Marshal(map[string]any{
-		"start_paused": true,
-		"script": map[string]any{
-			"name":     "Paused Browser Draft",
-			"version":  "1.0.0",
-			"protocol": "browser",
-			"config": map[string]any{
-				"base_url": "https://example.com",
-			},
-			"actions": []map[string]any{{
-				"name": "shot",
-				"type": "browser_screenshot",
-			}},
-		},
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{
+			ActionName: action.Name,
+			Success:    true,
+			PageURL:    "https://example.com/",
+			PageTitle:  "Example",
+		}, nil
 	})
 
-	startReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", bytes.NewReader(body))
-	startReq.Header.Set("Content-Type", "application/json")
-	startResp := httptest.NewRecorder()
-	server.mux.ServeHTTP(startResp, startReq)
-	if startResp.Code != http.StatusOK {
-		t.Fatalf("start status = %d, want %d body=%s", startResp.Code, http.StatusOK, startResp.Body.String())
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
-
-	var startPayload struct {
-		ReplaySessionID string `json:"replay_session_id"`
-		Session         struct {
-			Status string `json:"status"`
-		} `json:"session"`
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, Addr: ":8080"})
+	script := &dsl.Script{
+		Name:      "Paused Browser Draft",
+		ProjectID: "project-browser",
+		Version:   "1.0.0",
+		Protocol:  protocolName,
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.com",
+		},
+		Actions: []dsl.Action{{
+			Name:   "shot",
+			Type:   "GET",
+			Method: "GET",
+			Target: "/",
+		}},
 	}
-	if err := json.Unmarshal(startResp.Body.Bytes(), &startPayload); err != nil {
-		t.Fatalf("json.Unmarshal start returned error: %v", err)
-	}
-	if startPayload.ReplaySessionID == "" {
+	session := server.browserReplay.Start("", script, BrowserReplayStartRequest{
+		ReplaySessionID: "browser-replay-start-paused",
+		StartPaused:     true,
+	})
+	if session.ID == "" {
 		t.Fatal("replay_session_id is empty")
 	}
-	if startPayload.Session.Status != BrowserReplayPaused {
-		t.Fatalf("start status = %q, want %q", startPayload.Session.Status, BrowserReplayPaused)
+	if session.Status != BrowserReplayPaused {
+		t.Fatalf("start status = %q, want %q", session.Status, BrowserReplayPaused)
 	}
+	startReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", nil)
+	server.recordAuditEvent(startReq, "browser_replay.session.start", "success", "browser_replay_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "script_name": script.Name, "status": session.Status, "start_paused": true})
 
-	pauseReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+startPayload.ReplaySessionID+"/pause", nil)
+	pauseReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+session.ID+"/pause", nil)
 	pauseResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(pauseResp, pauseReq)
 	if pauseResp.Code != http.StatusConflict {
@@ -262,7 +466,7 @@ func TestHandleResumeBrowserReplaySessionFromStartPaused(t *testing.T) {
 		t.Fatalf("pause conflict body = %q, want not running", pauseResp.Body.String())
 	}
 
-	resumeReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+startPayload.ReplaySessionID+"/resume", nil)
+	resumeReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+session.ID+"/resume", nil)
 	resumeResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resumeResp, resumeReq)
 	if resumeResp.Code != http.StatusOK {
@@ -281,9 +485,20 @@ func TestHandleResumeBrowserReplaySessionFromStartPaused(t *testing.T) {
 		t.Fatalf("resume status = %q, want %q", resumePayload.Session.Status, BrowserReplayRunning)
 	}
 
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Limit: 10, ProjectID: "project-browser"})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("audit event count = %d, want 2", len(events))
+	}
+	if events[0].Action != "browser_replay.session.resume" || events[1].Action != "browser_replay.session.start" {
+		t.Fatalf("audit actions = [%s %s], want resume/start", events[0].Action, events[1].Action)
+	}
+
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		session, ok := server.browserReplay.Get(startPayload.ReplaySessionID)
+		session, ok := server.browserReplay.Get(session.ID)
 		if !ok {
 			t.Fatal("session disappeared")
 		}

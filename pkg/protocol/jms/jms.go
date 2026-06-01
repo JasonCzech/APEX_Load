@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func init() {
@@ -29,19 +29,20 @@ type JMS struct {
 }
 
 type config struct {
-	BrokerURL       string
-	MessageVPN      string
-	Username        string
-	Password        string
-	ClientID        string
-	Destination     string
-	DestinationType string
-	ReplyTo         string
-	Acknowledgement string
-	DeliveryMode    string
-	Timeout         time.Duration
-	Properties      map[string]string
-	Mock            bool
+	BrokerURL              string
+	MessageVPN             string
+	Username               string
+	Password               string
+	ClientID               string
+	Destination            string
+	DestinationType        string
+	DeadLetterDestinations []string
+	ReplyTo                string
+	Acknowledgement        string
+	DeliveryMode           string
+	Timeout                time.Duration
+	Properties             map[string]string
+	Mock                   bool
 }
 
 type brokerAdapter interface {
@@ -101,19 +102,20 @@ func (j *JMS) Name() string {
 
 func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 	j.cfg = config{
-		BrokerURL:       stringValue(cfg, "broker_url"),
-		MessageVPN:      stringValue(cfg, "jms_message_vpn"),
-		Username:        stringValue(cfg, "jms_username"),
-		Password:        stringValue(cfg, "jms_password"),
-		ClientID:        stringValue(cfg, "jms_client_id"),
-		Destination:     stringValue(cfg, "jms_destination"),
-		DestinationType: stringValue(cfg, "jms_destination_type"),
-		ReplyTo:         stringValue(cfg, "jms_reply_to"),
-		Acknowledgement: stringValue(cfg, "jms_acknowledgement"),
-		DeliveryMode:    stringValue(cfg, "jms_delivery_mode"),
-		Timeout:         durationValue(cfg, "jms_timeout_ms", 5*time.Second),
-		Properties:      stringMapValue(cfg, "jms_properties"),
-		Mock:            boolValue(cfg, "jms_mock"),
+		BrokerURL:              stringValue(cfg, "broker_url"),
+		MessageVPN:             stringValue(cfg, "jms_message_vpn"),
+		Username:               stringValue(cfg, "jms_username"),
+		Password:               stringValue(cfg, "jms_password"),
+		ClientID:               stringValue(cfg, "jms_client_id"),
+		Destination:            stringValue(cfg, "jms_destination"),
+		DestinationType:        stringValue(cfg, "jms_destination_type"),
+		DeadLetterDestinations: stringSliceValue(cfg, "jms_dead_letter_destinations"),
+		ReplyTo:                stringValue(cfg, "jms_reply_to"),
+		Acknowledgement:        stringValue(cfg, "jms_acknowledgement"),
+		DeliveryMode:           stringValue(cfg, "jms_delivery_mode"),
+		Timeout:                durationValue(cfg, "jms_timeout_ms", 5*time.Second),
+		Properties:             stringMapValue(cfg, "jms_properties"),
+		Mock:                   boolValue(cfg, "jms_mock"),
 	}
 	if provider := stringValue(cfg, "jms_provider"); provider != "" {
 		j.provider = provider
@@ -141,24 +143,38 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 
 func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	start := time.Now()
+	destination := j.destination(action)
+	isDeadLetter := j.isDeadLetterAction(action, destination)
 	result := &protocol.Result{
 		ActionName:       action.Name,
 		StartTime:        start,
 		StatusCode:       200,
 		Success:          true,
 		Extractions:      make(map[string]string),
-		DependencyType:   classifyJMSDependencyType(j.cfg.DestinationType, action),
-		DependencyTarget: j.destination(action),
+		DependencyType:   classifyJMSDependencyType(j.cfg.DestinationType, action, isDeadLetter),
+		DependencyTarget: destination,
+	}
+	if isDeadLetter {
+		result.Extractions["jms_dead_letter"] = "true"
+		result.Extractions["jms_dead_letter_destination"] = destination
 	}
 
 	var err error
+	var requestMsg message
+	var responseMsg message
+	hasRequestMsg := false
+	hasResponseMsg := false
 	switch strings.ToLower(action.Type) {
 	case "jms_publish":
-		err = j.publish(ctx, action, result)
+		requestMsg, err = j.publish(ctx, action, result)
+		hasRequestMsg = err == nil
 	case "jms_consume":
-		err = j.consume(ctx, action, result)
+		responseMsg, err = j.consume(ctx, action, result)
+		hasResponseMsg = err == nil
 	case "jms_request_reply":
-		err = j.requestReply(ctx, action, result)
+		requestMsg, responseMsg, err = j.requestReply(ctx, action, result)
+		hasRequestMsg = err == nil
+		hasResponseMsg = err == nil
 	case "jms_ack", "jms_commit", "jms_rollback":
 		result.Extractions["jms_operation"] = action.Type
 	default:
@@ -166,6 +182,7 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 	}
 
 	result.Duration = time.Since(start)
+	result.ServerTelemetry = finalizeJMSServerTelemetry(result, requestMsg, hasRequestMsg, responseMsg, hasResponseMsg)
 	if err != nil {
 		result.Success = false
 		if result.StatusCode == 0 || result.StatusCode == 200 {
@@ -173,6 +190,7 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 		}
 		result.ErrorMessage = err.Error()
 	}
+	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 	return result, nil
 }
 
@@ -196,49 +214,49 @@ func (j *JMS) HealthCheck(ctx context.Context) error {
 	return j.adapter.HealthCheck(ctx)
 }
 
-func (j *JMS) publish(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
+func (j *JMS) publish(ctx context.Context, action *protocol.Action, result *protocol.Result) (message, error) {
 	destination := j.destination(action)
 	if destination == "" {
-		return fmt.Errorf("JMS destination is required")
+		return message{}, fmt.Errorf("JMS destination is required")
 	}
 	msg := j.buildMessage(action, destination)
 	published, err := j.adapter.Publish(ctx, destination, msg)
 	if err != nil {
-		return err
+		return message{}, err
 	}
 	result.BytesSent = int64(len(published.Body))
 	addMessageExtractions(result, published)
 	result.Extractions["jms_operation"] = "publish"
-	return evaluateAssertions(action.Assertions, result, published)
+	return published, evaluateAssertions(action.Assertions, result, published)
 }
 
-func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
+func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *protocol.Result) (message, error) {
 	destination := j.destination(action)
 	if destination == "" {
-		return fmt.Errorf("JMS destination is required")
+		return message{}, fmt.Errorf("JMS destination is required")
 	}
 	msg, err := j.adapter.Consume(ctx, destination, j.timeout(action))
 	if err != nil {
 		result.StatusCode = 204
-		return err
+		return message{}, err
 	}
 	result.BytesReceived = int64(len(msg.Body))
 	addMessageExtractions(result, msg)
 	result.Extractions["jms_operation"] = "consume"
 	if err := runExtractors(action.Extractors, result, msg); err != nil {
-		return err
+		return message{}, err
 	}
-	return evaluateAssertions(action.Assertions, result, msg)
+	return msg, evaluateAssertions(action.Assertions, result, msg)
 }
 
-func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
+func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result *protocol.Result) (message, message, error) {
 	requestDestination := j.destination(action)
 	if requestDestination == "" {
-		return fmt.Errorf("JMS request destination is required")
+		return message{}, message{}, fmt.Errorf("JMS request destination is required")
 	}
 	replyDestination := paramString(action.Params, "reply_to", j.cfg.ReplyTo)
 	if replyDestination == "" {
-		return fmt.Errorf("JMS reply_to destination is required")
+		return message{}, message{}, fmt.Errorf("JMS reply_to destination is required")
 	}
 
 	request := j.buildMessage(action, requestDestination)
@@ -248,7 +266,7 @@ func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result 
 	sent, response, err := j.adapter.RequestReply(ctx, requestDestination, replyDestination, request, j.timeout(action))
 	if err != nil {
 		result.StatusCode = 204
-		return err
+		return message{}, message{}, err
 	}
 	result.BytesSent = int64(len(sent.Body))
 	result.BytesReceived = int64(len(response.Body))
@@ -256,9 +274,9 @@ func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result 
 	result.Extractions["jms_request_message_id"] = sent.ID
 	result.Extractions["jms_operation"] = "request_reply"
 	if err := runExtractors(action.Extractors, result, response); err != nil {
-		return err
+		return message{}, message{}, err
 	}
-	return evaluateAssertions(action.Assertions, result, response)
+	return sent, response, evaluateAssertions(action.Assertions, result, response)
 }
 
 func (j *JMS) timeout(action *protocol.Action) time.Duration {
@@ -388,14 +406,98 @@ func addMessageExtractions(result *protocol.Result, msg message) {
 	result.Extractions["jms_correlation_id"] = msg.CorrelationID
 	result.Extractions["jms_destination"] = msg.Destination
 	result.Extractions["jms_body"] = string(msg.Body)
+	if reason, ok := firstMatchingMapValue(msg.Properties, "dead_letter_reason", "dlq_reason", "x-dead-letter-reason"); ok {
+		result.Extractions["jms_dead_letter_reason"] = reason
+	}
+	if deliveryCount, ok := firstMatchingMapValue(msg.Properties, "delivery_count", "x-delivery-count", "JMSXDeliveryCount"); ok {
+		result.Extractions["jms_delivery_count"] = deliveryCount
+	}
 }
 
-func classifyJMSDependencyType(defaultDestinationType string, action *protocol.Action) string {
+func finalizeJMSServerTelemetry(result *protocol.Result, request message, hasRequest bool, response message, hasResponse bool) *protocol.ServerTelemetry {
+	if result == nil || (!hasRequest && !hasResponse) {
+		return nil
+	}
+	telemetry := &protocol.ServerTelemetry{
+		TransferMs: durationToNonNegativeMilliseconds(result.Duration),
+	}
+	if hasRequest {
+		telemetry.MessagesSent = 1
+	}
+	if hasResponse {
+		telemetry.MessagesReceived = 1
+		observedAt := result.StartTime.Add(result.Duration)
+		if !response.CreatedAt.IsZero() && !observedAt.Before(response.CreatedAt) {
+			telemetry.ConsumerLagMs = durationToNonNegativeMilliseconds(observedAt.Sub(response.CreatedAt))
+		}
+	}
+	if hasRequest {
+		telemetry.RequestPayloadKB = bytesToKilobytes(int64(len(request.Body)))
+		telemetry.RequestSizeClass = protocol.ClassifyPayloadSize(int64(len(request.Body)))
+	} else if result.BytesSent > 0 {
+		telemetry.RequestPayloadKB = bytesToKilobytes(result.BytesSent)
+		telemetry.RequestSizeClass = protocol.ClassifyPayloadSize(result.BytesSent)
+	}
+	if hasResponse {
+		telemetry.ResponsePayloadKB = bytesToKilobytes(int64(len(response.Body)))
+		telemetry.ResponseSizeClass = protocol.ClassifyPayloadSize(int64(len(response.Body)))
+	} else if result.BytesReceived > 0 {
+		telemetry.ResponsePayloadKB = bytesToKilobytes(result.BytesReceived)
+		telemetry.ResponseSizeClass = protocol.ClassifyPayloadSize(result.BytesReceived)
+	}
+	if hasRequest && hasResponse && !request.CreatedAt.IsZero() && !response.CreatedAt.IsZero() && !response.CreatedAt.Before(request.CreatedAt) {
+		serverProcessing := response.CreatedAt.Sub(request.CreatedAt)
+		telemetry.ServerProcessingMs = durationToNonNegativeMilliseconds(serverProcessing)
+		telemetry.MessageLatencyMs = durationToNonNegativeMilliseconds(serverProcessing)
+		telemetry.TransferMs = durationToNonNegativeMilliseconds(result.Duration - serverProcessing)
+	}
+	telemetry.MessagesSentPerSec = messagesPerSecond(telemetry.MessagesSent, result.Duration)
+	telemetry.MessagesReceivedPerSec = messagesPerSecond(telemetry.MessagesReceived, result.Duration)
+	return telemetry
+}
+
+func durationToNonNegativeMilliseconds(duration time.Duration) float64 {
+	if duration <= 0 {
+		return 0
+	}
+	return float64(duration.Microseconds()) / 1000.0
+}
+
+func bytesToKilobytes(bytes int64) float64 {
+	if bytes <= 0 {
+		return 0
+	}
+	return float64(bytes) / 1024.0
+}
+
+func messagesPerSecond(count int, duration time.Duration) float64 {
+	if count <= 0 || duration <= 0 {
+		return 0
+	}
+	return float64(count) / duration.Seconds()
+}
+
+func classifyJMSDependencyType(defaultDestinationType string, action *protocol.Action, deadLetter bool) string {
 	destinationType := strings.TrimSpace(paramString(action.Params, "destination_type", defaultDestinationType))
 	if destinationType == "" {
 		destinationType = "queue"
 	}
+	if deadLetter {
+		return "jms_dead_letter_" + strings.ToLower(destinationType)
+	}
 	return "jms_" + strings.ToLower(destinationType)
+}
+
+func (j *JMS) isDeadLetterAction(action *protocol.Action, destination string) bool {
+	if boolParam(action.Params, "dead_letter", false) {
+		return true
+	}
+	for _, candidate := range j.cfg.DeadLetterDestinations {
+		if strings.EqualFold(strings.TrimSpace(candidate), strings.TrimSpace(destination)) {
+			return true
+		}
+	}
+	return false
 }
 
 func runExtractors(extractors []protocol.Extractor, result *protocol.Result, msg message) error {
@@ -547,6 +649,17 @@ func durationParam(params map[string]any, key string, fallback time.Duration) ti
 	return durationValue(params, key, fallback)
 }
 
+func boolParam(params map[string]any, key string, fallback bool) bool {
+	if params == nil {
+		return fallback
+	}
+	value, ok := params[key].(bool)
+	if !ok {
+		return fallback
+	}
+	return value
+}
+
 func cloneStringMap(in map[string]string) map[string]string {
 	if len(in) == 0 {
 		return nil
@@ -556,6 +669,62 @@ func cloneStringMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func stringSliceValue(cfg map[string]any, key string) []string {
+	raw, ok := cfg[key]
+	if !ok {
+		return nil
+	}
+	switch value := raw.(type) {
+	case []string:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			if trimmed := strings.TrimSpace(item); trimmed != "" {
+				out = append(out, trimmed)
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			if itemStr, ok := item.(string); ok {
+				if trimmed := strings.TrimSpace(itemStr); trimmed != "" {
+					out = append(out, trimmed)
+				}
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	case string:
+		parts := strings.Split(value, ",")
+		out := make([]string, 0, len(parts))
+		for _, item := range parts {
+			if trimmed := strings.TrimSpace(item); trimmed != "" {
+				out = append(out, trimmed)
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func firstMatchingMapValue(values map[string]string, keys ...string) (string, bool) {
+	for _, key := range keys {
+		if value, ok := values[key]; ok && strings.TrimSpace(value) != "" {
+			return value, true
+		}
+	}
+	return "", false
 }
 
 func lookupString(key string, values map[string]string, label string) (string, error) {

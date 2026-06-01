@@ -1,29 +1,46 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
-import { normalizeImportResult, summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImportUtils'
-import { type ImportedAction, type ImportedScript, type JMeterImportResult as ImportResult, type JMeterSupportMatrixResponse, type SupportMatrix } from '../types/scriptImports'
-import { type ScriptDefinition } from '../types/scripts'
+import { summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImportUtils'
+import { type JMeterImportResult as ImportResult, type JMeterSupportMatrixResponse, type SupportMatrix } from '../types/scriptImports'
+import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
+import SourceMappingReview from './SourceMappingReview'
+import { withFallbackPersistedScripts } from './importSaveUtils'
+import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './LoadRunnerImport.css'
 
 interface Props {
-  onImported?: (script: ImportedScript) => void
+  projectId?: string
+  onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
 }
 
 type ReviewMode = 'validation' | 'conversion'
 
-function toScriptDefinition(script: ImportedScript): ScriptDefinition {
-  return script as unknown as ScriptDefinition
-}
-
-function getPrimaryScript(result: ImportResult | null): ImportedScript | null {
+function getPrimaryScript(result: ImportResult | null): ScriptDefinition | null {
   return result?.script || result?.scripts?.[0] || null
 }
 
-export default function JMeterImport({ onImported, onEdit, onClose }: Props) {
+function buildFallbackPrimaryScript(name: string): ScriptDefinition {
+  return {
+    name,
+    version: '1.0.0',
+    protocol: 'http',
+    config: { base_url: '' },
+    actions: [],
+  }
+}
+
+function sourceReviewForJMeter(result?: ImportResult | null, script?: ScriptDefinition | null): SourceReview | null {
+  const metadataReview = script?.metadata?.import?.preserved?.source_review as SourceReview | undefined
+  const review = result?.source_review || metadataReview
+  if (!review || (!Array.isArray(review.source_files) && !Array.isArray(review.mappings))) return null
+  return review
+}
+
+export default function JMeterImport({ projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -44,6 +61,7 @@ export default function JMeterImport({ onImported, onEdit, onClose }: Props) {
   const supportMatrixSections = summarizeSupportMatrix(supportMatrix)
   const extractorSummary = summarizeImportExtractors(result?.scripts || [])
   const primaryScript = getPrimaryScript(result)
+  const sourceReview = sourceReviewForJMeter(result, primaryScript)
 
   useEffect(() => {
     let cancelled = false
@@ -93,11 +111,12 @@ export default function JMeterImport({ onImported, onEdit, onClose }: Props) {
     try {
       const response = await api.importJMeter(file, {
         name: options.name || undefined,
+        project_id: projectId,
         base_url: options.base_url || undefined,
         include_assertions: options.include_assertions,
         scenario_draft: options.scenario_draft,
       })
-      setResult(normalizeImportResult(response))
+      setResult(response)
       setReviewMode('conversion')
       setNotice('Conversion complete. Review the generated scripts, warnings, and assumptions before saving.')
     } catch (error: unknown) {
@@ -116,11 +135,12 @@ export default function JMeterImport({ onImported, onEdit, onClose }: Props) {
     try {
       const response = await api.validateJMeterImport(file, {
         name: options.name || undefined,
+        project_id: projectId,
         base_url: options.base_url || undefined,
         include_assertions: options.include_assertions,
         scenario_draft: options.scenario_draft,
       })
-      setResult(normalizeImportResult(response))
+      setResult(response)
       setReviewMode('validation')
       setNotice('Validation complete. Review the generated scripts and warnings before saving.')
     } catch (error: unknown) {
@@ -136,13 +156,20 @@ export default function JMeterImport({ onImported, onEdit, onClose }: Props) {
     setError('')
     setNotice('')
     try {
+      const scripts = result.scripts.map(script => script.project_id ? script : { ...script, project_id: projectId })
       const response = await api.saveJMeterImport({
-        scripts: result.scripts,
+        scripts,
         scenario_draft: result.scenario_draft,
       })
+      const savedScripts = withFallbackPersistedScripts(response.scripts, result.scripts)
       const scenarioText = response.scenario ? ' and scenario draft' : ''
       setNotice(`Saved ${response.count || result.scripts.length} script${result.scripts.length === 1 ? '' : 's'}${scenarioText} to the library.`)
-      onImported?.(result.scripts[0])
+      if (savedScripts.length) {
+        onImported?.({
+          scripts: savedScripts,
+          scenario: response.scenario,
+        })
+      }
     } catch (error: unknown) {
       setError(getErrorMessage(error, 'Failed to save converted scripts'))
     } finally {
@@ -156,7 +183,7 @@ export default function JMeterImport({ onImported, onEdit, onClose }: Props) {
         <div>
           <h2>Import JMeter Test Plan</h2>
           <p className="lr-subtitle">
-            Upload a <code>.jmx</code> plan and convert HTTP thread groups into Stormrunner reusable scripts. The importer preserves variables, CSV data sources, headers, timers, and review notes where possible.
+            Upload a <code>.jmx</code> plan and convert HTTP thread groups into APEX Load reusable scripts. The importer preserves variables, CSV data sources, headers, timers, and review notes where possible.
           </p>
         </div>
         {onClose && <button className="btn btn-ghost" onClick={onClose}>x</button>}
@@ -264,32 +291,31 @@ export default function JMeterImport({ onImported, onEdit, onClose }: Props) {
             subtitle={reviewMode === 'validation'
               ? 'This preview came from the dry-run validator. You can still save the reviewed assets if the output looks correct.'
               : 'This preview came from the converter and is ready for final review before saving.'}
-            script={primaryScript || { name: result.summary?.file_name || file?.name || 'Imported JMeter Plan' }}
+            script={primaryScript || buildFallbackPrimaryScript(result.summary?.file_name || file?.name || 'Imported JMeter Plan')}
             previewData={{ scripts: result.scripts, scenario_draft: result.scenario_draft, summary: result.summary }}
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
+            unsupportedElements={result.unsupported_elements}
+            reviewSections={result.review_sections}
             saving={saving}
             saveLabel={`${reviewMode === 'validation' ? 'Save Reviewed' : 'Save'} ${result.scripts?.length || 0} Script${(result.scripts?.length || 0) === 1 ? '' : 's'}`}
             onSave={handleSaveConverted}
-            onEdit={onEdit && primaryScript ? () => onEdit(toScriptDefinition(primaryScript)) : undefined}
+            onEdit={onEdit && primaryScript ? () => onEdit(primaryScript) : undefined}
             editLabel={result.scripts.length > 1 ? 'Open First Script In Visual Editor' : 'Open In Visual Editor'}
             previewTitle="Import Preview"
+            previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={primaryScript} title="Source Comparison" /> : undefined}
           >
             <div className="lr-stats-grid">
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.converted_actions}</span><span className="lr-stat-label">Actions</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.samplers}</span><span className="lr-stat-label">HTTP Samplers</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.total_samplers ?? result.stats.samplers}</span><span className="lr-stat-label">Total Samplers</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.skipped_samplers ?? 0}</span><span className="lr-stat-label">Skipped Samplers</span></div>
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.thread_groups}</span><span className="lr-stat-label">Thread Groups</span></div>
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.csv_sources}</span><span className="lr-stat-label">CSV Sources</span></div>
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.variables}</span><span className="lr-stat-label">Variables</span></div>
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.assertions}</span><span className="lr-stat-label">Assertions</span></div>
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.unsupported}</span><span className="lr-stat-label">Unsupported</span></div>
             </div>
-
-            {result.unsupported_elements.length > 0 && (
-              <div className="lr-warnings">
-                <h4>Unsupported Elements ({result.unsupported_elements.length})</h4>
-                <ul>{result.unsupported_elements.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul>
-              </div>
-            )}
 
             {result.assumptions.length > 0 && (
               <div className="lr-warnings">
@@ -317,11 +343,11 @@ export default function JMeterImport({ onImported, onEdit, onClose }: Props) {
                 <span>{result.summary?.file_name || file?.name}</span>
               </div>
               <div className="lr-preserved-grid">
-                {(result.scripts || []).map((script: ImportedScript) => (
+                {(result.scripts || []).map((script: ScriptDefinition) => (
                   <div className="lr-preserved-card" key={script.name}>
                     <span className="lr-preserved-label">Script</span>
                     <strong>{script.name}</strong>
-                    <small>{script.actions?.length || 0} actions / {script.data_sources?.length || 0} data sources / {script.actions?.reduce((count: number, action: ImportedAction) => count + (action.extractors?.length || 0), 0) || 0} extractors</small>
+                    <small>{script.actions?.length || 0} actions / {script.data_sources?.length || 0} data sources / {script.actions?.reduce((count, action) => count + (action.extractors?.length || 0), 0) || 0} extractors</small>
                   </div>
                 ))}
                 {result.scenario_draft && (

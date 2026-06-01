@@ -25,8 +25,11 @@ describe('scenarioPayloadUtils', () => {
       goalConfig: {},
       runtimeSettings: {
         iterations: undefined,
+        pacing: undefined,
+        think_time: undefined,
         log_level: '',
         auto_transactions: '',
+        continue_on_error: false,
         snapshot_on_error: false,
       },
       projectId: 'project-1',
@@ -69,14 +72,25 @@ describe('scenarioPayloadUtils', () => {
       }],
       goalConfig: {
         target_average_tps: 300,
+        max_avg_server_processing_ms: 450,
+        max_avg_transfer_ms: 120,
         max_error_count: 25,
         stop_on_max_errors: true,
         sla_breach_window: '45s',
       },
       runtimeSettings: {
         iterations: 5,
+        pacing: { type: 'fixed_interval', interval_ms: 2500 },
+        think_time: { type: 'fixed', mean_ms: 750 },
+        browser: {
+          headless: false,
+          device_profile: 'iphone_se',
+          touch_mode: true,
+          orientation: 'portrait',
+        },
         log_level: 'standard',
         auto_transactions: 'per_action',
+        continue_on_error: true,
         snapshot_on_error: true,
       },
       dataPools: [{
@@ -105,15 +119,25 @@ describe('scenarioPayloadUtils', () => {
       }],
       goal_config: {
         target_average_tps: 300,
+        max_avg_server_processing_ms: 450,
+        max_avg_transfer_ms: 120,
           max_error_count: 25,
           stop_on_max_errors: true,
         sla_breach_window: '45s',
       },
       runtime_settings: {
         iterations: 5,
+        pacing: { type: 'fixed_interval', interval_ms: 2500 },
+        think_time: { type: 'fixed', mean_ms: 750 },
+        browser: {
+          headless: false,
+          device_profile: 'iphone_se',
+          touch_mode: true,
+          orientation: 'portrait',
+        },
         log_level: 'standard',
         auto_transactions: 'per_action',
-        error_handling: { snapshot_on_error: true },
+        error_handling: { continue_on_error: true, snapshot_on_error: true },
       },
       data_pools: [{
         pool_id: 'pool-1',
@@ -144,8 +168,11 @@ describe('scenarioPayloadUtils', () => {
       goalConfig: {},
       runtimeSettings: {
         iterations: undefined,
+        pacing: undefined,
+        think_time: undefined,
         log_level: '',
         auto_transactions: '',
+        continue_on_error: false,
         snapshot_on_error: false,
       },
     })
@@ -159,6 +186,52 @@ describe('scenarioPayloadUtils', () => {
     }])
     expect(payload.assignment).toEqual({ mode: 'auto' })
     expect(payload.script_id).toBeUndefined()
+  })
+
+  it('keeps staged single-group drafts in the groups array', () => {
+    const payload = buildCreateTestPayload({
+      name: '',
+      duration: '8m',
+      startDelay: '',
+      scenarioMode: 'vuser_driven',
+      scriptShakeout: false,
+      resourceBaseline: false,
+      groups: [{
+        name: '',
+        scriptId: 'script-1',
+        vusers: 25,
+        rampUp: '',
+        rampDown: '',
+        stages: [
+          { name: 'Warmup', type: 'ramp_up', duration: '2m', target_vusers: 25 },
+          { name: 'Steady', type: 'hold', duration: '5m', target_vusers: 25 },
+          { name: 'Cooldown', type: 'ramp_down', duration: '1m', target_vusers: 1 },
+        ],
+        initialization: 'at_runtime',
+      }],
+      goalConfig: {},
+      runtimeSettings: {
+        iterations: undefined,
+        pacing: undefined,
+        think_time: undefined,
+        log_level: '',
+        auto_transactions: '',
+        continue_on_error: false,
+        snapshot_on_error: false,
+      },
+    })
+
+    expect(payload.script_id).toBeUndefined()
+    expect(payload.groups).toEqual([{
+      script_id: 'script-1',
+      vusers: 25,
+      stages: [
+        { name: 'Warmup', type: 'ramp_up', duration: '2m', target_vusers: 25 },
+        { name: 'Steady', type: 'hold', duration: '5m', target_vusers: 25 },
+        { name: 'Cooldown', type: 'ramp_down', duration: '1m', target_vusers: 1 },
+      ],
+      initialization: 'at_runtime',
+    }])
   })
 
   it('serializes explicit hostname assignment into scenario and test payloads', () => {
@@ -181,8 +254,11 @@ describe('scenarioPayloadUtils', () => {
       goalConfig: {},
       runtimeSettings: {
         iterations: undefined,
+        pacing: undefined,
+        think_time: undefined,
         log_level: '',
         auto_transactions: '',
+        continue_on_error: false,
         snapshot_on_error: false,
       },
     })
@@ -207,15 +283,25 @@ describe('scenarioPayloadUtils', () => {
       resource_baseline: true,
       goal_config: {
         target_average_tps: 300,
+        max_avg_server_processing_ms: 450,
+        max_avg_transfer_ms: 120,
         max_error_count: 12,
         stop_on_max_errors: true,
         sla_breach_window: '45s',
       },
       runtime_settings: {
         iterations: 5,
+        pacing: { type: 'fixed_delay', delay_ms: 1200 },
+        think_time: { type: 'fixed', mean_ms: 900 },
+        browser: {
+          headless: false,
+          device_profile: 'pixel_8',
+          touch_mode: true,
+          orientation: 'landscape',
+        },
         log_level: 'standard',
         auto_transactions: 'per_action',
-        error_handling: { snapshot_on_error: true },
+        error_handling: { continue_on_error: true, snapshot_on_error: true },
       },
       groups: [],
       script_id: 'script-1',
@@ -250,16 +336,61 @@ describe('scenarioPayloadUtils', () => {
       initialization: 'at_runtime',
       goal_config: {
         target_average_tps: 300,
+        max_avg_server_processing_ms: 450,
+        max_avg_transfer_ms: 120,
         max_error_count: 12,
         stop_on_max_errors: true,
         sla_breach_window: '45s',
       },
       runtime_settings: {
         iterations: 5,
+        pacing: { type: 'fixed_delay', delay_ms: 1200 },
+        think_time: { type: 'fixed', mean_ms: 900 },
+        browser: {
+          headless: false,
+          device_profile: 'pixel_8',
+          touch_mode: true,
+          orientation: 'landscape',
+        },
         log_level: 'standard',
         auto_transactions: 'per_action',
-        error_handling: { snapshot_on_error: true },
+        error_handling: { continue_on_error: true, snapshot_on_error: true },
       },
+    })
+  })
+
+  it('serializes richer runtime override fields when provided', () => {
+    const payload = buildCreateTestPayload({
+      name: 'Runtime Override Test',
+      duration: '3m',
+      startDelay: '',
+      scenarioMode: 'vuser_driven',
+      scriptShakeout: false,
+      resourceBaseline: false,
+      groups: [{
+        name: '',
+        scriptId: 'script-1',
+        vusers: 10,
+        rampUp: '',
+        rampDown: '',
+        initialization: 'at_runtime',
+      }],
+      goalConfig: {},
+      runtimeSettings: {
+        iterations: undefined,
+        pacing: { type: 'tps', tps: 25 },
+        think_time: { type: 'fixed', mean_ms: 500, ignore: false },
+        log_level: '',
+        auto_transactions: '',
+        continue_on_error: true,
+        snapshot_on_error: false,
+      },
+    })
+
+    expect(payload.runtime_settings).toEqual({
+      pacing: { type: 'tps', tps: 25 },
+      think_time: { type: 'fixed', mean_ms: 500, ignore: false },
+      error_handling: { continue_on_error: true },
     })
   })
 })

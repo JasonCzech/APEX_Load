@@ -1,0 +1,220 @@
+import { describe, expect, it } from 'vitest'
+
+import {
+  buildEffectiveScenarioGroups,
+  buildGroupsForRunPayload,
+  buildRunDefaultCards,
+  buildRunLoadProfilePreview,
+  buildRuntimeSettingsForRun,
+  formatGroupPlacement,
+  generatorCanRunGroup,
+  generatorDisabledReason,
+  getEffectiveRuntimeDefaults,
+  groupOverrideKey,
+  groupPlacementSummary,
+  selectedGeneratorCapacity,
+  type GroupRunOverride,
+} from './newTestRunModel'
+import { type StoredScenario, type SystemInventoryGenerator } from '../types'
+
+function scenarioFixture(): StoredScenario {
+  return {
+    id: 'scenario-1',
+    name: 'Checkout',
+    duration: '10m',
+    scenario_mode: 'vuser_driven',
+    script_shakeout: false,
+    resource_baseline: false,
+    runtime_settings: {
+      iterations: 3,
+      log_level: 'info',
+      auto_transactions: 'actions',
+      error_handling: {
+        continue_on_error: false,
+        snapshot_on_error: true,
+      },
+    },
+    scripts: [
+      {
+        order: 0,
+        name: 'Browse',
+        script_id: 'script-1',
+        script_name: 'Browse Script',
+        protocol: 'http',
+        vusers: 10,
+        ramp_up: '1m',
+        ramp_down: '30s',
+        initialization: 'at_runtime',
+      },
+      {
+        order: 1,
+        name: 'Checkout',
+        script_id: 'script-2',
+        script_name: 'Checkout Script',
+        protocol: 'browser',
+        vusers: 5,
+        ramp_up: '30s',
+        ramp_down: '30s',
+        iterations: 7,
+        runtime_settings: {
+          log_level: 'debug',
+        },
+      },
+    ],
+    script_count: 2,
+    created_at: '2026-05-01T00:00:00Z',
+    updated_at: '2026-05-01T00:00:00Z',
+  }
+}
+
+function generatorFixture(overrides: Partial<SystemInventoryGenerator> = {}): SystemInventoryGenerator {
+  return {
+    target: 'gen-a:9090',
+    generator_id: 'gen-a',
+    region: 'east',
+    status: 'connected',
+    supported_protocols: ['http', 'browser'],
+    compatibility_state: 'compatible',
+    drain_state: 'active',
+    capacity_state: 'available',
+    health_score: 100,
+    available_capacity: 100,
+    active_vusers: 0,
+    cpu_percent: 0,
+    memory_bytes: 0,
+    goroutine_count: 1,
+    cpu_limit_cores: 4,
+    memory_limit_bytes: 8_589_934_592,
+    max_vusers: 100,
+    ...overrides,
+  }
+}
+
+describe('newTestRunModel', () => {
+  it('applies run defaults without mutating scenario defaults', () => {
+    const scenario = scenarioFixture()
+    const effective = getEffectiveRuntimeDefaults(scenario, {
+      duration: '15m',
+      runtime_settings: {
+        iterations: 8,
+        log_level: 'trace',
+        continue_on_error: true,
+      },
+    })
+
+    expect(effective.iterations).toBe(8)
+    expect(effective.log_level).toBe('trace')
+    expect(effective.auto_transactions).toBe('actions')
+    expect(effective.continue_on_error).toBe(true)
+    expect(scenario.runtime_settings?.iterations).toBe(3)
+    expect(scenario.runtime_settings?.log_level).toBe('info')
+  })
+
+  it('builds runtime settings payload only when run defaults are overridden', () => {
+    const scenario = scenarioFixture()
+
+    expect(buildRuntimeSettingsForRun(scenario, { runtime_settings: {} })).toBeUndefined()
+    expect(buildRuntimeSettingsForRun(scenario, {
+      runtime_settings: {
+        iterations: 9,
+        snapshot_on_error: false,
+      },
+    })).toEqual({
+      iterations: 9,
+      log_level: 'info',
+      auto_transactions: 'actions',
+      error_handling: {
+        continue_on_error: false,
+        snapshot_on_error: false,
+      },
+    })
+  })
+
+  it('builds effective groups and create payloads from group overrides', () => {
+    const scenario = scenarioFixture()
+    const firstGroup = scenario.scripts[0]
+    const overrides: Record<string, GroupRunOverride> = {
+      [groupOverrideKey(firstGroup)]: {
+        vusers: 25,
+        ramp_up: '2m',
+        runtime_settings: {
+          iterations: 4,
+          pacing: { type: 'fixed_delay', delay_ms: 250 },
+        },
+        assignment: {
+          mode: 'specific_hosts',
+          selected_targets: ['gen-a:9090', 'gen-b:9090'],
+          shard_strategy: 'capacity_weighted',
+        },
+      },
+    }
+
+    const effectiveGroups = buildEffectiveScenarioGroups(scenario, overrides)
+    const payload = buildGroupsForRunPayload(scenario, overrides)
+
+    expect(effectiveGroups[0].vusers).toBe(25)
+    expect(scenario.scripts[0].vusers).toBe(10)
+    expect(payload?.[0]).toMatchObject({
+      name: 'Browse',
+      script_id: 'script-1',
+      vusers: 25,
+      ramp_up: '2m',
+      iterations: undefined,
+      initialization: 'at_runtime',
+      runtime_settings: {
+        iterations: 4,
+        pacing: { type: 'fixed_delay', delay_ms: 250 },
+      },
+      assignment: {
+        mode: 'specific_hosts',
+        selected_targets: ['gen-a:9090', 'gen-b:9090'],
+        shard_strategy: 'capacity_weighted',
+      },
+    })
+  })
+
+  it('models load profile timing including resource baseline windows', () => {
+    const preview = buildRunLoadProfilePreview(scenarioFixture().scripts, '10m', '30s', true)
+
+    expect(preview.steadySeconds).toBe(600)
+    expect(preview.preBaselineSeconds).toBe(330)
+    expect(preview.postBaselineSeconds).toBe(300)
+    expect(preview.totalSeconds).toBe(1260)
+    expect(preview.peakVUsers).toBe(15)
+    expect(preview.points[0]).toMatchObject({ second: 0, total: 0 })
+    expect(preview.points[preview.points.length - 1]).toMatchObject({ second: 1260, total: 0 })
+  })
+
+  it('formats placement summaries and generator eligibility', () => {
+    const scenario = scenarioFixture()
+    const pinned: GroupRunOverride = { assignment: { mode: 'specific_hosts', selected_targets: ['gen-a:9090'] } }
+    const sharded: GroupRunOverride = { assignment: { mode: 'specific_hosts', selected_targets: ['gen-a:9090', 'gen-b:9090'] } }
+
+    expect(formatGroupPlacement()).toBe('Auto')
+    expect(formatGroupPlacement(pinned)).toBe('Pinned: gen-a:9090')
+    expect(formatGroupPlacement(sharded)).toBe('Sharded: 2 hosts, capacity weighted')
+    expect(groupPlacementSummary({ one: pinned, two: sharded })).toBe('1 pinned group, 1 sharded group')
+
+    expect(generatorCanRunGroup(generatorFixture(), scenario.scripts[0])).toBe(true)
+    expect(generatorCanRunGroup(generatorFixture({ supported_protocols: ['http'] }), scenario.scripts[1])).toBe(false)
+    expect(generatorDisabledReason(generatorFixture({ supported_protocols: ['http'] }), scenario.scripts[1])).toBe('Does not support browser')
+    expect(selectedGeneratorCapacity([
+      generatorFixture({ target: 'gen-a:9090', available_capacity: 20 }),
+      generatorFixture({ target: 'gen-b:9090', available_capacity: 30 }),
+    ], ['gen-b:9090'])).toBe(30)
+  })
+
+  it('builds run default cards with override status', () => {
+    const cards = buildRunDefaultCards(scenarioFixture(), {
+      duration: '20m',
+      resource_baseline: true,
+      runtime_settings: {
+        log_level: 'debug',
+      },
+    })
+
+    expect(cards.find(card => card.key === 'duration')).toMatchObject({ value: '20m', isOverridden: true })
+    expect(cards.find(card => card.key === 'resource_baseline')).toMatchObject({ value: '5m before and after', isOverridden: true })
+    expect(cards.find(card => card.key === 'log_level')).toMatchObject({ value: 'debug', scenarioValue: 'info', isOverridden: true })
+  })
+})

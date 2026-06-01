@@ -12,11 +12,11 @@ import (
 )
 
 type ResourceCollector struct {
-	proc         *process.Process
-	lastNet      net.IOCountersStat
-	lastDisk     disk.IOCountersStat
-	lastTime     time.Time
-	initialized  bool
+	proc        *process.Process
+	lastNet     net.IOCountersStat
+	lastDisk    disk.IOCountersStat
+	lastTime    time.Time
+	initialized bool
 }
 
 func NewResourceCollector() *ResourceCollector {

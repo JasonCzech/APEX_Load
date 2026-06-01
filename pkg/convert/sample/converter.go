@@ -1,21 +1,26 @@
 package sample
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
+	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type ImportRequest struct {
 	Name            string         `json:"name,omitempty"`
+	ProjectID       string         `json:"project_id,omitempty"`
 	Format          string         `json:"format"`
 	Content         string         `json:"content"`
 	ResponseContent string         `json:"response_content,omitempty"`
@@ -23,16 +28,18 @@ type ImportRequest struct {
 }
 
 type ConvertOptions struct {
-	BaseURL           string `json:"base_url,omitempty"`
-	IncludeAssertions *bool  `json:"include_assertions,omitempty"`
-	InferExtractors   *bool  `json:"infer_extractors,omitempty"`
-	SanitizeSensitive *bool  `json:"sanitize_sensitive,omitempty"`
+	BaseURL             string `json:"base_url,omitempty"`
+	IncludeAssertions   *bool  `json:"include_assertions,omitempty"`
+	InferExtractors     *bool  `json:"infer_extractors,omitempty"`
+	SanitizeSensitive   *bool  `json:"sanitize_sensitive,omitempty"`
+	IncludeStaticAssets *bool  `json:"include_static_assets,omitempty"`
 }
 
 type ConvertStats struct {
 	Format               string `json:"format"`
 	TotalRequests        int    `json:"total_requests"`
 	ConvertedActions     int    `json:"converted_actions"`
+	FilteredAssets       int    `json:"filtered_assets,omitempty"`
 	Assertions           int    `json:"assertions"`
 	Extractors           int    `json:"extractors"`
 	CorrelationsDetected int    `json:"correlations_detected"`
@@ -42,45 +49,39 @@ type Correlation struct {
 	Name        string `json:"name"`
 	Source      string `json:"source"`
 	Expression  string `json:"expression"`
+	ExtractType string `json:"extract_type,omitempty"`
+	Value       string `json:"-"`
 	SampleValue string `json:"sample_value"`
 	FoundInStep int    `json:"found_in_step"`
 	UsedInSteps []int  `json:"used_in_steps"`
 }
 
 type ConvertResult struct {
-	Script       *dsl.Script   `json:"script"`
-	Warnings     []string      `json:"warnings,omitempty"`
-	Stats        ConvertStats  `json:"stats"`
-	Correlations []Correlation `json:"correlations,omitempty"`
+	Script       *dsl.Script        `json:"script"`
+	Warnings     []string           `json:"warnings,omitempty"`
+	Unsupported  diag.Diagnostics   `json:"unsupported,omitempty"`
+	Stats        ConvertStats       `json:"stats"`
+	Correlations []Correlation      `json:"correlations,omitempty"`
+	SourceReview *sourceview.Review `json:"source_review,omitempty"`
 }
 
 type exchange struct {
-	Method   string
-	URL      string
-	Headers  map[string]string
-	Body     string
-	Response *response
+	Method       string
+	URL          string
+	Headers      map[string]string
+	Body         string
+	BodyEncoding string
+	Response     *response
+	StartedAt    time.Time
+	HasStartedAt bool
+	DurationMs   float64
+	TimeoutMs    int
 }
 
 type response struct {
 	Status  int
 	Headers map[string]string
 	Body    string
-}
-
-type candidate struct {
-	name       string
-	value      string
-	source     string
-	expression string
-}
-
-var jsonCandidatePatterns = []struct {
-	namePattern string
-	regex       *regexp.Regexp
-}{
-	{namePattern: "corr_%s", regex: regexp.MustCompile(`(?i)"([A-Za-z0-9_]*(?:token|session|csrf|xsrf|auth|id))"\s*:\s*"([^\"]{6,})"`)},
-	{namePattern: "corr_%s", regex: regexp.MustCompile(`(?i)"([A-Za-z0-9_]*(?:id))"\s*:\s*(\d{4,})`)},
 }
 
 var sensitiveHeaders = map[string]bool{
@@ -93,8 +94,8 @@ var sensitiveHeaders = map[string]bool{
 }
 
 const (
-	rawHTTPRequestDelimiter  = "\n\n### STORMRUNNER REQUEST ###\n\n"
-	rawHTTPResponseDelimiter = "\n\n### STORMRUNNER RESPONSE ###\n\n"
+	rawHTTPRequestDelimiter  = "\n\n### APEXLOAD REQUEST ###\n\n"
+	rawHTTPResponseDelimiter = "\n\n### APEXLOAD RESPONSE ###\n\n"
 )
 
 func Convert(req ImportRequest) (*ConvertResult, error) {
@@ -107,20 +108,22 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	var (
-		exchanges []exchange
-		warnings  []string
-		err       error
+		exchanges   []exchange
+		warnings    []string
+		err         error
+		diagnostics diag.Collector
+		filtered    int
 	)
 
 	switch format {
 	case "raw_http":
 		exchanges, warnings, err = parseRawHTTP(req.Content, req.ResponseContent, req.Options.BaseURL)
 	case "curl":
-		exchanges, warnings, err = parseCurl(req.Content, req.ResponseContent)
+		exchanges, warnings, err = parseCurl(req.Content, req.ResponseContent, &diagnostics)
 	case "rest_json":
 		exchanges, warnings, err = parseRESTJSON(req.Content)
 	case "har":
-		exchanges, warnings, err = parseHAR(req.Content)
+		exchanges, warnings, filtered, err = parseHAR(req.Content, boolOption(req.Options.IncludeStaticAssets, false), &diagnostics)
 	default:
 		return nil, fmt.Errorf("unsupported format %q", req.Format)
 	}
@@ -148,7 +151,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if inferExtractors {
 		correlations = detectCorrelations(exchanges)
 		for _, corr := range correlations {
-			correlationVars[corr.SampleValue] = "{{var." + corr.Name + "}}"
+			value := corr.Value
+			if value == "" {
+				value = corr.SampleValue
+			}
+			correlationVars[value] = "{{var." + corr.Name + "}}"
 		}
 		if len(correlations) == 0 {
 			warnings = append(warnings, "no reusable correlation values were detected across the provided samples")
@@ -189,10 +196,14 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		Warnings:     warnings,
 		Correlations: correlations,
 		Stats: ConvertStats{
-			Format:        format,
-			TotalRequests: len(exchanges),
+			Format:         format,
+			TotalRequests:  len(exchanges) + filtered,
+			FilteredAssets: filtered,
 		},
 	}
+	sourceFiles := sampleSourceFiles(format, req.Content, req.ResponseContent)
+	sourceLocations := sampleSourceLocations(format, req.Content, req.ResponseContent, exchanges)
+	sourceMappings := make([]sourceview.Mapping, 0, len(exchanges))
 
 	for idx, ex := range exchanges {
 		target := relativeTarget(ex.URL, baseURL)
@@ -202,20 +213,33 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 
 		body := ex.Body
-		if sanitizeSensitive {
-			body = sanitizeBody(body)
+		if ex.BodyEncoding == "" {
+			body = applyCorrelationVars(body, correlationVars)
+			if sanitizeSensitive {
+				body = sanitizeBody(body)
+			}
 		}
-		body = applyCorrelationVars(body, correlationVars)
 		target = applyCorrelationVars(target, correlationVars)
 		headers = applyCorrelationVarsToHeaders(headers, correlationVars)
 
 		action := dsl.Action{
-			Name:    actionName(idx, ex.Method, ex.URL),
-			Type:    "request",
-			Method:  strings.ToUpper(ex.Method),
-			Target:  target,
-			Headers: headers,
-			Body:    body,
+			Name:         actionName(idx, ex.Method, ex.URL),
+			Type:         "request",
+			Method:       strings.ToUpper(ex.Method),
+			Target:       target,
+			Headers:      headers,
+			Body:         body,
+			BodyEncoding: ex.BodyEncoding,
+		}
+		if ex.TimeoutMs > 0 {
+			action.TimeoutMs = ex.TimeoutMs
+		}
+		if thinkTimeMs, ok := thinkTimeAfter(exchanges, idx); ok {
+			action.ThinkTimeAfter = true
+			action.ThinkTime = dsl.ThinkTimeConfig{
+				Type:   "fixed",
+				MeanMs: thinkTimeMs,
+			}
 		}
 
 		if len(action.Headers) == 0 {
@@ -229,6 +253,19 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		if ex.Response != nil {
 			if includeAssertions && ex.Response.Status > 0 {
 				action.Assertions = append(action.Assertions, dsl.Assertion{Type: "status_code", Expected: ex.Response.Status})
+				if location := responseSourceLocation(sourceLocations, idx); location.SourceFile != "" {
+					sourceMappings = append(sourceMappings, sourceview.Mapping{
+						SourceFile: location.SourceFile,
+						StartLine:  location.StartLine,
+						EndLine:    location.EndLine,
+						Function:   "response_status",
+						TargetPath: fmt.Sprintf("actions[%d].assertions[%d]", idx, len(action.Assertions)-1),
+						TargetName: "status_code",
+						TargetKind: "assertion",
+						Status:     "contributor",
+						Notes:      "Sample response status was converted into a generated assertion.",
+					})
+				}
 				result.Stats.Assertions++
 			}
 			if inferExtractors {
@@ -237,23 +274,234 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 						action.Extractors = append(action.Extractors, dsl.Extractor{
 							Name:       corr.Name,
 							Source:     corr.Source,
-							Type:       extractorTypeForSource(corr.Source),
+							Type:       extractorTypeForCorrelation(corr),
 							Expression: corr.Expression,
 						})
+						if location := responseSourceLocation(sourceLocations, idx); location.SourceFile != "" {
+							sourceMappings = append(sourceMappings, sourceview.Mapping{
+								SourceFile: location.SourceFile,
+								StartLine:  location.StartLine,
+								EndLine:    location.EndLine,
+								Function:   "response_correlation",
+								TargetPath: fmt.Sprintf("actions[%d].extractors[%d]", idx, len(action.Extractors)-1),
+								TargetName: corr.Name,
+								TargetKind: "extractor",
+								Status:     "contributor",
+								Notes:      "Sample response value was converted into a generated extractor.",
+							})
+						}
 						result.Stats.Extractors++
 					}
 				}
 			}
 		}
 
+		location := requestSourceLocation(sourceLocations, idx)
+		sourceMappings = append(sourceMappings, sourceview.Mapping{
+			SourceFile: location.SourceFile,
+			StartLine:  location.StartLine,
+			EndLine:    location.EndLine,
+			Function:   sampleSourceFunction(format),
+			TargetPath: fmt.Sprintf("actions[%d]", idx),
+			TargetName: action.Name,
+			TargetKind: "action",
+			Status:     "converted",
+			Notes:      "Source request was converted into a generated APEX Load action.",
+		})
 		result.Script.Actions = append(result.Script.Actions, action)
 		result.Stats.ConvertedActions++
 	}
 
 	applySOAPSampleProtocol(result.Script, &result.Warnings)
 
+	if gap := result.Stats.TotalRequests - result.Stats.ConvertedActions; gap > 0 {
+		diagnostics.Add(diag.Warning, "Sample completeness guard", format, fmt.Sprintf("%d request(s) were parsed but not converted into actions", gap))
+	}
+	result.Unsupported = diagnostics.Items()
 	result.Stats.CorrelationsDetected = len(correlations)
+	result.SourceReview = sourceview.Build(sourceFiles, sourceMappings)
 	return result, nil
+}
+
+type sampleSourceLocation struct {
+	SourceFile        string
+	StartLine         int
+	EndLine           int
+	ResponseFile      string
+	ResponseStartLine int
+	ResponseEndLine   int
+}
+
+func sampleSourceFiles(format string, content string, responseContent string) map[string]string {
+	files := map[string]string{
+		sampleSourceFileName(format): content,
+	}
+	if strings.TrimSpace(responseContent) != "" {
+		files[sampleResponseFileName(format)] = responseContent
+	}
+	return files
+}
+
+func sampleSourceFileName(format string) string {
+	switch normalizeFormat(format) {
+	case "raw_http":
+		return "sample.http"
+	case "curl":
+		return "sample.curl"
+	case "har":
+		return "sample.har"
+	case "rest_json":
+		return "sample.json"
+	default:
+		return "sample.txt"
+	}
+}
+
+func sampleResponseFileName(format string) string {
+	switch normalizeFormat(format) {
+	case "raw_http":
+		return "sample-response.http"
+	case "curl":
+		return "sample-response.txt"
+	default:
+		return "sample-response.txt"
+	}
+}
+
+func sampleSourceFunction(format string) string {
+	switch normalizeFormat(format) {
+	case "raw_http":
+		return "raw_http_request"
+	case "curl":
+		return "curl_command"
+	case "har":
+		return "har_entry"
+	case "rest_json":
+		return "rest_json_request"
+	default:
+		return "sample_request"
+	}
+}
+
+func sampleSourceLocations(format string, content string, responseContent string, exchanges []exchange) []sampleSourceLocation {
+	sourceFile := sampleSourceFileName(format)
+	responseFile := ""
+	if strings.TrimSpace(responseContent) != "" {
+		responseFile = sampleResponseFileName(format)
+	}
+	locations := make([]sampleSourceLocation, len(exchanges))
+	for index := range exchanges {
+		locations[index] = sampleSourceLocation{
+			SourceFile:        sourceFile,
+			StartLine:         1,
+			EndLine:           maxLine(content, 1),
+			ResponseFile:      responseFile,
+			ResponseStartLine: 1,
+			ResponseEndLine:   maxLine(responseContent, 1),
+		}
+	}
+	if len(exchanges) == 0 {
+		return locations
+	}
+
+	switch normalizeFormat(format) {
+	case "raw_http":
+		assignDelimitedContentLocations(locations, content, rawHTTPRequestDelimiter)
+	case "rest_json", "har":
+		assignURLLocations(locations, content, exchanges)
+	case "curl":
+		assignCurlLocations(locations, content, exchanges)
+	}
+	if responseFile != "" {
+		assignResponseLocations(locations, responseContent)
+	}
+	return locations
+}
+
+func assignDelimitedContentLocations(locations []sampleSourceLocation, content string, delimiter string) {
+	offset := 0
+	for index := range locations {
+		start := offset
+		end := len(content)
+		if next := strings.Index(content[offset:], delimiter); next >= 0 {
+			end = offset + next
+			offset = end + len(delimiter)
+		}
+		locations[index].StartLine = sourceview.LineForOffset(content, start)
+		locations[index].EndLine = sourceview.LineForOffset(content, end)
+	}
+}
+
+func assignURLLocations(locations []sampleSourceLocation, content string, exchanges []exchange) {
+	offset := 0
+	for index := range locations {
+		needle := exchanges[index].URL
+		if strings.TrimSpace(needle) == "" {
+			continue
+		}
+		found := strings.Index(content[offset:], needle)
+		if found < 0 {
+			found = strings.Index(content, needle)
+			if found < 0 {
+				continue
+			}
+		} else {
+			found += offset
+		}
+		locations[index].StartLine = sourceview.LineForOffset(content, found)
+		locations[index].EndLine = locations[index].StartLine
+		offset = found + len(needle)
+	}
+}
+
+func assignCurlLocations(locations []sampleSourceLocation, content string, exchanges []exchange) {
+	if len(exchanges) == 0 {
+		return
+	}
+	start := sourceview.LineForOffset(content, 0)
+	end := maxLine(content, start)
+	for index := range locations {
+		locations[index].StartLine = start
+		locations[index].EndLine = end
+	}
+}
+
+func assignResponseLocations(locations []sampleSourceLocation, responseContent string) {
+	offset := 0
+	for index := range locations {
+		start := offset
+		end := len(responseContent)
+		if next := strings.Index(responseContent[offset:], rawHTTPResponseDelimiter); next >= 0 {
+			end = offset + next
+			offset = end + len(rawHTTPResponseDelimiter)
+		}
+		locations[index].ResponseStartLine = sourceview.LineForOffset(responseContent, start)
+		locations[index].ResponseEndLine = sourceview.LineForOffset(responseContent, end)
+	}
+}
+
+func requestSourceLocation(locations []sampleSourceLocation, index int) sampleSourceLocation {
+	if index >= 0 && index < len(locations) {
+		return locations[index]
+	}
+	return sampleSourceLocation{SourceFile: "sample.txt", StartLine: 1, EndLine: 1}
+}
+
+func responseSourceLocation(locations []sampleSourceLocation, index int) sampleSourceLocation {
+	location := requestSourceLocation(locations, index)
+	if location.ResponseFile != "" {
+		location.SourceFile = location.ResponseFile
+		location.StartLine = location.ResponseStartLine
+		location.EndLine = location.ResponseEndLine
+	}
+	return location
+}
+
+func maxLine(content string, fallback int) int {
+	if strings.TrimSpace(content) == "" {
+		return fallback
+	}
+	return strings.Count(content, "\n") + 1
 }
 
 func applySOAPSampleProtocol(script *dsl.Script, warnings *[]string) {
@@ -499,7 +747,15 @@ func parseRawResponse(content string) (*response, []string, error) {
 	return &response{Status: status, Headers: parseHeaderLines(lines[1:]), Body: body}, nil, nil
 }
 
-func parseCurl(content, responseContent string) ([]exchange, []string, error) {
+type curlFormPart struct {
+	Name        string
+	Value       string
+	Filename    string
+	ContentType string
+	File        bool
+}
+
+func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]exchange, []string, error) {
 	tokens, err := shellSplit(content)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse curl command: %w", err)
@@ -508,68 +764,178 @@ func parseCurl(content, responseContent string) ([]exchange, []string, error) {
 		return nil, nil, errors.New("curl sample must start with 'curl'")
 	}
 	ex := exchange{Method: "GET", Headers: map[string]string{}}
-	var pendingURL bool
+	formParts := []curlFormPart{}
+	dataParts := []string{}
+	dataAsQuery := false
+	methodExplicit := false
+	location := "curl command"
 	for index := 1; index < len(tokens); index++ {
 		token := tokens[index]
-		switch token {
-		case "-X", "--request":
+		switch {
+		case token == "-X" || token == "--request":
 			index++
 			if index >= len(tokens) {
 				return nil, nil, errors.New("curl sample is missing a method after -X/--request")
 			}
 			ex.Method = strings.ToUpper(tokens[index])
-		case "-H", "--header":
+			methodExplicit = true
+		case strings.HasPrefix(token, "--request="):
+			ex.Method = strings.ToUpper(strings.TrimPrefix(token, "--request="))
+			methodExplicit = true
+		case strings.HasPrefix(token, "-X") && token != "-X":
+			ex.Method = strings.ToUpper(strings.TrimPrefix(token, "-X"))
+			methodExplicit = true
+		case token == "-H" || token == "--header":
 			index++
 			if index >= len(tokens) {
 				return nil, nil, errors.New("curl sample is missing a header value after -H/--header")
 			}
-			key, value, ok := splitHeader(tokens[index])
-			if ok {
-				ex.Headers[key] = value
-			}
-		case "-d", "--data", "--data-raw", "--data-binary", "--data-ascii":
+			addCurlHeader(ex.Headers, tokens[index])
+		case strings.HasPrefix(token, "--header="):
+			addCurlHeader(ex.Headers, strings.TrimPrefix(token, "--header="))
+		case strings.HasPrefix(token, "-H") && token != "-H":
+			addCurlHeader(ex.Headers, strings.TrimPrefix(token, "-H"))
+		case isCurlDataFlag(token):
 			index++
 			if index >= len(tokens) {
 				return nil, nil, errors.New("curl sample is missing a body value after data flag")
 			}
-			if ex.Body == "" {
-				ex.Body = tokens[index]
+			if isCurlDataURLEncodeFlag(token) {
+				dataParts = append(dataParts, encodeCurlDataValue(tokens[index], diagnostics, location))
 			} else {
-				ex.Body += "&" + tokens[index]
+				dataParts = append(dataParts, tokens[index])
 			}
-			if ex.Method == "GET" {
-				ex.Method = "POST"
+		case isCurlDataFlagWithValue(token):
+			_, value, _ := strings.Cut(token, "=")
+			if strings.HasPrefix(token, "--data-urlencode=") {
+				dataParts = append(dataParts, encodeCurlDataValue(value, diagnostics, location))
+			} else {
+				dataParts = append(dataParts, value)
 			}
-		case "--url":
-			pendingURL = true
-		case "-A", "--user-agent":
+		case strings.HasPrefix(token, "-d") && token != "-d":
+			dataParts = append(dataParts, strings.TrimPrefix(token, "-d"))
+		case token == "--json":
+			index++
+			if index >= len(tokens) {
+				return nil, nil, errors.New("curl sample is missing a JSON value after --json")
+			}
+			dataParts = append(dataParts, tokens[index])
+			addCurlJSONHeaders(ex.Headers)
+		case strings.HasPrefix(token, "--json="):
+			dataParts = append(dataParts, strings.TrimPrefix(token, "--json="))
+			addCurlJSONHeaders(ex.Headers)
+		case token == "-G" || token == "--get":
+			dataAsQuery = true
+		case token == "-F" || token == "--form" || token == "--form-string":
+			index++
+			if index >= len(tokens) {
+				return nil, nil, errors.New("curl sample is missing a form value after -F/--form")
+			}
+			formParts = append(formParts, parseCurlFormPart(tokens[index], token == "--form-string", diagnostics, location))
+		case strings.HasPrefix(token, "--form="):
+			formParts = append(formParts, parseCurlFormPart(strings.TrimPrefix(token, "--form="), false, diagnostics, location))
+		case strings.HasPrefix(token, "--form-string="):
+			formParts = append(formParts, parseCurlFormPart(strings.TrimPrefix(token, "--form-string="), true, diagnostics, location))
+		case strings.HasPrefix(token, "-F") && token != "-F":
+			formParts = append(formParts, parseCurlFormPart(strings.TrimPrefix(token, "-F"), false, diagnostics, location))
+		case token == "--url":
+			index++
+			if index >= len(tokens) {
+				return nil, nil, errors.New("curl sample is missing a URL after --url")
+			}
+			ex.URL = tokens[index]
+		case strings.HasPrefix(token, "--url="):
+			ex.URL = strings.TrimPrefix(token, "--url=")
+		case token == "-A" || token == "--user-agent":
 			index++
 			if index < len(tokens) {
 				ex.Headers["User-Agent"] = tokens[index]
 			}
-		case "-b", "--cookie":
+		case strings.HasPrefix(token, "--user-agent="):
+			ex.Headers["User-Agent"] = strings.TrimPrefix(token, "--user-agent=")
+		case strings.HasPrefix(token, "-A") && token != "-A":
+			ex.Headers["User-Agent"] = strings.TrimPrefix(token, "-A")
+		case token == "-e" || token == "--referer":
+			index++
+			if index < len(tokens) {
+				ex.Headers["Referer"] = tokens[index]
+			}
+		case strings.HasPrefix(token, "--referer="):
+			ex.Headers["Referer"] = strings.TrimPrefix(token, "--referer=")
+		case strings.HasPrefix(token, "-e") && token != "-e":
+			ex.Headers["Referer"] = strings.TrimPrefix(token, "-e")
+		case token == "--max-time":
+			index++
+			if index < len(tokens) {
+				ex.TimeoutMs = parseCurlSecondsMs(tokens[index])
+			}
+		case strings.HasPrefix(token, "--max-time="):
+			ex.TimeoutMs = parseCurlSecondsMs(strings.TrimPrefix(token, "--max-time="))
+		case token == "-b" || token == "--cookie":
 			index++
 			if index < len(tokens) {
 				ex.Headers["Cookie"] = tokens[index]
 			}
-		case "-u", "--user":
+		case strings.HasPrefix(token, "--cookie="):
+			ex.Headers["Cookie"] = strings.TrimPrefix(token, "--cookie=")
+		case strings.HasPrefix(token, "-b") && token != "-b":
+			ex.Headers["Cookie"] = strings.TrimPrefix(token, "-b")
+		case token == "-u" || token == "--user":
 			index++
 			if index < len(tokens) {
 				ex.Headers["Authorization"] = "Basic " + tokens[index]
+				diagnostics.Add(diag.Info, "cURL basic auth", location, "basic auth credentials were preserved as a placeholder-style Authorization header; validate secret handling before replay")
+			}
+		case strings.HasPrefix(token, "--user="):
+			ex.Headers["Authorization"] = "Basic " + strings.TrimPrefix(token, "--user=")
+			diagnostics.Add(diag.Info, "cURL basic auth", location, "basic auth credentials were preserved as a placeholder-style Authorization header; validate secret handling before replay")
+		case strings.HasPrefix(token, "-u") && token != "-u":
+			ex.Headers["Authorization"] = "Basic " + strings.TrimPrefix(token, "-u")
+			diagnostics.Add(diag.Info, "cURL basic auth", location, "basic auth credentials were preserved as a placeholder-style Authorization header; validate secret handling before replay")
+		case token == "-I" || token == "--head":
+			ex.Method = "HEAD"
+		case token == "-L" || token == "--location" || token == "--location-trusted":
+			diagnostics.Add(diag.Info, "cURL redirect option", location, "redirect-following option "+token+" is not modeled in the generated script; configure redirect policy before replay if required")
+		case isCurlFlag(token):
+			diagnostics.Add(diag.Warning, "cURL option", location, "option "+token+" is not modeled by the sample importer; review equivalent runtime behavior before replay")
+			if curlFlagLikelyTakesValue(token) && index+1 < len(tokens) && !isCurlFlag(tokens[index+1]) {
+				index++
 			}
 		default:
-			if pendingURL {
-				ex.URL = token
-				pendingURL = false
-				continue
-			}
 			if !strings.HasPrefix(token, "-") && ex.URL == "" {
 				ex.URL = token
+			} else if !strings.HasPrefix(token, "-") {
+				diagnostics.Add(diag.Info, "cURL argument", location, "extra positional argument "+token+" was not converted")
 			}
 		}
 	}
 	if ex.URL == "" {
 		return nil, nil, errors.New("curl sample did not include a URL")
+	}
+	if len(dataParts) > 0 {
+		if dataAsQuery {
+			ex.URL = addCurlQueryData(ex.URL, dataParts)
+			if !methodExplicit {
+				ex.Method = "GET"
+			}
+		} else {
+			ex.Body = strings.Join(dataParts, "&")
+			if !methodExplicit && ex.Method == "GET" {
+				ex.Method = "POST"
+			}
+		}
+	}
+	if len(formParts) > 0 {
+		if strings.TrimSpace(ex.Body) != "" {
+			diagnostics.Add(diag.Warning, "cURL mixed body", location, "both data and multipart form flags were present; multipart form body was used and data flags require review")
+		}
+		ex.Body = curlMultipartBody(formParts)
+		if headerLookup(ex.Headers, "Content-Type") == "" {
+			ex.Headers["Content-Type"] = "multipart/form-data; boundary=----apexload-curl-boundary"
+		}
+		if ex.Method == "GET" {
+			ex.Method = "POST"
+		}
 	}
 	var warnings []string
 	if strings.TrimSpace(responseContent) != "" {
@@ -581,6 +947,184 @@ func parseCurl(content, responseContent string) ([]exchange, []string, error) {
 		warnings = append(warnings, respWarnings...)
 	}
 	return []exchange{ex}, warnings, nil
+}
+
+func addCurlHeader(headers map[string]string, raw string) {
+	key, value, ok := splitHeader(raw)
+	if ok {
+		headers[key] = value
+	}
+}
+
+func addCurlJSONHeaders(headers map[string]string) {
+	if headerLookup(headers, "Content-Type") == "" {
+		headers["Content-Type"] = "application/json"
+	}
+	if headerLookup(headers, "Accept") == "" {
+		headers["Accept"] = "application/json"
+	}
+}
+
+func appendCurlData(ex *exchange, value string) {
+	if ex.Body == "" {
+		ex.Body = value
+	} else {
+		ex.Body += "&" + value
+	}
+	if ex.Method == "GET" {
+		ex.Method = "POST"
+	}
+}
+
+func isCurlDataURLEncodeFlag(token string) bool {
+	return token == "--data-urlencode"
+}
+
+func isCurlDataFlag(token string) bool {
+	switch token {
+	case "-d", "--data", "--data-raw", "--data-binary", "--data-ascii", "--data-urlencode":
+		return true
+	default:
+		return false
+	}
+}
+
+func encodeCurlDataValue(raw string, diagnostics *diag.Collector, location string) string {
+	if strings.Contains(raw, "@") && !strings.Contains(raw, "=") {
+		diagnostics.Add(diag.Warning, "cURL data-urlencode", location, "--data-urlencode file-reference syntax was approximated as an encoded literal; review the generated query/body value")
+	}
+	if name, value, ok := strings.Cut(raw, "="); ok && name != "" {
+		return url.QueryEscape(name) + "=" + url.QueryEscape(value)
+	}
+	if strings.HasPrefix(raw, "=") {
+		return url.QueryEscape(strings.TrimPrefix(raw, "="))
+	}
+	return url.QueryEscape(raw)
+}
+
+func addCurlQueryData(rawURL string, dataParts []string) string {
+	if len(dataParts) == 0 {
+		return rawURL
+	}
+	separator := "?"
+	if strings.Contains(rawURL, "?") {
+		separator = "&"
+		if strings.HasSuffix(rawURL, "?") || strings.HasSuffix(rawURL, "&") {
+			separator = ""
+		}
+	}
+	return rawURL + separator + strings.Join(dataParts, "&")
+}
+
+func parseCurlSecondsMs(value string) int {
+	seconds, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil || seconds <= 0 {
+		return 0
+	}
+	return int(seconds * 1000)
+}
+
+func isCurlDataFlagWithValue(token string) bool {
+	for _, prefix := range []string{"--data=", "--data-raw=", "--data-binary=", "--data-ascii=", "--data-urlencode="} {
+		if strings.HasPrefix(token, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func parseCurlFormPart(raw string, forceLiteral bool, diagnostics *diag.Collector, location string) curlFormPart {
+	name, value, ok := strings.Cut(raw, "=")
+	name = strings.TrimSpace(name)
+	if !ok || name == "" {
+		diagnostics.Add(diag.Warning, "cURL multipart form", location, "form part "+raw+" did not use name=value syntax and was represented with a placeholder name")
+		name = "field"
+		value = raw
+	}
+	part := curlFormPart{Name: name, Value: value}
+	segments := strings.Split(value, ";")
+	payload := segments[0]
+	for _, segment := range segments[1:] {
+		key, val, ok := strings.Cut(segment, "=")
+		if !ok {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "type":
+			part.ContentType = strings.Trim(strings.TrimSpace(val), `"`)
+		case "filename":
+			part.Filename = strings.Trim(strings.TrimSpace(val), `"`)
+		}
+	}
+	if !forceLiteral && (strings.HasPrefix(payload, "@") || strings.HasPrefix(payload, "<")) {
+		source := strings.TrimLeft(payload, "@<")
+		if part.Filename == "" {
+			part.Filename = baseName(source)
+		}
+		if part.Filename == "" {
+			part.Filename = "upload.bin"
+		}
+		part.Value = "{{file." + sanitizeIdentifier(name) + "}}"
+		part.File = true
+		diagnostics.Add(diag.Warning, "cURL multipart file", location, "form part "+name+" references local file "+source+"; file bytes are not embedded in the sample and must be supplied before replay")
+		return part
+	}
+	part.Value = payload
+	return part
+}
+
+func curlMultipartBody(parts []curlFormPart) string {
+	const boundary = "----apexload-curl-boundary"
+	var b strings.Builder
+	for _, part := range parts {
+		name := escapeMultipartQuoted(part.Name)
+		b.WriteString("--" + boundary + "\r\n")
+		b.WriteString(`Content-Disposition: form-data; name="` + name + `"`)
+		if part.File {
+			b.WriteString(`; filename="` + escapeMultipartQuoted(part.Filename) + `"`)
+		}
+		b.WriteString("\r\n")
+		if part.ContentType != "" {
+			b.WriteString("Content-Type: " + part.ContentType + "\r\n")
+		}
+		b.WriteString("\r\n")
+		b.WriteString(part.Value + "\r\n")
+	}
+	b.WriteString("--" + boundary + "--\r\n")
+	return b.String()
+}
+
+func escapeMultipartQuoted(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	return strings.ReplaceAll(value, `"`, `\"`)
+}
+
+func baseName(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.TrimRight(value, `/\`)
+	if value == "" {
+		return ""
+	}
+	if idx := strings.LastIndexAny(value, `/\`); idx >= 0 {
+		return value[idx+1:]
+	}
+	return value
+}
+
+func isCurlFlag(token string) bool {
+	return strings.HasPrefix(token, "-") && token != "-"
+}
+
+func curlFlagLikelyTakesValue(token string) bool {
+	if strings.Contains(token, "=") {
+		return false
+	}
+	switch token {
+	case "--connect-timeout", "--max-time", "--retry", "--retry-delay", "--proxy", "--cacert", "--cert", "--key", "--resolve", "--interface", "--limit-rate", "--request-target", "--output", "-o", "--write-out", "-w":
+		return true
+	default:
+		return len(token) == 2 && token != "-L" && token != "-I" && token != "-k" && token != "-s" && token != "-v"
+	}
 }
 
 func parseRESTJSON(content string) ([]exchange, []string, error) {
@@ -603,28 +1147,36 @@ func parseRESTJSON(content string) ([]exchange, []string, error) {
 	return exchanges, nil, nil
 }
 
-func parseHAR(content string) ([]exchange, []string, error) {
+func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collector) ([]exchange, []string, int, error) {
 	var payload any
 	if err := json.Unmarshal([]byte(content), &payload); err != nil {
-		return nil, nil, fmt.Errorf("failed to parse HAR JSON: %w", err)
+		return nil, nil, 0, fmt.Errorf("failed to parse HAR JSON: %w", err)
 	}
 	items, err := extractHARItems(payload)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 	exchanges := make([]exchange, 0, len(items))
-	for _, item := range items {
-		ex, err := parseHARItem(item)
+	filtered := 0
+	for index, item := range items {
+		if !includeStaticAssets && isStaticHAREntry(item) {
+			filtered++
+			continue
+		}
+		ex, err := parseHARItem(item, diagnostics, index)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 		exchanges = append(exchanges, ex)
 	}
 	warnings := []string{}
 	if len(exchanges) > 1 {
-		warnings = append(warnings, "HAR import includes only request/response essentials; browser-specific timing and asset metadata are not preserved")
+		warnings = append(warnings, "HAR import preserves inter-request think time when entry timestamps are available, but browser-specific asset metadata is not preserved")
 	}
-	return exchanges, warnings, nil
+	if filtered > 0 {
+		diagnostics.Add(diag.Info, "HAR static asset filter", "HAR import", fmt.Sprintf("%d static asset entr%s skipped by default; enable include_static_assets to retain browser assets", filtered, pluralSuffix(filtered, "y was", "ies were")))
+	}
+	return exchanges, warnings, filtered, nil
 }
 
 func extractRESTItems(payload any) ([]map[string]any, error) {
@@ -706,16 +1258,81 @@ func extractHARItems(payload any) ([]map[string]any, error) {
 	return nil, errors.New("HAR content must include log.entries or a single entry with request/response")
 }
 
-func parseHARItem(item map[string]any) (exchange, error) {
+func isStaticHAREntry(item map[string]any) bool {
+	requestData, _ := item["request"].(map[string]any)
+	responseData, _ := item["response"].(map[string]any)
+	if content, ok := responseData["content"].(map[string]any); ok {
+		if isStaticMIMEType(stringValue(content["mimeType"])) {
+			return true
+		}
+	}
+	return isStaticURL(stringValue(requestData["url"]))
+}
+
+func isStaticMIMEType(mimeType string) bool {
+	mimeType = strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
+	if mimeType == "" {
+		return false
+	}
+	if strings.HasPrefix(mimeType, "image/") || strings.HasPrefix(mimeType, "font/") || strings.HasPrefix(mimeType, "audio/") || strings.HasPrefix(mimeType, "video/") {
+		return true
+	}
+	switch mimeType {
+	case "text/css", "text/javascript", "application/javascript", "application/x-javascript", "application/font-woff", "application/font-woff2", "application/vnd.ms-fontobject":
+		return true
+	default:
+		return false
+	}
+}
+
+func isStaticURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	pathValue := rawURL
+	if err == nil && parsed.Path != "" {
+		pathValue = parsed.Path
+	}
+	pathValue = strings.ToLower(pathValue)
+	for _, ext := range []string{".css", ".js", ".mjs", ".map", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".otf", ".mp4", ".webm", ".mp3", ".wav"} {
+		if strings.HasSuffix(pathValue, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+func pluralSuffix(count int, singular string, plural string) string {
+	if count == 1 {
+		return singular
+	}
+	return plural
+}
+
+func parseHARItem(item map[string]any, diagnostics *diag.Collector, index int) (exchange, error) {
 	requestData, ok := item["request"].(map[string]any)
 	if !ok {
 		return exchange{}, errors.New("HAR entry is missing request")
 	}
+	location := fmt.Sprintf("HAR entry %d", index+1)
+	body, bodyEncoding := harBody(requestData, diagnostics, location)
 	ex := exchange{
-		Method:  strings.ToUpper(stringValue(requestData["method"])),
-		URL:     stringValue(requestData["url"]),
-		Body:    harBody(requestData),
-		Headers: headerListToMap(requestData["headers"]),
+		Method:       strings.ToUpper(stringValue(requestData["method"])),
+		URL:          stringValue(requestData["url"]),
+		Body:         body,
+		BodyEncoding: bodyEncoding,
+		Headers:      headerListToMap(requestData["headers"], diagnostics, location),
+		DurationMs:   floatValue(item["time"]),
+	}
+	if ex.Headers == nil {
+		ex.Headers = map[string]string{}
+	}
+	if ex.Method != "" || ex.URL != "" {
+		location = strings.TrimSpace(ex.Method + " " + ex.URL)
+	}
+	applyHARPostDataHeaders(requestData, ex.Headers)
+	mergeHARCookies(requestData["cookies"], ex.Headers, diagnostics, location)
+	if startedAt, ok := parseHARStartedAt(item["startedDateTime"]); ok {
+		ex.StartedAt = startedAt
+		ex.HasStartedAt = true
 	}
 	if ex.Method == "" || ex.URL == "" {
 		return exchange{}, errors.New("HAR request entries must include method and url")
@@ -723,15 +1340,33 @@ func parseHARItem(item map[string]any) (exchange, error) {
 	if responseData, ok := item["response"].(map[string]any); ok {
 		responseBody := ""
 		if content, ok := responseData["content"].(map[string]any); ok {
-			responseBody = bodyValue(content["text"])
+			responseBody = decodeHARText(bodyValue(content["text"]), stringValue(content["encoding"]), diagnostics, location+" response", "response body")
 		}
 		ex.Response = &response{
 			Status:  intValue(responseData["status"]),
-			Headers: headerListToMap(responseData["headers"]),
+			Headers: headerListToMap(responseData["headers"], diagnostics, location+" response"),
 			Body:    responseBody,
 		}
 	}
 	return ex, nil
+}
+
+func thinkTimeAfter(exchanges []exchange, index int) (float64, bool) {
+	if index < 0 || index >= len(exchanges)-1 {
+		return 0, false
+	}
+	current := exchanges[index]
+	next := exchanges[index+1]
+	if current.HasStartedAt && next.HasStartedAt {
+		gap := next.StartedAt.Sub(current.StartedAt) - time.Duration(current.DurationMs*float64(time.Millisecond))
+		if gap > 500*time.Millisecond {
+			return float64(gap / time.Millisecond), true
+		}
+	}
+	if current.DurationMs > 500 {
+		return current.DurationMs, true
+	}
+	return 0, false
 }
 
 func detectBaseURL(exchanges []exchange) string {
@@ -746,91 +1381,35 @@ func detectBaseURL(exchanges []exchange) string {
 }
 
 func detectCorrelations(exchanges []exchange) []Correlation {
-	seen := map[string]bool{}
-	correlations := []Correlation{}
+	observations := make([]correlate.Observation, 0, len(exchanges))
 	for index, ex := range exchanges {
-		if ex.Response == nil {
-			continue
+		observation := correlate.Observation{
+			ID:             index + 1,
+			RequestURL:     ex.URL,
+			RequestBody:    ex.Body,
+			RequestHeaders: ex.Headers,
 		}
-		candidates := responseCandidates(*ex.Response)
-		for _, candidate := range candidates {
-			if candidate.value == "" || seen[candidate.value] {
-				continue
-			}
-			usedIn := []int{}
-			for later := index + 1; later < len(exchanges); later++ {
-				if exchangeContains(exchanges[later], candidate.value) {
-					usedIn = append(usedIn, later+1)
-				}
-			}
-			if len(usedIn) == 0 {
-				continue
-			}
-			seen[candidate.value] = true
-			correlations = append(correlations, Correlation{
-				Name:        candidate.name,
-				Source:      candidate.source,
-				Expression:  candidate.expression,
-				SampleValue: candidate.value,
-				FoundInStep: index + 1,
-				UsedInSteps: usedIn,
-			})
+		if ex.Response != nil {
+			observation.ResponseBody = ex.Response.Body
+			observation.ResponseHeaders = ex.Response.Headers
 		}
+		observations = append(observations, observation)
 	}
-	sort.Slice(correlations, func(i, j int) bool {
-		if correlations[i].FoundInStep == correlations[j].FoundInStep {
-			return correlations[i].Name < correlations[j].Name
-		}
-		return correlations[i].FoundInStep < correlations[j].FoundInStep
-	})
-	return correlations
-}
-
-func responseCandidates(resp response) []candidate {
-	results := []candidate{}
-	for _, pattern := range jsonCandidatePatterns {
-		matches := pattern.regex.FindAllStringSubmatch(resp.Body, -1)
-		for _, match := range matches {
-			if len(match) < 3 {
-				continue
-			}
-			key := sanitizeIdentifier(match[1])
-			results = append(results, candidate{
-				name:       fmt.Sprintf(pattern.namePattern, key),
-				value:      match[2],
-				source:     "body",
-				expression: "$." + match[1],
-			})
-		}
-	}
-	for key, value := range resp.Headers {
-		lowerKey := strings.ToLower(key)
-		if !strings.Contains(lowerKey, "token") && !strings.Contains(lowerKey, "cookie") && !strings.Contains(lowerKey, "location") && !strings.Contains(lowerKey, "id") {
-			continue
-		}
-		if len(value) < 4 {
-			continue
-		}
-		results = append(results, candidate{
-			name:       "corr_" + sanitizeIdentifier(lowerKey),
-			value:      value,
-			source:     "header",
-			expression: key,
+	shared := correlate.Detect(observations)
+	correlations := make([]Correlation, 0, len(shared))
+	for _, corr := range shared {
+		correlations = append(correlations, Correlation{
+			Name:        corr.Name,
+			Source:      corr.Source,
+			Expression:  corr.Expression,
+			ExtractType: corr.ExtractType,
+			Value:       corr.Value,
+			SampleValue: corr.SampleValue,
+			FoundInStep: corr.FoundInID,
+			UsedInSteps: corr.UsedInIDs,
 		})
 	}
-	return results
-}
-
-func exchangeContains(ex exchange, value string) bool {
-	if strings.Contains(ex.URL, value) || strings.Contains(ex.Body, value) {
-		return true
-	}
-	for _, headerValue := range ex.Headers {
-		if strings.Contains(headerValue, value) {
-			return true
-		}
-	}
-	return false
+	return correlations
 }
 
 func actionName(index int, method, rawURL string) string {
@@ -1014,35 +1593,38 @@ func sanitizeBody(body string) string {
 	if trimmed == "" {
 		return body
 	}
-	replacements := []*regexp.Regexp{
-		regexp.MustCompile(`(?i)("(?:password|token|access_token|refresh_token|api_key)"\s*:\s*")([^"]+)(")`),
-		regexp.MustCompile(`(?i)((?:password|token|access_token|refresh_token|api_key)=)([^&\s]+)`),
-	}
-	result := body
-	for _, pattern := range replacements {
-		result = pattern.ReplaceAllString(result, `${1}{{secret.redacted}}${3}`)
-	}
+	jsonSensitive := regexp.MustCompile(`(?i)("(?:password|token|access_token|refresh_token|api_key)"\s*:\s*")([^"]+)(")`)
+	formSensitive := regexp.MustCompile(`(?i)((?:^|[&\s])(?:password|token|access_token|refresh_token|api_key)=)([^&\s]+)`)
+	result := jsonSensitive.ReplaceAllStringFunc(body, func(segment string) string {
+		match := jsonSensitive.FindStringSubmatch(segment)
+		if len(match) < 4 || strings.Contains(match[2], "{{") {
+			return segment
+		}
+		return match[1] + "{{secret.redacted}}" + match[3]
+	})
+	result = formSensitive.ReplaceAllStringFunc(result, func(segment string) string {
+		match := formSensitive.FindStringSubmatch(segment)
+		if len(match) < 3 || strings.Contains(match[2], "{{") {
+			return segment
+		}
+		return match[1] + "{{secret.redacted}}"
+	})
 	return result
 }
 
 func applyCorrelationVars(value string, vars map[string]string) string {
-	for raw, replacement := range vars {
-		if raw == "" {
-			continue
-		}
-		value = strings.ReplaceAll(value, raw, replacement)
-	}
-	return value
+	return correlate.ApplyVars(value, vars)
 }
 
 func applyCorrelationVarsToHeaders(headers map[string]string, vars map[string]string) map[string]string {
-	if len(headers) == 0 {
-		return headers
+	return correlate.ApplyVarsToHeaders(headers, vars)
+}
+
+func extractorTypeForCorrelation(corr Correlation) string {
+	if corr.ExtractType != "" {
+		return corr.ExtractType
 	}
-	for key, value := range headers {
-		headers[key] = applyCorrelationVars(value, vars)
-	}
-	return headers
+	return extractorTypeForSource(corr.Source)
 }
 
 func extractorTypeForSource(source string) string {
@@ -1098,6 +1680,39 @@ func intValue(value any) int {
 	}
 }
 
+func floatValue(value any) float64 {
+	switch typed := value.(type) {
+	case float64:
+		return typed
+	case float32:
+		return float64(typed)
+	case int:
+		return float64(typed)
+	case int64:
+		return float64(typed)
+	case json.Number:
+		parsed, _ := typed.Float64()
+		return parsed
+	case string:
+		parsed, _ := strconv.ParseFloat(typed, 64)
+		return parsed
+	default:
+		return 0
+	}
+}
+
+func parseHARStartedAt(value any) (time.Time, bool) {
+	raw := stringValue(value)
+	if raw == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
+}
+
 func bodyValue(value any) string {
 	switch typed := value.(type) {
 	case string:
@@ -1128,12 +1743,14 @@ func mapValueToStringMap(value any) map[string]string {
 	return result
 }
 
-func headerListToMap(value any) map[string]string {
+func headerListToMap(value any, diagnostics *diag.Collector, location string) map[string]string {
 	items, ok := value.([]any)
 	if !ok {
 		return nil
 	}
 	result := make(map[string]string, len(items))
+	canonical := map[string]string{}
+	duplicateSetCookie := false
 	for _, item := range items {
 		mapped, ok := item.(map[string]any)
 		if !ok {
@@ -1143,16 +1760,205 @@ func headerListToMap(value any) map[string]string {
 		if name == "" {
 			continue
 		}
-		result[name] = stringValue(mapped["value"])
+		value := stringValue(mapped["value"])
+		normalized := strings.ToLower(name)
+		existingKey := canonical[normalized]
+		if existingKey == "" {
+			canonical[normalized] = name
+			result[name] = value
+			continue
+		}
+		if strings.EqualFold(existingKey, "Set-Cookie") {
+			duplicateSetCookie = true
+		}
+		if result[existingKey] == "" {
+			result[existingKey] = value
+		} else if value != "" {
+			result[existingKey] += ", " + value
+		}
+	}
+	if duplicateSetCookie {
+		diagnostics.Add(diag.Info, "duplicate Set-Cookie headers", location, "multiple Set-Cookie headers were folded into one comma-joined header value; validate cookie replay behavior")
 	}
 	return result
 }
 
-func harBody(requestData map[string]any) string {
+func harBody(requestData map[string]any, diagnostics *diag.Collector, location string) (string, string) {
 	if postData, ok := requestData["postData"].(map[string]any); ok {
 		if text := bodyValue(postData["text"]); text != "" {
-			return text
+			return decodeHARRequestBody(text, stringValue(postData["encoding"]), diagnostics, location)
 		}
+		return harParamsBody(postData, diagnostics, location), ""
 	}
-	return ""
+	return "", ""
+}
+
+func decodeHARText(text string, encoding string, diagnostics *diag.Collector, location string, label string) string {
+	if !strings.EqualFold(strings.TrimSpace(encoding), "base64") {
+		return text
+	}
+	decoded, err := decodeBase64Text(text)
+	if err != nil {
+		diagnostics.Add(diag.Warning, "HAR base64 content", location, label+" is marked base64 but could not be decoded; original text was preserved")
+		return text
+	}
+	if !utf8.Valid(decoded) {
+		placeholder := "{{binary.har_" + strings.ReplaceAll(strings.ToLower(label), " ", "_") + "}}"
+		diagnostics.Add(diag.Info, "HAR base64 content", location, label+" decoded to non-UTF-8 bytes and was represented with "+placeholder)
+		return placeholder
+	}
+	return string(decoded)
+}
+
+func decodeHARRequestBody(text string, encoding string, diagnostics *diag.Collector, location string) (string, string) {
+	if !strings.EqualFold(strings.TrimSpace(encoding), "base64") {
+		return text, ""
+	}
+	decoded, err := decodeBase64Text(text)
+	if err != nil {
+		diagnostics.Add(diag.Warning, "HAR base64 content", location, "request body is marked base64 but could not be decoded; original text was preserved")
+		return text, ""
+	}
+	if !utf8.Valid(decoded) {
+		diagnostics.Add(diag.Info, "HAR base64 content", location, "request body decoded to non-UTF-8 bytes and was preserved as base64 for replay")
+		return base64.StdEncoding.EncodeToString(decoded), "base64"
+	}
+	return string(decoded), ""
+}
+
+func decodeBase64Text(value string) ([]byte, error) {
+	compact := strings.Join(strings.Fields(value), "")
+	encodings := []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	}
+	var lastErr error
+	for _, encoding := range encodings {
+		decoded, err := encoding.DecodeString(compact)
+		if err == nil {
+			return decoded, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
+}
+
+func harParamsBody(postData map[string]any, diagnostics *diag.Collector, location string) string {
+	params, ok := postData["params"].([]any)
+	if !ok || len(params) == 0 {
+		return ""
+	}
+	mimeType := strings.ToLower(stringValue(postData["mimeType"]))
+	if strings.Contains(mimeType, "multipart/form-data") {
+		return harMultipartBody(params, diagnostics, location)
+	}
+	values := url.Values{}
+	for _, item := range params {
+		param, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := stringValue(param["name"])
+		if name == "" {
+			continue
+		}
+		value := stringValue(param["value"])
+		if filename := stringValue(param["fileName"]); filename != "" || value == "" {
+			placeholder := "{{file." + sanitizeIdentifier(name) + "}}"
+			if filename != "" {
+				placeholder = filename
+			}
+			value = placeholder
+			diagnostics.Add(diag.Warning, "HAR postData.params file", location, "form parameter "+name+" references file content that is not embedded in the HAR; replace the placeholder before replay")
+		}
+		values.Add(name, value)
+	}
+	if !strings.Contains(mimeType, "application/x-www-form-urlencoded") && mimeType != "" {
+		diagnostics.Add(diag.Info, "HAR postData.params", location, "postData.params were serialized as URL-encoded form data because text was absent")
+	}
+	return values.Encode()
+}
+
+func harMultipartBody(params []any, diagnostics *diag.Collector, location string) string {
+	const boundary = "----apexload-har-boundary"
+	var b strings.Builder
+	for _, item := range params {
+		param, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := stringValue(param["name"])
+		if name == "" {
+			continue
+		}
+		value := stringValue(param["value"])
+		filename := stringValue(param["fileName"])
+		b.WriteString("--" + boundary + "\r\n")
+		if filename != "" || value == "" {
+			if filename == "" {
+				filename = "upload.bin"
+			}
+			b.WriteString(`Content-Disposition: form-data; name="` + name + `"; filename="` + filename + `"` + "\r\n")
+			if contentType := stringValue(param["contentType"]); contentType != "" {
+				b.WriteString("Content-Type: " + contentType + "\r\n")
+			}
+			b.WriteString("\r\n{{file." + sanitizeIdentifier(name) + "}}\r\n")
+			diagnostics.Add(diag.Warning, "HAR multipart file", location, "multipart parameter "+name+" references file bytes that are not embedded in the HAR; replace {{file."+sanitizeIdentifier(name)+"}} before replay")
+			continue
+		}
+		b.WriteString(`Content-Disposition: form-data; name="` + name + `"` + "\r\n\r\n")
+		b.WriteString(value + "\r\n")
+	}
+	b.WriteString("--" + boundary + "--\r\n")
+	return b.String()
+}
+
+func applyHARPostDataHeaders(requestData map[string]any, headers map[string]string) {
+	if headers == nil {
+		return
+	}
+	postData, ok := requestData["postData"].(map[string]any)
+	if !ok {
+		return
+	}
+	mimeType := stringValue(postData["mimeType"])
+	if mimeType == "" || headerLookup(headers, "Content-Type") != "" {
+		return
+	}
+	if strings.Contains(strings.ToLower(mimeType), "multipart/form-data") && !strings.Contains(strings.ToLower(mimeType), "boundary=") {
+		mimeType += "; boundary=----apexload-har-boundary"
+	}
+	headers["Content-Type"] = mimeType
+}
+
+func mergeHARCookies(value any, headers map[string]string, diagnostics *diag.Collector, location string) {
+	if headerLookup(headers, "Cookie") != "" {
+		return
+	}
+	items, ok := value.([]any)
+	if !ok || len(items) == 0 {
+		return
+	}
+	pairs := make([]string, 0, len(items))
+	for _, item := range items {
+		mapped, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := stringValue(mapped["name"])
+		if name == "" {
+			continue
+		}
+		pairs = append(pairs, name+"="+stringValue(mapped["value"]))
+	}
+	if len(pairs) == 0 {
+		return
+	}
+	if headers == nil {
+		return
+	}
+	headers["Cookie"] = strings.Join(pairs, "; ")
+	diagnostics.Add(diag.Info, "HAR cookies[]", location, "request cookies[] were merged into a Cookie header; browser cookie-jar state is not simulated")
 }

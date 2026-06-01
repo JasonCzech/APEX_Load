@@ -2,12 +2,21 @@ import { useState, useEffect, useCallback } from 'react'
 import { downloadBlob } from '../utils/fileUtils'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
-import { BASE } from '../hooks/apiClient'
+import { apiFetch } from '../hooks/apiClient'
 import { Project } from '../types'
-import { getErrorMessage } from '../utils/errorUtils'
-import { type RecorderCorrelation as Correlation, type ScriptImportResult } from '../types/scriptImports'
+import { type RecorderImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
-import ScriptImportReview from './ScriptImportReview'
+import { withFallbackPersistedScript } from './importSaveUtils'
+import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
+import { type ImportedSaveResult } from './useScriptsAuthoringState'
+import {
+  DEFAULT_MACOS_NETWORK_SERVICE,
+  buildMacOSRestoreProxyCommand,
+  buildMacOSStartProxyCommand,
+  buildWindowsRestoreProxyCommand,
+  buildWindowsStartProxyCommand,
+  recorderProxyPort,
+} from './recordingProxyCommands'
 import './RecordingStudio.css'
 
 interface RecordedRequest {
@@ -23,8 +32,10 @@ interface RecordedRequest {
   response_time_ms: number
   content_type: string
   body: string
+  body_encoding?: string
   body_size_bytes?: number
   body_truncated?: boolean
+  response_body_encoding?: string
   response_body_size_bytes?: number
   response_body_truncated?: boolean
   think_time_ms: number
@@ -48,34 +59,61 @@ interface RecordingSession {
     exclude_static: boolean
     exclude_hosts?: string[]
     include_hosts?: string[]
+    capture_cookies?: boolean
   }
 }
 
-interface StartRecordingRequest {
+interface Correlation {
   name: string
-  project_id?: string
-  exclude_static: boolean
-  include_hosts?: string[]
-  exclude_hosts?: string[]
+  source: string
+  expression: string
+  extract_type: string
+  found_in_seq: number
+  used_in_seqs: number[]
+  sample_value: string
+  rule_id?: string
+  confidence?: number
+  reasons?: string[]
 }
 
-type RecorderPreviewResult = ScriptImportResult<Record<string, unknown>, Correlation, ScriptDefinition>
+// confidenceTone buckets a 0..1 correlation confidence for badge styling.
+// >=0.8 is auto-applicable in the engine; the UI mirrors that threshold.
+function confidenceTone(confidence?: number): 'high' | 'medium' | 'low' | null {
+  if (typeof confidence !== 'number') return null
+  if (confidence >= 0.8) return 'high'
+  if (confidence >= 0.6) return 'medium'
+  return 'low'
+}
 
-interface Props {
+interface RecorderStatus {
+  proxy_addr?: string
+  ca_cert_path?: string
+  active?: {
+    id: string
+    name: string
+    status: string
+    request_count: number
+    started_at: string
+  } | null
+}
+
+interface RecordingStudioProps {
   activeProject?: Project | null
-  onImported?: (script: ScriptDefinition) => void
+  onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition) => void
 }
 
-export default function RecordingStudio({ activeProject, onImported, onEdit }: Props) {
+export default function RecordingStudio({ activeProject, onImported, onEdit }: RecordingStudioProps) {
   const api = useApi()
   const [sessions, setSessions] = useState<RecordingSession[]>([])
   const [activeSession, setActiveSession] = useState<RecordingSession | null>(null)
   const [proxyAddr, setProxyAddr] = useState('')
   const [caCertPath, setCaCertPath] = useState('')
+  const [macOSNetworkService, setMacOSNetworkService] = useState(DEFAULT_MACOS_NETWORK_SERVICE)
   const [sessionName, setSessionName] = useState('')
   const [includeHosts, setIncludeHosts] = useState('')
   const [excludeHosts, setExcludeHosts] = useState('')
+  const [captureCookies, setCaptureCookies] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [feedbackType, setFeedbackType] = useState<'success' | 'error'>('success')
   const [selectedSession, setSelectedSession] = useState<RecordingSession | null>(null)
@@ -88,10 +126,10 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
     excluded: false,
   })
   const [showSetup, setShowSetup] = useState(true)
-  const convertTask = useAsyncTask<RecorderPreviewResult>()
-  const saveTask = useAsyncTask<boolean>()
+  const [parameterizeInputs, setParameterizeInputs] = useState(false)
+  const convertTask = useAsyncTask<RecorderImportResult>()
 
-  const proxyPort = (proxyAddr || ':8081').split(':').pop() || '8081'
+  const proxyPort = recorderProxyPort(proxyAddr)
 
   const handleCopyCAPath = async () => {
     if (!caCertPath) return
@@ -101,22 +139,64 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
       }
       await navigator.clipboard.writeText(caCertPath)
       showFeedback('CA certificate path copied')
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to copy CA certificate path'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message || 'Failed to copy CA certificate path', 'error')
     }
   }
 
   const handleDownloadCA = async (format: 'crt' | 'pem' = 'crt') => {
     try {
-      const url = format === 'pem' ? `${BASE}/recorder/ca.pem?format=pem` : `${BASE}/recorder/ca.pem`
-      const res = await fetch(url)
+      const url = format === 'pem' ? '/recorder/ca.pem?format=pem' : '/recorder/ca.pem'
+      const res = await apiFetch(url)
       if (!res.ok) throw new Error('Failed to download CA certificate')
       const blob = await res.blob()
-      const filename = format === 'pem' ? 'stormrunner-ca.pem' : 'stormrunner-ca.crt'
+      const filename = format === 'pem' ? 'apexload-ca.pem' : 'apexload-ca.crt'
       downloadBlob(blob, filename)
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to download CA certificate'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message || 'Failed to download CA certificate', 'error')
     }
+  }
+
+  const copyProxyCommand = async (command: string, successMessage: string, failureMessage: string) => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard access is not available in this browser')
+      }
+      await navigator.clipboard.writeText(command)
+      showFeedback(successMessage)
+    } catch (e: any) {
+      showFeedback(e.message || failureMessage, 'error')
+    }
+  }
+
+  const handleCopyMacOSProxyCommand = async (mode: 'start' | 'restore') => {
+    const command = mode === 'start'
+      ? buildMacOSStartProxyCommand(proxyPort, macOSNetworkService)
+      : buildMacOSRestoreProxyCommand(macOSNetworkService)
+    await copyProxyCommand(
+      command,
+      mode === 'start' ? 'macOS start proxy command copied' : 'macOS restore proxy command copied',
+      'Failed to copy macOS proxy command',
+    )
+  }
+
+  const handleCopyWindowsProxyCommand = async (mode: 'start' | 'restore') => {
+    const command = mode === 'start'
+      ? buildWindowsStartProxyCommand(proxyPort)
+      : buildWindowsRestoreProxyCommand()
+    await copyProxyCommand(
+      command,
+      mode === 'start' ? 'Windows start proxy command copied' : 'Windows restore proxy command copied',
+      'Failed to copy Windows proxy command',
+    )
+  }
+
+  const handleOpenMacOSNetworkSettings = () => {
+    window.location.href = 'x-apple.systempreferences:com.apple.Network-Settings.extension'
+  }
+
+  const handleOpenWindowsProxySettings = () => {
+    window.location.href = 'ms-settings:network-proxy'
   }
 
   const showFeedback = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -131,11 +211,12 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
         api.listRecordings(activeProject?.id),
         api.getRecorderStatus(),
       ])
+      const recorderStatus = statusRes as RecorderStatus
       setSessions(listRes.sessions || [])
-      setProxyAddr(statusRes.proxy_addr || '')
-      setCaCertPath(statusRes.ca_cert_path || '')
-      if (statusRes.active) {
-        const full = await api.getRecording(statusRes.active.id)
+      setProxyAddr(recorderStatus.proxy_addr || '')
+      setCaCertPath(recorderStatus.ca_cert_path || '')
+      if (recorderStatus.active) {
+        const full = await api.getRecording(recorderStatus.active.id)
         setActiveSession(full)
       } else {
         setActiveSession(null)
@@ -162,22 +243,23 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
 
   const handleStart = async () => {
     try {
-      const data: StartRecordingRequest = {
+      const data: any = {
         name: sessionName || 'Recording Session',
         project_id: activeProject?.id,
         exclude_static: true,
+        capture_cookies: captureCookies,
       }
       if (includeHosts.trim()) {
-        data.include_hosts = includeHosts.split(',').map(host => host.trim()).filter(Boolean)
+        data.include_hosts = includeHosts.split(',').map((h: string) => h.trim()).filter(Boolean)
       }
       if (excludeHosts.trim()) {
-        data.exclude_hosts = excludeHosts.split(',').map(host => host.trim()).filter(Boolean)
+        data.exclude_hosts = excludeHosts.split(',').map((h: string) => h.trim()).filter(Boolean)
       }
       const res = await api.startRecording(data)
       setActiveSession(res.session)
       showFeedback('Recording started — configure your browser proxy and navigate the target site')
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to start recording'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
@@ -188,8 +270,8 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
       showFeedback(`Recording stopped — ${activeSession.requests?.length || 0} requests captured`)
       setActiveSession(null)
       refresh()
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to stop recording'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
@@ -201,8 +283,8 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
         : await api.pauseRecording(activeSession.id)
       setActiveSession(next)
       showFeedback(next.status === 'paused' ? 'Recording paused' : 'Recording resumed')
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to update recording state'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
@@ -224,8 +306,8 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
     try {
       const updated = await api.updateRecordedRequest(session.id, req.seq, { excluded: !req.excluded })
       replaceRequest(session.id, updated)
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to update recorded request'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
@@ -235,34 +317,26 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
       const updated = await api.updateRecordedRequest(selectedSession.id, selectedRequest.seq, requestDraft)
       replaceRequest(selectedSession.id, updated)
       showFeedback(`Request #${updated.seq} updated`)
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to save request details'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
   const handlePreviewConversion = async (session: RecordingSession) => {
     try {
       const result = await convertTask.run(
-        async () => {
-          const response = await api.previewRecordingConversion(session.id, session.name)
-          return {
-            ...response,
-            script: response.script as ScriptDefinition | undefined,
-            scripts: response.scripts as ScriptDefinition[],
-          }
-        },
+        () => api.previewRecordingConversion(session.id, session.name, parameterizeInputs),
         { clearValue: true },
       )
-      const previewScript = result.script ?? result.scripts?.[0]
-      showFeedback(`Preview generated with ${previewScript?.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`)
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to preview recording conversion'), 'error')
+      showFeedback(`Preview generated with ${result.script?.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
   const handleExportHAR = async (session: RecordingSession) => {
     try {
-      const res = await fetch(`${BASE}/recorder/${session.id}/export?format=har`)
+      const res = await apiFetch(`/recorder/${session.id}/export?format=har`)
       if (!res.ok) {
         const payload = await res.json().catch(() => ({ error: 'Failed to export HAR' }))
         throw new Error(payload.error || 'Failed to export HAR')
@@ -271,22 +345,50 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
       const safeName = (session.name || 'recording').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
       downloadBlob(blob, `${safeName || 'recording'}.har`)
       showFeedback(`Exported "${session.name}" as HAR`)
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to export HAR'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
-  const handleSaveConverted = async () => {
-    if (!convertScript) return
+  const handleConvert = async (session: RecordingSession) => {
     try {
-      await saveTask.run(async () => {
-        await api.createScript(convertScript)
-        return true
-      })
-      showFeedback(`Script "${convertScript.name}" created with ${convertTask.value?.correlations?.length || 0} correlations detected`)
-      onImported?.(convertScript)
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to save generated script'), 'error')
+      const result = await convertTask.run(
+        () => api.convertRecording(session.id, session.name, parameterizeInputs),
+        { clearValue: true },
+      )
+      showFeedback(`Script "${result.script?.name || session.name}" created with ${result.correlations?.length || 0} correlations detected`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const buildReviewedScript = (): ScriptDefinition | null => {
+    const script = convertTask.value?.script
+    if (!script) {
+      return null
+    }
+    return attachImportCorrelationSuggestions(script as ScriptDefinition, 'recorder', convertTask.value?.correlations)
+  }
+
+  const handleEditConvertedScript = () => {
+    const script = buildReviewedScript()
+    if (!script) {
+      return
+    }
+    onEdit?.(script)
+  }
+
+  const handleSaveConvertedScript = async () => {
+    const script = buildReviewedScript()
+    if (!script) {
+      return
+    }
+    try {
+      const savedScript = await api.createScript(script, activeProject?.id)
+      showFeedback(`Script "${script.name}" created with ${convertTask.value?.correlations?.length || 0} correlations detected`)
+      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, script)] })
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
@@ -295,16 +397,15 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
       await api.deleteRecording(id)
       if (selectedSession?.id === id) setSelectedSession(null)
       refresh()
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to delete recording'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
   const stoppedSessions = sessions.filter(s => s.status === 'stopped')
   const convertResult = convertTask.value
-  const convertScript = convertResult?.script ?? convertResult?.scripts?.[0]
+  const convertedScript = convertResult?.script
   const converting = convertTask.pending
-  const saving = saveTask.pending
 
   return (
     <div className="page recording-studio">
@@ -346,7 +447,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
               <div className="rec-step-content">
                 <div className="rec-step-title">Download &amp; Install CA Certificate</div>
                 <div className="rec-step-desc">
-                  Install the Stormrunner CA certificate so the proxy can intercept HTTPS traffic.
+                  Install the APEX Load CA certificate so the proxy can intercept HTTPS traffic.
                 </div>
                 <div className="rec-step-note">
                   The recorder now reuses the same CA across controller restarts. Trust it once, then only re-download if you delete the CA files or change the recorder CA directory.
@@ -358,7 +459,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
                     </div>
                   )}
                   <div className="rec-step-note-troubleshoot">
-                    If the browser still says the connection is not secure, remove older Stormrunner CA entries, trust this CA for SSL/TLS, and restart the browser. Firefox may require explicit import or system-root trust to be enabled.
+                    If the browser still says the connection is not secure, remove older APEX Load CA entries, trust this CA for SSL/TLS, and restart the browser. Firefox may require explicit import or system-root trust to be enabled.
                   </div>
                 </div>
                 <div className="rec-download-row">
@@ -375,7 +476,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
                   </button>
                 </div>
                 <div className="rec-os-instructions">
-                  <div><span className="rec-os-label">macOS:</span> Double-click the .crt file &rarr; Keychain Access opens &rarr; Find &ldquo;Stormrunner Recording Proxy CA&rdquo; &rarr; Double-click &rarr; Trust &rarr; Always Trust</div>
+                  <div><span className="rec-os-label">macOS:</span> Double-click the .crt file &rarr; Keychain Access opens &rarr; Find &ldquo;APEX Load Recording Proxy CA&rdquo; &rarr; Double-click &rarr; Trust &rarr; Always Trust</div>
                   <div><span className="rec-os-label">Windows:</span> Double-click .crt &rarr; Install Certificate &rarr; Local Machine &rarr; Place in &ldquo;Trusted Root Certification Authorities&rdquo;</div>
                   <div><span className="rec-os-label">Firefox:</span> Download PEM format &rarr; Settings &rarr; Privacy &amp; Security &rarr; Certificates &rarr; View &rarr; Import &rarr; Check &ldquo;Trust for websites&rdquo;</div>
                 </div>
@@ -392,6 +493,46 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
                 <div className="rec-os-instructions">
                   <div>Use a browser extension like SwitchyOmega (Chrome) or FoxyProxy (Firefox) to route traffic through the proxy.</div>
                   <div><span className="rec-os-label">System proxy:</span> macOS System Settings &rarr; Network &rarr; Wi-Fi &rarr; Details &rarr; Proxies &rarr; Web Proxy (HTTP) &amp; Secure Web Proxy (HTTPS) &rarr; <code>localhost</code> port <code>{proxyPort}</code></div>
+                  <div><span className="rec-os-label">Windows 11:</span> Settings &rarr; Network &amp; internet &rarr; Proxy &rarr; Manual proxy setup &rarr; <code>localhost</code> port <code>{proxyPort}</code></div>
+                </div>
+                <div className="rec-proxy-shortcut">
+                  <div className="rec-proxy-platform">
+                    <div className="rec-proxy-platform-title">macOS</div>
+                    <label className="rec-proxy-service">
+                      <span>Network service</span>
+                      <input
+                        className="rec-input"
+                        aria-label="macOS network service"
+                        value={macOSNetworkService}
+                        onChange={e => setMacOSNetworkService(e.target.value)}
+                      />
+                    </label>
+                    <div className="rec-shortcut-actions">
+                      <button className="rec-download-alt" type="button" onClick={() => handleCopyMacOSProxyCommand('start')}>
+                        Copy Start Proxy Command
+                      </button>
+                      <button className="rec-download-alt" type="button" onClick={() => handleCopyMacOSProxyCommand('restore')}>
+                        Copy Restore Proxy Command
+                      </button>
+                      <button className="rec-download-alt" type="button" onClick={handleOpenMacOSNetworkSettings}>
+                        Open Network Settings
+                      </button>
+                    </div>
+                  </div>
+                  <div className="rec-proxy-platform">
+                    <div className="rec-proxy-platform-title">Windows 11</div>
+                    <div className="rec-shortcut-actions">
+                      <button className="rec-download-alt" type="button" onClick={() => handleCopyWindowsProxyCommand('start')}>
+                        Copy Windows Start Command
+                      </button>
+                      <button className="rec-download-alt" type="button" onClick={() => handleCopyWindowsProxyCommand('restore')}>
+                        Copy Windows Restore Command
+                      </button>
+                      <button className="rec-download-alt" type="button" onClick={handleOpenWindowsProxySettings}>
+                        Open Windows Proxy Settings
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -461,6 +602,14 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
                 placeholder="e.g. analytics.google.com, cdn.example.com"
               />
             </div>
+            <label className="rec-checkbox-row">
+              <input
+                type="checkbox"
+                checked={captureCookies}
+                onChange={e => setCaptureCookies(e.target.checked)}
+              />
+              <span>Capture cookies (may include secrets)</span>
+            </label>
             <button className="btn btn-primary rec-start-btn" onClick={handleStart}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" /></svg>
               Start Recording
@@ -510,6 +659,12 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
             <button className="btn btn-secondary rec-stop-btn" onClick={handlePauseResume}>
               {activeSession.status === 'paused' ? 'Resume Recording' : 'Pause Recording'}
             </button>
+            <button className="btn btn-secondary rec-stop-btn" type="button" onClick={() => handleCopyMacOSProxyCommand('restore')}>
+              Copy Restore Proxy Command
+            </button>
+            <button className="btn btn-secondary rec-stop-btn" type="button" onClick={() => handleCopyWindowsProxyCommand('restore')}>
+              Copy Windows Restore Command
+            </button>
           </div>
         )}
       </div>
@@ -518,6 +673,14 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
       {stoppedSessions.length > 0 && (
         <div className="rec-sessions-section">
           <h3 className="rec-section-title">Recorded Sessions</h3>
+          <label className="rec-convert-option">
+            <input
+              type="checkbox"
+              checked={parameterizeInputs}
+              onChange={e => setParameterizeInputs(e.target.checked)}
+            />
+            Parameterize input values (promote recorded form/query inputs into a data source)
+          </label>
           <div className="rec-sessions-list">
             {stoppedSessions.map(session => (
               <div
@@ -539,10 +702,17 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
                 <div className="rec-session-actions">
                   <button
                     className="btn btn-sm btn-primary"
+                    onClick={(e) => { e.stopPropagation(); handleConvert(session) }}
+                    disabled={converting}
+                  >
+                    {converting ? 'Converting...' : 'Convert to Script'}
+                  </button>
+                  <button
+                    className="btn btn-sm btn-secondary"
                     onClick={(e) => { e.stopPropagation(); handlePreviewConversion(session) }}
                     disabled={converting}
                   >
-                    {converting ? 'Generating...' : 'Review Script'}
+                    Review Script
                   </button>
                   <button
                     className="btn btn-sm btn-secondary"
@@ -683,55 +853,69 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
       )}
 
       {/* Convert Result */}
-      {convertResult && convertScript && (
+      {convertResult && convertedScript && (
         <div className="rec-convert-result">
-          <ScriptImportReview
-            title="Conversion Result"
-            subtitle="Review the generated script, warnings, and correlations before saving."
-            script={convertScript}
-            warnings={convertResult.warnings}
-            saving={saving}
-            onSave={handleSaveConverted}
-            onEdit={onEdit ? () => onEdit(convertScript) : undefined}
-          >
-            <div className="rec-result-summary">
-              <div className="rec-result-item">
-                <span className="rec-result-label">Script</span>
-                <span className="rec-result-value">{convertScript.name}</span>
-              </div>
-              <div className="rec-result-item">
-                <span className="rec-result-label">Protocol</span>
-                <span className="rec-result-value">{convertScript.protocol}</span>
-              </div>
-              <div className="rec-result-item">
-                <span className="rec-result-label">Actions</span>
-                <span className="rec-result-value">{convertScript.actions?.length || 0}</span>
+          <h3 className="rec-section-title">Conversion Result</h3>
+          <div className="rec-result-summary">
+            <div className="rec-result-item">
+              <span className="rec-result-label">Script</span>
+              <span className="rec-result-value">{convertedScript.name}</span>
+            </div>
+            <div className="rec-result-item">
+              <span className="rec-result-label">Protocol</span>
+              <span className="rec-result-value">{convertedScript.protocol}</span>
+            </div>
+            <div className="rec-result-item">
+              <span className="rec-result-label">Script ID</span>
+              <code className="rec-result-value">{convertedScript.id || 'preview'}</code>
+            </div>
+          </div>
+          <div className="rec-result-actions">
+            <button className="btn btn-primary" type="button" onClick={handleSaveConvertedScript}>Save To Script Library</button>
+            {onEdit && <button className="btn btn-secondary" type="button" onClick={handleEditConvertedScript}>Open In Visual Editor</button>}
+          </div>
+
+          {convertResult.correlations && convertResult.correlations.length > 0 && (
+            <div className="rec-correlations">
+              <h4 className="rec-subsection-title">Auto-Detected Correlations ({convertResult.correlations.length})</h4>
+              <div className="rec-corr-list">
+                {convertResult.correlations.map((c, i) => (
+                  <div key={i} className="rec-corr-item">
+                    <div className="rec-corr-header">
+                      <code className="rec-corr-name">{`{{var.${c.name}}}`}</code>
+                      {confidenceTone(c.confidence) && (
+                        <span
+                          className={`rec-corr-confidence tone-${confidenceTone(c.confidence)}`}
+                          title={c.rule_id ? `rule: ${c.rule_id}` : undefined}
+                        >
+                          {Math.round((c.confidence as number) * 100)}% confidence
+                        </span>
+                      )}
+                      <span className="rec-corr-type">{c.extract_type} / {c.source}</span>
+                    </div>
+                    <div className="rec-corr-detail">
+                      <span>Extracted from request #{c.found_in_seq}</span>
+                      <span>Used in #{c.used_in_seqs.join(', #')}</span>
+                    </div>
+                    {c.reasons && c.reasons.length > 0 && (
+                      <div className="rec-corr-reasons">Why: {c.reasons.join('; ')}</div>
+                    )}
+                    <div className="rec-corr-sample">
+                      Sample: <code>{c.sample_value}</code>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
+          )}
 
-            {convertResult.correlations && convertResult.correlations.length > 0 && (
-              <div className="rec-correlations">
-                <h4 className="rec-subsection-title">Auto-Detected Correlations ({convertResult.correlations.length})</h4>
-                <div className="rec-corr-list">
-                  {convertResult.correlations.map((c, i) => (
-                    <div key={i} className="rec-corr-item">
-                      <div className="rec-corr-header">
-                        <code className="rec-corr-name">{`{{var.${c.name}}}`}</code>
-                        <span className="rec-corr-type">{c.extract_type} / {c.source}</span>
-                      </div>
-                      <div className="rec-corr-detail">
-                        <span>Extracted from request #{c.found_in_seq}</span>
-                        <span>Used in #{c.used_in_seqs.join(', #')}</span>
-                      </div>
-                      <div className="rec-corr-sample">
-                        Sample: <code>{c.sample_value}</code>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </ScriptImportReview>
+          {convertResult.warnings && convertResult.warnings.length > 0 && (
+            <div className="rec-warnings">
+              {convertResult.warnings.map((w, i) => (
+                <div key={i} className="rec-warning-item">{w}</div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

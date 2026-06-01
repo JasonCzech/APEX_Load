@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func TestJMSProtocolsAreRegistered(t *testing.T) {
@@ -71,6 +71,24 @@ func TestJMSPublishConsumeWithExtractionAndAssertion(t *testing.T) {
 	}
 	if consumed.BytesReceived == 0 {
 		t.Fatal("BytesReceived = 0, want message bytes")
+	}
+	if consumed.ServerTelemetry == nil {
+		t.Fatal("ServerTelemetry = nil, want JMS telemetry")
+	}
+	if consumed.ServerTelemetry.ResponsePayloadKB <= 0 {
+		t.Fatalf("ResponsePayloadKB = %v, want > 0", consumed.ServerTelemetry.ResponsePayloadKB)
+	}
+	if consumed.ServerTelemetry.ResponseSizeClass != "small" {
+		t.Fatalf("ResponseSizeClass = %q, want small", consumed.ServerTelemetry.ResponseSizeClass)
+	}
+	if consumed.ServerTelemetry.MessagesReceived != 1 {
+		t.Fatalf("MessagesReceived = %d, want 1", consumed.ServerTelemetry.MessagesReceived)
+	}
+	if consumed.ServerTelemetry.MessagesReceivedPerSec <= 0 {
+		t.Fatalf("MessagesReceivedPerSec = %v, want > 0", consumed.ServerTelemetry.MessagesReceivedPerSec)
+	}
+	if consumed.ServerTelemetry.ConsumerLagMs < 0 {
+		t.Fatalf("ConsumerLagMs = %v, want non-negative", consumed.ServerTelemetry.ConsumerLagMs)
 	}
 }
 
@@ -180,5 +198,97 @@ func TestJMSRequestReplyEchoesResponse(t *testing.T) {
 	}
 	if result.DependencyTarget != "orders.request" {
 		t.Fatalf("DependencyTarget = %q, want orders.request", result.DependencyTarget)
+	}
+	if result.ServerTelemetry == nil {
+		t.Fatal("ServerTelemetry = nil, want request/reply telemetry")
+	}
+	if result.ServerTelemetry.ServerProcessingMs < 0 {
+		t.Fatalf("ServerProcessingMs = %v, want non-negative", result.ServerTelemetry.ServerProcessingMs)
+	}
+	if result.ServerTelemetry.TransferMs < 0 {
+		t.Fatalf("TransferMs = %v, want non-negative", result.ServerTelemetry.TransferMs)
+	}
+	if result.ServerTelemetry.MessagesSent != 1 || result.ServerTelemetry.MessagesReceived != 1 {
+		t.Fatalf("message counts = %#v, want one sent and one received", result.ServerTelemetry)
+	}
+	if result.ServerTelemetry.MessageLatencyMs < 0 {
+		t.Fatalf("MessageLatencyMs = %v, want non-negative", result.ServerTelemetry.MessageLatencyMs)
+	}
+	if result.ServerTelemetry.MessagesSentPerSec <= 0 {
+		t.Fatalf("MessagesSentPerSec = %v, want > 0", result.ServerTelemetry.MessagesSentPerSec)
+	}
+	if result.ServerTelemetry.MessagesReceivedPerSec <= 0 {
+		t.Fatalf("MessagesReceivedPerSec = %v, want > 0", result.ServerTelemetry.MessagesReceivedPerSec)
+	}
+	if result.ServerTelemetry.RequestSizeClass != "small" {
+		t.Fatalf("RequestSizeClass = %q, want small", result.ServerTelemetry.RequestSizeClass)
+	}
+	if result.ServerTelemetry.ResponseSizeClass != "small" {
+		t.Fatalf("ResponseSizeClass = %q, want small", result.ServerTelemetry.ResponseSizeClass)
+	}
+	if result.ServerTelemetry.ConsumerLagMs < 0 {
+		t.Fatalf("ConsumerLagMs = %v, want non-negative", result.ServerTelemetry.ConsumerLagMs)
+	}
+}
+
+func TestJMSConsumeClassifiesDeadLetterDestinations(t *testing.T) {
+	ctx := context.Background()
+	p := &JMS{name: "jms-solace", provider: "solace"}
+	if err := p.Init(ctx, map[string]any{
+		"jms_destination":              "orders.dlq",
+		"jms_dead_letter_destinations": []string{"orders.dlq"},
+		"jms_mock":                     true,
+		"jms_timeout_ms":               float64(250),
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	_, err := p.Execute(ctx, &protocol.Action{
+		Name:     "publish-dead-letter",
+		Type:     "jms_publish",
+		Body:     []byte(`{"orderId":"A-404"}`),
+		Metadata: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("publish returned error: %v", err)
+	}
+
+	consumed, err := p.Execute(ctx, &protocol.Action{
+		Name: "consume-dead-letter",
+		Type: "jms_consume",
+	})
+	if err != nil {
+		t.Fatalf("consume returned error: %v", err)
+	}
+	if consumed.DependencyType != "jms_dead_letter_queue" {
+		t.Fatalf("DependencyType = %q, want jms_dead_letter_queue", consumed.DependencyType)
+	}
+	if consumed.Extractions["jms_dead_letter"] != "true" {
+		t.Fatalf("jms_dead_letter extraction = %q, want true", consumed.Extractions["jms_dead_letter"])
+	}
+	if consumed.Extractions["jms_dead_letter_destination"] != "orders.dlq" {
+		t.Fatalf("jms_dead_letter_destination = %q, want orders.dlq", consumed.Extractions["jms_dead_letter_destination"])
+	}
+
+	p2 := &JMS{name: "jms-solace", provider: "solace"}
+	if err := p2.Init(ctx, map[string]any{
+		"jms_destination": "explicit.dead.letter",
+		"jms_mock":        true,
+		"jms_timeout_ms":  float64(250),
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	result, err := p2.Execute(ctx, &protocol.Action{
+		Name: "consume-explicit-dead-letter",
+		Type: "jms_consume",
+		Params: map[string]any{
+			"dead_letter": true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("explicit dead-letter execute returned error: %v", err)
+	}
+	if result.DependencyType != "jms_dead_letter_queue" {
+		t.Fatalf("explicit dead-letter DependencyType = %q, want jms_dead_letter_queue", result.DependencyType)
 	}
 }

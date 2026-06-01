@@ -8,13 +8,17 @@ import (
 	"os/signal"
 	"syscall"
 
-	pb "github.com/jasonczech/stormrunner/api/proto"
-	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
-	"github.com/jasonczech/stormrunner/pkg/config"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/browser"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/java_http"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/soap"
+	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	_ "github.com/jasonczech/apexload/pkg/protocol/browser"
+	_ "github.com/jasonczech/apexload/pkg/protocol/database"
+	_ "github.com/jasonczech/apexload/pkg/protocol/grpc"
+	_ "github.com/jasonczech/apexload/pkg/protocol/http"
+	_ "github.com/jasonczech/apexload/pkg/protocol/java_http"
+	_ "github.com/jasonczech/apexload/pkg/protocol/network"
+	_ "github.com/jasonczech/apexload/pkg/protocol/soap"
+	_ "github.com/jasonczech/apexload/pkg/protocol/websocket"
 	"google.golang.org/grpc"
 )
 
@@ -29,7 +33,7 @@ func main() {
 
 	generatorID, err := os.Hostname()
 	if err != nil || generatorID == "" {
-		generatorID = "stormrunner-generator"
+		generatorID = "apexload-generator"
 	}
 
 	listener, err := net.Listen("tcp", cfg.ListenAddr)
@@ -47,7 +51,7 @@ func main() {
 		errCh <- grpcServer.Serve(listener)
 	}()
 
-	slog.Info("stormrunner generator starting", "addr", cfg.ListenAddr, "generator_id", generatorID, "max_vusers", cfg.MaxVUsers)
+	slog.Info("apexload generator starting", "addr", cfg.ListenAddr, "generator_id", generatorID, "max_vusers", cfg.MaxVUsers)
 
 	select {
 	case <-ctx.Done():

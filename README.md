@@ -1,14 +1,14 @@
-# Project Stormrunner
+# Project APEX Load
 
-Kubernetes-native performance testing platform replacing LoadRunner Enterprise. Stormrunner is a Go-based load testing platform with an agentic script generation engine, real-time React dashboard, and OpenTelemetry telemetry pipeline.
+Kubernetes-native performance testing platform replacing LoadRunner Enterprise. APEX Load is a Go-based load testing platform with a deterministic assisted-authoring engine (external LLM integration is policy-gated and not enabled by default), a real-time React dashboard, and a Prometheus/Dynatrace telemetry pipeline.
 
 ## What This Is
 
-Stormrunner provides **three primary surfaces**:
+APEX Load provides **three primary surfaces**:
 
 - **Controller API + Dashboard**: Web UI for authoring, scheduling, and monitoring tests with real-time WebSocket-fed metrics
-- **CLI (`stormctl`)**: Local script execution for testing during development or in CI/CD pipelines
-- **Load Generator**: Kubernetes-native pods (StatefulSet) running goroutine-based virtual users, scalable 1–50 pods with ~10k VUsers/pod
+- **CLI (`apexctl`)**: Local script execution for testing during development or in CI/CD pipelines
+- **Load Generator**: Kubernetes-native pods (StatefulSet) running goroutine-based virtual users, scalable 1–50 pods (~10k VUsers/pod is a design target, not yet benchmarked)
 
 The project is organized to support both direct local runs and controller-managed distributed execution across multiple pods.
 
@@ -17,7 +17,9 @@ The project is organized to support both direct local runs and controller-manage
 The current controller can run in either local or distributed mode without changing the HTTP or dashboard surface.
 
 - Local mode: no generator targets configured; the controller executes tests in-process.
-- Distributed mode: set `STORMRUNNER_GENERATORS=host1:9090,host2:9090,...`; the controller distributes groups across configured generators, aggregates their metrics into one live test view, and stages merged run archives back into the controller archive directory.
+- Distributed mode: set `APEXLOAD_GENERATORS=host1:9090,host2:9090,...`; the controller distributes groups across configured generators, aggregates their metrics into one live test view, and stages merged run archives back into the controller archive directory.
+- Region-tagged generators: append `|region=<name>` to a configured generator target, for example `APEXLOAD_GENERATORS=us-east-1.example:9090|region=us-east,eu-west-1.example:9090|region=eu-west`.
+- Region-weighted placement: test and scenario requests can set `assignment.mode` to `region_weighted` with an `assignment.region_weights` map such as `{ "us-east": 2, "eu-west": 1 }`; the controller applies those weights when placing groups across tagged generators while still preferring healthy capacity.
 - Runtime controls: distributed runs support stop, pause, resume, duration adjustment, and per-group VUser scaling through the same `/api/v1/tests/...` endpoints used for local runs.
 - Archive behavior: generators produce manifest, JSONL, and parquet artifacts locally; the controller downloads and merges those artifacts so the existing archive/report endpoints continue to work unchanged.
 
@@ -35,7 +37,7 @@ The current controller can run in either local or distributed mode without chang
 | Component | Purpose |
 |-----------|---------|
 | `cmd/controller` | HTTP API server + embedded React dashboard |
-| `cmd/stormctl` | CLI for direct script execution (no controller needed) |
+| `cmd/apexctl` | CLI for direct script execution (no controller needed) |
 | `cmd/generator` | Distributed load generator (Kubernetes StatefulSet pod) |
 | `pkg/engine` | VUser goroutine engine, pacing, metrics, lifecycle |
 | `pkg/protocol` | Protocol interface; HTTP, SOAP, Java-over-HTTP, JMS implementations |
@@ -52,12 +54,21 @@ The current controller can run in either local or distributed mode without chang
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — System architecture, data flow diagrams, engine internals, metrics collection, performance characteristics
 - **[API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md)** — Complete REST API reference, DSL syntax guide, example scripts, template variables
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — Common issues, debugging techniques, solutions
+- **[docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md](docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md)** — Platform parity roadmap for architecture, scale-out, authoring, load modeling, monitoring, reporting, and scheduling
+- **[docs/ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md](docs/ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md)** — Implementation plan for PostgreSQL, object archives, Prometheus long-term metrics, and Redis/Valkey enterprise data services
+- **[docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md](docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md)** — Epic backlog and delivery plan to close practical parity gaps with LoadRunner in browser testing, script authoring UX, runtime settings, and auth/RBAC
+- **[docs/LOADRUNNER_PROTOCOL_IMPORT_ROUTING.md](docs/LOADRUNNER_PROTOCOL_IMPORT_ROUTING.md)** — Protocol-aware LoadRunner/VuGen ZIP import routing, executable/review modes, and review-artifact API contract
+- **[docs/K6_NEOLOAD_PARITY_PLAN.md](docs/K6_NEOLOAD_PARITY_PLAN.md)** — Competitive parity plan for closing APEX Load gaps against Grafana k6 and Tricentis NeoLoad
+- **[docs/COMPETITIVE_SUPPORT_MATRIX.md](docs/COMPETITIVE_SUPPORT_MATRIX.md)** — Evidence-backed support matrix for k6, NeoLoad, LoadRunner, JMeter, DevWeb, HAR, and native APEX Load flows
+- **[docs/MOBILE_BROWSER_EMULATION_PLAN.md](docs/MOBILE_BROWSER_EMULATION_PLAN.md)** — Current browser engine and device profile support matrix plus conservative mobile-browser benchmark guidance
+- **[docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md](docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md)** — Self-hosted auth/RBAC operations, break-glass recovery, service-account handling, and audit export guidance
 - **[AGENTS.md](AGENTS.md)** — High-level platform overview, tech stack, release phases
 
 ## Requirements
 
-- Go `1.25+`
+- Go `1.26+`
 - Node.js `18+` (recommended for dashboard builds)
+- Windows local utility: Windows PowerShell `5.1+` or PowerShell `7+`
 
 ## Quick Start
 
@@ -72,8 +83,8 @@ By default the controller listens on `:8080`.
 To enable distributed execution, point the controller at one or more generators:
 
 ```bash
-STORMRUNNER_GENERATORS=127.0.0.1:9090,127.0.0.1:9091 \
-STORMRUNNER_GENERATOR_TIMEOUT=10s \
+APEXLOAD_GENERATORS=127.0.0.1:9090,127.0.0.1:9091 \
+APEXLOAD_GENERATOR_TIMEOUT=10s \
 go run ./cmd/controller
 ```
 
@@ -93,7 +104,7 @@ Navigate to `http://127.0.0.1:8080`.
    - Go to **Scripts** page
    - Click **New Script**
    - Name: "API Load Test"
-   - Paste example from `examples/simple-http.json`
+  - Paste example from `examples/simple-http.json` or `examples/simple-java-http-embedded.json`
    - Click **Save**
 
 2. **Create a scenario** (test configuration):
@@ -102,6 +113,8 @@ Navigate to `http://127.0.0.1:8080`.
    - Select your script
    - Set VUsers: 50, Duration: 5 minutes, Ramp-up: 30 seconds
    - Click **Start Test**
+
+Recurring runs can be managed from the same **Scenarios** page by switching to the **Schedules** view, selecting a stored scenario, and saving a five-field cron expression.
 
 3. **Monitor in real-time**:
    - Watch metrics dashboard: throughput, latency (p50/p95/p99), error rate
@@ -121,18 +134,50 @@ For hot-reload during frontend dev:
 ```bash
 cd dashboard
 npm run dev
-# Starts dev server on :5173 with proxy to :8080 for API calls
+# Starts dev server on :3000 with proxy to :8080 for API calls
 ```
+
+### 5. Windows local startup utility
+
+On Windows 11, the local controller and dashboard can be started from one PowerShell entry point:
+
+```powershell
+.\scripts\start-local-windows.ps1
+```
+
+Useful options:
+
+```powershell
+# Start controller + dashboard dev server and open the recorder authoring route
+.\scripts\start-local-windows.ps1 -DashboardRoute '#/scripts?mode=create'
+
+# Also set the Windows per-user manual proxy to the recorder proxy while the utility is running
+.\scripts\start-local-windows.ps1 -ConfigureRecorderProxy -DashboardRoute '#/scripts?mode=create'
+
+# Restore saved Windows proxy settings without starting APEX Load
+.\scripts\start-local-windows.ps1 -RestoreRecorderProxy
+
+# Build dashboard assets and run the controller's embedded dashboard only
+.\scripts\start-local-windows.ps1 -Mode Embedded -BuildDashboard
+```
+
+`-ConfigureRecorderProxy` saves the current `HKCU` WinINET proxy settings, points HTTP/HTTPS traffic at the local recorder proxy, and restores the saved state when you press Enter to stop the utility.
 
 ## Environment Variables
 
 Controller runtime configuration:
 
-- `STORMRUNNER_ADDR`: HTTP bind address (default `:8080`)
-- `STORMRUNNER_DB`: SQLite DB path (default `stormrunner.db`)
-- `STORMRUNNER_GENERATORS`: comma-separated generator gRPC targets; when set, the controller uses the distributed backend
-- `STORMRUNNER_GENERATOR_TIMEOUT`: timeout for controller-to-generator RPCs (default `10s`)
-- `STORMRUNNER_ARCHIVE_DIR`: archive root for local runs and staged remote archives (default `artifacts/archives`)
+- `APEXLOAD_ADDR`: HTTP bind address (default `:8080`)
+- `APEXLOAD_STORE`: metadata store backend: `sqlite` or `postgres` (default `sqlite`)
+- `APEXLOAD_DB`: SQLite DB path (default `apexload.db`)
+- `APEXLOAD_DATABASE_URL`: PostgreSQL connection URL when `APEXLOAD_STORE=postgres`
+- `APEXLOAD_DATABASE_MAX_OPEN_CONNS`, `APEXLOAD_DATABASE_MAX_IDLE_CONNS`, `APEXLOAD_DATABASE_CONN_MAX_LIFETIME`: production PostgreSQL pool tuning
+- `APEXLOAD_GENERATORS`: comma-separated generator gRPC targets; when set, the controller uses the distributed backend
+- `APEXLOAD_GENERATOR_TIMEOUT`: timeout for controller-to-generator RPCs (default `10s`)
+- `APEXLOAD_ARCHIVE_BACKEND`: archive backend: `filesystem`, `s3`, `azure_blob`, or `gcs` (default `filesystem`)
+- `APEXLOAD_ARCHIVE_DIR`: archive root for local runs and staged remote archives (default `artifacts/archives`)
+- `APEXLOAD_ARCHIVE_BUCKET`, `APEXLOAD_ARCHIVE_CONTAINER`, `APEXLOAD_ARCHIVE_PREFIX`, `APEXLOAD_ARCHIVE_REGION`, `APEXLOAD_ARCHIVE_ENDPOINT`: object archive target metadata for enterprise deployments
+- `APEXLOAD_PROMETHEUS_REMOTE_WRITE_URL`: optional Prometheus-compatible long-term metrics retention endpoint
 
 ## Build and Test
 
@@ -141,7 +186,7 @@ Controller runtime configuration:
 Use Make targets from repo root:
 
 ```bash
-make build       # builds generator/controller/stormctl into ./bin
+make build       # builds generator/controller/apexctl into ./bin
 make test        # runs Go tests with race detector
 make test-cover  # race + coverage report (coverage.out / coverage.html)
 make lint        # runs golangci-lint (if installed)
@@ -173,16 +218,18 @@ go test -bench=BenchmarkEngine ./pkg/engine -benchmem
 
 ## CLI Usage
 
-### stormctl — Local script execution
+### apexctl — Local script execution
 
 Run a DSL script without the controller:
 
 ```bash
-go run ./cmd/stormctl run \
+go run ./cmd/apexctl run \
   --script path/to/script.json \
   --vusers 50 \
   --duration 2m \
-  --ramp-up 30s
+  --ramp-up 30s \
+  --p95-latency-ms 800 \
+  --max-error-pct 2.5
 ```
 
 **Key flags:**
@@ -191,20 +238,31 @@ go run ./cmd/stormctl run \
 - `--vusers, -v` (default: 10) — Number of virtual users
 - `--duration, -d` (default: 1m) — Total test duration
 - `--ramp-up, -r` (default: 0s) — VUser ramp-up period
+- `--format` (`text`, `json`) — Human or machine-readable result output
+- `--api` — Execute through the controller API instead of locally
+- `--env, -env` — Runtime environment substitution for `{{env.KEY}}` placeholders
+- `--base-url` — Override the script base URL at run time
+- `--p95-latency-ms`, `--max-error-pct`, `--max-avg-server-processing-ms`, `--max-avg-transfer-ms`, `--max-error-count` — CI/CD guardrails that make `apexctl` exit non-zero when breached
+
+**JSON pipeline example:**
+```bash
+go run ./cmd/apexctl run \
+  --api http://localhost:8080 \
+  --script path/to/script.json \
+  --format json \
+  --p95-latency-ms 800 \
+  --max-error-pct 2.5
+```
 
 **Example output:**
 ```
-Results:
-  Duration: 2m5s
-  Total Transactions: 12,450
-  Total Errors: 8
-  Throughput: 99.6 req/sec
-  Latency (ms):
-    Min: 45.2
-    Avg: 156.3
-    P95: 482.5
-    P99: 892.1
-    Max: 1205.3
+=== Test Complete ===
+  Duration:     2m5s
+  Transactions: 12450
+  Errors:       8
+  Error Rate:   0.06%
+  TPS:          99.6
+  SLA:          passing
 ```
 
 ## API Endpoints (Controller)
@@ -216,10 +274,19 @@ Results:
 POST   /api/v1/tests                    — Create and queue test
 GET    /api/v1/tests                    — List all tests
 GET    /api/v1/tests/{id}               — Get test details
+GET    /api/v1/tests/{id}/sla-status    — Get summarized SLA pass/fail status
 POST   /api/v1/tests/{id}/start         — Start test
 POST   /api/v1/tests/{id}/stop          — Graceful stop
 POST   /api/v1/tests/{id}/abort         — Immediate abort
 WS     /api/v1/ws                       — Global WebSocket stream
+```
+
+**Archives:**
+```
+GET    /api/v1/tests/{id}/archive                    — Download full archive bundle
+GET    /api/v1/tests/{id}/archive/browser-diagnostics — Download browser evidence bundle
+GET    /api/v1/tests/{id}/archive/report             — Get archive report JSON
+GET    /api/v1/tests/{id}/report                     — Get standalone HTML report
 ```
 
 **Scripts:**
@@ -229,16 +296,67 @@ GET    /api/v1/scripts                  — List scripts
 GET    /api/v1/scripts/{id}             — Get script
 PUT    /api/v1/scripts/{id}             — Update script
 DELETE /api/v1/scripts/{id}             — Delete script
+PATCH  /api/v1/scripts/{id}/move        — Move script to another folder
+POST   /api/v1/scripts/replay           — Replay a draft script
+POST   /api/v1/scripts/replay/sessions  — Start a unified replay/debug session for a draft script
+POST   /api/v1/scripts/browser-replay/sessions — Start browser replay for a draft script
 POST   /api/v1/scripts/{id}/validate    — Validate script
+POST   /api/v1/scripts/{id}/replay      — Replay a saved script
+POST   /api/v1/scripts/{id}/replay/sessions — Start a unified replay/debug session for a saved script
+POST   /api/v1/scripts/{id}/browser-replay/sessions — Start browser replay for a saved script
+POST   /api/v1/scripts/{id}/export      — Export script JSON to disk
+GET    /api/v1/scripts/{id}/download    — Download script JSON
 POST   /api/v1/scripts/import/sample    — Build a script from raw HTTP, cURL, REST JSON, or HAR samples
-POST   /api/v1/scripts/import/loadrunner — Convert a LoadRunner archive to DSL
+GET    /api/v1/scripts/web-api/support-matrix — Get Web/API support, diagnostics, envelopes, and sample projects
+POST   /api/v1/scripts/import/loadrunner — Detect and route a LoadRunner/VuGen ZIP archive to executable script or review artifact
+POST   /api/v1/scripts/import/loadrunner/validate — Validate a LoadRunner/VuGen import draft without saving
+POST   /api/v1/scripts/import/jmeter    — Convert a JMeter plan to DSL
+POST   /api/v1/scripts/import/jmeter/save — Save a reviewed JMeter import draft
 POST   /api/v1/scripts/import/jmeter/validate — Validate a JMeter import draft
+GET    /api/v1/scripts/import/jmeter/support-matrix — Get JMeter support matrix
+POST   /api/v1/scripts/import/devweb   — Convert a DevWeb JavaScript file or archive to DSL
+GET    /api/v1/scripts/import/devweb/support-matrix — Get DevWeb construct support matrix
+POST   /api/v1/scripts/import/har      — Convert a HAR file to HTTP DSL
+POST   /api/v1/scripts/import/openapi  — Convert OpenAPI/Swagger JSON or YAML to HTTP DSL
+POST   /api/v1/scripts/import/wsdl     — Convert WSDL to SOAP DSL
+```
+
+**Browser Replay:**
+```
+GET    /api/v1/replay/sessions/{session_id}               — Get unified replay session state
+POST   /api/v1/replay/sessions/{session_id}/pause         — Pause unified replay session
+POST   /api/v1/replay/sessions/{session_id}/resume        — Resume unified replay session
+POST   /api/v1/replay/sessions/{session_id}/step          — Step unified replay session
+POST   /api/v1/replay/sessions/{session_id}/stop          — Stop unified replay session
+PATCH  /api/v1/replay/sessions/{session_id}/breakpoints   — Update replay breakpoints
+GET    /api/v1/replay/sessions/{session_id}/export        — Export replay evidence JSON or log
+GET    /api/v1/browser-replay/sessions/{session_id}        — Get browser replay session state
+POST   /api/v1/browser-replay/sessions/{session_id}/pause  — Pause browser replay session
+POST   /api/v1/browser-replay/sessions/{session_id}/resume — Resume browser replay session
+POST   /api/v1/browser-replay/sessions/{session_id}/stop   — Stop browser replay session
+```
+
+**Scenario Schedules:**
+```
+GET    /api/v1/scenarios/{id}/schedules              — List recurring schedules for a scenario
+POST   /api/v1/scenarios/{id}/schedules              — Create a recurring schedule
+PUT    /api/v1/scenarios/{id}/schedules/{schedule_id} — Update or pause a schedule
+DELETE /api/v1/scenarios/{id}/schedules/{schedule_id} — Delete a recurring schedule
 ```
 
 **System:**
 ```
 GET    /api/v1/system/health            — Health check
+GET    /api/v1/system/readiness         — Production readiness checks
+GET    /api/v1/system/inventory         — Controller and generator inventory
+GET    /api/v1/system/usage             — Usage accounting rollups
+GET    /api/v1/system/parity-status     — Platform and competitive parity status
+PATCH  /api/v1/system/generators/drain  — Cordon, drain, or reactivate a generator
 ```
+
+**CI/CD Templates:**
+- GitHub composite action: `.github/actions/apexload-run/action.yml`
+- Azure Pipelines template: `azure-pipelines-task.yml`
 
 See [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) for complete endpoint documentation.
 
@@ -248,6 +366,11 @@ Scripts are JSON with these sections:
 
 ```json
 {
+  "goal_config": {
+    "p95_latency_ms": 800,
+    "max_error_pct": 2.5,
+    "max_error_count": 10
+  },
   "config": {
     "protocol": "http",
     "base_url": "https://api.example.com",
@@ -284,7 +407,8 @@ Scripts are JSON with these sections:
 
 **Features:**
 - **Template variables**: `{{env.VAR}}`, `{{data.source.column}}`, `{{param.name}}`, `{{var.name}}`, `{{fn.uuid()}}`
-- **Named parameters**: random number, date/time, timestamp, counter, file/list, UUID, and random string generators with `once`, `each_iteration`, and `each_occurrence` update modes
+- **Scenario-native guardrails**: Optional top-level `goal_config` thresholds are honored by `apexctl run`, with explicit CLI guardrail flags taking precedence when both are present
+- **Named parameters**: random number, date/time, timestamp, counter, LoadRunner-compatible current iteration, host, time, file/list, UUID, and random string generators with `once`, `each_iteration`, and `each_occurrence` update modes
 - **Protocol surfaces**: `http`, `soap`, `java_http`, `browser`, and `jms-solace` authoring paths in the dashboard
 - **Extractors**: Pull values from responses for use in subsequent requests
 - **Assertions**: Validate response status, headers, body content
@@ -302,7 +426,7 @@ See [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) for complete DSL syntax
 ```
 cmd/
   controller/         # Main API server + dashboard
-  stormctl/          # CLI tool
+  apexctl/          # CLI tool
   generator/         # Distributed load generator
 
 pkg/
@@ -363,6 +487,8 @@ make test-cover
 
 ## Performance Targets
 
+These are design targets, not yet backed by published benchmark artifacts. Do not cite as achieved.
+
 | Metric | Target | Notes |
 |--------|--------|-------|
 | VUsers per pod | 10,000 | Memory-limited (~2–4 KB per goroutine) |
@@ -375,7 +501,7 @@ make test-cover
 ## Project Status
 
 - ✅ Controller + dashboard fully functional
-- ✅ Local engine (stormctl) working
+- ✅ Local engine (apexctl) working
 - ✅ HTTP protocol family complete (HTTP, SOAP, Java-over-HTTP MVP)
 - ✅ DSL parser and templating
 - ✅ Real-time metrics and WebSocket streaming
@@ -385,7 +511,10 @@ make test-cover
 - ✅ Runtime telemetry SLA hardening baseline now includes visible drop counters, bounded live history, end-to-end freshness, sampled telemetry diagnostics for transaction hotspots, schema-versioned typed telemetry retention, distributed telemetry propagation, first-class correlation/dependency metadata, and distributed lag-stage breakdowns from generator capture through controller fan-out
 - 🟡 Browser client metrics future plan for web-app synthetic UX telemetry
 - 🟡 JMS protocols (Solace, IBM MQ)
-- 🟡 Agentic script generation (LLM-powered)
+- ✅ CI/CD gating: `apexctl` JUnit output + `status`/`wait` subcommands, with GitHub/Azure DevOps/Jenkins templates (see [docs/CICD_INTEGRATION.md](docs/CICD_INTEGRATION.md))
+- ✅ Correlation rules engine + replay-failure detection & guided repair (`/api/v1/correlations/diagnose`)
+- ✅ Assisted authoring (deterministic-local draft/repair/explain over the DSL, via MCP)
+- 🟡 External LLM script generation (policy-gated; not wired by default)
 
 ## Contributing
 
@@ -405,4 +534,3 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for coding conventions, testing policy, and
 ## License
 
 [License information here]
-

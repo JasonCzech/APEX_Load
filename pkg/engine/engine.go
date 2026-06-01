@@ -30,10 +30,11 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 // Engine orchestrates VUser goroutines and metrics collection.
@@ -103,6 +104,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, e.duration)
 	e.cancel = cancel
 	defer cancel()
+	executionGoals := NewExecutionGoalLimiter(e.script.Config.RunLogic, cancel)
 
 	proto, err := protocol.Get(e.script.Protocol)
 	if err != nil {
@@ -117,8 +119,18 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	e.metrics.Start(time.Second)
 	defer e.metrics.Stop()
 
+	iterationRateLimiter := newIterationRateLimiter(e.script)
+	if iterationRateLimiter != nil {
+		e.metrics.SetTargetTPS(e.script.Config.Pacing.TPS)
+		defer iterationRateLimiter.Stop()
+	}
+	if isOpenWorkload(e.script) {
+		return e.runOpenWorkload(ctx, protoConfig)
+	}
+
 	start := time.Now()
 	var wg sync.WaitGroup
+	rendezvous := NewRendezvousCoordinator()
 
 	rampDelay := e.rampDelay()
 
@@ -153,10 +165,14 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 			defer vuProto.Teardown(context.Background())
 
 			vu := &VUser{
-				ID:      vuserID,
-				Proto:   vuProto,
-				Script:  e.script,
-				Metrics: e.metrics,
+				ID:                   vuserID,
+				TotalVUsers:          e.vusers,
+				Proto:                vuProto,
+				Script:               e.script,
+				Metrics:              e.metrics,
+				IterationRateLimiter: iterationRateLimiter,
+				Rendezvous:           rendezvous,
+				ExecutionGoals:       executionGoals,
 			}
 			vu.Run(ctx)
 		}()
@@ -191,4 +207,71 @@ func (e *Engine) rampDelay() time.Duration {
 		return 0
 	}
 	return e.rampUp / time.Duration(e.vusers)
+}
+
+func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any) (*RunResult, error) {
+	start := time.Now()
+	iterationScript := cloneSingleIterationScript(e.script)
+	arrivals, bounded := boundedArrivalLimit(e.script, e.vusers)
+	executionGoals := NewExecutionGoalLimiter(e.script.Config.RunLogic, e.cancel)
+
+	var wg sync.WaitGroup
+	var activeWorkers atomic.Int64
+	setActive := func(delta int64) {
+		e.metrics.SetActiveVUsers(activeWorkers.Add(delta))
+	}
+
+	runArrivalScheduler(ctx, e.script.Config.Pacing.TPS, func() int {
+		if bounded {
+			return arrivals
+		}
+		return 0
+	}(), nil, func(arrival int) {
+		wg.Add(1)
+		setActive(1)
+
+		go func(workerID int) {
+			defer wg.Done()
+			defer func() { setActive(-1) }()
+
+			vuProto, err := protocol.Get(e.script.Protocol)
+			if err != nil {
+				slog.Error("failed to create protocol for arrival worker", "arrival", workerID, "err", err)
+				return
+			}
+			if err := vuProto.Init(ctx, protoConfig); err != nil {
+				slog.Error("failed to init protocol for arrival worker", "arrival", workerID, "err", err)
+				return
+			}
+			defer vuProto.Teardown(context.Background())
+
+			vu := &VUser{
+				ID:             workerID,
+				Proto:          vuProto,
+				Script:         iterationScript,
+				Metrics:        e.metrics,
+				ExecutionGoals: executionGoals,
+			}
+			vu.Run(ctx)
+		}(arrival)
+	})
+
+	wg.Wait()
+	elapsed := time.Since(start)
+	result := &RunResult{
+		Duration:          elapsed,
+		TotalTransactions: e.metrics.TotalTransactions(),
+		TotalErrors:       e.metrics.TotalErrors(),
+	}
+	if snap, ok := e.metrics.LatestSnapshot(); ok {
+		result.FinalSnapshot = snap
+	}
+	return result, nil
+}
+
+func newIterationRateLimiter(script *dsl.Script) *TokenBucket {
+	if script == nil || script.Config.Pacing.Type != "tps" || script.Config.Pacing.TPS <= 0 {
+		return nil
+	}
+	return NewTokenBucket(script.Config.Pacing.TPS)
 }

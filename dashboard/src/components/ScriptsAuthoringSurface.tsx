@@ -1,64 +1,148 @@
+import { type ReactNode } from 'react'
 import { type ScriptDefinition } from '../types/scripts'
+import { Project, type StoredScript } from '../types'
 import ScriptEditor from './ScriptEditor'
 import LoadRunnerImport from './LoadRunnerImport'
 import JMeterImport from './JMeterImport'
 import JavaHttpImport from './JavaHttpImport'
 import RecordingStudio from './RecordingStudio'
 import SampleScriptImport from './SampleScriptImport'
-import { type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
+import ProtocolAssetImport from './ProtocolAssetImport'
+import { type AuthoringReturnTarget, type DraftEditorFocus, type ImportedSaveResult, type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
 
 interface Props {
   subView: ScriptsAuthoringSubView
   draftScript: ScriptDefinition | null
+  draftEditorFocus: DraftEditorFocus | null
+  draftReturnTarget: AuthoringReturnTarget | null
+  authoringNotice: string | null
   editingId: string | null
   editingScript: ScriptDefinition | null
-  onSaved: () => void
+  projectId?: string
+  activeProject?: Project | null
+  onSaved: (script: StoredScript) => void
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
-  onImported: () => void
-  onEditDraft: (script: ScriptDefinition) => void
+  onImported: (result: ImportedSaveResult) => void
+  onEditDraft: (script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null) => void
+  onReturnToDraftSource: () => void
+}
+
+function renderCreateOptionsSurface(
+  content: ReactNode,
+  onBack: () => void,
+  hidden = false,
+) {
+  return (
+    <div className="page" hidden={hidden}>
+      <button className="btn btn-secondary" onClick={onBack} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
+      {content}
+    </div>
+  )
 }
 
 export default function ScriptsAuthoringSurface({
   subView,
   draftScript,
+  draftEditorFocus,
+  draftReturnTarget,
+  authoringNotice,
   editingId,
   editingScript,
+  projectId,
+  activeProject,
   onSaved,
   onOpenLibrary,
   onOpenCreateOptions,
   onImported,
   onEditDraft,
+  onReturnToDraftSource,
 }: Props) {
+  const loadRunnerEditReturnTarget: AuthoringReturnTarget = {
+    subView: 'import',
+    label: 'Back to Converted Script',
+    description: 'Return to the converted LoadRunner review without losing the current import results.',
+  }
+  const openLoadRunnerDraftInEditor = (script: ScriptDefinition, focus?: DraftEditorFocus) => {
+    onEditDraft(script, focus, loadRunnerEditReturnTarget)
+  }
+  const renderLoadRunnerImportSurface = (hidden = false) => renderCreateOptionsSurface(
+    <LoadRunnerImport projectId={projectId} onImported={onImported} onEdit={openLoadRunnerDraftInEditor} onClose={onOpenCreateOptions} />,
+    onOpenCreateOptions,
+    hidden,
+  )
+  const closeCreateEditor = draftReturnTarget ? onReturnToDraftSource : onOpenLibrary
+
   switch (subView) {
     case 'create':
-      return <div className="page"><ScriptEditor initialScript={draftScript} onSave={onSaved} onClose={onOpenLibrary} /></div>
+      if (draftReturnTarget?.subView === 'import') {
+        return (
+          <div className="scripts-authoring-stack">
+            {renderLoadRunnerImportSurface(true)}
+            <div className="page">
+              <div className="authoring-return-bar">
+                <button className="btn btn-secondary" onClick={onReturnToDraftSource}>{draftReturnTarget.label}</button>
+                {draftReturnTarget.description && <span>{draftReturnTarget.description}</span>}
+              </div>
+              {authoringNotice && <div className="settings-notice">{authoringNotice}</div>}
+              <ScriptEditor initialScript={draftScript} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} onSave={onSaved} onClose={closeCreateEditor} />
+            </div>
+          </div>
+        )
+      }
+      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} onSave={onSaved} onClose={closeCreateEditor} /></div>
     case 'edit':
-      return <div className="page"><ScriptEditor scriptId={editingId} initialScript={editingScript} onSave={onSaved} onClose={onOpenLibrary} /></div>
+      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
     case 'import':
-      return <div className="page"><LoadRunnerImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenLibrary} /></div>
-    case 'jmeter-import':
-      return <div className="page"><JMeterImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenLibrary} /></div>
-    case 'recorder':
       return (
-        <div className="page">
-          <button className="btn btn-secondary" onClick={onOpenCreateOptions} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
-          <RecordingStudio onImported={onImported} onEdit={onEditDraft} />
+        <div className="scripts-authoring-stack">
+          {renderLoadRunnerImportSurface(false)}
         </div>
+      )
+    case 'jmeter-import':
+      return renderCreateOptionsSurface(
+        <JMeterImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
+      )
+    case 'recorder':
+      return renderCreateOptionsSurface(
+        <RecordingStudio activeProject={activeProject} onImported={onImported} onEdit={onEditDraft} />,
+        onOpenCreateOptions,
       )
     case 'sample':
-      return (
-        <div className="page">
-          <button className="btn btn-secondary" onClick={onOpenCreateOptions} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
-          <SampleScriptImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />
-        </div>
+      return renderCreateOptionsSurface(
+        <SampleScriptImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
       )
     case 'java-http-import':
-      return (
-        <div className="page">
-          <button className="btn btn-secondary" onClick={onOpenCreateOptions} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
-          <JavaHttpImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />
-        </div>
+      return renderCreateOptionsSurface(
+        <JavaHttpImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
+      )
+    case 'devweb-import':
+      return renderCreateOptionsSurface(
+        <ProtocolAssetImport kind="devweb" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
+      )
+    case 'har-import':
+      return renderCreateOptionsSurface(
+        <ProtocolAssetImport kind="har" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
+      )
+    case 'openapi-import':
+      return renderCreateOptionsSurface(
+        <ProtocolAssetImport kind="openapi" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
+      )
+    case 'postman-import':
+      return renderCreateOptionsSurface(
+        <ProtocolAssetImport kind="postman" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
+      )
+    case 'wsdl-import':
+      return renderCreateOptionsSurface(
+        <ProtocolAssetImport kind="wsdl" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
       )
     default:
       return null

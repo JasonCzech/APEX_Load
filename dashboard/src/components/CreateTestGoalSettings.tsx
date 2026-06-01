@@ -1,4 +1,5 @@
 import { GoalConfig } from '../types'
+import DurationField from './DurationField'
 
 interface Props {
   goalConfig: GoalConfig
@@ -48,6 +49,28 @@ export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange 
           />
         </label>
         <label>
+          <span>Avg Server Processing Ceiling (ms)</span>
+          <input
+            type="number"
+            min={1}
+            step="1"
+            value={goalConfig.max_avg_server_processing_ms || ''}
+            onChange={(event) => onGoalConfigChange('max_avg_server_processing_ms', event.target.value ? Number(event.target.value) : undefined)}
+            placeholder="e.g. 450"
+          />
+        </label>
+        <label>
+          <span>Avg Transfer Ceiling (ms)</span>
+          <input
+            type="number"
+            min={1}
+            step="1"
+            value={goalConfig.max_avg_transfer_ms || ''}
+            onChange={(event) => onGoalConfigChange('max_avg_transfer_ms', event.target.value ? Number(event.target.value) : undefined)}
+            placeholder="e.g. 120"
+          />
+        </label>
+        <label>
           <span>Max Error Count</span>
           <input
             type="number"
@@ -80,15 +103,13 @@ export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange 
             placeholder="e.g. 300"
           />
         </label>
-        <label>
-          <span>SLA Breach Window</span>
-          <input
-            type="text"
-            value={goalConfig.sla_breach_window || ''}
-            onChange={(event) => onGoalConfigChange('sla_breach_window', event.target.value)}
-            placeholder="e.g. 30s"
-          />
-        </label>
+        <DurationField
+          label="SLA Breach Window"
+          value={goalConfig.sla_breach_window || ''}
+          allowEmpty
+          compact
+          onChange={(value) => onGoalConfigChange('sla_breach_window', value)}
+        />
         <label className="checkbox-label goal-checkbox-label">
           <input
             type="checkbox"

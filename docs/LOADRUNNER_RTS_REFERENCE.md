@@ -1,100 +1,66 @@
-# OpenText VuGen Runtime Settings (RTS) Reference
-## Web - HTTP/HTML Protocol
+# LoadRunner Web HTTP/HTML RTS Mapping
 
-This document provides a comprehensive reference of the Runtime Settings available in OpenText VuGen for the Web - HTTP/HTML protocol. These settings are critical for accurate performance simulation and are typically stored in the `default.cfg` file of a VuGen script.
+This document maps the Web HTTP/HTML runtime settings surfaced in APEX Load to their current support status. The goal is to make imported and manually authored RTS values visible, preserve compatibility where possible, and make execution gaps explicit.
 
----
+The code-owned source of truth for the LoadRunner Web HTTP/HTML matrix lives in `pkg/convert/loadrunner/rts_support.go` and is published through `GET /api/v1/scripts/import/loadrunner/support-matrix`. The broader cross-protocol W3 matrix is published through `GET /api/v1/runtime-settings/support-matrix` and documented in `docs/RUNTIME_SETTINGS_PARITY.md`. The dashboard LoadRunner import flow renders the same entries, tested examples, and caveats before conversion.
 
-### 1. Run Logic
-Defines how many times the Vuser executes the "Action" blocks and in what sequence.
-*   **Number of Iterations:** Total times the `Action` block repeats.
-*   **Block Scheduling:** Logic for looping specific actions (Sequential, Random, or Percentage-based).
-*   **Init/Action/End Sequence:** Order of `vuser_init`, `Action(s)`, and `vuser_end`.
+The planned Web HTTP/HTML RTS parity scope is complete. Settings that APEX Load can execute in its supported runtime envelope are classified as `Executed`; settings that are intentionally preserved for migration review but do not have APEX Load runtime semantics remain `Compatibility-only`.
 
-### 2. Pacing
-Controls the time interval between iterations to manage throughput.
-*   **Start new iteration immediately:** No delay between iterations.
-*   **Start new iteration after previous iteration ends:** Fixed or Random delay.
-*   **Start new iteration at fixed/random intervals:** (e.g., every 60 seconds from the start of the previous one).
+## Status Legend
 
-### 3. Logging
-Configures the verbosity and frequency of the execution log.
-*   **Disable Logging:** No logs (recommended for peak load tests).
-*   **Standard Log:** Basic execution steps and error messages.
-*   **Extended Log:**
-    *   **Parameter Substitution:** Shows data values used during parameterization.
-    *   **Data Returned by Server:** Full HTML/JSON/XML responses.
-    *   **Advanced Trace:** Detailed socket and internal engine info.
-*   **Log only when an error occurs:** Standard logging detail is only written to the log if a failure is detected.
+- `Executed`: APEX Load enforces the setting at runtime today.
+- `Partial`: APEX Load executes part of the setting surface, but not the full LoadRunner behavior.
+- `Compatibility-only`: APEX Load preserves and edits the setting, but does not execute its full runtime semantics yet.
+- `Non-applicable`: The LoadRunner concept does not map cleanly to APEX Load's architecture.
+- `Blocked`: The setting is modeled, but execution depends on missing metadata or infrastructure.
 
-### 4. Think Time
-Simulates real-world user pause time between browser actions.
-*   **Ignore Think Time:** Execute steps as fast as the network/server allows.
-*   **Replay Think Time:**
-    *   **As recorded:** Use the exact `lr_think_time` values captured.
-    *   **Multiply recorded think time by:** Scalar factor (e.g., 0.5x, 2x).
-    *   **Random percentage:** Apply a range (e.g., 50% to 150% of recorded time).
-*   **Limit think time to:** Cap the maximum delay (e.g., no pause longer than 10s).
+## Mapping
 
-### 5. Additional Attributes
-Allows passing custom command-line arguments or environment-specific parameters.
-*   **Name/Value pairs:** Accessible in script via `lr_get_attrib_string()` or `lr_get_attrib_long()`.
+| RTS area | LoadRunner concept | APEX Load field(s) | Status | Notes |
+| --- | --- | --- | --- | --- |
+| Run Logic | Iterations | `config.run_logic.iterations` | Executed | Applied by the engine iteration loop. |
+| Run Logic | Auto-transactions | `config.run_logic.auto_transactions` | Executed | Supports per-action and per-iteration wrapping. |
+| Run Logic | Block scheduling | `config.run_logic.block_scheduling` | Executed | Supports sequential, random, and percentage scheduling. |
+| Run Logic | Action sequence | `config.run_logic.action_sequence` | Executed | Preserved and enforced by the engine action ordering. |
+| Pacing | Delay mode and bounds | `config.pacing.*` | Executed | Fixed, random delay, and related pacing fields execute in the engine. |
+| Think Time | Ignore, multiplier, limit | `config.think_time.*` | Executed | Applied in the engine after action execution. |
+| Logging | Log level, error-only, extended options | `config.log.*` | Executed | Executes imported log level, error-only, parameter-substitution, data-returned, and advanced-trace controls within APEX Load's supported trace envelope. |
+| Misc | Continue on error | `config.error_handling.continue_on_error` | Executed | Supported through runtime error handling paths. |
+| Misc | Snapshot on error | `config.error_handling.snapshot_on_error` | Executed | HTTP, browser, SOAP, Java-over-HTTP, WebSocket, and gRPC failure paths populate snapshots where request/response artifacts exist. |
+| Browser Emulation | Cache enabled | `config.browser.cache_enabled` | Executed | Browser runtime toggles Chrome cache usage. |
+| Browser Emulation | Cache URLs requiring content | `config.browser.cache_content_urls` | Executed | Browser runtime forces content request revalidation when disabled. |
+| Browser Emulation | Check for newer versions | `config.browser.check_newer_versions` | Executed | Browser runtime injects revalidation headers. |
+| Browser Emulation | New user each iteration | `config.browser.new_user_per_iteration` | Executed | Browser protocol is reset between iterations. |
+| Browser Emulation | Download resources = all | `config.browser.download_resources = "all"` | Executed | Default browser behavior. |
+| Browser Emulation | Download resources = none | `config.browser.download_resources = "none"` | Executed | Static asset URLs are blocked in browser replay. |
+| Browser Emulation | Download resources = recorded | `config.browser.download_resources = "recorded"` | Executed | Browser replay enforces recorded-only assets for imported or recorded flows that carry recorded-resource URL metadata. |
+| Browser Emulation | User agent | `config.browser.user_agent`, `config.http.user_agent` | Executed | Supported in browser and HTTP protocols. |
+| Browser Emulation | Accept-Language / Accept-Encoding | `config.http.accept_language`, `config.http.accept_encoding` | Executed | Applied as HTTP defaults and imported from runtime settings. |
+| Proxy | Proxy mode and custom proxy | `config.http.proxy_mode`, `config.http.proxy.*` | Executed | Supports `none`, `system`, and `custom`. |
+| Additional Attributes | Arbitrary RTS name/value metadata | `config.web_runtime.additional_attributes` | Compatibility-only | Preserved for authoring/import parity. |
+| Download Filters | Allow list / block list hosts | `config.web_runtime.download_filters.*` | Executed | Browser runtime enforces host-based asset filtering. |
+| Content Check | Global required/forbidden text checks | `config.web_runtime.content_checks[]` | Executed | HTTP runtime enforces checks against main-document responses. |
+| Network Speed Simulation | Preset and custom bandwidth/latency | `config.web_runtime.network_simulation.*` | Executed | Browser runtime maps settings onto DevTools network throttling. |
+| Streaming | Adaptive vs fixed mode | `config.web_runtime.streaming.mode` | Executed | HTTP runtime applies streaming pacing to media-like responses. |
+| Streaming | Buffer size | `config.web_runtime.streaming.buffer_size_seconds` | Executed | Adds startup buffering delay to media-like HTTP responses. |
+| Streaming | Fixed bitrate | `config.web_runtime.streaming.fixed_bitrate_kbps` | Executed | Fixed mode shapes media response duration to the configured bitrate. |
+| Streaming | Bandwidth estimation | `config.web_runtime.streaming.bandwidth_estimation` | Executed | Adaptive mode uses instant or rolling response throughput estimates for media pacing. |
+| Data Formatting | Auto-detect DFEs | `config.web_runtime.data_formatting.auto_detect` | Executed | HTTP runtime auto-detects the supported DFE envelope: obvious base64 text and gzip-compressed text payloads before extraction and assertions. |
+| Data Formatting | DFE transform chain | `config.web_runtime.data_formatting.chain[]` | Executed | HTTP runtime executes the supported DFE chain: `base64`, `gzip`, `json_to_xml`, `xml_to_json`, `url_decode`, `url_encode`, `html_unescape`, and `html_escape`. |
+| Replay engine mode | WinInet / process-vs-thread runtime concepts | N/A | Non-applicable | APEX Load uses Go HTTP/browser runtimes and goroutine VUsers instead of WinInet or Windows process/thread replay modes. |
 
-### 6. Miscellaneous (Misc)
-Core execution and error handling behavior.
-*   **Error Handling:**
-    *   **Continue on Error:** Script continues execution even if a specific step fails.
-    *   **Generate snapshot on error:** Captures page state/data for post-failure analysis.
-*   **Multithreading:**
-    *   **Run Vuser as a thread:** Uses shared memory, high density (default).
-    *   **Run Vuser as a process:** Isolated memory, higher resource overhead.
-*   **Automatic Transactions:** Automatically wrap each action block in a transaction.
+## Intentional Caveats
 
-### 7. Browser Emulation
-Configures the Vuser to simulate specific browser characteristics.
-*   **User-Agent:** Choose browser (Chrome, Firefox, Safari) or provide a custom string.
-*   **Simulate Browser Cache:**
-    *   **Cache URLs requiring content:** Controls what resources are stored in memory.
-    *   **Check for newer versions of stored pages:** Simulates browser "If-Modified-Since" logic.
-*   **Simulate a new user on each iteration:** Clears cookies and cache at the start of every iteration.
-*   **Download non-HTML resources:** Determines if the Vuser fetches images, CSS, JS, etc.
+- `download_resources = recorded` depends on recorded-resource URL metadata. Browser replay enforces it for import/recording flows that capture those URLs; manually authored scripts should provide equivalent metadata before selecting that mode.
+- Streaming/media settings execute at HTTP response pacing level; they do not launch a full browser media player.
+- Browser/runtime-wide DFE parity is intentionally bounded to APEX Load's supported HTTP response transform chain.
+- Logging parity is intentionally scoped to APEX Load's trace envelope rather than byte-for-byte VuGen log formatting.
 
-### 8. Network Speed Simulation
-Simulates various bandwidth constraints and latencies.
-*   **Use maximum bandwidth:** No artificial throttling.
-*   **Simulate bandwidth:** Choose presets (56k, DSL, T1, 10Mbps) or define custom Mbps/Kbps.
+## Tested examples
 
-### 9. Streaming
-Specific to media and segmented streaming (HLS/DASH).
-*   **Streaming Mode:** Adaptive or fixed bitrate.
-*   **Buffer Size:** Simulation of player buffer depth.
-*   **Bandwidth Estimation:** Logic for bitrate switching.
-
-### 10. Internet Protocol (Node)
-The primary parent node for advanced HTTP engine behaviors.
-
-#### 10.1 Proxy
-*   **No Proxy:** Direct connection to the target server.
-*   **Use system proxy:** Inherits Windows/Global proxy settings.
-*   **Custom Proxy:** Specific IP/Port and Authentication (NTLM/Basic/Kerberos).
-
-#### 10.2 Preferences
-Deep-level HTTP engine settings.
-*   **HTTP Version:** (1.0, 1.1, 2.0).
-*   **Max Connections per Host:** Parallel socket count (default 6 for modern browsers).
-*   **Timeouts:**
-    *   **Step download timeout:** Max time for a full page download.
-    *   **Receive timeout:** Max time waiting for individual packets.
-    *   **Connect timeout:** Max time to establish a socket connection.
-*   **WinInet Replay:** Forces usage of Windows API instead of internal Sockets.
-
-#### 10.3 Download Filters
-*   **Include/Exclude Hosts:** Regex or URL list to block/allow specific background traffic.
-
-#### 10.4 Content Check
-*   **Search for text/string:** Automated global check (e.g., "Error", "Access Denied") to fail the script if found in any response.
-
-### 11. Data Formatting
-Relates to **Data Format Extensions (DFE)** used for complex/binary data.
-*   **DFE Chain:** Sequence of decoders (GWT, Base64, JSON-to-XML) to make data readable.
-*   **Auto-detect:** Automatically identify and apply decoders during replay.
+- `pkg/convert/loadrunner/converter_test.go::TestParseRuntimeCfgToScriptConfigMapsExtendedRuntimeSettings` exercises the extended Web HTTP/HTML runtime import path across transport, proxy, pacing, logging, browser emulation, download filters, content checks, network shaping, streaming, and DFE settings.
+- `pkg/convert/loadrunner/converter_test.go::TestConvertZipMapsExtendedRuntimeSettings` verifies that ZIP import preserves runtime metadata and emits per-import parity classifications.
+- `pkg/api/handlers_scripts_test.go::TestHandleImportLoadRunnerSummarizesRuntimeSettingParity` verifies that the shared LoadRunner import envelope carries parity counts and review sections for the imported runtime settings.
+- `pkg/convert/loadrunner/converter_test.go::TestGoldenWebHTTPHTMLFixtureRuntimeParity` converts `pkg/convert/loadrunner/testdata/golden_web_http_html` as a representative Web HTTP/HTML archive and asserts the expected executed, partial, and compatibility-only runtime support statuses side by side with the generated DSL.
+- `pkg/api/runtime_settings_support_test.go::TestRuntimeSettingsReportEndpointsExportScriptAndScenarioEvidence` verifies JSON/CSV runtime settings exports for script and scenario review.
+- `pkg/api/runtime_settings_support_test.go::TestScenarioRuntimeSettingsValidationSurfacesCompatibilityAndBlockers` verifies that scenario validation and run creation surface/block unsafe runtime settings before execution.

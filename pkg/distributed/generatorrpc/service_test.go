@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/jasonczech/stormrunner/api/proto"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
+	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	_ "github.com/jasonczech/apexload/pkg/protocol/http"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
@@ -238,6 +238,15 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	if !reflect.DeepEqual(pong.ActiveTestIDs, []string{"test-1"}) {
 		t.Fatalf("active test ids = %v, want [test-1]", pong.ActiveTestIDs)
 	}
+	if pong.Version != "0.1.0" {
+		t.Fatalf("heartbeat version = %q, want 0.1.0", pong.Version)
+	}
+	if !hasString(pong.SupportedProtocols, "http") {
+		t.Fatalf("supported protocols = %v, want http", pong.SupportedProtocols)
+	}
+	if !hasString(pong.CompatibleFeatures, "http") {
+		t.Fatalf("compatible features = %v, want http", pong.CompatibleFeatures)
+	}
 	if pong.Stats.ActiveVUsers != 12 {
 		t.Fatalf("heartbeat active vusers = %d, want 12", pong.Stats.ActiveVUsers)
 	}
@@ -446,6 +455,7 @@ func TestServicePublishMetricsBroadcastsTransactions(t *testing.T) {
 		Success:       true,
 		BytesSent:     128,
 		BytesReceived: 1024,
+		SOAPOperation: "GetHome",
 	}, {
 		Name:          "Checkout",
 		DurationMs:    340,
@@ -454,6 +464,7 @@ func TestServicePublishMetricsBroadcastsTransactions(t *testing.T) {
 		ErrorMessage:  "remote failure",
 		BytesSent:     256,
 		BytesReceived: 512,
+		SOAPOperation: "CreateOrder",
 	}}, MetricsTelemetry{DroppedResults: 3, CollectedAtUnixMs: 1000, PublishedAtUnixMs: 1300, SampleAgeMs: 300})
 	if err != nil {
 		t.Fatalf("PublishMetrics: %v", err)
@@ -477,6 +488,9 @@ func TestServicePublishMetricsBroadcastsTransactions(t *testing.T) {
 	}
 	if batch.Transactions[1].ErrorMessage != "remote failure" {
 		t.Fatalf("snapshot transaction error = %q, want remote failure", batch.Transactions[1].ErrorMessage)
+	}
+	if batch.Transactions[1].SOAPOperation != "CreateOrder" {
+		t.Fatalf("snapshot transaction soap operation = %q, want CreateOrder", batch.Transactions[1].SOAPOperation)
 	}
 	if batch.Telemetry == nil {
 		t.Fatal("expected telemetry on metrics batch")
@@ -588,7 +602,7 @@ func TestServiceWithExecutionRunsAssignedScript(t *testing.T) {
 func TestServiceWithExecutionExposesArchiveArtifacts(t *testing.T) {
 	const bufSize = 1024 * 1024
 
-	t.Setenv("STORMRUNNER_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -683,4 +697,13 @@ func TestServiceWithExecutionExposesArchiveArtifacts(t *testing.T) {
 	if err := metrics.CloseSend(); err != nil {
 		t.Fatalf("Metrics CloseSend: %v", err)
 	}
+}
+
+func hasString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

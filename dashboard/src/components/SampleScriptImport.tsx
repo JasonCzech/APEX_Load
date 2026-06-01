@@ -12,11 +12,16 @@ import {
   type LoadedSample,
   type SampleFormat,
 } from './sampleImportUtils'
-import { type ImportedScript, type SampleImportResult } from '../types/scriptImports'
-import { type ScriptDefinition } from '../types/scripts'
+import { type SampleImportResult } from '../types/scriptImports'
+import { type StoredScript } from '../types'
+import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { createJavaHttpDraft } from './scriptDraftFactories'
+import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
+import SourceMappingReview from './SourceMappingReview'
+import { withFallbackPersistedScript } from './importSaveUtils'
+import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
 
 type AuthType = 'none' | 'basic' | 'bearer'
@@ -29,6 +34,7 @@ type SampleImportOptions = {
   include_assertions: boolean
   infer_extractors: boolean
   sanitize_sensitive: boolean
+  include_static_assets: boolean
   auth_type: AuthType
   auth_username: string
   auth_password: string
@@ -48,7 +54,8 @@ type SampleImportOptionsAction =
   | { type: 'reset' }
 
 interface Props {
-  onImported?: (script: ImportedScript) => void
+  projectId?: string
+  onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
   preset?: SampleImportPreset
@@ -102,7 +109,7 @@ const sampleTemplates: Record<SampleFormat, { primary: string; secondary?: strin
         },
         "response": {
           "status": 200,
-          "content": {"text": "{\"orders\":[]}"}
+          "content": {"text": "{"orders":[]}"}
         }
       }
     ]
@@ -122,6 +129,29 @@ const javaHttpTemplates: Partial<Record<SampleFormat, { primary: string; seconda
   -H 'Accept: application/x-java-serialized-object' \\
   --data 'rO0ABXQABGRlbW8='`,
   },
+  har: {
+    primary: `{
+  "log": {
+    "entries": [
+      {
+        "request": {
+          "method": "POST",
+          "url": "https://api.example.com/java/session",
+          "headers": [
+            {"name": "Content-Type", "value": "application/x-java-serialized-object"},
+            {"name": "Accept", "value": "application/x-java-serialized-object"}
+          ],
+          "postData": {"text": "rO0ABXQABGRlbW8="}
+        },
+        "response": {
+          "status": 200,
+          "content": {"text": "rO0ABXQACnNlc3Npb24="}
+        }
+      }
+    ]
+  }
+}`,
+  },
 }
 
 const defaultFormatByPreset: Record<SampleImportPreset, SampleFormat> = {
@@ -131,7 +161,7 @@ const defaultFormatByPreset: Record<SampleImportPreset, SampleFormat> = {
 
 const availableFormatsByPreset: Record<SampleImportPreset, SampleFormat[]> = {
   default: ['rest_json', 'raw_http', 'curl', 'har'],
-  'java-http': ['raw_http', 'curl'],
+  'java-http': ['raw_http', 'curl', 'har'],
 }
 
 const javaHttpDefaults = createJavaHttpDraft().config.java_http || {}
@@ -151,6 +181,9 @@ function getFormatHelp(preset: SampleImportPreset, format: SampleFormat): string
     if (format === 'curl') {
       return 'Paste a curl command whose --data body is already a base64-encoded serialized Java payload.'
     }
+    if (format === 'har') {
+      return 'Paste a HAR captured from a Java-RPC-over-HTTP client. Request/response bodies should already be base64-encoded serialized Java payloads.'
+    }
   }
   return formatHelp[format]
 }
@@ -159,6 +192,13 @@ function looksLikeBase64(value: string): boolean {
   const trimmed = value.trim()
   if (!trimmed) return true
   return trimmed.length % 4 === 0 && /^[A-Za-z0-9+/=\r\n]+$/.test(trimmed)
+}
+
+// A Java serialized object stream begins with the magic bytes 0xAC 0xED 0x00 0x05,
+// which always base64-encode to a leading "rO0AB" prefix regardless of the payload
+// that follows. Checking the prefix avoids decoding while still validating the codec.
+function looksLikeJavaSerialized(value: string): boolean {
+  return value.replace(/[\r\n]/g, '').trim().startsWith('rO0AB')
 }
 
 function promoteScriptToJavaHTTP(script: ScriptDefinition): ScriptDefinition {
@@ -177,14 +217,35 @@ function promoteScriptToJavaHTTP(script: ScriptDefinition): ScriptDefinition {
 
 function appendJavaHTTPWarnings(script: ScriptDefinition, warnings: string[]): string[] {
   const nextWarnings = [...warnings]
-  const hasNonBase64Body = script.actions.some(action => typeof action.body === 'string' && action.body.trim() !== '' && !looksLikeBase64(action.body))
+  const nonEmptyBodies = script.actions
+    .map(action => (typeof action.body === 'string' ? action.body : ''))
+    .filter(body => body.trim() !== '')
+  const hasNonBase64Body = nonEmptyBodies.some(body => !looksLikeBase64(body))
+  // A body can be valid base64 yet not be a Java serialized object — flag that
+  // separately so the user can verify the codec/source rather than silently
+  // shipping a payload the java_http protocol can't meaningfully replay.
+  const hasNonJavaSerializedBody = nonEmptyBodies.some(body => looksLikeBase64(body) && !looksLikeJavaSerialized(body))
+
   const warning = hasNonBase64Body
     ? 'One or more imported request bodies are not base64-encoded. Java-over-HTTP replay expects opaque base64-encoded serialized bytes, so review those actions before saving.'
     : 'Java-over-HTTP imports assume request and response payloads are already base64-encoded serialized Java bytes. Review the generated draft before saving.'
   if (!nextWarnings.includes(warning)) {
     nextWarnings.push(warning)
   }
+  if (hasNonJavaSerializedBody) {
+    const magicWarning = 'One or more base64 bodies do not decode to a Java serialized object stream (expected magic bytes 0xAC 0xED 0x00 0x05). Verify the codec or source before saving.'
+    if (!nextWarnings.includes(magicWarning)) {
+      nextWarnings.push(magicWarning)
+    }
+  }
   return nextWarnings
+}
+
+function sourceReviewForSample(result?: SampleImportResult | null, script?: ScriptDefinition | null): SourceReview | null {
+  const metadataReview = script?.metadata?.import?.preserved?.source_review as SourceReview | undefined
+  const review = result?.source_review || metadataReview
+  if (!review || (!Array.isArray(review.source_files) && !Array.isArray(review.mappings))) return null
+  return review
 }
 
 const initialOptions: SampleImportOptions = {
@@ -193,6 +254,7 @@ const initialOptions: SampleImportOptions = {
   include_assertions: true,
   infer_extractors: true,
   sanitize_sensitive: true,
+  include_static_assets: false,
   auth_type: 'none',
   auth_username: '',
   auth_password: '',
@@ -221,7 +283,7 @@ function sampleImportOptionsReducer(state: SampleImportOptions, action: SampleIm
   }
 }
 
-export default function SampleScriptImport({ onImported, onEdit, onClose, preset = 'default' }: Props) {
+export default function SampleScriptImport({ projectId, onImported, onEdit, onClose, preset = 'default' }: Props) {
   const api = useApi()
   const primaryFileRef = useRef<HTMLInputElement>(null)
   const secondaryFileRef = useRef<HTMLInputElement>(null)
@@ -239,7 +301,7 @@ export default function SampleScriptImport({ onImported, onEdit, onClose, preset
   const [dragTarget, setDragTarget] = useState<'primary' | 'secondary' | null>(null)
   const [messageError, setMessageError] = useState('')
   const convertTask = useAsyncTask<SampleImportResult>()
-  const saveTask = useAsyncTask<boolean>()
+  const saveTask = useAsyncTask<StoredScript>()
   const [options, dispatchOptions] = useReducer(sampleImportOptionsReducer, initialOptions)
 
   const updateOption = <K extends keyof SampleImportOptions>(field: K, value: SampleImportOptions[K]) => {
@@ -252,6 +314,8 @@ export default function SampleScriptImport({ onImported, onEdit, onClose, preset
   const saving = saveTask.pending
   const availableFormats = availableFormatsByPreset[preset]
   const isJavaHttpPreset = preset === 'java-http'
+  const reviewedScript = result?.script || result?.scripts?.[0] || null
+  const sourceReview = sourceReviewForSample(result, reviewedScript)
 
   const handleFormatChange = (nextFormat: SampleFormat) => {
     const template = getSampleTemplate(preset, nextFormat)
@@ -267,10 +331,6 @@ export default function SampleScriptImport({ onImported, onEdit, onClose, preset
     convertTask.reset()
     saveTask.clearError()
     setMessageError('')
-  }
-
-  const handleFileLoad = async (file: File, target: 'primary' | 'secondary') => {
-    await handleFilesLoad([file], target)
   }
 
   const handleFilesLoad = async (files: File[], target: 'primary' | 'secondary') => {
@@ -325,7 +385,7 @@ export default function SampleScriptImport({ onImported, onEdit, onClose, preset
     }
   }
 
-  const buildScriptWithOptions = (baseScript?: ImportedScript) => {
+  const buildScriptWithOptions = (baseScript?: ScriptDefinition) => {
     const script = JSON.parse(JSON.stringify(baseScript || {})) as ScriptDefinition
     script.name = options.name.trim() || script.name
     script.config = script.config || {}
@@ -389,6 +449,7 @@ export default function SampleScriptImport({ onImported, onEdit, onClose, preset
         async () => {
           const res = await api.importSample({
             name: options.name || undefined,
+            project_id: projectId,
             format,
             content: primaryContent,
             response_content: secondaryContent || undefined,
@@ -397,16 +458,18 @@ export default function SampleScriptImport({ onImported, onEdit, onClose, preset
               include_assertions: options.include_assertions,
               infer_extractors: options.infer_extractors,
               sanitize_sensitive: options.sanitize_sensitive,
+              include_static_assets: format === 'har' ? options.include_static_assets : undefined,
             },
           })
 
           const builtScript = buildScriptWithOptions(res.script)
           const finalScript = isJavaHttpPreset ? promoteScriptToJavaHTTP(builtScript) : builtScript
+          const correlatedScript = attachImportCorrelationSuggestions(finalScript, 'sample-import', res.correlations)
           const warnings = isJavaHttpPreset ? appendJavaHTTPWarnings(finalScript, res.warnings) : res.warnings
 
           return {
             ...res,
-            script: finalScript,
+            script: correlatedScript,
             warnings,
           }
         },
@@ -422,11 +485,10 @@ export default function SampleScriptImport({ onImported, onEdit, onClose, preset
     if (!reviewedScript) return
     setMessageError('')
     try {
-      await saveTask.run(async () => {
-        await api.createScript(reviewedScript)
-        return true
+      const savedScript = await saveTask.run(async () => {
+        return api.createScript(reviewedScript, projectId)
       })
-      onImported?.(reviewedScript)
+      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, reviewedScript)] })
     } catch (error: unknown) {
       setMessageError(getErrorMessage(error, 'Failed to save generated script'))
     }
@@ -440,7 +502,7 @@ export default function SampleScriptImport({ onImported, onEdit, onClose, preset
           <p className="sample-import-subtitle">
             {isJavaHttpPreset
               ? 'Create a Java-over-HTTP draft from raw HTTP or cURL samples that already preserve base64-encoded serialized Java payloads.'
-              : 'Create a Stormrunner script from raw HTTP, curl, REST JSON, or HAR data, then layer in runtime details before saving.'}
+              : 'Create a APEX Load script from raw HTTP, curl, REST JSON, or HAR data, then layer in runtime details before saving.'}
           </p>
         </div>
         {onClose && <button className="btn btn-ghost" onClick={onClose}>✕</button>}
@@ -594,7 +656,7 @@ export default function SampleScriptImport({ onImported, onEdit, onClose, preset
           </label>
           <label className="sample-import-field">
             <span>User Agent</span>
-            <input value={options.user_agent} onChange={e => updateOption('user_agent', e.target.value)} placeholder="Stormrunner Sample Import" />
+            <input value={options.user_agent} onChange={e => updateOption('user_agent', e.target.value)} placeholder="APEX Load Sample Import" />
           </label>
           <label className="sample-import-field">
             <span>Max Retries</span>
@@ -631,6 +693,7 @@ export default function SampleScriptImport({ onImported, onEdit, onClose, preset
           <label className="sample-toggle"><input type="checkbox" checked={options.include_assertions} onChange={e => updateOption('include_assertions', e.target.checked)} />Infer status assertions</label>
           <label className="sample-toggle"><input type="checkbox" checked={options.infer_extractors} onChange={e => updateOption('infer_extractors', e.target.checked)} />Infer extractors and correlation variables</label>
           <label className="sample-toggle"><input type="checkbox" checked={options.sanitize_sensitive} onChange={e => updateOption('sanitize_sensitive', e.target.checked)} />Sanitize obvious secrets</label>
+          {format === 'har' && <label className="sample-toggle"><input type="checkbox" checked={options.include_static_assets} onChange={e => updateOption('include_static_assets', e.target.checked)} />Include static assets</label>}
           <label className="sample-toggle"><input type="checkbox" checked={options.continue_on_error} onChange={e => updateOption('continue_on_error', e.target.checked)} />Continue on error</label>
         </div>
       </div>
@@ -644,16 +707,19 @@ export default function SampleScriptImport({ onImported, onEdit, onClose, preset
 
       {error && <div className="sample-import-error">{error}</div>}
 
-      {result && (result.script || result.scripts?.[0]) && (
+      {result && reviewedScript && (
         <div className="sample-import-result">
           <ScriptImportReview
             title="3. Review Generated Script"
             subtitle={`${result.stats.converted_actions} action(s) derived from ${result.stats.total_requests} request sample(s).`}
-            script={(result.script || result.scripts?.[0])!}
+            script={reviewedScript}
             warnings={result.warnings}
+            unsupportedElements={result.unsupported_elements}
+            reviewSections={result.review_sections}
             saving={saving}
             onSave={handleSave}
-            onEdit={onEdit ? () => onEdit((result.script || result.scripts?.[0]) as ScriptDefinition) : undefined}
+            onEdit={onEdit ? () => onEdit(reviewedScript) : undefined}
+            previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
           >
 
             <div className="sample-import-stats-grid">
@@ -661,6 +727,7 @@ export default function SampleScriptImport({ onImported, onEdit, onClose, preset
               <div className="sample-stat"><span className="sample-stat-value">{result.stats.assertions}</span><span className="sample-stat-label">Assertions</span></div>
               <div className="sample-stat"><span className="sample-stat-value">{result.stats.extractors}</span><span className="sample-stat-label">Extractors</span></div>
               <div className="sample-stat"><span className="sample-stat-value">{result.stats.correlations_detected}</span><span className="sample-stat-label">Correlations</span></div>
+              {typeof result.stats.filtered_assets === 'number' && result.stats.filtered_assets > 0 && <div className="sample-stat"><span className="sample-stat-value">{result.stats.filtered_assets}</span><span className="sample-stat-label">Filtered assets</span></div>}
             </div>
 
             {result.correlations.length > 0 && (

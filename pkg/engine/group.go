@@ -4,21 +4,26 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type GroupConfig struct {
-	Name         string
-	Script       *dsl.Script
-	VUsers       int
-	RampUp       time.Duration
-	RampDown     time.Duration
-	InitStrategy string // "at_runtime", "at_once"
-	ResultSink   ResultSink
+	Name            string
+	Script          *dsl.Script
+	VUsers          int
+	RampUp          time.Duration
+	RampDown        time.Duration
+	InitStrategy    string // "at_runtime", "at_once"
+	ResultSink      ResultSink
+	RedactionConfig *RedactionConfig
+	rateLimiter     *TokenBucket
+	rendezvous      *RendezvousCoordinator
+	executionGoals  *ExecutionGoalLimiter
 }
 
 type ResultSink interface {
@@ -45,6 +50,7 @@ type MultiGroupEngine struct {
 	totalCtx       context.Context
 	wg             *sync.WaitGroup
 	vuserCancels   map[int]context.CancelFunc
+	vuserGroups    map[int]string
 	nextVUserID    int
 	paused         bool
 	pauseCh        chan struct{}
@@ -108,13 +114,21 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 
 	mge.mu.Lock()
 	mge.vuserCancels = make(map[int]context.CancelFunc)
+	mge.vuserGroups = make(map[int]string)
+	mge.nextVUserID = 0
 	mge.pauseCh = make(chan struct{})
 	close(mge.pauseCh) // Start unpaused
 	mge.targetDuration = mge.duration
-	
+
 	// Create a base context for VUsers that only cancels on hard stop/abort
 	baseCtx, baseCancel := context.WithCancel(ctx)
 	mge.baseCtx = baseCtx
+	for i := range mge.groups {
+		mge.groups[i].executionGoals = NewExecutionGoalLimiter(mge.groups[i].Script.Config.RunLogic, baseCancel)
+		if !isOpenWorkload(mge.groups[i].Script) {
+			mge.groups[i].rendezvous = NewRendezvousCoordinator()
+		}
+	}
 	mge.stopVUsers = baseCancel
 	mge.mu.Unlock()
 
@@ -157,12 +171,48 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		return nil, err
 	}
 
-	vuserOffset := 0
-	for gi, group := range mge.groups {
-		gi, group := gi, group
+	totalTargetTPS := 0.0
+	atOnceGroups := make([]GroupConfig, 0)
+	for gi, _ := range mge.groups {
+		if mge.groups[gi].Script.Config.Pacing.Type == "tps" && mge.groups[gi].Script.Config.Pacing.TPS > 0 {
+			targetTPS := mge.groups[gi].Script.Config.Pacing.TPS
+			totalTargetTPS += targetTPS
+			mge.metrics.SetGroupTargetTPS(mge.groups[gi].Name, targetTPS)
+		}
+		if !isOpenWorkload(mge.groups[gi].Script) {
+			mge.groups[gi].rateLimiter = newIterationRateLimiter(mge.groups[gi].Script)
+			if mge.groups[gi].rateLimiter != nil {
+				defer mge.groups[gi].rateLimiter.Stop()
+			}
+		}
+		gi, group := gi, mge.groups[gi]
 		groupResults[gi] = GroupResult{Name: group.Name}
 
 		protoConfig := buildProtoConfig(group.Script)
+		if groupLifecycleAtOnce(group) {
+			if !mge.runGroupLifecycleBlock(mge.baseCtx, group, protoConfig, group.Script.Init, "init") {
+				baseCancel()
+				return nil, fmt.Errorf("group %q init-once failed", group.Name)
+			}
+			atOnceGroups = append(atOnceGroups, group)
+		}
+		if isOpenWorkload(group.Script) {
+			arrivals, bounded := boundedArrivalLimit(group.Script, group.VUsers)
+			wg.Add(1)
+			go func(group GroupConfig, protoConfig map[string]any, totalArrivals int) {
+				defer wg.Done()
+				runArrivalScheduler(mge.baseCtx, group.Script.Config.Pacing.TPS, totalArrivals, mge.WaitIfPaused, func(int) {
+					vuserID := mge.allocateVUserID()
+					mge.spawnOpenWorker(vuserID, group, protoConfig, &wg)
+				})
+			}(group, protoConfig, func() int {
+				if bounded {
+					return arrivals
+				}
+				return 0
+			}())
+			continue
+		}
 
 		rampDelay := time.Duration(0)
 		if group.RampUp > 0 && group.VUsers > 1 {
@@ -183,18 +233,19 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 				time.Sleep(rampDelay)
 			}
 
-			vuserID := vuserOffset + i
+			vuserID := mge.allocateVUserID()
 			mge.spawnVUser(vuserID, group, protoConfig, rampDownDelay, i, &wg)
 		}
-
-		vuserOffset += group.VUsers
+	}
+	if totalTargetTPS > 0 {
+		mge.metrics.SetTargetTPS(totalTargetTPS)
 	}
 
-	mge.mu.Lock()
-	mge.nextVUserID = vuserOffset
-	mge.mu.Unlock()
-
 	wg.Wait()
+	for _, group := range atOnceGroups {
+		protoConfig := buildProtoConfig(group.Script)
+		mge.runGroupLifecycleBlock(context.Background(), group, protoConfig, group.Script.Teardown, "teardown")
+	}
 	if err := waitForBaselineWindow(ctx, mge.postBaseline); err != nil {
 		return nil, err
 	}
@@ -210,6 +261,39 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		result.FinalSnapshot = snap
 	}
 	return result, nil
+}
+
+func groupLifecycleAtOnce(group GroupConfig) bool {
+	return strings.EqualFold(strings.TrimSpace(group.InitStrategy), "at_once")
+}
+
+func (mge *MultiGroupEngine) runGroupLifecycleBlock(ctx context.Context, group GroupConfig, protoConfig map[string]any, actions []dsl.Action, phase string) bool {
+	if len(actions) == 0 {
+		return true
+	}
+	vuProto, err := protocol.Get(group.Script.Protocol)
+	if err != nil {
+		slog.Error("failed to create lifecycle protocol", "group", group.Name, "phase", phase, "err", err)
+		return false
+	}
+	if err := vuProto.Init(ctx, protoConfig); err != nil {
+		slog.Error("failed to init lifecycle protocol", "group", group.Name, "phase", phase, "err", err)
+		return false
+	}
+	defer vuProto.Teardown(context.Background())
+
+	vu := &VUser{
+		ID:              -1,
+		TotalVUsers:     group.VUsers,
+		Group:           group.Name,
+		Proto:           vuProto,
+		Script:          group.Script,
+		Metrics:         mge.metrics,
+		ResultSink:      group.ResultSink,
+		RedactionConfig: group.RedactionConfig,
+		Rendezvous:      group.rendezvous,
+	}
+	return vu.RunLifecycleBlock(ctx, actions, phase)
 }
 
 func waitForBaselineWindow(ctx context.Context, duration time.Duration) error {
@@ -229,13 +313,14 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 
 	mge.mu.Lock()
 	mge.vuserCancels[vuserID] = vuCancel
+	mge.vuserGroups[vuserID] = group.Name
 	mge.mu.Unlock()
 
 	if rampDownDelay > 0 {
 		go func(idx int, cancelFunc context.CancelFunc) {
 			// Wait for steady state to end (base context cancellation)
 			<-mge.baseCtx.Done()
-			
+
 			// Optional: if aborted, don't do ramp down
 			// But for now, we'll just follow the pattern
 			if rampDownDelay > 0 {
@@ -266,18 +351,26 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 			vuProto.Teardown(context.Background())
 			mge.mu.Lock()
 			delete(mge.vuserCancels, vuserID)
+			delete(mge.vuserGroups, vuserID)
 			mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 			mge.mu.Unlock()
 		}()
 
 		vu := &VUser{
-			ID:         vuserID,
-			Group:      group.Name,
-			Proto:      vuProto,
-			Script:     group.Script,
-			Metrics:    mge.metrics,
-			ResultSink: group.ResultSink,
-			PauseControl: mge,
+			ID:                   vuserID,
+			TotalVUsers:          group.VUsers,
+			Group:                group.Name,
+			Proto:                vuProto,
+			Script:               group.Script,
+			Metrics:              mge.metrics,
+			ResultSink:           group.ResultSink,
+			RedactionConfig:      group.RedactionConfig,
+			PauseControl:         mge,
+			IterationRateLimiter: group.rateLimiter,
+			Rendezvous:           group.rendezvous,
+			ExecutionGoals:       group.executionGoals,
+			SkipInit:             groupLifecycleAtOnce(group),
+			SkipTeardown:         groupLifecycleAtOnce(group),
 		}
 		vu.Run(vuCtx)
 	}()
@@ -285,6 +378,75 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 
 func (mge *MultiGroupEngine) activeVUserCount() int {
 	return len(mge.vuserCancels)
+}
+
+func (mge *MultiGroupEngine) allocateVUserID() int {
+	mge.mu.Lock()
+	defer mge.mu.Unlock()
+	id := mge.nextVUserID
+	mge.nextVUserID++
+	return id
+}
+
+func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup) {
+	vuCtx, vuCancel := context.WithCancel(mge.baseCtx)
+
+	mge.mu.Lock()
+	mge.vuserCancels[vuserID] = vuCancel
+	mge.vuserGroups[vuserID] = group.Name
+	mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
+	mge.mu.Unlock()
+
+	vuProto, err := protocol.Get(group.Script.Protocol)
+	if err != nil {
+		slog.Error("failed to create protocol for open workload worker", "group", group.Name, "worker", vuserID, "err", err)
+		vuCancel()
+		mge.mu.Lock()
+		delete(mge.vuserCancels, vuserID)
+		delete(mge.vuserGroups, vuserID)
+		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
+		mge.mu.Unlock()
+		return
+	}
+	if err := vuProto.Init(vuCtx, protoConfig); err != nil {
+		slog.Error("failed to init protocol for open workload worker", "group", group.Name, "worker", vuserID, "err", err)
+		vuCancel()
+		mge.mu.Lock()
+		delete(mge.vuserCancels, vuserID)
+		delete(mge.vuserGroups, vuserID)
+		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
+		mge.mu.Unlock()
+		return
+	}
+
+	iterationScript := cloneSingleIterationScript(group.Script)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer func() {
+			vuProto.Teardown(context.Background())
+			mge.mu.Lock()
+			delete(mge.vuserCancels, vuserID)
+			delete(mge.vuserGroups, vuserID)
+			mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
+			mge.mu.Unlock()
+		}()
+
+		vu := &VUser{
+			ID:              vuserID,
+			Group:           group.Name,
+			Proto:           vuProto,
+			Script:          iterationScript,
+			Metrics:         mge.metrics,
+			ResultSink:      group.ResultSink,
+			RedactionConfig: group.RedactionConfig,
+			PauseControl:    mge,
+			ExecutionGoals:  group.executionGoals,
+			SkipInit:        groupLifecycleAtOnce(group),
+			SkipTeardown:    groupLifecycleAtOnce(group),
+		}
+		vu.Run(vuCtx)
+	}()
 }
 
 // ScaleVUsers adds or removes VUsers for a specific group.
@@ -308,6 +470,9 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 	if group == nil {
 		return fmt.Errorf("group not found: %s", groupName)
 	}
+	if isOpenWorkload(group.Script) {
+		return fmt.Errorf("scaling open workload groups is not supported")
+	}
 
 	currentVUsers := group.VUsers
 	delta := targetVUsers - currentVUsers
@@ -330,8 +495,12 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 			if removed >= toRemove {
 				break
 			}
+			if mge.vuserGroups[id] != groupName {
+				continue
+			}
 			cancel()
 			delete(mge.vuserCancels, id)
+			delete(mge.vuserGroups, id)
 			removed++
 		}
 	}
@@ -356,7 +525,7 @@ func (mge *MultiGroupEngine) adjustDurationLocked(newDuration time.Duration) err
 	}
 
 	mge.targetDuration = newDuration
-	
+
 	slog.Info("test duration adjusted", "new_duration", newDuration)
 	return nil
 }
@@ -390,7 +559,7 @@ func (mge *MultiGroupEngine) Pause() error {
 	mge.paused = true
 	mge.pauseStartTime = time.Now()
 	mge.pauseCh = make(chan struct{}) // New channel blocks waiters
-	
+
 	slog.Info("test execution paused")
 	return nil
 }

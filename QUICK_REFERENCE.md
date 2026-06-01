@@ -9,18 +9,18 @@
 go run ./cmd/controller
 
 # Start with custom port
-STORMRUNNER_ADDR=:9000 go run ./cmd/controller
+APEXLOAD_ADDR=:9000 go run ./cmd/controller
 
 # Start controller in distributed mode
-STORMRUNNER_GENERATORS=127.0.0.1:9090,127.0.0.1:9091 \
-STORMRUNNER_GENERATOR_TIMEOUT=10s \
+APEXLOAD_GENERATORS=127.0.0.1:9090,127.0.0.1:9091 \
+APEXLOAD_GENERATOR_TIMEOUT=10s \
 go run ./cmd/controller
 
 # Start generator
 go run ./cmd/generator
 
 # Run test locally (no controller needed)
-go run ./cmd/stormctl run --script test.json --vusers 50 --duration 2m
+go run ./cmd/apexctl run --script test.json --vusers 50 --duration 2m
 ```
 
 ### Building
@@ -62,17 +62,17 @@ go test -run TestMetricsCollection ./pkg/engine
 
 ```bash
 # Query scripts
-sqlite3 stormrunner.db "SELECT id, name FROM scripts;"
+sqlite3 apexload.db "SELECT id, name FROM scripts;"
 
 # Query tests
-sqlite3 stormrunner.db "SELECT id, name, status FROM tests;"
+sqlite3 apexload.db "SELECT id, name, status FROM tests;"
 
 # Reset database
-rm stormrunner.db
+rm apexload.db
 # Restart controller to recreate
 
 # Backup database
-cp stormrunner.db stormrunner.db.backup
+cp apexload.db apexload.db.backup
 ```
 
 ---
@@ -95,6 +95,7 @@ cp stormrunner.db stormrunner.db.backup
 | PATCH | `/api/v1/tests/{id}/duration` | Adjust duration at runtime |
 | DELETE | `/api/v1/tests/{id}` | Delete a non-active test |
 | GET | `/api/v1/tests/{id}/metrics` | Get current metrics |
+| GET | `/api/v1/tests/{id}/archive/browser-diagnostics` | Download browser evidence bundle |
 
 ### Scripts
 
@@ -164,6 +165,95 @@ cp stormrunner.db stormrunner.db.backup
 ```
 
 **Supported protocol surfaces:** `http`, `soap`, `java_http`, `browser`, `jms-solace`
+
+## Browser And Mobile DSL
+
+```json
+{
+  "protocol": "browser",
+  "config": {
+    "base_url": "https://www.example.com",
+    "browser": {
+      "engine": "webkit",
+      "device_profile": "iphone_15_pro",
+      "touch_mode": true,
+      "orientation": "portrait",
+      "client_metrics": true,
+      "slow_mo_ms": 50,
+      "viewport": {
+        "width": 393,
+        "height": 852
+      }
+    }
+  },
+  "actions": [
+    {
+      "name": "open-home",
+      "type": "browser_navigate",
+      "target": "/"
+    },
+    {
+      "name": "open-menu",
+      "type": "browser_tap",
+      "selector": "button[data-testid='menu-toggle']"
+    },
+    {
+      "name": "swipe-carousel",
+      "type": "browser_swipe",
+      "selector": "[data-testid='hero-carousel']",
+      "params": {
+        "direction": "left",
+        "distance": 220
+      }
+    }
+  ]
+}
+```
+
+Supported browser actions:
+- `browser_navigate`
+- `browser_click`
+- `browser_fill`
+- `browser_select`
+- `browser_wait`
+- `browser_screenshot`
+- `browser_tap`
+- `browser_long_press`
+- `browser_swipe`
+
+Current mobile-browser support envelope:
+- `chromium`: `desktop_1080p`, `galaxy_s24`, `pixel_8`
+- `webkit`: `ipad_air`, `iphone_15_pro`, `iphone_se`
+- Conservative starting concurrency and benchmark guidance live in `docs/MOBILE_BROWSER_EMULATION_PLAN.md`
+
+Browser/mobile config keys:
+- `config.browser.engine`: `chromium` or `webkit` (`webkit` executes through Playwright WebKit and requires Playwright WebKit assets installed on the controller host)
+- `config.browser.device_profile`: named preset such as `pixel_8`, `iphone_15_pro`, or `ipad_air`
+- `config.browser.touch_mode`: force touch interactions on or off
+- `config.browser.orientation`: `portrait` or `landscape`
+- `config.browser.client_metrics`: enable FCP/LCP/CLS/INP and long-task capture
+
+Browser action value requirements:
+- `browser_fill.value`: text to enter into the targeted field
+- `browser_select.value`: option value, visible text, or label to choose from the targeted `<select>` element
+
+Gesture params:
+- `browser_long_press.params.duration_ms`
+- `browser_swipe.params.direction`: `left`, `right`, `up`, `down`
+- `browser_swipe.params.distance`: positive pixel distance
+
+Captured browser metrics:
+- `avg_fcp_ms`
+- `avg_lcp_ms`
+- `avg_cls_score`
+- `avg_inp_ms`
+- `avg_blocking_resources`
+- `avg_long_task_count`
+- `avg_js_heap_used_mb`
+
+Archived and live browser summaries are exposed through `metrics.browser`, `metrics.browser_by_device`, archive interval summaries, and archive reports. Browser evidence bundles can be downloaded from `/api/v1/tests/{id}/archive/browser-diagnostics`; each bundle contains `browser_diagnostics.json` plus captured screenshot and HTML artifacts when those snapshots are available.
+
+Chromium browser runs with `config.browser.client_metrics` enabled also report browser-process CPU and memory as `browser_process_cpu_pct` / `browser_process_mem_mb` on transaction events and `avg_browser_process_cpu_pct` / `avg_browser_process_mem_mb` on summaries.
 
 **Java-over-HTTP MVP:**
 - Reuses the HTTP transport with the `java_serialized_object_base64` codec.
@@ -251,16 +341,17 @@ cp stormrunner.db stormrunner.db.backup
 
 ## CLI Flags
 
-### stormctl run
+### apexctl run
 
 ```bash
-go run ./cmd/stormctl run \
+go run ./cmd/apexctl run \
   --script path/to/script.json \
   --vusers 100 \
   --duration 5m \
   --ramp-up 30s \
-  --log-level debug \
-  --output results.json
+  --format json \
+  --p95-latency-ms 800 \
+  --max-error-pct 2.5
 ```
 
 | Flag | Default | Description |
@@ -269,7 +360,15 @@ go run ./cmd/stormctl run \
 | `--vusers, -v` | 10 | Number of virtual users |
 | `--duration, -d` | 1m | Test duration |
 | `--ramp-up, -r` | 0s | Ramp-up period |
-| `--output, -o` | (none) | Results output file |
+| `--format` | `text` | Output format: `text` or `json` |
+| `--api` | (none) | Execute through the controller API |
+| `--env, -env` | (repeatable) | Runtime placeholder override (`KEY=value`) |
+| `--base-url` | (none) | Override the script base URL |
+| `--p95-latency-ms` | (none) | Fail the run if P95 latency exceeds this threshold |
+| `--max-error-pct` | (none) | Fail the run if error rate exceeds this threshold |
+| `--max-avg-server-processing-ms` | (none) | Fail the run if average server processing exceeds this threshold |
+| `--max-avg-transfer-ms` | (none) | Fail the run if average transfer exceeds this threshold |
+| `--max-error-count` | (none) | Fail the run if total error count exceeds this threshold |
 
 ---
 
@@ -292,8 +391,8 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `STORMRUNNER_ADDR` | `:8080` | HTTP server bind address |
-| `STORMRUNNER_DB` | `stormrunner.db` | SQLite database path |
+| `APEXLOAD_ADDR` | `:8080` | HTTP server bind address |
+| `APEXLOAD_DB` | `apexload.db` | SQLite database path |
 | `LOG_LEVEL` | `info` | Logging level (debug, info, warn, error) |
 
 ---
@@ -302,7 +401,7 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 
 | File | Purpose |
 |------|---------|
-| `stormrunner.db` | SQLite database (auto-created) |
+| `apexload.db` | SQLite database (auto-created) |
 | `coverage.html` | Test coverage report (after `make test-cover`) |
 | `pkg/api/static/` | Embedded dashboard assets |
 | `dashboard/dist/` | Built frontend (before embedding) |
@@ -345,7 +444,7 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 
 ```
 "listen tcp :8080: bind: address already in use"
-→ Change port: STORMRUNNER_ADDR=:9000 go run ./cmd/controller
+→ Change port: APEXLOAD_ADDR=:9000 go run ./cmd/controller
 
 "Error opening database: database is locked"
 → Close other processes: pkill -f "cmd/controller"

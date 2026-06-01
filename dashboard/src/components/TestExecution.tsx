@@ -1,11 +1,12 @@
-import { useCallback } from 'react'
-import { useApi } from '../hooks/useApi'
+import { useMemo } from 'react'
+
 import {
-  TestSummary,
   MetricsHistoryPoint,
 } from '../types'
 import TestExecutionArchive from './TestExecutionArchive'
 import { useExecutionActionBridge } from './useExecutionActionBridge'
+import { useExecutionArchiveResourceHistory } from './useExecutionArchiveResourceHistory'
+import { useExecutionArchiveSummaryHistory } from './useExecutionArchiveSummaryHistory'
 import { useExecutionArchiveModel } from './useExecutionArchiveModel'
 import { useExecutionLiveControls } from './useExecutionLiveControls'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
@@ -19,6 +20,7 @@ import TestExecutionScenarioOverview from './TestExecutionScenarioOverview'
 import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
+import { mergeArchiveResourceHistory } from './testExecutionMetricsModel'
 import { buildExecutionPhaseModel } from './testExecutionPhaseModel'
 import { buildExecutionStatusModel, describeGoalController } from './testExecutionStatusModel'
 import { useExecutionChartModel } from './useExecutionChartModel'
@@ -39,7 +41,6 @@ interface Props {
 }
 
 export default function TestExecution({ testId, history, onBack, onEditScript, onSelectTest }: Props) {
-  const api = useApi()
   const { test, setTest, error } = useExecutionTestPolling(testId)
   const {
     expandedChart,
@@ -56,6 +57,21 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
   } = useExecutionScenarioPreviewModel(test)
   const { localMetricsHistory, latestMetrics } = useExecutionMetricsStream(testId, test?.status)
   const {
+    archiveResourceHistory,
+    archiveResourceError,
+    archiveResourcesLoading,
+  } = useExecutionArchiveResourceHistory(test)
+  const {
+    archiveSummaryHistory,
+    archiveSummaryError,
+    archiveSummariesLoading,
+  } = useExecutionArchiveSummaryHistory(test)
+  const archiveLoadImpactData = useMemo(
+    () => mergeArchiveResourceHistory(archiveSummaryHistory, archiveResourceHistory),
+    [archiveResourceHistory, archiveSummaryHistory],
+  )
+  const archiveLoadImpactError = [archiveSummaryError, archiveResourceError].filter(Boolean).join(' ')
+  const {
     filteredData,
     summary,
     timeRange,
@@ -66,19 +82,23 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     onChartMouseDown,
     onChartMouseMove,
     onZoom,
+    onResetZoom,
   } = useExecutionChartModel({
     test,
     history,
     localMetricsHistory,
+    archiveResourceHistory,
   })
   const {
     controlFeedback,
     showControlFeedback,
     startCapacityConflict,
+    startShakeoutConflict,
     startFeedback,
     onDismissStartConflict,
     onStart,
     onConfirmStartAnyway,
+    onContinueAfterShakeoutFailure,
     onStop,
     onAbort,
     onPause,
@@ -89,9 +109,16 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     onToggleControls,
     vuserTargets,
     onVuserTargetChange,
+    vuserGroupActions,
+    onVuserGroupActionChange,
+    vuserRampEnabled,
+    onVuserRampEnabledChange,
+    vuserRampDuration,
+    onVuserRampDurationChange,
     durationInput,
     onDurationInputChange,
     onScaleVUsers,
+    onStopAllVUsers,
     onAdjustDuration,
     liveControlPreview,
   } = useExecutionLiveControls(testId, test, showControlFeedback)
@@ -103,23 +130,34 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     archiveActionEntries,
     selectedArchiveAction,
     onSelectedArchiveActionChange,
+    archiveSOAPOperationEntries,
+    selectedArchiveSOAPOperation,
+    onSelectedArchiveSOAPOperationChange,
     archiveGroups,
     selectedArchiveGroup,
     onSelectedArchiveGroupChange,
     archiveErrorsOnly,
     onArchiveErrorsOnlyChange,
+    archiveTransactionSort,
+    onArchiveTransactionSortChange,
+    archiveTransactionFilters,
+    archiveTransactionFiltersActive,
+    onArchiveTransactionFilterChange,
+    onArchiveTransactionFiltersReset,
     archiveTransactionsLoading,
     archiveTransactionsTotal,
     archivePageStart,
     archivePageEnd,
     archiveTransactionsOffset,
     archivePageSize,
+    onPageSizeChange,
     onPreviousPage,
     onNextPage,
     archiveTransactions,
     expandedArchiveEvent,
     onExpandedArchiveEventChange,
     onDownloadArchive,
+    onDownloadBrowserDiagnostics,
     onDownloadArchiveArtifact,
   } = useExecutionArchiveModel(test)
 
@@ -167,23 +205,17 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       }
     : metrics
 
+  const summaryTransactions = statusMetrics?.transactions ? Object.values(statusMetrics.transactions) : transactions
+
   return (
     <div className="execution">
       <TestExecutionHeader
         test={test}
         isMultiGroup={isMultiGroup}
-        timeRange={timeRange}
-        onTimeRangeChange={onTimeRangeChange}
         onBack={onBack}
         onStart={onStart}
         onSelectTest={onSelectTest}
-        isRunning={isRunning}
-        isPaused={isPaused}
         isStopping={isStopping}
-        onStop={onStop}
-        onAbort={onAbort}
-        onPause={onPause}
-        onResume={onResume}
         showArchiveDownload={showArchiveDownload}
         onDownloadArchive={onDownloadArchive}
       />
@@ -196,10 +228,24 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
           test={test}
           vuserTargets={vuserTargets}
           onVuserTargetChange={onVuserTargetChange}
+          vuserGroupActions={vuserGroupActions}
+          onVuserGroupActionChange={onVuserGroupActionChange}
+          vuserRampEnabled={vuserRampEnabled}
+          onVuserRampEnabledChange={onVuserRampEnabledChange}
+          vuserRampDuration={vuserRampDuration}
+          onVuserRampDurationChange={onVuserRampDurationChange}
           onScaleVUsers={onScaleVUsers}
+          onStopAllVUsers={onStopAllVUsers}
           durationInput={durationInput}
           onDurationInputChange={onDurationInputChange}
           onAdjustDuration={onAdjustDuration}
+          isRunning={isRunning}
+          isPaused={isPaused}
+          isStopping={isStopping}
+          onPause={onPause}
+          onResume={onResume}
+          onStop={onStop}
+          onAbort={onAbort}
           liveControlPreview={liveControlPreview}
           controlFeedback={controlFeedback}
           groupColors={GROUP_COLORS}
@@ -216,9 +262,12 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       <TestExecutionScenarioPreview
         test={test}
         startCapacityConflict={startCapacityConflict}
+        startShakeoutConflict={startShakeoutConflict}
         startFeedback={startFeedback}
         onDismissStartConflict={onDismissStartConflict}
         onConfirmStartAnyway={onConfirmStartAnyway}
+        onContinueAfterShakeoutFailure={onContinueAfterShakeoutFailure}
+        onCancelShakeoutRun={onAbort}
         queuedScenarioPreview={queuedScenarioPreview}
         queuedScenarioRows={queuedScenarioRows}
         scriptDetailsLoading={scriptDetailsLoading}
@@ -243,21 +292,35 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
           archiveError={archiveError}
           archiveLoading={archiveLoading}
           archiveReport={archiveReport}
+          loadImpactData={archiveLoadImpactData}
+          loadImpactLoading={archiveSummariesLoading || archiveResourcesLoading}
+          loadImpactError={archiveLoadImpactError}
+          onDownloadBrowserDiagnostics={onDownloadBrowserDiagnostics}
           onDownloadArchiveArtifact={onDownloadArchiveArtifact}
           archiveActionEntries={archiveActionEntries}
           selectedArchiveAction={selectedArchiveAction}
           onSelectedArchiveActionChange={onSelectedArchiveActionChange}
+          archiveSOAPOperationEntries={archiveSOAPOperationEntries}
+          selectedArchiveSOAPOperation={selectedArchiveSOAPOperation}
+          onSelectedArchiveSOAPOperationChange={onSelectedArchiveSOAPOperationChange}
           archiveGroups={archiveGroups}
           selectedArchiveGroup={selectedArchiveGroup}
           onSelectedArchiveGroupChange={onSelectedArchiveGroupChange}
           archiveErrorsOnly={archiveErrorsOnly}
           onArchiveErrorsOnlyChange={onArchiveErrorsOnlyChange}
+          archiveTransactionSort={archiveTransactionSort}
+          onArchiveTransactionSortChange={onArchiveTransactionSortChange}
+          archiveTransactionFilters={archiveTransactionFilters}
+          archiveTransactionFiltersActive={archiveTransactionFiltersActive}
+          onArchiveTransactionFilterChange={onArchiveTransactionFilterChange}
+          onArchiveTransactionFiltersReset={onArchiveTransactionFiltersReset}
           archiveTransactionsLoading={archiveTransactionsLoading}
           archiveTransactionsTotal={archiveTransactionsTotal}
           archivePageStart={archivePageStart}
           archivePageEnd={archivePageEnd}
           archiveTransactionsOffset={archiveTransactionsOffset}
           archivePageSize={archivePageSize}
+          onPageSizeChange={onPageSizeChange}
           onPreviousPage={onPreviousPage}
           onNextPage={onNextPage}
           archiveTransactions={archiveTransactions}
@@ -285,17 +348,24 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         onChartMouseDown={onChartMouseDown}
         onChartMouseMove={onChartMouseMove}
         onZoom={onZoom}
+        onResetZoom={onResetZoom}
         showRefArea={showRefArea}
         refAreaLeft={refAreaLeft}
         refAreaEnd={refAreaEnd}
+        timeRange={timeRange}
+        onTimeRangeChange={onTimeRangeChange}
         isMultiGroup={isMultiGroup}
         groupNames={groupNames}
         groupColors={GROUP_COLORS}
+        showLoadImpact={!(showArchiveSection && archiveReport)}
       />
 
       <TestExecutionSummary
-        transactions={transactions}
-        metrics={metrics}
+        transactions={summaryTransactions}
+        metrics={statusMetrics}
+        baseline={test.comparison_baseline}
+        history={filteredData}
+        goalConfig={test.goal_config}
       />
     </div>
   )

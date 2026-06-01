@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/stormrunner/pkg/dsl"
-	"github.com/jasonczech/stormrunner/pkg/engine"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 const (
@@ -21,18 +21,22 @@ const (
 )
 
 type BrowserReplaySession struct {
-	ID                string                     `json:"id"`
-	ScriptID          string                     `json:"script_id,omitempty"`
-	Status            string                     `json:"status"`
-	Group             string                     `json:"group"`
-	Protocol          string                     `json:"protocol"`
-	StartedAt         *time.Time                 `json:"started_at,omitempty"`
-	CompletedAt       *time.Time                 `json:"completed_at,omitempty"`
-	CurrentEventIndex int                        `json:"current_event_index"`
-	CurrentEvent      *engine.ReplayActionEvent  `json:"current_event,omitempty"`
-	Events            []engine.ReplayActionEvent `json:"events,omitempty"`
-	FinalReport       *engine.ReplayReport       `json:"report,omitempty"`
-	Error             string                     `json:"error,omitempty"`
+	ID                string                      `json:"id"`
+	Mode              string                      `json:"mode,omitempty"`
+	ScriptID          string                      `json:"script_id,omitempty"`
+	ProjectID         string                      `json:"project_id,omitempty"`
+	Status            string                      `json:"status"`
+	Group             string                      `json:"group"`
+	Protocol          string                      `json:"protocol"`
+	RuntimeProfile    engine.ReplayRuntimeProfile `json:"runtime_profile,omitempty"`
+	Preflight         *ReplayPreflight            `json:"preflight,omitempty"`
+	StartedAt         *time.Time                  `json:"started_at,omitempty"`
+	CompletedAt       *time.Time                  `json:"completed_at,omitempty"`
+	CurrentEventIndex int                         `json:"current_event_index"`
+	CurrentEvent      *engine.ReplayActionEvent   `json:"current_event,omitempty"`
+	Events            []engine.ReplayActionEvent  `json:"events,omitempty"`
+	FinalReport       *engine.ReplayReport        `json:"report,omitempty"`
+	Error             string                      `json:"error,omitempty"`
 
 	mu     sync.RWMutex
 	cancel context.CancelFunc
@@ -62,12 +66,20 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 	}
 	now := time.Now()
 	ctx, cancel := context.WithCancel(context.Background())
+	ignoreThinkTime := true
+	if req.IgnoreThinkTime != nil {
+		ignoreThinkTime = *req.IgnoreThinkTime
+	}
 	session := &BrowserReplaySession{
 		ID:                sessionID,
+		Mode:              "browser_replay",
 		ScriptID:          scriptID,
+		ProjectID:         normalizeProjectID(script.ProjectID),
 		Status:            BrowserReplayRunning,
 		Group:             groupName,
 		Protocol:          script.Protocol,
+		RuntimeProfile:    replayRuntimeProfileForBrowser(script, req, ignoreThinkTime),
+		Preflight:         cloneReplayPreflight(req.Preflight),
 		StartedAt:         &now,
 		CurrentEventIndex: -1,
 		cancel:            cancel,
@@ -85,11 +97,6 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 		m.broadcast("browser_replay_paused", session, -1, nil, nil)
 	}
 
-	ignoreThinkTime := true
-	if req.IgnoreThinkTime != nil {
-		ignoreThinkTime = *req.IgnoreThinkTime
-	}
-
 	go func() {
 		if !m.waitWhilePaused(ctx, session) {
 			completedAt := time.Now()
@@ -102,8 +109,11 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 		}
 
 		report, err := engine.ReplayScript(ctx, script, engine.ReplayOptions{
+			ReplaySessionID: sessionID,
 			GroupName:       groupName,
+			RuntimeProfile:  &session.RuntimeProfile,
 			Variables:       req.Variables,
+			RedactionRules:  req.RedactionRules,
 			IgnoreThinkTime: ignoreThinkTime,
 			OnProgress: func(event engine.ReplayProgressEvent) {
 				if event.Type == engine.ReplayProgressEventRun {
@@ -222,7 +232,7 @@ func (m *BrowserReplayManager) Stop(sessionID string) (*BrowserReplaySession, bo
 	}
 
 	session.mu.Lock()
-	if session.Status == BrowserReplayRunning && session.cancel != nil {
+	if (session.Status == BrowserReplayRunning || session.Status == BrowserReplayPaused) && session.cancel != nil {
 		session.Status = BrowserReplayStopped
 		session.cancel()
 	}
@@ -240,6 +250,7 @@ func (m *BrowserReplayManager) broadcast(messageType string, session *BrowserRep
 		"type":              messageType,
 		"replay_session_id": sessionPayload.ID,
 		"script_id":         sessionPayload.ScriptID,
+		"project_id":        sessionPayload.ProjectID,
 		"timestamp":         time.Now(),
 		"session":           sessionPayload,
 	}
@@ -247,6 +258,7 @@ func (m *BrowserReplayManager) broadcast(messageType string, session *BrowserRep
 		message["event_index"] = eventIndex
 	}
 	if event != nil {
+		message["event_id"] = event.EventID
 		message["event"] = event
 	}
 	if report != nil {
@@ -262,9 +274,22 @@ func (s *BrowserReplaySession) snapshot() *BrowserReplaySession {
 }
 
 func (s *BrowserReplaySession) snapshotLocked() *BrowserReplaySession {
-	clone := *s
-	clone.mu = sync.RWMutex{}
-	clone.cancel = nil
+	clone := &BrowserReplaySession{
+		ID:                s.ID,
+		Mode:              s.Mode,
+		ScriptID:          s.ScriptID,
+		ProjectID:         s.ProjectID,
+		Status:            s.Status,
+		Group:             s.Group,
+		Protocol:          s.Protocol,
+		RuntimeProfile:    cloneEngineReplayRuntimeProfile(&s.RuntimeProfile),
+		Preflight:         cloneReplayPreflight(s.Preflight),
+		StartedAt:         s.StartedAt,
+		CompletedAt:       s.CompletedAt,
+		CurrentEventIndex: s.CurrentEventIndex,
+		FinalReport:       cloneBrowserReplayReport(s.FinalReport),
+		Error:             s.Error,
+	}
 	if s.CurrentEvent != nil {
 		current := cloneBrowserReplayEvent(*s.CurrentEvent)
 		clone.CurrentEvent = &current
@@ -275,7 +300,45 @@ func (s *BrowserReplaySession) snapshotLocked() *BrowserReplaySession {
 			clone.Events[i] = cloneBrowserReplayEvent(event)
 		}
 	}
-	return &clone
+	return clone
+}
+
+func cloneBrowserReplayReport(report *engine.ReplayReport) *engine.ReplayReport {
+	if report == nil {
+		return nil
+	}
+	cloned := *report
+	cloned.FinalVariables = cloneBrowserStringMap(report.FinalVariables)
+	cloned.RuntimeProfile = cloneEngineReplayRuntimeProfile(&report.RuntimeProfile)
+	cloned.ArtifactManifest = cloneBrowserReplayArtifactManifest(report.ArtifactManifest)
+	cloned.DiagnosisSummary = cloneBrowserReplayDiagnosisSummary(report.DiagnosisSummary)
+	cloned.RepairSuggestions = cloneBrowserReplayRepairSuggestions(report.RepairSuggestions)
+	if len(report.Events) > 0 {
+		cloned.Events = make([]engine.ReplayActionEvent, len(report.Events))
+		for i, event := range report.Events {
+			cloned.Events[i] = cloneBrowserReplayEvent(event)
+		}
+	}
+	if len(report.Snapshots) > 0 {
+		cloned.Snapshots = make([]*protocol.ErrorSnapshot, len(report.Snapshots))
+		for i, snapshot := range report.Snapshots {
+			cloned.Snapshots[i] = cloneBrowserErrorSnapshot(snapshot)
+		}
+	}
+	return &cloned
+}
+
+func cloneBrowserErrorSnapshot(snapshot *protocol.ErrorSnapshot) *protocol.ErrorSnapshot {
+	if snapshot == nil {
+		return nil
+	}
+	cloned := *snapshot
+	cloned.RequestHeaders = cloneBrowserStringMap(snapshot.RequestHeaders)
+	cloned.ResponseHeaders = cloneBrowserStringMap(snapshot.ResponseHeaders)
+	cloned.ConsoleEntries = cloneBrowserConsoleEntries(snapshot.ConsoleEntries)
+	cloned.NetworkEntries = cloneBrowserNetworkEntries(snapshot.NetworkEntries)
+	cloned.DOMSummary = cloneBrowserDOMSummary(snapshot.DOMSummary)
+	return &cloned
 }
 
 func cloneBrowserReplayEvent(event engine.ReplayActionEvent) engine.ReplayActionEvent {
@@ -285,6 +348,9 @@ func cloneBrowserReplayEvent(event engine.ReplayActionEvent) engine.ReplayAction
 	cloned.Console = cloneBrowserConsoleEntries(event.Console)
 	cloned.Network = cloneBrowserNetworkEntries(event.Network)
 	cloned.DOMSummary = cloneBrowserDOMSummary(event.DOMSummary)
+	cloned.ClientMetrics = cloneBrowserClientMetrics(event.ClientMetrics)
+	cloned.Diagnosis = cloneBrowserReplayDiagnosis(event.Diagnosis)
+	cloned.RepairSuggestions = cloneBrowserReplayRepairSuggestions(event.RepairSuggestions)
 	if event.Snapshot != nil {
 		snapshot := *event.Snapshot
 		snapshot.RequestHeaders = cloneBrowserStringMap(event.Snapshot.RequestHeaders)
@@ -295,6 +361,60 @@ func cloneBrowserReplayEvent(event engine.ReplayActionEvent) engine.ReplayAction
 		cloned.Snapshot = &snapshot
 	}
 	return cloned
+}
+
+func cloneBrowserReplayArtifactManifest(manifest *engine.ReplayArtifactManifest) *engine.ReplayArtifactManifest {
+	if manifest == nil {
+		return nil
+	}
+	cloned := *manifest
+	cloned.RuntimeProfile = cloneEngineReplayRuntimeProfile(&manifest.RuntimeProfile)
+	if len(manifest.DataSources) > 0 {
+		cloned.DataSources = append([]string(nil), manifest.DataSources...)
+	}
+	if len(manifest.SeedVariables) > 0 {
+		cloned.SeedVariables = append([]string(nil), manifest.SeedVariables...)
+	}
+	return &cloned
+}
+
+func cloneBrowserReplayDiagnosis(diagnosis *engine.ReplayDiagnosis) *engine.ReplayDiagnosis {
+	if diagnosis == nil {
+		return nil
+	}
+	cloned := *diagnosis
+	if len(diagnosis.Signals) > 0 {
+		cloned.Signals = append([]string(nil), diagnosis.Signals...)
+	}
+	return &cloned
+}
+
+func cloneBrowserReplayRepairSuggestions(suggestions []engine.ReplayRepairSuggestion) []engine.ReplayRepairSuggestion {
+	if len(suggestions) == 0 {
+		return nil
+	}
+	cloned := make([]engine.ReplayRepairSuggestion, len(suggestions))
+	for i, suggestion := range suggestions {
+		cloned[i] = suggestion
+		if len(suggestion.Fields) > 0 {
+			cloned[i].Fields = cloneBrowserStringMap(suggestion.Fields)
+		}
+	}
+	return cloned
+}
+
+func cloneBrowserReplayDiagnosisSummary(summary *engine.ReplayDiagnosisSummary) *engine.ReplayDiagnosisSummary {
+	if summary == nil {
+		return nil
+	}
+	cloned := *summary
+	if len(summary.Categories) > 0 {
+		cloned.Categories = make(map[string]int, len(summary.Categories))
+		for key, value := range summary.Categories {
+			cloned.Categories[key] = value
+		}
+	}
+	return &cloned
 }
 
 func cloneBrowserStringMap(input map[string]string) map[string]string {
@@ -334,6 +454,14 @@ func cloneBrowserDOMSummary(summary *protocol.DOMSummary) *protocol.DOMSummary {
 	if len(summary.VisibleText) > 0 {
 		cloned.VisibleText = append([]string(nil), summary.VisibleText...)
 	}
+	return &cloned
+}
+
+func cloneBrowserClientMetrics(metrics *protocol.ClientMetrics) *protocol.ClientMetrics {
+	if metrics == nil {
+		return nil
+	}
+	cloned := *metrics
 	return &cloned
 }
 

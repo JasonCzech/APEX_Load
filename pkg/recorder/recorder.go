@@ -1,9 +1,14 @@
 package recorder
 
 import (
+	"bytes"
+	"compress/flate"
+	"compress/gzip"
+	"compress/zlib"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,9 +20,12 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/andybalholm/brotli"
 )
 
 const defaultBodyCaptureLimitBytes = 512 * 1024
+const streamingRecordDelay = 250 * time.Millisecond
 
 const (
 	defaultRecorderCADir  = "artifacts/recorder"
@@ -26,34 +34,47 @@ const (
 )
 
 type RecordedRequest struct {
-	Seq                   int                 `json:"seq"`
-	Timestamp             time.Time           `json:"timestamp"`
-	Method                string              `json:"method"`
-	URL                   string              `json:"url"`
-	Scheme                string              `json:"scheme,omitempty"`
-	Path                  string              `json:"path"`
-	QueryString           string              `json:"query_string,omitempty"`
-	Host                  string              `json:"host"`
-	Headers               map[string]string   `json:"headers"`
-	HeadersMulti          map[string][]string `json:"headers_multi,omitempty"`
-	Body                  string              `json:"body,omitempty"`
-	BodySizeBytes         int                 `json:"body_size_bytes,omitempty"`
-	BodyTruncated         bool                `json:"body_truncated,omitempty"`
-	ContentType           string              `json:"content_type,omitempty"`
-	StatusCode            int                 `json:"status_code"`
-	ResponseTimeMs        float64             `json:"response_time_ms"`
-	ResponseBody          string              `json:"response_body,omitempty"`
-	ResponseBodySizeBytes int                 `json:"response_body_size_bytes,omitempty"`
-	ResponseBodyTruncated bool                `json:"response_body_truncated,omitempty"`
-	ResponseHeaders       map[string]string   `json:"response_headers,omitempty"`
-	ResponseHeadersMulti  map[string][]string `json:"response_headers_multi,omitempty"`
-	ThinkTimeMs           int64               `json:"think_time_ms"`
-	IsStatic              bool                `json:"is_static"`
-	ResourceType          string              `json:"resource_type,omitempty"`
-	StepName              string              `json:"step_name,omitempty"`
-	TransactionName       string              `json:"transaction_name,omitempty"`
-	Note                  string              `json:"note,omitempty"`
-	Excluded              bool                `json:"excluded,omitempty"`
+	Seq                   int                        `json:"seq"`
+	Timestamp             time.Time                  `json:"timestamp"`
+	Method                string                     `json:"method"`
+	URL                   string                     `json:"url"`
+	Scheme                string                     `json:"scheme,omitempty"`
+	Path                  string                     `json:"path"`
+	QueryString           string                     `json:"query_string,omitempty"`
+	Host                  string                     `json:"host"`
+	Headers               map[string]string          `json:"headers"`
+	HeadersMulti          map[string][]string        `json:"headers_multi,omitempty"`
+	Body                  string                     `json:"body,omitempty"`
+	BodyEncoding          string                     `json:"body_encoding,omitempty"`
+	BodySizeBytes         int                        `json:"body_size_bytes,omitempty"`
+	BodyTruncated         bool                       `json:"body_truncated,omitempty"`
+	ContentType           string                     `json:"content_type,omitempty"`
+	StatusCode            int                        `json:"status_code"`
+	ResponseTimeMs        float64                    `json:"response_time_ms"`
+	ResponseBody          string                     `json:"response_body,omitempty"`
+	ResponseBodyEncoding  string                     `json:"response_body_encoding,omitempty"`
+	ResponseBodySizeBytes int                        `json:"response_body_size_bytes,omitempty"`
+	ResponseBodyTruncated bool                       `json:"response_body_truncated,omitempty"`
+	ResponseHeaders       map[string]string          `json:"response_headers,omitempty"`
+	ResponseHeadersMulti  map[string][]string        `json:"response_headers_multi,omitempty"`
+	ThinkTimeMs           int64                      `json:"think_time_ms"`
+	IsStatic              bool                       `json:"is_static"`
+	ResourceType          string                     `json:"resource_type,omitempty"`
+	StepName              string                     `json:"step_name,omitempty"`
+	TransactionName       string                     `json:"transaction_name,omitempty"`
+	Note                  string                     `json:"note,omitempty"`
+	Excluded              bool                       `json:"excluded,omitempty"`
+	WebSocketMessages     []RecordedWebSocketMessage `json:"websocket_messages,omitempty"`
+}
+
+type RecordedWebSocketMessage struct {
+	Direction        string    `json:"direction"`
+	Opcode           int       `json:"opcode"`
+	Payload          string    `json:"payload,omitempty"`
+	PayloadEncoding  string    `json:"payload_encoding,omitempty"`
+	PayloadSizeBytes int       `json:"payload_size_bytes,omitempty"`
+	PayloadTruncated bool      `json:"payload_truncated,omitempty"`
+	Timestamp        time.Time `json:"timestamp"`
 }
 
 type Session struct {
@@ -79,6 +100,7 @@ type SessionFilters struct {
 	IncludeHosts          []string `json:"include_hosts,omitempty"`
 	BodyCaptureLimitBytes int      `json:"body_capture_limit_bytes,omitempty"`
 	RedactHeaders         []string `json:"redact_headers,omitempty"`
+	CaptureCookies        bool     `json:"capture_cookies,omitempty"`
 }
 
 type SessionEvent struct {
@@ -98,11 +120,11 @@ type RequestUpdate struct {
 }
 
 type Recorder struct {
-	mu       sync.RWMutex
-	sessions map[string]*Session
-	active   *Session
-	proxy    *http.Server
-	addr     string
+	mu         sync.RWMutex
+	sessions   map[string]*Session
+	active     *Session
+	proxy      *http.Server
+	addr       string
 	caCertPath string
 	caKeyPath  string
 
@@ -125,15 +147,15 @@ func NewWithCAFiles(proxyAddr, caCertPath, caKeyPath string) *Recorder {
 		proxyAddr = ":8081"
 	}
 	return &Recorder{
-		sessions: make(map[string]*Session),
-		addr:     proxyAddr,
+		sessions:   make(map[string]*Session),
+		addr:       proxyAddr,
 		caCertPath: caCertPath,
 		caKeyPath:  caKeyPath,
 	}
 }
 
 func defaultCAFiles() (string, string) {
-	baseDir := os.Getenv("STORMRUNNER_RECORDER_CA_DIR")
+	baseDir := os.Getenv("APEXLOAD_RECORDER_CA_DIR")
 	if strings.TrimSpace(baseDir) == "" {
 		baseDir = defaultRecorderCADir
 	}
@@ -363,6 +385,11 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 
 	start := time.Now()
 
+	if isWebSocketUpgrade(req) {
+		r.handleWebSocketProxy(w, req, session, start)
+		return
+	}
+
 	targetURL := req.URL.String()
 	if !req.URL.IsAbs() {
 		targetURL = "http://" + req.Host + req.URL.String()
@@ -374,7 +401,7 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 		req.Body.Close()
 	}
 
-	proxyReq, err := http.NewRequest(req.Method, targetURL, strings.NewReader(string(bodyBytes)))
+	proxyReq, err := http.NewRequest(req.Method, targetURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		http.Error(w, "proxy error: "+err.Error(), http.StatusBadGateway)
 		return
@@ -404,19 +431,36 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
-	elapsed := time.Since(start)
-
 	for k, vv := range resp.Header {
 		for _, v := range vv {
 			w.Header().Add(k, v)
 		}
 	}
 	w.WriteHeader(resp.StatusCode)
+	if isStreamingResponse(resp) {
+		stopClientCloseWatch := make(chan struct{})
+		go func() {
+			select {
+			case <-req.Context().Done():
+				resp.Body.Close()
+			case <-stopClientCloseWatch:
+			}
+		}()
+		r.streamAndRecordResponse(w, func() {
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		}, session, req, bodyBytes, resp, start)
+		close(stopClientCloseWatch)
+		return
+	}
+
+	respBody, _ := io.ReadAll(resp.Body)
+	elapsed := time.Since(start)
 	w.Write(respBody)
 
 	if session != nil {
-		r.recordRequest(session, req, bodyBytes, resp, respBody, elapsed)
+		r.recordRequestStarted(session, req, bodyBytes, resp, respBody, elapsed, start)
 	}
 }
 
@@ -424,12 +468,112 @@ func (r *Recorder) handleConnect(w http.ResponseWriter, req *http.Request) {
 	r.handleConnectMITM(w, req)
 }
 
-func (r *Recorder) recordRequest(s *Session, req *http.Request, reqBody []byte, resp *http.Response, respBody []byte, elapsed time.Duration) {
+func isStreamingResponse(resp *http.Response) bool {
+	if resp == nil {
+		return false
+	}
+	ct := strings.ToLower(resp.Header.Get("Content-Type"))
+	if strings.Contains(ct, "text/event-stream") {
+		return true
+	}
+	if resp.ContentLength >= 0 || resp.Header.Get("Content-Length") != "" {
+		return false
+	}
+	for _, enc := range resp.TransferEncoding {
+		if strings.EqualFold(enc, "chunked") {
+			return true
+		}
+	}
+	for _, enc := range strings.Split(resp.Header.Get("Transfer-Encoding"), ",") {
+		if strings.EqualFold(strings.TrimSpace(enc), "chunked") {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *Recorder) streamAndRecordResponse(w io.Writer, flush func(), session *Session, req *http.Request, reqBody []byte, resp *http.Response, startedAt time.Time) {
+	limit := defaultBodyCaptureLimitBytes
+	if session != nil && session.Filters.BodyCaptureLimitBytes > 0 {
+		limit = session.Filters.BodyCaptureLimitBytes
+	}
+
+	var (
+		mu       sync.Mutex
+		captured []byte
+		once     sync.Once
+	)
+	record := func() {
+		if session == nil {
+			return
+		}
+		mu.Lock()
+		snapshot := append([]byte(nil), captured...)
+		mu.Unlock()
+		r.recordRequestWithOptions(session, req, reqBody, resp, snapshot, time.Since(startedAt), recordOptions{
+			requestStartedAt:          startedAt,
+			forceResponseBodyTruncate: true,
+		})
+	}
+	timer := time.AfterFunc(streamingRecordDelay, func() {
+		once.Do(record)
+	})
+	defer timer.Stop()
+
+	buf := make([]byte, 32*1024)
+	for {
+		n, readErr := resp.Body.Read(buf)
+		if n > 0 {
+			chunk := buf[:n]
+			if _, err := w.Write(chunk); err != nil {
+				once.Do(record)
+				return
+			}
+			if flush != nil {
+				flush()
+			}
+
+			captureFull := false
+			mu.Lock()
+			if len(captured) < limit {
+				remaining := limit - len(captured)
+				if remaining > len(chunk) {
+					remaining = len(chunk)
+				}
+				captured = append(captured, chunk[:remaining]...)
+				captureFull = len(captured) >= limit
+			}
+			mu.Unlock()
+			if captureFull {
+				once.Do(record)
+			}
+		}
+		if readErr != nil {
+			once.Do(record)
+			return
+		}
+	}
+}
+
+func (r *Recorder) recordRequest(s *Session, req *http.Request, reqBody []byte, resp *http.Response, respBody []byte, elapsed time.Duration) int {
+	return r.recordRequestWithOptions(s, req, reqBody, resp, respBody, elapsed, recordOptions{requestStartedAt: time.Now()})
+}
+
+func (r *Recorder) recordRequestStarted(s *Session, req *http.Request, reqBody []byte, resp *http.Response, respBody []byte, elapsed time.Duration, requestStartedAt time.Time) int {
+	return r.recordRequestWithOptions(s, req, reqBody, resp, respBody, elapsed, recordOptions{requestStartedAt: requestStartedAt})
+}
+
+type recordOptions struct {
+	requestStartedAt          time.Time
+	forceResponseBodyTruncate bool
+}
+
+func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBody []byte, resp *http.Response, respBody []byte, elapsed time.Duration, opts recordOptions) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.Status != "recording" {
-		return
+		return 0
 	}
 
 	parsed, _ := url.Parse(req.URL.String())
@@ -439,7 +583,7 @@ func (r *Recorder) recordRequest(s *Session, req *http.Request, reqBody []byte, 
 	}
 
 	if s.Filters.ExcludeStatic && isStaticResource(parsed) {
-		return
+		return 0
 	}
 
 	if len(s.Filters.IncludeHosts) > 0 {
@@ -451,13 +595,13 @@ func (r *Recorder) recordRequest(s *Session, req *http.Request, reqBody []byte, 
 			}
 		}
 		if !matched {
-			return
+			return 0
 		}
 	}
 
 	for _, h := range s.Filters.ExcludeHosts {
 		if strings.Contains(host, h) {
-			return
+			return 0
 		}
 	}
 
@@ -465,21 +609,38 @@ func (r *Recorder) recordRequest(s *Session, req *http.Request, reqBody []byte, 
 
 	var thinkMs int64
 	if !s.lastReqTime.IsZero() {
-		thinkMs = time.Since(s.lastReqTime).Milliseconds() - int64(elapsed.Milliseconds())
+		thinkMs = opts.requestStartedAt.Sub(s.lastReqTime).Milliseconds()
 		if thinkMs < 0 {
 			thinkMs = 0
 		}
 	}
-	s.lastReqTime = time.Now()
+	if s.lastReqTime.IsZero() || opts.requestStartedAt.After(s.lastReqTime) {
+		s.lastReqTime = opts.requestStartedAt
+	}
 
-	headersMulti := sanitizeHeaders(req.Header, s.Filters.RedactHeaders, true)
+	headersMulti := sanitizeHeaders(req.Header, s.Filters.RedactHeaders, true, s.Filters.CaptureCookies)
 	headers := firstHeaderValues(headersMulti)
-	respHeadersMulti := sanitizeHeaders(resp.Header, s.Filters.RedactHeaders, false)
-	respHeaders := firstHeaderValues(respHeadersMulti)
+	respHeadersMulti := sanitizeHeaders(resp.Header, s.Filters.RedactHeaders, false, s.Filters.CaptureCookies)
 
 	ct := resp.Header.Get("Content-Type")
-	respBodyStr, respBodyTruncated := capturedBody(respBody, ct, s.Filters.BodyCaptureLimitBytes)
-	reqBodyStr, reqBodyTruncated := capturedBody(reqBody, req.Header.Get("Content-Type"), s.Filters.BodyCaptureLimitBytes)
+	// Decompress the captured response body so correlation/extraction works against
+	// real sites (the proxy forwards the browser's Accept-Encoding upstream, so Go's
+	// transport does not auto-decompress). The bytes written back to the browser are
+	// untouched — only the stored copy is decoded. Drop the now-stale encoding/length
+	// headers so the generated script doesn't claim an encoding it no longer carries.
+	respBodyForCapture := respBody
+	if decoded, ok := decodeBody(respBody, resp.Header.Get("Content-Encoding"), s.Filters.BodyCaptureLimitBytes); ok {
+		respBodyForCapture = decoded
+		delete(respHeadersMulti, "Content-Encoding")
+		delete(respHeadersMulti, "Content-Length")
+	}
+	respHeaders := firstHeaderValues(respHeadersMulti)
+
+	respBodyStr, respBodyTruncated, respBodyEncoding := capturedBody(respBodyForCapture, ct, s.Filters.BodyCaptureLimitBytes)
+	if opts.forceResponseBodyTruncate {
+		respBodyTruncated = true
+	}
+	reqBodyStr, reqBodyTruncated, reqBodyEncoding := capturedBody(reqBody, req.Header.Get("Content-Type"), s.Filters.BodyCaptureLimitBytes)
 
 	if s.BaseURL == "" && parsed != nil {
 		s.BaseURL = parsed.Scheme + "://" + parsed.Host
@@ -498,13 +659,15 @@ func (r *Recorder) recordRequest(s *Session, req *http.Request, reqBody []byte, 
 		Headers:               headers,
 		HeadersMulti:          headersMulti,
 		Body:                  reqBodyStr,
+		BodyEncoding:          reqBodyEncoding,
 		BodySizeBytes:         len(reqBody),
 		BodyTruncated:         reqBodyTruncated,
 		ContentType:           req.Header.Get("Content-Type"),
 		StatusCode:            resp.StatusCode,
 		ResponseTimeMs:        float64(elapsed.Microseconds()) / 1000.0,
 		ResponseBody:          respBodyStr,
-		ResponseBodySizeBytes: len(respBody),
+		ResponseBodyEncoding:  respBodyEncoding,
+		ResponseBodySizeBytes: len(respBodyForCapture),
 		ResponseBodyTruncated: respBodyTruncated,
 		ResponseHeaders:       respHeaders,
 		ResponseHeadersMulti:  respHeadersMulti,
@@ -522,17 +685,43 @@ func (r *Recorder) recordRequest(s *Session, req *http.Request, reqBody []byte, 
 			Request:   &rec,
 		})
 	}
+	return rec.Seq
 }
 
-func sanitizeHeaders(headers http.Header, extraRedact []string, skipProxy bool) map[string][]string {
+func (r *Recorder) appendWebSocketMessage(s *Session, seq int, msg RecordedWebSocketMessage) {
+	if s == nil || seq == 0 {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Status != "recording" {
+		return
+	}
+	for i := range s.Requests {
+		if s.Requests[i].Seq != seq {
+			continue
+		}
+		s.Requests[i].WebSocketMessages = append(s.Requests[i].WebSocketMessages, msg)
+		updated := s.Requests[i]
+		if s.notify != nil {
+			s.notify(SessionEvent{Type: "request_updated", SessionID: s.ID, Request: &updated})
+		}
+		return
+	}
+}
+
+func sanitizeHeaders(headers http.Header, extraRedact []string, skipProxy bool, captureCookies bool) map[string][]string {
 	redact := map[string]bool{
 		"authorization": true,
-		"cookie":        true,
-		"set-cookie":    true,
 		"x-api-key":     true,
 		"x-auth-token":  true,
 		"x-csrf-token":  true,
 		"x-xsrf-token":  true,
+	}
+	if !captureCookies {
+		redact["cookie"] = true
+		redact["set-cookie"] = true
 	}
 	for _, h := range extraRedact {
 		redact[strings.ToLower(strings.TrimSpace(h))] = true
@@ -567,20 +756,75 @@ func firstHeaderValues(headers map[string][]string) map[string]string {
 	return result
 }
 
-func capturedBody(body []byte, contentType string, limit int) (string, bool) {
-	if len(body) == 0 {
-		return "", false
+// decodeBody decompresses a captured response body according to its
+// Content-Encoding. It returns (decoded, true) when it successfully applied a
+// known encoding, or (raw, false) when the body is unencoded or uses an
+// encoding we can't decode — callers keep the raw bytes in that
+// case. Decompression is bounded by limit (+1 so capturedBody can still flag
+// truncation) to guard against decompression bombs.
+func decodeBody(raw []byte, encoding string, limit int) ([]byte, bool) {
+	enc := strings.ToLower(strings.TrimSpace(encoding))
+	// Multiple encodings are applied in order; the outermost (last) is what we
+	// see on the wire, so decode that one.
+	if idx := strings.LastIndex(enc, ","); idx >= 0 {
+		enc = strings.TrimSpace(enc[idx+1:])
+	}
+	if len(raw) == 0 || enc == "" || enc == "identity" {
+		return raw, false
 	}
 	if limit <= 0 {
 		limit = defaultBodyCaptureLimitBytes
 	}
-	if !isTextContent(contentType) && !utf8.Valid(body) {
-		return "", false
+
+	var reader io.Reader
+	switch enc {
+	case "gzip", "x-gzip":
+		zr, err := gzip.NewReader(bytes.NewReader(raw))
+		if err != nil {
+			return raw, false
+		}
+		defer zr.Close()
+		reader = zr
+	case "deflate":
+		// "deflate" is nominally zlib-wrapped, but some servers send raw DEFLATE.
+		if zr, err := zlib.NewReader(bytes.NewReader(raw)); err == nil {
+			defer zr.Close()
+			reader = zr
+		} else {
+			fr := flate.NewReader(bytes.NewReader(raw))
+			defer fr.Close()
+			reader = fr
+		}
+	case "br":
+		reader = brotli.NewReader(bytes.NewReader(raw))
+	default:
+		return raw, false
 	}
+
+	decoded, err := io.ReadAll(io.LimitReader(reader, int64(limit)+1))
+	if len(decoded) == 0 && err != nil {
+		return raw, false
+	}
+	return decoded, true
+}
+
+func capturedBody(body []byte, contentType string, limit int) (string, bool, string) {
+	if len(body) == 0 {
+		return "", false, ""
+	}
+	if limit <= 0 {
+		limit = defaultBodyCaptureLimitBytes
+	}
+	captured := body
+	truncated := false
 	if len(body) > limit {
-		return string(body[:limit]), true
+		captured = body[:limit]
+		truncated = true
 	}
-	return string(body), false
+	if !isTextContent(contentType) && !utf8.Valid(captured) {
+		return base64.StdEncoding.EncodeToString(captured), truncated, "base64"
+	}
+	return string(captured), truncated, ""
 }
 
 func classifyResource(u *url.URL, contentType string) string {

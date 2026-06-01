@@ -5,14 +5,24 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/chromedp/cdproto/emulation"
+	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/performance"
 	"github.com/chromedp/cdproto/runtime"
+	"github.com/chromedp/cdproto/systeminfo"
 	"github.com/chromedp/chromedp"
-	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/shirou/gopsutil/v3/process"
+	playwright "github.com/playwright-community/playwright-go"
 )
 
 func init() {
@@ -22,26 +32,45 @@ func init() {
 }
 
 type Browser struct {
-	baseURL            string
-	currentURL         string
-	headless           bool
-	cacheEnabled       bool
-	checkNewerVersions bool
-	networkMode        string
-	networkPreset      string
-	networkBandwidthKB int
-	networkLatencyMS   int
-	downloadResources  string
-	slowMo             time.Duration
-	userAgent          string
-	captureScreenshots string
-	viewportW          int
-	viewportH          int
+	engine                     string
+	baseURL                    string
+	currentURL                 string
+	deviceProfile              string
+	devicePlatform             string
+	deviceTier                 string
+	headless                   bool
+	cacheEnabled               bool
+	cacheContentURLs           bool
+	checkNewerVersions         bool
+	recordedResourcesAvailable bool
+	recordedResources          map[string]struct{}
+	downloadFilterMode         string
+	downloadFilterHosts        []string
+	networkMode                string
+	networkPreset              string
+	networkBandwidthKB         int
+	networkLatencyMS           int
+	downloadResources          string
+	slowMo                     time.Duration
+	userAgent                  string
+	captureScreenshots         string
+	clientMetricsEnabled       bool
+	mobile                     bool
+	touchMode                  bool
+	orientation                string
+	deviceScaleFactor          float64
+	cpuThrottleRate            float64
+	viewportW                  int
+	viewportH                  int
 
 	allocCtx    context.Context
 	browserCtx  context.Context
 	allocCancel context.CancelFunc
 	browserStop context.CancelFunc
+	pw          *playwright.Playwright
+	pwBrowser   playwright.Browser
+	pwContext   playwright.BrowserContext
+	pwPage      playwright.Page
 
 	mu             sync.Mutex
 	consoleEntries []protocol.ConsoleEntry
@@ -62,25 +91,64 @@ type domState struct {
 	Visible    []string `json:"visible"`
 }
 
+type browserProcessSnapshot struct {
+	CPUTimeSeconds float64
+	MemoryMB       float64
+	CapturedAt      time.Time
+}
+
 func (b *Browser) Name() string { return "browser" }
 
 func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	b.close()
+	b.engine = "chromium"
 	b.headless = true
 	b.cacheEnabled = true
+	b.cacheContentURLs = true
 	b.checkNewerVersions = false
+	b.recordedResourcesAvailable = false
+	b.recordedResources = nil
+	b.downloadFilterMode = ""
+	b.downloadFilterHosts = nil
 	b.networkMode = ""
 	b.networkPreset = ""
 	b.networkBandwidthKB = 0
 	b.networkLatencyMS = 0
 	b.downloadResources = "all"
+	b.orientation = "landscape"
+	b.deviceScaleFactor = 1
+	b.cpuThrottleRate = 1
 	b.viewportW = 1440
 	b.viewportH = 900
 	b.pendingNetwork = make(map[network.RequestID]networkRequest)
 	b.currentURL = ""
+	b.clientMetricsEnabled = false
+	b.mobile = false
+	b.touchMode = false
+	b.deviceProfile = ""
+	b.devicePlatform = ""
+	b.deviceTier = ""
+	engineConfigured := false
 
 	if baseURL, ok := config["base_url"].(string); ok {
 		b.baseURL = baseURL
+	}
+	if engine, ok := config["browser_engine"].(string); ok && strings.TrimSpace(engine) != "" {
+		b.engine = strings.TrimSpace(engine)
+		engineConfigured = true
+	}
+	if deviceProfile, ok := config["browser_device_profile"].(string); ok && strings.TrimSpace(deviceProfile) != "" {
+		profile, found := LookupDevice(strings.TrimSpace(deviceProfile))
+		if !found {
+			return fmt.Errorf("unknown browser device profile: %s", deviceProfile)
+		}
+		if profile.BrowserFamily != "" {
+			if engineConfigured && b.engine != profile.BrowserFamily {
+				return fmt.Errorf("browser engine %s is incompatible with device profile %s (requires %s)", b.engine, profile.Name, profile.BrowserFamily)
+			}
+			b.engine = profile.BrowserFamily
+		}
+		b.applyDeviceProfile(profile)
 	}
 	if headless, ok := config["browser_headless"].(bool); ok {
 		b.headless = headless
@@ -88,8 +156,23 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	if cacheEnabled, ok := config["browser_cache_enabled"].(bool); ok {
 		b.cacheEnabled = cacheEnabled
 	}
+	if cacheContentURLs, ok := config["browser_cache_content_urls"].(bool); ok {
+		b.cacheContentURLs = cacheContentURLs
+	}
 	if checkNewerVersions, ok := config["browser_check_newer_versions"].(bool); ok {
 		b.checkNewerVersions = checkNewerVersions
+	}
+	if recordedResourcesAvailable, ok := config["browser_recorded_resources_available"].(bool); ok {
+		b.recordedResourcesAvailable = recordedResourcesAvailable
+	}
+	if recordedResources, ok := config["browser_recorded_resources"].([]string); ok {
+		b.recordedResources = normalizeRecordedResources(recordedResources)
+	}
+	if downloadFilterMode, ok := config["web_download_filters_mode"].(string); ok {
+		b.downloadFilterMode = strings.TrimSpace(downloadFilterMode)
+	}
+	if downloadFilterHosts, ok := config["web_download_filters_hosts"].([]string); ok {
+		b.downloadFilterHosts = normalizeDownloadFilterHosts(downloadFilterHosts)
 	}
 	if networkMode, ok := config["web_network_simulation_mode"].(string); ok {
 		b.networkMode = strings.TrimSpace(networkMode)
@@ -112,6 +195,18 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	if userAgent, ok := config["browser_user_agent"].(string); ok {
 		b.userAgent = userAgent
 	}
+	if touchMode, ok := config["browser_touch_mode"].(bool); ok {
+		b.touchMode = touchMode
+	}
+	if orientation, ok := config["browser_orientation"].(string); ok && strings.TrimSpace(orientation) != "" {
+		b.orientation = normalizeOrientation(orientation)
+	}
+	if b.orientation == "" {
+		return fmt.Errorf("unsupported browser orientation")
+	}
+	if clientMetrics, ok := config["browser_client_metrics"].(bool); ok {
+		b.clientMetricsEnabled = clientMetrics
+	}
 	if captureScreenshots, ok := config["browser_capture_screenshots"].(string); ok {
 		b.captureScreenshots = captureScreenshots
 	}
@@ -120,6 +215,21 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	}
 	if viewportH := configInt(config, "browser_viewport_height"); viewportH > 0 {
 		b.viewportH = viewportH
+	}
+	if b.networkMode == "" && b.networkPreset == "" {
+		if profile, ok := LookupDevice(b.deviceProfile); ok && profile.NetworkPreset != "" {
+			b.networkMode = "preset"
+			b.networkPreset = profile.NetworkPreset
+		}
+	}
+	if b.downloadResources == "recorded" && !b.recordedResourcesAvailable {
+		return fmt.Errorf("browser download_resources=recorded requires recorded resource metadata")
+	}
+	if b.engine != "chromium" && b.engine != "webkit" {
+		return fmt.Errorf("unsupported browser engine: %s", b.engine)
+	}
+	if b.engine == "webkit" {
+		return b.initPlaywright(ctx)
 	}
 
 	allocatorOpts := append(chromedp.DefaultExecAllocatorOptions[:],
@@ -140,16 +250,38 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 		network.Enable(),
 		network.SetCacheDisabled(!b.cacheEnabled),
 		runtime.Enable(),
-		chromedp.EmulateViewport(int64(b.viewportW), int64(b.viewportH)),
+		emulation.SetDeviceMetricsOverride(int64(b.viewportW), int64(b.viewportH), b.deviceScaleFactor, b.mobile).
+			WithScreenOrientation(&emulation.ScreenOrientation{
+				Type:  screenOrientationType(b.orientation),
+				Angle: screenOrientationAngle(b.orientation),
+			}),
+	}
+	if b.clientMetricsEnabled {
+		startupActions = append(startupActions,
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				_, err := page.AddScriptToEvaluateOnNewDocument(browserMetricsBootstrapScript).Do(ctx)
+				return err
+			}),
+			performance.Enable(),
+		)
+	}
+	if b.touchMode {
+		startupActions = append(startupActions, emulation.SetTouchEmulationEnabled(true).WithMaxTouchPoints(5))
+	}
+	if b.cpuThrottleRate > 1 {
+		startupActions = append(startupActions, emulation.SetCPUThrottlingRate(b.cpuThrottleRate))
 	}
 	if b.downloadResources == "none" {
-		startupActions = append(startupActions, network.SetBlockedURLS(blockedStaticAssetPatterns()))
+		startupActions = append(startupActions, network.SetBlockedURLs().WithURLPatterns(blockedStaticAssetPatterns()))
 	}
 	if b.checkNewerVersions {
 		startupActions = append(startupActions, network.SetExtraHTTPHeaders(network.Headers(map[string]any{
 			"Cache-Control": "no-cache",
 			"Pragma":        "no-cache",
 		})))
+	}
+	if patterns := b.fetchRequestPatterns(); len(patterns) > 0 {
+		startupActions = append(startupActions, fetch.Enable().WithPatterns(patterns))
 	}
 	if throttleAction := b.networkThrottleAction(); throttleAction != nil {
 		startupActions = append(startupActions, throttleAction)
@@ -162,27 +294,255 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	return nil
 }
 
-func blockedStaticAssetPatterns() []string {
-	return []string{
-		"*.png",
-		"*.jpg",
-		"*.jpeg",
-		"*.gif",
-		"*.webp",
-		"*.svg",
-		"*.ico",
-		"*.css",
-		"*.js",
-		"*.woff",
-		"*.woff2",
-		"*.ttf",
-		"*.eot",
-		"*.mp3",
-		"*.mp4",
-		"*.webm",
-		"*.avi",
-		"*.mov",
+func (b *Browser) applyDeviceProfile(profile DeviceProfile) {
+	b.deviceProfile = profile.Name
+	b.devicePlatform = profile.Platform
+	b.deviceTier = profile.DeviceTier
+	b.viewportW = profile.Width
+	b.viewportH = profile.Height
+	b.deviceScaleFactor = profile.DeviceScaleFactor
+	b.mobile = profile.Mobile
+	b.touchMode = profile.HasTouch
+	b.orientation = normalizeOrientation(profile.DefaultOrientation)
+	b.cpuThrottleRate = profile.CPUThrottleRate
+	if b.userAgent == "" {
+		b.userAgent = profile.UserAgent
 	}
+}
+
+func normalizeOrientation(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "landscape":
+		return "landscape"
+	case "portrait":
+		return "portrait"
+	default:
+		return ""
+	}
+}
+
+func screenOrientationType(orientation string) emulation.OrientationType {
+	if normalizeOrientation(orientation) == "portrait" {
+		return emulation.OrientationTypePortraitPrimary
+	}
+	return emulation.OrientationTypeLandscapePrimary
+}
+
+func screenOrientationAngle(orientation string) int64 {
+	if normalizeOrientation(orientation) == "portrait" {
+		return 0
+	}
+	return 90
+}
+
+func blockedStaticAssetPatterns() []*network.BlockPattern {
+	extensions := []string{
+		"png",
+		"jpg",
+		"jpeg",
+		"gif",
+		"webp",
+		"svg",
+		"ico",
+		"css",
+		"js",
+		"woff",
+		"woff2",
+		"ttf",
+		"eot",
+		"mp3",
+		"mp4",
+		"webm",
+		"avi",
+		"mov",
+	}
+	blocked := make([]*network.BlockPattern, 0, len(extensions)*2)
+	for _, extension := range extensions {
+		blocked = append(blocked,
+			&network.BlockPattern{URLPattern: "*://*/*." + extension, Block: true},
+			&network.BlockPattern{URLPattern: "*://*:*/*." + extension, Block: true},
+		)
+	}
+	return blocked
+}
+
+func assetRequestPatterns() []*fetch.RequestPattern {
+	requestStage := fetch.RequestStageRequest
+	return []*fetch.RequestPattern{
+		{ResourceType: network.ResourceTypeImage, RequestStage: requestStage},
+		{ResourceType: network.ResourceTypeStylesheet, RequestStage: requestStage},
+		{ResourceType: network.ResourceTypeScript, RequestStage: requestStage},
+		{ResourceType: network.ResourceTypeFont, RequestStage: requestStage},
+		{ResourceType: network.ResourceTypeMedia, RequestStage: requestStage},
+		{ResourceType: network.ResourceTypeOther, RequestStage: requestStage},
+	}
+}
+
+func contentRequestPatterns() []*fetch.RequestPattern {
+	requestStage := fetch.RequestStageRequest
+	return []*fetch.RequestPattern{
+		{ResourceType: network.ResourceTypeDocument, RequestStage: requestStage},
+		{ResourceType: network.ResourceTypeFetch, RequestStage: requestStage},
+		{ResourceType: network.ResourceTypeXHR, RequestStage: requestStage},
+	}
+}
+
+func (b *Browser) fetchRequestPatterns() []*fetch.RequestPattern {
+	if !b.hasDownloadFilters() && b.cacheContentURLs && b.downloadResources != "recorded" {
+		return nil
+	}
+	patterns := make([]*fetch.RequestPattern, 0, 9)
+	seen := make(map[network.ResourceType]struct{})
+	appendUnique := func(items []*fetch.RequestPattern) {
+		for _, item := range items {
+			if item == nil {
+				continue
+			}
+			if _, ok := seen[item.ResourceType]; ok {
+				continue
+			}
+			seen[item.ResourceType] = struct{}{}
+			patterns = append(patterns, item)
+		}
+	}
+	if b.hasDownloadFilters() {
+		appendUnique(assetRequestPatterns())
+	}
+	if b.downloadResources == "recorded" {
+		appendUnique(assetRequestPatterns())
+	}
+	if !b.cacheContentURLs {
+		appendUnique(contentRequestPatterns())
+	}
+	return patterns
+}
+
+func normalizeRecordedResources(urls []string) map[string]struct{} {
+	normalized := make(map[string]struct{})
+	for _, rawURL := range urls {
+		for _, key := range recordedResourceKeys(rawURL) {
+			normalized[key] = struct{}{}
+		}
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func recordedResourceKeys(rawURL string) []string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return nil
+	}
+	path := parsed.EscapedPath()
+	if path == "" {
+		path = "/"
+	}
+	if parsed.RawQuery != "" {
+		path += "?" + parsed.RawQuery
+	}
+	if parsed.Host == "" {
+		return []string{path}
+	}
+	return []string{strings.ToLower(parsed.Host) + path, path}
+}
+
+func normalizeDownloadFilterHosts(hosts []string) []string {
+	normalized := make([]string, 0, len(hosts))
+	seen := make(map[string]struct{}, len(hosts))
+	for _, host := range hosts {
+		candidate := strings.ToLower(strings.TrimSpace(host))
+		candidate = strings.TrimPrefix(candidate, "http://")
+		candidate = strings.TrimPrefix(candidate, "https://")
+		candidate = strings.TrimRight(candidate, "/")
+		if candidate == "" {
+			continue
+		}
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		normalized = append(normalized, candidate)
+	}
+	return normalized
+}
+
+func (b *Browser) hasDownloadFilters() bool {
+	return (b.downloadFilterMode == "allow_list" || b.downloadFilterMode == "block_list") && len(b.downloadFilterHosts) > 0
+}
+
+func (b *Browser) shouldBlockFilteredRequest(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	fullHost := strings.ToLower(parsed.Host)
+	hostName := strings.ToLower(parsed.Hostname())
+	matched := false
+	for _, allowedHost := range b.downloadFilterHosts {
+		if allowedHost == fullHost || allowedHost == hostName {
+			matched = true
+			break
+		}
+	}
+	switch b.downloadFilterMode {
+	case "allow_list":
+		return !matched
+	case "block_list":
+		return matched
+	default:
+		return false
+	}
+}
+
+func (b *Browser) shouldBlockUnrecordedRequest(rawURL string) bool {
+	if b.downloadResources != "recorded" || !b.recordedResourcesAvailable {
+		return false
+	}
+	if len(b.recordedResources) == 0 {
+		return true
+	}
+	for _, key := range recordedResourceKeys(rawURL) {
+		if _, ok := b.recordedResources[key]; ok {
+			return false
+		}
+	}
+	return true
+}
+
+func shouldRevalidateContentRequest(resourceType network.ResourceType) bool {
+	switch resourceType {
+	case network.ResourceTypeDocument, network.ResourceTypeFetch, network.ResourceTypeXHR:
+		return true
+	default:
+		return false
+	}
+}
+
+func continuedRequestHeaders(headers network.Headers) []*fetch.HeaderEntry {
+	keys := make([]string, 0, len(headers)+2)
+	for key := range headers {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	entries := make([]*fetch.HeaderEntry, 0, len(keys)+2)
+	seen := make(map[string]struct{}, len(keys)+2)
+	for _, key := range keys {
+		lowerKey := strings.ToLower(strings.TrimSpace(key))
+		if lowerKey == "cache-control" || lowerKey == "pragma" {
+			continue
+		}
+		entries = append(entries, &fetch.HeaderEntry{Name: key, Value: fmt.Sprint(headers[key])})
+		seen[lowerKey] = struct{}{}
+	}
+	if _, ok := seen["cache-control"]; !ok {
+		entries = append(entries, &fetch.HeaderEntry{Name: "Cache-Control", Value: "no-cache"})
+	}
+	if _, ok := seen["pragma"]; !ok {
+		entries = append(entries, &fetch.HeaderEntry{Name: "Pragma", Value: "no-cache"})
+	}
+	return entries
 }
 
 func (b *Browser) networkThrottleAction() chromedp.Action {
@@ -199,11 +559,28 @@ func (b *Browser) networkThrottleAction() chromedp.Action {
 		uploadThroughput = bytesPerSecond
 	}
 
-	action := network.EmulateNetworkConditions(false, float64(latencyMS), downloadThroughput, uploadThroughput)
-	if connectionType != "" {
-		action = action.WithConnectionType(connectionType)
+	conditions := &network.Conditions{
+		URLPattern:         "",
+		Latency:            float64(latencyMS),
+		DownloadThroughput: downloadThroughput,
+		UploadThroughput:   uploadThroughput,
 	}
-	return action
+	if connectionType != "" {
+		conditions.ConnectionType = connectionType
+	}
+
+	overrideState := network.OverrideNetworkState(false, float64(latencyMS), downloadThroughput, uploadThroughput)
+	if connectionType != "" {
+		overrideState = overrideState.WithConnectionType(connectionType)
+	}
+
+	return chromedp.Tasks{
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			_, err := network.EmulateNetworkConditionsByRule(false, []*network.Conditions{conditions}).Do(ctx)
+			return err
+		}),
+		overrideState,
+	}
 }
 
 func resolveNetworkProfile(mode, preset string, latencyMS, bandwidthKB int) (int, int, network.ConnectionType) {
@@ -237,7 +614,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		StartTime:   time.Now(),
 		Extractions: map[string]string{},
 	}
-	if b.browserCtx == nil {
+	if !b.initialized() {
 		result.ErrorMessage = "browser protocol is not initialized"
 		return result, nil
 	}
@@ -245,6 +622,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	consoleStart, networkStart := b.eventOffsets()
 	actionCtx, cancel := b.executionContext(ctx)
 	defer cancel()
+	processBefore, _ := b.captureBrowserProcessSnapshot(actionCtx)
 
 	var actionErr error
 	switch action.Type {
@@ -254,10 +632,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 			result.Duration = time.Since(result.StartTime)
 			return result, nil
 		}
-		actionErr = chromedp.Run(actionCtx,
-			chromedp.Navigate(b.resolveURL(action.Target)),
-			chromedp.WaitReady("body", chromedp.ByQuery),
-		)
+		actionErr = b.navigate(actionCtx, b.resolveURL(action.Target))
 	case "browser_wait":
 		actionErr = b.runWait(actionCtx, action)
 	case "browser_click":
@@ -267,10 +642,44 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 			result.Duration = time.Since(result.StartTime)
 			return result, nil
 		}
-		actionErr = chromedp.Run(actionCtx,
-			chromedp.WaitVisible(selector, chromedp.ByQuery),
-			chromedp.Click(selector, chromedp.ByQuery),
-		)
+		if b.touchMode {
+			actionErr = b.dispatchTap(actionCtx, selector)
+		} else {
+			actionErr = b.click(actionCtx, selector)
+		}
+	case "browser_tap":
+		selector := b.actionSelector(action)
+		if selector == "" {
+			result.ErrorMessage = "browser_tap requires selector or target"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		actionErr = b.dispatchTap(actionCtx, selector)
+	case "browser_long_press":
+		selector := b.actionSelector(action)
+		if selector == "" {
+			result.ErrorMessage = "browser_long_press requires selector or target"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		durationMS := actionParamInt(action.Params, "duration_ms", 500)
+		if durationMS <= 0 {
+			durationMS = 500
+		}
+		actionErr = b.dispatchLongPress(actionCtx, selector, time.Duration(durationMS)*time.Millisecond)
+	case "browser_swipe":
+		selector := b.actionSelector(action)
+		if selector == "" {
+			result.ErrorMessage = "browser_swipe requires selector or target"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		direction := actionParamString(action.Params, "direction", "left")
+		distance := actionParamInt(action.Params, "distance", 300)
+		if distance <= 0 {
+			distance = 300
+		}
+		actionErr = b.dispatchSwipe(actionCtx, selector, direction, distance)
 	case "browser_fill":
 		selector := b.actionSelector(action)
 		if selector == "" {
@@ -283,10 +692,20 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 			result.Duration = time.Since(result.StartTime)
 			return result, nil
 		}
-		actionErr = chromedp.Run(actionCtx,
-			chromedp.WaitVisible(selector, chromedp.ByQuery),
-			chromedp.SetValue(selector, action.Value, chromedp.ByQuery),
-		)
+		actionErr = b.fill(actionCtx, selector, action.Value)
+	case "browser_select":
+		selector := b.actionSelector(action)
+		if selector == "" {
+			result.ErrorMessage = "browser_select requires selector or target"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		if action.Value == "" {
+			result.ErrorMessage = "browser_select requires value"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		actionErr = b.selectOption(actionCtx, selector, action.Value)
 	case "browser_screenshot":
 		// Capture is handled with the rest of the page state below.
 	default:
@@ -311,6 +730,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	result.ConsoleEntries = b.consoleEntriesSince(consoleStart)
 	result.NetworkEntries = b.networkEntriesSince(networkStart)
 	result.Duration = time.Since(result.StartTime)
+	result.ClientMetrics = b.captureClientMetrics(actionCtx, result.Duration, processBefore)
 
 	if actionErr != nil {
 		result.ErrorMessage = actionErr.Error()
@@ -329,9 +749,80 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		result.ErrorMessage = captureErr.Error()
 		return result, nil
 	}
+	if requiresBrowserAssertionHTML(action.Assertions) && result.HTML == "" {
+		html, err := b.captureHTML(actionCtx)
+		if err != nil {
+			result.ErrorMessage = err.Error()
+			return result, nil
+		}
+		result.HTML = html
+	}
+	if assertionErr := evaluateBrowserAssertions(action.Assertions, result); assertionErr != nil {
+		result.ErrorMessage = assertionErr.Error()
+		result.Snapshot = &protocol.ErrorSnapshot{
+			PageURL:          result.PageURL,
+			PageTitle:        result.PageTitle,
+			HTML:             result.HTML,
+			ScreenshotBase64: result.ScreenshotBase64,
+			ConsoleEntries:   cloneConsoleEntries(result.ConsoleEntries),
+			NetworkEntries:   cloneNetworkEntries(result.NetworkEntries),
+			DOMSummary:       cloneDOMSummary(result.DOMSummary),
+		}
+		return result, nil
+	}
 
 	result.Success = true
 	return result, nil
+}
+
+func requiresBrowserAssertionHTML(assertions []protocol.Assertion) bool {
+	for _, assertion := range assertions {
+		switch assertion.Type {
+		case "body_contains", "body_not_contains":
+			return true
+		}
+	}
+	return false
+}
+
+func evaluateBrowserAssertions(assertions []protocol.Assertion, result *protocol.Result) error {
+	for _, assertion := range assertions {
+		switch assertion.Type {
+		case "response_time_ms":
+			if assertion.Max > 0 && result.Duration.Milliseconds() > int64(assertion.Max) {
+				return fmt.Errorf("browser response time %dms exceeded max %dms", result.Duration.Milliseconds(), assertion.Max)
+			}
+		case "body_contains":
+			if !strings.Contains(result.HTML, assertion.Value) {
+				return fmt.Errorf("browser page HTML does not contain %q", assertion.Value)
+			}
+		case "body_not_contains":
+			if strings.Contains(result.HTML, assertion.Value) {
+				return fmt.Errorf("browser page HTML contains %q (unexpected)", assertion.Value)
+			}
+		case "page_title":
+			expected := strings.TrimSpace(assertion.Value)
+			if expected == "" && assertion.Expected != nil {
+				expected = strings.TrimSpace(fmt.Sprint(assertion.Expected))
+			}
+			if expected == "" {
+				return fmt.Errorf("page_title assertion requires value or expected")
+			}
+			if result.PageTitle != expected {
+				return fmt.Errorf("browser page title = %q, want %q", result.PageTitle, expected)
+			}
+		case "url_contains":
+			if assertion.Value == "" {
+				return fmt.Errorf("url_contains assertion requires value")
+			}
+			if !strings.Contains(result.PageURL, assertion.Value) {
+				return fmt.Errorf("browser page URL %q does not contain %q", result.PageURL, assertion.Value)
+			}
+		default:
+			return fmt.Errorf("unsupported browser assertion type: %s", assertion.Type)
+		}
+	}
+	return nil
 }
 
 func (b *Browser) Teardown(_ context.Context) error {
@@ -367,12 +858,12 @@ func (b *Browser) runWait(ctx context.Context, action *protocol.Action) error {
 			if waitValue == "" {
 				return fmt.Errorf("browser_wait requires selector, target, or wait_for value")
 			}
-			return chromedp.Run(waitCtx, chromedp.WaitVisible(waitValue, chromedp.ByQuery))
+			return b.waitVisible(waitCtx, waitValue)
 		case "hidden":
 			if waitValue == "" {
 				return fmt.Errorf("browser_wait hidden requires selector or wait_for value")
 			}
-			return chromedp.Run(waitCtx, chromedp.WaitNotPresent(waitValue, chromedp.ByQuery))
+			return b.waitHidden(waitCtx, waitValue)
 		case "text":
 			if waitValue == "" {
 				return fmt.Errorf("browser_wait text requires wait_for value")
@@ -401,7 +892,7 @@ func (b *Browser) runWait(ctx context.Context, action *protocol.Action) error {
 	if selector != "" {
 		waitCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		return chromedp.Run(waitCtx, chromedp.WaitVisible(selector, chromedp.ByQuery))
+		return b.waitVisible(waitCtx, selector)
 	}
 	if action.Target == "" {
 		return fmt.Errorf("browser_wait requires wait_for, selector, or target")
@@ -418,6 +909,198 @@ func (b *Browser) actionSelector(action *protocol.Action) string {
 		return action.Selector
 	}
 	return action.Target
+}
+
+func (b *Browser) dispatchTap(ctx context.Context, selector string) error {
+	return b.runTouchScript(ctx, selector, `
+		dispatchPointer('pointerdown', x, y);
+		dispatchTouch('touchstart', x, y, true);
+		dispatchTouch('touchend', x, y, false);
+		dispatchPointer('pointerup', x, y);
+		dispatchClick(x, y);
+	`, "browser tap")
+}
+
+func (b *Browser) dispatchLongPress(ctx context.Context, selector string, duration time.Duration) error {
+	if err := b.runTouchScript(ctx, selector, `
+		dispatchPointer('pointerdown', x, y);
+		dispatchTouch('touchstart', x, y, true);
+	`, "browser long press start"); err != nil {
+		return err
+	}
+	if err := b.sleep(ctx, duration); err != nil {
+		return err
+	}
+	return b.runTouchScript(ctx, selector, `
+		dispatchTouch('touchend', x, y, false);
+		dispatchPointer('pointerup', x, y);
+		dispatchClick(x, y);
+	`, "browser long press end")
+}
+
+func (b *Browser) dispatchSwipe(ctx context.Context, selector, direction string, distance int) error {
+	return b.runTouchScript(ctx, selector, fmt.Sprintf(`
+		const startX = x;
+		const startY = y;
+		let endX = startX;
+		let endY = startY;
+		switch (%q) {
+		case 'right':
+			endX = startX + %d;
+			break;
+		case 'up':
+			endY = startY - %d;
+			break;
+		case 'down':
+			endY = startY + %d;
+			break;
+		default:
+			endX = startX - %d;
+			break;
+		}
+		dispatchPointer('pointerdown', startX, startY);
+		dispatchTouch('touchstart', startX, startY, true);
+		const steps = 5;
+		for (let i = 1; i <= steps; i++) {
+			const nextX = startX + ((endX - startX) * i / steps);
+			const nextY = startY + ((endY - startY) * i / steps);
+			dispatchPointer('pointermove', nextX, nextY);
+			dispatchTouch('touchmove', nextX, nextY, true);
+		}
+		dispatchTouch('touchend', endX, endY, false);
+		dispatchPointer('pointerup', endX, endY);
+	`, strings.ToLower(strings.TrimSpace(direction)), distance, distance, distance, distance), "browser swipe")
+}
+
+func (b *Browser) runTouchScript(ctx context.Context, selector, operation, label string) error {
+	if err := b.waitVisible(ctx, selector); err != nil {
+		return err
+	}
+
+	var evalErr string
+	expression := fmt.Sprintf(`(() => {
+		const el = document.querySelector(%q);
+		if (!el) {
+			return 'selector not found';
+		}
+		el.scrollIntoView({ block: 'center', inline: 'center' });
+		const rect = el.getBoundingClientRect();
+		const x = rect.left + (rect.width / 2);
+		const y = rect.top + (rect.height / 2);
+		const makeTouchList = (clientX, clientY, active) => {
+			const touchLike = {
+				identifier: Date.now(),
+				target: el,
+				clientX,
+				clientY,
+				pageX: clientX + window.scrollX,
+				pageY: clientY + window.scrollY,
+				screenX: clientX,
+				screenY: clientY,
+				radiusX: 2,
+				radiusY: 2,
+				rotationAngle: 0,
+				force: 1,
+			};
+			if (typeof Touch === 'function') {
+				const touch = new Touch(touchLike);
+				return { changed: [touch], active: active ? [touch] : [] };
+			}
+			return { changed: [touchLike], active: active ? [touchLike] : [] };
+		};
+		const dispatchTouch = (type, clientX, clientY, active) => {
+			const list = makeTouchList(clientX, clientY, active);
+			let event;
+			if (typeof TouchEvent === 'function') {
+				event = new TouchEvent(type, {
+					bubbles: true,
+					cancelable: true,
+					composed: true,
+					touches: list.active,
+					targetTouches: list.active,
+					changedTouches: list.changed,
+				});
+			} else {
+				event = new Event(type, { bubbles: true, cancelable: true, composed: true });
+				Object.defineProperty(event, 'touches', { value: list.active });
+				Object.defineProperty(event, 'targetTouches', { value: list.active });
+				Object.defineProperty(event, 'changedTouches', { value: list.changed });
+			}
+			el.dispatchEvent(event);
+		};
+		const dispatchPointer = (type, clientX, clientY) => {
+			if (typeof PointerEvent !== 'function') {
+				return;
+			}
+			el.dispatchEvent(new PointerEvent(type, {
+				bubbles: true,
+				cancelable: true,
+				composed: true,
+				pointerType: 'touch',
+				isPrimary: true,
+				clientX,
+				clientY,
+			}));
+		};
+		const dispatchClick = (clientX, clientY) => {
+			el.dispatchEvent(new MouseEvent('click', {
+			bubbles: true,
+			cancelable: true,
+			composed: true,
+			clientX,
+			clientY,
+		}));
+		};
+		%s
+		return '';
+	})()`, selector, operation)
+	if err := b.evaluatePageExpression(ctx, expression, &evalErr); err != nil {
+		return err
+	}
+	if evalErr != "" {
+		return fmt.Errorf("%s failed: %s", label, evalErr)
+	}
+	return nil
+}
+
+func actionParamInt(params map[string]any, key string, defaultValue int) int {
+	if params == nil {
+		return defaultValue
+	}
+	value, ok := params[key]
+	if !ok {
+		return defaultValue
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case float32:
+		return int(typed)
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
+		if err == nil {
+			return parsed
+		}
+	}
+	return defaultValue
+}
+
+func actionParamString(params map[string]any, key, defaultValue string) string {
+	if params == nil {
+		return defaultValue
+	}
+	value, ok := params[key]
+	if !ok {
+		return defaultValue
+	}
+	if typed, ok := value.(string); ok && strings.TrimSpace(typed) != "" {
+		return strings.TrimSpace(typed)
+	}
+	return defaultValue
 }
 
 func (b *Browser) captureRequestedArtifacts(ctx context.Context, action *protocol.Action) (string, string, error) {
@@ -465,7 +1148,230 @@ func (b *Browser) capturePageState(ctx context.Context, action *protocol.Action,
 	return pageURL, pageTitle, domSummary, html, screenshot, nil
 }
 
+type browserPageMetrics struct {
+	FCPMs                 float64 `json:"fcp_ms"`
+	LCPMs                 float64 `json:"lcp_ms"`
+	CLSScore              float64 `json:"cls_score"`
+	INPMs                 float64 `json:"inp_ms"`
+	DOMContentLoadedMs    float64 `json:"dom_content_loaded_ms"`
+	DOMCompleteMs         float64 `json:"dom_complete_ms"`
+	LoadEventMs           float64 `json:"load_event_ms"`
+	BlockingResourceCount int     `json:"blocking_resource_count"`
+	TotalResourceCount    int     `json:"total_resource_count"`
+	ResourceTransferKB    float64 `json:"resource_transfer_kb"`
+	LongTaskCount         int     `json:"long_task_count"`
+}
+
+func (b *Browser) captureClientMetrics(ctx context.Context, duration time.Duration, processBefore browserProcessSnapshot) *protocol.ClientMetrics {
+	if !b.clientMetricsEnabled {
+		return nil
+	}
+
+	metrics := &protocol.ClientMetrics{
+		DeviceProfile:    b.deviceProfile,
+		DevicePlatform:   b.devicePlatform,
+		DeviceTier:       b.deviceTier,
+		BrowserEngine:    b.engine,
+		ActionDurationMs: float64(duration) / float64(time.Millisecond),
+	}
+
+	if err := b.capturePageMetrics(ctx, metrics); err != nil {
+		// Keep metrics collection non-fatal for the browser action.
+	}
+	if err := b.captureRuntimeMetrics(ctx, metrics); err != nil {
+		// Keep metrics collection non-fatal for the browser action.
+	}
+	if err := b.captureBrowserProcessMetrics(ctx, metrics, processBefore); err != nil {
+		// Keep browser-process attribution non-fatal because CDP support varies by runtime.
+	}
+
+	if *metrics == (protocol.ClientMetrics{ActionDurationMs: metrics.ActionDurationMs}) {
+		return metrics
+	}
+	return metrics
+}
+
+func (b *Browser) capturePageMetrics(ctx context.Context, metrics *protocol.ClientMetrics) error {
+	var snapshot browserPageMetrics
+	expression := `(() => {
+		const paints = performance.getEntriesByType('paint');
+		const fcp = paints.find((entry) => entry.name === 'first-contentful-paint');
+		const nav = performance.getEntriesByType('navigation')[0] || {};
+		const resources = performance.getEntriesByType('resource');
+		const lcpEntries = performance.getEntriesByType('largest-contentful-paint');
+		const lcp = lcpEntries.length ? lcpEntries[lcpEntries.length - 1].startTime : 0;
+		const shifts = performance.getEntriesByType('layout-shift');
+		const cls = shifts.reduce((sum, entry) => sum + (entry.hadRecentInput ? 0 : (entry.value || 0)), 0);
+		const eventEntries = performance.getEntriesByType('event');
+		const inp = eventEntries.reduce((max, entry) => Math.max(max, entry.duration || entry.processingEnd || 0), 0);
+		const longTasks = performance.getEntriesByType('longtask');
+		const observerMetrics = window.__apexloadMetrics || {};
+		const blocking = resources.filter((entry) => entry.renderBlockingStatus === 'blocking');
+		return {
+			fcp_ms: fcp ? fcp.startTime : 0,
+			lcp_ms: observerMetrics.lcp || lcp,
+			cls_score: observerMetrics.cls || cls,
+			inp_ms: observerMetrics.inp || inp,
+			dom_content_loaded_ms: nav.domContentLoadedEventEnd || 0,
+			dom_complete_ms: nav.domComplete || 0,
+			load_event_ms: nav.loadEventEnd || 0,
+			blocking_resource_count: blocking.length,
+			total_resource_count: resources.length,
+			resource_transfer_kb: resources.reduce((sum, entry) => sum + ((entry.transferSize || 0) / 1024), 0),
+			long_task_count: observerMetrics.longTaskCount || longTasks.length,
+		};
+	})()`
+	if err := b.evaluatePageExpression(ctx, expression, &snapshot); err != nil {
+		return err
+	}
+	metrics.FCPMs = snapshot.FCPMs
+	metrics.LCPMs = snapshot.LCPMs
+	metrics.CLSScore = snapshot.CLSScore
+	metrics.INPMs = snapshot.INPMs
+	metrics.DOMContentLoadedMs = snapshot.DOMContentLoadedMs
+	metrics.DOMCompleteMs = snapshot.DOMCompleteMs
+	metrics.LoadEventMs = snapshot.LoadEventMs
+	metrics.BlockingResourceCount = snapshot.BlockingResourceCount
+	metrics.TotalResourceCount = snapshot.TotalResourceCount
+	metrics.ResourceTransferKB = snapshot.ResourceTransferKB
+	metrics.LongTaskCount = snapshot.LongTaskCount
+	return nil
+}
+
+const browserMetricsBootstrapScript = `(() => {
+	if (window.__apexloadMetrics) {
+		return;
+	}
+	window.__apexloadMetrics = {
+		lcp: 0,
+		cls: 0,
+		inp: 0,
+		longTaskCount: 0,
+	};
+	try {
+		new PerformanceObserver((list) => {
+			for (const entry of list.getEntries()) {
+				window.__apexloadMetrics.lcp = entry.startTime || window.__apexloadMetrics.lcp;
+			}
+		}).observe({ type: 'largest-contentful-paint', buffered: true });
+	} catch (e) {}
+	try {
+		new PerformanceObserver((list) => {
+			for (const entry of list.getEntries()) {
+				if (!entry.hadRecentInput) {
+					window.__apexloadMetrics.cls += entry.value || 0;
+				}
+			}
+		}).observe({ type: 'layout-shift', buffered: true });
+	} catch (e) {}
+	try {
+		new PerformanceObserver((list) => {
+			window.__apexloadMetrics.longTaskCount += list.getEntries().length;
+		}).observe({ type: 'longtask', buffered: true });
+	} catch (e) {}
+	try {
+		new PerformanceObserver((list) => {
+			for (const entry of list.getEntries()) {
+				const duration = entry.duration || entry.processingEnd || 0;
+				if (duration > window.__apexloadMetrics.inp) {
+					window.__apexloadMetrics.inp = duration;
+				}
+			}
+		}).observe({ type: 'event', buffered: true, durationThreshold: 16 });
+	} catch (e) {}
+})();`
+
+func (b *Browser) captureRuntimeMetrics(ctx context.Context, metrics *protocol.ClientMetrics) error {
+	if b.engine != "chromium" {
+		return nil
+	}
+	var perfMetrics []*performance.Metric
+	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		var err error
+		perfMetrics, err = performance.GetMetrics().Do(ctx)
+		return err
+	})); err != nil {
+		return err
+	}
+	for _, metric := range perfMetrics {
+		switch metric.Name {
+		case "JSHeapUsedSize":
+			metrics.JSHeapUsedMB = metric.Value / (1024 * 1024)
+		case "JSHeapTotalSize":
+			metrics.JSHeapTotalMB = metric.Value / (1024 * 1024)
+		case "LayoutCount":
+			metrics.LayoutCount = int(metric.Value)
+		case "RecalcStyleCount":
+			metrics.RecalcStyleCount = int(metric.Value)
+		case "ScriptDuration":
+			metrics.ScriptDurationMs = metric.Value * 1000
+		case "LayoutDuration":
+			metrics.LayoutDurationMs = metric.Value * 1000
+		case "TaskDuration":
+			metrics.TaskDurationMs = metric.Value * 1000
+		}
+	}
+	return nil
+}
+
+func (b *Browser) captureBrowserProcessMetrics(ctx context.Context, metrics *protocol.ClientMetrics, before browserProcessSnapshot) error {
+	after, err := b.captureBrowserProcessSnapshot(ctx)
+	if err != nil {
+		return err
+	}
+	cpuPct, memoryMB := browserProcessResourceMetrics(before, after)
+	metrics.BrowserProcessCPUPct = cpuPct
+	metrics.BrowserProcessMemMB = memoryMB
+	return nil
+}
+
+func (b *Browser) captureBrowserProcessSnapshot(ctx context.Context) (browserProcessSnapshot, error) {
+	if !b.clientMetricsEnabled || b.engine != "chromium" {
+		return browserProcessSnapshot{}, nil
+	}
+	var processes []*systeminfo.ProcessInfo
+	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		var err error
+		processes, err = systeminfo.GetProcessInfo().Do(ctx)
+		return err
+	})); err != nil {
+		return browserProcessSnapshot{}, err
+	}
+	snapshot := browserProcessSnapshot{CapturedAt: time.Now()}
+	for _, proc := range processes {
+		if proc == nil {
+			continue
+		}
+		snapshot.CPUTimeSeconds += proc.CPUTime
+		if p, err := process.NewProcess(int32(proc.ID)); err == nil {
+			if info, err := p.MemoryInfo(); err == nil && info != nil {
+				snapshot.MemoryMB += float64(info.RSS) / 1024 / 1024
+			}
+		}
+	}
+	return snapshot, nil
+}
+
+func browserProcessResourceMetrics(before, after browserProcessSnapshot) (float64, float64) {
+	memoryMB := after.MemoryMB
+	if before.CapturedAt.IsZero() || after.CapturedAt.IsZero() || !after.CapturedAt.After(before.CapturedAt) {
+		return 0, memoryMB
+	}
+	cpuDelta := after.CPUTimeSeconds - before.CPUTimeSeconds
+	if cpuDelta <= 0 {
+		return 0, memoryMB
+	}
+	elapsedSeconds := after.CapturedAt.Sub(before.CapturedAt).Seconds()
+	if elapsedSeconds <= 0 {
+		return 0, memoryMB
+	}
+	return cpuDelta / elapsedSeconds * 100, memoryMB
+}
+
 func (b *Browser) readDOMSummary(ctx context.Context) (string, string, *protocol.DOMSummary, error) {
+	if b.engine == "webkit" {
+		return b.readPlaywrightDOMSummary(ctx)
+	}
 	var pageURL string
 	var title string
 	var state domState
@@ -499,12 +1405,18 @@ func configInt(config map[string]any, key string) int {
 }
 
 func (b *Browser) captureHTML(ctx context.Context) (string, error) {
+	if b.engine == "webkit" {
+		return b.capturePlaywrightHTML(ctx)
+	}
 	var html string
 	err := chromedp.Run(ctx, chromedp.OuterHTML("html", &html, chromedp.ByQuery))
 	return html, err
 }
 
 func (b *Browser) captureScreenshot(ctx context.Context, action *protocol.Action) (string, error) {
+	if b.engine == "webkit" {
+		return b.capturePlaywrightScreenshot(ctx, action)
+	}
 	var buf []byte
 	selector := b.screenshotSelector(action)
 	if selector != "" {
@@ -531,7 +1443,7 @@ func (b *Browser) screenshotSelector(action *protocol.Action) string {
 		return action.Selector
 	}
 	switch action.Type {
-	case "browser_click", "browser_fill", "browser_wait", "browser_screenshot":
+	case "browser_click", "browser_fill", "browser_select", "browser_wait", "browser_screenshot":
 		return action.Target
 	default:
 		return ""
@@ -543,7 +1455,7 @@ func (b *Browser) waitForJS(ctx context.Context, expression string) error {
 	defer ticker.Stop()
 	for {
 		var ready bool
-		if err := chromedp.Run(ctx, chromedp.Evaluate(expression, &ready)); err == nil && ready {
+		if err := b.evaluatePageExpression(ctx, expression, &ready); err == nil && ready {
 			return nil
 		}
 		select {
@@ -576,6 +1488,9 @@ func (b *Browser) sleep(ctx context.Context, delay time.Duration) error {
 }
 
 func (b *Browser) executionContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if b.engine == "webkit" {
+		return context.WithCancel(ctx)
+	}
 	actionCtx, cancel := context.WithCancel(b.browserCtx)
 	go func() {
 		select {
@@ -618,6 +1533,11 @@ func (b *Browser) networkEntriesSince(offset int) []protocol.NetworkEntry {
 }
 
 func (b *Browser) handleBrowserEvent(ev any) {
+	if event, ok := ev.(*fetch.EventRequestPaused); ok {
+		go b.handleInterceptedRequest(event)
+		return
+	}
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -683,7 +1603,27 @@ func (b *Browser) handleBrowserEvent(ev any) {
 	}
 }
 
+func (b *Browser) handleInterceptedRequest(event *fetch.EventRequestPaused) {
+	if event == nil || event.Request == nil || b.browserCtx == nil {
+		return
+	}
+	if b.shouldBlockUnrecordedRequest(event.Request.URL) {
+		_ = fetch.FailRequest(event.RequestID, network.ErrorReasonBlockedByClient).Do(b.browserCtx)
+		return
+	}
+	if b.hasDownloadFilters() && b.shouldBlockFilteredRequest(event.Request.URL) {
+		_ = fetch.FailRequest(event.RequestID, network.ErrorReasonBlockedByClient).Do(b.browserCtx)
+		return
+	}
+	continueRequest := fetch.ContinueRequest(event.RequestID)
+	if !b.cacheContentURLs && shouldRevalidateContentRequest(event.ResourceType) {
+		continueRequest = continueRequest.WithHeaders(continuedRequestHeaders(event.Request.Headers))
+	}
+	_ = continueRequest.Do(b.browserCtx)
+}
+
 func (b *Browser) close() {
+	b.closePlaywright()
 	if b.browserStop != nil {
 		b.browserStop()
 		b.browserStop = nil

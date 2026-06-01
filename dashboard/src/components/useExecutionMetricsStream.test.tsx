@@ -5,11 +5,13 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { WSMessage } from '../types'
+import { latencySeriesKeyForTarget } from './latencySeries'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const useWebSocketMock = vi.fn()
+const edgeLatencyKey = latencySeriesKeyForTarget({ name: 'edge', endpoint: 'https://example.test' })
 
 vi.mock('../hooks/useWebSocket', () => ({
   useWebSocket: (...args: unknown[]) => useWebSocketMock(...args),
@@ -25,6 +27,8 @@ function MetricsStreamHarness({ status = 'RUNNING' }: { status?: 'RUNNING' | 'CO
       <span data-testid="tps">{String(latest?.tps ?? -1)}</span>
       <span data-testid="group-tps">{String(latest?.Checkout_tps ?? -1)}</span>
       <span data-testid="cpu">{String(latest?.cpuProcess ?? -1)}</span>
+      <span data-testid="route-latency">{String(latest?.[edgeLatencyKey] ?? -1)}</span>
+      <span data-testid="latest-route-latency">{String(latestMetrics?.latency?.targets?.[0]?.latency_ms ?? -1)}</span>
       <span data-testid="delivery-lag">{String(latestMetrics?.telemetry?.delivery_lag_ms ?? -1)}</span>
       <span data-testid="end-to-end-age">{String(latestMetrics?.telemetry?.end_to_end_age_ms ?? -1)}</span>
       <span data-testid="transport-lag">{String(latestMetrics?.telemetry?.transport_lag_ms ?? -1)}</span>
@@ -109,6 +113,15 @@ describe('useExecutionMetricsStream', () => {
           controller_fanout_lag_ms: 350,
           sample_age_ms: 900,
         },
+        latency: {
+          targets: [{
+            name: 'edge',
+            endpoint: 'https://example.test',
+            latency_ms: 42.26,
+            last_success: true,
+            timestamp: '2026-05-12T20:05:00Z',
+          }],
+        },
       },
     } as unknown as WSMessage)
 
@@ -116,11 +129,51 @@ describe('useExecutionMetricsStream', () => {
     expect(readTestId('tps')).toBe('12.3')
     expect(readTestId('group-tps')).toBe('7.9')
     expect(readTestId('cpu')).toBe('44.4')
+    expect(readTestId('route-latency')).toBe('42.3')
     expect(readTestId('delivery-lag')).toBe('350')
     expect(readTestId('end-to-end-age')).toBe('1250')
     expect(readTestId('transport-lag')).toBe('300')
     expect(readTestId('fanout-lag')).toBe('350')
     expect(readTestId('received-at')).toBe('2026-05-12T20:05:01.250Z')
+  })
+
+  it('merges latency update websocket messages into the latest execution history point', async () => {
+    await act(async () => {
+      root.render(<MetricsStreamHarness />)
+    })
+
+    await emit({
+      type: 'metrics_update',
+      timestamp: '2026-05-12T20:05:00Z',
+      data: {
+        active_vusers: 15,
+        tps: 12,
+        avg_response_ms: 221,
+        error_pct: 1,
+        total_transactions: 120,
+        total_errors: 2,
+        p50_ms: 150,
+        p90_ms: 320,
+        p95_ms: 410,
+        p99_ms: 501,
+      },
+    } as unknown as WSMessage)
+    await emit({
+      type: 'latency_update',
+      latency: {
+        targets: [{
+          name: 'edge',
+          endpoint: 'https://example.test',
+          latency_ms: 27.44,
+          last_success: true,
+          timestamp: '2026-05-12T20:05:05Z',
+        }],
+      },
+    } as WSMessage)
+
+    expect(readTestId('count')).toBe('1')
+    expect(readTestId('route-latency')).toBe('27.4')
+    expect(readTestId('latest-route-latency')).toBe('27.44')
   })
 
   it('disables the test websocket stream for completed runs', async () => {
