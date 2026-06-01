@@ -1,0 +1,47 @@
+// APEX Load — Jenkins declarative pipeline example.
+//
+// Runs a performance test, gates the build on SLA thresholds (apexctl exits
+// non-zero on breach), and publishes the JUnit report so Jenkins shows the
+// pass/fail trend.
+pipeline {
+  agent any
+
+  parameters {
+    string(name: 'SCRIPT', defaultValue: 'examples/web-api/ecommerce-http.json', description: 'JSON DSL script path')
+    string(name: 'VUSERS', defaultValue: '100', description: 'Virtual users')
+    string(name: 'DURATION', defaultValue: '3m', description: 'Test duration')
+    string(name: 'P95_LATENCY_MS', defaultValue: '800', description: 'P95 latency SLA (ms)')
+    string(name: 'MAX_ERROR_PCT', defaultValue: '2.0', description: 'Max error rate (%)')
+    string(name: 'API_URL', defaultValue: '', description: 'Controller URL (empty = run locally)')
+  }
+
+  stages {
+    stage('Performance Gate') {
+      steps {
+        sh '''
+          set -e
+          cmd="go run ./cmd/apexctl run \
+            --script ${SCRIPT} \
+            --vusers ${VUSERS} \
+            --duration ${DURATION} \
+            --p95-latency-ms ${P95_LATENCY_MS} \
+            --max-error-pct ${MAX_ERROR_PCT} \
+            --junit apexload-results.xml \
+            --format json"
+          if [ -n "${API_URL}" ]; then
+            cmd="${cmd} --api ${API_URL}"
+          fi
+          # A breach makes apexctl exit non-zero, failing the stage.
+          ${cmd}
+        '''
+      }
+    }
+  }
+
+  post {
+    always {
+      // Publishes results even on failure so the breach shows in the trend.
+      junit testResults: 'apexload-results.xml', allowEmptyResults: true
+    }
+  }
+}

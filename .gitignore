@@ -1,8 +1,11 @@
 # Binaries and build artifacts
 bin/
-controller
-generator
-apexctl
+# Anchored to repo root so these match the compiled binaries only, not the
+# cmd/controller, cmd/generator, and cmd/apexctl source directories.
+/controller
+/generator
+/apexctl
+/main
 *.exe
 *.exe~
 *.dll
