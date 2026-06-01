@@ -2559,6 +2559,152 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('WebKit controller host is missing the Playwright browser cache warmup.')
   })
 
+  it('renders replay preflight, pinned failure diagnosis, and variable timeline', async () => {
+    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce({
+      replay_session_id: 'diagnostic-replay-1',
+      debug_session_id: 'diagnostic-replay-1',
+      preflight: {
+        valid: false,
+        action_count: 1,
+        expected_action_count: 1,
+        data_source_count: 0,
+        parameter_count: 0,
+        missing_variables: ['account_id'],
+        checks: [
+          { id: 'variables', label: 'Variable readiness', status: 'fail', detail: 'account_id' },
+        ],
+      },
+      session: {
+        id: 'diagnostic-replay-1',
+        mode: 'replay',
+        group: 'Checkout Flow-debug',
+        protocol: 'http',
+        log_level: 'debug',
+        status: 'failed',
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:01Z',
+        current_event_index: 0,
+        preflight: {
+          valid: false,
+          action_count: 1,
+          expected_action_count: 1,
+          data_source_count: 0,
+          parameter_count: 0,
+          missing_variables: ['account_id'],
+          checks: [
+            { id: 'variables', label: 'Variable readiness', status: 'fail', detail: 'account_id' },
+          ],
+        },
+        report: {
+          group: 'Checkout Flow-debug',
+          protocol: 'http',
+          started_at: '2026-05-14T20:00:00Z',
+          completed_at: '2026-05-14T20:00:01Z',
+          success: false,
+          error: 'forbidden session expired',
+          final_variables: { csrf: 'token-1' },
+          diagnosis_summary: {
+            failure_count: 1,
+            categories: { auth_session: 1 },
+            first_failure_action: 'Get Account',
+            first_failure_cause: 'forbidden session expired',
+          },
+          artifact_manifest: {
+            replay_id: 'diagnostic-replay-1',
+            script_hash: 'abc123',
+            network_entries: 0,
+            console_entries: 0,
+            screenshots: 0,
+            snapshots: 0,
+          },
+          events: [
+            {
+              event_id: 'diagnostic-replay-1:action:000:000',
+              phase: 'action',
+              action_name: 'Get Account',
+              action_type: 'GET',
+              method: 'GET',
+              target: '/accounts/{{var.account_id}}',
+              status_code: 403,
+              success: false,
+              error_message: 'forbidden session expired',
+              started_at: '2026-05-14T20:00:00Z',
+              completed_at: '2026-05-14T20:00:01Z',
+              duration_ms: 42,
+              extractions: { csrf: 'token-1' },
+              diagnosis: {
+                category: 'auth_session',
+                severity: 'error',
+                cause: 'forbidden session expired',
+                evidence: 'The target returned an authentication/session signal during replay.',
+                action: 'Refresh login/session setup.',
+              },
+              repair_suggestions: [
+                {
+                  id: 'diagnostic-replay-1:repair-session',
+                  title: 'Refresh session setup',
+                  description: 'Draft a setup change for login, cookies, or CSRF extraction.',
+                  draft_patch_type: 'repair_auth_session',
+                },
+              ],
+            },
+          ],
+        },
+        events: [],
+      },
+    })
+
+    const diagnosticScript: ScriptDefinition = {
+      ...initialScript,
+      actions: [
+        {
+          name: 'Get Account',
+          type: 'GET',
+          method: 'GET',
+          target: '/accounts/{{var.account_id}}',
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={diagnosticScript} />)
+    })
+
+    expect(container.textContent).toContain('Preflight')
+    expect(container.textContent).toContain('Missing variable: account_id')
+
+    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Run Replay',
+    )
+    expect(replayButton).toBeDefined()
+    if (!replayButton) {
+      return
+    }
+
+    await act(async () => {
+      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('First failing action')
+    expect(container.textContent).toContain('Auth Session')
+    expect(container.textContent).toContain('Refresh session setup')
+
+    const variablesTab = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Variables',
+    )
+    expect(variablesTab).toBeDefined()
+    if (!variablesTab) {
+      return
+    }
+    await act(async () => {
+      variablesTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Variable Timeline')
+    expect(container.textContent).toContain('csrf')
+  })
+
   it('exports the current browser replay session as JSON', async () => {
     apiMock.startDraftScriptDebugSession.mockResolvedValueOnce({
       replay_session_id: 'browser-replay-1',

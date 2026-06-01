@@ -121,12 +121,16 @@ func TestHandleStartScriptDebugDraftScriptReturnsSession(t *testing.T) {
 	var payload struct {
 		DebugSessionID string             `json:"debug_session_id"`
 		Session        ScriptDebugSession `json:"session"`
+		Preflight      ReplayPreflight    `json:"preflight"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
 	}
 	if payload.DebugSessionID != "debug-api" || payload.Session.Status != ScriptDebugPaused || payload.Session.LogLevel != "trace" {
 		t.Fatalf("payload = %#v, want paused trace session debug-api", payload)
+	}
+	if payload.Preflight.ActionCount != 1 || payload.Session.Preflight == nil || payload.Session.RuntimeProfile.LogLevel != "trace" {
+		t.Fatalf("preflight/runtime = %#v/%#v, want preflight and trace runtime profile", payload.Preflight, payload.Session.RuntimeProfile)
 	}
 
 	exportReq := httptest.NewRequest(http.MethodGet, "/api/v1/script-debug/sessions/debug-api/export?format=log", nil)
@@ -144,6 +148,69 @@ func TestHandleStartScriptDebugDraftScriptReturnsSession(t *testing.T) {
 	server.mux.ServeHTTP(stopResp, stopReq)
 	if stopResp.Code != http.StatusOK {
 		t.Fatalf("stop status = %d, want %d body=%s", stopResp.Code, http.StatusOK, stopResp.Body.String())
+	}
+}
+
+func TestHandleStartReplaySessionDraftScriptReturnsUnifiedPreflight(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	server := NewServer(ServerConfig{})
+	body, _ := json.Marshal(map[string]any{
+		"replay_session_id": "unified-replay-api",
+		"start_paused":      true,
+		"log_level":         "debug",
+		"script": map[string]any{
+			"name":     "Unified Replay",
+			"version":  "1.0.0",
+			"protocol": protocolName,
+			"config": map[string]any{
+				"base_url": "https://example.com",
+			},
+			"actions": []map[string]any{{
+				"name":   "Get account",
+				"type":   "GET",
+				"method": "GET",
+				"target": "/accounts/{{var.account_id}}",
+			}},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/replay/sessions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload struct {
+		ReplaySessionID string             `json:"replay_session_id"`
+		Session         ScriptDebugSession `json:"session"`
+		Preflight       ReplayPreflight    `json:"preflight"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if payload.ReplaySessionID != "unified-replay-api" || payload.Session.Mode != "replay" || payload.Session.Preflight == nil {
+		t.Fatalf("payload = %#v, want unified replay session with preflight", payload)
+	}
+	if !slices.Contains(payload.Preflight.MissingVariables, "account_id") || payload.Preflight.ActionCount != 1 {
+		t.Fatalf("preflight = %#v, want missing account_id and one action", payload.Preflight)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/replay/sessions/unified-replay-api", nil)
+	getResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(getResp, getReq)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("unified get status = %d, want %d body=%s", getResp.Code, http.StatusOK, getResp.Body.String())
+	}
+
+	stopReq := httptest.NewRequest(http.MethodPost, "/api/v1/replay/sessions/unified-replay-api/stop", nil)
+	stopResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(stopResp, stopReq)
+	if stopResp.Code != http.StatusOK {
+		t.Fatalf("unified stop status = %d, want %d body=%s", stopResp.Code, http.StatusOK, stopResp.Body.String())
 	}
 }
 

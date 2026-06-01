@@ -1413,6 +1413,85 @@ export interface BrowserReplayDomSummary {
   visible_text?: string[]
 }
 
+export interface ReplayRuntimeProfile {
+  name?: string
+  capture_mode?: string
+  log_level?: string
+  ignore_think_time?: boolean
+  browser_engine?: string
+  device_profile?: string
+  headless?: boolean
+  failure_policy?: string
+}
+
+export interface ReplayArtifactManifest {
+  replay_id?: string
+  script_hash?: string
+  script_revision?: string
+  created_at?: string
+  runtime_profile?: ReplayRuntimeProfile
+  data_sources?: string[]
+  seed_variables?: string[]
+  screenshots?: number
+  network_entries?: number
+  console_entries?: number
+  snapshots?: number
+  html_captured?: boolean
+  browser_evidence?: boolean
+}
+
+export interface ReplayDiagnosis {
+  category: string
+  severity: string
+  cause: string
+  evidence?: string
+  action?: string
+  signals?: string[]
+  frame_context?: string
+  suggested_locator?: string
+}
+
+export interface ReplayRepairSuggestion {
+  id: string
+  title: string
+  description: string
+  draft_patch_type: string
+  action?: string
+  confidence?: number
+  fields?: Record<string, string>
+}
+
+export interface ReplayDiagnosisSummary {
+  failure_count: number
+  categories?: Record<string, number>
+  first_failure_event_id?: string
+  first_failure_action?: string
+  first_failure_cause?: string
+}
+
+export interface ReplayPreflightCheck {
+  id: string
+  label: string
+  status: 'pass' | 'warn' | 'fail' | string
+  detail?: string
+}
+
+export interface ReplayPreflight {
+  valid: boolean
+  action_count: number
+  expected_action_count: number
+  data_source_count: number
+  parameter_count: number
+  browser_required?: boolean
+  missing_variables?: string[]
+  required_secrets?: string[]
+  missing_secrets?: string[]
+  runtime_prerequisites?: string[]
+  issues?: string[]
+  warnings?: string[]
+  checks?: ReplayPreflightCheck[]
+}
+
 export interface BrowserReplaySnapshot {
   request_method?: string
   request_url?: string
@@ -1432,6 +1511,9 @@ export interface BrowserReplaySnapshot {
 }
 
 export interface BrowserReplayEvent {
+  event_id?: string
+  action_index?: number
+  event_index?: number
   phase: string
   action_name: string
   action_type: string
@@ -1463,9 +1545,18 @@ export interface BrowserReplayEvent {
   dom_summary?: BrowserReplayDomSummary
   client_metrics?: ClientMetrics
   snapshot?: BrowserReplaySnapshot
+  diagnosis?: ReplayDiagnosis
+  repair_suggestions?: ReplayRepairSuggestion[]
 }
 
 export interface BrowserReplayReport {
+  replay_session_id?: string
+  script_hash?: string
+  script_revision?: string
+  runtime_profile?: ReplayRuntimeProfile
+  artifact_manifest?: ReplayArtifactManifest
+  diagnosis_summary?: ReplayDiagnosisSummary
+  repair_suggestions?: ReplayRepairSuggestion[]
   group: string
   protocol: string
   started_at: string
@@ -1478,11 +1569,14 @@ export interface BrowserReplayReport {
 
 export interface BrowserReplaySession {
   id: string
+  mode?: string
   script_id?: string
   project_id?: string
   status: 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped'
   group: string
   protocol: string
+  runtime_profile?: ReplayRuntimeProfile
+  preflight?: ReplayPreflight
   started_at?: string
   completed_at?: string
   current_event_index: number
@@ -1508,11 +1602,13 @@ export interface BrowserReplayStartResponse {
   script_id: string
   replay_session_id: string
   session: BrowserReplaySession
+  preflight?: ReplayPreflight
   warnings?: string[]
 }
 
 export interface BrowserReplaySessionResponse {
   session: BrowserReplaySession
+  preflight?: ReplayPreflight
   warnings?: string[]
 }
 
@@ -1536,6 +1632,7 @@ export interface ScriptDebugLogEntry {
 }
 
 export interface ScriptDebugAction {
+  event_id?: string
   phase: string
   action_index: number
   event_index: number
@@ -1549,12 +1646,15 @@ export interface ScriptDebugAction {
 
 export interface ScriptDebugSession {
   id: string
+  mode?: string
   script_id?: string
   project_id?: string
   status: BrowserReplaySession['status']
   group: string
   protocol: string
   log_level: ScriptDebugLogLevel
+  runtime_profile?: ReplayRuntimeProfile
+  preflight?: ReplayPreflight
   started_at?: string
   completed_at?: string
   current_event_index: number
@@ -1571,6 +1671,8 @@ export interface ScriptDebugSession {
 export interface ScriptDebugStartRequest {
   group_name?: string
   replay_session_id?: string
+  replay_profile?: string
+  runtime_profile?: ReplayRuntimeProfile
   variables?: Record<string, string>
   start_paused?: boolean
   breakpoints?: ScriptDebugBreakpoint[]
@@ -1585,11 +1687,13 @@ export interface ScriptDebugStartResponse {
   replay_session_id: string
   debug_session_id: string
   session: ScriptDebugSession
+  preflight?: ReplayPreflight
   warnings?: string[]
 }
 
 export interface ScriptDebugSessionResponse {
   session: ScriptDebugSession
+  preflight?: ReplayPreflight
   warnings?: string[]
 }
 

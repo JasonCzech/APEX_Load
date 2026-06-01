@@ -430,6 +430,9 @@ export interface ScriptReplaySnapshot {
 }
 
 export interface ScriptReplayActionEvent {
+  event_id?: string
+  action_index?: number
+  event_index?: number
   phase: string
   action_name: string
   action_type: string
@@ -460,9 +463,40 @@ export interface ScriptReplayActionEvent {
   network_entries?: ScriptReplayNetworkEntry[]
   dom_summary?: ScriptReplayDOMSummary
   snapshot?: ScriptReplaySnapshot
+  diagnosis?: {
+    category: string
+    severity: string
+    cause: string
+    evidence?: string
+    action?: string
+    signals?: string[]
+    frame_context?: string
+    suggested_locator?: string
+  }
+  repair_suggestions?: Array<{
+    id: string
+    title: string
+    description: string
+    draft_patch_type: string
+    action?: string
+    confidence?: number
+    fields?: Record<string, string>
+  }>
 }
 
 export interface ScriptReplayReport {
+  replay_session_id?: string
+  script_hash?: string
+  script_revision?: string
+  artifact_manifest?: Record<string, unknown>
+  diagnosis_summary?: {
+    failure_count: number
+    categories?: Record<string, number>
+    first_failure_event_id?: string
+    first_failure_action?: string
+    first_failure_cause?: string
+  }
+  repair_suggestions?: ScriptReplayActionEvent['repair_suggestions']
   group: string
   protocol: string
   started_at: string
@@ -477,6 +511,8 @@ export interface ScriptReplayReport {
 export interface ScriptReplayResponse {
   script_id: string
   replay_session_id: string
+  preflight?: Record<string, unknown>
+  warnings?: string[]
   report: ScriptReplayReport
 }
 

@@ -271,9 +271,11 @@ PUT    /api/v1/scripts/{id}             — Update script
 DELETE /api/v1/scripts/{id}             — Delete script
 PATCH  /api/v1/scripts/{id}/move        — Move script to another folder
 POST   /api/v1/scripts/replay           — Replay a draft script
+POST   /api/v1/scripts/replay/sessions  — Start a unified replay/debug session for a draft script
 POST   /api/v1/scripts/browser-replay/sessions — Start browser replay for a draft script
 POST   /api/v1/scripts/{id}/validate    — Validate script
 POST   /api/v1/scripts/{id}/replay      — Replay a saved script
+POST   /api/v1/scripts/{id}/replay/sessions — Start a unified replay/debug session for a saved script
 POST   /api/v1/scripts/{id}/browser-replay/sessions — Start browser replay for a saved script
 POST   /api/v1/scripts/{id}/export      — Export script JSON to disk
 GET    /api/v1/scripts/{id}/download    — Download script JSON
@@ -294,6 +296,13 @@ POST   /api/v1/scripts/import/wsdl     — Convert WSDL to SOAP DSL
 
 **Browser Replay:**
 ```
+GET    /api/v1/replay/sessions/{session_id}               — Get unified replay session state
+POST   /api/v1/replay/sessions/{session_id}/pause         — Pause unified replay session
+POST   /api/v1/replay/sessions/{session_id}/resume        — Resume unified replay session
+POST   /api/v1/replay/sessions/{session_id}/step          — Step unified replay session
+POST   /api/v1/replay/sessions/{session_id}/stop          — Stop unified replay session
+PATCH  /api/v1/replay/sessions/{session_id}/breakpoints   — Update replay breakpoints
+GET    /api/v1/replay/sessions/{session_id}/export        — Export replay evidence JSON or log
 GET    /api/v1/browser-replay/sessions/{session_id}        — Get browser replay session state
 POST   /api/v1/browser-replay/sessions/{session_id}/pause  — Pause browser replay session
 POST   /api/v1/browser-replay/sessions/{session_id}/resume — Resume browser replay session

@@ -18,6 +18,7 @@ type BrowserReplayStartRequest struct {
 	Browser         *dsl.BrowserConfig     `json:"browser,omitempty"`
 	IgnoreThinkTime *bool                  `json:"ignore_think_time,omitempty"`
 	Script          *dsl.Script            `json:"script,omitempty"`
+	Preflight       *ReplayPreflight       `json:"-"`
 }
 
 func (s *Server) handleStartBrowserReplayDraftScript(w http.ResponseWriter, r *http.Request) {
@@ -71,12 +72,14 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.
 	script = applyBrowserReplayOverrides(script, req)
 	issues := validateScript(script)
 	warnings := validationWarnings(script)
+	preflight := buildReplayPreflight(script, req.Variables, issues, warnings)
 	if len(issues) > 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"script_id": id,
 			"valid":     false,
 			"issues":    issues,
 			"warnings":  warnings,
+			"preflight": preflight,
 		})
 		return
 	}
@@ -85,12 +88,14 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.
 		return
 	}
 
+	req.Preflight = preflight
 	session := s.browserReplay.Start(id, script, req)
 	s.recordAuditEvent(r, "browser_replay.session.start", "success", "browser_replay_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "script_name": script.Name, "status": session.Status, "start_paused": req.StartPaused})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"script_id":         id,
 		"replay_session_id": session.ID,
 		"session":           session,
+		"preflight":         preflight,
 		"warnings":          warnings,
 	})
 }

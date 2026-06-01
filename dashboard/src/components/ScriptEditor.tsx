@@ -5,8 +5,10 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import {
   BrowserReplayEvent,
   BrowserReplayNetworkEntry,
+  ReplayPreflight,
   BrowserReplayReport,
   ScriptDebugBreakpoint,
+  ScriptDebugAction,
   ScriptDebugLogEntry,
   ScriptDebugLogLevel,
   ScriptDebugSession,
@@ -461,6 +463,119 @@ function hasStructuredReplaySnapshot(snapshot?: ReplaySnapshot | null) {
   )
 }
 
+const REPLAY_TEMPLATE_REF_PATTERN = /\{\{\s*(var|env)\.([a-zA-Z0-9_.-]+)/g
+
+function safeParseReplayVariables(text: string): Record<string, string> | undefined {
+  try {
+    return parseReplayVariablesText(text)
+  } catch {
+    return undefined
+  }
+}
+
+function buildLocalReplayPreflight(script: ScriptData, variables?: Record<string, string>): ReplayPreflight {
+  const phases = script as ScriptData & { init?: Action[]; teardown?: Action[] }
+  const orderedActions = [
+    ...(phases.init || []),
+    ...(script.actions || []),
+    ...(phases.teardown || []),
+  ]
+  const availableVariables = new Set<string>([
+    ...Object.keys(variables || {}),
+    ...(script.parameters || []).map(parameter => parameter.name).filter(Boolean),
+  ])
+  const missingVariables = new Set<string>()
+  const requiredSecrets = new Set<string>()
+
+  orderedActions.forEach(action => {
+    const payload = JSON.stringify(action)
+    REPLAY_TEMPLATE_REF_PATTERN.lastIndex = 0
+    let match = REPLAY_TEMPLATE_REF_PATTERN.exec(payload)
+    while (match) {
+      const [, kind, name] = match
+      if (kind === 'var' && !availableVariables.has(name)) {
+        missingVariables.add(name)
+      }
+      if (kind === 'env') {
+        requiredSecrets.add(name)
+      }
+      match = REPLAY_TEMPLATE_REF_PATTERN.exec(payload)
+    }
+    ;(action.extractors || []).forEach(extractor => {
+      if (extractor.name) availableVariables.add(extractor.name)
+    })
+  })
+
+  const dataWarnings = (script.data_sources || [])
+    .filter(source => !source.path && !source.inline_data)
+    .map(source => `${source.name || 'Data source'} needs a file path or inline data.`)
+  const missingVariableList = Array.from(missingVariables).sort()
+  const requiredSecretList = Array.from(requiredSecrets).sort()
+  const browserRequired = script.protocol === 'browser'
+  const runtimePrerequisites = browserRequired
+    ? [
+        `Browser engine: ${script.config.browser?.engine || 'chromium'}`,
+        `Screenshot capture: ${script.config.browser?.capture_screenshots || 'per_action'}`,
+      ]
+    : [`Adapter: ${script.protocol}`]
+
+  return {
+    valid: missingVariableList.length === 0 && dataWarnings.length === 0,
+    action_count: orderedActions.length,
+    expected_action_count: orderedActions.length,
+    data_source_count: script.data_sources?.length || 0,
+    parameter_count: script.parameters?.length || 0,
+    browser_required: browserRequired,
+    missing_variables: missingVariableList,
+    required_secrets: requiredSecretList,
+    runtime_prerequisites: runtimePrerequisites,
+    warnings: dataWarnings,
+    checks: [
+      {
+        id: 'validation',
+        label: 'Script validation',
+        status: script.name && script.actions.length > 0 ? 'pass' : 'fail',
+        detail: script.name && script.actions.length > 0 ? 'Ready' : 'Script name and actions are required.',
+      },
+      {
+        id: 'variables',
+        label: 'Variable readiness',
+        status: missingVariableList.length > 0 ? 'fail' : 'pass',
+        detail: missingVariableList.length > 0 ? missingVariableList.join(', ') : 'All replay variables are seeded or extracted before use.',
+      },
+      {
+        id: 'secrets',
+        label: 'Secret bindings',
+        status: requiredSecretList.length > 0 ? 'warn' : 'pass',
+        detail: requiredSecretList.length > 0 ? requiredSecretList.join(', ') : 'No environment secret references detected.',
+      },
+      {
+        id: 'data_sources',
+        label: 'Data source readiness',
+        status: dataWarnings.length > 0 ? 'fail' : (script.data_sources?.length ? 'warn' : 'pass'),
+        detail: dataWarnings.length > 0 ? dataWarnings.join('; ') : `${script.data_sources?.length || 0} data source${(script.data_sources?.length || 0) === 1 ? '' : 's'} configured.`,
+      },
+      {
+        id: 'runtime',
+        label: 'Runtime prerequisites',
+        status: browserRequired ? 'warn' : 'pass',
+        detail: runtimePrerequisites.join('; '),
+      },
+    ],
+  }
+}
+
+function formatReplayDiagnosisCategory(category?: string) {
+  return (category || 'diagnosis').replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
+}
+
+function replayPreflightStatusLabel(preflight?: ReplayPreflight | null) {
+  if (!preflight) return 'Not checked'
+  if (!preflight.valid) return 'Needs attention'
+  if ((preflight.checks || []).some(check => check.status === 'warn')) return 'Ready with notes'
+  return 'Ready'
+}
+
 function decodeBase64Bytes(value: string): Uint8Array {
   const decoded = atob(value)
   const bytes = new Uint8Array(decoded.length)
@@ -491,7 +606,9 @@ interface ReplayActivityItem {
 interface ReplayWSMessage extends WSMessage {
   replay_session_id?: string
   debug_session_id?: string
+  event_id?: string
   event_index?: number
+  action?: ScriptDebugAction
   event?: ReplayActionEvent
   report?: ReplayReport
   session?: ScriptDebugSession
@@ -1380,15 +1497,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       return
     }
 
-    if (msg.type === 'script_debug_action' && msg.session) {
+    if ((msg.type === 'script_debug_action' || msg.type === 'script_debug_action_started' || msg.type === 'action_started') && (msg.session || msg.action)) {
       const session = msg.session
-      setBrowserReplaySession(session)
-      const currentAction = session.current_action
+      if (session) setBrowserReplaySession(session)
+      const currentAction = msg.action || session?.current_action
       if (currentAction) {
         setReplayActivity(prev => upsertReplayActivity(prev, {
-          id: `ready-${currentAction.phase}-${currentAction.action_index}`,
+          id: msg.type.includes('started') ? `started-${currentAction.phase}-${currentAction.action_index}` : `ready-${currentAction.phase}-${currentAction.action_index}`,
           kind: 'event',
-          title: `Ready: ${currentAction.action_name || 'next action'}`,
+          title: `${msg.type.includes('started') ? 'Started' : 'Ready'}: ${currentAction.action_name || 'next action'}`,
           detail: `${formatDebugPhaseLabel(currentAction.phase)} ${currentAction.action_index + 1}`,
           timestamp: new Date().toISOString(),
         }))
@@ -1396,7 +1513,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       return
     }
 
-    if (msg.type === 'script_debug_event' && msg.event) {
+    if ((msg.type === 'script_debug_event' || msg.type === 'script_debug_action_completed' || msg.type === 'script_debug_action_failed') && msg.event) {
       const replayEvent = msg.event
       if (msg.session) setBrowserReplaySession(msg.session)
       setReplayReport(prev => {
@@ -1532,7 +1649,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       return
     }
 
-    if (msg.type === 'replay_event' && msg.event) {
+    if ((msg.type === 'replay_event' || msg.type === 'action_completed' || msg.type === 'action_failed') && msg.event) {
       const replayEvent = msg.event
       setReplayReport(prev => {
         if (!prev) return prev
@@ -2363,6 +2480,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         breakpoints: debugBreakpoints,
         variables: replaySeedVariables,
       },
+      preflight: browserReplaySession?.preflight || replayPreflight,
+      artifact_manifest: replayReport.artifact_manifest,
+      diagnosis_summary: replayReport.diagnosis_summary,
+      repair_suggestions: replayReport.repair_suggestions,
       session: browserReplaySession,
       report: replayReport,
     }
@@ -2395,6 +2516,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         start_paused: replayOptions.startPaused,
         variables: replaySeedVariables,
       },
+      preflight: browserReplaySession?.preflight || replayPreflight,
+      artifact_manifest: replayReport.artifact_manifest,
+      diagnosis_summary: replayReport.diagnosis_summary,
+      repair_suggestions: replayReport.repair_suggestions,
       session: browserReplaySession,
       report: replayReport,
     }
@@ -2558,6 +2683,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     : null
   const replayVariableDiffs = replayReport
     ? buildReplayVariableDiffs(replaySeedVariables, replayReport.events)
+    : []
+  const replayConfiguredVariables = safeParseReplayVariables(replayOptions.variablesText)
+  const replayPreflight = browserReplaySession?.preflight || buildLocalReplayPreflight(script, replayConfiguredVariables)
+  const replayFailingEventIndex = replayReport?.events.findIndex(event => !event.success) ?? -1
+  const replayFailingEvent = replayReport && replayFailingEventIndex >= 0 ? replayReport.events[replayFailingEventIndex] : null
+  const replayVariableTimeline = replayReport
+    ? replayReport.events.flatMap((event, index) => Object.entries(replayVariableDiffs[index] || {}).map(([name, diff]) => ({
+        key: `${index}-${name}`,
+        name,
+        previous: diff.previous,
+        next: diff.next,
+        action: event.action_name || `Action ${index + 1}`,
+        index,
+      })))
     : []
   const isReplayPaused = browserReplaySession?.status === 'paused'
   const scriptPhases = script as ScriptData & { init?: Action[]; teardown?: Action[] }
@@ -3346,6 +3485,38 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     />
                   </label>
                 </div>
+                <div className={`replay-preflight-card ${replayPreflight.valid ? 'ready' : 'attention'}`}>
+                  <div className="replay-preflight-header">
+                    <div>
+                      <span className="replay-detail-label">Preflight</span>
+                      <strong>{replayPreflightStatusLabel(replayPreflight)}</strong>
+                    </div>
+                    <div className="replay-preflight-meta">
+                      <span>{replayPreflight.action_count} action{replayPreflight.action_count === 1 ? '' : 's'}</span>
+                      <span>{replayPreflight.data_source_count} data source{replayPreflight.data_source_count === 1 ? '' : 's'}</span>
+                      {replayPreflight.browser_required && <span>Browser runtime</span>}
+                    </div>
+                  </div>
+                  <div className="replay-preflight-checks">
+                    {(replayPreflight.checks || []).map(check => (
+                      <div key={check.id} className={`replay-preflight-check ${check.status}`}>
+                        <span>{check.label}</span>
+                        <strong>{check.status === 'pass' ? 'Ready' : check.status === 'warn' ? 'Note' : 'Needs work'}</strong>
+                        {check.detail && <small>{check.detail}</small>}
+                      </div>
+                    ))}
+                  </div>
+                  {((replayPreflight.missing_variables?.length || 0) > 0 || (replayPreflight.missing_secrets?.length || 0) > 0) && (
+                    <div className="replay-preflight-alerts">
+                      {(replayPreflight.missing_variables || []).map(name => (
+                        <span key={`missing-var-${name}`}>Missing variable: {name}</span>
+                      ))}
+                      {(replayPreflight.missing_secrets || []).map(name => (
+                        <span key={`missing-secret-${name}`}>Missing secret: {name}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div className="debug-breakpoint-planner">
                   <div className="debug-breakpoint-header">
                     <div>
@@ -3455,6 +3626,31 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       </div>
                     </div>
                     {replayReport.error && <p className="replay-report-error">{replayReport.error}</p>}
+                    {replayFailingEvent && (
+                      <div className="replay-failure-pin">
+                        <div>
+                          <span className="replay-detail-label">First failing action</span>
+                          <strong>{replayFailingEvent.action_name || `Action ${replayFailingEventIndex + 1}`}</strong>
+                          <p>{replayFailingEvent.diagnosis?.cause || replayFailingEvent.error_message || 'Replay action failed.'}</p>
+                          {replayFailingEvent.diagnosis && (
+                            <div className="replay-diagnosis-chip-row">
+                              <span className="replay-diagnosis-chip">{formatReplayDiagnosisCategory(replayFailingEvent.diagnosis.category)}</span>
+                              {replayFailingEvent.diagnosis.evidence && <span>{replayFailingEvent.diagnosis.evidence}</span>}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost"
+                          onClick={() => {
+                            setDebuggerTab('request')
+                            setExpandedReplayEvent(replayFailingEventIndex)
+                          }}
+                        >
+                          Inspect
+                        </button>
+                      </div>
+                    )}
                     <div className="debugger-tabs" role="tablist" aria-label="Debugger panels">
                       {[
                         ['timeline', 'Timeline'],
@@ -3524,6 +3720,26 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               : 'Replay completed without any extracted or seeded variables.'}
                           </div>
                         )}
+                        {replayVariableTimeline.length > 0 && (
+                          <div className="replay-variable-timeline">
+                            <h5>Variable Timeline</h5>
+                            {replayVariableTimeline.map(item => (
+                              <button
+                                key={item.key}
+                                type="button"
+                                className="replay-variable-timeline-row"
+                                onClick={() => {
+                                  setDebuggerTab('request')
+                                  setExpandedReplayEvent(item.index)
+                                }}
+                              >
+                                <span>{item.name}</span>
+                                <strong>{item.action}</strong>
+                                <small>{item.previous ?? 'unset'} {'->'} {item.next}</small>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                     {debuggerTab === 'raw' && (
@@ -3589,6 +3805,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                 {changedVariables.length > 0 && (
                                   <span className="replay-event-diff-count">{changedVariables.length} variable{changedVariables.length === 1 ? '' : 's'} changed</span>
                                 )}
+                                {event.diagnosis && (
+                                  <span className="replay-diagnosis-chip">{formatReplayDiagnosisCategory(event.diagnosis.category)}</span>
+                                )}
                                 <span className={event.success ? 'text-success' : 'text-danger'}>{event.success ? `HTTP ${event.status_code || 'OK'}` : event.error_message || 'Failed'}</span>
                                 <span>{event.duration_ms.toFixed(1)} ms</span>
                                 <span>{isOpen ? '▾' : '▸'}</span>
@@ -3618,6 +3837,28 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                     </div>
                                   )}
                                 </div>
+                                {event.diagnosis && (
+                                  <div className="replay-diagnosis-panel">
+                                    <div>
+                                      <span className="replay-detail-label">Diagnosis</span>
+                                      <strong>{formatReplayDiagnosisCategory(event.diagnosis.category)}</strong>
+                                      <p>{event.diagnosis.cause}</p>
+                                      {event.diagnosis.evidence && <small>{event.diagnosis.evidence}</small>}
+                                      {event.diagnosis.action && <small>{event.diagnosis.action}</small>}
+                                    </div>
+                                    {(event.repair_suggestions || []).length > 0 && (
+                                      <div className="replay-repair-suggestions">
+                                        <span className="replay-detail-label">Draft repair suggestions</span>
+                                        {(event.repair_suggestions || []).map(suggestion => (
+                                          <div key={suggestion.id} className="replay-repair-suggestion">
+                                            <strong>{suggestion.title}</strong>
+                                            <span>{suggestion.description}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                                 {hasBrowserReplayArtifacts(event) && (
                                   <div className="replay-browser-grid">
                                     {(() => {

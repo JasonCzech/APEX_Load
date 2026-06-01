@@ -460,11 +460,12 @@ func TestHandleReplayDraftScriptBroadcastsProgress(t *testing.T) {
 		t.Fatalf("replay_session_id = %q, want session-123", payload.ReplaySessionID)
 	}
 
-	types := make([]string, 0, 3)
-	for i := 0; i < 3; i++ {
+	types := make([]string, 0, 5)
+	for i := 0; i < 5; i++ {
 		msg := <-server.hub.broadcast
 		var decoded struct {
 			Type            string `json:"type"`
+			EventID         string `json:"event_id"`
 			ReplaySessionID string `json:"replay_session_id"`
 			ScriptID        string `json:"script_id"`
 			EventIndex      *int   `json:"event_index,omitempty"`
@@ -479,16 +480,25 @@ func TestHandleReplayDraftScriptBroadcastsProgress(t *testing.T) {
 			t.Fatalf("broadcast script_id = %q, want empty", decoded.ScriptID)
 		}
 		types = append(types, decoded.Type)
-		if decoded.Type == engine.ReplayProgressEventRun {
+		if decoded.Type == engine.ReplayProgressEventRun || decoded.Type == engine.ReplayProgressActionStarted || decoded.Type == engine.ReplayProgressActionCompleted {
 			if decoded.EventIndex == nil || *decoded.EventIndex != 0 {
 				t.Fatalf("event_index = %#v, want 0", decoded.EventIndex)
+			}
+			if decoded.EventID == "" {
+				t.Fatalf("event_id is empty for %s", decoded.Type)
 			}
 		} else if decoded.EventIndex != nil {
 			t.Fatalf("event_index should be omitted for %s, got %#v", decoded.Type, decoded.EventIndex)
 		}
 	}
 
-	if !slices.Equal(types, []string{engine.ReplayProgressStarted, engine.ReplayProgressEventRun, engine.ReplayProgressComplete}) {
+	if !slices.Equal(types, []string{
+		engine.ReplayProgressStarted,
+		engine.ReplayProgressActionStarted,
+		engine.ReplayProgressActionCompleted,
+		engine.ReplayProgressEventRun,
+		engine.ReplayProgressComplete,
+	}) {
 		t.Fatalf("broadcast types = %#v", types)
 	}
 }
