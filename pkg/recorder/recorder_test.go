@@ -1,6 +1,9 @@
 package recorder
 
 import (
+	"bytes"
+	"compress/gzip"
+	"compress/zlib"
 	"fmt"
 	"io"
 	"net/http"
@@ -395,6 +398,101 @@ func TestIsStaticResource(t *testing.T) {
 		if got != tt.expect {
 			t.Errorf("isStaticResource(%s) = %v, want %v", tt.path, got, tt.expect)
 		}
+	}
+}
+
+func gzipBytes(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	if _, err := zw.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func zlibBytes(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zlib.NewWriter(&buf)
+	if _, err := zw.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestRecordRequestDecompressesResponseBody(t *testing.T) {
+	rec := New(":0")
+	session, err := rec.StartSession("test", "Decompress Test", SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	payload := []byte(`{"token":"session-token-abcdef123456"}`)
+
+	cases := []struct {
+		name     string
+		encoding string
+		body     []byte
+	}{
+		{"gzip", "gzip", gzipBytes(t, payload)},
+		{"deflate-zlib", "deflate", zlibBytes(t, payload)},
+	}
+
+	for i, tc := range cases {
+		req, _ := http.NewRequest("GET", fmt.Sprintf("http://example.com/api/login%d", i), nil)
+		resp := &http.Response{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Type":     []string{"application/json"},
+				"Content-Encoding": []string{tc.encoding},
+				"Content-Length":   []string{fmt.Sprintf("%d", len(tc.body))},
+			},
+		}
+		rec.recordRequest(session, req, nil, resp, tc.body, 10*time.Millisecond)
+
+		recorded := session.Requests[i]
+		if recorded.ResponseBody != string(payload) {
+			t.Fatalf("%s: expected decompressed body %q, got %q", tc.name, payload, recorded.ResponseBody)
+		}
+		if recorded.ResponseBodySizeBytes != len(payload) {
+			t.Fatalf("%s: expected size %d, got %d", tc.name, len(payload), recorded.ResponseBodySizeBytes)
+		}
+		if _, ok := recorded.ResponseHeaders["Content-Encoding"]; ok {
+			t.Fatalf("%s: expected Content-Encoding header to be stripped", tc.name)
+		}
+		if _, ok := recorded.ResponseHeaders["Content-Length"]; ok {
+			t.Fatalf("%s: expected Content-Length header to be stripped", tc.name)
+		}
+	}
+}
+
+func TestDecodeBody(t *testing.T) {
+	payload := []byte("hello world correlation payload")
+
+	if got, ok := decodeBody(gzipBytes(t, payload), "gzip", defaultBodyCaptureLimitBytes); !ok || string(got) != string(payload) {
+		t.Fatalf("gzip decode failed: ok=%v got=%q", ok, got)
+	}
+	if got, ok := decodeBody(zlibBytes(t, payload), "deflate", defaultBodyCaptureLimitBytes); !ok || string(got) != string(payload) {
+		t.Fatalf("deflate decode failed: ok=%v got=%q", ok, got)
+	}
+	// Unencoded body is returned untouched.
+	if got, ok := decodeBody(payload, "", defaultBodyCaptureLimitBytes); ok || string(got) != string(payload) {
+		t.Fatalf("identity decode should be a no-op: ok=%v got=%q", ok, got)
+	}
+	// Unsupported encoding (brotli) falls back to raw without error.
+	if got, ok := decodeBody(payload, "br", defaultBodyCaptureLimitBytes); ok || string(got) != string(payload) {
+		t.Fatalf("brotli should fall back to raw: ok=%v got=%q", ok, got)
+	}
+	// Malformed gzip falls back to raw without panicking.
+	if got, ok := decodeBody([]byte("not actually gzip"), "gzip", defaultBodyCaptureLimitBytes); ok || string(got) != "not actually gzip" {
+		t.Fatalf("malformed gzip should fall back to raw: ok=%v got=%q", ok, got)
 	}
 }
 

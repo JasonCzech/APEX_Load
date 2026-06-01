@@ -118,14 +118,14 @@ export function useRecorderApi() {
   )
 
   const convertRecording = useCallback(
-    (id: string, name?: string) =>
-      request<RecorderImportResult>(`/recorder/${id}/convert`, { method: 'POST', body: JSON.stringify({ name }) }),
+    (id: string, name?: string, parameterize?: boolean) =>
+      request<RecorderImportResult>(`/recorder/${id}/convert`, { method: 'POST', body: JSON.stringify({ name, parameterize }) }),
     [],
   )
 
   const previewRecordingConversion = useCallback(
-    (id: string, name?: string) =>
-      request<RecorderImportResult>(`/recorder/${id}/convert/preview`, { method: 'POST', body: JSON.stringify({ name }) }),
+    (id: string, name?: string, parameterize?: boolean) =>
+      request<RecorderImportResult>(`/recorder/${id}/convert/preview`, { method: 'POST', body: JSON.stringify({ name, parameterize }) }),
     [],
   )
 

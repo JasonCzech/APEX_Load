@@ -158,11 +158,12 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req struct {
-		Name string `json:"name"`
+		Name         string `json:"name"`
+		Parameterize bool   `json:"parameterize"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
-	result := recorder.ConvertSession(session, req.Name)
+	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize})
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 	}
@@ -185,11 +186,12 @@ func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http
 	}
 
 	var req struct {
-		Name string `json:"name"`
+		Name         string `json:"name"`
+		Parameterize bool   `json:"parameterize"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
-	result := recorder.ConvertSession(session, req.Name)
+	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize})
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 	}

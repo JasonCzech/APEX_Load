@@ -161,7 +161,7 @@ describe('RecordingStudio', () => {
 
     await flushPromises()
 
-    expect(apiMock.previewRecordingConversion).toHaveBeenCalledWith('rec-1', 'Checkout Capture')
+    expect(apiMock.previewRecordingConversion).toHaveBeenCalledWith('rec-1', 'Checkout Capture', false)
     expect(container.textContent).toContain('Preview generated with 1 actions and 1 correlations')
     expect(container.textContent).toContain('Checkout Preview')
     expect(container.textContent).toContain('review dynamic headers')
@@ -225,6 +225,34 @@ describe('RecordingStudio', () => {
         protocol: 'http',
       })],
     }))
+  })
+
+  it('passes the parameterize option through when toggled', async () => {
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    const toggle = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(
+      input => (input as HTMLInputElement).parentElement?.textContent?.includes('Parameterize input values'),
+    ) as HTMLInputElement | undefined
+    expect(toggle).toBeDefined()
+    if (!toggle) return
+
+    await act(async () => {
+      toggle.click()
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Convert to Script')
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.convertRecording).toHaveBeenCalledWith('rec-1', 'Checkout Capture', true)
   })
 })
 

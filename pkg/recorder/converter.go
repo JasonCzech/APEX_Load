@@ -2,7 +2,9 @@ package recorder
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,7 +27,21 @@ type ConvertResult struct {
 	Warnings     []string      `json:"warnings,omitempty"`
 }
 
+// ConvertOptions toggles optional, opt-in conversion behaviors.
+type ConvertOptions struct {
+	// Parameterize promotes recorded input values (form fields / query params)
+	// into a generated data source so the script is data-driven instead of
+	// replaying hard-coded values.
+	Parameterize bool
+}
+
+// ConvertSession converts a recording with default options.
 func ConvertSession(session *Session, name string) *ConvertResult {
+	return ConvertSessionWithOptions(session, name, ConvertOptions{})
+}
+
+// ConvertSessionWithOptions converts a recording, applying the supplied options.
+func ConvertSessionWithOptions(session *Session, name string, opts ConvertOptions) *ConvertResult {
 	if name == "" {
 		name = session.Name
 	}
@@ -95,6 +111,14 @@ func ConvertSession(session *Session, name string) *ConvertResult {
 			Target: target,
 		}
 
+		// Carry the curated transaction name through to the engine, which groups
+		// metrics by action metadata "source_transaction" (see
+		// engine.applyProtocolResultSourceMetadata). Without this the transaction
+		// names users assign in the recording studio are silently dropped.
+		if txn := strings.TrimSpace(req.TransactionName); txn != "" {
+			action.Metadata = map[string]any{"source_transaction": txn}
+		}
+
 		headers := filterRecordedHeaders(req.Headers)
 		if len(headers) > 0 {
 			action.Headers = headers
@@ -134,6 +158,9 @@ func ConvertSession(session *Session, name string) *ConvertResult {
 
 	if len(script.Actions) == 0 {
 		result.Warnings = append(result.Warnings, "no non-static requests found in recording")
+	}
+	if opts.Parameterize {
+		result.Warnings = append(result.Warnings, parameterizeInputs(script)...)
 	}
 	if len(recordedResourceURLs) > 0 {
 		script.Metadata = &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
@@ -212,6 +239,17 @@ var (
 		"x-csrf-token", "x-xsrf-token", "set-cookie", "location",
 		"x-request-id", "x-correlation-id", "authorization",
 	}
+	// HTML hidden-field tokens (CSRF, ASP.NET __VIEWSTATE / __RequestVerificationToken,
+	// OAuth state, etc.) are a staple of recorded form flows that the JSON patterns miss.
+	// Group order differs between the two attribute orderings, tracked by nameGroup/valueGroup.
+	htmlInputPatterns = []struct {
+		re         *regexp.Regexp
+		nameGroup  int
+		valueGroup int
+	}{
+		{regexp.MustCompile(`(?i)<input[^>]*\bname="([A-Za-z0-9_.\-\[\]]*(?:csrf|xsrf|token|nonce|state|viewstate|authenticity)[A-Za-z0-9_.\-\[\]]*)"[^>]*\bvalue="([^"]{4,})"`), 1, 2},
+		{regexp.MustCompile(`(?i)<input[^>]*\bvalue="([^"]{4,})"[^>]*\bname="([A-Za-z0-9_.\-\[\]]*(?:csrf|xsrf|token|nonce|state|viewstate|authenticity)[A-Za-z0-9_.\-\[\]]*)"`), 2, 1},
+	}
 )
 
 func extractDynamicValues(req RecordedRequest) []candidate {
@@ -262,8 +300,48 @@ func extractDynamicValues(req RecordedRequest) []candidate {
 		}
 	}
 
+	// HTML hidden form tokens. Emit a regex extractor (robust to attribute
+	// spacing/ordering) that the HTTP protocol's body extractor understands.
+	for _, pat := range htmlInputPatterns {
+		matches := pat.re.FindAllStringSubmatch(req.ResponseBody, -1)
+		for _, m := range matches {
+			if len(m) <= pat.valueGroup || len(m) <= pat.nameGroup {
+				continue
+			}
+			field := m[pat.nameGroup]
+			value := m[pat.valueGroup]
+			if value == "" {
+				continue
+			}
+			var expression string
+			if pat.nameGroup < pat.valueGroup {
+				expression = fmt.Sprintf(`name="%s"[^>]*value="([^"]+)"`, regexp.QuoteMeta(field))
+			} else {
+				expression = fmt.Sprintf(`value="([^"]+)"[^>]*name="%s"`, regexp.QuoteMeta(field))
+			}
+			candidates = append(candidates, candidate{
+				name:        "corr_" + slugifyCorrelationName(field),
+				value:       value,
+				source:      "body",
+				extractType: "regex",
+				expression:  expression,
+			})
+		}
+	}
+
 	return candidates
 }
+
+func slugifyCorrelationName(field string) string {
+	slug := nonWordCorrelationChars.ReplaceAllString(strings.ToLower(field), "_")
+	slug = strings.Trim(slug, "_")
+	if slug == "" {
+		return "value"
+	}
+	return slug
+}
+
+var nonWordCorrelationChars = regexp.MustCompile(`[^a-z0-9]+`)
 
 func buildCorrelationMap(correlations []Correlation) map[string]string {
 	m := make(map[string]string)
@@ -274,10 +352,104 @@ func buildCorrelationMap(correlations []Correlation) map[string]string {
 }
 
 func applyCorrelationVars(s string, corrMap map[string]string) string {
-	for value, varRef := range corrMap {
-		s = strings.ReplaceAll(s, value, varRef)
+	// Replace longest values first so a short correlation value (e.g. a numeric
+	// id) can't clobber a substring of a longer one that shares a prefix.
+	values := make([]string, 0, len(corrMap))
+	for value := range corrMap {
+		if value == "" {
+			continue
+		}
+		values = append(values, value)
+	}
+	sort.Slice(values, func(i, j int) bool { return len(values[i]) > len(values[j]) })
+	for _, value := range values {
+		s = strings.ReplaceAll(s, value, corrMap[value])
 	}
 	return s
+}
+
+const parameterizedDataSourceName = "recorded_inputs"
+
+// parameterizableField matches form/query field names that typically hold
+// user-supplied input worth turning into data-driven parameters.
+var parameterizableField = regexp.MustCompile(`(?i)\b(user(name)?|email|login|pass(word|wd)?|search|query|q|first[_-]?name|last[_-]?name|full[_-]?name|phone|mobile|zip|postal[_-]?code|city|address|account|customer)\b`)
+
+// keyValuePair captures `key=value` segments in query strings and
+// form-urlencoded bodies, preserving the leading delimiter so it can be
+// re-emitted unchanged.
+var keyValuePair = regexp.MustCompile(`([?&]|^)([A-Za-z0-9_.\-\[\]]+)=([^&#\s"']+)`)
+
+// parameterizeInputs promotes recorded input values into a generated data
+// source and rewrites the occurrences to {{data.recorded_inputs.<col>}}. It runs
+// after correlation replacement so values already turned into {{var.*}} are left
+// alone. Returns warnings describing what was parameterized.
+func parameterizeInputs(script *dsl.Script) []string {
+	columns := make([]string, 0)
+	sampleValues := make(map[string]string)
+	seen := make(map[string]bool)
+
+	rewrite := func(s string) string {
+		return keyValuePair.ReplaceAllStringFunc(s, func(segment string) string {
+			m := keyValuePair.FindStringSubmatch(segment)
+			if m == nil {
+				return segment
+			}
+			prefix, key, value := m[1], m[2], m[3]
+			if strings.Contains(value, "{{") || !parameterizableField.MatchString(key) {
+				return segment
+			}
+			col := slugifyCorrelationName(key)
+			if col == "" {
+				return segment
+			}
+			if !seen[col] {
+				seen[col] = true
+				columns = append(columns, col)
+				decoded, err := url.QueryUnescape(value)
+				if err != nil {
+					decoded = value
+				}
+				sampleValues[col] = decoded
+			}
+			return prefix + key + "={{data." + parameterizedDataSourceName + "." + col + "}}"
+		})
+	}
+
+	for i := range script.Actions {
+		script.Actions[i].Target = rewrite(script.Actions[i].Target)
+		if script.Actions[i].Body != "" {
+			script.Actions[i].Body = rewrite(script.Actions[i].Body)
+		}
+	}
+
+	if len(columns) == 0 {
+		return nil
+	}
+
+	header := strings.Join(columns, ",")
+	row := make([]string, len(columns))
+	for i, col := range columns {
+		row[i] = csvEscapeField(sampleValues[col])
+	}
+	script.DataSources = append(script.DataSources, dsl.DataSource{
+		Name:           parameterizedDataSourceName,
+		Type:           "csv",
+		Strategy:       "sequential",
+		FirstRowHeader: true,
+		InlineData:     header + "\n" + strings.Join(row, ","),
+	})
+
+	return []string{fmt.Sprintf(
+		"Parameterized %d recorded input field(s) into data source %q (%s). Review the sample values and add rows before running at load.",
+		len(columns), parameterizedDataSourceName, strings.Join(columns, ", "),
+	)}
+}
+
+func csvEscapeField(value string) string {
+	if strings.ContainsAny(value, ",\"\n\r") {
+		return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
+	}
+	return value
 }
 
 func filterRecordedHeaders(headers map[string]string) map[string]string {

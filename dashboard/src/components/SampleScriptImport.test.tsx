@@ -248,7 +248,8 @@ describe('SampleScriptImport', () => {
     expect(container.textContent).toContain('Import Java over HTTP Samples')
     expect(container.textContent).toContain('base64-encoded serialized Java payloads')
     expect(container.textContent).not.toContain('REST JSON')
-    expect(container.textContent).not.toContain('HAR / HAR Entry')
+    // HAR is now an accepted Java-over-HTTP source format.
+    expect(container.textContent).toContain('HAR / HAR Entry')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
     expect(convertButton).toBeDefined()
@@ -294,6 +295,38 @@ describe('SampleScriptImport', () => {
         protocol: 'java_http',
       })],
     }))
+  })
+
+  it('warns when a Java-over-HTTP body is base64 but not a serialized object stream', async () => {
+    apiMock.importSample.mockResolvedValueOnce({
+      script: {
+        name: 'java_call',
+        protocol: 'http',
+        config: { base_url: 'https://api.example.com' },
+        actions: [
+          // Valid base64, but decodes to "hello world!" — not a Java serialized stream.
+          { name: '01 - POST java session', body: 'aGVsbG8gd29ybGQh', extractors: [] },
+        ],
+      },
+      warnings: [],
+      correlations: [],
+      stats: { format: 'raw_http', total_requests: 1, converted_actions: 1, assertions: 0, extractors: 0, correlations_detected: 0 },
+    })
+
+    await act(async () => {
+      root.render(<SampleScriptImport preset="java-http" />)
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('do not decode to a Java serialized object stream')
   })
 
   it('passes the active project id into sample conversion previews', async () => {

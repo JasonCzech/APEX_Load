@@ -101,6 +101,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
     excluded: false,
   })
   const [showSetup, setShowSetup] = useState(true)
+  const [parameterizeInputs, setParameterizeInputs] = useState(false)
   const convertTask = useAsyncTask<RecorderImportResult>()
 
   const proxyPort = (proxyAddr || ':8081').split(':').pop() || '8081'
@@ -256,7 +257,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   const handlePreviewConversion = async (session: RecordingSession) => {
     try {
       const result = await convertTask.run(
-        () => api.previewRecordingConversion(session.id, session.name),
+        () => api.previewRecordingConversion(session.id, session.name, parameterizeInputs),
         { clearValue: true },
       )
       showFeedback(`Preview generated with ${result.script?.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`)
@@ -284,7 +285,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   const handleConvert = async (session: RecordingSession) => {
     try {
       const result = await convertTask.run(
-        () => api.convertRecording(session.id, session.name),
+        () => api.convertRecording(session.id, session.name, parameterizeInputs),
         { clearValue: true },
       )
       showFeedback(`Script "${result.script?.name || session.name}" created with ${result.correlations?.length || 0} correlations detected`)
@@ -550,6 +551,14 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
       {stoppedSessions.length > 0 && (
         <div className="rec-sessions-section">
           <h3 className="rec-section-title">Recorded Sessions</h3>
+          <label className="rec-convert-option">
+            <input
+              type="checkbox"
+              checked={parameterizeInputs}
+              onChange={e => setParameterizeInputs(e.target.checked)}
+            />
+            Parameterize input values (promote recorded form/query inputs into a data source)
+          </label>
           <div className="rec-sessions-list">
             {stoppedSessions.map(session => (
               <div

@@ -257,6 +257,16 @@
   margin-bottom: 16px;
 }
 
+.rec-convert-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  cursor: pointer;
+}
+
 .rec-live-dot {
   width: 8px;
   height: 8px;

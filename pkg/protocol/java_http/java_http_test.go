@@ -164,6 +164,74 @@ func TestResolveJavaHTTPURLTrimsUnresolvedLeadingTemplateBase(t *testing.T) {
 	}
 }
 
+func TestJavaHTTPResponseMappingExtractsFromRawPayload(t *testing.T) {
+	// A Java serialized stream carries its string fields as ASCII, so a regex
+	// mapping can pull a named value out of the opaque payload for correlation.
+	responsePayload := append([]byte{0xac, 0xed, 0x00, 0x05}, []byte(`sessionId=sess-abc-987;ok`)...)
+	requestBase64 := base64.StdEncoding.EncodeToString([]byte{0xac, 0xed, 0x00, 0x05})
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(responsePayload)
+	}))
+	defer ts.Close()
+
+	p := &JavaHTTP{}
+	if err := p.Init(context.Background(), map[string]any{
+		"base_url":                         ts.URL,
+		"java_http_codec":                  supportedCodec,
+		"java_http_helper_mode":            "embedded",
+		"java_http_body_encoding":          "base64",
+		"java_http_preserve_binary_result": true,
+		"java_http_response_mapping": map[string]string{
+			"session_id": `sessionId=([^;]+)`,
+		},
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	result, err := p.Execute(context.Background(), &protocol.Action{
+		Name:   "java-call",
+		Method: "POST",
+		Target: "/invoke",
+		Body:   []byte(requestBase64),
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if got := result.Extractions["session_id"]; got != "sess-abc-987" {
+		t.Fatalf("session_id extraction = %q, want sess-abc-987", got)
+	}
+	// Response body is still preserved as opaque base64.
+	if result.ResponseBody != base64.StdEncoding.EncodeToString(responsePayload) {
+		t.Fatalf("response body not preserved as base64: %q", result.ResponseBody)
+	}
+}
+
+func TestJavaHTTPResponseMappingEmptyIsNoop(t *testing.T) {
+	responsePayload := []byte{0xac, 0xed, 0x00, 0x05, 'o', 'k'}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(responsePayload)
+	}))
+	defer ts.Close()
+
+	p := &JavaHTTP{}
+	if err := p.Init(context.Background(), map[string]any{
+		"base_url":                ts.URL,
+		"java_http_codec":         supportedCodec,
+		"java_http_body_encoding": "base64",
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	result, err := p.Execute(context.Background(), &protocol.Action{Name: "c", Method: "POST", Target: "/x", Body: []byte(base64.StdEncoding.EncodeToString([]byte{0xac, 0xed}))})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	// Only the standard codec/helper extractions are present.
+	if len(result.Extractions) != 2 {
+		t.Fatalf("expected only the 2 standard extractions, got %#v", result.Extractions)
+	}
+}
+
 func TestJavaHTTPInitAllowsSidecarHelperMode(t *testing.T) {
 	p := &JavaHTTP{}
 	if err := p.Init(context.Background(), map[string]any{

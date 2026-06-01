@@ -1,6 +1,10 @@
 package recorder
 
 import (
+	"bytes"
+	"compress/flate"
+	"compress/gzip"
+	"compress/zlib"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
@@ -475,10 +479,22 @@ func (r *Recorder) recordRequest(s *Session, req *http.Request, reqBody []byte, 
 	headersMulti := sanitizeHeaders(req.Header, s.Filters.RedactHeaders, true)
 	headers := firstHeaderValues(headersMulti)
 	respHeadersMulti := sanitizeHeaders(resp.Header, s.Filters.RedactHeaders, false)
-	respHeaders := firstHeaderValues(respHeadersMulti)
 
 	ct := resp.Header.Get("Content-Type")
-	respBodyStr, respBodyTruncated := capturedBody(respBody, ct, s.Filters.BodyCaptureLimitBytes)
+	// Decompress the captured response body so correlation/extraction works against
+	// real sites (the proxy forwards the browser's Accept-Encoding upstream, so Go's
+	// transport does not auto-decompress). The bytes written back to the browser are
+	// untouched — only the stored copy is decoded. Drop the now-stale encoding/length
+	// headers so the generated script doesn't claim an encoding it no longer carries.
+	respBodyForCapture := respBody
+	if decoded, ok := decodeBody(respBody, resp.Header.Get("Content-Encoding"), s.Filters.BodyCaptureLimitBytes); ok {
+		respBodyForCapture = decoded
+		delete(respHeadersMulti, "Content-Encoding")
+		delete(respHeadersMulti, "Content-Length")
+	}
+	respHeaders := firstHeaderValues(respHeadersMulti)
+
+	respBodyStr, respBodyTruncated := capturedBody(respBodyForCapture, ct, s.Filters.BodyCaptureLimitBytes)
 	reqBodyStr, reqBodyTruncated := capturedBody(reqBody, req.Header.Get("Content-Type"), s.Filters.BodyCaptureLimitBytes)
 
 	if s.BaseURL == "" && parsed != nil {
@@ -504,7 +520,7 @@ func (r *Recorder) recordRequest(s *Session, req *http.Request, reqBody []byte, 
 		StatusCode:            resp.StatusCode,
 		ResponseTimeMs:        float64(elapsed.Microseconds()) / 1000.0,
 		ResponseBody:          respBodyStr,
-		ResponseBodySizeBytes: len(respBody),
+		ResponseBodySizeBytes: len(respBodyForCapture),
 		ResponseBodyTruncated: respBodyTruncated,
 		ResponseHeaders:       respHeaders,
 		ResponseHeadersMulti:  respHeadersMulti,
@@ -565,6 +581,56 @@ func firstHeaderValues(headers map[string][]string) map[string]string {
 		}
 	}
 	return result
+}
+
+// decodeBody decompresses a captured response body according to its
+// Content-Encoding. It returns (decoded, true) when it successfully applied a
+// known encoding, or (raw, false) when the body is unencoded or uses an
+// encoding we can't decode (e.g. brotli) — callers keep the raw bytes in that
+// case. Decompression is bounded by limit (+1 so capturedBody can still flag
+// truncation) to guard against decompression bombs.
+func decodeBody(raw []byte, encoding string, limit int) ([]byte, bool) {
+	enc := strings.ToLower(strings.TrimSpace(encoding))
+	// Multiple encodings are applied in order; the outermost (last) is what we
+	// see on the wire, so decode that one.
+	if idx := strings.LastIndex(enc, ","); idx >= 0 {
+		enc = strings.TrimSpace(enc[idx+1:])
+	}
+	if len(raw) == 0 || enc == "" || enc == "identity" {
+		return raw, false
+	}
+	if limit <= 0 {
+		limit = defaultBodyCaptureLimitBytes
+	}
+
+	var reader io.Reader
+	switch enc {
+	case "gzip", "x-gzip":
+		zr, err := gzip.NewReader(bytes.NewReader(raw))
+		if err != nil {
+			return raw, false
+		}
+		defer zr.Close()
+		reader = zr
+	case "deflate":
+		// "deflate" is nominally zlib-wrapped, but some servers send raw DEFLATE.
+		if zr, err := zlib.NewReader(bytes.NewReader(raw)); err == nil {
+			defer zr.Close()
+			reader = zr
+		} else {
+			fr := flate.NewReader(bytes.NewReader(raw))
+			defer fr.Close()
+			reader = fr
+		}
+	default:
+		return raw, false
+	}
+
+	decoded, err := io.ReadAll(io.LimitReader(reader, int64(limit)+1))
+	if len(decoded) == 0 && err != nil {
+		return raw, false
+	}
+	return decoded, true
 }
 
 func capturedBody(body []byte, contentType string, limit int) (string, bool) {
