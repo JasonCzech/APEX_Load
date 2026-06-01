@@ -125,8 +125,12 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		}
 
 		if req.Body != "" {
-			body := applyCorrelationVars(req.Body, corrMap)
+			body := req.Body
+			if req.BodyEncoding == "" {
+				body = applyCorrelationVars(body, corrMap)
+			}
 			action.Body = body
+			action.BodyEncoding = req.BodyEncoding
 		}
 
 		for _, corr := range correlations {

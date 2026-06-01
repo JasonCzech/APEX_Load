@@ -447,6 +447,53 @@ func TestConvertHARDecodesBase64Bodies(t *testing.T) {
 	}
 }
 
+func TestConvertHARPreservesBinaryPostDataAsBase64(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {
+				"entries": [
+					{
+						"request": {
+							"method": "POST",
+							"url": "https://api.example.com/v1/upload",
+							"headers": [{"name":"Content-Type","value":"application/octet-stream"}],
+							"postData": {
+								"mimeType": "application/octet-stream",
+								"encoding": "base64",
+								"text": "//79AA=="
+							}
+						},
+						"response": {
+							"status": 201,
+							"headers": [],
+							"content": {"text": "{}"}
+						}
+					}
+				]
+			}
+		}`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
+	}
+	action := result.Script.Actions[0]
+	if action.BodyEncoding != "base64" {
+		t.Fatalf("body encoding = %q, want base64", action.BodyEncoding)
+	}
+	if action.Body != "//79AA==" {
+		t.Fatalf("body = %q, want preserved base64 payload", action.Body)
+	}
+	if strings.Contains(action.Body, "{{binary.") {
+		t.Fatalf("body = %q, should not use binary placeholder", action.Body)
+	}
+}
+
 func TestConvertHARPreservesFormParamsCookiesAndDuplicateHeaders(t *testing.T) {
 	sanitizeSensitive := false
 	inferExtractors := false

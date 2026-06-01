@@ -68,6 +68,7 @@ type exchange struct {
 	URL          string
 	Headers      map[string]string
 	Body         string
+	BodyEncoding string
 	Response     *response
 	StartedAt    time.Time
 	HasStartedAt bool
@@ -221,20 +222,23 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 
 		body := ex.Body
-		if sanitizeSensitive {
+		if sanitizeSensitive && ex.BodyEncoding == "" {
 			body = sanitizeBody(body)
 		}
-		body = applyCorrelationVars(body, correlationVars)
+		if ex.BodyEncoding == "" {
+			body = applyCorrelationVars(body, correlationVars)
+		}
 		target = applyCorrelationVars(target, correlationVars)
 		headers = applyCorrelationVarsToHeaders(headers, correlationVars)
 
 		action := dsl.Action{
-			Name:    actionName(idx, ex.Method, ex.URL),
-			Type:    "request",
-			Method:  strings.ToUpper(ex.Method),
-			Target:  target,
-			Headers: headers,
-			Body:    body,
+			Name:         actionName(idx, ex.Method, ex.URL),
+			Type:         "request",
+			Method:       strings.ToUpper(ex.Method),
+			Target:       target,
+			Headers:      headers,
+			Body:         body,
+			BodyEncoding: ex.BodyEncoding,
 		}
 		if ex.TimeoutMs > 0 {
 			action.TimeoutMs = ex.TimeoutMs
@@ -1318,12 +1322,14 @@ func parseHARItem(item map[string]any, diagnostics *diag.Collector, index int) (
 		return exchange{}, errors.New("HAR entry is missing request")
 	}
 	location := fmt.Sprintf("HAR entry %d", index+1)
+	body, bodyEncoding := harBody(requestData, diagnostics, location)
 	ex := exchange{
-		Method:     strings.ToUpper(stringValue(requestData["method"])),
-		URL:        stringValue(requestData["url"]),
-		Body:       harBody(requestData, diagnostics, location),
-		Headers:    headerListToMap(requestData["headers"], diagnostics, location),
-		DurationMs: floatValue(item["time"]),
+		Method:       strings.ToUpper(stringValue(requestData["method"])),
+		URL:          stringValue(requestData["url"]),
+		Body:         body,
+		BodyEncoding: bodyEncoding,
+		Headers:      headerListToMap(requestData["headers"], diagnostics, location),
+		DurationMs:   floatValue(item["time"]),
 	}
 	if ex.Headers == nil {
 		ex.Headers = map[string]string{}
@@ -1839,14 +1845,14 @@ func headerListToMap(value any, diagnostics *diag.Collector, location string) ma
 	return result
 }
 
-func harBody(requestData map[string]any, diagnostics *diag.Collector, location string) string {
+func harBody(requestData map[string]any, diagnostics *diag.Collector, location string) (string, string) {
 	if postData, ok := requestData["postData"].(map[string]any); ok {
 		if text := bodyValue(postData["text"]); text != "" {
-			return decodeHARText(text, stringValue(postData["encoding"]), diagnostics, location, "request body")
+			return decodeHARRequestBody(text, stringValue(postData["encoding"]), diagnostics, location)
 		}
-		return harParamsBody(postData, diagnostics, location)
+		return harParamsBody(postData, diagnostics, location), ""
 	}
-	return ""
+	return "", ""
 }
 
 func decodeHARText(text string, encoding string, diagnostics *diag.Collector, location string, label string) string {
@@ -1864,6 +1870,22 @@ func decodeHARText(text string, encoding string, diagnostics *diag.Collector, lo
 		return placeholder
 	}
 	return string(decoded)
+}
+
+func decodeHARRequestBody(text string, encoding string, diagnostics *diag.Collector, location string) (string, string) {
+	if !strings.EqualFold(strings.TrimSpace(encoding), "base64") {
+		return text, ""
+	}
+	decoded, err := decodeBase64Text(text)
+	if err != nil {
+		diagnostics.Add(diag.Warning, "HAR base64 content", location, "request body is marked base64 but could not be decoded; original text was preserved")
+		return text, ""
+	}
+	if !utf8.Valid(decoded) {
+		diagnostics.Add(diag.Info, "HAR base64 content", location, "request body decoded to non-UTF-8 bytes and was preserved as base64 for replay")
+		return base64.StdEncoding.EncodeToString(decoded), "base64"
+	}
+	return string(decoded), ""
 }
 
 func decodeBase64Text(value string) ([]byte, error) {

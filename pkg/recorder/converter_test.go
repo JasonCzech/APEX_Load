@@ -92,6 +92,39 @@ func TestConvertSession_CustomName(t *testing.T) {
 	}
 }
 
+func TestConvertSession_CarriesBinaryBodyEncoding(t *testing.T) {
+	s := &Session{
+		ID:      "test",
+		Name:    "Binary Upload",
+		BaseURL: "http://example.com",
+		Requests: []RecordedRequest{
+			{
+				Seq:          1,
+				Method:       "POST",
+				URL:          "http://example.com/api/upload",
+				Path:         "/api/upload",
+				Host:         "example.com",
+				Body:         "AP8QgA==",
+				BodyEncoding: "base64",
+				ContentType:  "application/octet-stream",
+				StatusCode:   201,
+			},
+		},
+	}
+
+	result := ConvertSession(s, "")
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("expected 1 action, got %d", len(result.Script.Actions))
+	}
+	action := result.Script.Actions[0]
+	if action.Body != "AP8QgA==" {
+		t.Fatalf("body = %q, want base64 payload", action.Body)
+	}
+	if action.BodyEncoding != "base64" {
+		t.Fatalf("body encoding = %q, want base64", action.BodyEncoding)
+	}
+}
+
 func TestConvertSession_StaticFiltered(t *testing.T) {
 	s := &Session{
 		ID:      "test",

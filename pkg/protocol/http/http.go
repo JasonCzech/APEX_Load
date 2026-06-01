@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -98,15 +99,32 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 
 	targetURL := h.resolveURL(action.Target)
-	requestBytes := int64(len(action.Body))
+	requestBody := action.Body
+	redactedRequestBody := action.RedactedBody
+	if strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") && len(action.Body) > 0 {
+		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(action.Body)))
+		if err != nil {
+			result.Duration = time.Since(result.StartTime)
+			result.ErrorMessage = fmt.Sprintf("invalid base64 http body: %v", err)
+			result.Snapshot = buildHTTPSnapshot(action.Method, targetURL, nil, action.Body, action.RedactedTarget, action.RedactedHeaders, action.RedactedBody, 0, nil, nil)
+			return result, nil
+		}
+		requestBody = decoded
+		if len(redactedRequestBody) > 0 {
+			if decodedRedacted, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(redactedRequestBody))); err == nil {
+				redactedRequestBody = decodedRedacted
+			}
+		}
+	}
+	requestBytes := int64(len(requestBody))
 	connectionReused := false
 	redirectCount := 0
 	redirectDuration := time.Duration(0)
 	redirectLegStart := result.StartTime
 
 	var body io.Reader
-	if len(action.Body) > 0 {
-		body = bytes.NewReader(action.Body)
+	if len(requestBody) > 0 {
+		body = bytes.NewReader(requestBody)
 	}
 
 	method := strings.ToUpper(action.Method)
@@ -117,7 +135,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
 		result.ErrorMessage = err.Error()
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, nil, action.Body, action.RedactedTarget, action.RedactedHeaders, action.RedactedBody, 0, nil, nil)
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, nil, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, 0, nil, nil)
 		return result, nil
 	}
 	result.DependencyTarget = classifyHTTPDependencyTarget(targetURL)
@@ -175,7 +193,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.Duration = time.Since(result.StartTime)
 		result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, connectionReused, redirectCount, redirectDuration)
 		result.ErrorMessage = err.Error()
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, action.RedactedTarget, action.RedactedHeaders, action.RedactedBody, 0, nil, nil)
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, 0, nil, nil)
 		return result, nil
 	}
 
@@ -195,7 +213,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			result.BytesReceived = n
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, connectionReused, redirectCount, redirectDuration)
 			result.ErrorMessage = err.Error()
-			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, action.RedactedTarget, action.RedactedHeaders, action.RedactedBody, resp.StatusCode, cloneHTTPHeaders(resp.Header), buf.Bytes())
+			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, resp.StatusCode, cloneHTTPHeaders(resp.Header), buf.Bytes())
 			return result, nil
 		}
 	}
@@ -219,7 +237,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
 		result.ErrorMessage = err.Error()
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, action.RedactedTarget, action.RedactedHeaders, action.RedactedBody, resp.StatusCode, responseHeaders, respBody)
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
 		return result, nil
 	}
 	respBody = formattedBody

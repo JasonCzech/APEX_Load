@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"compress/zlib"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/andybalholm/brotli"
 )
 
 func TestNewRecorder(t *testing.T) {
@@ -329,6 +332,170 @@ func TestRecordRequestRichMetadataRedactionAndTruncation(t *testing.T) {
 	}
 }
 
+func TestRecordRequestCapturesBinaryBodiesAsBase64(t *testing.T) {
+	rec := New(":0")
+	session, err := rec.StartSession("test", "Binary Body Test", SessionFilters{
+		ExcludeStatic:         true,
+		BodyCaptureLimitBytes: 4,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reqBody := []byte{0x00, 0xff, 0x10, 0x80, 0x42}
+	respBody := []byte{0xde, 0xad, 0xbe, 0xef, 0x01}
+	req, _ := http.NewRequest("POST", "http://example.com/api/upload", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp := &http.Response{
+		StatusCode: http.StatusCreated,
+		Header: http.Header{
+			"Content-Type": []string{"application/octet-stream"},
+		},
+	}
+
+	rec.recordRequest(session, req, reqBody, resp, respBody, 10*time.Millisecond)
+
+	if len(session.Requests) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(session.Requests))
+	}
+	recorded := session.Requests[0]
+	if recorded.BodyEncoding != "base64" {
+		t.Fatalf("request body encoding = %q, want base64", recorded.BodyEncoding)
+	}
+	if recorded.Body != base64.StdEncoding.EncodeToString(reqBody[:4]) {
+		t.Fatalf("request body = %q, want base64 of limited bytes", recorded.Body)
+	}
+	if !recorded.BodyTruncated {
+		t.Fatal("expected request body to be marked truncated")
+	}
+	if recorded.ResponseBodyEncoding != "base64" {
+		t.Fatalf("response body encoding = %q, want base64", recorded.ResponseBodyEncoding)
+	}
+	if recorded.ResponseBody != base64.StdEncoding.EncodeToString(respBody[:4]) {
+		t.Fatalf("response body = %q, want base64 of limited bytes", recorded.ResponseBody)
+	}
+	if !recorded.ResponseBodyTruncated {
+		t.Fatal("expected response body to be marked truncated")
+	}
+}
+
+func TestRecordRequestLeavesTextBodiesUnencoded(t *testing.T) {
+	rec := New(":0")
+	session, err := rec.StartSession("test", "Text Body Test", SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reqBody := []byte(`{"name":"alice"}`)
+	respBody := []byte(`{"ok":true}`)
+	req, _ := http.NewRequest("POST", "http://example.com/api/users", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"application/json"},
+		},
+	}
+
+	rec.recordRequest(session, req, reqBody, resp, respBody, 10*time.Millisecond)
+
+	recorded := session.Requests[0]
+	if recorded.BodyEncoding != "" || recorded.ResponseBodyEncoding != "" {
+		t.Fatalf("expected text bodies to stay unencoded, got request=%q response=%q", recorded.BodyEncoding, recorded.ResponseBodyEncoding)
+	}
+	if recorded.Body != string(reqBody) || recorded.ResponseBody != string(respBody) {
+		t.Fatalf("text bodies changed: request=%q response=%q", recorded.Body, recorded.ResponseBody)
+	}
+}
+
+func TestProxyStreamsSSEWithoutWaitingForEOF(t *testing.T) {
+	backendReady := make(chan struct{})
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: hello\n\n"))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		close(backendReady)
+		<-r.Context().Done()
+	}))
+	defer backend.Close()
+
+	rec := New(":0")
+	if _, err := rec.StartSession("test", "SSE Test", SessionFilters{BodyCaptureLimitBytes: 64}, nil); err != nil {
+		t.Fatal(err)
+	}
+	proxy := httptest.NewServer(http.HandlerFunc(rec.handleProxy))
+	defer proxy.Close()
+	proxyURL, _ := url.Parse(proxy.URL)
+	client := &http.Client{
+		Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)},
+		Timeout:   2 * time.Second,
+	}
+
+	resp, err := client.Get(backend.URL + "/events")
+	if err != nil {
+		t.Fatalf("GET through proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	buf := make([]byte, len("data: hello\n\n"))
+	if _, err := io.ReadFull(resp.Body, buf); err != nil {
+		t.Fatalf("reading first SSE event: %v", err)
+	}
+	if string(buf) != "data: hello\n\n" {
+		t.Fatalf("first SSE event = %q", buf)
+	}
+	<-backendReady
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		session, _ := rec.GetSession("test")
+		if len(session.Requests) == 1 {
+			recorded := session.Requests[0]
+			if recorded.ResponseBody != "data: hello\n\n" {
+				t.Fatalf("captured SSE body = %q", recorded.ResponseBody)
+			}
+			if !recorded.ResponseBodyTruncated {
+				t.Fatal("expected streaming response to be marked truncated")
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for streaming response to be recorded")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestRecordRequestThinkTimeUsesRequestStartOrdering(t *testing.T) {
+	rec := New(":0")
+	session, err := rec.StartSession("test", "Think Time Test", SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}
+	startedAt := time.Now()
+
+	firstReq, _ := http.NewRequest("GET", "http://example.com/api/first", nil)
+	secondReq, _ := http.NewRequest("GET", "http://example.com/api/second", nil)
+	thirdReq, _ := http.NewRequest("GET", "http://example.com/api/third", nil)
+
+	rec.recordRequestStarted(session, secondReq, nil, resp, []byte(`{}`), 100*time.Millisecond, startedAt.Add(10*time.Millisecond))
+	rec.recordRequestStarted(session, firstReq, nil, resp, []byte(`{}`), 200*time.Millisecond, startedAt)
+	rec.recordRequestStarted(session, thirdReq, nil, resp, []byte(`{}`), 20*time.Millisecond, startedAt.Add(25*time.Millisecond))
+
+	if len(session.Requests) != 3 {
+		t.Fatalf("expected 3 requests, got %d", len(session.Requests))
+	}
+	if session.Requests[1].ThinkTimeMs != 0 {
+		t.Fatalf("overlapping earlier request think time = %d, want 0", session.Requests[1].ThinkTimeMs)
+	}
+	if session.Requests[2].ThinkTimeMs != 15 {
+		t.Fatalf("third request think time = %d, want 15ms gap from latest start", session.Requests[2].ThinkTimeMs)
+	}
+}
+
 func TestStaticFiltering(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
@@ -427,6 +594,19 @@ func zlibBytes(t *testing.T, data []byte) []byte {
 	return buf.Bytes()
 }
 
+func brotliBytes(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := brotli.NewWriter(&buf)
+	if _, err := zw.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
 func TestRecordRequestDecompressesResponseBody(t *testing.T) {
 	rec := New(":0")
 	session, err := rec.StartSession("test", "Decompress Test", SessionFilters{}, nil)
@@ -443,6 +623,7 @@ func TestRecordRequestDecompressesResponseBody(t *testing.T) {
 	}{
 		{"gzip", "gzip", gzipBytes(t, payload)},
 		{"deflate-zlib", "deflate", zlibBytes(t, payload)},
+		{"brotli", "br", brotliBytes(t, payload)},
 	}
 
 	for i, tc := range cases {
@@ -486,13 +667,16 @@ func TestDecodeBody(t *testing.T) {
 	if got, ok := decodeBody(payload, "", defaultBodyCaptureLimitBytes); ok || string(got) != string(payload) {
 		t.Fatalf("identity decode should be a no-op: ok=%v got=%q", ok, got)
 	}
-	// Unsupported encoding (brotli) falls back to raw without error.
-	if got, ok := decodeBody(payload, "br", defaultBodyCaptureLimitBytes); ok || string(got) != string(payload) {
-		t.Fatalf("brotli should fall back to raw: ok=%v got=%q", ok, got)
+	if got, ok := decodeBody(brotliBytes(t, payload), "br", defaultBodyCaptureLimitBytes); !ok || string(got) != string(payload) {
+		t.Fatalf("brotli decode failed: ok=%v got=%q", ok, got)
 	}
 	// Malformed gzip falls back to raw without panicking.
 	if got, ok := decodeBody([]byte("not actually gzip"), "gzip", defaultBodyCaptureLimitBytes); ok || string(got) != "not actually gzip" {
 		t.Fatalf("malformed gzip should fall back to raw: ok=%v got=%q", ok, got)
+	}
+	// Malformed brotli falls back to raw without panicking.
+	if got, ok := decodeBody([]byte("not actually brotli"), "br", defaultBodyCaptureLimitBytes); ok || string(got) != "not actually brotli" {
+		t.Fatalf("malformed brotli should fall back to raw: ok=%v got=%q", ok, got)
 	}
 }
 

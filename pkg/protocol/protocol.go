@@ -65,6 +65,7 @@ type Action struct {
 	Headers         map[string]string      `json:"headers,omitempty"`
 	RedactedHeaders map[string]string      `json:"-"`
 	Body            []byte                 `json:"body,omitempty"`
+	BodyEncoding    string                 `json:"body_encoding,omitempty"`
 	RedactedBody    []byte                 `json:"-"`
 	Params          map[string]any         `json:"params,omitempty"`
 	WaitFor         *WaitCondition         `json:"wait_for,omitempty"`

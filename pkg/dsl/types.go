@@ -425,6 +425,7 @@ type Action struct {
 	Value          string                 `json:"value,omitempty"`
 	Headers        map[string]string      `json:"headers,omitempty"`
 	Body           string                 `json:"body,omitempty"`
+	BodyEncoding   string                 `json:"body_encoding,omitempty"`
 	Params         map[string]any         `json:"params,omitempty"`
 	WaitFor        *WaitCondition         `json:"wait_for,omitempty"`
 	Capture        *BrowserCaptureOptions `json:"capture,omitempty"`
