@@ -237,6 +237,50 @@
   color: var(--text-secondary);
 }
 
+.rec-proxy-shortcut {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+  padding: 10px 12px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.rec-proxy-platform {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rec-proxy-platform-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.rec-proxy-service {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.rec-proxy-service .rec-input {
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.rec-shortcut-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* Controls Card */
 .rec-controls-card {
   background: var(--bg-card);

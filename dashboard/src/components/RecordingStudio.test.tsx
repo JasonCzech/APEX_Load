@@ -5,6 +5,13 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import RecordingStudio from './RecordingStudio'
+import {
+  buildMacOSRestoreProxyCommand,
+  buildMacOSStartProxyCommand,
+  buildWindowsRestoreProxyCommand,
+  buildWindowsStartProxyCommand,
+  recorderProxyPort,
+} from './recordingProxyCommands'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -23,6 +30,8 @@ const apiMock = {
   updateRecordedRequest: vi.fn(),
 }
 
+const clipboardWriteMock = vi.fn()
+
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
@@ -35,6 +44,11 @@ describe('RecordingStudio', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    clipboardWriteMock.mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: clipboardWriteMock },
+    })
 
     apiMock.listRecordings.mockResolvedValue({
       sessions: [
@@ -134,6 +148,41 @@ describe('RecordingStudio', () => {
     })
     container.remove()
     vi.clearAllMocks()
+  })
+
+  it('builds macOS proxy shortcuts that save and restore the selected service', () => {
+    const startCommand = buildMacOSStartProxyCommand('9090', `USB Bob's LAN`)
+    const restoreCommand = buildMacOSRestoreProxyCommand(`USB Bob's LAN`)
+
+    expect(recorderProxyPort('127.0.0.1:9090')).toBe('9090')
+    expect(recorderProxyPort('bad-port')).toBe('8081')
+    expect(startCommand).toContain(`SERVICE='USB Bob'\\''s LAN'`)
+    expect(startCommand).toContain(`PROXY_PORT='9090'`)
+    expect(startCommand).toContain('networksetup -getwebproxy "$SERVICE"')
+    expect(startCommand).toContain('networksetup -setsecurewebproxystate "$SERVICE" on')
+    expect(restoreCommand).toContain(`SERVICE='USB Bob'\\''s LAN'`)
+    expect(restoreCommand).toContain('networksetup "$STATE_CMD" "$SERVICE" off')
+    expect(restoreCommand).toContain('rm -f "$STATE_DIR/$STATE_KEY.http" "$STATE_DIR/$STATE_KEY.https"')
+  })
+
+  it('builds Windows 11 proxy shortcuts that save and restore per-user proxy settings', () => {
+    const startCommand = buildWindowsStartProxyCommand('9090')
+    const restoreCommand = buildWindowsRestoreProxyCommand()
+    const fallbackStartCommand = buildWindowsStartProxyCommand('not-a-port')
+
+    expect(startCommand).toContain(`$proxyPort = '9090'`)
+    expect(startCommand).toContain(`$proxyServer = 'http={0}:{1};https={0}:{1}' -f $proxyHost, $proxyPort`)
+    expect(startCommand).toContain(`$settingsPath = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'`)
+    expect(startCommand).toContain(`Get-ItemProperty -Path $settingsPath -Name $Name`)
+    expect(startCommand).toContain(`New-ItemProperty -Path $settingsPath -Name ProxyEnable -PropertyType DWord -Value 1 -Force`)
+    expect(startCommand).toContain(`Remove-ItemProperty -Path $settingsPath -Name AutoConfigURL`)
+    expect(startCommand).toContain('Notify-ProxySettingsChanged')
+    expect(fallbackStartCommand).toContain(`$proxyPort = '8081'`)
+    expect(restoreCommand).toContain(`Get-Content -Path $statePath -Raw | ConvertFrom-Json`)
+    expect(restoreCommand).toContain(`Restore-DwordRegistryValue -Name ProxyEnable -DefaultValue 0`)
+    expect(restoreCommand).toContain(`Restore-StringRegistryValue -Name ProxyServer`)
+    expect(restoreCommand).toContain(`Restore-StringRegistryValue -Name AutoConfigURL`)
+    expect(restoreCommand).toContain(`Remove-Item -Path $statePath -ErrorAction SilentlyContinue`)
   })
 
   it('reviews a recording conversion and saves it through the shared script flow', async () => {
@@ -297,6 +346,76 @@ describe('RecordingStudio', () => {
       capture_cookies: true,
       exclude_static: true,
     }))
+  })
+
+  it('copies macOS start and restore proxy commands from the setup shortcut', async () => {
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    const serviceInput = container.querySelector('input[aria-label="macOS network service"]') as HTMLInputElement | null
+    expect(serviceInput).toBeDefined()
+    if (!serviceInput) return
+
+    const startShortcut = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Copy Start Proxy Command')
+    expect(startShortcut).toBeDefined()
+    if (!startShortcut) return
+
+    await act(async () => {
+      startShortcut.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(clipboardWriteMock).toHaveBeenLastCalledWith(expect.stringContaining(`SERVICE='Wi-Fi'`))
+    expect(clipboardWriteMock).toHaveBeenLastCalledWith(expect.stringContaining(`PROXY_PORT='8081'`))
+    expect(container.textContent).toContain('macOS start proxy command copied')
+
+    const restoreShortcut = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Copy Restore Proxy Command')
+    expect(restoreShortcut).toBeDefined()
+    if (!restoreShortcut) return
+
+    await act(async () => {
+      restoreShortcut.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(clipboardWriteMock).toHaveBeenLastCalledWith(expect.stringContaining(`restore_proxy "$STATE_DIR/$STATE_KEY.http"`))
+    expect(container.textContent).toContain('macOS restore proxy command copied')
+  })
+
+  it('copies Windows 11 start and restore proxy commands from the setup shortcut', async () => {
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    const startShortcut = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Copy Windows Start Command')
+    expect(startShortcut).toBeDefined()
+    if (!startShortcut) return
+
+    await act(async () => {
+      startShortcut.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(clipboardWriteMock).toHaveBeenLastCalledWith(expect.stringContaining(`$proxyPort = '8081'`))
+    expect(clipboardWriteMock).toHaveBeenLastCalledWith(expect.stringContaining('windows-11-wininet.json'))
+    expect(clipboardWriteMock).toHaveBeenLastCalledWith(expect.stringContaining('Notify-ProxySettingsChanged'))
+    expect(container.textContent).toContain('Windows start proxy command copied')
+
+    const restoreShortcut = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Copy Windows Restore Command')
+    expect(restoreShortcut).toBeDefined()
+    if (!restoreShortcut) return
+
+    await act(async () => {
+      restoreShortcut.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(clipboardWriteMock).toHaveBeenLastCalledWith(expect.stringContaining(`Restore-DwordRegistryValue -Name ProxyEnable -DefaultValue 0`))
+    expect(clipboardWriteMock).toHaveBeenLastCalledWith(expect.stringContaining(`Restore-StringRegistryValue -Name ProxyServer`))
+    expect(container.textContent).toContain('Windows restore proxy command copied')
   })
 })
 

@@ -326,7 +326,15 @@ go run ./cmd/controller
 cd dashboard
 npm install
 npm run dev
-# Starts Vite dev server on :5173 with API proxy to :8080
+# Starts Vite dev server on :3000 with API proxy to :8080
+```
+
+**Windows local helper** (optional)
+```powershell
+.\scripts\start-local-windows.ps1
+
+# Open directly to recorder authoring and manage Windows recorder proxy state
+.\scripts\start-local-windows.ps1 -ConfigureRecorderProxy -DashboardRoute '#/scripts?mode=create'
 ```
 
 ### 2. Making Changes

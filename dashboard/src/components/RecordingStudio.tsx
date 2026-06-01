@@ -9,6 +9,14 @@ import { type ScriptDefinition } from '../types/scripts'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
+import {
+  DEFAULT_MACOS_NETWORK_SERVICE,
+  buildMacOSRestoreProxyCommand,
+  buildMacOSStartProxyCommand,
+  buildWindowsRestoreProxyCommand,
+  buildWindowsStartProxyCommand,
+  recorderProxyPort,
+} from './recordingProxyCommands'
 import './RecordingStudio.css'
 
 interface RecordedRequest {
@@ -89,6 +97,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   const [activeSession, setActiveSession] = useState<RecordingSession | null>(null)
   const [proxyAddr, setProxyAddr] = useState('')
   const [caCertPath, setCaCertPath] = useState('')
+  const [macOSNetworkService, setMacOSNetworkService] = useState(DEFAULT_MACOS_NETWORK_SERVICE)
   const [sessionName, setSessionName] = useState('')
   const [includeHosts, setIncludeHosts] = useState('')
   const [excludeHosts, setExcludeHosts] = useState('')
@@ -108,7 +117,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   const [parameterizeInputs, setParameterizeInputs] = useState(false)
   const convertTask = useAsyncTask<RecorderImportResult>()
 
-  const proxyPort = (proxyAddr || ':8081').split(':').pop() || '8081'
+  const proxyPort = recorderProxyPort(proxyAddr)
 
   const handleCopyCAPath = async () => {
     if (!caCertPath) return
@@ -134,6 +143,48 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
     } catch (e: any) {
       showFeedback(e.message || 'Failed to download CA certificate', 'error')
     }
+  }
+
+  const copyProxyCommand = async (command: string, successMessage: string, failureMessage: string) => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard access is not available in this browser')
+      }
+      await navigator.clipboard.writeText(command)
+      showFeedback(successMessage)
+    } catch (e: any) {
+      showFeedback(e.message || failureMessage, 'error')
+    }
+  }
+
+  const handleCopyMacOSProxyCommand = async (mode: 'start' | 'restore') => {
+    const command = mode === 'start'
+      ? buildMacOSStartProxyCommand(proxyPort, macOSNetworkService)
+      : buildMacOSRestoreProxyCommand(macOSNetworkService)
+    await copyProxyCommand(
+      command,
+      mode === 'start' ? 'macOS start proxy command copied' : 'macOS restore proxy command copied',
+      'Failed to copy macOS proxy command',
+    )
+  }
+
+  const handleCopyWindowsProxyCommand = async (mode: 'start' | 'restore') => {
+    const command = mode === 'start'
+      ? buildWindowsStartProxyCommand(proxyPort)
+      : buildWindowsRestoreProxyCommand()
+    await copyProxyCommand(
+      command,
+      mode === 'start' ? 'Windows start proxy command copied' : 'Windows restore proxy command copied',
+      'Failed to copy Windows proxy command',
+    )
+  }
+
+  const handleOpenMacOSNetworkSettings = () => {
+    window.location.href = 'x-apple.systempreferences:com.apple.Network-Settings.extension'
+  }
+
+  const handleOpenWindowsProxySettings = () => {
+    window.location.href = 'ms-settings:network-proxy'
   }
 
   const showFeedback = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -430,6 +481,46 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
                 <div className="rec-os-instructions">
                   <div>Use a browser extension like SwitchyOmega (Chrome) or FoxyProxy (Firefox) to route traffic through the proxy.</div>
                   <div><span className="rec-os-label">System proxy:</span> macOS System Settings &rarr; Network &rarr; Wi-Fi &rarr; Details &rarr; Proxies &rarr; Web Proxy (HTTP) &amp; Secure Web Proxy (HTTPS) &rarr; <code>localhost</code> port <code>{proxyPort}</code></div>
+                  <div><span className="rec-os-label">Windows 11:</span> Settings &rarr; Network &amp; internet &rarr; Proxy &rarr; Manual proxy setup &rarr; <code>localhost</code> port <code>{proxyPort}</code></div>
+                </div>
+                <div className="rec-proxy-shortcut">
+                  <div className="rec-proxy-platform">
+                    <div className="rec-proxy-platform-title">macOS</div>
+                    <label className="rec-proxy-service">
+                      <span>Network service</span>
+                      <input
+                        className="rec-input"
+                        aria-label="macOS network service"
+                        value={macOSNetworkService}
+                        onChange={e => setMacOSNetworkService(e.target.value)}
+                      />
+                    </label>
+                    <div className="rec-shortcut-actions">
+                      <button className="rec-download-alt" type="button" onClick={() => handleCopyMacOSProxyCommand('start')}>
+                        Copy Start Proxy Command
+                      </button>
+                      <button className="rec-download-alt" type="button" onClick={() => handleCopyMacOSProxyCommand('restore')}>
+                        Copy Restore Proxy Command
+                      </button>
+                      <button className="rec-download-alt" type="button" onClick={handleOpenMacOSNetworkSettings}>
+                        Open Network Settings
+                      </button>
+                    </div>
+                  </div>
+                  <div className="rec-proxy-platform">
+                    <div className="rec-proxy-platform-title">Windows 11</div>
+                    <div className="rec-shortcut-actions">
+                      <button className="rec-download-alt" type="button" onClick={() => handleCopyWindowsProxyCommand('start')}>
+                        Copy Windows Start Command
+                      </button>
+                      <button className="rec-download-alt" type="button" onClick={() => handleCopyWindowsProxyCommand('restore')}>
+                        Copy Windows Restore Command
+                      </button>
+                      <button className="rec-download-alt" type="button" onClick={handleOpenWindowsProxySettings}>
+                        Open Windows Proxy Settings
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -555,6 +646,12 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
             </button>
             <button className="btn btn-secondary rec-stop-btn" onClick={handlePauseResume}>
               {activeSession.status === 'paused' ? 'Resume Recording' : 'Pause Recording'}
+            </button>
+            <button className="btn btn-secondary rec-stop-btn" type="button" onClick={() => handleCopyMacOSProxyCommand('restore')}>
+              Copy Restore Proxy Command
+            </button>
+            <button className="btn btn-secondary rec-stop-btn" type="button" onClick={() => handleCopyWindowsProxyCommand('restore')}>
+              Copy Windows Restore Command
             </button>
           </div>
         )}

@@ -68,6 +68,7 @@ The current controller can run in either local or distributed mode without chang
 
 - Go `1.26+`
 - Node.js `18+` (recommended for dashboard builds)
+- Windows local utility: Windows PowerShell `5.1+` or PowerShell `7+`
 
 ## Quick Start
 
@@ -133,8 +134,34 @@ For hot-reload during frontend dev:
 ```bash
 cd dashboard
 npm run dev
-# Starts dev server on :5173 with proxy to :8080 for API calls
+# Starts dev server on :3000 with proxy to :8080 for API calls
 ```
+
+### 5. Windows local startup utility
+
+On Windows 11, the local controller and dashboard can be started from one PowerShell entry point:
+
+```powershell
+.\scripts\start-local-windows.ps1
+```
+
+Useful options:
+
+```powershell
+# Start controller + dashboard dev server and open the recorder authoring route
+.\scripts\start-local-windows.ps1 -DashboardRoute '#/scripts?mode=create'
+
+# Also set the Windows per-user manual proxy to the recorder proxy while the utility is running
+.\scripts\start-local-windows.ps1 -ConfigureRecorderProxy -DashboardRoute '#/scripts?mode=create'
+
+# Restore saved Windows proxy settings without starting APEX Load
+.\scripts\start-local-windows.ps1 -RestoreRecorderProxy
+
+# Build dashboard assets and run the controller's embedded dashboard only
+.\scripts\start-local-windows.ps1 -Mode Embedded -BuildDashboard
+```
+
+`-ConfigureRecorderProxy` saves the current `HKCU` WinINET proxy settings, points HTTP/HTTPS traffic at the local recorder proxy, and restores the saved state when you press Enter to stop the utility.
 
 ## Environment Variables
 
