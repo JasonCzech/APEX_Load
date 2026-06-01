@@ -58,6 +58,12 @@ func TestConvertWSDLBuildsSOAPScript(t *testing.T) {
 	if result.Stats.ConvertedActions != 2 || len(result.Stats.SOAPActionsDetected) != 2 {
 		t.Fatalf("stats = %+v, want converted SOAP actions", result.Stats)
 	}
+	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) == 0 || len(result.SourceReview.Mappings) != 2 {
+		t.Fatalf("source review = %#v, want source file and two action mappings", result.SourceReview)
+	}
+	if result.SourceReview.Mappings[0].TargetPath != "actions[0]" || result.SourceReview.Mappings[0].Status != "converted" {
+		t.Fatalf("first source mapping = %#v", result.SourceReview.Mappings[0])
+	}
 }
 
 func TestConvertWSDLFiltersOperationsAndUsesOverrideURL(t *testing.T) {

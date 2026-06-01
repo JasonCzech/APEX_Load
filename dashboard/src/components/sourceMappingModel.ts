@@ -5,7 +5,7 @@
 //   - click → mapping resolution for bidirectional linking.
 // Everything here is side-effect free so it can be unit tested without a DOM.
 
-import { type LoadRunnerSourceReviewMapping } from '../types/scripts'
+import { type SourceReviewMapping } from '../types/scripts'
 import { type LineRange, lineRangeForTargetPath } from './dslJsonPointers'
 
 export type MappingCategory = 'converted' | 'preserved' | 'review' | 'unsupported'
@@ -54,7 +54,7 @@ export interface CoverageSummary {
 
 /** Roll up mappings into the counts shown in the confidence header. */
 export function computeCoverage(
-  mappings: LoadRunnerSourceReviewMapping[],
+  mappings: SourceReviewMapping[],
   dslWithoutOrigin = 0,
 ): CoverageSummary {
   const summary: CoverageSummary = {
@@ -88,14 +88,14 @@ function fileBasename(path?: string): string {
 }
 
 /** Whether a mapping's source_file refers to the file at `filePath`. */
-export function mappingMatchesFile(mapping: LoadRunnerSourceReviewMapping, filePath?: string): boolean {
+export function mappingMatchesFile(mapping: SourceReviewMapping, filePath?: string): boolean {
   if (!filePath || !mapping.source_file) return false
   const file = filePath.toLowerCase()
   const source = mapping.source_file.toLowerCase()
   return file === source || file.endsWith(`/${source}`) || fileBasename(file) === fileBasename(source)
 }
 
-function mappingEndLine(mapping: LoadRunnerSourceReviewMapping): number {
+function mappingEndLine(mapping: SourceReviewMapping): number {
   return mapping.end_line && mapping.end_line >= mapping.start_line ? mapping.end_line : mapping.start_line
 }
 
@@ -108,7 +108,7 @@ function setWithPriority(map: Map<number, MappingCategory>, line: number, catego
 
 /** Status colour for every mapped line in a source file (drives the left gutter). */
 export function lineStatusForSource(
-  mappings: LoadRunnerSourceReviewMapping[],
+  mappings: SourceReviewMapping[],
   filePath?: string,
 ): Map<number, MappingCategory> {
   const result = new Map<number, MappingCategory>()
@@ -151,7 +151,7 @@ export interface DslLineStatusResult {
  */
 export function dslLineStatus(
   ranges: Map<string, LineRange>,
-  mappings: LoadRunnerSourceReviewMapping[],
+  mappings: SourceReviewMapping[],
 ): DslLineStatusResult {
   const mapped = new Map<number, MappingCategory>()
   for (const mapping of mappings) {
@@ -188,11 +188,11 @@ function rangeSpan(start: number, end: number): number {
 
 /** Resolve a clicked source line to the most specific covering mapping. */
 export function mappingForSourceLine(
-  mappings: LoadRunnerSourceReviewMapping[],
+  mappings: SourceReviewMapping[],
   filePath: string | undefined,
   line: number,
-): LoadRunnerSourceReviewMapping | null {
-  let best: LoadRunnerSourceReviewMapping | null = null
+): SourceReviewMapping | null {
+  let best: SourceReviewMapping | null = null
   let bestSpan = Number.POSITIVE_INFINITY
   for (const mapping of mappings) {
     if (!mapping || !mapping.start_line || !mappingMatchesFile(mapping, filePath)) continue
@@ -210,10 +210,10 @@ export function mappingForSourceLine(
 /** Resolve a clicked DSL line to the most specific mapping whose target covers it. */
 export function mappingForDslLine(
   ranges: Map<string, LineRange>,
-  mappings: LoadRunnerSourceReviewMapping[],
+  mappings: SourceReviewMapping[],
   line: number,
-): LoadRunnerSourceReviewMapping | null {
-  let best: LoadRunnerSourceReviewMapping | null = null
+): SourceReviewMapping | null {
+  let best: SourceReviewMapping | null = null
   let bestSpan = Number.POSITIVE_INFINITY
   for (const mapping of mappings) {
     if (!mapping || !mapping.target_path) continue

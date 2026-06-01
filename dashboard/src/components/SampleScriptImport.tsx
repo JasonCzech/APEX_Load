@@ -14,11 +14,12 @@ import {
 } from './sampleImportUtils'
 import { type SampleImportResult } from '../types/scriptImports'
 import { type StoredScript } from '../types'
-import { type ScriptDefinition } from '../types/scripts'
+import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { createJavaHttpDraft } from './scriptDraftFactories'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
+import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
@@ -193,6 +194,13 @@ function appendJavaHTTPWarnings(script: ScriptDefinition, warnings: string[]): s
   return nextWarnings
 }
 
+function sourceReviewForSample(result?: SampleImportResult | null, script?: ScriptDefinition | null): SourceReview | null {
+  const metadataReview = script?.metadata?.import?.preserved?.source_review as SourceReview | undefined
+  const review = result?.source_review || metadataReview
+  if (!review || (!Array.isArray(review.source_files) && !Array.isArray(review.mappings))) return null
+  return review
+}
+
 const initialOptions: SampleImportOptions = {
   name: '',
   base_url: '',
@@ -259,6 +267,8 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
   const saving = saveTask.pending
   const availableFormats = availableFormatsByPreset[preset]
   const isJavaHttpPreset = preset === 'java-http'
+  const reviewedScript = result?.script || result?.scripts?.[0] || null
+  const sourceReview = sourceReviewForSample(result, reviewedScript)
 
   const handleFormatChange = (nextFormat: SampleFormat) => {
     const template = getSampleTemplate(preset, nextFormat)
@@ -650,18 +660,19 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
 
       {error && <div className="sample-import-error">{error}</div>}
 
-      {result && (result.script || result.scripts?.[0]) && (
+      {result && reviewedScript && (
         <div className="sample-import-result">
           <ScriptImportReview
             title="3. Review Generated Script"
             subtitle={`${result.stats.converted_actions} action(s) derived from ${result.stats.total_requests} request sample(s).`}
-            script={(result.script || result.scripts?.[0])!}
+            script={reviewedScript}
             warnings={result.warnings}
             unsupportedElements={result.unsupported_elements}
             reviewSections={result.review_sections}
             saving={saving}
             onSave={handleSave}
-            onEdit={onEdit ? () => onEdit((result.script || result.scripts?.[0]) as ScriptDefinition) : undefined}
+            onEdit={onEdit ? () => onEdit(reviewedScript) : undefined}
+            previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
           >
 
             <div className="sample-import-stats-grid">

@@ -139,6 +139,7 @@ func (s *Server) handleImportJMeter(w http.ResponseWriter, r *http.Request) {
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
+	attachSourceReviewToScripts(result.Scripts, "jmeter", result.Summary.FileName, result.SourceReview)
 
 	writeJMeterImportResponse(w, http.StatusOK, result)
 }
@@ -163,6 +164,7 @@ func (s *Server) handleValidateJMeterImport(w http.ResponseWriter, r *http.Reque
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
+	attachSourceReviewToScripts(result.Scripts, "jmeter", result.Summary.FileName, result.SourceReview)
 
 	writeJMeterImportResponse(w, http.StatusOK, result)
 }
@@ -219,6 +221,7 @@ func (s *Server) handleImportDevWeb(w http.ResponseWriter, r *http.Request) {
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
+	attachSourceReviewToScript(result.Script, "devweb", importReq.Name, result.SourceReview)
 	issues := validateScript(result.Script)
 	if len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
@@ -231,6 +234,7 @@ func (s *Server) handleImportDevWeb(w http.ResponseWriter, r *http.Request) {
 		Stats:               result.Stats,
 		UnsupportedElements: result.Unsupported.Strings(),
 		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
+		SourceReview:        result.SourceReview,
 	}))
 }
 
@@ -250,6 +254,7 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
+	attachSourceReviewToScript(result.Script, "har", importReq.Opts.ScriptName, result.SourceReview)
 	issues := validateScript(result.Script)
 	if len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
@@ -263,6 +268,7 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 		Correlations:        result.Correlations,
 		UnsupportedElements: result.Unsupported.Strings(),
 		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
+		SourceReview:        result.SourceReview,
 	}))
 }
 
@@ -540,6 +546,7 @@ func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *lo
 		Summary:             summary,
 		DetectedProtocol:    result.DetectedProtocol,
 		ReviewArtifact:      result.ReviewArtifact,
+		SourceReview:        summary.SourceReview,
 	}))
 }
 
@@ -1708,6 +1715,37 @@ func stringValue(value any) string {
 	return text
 }
 
+func attachSourceReviewToScripts(scripts []*dsl.Script, source string, sourceScriptName string, review any) {
+	if isNilImportValue(review) {
+		return
+	}
+	for _, script := range scripts {
+		attachSourceReviewToScript(script, source, sourceScriptName, review)
+	}
+}
+
+func attachSourceReviewToScript(script *dsl.Script, source string, sourceScriptName string, review any) {
+	if script == nil || isNilImportValue(review) {
+		return
+	}
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{}
+	}
+	if script.Metadata.Import.Source == "" {
+		script.Metadata.Import.Source = source
+	}
+	if script.Metadata.Import.SourceScriptName == "" {
+		script.Metadata.Import.SourceScriptName = sourceScriptName
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = map[string]any{}
+	}
+	script.Metadata.Import.Preserved["source_review"] = review
+}
+
 func writeJMeterImportResponse(w http.ResponseWriter, status int, result *jmeter.ConvertResult) {
 	unsupportedElements := uniqueSortedStrings(append(append([]string{}, result.UnsupportedElements...), result.Unsupported.Strings()...))
 	writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{
@@ -1721,6 +1759,7 @@ func writeJMeterImportResponse(w http.ResponseWriter, status int, result *jmeter
 		Assumptions:         result.Assumptions,
 		Stats:               result.Stats,
 		Summary:             result.Summary,
+		SourceReview:        result.SourceReview,
 	}))
 }
 
@@ -1808,6 +1847,7 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(req.ProjectID)
 	}
+	attachSourceReviewToScript(result.Script, req.Format, req.Name, result.SourceReview)
 
 	issues := validateScript(result.Script)
 	if len(issues) > 0 {
@@ -1822,6 +1862,7 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 		Correlations:        result.Correlations,
 		UnsupportedElements: result.Unsupported.Strings(),
 		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
+		SourceReview:        result.SourceReview,
 	}))
 }
 

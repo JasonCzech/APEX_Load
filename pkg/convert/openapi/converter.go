@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"gopkg.in/yaml.v3"
 )
@@ -55,11 +56,12 @@ type ReviewSummary struct {
 }
 
 type ConvertResult struct {
-	Script      *dsl.Script      `json:"script"`
-	Warnings    []string         `json:"warnings,omitempty"`
-	Unsupported diag.Diagnostics `json:"unsupported,omitempty"`
-	Stats       ConvertStats     `json:"stats"`
-	Summary     ReviewSummary    `json:"summary"`
+	Script       *dsl.Script        `json:"script"`
+	Warnings     []string           `json:"warnings,omitempty"`
+	Unsupported  diag.Diagnostics   `json:"unsupported,omitempty"`
+	Stats        ConvertStats       `json:"stats"`
+	Summary      ReviewSummary      `json:"summary"`
+	SourceReview *sourceview.Review `json:"source_review,omitempty"`
 }
 
 type document struct {
@@ -188,6 +190,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	var diagnostics diag.Collector
+	sourceFileName := openAPISourceFileName(content)
+	sourceMappings := make([]sourceview.Mapping, 0)
 	res := resolver{doc: doc, diagnostics: &diagnostics}
 	baseURL, warnings := deriveBaseURL(doc, req.Options.BaseURL)
 	scriptName := firstNonEmpty(req.Options.ScriptName, req.Name, doc.Info.Title, "Imported_OpenAPI_Script")
@@ -243,10 +247,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				skipped := strings.ToUpper(candidate.method) + " " + path
 				result.Stats.SkippedOperations = append(result.Stats.SkippedOperations, skipped)
 				diagnostics.Add(diag.Warning, "OpenAPI operation skipped", skipped, "operation was not converted because it was filtered or uses an unsupported HTTP method")
+				sourceMappings = append(sourceMappings, openAPISourceMapping(sourceFileName, content, path, candidate.method, "", skipped, "operation", "review_only", "OpenAPI operation was filtered or used an unsupported HTTP method."))
 				continue
 			}
 			action, bodyColumns, assertionAdded := buildAction(path, candidate.method, item.Parameters, candidate.op, boolOption(req.Options.IncludeAssertions, true), res)
+			actionIndex := len(result.Script.Actions)
 			result.Script.Actions = append(result.Script.Actions, action)
+			sourceMappings = append(sourceMappings, openAPISourceMapping(sourceFileName, content, path, candidate.method, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "OpenAPI operation was converted into a generated APEX Load action."))
 			result.Stats.ConvertedActions++
 			result.Stats.ParametersDetected += len(item.Parameters) + len(candidate.op.Parameters)
 			if action.Body != "" {
@@ -284,7 +291,62 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		diagnostics.Add(diag.Warning, "OpenAPI completeness guard", "document", fmt.Sprintf("%d operation(s) were present but not converted or explicitly skipped", gap))
 	}
 	result.Unsupported = diagnostics.Items()
+	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: content}, sourceMappings)
 	return result, nil
+}
+
+func openAPISourceFileName(content string) string {
+	if strings.HasPrefix(strings.TrimSpace(content), "{") {
+		return "openapi.json"
+	}
+	return "openapi.yaml"
+}
+
+func openAPISourceMapping(sourceFile string, content string, path string, method string, targetPath string, targetName string, targetKind string, status string, notes string) sourceview.Mapping {
+	line := openAPIOperationLine(content, path, method)
+	return sourceview.Mapping{
+		SourceFile: sourceFile,
+		StartLine:  line,
+		EndLine:    line,
+		Function:   strings.ToUpper(method) + " " + path,
+		TargetPath: targetPath,
+		TargetName: targetName,
+		TargetKind: targetKind,
+		Status:     status,
+		Notes:      notes,
+	}
+}
+
+func openAPIOperationLine(content string, path string, method string) int {
+	pathLine := lineForNeedle(content, `"`+path+`"`)
+	if pathLine == 1 {
+		pathLine = lineForNeedle(content, path+":")
+	}
+	if pathLine < 1 {
+		pathLine = 1
+	}
+	methodNeedles := []string{`"` + strings.ToLower(method) + `"`, strings.ToLower(method) + ":"}
+	lines := strings.Split(content, "\n")
+	for index := pathLine - 1; index < len(lines) && index < pathLine+80; index++ {
+		trimmed := strings.TrimSpace(lines[index])
+		for _, needle := range methodNeedles {
+			if strings.HasPrefix(trimmed, needle) {
+				return index + 1
+			}
+		}
+	}
+	return pathLine
+}
+
+func lineForNeedle(content string, needle string) int {
+	if needle == "" {
+		return 1
+	}
+	offset := strings.Index(content, needle)
+	if offset < 0 {
+		return 1
+	}
+	return sourceview.LineForOffset(content, offset)
 }
 
 func decodeDocument(data []byte) (*document, error) {

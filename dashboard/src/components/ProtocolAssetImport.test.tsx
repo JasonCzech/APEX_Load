@@ -21,6 +21,12 @@ vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
 
+vi.mock('./LinkedCodePane', () => ({
+  default: ({ value, ariaLabel }: { value: string; ariaLabel?: string }) => (
+    <pre aria-label={ariaLabel}>{value}</pre>
+  ),
+}))
+
 describe('ProtocolAssetImport', () => {
   let container: HTMLDivElement
   let root: Root
@@ -70,6 +76,10 @@ describe('ProtocolAssetImport', () => {
         title: 'Orders API',
         operation_names: ['Create Order'],
       },
+      source_review: {
+        source_files: [{ path: 'openapi.json', language: 'json', content: '{"paths":{"/orders":{"post":{}}}}' }],
+        mappings: [{ id: 'openapi-post', source_file: 'openapi.json', start_line: 1, function: 'POST /orders', target_path: 'actions[0]', target_name: 'Create Order', target_kind: 'action', status: 'converted' }],
+      },
     })
     apiMock.importHAR.mockResolvedValue({
       scripts: [],
@@ -98,6 +108,10 @@ describe('ProtocolAssetImport', () => {
         correlations_detected: 0,
       },
       summary: {},
+      source_review: {
+        source_files: [{ path: 'sample.har', language: 'json', content: '{"log":{"entries":[]}}' }],
+        mappings: [{ id: 'har-entry', source_file: 'sample.har', start_line: 1, function: 'har_entry', target_path: 'actions[0]', target_name: 'GET api orders', target_kind: 'action', status: 'converted' }],
+      },
     })
   })
 
@@ -146,6 +160,9 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('schema reference external.yaml')
     expect(container.textContent).toContain('Import Review (1)')
     expect(container.textContent).toContain('file bytes must be supplied before replay')
+    expect(container.textContent).toContain('Source Comparison')
+    expect(container.textContent).toContain('POST /orders')
+    expect(container.textContent).toContain('actions[0]')
   })
 
   it('passes the HAR include static assets toggle to the API', async () => {

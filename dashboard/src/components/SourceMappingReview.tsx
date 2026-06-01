@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 
-import { type LoadRunnerSourceReview, type LoadRunnerSourceReviewFile, type LoadRunnerSourceReviewMapping, type ScriptDefinition } from '../types/scripts'
+import { type ScriptDefinition, type SourceReview, type SourceReviewFile, type SourceReviewMapping } from '../types/scripts'
 import { canCopyTextToClipboard, copyTextToClipboard } from '../utils/clipboardUtils'
 import { buildDslDocument, lineRangeForTargetPath } from './dslJsonPointers'
 import {
@@ -22,7 +22,7 @@ type SortField = 'source' | 'function' | 'target' | 'status'
 type SortDirection = 'asc' | 'desc'
 
 interface Props {
-  sourceReview?: LoadRunnerSourceReview | null
+  sourceReview?: SourceReview | null
   script?: ScriptDefinition | null
   title?: string
 }
@@ -35,26 +35,26 @@ const CATEGORY_CLASS: Record<string, string> = {
   unsupported: 'unsupported',
 }
 
-function normalizeMappings(sourceReview?: LoadRunnerSourceReview | null): LoadRunnerSourceReviewMapping[] {
+function normalizeMappings(sourceReview?: SourceReview | null): SourceReviewMapping[] {
   return (sourceReview?.mappings || []).filter(mapping => mapping && mapping.id)
 }
 
-function normalizeFiles(sourceReview?: LoadRunnerSourceReview | null): LoadRunnerSourceReviewFile[] {
+function normalizeFiles(sourceReview?: SourceReview | null): SourceReviewFile[] {
   return (sourceReview?.source_files || []).filter(file => file && file.path)
 }
 
-function fileMatchesPath(file: LoadRunnerSourceReviewFile, path?: string) {
+function fileMatchesPath(file: SourceReviewFile, path?: string) {
   if (!path) return false
   const filePath = file.path.toLowerCase()
   const requested = path.toLowerCase()
   return filePath === requested || filePath.endsWith(`/${requested}`) || filePath.split('/').pop() === requested.split('/').pop()
 }
 
-function findSourceFile(files: LoadRunnerSourceReviewFile[], path?: string) {
+function findSourceFile(files: SourceReviewFile[], path?: string) {
   return files.find(file => fileMatchesPath(file, path)) || files[0] || null
 }
 
-function findFirstMappingForFile(mappings: LoadRunnerSourceReviewMapping[], filePath?: string) {
+function findFirstMappingForFile(mappings: SourceReviewMapping[], filePath?: string) {
   return mappings.find(mapping => mappingMatchesFile(mapping, filePath)) || null
 }
 
@@ -63,7 +63,7 @@ function compareText(a: string, b: string, direction: SortDirection) {
   return direction === 'asc' ? result : -result
 }
 
-function mappingSortValue(mapping: LoadRunnerSourceReviewMapping, field: SortField) {
+function mappingSortValue(mapping: SourceReviewMapping, field: SortField) {
   switch (field) {
     case 'function':
       return mapping.function || ''
@@ -84,7 +84,7 @@ function formatSupportModeLabel(mode?: string) {
   return (mode || '').replace(/_/g, ' ')
 }
 
-function formatSourceRange(mapping?: LoadRunnerSourceReviewMapping | null) {
+function formatSourceRange(mapping?: SourceReviewMapping | null) {
   if (!mapping) return 'No mapping selected'
   if (!mapping.start_line) return mapping.source_file || 'Source'
   if (mapping.end_line && mapping.end_line !== mapping.start_line) {
@@ -103,6 +103,14 @@ function excerptFromText(text: string, startLine?: number, endLine?: number) {
 
 function PaneFallback() {
   return <div className="source-map-empty">Loading code view…</div>
+}
+
+const COVERAGE_TOOLTIPS: Record<string, string> = {
+  converted: 'Source mappings that were converted into executable generated DSL.',
+  preserved: 'Source mappings preserved as supporting evidence, contributors, metadata, assertions, extractors, headers, timers, or data elements.',
+  review: 'Source mappings kept for reviewer attention, including review-only constructs or coarse ranges where exact child spans were unavailable.',
+  unsupported: 'Source mappings that could not be converted into executable DSL and need manual review before relying on the script.',
+  dslWithoutOrigin: 'Generated DSL actions, parameters, or data sources with no traceable source mapping.',
 }
 
 export default function SourceMappingReview({ sourceReview, script, title = 'Source Mapping' }: Props) {
@@ -162,7 +170,7 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
     return null
   }
 
-  const selectMapping = (mapping: LoadRunnerSourceReviewMapping | null) => {
+  const selectMapping = (mapping: SourceReviewMapping | null) => {
     if (!mapping) return
     setSelectedMappingId(mapping.id)
     if (mapping.source_file) setSelectedFilePath(mapping.source_file)
@@ -208,11 +216,11 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
     selectMapping(mappingForDslLine(dslDocument.ranges, mappings, line))
   }
 
-  const coverageChips: Array<{ key: string; label: string; value: number }> = [
-    { key: 'converted', label: 'Converted', value: coverage.converted },
-    { key: 'preserved', label: 'Preserved', value: coverage.preserved },
-    { key: 'review', label: 'Needs review', value: coverage.review },
-    { key: 'unsupported', label: 'Unsupported', value: coverage.unsupported },
+  const coverageChips: Array<{ key: string; label: string; value: number; tooltip: string }> = [
+    { key: 'converted', label: 'Converted', value: coverage.converted, tooltip: COVERAGE_TOOLTIPS.converted },
+    { key: 'preserved', label: 'Preserved', value: coverage.preserved, tooltip: COVERAGE_TOOLTIPS.preserved },
+    { key: 'review', label: 'Needs review', value: coverage.review, tooltip: COVERAGE_TOOLTIPS.review },
+    { key: 'unsupported', label: 'Unsupported', value: coverage.unsupported, tooltip: COVERAGE_TOOLTIPS.unsupported },
   ]
 
   return (
@@ -230,14 +238,22 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
 
       <div className="source-map-coverage" role="group" aria-label="Conversion coverage">
         {coverageChips.map(chip => (
-          <span key={chip.key} className={`source-map-status ${CATEGORY_CLASS[chip.key]}`}>
+          <span
+            key={chip.key}
+            className={`source-map-status ${CATEGORY_CLASS[chip.key]}`}
+            title={chip.tooltip}
+            data-tooltip={chip.tooltip}
+            tabIndex={0}
+          >
             {chip.label}: {chip.value}
           </span>
         ))}
         {dslDocument && (
           <span
             className={`source-map-status ${coverage.dslWithoutOrigin > 0 ? 'unsupported' : 'converted'}`}
-            title="DSL elements (actions, parameters, data sources) with no traceable source origin"
+            title={COVERAGE_TOOLTIPS.dslWithoutOrigin}
+            data-tooltip={COVERAGE_TOOLTIPS.dslWithoutOrigin}
+            tabIndex={0}
           >
             DSL without source origin: {coverage.dslWithoutOrigin}
           </span>

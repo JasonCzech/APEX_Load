@@ -60,6 +60,7 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
+	attachSourceReviewToScript(result.Script, "openapi", importReq.Name, result.SourceReview)
 	if issues := validateScript(result.Script); len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
@@ -71,6 +72,7 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		Summary:             result.Summary,
 		UnsupportedElements: result.Unsupported.Strings(),
 		ReviewSections:      appendImportDiagnosticReviewSections(buildOpenAPIReviewSections(result), result.Unsupported),
+		SourceReview:        result.SourceReview,
 	}))
 }
 
@@ -92,6 +94,7 @@ func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
+	attachSourceReviewToScript(result.Script, "wsdl", importReq.Name, result.SourceReview)
 	if issues := validateScript(result.Script); len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
@@ -103,6 +106,7 @@ func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
 		Summary:             result.Summary,
 		UnsupportedElements: result.Unsupported.Strings(),
 		ReviewSections:      appendImportDiagnosticReviewSections(buildWSDLReviewSections(result), result.Unsupported),
+		SourceReview:        result.SourceReview,
 	}))
 }
 
@@ -124,6 +128,7 @@ func (s *Server) handleImportPostman(w http.ResponseWriter, r *http.Request) {
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
+	attachSourceReviewToScript(result.Script, "postman", importReq.Name, result.SourceReview)
 	if issues := validateScript(result.Script); len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
@@ -135,6 +140,7 @@ func (s *Server) handleImportPostman(w http.ResponseWriter, r *http.Request) {
 		Summary:             result.Summary,
 		UnsupportedElements: result.Unsupported.Strings(),
 		ReviewSections:      appendImportDiagnosticReviewSections(buildPostmanReviewSections(result), result.Unsupported),
+		SourceReview:        result.SourceReview,
 	}))
 }
 

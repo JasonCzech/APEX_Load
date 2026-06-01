@@ -55,6 +55,19 @@ func TestConvertHAR(t *testing.T) {
 	if len(result.Correlations) == 0 {
 		t.Fatal("expected detected correlations")
 	}
+	if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 {
+		t.Fatalf("source review = %#v, want mappings", result.SourceReview)
+	}
+	foundActionMapping := false
+	for _, mapping := range result.SourceReview.Mappings {
+		if mapping.TargetPath == "actions[0]" && mapping.Status == "converted" {
+			foundActionMapping = true
+			break
+		}
+	}
+	if !foundActionMapping {
+		t.Fatalf("missing action source mapping in %#v", result.SourceReview.Mappings)
+	}
 }
 
 func TestConvertHARRequiresContent(t *testing.T) {

@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImportUtils'
 import { type JMeterImportResult as ImportResult, type JMeterSupportMatrixResponse, type SupportMatrix } from '../types/scriptImports'
-import { type ScriptDefinition } from '../types/scripts'
+import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
+import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScripts } from './importSaveUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './LoadRunnerImport.css'
@@ -32,6 +33,13 @@ function buildFallbackPrimaryScript(name: string): ScriptDefinition {
   }
 }
 
+function sourceReviewForJMeter(result?: ImportResult | null, script?: ScriptDefinition | null): SourceReview | null {
+  const metadataReview = script?.metadata?.import?.preserved?.source_review as SourceReview | undefined
+  const review = result?.source_review || metadataReview
+  if (!review || (!Array.isArray(review.source_files) && !Array.isArray(review.mappings))) return null
+  return review
+}
+
 export default function JMeterImport({ projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -53,6 +61,7 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
   const supportMatrixSections = summarizeSupportMatrix(supportMatrix)
   const extractorSummary = summarizeImportExtractors(result?.scripts || [])
   const primaryScript = getPrimaryScript(result)
+  const sourceReview = sourceReviewForJMeter(result, primaryScript)
 
   useEffect(() => {
     let cancelled = false
@@ -294,6 +303,7 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
             onEdit={onEdit && primaryScript ? () => onEdit(primaryScript) : undefined}
             editLabel={result.scripts.length > 1 ? 'Open First Script In Visual Editor' : 'Open In Visual Editor'}
             previewTitle="Import Preview"
+            previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={primaryScript} title="Source Comparison" /> : undefined}
           >
             <div className="lr-stats-grid">
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.converted_actions}</span><span className="lr-stat-label">Actions</span></div>

@@ -3,6 +3,8 @@ package sample
 import (
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 )
 
 func TestConvertRESTJSON(t *testing.T) {
@@ -71,6 +73,14 @@ func TestConvertRESTJSON(t *testing.T) {
 	if result.Stats.CorrelationsDetected == 0 {
 		t.Fatal("expected correlation stats to be populated")
 	}
+	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) == 0 || len(result.SourceReview.Mappings) == 0 {
+		t.Fatalf("source review = %#v, want files and mappings", result.SourceReview)
+	}
+	assertSampleSourceMapping(t, result.SourceReview.Mappings, "rest_json_request", "actions[0]", "converted")
+	assertSampleSourceMapping(t, result.SourceReview.Mappings, "response_status", "actions[0].assertions[0]", "contributor")
+	if strings.Contains(result.SourceReview.SourceFiles[0].Content, "top-secret") || strings.Contains(result.SourceReview.SourceFiles[0].Content, "secret\"") {
+		t.Fatalf("source review leaked sensitive content: %s", result.SourceReview.SourceFiles[0].Content)
+	}
 }
 
 func TestConvertCurl(t *testing.T) {
@@ -105,6 +115,20 @@ func TestConvertCurl(t *testing.T) {
 	if result.Stats.ConvertedActions != 1 {
 		t.Fatalf("converted actions = %d, want 1", result.Stats.ConvertedActions)
 	}
+	if result.SourceReview == nil {
+		t.Fatal("expected source review")
+	}
+	assertSampleSourceMapping(t, result.SourceReview.Mappings, "curl_command", "actions[0]", "converted")
+}
+
+func assertSampleSourceMapping(t *testing.T, mappings []sourceview.Mapping, function string, targetPath string, status string) {
+	t.Helper()
+	for _, mapping := range mappings {
+		if mapping.Function == function && mapping.TargetPath == targetPath && mapping.Status == status {
+			return
+		}
+	}
+	t.Fatalf("missing source mapping function=%s target=%s status=%s in %#v", function, targetPath, status, mappings)
 }
 
 func TestConvertCurlGetMovesDataToQueryAndURLEncodes(t *testing.T) {

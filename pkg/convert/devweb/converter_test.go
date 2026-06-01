@@ -43,6 +43,12 @@ load.action("Create Order", async function() {
 	if action.ThinkTime.MeanMs != 1500 || !action.ThinkTimeAfter {
 		t.Fatalf("think time = %#v after=%v", action.ThinkTime, action.ThinkTimeAfter)
 	}
+	if result.SourceReview == nil || len(result.SourceReview.Mappings) != 1 {
+		t.Fatalf("source review = %#v, want one mapping", result.SourceReview)
+	}
+	if mapping := result.SourceReview.Mappings[0]; mapping.Function != "load.WebRequest" || mapping.TargetPath != "actions[0]" || mapping.Status != "converted" {
+		t.Fatalf("source mapping = %#v", mapping)
+	}
 }
 
 func TestConvertWebSocketDevWebScript(t *testing.T) {

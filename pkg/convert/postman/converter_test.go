@@ -84,6 +84,12 @@ func TestConvertPostmanCollection(t *testing.T) {
 	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil || result.Script.Metadata.Import.Source != "postman" {
 		t.Fatalf("missing postman import metadata: %#v", result.Script.Metadata)
 	}
+	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) == 0 || len(result.SourceReview.Mappings) != 2 {
+		t.Fatalf("source review = %#v, want source file and two action mappings", result.SourceReview)
+	}
+	if strings.Contains(result.SourceReview.SourceFiles[0].Content, "secret-token") {
+		t.Fatalf("source review leaked bearer token: %s", result.SourceReview.SourceFiles[0].Content)
+	}
 }
 
 func TestConvertPostmanFormAndGraphQLBodies(t *testing.T) {

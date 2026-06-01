@@ -150,6 +150,29 @@ describe('SourceMappingReview', () => {
     expect(container.textContent).toContain('native noop')
   })
 
+  it('exposes hover bubble copy on conversion coverage pills', async () => {
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />)
+    })
+    await flushPromises()
+
+    const coverage = container.querySelector('.source-map-coverage')
+    expect(coverage).not.toBeNull()
+    const converted = Array.from(coverage?.querySelectorAll('.source-map-status') || []).find(pill => pill.textContent?.includes('Converted:')) as HTMLElement | undefined
+    const preserved = Array.from(coverage?.querySelectorAll('.source-map-status') || []).find(pill => pill.textContent?.includes('Preserved:')) as HTMLElement | undefined
+    const review = Array.from(coverage?.querySelectorAll('.source-map-status') || []).find(pill => pill.textContent?.includes('Needs review:')) as HTMLElement | undefined
+    const unsupported = Array.from(coverage?.querySelectorAll('.source-map-status') || []).find(pill => pill.textContent?.includes('Unsupported:')) as HTMLElement | undefined
+    const withoutOrigin = Array.from(coverage?.querySelectorAll('.source-map-status') || []).find(pill => pill.textContent?.includes('DSL without source origin:')) as HTMLElement | undefined
+
+    expect(converted?.dataset.tooltip).toContain('converted into executable generated DSL')
+    expect(converted?.getAttribute('title')).toBe(converted?.dataset.tooltip)
+    expect(converted?.tabIndex).toBe(0)
+    expect(preserved?.dataset.tooltip).toContain('supporting evidence')
+    expect(review?.dataset.tooltip).toContain('reviewer attention')
+    expect(unsupported?.dataset.tooltip).toContain('manual review')
+    expect(withoutOrigin?.dataset.tooltip).toContain('no traceable source mapping')
+  })
+
   it('clears the stale DSL selection when the selected source file has no mapping', async () => {
     await act(async () => {
       root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />)

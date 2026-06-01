@@ -17,6 +17,12 @@ vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
 
+vi.mock('./LinkedCodePane', () => ({
+  default: ({ value, ariaLabel }: { value: string; ariaLabel?: string }) => (
+    <pre aria-label={ariaLabel}>{value}</pre>
+  ),
+}))
+
 describe('SampleScriptImport', () => {
   let container: HTMLDivElement
   let root: Root
@@ -58,6 +64,10 @@ describe('SampleScriptImport', () => {
         assertions: 1,
         extractors: 1,
         correlations_detected: 1,
+      },
+      source_review: {
+        source_files: [{ path: 'sample.json', language: 'json', content: '{"requests":[]}' }],
+        mappings: [{ id: 'sample-request', source_file: 'sample.json', start_line: 1, function: 'rest_json_request', target_path: 'actions[0]', target_name: '01 - POST v1 session', target_kind: 'action', status: 'converted' }],
       },
     })
     apiMock.createScript.mockImplementation(async (script: { name?: string; protocol?: string; version?: string }) => ({
@@ -110,6 +120,9 @@ describe('SampleScriptImport', () => {
     }))
     expect(container.textContent).toContain('Review Generated Script')
     expect(container.textContent).toContain('POST_v1_session')
+    expect(container.textContent).toContain('Source Comparison')
+    expect(container.textContent).toContain('rest_json_request')
+    expect(container.textContent).toContain('actions[0]')
     expect(container.textContent).toContain('session_id')
     expect(container.textContent).toContain('no reusable correlation values were detected across the provided samples')
 

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 )
 
 const sampleJMX = `<?xml version="1.0" encoding="UTF-8"?>
@@ -263,6 +265,21 @@ func TestConvertJMXHTTPPlan(t *testing.T) {
 	if _, err := time.Parse(time.RFC3339, importedAt); err != nil {
 		t.Fatalf("imported_at parse error: %v", err)
 	}
+	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) == 0 || len(result.SourceReview.Mappings) == 0 {
+		t.Fatalf("source review = %#v, want files and mappings", result.SourceReview)
+	}
+	assertJMeterSourceMapping(t, result.SourceReview.Mappings, "HTTPSamplerProxy", "actions[0]", "converted")
+	assertJMeterSourceMapping(t, result.SourceReview.Mappings, "jmeter_assertion", "actions[0].assertions[0]", "contributor")
+}
+
+func assertJMeterSourceMapping(t *testing.T, mappings []sourceview.Mapping, function string, targetPath string, status string) {
+	t.Helper()
+	for _, mapping := range mappings {
+		if mapping.Function == function && mapping.TargetPath == targetPath && mapping.Status == status {
+			return
+		}
+	}
+	t.Fatalf("missing source mapping function=%s target=%s status=%s in %#v", function, targetPath, status, mappings)
 }
 
 func TestConvertJMXResponseAssertionFieldsAndDynamicFunctions(t *testing.T) {

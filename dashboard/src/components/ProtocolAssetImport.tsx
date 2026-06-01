@@ -4,9 +4,10 @@ import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type StoredScript } from '../types'
 import { type DevWebImportResult, type HARImportResult, type OpenAPIImportResult, type PostmanImportResult, type WSDLImportResult } from '../types/scriptImports'
-import { type ScriptDefinition } from '../types/scripts'
+import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
+import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
@@ -61,6 +62,13 @@ const copy = {
 
 type ProtocolImportResult = DevWebImportResult | HARImportResult | OpenAPIImportResult | PostmanImportResult | WSDLImportResult
 
+function sourceReviewForImport(result?: ProtocolImportResult | null, script?: ScriptDefinition | null): SourceReview | null {
+  const metadataReview = script?.metadata?.import?.preserved?.source_review as SourceReview | undefined
+  const review = result?.source_review || metadataReview
+  if (!review || (!Array.isArray(review.source_files) && !Array.isArray(review.mappings))) return null
+  return review
+}
+
 export default function ProtocolAssetImport({ kind, projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const convertTask = useAsyncTask<ProtocolImportResult>()
@@ -112,6 +120,8 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
 
   const stats = result?.stats as Record<string, unknown> | undefined
   const actionCount = typeof stats?.converted_actions === 'number' ? stats.converted_actions : 0
+  const reviewedScript = result?.script || result?.scripts?.[0] || null
+  const sourceReview = sourceReviewForImport(result, reviewedScript)
 
   return (
     <div className="sample-import">
@@ -164,18 +174,19 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
 
       {(messageError || convertTask.error) && <div className="sample-import-error">{messageError || convertTask.error}</div>}
 
-      {result && (result.script || result.scripts?.[0]) && (
+      {result && reviewedScript && (
         <div className="sample-import-result">
           <ScriptImportReview
             title="Review Generated Script"
             subtitle={`${actionCount} action(s) generated from ${kind === 'devweb' ? 'DevWeb source' : kind === 'har' ? 'HAR entries' : kind === 'openapi' ? 'OpenAPI operations' : kind === 'postman' ? 'Postman requests' : 'WSDL operations'}.`}
-            script={(result.script || result.scripts?.[0])!}
+            script={reviewedScript}
             warnings={result.warnings}
             unsupportedElements={result.unsupported_elements}
             reviewSections={result.review_sections}
             saving={saveTask.pending}
             onSave={handleSave}
-            onEdit={onEdit ? () => onEdit((result.script || result.scripts?.[0]) as ScriptDefinition) : undefined}
+            onEdit={onEdit ? () => onEdit(reviewedScript) : undefined}
+            previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
           >
             <div className="sample-import-stats-grid">
               {stats && Object.entries(stats).filter(([, value]) => typeof value === 'number').slice(0, 5).map(([key, value]) => (

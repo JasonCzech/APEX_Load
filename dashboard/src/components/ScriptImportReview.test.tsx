@@ -60,4 +60,28 @@ describe('ScriptImportReview', () => {
     expect(container.textContent).toContain('Import Review (1)')
     expect(container.textContent).toContain('Multipart file upload needs a governed file value.')
   })
+
+  it('renders generated preview as a collapsible section before source comparison content', () => {
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          title="Review Generated Script"
+          script={script}
+          previewAside={<div className="test-source-comparison">Source Comparison</div>}
+        />,
+      )
+    })
+
+    const review = container.querySelector('.script-import-review')
+    expect(review).not.toBeNull()
+    const children = Array.from(review?.children || [])
+    const preview = children.find(element => element.classList.contains('script-import-review-preview')) as HTMLDetailsElement | undefined
+    const comparison = children.find(element => element.classList.contains('script-import-review-preview-aside'))
+    expect(preview?.tagName).toBe('DETAILS')
+    expect(preview?.open).toBe(true)
+    expect(preview?.querySelector('summary h4')?.textContent).toBe('Generated Script Preview')
+    expect(comparison?.textContent).toContain('Source Comparison')
+    expect(preview && comparison ? children.indexOf(preview) < children.indexOf(comparison) : false).toBe(true)
+    expect(container.querySelector('.script-import-review-preview-row')).toBeNull()
+  })
 })

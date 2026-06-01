@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -48,11 +49,12 @@ type ReviewSummary struct {
 }
 
 type ConvertResult struct {
-	Script      *dsl.Script      `json:"script"`
-	Warnings    []string         `json:"warnings,omitempty"`
-	Unsupported diag.Diagnostics `json:"unsupported,omitempty"`
-	Stats       ConvertStats     `json:"stats"`
-	Summary     ReviewSummary    `json:"summary"`
+	Script       *dsl.Script        `json:"script"`
+	Warnings     []string           `json:"warnings,omitempty"`
+	Unsupported  diag.Diagnostics   `json:"unsupported,omitempty"`
+	Stats        ConvertStats       `json:"stats"`
+	Summary      ReviewSummary      `json:"summary"`
+	SourceReview *sourceview.Review `json:"source_review,omitempty"`
 }
 
 type definitions struct {
@@ -196,6 +198,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	var diagnostics diag.Collector
+	sourceFileName := "service.wsdl"
+	sourceMappings := make([]sourceview.Mapping, 0)
 	addImportDiagnostics(doc, &diagnostics)
 	baseURL, warnings := deriveBaseURL(doc, req.Options.BaseURL, &diagnostics)
 	soapVersion := firstNonEmpty(req.Options.SOAPVersion, detectSOAPVersion(content), "1.1")
@@ -271,7 +275,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			action.Headers["SOAPAction"] = op.SOAPAction
 			result.Stats.SOAPActionsDetected = append(result.Stats.SOAPActionsDetected, op.SOAPAction)
 		}
+		actionIndex := len(result.Script.Actions)
 		result.Script.Actions = append(result.Script.Actions, action)
+		sourceMappings = append(sourceMappings, wsdlSourceMapping(sourceFileName, content, op, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "WSDL operation was converted into a generated SOAP action."))
 		result.Summary.Operations = append(result.Summary.Operations, op.Name)
 		result.Stats.ConvertedActions++
 	}
@@ -284,7 +290,32 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		diagnostics.Add(diag.Warning, "WSDL completeness guard", "definitions", fmt.Sprintf("%d operation(s) were detected but not converted into SOAP actions", gap))
 	}
 	result.Unsupported = diagnostics.Items()
+	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: content}, sourceMappings)
 	return result, nil
+}
+
+func wsdlSourceMapping(sourceFile string, content string, op operationInfo, targetPath string, targetName string, targetKind string, status string, notes string) sourceview.Mapping {
+	line := wsdlOperationLine(content, op.Name)
+	return sourceview.Mapping{
+		SourceFile: sourceFile,
+		StartLine:  line,
+		EndLine:    line,
+		Function:   "operation " + op.Name,
+		TargetPath: targetPath,
+		TargetName: targetName,
+		TargetKind: targetKind,
+		Status:     status,
+		Notes:      notes,
+	}
+}
+
+func wsdlOperationLine(content string, operationName string) int {
+	for _, needle := range []string{`name="` + operationName + `"`, `name='` + operationName + `'`} {
+		if offset := strings.Index(content, needle); offset >= 0 {
+			return sourceview.LineForOffset(content, offset)
+		}
+	}
+	return 1
 }
 
 type operationInfo struct {

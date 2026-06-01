@@ -377,6 +377,11 @@ func TestHandleImportSample(t *testing.T) {
 			Actions []struct {
 				Target string `json:"target"`
 			} `json:"actions"`
+			Metadata struct {
+				Import struct {
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
 		} `json:"script"`
 		Warnings     []string       `json:"warnings"`
 		Assumptions  []string       `json:"assumptions"`
@@ -389,6 +394,7 @@ func TestHandleImportSample(t *testing.T) {
 			ConvertedActions int `json:"converted_actions"`
 			Assertions       int `json:"assertions"`
 		} `json:"stats"`
+		SourceReview map[string]any `json:"source_review"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -423,6 +429,12 @@ func TestHandleImportSample(t *testing.T) {
 	}
 	if result.Script.Actions[1].Target != "/v1/session/{{var.corr_sessionid}}/items" {
 		t.Fatalf("second target = %q, want correlated target", result.Script.Actions[1].Target)
+	}
+	if len(result.SourceReview) == 0 {
+		t.Fatal("expected root source_review in response")
+	}
+	if result.Script.Metadata.Import.Preserved["source_review"] == nil {
+		t.Fatalf("script metadata missing preserved source_review: %#v", result.Script.Metadata.Import.Preserved)
 	}
 }
 
@@ -1882,11 +1894,17 @@ func TestHandleImportJMeter(t *testing.T) {
 			Actions []struct {
 				Target string `json:"target"`
 			} `json:"actions"`
+			Metadata struct {
+				Import struct {
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
 		} `json:"scripts"`
-		ScenarioDraft any      `json:"scenario_draft"`
-		Correlations  []any    `json:"correlations"`
-		Assumptions   []string `json:"assumptions"`
-		Unsupported   []string `json:"unsupported_elements"`
+		ScenarioDraft any            `json:"scenario_draft"`
+		Correlations  []any          `json:"correlations"`
+		Assumptions   []string       `json:"assumptions"`
+		Unsupported   []string       `json:"unsupported_elements"`
+		SourceReview  map[string]any `json:"source_review"`
 		Stats         struct {
 			ConvertedActions int `json:"converted_actions"`
 		} `json:"stats"`
@@ -1911,6 +1929,12 @@ func TestHandleImportJMeter(t *testing.T) {
 	}
 	if len(result.Unsupported) != 0 {
 		t.Fatalf("unsupported_elements = %v, want none", result.Unsupported)
+	}
+	if len(result.SourceReview) == 0 {
+		t.Fatal("expected root source_review in response")
+	}
+	if result.Scripts[0].Metadata.Import.Preserved["source_review"] == nil {
+		t.Fatalf("script metadata missing preserved source_review: %#v", result.Scripts[0].Metadata.Import.Preserved)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -39,15 +40,19 @@ type ConvertStats struct {
 }
 
 type ConvertResult struct {
-	Script      *dsl.Script      `json:"script"`
-	Warnings    []string         `json:"warnings,omitempty"`
-	Unsupported diag.Diagnostics `json:"unsupported,omitempty"`
-	Stats       ConvertStats     `json:"stats"`
+	Script       *dsl.Script        `json:"script"`
+	Warnings     []string           `json:"warnings,omitempty"`
+	Unsupported  diag.Diagnostics   `json:"unsupported,omitempty"`
+	Stats        ConvertStats       `json:"stats"`
+	SourceReview *sourceview.Review `json:"source_review,omitempty"`
 }
 
 type parsedStep struct {
-	Protocol string
-	Action   dsl.Action
+	Protocol  string
+	Action    dsl.Action
+	Function  string
+	StartLine int
+	EndLine   int
 }
 
 type devwebReviewPattern struct {
@@ -101,7 +106,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if strings.TrimSpace(req.Content) == "" {
 		return nil, fmt.Errorf("content is required")
 	}
-	return convertSource(firstNonEmpty(req.Name, "Converted_DevWeb_Script"), req.Content, req.Options)
+	return convertSource(firstNonEmpty(req.Name, "Converted_DevWeb_Script"), firstNonEmpty(req.Name, "devweb")+".js", req.Content, req.Options)
 }
 
 func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
@@ -125,10 +130,10 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if strings.TrimSpace(content) == "" {
 		return nil, fmt.Errorf("no DevWeb .js file found in archive")
 	}
-	return convertSource(firstNonEmpty(name, "Converted_DevWeb_Script"), content, opts)
+	return convertSource(firstNonEmpty(name, "Converted_DevWeb_Script"), firstNonEmpty(name, "devweb")+".js", content, opts)
 }
 
-func convertSource(name string, content string, opts ConvertOptions) (*ConvertResult, error) {
+func convertSource(name string, sourceFileName string, content string, opts ConvertOptions) (*ConvertResult, error) {
 	result := &ConvertResult{
 		Script: &dsl.Script{
 			Name:          sanitizeName(name),
@@ -150,10 +155,11 @@ func convertSource(name string, content string, opts ConvertOptions) (*ConvertRe
 		},
 	}
 	var diagnostics diag.Collector
+	sourceMappings := make([]sourceview.Mapping, 0)
 
 	blocks := actionBlocks(content)
 	if len(blocks) == 0 {
-		blocks = []namedBlock{{Name: "DevWebAction", Body: content}}
+		blocks = []namedBlock{{Name: "DevWebAction", Body: content, StartLine: 1}}
 		result.Warnings = append(result.Warnings, "no load.action blocks found; imported top-level DevWeb calls in source order")
 	}
 
@@ -162,16 +168,20 @@ func convertSource(name string, content string, opts ConvertOptions) (*ConvertRe
 		steps := parseBlock(block, &result.Stats, &result.Warnings, &diagnostics)
 		for _, step := range steps {
 			protocols = append(protocols, step.Protocol)
+			actionIndex := len(result.Script.Actions)
 			result.Script.Actions = append(result.Script.Actions, step.Action)
+			sourceMappings = append(sourceMappings, devwebSourceMapping(sourceFileName, step, fmt.Sprintf("actions[%d]", actionIndex)))
 			result.Stats.ConvertedActions++
 		}
 	}
 	if len(result.Script.Actions) == 0 && len(blocks) > 0 {
 		diagnostics.Add(diag.Warning, "DevWeb load.action parser", result.Script.Name, "load.action block parsing could not preserve nested JavaScript objects; importing supported calls from full source for review")
-		steps := parseBlock(namedBlock{Name: result.Script.Name, Body: content}, &result.Stats, &result.Warnings, &diagnostics)
+		steps := parseBlock(namedBlock{Name: result.Script.Name, Body: content, StartLine: 1}, &result.Stats, &result.Warnings, &diagnostics)
 		for _, step := range steps {
 			protocols = append(protocols, step.Protocol)
+			actionIndex := len(result.Script.Actions)
 			result.Script.Actions = append(result.Script.Actions, step.Action)
+			sourceMappings = append(sourceMappings, devwebSourceMapping(sourceFileName, step, fmt.Sprintf("actions[%d]", actionIndex)))
 			result.Stats.ConvertedActions++
 		}
 	}
@@ -194,19 +204,23 @@ func convertSource(name string, content string, opts ConvertOptions) (*ConvertRe
 		diagnostics.Add(diag.Warning, "DevWeb completeness guard", result.Script.Name, fmt.Sprintf("%d SDK construct(s) were detected but not converted or explicitly skipped", gap))
 	}
 	result.Unsupported = diagnostics.Items()
+	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: content}, sourceMappings)
 	return result, nil
 }
 
 type namedBlock struct {
-	Name string
-	Body string
+	Name      string
+	Body      string
+	StartLine int
 }
 
 func actionBlocks(content string) []namedBlock {
-	matches := actionBlockPattern.FindAllStringSubmatch(content, -1)
+	matches := actionBlockPattern.FindAllStringSubmatchIndex(content, -1)
 	blocks := make([]namedBlock, 0, len(matches))
 	for _, match := range matches {
-		blocks = append(blocks, namedBlock{Name: match[1], Body: match[2]})
+		name := content[match[2]:match[3]]
+		body := content[match[4]:match[5]]
+		blocks = append(blocks, namedBlock{Name: name, Body: body, StartLine: sourceview.LineForOffset(content, match[4])})
 	}
 	return blocks
 }
@@ -225,7 +239,7 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 			continue
 		}
 		stats.HTTPRequests++
-		steps = append(steps, parsedStep{Protocol: "http", Action: action})
+		steps = append(steps, parsedStep{Protocol: "http", Action: action, Function: "load.WebRequest", StartLine: devwebLine(block, match[0]), EndLine: devwebLine(block, match[1])})
 	}
 	if calls := webRequestCallPattern.FindAllStringIndex(block.Body, -1); len(calls) > len(webRequestMatches) {
 		for _, call := range calls {
@@ -257,7 +271,7 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 			Name:   actionName(block.Name, "connect"),
 			Type:   "ws_connect",
 			Target: target,
-		}})
+		}, Function: "load.WebSocket", StartLine: block.StartLine, EndLine: block.StartLine})
 	}
 	for _, match := range webSocketOpenPattern.FindAllStringSubmatch(block.Body, -1) {
 		if _, exists := socketVars[match[1]]; exists {
@@ -279,7 +293,7 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 			Name: actionName(block.Name, "send"),
 			Type: "ws_send",
 			Body: jsString(match[2]),
-		}})
+		}, Function: "WebSocket.send", StartLine: block.StartLine, EndLine: block.StartLine})
 	}
 	for _, match := range webSocketRecvPattern.FindAllStringSubmatch(block.Body, -1) {
 		if _, exists := socketVars[match[1]]; !exists {
@@ -291,7 +305,7 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 			Name:   actionName(block.Name, "receive"),
 			Type:   "ws_receive",
 			Params: map[string]any{"timeout_ms": 30000},
-		}})
+		}, Function: "WebSocket.receive", StartLine: block.StartLine, EndLine: block.StartLine})
 	}
 	for _, match := range webSocketClosePattern.FindAllStringSubmatch(block.Body, -1) {
 		if _, exists := socketVars[match[1]]; !exists {
@@ -302,7 +316,7 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 		steps = append(steps, parsedStep{Protocol: "websocket", Action: dsl.Action{
 			Name: actionName(block.Name, "close"),
 			Type: "ws_close",
-		}})
+		}, Function: "WebSocket.close", StartLine: block.StartLine, EndLine: block.StartLine})
 	}
 	for _, match := range grpcInvokePattern.FindAllStringSubmatch(block.Body, -1) {
 		stats.TotalSteps++
@@ -325,7 +339,7 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 			Type:   "grpc_unary",
 			Target: target,
 			Body:   body,
-		}})
+		}, Function: "grpc.invoke", StartLine: block.StartLine, EndLine: block.StartLine})
 	}
 	for _, match := range thinkTimePattern.FindAllStringSubmatch(block.Body, -1) {
 		stats.TotalSteps++
@@ -371,11 +385,44 @@ func webRequestCallCovered(offset int, matches [][]int) bool {
 }
 
 func devwebLocation(block namedBlock, offset int) string {
-	line := 1
-	if offset > 0 && offset <= len(block.Body) {
-		line += strings.Count(block.Body[:offset], "\n")
-	}
+	line := devwebLine(block, offset)
 	return fmt.Sprintf("%s line %d", firstNonEmpty(block.Name, "DevWebAction"), line)
+}
+
+func devwebLine(block namedBlock, offset int) int {
+	start := block.StartLine
+	if start <= 0 {
+		start = 1
+	}
+	if offset <= 0 {
+		return start
+	}
+	if offset > len(block.Body) {
+		offset = len(block.Body)
+	}
+	return start + strings.Count(block.Body[:offset], "\n")
+}
+
+func devwebSourceMapping(sourceFile string, step parsedStep, targetPath string) sourceview.Mapping {
+	startLine := step.StartLine
+	if startLine <= 0 {
+		startLine = 1
+	}
+	endLine := step.EndLine
+	if endLine < startLine {
+		endLine = startLine
+	}
+	return sourceview.Mapping{
+		SourceFile: sourceFile,
+		StartLine:  startLine,
+		EndLine:    endLine,
+		Function:   firstNonEmpty(step.Function, step.Action.Type),
+		TargetPath: targetPath,
+		TargetName: step.Action.Name,
+		TargetKind: "action",
+		Status:     "converted",
+		Notes:      "DevWeb SDK construct was converted into generated APEX Load DSL.",
+	}
 }
 
 func parseWebRequest(blockName string, objectLiteral string) (dsl.Action, bool) {

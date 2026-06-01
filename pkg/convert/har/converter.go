@@ -6,6 +6,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -25,6 +26,7 @@ type ConvertResult struct {
 	Unsupported  diag.Diagnostics     `json:"unsupported,omitempty"`
 	Stats        sample.ConvertStats  `json:"stats"`
 	Correlations []sample.Correlation `json:"correlations,omitempty"`
+	SourceReview *sourceview.Review   `json:"source_review,omitempty"`
 }
 
 func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
@@ -60,6 +62,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		Unsupported:  result.Unsupported,
 		Stats:        result.Stats,
 		Correlations: result.Correlations,
+		SourceReview: result.SourceReview,
 	}, nil
 }
 

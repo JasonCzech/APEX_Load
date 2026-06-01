@@ -1,5 +1,5 @@
 import { type StoredScenario, type StoredScript } from '../types'
-import { type LoadRunnerSourceReview, type ScriptDefinition } from './scripts'
+import { type SourceReview, type ScriptDefinition } from './scripts'
 
 export interface SupportMatrix {
   supported: string[]
@@ -48,6 +48,7 @@ export interface ScriptImportResult<
   summary: TSummary
   detected_protocol?: DetectedLoadRunnerProtocol
   review_artifact?: LoadRunnerReviewArtifact
+  source_review?: SourceReview
 }
 
 export interface DetectedLoadRunnerProtocol {
@@ -99,7 +100,7 @@ export interface LoadRunnerImportSummary {
   migration_readiness?: LoadRunnerMigrationReadiness
   detected_protocol?: DetectedLoadRunnerProtocol
   review_artifact?: LoadRunnerReviewArtifact
-  source_review?: LoadRunnerSourceReview
+  source_review?: SourceReview
   import_mode?: string
   unsupported_function_count: number
 }

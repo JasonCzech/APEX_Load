@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/convert/tmpl"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -28,15 +29,16 @@ type ConvertOptions struct {
 }
 
 type ConvertResult struct {
-	Scripts             []*dsl.Script    `json:"scripts"`
-	Script              *dsl.Script      `json:"script,omitempty"`
-	ScenarioDraft       *ScenarioDraft   `json:"scenario_draft,omitempty"`
-	Warnings            []string         `json:"warnings,omitempty"`
-	UnsupportedElements []string         `json:"unsupported_elements,omitempty"`
-	Unsupported         diag.Diagnostics `json:"unsupported,omitempty"`
-	Assumptions         []string         `json:"assumptions,omitempty"`
-	Stats               ConvertStats     `json:"stats"`
-	Summary             ImportSummary    `json:"summary"`
+	Scripts             []*dsl.Script      `json:"scripts"`
+	Script              *dsl.Script        `json:"script,omitempty"`
+	ScenarioDraft       *ScenarioDraft     `json:"scenario_draft,omitempty"`
+	Warnings            []string           `json:"warnings,omitempty"`
+	UnsupportedElements []string           `json:"unsupported_elements,omitempty"`
+	Unsupported         diag.Diagnostics   `json:"unsupported,omitempty"`
+	Assumptions         []string           `json:"assumptions,omitempty"`
+	Stats               ConvertStats       `json:"stats"`
+	Summary             ImportSummary      `json:"summary"`
+	SourceReview        *sourceview.Review `json:"source_review,omitempty"`
 }
 
 type ConvertStats struct {
@@ -85,10 +87,12 @@ type SupportMatrix struct {
 }
 
 type xmlNode struct {
-	Name     string
-	Attrs    map[string]string
-	Text     string
-	Children []*xmlNode
+	Name      string
+	Attrs     map[string]string
+	Text      string
+	Children  []*xmlNode
+	StartLine int
+	EndLine   int
 }
 
 type treeNode struct {
@@ -189,6 +193,8 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	variableNames := map[string]struct{}{}
 	csvNames := map[string]struct{}{}
 	var diagnostics diag.Collector
+	sourceFileName := firstNonEmpty(opts.FileName, "import.jmx")
+	sourceMappings := make([]sourceview.Mapping, 0)
 
 	threadGroups := findTreeNodes(trees, "ThreadGroup")
 	if len(threadGroups) == 0 {
@@ -231,7 +237,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			}},
 		}
 
-		walkThreadGroup(tg, &ctx, script, opts, result, unsupported, variableNames, csvNames, &diagnostics)
+		walkThreadGroup(tg, &ctx, script, opts, result, unsupported, variableNames, csvNames, &diagnostics, sourceFileName, &sourceMappings)
 		if script.Config.BaseURL == "" {
 			script.Config.BaseURL = opts.BaseURL
 		}
@@ -291,10 +297,11 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if opts.ScenarioDraft && len(result.Scripts) > 0 {
 		result.ScenarioDraft = buildScenarioDraft(threadGroups, result.Scripts)
 	}
+	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: string(data)}, sourceMappings)
 	return result, nil
 }
 
-func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, opts ConvertOptions, result *ConvertResult, unsupported map[string]struct{}, variableNames map[string]struct{}, csvNames map[string]struct{}, diagnostics *diag.Collector) {
+func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, opts ConvertOptions, result *ConvertResult, unsupported map[string]struct{}, variableNames map[string]struct{}, csvNames map[string]struct{}, diagnostics *diag.Collector, sourceFileName string, sourceMappings *[]sourceview.Mapping) {
 	for _, child := range node.Children {
 		switch child.Element.Name {
 		case "ConfigTestElement":
@@ -345,12 +352,14 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			result.Warnings = append(result.Warnings, warnings...)
 			result.Stats.Samplers++
 			if action != nil {
+				actionIndex := len(script.Actions)
 				script.Actions = append(script.Actions, *action)
+				appendJMeterActionSourceMappings(sourceMappings, sourceFileName, child, actionIndex, action)
 				result.Stats.ConvertedActions++
 			}
 			diagnoseJMeterChildren(child.Children, diagnostics, unsupported)
 		case "ThreadGroup", "TestPlan":
-			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics)
+			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
 			continue
 		case "TransactionController":
 			next := *ctx
@@ -359,19 +368,21 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 				txName = ctx.transaction + " / " + txName
 			}
 			next.transaction = txName
-			walkThreadGroup(child, &next, script, opts, result, unsupported, variableNames, csvNames, diagnostics)
+			walkThreadGroup(child, &next, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
 			continue
 		case "IfController", "WhileController", "ForeachController", "ForEachController", "LoopController", "InterleaveControl", "RandomController", "ThroughputController":
 			diagnostics.Add(diag.Warning, "JMeter "+child.Element.Name, jmeterElementLocation(child.Element), "controller logic was flattened; child requests are imported in source order without original conditions or transaction semantics")
+			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", "JMeter controller logic was flattened; child requests are imported in source order without original conditions."))
 		case "hashTree":
 		default:
 			if strings.TrimSpace(child.Element.Name) != "" {
 				unsupported[child.Element.Name] = struct{}{}
 				diagnoseJMeterElement(child.Element, diagnostics)
+				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "unsupported", "review_only", "JMeter element was not converted into executable APEX Load DSL."))
 			}
 		}
 		if len(child.Children) > 0 && child.Element.Name != "HTTPSamplerProxy" {
-			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics)
+			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
 		}
 	}
 }
@@ -394,6 +405,81 @@ func countJMeterSamplerElements(nodes []*treeNode) (int, int) {
 		skipped += childSkipped
 	}
 	return total, skipped
+}
+
+func appendJMeterActionSourceMappings(mappings *[]sourceview.Mapping, sourceFile string, node *treeNode, actionIndex int, action *dsl.Action) {
+	if mappings == nil || node == nil || node.Element == nil || action == nil {
+		return
+	}
+	*mappings = append(*mappings, jmeterSourceMapping(
+		sourceFile,
+		node.Element,
+		node.Element.Name,
+		fmt.Sprintf("actions[%d]", actionIndex),
+		action.Name,
+		"action",
+		"converted",
+		"JMeter HTTP sampler was converted into a generated APEX Load action.",
+	))
+	for index, extractor := range action.Extractors {
+		*mappings = append(*mappings, jmeterSourceMapping(
+			sourceFile,
+			node.Element,
+			"jmeter_extractor",
+			fmt.Sprintf("actions[%d].extractors[%d]", actionIndex, index),
+			extractor.Name,
+			"extractor",
+			"contributor",
+			"JMeter post-processor was converted into a generated extractor.",
+		))
+	}
+	for index, assertion := range action.Assertions {
+		*mappings = append(*mappings, jmeterSourceMapping(
+			sourceFile,
+			node.Element,
+			"jmeter_assertion",
+			fmt.Sprintf("actions[%d].assertions[%d]", actionIndex, index),
+			assertion.Type,
+			"assertion",
+			"contributor",
+			"JMeter assertion or default assertion contributed to this generated assertion.",
+		))
+	}
+	if action.ThinkTimeAfter {
+		*mappings = append(*mappings, jmeterSourceMapping(
+			sourceFile,
+			node.Element,
+			"jmeter_timer",
+			fmt.Sprintf("actions[%d].think_time", actionIndex),
+			"Think Time",
+			"config",
+			"contributor",
+			"JMeter timer contributed to this generated think-time setting.",
+		))
+	}
+}
+
+func jmeterSourceMapping(sourceFile string, element *xmlNode, function string, targetPath string, targetName string, targetKind string, status string, notes string) sourceview.Mapping {
+	startLine := 1
+	endLine := 1
+	if element != nil {
+		startLine = element.StartLine
+		endLine = element.EndLine
+		if endLine == 0 {
+			endLine = startLine
+		}
+	}
+	return sourceview.Mapping{
+		SourceFile: sourceFile,
+		StartLine:  startLine,
+		EndLine:    endLine,
+		Function:   function,
+		TargetPath: targetPath,
+		TargetName: targetName,
+		TargetKind: targetKind,
+		Status:     status,
+		Notes:      notes,
+	}
 }
 
 func isJMeterSamplerElement(name string) bool {
@@ -911,6 +997,7 @@ func parseXPathNamespaces(raw string) (map[string]string, error) {
 
 func parseXML(data []byte) (*xmlNode, error) {
 	decoder := xml.NewDecoder(bytes.NewReader(data))
+	content := string(data)
 	var stack []*xmlNode
 	for {
 		tok, err := decoder.Token()
@@ -922,7 +1009,7 @@ func parseXML(data []byte) (*xmlNode, error) {
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
-			node := &xmlNode{Name: t.Name.Local, Attrs: map[string]string{}}
+			node := &xmlNode{Name: t.Name.Local, Attrs: map[string]string{}, StartLine: sourceview.LineForOffset(content, int(decoder.InputOffset()))}
 			for _, attr := range t.Attr {
 				node.Attrs[attr.Name.Local] = attr.Value
 			}
@@ -939,6 +1026,7 @@ func parseXML(data []byte) (*xmlNode, error) {
 			if len(stack) == 0 {
 				continue
 			}
+			stack[len(stack)-1].EndLine = sourceview.LineForOffset(content, int(decoder.InputOffset()))
 			if len(stack) == 1 {
 				return stack[0], nil
 			}

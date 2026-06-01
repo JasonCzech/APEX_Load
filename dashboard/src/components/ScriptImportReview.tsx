@@ -50,10 +50,12 @@ export default function ScriptImportReview({
   children,
 }: Props) {
   const previewPane = (
-    <div className="script-import-review-preview">
-      <h4>{previewTitle}</h4>
+    <details className="script-import-review-preview" open>
+      <summary>
+        <h4>{previewTitle}</h4>
+      </summary>
       <pre>{JSON.stringify(previewData ?? { script }, null, 2)}</pre>
-    </div>
+    </details>
   )
   const sortedReviewSections = [...reviewSections].sort((a, b) => {
     const left = severityRank[String(a.severity || '').toLowerCase()] ?? 3
@@ -117,14 +119,12 @@ export default function ScriptImportReview({
         </div>
       )}
 
-      {previewAside ? (
-        <div className="script-import-review-preview-row">
-          {previewPane}
-          <div className="script-import-review-preview-aside">
-            {previewAside}
-          </div>
+      {previewPane}
+      {previewAside && (
+        <div className="script-import-review-preview-aside">
+          {previewAside}
         </div>
-      ) : previewPane}
+      )}
     </div>
   )
 }

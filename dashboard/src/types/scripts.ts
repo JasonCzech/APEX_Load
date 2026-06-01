@@ -263,7 +263,7 @@ export interface ScriptImportMetadata {
   preserved?: Record<string, unknown>
 }
 
-export interface LoadRunnerSourceReviewFile {
+export interface SourceReviewFile {
   path: string
   language?: string
   content: string
@@ -272,7 +272,7 @@ export interface LoadRunnerSourceReviewFile {
   redacted?: boolean
 }
 
-export interface LoadRunnerSourceReviewMapping {
+export interface SourceReviewMapping {
   id: string
   source_file: string
   start_line: number
@@ -286,10 +286,14 @@ export interface LoadRunnerSourceReviewMapping {
   notes?: string
 }
 
-export interface LoadRunnerSourceReview {
-  source_files?: LoadRunnerSourceReviewFile[]
-  mappings?: LoadRunnerSourceReviewMapping[]
+export interface SourceReview {
+  source_files?: SourceReviewFile[]
+  mappings?: SourceReviewMapping[]
 }
+
+export type LoadRunnerSourceReviewFile = SourceReviewFile
+export type LoadRunnerSourceReviewMapping = SourceReviewMapping
+export type LoadRunnerSourceReview = SourceReview
 
 export interface ScriptMetadata {
   import?: ScriptImportMetadata

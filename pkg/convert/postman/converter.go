@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/convert/tmpl"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -52,11 +53,12 @@ type ReviewSummary struct {
 }
 
 type ConvertResult struct {
-	Script      *dsl.Script      `json:"script"`
-	Warnings    []string         `json:"warnings,omitempty"`
-	Unsupported diag.Diagnostics `json:"unsupported,omitempty"`
-	Stats       ConvertStats     `json:"stats"`
-	Summary     ReviewSummary    `json:"summary"`
+	Script       *dsl.Script        `json:"script"`
+	Warnings     []string           `json:"warnings,omitempty"`
+	Unsupported  diag.Diagnostics   `json:"unsupported,omitempty"`
+	Stats        ConvertStats       `json:"stats"`
+	Summary      ReviewSummary      `json:"summary"`
+	SourceReview *sourceview.Review `json:"source_review,omitempty"`
 }
 
 type collection struct {
@@ -215,6 +217,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	var diagnostics diag.Collector
+	sourceFileName := "postman_collection.json"
+	sourceMappings := make([]sourceview.Mapping, 0)
 	vars := collectionVariables(col.Variable)
 	applyPostmanEventVariables(vars, requests, &diagnostics)
 	baseURL, warnings := deriveBaseURL(requests, vars, req.Options.BaseURL)
@@ -280,6 +284,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		if action.Name == "" {
 			result.Stats.SkippedItems = append(result.Stats.SkippedItems, item.Name)
 			diagnostics.Add(diag.Warning, "Postman item skipped", postmanItemLocation(item), "request item could not be converted into an executable action")
+			sourceMappings = append(sourceMappings, postmanSourceMapping(sourceFileName, content, item, "", postmanItemLocation(item), "request", "review_only", "Postman item could not be converted into an executable action."))
 			continue
 		}
 		result.Warnings = append(result.Warnings, actionWarnings...)
@@ -289,7 +294,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		if len(action.Assertions) > 0 {
 			result.Stats.Assertions += len(action.Assertions)
 		}
+		actionIndex := len(result.Script.Actions)
 		result.Script.Actions = append(result.Script.Actions, action)
+		sourceMappings = append(sourceMappings, postmanSourceMapping(sourceFileName, content, item, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "Postman request was converted into a generated APEX Load action."))
 		result.Summary.Requests = append(result.Summary.Requests, action.Method+" "+action.Target)
 		result.Stats.ConvertedActions++
 	}
@@ -300,7 +307,35 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		diagnostics.Add(diag.Warning, "Postman completeness guard", "collection", fmt.Sprintf("%d request item(s) were present but not converted or explicitly skipped", gap))
 	}
 	result.Unsupported = diagnostics.Items()
+	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: content}, sourceMappings)
 	return result, nil
+}
+
+func postmanSourceMapping(sourceFile string, content string, item requestItem, targetPath string, targetName string, targetKind string, status string, notes string) sourceview.Mapping {
+	line := postmanItemLine(content, item)
+	return sourceview.Mapping{
+		SourceFile: sourceFile,
+		StartLine:  line,
+		EndLine:    line,
+		Function:   postmanItemLocation(item),
+		TargetPath: targetPath,
+		TargetName: targetName,
+		TargetKind: targetKind,
+		Status:     status,
+		Notes:      notes,
+	}
+}
+
+func postmanItemLine(content string, item requestItem) int {
+	for _, needle := range []string{`"` + item.Name + `"`, item.Request.URL.Raw, item.Request.Method} {
+		if strings.TrimSpace(needle) == "" {
+			continue
+		}
+		if offset := strings.Index(content, needle); offset >= 0 {
+			return sourceview.LineForOffset(content, offset)
+		}
+	}
+	return 1
 }
 
 func collectItems(items []item, folder string, inheritedEvents []event, requests *[]requestItem, folders *int) {

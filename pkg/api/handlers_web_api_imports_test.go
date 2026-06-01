@@ -131,12 +131,18 @@ func TestHandleImportOpenAPI(t *testing.T) {
 			Actions   []struct {
 				Target string `json:"target"`
 			} `json:"actions"`
+			Metadata struct {
+				Import struct {
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
 		} `json:"script"`
 		ReviewSections []struct {
 			Key      string   `json:"key"`
 			Severity string   `json:"severity"`
 			Items    []string `json:"items"`
 		} `json:"review_sections"`
+		SourceReview map[string]any `json:"source_review"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -146,6 +152,12 @@ func TestHandleImportOpenAPI(t *testing.T) {
 	}
 	if len(result.Script.Actions) != 1 || !strings.Contains(result.Script.Actions[0].Target, "{{data.openapi.id}}") {
 		t.Fatalf("unexpected actions: %+v", result.Script.Actions)
+	}
+	if len(result.SourceReview) == 0 {
+		t.Fatal("expected root source_review in response")
+	}
+	if result.Script.Metadata.Import.Preserved["source_review"] == nil {
+		t.Fatalf("script metadata missing preserved source_review: %#v", result.Script.Metadata.Import.Preserved)
 	}
 	assertReviewSection(t, result.ReviewSections, "openapi_operations", "info", "getOrder")
 }

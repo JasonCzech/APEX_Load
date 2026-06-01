@@ -17,6 +17,7 @@ type scriptImportResponseOptions struct {
 	Summary             any
 	DetectedProtocol    any
 	ReviewArtifact      any
+	SourceReview        any
 }
 
 type scriptImportReviewSection struct {
@@ -96,6 +97,7 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		"summary":              summary,
 		"detected_protocol":    opts.DetectedProtocol,
 		"review_artifact":      opts.ReviewArtifact,
+		"source_review":        opts.SourceReview,
 	}
 	if opts.Result != nil {
 		response["result"] = opts.Result
