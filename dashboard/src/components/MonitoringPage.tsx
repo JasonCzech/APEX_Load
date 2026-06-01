@@ -530,12 +530,14 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
                 <span className="monitor-label">Fields</span>
                 <span className="monitor-value">{apmProfiles.generic_correlation.correlation_fields.slice(0, 4).join(', ')}</span>
               </div>
-              <div className="monitor-warning-list">
-                {apmProfiles.profiles.slice(0, 5).map(profile => (
-                  <p key={profile.id} className={profile.status === 'available' ? 'telemetry-text-warning' : ''}>
-                    {profile.name}: {profile.status}
-                  </p>
-                ))}
+              <div className="monitor-scroll-area">
+                <div className="monitor-warning-list">
+                  {apmProfiles.profiles.map(profile => (
+                    <p key={profile.id} className={profile.status === 'available' ? 'telemetry-text-warning' : ''}>
+                      {profile.name}: {profile.status}
+                    </p>
+                  ))}
+                </div>
               </div>
             </>
           )}
@@ -580,12 +582,14 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
                   <span className="telemetry-summary-label">Total</span>
                 </div>
               </div>
-              <div className="monitor-warning-list">
-                {monitorPacks.packs.slice(0, 6).map(pack => (
-                  <p key={pack.id} className={pack.status === 'integration_contract' ? 'telemetry-text-warning' : ''}>
-                    {pack.name}: {pack.signals.slice(0, 2).join(', ')}
-                  </p>
-                ))}
+              <div className="monitor-scroll-area">
+                <div className="monitor-warning-list">
+                  {monitorPacks.packs.map(pack => (
+                    <p key={pack.id} className={pack.status === 'integration_contract' ? 'telemetry-text-warning' : ''}>
+                      {pack.name}: {pack.signals.slice(0, 2).join(', ')}
+                    </p>
+                  ))}
+                </div>
               </div>
             </>
           )}
@@ -730,12 +734,25 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
                   </p>
                 </div>
               )}
-              <div className="monitor-warning-list">
-                {parityAreas.map(area => (
-                  <p key={area.id} className={area.blocking_gate || area.status === 'blocked' ? 'text-danger' : area.status === 'partial' ? 'telemetry-text-warning' : ''}>
-                    {area.name}: {area.status}{area.remaining?.length ? ` - ${area.remaining[0]}` : ''}
-                  </p>
-                ))}
+              <div className="monitor-scroll-area">
+                <div className="monitor-inventory-list">
+                  {parityAreas.map(area => (
+                    <div key={area.id} className={`monitor-inventory-item ${area.blocking_gate || area.status === 'blocked' ? 'is-warning' : ''}`}>
+                      <div className="monitor-row">
+                        <span className="monitor-value">{area.name}</span>
+                        <span className={`monitor-value ${area.blocking_gate || area.status === 'blocked' ? 'text-danger' : area.status === 'partial' ? 'telemetry-text-warning' : 'text-success'}`}>
+                          {formatCompetitiveStatus(area.status)}
+                        </span>
+                      </div>
+                      {area.remaining?.length ? (
+                        <div className="monitor-row">
+                          <span className="monitor-label">Remaining</span>
+                          <span className="monitor-value">{area.remaining[0]}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
               </div>
               {browserBenchmarkProfiles.length > 0 && (
                 <div className="monitor-browser-benchmark-summary">
@@ -981,13 +998,14 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               {generators.length ? 'No fleet placement alerts detected from live generator inventory.' : 'No generator inventory available for fleet alert evaluation.'}
             </p>
           ) : (
-            <div className="monitor-warning-list">
-              {fleetAlerts.slice(0, 6).map(alert => (
-                <p key={`${alert.type}:${alert.target}`} className={alert.severity === 'danger' ? 'text-danger' : ''}>
-                  {alert.summary}
-                </p>
-              ))}
-              {fleetAlerts.length > 6 ? <p>{fleetAlerts.length - 6} additional fleet alert{fleetAlerts.length - 6 === 1 ? '' : 's'} hidden.</p> : null}
+            <div className="monitor-scroll-area">
+              <div className="monitor-warning-list">
+                {fleetAlerts.map(alert => (
+                  <p key={`${alert.type}:${alert.target}`} className={alert.severity === 'danger' ? 'text-danger' : ''}>
+                    {alert.summary}
+                  </p>
+                ))}
+              </div>
             </div>
           )}
         </div>

@@ -693,6 +693,7 @@
   grid-template-columns: minmax(420px, 1.2fr) minmax(360px, 0.8fr);
   gap: 14px;
   align-items: start;
+  max-width: 1300px;
 }
 
 .access-side-stack {
@@ -2237,6 +2238,13 @@
   font-size: 12px;
 }
 
+.dashboard-widget-content h3 {
+  font-size: 26px;
+}
+
+@media (max-width: 768px) {
+}
+
 @media (max-width: 720px) {
   .authoring-correlation-grid {
     grid-template-columns: 1fr;
@@ -2691,6 +2699,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 16px;
+  align-items: start;
 }
 
 .monitor-actions {
@@ -2706,7 +2715,7 @@
 }
 
 .monitoring-grid.is-customizing {
-  align-items: start;
+  /* align-items: start is now applied globally to .monitoring-grid */
 }
 
 .monitor-card {
@@ -2848,6 +2857,31 @@
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.monitor-scroll-area {
+  max-height: 280px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+}
+
+/* Custom scrollbar for monitor cards */
+.monitor-scroll-area::-webkit-scrollbar {
+  width: 6px;
+}
+
+.monitor-scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.monitor-scroll-area::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.monitor-scroll-area::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 .capacity-gauge {
@@ -5047,17 +5081,26 @@
   white-space: nowrap;
 }
 
+.settings-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.settings-subsection {
+  grid-column: 1 / -1;
+}
+
 .setting-row {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 8px;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--border);
-}
-
-.setting-row:last-child {
-  border-bottom: none;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
 }
 
 .settings-input {
@@ -5081,13 +5124,19 @@
 }
 
 .settings-input-number {
-  width: 100%;
+  max-width: 160px;
 }
 
 .setting-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+}
+
+.setting-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
 }
 
 .setting-label {

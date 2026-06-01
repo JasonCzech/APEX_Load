@@ -3556,7 +3556,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                 </div>
                 <strong>{dataPools.length}</strong>
               </div>
-              <div className="inline-create-row">
+              <div className="inline-create-row" style={{ gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) auto' }}>
                 <input
                   className="settings-input"
                   value={dataPoolName}
@@ -3569,7 +3569,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                   onChange={event => setDataPoolDescription(event.target.value)}
                   placeholder="Optional description"
                 />
-                <button className="btn btn-secondary" type="button" onClick={createDataPool} disabled={!dataPoolName.trim()}>
+                <button className="btn btn-secondary btn-sm" type="button" onClick={createDataPool} disabled={!dataPoolName.trim()}>
                   Add Pool
                 </button>
               </div>
