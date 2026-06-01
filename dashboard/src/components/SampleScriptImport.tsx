@@ -129,6 +129,29 @@ const javaHttpTemplates: Partial<Record<SampleFormat, { primary: string; seconda
   -H 'Accept: application/x-java-serialized-object' \\
   --data 'rO0ABXQABGRlbW8='`,
   },
+  har: {
+    primary: `{
+  "log": {
+    "entries": [
+      {
+        "request": {
+          "method": "POST",
+          "url": "https://api.example.com/java/session",
+          "headers": [
+            {"name": "Content-Type", "value": "application/x-java-serialized-object"},
+            {"name": "Accept", "value": "application/x-java-serialized-object"}
+          ],
+          "postData": {"text": "rO0ABXQABGRlbW8="}
+        },
+        "response": {
+          "status": 200,
+          "content": {"text": "rO0ABXQACnNlc3Npb24="}
+        }
+      }
+    ]
+  }
+}`,
+  },
 }
 
 const defaultFormatByPreset: Record<SampleImportPreset, SampleFormat> = {
@@ -138,7 +161,7 @@ const defaultFormatByPreset: Record<SampleImportPreset, SampleFormat> = {
 
 const availableFormatsByPreset: Record<SampleImportPreset, SampleFormat[]> = {
   default: ['rest_json', 'raw_http', 'curl', 'har'],
-  'java-http': ['raw_http', 'curl'],
+  'java-http': ['raw_http', 'curl', 'har'],
 }
 
 const javaHttpDefaults = createJavaHttpDraft().config.java_http || {}
@@ -158,6 +181,9 @@ function getFormatHelp(preset: SampleImportPreset, format: SampleFormat): string
     if (format === 'curl') {
       return 'Paste a curl command whose --data body is already a base64-encoded serialized Java payload.'
     }
+    if (format === 'har') {
+      return 'Paste a HAR captured from a Java-RPC-over-HTTP client. Request/response bodies should already be base64-encoded serialized Java payloads.'
+    }
   }
   return formatHelp[format]
 }
@@ -166,6 +192,13 @@ function looksLikeBase64(value: string): boolean {
   const trimmed = value.trim()
   if (!trimmed) return true
   return trimmed.length % 4 === 0 && /^[A-Za-z0-9+/=\r\n]+$/.test(trimmed)
+}
+
+// A Java serialized object stream begins with the magic bytes 0xAC 0xED 0x00 0x05,
+// which always base64-encode to a leading "rO0AB" prefix regardless of the payload
+// that follows. Checking the prefix avoids decoding while still validating the codec.
+function looksLikeJavaSerialized(value: string): boolean {
+  return value.replace(/[\r\n]/g, '').trim().startsWith('rO0AB')
 }
 
 function promoteScriptToJavaHTTP(script: ScriptDefinition): ScriptDefinition {
@@ -184,12 +217,26 @@ function promoteScriptToJavaHTTP(script: ScriptDefinition): ScriptDefinition {
 
 function appendJavaHTTPWarnings(script: ScriptDefinition, warnings: string[]): string[] {
   const nextWarnings = [...warnings]
-  const hasNonBase64Body = script.actions.some(action => typeof action.body === 'string' && action.body.trim() !== '' && !looksLikeBase64(action.body))
+  const nonEmptyBodies = script.actions
+    .map(action => (typeof action.body === 'string' ? action.body : ''))
+    .filter(body => body.trim() !== '')
+  const hasNonBase64Body = nonEmptyBodies.some(body => !looksLikeBase64(body))
+  // A body can be valid base64 yet not be a Java serialized object — flag that
+  // separately so the user can verify the codec/source rather than silently
+  // shipping a payload the java_http protocol can't meaningfully replay.
+  const hasNonJavaSerializedBody = nonEmptyBodies.some(body => looksLikeBase64(body) && !looksLikeJavaSerialized(body))
+
   const warning = hasNonBase64Body
     ? 'One or more imported request bodies are not base64-encoded. Java-over-HTTP replay expects opaque base64-encoded serialized bytes, so review those actions before saving.'
     : 'Java-over-HTTP imports assume request and response payloads are already base64-encoded serialized Java bytes. Review the generated draft before saving.'
   if (!nextWarnings.includes(warning)) {
     nextWarnings.push(warning)
+  }
+  if (hasNonJavaSerializedBody) {
+    const magicWarning = 'One or more base64 bodies do not decode to a Java serialized object stream (expected magic bytes 0xAC 0xED 0x00 0x05). Verify the codec or source before saving.'
+    if (!nextWarnings.includes(magicWarning)) {
+      nextWarnings.push(magicWarning)
+    }
   }
   return nextWarnings
 }

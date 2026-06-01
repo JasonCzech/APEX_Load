@@ -146,11 +146,140 @@ export function createJmsDraft(): ScriptDefinition {
   }
 }
 
+export function createWebSocketDraft(): ScriptDefinition {
+  return {
+    ...createBaseDraft(),
+    protocol: 'websocket',
+    config: {
+      ...createBaseDraft().config,
+      websocket: {
+        read_timeout_ms: 30000,
+        write_timeout_ms: 10000,
+        max_message_size: 1048576,
+        subprotocol: '',
+        origin: '',
+        compression: false,
+        reconnect: true,
+      },
+    },
+    actions: [
+      {
+        name: 'Connect_WebSocket',
+        type: 'ws_connect',
+        target: '/ws',
+        headers: {},
+        body: '',
+        params: { timeout_ms: 30000 },
+        extractors: [],
+        assertions: [],
+        think_time_after: true,
+      },
+    ],
+  }
+}
+
+export function createGrpcDraft(): ScriptDefinition {
+  return {
+    ...createBaseDraft(),
+    protocol: 'grpc',
+    config: {
+      ...createBaseDraft().config,
+      grpc: {
+        use_reflection: true,
+        plain_text: false,
+        timeout_ms: 30000,
+        max_recv_msg_size: 4194304,
+        metadata: {},
+        authority: '',
+      },
+    },
+    actions: [
+      {
+        name: 'Unary_Call',
+        type: 'grpc_unary',
+        target: 'package.Service/Method',
+        headers: {},
+        body: '{}',
+        params: { timeout_ms: 30000 },
+        extractors: [],
+        assertions: [{ type: 'grpc_status', expected: 0 }],
+        think_time_after: true,
+      },
+    ],
+  }
+}
+
+export function createDatabaseDraft(): ScriptDefinition {
+  return {
+    ...createBaseDraft(),
+    protocol: 'database',
+    config: {
+      ...createBaseDraft().config,
+      database: {
+        driver: 'sqlite',
+        dsn: ':memory:',
+        query_timeout_ms: 30000,
+        max_open_conns: 1,
+        max_rows: 100,
+        read_only: true,
+        rollback_on_teardown: true,
+      },
+    },
+    actions: [
+      {
+        name: 'Query_Database',
+        type: 'db_query',
+        target: 'select 1 as ok',
+        headers: {},
+        body: '',
+        params: { binds: [] },
+        extractors: [{ name: 'ok', source: 'scalar', type: 'jsonpath', expression: '$.scalar' }],
+        assertions: [{ type: 'row_count', expected: 1 }],
+        think_time_after: true,
+      },
+    ],
+  }
+}
+
+export function createNetworkDraft(): ScriptDefinition {
+  return {
+    ...createBaseDraft(),
+    protocol: 'network',
+    config: {
+      ...createBaseDraft().config,
+      network: {
+        subprotocol: 'tcp',
+        host: 'localhost',
+        port: 80,
+        timeout_ms: 30000,
+        tls: false,
+      },
+    },
+    actions: [
+      {
+        name: 'Network_Health',
+        type: 'network_health',
+        target: 'localhost:80',
+        headers: {},
+        body: '',
+        params: {},
+        extractors: [],
+        assertions: [],
+        think_time_after: true,
+      },
+    ],
+  }
+}
+
 function baseDraftForComponent(component: AuthoringComponent): ScriptDefinition {
   for (const protocol of component.protocols) {
     const normalized = protocol.toLowerCase()
     if (normalized === 'soap') return createSoapDraft()
     if (normalized === 'java_http') return createJavaHttpDraft()
+    if (normalized === 'websocket') return createWebSocketDraft()
+    if (normalized === 'grpc') return createGrpcDraft()
+    if (normalized === 'database') return createDatabaseDraft()
+    if (normalized === 'network') return createNetworkDraft()
     if (normalized === 'browser' || normalized === 'trueclient_mobile_web' || normalized === 'trueclient2_web') {
       return createWebDraft()
     }

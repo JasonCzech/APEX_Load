@@ -16,9 +16,11 @@ type RecorderRequestRecord = {
   response_time_ms: number
   content_type: string
   body: string
+  body_encoding?: string
   body_size_bytes?: number
   body_truncated?: boolean
   response_body_size_bytes?: number
+  response_body_encoding?: string
   response_body_truncated?: boolean
   think_time_ms: number
   is_static: boolean
@@ -42,6 +44,7 @@ type RecorderSession = {
     exclude_static: boolean
     exclude_hosts?: string[]
     include_hosts?: string[]
+    capture_cookies?: boolean
   }
 }
 
@@ -59,6 +62,7 @@ type RecorderStartRequest = {
   exclude_static?: boolean
   include_hosts?: string[]
   exclude_hosts?: string[]
+  capture_cookies?: boolean
 }
 
 type RecorderStartResponse = {
@@ -118,14 +122,14 @@ export function useRecorderApi() {
   )
 
   const convertRecording = useCallback(
-    (id: string, name?: string) =>
-      request<RecorderImportResult>(`/recorder/${id}/convert`, { method: 'POST', body: JSON.stringify({ name }) }),
+    (id: string, name?: string, parameterize?: boolean) =>
+      request<RecorderImportResult>(`/recorder/${id}/convert`, { method: 'POST', body: JSON.stringify({ name, parameterize }) }),
     [],
   )
 
   const previewRecordingConversion = useCallback(
-    (id: string, name?: string) =>
-      request<RecorderImportResult>(`/recorder/${id}/convert/preview`, { method: 'POST', body: JSON.stringify({ name }) }),
+    (id: string, name?: string, parameterize?: boolean) =>
+      request<RecorderImportResult>(`/recorder/${id}/convert/preview`, { method: 'POST', body: JSON.stringify({ name, parameterize }) }),
     [],
   )
 

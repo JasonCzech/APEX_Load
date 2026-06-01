@@ -471,6 +471,7 @@ func TestBuildProtoConfig_Database(t *testing.T) {
 			Database: dsl.DatabaseConfig{
 				Driver:             "sqlite",
 				DSN:                ":memory:",
+				DSNSecret:          "secret://perf/db-dsn",
 				MaxOpenConns:       4,
 				MaxIdleConns:       2,
 				ConnMaxLifetimeMs:  60000,
@@ -486,6 +487,9 @@ func TestBuildProtoConfig_Database(t *testing.T) {
 
 	if cfg["database_driver"] != "sqlite" || cfg["database_dsn"] != ":memory:" {
 		t.Fatalf("database config = %#v, want driver and dsn", cfg)
+	}
+	if cfg["database_dsn_secret"] != "secret://perf/db-dsn" {
+		t.Fatalf("database_dsn_secret = %#v, want secret binding", cfg["database_dsn_secret"])
 	}
 	if cfg["database_max_open_conns"] != float64(4) || cfg["database_query_timeout_ms"] != float64(1500) || cfg["database_max_rows"] != float64(25) {
 		t.Fatalf("database numeric config = %#v", cfg)

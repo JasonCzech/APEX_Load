@@ -33,6 +33,7 @@ export interface ScriptActionDefinition {
   value?: string
   headers?: Record<string, string>
   body?: string
+  body_encoding?: string
   params?: Record<string, unknown>
   metadata?: Record<string, unknown>
   wait_for?: ScriptWaitCondition
@@ -237,6 +238,33 @@ export interface JMSConfig {
   mock?: boolean
 }
 
+export interface DatabaseConfig {
+  driver?: string
+  dsn?: string
+  dsn_secret?: string
+  query_timeout_ms?: number
+  max_open_conns?: number
+  max_idle_conns?: number
+  conn_max_lifetime_ms?: number
+  max_rows?: number
+  read_only?: boolean
+  rollback_on_teardown?: boolean
+}
+
+export interface NetworkConfig {
+  subprotocol?: string
+  host?: string
+  address?: string
+  port?: number
+  timeout_ms?: number
+  tls?: boolean
+  username?: string
+  password?: string
+  from?: string
+  to?: string[]
+  base_dn?: string
+}
+
 export interface SOAPConfig {
   version?: string
   namespaces?: Record<string, string>
@@ -312,6 +340,8 @@ export interface ScriptConfig {
   soap?: SOAPConfig
   websocket?: WebSocketConfig
   grpc?: GRPCConfig
+  database?: DatabaseConfig
+  network?: NetworkConfig
   browser?: BrowserConfig
   jms?: JMSConfig
   observability?: ObservabilityConfig
@@ -428,7 +458,24 @@ export interface ScriptReplaySnapshot {
   dom_summary?: ScriptReplayDOMSummary
 }
 
+export interface ScriptProtocolEvidence {
+  protocol?: string
+  operation?: string
+  target?: string
+  status?: string
+  timings?: Record<string, unknown>
+  messages?: Record<string, unknown>
+  metadata?: Record<string, unknown>
+  rows?: Record<string, unknown>
+  records?: Record<string, unknown>
+  transcript?: unknown[]
+  [key: string]: unknown
+}
+
 export interface ScriptReplayActionEvent {
+  event_id?: string
+  action_index?: number
+  event_index?: number
   phase: string
   action_name: string
   action_type: string
@@ -459,9 +506,41 @@ export interface ScriptReplayActionEvent {
   network_entries?: ScriptReplayNetworkEntry[]
   dom_summary?: ScriptReplayDOMSummary
   snapshot?: ScriptReplaySnapshot
+  protocol_evidence?: ScriptProtocolEvidence
+  diagnosis?: {
+    category: string
+    severity: string
+    cause: string
+    evidence?: string
+    action?: string
+    signals?: string[]
+    frame_context?: string
+    suggested_locator?: string
+  }
+  repair_suggestions?: Array<{
+    id: string
+    title: string
+    description: string
+    draft_patch_type: string
+    action?: string
+    confidence?: number
+    fields?: Record<string, string>
+  }>
 }
 
 export interface ScriptReplayReport {
+  replay_session_id?: string
+  script_hash?: string
+  script_revision?: string
+  artifact_manifest?: Record<string, unknown>
+  diagnosis_summary?: {
+    failure_count: number
+    categories?: Record<string, number>
+    first_failure_event_id?: string
+    first_failure_action?: string
+    first_failure_cause?: string
+  }
+  repair_suggestions?: ScriptReplayActionEvent['repair_suggestions']
   group: string
   protocol: string
   started_at: string
@@ -476,6 +555,8 @@ export interface ScriptReplayReport {
 export interface ScriptReplayResponse {
   script_id: string
   replay_session_id: string
+  preflight?: Record<string, unknown>
+  warnings?: string[]
   report: ScriptReplayReport
 }
 

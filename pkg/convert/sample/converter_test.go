@@ -447,6 +447,112 @@ func TestConvertHARDecodesBase64Bodies(t *testing.T) {
 	}
 }
 
+func TestConvertHARPreservesBinaryPostDataAsBase64(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {
+				"entries": [
+					{
+						"request": {
+							"method": "POST",
+							"url": "https://api.example.com/v1/upload",
+							"headers": [{"name":"Content-Type","value":"application/octet-stream"}],
+							"postData": {
+								"mimeType": "application/octet-stream",
+								"encoding": "base64",
+								"text": "//79AA=="
+							}
+						},
+						"response": {
+							"status": 201,
+							"headers": [],
+							"content": {"text": "{}"}
+						}
+					}
+				]
+			}
+		}`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
+	}
+	action := result.Script.Actions[0]
+	if action.BodyEncoding != "base64" {
+		t.Fatalf("body encoding = %q, want base64", action.BodyEncoding)
+	}
+	if action.Body != "//79AA==" {
+		t.Fatalf("body = %q, want preserved base64 payload", action.Body)
+	}
+	if strings.Contains(action.Body, "{{binary.") {
+		t.Fatalf("body = %q, should not use binary placeholder", action.Body)
+	}
+}
+
+func TestConvertHARDetectsHTMLHiddenTokenCorrelation(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {
+				"entries": [
+					{
+						"request": {
+							"method": "GET",
+							"url": "https://shop.example.com/login",
+							"headers": []
+						},
+						"response": {
+							"status": 200,
+							"headers": [{"name":"Content-Type","value":"text/html"}],
+							"content": {
+								"mimeType": "text/html",
+								"text": "<form><input type=\"hidden\" name=\"csrf_token\" value=\"tok-9f8e7d6c5b4a\"></form>"
+							}
+						}
+					},
+					{
+						"request": {
+							"method": "POST",
+							"url": "https://shop.example.com/login",
+							"headers": [{"name":"Content-Type","value":"application/x-www-form-urlencoded"}],
+							"postData": {
+								"mimeType": "application/x-www-form-urlencoded",
+								"text": "csrf_token=tok-9f8e7d6c5b4a&user=demo"
+							}
+						},
+						"response": {
+							"status": 302,
+							"headers": [],
+							"content": {"text": ""}
+						}
+					}
+				]
+			}
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Stats.CorrelationsDetected != 1 {
+		t.Fatalf("correlations = %d, want 1: %#v", result.Stats.CorrelationsDetected, result.Correlations)
+	}
+	if len(result.Script.Actions[0].Extractors) != 1 {
+		t.Fatalf("first action extractors = %#v", result.Script.Actions[0].Extractors)
+	}
+	ext := result.Script.Actions[0].Extractors[0]
+	if ext.Name != "corr_csrf_token" || ext.Type != "regex" || ext.Source != "body" {
+		t.Fatalf("unexpected extractor: %#v", ext)
+	}
+	if !strings.Contains(result.Script.Actions[1].Body, "{{var.corr_csrf_token}}") {
+		t.Fatalf("second action body = %q, want correlated token", result.Script.Actions[1].Body)
+	}
+}
+
 func TestConvertHARPreservesFormParamsCookiesAndDuplicateHeaders(t *testing.T) {
 	sanitizeSensitive := false
 	inferExtractors := false

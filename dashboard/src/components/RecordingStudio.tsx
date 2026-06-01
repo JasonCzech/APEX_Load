@@ -9,6 +9,14 @@ import { type ScriptDefinition } from '../types/scripts'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
+import {
+  DEFAULT_MACOS_NETWORK_SERVICE,
+  buildMacOSRestoreProxyCommand,
+  buildMacOSStartProxyCommand,
+  buildWindowsRestoreProxyCommand,
+  buildWindowsStartProxyCommand,
+  recorderProxyPort,
+} from './recordingProxyCommands'
 import './RecordingStudio.css'
 
 interface RecordedRequest {
@@ -24,8 +32,10 @@ interface RecordedRequest {
   response_time_ms: number
   content_type: string
   body: string
+  body_encoding?: string
   body_size_bytes?: number
   body_truncated?: boolean
+  response_body_encoding?: string
   response_body_size_bytes?: number
   response_body_truncated?: boolean
   think_time_ms: number
@@ -49,6 +59,7 @@ interface RecordingSession {
     exclude_static: boolean
     exclude_hosts?: string[]
     include_hosts?: string[]
+    capture_cookies?: boolean
   }
 }
 
@@ -60,6 +71,18 @@ interface Correlation {
   found_in_seq: number
   used_in_seqs: number[]
   sample_value: string
+  rule_id?: string
+  confidence?: number
+  reasons?: string[]
+}
+
+// confidenceTone buckets a 0..1 correlation confidence for badge styling.
+// >=0.8 is auto-applicable in the engine; the UI mirrors that threshold.
+function confidenceTone(confidence?: number): 'high' | 'medium' | 'low' | null {
+  if (typeof confidence !== 'number') return null
+  if (confidence >= 0.8) return 'high'
+  if (confidence >= 0.6) return 'medium'
+  return 'low'
 }
 
 interface RecorderStatus {
@@ -86,9 +109,11 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   const [activeSession, setActiveSession] = useState<RecordingSession | null>(null)
   const [proxyAddr, setProxyAddr] = useState('')
   const [caCertPath, setCaCertPath] = useState('')
+  const [macOSNetworkService, setMacOSNetworkService] = useState(DEFAULT_MACOS_NETWORK_SERVICE)
   const [sessionName, setSessionName] = useState('')
   const [includeHosts, setIncludeHosts] = useState('')
   const [excludeHosts, setExcludeHosts] = useState('')
+  const [captureCookies, setCaptureCookies] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [feedbackType, setFeedbackType] = useState<'success' | 'error'>('success')
   const [selectedSession, setSelectedSession] = useState<RecordingSession | null>(null)
@@ -101,9 +126,10 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
     excluded: false,
   })
   const [showSetup, setShowSetup] = useState(true)
+  const [parameterizeInputs, setParameterizeInputs] = useState(false)
   const convertTask = useAsyncTask<RecorderImportResult>()
 
-  const proxyPort = (proxyAddr || ':8081').split(':').pop() || '8081'
+  const proxyPort = recorderProxyPort(proxyAddr)
 
   const handleCopyCAPath = async () => {
     if (!caCertPath) return
@@ -129,6 +155,48 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
     } catch (e: any) {
       showFeedback(e.message || 'Failed to download CA certificate', 'error')
     }
+  }
+
+  const copyProxyCommand = async (command: string, successMessage: string, failureMessage: string) => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard access is not available in this browser')
+      }
+      await navigator.clipboard.writeText(command)
+      showFeedback(successMessage)
+    } catch (e: any) {
+      showFeedback(e.message || failureMessage, 'error')
+    }
+  }
+
+  const handleCopyMacOSProxyCommand = async (mode: 'start' | 'restore') => {
+    const command = mode === 'start'
+      ? buildMacOSStartProxyCommand(proxyPort, macOSNetworkService)
+      : buildMacOSRestoreProxyCommand(macOSNetworkService)
+    await copyProxyCommand(
+      command,
+      mode === 'start' ? 'macOS start proxy command copied' : 'macOS restore proxy command copied',
+      'Failed to copy macOS proxy command',
+    )
+  }
+
+  const handleCopyWindowsProxyCommand = async (mode: 'start' | 'restore') => {
+    const command = mode === 'start'
+      ? buildWindowsStartProxyCommand(proxyPort)
+      : buildWindowsRestoreProxyCommand()
+    await copyProxyCommand(
+      command,
+      mode === 'start' ? 'Windows start proxy command copied' : 'Windows restore proxy command copied',
+      'Failed to copy Windows proxy command',
+    )
+  }
+
+  const handleOpenMacOSNetworkSettings = () => {
+    window.location.href = 'x-apple.systempreferences:com.apple.Network-Settings.extension'
+  }
+
+  const handleOpenWindowsProxySettings = () => {
+    window.location.href = 'ms-settings:network-proxy'
   }
 
   const showFeedback = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -179,6 +247,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
         name: sessionName || 'Recording Session',
         project_id: activeProject?.id,
         exclude_static: true,
+        capture_cookies: captureCookies,
       }
       if (includeHosts.trim()) {
         data.include_hosts = includeHosts.split(',').map((h: string) => h.trim()).filter(Boolean)
@@ -256,7 +325,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   const handlePreviewConversion = async (session: RecordingSession) => {
     try {
       const result = await convertTask.run(
-        () => api.previewRecordingConversion(session.id, session.name),
+        () => api.previewRecordingConversion(session.id, session.name, parameterizeInputs),
         { clearValue: true },
       )
       showFeedback(`Preview generated with ${result.script?.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`)
@@ -284,7 +353,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
   const handleConvert = async (session: RecordingSession) => {
     try {
       const result = await convertTask.run(
-        () => api.convertRecording(session.id, session.name),
+        () => api.convertRecording(session.id, session.name, parameterizeInputs),
         { clearValue: true },
       )
       showFeedback(`Script "${result.script?.name || session.name}" created with ${result.correlations?.length || 0} correlations detected`)
@@ -424,6 +493,46 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
                 <div className="rec-os-instructions">
                   <div>Use a browser extension like SwitchyOmega (Chrome) or FoxyProxy (Firefox) to route traffic through the proxy.</div>
                   <div><span className="rec-os-label">System proxy:</span> macOS System Settings &rarr; Network &rarr; Wi-Fi &rarr; Details &rarr; Proxies &rarr; Web Proxy (HTTP) &amp; Secure Web Proxy (HTTPS) &rarr; <code>localhost</code> port <code>{proxyPort}</code></div>
+                  <div><span className="rec-os-label">Windows 11:</span> Settings &rarr; Network &amp; internet &rarr; Proxy &rarr; Manual proxy setup &rarr; <code>localhost</code> port <code>{proxyPort}</code></div>
+                </div>
+                <div className="rec-proxy-shortcut">
+                  <div className="rec-proxy-platform">
+                    <div className="rec-proxy-platform-title">macOS</div>
+                    <label className="rec-proxy-service">
+                      <span>Network service</span>
+                      <input
+                        className="rec-input"
+                        aria-label="macOS network service"
+                        value={macOSNetworkService}
+                        onChange={e => setMacOSNetworkService(e.target.value)}
+                      />
+                    </label>
+                    <div className="rec-shortcut-actions">
+                      <button className="rec-download-alt" type="button" onClick={() => handleCopyMacOSProxyCommand('start')}>
+                        Copy Start Proxy Command
+                      </button>
+                      <button className="rec-download-alt" type="button" onClick={() => handleCopyMacOSProxyCommand('restore')}>
+                        Copy Restore Proxy Command
+                      </button>
+                      <button className="rec-download-alt" type="button" onClick={handleOpenMacOSNetworkSettings}>
+                        Open Network Settings
+                      </button>
+                    </div>
+                  </div>
+                  <div className="rec-proxy-platform">
+                    <div className="rec-proxy-platform-title">Windows 11</div>
+                    <div className="rec-shortcut-actions">
+                      <button className="rec-download-alt" type="button" onClick={() => handleCopyWindowsProxyCommand('start')}>
+                        Copy Windows Start Command
+                      </button>
+                      <button className="rec-download-alt" type="button" onClick={() => handleCopyWindowsProxyCommand('restore')}>
+                        Copy Windows Restore Command
+                      </button>
+                      <button className="rec-download-alt" type="button" onClick={handleOpenWindowsProxySettings}>
+                        Open Windows Proxy Settings
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -493,6 +602,14 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
                 placeholder="e.g. analytics.google.com, cdn.example.com"
               />
             </div>
+            <label className="rec-checkbox-row">
+              <input
+                type="checkbox"
+                checked={captureCookies}
+                onChange={e => setCaptureCookies(e.target.checked)}
+              />
+              <span>Capture cookies (may include secrets)</span>
+            </label>
             <button className="btn btn-primary rec-start-btn" onClick={handleStart}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" /></svg>
               Start Recording
@@ -542,6 +659,12 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
             <button className="btn btn-secondary rec-stop-btn" onClick={handlePauseResume}>
               {activeSession.status === 'paused' ? 'Resume Recording' : 'Pause Recording'}
             </button>
+            <button className="btn btn-secondary rec-stop-btn" type="button" onClick={() => handleCopyMacOSProxyCommand('restore')}>
+              Copy Restore Proxy Command
+            </button>
+            <button className="btn btn-secondary rec-stop-btn" type="button" onClick={() => handleCopyWindowsProxyCommand('restore')}>
+              Copy Windows Restore Command
+            </button>
           </div>
         )}
       </div>
@@ -550,6 +673,14 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
       {stoppedSessions.length > 0 && (
         <div className="rec-sessions-section">
           <h3 className="rec-section-title">Recorded Sessions</h3>
+          <label className="rec-convert-option">
+            <input
+              type="checkbox"
+              checked={parameterizeInputs}
+              onChange={e => setParameterizeInputs(e.target.checked)}
+            />
+            Parameterize input values (promote recorded form/query inputs into a data source)
+          </label>
           <div className="rec-sessions-list">
             {stoppedSessions.map(session => (
               <div
@@ -752,12 +883,23 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
                   <div key={i} className="rec-corr-item">
                     <div className="rec-corr-header">
                       <code className="rec-corr-name">{`{{var.${c.name}}}`}</code>
+                      {confidenceTone(c.confidence) && (
+                        <span
+                          className={`rec-corr-confidence tone-${confidenceTone(c.confidence)}`}
+                          title={c.rule_id ? `rule: ${c.rule_id}` : undefined}
+                        >
+                          {Math.round((c.confidence as number) * 100)}% confidence
+                        </span>
+                      )}
                       <span className="rec-corr-type">{c.extract_type} / {c.source}</span>
                     </div>
                     <div className="rec-corr-detail">
                       <span>Extracted from request #{c.found_in_seq}</span>
                       <span>Used in #{c.used_in_seqs.join(', #')}</span>
                     </div>
+                    {c.reasons && c.reasons.length > 0 && (
+                      <div className="rec-corr-reasons">Why: {c.reasons.join('; ')}</div>
+                    )}
                     <div className="rec-corr-sample">
                       Sample: <code>{c.sample_value}</code>
                     </div>

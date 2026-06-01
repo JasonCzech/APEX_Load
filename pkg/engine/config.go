@@ -228,6 +228,9 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	if databaseCfg.DSN != "" {
 		cfg["database_dsn"] = databaseCfg.DSN
 	}
+	if databaseCfg.DSNSecret != "" {
+		cfg["database_dsn_secret"] = databaseCfg.DSNSecret
+	}
 	if databaseCfg.MaxOpenConns > 0 {
 		cfg["database_max_open_conns"] = float64(databaseCfg.MaxOpenConns)
 	}

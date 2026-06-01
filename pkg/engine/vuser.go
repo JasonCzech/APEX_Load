@@ -1371,6 +1371,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		Headers:         headers,
 		RedactedHeaders: redactedHeaders,
 		Body:            []byte(body),
+		BodyEncoding:    action.BodyEncoding,
 		RedactedBody:    []byte(redactedBody),
 		Params:          vu.interpolateAnyMap(action.Params),
 		WaitFor:         toProtocolWaitCondition(action.WaitFor, vu),

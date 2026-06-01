@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { type AuthoringComponent, type StoredScenario, type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
-import { composeComponentDraft, createApiDraft, createJavaHttpDraft, createJmsDraft, createSoapDraft, createWebDraft } from './scriptDraftFactories'
+import { composeComponentDraft, createApiDraft, createDatabaseDraft, createGrpcDraft, createJavaHttpDraft, createJmsDraft, createNetworkDraft, createSoapDraft, createWebDraft, createWebSocketDraft } from './scriptDraftFactories'
 
 export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample' | 'java-http-import' | 'devweb-import' | 'har-import' | 'openapi-import' | 'postman-import' | 'wsdl-import'
 
@@ -45,6 +45,10 @@ export interface ScriptsCreateOptionActions {
   startApiScript: () => void
   startSoapScript: () => void
   startJavaHttpScript: () => void
+  startWebSocketScript: () => void
+  startGrpcScript: () => void
+  startDatabaseScript: () => void
+  startNetworkScript: () => void
   startWebScript: () => void
   startJmsScript: () => void
   startTemplateScript: (script: ScriptDefinition) => void
@@ -207,6 +211,22 @@ export function useScriptsAuthoringState({
     startDraft(createJavaHttpDraft)
   }, [startDraft])
 
+  const startWebSocketScript = useCallback(() => {
+    startDraft(createWebSocketDraft)
+  }, [startDraft])
+
+  const startGrpcScript = useCallback(() => {
+    startDraft(createGrpcDraft)
+  }, [startDraft])
+
+  const startDatabaseScript = useCallback(() => {
+    startDraft(createDatabaseDraft)
+  }, [startDraft])
+
+  const startNetworkScript = useCallback(() => {
+    startDraft(createNetworkDraft)
+  }, [startDraft])
+
   const startWebScript = useCallback(() => {
     startDraft(createWebDraft)
   }, [startDraft])
@@ -292,6 +312,10 @@ export function useScriptsAuthoringState({
       startApiScript,
       startSoapScript,
       startJavaHttpScript,
+      startWebSocketScript,
+      startGrpcScript,
+      startDatabaseScript,
+      startNetworkScript,
       startWebScript,
       startJmsScript,
       startTemplateScript,

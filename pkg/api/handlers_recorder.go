@@ -20,6 +20,7 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		IncludeHosts          []string `json:"include_hosts,omitempty"`
 		BodyCaptureLimitBytes int      `json:"body_capture_limit_bytes,omitempty"`
 		RedactHeaders         []string `json:"redact_headers,omitempty"`
+		CaptureCookies        bool     `json:"capture_cookies,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
@@ -46,6 +47,7 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		IncludeHosts:          req.IncludeHosts,
 		BodyCaptureLimitBytes: req.BodyCaptureLimitBytes,
 		RedactHeaders:         req.RedactHeaders,
+		CaptureCookies:        req.CaptureCookies,
 	}, notify)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
@@ -158,11 +160,12 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req struct {
-		Name string `json:"name"`
+		Name         string `json:"name"`
+		Parameterize bool   `json:"parameterize"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
-	result := recorder.ConvertSession(session, req.Name)
+	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize})
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 	}
@@ -185,11 +188,12 @@ func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http
 	}
 
 	var req struct {
-		Name string `json:"name"`
+		Name         string `json:"name"`
+		Parameterize bool   `json:"parameterize"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
-	result := recorder.ConvertSession(session, req.Name)
+	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize})
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 	}

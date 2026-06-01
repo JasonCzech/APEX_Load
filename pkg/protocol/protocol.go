@@ -65,6 +65,7 @@ type Action struct {
 	Headers         map[string]string      `json:"headers,omitempty"`
 	RedactedHeaders map[string]string      `json:"-"`
 	Body            []byte                 `json:"body,omitempty"`
+	BodyEncoding    string                 `json:"body_encoding,omitempty"`
 	RedactedBody    []byte                 `json:"-"`
 	Params          map[string]any         `json:"params,omitempty"`
 	WaitFor         *WaitCondition         `json:"wait_for,omitempty"`
@@ -234,6 +235,7 @@ type Result struct {
 	DOMSummary        *DOMSummary
 	ClientMetrics     *ClientMetrics
 	ServerTelemetry   *ServerTelemetry
+	ProtocolEvidence  map[string]any
 	Snapshot          *ErrorSnapshot // populated when snapshot_on_error is enabled
 	SourceStepID      string
 	SourceStepIndex   int

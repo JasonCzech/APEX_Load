@@ -191,10 +191,10 @@ curl -X POST http://localhost:8080/api/v1/scripts/validate \
   -d @script.json
 ```
 
-Start an interactive debugger session for a draft script:
+Start a unified replay session for a draft script:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/scripts/debug/sessions \
+curl -X POST http://localhost:8080/api/v1/scripts/replay/sessions \
   -H "Authorization: Bearer $APEXLOAD_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -212,24 +212,24 @@ curl -X POST http://localhost:8080/api/v1/scripts/debug/sessions \
   }'
 ```
 
-Stored scripts use `POST /api/v1/scripts/{id}/debug/sessions` with the same payload minus `script` unless overriding the draft definition. Debugger sessions are protocol-agnostic; browser scripts include screenshots, DOM, console, network, Core Web Vitals, and HTML evidence when captured.
+Stored scripts use `POST /api/v1/scripts/{id}/replay/sessions` with the same payload minus `script` unless overriding the draft definition. The response includes `preflight` readiness checks and a `session` object with `mode`, `runtime_profile`, lifecycle state, logs, events, and final report. Legacy `POST /api/v1/scripts/debug/sessions` and browser replay endpoints remain available as compatibility wrappers. Replay sessions are protocol-agnostic; browser scripts include screenshots, DOM, console, network, Core Web Vitals, and HTML evidence when captured.
 
-Debugger control endpoints:
+Replay control endpoints:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/script-debug/sessions/$SESSION_ID/step \
+curl -X POST http://localhost:8080/api/v1/replay/sessions/$SESSION_ID/step \
   -H "Authorization: Bearer $APEXLOAD_API_KEY"
 
-curl -X PATCH http://localhost:8080/api/v1/script-debug/sessions/$SESSION_ID/breakpoints \
+curl -X PATCH http://localhost:8080/api/v1/replay/sessions/$SESSION_ID/breakpoints \
   -H "Authorization: Bearer $APEXLOAD_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"breakpoints":[{"phase":"action","action_index":2}]}'
 
-curl "http://localhost:8080/api/v1/script-debug/sessions/$SESSION_ID/export?format=log" \
+curl "http://localhost:8080/api/v1/replay/sessions/$SESSION_ID/export?format=log" \
   -H "Authorization: Bearer $APEXLOAD_API_KEY"
 ```
 
-`view_scripts` can read and export debugger sessions. `manage_scripts` is required to start sessions, pause, resume, step, stop, or update breakpoints. WebSocket messages use `script_debug_*` event types with `debug_session_id`, `replay_session_id`, `session`, and optional `event`, `action`, or `report` fields. Existing `/browser-replay/sessions` endpoints remain available for older clients.
+`view_scripts` can read and export replay sessions. `manage_scripts` is required to start sessions, pause, resume, step, stop, or update breakpoints. WebSocket messages include stable `event_id` values and use session lifecycle, action lifecycle (`action_started`, `action_completed`, `action_failed`), compatibility `replay_event`, and final report events with `replay_session_id`, `session`, and optional `event`, `action`, or `report` fields.
 
 Import endpoints:
 
@@ -389,6 +389,7 @@ Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array w
 | `PATCH` | `/api/v1/scripts/{id}/move` |
 | `POST` | `/api/v1/scripts/validate` |
 | `POST` | `/api/v1/scripts/replay` |
+| `POST` | `/api/v1/scripts/replay/sessions` |
 | `POST` | `/api/v1/scripts/debug/sessions` |
 | `POST` | `/api/v1/scripts/browser-replay/sessions` |
 | `POST` | `/api/v1/scripts/browser-to-http/preview` |
@@ -401,6 +402,7 @@ Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array w
 | `POST` | `/api/v1/scripts/authoring/sessions/{id}/correlations/preview` |
 | `POST` | `/api/v1/scripts/{id}/validate` |
 | `POST` | `/api/v1/scripts/{id}/replay` |
+| `POST` | `/api/v1/scripts/{id}/replay/sessions` |
 | `POST` | `/api/v1/scripts/{id}/debug/sessions` |
 | `POST` | `/api/v1/scripts/{id}/browser-replay/sessions` |
 | `POST` | `/api/v1/scripts/{id}/export` |
@@ -413,6 +415,13 @@ Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array w
 | `POST` | `/api/v1/script-debug/sessions/{session_id}/stop` |
 | `PATCH` | `/api/v1/script-debug/sessions/{session_id}/breakpoints` |
 | `GET` | `/api/v1/script-debug/sessions/{session_id}/export?format=json|log` |
+| `GET` | `/api/v1/replay/sessions/{session_id}` |
+| `POST` | `/api/v1/replay/sessions/{session_id}/pause` |
+| `POST` | `/api/v1/replay/sessions/{session_id}/resume` |
+| `POST` | `/api/v1/replay/sessions/{session_id}/step` |
+| `POST` | `/api/v1/replay/sessions/{session_id}/stop` |
+| `PATCH` | `/api/v1/replay/sessions/{session_id}/breakpoints` |
+| `GET` | `/api/v1/replay/sessions/{session_id}/export?format=json|log` |
 
 ### Data Pools
 

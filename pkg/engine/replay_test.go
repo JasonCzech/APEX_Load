@@ -253,31 +253,177 @@ func TestReplayScriptPublishesProgressEvents(t *testing.T) {
 		t.Fatalf("ReplayScript returned error: %v", err)
 	}
 
-	if len(progress) != 4 {
-		t.Fatalf("progress count = %d, want 4", len(progress))
+	if len(progress) != 8 {
+		t.Fatalf("progress count = %d, want 8", len(progress))
 	}
-	gotTypes := []string{progress[0].Type, progress[1].Type, progress[2].Type, progress[3].Type}
-	wantTypes := []string{ReplayProgressStarted, ReplayProgressEventRun, ReplayProgressEventRun, ReplayProgressComplete}
+	gotTypes := []string{progress[0].Type, progress[1].Type, progress[2].Type, progress[3].Type, progress[4].Type, progress[5].Type, progress[6].Type, progress[7].Type}
+	wantTypes := []string{
+		ReplayProgressStarted,
+		ReplayProgressActionStarted,
+		ReplayProgressActionCompleted,
+		ReplayProgressEventRun,
+		ReplayProgressActionStarted,
+		ReplayProgressActionCompleted,
+		ReplayProgressEventRun,
+		ReplayProgressComplete,
+	}
 	if !slices.Equal(gotTypes, wantTypes) {
 		t.Fatalf("progress types = %#v, want %#v", gotTypes, wantTypes)
 	}
-	if progress[1].Event == nil || progress[1].Event.ActionName != "first" {
-		t.Fatalf("first event = %#v, want action first", progress[1].Event)
+	if progress[1].Action == nil || progress[1].Action.ActionName != "first" {
+		t.Fatalf("first action started = %#v, want action first", progress[1].Action)
 	}
-	if progress[2].Event == nil || progress[2].Event.ActionName != "second" {
-		t.Fatalf("second event = %#v, want action second", progress[2].Event)
+	if progress[3].Event == nil || progress[3].Event.ActionName != "first" {
+		t.Fatalf("first event = %#v, want action first", progress[3].Event)
 	}
-	if progress[3].Report == nil || len(progress[3].Report.Events) != len(report.Events) {
-		t.Fatalf("completion report events = %d, want %d", len(progress[3].Report.Events), len(report.Events))
+	if progress[6].Event == nil || progress[6].Event.ActionName != "second" {
+		t.Fatalf("second event = %#v, want action second", progress[6].Event)
 	}
-	if progress[3].Report.CompletedAt.IsZero() {
+	if progress[7].Report == nil || len(progress[7].Report.Events) != len(report.Events) {
+		t.Fatalf("completion report events = %d, want %d", len(progress[7].Report.Events), len(report.Events))
+	}
+	if progress[7].Report.CompletedAt.IsZero() {
 		t.Fatal("completion report missing completed_at")
 	}
 	if progress[0].Report == nil || progress[0].Report.CompletedAt.IsZero() == false {
 		t.Fatalf("start report completed_at = %v, want zero", progress[0].Report.CompletedAt)
 	}
-	if progress[1].EventIndex != 0 || progress[2].EventIndex != 1 {
-		t.Fatalf("event indexes = %d,%d want 0,1", progress[1].EventIndex, progress[2].EventIndex)
+	if progress[3].EventIndex != 0 || progress[6].EventIndex != 1 {
+		t.Fatalf("event indexes = %d,%d want 0,1", progress[3].EventIndex, progress[6].EventIndex)
+	}
+	if progress[1].EventID == "" || progress[1].EventID != progress[2].EventID || progress[2].EventID != progress[3].EventID {
+		t.Fatalf("first action event IDs = %q/%q/%q, want stable lifecycle ID", progress[1].EventID, progress[2].EventID, progress[3].EventID)
+	}
+}
+
+func TestReplayScriptClassifiesFailuresAndReportsArtifacts(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: false, StatusCode: 403, ErrorMessage: "forbidden session expired"}, nil
+	})
+
+	var progress []ReplayProgressEvent
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name:     "Auth Failure Script",
+		Protocol: protocolName,
+		Config:   dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false}},
+		DataSources: []dsl.DataSource{{
+			Name:       "users",
+			Type:       "csv",
+			InlineData: "id\n1\n",
+			Strategy:   "sequential",
+		}},
+		Actions: []dsl.Action{{Name: "account", Type: "GET", Method: "GET", Target: "/account"}},
+	}, ReplayOptions{
+		ReplaySessionID: "diagnosis-session",
+		Variables:       map[string]string{"token": "seeded"},
+		IgnoreThinkTime: true,
+		OnProgress: func(event ReplayProgressEvent) {
+			progress = append(progress, event)
+		},
+	})
+	if err != nil {
+		t.Fatalf("ReplayScript returned error: %v", err)
+	}
+	if report.Success {
+		t.Fatal("report.Success = true, want false")
+	}
+	if report.ReplaySessionID != "diagnosis-session" || report.ScriptHash == "" {
+		t.Fatalf("report metadata = session %q hash %q, want populated", report.ReplaySessionID, report.ScriptHash)
+	}
+	if report.ArtifactManifest == nil || report.ArtifactManifest.ReplayID != "diagnosis-session" || !slices.Contains(report.ArtifactManifest.DataSources, "users") || !slices.Contains(report.ArtifactManifest.SeedVariables, "token") {
+		t.Fatalf("artifact manifest = %#v, want replay/data/seed metadata", report.ArtifactManifest)
+	}
+	if report.DiagnosisSummary == nil || report.DiagnosisSummary.FailureCount != 1 || report.DiagnosisSummary.Categories["auth_session"] != 1 {
+		t.Fatalf("diagnosis summary = %#v, want auth_session failure", report.DiagnosisSummary)
+	}
+	if len(report.RepairSuggestions) == 0 {
+		t.Fatal("expected report repair suggestions")
+	}
+	event := report.Events[0]
+	if event.EventID == "" || event.Diagnosis == nil || event.Diagnosis.Category != "auth_session" {
+		t.Fatalf("event diagnosis = %#v id=%q, want auth_session with ID", event.Diagnosis, event.EventID)
+	}
+	if len(event.RepairSuggestions) == 0 {
+		t.Fatal("expected event repair suggestions")
+	}
+	var failedLifecycle *ReplayProgressEvent
+	for i := range progress {
+		if progress[i].Type == ReplayProgressActionFailed {
+			failedLifecycle = &progress[i]
+			break
+		}
+	}
+	if failedLifecycle == nil || failedLifecycle.Event == nil || failedLifecycle.Event.Diagnosis == nil {
+		t.Fatalf("progress = %#v, want action_failed with diagnosis", progress)
+	}
+}
+
+func TestReplayScriptCarriesNativeProtocolEvidence(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{
+			ActionName:       action.Name,
+			Success:          true,
+			StatusCode:       200,
+			DependencyType:   "database",
+			DependencyTarget: "sqlite",
+			ResponseBody:     `{"row_count":1,"rows":[{"id":1}],"scalar":1}`,
+			BytesSent:        18,
+			BytesReceived:    44,
+			Extractions:      map[string]string{"id": "1"},
+			ProtocolEvidence: protocol.BuildProtocolEvidence(action, &protocol.Result{Success: true, StatusCode: 200, DependencyType: "database", DependencyTarget: "sqlite", ResponseBody: `{"row_count":1,"rows":[{"id":1}],"scalar":1}`, BytesSent: 18, BytesReceived: 44, Extractions: map[string]string{"id": "1"}}),
+		}, nil
+	})
+
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name:     "Database Replay",
+		Protocol: protocolName,
+		Actions:  []dsl.Action{{Name: "query", Type: "db_query", Target: "select id from users"}},
+	}, ReplayOptions{ReplaySessionID: "native-evidence", IgnoreThinkTime: true})
+	if err != nil {
+		t.Fatalf("ReplayScript returned error: %v", err)
+	}
+	if len(report.Events) != 1 {
+		t.Fatalf("event count = %d, want 1", len(report.Events))
+	}
+	event := report.Events[0]
+	if event.ProtocolEvidence["protocol"] != "database" {
+		t.Fatalf("event protocol evidence = %#v, want database", event.ProtocolEvidence)
+	}
+	if rows, ok := event.ProtocolEvidence["rows"].(map[string]any); !ok || rows["row_count"] == nil {
+		t.Fatalf("event protocol rows = %#v, want row_count", event.ProtocolEvidence["rows"])
+	}
+	if report.ArtifactManifest == nil || report.ArtifactManifest.ProtocolArtifacts["database"] != 1 {
+		t.Fatalf("artifact manifest = %#v, want database protocol artifact count", report.ArtifactManifest)
+	}
+}
+
+func TestReplayScriptClassifiesNativeProtocolFailures(t *testing.T) {
+	cases := []struct {
+		name       string
+		event      ReplayActionEvent
+		want       string
+		wantSignal string
+	}{
+		{name: "websocket handshake", event: ReplayActionEvent{ActionType: "ws_connect", ErrorMessage: "bad status during websocket handshake"}, want: "websocket_handshake", wantSignal: "websocket_handshake"},
+		{name: "grpc contract", event: ReplayActionEvent{ActionType: "grpc_unary", ErrorMessage: "reflection descriptor for service not found"}, want: "grpc_contract", wantSignal: "grpc_contract"},
+		{name: "database guard", event: ReplayActionEvent{ActionType: "db_exec", ErrorMessage: "database read_only mode blocks mutating SQL"}, want: "database_guard", wantSignal: "database_guard"},
+		{name: "network dns", event: ReplayActionEvent{ActionType: "dns_query", ErrorMessage: "lookup missing.example: no such host"}, want: "network_dns_resolution", wantSignal: "dns"},
+		{name: "jms broker", event: ReplayActionEvent{ActionType: "jms_consume", ErrorMessage: "message received timeout for destination orders.in"}, want: "jms_broker_message", wantSignal: "jms"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			diagnosis := classifyReplayFailure(tc.event)
+			if diagnosis.Category != tc.want {
+				t.Fatalf("category = %q, want %q", diagnosis.Category, tc.want)
+			}
+			if !slices.Contains(diagnosis.Signals, tc.wantSignal) {
+				t.Fatalf("signals = %#v, want %q", diagnosis.Signals, tc.wantSignal)
+			}
+			if diagnosis.Evidence == "" || diagnosis.Action == "" {
+				t.Fatalf("diagnosis = %#v, want evidence/action", diagnosis)
+			}
+		})
 	}
 }
 

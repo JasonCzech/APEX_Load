@@ -2,16 +2,17 @@
 
 ## What This Is
 Kubernetes-native performance testing platform replacing LoadRunner Enterprise.
-Go-based load engine using goroutines as virtual users, with an agentic (LLM-powered)
-script generation engine in Python, React dashboard, and OpenTelemetry telemetry pipeline.
+Go-based load engine using goroutines as virtual users, with a deterministic
+assisted-authoring engine (external LLM integration is policy-gated and not wired by
+default), a React dashboard, and a Prometheus/Dynatrace telemetry pipeline.
 
 ## Architecture Overview
 - **Load Generators** (Go): VUsers are goroutines. Pods scale 1–50 via HPA. Target: 10k VUsers/pod for HTTP.
 - **Test Controller** (Go): Orchestrates tests, distributes VUsers across generators, aggregates metrics via gRPC streams.
-- **Agentic Script Engine** (Python + Azure OpenAI): Generates JSON DSL test scripts from Jira stories, OpenAPI specs, HAR files.
+- **Assisted-Authoring Engine** (Go): Produces and repairs JSON DSL drafts from OpenAPI specs, HAR files, and recordings using a deterministic-local provider. The MCP server exposes these as agent tools; external LLM providers are governed by policy and not enabled by default.
 - **Dashboard** (React 18 + TypeScript + Recharts): Real-time WebSocket-fed monitoring.
-- **Telemetry**: OpenTelemetry → Prometheus/Dynatrace/ELK. Controller aggregates with t-digest for percentiles.
-- **Storage**: PostgreSQL (metadata), Redis (live state), Azure Blob (results/artifacts).
+- **Telemetry**: Prometheus scrape + W3C `traceparent` propagation + Dynatrace event webhooks. Controller aggregates with t-digest for percentiles. (Full OpenTelemetry span instrumentation is not yet implemented.)
+- **Storage**: SQLite by default (`apexload.db`); PostgreSQL is an optional enterprise backend (via pgx). Live state is in-memory with optional Redis/Valkey for HA. Archives are written to the local filesystem; S3/Azure Blob/GCS are optional enterprise backends.
 - **Deployment**: AKS with CRDs, K8s operator, Helm charts, Terraform IaC.
 
 ## Module Path
@@ -79,6 +80,8 @@ POST   /api/v1/scripts/{id}/validate — Dry-run validation
 POST   /api/v1/scripts/{id}/export   — Export script JSON to disk
 GET    /api/v1/scripts/{id}/download — Download script as JSON file
 POST   /api/v1/scripts/import/loadrunner — Upload LR .zip, get converted DSL
+GET    /api/v1/correlations/rules    — Correlation detection rule catalog
+POST   /api/v1/correlations/diagnose — Replay-failure detection + ranked repair suggestions
 GET    /api/v1/system/health         — Health check
 WS     /api/v1/ws                    — Global WebSocket (all test events)
 ```
@@ -121,18 +124,20 @@ go test ./...
 ```
 
 ## Performance Targets
+These are design targets, not yet backed by published benchmark artifacts. Do not cite as achieved.
 - Harness overhead per transaction: < 50 μs
 - VUsers per pod (HTTP): 10,000 on 4 vCPU / 8 GB
 - Metrics latency (generator → dashboard): < 2 seconds
 - Ramp-up rate: 500 VUsers/second/pod
 
 ## Development Phases
-1. **Foundation (Wk 1–8)**: Single-pod HTTP, basic controller, CLI — CURRENT
-2. Distribution & Telemetry (Wk 9–16): Multi-pod, OTel, persistence
-3. Dashboard MVP (Wk 17–22): React real-time monitoring
-4. Agentic Scripting (Wk 23–28): LLM script generation
-5. JMS & Advanced (Wk 29–36): JMS protocols, multi-test concurrency
-6. Scale & Harden (Wk 37–44): 50k VUsers, HA, production readiness
+The original week-numbered phasing below is historical; the codebase is well past it (auth/RBAC, scheduling, distributed gRPC execution, governance, and authoring/import are all implemented). Treat it as a roadmap sketch, not current status.
+1. Foundation: Single-pod HTTP, basic controller, CLI
+2. Distribution & Telemetry: Multi-pod, telemetry, persistence
+3. Dashboard MVP: React real-time monitoring
+4. Assisted Scripting: deterministic DSL draft/repair (LLM integration policy-gated)
+5. JMS & Advanced: JMS protocols, multi-test concurrency
+6. Scale & Harden: 50k VUsers, HA, production readiness
 
 ## Tech Stack
-Go 1.26+ | PostgreSQL 16 | Redis 7 | React 18 + TS | OpenTelemetry | gRPC | AKS | Helm | Terraform
+Go 1.26+ | SQLite (default) / PostgreSQL 16 (optional) | Redis/Valkey (optional, HA) | React 18 + TS | Prometheus + gRPC | AKS | Helm | Terraform

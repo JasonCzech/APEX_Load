@@ -37,7 +37,8 @@ func TestDatabaseProtocolExecutesQueryAndAssertions(t *testing.T) {
 		Type:       "db_query",
 		Target:     "select name from users where name = ?",
 		Params:     map[string]any{"binds": []any{"Ada"}},
-		Assertions: []protocol.Assertion{{Type: "row_count", Expected: 1}},
+		Extractors: []protocol.Extractor{{Name: "selected_name", Source: "scalar", Type: "jsonpath", Expression: "$.scalar"}},
+		Assertions: []protocol.Assertion{{Type: "row_count", Expected: 1}, {Type: "scalar_equals", Expected: "Ada"}},
 	})
 	if err != nil {
 		t.Fatalf("query: %v", err)
@@ -50,6 +51,16 @@ func TestDatabaseProtocolExecutesQueryAndAssertions(t *testing.T) {
 	}
 	if !strings.Contains(result.ResponseBody, `"name":"Ada"`) || !strings.Contains(result.ResponseBody, `"row_count":1`) {
 		t.Fatalf("response body = %s, want Ada row", result.ResponseBody)
+	}
+	if result.Extractions["selected_name"] != "Ada" {
+		t.Fatalf("selected_name extraction = %q, want Ada", result.Extractions["selected_name"])
+	}
+	if result.ProtocolEvidence["protocol"] != "database" {
+		t.Fatalf("protocol evidence = %#v, want database", result.ProtocolEvidence)
+	}
+	rows, ok := result.ProtocolEvidence["rows"].(map[string]any)
+	if !ok || rows["row_count"] == nil || rows["scalar"] != "Ada" {
+		t.Fatalf("protocol evidence rows = %#v, want row_count and scalar Ada", result.ProtocolEvidence["rows"])
 	}
 }
 
@@ -97,5 +108,11 @@ func TestDatabaseProtocolReadOnlyBlocksMutations(t *testing.T) {
 	}
 	if result.Success || !strings.Contains(result.ErrorMessage, "read_only") {
 		t.Fatalf("result = %#v, want read_only block", result)
+	}
+	if result.Snapshot == nil || !strings.Contains(result.Snapshot.RequestURL, "create table blocked") {
+		t.Fatalf("snapshot = %#v, want failed SQL evidence", result.Snapshot)
+	}
+	if result.ProtocolEvidence["protocol"] != "database" || result.ProtocolEvidence["status"] != "failed" {
+		t.Fatalf("protocol evidence = %#v, want failed database evidence", result.ProtocolEvidence)
 	}
 }

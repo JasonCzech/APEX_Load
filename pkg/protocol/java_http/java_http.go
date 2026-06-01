@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -28,6 +29,9 @@ type JavaHTTP struct {
 	accept               string
 	bodyEncoding         string
 	preserveBinaryResult bool
+	objectSchema         string
+	requestMapping       map[string]string
+	responseMapping      map[string]string
 }
 
 func (j *JavaHTTP) Name() string { return "java_http" }
@@ -66,6 +70,11 @@ func (j *JavaHTTP) Init(ctx context.Context, config map[string]any) error {
 		return fmt.Errorf("unsupported java_http body encoding: %s", j.bodyEncoding)
 	}
 	j.preserveBinaryResult, _ = config["java_http_preserve_binary_result"].(bool)
+	if value, ok := config["java_http_object_schema"].(string); ok {
+		j.objectSchema = strings.TrimSpace(value)
+	}
+	j.requestMapping = coerceStringMap(config["java_http_request_mapping"])
+	j.responseMapping = coerceStringMap(config["java_http_response_mapping"])
 	j.http = &httpproto.HTTP{}
 	return j.http.Init(ctx, config)
 }
@@ -105,6 +114,14 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*proto
 		prepared.Body = decoded
 	}
 	result, err := j.http.Execute(ctx, &prepared)
+	// Apply response mappings against the raw (pre-base64) response bytes. Java
+	// serialized streams embed their string fields as ASCII, so regex mappings can
+	// pull named values out of an otherwise-opaque payload and feed correlation —
+	// before the body is re-encoded for preservation below.
+	mappedExtractions := map[string]string{}
+	if result != nil && len(j.responseMapping) > 0 {
+		mappedExtractions = applyResponseMapping(j.responseMapping, result.ResponseBody)
+	}
 	deserializationDuration := time.Duration(0)
 	if result != nil && j.preserveBinaryResult {
 		startedAt := time.Now()
@@ -123,6 +140,9 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*proto
 		}
 		result.Extractions["java_http_codec"] = j.codec
 		result.Extractions["java_http_helper_mode"] = j.helperMode
+		for name, value := range mappedExtractions {
+			result.Extractions[name] = value
+		}
 	}
 	return result, err
 }
@@ -139,6 +159,65 @@ func (j *JavaHTTP) HealthCheck(ctx context.Context) error {
 		return nil
 	}
 	return j.http.HealthCheck(ctx)
+}
+
+// coerceStringMap accepts either a map[string]string (set by the engine config
+// flattener) or a map[string]any (when init config is decoded from JSON).
+func coerceStringMap(value any) map[string]string {
+	switch typed := value.(type) {
+	case map[string]string:
+		if len(typed) == 0 {
+			return nil
+		}
+		out := make(map[string]string, len(typed))
+		for k, v := range typed {
+			out[k] = v
+		}
+		return out
+	case map[string]any:
+		if len(typed) == 0 {
+			return nil
+		}
+		out := make(map[string]string, len(typed))
+		for k, v := range typed {
+			if s, ok := v.(string); ok {
+				out[k] = s
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// applyResponseMapping evaluates each name→expression mapping against the raw
+// response body. An expression is treated as a regex with an optional capture
+// group; a substring fallback is used for plain-literal expressions.
+func applyResponseMapping(mapping map[string]string, body string) map[string]string {
+	out := make(map[string]string, len(mapping))
+	for name, expr := range mapping {
+		if strings.TrimSpace(expr) == "" {
+			continue
+		}
+		re, err := regexp.Compile(expr)
+		if err != nil {
+			// Not a valid regex — fall back to a literal substring presence check.
+			if strings.Contains(body, expr) {
+				out[name] = expr
+			}
+			continue
+		}
+		m := re.FindStringSubmatch(body)
+		if m == nil {
+			continue
+		}
+		if len(m) >= 2 {
+			out[name] = m[1]
+		} else {
+			out[name] = m[0]
+		}
+	}
+	return out
 }
 
 func cloneHeaders(headers map[string]string) map[string]string {

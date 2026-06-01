@@ -49,6 +49,10 @@ export default function ScriptsAuthoringShell({
         onStartApiScript={createOptionActions.startApiScript}
         onStartSoapScript={createOptionActions.startSoapScript}
         onStartJavaHttpScript={createOptionActions.startJavaHttpScript}
+        onStartWebSocketScript={createOptionActions.startWebSocketScript}
+        onStartGrpcScript={createOptionActions.startGrpcScript}
+        onStartDatabaseScript={createOptionActions.startDatabaseScript}
+        onStartNetworkScript={createOptionActions.startNetworkScript}
         onOpenJavaHttpImport={createOptionActions.openJavaHttpImport}
         onOpenSampleImport={createOptionActions.openSampleImport}
         onStartWebScript={createOptionActions.startWebScript}

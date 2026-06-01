@@ -49,7 +49,7 @@ Compared against the combined feature sets of LoadRunner Enterprise, Gatling Ent
 | Deep per-protocol telemetry | `PROTOCOL_TELEMETRY_PARITY_PLAN.md` |
 | SLA threshold evaluation | `PROTOCOL_TELEMETRY_PARITY_PLAN.md` |
 | Baseline run comparison | `PROTOCOL_TELEMETRY_PARITY_PLAN.md` |
-| Agentic script generation (LLM) | `AGENTS.md` Phase 4 |
+| External LLM script generation (current engine is deterministic-local; LLM policy-gated) | `AGENTS.md` Phase 4 |
 | Multi-test concurrency | `AGENTS.md` Phase 5 |
 | 50k VUser HA hardening | `AGENTS.md` Phase 6 |
 
@@ -433,12 +433,12 @@ In CI/CD environments, PRs are often deployed to ephemeral namespaces where host
 Before adding anything, it's worth recognizing that APEX Load already has capabilities that many competitors lack:
 
 - **Goroutine-per-VUser model** — fundamentally more efficient than thread-based or process-based engines
-- **Distributed execution with live aggregation** — the 1,362-line distributed backend is production-grade
-- **Browser protocol with recording studio** — built-in, not bolted-on
-- **Agentic script generation** — LLM-powered scripting is ahead of the entire industry
+- **Distributed execution with live aggregation** — the distributed gRPC backend is functional (scale targets remain unbenchmarked)
+- **Browser protocol with recording studio** — built-in proxy recorder for HTTP/WS; browser VUsers are diagnostic canaries, not a TruClient-class DOM recorder
+- **Assisted script authoring** — deterministic draft/repair/explain over the DSL, exposed via the MCP server. NOTE: this is a deterministic-local provider, **not** an LLM; external LLM integration is policy-gated and not wired by default. Do not market as "LLM-powered."
 - **Unified DSL** — one script format across all protocols, not per-protocol languages
 - **Real-time pause/resume with transaction integrity** — "soft pause" is a feature most competitors don't have
 - **Parquet archives** — native analytics-friendly format, not proprietary binary
-- **MCP server** — AI-agent integration layer that no competitor offers
+- **MCP server** — agent integration layer exposing authoring/run tools
 
 The gaps above are about operational completeness (CI/CD, reports, scheduling, alerts), enterprise controls (security, governance, reproducibility), and analytical depth (correlation, error patterns, APM), not architectural deficiencies. The engine and protocol foundation are solid.

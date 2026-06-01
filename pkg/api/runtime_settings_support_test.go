@@ -28,7 +28,7 @@ func TestRuntimeSettingsSupportMatrixEndpointCoversW3ProtocolsAndPresets(t *test
 	if payload.SchemaVersion != runtimeSettingsSupportSchemaVersion {
 		t.Fatalf("schema version = %q", payload.SchemaVersion)
 	}
-	for _, protocol := range []string{"browser", "vugen_web2", "trueclient2_web", "soap", "java_http", "websocket", "grpc", "jms-solace", "devweb", "har", "jmeter"} {
+	for _, protocol := range []string{"browser", "vugen_web2", "trueclient2_web", "soap", "java_http", "websocket", "grpc", "database", "network", "jms-solace", "devweb", "har", "jmeter"} {
 		if !containsString(payload.Protocols, protocol) {
 			t.Fatalf("protocols = %#v, missing %s", payload.Protocols, protocol)
 		}
@@ -57,6 +57,12 @@ func TestRuntimeSettingsSupportMatrixEndpointCoversW3ProtocolsAndPresets(t *test
 	}
 	if !runtimeSettingsSupportEntryContains(payload.SupportMatrix, "vugen_web2_http_conversion_readiness", "executed") {
 		t.Fatalf("support matrix missing Web 2.0 HTTP conversion readiness classification")
+	}
+	if !runtimeSettingsSupportEntryContains(payload.SupportMatrix, "database_runtime_controls", "executed") {
+		t.Fatalf("support matrix missing database runtime controls")
+	}
+	if !runtimeSettingsSupportEntryContains(payload.SupportMatrix, "network_protocol_runtime_controls", "executed") {
+		t.Fatalf("support matrix missing network runtime controls")
 	}
 	if !runtimeSettingsDecisionContains(payload.Decisions, "streaming-media-runtime", "executed") {
 		t.Fatalf("streaming/media decision = %#v, want executed", payload.Decisions)

@@ -109,6 +109,30 @@ export const EMPTY_JMS_ACTION: Action = {
   think_time_after: true,
 }
 
+export const EMPTY_WEBSOCKET_ACTION: Action = {
+  name: '', type: 'ws_connect', target: '/ws', headers: {}, body: '',
+  params: { timeout_ms: 30000 }, metadata: {}, extractors: [], assertions: [],
+  think_time_after: true,
+}
+
+export const EMPTY_GRPC_ACTION: Action = {
+  name: '', type: 'grpc_unary', target: 'package.Service/Method', headers: {}, body: '{}',
+  params: { timeout_ms: 30000 }, metadata: {}, extractors: [], assertions: [{ type: 'grpc_status', expected: 0 }],
+  think_time_after: true,
+}
+
+export const EMPTY_DATABASE_ACTION: Action = {
+  name: '', type: 'db_query', target: 'select 1 as ok', headers: {}, body: '',
+  params: { binds: [] }, metadata: {}, extractors: [], assertions: [{ type: 'row_count', expected: 1 }],
+  think_time_after: true,
+}
+
+export const EMPTY_NETWORK_ACTION: Action = {
+  name: '', type: 'network_health', target: 'localhost:80', headers: {}, body: '',
+  params: {}, metadata: {}, extractors: [], assertions: [],
+  think_time_after: true,
+}
+
 export const EMPTY_SOAP_ACTION: Action = {
   name: '', type: 'POST', method: 'POST', target: '', headers: {}, body: '',
   extractors: [], assertions: [{ type: 'status_code', expected: 200 }], think_time_after: true,

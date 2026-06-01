@@ -109,6 +109,7 @@ type TransactionEvent struct {
 	DOMSummary        *protocol.DOMSummary      `json:"dom_summary,omitempty"`
 	ClientMetrics     *protocol.ClientMetrics   `json:"client_metrics,omitempty"`
 	ServerTelemetry   *protocol.ServerTelemetry `json:"server_telemetry,omitempty"`
+	ProtocolEvidence  map[string]any            `json:"protocol_evidence,omitempty"`
 	Snapshot          *protocol.ErrorSnapshot   `json:"snapshot,omitempty"`
 	SourceStepID      string                    `json:"source_step_id,omitempty"`
 	SourceStepIndex   int                       `json:"source_step_index,omitempty"`
@@ -651,6 +652,7 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		DOMSummary:        cloneProtocolDOMSummary(result.DOMSummary),
 		ClientMetrics:     result.ClientMetrics,
 		ServerTelemetry:   result.ServerTelemetry,
+		ProtocolEvidence:  cloneAnyMap(result.ProtocolEvidence),
 		Snapshot:          result.Snapshot,
 		SourceStepID:      result.SourceStepID,
 		SourceStepIndex:   result.SourceStepIndex,
@@ -2292,6 +2294,17 @@ func cloneProtocolDOMSummary(summary *protocol.DOMSummary) *protocol.DOMSummary 
 		cloned.VisibleText = append([]string(nil), summary.VisibleText...)
 	}
 	return &cloned
+}
+
+func cloneAnyMap(input map[string]any) map[string]any {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
 }
 
 func normalizeArchiveErrorSignature(message string) string {

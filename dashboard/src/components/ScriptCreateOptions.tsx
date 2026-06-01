@@ -9,6 +9,10 @@ interface Props {
   onStartApiScript: () => void
   onStartSoapScript: () => void
   onStartJavaHttpScript: () => void
+  onStartWebSocketScript: () => void
+  onStartGrpcScript: () => void
+  onStartDatabaseScript: () => void
+  onStartNetworkScript: () => void
   onOpenJavaHttpImport: () => void
   onOpenSampleImport: () => void
   onStartWebScript: () => void
@@ -85,6 +89,10 @@ export default function ScriptCreateOptions({
   onStartApiScript,
   onStartSoapScript,
   onStartJavaHttpScript,
+  onStartWebSocketScript,
+  onStartGrpcScript,
+  onStartDatabaseScript,
+  onStartNetworkScript,
   onOpenJavaHttpImport,
   onOpenSampleImport,
   onStartWebScript,
@@ -362,6 +370,26 @@ export default function ScriptCreateOptions({
                     <span className="script-create-type-badge">JAVA</span>
                     <h3>Java over HTTP</h3>
                     <p>Create a first-class Java-over-HTTP draft with the `java_serialized_object_base64` codec and choose embedded or sidecar helper execution on the HTTP transport.</p>
+                  </button>
+                  <button className="script-create-option" onClick={onStartWebSocketScript}>
+                    <span className="script-create-type-badge">WS</span>
+                    <h3>WebSocket Script</h3>
+                    <p>Model connect, send, receive, ping, close, handshake headers, message assertions, and transcript evidence.</p>
+                  </button>
+                  <button className="script-create-option" onClick={onStartGrpcScript}>
+                    <span className="script-create-type-badge">gRPC</span>
+                    <h3>gRPC Script</h3>
+                    <p>Start unary or streaming calls with reflection/proto setup, metadata, status checks, and message-count assertions.</p>
+                  </button>
+                  <button className="script-create-option" onClick={onStartDatabaseScript}>
+                    <span className="script-create-type-badge">DB</span>
+                    <h3>Database Script</h3>
+                    <p>Author query, exec, transaction, bind, row/scalar assertion, extractor, and read-only fixture flows.</p>
+                  </button>
+                  <button className="script-create-option" onClick={onStartNetworkScript}>
+                    <span className="script-create-type-badge">NET</span>
+                    <h3>Network Protocol Script</h3>
+                    <p>Build DNS, TCP, UDP, FTP, SMTP, POP3, IMAP, LDAP, and Winsock-style probes with transcript evidence.</p>
                   </button>
                   <button className="script-create-option" onClick={onOpenSampleImport}>
                     <span className="script-create-type-badge">API</span>

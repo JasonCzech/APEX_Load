@@ -808,6 +808,82 @@ GET /api/v1/recorder/har?har_id=har-001
 
 Returns HAR file with `Content-Type: application/json`.
 
+### Correlation Intelligence
+
+The correlation engine detects dynamic values that must be correlated (auth/CSRF
+tokens, session cookies, ASP.NET state fields, dynamic headers, redirects) and
+ranks them by confidence. Recorder/import flows run detection automatically; the
+endpoints below expose the rule catalog and a record-vs-replay diagnosis.
+
+#### List correlation rules
+
+```
+GET /api/v1/correlations/rules
+```
+
+Returns the detection rule catalog so a UI can show "what we detect":
+
+```json
+{
+  "rules": [
+    { "id": "html.aspnet_state", "family": "html", "title": "ASP.NET state field",
+      "description": "WebForms __VIEWSTATE / __EVENTVALIDATION style hidden fields…",
+      "base_confidence": 0.95 }
+  ]
+}
+```
+
+#### Diagnose replay correlation failures
+
+```
+POST /api/v1/correlations/diagnose
+```
+
+Compares a recording against a replay of the same flow (steps matched by `id`)
+and returns ranked repair suggestions: stale values that will break (severity
+`error`) and correlation sources that vanished on replay (severity `warning`),
+each with the exact extractor to add.
+
+Request:
+
+```json
+{
+  "recorded": [
+    { "id": 1, "response_body": "{\"csrf_token\":\"AAA-recorded\"}" },
+    { "id": 2, "request_body": "csrf=AAA-recorded" }
+  ],
+  "replay": [
+    { "id": 1, "response_body": "{\"csrf_token\":\"BBB-replayed\"}" },
+    { "id": 2, "request_body": "csrf=AAA-recorded" }
+  ]
+}
+```
+
+Each step accepts `id`, `request_url`, `request_body`, `request_headers`,
+`response_body`, `response_headers`. Response:
+
+```json
+{
+  "suggestions": [
+    {
+      "rule_id": "json.csrf_token",
+      "severity": "error",
+      "title": "Stale value replayed (missing correlation)",
+      "detail": "Step 2 replays the recorded value for corr_csrf_token, but step 1 now returns a different value…",
+      "source_step_id": 1,
+      "failing_step_id": 2,
+      "recorded_value": "AAA-recorded",
+      "replay_value": "BBB-replayed",
+      "suggestion": "Capture corr_csrf_token from step 1 and substitute {{var.corr_csrf_token}} in step 2.",
+      "extractor": { "name": "corr_csrf_token", "source": "body", "extract_type": "jsonpath", "expression": "$.csrf_token" },
+      "confidence": 0.94
+    }
+  ],
+  "blocking": true,
+  "counts": { "errors": 1, "warnings": 0 }
+}
+```
+
 ### System
 
 #### Health check

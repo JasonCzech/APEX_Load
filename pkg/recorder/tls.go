@@ -2,6 +2,7 @@ package recorder
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -284,13 +285,6 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 
 	slog.Debug("HTTPS CONNECT interception", "host", host, "hostname", hostname)
 
-	leafCert, err := r.generateLeafCert(hostname)
-	if err != nil {
-		slog.Error("failed to generate leaf cert", "hostname", hostname, "err", err)
-		http.Error(w, "TLS interception error: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-
 	// Respond 200 to the client to indicate the tunnel is established.
 	w.WriteHeader(http.StatusOK)
 
@@ -300,18 +294,41 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 		slog.Error("response writer does not support hijacking")
 		return
 	}
-	clientConn, _, err := hijacker.Hijack()
+	clientConn, clientRW, err := hijacker.Hijack()
 	if err != nil {
 		slog.Error("failed to hijack connection", "err", err)
 		return
 	}
 	defer clientConn.Close()
 
+	clientReader := clientRW.Reader
+	if clientReader == nil {
+		clientReader = bufio.NewReader(clientConn)
+	}
+	firstByte, err := peekConnectTunnelByte(clientConn, clientReader)
+	if err != nil {
+		if err != io.EOF {
+			slog.Debug("failed to inspect CONNECT tunnel", "host", host, "err", err)
+		}
+		return
+	}
+	if firstByte != 0x16 {
+		r.forwardPlainConnect(clientConn, clientReader, hostname, host)
+		return
+	}
+
+	leafCert, err := r.generateLeafCert(hostname)
+	if err != nil {
+		slog.Error("failed to generate leaf cert", "hostname", hostname, "err", err)
+		writeHTTPError(clientConn, http.StatusBadGateway, "TLS interception error: "+err.Error())
+		return
+	}
+
 	// Wrap the raw connection with TLS using the leaf cert.
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{*leafCert},
 	}
-	tlsConn := tls.Server(clientConn, tlsConfig)
+	tlsConn := tls.Server(&readBufferedConn{Conn: clientConn, reader: clientReader}, tlsConfig)
 	if err := tlsConn.Handshake(); err != nil {
 		slog.Debug("TLS handshake with client failed", "hostname", hostname, "err", err)
 		return
@@ -324,7 +341,6 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 	}
 	client := &http.Client{
 		Transport: transport,
-		Timeout:   30 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -341,18 +357,67 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		r.forwardHTTPS(tlsConn, clientReq, hostname, host, client)
+		r.forwardHTTPS(tlsConn, reader, clientReq, hostname, host, client)
 	}
+}
+
+func peekConnectTunnelByte(conn net.Conn, reader *bufio.Reader) (byte, error) {
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	defer conn.SetReadDeadline(time.Time{})
+	peeked, err := reader.Peek(1)
+	if err != nil {
+		return 0, err
+	}
+	return peeked[0], nil
+}
+
+func (r *Recorder) forwardPlainConnect(clientConn net.Conn, clientReader *bufio.Reader, hostname, host string) {
+	for {
+		clientReq, err := http.ReadRequest(clientReader)
+		if err != nil {
+			if err != io.EOF {
+				slog.Debug("error reading plaintext CONNECT request", "hostname", hostname, "err", err)
+			}
+			return
+		}
+
+		r.mu.RLock()
+		session := r.active
+		r.mu.RUnlock()
+		start := time.Now()
+
+		if isWebSocketUpgrade(clientReq) {
+			r.forwardWebSocketPlainConnect(clientConn, clientReader, clientReq, hostname, host, session, start)
+			return
+		}
+
+		writeHTTPError(clientConn, http.StatusBadGateway, "unsupported plaintext CONNECT request")
+		return
+	}
+}
+
+type readBufferedConn struct {
+	net.Conn
+	reader *bufio.Reader
+}
+
+func (c *readBufferedConn) Read(p []byte) (int, error) {
+	return c.reader.Read(p)
 }
 
 // forwardHTTPS forwards a single HTTP request read from the intercepted TLS connection
 // to the real upstream server and writes the response back to the client.
-func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReq *http.Request, hostname, host string, client *http.Client) {
+func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReader *bufio.Reader, clientReq *http.Request, hostname, host string, client *http.Client) {
 	r.mu.RLock()
 	session := r.active
 	r.mu.RUnlock()
 
 	start := time.Now()
+
+	if isWebSocketUpgrade(clientReq) {
+		r.forwardWebSocketHTTPS(tlsConn, clientReader, clientReq, hostname, host, session, start)
+		return
+	}
 
 	// Read the request body.
 	var bodyBytes []byte
@@ -364,7 +429,7 @@ func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReq *http.Request, hostn
 	// Build the upstream URL using the full host:port from the CONNECT request.
 	targetURL := "https://" + host + clientReq.URL.RequestURI()
 
-	upstreamReq, err := http.NewRequest(clientReq.Method, targetURL, strings.NewReader(string(bodyBytes)))
+	upstreamReq, err := http.NewRequest(clientReq.Method, targetURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		slog.Debug("failed to create upstream request", "err", err)
 		writeHTTPError(tlsConn, http.StatusBadGateway, "proxy error: "+err.Error())
@@ -387,34 +452,75 @@ func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReq *http.Request, hostn
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
-	elapsed := time.Since(start)
-
-	// Write the response back to the client over the TLS connection.
-	var respBuf strings.Builder
-	fmt.Fprintf(&respBuf, "HTTP/%d.%d %d %s\r\n", resp.ProtoMajor, resp.ProtoMinor, resp.StatusCode, http.StatusText(resp.StatusCode))
-	for k, vv := range resp.Header {
-		for _, v := range vv {
-			fmt.Fprintf(&respBuf, "%s: %s\r\n", k, v)
-		}
-	}
-	// Ensure Content-Length is set for the response body.
-	if resp.Header.Get("Content-Length") == "" && resp.Header.Get("Transfer-Encoding") == "" {
-		fmt.Fprintf(&respBuf, "Content-Length: %d\r\n", len(respBody))
-	}
-	respBuf.WriteString("\r\n")
-	tlsConn.Write([]byte(respBuf.String()))
-	tlsConn.Write(respBody)
-
-	// Set the request URL to the full HTTPS URL for recording.
+	// Set the request URL to the full HTTPS URL for recording before any
+	// streaming response can emit its early recording event.
 	clientReq.URL.Scheme = "https"
 	clientReq.URL.Host = hostname
 	clientReq.Host = hostname
 
+	if isStreamingResponse(resp) {
+		writeHTTPSResponseHeaders(tlsConn, resp, -1, true)
+		chunked := &chunkedHTTPWriter{w: tlsConn}
+		r.streamAndRecordResponse(chunked, nil, session, clientReq, bodyBytes, resp, start)
+		chunked.Close()
+		return
+	}
+
+	respBody, _ := io.ReadAll(resp.Body)
+	elapsed := time.Since(start)
+
+	// Write the response back to the client over the TLS connection.
+	writeHTTPSResponseHeaders(tlsConn, resp, len(respBody), false)
+	tlsConn.Write(respBody)
+
 	// Record the request if there is an active session.
 	if session != nil {
-		r.recordRequest(session, clientReq, bodyBytes, resp, respBody, elapsed)
+		r.recordRequestStarted(session, clientReq, bodyBytes, resp, respBody, elapsed, start)
 	}
+}
+
+func writeHTTPSResponseHeaders(conn net.Conn, resp *http.Response, bodyLen int, chunked bool) {
+	var respBuf strings.Builder
+	fmt.Fprintf(&respBuf, "HTTP/%d.%d %d %s\r\n", resp.ProtoMajor, resp.ProtoMinor, resp.StatusCode, http.StatusText(resp.StatusCode))
+	for k, vv := range resp.Header {
+		if chunked && (strings.EqualFold(k, "Content-Length") || strings.EqualFold(k, "Transfer-Encoding")) {
+			continue
+		}
+		for _, v := range vv {
+			fmt.Fprintf(&respBuf, "%s: %s\r\n", k, v)
+		}
+	}
+	if chunked {
+		respBuf.WriteString("Transfer-Encoding: chunked\r\n")
+	} else if resp.Header.Get("Content-Length") == "" && resp.Header.Get("Transfer-Encoding") == "" {
+		fmt.Fprintf(&respBuf, "Content-Length: %d\r\n", bodyLen)
+	}
+	respBuf.WriteString("\r\n")
+	conn.Write([]byte(respBuf.String()))
+}
+
+type chunkedHTTPWriter struct {
+	w io.Writer
+}
+
+func (w *chunkedHTTPWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if _, err := fmt.Fprintf(w.w, "%x\r\n", len(p)); err != nil {
+		return 0, err
+	}
+	if _, err := w.w.Write(p); err != nil {
+		return 0, err
+	}
+	if _, err := io.WriteString(w.w, "\r\n"); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+func (w *chunkedHTTPWriter) Close() {
+	_, _ = io.WriteString(w.w, "0\r\n\r\n")
 }
 
 // writeHTTPError writes a minimal HTTP error response to a raw connection.

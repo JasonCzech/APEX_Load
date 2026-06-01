@@ -268,6 +268,9 @@ export interface RecorderCorrelation {
   found_in_seq: number
   used_in_seqs: number[]
   sample_value: string
+  rule_id?: string
+  confidence?: number
+  reasons?: string[]
 }
 
 export type LoadRunnerImportResult = ScriptImportResult<LoadRunnerConvertStats, unknown, ScriptDefinition, unknown, LoadRunnerImportSummary>

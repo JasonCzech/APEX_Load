@@ -1,0 +1,78 @@
+# APEX Load — Azure DevOps step template.
+#
+# Runs a performance test, gates the pipeline on SLA thresholds (non-zero exit
+# fails the step), and publishes the JUnit report to the Tests tab.
+#
+# Usage in a pipeline:
+#   steps:
+#     - template: ci/azure-devops/apexload-perf-gate.yml
+#       parameters:
+#         script: examples/web-api/ecommerce-http.json
+#         vusers: '100'
+#         duration: '3m'
+#         p95LatencyMs: '800'
+#         maxErrorPct: '2.0'
+
+parameters:
+  - name: script
+    type: string
+  - name: vusers
+    type: string
+    default: "50"
+  - name: duration
+    type: string
+    default: "5m"
+  - name: rampUp
+    type: string
+    default: "30s"
+  - name: apiUrl
+    type: string
+    default: ""
+  - name: baseUrl
+    type: string
+    default: ""
+  - name: p95LatencyMs
+    type: string
+    default: ""
+  - name: maxErrorPct
+    type: string
+    default: ""
+  - name: junit
+    type: string
+    default: "apexload-results.xml"
+
+steps:
+  - task: GoTool@0
+    displayName: Use Go 1.26
+    inputs:
+      version: "1.26"
+
+  - bash: |
+      set -uo pipefail
+
+      cmd=(go run ./cmd/apexctl run \
+        --script '${{ parameters.script }}' \
+        --vusers '${{ parameters.vusers }}' \
+        --duration '${{ parameters.duration }}' \
+        --ramp-up '${{ parameters.rampUp }}' \
+        --junit '${{ parameters.junit }}' \
+        --format json)
+
+      [[ -n '${{ parameters.apiUrl }}' ]]       && cmd+=(--api '${{ parameters.apiUrl }}')
+      [[ -n '${{ parameters.baseUrl }}' ]]      && cmd+=(--base-url '${{ parameters.baseUrl }}')
+      [[ -n '${{ parameters.p95LatencyMs }}' ]] && cmd+=(--p95-latency-ms '${{ parameters.p95LatencyMs }}')
+      [[ -n '${{ parameters.maxErrorPct }}' ]]  && cmd+=(--max-error-pct '${{ parameters.maxErrorPct }}')
+
+      "${cmd[@]}"
+    displayName: Run APEX Load SLA gate
+
+  # Always publish results, even when the gate step failed, so the breach is
+  # visible in the Tests tab rather than only in the log.
+  - task: PublishTestResults@2
+    condition: always()
+    displayName: Publish APEX Load results
+    inputs:
+      testResultsFormat: JUnit
+      testResultsFiles: ${{ parameters.junit }}
+      testRunTitle: APEX Load SLA
+      failTaskOnFailedTests: false

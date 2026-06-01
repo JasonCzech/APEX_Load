@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -530,6 +531,72 @@ func TestHTTP_Execute_POST(t *testing.T) {
 	}
 	if result.BytesSent != 15 {
 		t.Errorf("BytesSent = %d, want 15", result.BytesSent)
+	}
+}
+
+func TestHTTP_Execute_DecodesBase64Body(t *testing.T) {
+	binaryBody := []byte{0x00, 0xff, 0x10, 0x80, 0x42}
+	var received []byte
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		received, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("ReadAll: %v", err)
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:         "binary-post",
+		Method:       "POST",
+		Target:       "/upload",
+		Body:         []byte(base64.StdEncoding.EncodeToString(binaryBody)),
+		BodyEncoding: "base64",
+	})
+
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Success = false, error: %s", result.ErrorMessage)
+	}
+	if !bytes.Equal(received, binaryBody) {
+		t.Fatalf("received body = %v, want %v", received, binaryBody)
+	}
+	if result.BytesSent != int64(len(binaryBody)) {
+		t.Fatalf("BytesSent = %d, want %d", result.BytesSent, len(binaryBody))
+	}
+}
+
+func TestHTTP_Execute_InvalidBase64BodyFailsBeforeSend(t *testing.T) {
+	called := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:         "bad-binary-post",
+		Method:       "POST",
+		Target:       "/upload",
+		Body:         []byte("not base64!"),
+		BodyEncoding: "base64",
+	})
+
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if called {
+		t.Fatal("server should not be called when base64 decoding fails")
+	}
+	if result.ErrorMessage == "" || !strings.Contains(result.ErrorMessage, "invalid base64 http body") {
+		t.Fatalf("ErrorMessage = %q, want invalid base64 error", result.ErrorMessage)
 	}
 }
 

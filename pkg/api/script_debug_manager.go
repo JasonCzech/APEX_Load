@@ -41,24 +41,27 @@ type ScriptDebugLogEntry struct {
 }
 
 type ScriptDebugSession struct {
-	ID                string                     `json:"id"`
-	ScriptID          string                     `json:"script_id,omitempty"`
-	ProjectID         string                     `json:"project_id,omitempty"`
-	Status            string                     `json:"status"`
-	Group             string                     `json:"group"`
-	Protocol          string                     `json:"protocol"`
-	LogLevel          string                     `json:"log_level"`
-	StartedAt         *time.Time                 `json:"started_at,omitempty"`
-	CompletedAt       *time.Time                 `json:"completed_at,omitempty"`
-	CurrentEventIndex int                        `json:"current_event_index"`
-	CurrentAction     *engine.ReplayDebugAction  `json:"current_action,omitempty"`
-	CurrentEvent      *engine.ReplayActionEvent  `json:"current_event,omitempty"`
-	Breakpoints       []ScriptDebugBreakpoint    `json:"breakpoints,omitempty"`
-	Events            []engine.ReplayActionEvent `json:"events,omitempty"`
-	Logs              []ScriptDebugLogEntry      `json:"logs,omitempty"`
-	RawOutput         []string                   `json:"raw_output,omitempty"`
-	FinalReport       *engine.ReplayReport       `json:"report,omitempty"`
-	Error             string                     `json:"error,omitempty"`
+	ID                string                      `json:"id"`
+	Mode              string                      `json:"mode,omitempty"`
+	ScriptID          string                      `json:"script_id,omitempty"`
+	ProjectID         string                      `json:"project_id,omitempty"`
+	Status            string                      `json:"status"`
+	Group             string                      `json:"group"`
+	Protocol          string                      `json:"protocol"`
+	LogLevel          string                      `json:"log_level"`
+	RuntimeProfile    engine.ReplayRuntimeProfile `json:"runtime_profile,omitempty"`
+	Preflight         *ReplayPreflight            `json:"preflight,omitempty"`
+	StartedAt         *time.Time                  `json:"started_at,omitempty"`
+	CompletedAt       *time.Time                  `json:"completed_at,omitempty"`
+	CurrentEventIndex int                         `json:"current_event_index"`
+	CurrentAction     *engine.ReplayDebugAction   `json:"current_action,omitempty"`
+	CurrentEvent      *engine.ReplayActionEvent   `json:"current_event,omitempty"`
+	Breakpoints       []ScriptDebugBreakpoint     `json:"breakpoints,omitempty"`
+	Events            []engine.ReplayActionEvent  `json:"events,omitempty"`
+	Logs              []ScriptDebugLogEntry       `json:"logs,omitempty"`
+	RawOutput         []string                    `json:"raw_output,omitempty"`
+	FinalReport       *engine.ReplayReport        `json:"report,omitempty"`
+	Error             string                      `json:"error,omitempty"`
 
 	mu       sync.RWMutex
 	cancel   context.CancelFunc
@@ -92,14 +95,21 @@ func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req Scri
 	}
 	now := time.Now()
 	ctx, cancel := context.WithCancel(context.Background())
+	ignoreThinkTime := true
+	if req.IgnoreThinkTime != nil {
+		ignoreThinkTime = *req.IgnoreThinkTime
+	}
 	session := &ScriptDebugSession{
 		ID:                sessionID,
+		Mode:              normalizeReplaySessionMode(req.Mode),
 		ScriptID:          scriptID,
 		ProjectID:         normalizeProjectID(script.ProjectID),
 		Status:            ScriptDebugRunning,
 		Group:             groupName,
 		Protocol:          script.Protocol,
 		LogLevel:          normalizeDebugLogLevel(req.LogLevel),
+		RuntimeProfile:    replayRuntimeProfileForDebug(script, req, ignoreThinkTime),
+		Preflight:         cloneReplayPreflight(req.Preflight),
 		StartedAt:         &now,
 		CurrentEventIndex: -1,
 		Breakpoints:       normalizeDebugBreakpoints(req.Breakpoints),
@@ -122,14 +132,11 @@ func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req Scri
 		m.broadcast("script_debug_paused", session, -1, nil, nil, nil)
 	}
 
-	ignoreThinkTime := true
-	if req.IgnoreThinkTime != nil {
-		ignoreThinkTime = *req.IgnoreThinkTime
-	}
-
 	go func() {
 		report, err := engine.ReplayScript(ctx, script, engine.ReplayOptions{
+			ReplaySessionID: sessionID,
 			GroupName:       groupName,
+			RuntimeProfile:  &session.RuntimeProfile,
 			Variables:       req.Variables,
 			RedactionRules:  req.RedactionRules,
 			IgnoreThinkTime: ignoreThinkTime,
@@ -185,6 +192,23 @@ func (m *ScriptDebugManager) handleReplayProgress(session *ScriptDebugSession, e
 			session.FinalReport = cloneBrowserReplayReport(event.Report)
 		}
 		session.mu.Unlock()
+	case engine.ReplayProgressActionStarted:
+		session.mu.Lock()
+		if event.Action != nil {
+			actionCopy := *event.Action
+			session.CurrentAction = &actionCopy
+			session.appendLogLocked("debug", "action", fmt.Sprintf("Started %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName), "", nil)
+		}
+		session.mu.Unlock()
+		m.broadcast("script_debug_action_started", session, event.EventIndex, nil, event.Action, nil)
+	case engine.ReplayProgressActionCompleted, engine.ReplayProgressActionFailed:
+		messageType := "script_debug_action_completed"
+		if event.Type == engine.ReplayProgressActionFailed {
+			messageType = "script_debug_action_failed"
+		}
+		if event.Event != nil {
+			m.broadcast(messageType, session, event.EventIndex, event.Event, event.Action, nil)
+		}
 	case engine.ReplayProgressEventRun:
 		session.mu.Lock()
 		if event.Event != nil {
@@ -356,9 +380,13 @@ func (m *ScriptDebugManager) broadcast(messageType string, session *ScriptDebugS
 		message["event_index"] = eventIndex
 	}
 	if event != nil {
+		message["event_id"] = event.EventID
 		message["event"] = event
 	}
 	if action != nil {
+		if action.EventID != "" {
+			message["event_id"] = action.EventID
+		}
 		message["action"] = action
 	}
 	if report != nil {
@@ -376,12 +404,15 @@ func (s *ScriptDebugSession) snapshot() *ScriptDebugSession {
 func (s *ScriptDebugSession) snapshotLocked() *ScriptDebugSession {
 	clone := &ScriptDebugSession{
 		ID:                s.ID,
+		Mode:              s.Mode,
 		ScriptID:          s.ScriptID,
 		ProjectID:         s.ProjectID,
 		Status:            s.Status,
 		Group:             s.Group,
 		Protocol:          s.Protocol,
 		LogLevel:          s.LogLevel,
+		RuntimeProfile:    cloneEngineReplayRuntimeProfile(&s.RuntimeProfile),
+		Preflight:         cloneReplayPreflight(s.Preflight),
 		StartedAt:         s.StartedAt,
 		CompletedAt:       s.CompletedAt,
 		CurrentEventIndex: s.CurrentEventIndex,
@@ -528,6 +559,101 @@ func normalizeDebugBreakpoints(input []ScriptDebugBreakpoint) []ScriptDebugBreak
 		output = append(output, ScriptDebugBreakpoint{Phase: phase, ActionIndex: breakpoint.ActionIndex})
 	}
 	return output
+}
+
+func normalizeReplaySessionMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "replay", "browser_replay", "script_debug":
+		return strings.ToLower(strings.TrimSpace(mode))
+	default:
+		return "script_debug"
+	}
+}
+
+func replayRuntimeProfileForDebug(script *dsl.Script, req ScriptDebugStartRequest, ignoreThinkTime bool) engine.ReplayRuntimeProfile {
+	profile := engine.ReplayRuntimeProfile{}
+	if req.RuntimeProfile != nil {
+		profile = cloneEngineReplayRuntimeProfile(req.RuntimeProfile)
+	}
+	if profile.Name == "" {
+		if strings.TrimSpace(req.ReplayProfile) != "" {
+			profile.Name = strings.TrimSpace(req.ReplayProfile)
+		} else {
+			profile.Name = "debug trace"
+		}
+	}
+	if profile.CaptureMode == "" {
+		profile.CaptureMode = "diagnostic"
+	}
+	profile.LogLevel = normalizeDebugLogLevel(req.LogLevel)
+	profile.IgnoreThinkTime = ignoreThinkTime
+	if script != nil {
+		if profile.BrowserEngine == "" {
+			profile.BrowserEngine = strings.TrimSpace(script.Config.Browser.Engine)
+		}
+		if profile.DeviceProfile == "" {
+			profile.DeviceProfile = strings.TrimSpace(script.Config.Browser.DeviceProfile)
+		}
+		if profile.Headless == nil && script.Config.Browser.Headless != nil {
+			headless := *script.Config.Browser.Headless
+			profile.Headless = &headless
+		}
+		if profile.FailurePolicy == "" {
+			if script.Config.ErrorHandling.ContinueOnError {
+				profile.FailurePolicy = "continue_on_error"
+			} else {
+				profile.FailurePolicy = "stop_on_error"
+			}
+		}
+	}
+	return profile
+}
+
+func replayRuntimeProfileForBrowser(script *dsl.Script, req BrowserReplayStartRequest, ignoreThinkTime bool) engine.ReplayRuntimeProfile {
+	profile := engine.ReplayRuntimeProfile{
+		Name:            "browser canary",
+		CaptureMode:     "browser_evidence",
+		LogLevel:        "info",
+		IgnoreThinkTime: ignoreThinkTime,
+	}
+	if script != nil {
+		profile.BrowserEngine = strings.TrimSpace(script.Config.Browser.Engine)
+		profile.DeviceProfile = strings.TrimSpace(script.Config.Browser.DeviceProfile)
+		if script.Config.Browser.Headless != nil {
+			headless := *script.Config.Browser.Headless
+			profile.Headless = &headless
+		}
+		if script.Config.ErrorHandling.ContinueOnError {
+			profile.FailurePolicy = "continue_on_error"
+		} else {
+			profile.FailurePolicy = "stop_on_error"
+		}
+	}
+	if req.Browser != nil {
+		if req.Browser.Engine != "" {
+			profile.BrowserEngine = strings.TrimSpace(req.Browser.Engine)
+		}
+		if req.Browser.DeviceProfile != "" {
+			profile.DeviceProfile = strings.TrimSpace(req.Browser.DeviceProfile)
+		}
+		if req.Browser.Headless != nil {
+			headless := *req.Browser.Headless
+			profile.Headless = &headless
+		}
+	}
+	return profile
+}
+
+func cloneEngineReplayRuntimeProfile(profile *engine.ReplayRuntimeProfile) engine.ReplayRuntimeProfile {
+	if profile == nil {
+		return engine.ReplayRuntimeProfile{}
+	}
+	cloned := *profile
+	if profile.Headless != nil {
+		headless := *profile.Headless
+		cloned.Headless = &headless
+	}
+	return cloned
 }
 
 func normalizeDebugLogLevel(level string) string {
