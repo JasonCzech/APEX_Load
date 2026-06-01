@@ -54,11 +54,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  transition: border-color 0.2s;
+  transition: all var(--transition-fast);
 }
 
 .dash-health-card:hover {
   border-color: var(--text-muted);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
 }
 
 .dash-health-card.status-healthy {
@@ -256,7 +258,7 @@
   border-radius: var(--radius);
   padding: 16px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-spring);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -264,8 +266,8 @@
 
 .dash-active-card:hover {
   border-color: var(--accent);
-  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.15);
-  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(var(--accent-rgb), 0.15);
+  transform: translateY(-4px);
 }
 
 .dash-active-card.editable {

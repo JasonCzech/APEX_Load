@@ -338,13 +338,17 @@ export default function ScriptCreateOptions({
                       <span className="script-create-type-badge">{template.protocol.toUpperCase()}</span>
                       <h3>{template.name}</h3>
                       <p>{template.description}</p>
-                      {template.tags?.length ? (
-                        <span className="script-create-template-tags">{template.use_case.replace(/_/g, ' ')} · {template.tags.slice(0, 3).join(', ')}</span>
-                      ) : (
-                        <span className="script-create-template-tags">{template.use_case.replace(/_/g, ' ')}</span>
-                      )}
+                      <div className="script-create-template-tags">
+                        <span className="tag-chip use-case">{template.use_case.replace(/_/g, ' ')}</span>
+                        {template.tags?.slice(0, 3).map(tag => (
+                          <span key={tag} className="tag-chip">{tag}</span>
+                        ))}
+                      </div>
                       {template.recommended_scenario && (
-                        <small title="A starting recommendation only — not applied automatically. Set load when you create a scenario.">Suggested load: {template.recommended_scenario.vusers || 1} VUsers · {template.recommended_scenario.duration || 'script default'}</small>
+                        <div className="script-create-recommendation" title="A starting recommendation only — not applied automatically. Set load when you create a scenario.">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                          <span>Suggested: {template.recommended_scenario.vusers || 1} VUsers / {template.recommended_scenario.duration || 'script default'}</span>
+                        </div>
                       )}
                     </button>
                   )) : (

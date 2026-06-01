@@ -6,7 +6,13 @@
   align-items: center;
   justify-content: center;
   z-index: 200;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(8px);
+  animation: modalOverlayFadeIn var(--transition-fast);
+}
+
+@keyframes modalOverlayFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .modal {
@@ -19,6 +25,12 @@
   max-height: 85vh;
   overflow-y: auto;
   box-shadow: var(--shadow-md);
+  animation: modalScaleIn var(--transition-spring);
+}
+
+@keyframes modalScaleIn {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 .modal.modal-wide {
@@ -75,7 +87,7 @@
 }
 
 .mode-chip.active {
-  background: rgba(0, 163, 255, 0.16);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
@@ -109,7 +121,7 @@
 .modal-form input:focus,
 .modal-form select:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(0, 163, 255, 0.1);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .form-row {
@@ -350,8 +362,8 @@
 }
 
 .assignment-target.selected {
-  border-color: rgba(0, 163, 255, 0.45);
-  box-shadow: 0 0 0 1px rgba(0, 163, 255, 0.18) inset;
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 1px var(--accent-soft) inset;
 }
 
 .assignment-target input[type='checkbox'] {
@@ -382,8 +394,8 @@
 .assignment-chip {
   padding: 8px 12px;
   border-radius: 999px;
-  background: rgba(0, 163, 255, 0.12);
-  border: 1px solid rgba(0, 163, 255, 0.22);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
   color: var(--accent);
   font-size: 12px;
   font-weight: 600;
@@ -431,8 +443,8 @@
 
 .goal-settings {
   padding: 20px;
-  background: rgba(0, 163, 255, 0.04);
-  border: 1px solid rgba(0, 163, 255, 0.14);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
   border-radius: 12px;
 }
 

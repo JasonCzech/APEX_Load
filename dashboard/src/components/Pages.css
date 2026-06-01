@@ -1595,7 +1595,7 @@
 
 .script-create-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 12px;
 }
 
@@ -1811,31 +1811,45 @@
   position: relative;
   text-align: left;
   border: 1px solid var(--border);
-  background: var(--bg-primary);
-  border-radius: 8px;
-  padding: 18px;
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 20px;
   color: var(--text-primary);
-  transition: border-color 0.15s, transform 0.15s;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  transition: all var(--transition-spring);
+  cursor: pointer;
 }
 
 .script-create-option.primary {
-  border-color: rgba(99, 102, 241, 0.45);
+  border-color: var(--accent-border);
+  background: linear-gradient(180deg, var(--accent-soft) 0%, transparent 100px), var(--bg-card);
 }
 
 .script-create-option:hover {
   border-color: var(--accent);
-  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.12);
+  transform: translateY(-4px);
+}
+
+.script-create-option:active {
+  transform: translateY(0) scale(0.98);
 }
 
 .script-create-option h3 {
-  margin: 18px 0 8px;
+  margin: 0 0 8px;
   font-size: 16px;
+  font-weight: 600;
+  padding-right: 48px;
 }
 
 .script-create-option p {
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.5;
+  margin: 0 0 16px;
+  flex: 1;
 }
 
 .script-create-empty {
@@ -1849,12 +1863,44 @@
 }
 
 .script-create-template-tags {
-  display: block;
-  margin-bottom: 8px;
-  color: var(--text-muted);
-  font-size: 11px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.tag-chip {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tag-chip.use-case {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+
+.script-create-recommendation {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.script-create-recommendation svg {
+  color: var(--accent);
 }
 
 .script-create-existing-meta {
