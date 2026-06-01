@@ -306,6 +306,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("DELETE /api/v1/scripts/authoring/sessions/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteAuthoringSession)))))
 	s.mux.Handle("POST /api/v1/scripts/authoring/sessions/{id}/approve", cors(log(auth(http.HandlerFunc(s.handleApproveAuthoringSession)))))
 	s.mux.Handle("POST /api/v1/scripts/authoring/sessions/{id}/correlations/preview", cors(log(auth(http.HandlerFunc(s.handlePreviewAuthoringCorrelation)))))
+	s.mux.Handle("GET /api/v1/correlations/rules", cors(log(auth(http.HandlerFunc(s.handleListCorrelationRules)))))
+	s.mux.Handle("POST /api/v1/correlations/diagnose", cors(log(auth(http.HandlerFunc(s.handleDiagnoseCorrelations)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/validate", cors(log(auth(http.HandlerFunc(s.handleValidateScript)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/replay", cors(log(auth(http.HandlerFunc(s.handleReplayScript)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/replay/sessions", cors(log(auth(http.HandlerFunc(s.handleStartReplaySessionScript)))))

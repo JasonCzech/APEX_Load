@@ -25,6 +25,15 @@ type Correlation struct {
 	UsedInIDs   []int
 	Value       string
 	SampleValue string
+	// RuleID identifies which detection rule produced this correlation, so the
+	// dashboard and migration review can explain *why* a value was flagged.
+	RuleID string
+	// Confidence is a 0..1 ranking combining the rule's base confidence with
+	// runtime signals (reuse count, value entropy). Higher = more certain this
+	// is a genuine dynamic value that must be correlated.
+	Confidence float64
+	// Reasons are human-readable factors that contributed to the confidence.
+	Reasons []string
 }
 
 type Candidate struct {
@@ -33,6 +42,11 @@ type Candidate struct {
 	Source      string
 	ExtractType string
 	Expression  string
+	// RuleID and BaseConfidence are assigned by the rule that emitted the
+	// candidate; Reason is a short description of the matched pattern.
+	RuleID         string
+	BaseConfidence float64
+	Reason         string
 }
 
 var (
@@ -48,6 +62,8 @@ var (
 	}
 	nonWordCorrelationChars = regexp.MustCompile(`[^a-z0-9]+`)
 	setCookieValuePattern   = regexp.MustCompile(`(?i)([A-Za-z0-9_.\-]+)=([^;\s,]{4,})`)
+	// ASP.NET WebForms hidden state fields (__VIEWSTATE, __EVENTVALIDATION, …).
+	aspNetHiddenPattern = regexp.MustCompile(`(?i)<input[^>]*\bname="(__[A-Za-z0-9]+)"[^>]*\bvalue="([^"]*)"`)
 )
 
 func Detect(observations []Observation) []Correlation {
@@ -71,6 +87,7 @@ func Detect(observations []Observation) []Correlation {
 				continue
 			}
 			seen[candidate.Value] = true
+			confidence, reasons := scoreConfidence(candidate, len(usedIn))
 			correlations = append(correlations, Correlation{
 				Name:        candidate.Name,
 				Source:      candidate.Source,
@@ -80,10 +97,18 @@ func Detect(observations []Observation) []Correlation {
 				UsedInIDs:   usedIn,
 				Value:       candidate.Value,
 				SampleValue: Truncate(candidate.Value, 80),
+				RuleID:      candidate.RuleID,
+				Confidence:  confidence,
+				Reasons:     reasons,
 			})
 		}
 	}
-	sort.Slice(correlations, func(i, j int) bool {
+	// Rank by confidence (desc) so the most certain correlations surface first,
+	// falling back to source order for stable, deterministic output.
+	sort.SliceStable(correlations, func(i, j int) bool {
+		if correlations[i].Confidence != correlations[j].Confidence {
+			return correlations[i].Confidence > correlations[j].Confidence
+		}
 		if correlations[i].FoundInID == correlations[j].FoundInID {
 			return correlations[i].Name < correlations[j].Name
 		}
@@ -94,8 +119,9 @@ func Detect(observations []Observation) []Correlation {
 
 func Candidates(responseBody string, responseHeaders map[string]string) []Candidate {
 	candidates := make([]Candidate, 0)
-	candidates = append(candidates, jsonCandidates(responseBody)...)
+	candidates = append(candidates, aspNetHiddenCandidates(responseBody)...)
 	candidates = append(candidates, htmlInputCandidates(responseBody)...)
+	candidates = append(candidates, jsonCandidates(responseBody)...)
 	candidates = append(candidates, headerCandidates(responseHeaders)...)
 	return candidates
 }
@@ -171,12 +197,16 @@ func jsonCandidates(body string) []Candidate {
 			continue
 		}
 		key := match[1]
+		ruleID, base := classifyJSONKey(key)
 		candidates = append(candidates, Candidate{
-			Name:        "corr_" + Slug(key),
-			Value:       match[2],
-			Source:      "body",
-			ExtractType: "jsonpath",
-			Expression:  "$." + key,
+			Name:           "corr_" + Slug(key),
+			Value:          match[2],
+			Source:         "body",
+			ExtractType:    "jsonpath",
+			Expression:     "$." + key,
+			RuleID:         ruleID,
+			BaseConfidence: base,
+			Reason:         "JSON field " + key + " looks like a dynamic token/identifier",
 		})
 	}
 	for _, match := range jsonNumberIDPattern.FindAllStringSubmatch(body, -1) {
@@ -185,14 +215,34 @@ func jsonCandidates(body string) []Candidate {
 		}
 		key := match[1]
 		candidates = append(candidates, Candidate{
-			Name:        "corr_" + Slug(key),
-			Value:       match[2],
-			Source:      "body",
-			ExtractType: "jsonpath",
-			Expression:  "$." + key,
+			Name:           "corr_" + Slug(key),
+			Value:          match[2],
+			Source:         "body",
+			ExtractType:    "jsonpath",
+			Expression:     "$." + key,
+			RuleID:         RuleJSONNumericID,
+			BaseConfidence: 0.5,
+			Reason:         "JSON numeric id field " + key,
 		})
 	}
 	return candidates
+}
+
+// classifyJSONKey picks the most specific rule (and base confidence) for a JSON
+// key, so CSRF/auth tokens rank above generic ids.
+func classifyJSONKey(key string) (string, float64) {
+	lower := strings.ToLower(key)
+	switch {
+	case strings.Contains(lower, "csrf"), strings.Contains(lower, "xsrf"):
+		return RuleJSONCSRFToken, 0.9
+	case strings.Contains(lower, "access_token"), strings.Contains(lower, "id_token"),
+		strings.Contains(lower, "refresh_token"), strings.Contains(lower, "token"):
+		return RuleJSONAuthToken, 0.85
+	case strings.Contains(lower, "session"), strings.Contains(lower, "sid"):
+		return RuleJSONSessionID, 0.85
+	default:
+		return RuleJSONDynamicID, 0.6
+	}
 }
 
 func htmlInputCandidates(body string) []Candidate {
@@ -212,20 +262,58 @@ func htmlInputCandidates(body string) []Candidate {
 				expression = fmt.Sprintf(`value="([^"]+)"[^>]*name="%s"`, regexp.QuoteMeta(field))
 			}
 			candidates = append(candidates, Candidate{
-				Name:        "corr_" + Slug(field),
-				Value:       value,
-				Source:      "body",
-				ExtractType: "regex",
-				Expression:  expression,
+				Name:           "corr_" + Slug(field),
+				Value:          value,
+				Source:         "body",
+				ExtractType:    "regex",
+				Expression:     expression,
+				RuleID:         RuleHTMLHiddenToken,
+				BaseConfidence: 0.9,
+				Reason:         "Hidden form field " + field + " (anti-CSRF/state token)",
 			})
 		}
 	}
 	return candidates
 }
 
+// aspNetHiddenCandidates handles ASP.NET WebForms state fields, which are the
+// classic correlation case for .NET apps and a frequent LoadRunner migration
+// pain point. They are large opaque hidden inputs that change every request.
+func aspNetHiddenCandidates(body string) []Candidate {
+	candidates := make([]Candidate, 0)
+	for _, match := range aspNetHiddenPattern.FindAllStringSubmatch(body, -1) {
+		if len(match) < 3 {
+			continue
+		}
+		field := match[1]
+		value := match[2]
+		if value == "" {
+			continue
+		}
+		candidates = append(candidates, Candidate{
+			Name:           "corr_" + Slug(field),
+			Value:          value,
+			Source:         "body",
+			ExtractType:    "regex",
+			Expression:     fmt.Sprintf(`name="%s"[^>]*value="([^"]+)"`, regexp.QuoteMeta(field)),
+			RuleID:         RuleASPNetState,
+			BaseConfidence: 0.95,
+			Reason:         "ASP.NET state field " + field,
+		})
+	}
+	return candidates
+}
+
 func headerCandidates(headers map[string]string) []Candidate {
 	candidates := make([]Candidate, 0)
-	for key, value := range headers {
+	// Deterministic key order so equal-confidence output is stable.
+	keys := make([]string, 0, len(headers))
+	for key := range headers {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := headers[key]
 		if strings.TrimSpace(value) == "" {
 			continue
 		}
@@ -234,15 +322,33 @@ func headerCandidates(headers map[string]string) []Candidate {
 			candidates = append(candidates, setCookieCandidates(key, value)...)
 			continue
 		}
+		if lowerKey == "location" {
+			// A redirect target frequently carries a one-time code/state that the
+			// next request must echo back. Capture the whole value for review.
+			candidates = append(candidates, Candidate{
+				Name:           "corr_location",
+				Value:          value,
+				Source:         "header",
+				ExtractType:    "header",
+				Expression:     key,
+				RuleID:         RuleLocationRedirect,
+				BaseConfidence: 0.6,
+				Reason:         "Location redirect target may carry a one-time code/state",
+			})
+			continue
+		}
 		if !dynamicHeaderName(lowerKey) || len(value) < 4 {
 			continue
 		}
 		candidates = append(candidates, Candidate{
-			Name:        "corr_" + Slug(lowerKey),
-			Value:       value,
-			Source:      "header",
-			ExtractType: "header",
-			Expression:  key,
+			Name:           "corr_" + Slug(lowerKey),
+			Value:          value,
+			Source:         "header",
+			ExtractType:    "header",
+			Expression:     key,
+			RuleID:         RuleDynamicHeader,
+			BaseConfidence: 0.8,
+			Reason:         "Response header " + key + " looks dynamic (token/auth/id)",
 		})
 	}
 	return candidates
@@ -256,15 +362,29 @@ func setCookieCandidates(headerName string, value string) []Candidate {
 		}
 		cookieName := match[1]
 		cookieValue := match[2]
+		ruleID, base := RuleSetCookieOther, 0.55
+		if isSessionCookieName(cookieName) {
+			ruleID, base = RuleSetCookieSession, 0.8
+		}
 		candidates = append(candidates, Candidate{
-			Name:        "corr_cookie_" + Slug(cookieName),
-			Value:       cookieValue,
-			Source:      "header",
-			ExtractType: "regex",
-			Expression:  fmt.Sprintf(`(?i)%s:\s*%s=([^;\s,]+)`, regexp.QuoteMeta(headerName), regexp.QuoteMeta(cookieName)),
+			Name:           "corr_cookie_" + Slug(cookieName),
+			Value:          cookieValue,
+			Source:         "header",
+			ExtractType:    "regex",
+			Expression:     fmt.Sprintf(`(?i)%s:\s*%s=([^;\s,]+)`, regexp.QuoteMeta(headerName), regexp.QuoteMeta(cookieName)),
+			RuleID:         ruleID,
+			BaseConfidence: base,
+			Reason:         "Set-Cookie " + cookieName,
 		})
 	}
 	return candidates
+}
+
+func isSessionCookieName(name string) bool {
+	lower := strings.ToLower(name)
+	return strings.Contains(lower, "session") || strings.Contains(lower, "sid") ||
+		strings.Contains(lower, "auth") || strings.Contains(lower, "csrf") ||
+		strings.Contains(lower, "xsrf") || strings.Contains(lower, "token")
 }
 
 func dynamicHeaderName(lowerKey string) bool {
