@@ -1,6 +1,6 @@
 # Project APEX Load
 
-Kubernetes-native performance testing platform replacing LoadRunner Enterprise. APEX Load is a Go-based load testing platform with an agentic script generation engine, real-time React dashboard, and OpenTelemetry telemetry pipeline.
+Kubernetes-native performance testing platform replacing LoadRunner Enterprise. APEX Load is a Go-based load testing platform with a deterministic assisted-authoring engine (external LLM integration is policy-gated and not enabled by default), a real-time React dashboard, and a Prometheus/Dynatrace telemetry pipeline.
 
 ## What This Is
 
@@ -8,7 +8,7 @@ APEX Load provides **three primary surfaces**:
 
 - **Controller API + Dashboard**: Web UI for authoring, scheduling, and monitoring tests with real-time WebSocket-fed metrics
 - **CLI (`apexctl`)**: Local script execution for testing during development or in CI/CD pipelines
-- **Load Generator**: Kubernetes-native pods (StatefulSet) running goroutine-based virtual users, scalable 1–50 pods with ~10k VUsers/pod
+- **Load Generator**: Kubernetes-native pods (StatefulSet) running goroutine-based virtual users, scalable 1–50 pods (~10k VUsers/pod is a design target, not yet benchmarked)
 
 The project is organized to support both direct local runs and controller-managed distributed execution across multiple pods.
 
@@ -487,6 +487,8 @@ make test-cover
 
 ## Performance Targets
 
+These are design targets, not yet backed by published benchmark artifacts. Do not cite as achieved.
+
 | Metric | Target | Notes |
 |--------|--------|-------|
 | VUsers per pod | 10,000 | Memory-limited (~2–4 KB per goroutine) |
@@ -509,7 +511,10 @@ make test-cover
 - ✅ Runtime telemetry SLA hardening baseline now includes visible drop counters, bounded live history, end-to-end freshness, sampled telemetry diagnostics for transaction hotspots, schema-versioned typed telemetry retention, distributed telemetry propagation, first-class correlation/dependency metadata, and distributed lag-stage breakdowns from generator capture through controller fan-out
 - 🟡 Browser client metrics future plan for web-app synthetic UX telemetry
 - 🟡 JMS protocols (Solace, IBM MQ)
-- 🟡 Agentic script generation (LLM-powered)
+- ✅ CI/CD gating: `apexctl` JUnit output + `status`/`wait` subcommands, with GitHub/Azure DevOps/Jenkins templates (see [docs/CICD_INTEGRATION.md](docs/CICD_INTEGRATION.md))
+- ✅ Correlation rules engine + replay-failure detection & guided repair (`/api/v1/correlations/diagnose`)
+- ✅ Assisted authoring (deterministic-local draft/repair/explain over the DSL, via MCP)
+- 🟡 External LLM script generation (policy-gated; not wired by default)
 
 ## Contributing
 
