@@ -522,6 +522,12 @@ func requiredServiceAccountScope(r *http.Request) string {
 		}
 		return "tests:run"
 	}
+	if strings.HasPrefix(path, "/api/v1/library") {
+		if method == http.MethodGet || method == http.MethodHead || path == "/api/v1/library/export" || strings.HasSuffix(path, "/diff") {
+			return "read"
+		}
+		return "write"
+	}
 	if strings.HasPrefix(path, "/api/v1/scripts") {
 		if method == http.MethodGet || method == http.MethodHead {
 			return "read"
@@ -817,6 +823,69 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 
 	if (path == "/api/v1/integrations/apm/profiles" || path == "/api/v1/monitoring/packs" || path == "/api/v1/reports/profiles" || path == "/api/v1/results/imports") && method == http.MethodGet {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+	}
+
+	if path == "/api/v1/library/capabilities" && method == http.MethodGet {
+		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+	}
+
+	if path == "/api/v1/library/catalog" && method == http.MethodGet {
+		if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
+			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+		}
+		return accessRequirement{
+			GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveProjectIDFromQuery,
+		}, true
+	}
+
+	if path == "/api/v1/library/export" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveLibraryTransferProjectID,
+		}, true
+	}
+
+	if path == "/api/v1/library/import" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveLibraryImportProjectID,
+		}, true
+	}
+
+	if path == "/api/v1/library/remotes" {
+		if method == http.MethodGet {
+			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+		}
+		if method == http.MethodPost {
+			return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
+		}
+	}
+
+	if strings.HasPrefix(path, "/api/v1/library/remotes/") {
+		if strings.HasSuffix(path, "/catalog") && method == http.MethodGet {
+			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+		}
+		if strings.HasSuffix(path, "/diff") && method == http.MethodPost {
+			return accessRequirement{
+				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveLibraryTransferProjectID,
+			}, true
+		}
+		if strings.HasSuffix(path, "/probe") && method == http.MethodPost {
+			return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
+		}
+		if (strings.HasSuffix(path, "/pull") || strings.HasSuffix(path, "/push")) && method == http.MethodPost {
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveLibraryTransferProjectID,
+			}, true
+		}
 	}
 
 	if path == "/api/v1/ai/authoring/contract" && method == http.MethodGet {
@@ -2163,7 +2232,7 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 			}
 
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-APEXLoad-API-Key, X-APEXLoad-Dev-View, X-APEXLoad-Dev-Project-ID")
 			w.Header().Set("Access-Control-Max-Age", "86400")
 
 			if r.Method == http.MethodOptions {

@@ -832,7 +832,7 @@ func (s *Server) handleImportExternalResults(w http.ResponseWriter, r *http.Requ
 	}
 	provider := normalizeExternalResultProvider(req.Provider)
 	if provider == "" {
-		writeError(w, http.StatusBadRequest, "provider must be one of k6, jmeter, or gatling")
+		writeError(w, http.StatusBadRequest, "provider must be one of apexload, k6, jmeter, or gatling")
 		return
 	}
 	raw := req.Result
@@ -902,6 +902,8 @@ func (s *Server) handleListExternalResultImports(w http.ResponseWriter, r *http.
 
 func normalizeExternalResultProvider(provider string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "apexload", "apex-load", "apex_load":
+		return "apexload"
 	case "k6":
 		return "k6"
 	case "jmeter", "apache-jmeter":

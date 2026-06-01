@@ -4856,6 +4856,28 @@
   text-transform: uppercase;
 }
 
+.library-federation-toolbar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.library-federation-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.library-federation-checkbox input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
 .project-redaction-rule-pattern {
   min-height: 92px;
   resize: vertical;
@@ -5209,6 +5231,10 @@
   }
 
   .project-redaction-rule-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .library-federation-toolbar {
     grid-template-columns: 1fr;
   }
 

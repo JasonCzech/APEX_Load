@@ -20,25 +20,28 @@ import (
 var StaticFS embed.FS
 
 type Server struct {
-	httpServer    *http.Server
-	hub           *Hub
-	runner        *TestRunner
-	scheduler     *scenarioScheduler
-	browserReplay *BrowserReplayManager
-	scriptDebug   *ScriptDebugManager
-	recorder      *recorder.Recorder
-	store         storage.Store
-	cache         CacheBackend
-	controllerID  string
-	authoringMu   sync.Mutex
-	authoring     map[string]*storage.AuthoringSession
-	c4Mu          sync.Mutex
-	slaWaivers    map[string][]*storage.ReleaseSLAWaiver
-	resultImports map[string]*storage.ExternalResultImport
-	mux           *http.ServeMux
-	usageCancel   context.CancelFunc
-	fanoutCancel  context.CancelFunc
-	fanoutSub     FanoutSubscription
+	httpServer     *http.Server
+	hub            *Hub
+	runner         *TestRunner
+	scheduler      *scenarioScheduler
+	browserReplay  *BrowserReplayManager
+	scriptDebug    *ScriptDebugManager
+	recorder       *recorder.Recorder
+	store          storage.Store
+	cache          CacheBackend
+	controllerID   string
+	authoringMu    sync.Mutex
+	authoring      map[string]*storage.AuthoringSession
+	libraryMu      sync.Mutex
+	libraryRemotes map[string]*LibraryRemote
+	libraryLinks   map[string]*librarySyncLink
+	c4Mu           sync.Mutex
+	slaWaivers     map[string][]*storage.ReleaseSLAWaiver
+	resultImports  map[string]*storage.ExternalResultImport
+	mux            *http.ServeMux
+	usageCancel    context.CancelFunc
+	fanoutCancel   context.CancelFunc
+	fanoutSub      FanoutSubscription
 }
 
 // ServerConfig configures API server startup behavior and integrations.
@@ -81,19 +84,21 @@ func NewServer(cfg ServerConfig) *Server {
 	rec := recorder.New(cfg.ProxyAddr)
 
 	s := &Server{
-		hub:           hub,
-		runner:        runner,
-		scheduler:     newScenarioScheduler(runner),
-		browserReplay: NewBrowserReplayManager(hub),
-		scriptDebug:   NewScriptDebugManager(hub),
-		recorder:      rec,
-		store:         cfg.Store,
-		cache:         cache,
-		controllerID:  controllerID,
-		authoring:     make(map[string]*storage.AuthoringSession),
-		slaWaivers:    make(map[string][]*storage.ReleaseSLAWaiver),
-		resultImports: make(map[string]*storage.ExternalResultImport),
-		mux:           http.NewServeMux(),
+		hub:            hub,
+		runner:         runner,
+		scheduler:      newScenarioScheduler(runner),
+		browserReplay:  NewBrowserReplayManager(hub),
+		scriptDebug:    NewScriptDebugManager(hub),
+		recorder:       rec,
+		store:          cfg.Store,
+		cache:          cache,
+		controllerID:   controllerID,
+		authoring:      make(map[string]*storage.AuthoringSession),
+		libraryRemotes: make(map[string]*LibraryRemote),
+		libraryLinks:   make(map[string]*librarySyncLink),
+		slaWaivers:     make(map[string][]*storage.ReleaseSLAWaiver),
+		resultImports:  make(map[string]*storage.ExternalResultImport),
+		mux:            http.NewServeMux(),
 	}
 
 	s.routes(cfg.AllowedOrigins)
@@ -417,6 +422,17 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/integrations/apm/profiles", cors(log(auth(http.HandlerFunc(s.handleListAPMIntegrationProfiles)))))
 	s.mux.Handle("GET /api/v1/monitoring/packs", cors(log(auth(http.HandlerFunc(s.handleListInfrastructureMonitorPacks)))))
 	s.mux.Handle("GET /api/v1/reports/profiles", cors(log(auth(http.HandlerFunc(s.handleListReportProfiles)))))
+	s.mux.Handle("GET /api/v1/library/capabilities", cors(log(auth(http.HandlerFunc(s.handleLibraryCapabilities)))))
+	s.mux.Handle("GET /api/v1/library/catalog", cors(log(auth(http.HandlerFunc(s.handleLibraryCatalog)))))
+	s.mux.Handle("POST /api/v1/library/export", cors(log(auth(http.HandlerFunc(s.handleLibraryExport)))))
+	s.mux.Handle("POST /api/v1/library/import", cors(log(auth(http.HandlerFunc(s.handleLibraryImport)))))
+	s.mux.Handle("GET /api/v1/library/remotes", cors(log(auth(http.HandlerFunc(s.handleLibraryListRemotes)))))
+	s.mux.Handle("POST /api/v1/library/remotes", cors(log(auth(http.HandlerFunc(s.handleLibraryCreateRemote)))))
+	s.mux.Handle("POST /api/v1/library/remotes/{id}/probe", cors(log(auth(http.HandlerFunc(s.handleLibraryProbeRemote)))))
+	s.mux.Handle("GET /api/v1/library/remotes/{id}/catalog", cors(log(auth(http.HandlerFunc(s.handleLibraryRemoteCatalog)))))
+	s.mux.Handle("POST /api/v1/library/remotes/{id}/pull", cors(log(auth(http.HandlerFunc(s.handleLibraryRemotePull)))))
+	s.mux.Handle("POST /api/v1/library/remotes/{id}/push", cors(log(auth(http.HandlerFunc(s.handleLibraryRemotePush)))))
+	s.mux.Handle("POST /api/v1/library/remotes/{id}/diff", cors(log(auth(http.HandlerFunc(s.handleLibraryRemoteDiff)))))
 	s.mux.Handle("POST /api/v1/results/import", cors(log(auth(http.HandlerFunc(s.handleImportExternalResults)))))
 	s.mux.Handle("GET /api/v1/results/imports", cors(log(auth(http.HandlerFunc(s.handleListExternalResultImports)))))
 	s.mux.Handle("GET /api/v1/fleet/alerts", cors(log(auth(http.HandlerFunc(s.handleGetFleetAlerts)))))

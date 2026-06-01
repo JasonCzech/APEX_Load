@@ -11,6 +11,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import { mergeSettingsOrder, moveSettingsSection, readSettingsSectionArray, SETTINGS_SECTIONS, type SettingsSectionId } from './settingsSectionLayout'
 import './CreateTestModal.css'
 import { downloadBlob } from '../utils/fileUtils'
+import LibraryFederationPanel from './LibraryFederationPanel'
 
 const DEFAULT_SETTINGS: DashboardSystemSettings = {
   general: {
@@ -3684,6 +3685,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
         >
           {renderSettingsHeader('integrations', 'Integrations')}
           <div className="settings-group">
+            <LibraryFederationPanel projectId={activeProject?.id} />
             <div className="settings-subsection">
               <div className="settings-manager-summary">
                 <div>

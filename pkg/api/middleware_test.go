@@ -23,6 +23,7 @@ import (
 func TestAccessRequirementCoversAuthGovernanceRoutes(t *testing.T) {
 	systemAdminOnly := []string{RoleSystemAdmin}
 	allGlobalReaders := []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}
+	allGlobalWriters := []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}
 	tests := []struct {
 		name        string
 		method      string
@@ -47,6 +48,17 @@ func TestAccessRequirementCoversAuthGovernanceRoutes(t *testing.T) {
 		{name: "apply archive retention", method: http.MethodPost, path: "/api/v1/archives/retention/apply", globalRoles: systemAdminOnly},
 		{name: "read system settings", method: http.MethodGet, path: "/api/v1/system/settings", globalRoles: allGlobalReaders},
 		{name: "update system settings", method: http.MethodPut, path: "/api/v1/system/settings", globalRoles: systemAdminOnly},
+		{name: "read library capabilities", method: http.MethodGet, path: "/api/v1/library/capabilities", globalRoles: allGlobalReaders},
+		{name: "read library catalog", method: http.MethodGet, path: "/api/v1/library/catalog", globalRoles: allGlobalReaders},
+		{name: "export library bundle", method: http.MethodPost, path: "/api/v1/library/export", globalRoles: allGlobalReaders},
+		{name: "import library bundle", method: http.MethodPost, path: "/api/v1/library/import", globalRoles: allGlobalWriters},
+		{name: "list library remotes", method: http.MethodGet, path: "/api/v1/library/remotes", globalRoles: allGlobalReaders},
+		{name: "create library remote", method: http.MethodPost, path: "/api/v1/library/remotes", globalRoles: systemAdminOnly},
+		{name: "probe library remote", method: http.MethodPost, path: "/api/v1/library/remotes/remote-1/probe", globalRoles: systemAdminOnly},
+		{name: "read remote library catalog", method: http.MethodGet, path: "/api/v1/library/remotes/remote-1/catalog", globalRoles: allGlobalReaders},
+		{name: "diff remote library item", method: http.MethodPost, path: "/api/v1/library/remotes/remote-1/diff", globalRoles: allGlobalReaders},
+		{name: "pull remote library item", method: http.MethodPost, path: "/api/v1/library/remotes/remote-1/pull", globalRoles: allGlobalWriters},
+		{name: "push remote library item", method: http.MethodPost, path: "/api/v1/library/remotes/remote-1/push", globalRoles: allGlobalWriters},
 	}
 
 	for _, tt := range tests {
