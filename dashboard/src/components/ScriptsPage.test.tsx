@@ -274,7 +274,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Create Script')
     expect(container.textContent).toContain('Model From Existing Script')
 
-    await clickButton('Build Manually')
+    await clickButton('Start New Script')
 
     const sampleButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Build From Sample'))
     expect(sampleButton).toBeDefined()
@@ -358,7 +358,10 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     const workflowCards = Array.from(container.querySelectorAll('.script-workflow-card')).map(button => button.textContent || '')
-    expect(workflowCards).toHaveLength(5)
+    expect(workflowCards).toHaveLength(4)
+    expect(workflowCards.some(label => label.includes('Start New Script'))).toBe(true)
+    expect(workflowCards.some(label => label.includes('Use Template'))).toBe(false)
+    expect(workflowCards.some(label => label.includes('Build Manually'))).toBe(false)
     expect(workflowCards.some(label => label.includes('Import From Source'))).toBe(true)
     expect(workflowCards.some(label => label.includes('Start From Source'))).toBe(false)
     expect(workflowCards.some(label => label.includes('Import Existing'))).toBe(false)
@@ -387,6 +390,26 @@ describe('ScriptsPage', () => {
     expect(countImportOption('Import JMeter')).toBe(1)
     expect(countImportOption('DevWeb Source')).toBe(1)
     expect(countImportOption('Import SOAP Assets')).toBe(1)
+  })
+
+  it('consolidates template and manual choices under Start New Script', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+
+    await flushPromises()
+
+    await clickButton('Start New Script')
+
+    const lanes = Array.from(container.querySelectorAll('.script-create-lane.full'))
+    expect(lanes).toHaveLength(1)
+    expect(container.textContent).toContain('Starter Templates')
+    expect(container.textContent).toContain('Blank & Assisted Editors')
+    expect(container.textContent).toContain('Reusable Blocks')
+    expect(container.textContent).toContain('API Visual Editor')
+    expect(container.textContent).toContain('Build From Sample')
+    expect(container.textContent).not.toContain('Use Template')
+    expect(container.textContent).not.toContain('Build Manually')
   })
 
   it('models a new draft from an existing saved script without editing the original', async () => {
@@ -761,8 +784,9 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Build Manually')
+    await clickButton('Start New Script')
 
+    expect(container.textContent).toContain('Blank & Assisted Editors')
     expect(container.textContent).toContain('Web Services (SOAP)')
     expect(container.textContent).toContain('Java over HTTP')
     expect(container.textContent).toContain('embedded or sidecar helper execution')
@@ -800,7 +824,7 @@ describe('ScriptsPage', () => {
       createButtonAgain.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    await clickButton('Build Manually')
+    await clickButton('Start New Script')
 
     const javaButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Java over HTTP'))
     expect(javaButton).toBeDefined()
@@ -856,12 +880,12 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     await flushPromises()
-    await clickButton('Use Template')
+    await clickButton('Start New Script')
 
     expect(apiMock.listAuthoringTemplates).toHaveBeenCalledTimes(1)
     expect(apiMock.listAuthoringComponents).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('Starter Templates')
-    expect(container.textContent).toContain('Component Library')
+    expect(container.textContent).toContain('Reusable Blocks')
     expect(container.textContent).toContain('Browser Checkout Canary')
     expect(container.textContent).toContain('Browser Login Transaction')
 
@@ -879,7 +903,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('editor:Browser Checkout Canary')
   })
 
-  it('composes a Component Library entry into the draft editor', async () => {
+  it('composes a reusable block entry into the draft editor', async () => {
     apiMock.listAuthoringTemplates.mockResolvedValueOnce({ templates: [], count: 0 })
     apiMock.listAuthoringComponents.mockResolvedValueOnce({
       components: [{
@@ -901,9 +925,9 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
     await flushPromises()
-    await clickButton('Use Template')
+    await clickButton('Start New Script')
 
-    expect(container.textContent).toContain('Component Library')
+    expect(container.textContent).toContain('Reusable Blocks')
     expect(container.textContent).toContain('OAuth Bearer Token Flow')
 
     const componentButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('OAuth Bearer Token Flow'))

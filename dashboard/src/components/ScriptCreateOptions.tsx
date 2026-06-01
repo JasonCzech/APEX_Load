@@ -105,7 +105,7 @@ export default function ScriptCreateOptions({
   const api = useApi()
   const [templates, setTemplates] = useState<AuthoringTemplate[]>([])
   const [components, setComponents] = useState<AuthoringComponent[]>([])
-  const [workflow, setWorkflow] = useState<'existing' | 'templates' | 'manual' | 'source' | 'record'>('existing')
+  const [workflow, setWorkflow] = useState<'existing' | 'start-new' | 'source' | 'record'>('existing')
   const [existingScriptQuery, setExistingScriptQuery] = useState('')
   const [existingScriptProtocol, setExistingScriptProtocol] = useState('all')
   const [existingScriptHealth, setExistingScriptHealth] = useState('all')
@@ -182,7 +182,7 @@ export default function ScriptCreateOptions({
       <div className="page-header">
         <div>
           <h2>Create Script</h2>
-          <p className="page-subtitle">Start from a template, build manually, record a browser flow, or import from a source asset.</p>
+          <p className="page-subtitle">Model from saved work, start a new script, record a browser flow, or import from a source asset.</p>
         </div>
         <PageViewToggle
           value="create-options"
@@ -204,23 +204,18 @@ export default function ScriptCreateOptions({
           <strong>Model Existing</strong>
           <small>Clone a saved script into a new editable draft.</small>
         </button>
-        <button type="button" className={`script-workflow-card ${workflow === 'templates' ? 'active' : ''}`} onClick={() => setWorkflow('templates')}>
+        <button type="button" className={`script-workflow-card ${workflow === 'start-new' ? 'active' : ''}`} onClick={() => setWorkflow('start-new')}>
           <span>2</span>
-          <strong>Use Template</strong>
-          <small>Fastest path for common protocols and smoke tests.</small>
-        </button>
-        <button type="button" className={`script-workflow-card ${workflow === 'manual' ? 'active' : ''}`} onClick={() => setWorkflow('manual')}>
-          <span>3</span>
-          <strong>Build Manually</strong>
-          <small>Create API, SOAP, Java-over-HTTP, browser, or JMS scripts.</small>
+          <strong>Start New Script</strong>
+          <small>Use templates, reusable blocks, or blank protocol editors.</small>
         </button>
         <button type="button" className={`script-workflow-card ${workflow === 'record' ? 'active' : ''}`} onClick={() => setWorkflow('record')}>
-          <span>4</span>
+          <span>3</span>
           <strong>Record Browser</strong>
           <small>Capture a user journey and review it before save.</small>
         </button>
         <button type="button" className={`script-workflow-card ${workflow === 'source' ? 'active' : ''}`} onClick={() => setWorkflow('source')}>
-          <span>5</span>
+          <span>4</span>
           <strong>Import From Source</strong>
           <small>Generate or migrate scripts from contracts, collections, traffic captures, source archives, and legacy tool exports.</small>
         </button>
@@ -319,102 +314,95 @@ export default function ScriptCreateOptions({
           </section>
         )}
 
-        {workflow === 'templates' && (
+        {workflow === 'start-new' && (
           <section className="script-create-lane api full">
             <div className="script-create-lane-header">
-              <span className="script-create-kicker">Backend catalog</span>
-              <h3>Starter Templates</h3>
-              <p>Start from the controller-owned template catalog so UI choices stay aligned with validated backend DSL examples.</p>
+              <span className="script-create-kicker">New draft authoring</span>
+              <h3>Start New Script</h3>
+              <p>Choose a starter template, compose a reusable block, or open a blank protocol editor for a new draft.</p>
             </div>
-            <div className="script-create-grid">
-              {templates.length > 0 ? templates.map(template => (
-                <button key={template.id} className="script-create-option" type="button" onClick={() => onStartTemplateScript(template.script)}>
-                  <span className="script-create-type-badge">{template.protocol.toUpperCase()}</span>
-                  <h3>{template.name}</h3>
-                  <p>{template.description}</p>
-                  {template.tags?.length ? (
-                    <span className="script-create-template-tags">{template.use_case.replace(/_/g, ' ')} · {template.tags.slice(0, 3).join(', ')}</span>
-                  ) : (
-                    <span className="script-create-template-tags">{template.use_case.replace(/_/g, ' ')}</span>
+            <div className="script-create-choice-groups">
+              <div className="script-create-choice-group">
+                <h4>Starter Templates</h4>
+                <div className="script-create-grid">
+                  {templates.length > 0 ? templates.map(template => (
+                    <button key={template.id} className="script-create-option" type="button" onClick={() => onStartTemplateScript(template.script)}>
+                      <span className="script-create-type-badge">{template.protocol.toUpperCase()}</span>
+                      <h3>{template.name}</h3>
+                      <p>{template.description}</p>
+                      {template.tags?.length ? (
+                        <span className="script-create-template-tags">{template.use_case.replace(/_/g, ' ')} · {template.tags.slice(0, 3).join(', ')}</span>
+                      ) : (
+                        <span className="script-create-template-tags">{template.use_case.replace(/_/g, ' ')}</span>
+                      )}
+                      {template.recommended_scenario && (
+                        <small title="A starting recommendation only — not applied automatically. Set load when you create a scenario.">Suggested load: {template.recommended_scenario.vusers || 1} VUsers · {template.recommended_scenario.duration || 'script default'}</small>
+                      )}
+                    </button>
+                  )) : (
+                    <div className="script-create-empty">No starter templates are available from this controller.</div>
                   )}
-                  {template.recommended_scenario && (
-                    <small title="A starting recommendation only — not applied automatically. Set load when you create a scenario.">Suggested load: {template.recommended_scenario.vusers || 1} VUsers · {template.recommended_scenario.duration || 'script default'}</small>
+                </div>
+              </div>
+
+              <div className="script-create-choice-group">
+                <h4>Blank & Assisted Editors</h4>
+                <div className="script-create-grid">
+                  <button className="script-create-option primary" onClick={onStartApiScript}>
+                    <span className="script-create-type-badge">API</span>
+                    <h3>API Visual Editor</h3>
+                    <p>Build a protocol-level script from requests and reusable action definitions.</p>
+                  </button>
+                  <button className="script-create-option" onClick={onStartSoapScript}>
+                    <span className="script-create-type-badge">SOAP</span>
+                    <h3>Web Services (SOAP)</h3>
+                    <p>Create a SOAP draft with WS-Security, namespaces, fault handling, and SOAPAction support.</p>
+                  </button>
+                  <button className="script-create-option" onClick={onStartJavaHttpScript}>
+                    <span className="script-create-type-badge">JAVA</span>
+                    <h3>Java over HTTP</h3>
+                    <p>Create a first-class Java-over-HTTP draft with the `java_serialized_object_base64` codec and choose embedded or sidecar helper execution on the HTTP transport.</p>
+                  </button>
+                  <button className="script-create-option" onClick={onOpenSampleImport}>
+                    <span className="script-create-type-badge">API</span>
+                    <h3>Build From Sample</h3>
+                    <p>Generate an API script from sample traffic or payload examples.</p>
+                  </button>
+                  <button className="script-create-option primary" onClick={onStartWebScript}>
+                    <span className="script-create-type-badge web">WEB</span>
+                    <h3>Web/HTML Visual Editor</h3>
+                    <p>Build a browser-level script that interacts with the page like a user.</p>
+                  </button>
+                  <button className="script-create-option primary" onClick={onStartJmsScript}>
+                    <span className="script-create-type-badge jms">JMS</span>
+                    <h3>JMS Solace Script</h3>
+                    <p>Create a reusable JMS script draft for Solace publish/consume flows.</p>
+                  </button>
+                </div>
+              </div>
+
+              <div className="script-create-choice-group">
+                <h4>Reusable Blocks</h4>
+                <div className="script-create-component-list">
+                  {components.length > 0 ? components.map(component => (
+                    <button key={component.id} type="button" className="script-create-component" onClick={() => onComposeComponent(component)}>
+                      <div>
+                        <span className="script-create-type-badge inline">{component.kind.replace(/_/g, ' ')}</span>
+                        <h3>{component.name}</h3>
+                        <p>{component.summary}</p>
+                      </div>
+                      <div className="script-create-component-meta">
+                        <span>{component.protocols.includes('*') ? 'All protocols' : component.protocols.join(', ')}</span>
+                        {component.tags?.length ? <span>{component.tags.slice(0, 3).join(' / ')}</span> : null}
+                      </div>
+                    </button>
+                  )) : (
+                    <div className="script-create-empty">No reusable blocks are available from this controller.</div>
                   )}
-                </button>
-              )) : (
-                <div className="script-create-empty">No starter templates are available from this controller.</div>
-              )}
+                </div>
+              </div>
             </div>
           </section>
-        )}
-
-        {workflow === 'templates' && (
-          <section className="script-create-lane components full">
-            <div className="script-create-lane-header">
-              <span className="script-create-kicker">Reusable blocks</span>
-              <h3>Component Library</h3>
-              <p>Compose common request groups, auth flows, login transactions, data pools, and teardown blocks from the same controller-owned catalog.</p>
-            </div>
-            <div className="script-create-component-list">
-              {components.length > 0 ? components.map(component => (
-                <button key={component.id} type="button" className="script-create-component" onClick={() => onComposeComponent(component)}>
-                  <div>
-                    <span className="script-create-type-badge inline">{component.kind.replace(/_/g, ' ')}</span>
-                    <h3>{component.name}</h3>
-                    <p>{component.summary}</p>
-                  </div>
-                  <div className="script-create-component-meta">
-                    <span>{component.protocols.includes('*') ? 'All protocols' : component.protocols.join(', ')}</span>
-                    {component.tags?.length ? <span>{component.tags.slice(0, 3).join(' / ')}</span> : null}
-                  </div>
-                </button>
-              )) : (
-                <div className="script-create-empty">No reusable components are available from this controller.</div>
-              )}
-            </div>
-          </section>
-        )}
-
-        {workflow === 'manual' && (
-        <section className="script-create-lane api full">
-          <div className="script-create-lane-header">
-            <span className="script-create-kicker">Manual authoring</span>
-            <h3>Build Manually</h3>
-            <p>Choose the protocol editor first; advanced runtime and validation controls stay inside the editor.</p>
-          </div>
-          <div className="script-create-grid">
-            <button className="script-create-option primary" onClick={onStartApiScript}>
-              <span className="script-create-type-badge">API</span>
-              <h3>API Visual Editor</h3>
-              <p>Build a protocol-level script from requests and reusable action definitions.</p>
-            </button>
-            <button className="script-create-option" onClick={onStartSoapScript}>
-              <span className="script-create-type-badge">SOAP</span>
-              <h3>Web Services (SOAP)</h3>
-              <p>Create a SOAP draft with WS-Security, namespaces, fault handling, and SOAPAction support.</p>
-            </button>
-            <button className="script-create-option" onClick={onStartJavaHttpScript}>
-              <span className="script-create-type-badge">JAVA</span>
-              <h3>Java over HTTP</h3>
-              <p>Create a first-class Java-over-HTTP draft with the `java_serialized_object_base64` codec and choose embedded or sidecar helper execution on the HTTP transport.</p>
-            </button>
-            <button className="script-create-option" onClick={onOpenSampleImport}>
-              <span className="script-create-type-badge">API</span>
-              <h3>Build From Sample</h3>
-              <p>Generate an API script from sample traffic or payload examples.</p>
-            </button>
-            <button className="script-create-option primary" onClick={onStartWebScript}>
-              <span className="script-create-type-badge web">WEB</span>
-              <h3>Web/HTML Visual Editor</h3>
-              <p>Build a browser-level script that interacts with the page like a user.</p>
-            </button>
-            <button className="script-create-option primary" onClick={onStartJmsScript}>
-              <span className="script-create-type-badge jms">JMS</span>
-              <h3>JMS Solace Script</h3>
-              <p>Create a reusable JMS script draft for Solace publish/consume flows.</p>
-            </button>
-          </div>
-        </section>
         )}
 
         {workflow === 'record' && (

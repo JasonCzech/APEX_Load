@@ -1599,16 +1599,19 @@
   gap: 12px;
 }
 
+.script-create-choice-groups,
 .script-create-import-groups {
   display: grid;
   gap: 18px;
 }
 
+.script-create-choice-group,
 .script-create-import-group {
   display: grid;
   gap: 10px;
 }
 
+.script-create-choice-group h4,
 .script-create-import-group h4 {
   margin: 0;
   color: var(--text-secondary);
