@@ -246,6 +246,68 @@ func TestTrustedHeaderAuthRejectsServiceAccountWithoutRouteScope(t *testing.T) {
 	}
 }
 
+func TestServiceAccountLibraryScopesAreKindScoped(t *testing.T) {
+	importBody := func(kind string) map[string]any {
+		return map[string]any{
+			"bundle": map[string]any{
+				"schema_version": libraryBundleSchemaVersion,
+				"items": []map[string]any{{
+					"kind": kind,
+				}},
+			},
+		}
+	}
+	transferBody := func(kind string) map[string]any {
+		return map[string]any{"kind": kind, "id": "asset-1"}
+	}
+	tests := []struct {
+		name    string
+		scopes  []string
+		method  string
+		path    string
+		body    any
+		allowed bool
+	}{
+		{name: "read scope can catalog", scopes: []string{"results:read"}, method: http.MethodGet, path: "/api/v1/library/catalog", allowed: true},
+		{name: "read scope can export", scopes: []string{"results:read"}, method: http.MethodPost, path: "/api/v1/library/export", body: transferBody("script"), allowed: true},
+		{name: "read scope can diff", scopes: []string{"results:read"}, method: http.MethodPost, path: "/api/v1/library/remotes/remote-1/diff", body: transferBody("script"), allowed: true},
+		{name: "read scope cannot import script", scopes: []string{"results:read"}, method: http.MethodPost, path: "/api/v1/library/import", body: importBody("script"), allowed: false},
+		{name: "script scope imports scripts", scopes: []string{"scripts:write"}, method: http.MethodPost, path: "/api/v1/library/import", body: importBody("script"), allowed: true},
+		{name: "script scope pulls scripts", scopes: []string{"scripts:write"}, method: http.MethodPost, path: "/api/v1/library/remotes/remote-1/pull", body: transferBody("script"), allowed: true},
+		{name: "script scope pushes scripts", scopes: []string{"scripts:write"}, method: http.MethodPost, path: "/api/v1/library/remotes/remote-1/push", body: transferBody("script"), allowed: true},
+		{name: "script scope cannot import scenarios", scopes: []string{"scripts:write"}, method: http.MethodPost, path: "/api/v1/library/import", body: importBody("scenario"), allowed: false},
+		{name: "script scope cannot push results", scopes: []string{"scripts:write"}, method: http.MethodPost, path: "/api/v1/library/remotes/remote-1/push", body: transferBody("result"), allowed: false},
+		{name: "scenario scope imports scenarios", scopes: []string{"tests:run"}, method: http.MethodPost, path: "/api/v1/library/import", body: importBody("scenario"), allowed: true},
+		{name: "scenario scope pulls scenarios", scopes: []string{"tests:run"}, method: http.MethodPost, path: "/api/v1/library/remotes/remote-1/pull", body: transferBody("scenario"), allowed: true},
+		{name: "scenario scope cannot import scripts", scopes: []string{"tests:run"}, method: http.MethodPost, path: "/api/v1/library/import", body: importBody("script"), allowed: false},
+		{name: "result scope imports result metadata", scopes: []string{"results:write"}, method: http.MethodPost, path: "/api/v1/library/import", body: importBody("result"), allowed: true},
+		{name: "result scope imports streamed archives", scopes: []string{"results:write"}, method: http.MethodPost, path: "/api/v1/library/import/archive", allowed: true},
+		{name: "result scope pulls results", scopes: []string{"results:write"}, method: http.MethodPost, path: "/api/v1/library/remotes/remote-1/pull", body: transferBody("result"), allowed: true},
+		{name: "result scope cannot read catalog", scopes: []string{"results:write"}, method: http.MethodGet, path: "/api/v1/library/catalog", allowed: false},
+		{name: "settings scope creates remotes", scopes: []string{"settings:manage"}, method: http.MethodPost, path: "/api/v1/library/remotes", allowed: true},
+		{name: "settings scope updates remotes", scopes: []string{"settings:manage"}, method: http.MethodPut, path: "/api/v1/library/remotes/remote-1", allowed: true},
+		{name: "settings scope deletes remotes", scopes: []string{"settings:manage"}, method: http.MethodDelete, path: "/api/v1/library/remotes/remote-1", allowed: true},
+		{name: "settings scope probes remotes", scopes: []string{"settings:manage"}, method: http.MethodPost, path: "/api/v1/library/remotes/remote-1/probe", allowed: true},
+		{name: "script scope cannot create remotes", scopes: []string{"scripts:write"}, method: http.MethodPost, path: "/api/v1/library/remotes", allowed: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := scopedLibraryRequest(t, tt.method, tt.path, tt.body)
+			account := &AuthenticatedServiceAccount{ID: "svc-library", Name: "Library Automation", Scopes: tt.scopes}
+			if got := serviceAccountAllowsRequest(account, req); got != tt.allowed {
+				t.Fatalf("serviceAccountAllowsRequest = %v, want %v", got, tt.allowed)
+			}
+			if tt.body != nil {
+				var decoded map[string]any
+				if err := json.NewDecoder(req.Body).Decode(&decoded); err != nil {
+					t.Fatalf("request body was not reusable after scope resolution: %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestTrustedHeaderAuthRejectsUnknownServiceAccountAPIKey(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
@@ -2054,4 +2116,18 @@ func enableTrustedHeaderAuth(t *testing.T, server *Server) SystemSettings {
 		t.Fatalf("UpdateSystemSettings returned error: %v", err)
 	}
 	return settings
+}
+
+func scopedLibraryRequest(t *testing.T, method string, path string, body any) *http.Request {
+	t.Helper()
+	if body == nil {
+		return httptest.NewRequest(method, path, nil)
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal scoped library request: %v", err)
+	}
+	req := httptest.NewRequest(method, path, bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	return req
 }
