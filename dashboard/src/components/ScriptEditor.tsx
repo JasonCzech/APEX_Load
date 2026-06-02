@@ -5786,6 +5786,84 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           </label>
                         </div>
                       </div>
+                      <div className="settings-sub-group" data-testid="web-runtime-source-ips">
+                        <h5>Source IPs (IP spoofing)</h5>
+                        <div className="cell-muted" style={{ marginBottom: 12 }}>
+                          One IP per line. VUsers bind outgoing connections round-robin across this pool so the test presents many client addresses. The generator host must own these addresses.
+                        </div>
+                        <textarea
+                          aria-label="Source IP pool"
+                          rows={3}
+                          value={(script.config.web_runtime?.source_ips || []).join('\n')}
+                          onChange={e => updateField('config.web_runtime', {
+                            ...script.config.web_runtime,
+                            source_ips: e.target.value.split('\n'),
+                          })}
+                          placeholder={'10.0.0.5\n10.0.0.6'}
+                        />
+                      </div>
+                      <div className="settings-sub-group" data-testid="web-runtime-network-profiles">
+                        <h5>Network Profile Mix</h5>
+                        <div className="cell-muted" style={{ marginBottom: 12 }}>
+                          Distribute VUsers across weighted network conditions (e.g. 30% 3G / 70% 4G). Overrides the single profile above. Per-profile response metrics appear in results.
+                        </div>
+                        {(script.config.web_runtime?.network_profiles || []).map((profile, i) => (
+                          <div key={`net-profile-${i}`} className="form-grid" style={{ marginBottom: 8 }}>
+                            <label>
+                              <span>Name</span>
+                              <input aria-label="Profile name" value={profile.name || ''}
+                                onChange={e => updateField('config.web_runtime', {
+                                  ...script.config.web_runtime,
+                                  network_profiles: (script.config.web_runtime?.network_profiles || []).map((p, idx) => idx === i ? { ...p, name: e.target.value } : p),
+                                })} />
+                            </label>
+                            <label>
+                              <span>Weight</span>
+                              <input type="number" min="1" aria-label="Profile weight" value={profile.weight || 0}
+                                onChange={e => updateField('config.web_runtime', {
+                                  ...script.config.web_runtime,
+                                  network_profiles: (script.config.web_runtime?.network_profiles || []).map((p, idx) => idx === i ? { ...p, weight: Number(e.target.value) } : p),
+                                })} />
+                            </label>
+                            <label>
+                              <span>Mode</span>
+                              <select value={profile.mode || 'custom'}
+                                onChange={e => updateField('config.web_runtime', {
+                                  ...script.config.web_runtime,
+                                  network_profiles: (script.config.web_runtime?.network_profiles || []).map((p, idx) => idx === i ? { ...p, mode: e.target.value } : p),
+                                })}>
+                                <option value="custom">Custom</option>
+                                <option value="preset">Preset</option>
+                                <option value="max">Maximum</option>
+                              </select>
+                            </label>
+                            <label>
+                              <span>Bandwidth (Kbps)</span>
+                              <input type="number" aria-label="Profile bandwidth" value={profile.bandwidth_kbps || 0}
+                                onChange={e => updateField('config.web_runtime', {
+                                  ...script.config.web_runtime,
+                                  network_profiles: (script.config.web_runtime?.network_profiles || []).map((p, idx) => idx === i ? { ...p, bandwidth_kbps: Number(e.target.value) } : p),
+                                })} />
+                            </label>
+                            <label>
+                              <span>Latency (ms)</span>
+                              <input type="number" aria-label="Profile latency" value={profile.latency_ms || 0}
+                                onChange={e => updateField('config.web_runtime', {
+                                  ...script.config.web_runtime,
+                                  network_profiles: (script.config.web_runtime?.network_profiles || []).map((p, idx) => idx === i ? { ...p, latency_ms: Number(e.target.value) } : p),
+                                })} />
+                            </label>
+                            <button type="button" className="btn btn-ghost" onClick={() => updateField('config.web_runtime', {
+                              ...script.config.web_runtime,
+                              network_profiles: (script.config.web_runtime?.network_profiles || []).filter((_, idx) => idx !== i),
+                            })}>Remove</button>
+                          </div>
+                        ))}
+                        <button type="button" className="btn btn-secondary" onClick={() => updateField('config.web_runtime', {
+                          ...script.config.web_runtime,
+                          network_profiles: [...(script.config.web_runtime?.network_profiles || []), { name: '', weight: 1, mode: 'custom' }],
+                        })}>Add Network Profile</button>
+                      </div>
                       <div className="settings-sub-group">
                         <h5>Streaming</h5>
                         <div className="cell-muted" style={{ marginBottom: 12 }}>

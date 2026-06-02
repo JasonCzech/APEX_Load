@@ -914,6 +914,20 @@ describe('ScriptEditor', () => {
   ) as HTMLTextAreaElement | undefined
   expect(contentCheckArea).toBeDefined()
   expect(contentCheckArea?.readOnly).toBe(false)
+
+  // Source IP pool and network-profile mix editors are present.
+  const sourceIpArea = container.querySelector('textarea[aria-label="Source IP pool"]') as HTMLTextAreaElement | null
+  expect(sourceIpArea).toBeTruthy()
+  expect(container.textContent).toContain('Network Profile Mix')
+
+  const addProfileButton = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Add Network Profile') as HTMLButtonElement | undefined
+  expect(addProfileButton).toBeTruthy()
+  if (!addProfileButton) return
+  await act(async () => {
+    addProfileButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+  expect(container.querySelector('input[aria-label="Profile name"]')).toBeTruthy()
+  expect(container.querySelector('input[aria-label="Profile weight"]')).toBeTruthy()
   })
 
   it('keeps existing RTS accordion sections open when HTTP Transport is expanded', async () => {

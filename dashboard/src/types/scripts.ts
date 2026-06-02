@@ -199,6 +199,11 @@ export interface ObservabilityConfig {
   external_metrics?: ExternalMetricConfig[]
 }
 
+export interface NetworkProfileWeight extends NetworkSimulationConfig {
+  name: string
+  weight: number
+}
+
 export interface WebRuntimeConfig {
   additional_attributes?: Record<string, string>
   download_filters?: DownloadFiltersConfig
@@ -206,6 +211,8 @@ export interface WebRuntimeConfig {
   network_simulation?: NetworkSimulationConfig
   streaming?: StreamingConfig
   data_formatting?: DataFormattingConfig
+  source_ips?: string[]
+  network_profiles?: NetworkProfileWeight[]
 }
 
 export interface JavaHTTPConfig {
