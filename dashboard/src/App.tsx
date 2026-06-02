@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDashboardTheme } from './hooks/useDashboardTheme'
+import { useDashboardZoomShortcuts } from './hooks/useDashboardZoomShortcuts'
 import { useWebSocket } from './hooks/useWebSocket'
 import { ApplicationProvider } from './hooks/ApplicationProvider'
 import { useApplication } from './hooks/useApplication'
@@ -53,6 +54,8 @@ function formatDesktopRemoteHealth(status?: DesktopStatusResponse) {
 }
 
 function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuthStatus }) {
+  useDashboardZoomShortcuts()
+
   const [view, setView] = useState<AppView>(() => (
     typeof window === 'undefined' ? { page: 'dashboard' } : parseAppViewFromHash(window.location.hash)
   ))

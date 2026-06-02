@@ -24,6 +24,7 @@ require (
 	github.com/wailsapp/wails/v2 v2.12.0
 	github.com/xitongsys/parquet-go v1.6.2
 	github.com/xitongsys/parquet-go-source v0.0.0-20241021075129-b732d2ac9c9b
+	github.com/zalando/go-keyring v0.2.8
 	gocloud.dev v0.45.0
 	golang.org/x/oauth2 v0.36.0
 	google.golang.org/grpc v1.81.0
@@ -139,7 +140,6 @@ require (
 	github.com/wailsapp/mimetype v1.4.1 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	github.com/zalando/go-keyring v0.2.8 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.42.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0 // indirect
