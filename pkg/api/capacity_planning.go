@@ -296,11 +296,18 @@ func resolveCapacityAvailabilityForProject(settings SystemSettings, projectID st
 }
 
 func capacityReservationTotals(settings SystemSettings, projectID string) (int, int) {
+	return capacityReservationTotalsAt(settings, projectID, time.Now())
+}
+
+// capacityReservationTotalsAt counts reserved generators (total, and for the
+// given project) considering only reservations whose timeslot is active at the
+// supplied instant. Split out for deterministic testing of timeslot windows.
+func capacityReservationTotalsAt(settings SystemSettings, projectID string, now time.Time) (int, int) {
 	normalizedProjectID := normalizeProjectID(strings.TrimSpace(projectID))
 	totalReserved := 0
 	projectReserved := 0
 	for _, reservation := range normalizeCapacityReservations(settings.CapacityPlanning.Reservations) {
-		if reservation.ReservedGenerators < 0 {
+		if reservation.ReservedGenerators < 0 || !reservationActiveAt(reservation, now) {
 			continue
 		}
 		totalReserved += reservation.ReservedGenerators

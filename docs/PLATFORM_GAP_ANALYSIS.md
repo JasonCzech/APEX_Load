@@ -270,7 +270,7 @@ The platform already has strong execution primitives, but an enterprise shared s
 - **Usage accounting** — per-project historical usage for chargeback, governance, and planning
 - **Fair-share scheduling** — avoid one tenant monopolizing distributed capacity
 
-**Current direction:** Aggregate quotas are enforced today — global and per-project max concurrent tests and a per-project VUser pool, with queueing when capacity is unavailable. Per-test hard caps (`MaxVUsersPerTest`, `MaxTestDurationMinutes`) now reject oversized individual tests at creation. **Reserved capacity pools are enforced**: per-project generator reservations protect a critical team's slice — other tenants are bounded to the shared (non-reserved) pool at admission, and reservations also drive fair-share queue priority. Remaining: cost-based approval policy, calendar/timeslot reservation, and usage accounting/chargeback.
+**Current direction:** Aggregate quotas are enforced today — global and per-project max concurrent tests and a per-project VUser pool, with queueing when capacity is unavailable. Per-test hard caps (`MaxVUsersPerTest`, `MaxTestDurationMinutes`) now reject oversized individual tests at creation. **Reserved capacity pools are enforced**: per-project generator reservations protect a critical team's slice — other tenants are bounded to the shared (non-reserved) pool at admission, reservations drive fair-share queue priority, and they can be **time-windowed timeslots** (`starts_at`/`ends_at`) so capacity is reserved only during a window (non-overlapping windows may oversubscribe the inventory). Remaining: cost-based approval policy and usage accounting/chargeback.
 
 ---
 

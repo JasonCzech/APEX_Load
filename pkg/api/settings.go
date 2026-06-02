@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 )
 
 const systemSettingsStoreKey = "system_settings"
@@ -67,6 +68,11 @@ type AvailabilitySettings struct {
 type CapacityReservation struct {
 	ProjectID          string `json:"project_id"`
 	ReservedGenerators int    `json:"reserved_generators"`
+	// StartsAt/EndsAt make a reservation a timeslot: it is only active within the
+	// window. Either bound may be nil for an open-ended window; both nil means the
+	// reservation is always active (backward compatible).
+	StartsAt *time.Time `json:"starts_at,omitempty"`
+	EndsAt   *time.Time `json:"ends_at,omitempty"`
 }
 
 type ArchiveRetentionSettings struct {
@@ -416,10 +422,19 @@ func validateSystemSettings(settings SystemSettings) error {
 		if reservation.ReservedGenerators < 0 {
 			return fmt.Errorf("capacity_planning.reservations.reserved_generators must be greater than or equal to 0")
 		}
+		if reservation.StartsAt != nil && reservation.EndsAt != nil && reservation.EndsAt.Before(*reservation.StartsAt) {
+			return fmt.Errorf("capacity_planning.reservations.ends_at must not be before starts_at")
+		}
 		if strings.TrimSpace(reservation.ProjectID) == "" || reservation.ReservedGenerators == 0 {
 			continue
 		}
-		totalReserved += reservation.ReservedGenerators
+		// Only always-active reservations are summed against total capacity here.
+		// Time-windowed reservations may legitimately oversubscribe across
+		// non-overlapping windows; the admission path clamps active reservations
+		// to available capacity at runtime.
+		if reservation.StartsAt == nil && reservation.EndsAt == nil {
+			totalReserved += reservation.ReservedGenerators
+		}
 	}
 	if totalReserved > settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators {
 		return fmt.Errorf("capacity_planning.reservations cannot exceed configured available generators")
@@ -527,12 +542,31 @@ func normalizeCapacityReservations(reservations []CapacityReservation) []Capacit
 		if rawProjectID == "" || reservation.ReservedGenerators == 0 {
 			continue
 		}
+		// Drop reservations with an inverted window (ends before it starts); they
+		// can never be active and would otherwise silently reserve nothing.
+		if reservation.StartsAt != nil && reservation.EndsAt != nil && reservation.EndsAt.Before(*reservation.StartsAt) {
+			continue
+		}
 		out = append(out, CapacityReservation{
 			ProjectID:          normalizeProjectID(rawProjectID),
 			ReservedGenerators: reservation.ReservedGenerators,
+			StartsAt:           reservation.StartsAt,
+			EndsAt:             reservation.EndsAt,
 		})
 	}
 	return out
+}
+
+// reservationActiveAt reports whether a reservation's timeslot is active at the
+// given instant. Open-ended bounds are treated as unbounded.
+func reservationActiveAt(reservation CapacityReservation, now time.Time) bool {
+	if reservation.StartsAt != nil && now.Before(*reservation.StartsAt) {
+		return false
+	}
+	if reservation.EndsAt != nil && now.After(*reservation.EndsAt) {
+		return false
+	}
+	return true
 }
 
 func normalizeArchiveRetentionPolicies(policies []ArchiveRetentionPolicy) []ArchiveRetentionPolicy {
