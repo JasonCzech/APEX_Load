@@ -380,6 +380,11 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
                     Logs
                   </button>
                 )}
+                {desktopBridge?.OpenAppDataFolder && (
+                  <button className="btn btn-sm btn-ghost" type="button" onClick={() => { void desktopBridge.OpenAppDataFolder?.() }}>
+                    App Data
+                  </button>
+                )}
               </div>
             )}
             <ThemeToggle theme={theme} onThemeChange={setTheme} />
