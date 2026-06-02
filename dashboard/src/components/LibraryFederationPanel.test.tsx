@@ -12,72 +12,30 @@ describe('LibraryFederationPanel', () => {
   let container: HTMLDivElement
   let root: Root
   let fetchMock: MockInstance<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>
+  let confirmMock: MockInstance<(message?: string) => boolean>
 
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    confirmMock = vi.spyOn(globalThis, 'confirm').mockReturnValue(true)
     fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
       const method = init?.method || 'GET'
-      if (url.includes('/api/v1/library/remotes') && method === 'GET' && !url.includes('/catalog')) {
+      if (url.includes('/api/v1/library/remotes') && method === 'GET') {
         return jsonResponse({
-          remotes: [{
-            id: 'remote-1',
-            name: 'Team AKS',
-            base_url: 'https://apexload.example.test',
-            default_project_id: 'project-1',
-            auth_method: 'service_account',
-            status: 'healthy',
-          }],
+          remotes: [remotePayload()],
           count: 1,
         })
       }
-      if (url.includes('/api/v1/library/catalog')) {
-        return jsonResponse({
-          items: [{
-            kind: 'script',
-            id: 'local-script',
-            name: 'Local Checkout',
-            project_id: 'project-1',
-            protocol: 'http',
-            content_hash: 'localhash123456',
-            updated_at: '2026-05-01T00:00:00Z',
-          }],
-          count: 1,
-        })
+      if (url.includes('/api/v1/library/remotes/remote-1/probe') && method === 'POST') {
+        return jsonResponse({ status: 'healthy' })
       }
-      if (url.includes('/api/v1/library/remotes/remote-1/catalog')) {
-        return jsonResponse({
-          remote: { id: 'remote-1', name: 'Team AKS', base_url: 'https://apexload.example.test' },
-          catalog: {
-            items: [{
-              kind: 'script',
-              id: 'host-script',
-              name: 'Host Checkout',
-              project_id: 'project-1',
-              protocol: 'http',
-              content_hash: 'hosthash123456',
-              updated_at: '2026-05-02T00:00:00Z',
-              sync_status: 'host only',
-            }],
-            count: 1,
-          },
-        })
+      if (url.includes('/api/v1/library/remotes/remote-1') && method === 'PUT') {
+        return jsonResponse({ ...remotePayload(), name: 'Team AKS' })
       }
-      if (url.includes('/api/v1/library/remotes/remote-1/pull') && method === 'POST') {
-        return jsonResponse({
-          import: {
-            items: [{ kind: 'script', local_item_id: 'local-copy', action: 'created' }],
-          },
-        })
-      }
-      if (url.includes('/api/v1/library/remotes/remote-1/push') && method === 'POST') {
-        return jsonResponse({
-          import: {
-            items: [{ kind: 'script', local_item_id: 'local-script', action: 'created' }],
-          },
-        })
+      if (url.includes('/api/v1/library/remotes/remote-1') && method === 'DELETE') {
+        return jsonResponse({ deleted: 'remote-1' })
       }
       return jsonResponse({})
     })
@@ -89,9 +47,10 @@ describe('LibraryFederationPanel', () => {
     })
     container.remove()
     fetchMock.mockRestore()
+    confirmMock.mockRestore()
   })
 
-  it('shows local and hosted catalog rows and routes transfers through the local controller', async () => {
+  it('manages remote connection state without receiving browser-visible API keys', async () => {
     await act(async () => {
       root.render(<LibraryFederationPanel projectId="project-1" />)
     })
@@ -99,33 +58,49 @@ describe('LibraryFederationPanel', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Team AKS')
-    expect(container.textContent).toContain('Local Checkout')
-    expect(container.textContent).toContain('Host Checkout')
-    expect(container.textContent).toContain('host only')
+    expect(container.textContent).toContain('credentials configured')
+    expect(container.textContent).not.toContain('secret-token')
 
-    const pullButton = findButton('Pull')
-    expect(pullButton).toBeDefined()
-    if (!pullButton) return
+    const probeButton = findButton('Probe Remote')
+    expect(probeButton).toBeDefined()
     await act(async () => {
-      pullButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      probeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/v1/library/remotes/remote-1/probe'))).toBe(true)
 
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/v1/library/remotes/remote-1/pull'))).toBe(true)
-    expect(container.textContent).toContain('Pulled 1 item.')
-
-    const pushButton = findButton('Push')
-    expect(pushButton).toBeDefined()
-    if (!pushButton) return
+    const saveButton = findButton('Save Remote')
+    expect(saveButton).toBeDefined()
     await act(async () => {
-      pushButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
+    const updateCall = fetchMock.mock.calls.find(([input, init]) => String(input).includes('/api/v1/library/remotes/remote-1') && init?.method === 'PUT')
+    expect(updateCall).toBeDefined()
+    expect(String(updateCall?.[1]?.body || '')).not.toContain('secret-token')
 
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/v1/library/remotes/remote-1/push'))).toBe(true)
-    expect(container.textContent).toContain('Pushed 1 item.')
+    const deleteButton = findButton('Delete')
+    expect(deleteButton).toBeDefined()
+    await act(async () => {
+      deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes('/api/v1/library/remotes/remote-1') && init?.method === 'DELETE')).toBe(true)
   })
 })
+
+function remotePayload() {
+  return {
+    id: 'remote-1',
+    name: 'Team AKS',
+    base_url: 'https://apexload.example.test',
+    default_project_id: 'project-1',
+    auth_method: 'service_account',
+    credential_ref: 'keyring:library-remote:remote-1',
+    credential_configured: true,
+    status: 'healthy',
+  }
+}
 
 function jsonResponse(body: unknown) {
   return Promise.resolve(new Response(JSON.stringify(body), {

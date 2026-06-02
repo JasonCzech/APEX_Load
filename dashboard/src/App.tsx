@@ -15,7 +15,9 @@ import { useProject } from './hooks/useProject'
 import { DevViewProvider, useDevView } from './hooks/DevViewProvider'
 import { useSystemApi } from './hooks/api/useSystemApi'
 import { useRepositoryApi } from './hooks/api/useRepositoryApi'
+import { useLibraryApi } from './hooks/api/useLibraryApi'
 import { isEffectiveOperationAllowed } from './utils/authAccessUtils'
+import { DesktopStatusResponse } from './types/library'
 import ThemeToggle from './components/ThemeToggle'
 import './App.css'
 import './components/Pages.css'
@@ -31,6 +33,25 @@ const ApplicationRepositoryPage = lazy(() => import('./components/ApplicationRep
 const AccessPage = lazy(() => import('./components/AccessPage'))
 const SettingsPage = lazy(() => import('./components/SettingsPage'))
 
+type WailsDesktopBridge = {
+  OpenInBrowser?: () => Promise<void>
+  OpenLogsFolder?: () => Promise<void>
+  OpenAppDataFolder?: () => Promise<void>
+}
+
+function getWailsDesktopBridge(): WailsDesktopBridge | undefined {
+  if (typeof window === 'undefined') return undefined
+  return (window as unknown as { go?: { main?: { App?: WailsDesktopBridge } } }).go?.main?.App
+}
+
+function formatDesktopRemoteHealth(status?: DesktopStatusResponse) {
+  const count = status?.remote_libraries?.count || 0
+  if (count === 0) return '0 hosts'
+  const statuses = status?.remote_libraries?.statuses || {}
+  const healthy = statuses.healthy || 0
+  return `${healthy}/${count} hosts`
+}
+
 function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuthStatus }) {
   const [view, setView] = useState<AppView>(() => (
     typeof window === 'undefined' ? { page: 'dashboard' } : parseAppViewFromHash(window.location.hash)
@@ -42,6 +63,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const { theme, setTheme } = useDashboardTheme()
   const { mode: devViewMode } = useDevView()
   const { getAuthEffectiveAccess } = useSystemApi()
+  const libraryApi = useLibraryApi()
   const repositoryApi = useRepositoryApi()
   const isDevUserPreview = authStatus?.mode === 'dev' && devViewMode === 'user'
   const scriptMode = view.page === 'scripts' && 'mode' in view ? view.mode : undefined
@@ -52,6 +74,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const [activeDomain, setActiveDomainState] = useState<import('./types').Domain | null>(null)
   const [applicationRepository, setApplicationRepository] = useState<import('./types').ApplicationRepository | null>(null)
   const [repositoryCategories, setRepositoryCategories] = useState<import('./types').RepositoryCategory[]>([])
+  const [desktopStatus, setDesktopStatus] = useState<DesktopStatusResponse | null>(null)
 
   const handleWSMessage = useCallback((msg: WSMessage) => {
     if (msg.type === 'metrics_update' && msg.data && msg.test_id && msg.timestamp) {
@@ -284,6 +307,34 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     }
   }, [canUseAccessWorkspace, view.page])
 
+  useEffect(() => {
+    let cancelled = false
+    const loadDesktopStatus = async () => {
+      try {
+        const status = await libraryApi.getDesktopStatus()
+        if (!cancelled) {
+          setDesktopStatus(status)
+        }
+      } catch {
+        if (!cancelled) {
+          setDesktopStatus(null)
+        }
+      }
+    }
+
+    void loadDesktopStatus()
+    const interval = window.setInterval(() => {
+      void loadDesktopStatus()
+    }, 30000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [libraryApi])
+
+  const desktopBridge = getWailsDesktopBridge()
+  const showDesktopStatus = Boolean(desktopStatus?.desktop_mode)
+
   return (
     <div className="app-layout">
       <Sidebar
@@ -313,7 +364,26 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             <span className="topbar-domain">{activeDomain?.name || 'APEX Load'}</span>
             <span className="topbar-project">{activeProject?.name || 'No project selected'}</span>
           </div>
-          <ThemeToggle theme={theme} onThemeChange={setTheme} />
+          <div className="main-topbar-actions">
+            {showDesktopStatus && (
+              <div className="desktop-status-strip" aria-label="Desktop controller status">
+                <span className="script-health-token healthy">Desktop</span>
+                <span className="desktop-status-address">{desktopStatus?.browser_url || desktopStatus?.api_address}</span>
+                <span className="script-health-token">{formatDesktopRemoteHealth(desktopStatus || undefined)}</span>
+                {desktopBridge?.OpenInBrowser && (
+                  <button className="btn btn-sm btn-ghost" type="button" onClick={() => { void desktopBridge.OpenInBrowser?.() }}>
+                    Open Browser
+                  </button>
+                )}
+                {desktopBridge?.OpenLogsFolder && (
+                  <button className="btn btn-sm btn-ghost" type="button" onClick={() => { void desktopBridge.OpenLogsFolder?.() }}>
+                    Logs
+                  </button>
+                )}
+              </div>
+            )}
+            <ThemeToggle theme={theme} onThemeChange={setTheme} />
+          </div>
         </div>
         <Suspense fallback={<div className="page">Loading page...</div>}>
           {view.page === 'dashboard' && (

@@ -13,6 +13,7 @@ import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { buildScenarioModelPreview, buildScenarioShapeCatalog, formatModelTimeLabel, ScenarioModelPreview, ScenarioSourceMode, ScenarioWizardStep, validateStageTimeline } from './scenarioWizardUtils'
 import DurationField from './DurationField'
 import PageViewToggle from './PageViewToggle'
+import LibraryAssetSourcePanel from './LibraryAssetSourcePanel'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -1960,6 +1961,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
             />
           </label>
         </div>
+        <LibraryAssetSourcePanel kind="scenario" projectId={activeProject?.id} onRefreshLocal={refresh} />
         <div className="data-table">
           <table>
             <thead>

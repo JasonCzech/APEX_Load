@@ -369,8 +369,8 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).toContain('Reusable Blocks')
     expect(container.textContent).toContain('HTTP Smoke')
     expect(container.textContent).toContain('OAuth Bearer Token Flow')
-    expect(container.textContent).toContain('ci smoke · api, ci, smoke')
-    expect(container.textContent).toContain('Suggested load: 3 VUsers · 2m')
+    expect(container.textContent).toMatch(/ci smoke\s*api\s*ci\s*smoke/i)
+    expect(container.textContent).toMatch(/Suggested:\s*3 VUsers\s*\/\s*2m/i)
 
     await clickButton('HTTP Smoke')
     expect(actions.startTemplateScript).toHaveBeenCalledWith(expect.objectContaining({

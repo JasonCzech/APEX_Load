@@ -8,6 +8,7 @@ import { useRepositoryApi } from './api/useRepositoryApi'
 import { useScriptApi } from './api/useScriptApi'
 import { useSystemApi } from './api/useSystemApi'
 import { useTestApi } from './api/useTestApi'
+import { useLibraryApi } from './api/useLibraryApi'
 
 export { ApiError }
 
@@ -19,6 +20,7 @@ export function useApi() {
   const scripts = useScriptApi()
   const system = useSystemApi()
   const recorder = useRecorderApi()
+  const library = useLibraryApi()
 
   return useMemo(
     () => ({
@@ -29,7 +31,8 @@ export function useApi() {
       ...scripts,
       ...system,
       ...recorder,
+      ...library,
     }),
-    [tests, applications, projects, repository, scripts, system, recorder],
+    [tests, applications, projects, repository, scripts, system, recorder, library],
   )
 }

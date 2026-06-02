@@ -1,14 +1,21 @@
 package api
 
 import (
+	"archive/zip"
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +25,9 @@ import (
 )
 
 const libraryBundleSchemaVersion = "apexload.library_bundle.v1"
+const libraryRemotesSettingKey = "library.remotes.v1"
+const librarySyncLinksSettingKey = "library.sync_links.v1"
+const defaultLibraryArchiveMaxBytes int64 = 512 * 1024 * 1024
 
 type LibraryCapabilitiesResponse struct {
 	SchemaVersion string    `json:"schema_version"`
@@ -96,10 +106,13 @@ type LibraryScenarioPayload struct {
 }
 
 type LibraryResultPayload struct {
-	Test          *ManagedTest              `json:"test,omitempty"`
-	Archive       *storage.RunArchiveRecord `json:"archive,omitempty"`
-	ArchiveZipB64 string                    `json:"archive_zip_b64,omitempty"`
-	Summary       map[string]any            `json:"summary,omitempty"`
+	Test                *ManagedTest              `json:"test,omitempty"`
+	Archive             *storage.RunArchiveRecord `json:"archive,omitempty"`
+	ArchiveZipB64       string                    `json:"archive_zip_b64,omitempty"`
+	ArchiveTransfer     string                    `json:"archive_transfer,omitempty"`
+	ArchiveManifestHash string                    `json:"archive_manifest_hash,omitempty"`
+	ArchiveSizeBytes    int64                     `json:"archive_size_bytes,omitempty"`
+	Summary             map[string]any            `json:"summary,omitempty"`
 }
 
 type LibraryImportRequest struct {
@@ -133,18 +146,20 @@ type LibraryConflict struct {
 }
 
 type LibraryRemote struct {
-	ID               string                       `json:"id"`
-	Name             string                       `json:"name"`
-	BaseURL          string                       `json:"base_url"`
-	DefaultProjectID string                       `json:"default_project_id,omitempty"`
-	AuthMethod       string                       `json:"auth_method"`
-	Status           string                       `json:"status,omitempty"`
-	LastHealthCheck  *time.Time                   `json:"last_health_check,omitempty"`
-	LastError        string                       `json:"last_error,omitempty"`
-	Capabilities     *LibraryCapabilitiesResponse `json:"capabilities,omitempty"`
-	APIKey           string                       `json:"-"`
-	CreatedAt        time.Time                    `json:"created_at"`
-	UpdatedAt        time.Time                    `json:"updated_at"`
+	ID                   string                       `json:"id"`
+	Name                 string                       `json:"name"`
+	BaseURL              string                       `json:"base_url"`
+	DefaultProjectID     string                       `json:"default_project_id,omitempty"`
+	AuthMethod           string                       `json:"auth_method"`
+	CredentialRef        string                       `json:"credential_ref,omitempty"`
+	CredentialConfigured bool                         `json:"credential_configured"`
+	Status               string                       `json:"status,omitempty"`
+	LastHealthCheck      *time.Time                   `json:"last_health_check,omitempty"`
+	LastError            string                       `json:"last_error,omitempty"`
+	Capabilities         *LibraryCapabilitiesResponse `json:"capabilities,omitempty"`
+	APIKey               string                       `json:"-"`
+	CreatedAt            time.Time                    `json:"created_at"`
+	UpdatedAt            time.Time                    `json:"updated_at"`
 }
 
 type LibraryRemoteRequest struct {
@@ -152,6 +167,7 @@ type LibraryRemoteRequest struct {
 	BaseURL          string `json:"base_url"`
 	DefaultProjectID string `json:"default_project_id,omitempty"`
 	AuthMethod       string `json:"auth_method,omitempty"`
+	CredentialRef    string `json:"credential_ref,omitempty"`
 	APIKey           string `json:"api_key,omitempty"`
 }
 
@@ -190,6 +206,107 @@ type librarySyncLink struct {
 	LocalContentHash  string
 	RemoteContentHash string
 	LastSyncedAt      time.Time
+}
+
+func (s *Server) loadLibraryState() {
+	if s == nil || s.store == nil {
+		return
+	}
+	if raw, err := s.store.GetSetting(libraryRemotesSettingKey); err != nil {
+		slog.Warn("failed to load library remotes", "err", err)
+	} else if strings.TrimSpace(raw) != "" {
+		var remotes []LibraryRemote
+		if err := json.Unmarshal([]byte(raw), &remotes); err != nil {
+			slog.Warn("failed to decode library remotes", "err", err)
+		} else {
+			s.libraryMu.Lock()
+			for i := range remotes {
+				remote := remotes[i]
+				remote.APIKey = ""
+				remote.CredentialConfigured = false
+				if remote.ID != "" {
+					copied := remote
+					s.libraryRemotes[remote.ID] = &copied
+				}
+			}
+			s.libraryMu.Unlock()
+		}
+	}
+	if raw, err := s.store.GetSetting(librarySyncLinksSettingKey); err != nil {
+		slog.Warn("failed to load library sync links", "err", err)
+	} else if strings.TrimSpace(raw) != "" {
+		var links []librarySyncLink
+		if err := json.Unmarshal([]byte(raw), &links); err != nil {
+			slog.Warn("failed to decode library sync links", "err", err)
+		} else {
+			s.libraryMu.Lock()
+			for i := range links {
+				link := links[i]
+				if link.Kind == "" || link.SourceItemID == "" {
+					continue
+				}
+				copied := link
+				s.libraryLinks[libraryLinkKey(link.RemoteID, link.Kind, link.SourceInstanceID, link.SourceItemID)] = &copied
+			}
+			s.libraryMu.Unlock()
+		}
+	}
+}
+
+func (s *Server) persistLibraryRemotes() {
+	if s == nil || s.store == nil {
+		return
+	}
+	s.libraryMu.Lock()
+	remotes := make([]LibraryRemote, 0, len(s.libraryRemotes))
+	for _, remote := range s.libraryRemotes {
+		if remote == nil {
+			continue
+		}
+		copied := *remote
+		copied.APIKey = ""
+		copied.CredentialConfigured = false
+		remotes = append(remotes, copied)
+	}
+	sort.SliceStable(remotes, func(i, j int) bool {
+		return strings.ToLower(remotes[i].Name) < strings.ToLower(remotes[j].Name)
+	})
+	s.libraryMu.Unlock()
+	payload, err := json.Marshal(remotes)
+	if err != nil {
+		slog.Warn("failed to encode library remotes", "err", err)
+		return
+	}
+	if err := s.store.SaveSetting(libraryRemotesSettingKey, string(payload)); err != nil {
+		slog.Warn("failed to persist library remotes", "err", err)
+	}
+}
+
+func (s *Server) persistLibraryLinks() {
+	if s == nil || s.store == nil {
+		return
+	}
+	s.libraryMu.Lock()
+	links := make([]librarySyncLink, 0, len(s.libraryLinks))
+	for _, link := range s.libraryLinks {
+		if link == nil {
+			continue
+		}
+		links = append(links, *link)
+	}
+	sort.SliceStable(links, func(i, j int) bool {
+		return libraryLinkKey(links[i].RemoteID, links[i].Kind, links[i].SourceInstanceID, links[i].SourceItemID) <
+			libraryLinkKey(links[j].RemoteID, links[j].Kind, links[j].SourceInstanceID, links[j].SourceItemID)
+	})
+	s.libraryMu.Unlock()
+	payload, err := json.Marshal(links)
+	if err != nil {
+		slog.Warn("failed to encode library sync links", "err", err)
+		return
+	}
+	if err := s.store.SaveSetting(librarySyncLinksSettingKey, string(payload)); err != nil {
+		slog.Warn("failed to persist library sync links", "err", err)
+	}
 }
 
 func (s *Server) handleLibraryCapabilities(w http.ResponseWriter, r *http.Request) {
@@ -253,12 +370,59 @@ func (s *Server) handleLibraryImport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, result)
 }
 
+func (s *Server) handleLibraryImportArchive(w http.ResponseWriter, r *http.Request) {
+	req, archiveImport, cleanup, err := readLibraryArchiveImportRequest(r)
+	if cleanup != nil {
+		defer cleanup()
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, err := s.importLibraryBundleWithArchive(req, "", archiveImport)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	status := http.StatusCreated
+	if len(result.Conflicts) > 0 {
+		status = http.StatusConflict
+	}
+	s.recordAuditEvent(r, "library.import_archive", "success", "library_bundle", req.Bundle.BundleID, normalizeProjectID(req.ProjectID), map[string]any{"items": len(result.Items), "conflicts": len(result.Conflicts), "archive_size_bytes": archiveImportSize(archiveImport)})
+	writeJSON(w, status, result)
+}
+
+func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	test, ok := s.runner.GetTest(id)
+	if !ok || test == nil {
+		writeError(w, http.StatusNotFound, "result not found")
+		return
+	}
+	record, ok := s.runner.GetRunArchive(id)
+	if !ok || record == nil {
+		writeError(w, http.StatusNotFound, "archive not found")
+		return
+	}
+	if err := ensureArchiveMaterialized(record); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+sanitizeFilename(test.Name)+"-"+id+".zip\"")
+	w.Header().Set("Last-Modified", record.CompletedAt.UTC().Format(http.TimeFormat))
+	w.WriteHeader(http.StatusOK)
+	if err := zipDirectory(record.ArchivePath, w); err != nil {
+		slog.Warn("failed to stream library result archive", "test_id", id, "err", err)
+	}
+}
+
 func (s *Server) handleLibraryListRemotes(w http.ResponseWriter, r *http.Request) {
 	s.libraryMu.Lock()
 	defer s.libraryMu.Unlock()
 	remotes := make([]LibraryRemote, 0, len(s.libraryRemotes))
 	for _, remote := range s.libraryRemotes {
-		remotes = append(remotes, sanitizeLibraryRemote(remote))
+		remotes = append(remotes, s.sanitizeLibraryRemote(remote))
 	}
 	sort.SliceStable(remotes, func(i, j int) bool {
 		return strings.ToLower(remotes[i].Name) < strings.ToLower(remotes[j].Name)
@@ -277,10 +441,90 @@ func (s *Server) handleLibraryCreateRemote(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := s.storeRemoteCredential(remote, req.APIKey, req.CredentialRef); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	s.libraryMu.Lock()
 	s.libraryRemotes[remote.ID] = remote
 	s.libraryMu.Unlock()
-	writeJSON(w, http.StatusCreated, sanitizeLibraryRemote(remote))
+	s.persistLibraryRemotes()
+	s.recordAuditEvent(r, "library.remote.create", "success", "library_remote", remote.ID, "", map[string]any{"name": remote.Name, "base_url": remote.BaseURL})
+	writeJSON(w, http.StatusCreated, s.sanitizeLibraryRemote(remote))
+}
+
+func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	var req LibraryRemoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	s.libraryMu.Lock()
+	remote := s.libraryRemotes[id]
+	if remote == nil {
+		s.libraryMu.Unlock()
+		writeError(w, http.StatusNotFound, "remote library not found")
+		return
+	}
+	updated := *remote
+	s.libraryMu.Unlock()
+	if strings.TrimSpace(req.Name) != "" {
+		updated.Name = strings.TrimSpace(req.Name)
+	}
+	if strings.TrimSpace(req.BaseURL) != "" {
+		baseURL := strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
+		parsed, err := url.Parse(baseURL)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			writeError(w, http.StatusBadRequest, "remote base_url must be an absolute URL")
+			return
+		}
+		updated.BaseURL = baseURL
+	}
+	if strings.TrimSpace(req.AuthMethod) != "" {
+		updated.AuthMethod = strings.TrimSpace(req.AuthMethod)
+	}
+	if req.DefaultProjectID != "" {
+		updated.DefaultProjectID = normalizeProjectID(req.DefaultProjectID)
+	}
+	updated.UpdatedAt = time.Now().UTC()
+	if err := s.storeRemoteCredential(&updated, req.APIKey, req.CredentialRef); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.libraryMu.Lock()
+	s.libraryRemotes[id] = &updated
+	s.libraryMu.Unlock()
+	s.persistLibraryRemotes()
+	s.recordAuditEvent(r, "library.remote.update", "success", "library_remote", id, "", map[string]any{"name": updated.Name, "base_url": updated.BaseURL})
+	writeJSON(w, http.StatusOK, s.sanitizeLibraryRemote(&updated))
+}
+
+func (s *Server) handleLibraryDeleteRemote(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	s.libraryMu.Lock()
+	remote := s.libraryRemotes[id]
+	if remote == nil {
+		s.libraryMu.Unlock()
+		writeError(w, http.StatusNotFound, "remote library not found")
+		return
+	}
+	delete(s.libraryRemotes, id)
+	for key, link := range s.libraryLinks {
+		if link != nil && link.RemoteID == id {
+			delete(s.libraryLinks, key)
+		}
+	}
+	s.libraryMu.Unlock()
+	if s.libraryCreds != nil {
+		if err := s.libraryCreds.DeleteRemoteAPIKey(id); err != nil {
+			slog.Warn("failed to delete remote library credential", "remote_id", id, "err", err)
+		}
+	}
+	s.persistLibraryRemotes()
+	s.persistLibraryLinks()
+	s.recordAuditEvent(r, "library.remote.delete", "success", "library_remote", id, "", map[string]any{"name": remote.Name})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleLibraryProbeRemote(w http.ResponseWriter, r *http.Request) {
@@ -303,13 +547,16 @@ func (s *Server) handleLibraryProbeRemote(w http.ResponseWriter, r *http.Request
 			stored.LastError = ""
 			stored.Capabilities = caps
 		}
-		remote = sanitizeLibraryRemote(stored)
+		remote = s.sanitizeLibraryRemote(stored)
 	}
 	s.libraryMu.Unlock()
+	s.persistLibraryRemotes()
 	if err != nil {
+		s.recordAuditEvent(r, "library.remote.probe", "failure", "library_remote", remote.ID, "", map[string]any{"error": err.Error()})
 		writeJSON(w, http.StatusOK, map[string]any{"remote": remote, "status": "unreachable", "error": err.Error()})
 		return
 	}
+	s.recordAuditEvent(r, "library.remote.probe", "success", "library_remote", remote.ID, "", nil)
 	writeJSON(w, http.StatusOK, map[string]any{"remote": remote, "status": "healthy", "capabilities": caps})
 }
 
@@ -329,7 +576,7 @@ func (s *Server) handleLibraryRemoteCatalog(w http.ResponseWriter, r *http.Reque
 	for i := range catalog.Items {
 		catalog.Items[i] = s.annotateRemoteCatalogItem(remote.ID, catalog.Items[i])
 	}
-	writeJSON(w, http.StatusOK, LibraryRemoteCatalogResponse{Remote: sanitizeLibraryRemote(&remote), Catalog: *catalog})
+	writeJSON(w, http.StatusOK, LibraryRemoteCatalogResponse{Remote: s.sanitizeLibraryRemote(&remote), Catalog: *catalog})
 }
 
 func (s *Server) handleLibraryRemotePull(w http.ResponseWriter, r *http.Request) {
@@ -351,7 +598,19 @@ func (s *Server) handleLibraryRemotePull(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	imported, err := s.importLibraryBundle(LibraryImportRequest{Bundle: *bundle, ProjectID: req.ProjectID, Mode: "pull"}, remote.ID)
+	var archiveImport *libraryArchiveImport
+	var cleanup func()
+	if normalizeLibraryKind(req.Kind) == "result" && libraryBundleHasStreamedArchive(bundle) {
+		archiveImport, cleanup, err = s.remoteLibraryDownloadArchive(remote, firstNonEmpty(req.RemoteID, req.ID))
+		if cleanup != nil {
+			defer cleanup()
+		}
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+	}
+	imported, err := s.importLibraryBundleWithArchive(LibraryImportRequest{Bundle: *bundle, ProjectID: req.ProjectID, Mode: "pull"}, remote.ID, archiveImport)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -368,7 +627,7 @@ func (s *Server) handleLibraryRemotePull(w http.ResponseWriter, r *http.Request)
 		"items":          len(imported.Items),
 		"conflicts":      len(imported.Conflicts),
 	})
-	writeJSON(w, status, LibraryRemoteTransferResponse{Remote: sanitizeLibraryRemote(&remote), Bundle: bundle, Import: imported})
+	writeJSON(w, status, LibraryRemoteTransferResponse{Remote: s.sanitizeLibraryRemote(&remote), Bundle: bundle, Import: imported})
 }
 
 func (s *Server) handleLibraryRemotePush(w http.ResponseWriter, r *http.Request) {
@@ -390,7 +649,12 @@ func (s *Server) handleLibraryRemotePush(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	imported, err := s.remoteLibraryImport(remote, LibraryImportRequest{Bundle: *bundle, ProjectID: req.ProjectID, Mode: "push"})
+	var imported *LibraryImportResponse
+	if normalizeLibraryKind(req.Kind) == "result" && libraryBundleHasStreamedArchive(bundle) {
+		imported, err = s.remoteLibraryImportArchive(remote, LibraryImportRequest{Bundle: *bundle, ProjectID: req.ProjectID, Mode: "push"}, req.ID)
+	} else {
+		imported, err = s.remoteLibraryImport(remote, LibraryImportRequest{Bundle: *bundle, ProjectID: req.ProjectID, Mode: "push"})
+	}
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -408,7 +672,7 @@ func (s *Server) handleLibraryRemotePush(w http.ResponseWriter, r *http.Request)
 		"items":          len(imported.Items),
 		"conflicts":      len(imported.Conflicts),
 	})
-	writeJSON(w, status, LibraryRemoteTransferResponse{Remote: sanitizeLibraryRemote(&remote), Bundle: bundle, Import: imported})
+	writeJSON(w, status, LibraryRemoteTransferResponse{Remote: s.sanitizeLibraryRemote(&remote), Bundle: bundle, Import: imported})
 }
 
 func (s *Server) handleLibraryRemoteDiff(w http.ResponseWriter, r *http.Request) {
@@ -450,7 +714,7 @@ func (s *Server) handleLibraryRemoteDiff(w http.ResponseWriter, r *http.Request)
 		status = "synced"
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"remote":      sanitizeLibraryRemote(&remote),
+		"remote":      s.sanitizeLibraryRemote(&remote),
 		"kind":        normalizeLibraryKind(req.Kind),
 		"local_id":    localID,
 		"remote_id":   remoteItemID,
@@ -662,12 +926,11 @@ func (s *Server) libraryResultBundleItem(id string) (LibraryBundleItem, error) {
 		},
 	}
 	if record, ok := s.runner.GetRunArchive(id); ok && record != nil {
+		result.Archive = record
 		if err := ensureArchiveMaterialized(record); err == nil {
-			var buf bytes.Buffer
-			if err := zipDirectory(record.ArchivePath, &buf); err == nil {
-				result.Archive = record
-				result.ArchiveZipB64 = base64.StdEncoding.EncodeToString(buf.Bytes())
-			}
+			result.ArchiveTransfer = "stream"
+			result.ArchiveManifestHash = hashArchiveManifest(record)
+			result.ArchiveSizeBytes = archiveDirectorySize(record.ArchivePath)
 		}
 	}
 	return LibraryBundleItem{
@@ -684,6 +947,16 @@ func (s *Server) libraryResultBundleItem(id string) (LibraryBundleItem, error) {
 }
 
 func (s *Server) importLibraryBundle(req LibraryImportRequest, remoteID string) (*LibraryImportResponse, error) {
+	return s.importLibraryBundleWithArchive(req, remoteID, nil)
+}
+
+type libraryArchiveImport struct {
+	ZipPath      string
+	SizeBytes    int64
+	ManifestHash string
+}
+
+func (s *Server) importLibraryBundleWithArchive(req LibraryImportRequest, remoteID string, archiveImport *libraryArchiveImport) (*LibraryImportResponse, error) {
 	bundle := req.Bundle
 	if bundle.SchemaVersion != libraryBundleSchemaVersion {
 		return nil, fmt.Errorf("unsupported library bundle schema %q", bundle.SchemaVersion)
@@ -715,7 +988,7 @@ func (s *Server) importLibraryBundle(req LibraryImportRequest, remoteID string) 
 			}
 			response.Items = append(response.Items, LibraryImportResultItem{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, ContentHash: item.ContentHash, Action: action})
 		case "result":
-			localID, action, conflict := s.importLibraryResult(item, projectID, remoteID)
+			localID, action, conflict := s.importLibraryResult(item, projectID, remoteID, archiveImport)
 			if conflict != nil {
 				response.Conflicts = append(response.Conflicts, *conflict)
 				continue
@@ -798,7 +1071,7 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 	return stored.ID, action, nil
 }
 
-func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, remoteID string) (string, string, *LibraryConflict) {
+func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, remoteID string, archiveImport *libraryArchiveImport) (string, string, *LibraryConflict) {
 	if item.Result == nil {
 		return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "result payload is missing"}
 	}
@@ -806,24 +1079,65 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 	if item.Result.Test != nil {
 		resultID = item.Result.Test.ID
 	}
+	importID := uuid.New().String()
+	rawResult := map[string]any{
+		"schema_version":        libraryBundleSchemaVersion,
+		"source_instance":       item.SourceInstanceID,
+		"source_item_id":        item.SourceItemID,
+		"content_hash":          item.ContentHash,
+		"test":                  item.Result.Test,
+		"archive":               item.Result.Archive,
+		"archive_transfer":      item.Result.ArchiveTransfer,
+		"archive_manifest_hash": item.Result.ArchiveManifestHash,
+		"archive_size_bytes":    item.Result.ArchiveSizeBytes,
+	}
+	if archiveImport != nil && strings.TrimSpace(archiveImport.ZipPath) != "" {
+		dir := libraryImportedArchiveDir(importID)
+		if err := os.RemoveAll(dir); err != nil {
+			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
+		}
+		if err := unzipArchiveFile(archiveImport.ZipPath, dir, libraryArchiveMaxBytes()); err != nil {
+			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
+		}
+		manifestHash := hashArchiveManifestPath(filepath.Join(dir, "manifest.json"))
+		sizeBytes := archiveDirectorySize(dir)
+		if item.Result.ArchiveManifestHash != "" && manifestHash != "" && manifestHash != item.Result.ArchiveManifestHash {
+			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "archive manifest hash does not match bundle metadata"}
+		}
+		if item.Result.ArchiveSizeBytes > 0 && sizeBytes != item.Result.ArchiveSizeBytes {
+			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "archive size does not match bundle metadata"}
+		}
+		rawResult["archive_path"] = dir
+		rawResult["imported_archive_manifest_hash"] = manifestHash
+		rawResult["imported_archive_size_bytes"] = sizeBytes
+		if item.Result.Archive != nil {
+			copied := *item.Result.Archive
+			copied.ArchivePath = dir
+			copied.ManifestPath = filepath.Join(dir, "manifest.json")
+			rawResult["archive"] = &copied
+		}
+	} else if strings.TrimSpace(item.Result.ArchiveZipB64) != "" {
+		dir := libraryImportedArchiveDir(importID)
+		if err := os.RemoveAll(dir); err != nil {
+			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
+		}
+		if err := importLegacyArchiveZipB64(item.Result.ArchiveZipB64, dir, libraryArchiveMaxBytes()); err != nil {
+			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
+		}
+		rawResult["archive_path"] = dir
+		rawResult["imported_archive_manifest_hash"] = hashArchiveManifestPath(filepath.Join(dir, "manifest.json"))
+		rawResult["imported_archive_size_bytes"] = archiveDirectorySize(dir)
+	}
 	imported := &storage.ExternalResultImport{
-		ID:         uuid.New().String(),
+		ID:         importID,
 		Provider:   "apexload",
 		Name:       firstNonEmpty(strings.TrimSpace(item.Name), "APEX Load result import"),
 		ProjectID:  normalizeProjectID(firstNonEmpty(projectID, item.ProjectID)),
 		ScenarioID: "",
 		Source:     "library://" + item.SourceInstanceID + "/" + item.SourceItemID,
 		Summary:    item.Result.Summary,
-		RawResult: map[string]any{
-			"schema_version":  libraryBundleSchemaVersion,
-			"source_instance": item.SourceInstanceID,
-			"source_item_id":  item.SourceItemID,
-			"content_hash":    item.ContentHash,
-			"test":            item.Result.Test,
-			"archive":         item.Result.Archive,
-			"archive_zip_b64": item.Result.ArchiveZipB64,
-		},
-		CreatedAt: time.Now().UTC(),
+		RawResult:  rawResult,
+		CreatedAt:  time.Now().UTC(),
 	}
 	if imported.Summary == nil {
 		imported.Summary = map[string]any{"status": "imported", "provider": "apexload"}
@@ -879,6 +1193,137 @@ func (s *Server) remoteLibraryImport(remote LibraryRemote, req LibraryImportRequ
 	return &imported, nil
 }
 
+func (s *Server) remoteLibraryImportArchive(remote LibraryRemote, req LibraryImportRequest, resultID string) (*LibraryImportResponse, error) {
+	record, ok := s.runner.GetRunArchive(resultID)
+	if !ok || record == nil {
+		return s.remoteLibraryImport(remote, req)
+	}
+	if err := ensureArchiveMaterialized(record); err != nil {
+		return nil, fmt.Errorf("materialize local archive: %w", err)
+	}
+	reader, writer := io.Pipe()
+	multipartWriter := multipart.NewWriter(writer)
+	errCh := make(chan error, 1)
+	go func() {
+		defer writer.Close()
+		bundlePart, err := multipartWriter.CreateFormField("bundle")
+		if err != nil {
+			errCh <- err
+			_ = multipartWriter.Close()
+			return
+		}
+		if err := json.NewEncoder(bundlePart).Encode(req.Bundle); err != nil {
+			errCh <- err
+			_ = multipartWriter.Close()
+			return
+		}
+		if strings.TrimSpace(req.ProjectID) != "" {
+			if err := multipartWriter.WriteField("project_id", req.ProjectID); err != nil {
+				errCh <- err
+				_ = multipartWriter.Close()
+				return
+			}
+		}
+		archivePart, err := multipartWriter.CreateFormFile("archive", sanitizeFilename(firstNonEmpty(resultID, "result"))+".zip")
+		if err != nil {
+			errCh <- err
+			_ = multipartWriter.Close()
+			return
+		}
+		if err := zipDirectory(record.ArchivePath, archivePart); err != nil {
+			errCh <- err
+			_ = multipartWriter.Close()
+			return
+		}
+		if err := multipartWriter.Close(); err != nil {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
+	base, err := url.Parse(remote.BaseURL)
+	if err != nil {
+		_ = reader.Close()
+		return nil, err
+	}
+	values := url.Values{}
+	if strings.TrimSpace(req.ProjectID) != "" {
+		values.Set("project_id", req.ProjectID)
+	}
+	endpoint := base.ResolveReference(&url.URL{Path: "/api/v1/library/import/archive", RawQuery: values.Encode()})
+	httpReq, err := http.NewRequest(http.MethodPost, endpoint.String(), reader)
+	if err != nil {
+		_ = reader.Close()
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", multipartWriter.FormDataContentType())
+	if err := s.authorizeRemoteRequest(httpReq, remote); err != nil {
+		_ = reader.Close()
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		_ = reader.Close()
+		if writeErr := <-errCh; writeErr != nil {
+			return nil, writeErr
+		}
+		return nil, err
+	}
+	defer resp.Body.Close()
+	writeErr := <-errCh
+	if writeErr != nil {
+		return nil, writeErr
+	}
+	if (resp.StatusCode < 200 || resp.StatusCode >= 300) && resp.StatusCode != http.StatusConflict {
+		return nil, fmt.Errorf("remote library returned %s", resp.Status)
+	}
+	var imported LibraryImportResponse
+	if err := json.NewDecoder(resp.Body).Decode(&imported); err != nil {
+		return nil, err
+	}
+	return &imported, nil
+}
+
+func (s *Server) remoteLibraryDownloadArchive(remote LibraryRemote, resultID string) (*libraryArchiveImport, func(), error) {
+	base, err := url.Parse(remote.BaseURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	path := "/api/v1/library/results/" + url.PathEscape(strings.TrimSpace(resultID)) + "/archive"
+	endpoint := base.ResolveReference(&url.URL{Path: path})
+	req, err := http.NewRequest(http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.authorizeRemoteRequest(req, remote); err != nil {
+		return nil, nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, nil, fmt.Errorf("remote library archive returned %s", resp.Status)
+	}
+	tmp, err := os.CreateTemp("", "apexload-library-archive-*.zip")
+	if err != nil {
+		return nil, nil, err
+	}
+	cleanup := func() { _ = os.Remove(tmp.Name()) }
+	written, err := copyWithMaxBytes(tmp, resp.Body, libraryArchiveMaxBytes())
+	closeErr := tmp.Close()
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	if closeErr != nil {
+		cleanup()
+		return nil, nil, closeErr
+	}
+	return &libraryArchiveImport{ZipPath: tmp.Name(), SizeBytes: written}, cleanup, nil
+}
+
 func (s *Server) remoteJSON(remote LibraryRemote, method string, path string, body any, out any) error {
 	_, err := s.remoteJSONAccepted(remote, method, path, body, out, nil)
 	return err
@@ -911,8 +1356,8 @@ func (s *Server) remoteJSONAccepted(remote LibraryRemote, method string, path st
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if remote.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+remote.APIKey)
+	if err := s.authorizeRemoteRequest(req, remote); err != nil {
+		return 0, err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -923,6 +1368,17 @@ func (s *Server) remoteJSONAccepted(remote LibraryRemote, method string, path st
 		return resp.StatusCode, fmt.Errorf("remote library returned %s", resp.Status)
 	}
 	return resp.StatusCode, json.NewDecoder(resp.Body).Decode(out)
+}
+
+func (s *Server) authorizeRemoteRequest(req *http.Request, remote LibraryRemote) error {
+	apiKey, err := s.remoteLibraryAPIKey(remote)
+	if err != nil {
+		return err
+	}
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	return nil
 }
 
 func buildLibraryRemote(req LibraryRemoteRequest) (*LibraryRemote, error) {
@@ -946,6 +1402,7 @@ func buildLibraryRemote(req LibraryRemoteRequest) (*LibraryRemote, error) {
 		BaseURL:          baseURL,
 		DefaultProjectID: normalizeProjectID(req.DefaultProjectID),
 		AuthMethod:       authMethod,
+		CredentialRef:    strings.TrimSpace(req.CredentialRef),
 		Status:           "unknown",
 		APIKey:           strings.TrimSpace(req.APIKey),
 		CreatedAt:        now,
@@ -964,12 +1421,80 @@ func (s *Server) libraryRemote(id string) (LibraryRemote, bool) {
 	return copied, true
 }
 
-func sanitizeLibraryRemote(remote *LibraryRemote) LibraryRemote {
+func (s *Server) storeRemoteCredential(remote *LibraryRemote, apiKey string, credentialRef string) error {
+	if remote == nil {
+		return fmt.Errorf("remote library is required")
+	}
+	apiKey = strings.TrimSpace(apiKey)
+	credentialRef = strings.TrimSpace(credentialRef)
+	if strings.EqualFold(remote.AuthMethod, "none") {
+		remote.CredentialRef = ""
+		remote.APIKey = ""
+		remote.CredentialConfigured = true
+		return nil
+	}
+	if apiKey != "" {
+		if s.libraryCreds == nil {
+			return fmt.Errorf("remote credential store is not configured")
+		}
+		ref, err := s.libraryCreds.PutRemoteAPIKey(remote.ID, apiKey)
+		if err != nil {
+			return err
+		}
+		remote.CredentialRef = strings.TrimSpace(ref)
+		remote.APIKey = ""
+		remote.CredentialConfigured = true
+		return nil
+	}
+	if credentialRef != "" {
+		remote.CredentialRef = credentialRef
+	}
+	remote.APIKey = ""
+	remote.CredentialConfigured = s.remoteCredentialConfigured(*remote)
+	return nil
+}
+
+func (s *Server) remoteLibraryAPIKey(remote LibraryRemote) (string, error) {
+	if strings.EqualFold(remote.AuthMethod, "none") {
+		return "", nil
+	}
+	if strings.TrimSpace(remote.APIKey) != "" {
+		return strings.TrimSpace(remote.APIKey), nil
+	}
+	if s.libraryCreds == nil {
+		return "", fmt.Errorf("remote library credential store is not configured")
+	}
+	apiKey, err := s.libraryCreds.GetRemoteAPIKey(remote)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(apiKey) == "" {
+		return "", fmt.Errorf("remote library credential is not configured")
+	}
+	return strings.TrimSpace(apiKey), nil
+}
+
+func (s *Server) remoteCredentialConfigured(remote LibraryRemote) bool {
+	if strings.EqualFold(remote.AuthMethod, "none") {
+		return true
+	}
+	if strings.TrimSpace(remote.APIKey) != "" {
+		return true
+	}
+	if strings.TrimSpace(remote.CredentialRef) == "" || s.libraryCreds == nil {
+		return false
+	}
+	secret, err := s.libraryCreds.GetRemoteAPIKey(remote)
+	return err == nil && strings.TrimSpace(secret) != ""
+}
+
+func (s *Server) sanitizeLibraryRemote(remote *LibraryRemote) LibraryRemote {
 	if remote == nil {
 		return LibraryRemote{}
 	}
 	copied := *remote
 	copied.APIKey = ""
+	copied.CredentialConfigured = s.remoteCredentialConfigured(copied)
 	return copied
 }
 
@@ -1111,7 +1636,6 @@ func (s *Server) rememberLibraryLink(remoteID string, kind string, sourceInstanc
 		remoteID = "direct"
 	}
 	s.libraryMu.Lock()
-	defer s.libraryMu.Unlock()
 	s.libraryLinks[libraryLinkKey(remoteID, kind, sourceInstanceID, sourceItemID)] = &librarySyncLink{
 		RemoteID:          remoteID,
 		Kind:              normalizeLibraryKind(kind),
@@ -1123,6 +1647,8 @@ func (s *Server) rememberLibraryLink(remoteID string, kind string, sourceInstanc
 		RemoteContentHash: remoteHash,
 		LastSyncedAt:      time.Now().UTC(),
 	}
+	s.libraryMu.Unlock()
+	s.persistLibraryLinks()
 }
 
 func libraryLinkKey(remoteID string, kind string, sourceInstanceID string, sourceItemID string) string {
@@ -1197,6 +1723,249 @@ func (s *Server) rememberRemoteImportLinks(remoteID string, bundle *LibraryBundl
 	}
 }
 
+func readLibraryArchiveImportRequest(r *http.Request) (LibraryImportRequest, *libraryArchiveImport, func(), error) {
+	reader, err := r.MultipartReader()
+	if err != nil {
+		return LibraryImportRequest{}, nil, nil, fmt.Errorf("invalid multipart archive import: %w", err)
+	}
+	var req LibraryImportRequest
+	req.ProjectID = strings.TrimSpace(r.URL.Query().Get("project_id"))
+	var bundleSeen bool
+	var archivePath string
+	var archiveSize int64
+	cleanup := func() {
+		if archivePath != "" {
+			_ = os.Remove(archivePath)
+		}
+	}
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			cleanup()
+			return LibraryImportRequest{}, nil, nil, err
+		}
+		switch part.FormName() {
+		case "bundle":
+			if err := json.NewDecoder(io.LimitReader(part, 16*1024*1024)).Decode(&req.Bundle); err != nil {
+				cleanup()
+				return LibraryImportRequest{}, nil, nil, fmt.Errorf("invalid bundle part: %w", err)
+			}
+			bundleSeen = true
+		case "project_id":
+			data, err := io.ReadAll(io.LimitReader(part, 4096))
+			if err != nil {
+				cleanup()
+				return LibraryImportRequest{}, nil, nil, err
+			}
+			req.ProjectID = strings.TrimSpace(string(data))
+		case "archive":
+			tmp, err := os.CreateTemp("", "apexload-library-import-*.zip")
+			if err != nil {
+				cleanup()
+				return LibraryImportRequest{}, nil, nil, err
+			}
+			archivePath = tmp.Name()
+			archiveSize, err = copyWithMaxBytes(tmp, part, libraryArchiveMaxBytes())
+			closeErr := tmp.Close()
+			if err != nil {
+				cleanup()
+				return LibraryImportRequest{}, nil, nil, err
+			}
+			if closeErr != nil {
+				cleanup()
+				return LibraryImportRequest{}, nil, nil, closeErr
+			}
+		}
+	}
+	if !bundleSeen {
+		cleanup()
+		return LibraryImportRequest{}, nil, nil, fmt.Errorf("bundle part is required")
+	}
+	if libraryBundleHasStreamedArchive(&req.Bundle) && archivePath == "" {
+		cleanup()
+		return LibraryImportRequest{}, nil, nil, fmt.Errorf("archive part is required for streamed result imports")
+	}
+	if archivePath == "" {
+		return req, nil, cleanup, nil
+	}
+	return req, &libraryArchiveImport{ZipPath: archivePath, SizeBytes: archiveSize}, cleanup, nil
+}
+
+func archiveImportSize(archiveImport *libraryArchiveImport) int64 {
+	if archiveImport == nil {
+		return 0
+	}
+	return archiveImport.SizeBytes
+}
+
+func libraryBundleHasStreamedArchive(bundle *LibraryBundle) bool {
+	if bundle == nil {
+		return false
+	}
+	for _, item := range bundle.Items {
+		if normalizeLibraryKind(item.Kind) == "result" && item.Result != nil && strings.EqualFold(item.Result.ArchiveTransfer, "stream") {
+			return true
+		}
+	}
+	return false
+}
+
+func libraryArchiveMaxBytes() int64 {
+	raw := strings.TrimSpace(os.Getenv("APEXLOAD_LIBRARY_ARCHIVE_MAX_BYTES"))
+	if raw == "" {
+		return defaultLibraryArchiveMaxBytes
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 {
+		return defaultLibraryArchiveMaxBytes
+	}
+	return value
+}
+
+func copyWithMaxBytes(dst io.Writer, src io.Reader, maxBytes int64) (int64, error) {
+	if maxBytes <= 0 {
+		maxBytes = defaultLibraryArchiveMaxBytes
+	}
+	limited := &io.LimitedReader{R: src, N: maxBytes + 1}
+	written, err := io.Copy(dst, limited)
+	if err != nil {
+		return written, err
+	}
+	if written > maxBytes {
+		return written, fmt.Errorf("archive exceeds maximum size of %d bytes", maxBytes)
+	}
+	return written, nil
+}
+
+func unzipArchiveFile(zipPath string, destination string, maxBytes int64) error {
+	reader, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return fmt.Errorf("open archive zip: %w", err)
+	}
+	defer reader.Close()
+	if err := os.MkdirAll(destination, 0o755); err != nil {
+		return err
+	}
+	var total int64
+	for _, file := range reader.File {
+		cleanName := filepath.Clean(file.Name)
+		if cleanName == "." || strings.HasPrefix(cleanName, ".."+string(filepath.Separator)) || filepath.IsAbs(cleanName) {
+			return fmt.Errorf("archive contains unsafe path %q", file.Name)
+		}
+		target := filepath.Join(destination, cleanName)
+		if file.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, file.Mode()); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		src, err := file.Open()
+		if err != nil {
+			return err
+		}
+		dst, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, file.Mode())
+		if err != nil {
+			_ = src.Close()
+			return err
+		}
+		remaining := maxBytes - total
+		if remaining <= 0 {
+			_ = dst.Close()
+			_ = src.Close()
+			return fmt.Errorf("archive exceeds maximum size of %d bytes", maxBytes)
+		}
+		written, copyErr := copyWithMaxBytes(dst, src, remaining)
+		closeDstErr := dst.Close()
+		closeSrcErr := src.Close()
+		total += written
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeDstErr != nil {
+			return closeDstErr
+		}
+		if closeSrcErr != nil {
+			return closeSrcErr
+		}
+		if total > maxBytes {
+			return fmt.Errorf("archive exceeds maximum size of %d bytes", maxBytes)
+		}
+	}
+	return nil
+}
+
+func importLegacyArchiveZipB64(encoded string, destination string, maxBytes int64) error {
+	tmp, err := os.CreateTemp("", "apexload-library-legacy-*.zip")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	_, err = copyWithMaxBytes(tmp, base64.NewDecoder(base64.StdEncoding, strings.NewReader(encoded)), maxBytes)
+	closeErr := tmp.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return unzipArchiveFile(tmpPath, destination, maxBytes)
+}
+
+func libraryImportedArchiveDir(importID string) string {
+	return filepath.Join(resolveArchiveRoot(), "library-imports", strings.TrimSpace(importID))
+}
+
+func archiveDirectorySize(dir string) int64 {
+	var total int64
+	if strings.TrimSpace(dir) == "" {
+		return 0
+	}
+	_ = filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry == nil || entry.IsDir() {
+			return nil
+		}
+		if info, statErr := entry.Info(); statErr == nil {
+			total += info.Size()
+		} else if info, statErr := os.Stat(path); statErr == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
+}
+
+func hashArchiveManifest(record *storage.RunArchiveRecord) string {
+	if record == nil {
+		return ""
+	}
+	if strings.TrimSpace(record.ManifestPath) != "" {
+		return hashArchiveManifestPath(record.ManifestPath)
+	}
+	if strings.TrimSpace(record.ArchivePath) != "" {
+		return hashArchiveManifestPath(filepath.Join(record.ArchivePath, "manifest.json"))
+	}
+	return ""
+}
+
+func hashArchiveManifestPath(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return ""
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(payload)
+	return fmt.Sprintf("sha256:%x", sum[:])
+}
+
 func resolveLibraryTransferProjectID(r *http.Request, store storage.Store) (string, int, string) {
 	var req LibraryTransferRequest
 	if err := decodeRequestBody(r, &req); err != nil {
@@ -1253,4 +2022,19 @@ func resolveLibraryImportProjectID(r *http.Request, _ storage.Store) (string, in
 		}
 	}
 	return "", 0, ""
+}
+
+func resolveLibraryResultArchiveProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", 0, ""
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		return "", http.StatusBadRequest, "result id is required"
+	}
+	test, err := store.GetTest(id)
+	if err != nil {
+		return "", http.StatusNotFound, "result not found"
+	}
+	return normalizeProjectID(test.ProjectID), 0, ""
 }

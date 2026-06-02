@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -35,6 +36,7 @@ type Server struct {
 	libraryMu      sync.Mutex
 	libraryRemotes map[string]*LibraryRemote
 	libraryLinks   map[string]*librarySyncLink
+	libraryCreds   LibraryCredentialStore
 	c4Mu           sync.Mutex
 	slaWaivers     map[string][]*storage.ReleaseSLAWaiver
 	resultImports  map[string]*storage.ExternalResultImport
@@ -42,18 +44,27 @@ type Server struct {
 	usageCancel    context.CancelFunc
 	fanoutCancel   context.CancelFunc
 	fanoutSub      FanoutSubscription
+	desktopMode    bool
+	desktopAppData string
+	desktopLogPath string
+	boundAddr      string
+	boundAddrMu    sync.RWMutex
 }
 
 // ServerConfig configures API server startup behavior and integrations.
 type ServerConfig struct {
-	Addr             string
-	ProxyAddr        string
-	MaxConcurrent    int
-	AllowedOrigins   []string
-	Store            storage.Store
-	Cache            CacheBackend
-	GeneratorTargets []string
-	GeneratorTimeout time.Duration
+	Addr               string
+	ProxyAddr          string
+	MaxConcurrent      int
+	AllowedOrigins     []string
+	Store              storage.Store
+	Cache              CacheBackend
+	LibraryCredentials LibraryCredentialStore
+	GeneratorTargets   []string
+	GeneratorTimeout   time.Duration
+	DesktopMode        bool
+	DesktopAppDataPath string
+	DesktopLogPath     string
 }
 
 // NewServer wires the HTTP server, test runner, websocket hub, recorder, and routes.
@@ -63,6 +74,9 @@ func NewServer(cfg ServerConfig) *Server {
 	}
 	if cfg.MaxConcurrent <= 0 {
 		cfg.MaxConcurrent = 10
+	}
+	if cfg.LibraryCredentials == nil {
+		cfg.LibraryCredentials = NewEnvLibraryCredentialStore()
 	}
 
 	hub := NewHub()
@@ -96,11 +110,16 @@ func NewServer(cfg ServerConfig) *Server {
 		authoring:      make(map[string]*storage.AuthoringSession),
 		libraryRemotes: make(map[string]*LibraryRemote),
 		libraryLinks:   make(map[string]*librarySyncLink),
+		libraryCreds:   cfg.LibraryCredentials,
 		slaWaivers:     make(map[string][]*storage.ReleaseSLAWaiver),
 		resultImports:  make(map[string]*storage.ExternalResultImport),
 		mux:            http.NewServeMux(),
+		desktopMode:    cfg.DesktopMode,
+		desktopAppData: cfg.DesktopAppDataPath,
+		desktopLogPath: cfg.DesktopLogPath,
 	}
 
+	s.loadLibraryState()
 	s.routes(cfg.AllowedOrigins)
 
 	s.httpServer = &http.Server{
@@ -416,6 +435,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/system/usage/snapshots", cors(log(auth(http.HandlerFunc(s.handleCreateUsageAccountingSnapshot)))))
 	s.mux.Handle("GET /api/v1/system/parity-status", cors(log(auth(http.HandlerFunc(s.handleGetParityStatus)))))
 	s.mux.Handle("GET /api/v1/system/browser-benchmarks", cors(log(auth(http.HandlerFunc(s.handleGetBrowserBenchmarkEvidence)))))
+	s.mux.Handle("GET /api/v1/desktop/status", cors(log(auth(http.HandlerFunc(s.handleDesktopStatus)))))
 	s.mux.Handle("GET /api/v1/runtime-settings/support-matrix", cors(log(auth(http.HandlerFunc(s.handleRuntimeSettingsSupportMatrix)))))
 	s.mux.Handle("GET /api/v1/protocol-bundles/support-matrix", cors(log(auth(http.HandlerFunc(s.handleProtocolBundleSupportMatrix)))))
 	s.mux.Handle("GET /api/v1/protocols/native-support-matrix", cors(log(auth(http.HandlerFunc(s.handleNativeProtocolSupportMatrix)))))
@@ -426,8 +446,12 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/library/catalog", cors(log(auth(http.HandlerFunc(s.handleLibraryCatalog)))))
 	s.mux.Handle("POST /api/v1/library/export", cors(log(auth(http.HandlerFunc(s.handleLibraryExport)))))
 	s.mux.Handle("POST /api/v1/library/import", cors(log(auth(http.HandlerFunc(s.handleLibraryImport)))))
+	s.mux.Handle("POST /api/v1/library/import/archive", cors(log(auth(http.HandlerFunc(s.handleLibraryImportArchive)))))
+	s.mux.Handle("GET /api/v1/library/results/{id}/archive", cors(log(auth(http.HandlerFunc(s.handleLibraryResultArchive)))))
 	s.mux.Handle("GET /api/v1/library/remotes", cors(log(auth(http.HandlerFunc(s.handleLibraryListRemotes)))))
 	s.mux.Handle("POST /api/v1/library/remotes", cors(log(auth(http.HandlerFunc(s.handleLibraryCreateRemote)))))
+	s.mux.Handle("PUT /api/v1/library/remotes/{id}", cors(log(auth(http.HandlerFunc(s.handleLibraryUpdateRemote)))))
+	s.mux.Handle("DELETE /api/v1/library/remotes/{id}", cors(log(auth(http.HandlerFunc(s.handleLibraryDeleteRemote)))))
 	s.mux.Handle("POST /api/v1/library/remotes/{id}/probe", cors(log(auth(http.HandlerFunc(s.handleLibraryProbeRemote)))))
 	s.mux.Handle("GET /api/v1/library/remotes/{id}/catalog", cors(log(auth(http.HandlerFunc(s.handleLibraryRemoteCatalog)))))
 	s.mux.Handle("POST /api/v1/library/remotes/{id}/pull", cors(log(auth(http.HandlerFunc(s.handleLibraryRemotePull)))))
@@ -499,11 +523,48 @@ func (s *Server) Start() error {
 	}
 	s.startUsageAccountingSnapshotCadence()
 
-	slog.Info("apexload API server starting", "addr", s.httpServer.Addr)
-	if err := s.httpServer.ListenAndServe(); err != http.ErrServerClosed {
+	listener, err := net.Listen("tcp", s.httpServer.Addr)
+	if err != nil {
+		return err
+	}
+	s.setBoundAddr(listener.Addr().String())
+	slog.Info("apexload API server starting", "addr", s.httpServer.Addr, "bound_addr", s.BoundAddr())
+	if err := s.httpServer.Serve(listener); err != http.ErrServerClosed {
 		return err
 	}
 	return nil
+}
+
+func (s *Server) setBoundAddr(addr string) {
+	s.boundAddrMu.Lock()
+	defer s.boundAddrMu.Unlock()
+	s.boundAddr = addr
+}
+
+func (s *Server) BoundAddr() string {
+	if s == nil {
+		return ""
+	}
+	s.boundAddrMu.RLock()
+	defer s.boundAddrMu.RUnlock()
+	if s.boundAddr != "" {
+		return s.boundAddr
+	}
+	return s.httpServer.Addr
+}
+
+func (s *Server) BrowserURL() string {
+	addr := s.BoundAddr()
+	if strings.HasPrefix(addr, ":") {
+		addr = "127.0.0.1" + addr
+	}
+	if strings.HasPrefix(addr, "[::]:") {
+		addr = "127.0.0.1:" + strings.TrimPrefix(addr, "[::]:")
+	}
+	if strings.HasPrefix(addr, "0.0.0.0:") {
+		addr = "127.0.0.1:" + strings.TrimPrefix(addr, "0.0.0.0:")
+	}
+	return "http://" + addr
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {

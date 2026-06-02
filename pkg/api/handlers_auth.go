@@ -1243,6 +1243,7 @@ func normalizeServiceAccountScopes(scopes []string) ([]string, error) {
 		"tests:run":               {},
 		"scripts:write":           {},
 		"results:read":            {},
+		"results:write":           {},
 		"system:read":             {},
 		"settings:manage":         {},
 		"service_accounts:manage": {},

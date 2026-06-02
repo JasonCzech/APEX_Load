@@ -20,6 +20,7 @@ import {
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import StatusBadge from './StatusBadge'
+import LibraryAssetSourcePanel from './LibraryAssetSourcePanel'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -865,6 +866,12 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
           )}
         </section>
       </div>
+
+      <LibraryAssetSourcePanel
+        kind="result"
+        projectId={activeRelease.project_id || activeApplication.project_id}
+        onRefreshLocal={() => refresh()}
+      />
 
       <div className="results-filter-bar">
         <input

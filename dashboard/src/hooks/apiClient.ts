@@ -1,7 +1,9 @@
 const DEFAULT_LOCAL_API_ORIGIN = 'http://127.0.0.1:8080'
 export const DEV_VIEW_STORAGE_KEY = 'apexload.devViewMode'
 export const DEV_VIEW_MODE_CHANGED_EVENT = 'apexload:dev-view-mode-changed'
+export const API_ORIGIN_CHANGED_EVENT = 'apexload:api-origin-changed'
 const ACTIVE_PROJECT_STORAGE_KEY = 'apexload.activeProjectId'
+const API_ORIGIN_STORAGE_KEY = 'apexload.apiOrigin'
 const DEV_VIEW_HEADER = 'X-APEXLoad-Dev-View'
 const DEV_PROJECT_HEADER = 'X-APEXLoad-Dev-Project-ID'
 
@@ -13,6 +15,9 @@ type ApiEnvironment = {
 }
 
 type ApiLocation = Pick<Location, 'protocol' | 'hostname' | 'port' | 'origin'>
+type WailsAppBridge = {
+  GetAPIOrigin?: () => Promise<string>
+}
 
 type ApiErrorPayload = {
   error?: string
@@ -44,14 +49,28 @@ function isApiErrorPayload(value: unknown): value is ApiErrorPayload {
   return typeof value === 'object' && value !== null
 }
 
+function isWailsLocation(location: ApiLocation | undefined): boolean {
+  return location?.protocol === 'wails:' || location?.hostname === 'wails.localhost'
+}
+
+function getStoredApiOrigin(): string {
+  return getLocalStorage()?.getItem(API_ORIGIN_STORAGE_KEY)?.trim() || ''
+}
+
+function getWailsAppBridge(): WailsAppBridge | undefined {
+  if (typeof window === 'undefined') return undefined
+  const candidate = (window as unknown as { go?: { main?: { App?: WailsAppBridge } } }).go?.main?.App
+  return candidate
+}
+
 export function resolveApiOrigin(env: ApiEnvironment = getApiEnvironment(), location: ApiLocation | undefined = getWindowLocation()): string {
   const envOrigin = env.VITE_API_ORIGIN
   if (envOrigin && envOrigin.trim()) {
     return trimTrailingSlash(envOrigin.trim())
   }
   // Detect Wails desktop environment
-  if (location?.protocol === 'wails:' || location?.hostname === 'wails.localhost') {
-    return DEFAULT_LOCAL_API_ORIGIN
+  if (isWailsLocation(location)) {
+    return trimTrailingSlash(getStoredApiOrigin() || DEFAULT_LOCAL_API_ORIGIN)
   }
   if (location?.protocol === 'file:') {
     return DEFAULT_LOCAL_API_ORIGIN
@@ -71,8 +90,34 @@ export function resolveApiOrigin(env: ApiEnvironment = getApiEnvironment(), loca
   return DEFAULT_LOCAL_API_ORIGIN
 }
 
-export const API_ORIGIN = resolveApiOrigin()
-export const BASE = `${API_ORIGIN}/api/v1`
+export let API_ORIGIN = resolveApiOrigin()
+export let BASE = `${API_ORIGIN}/api/v1`
+
+export function setApiOrigin(origin: string): void {
+  const normalized = trimTrailingSlash(origin.trim())
+  if (!normalized) return
+  API_ORIGIN = normalized
+  BASE = `${API_ORIGIN}/api/v1`
+  getLocalStorage()?.setItem(API_ORIGIN_STORAGE_KEY, normalized)
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(API_ORIGIN_CHANGED_EVENT, { detail: normalized }))
+  }
+}
+
+export async function initializeDesktopApiOrigin(): Promise<void> {
+  const location = getWindowLocation()
+  if (!isWailsLocation(location)) return
+  const bridge = getWailsAppBridge()
+  if (!bridge?.GetAPIOrigin) return
+  try {
+    const origin = await bridge.GetAPIOrigin()
+    if (origin?.trim()) {
+      setApiOrigin(origin)
+    }
+  } catch {
+    // Keep the default local API origin when the Wails bridge is unavailable.
+  }
+}
 
 export function normalizeDevViewMode(value: unknown): DevViewMode {
   return value === 'user' ? 'user' : 'admin'
@@ -132,8 +177,12 @@ async function parseJsonResponse(res: Response): Promise<unknown> {
   }
   const text = await res.text()
   const snippet = text.trim().slice(0, 180)
+  const isHTML = contentType.includes('text/html') || snippet.toLowerCase().startsWith('<!doctype html') || snippet.toLowerCase().startsWith('<html')
+  const message = isHTML
+    ? 'API endpoint returned the dashboard HTML instead of JSON. The backend route may be unavailable or the local dev proxy may be pointed at an older controller.'
+    : `Expected JSON response from API but received ${contentType || 'non-JSON content'}`
   throw new ApiError(
-    `Expected JSON response from API but received ${contentType || 'non-JSON content'}${snippet ? `: ${snippet}` : ''}`,
+    message,
     res.status,
     { content_type: contentType, body: snippet },
   )

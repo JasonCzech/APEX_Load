@@ -107,4 +107,21 @@ describe('dev preview API headers', () => {
     expect(headers.get('X-APEXLoad-Dev-View')).toBe('admin')
     expect(headers.get('Content-Type')).toBe('application/json')
   })
+
+  it('reports dashboard HTML fallbacks as unavailable API routes without echoing markup', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('<!DOCTYPE html><html><head><title>APEX Load</title></head></html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    }))
+
+    let message = ''
+    try {
+      await request('/library/remotes')
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error)
+    }
+
+    expect(message).toContain('backend route may be unavailable')
+    expect(message).not.toContain('<!DOCTYPE html>')
+  })
 })

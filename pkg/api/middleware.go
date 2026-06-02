@@ -485,7 +485,7 @@ func serviceAccountAllowsRequest(account *AuthenticatedServiceAccount, r *http.R
 		if required == "read" && (scope == "results:read" || scope == "system:read" || scope == "audit:read") {
 			return true
 		}
-		if required == "write" && (scope == "scripts:write" || scope == "tests:run" || scope == "settings:manage" || scope == "service_accounts:manage") {
+		if required == "write" && (scope == "scripts:write" || scope == "tests:run" || scope == "results:write" || scope == "settings:manage" || scope == "service_accounts:manage") {
 			return true
 		}
 	}
@@ -520,11 +520,23 @@ func requiredServiceAccountScope(r *http.Request) string {
 		if method == http.MethodGet || method == http.MethodHead {
 			return "results:read"
 		}
-		return "tests:run"
+		return "results:write"
 	}
 	if strings.HasPrefix(path, "/api/v1/library") {
 		if method == http.MethodGet || method == http.MethodHead || path == "/api/v1/library/export" || strings.HasSuffix(path, "/diff") {
 			return "read"
+		}
+		if path == "/api/v1/library/import/archive" {
+			return "results:write"
+		}
+		if path == "/api/v1/library/import" {
+			return requiredLibraryImportServiceAccountScope(r)
+		}
+		if path == "/api/v1/library/remotes" || strings.HasSuffix(path, "/probe") || method == http.MethodPut || method == http.MethodDelete {
+			return "settings:manage"
+		}
+		if strings.HasSuffix(path, "/pull") || strings.HasSuffix(path, "/push") {
+			return requiredLibraryTransferServiceAccountScope(r)
 		}
 		return "write"
 	}
@@ -544,6 +556,47 @@ func requiredServiceAccountScope(r *http.Request) string {
 		return "read"
 	}
 	return "write"
+}
+
+func requiredLibraryTransferServiceAccountScope(r *http.Request) string {
+	var req LibraryTransferRequest
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "write"
+	}
+	return serviceAccountScopeForLibraryKind(req.Kind)
+}
+
+func requiredLibraryImportServiceAccountScope(r *http.Request) string {
+	var req LibraryImportRequest
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "write"
+	}
+	scope := ""
+	for _, item := range req.Bundle.Items {
+		next := serviceAccountScopeForLibraryKind(item.Kind)
+		if next == "results:write" {
+			return next
+		}
+		if next == "tests:run" {
+			scope = next
+		} else if scope == "" {
+			scope = next
+		}
+	}
+	return firstNonEmpty(scope, "write")
+}
+
+func serviceAccountScopeForLibraryKind(kind string) string {
+	switch normalizeLibraryKind(kind) {
+	case "script":
+		return "scripts:write"
+	case "scenario":
+		return "tests:run"
+	case "result":
+		return "results:write"
+	default:
+		return "write"
+	}
 }
 
 func normalizeAuthenticatedServiceAccountScopes(scopes []string) []string {
@@ -817,7 +870,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
 	}
 
-	if (path == "/api/v1/system/inventory" || path == "/api/v1/system/usage" || path == "/api/v1/system/usage/export" || path == "/api/v1/system/usage/snapshots" || path == "/api/v1/system/parity-status" || path == "/api/v1/system/browser-benchmarks" || path == "/api/v1/runtime-settings/support-matrix" || path == "/api/v1/protocol-bundles/support-matrix" || path == "/api/v1/protocols/native-support-matrix" || path == "/api/v1/fleet/alerts" || path == "/api/v1/fleet/capacity") && method == http.MethodGet {
+	if (path == "/api/v1/system/inventory" || path == "/api/v1/system/usage" || path == "/api/v1/system/usage/export" || path == "/api/v1/system/usage/snapshots" || path == "/api/v1/system/parity-status" || path == "/api/v1/system/browser-benchmarks" || path == "/api/v1/desktop/status" || path == "/api/v1/runtime-settings/support-matrix" || path == "/api/v1/protocol-bundles/support-matrix" || path == "/api/v1/protocols/native-support-matrix" || path == "/api/v1/fleet/alerts" || path == "/api/v1/fleet/capacity") && method == http.MethodGet {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
 
@@ -856,6 +909,22 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}, true
 	}
 
+	if path == "/api/v1/library/import/archive" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveProjectIDFromQuery,
+		}, true
+	}
+
+	if strings.HasPrefix(path, "/api/v1/library/results/") && strings.HasSuffix(path, "/archive") && method == http.MethodGet {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveLibraryResultArchiveProjectID,
+		}, true
+	}
+
 	if path == "/api/v1/library/remotes" {
 		if method == http.MethodGet {
 			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
@@ -866,6 +935,9 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 	}
 
 	if strings.HasPrefix(path, "/api/v1/library/remotes/") {
+		if (method == http.MethodPut || method == http.MethodDelete) && !strings.Contains(path, "/catalog") && !strings.Contains(path, "/pull") && !strings.Contains(path, "/push") && !strings.Contains(path, "/diff") {
+			return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
+		}
 		if strings.HasSuffix(path, "/catalog") && method == http.MethodGet {
 			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 		}

@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestLibraryExportImportScenarioIncludesScriptDependency(t *testing.T) {
@@ -169,8 +172,70 @@ func TestLibraryPullDetectsLocalAndRemoteConflict(t *testing.T) {
 	}
 }
 
+func TestLibraryRemoteStatePersistsThroughSettingsStore(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "apexload.db")
+	store, err := storage.NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	creds := NewMemoryLibraryCredentialStore()
+	server := NewServer(ServerConfig{Store: store, LibraryCredentials: creds})
+
+	body := marshalLibraryTestJSON(t, LibraryRemoteRequest{
+		Name:             "Team Host",
+		BaseURL:          "https://host.example.test",
+		DefaultProjectID: "team-project",
+		AuthMethod:       "service_account",
+		APIKey:           "secret-token",
+	})
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/remotes", bytes.NewReader(body)))
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create remote status = %d body=%s", createResp.Code, createResp.Body.String())
+	}
+	var created LibraryRemote
+	if err := json.NewDecoder(createResp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created remote: %v", err)
+	}
+	if created.APIKey != "" {
+		t.Fatal("remote create response leaked api key")
+	}
+	raw, err := store.GetSetting(libraryRemotesSettingKey)
+	if err != nil {
+		t.Fatalf("GetSetting remotes: %v", err)
+	}
+	if !strings.Contains(raw, created.ID) {
+		t.Fatalf("persisted remotes did not include created id %q: %s", created.ID, raw)
+	}
+	if strings.Contains(raw, "secret-token") {
+		t.Fatalf("persisted remote settings leaked api key: %s", raw)
+	}
+
+	reopened := NewServer(ServerConfig{Store: store, LibraryCredentials: creds})
+	listResp := httptest.NewRecorder()
+	reopened.mux.ServeHTTP(listResp, httptest.NewRequest(http.MethodGet, "/api/v1/library/remotes", nil))
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list remotes status = %d body=%s", listResp.Code, listResp.Body.String())
+	}
+	var listed LibraryRemoteListResponse
+	if err := json.NewDecoder(listResp.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode listed remotes: %v", err)
+	}
+	if len(listed.Remotes) != 1 {
+		t.Fatalf("listed remotes = %d, want 1", len(listed.Remotes))
+	}
+	if listed.Remotes[0].ID != created.ID || !listed.Remotes[0].CredentialConfigured {
+		t.Fatalf("listed remote = %#v, want persisted remote with credential configured", listed.Remotes[0])
+	}
+	if listed.Remotes[0].APIKey != "" {
+		t.Fatal("remote list response leaked api key")
+	}
+}
+
 func createLibraryRemoteForTest(t *testing.T, server *Server, baseURL string, projectID string) LibraryRemote {
 	t.Helper()
+	server.libraryCreds = NewMemoryLibraryCredentialStore()
 	body := marshalLibraryTestJSON(t, LibraryRemoteRequest{
 		Name:             "K8s Host",
 		BaseURL:          baseURL,

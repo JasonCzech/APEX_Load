@@ -7,6 +7,7 @@ import AuthoringSessionsPanel from './AuthoringSessionsPanel'
 import ScriptsAuthoringShell from './ScriptsAuthoringShell'
 import ScriptsLibraryTable from './ScriptsLibraryTable'
 import PageViewToggle from './PageViewToggle'
+import LibraryAssetSourcePanel from './LibraryAssetSourcePanel'
 import { type ScriptDefinition } from '../types/scripts'
 import { useScriptsLibraryModel } from './useScriptsLibraryModel'
 import { type ImportedSaveResult, type ScriptsAuthoringSubView, useScriptsAuthoringState } from './useScriptsAuthoringState'
@@ -374,6 +375,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
               </button>
             ))}
           </div>
+          <LibraryAssetSourcePanel kind="script" projectId={activeProject?.id} onRefreshLocal={refresh} />
           <ScriptsLibraryTable
             scripts={sortedScripts}
             sortField={sortField}
