@@ -194,6 +194,14 @@ describe('TestExecutionArchive', () => {
     ],
     by_action: {},
     by_soap_operation: {},
+    by_region: {
+      'us-east': { transactions: 80, errors: 2, error_pct: 2.5, avg_response_ms: 120, min_response_ms: 40, max_response_ms: 300 },
+      'eu-west': { transactions: 20, errors: 0, error_pct: 0, avg_response_ms: 210, min_response_ms: 90, max_response_ms: 420 },
+    },
+    by_network_profile: {
+      '4g': { transactions: 70, errors: 1, error_pct: 1.4, avg_response_ms: 95, min_response_ms: 30, max_response_ms: 280 },
+      '3g': { transactions: 30, errors: 3, error_pct: 10, avg_response_ms: 320, min_response_ms: 150, max_response_ms: 800 },
+    },
     by_soap_fault_code: {},
     by_soap_fault_category: {},
     summary_timeline: [{
@@ -377,6 +385,12 @@ describe('TestExecutionArchive', () => {
         />,
       )
     })
+
+    expect(container.querySelector('[data-testid="archive-by-region"]')).toBeTruthy()
+    expect(container.textContent).toContain('Region Summary')
+    expect(container.textContent).toContain('us-east')
+    expect(container.querySelector('[data-testid="archive-by-network-profile"]')).toBeTruthy()
+    expect(container.textContent).toContain('Network Profile Summary')
 
     expect(container.textContent).toContain('SOAP Fault')
     expect(container.textContent).toContain('SOAP 1.2')

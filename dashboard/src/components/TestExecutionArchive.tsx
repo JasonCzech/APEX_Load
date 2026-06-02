@@ -653,6 +653,8 @@ export default function TestExecutionArchive({
   const [summaryTimelineExpanded, setSummaryTimelineExpanded] = useState(false)
   const [summaryTimelineErrorsOnly, setSummaryTimelineErrorsOnly] = useState(false)
   const soapOperationEntries = archiveSOAPOperationEntries.length > 0 ? archiveSOAPOperationEntries : buildArchiveStatsEntries(archiveReport?.by_soap_operation)
+  const regionEntries = buildArchiveStatsEntries(archiveReport?.by_region)
+  const networkProfileEntries = buildArchiveStatsEntries(archiveReport?.by_network_profile)
   const soapFaultCodeEntries = buildArchiveCountEntries(archiveReport?.by_soap_fault_code)
   const soapFaultCategoryEntries = buildArchiveCountEntries(archiveReport?.by_soap_fault_category)
   const soapFaultTimelineEntries = buildArchiveFaultTimelineEntries(archiveReport?.soap_fault_timeline)
@@ -1156,6 +1158,76 @@ export default function TestExecutionArchive({
                     </thead>
                     <tbody>
                       {soapOperationEntries.slice(0, 8).map(([name, stats]) => (
+                        <tr key={name}>
+                          <td className="tx-name">{name}</td>
+                          <td>{stats.transactions}</td>
+                          <td className={stats.errors > 0 ? 'error-cell' : ''}>{stats.errors}</td>
+                          <td>{stats.error_pct.toFixed(2)}%</td>
+                          <td>{stats.avg_response_ms.toFixed(1)}</td>
+                          <td>{stats.max_response_ms.toFixed(1)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+
+              {regionEntries.length > 0 && (
+                <>
+                  <div className="archive-section-header archive-subsection-header">
+                    <div>
+                      <h3 className="chart-title">Region Summary</h3>
+                      <p className="archive-section-copy">Archived response time and errors grouped by the generator region that produced each transaction.</p>
+                    </div>
+                  </div>
+                  <table className="tx-table" data-testid="archive-by-region">
+                    <thead>
+                      <tr>
+                        <th>Region</th>
+                        <th>Count</th>
+                        <th>Errors</th>
+                        <th>Error %</th>
+                        <th>Avg (ms)</th>
+                        <th>Max (ms)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {regionEntries.map(([name, stats]) => (
+                        <tr key={name}>
+                          <td className="tx-name">{name}</td>
+                          <td>{stats.transactions}</td>
+                          <td className={stats.errors > 0 ? 'error-cell' : ''}>{stats.errors}</td>
+                          <td>{stats.error_pct.toFixed(2)}%</td>
+                          <td>{stats.avg_response_ms.toFixed(1)}</td>
+                          <td>{stats.max_response_ms.toFixed(1)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+
+              {networkProfileEntries.length > 0 && (
+                <>
+                  <div className="archive-section-header archive-subsection-header">
+                    <div>
+                      <h3 className="chart-title">Network Profile Summary</h3>
+                      <p className="archive-section-copy">Archived response time and errors grouped by the assigned network condition (population mix).</p>
+                    </div>
+                  </div>
+                  <table className="tx-table" data-testid="archive-by-network-profile">
+                    <thead>
+                      <tr>
+                        <th>Profile</th>
+                        <th>Count</th>
+                        <th>Errors</th>
+                        <th>Error %</th>
+                        <th>Avg (ms)</th>
+                        <th>Max (ms)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {networkProfileEntries.map(([name, stats]) => (
                         <tr key={name}>
                           <td className="tx-name">{name}</td>
                           <td>{stats.transactions}</td>

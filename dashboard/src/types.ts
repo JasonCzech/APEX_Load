@@ -691,6 +691,7 @@ export interface RunArchiveReport {
   by_action: Record<string, RunArchiveActionStats>
   by_soap_operation?: Record<string, RunArchiveActionStats>
   by_network_profile?: Record<string, RunArchiveActionStats>
+  by_region?: Record<string, RunArchiveActionStats>
   by_soap_fault_code?: Record<string, number>
   by_soap_fault_category?: Record<string, number>
   soap_fault_timeline?: RunArchiveSOAPFaultTimelineBucket[]
