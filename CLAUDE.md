@@ -124,8 +124,10 @@ go test ./...
 ```
 
 ## Performance Targets
-These are design targets, not yet backed by published benchmark artifacts. Do not cite as achieved.
-- Harness overhead per transaction: < 50 μs
+Design targets. The harness-overhead target now has a reproducible micro-benchmark
+(`docs/BENCHMARK_HARNESS_OVERHEAD.md`, ~8 ns/op metrics hot path); the VUser-density
+and ramp targets remain unbenchmarked — do not cite those as achieved.
+- Harness overhead per transaction: < 50 μs (metrics hot path benchmarked ≪ target)
 - VUsers per pod (HTTP): 10,000 on 4 vCPU / 8 GB
 - Metrics latency (generator → dashboard): < 2 seconds
 - Ramp-up rate: 500 VUsers/second/pod
