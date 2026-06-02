@@ -253,6 +253,25 @@ Ranked by leverage toward closing the LRE gap (functionality + usability), with 
 | **P2** | **Browser/SPA recording fidelity** — DOM-aware capture, *or* crisply document canary-only positioning | Needed for SPA-heavy shops; otherwise scope it out loudly so it stops reading as a hidden gap. | L (or scope-out) |
 | **P2** | **Region/load-zone distribution + per-region response metrics** | Matches LRE geo testing; the distributed backend already exists, so this is incremental. | M |
 | **P3** | **Enterprise hardening** — real OTel instrumentation, PDF reports, Vault/mTLS, test-level approvals + quota enforcement | Individually small, collectively close the "governable shared service" gap. | M each |
+| **P4** | **Shared-service operations** — capabilities LRE has for running a shared load lab that the earlier tiers missed (see below) | These are load-realism and capacity-governance gaps, not analysis polish. | mixed |
+
+### P4: Shared-Service Operations (newly identified gaps)
+
+These surfaced on a second pass and were not in the original P0–P3 ranking. They
+are load-realism and shared-lab capacity concerns, distinct from the
+analysis/reporting polish in P1 (which is deprioritized for now).
+
+| Gap | LRE has | APEX today | Verdict | Effort |
+|---|---|---|---|---|
+| **Multiple source IPs / IP spoofing** | Multi-IP per generator to simulate many distinct client addresses (defeat server-side IP throttling/sticky balancing) | No real support — `lr_enable/disable_ip_spoofing` are no-op import stubs; HTTP dialer binds no `LocalAddr` | **▼** (partly mitigated by per-pod IPs in K8s) | S–M |
+| **Generator capacity reservation / reserved pools** | Calendar-reserved generator timeslots + reserved capacity slices for critical teams | Tests are scheduled; capacity is advisory only — no reservation/reserved pools | **▼** | M |
+| **On-demand cloud LG provisioning** | Provisions AWS/Azure generators on demand into named regions | K8s HPA scales pods; no named-cloud-region on-demand provisioning | **▼** (K8s autoscaling is a partial modern equivalent) | L |
+| **Server-side code-level diagnostics** | J2EE/.NET method-level diagnostics (ERT), call-stack drill-down | APM events + Prometheus scrape; no method-level breakdown | **▼** (APM-integration concern more than core load-tool gap) | L |
+| **Deeper Network Virtualization** | Captured real-network profiles + per-link topology | Bandwidth/jitter/packet-loss/latency shaping (NV-lite) | **= / ▼** (basics covered; captured-profile fidelity missing) | M |
+
+**Non-goals (named so they aren't silent):** ALM/Quality-Center test-management &
+defect integration, Service Virtualization integration, native SAML (OIDC /
+trusted-header is the supported path).
 
 ### Delivered (P0–P3)
 
