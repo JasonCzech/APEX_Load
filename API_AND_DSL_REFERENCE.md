@@ -1029,6 +1029,7 @@ Emits JSON messages for all test events:
 - `config.web_runtime.network_simulation.preset`: `56k`, `dsl`, `t1`, or `10mbps`
 - `config.web_runtime.network_simulation.bandwidth_kbps`, `config.web_runtime.network_simulation.latency_ms`: Custom transport shaping values
 - `config.web_runtime.network_simulation.jitter_ms`, `config.web_runtime.network_simulation.packet_loss_pct`: Optional jitter and packet-loss simulation values for custom HTTP transport shaping
+- `config.web_runtime.source_ips[]`: Pool of local client IP addresses to bind outgoing HTTP connections to (LoadRunner-style "IP spoofing" / multiple IPs). VUsers are distributed round-robin across the pool (stable per VUser), so the test presents many distinct source addresses to the target — useful to defeat server-side IP throttling or sticky load balancing. The generator host must own these addresses.
 - `config.web_runtime.streaming.mode`: `adaptive` or `fixed` media-response pacing mode
 - `config.web_runtime.streaming.buffer_size_seconds`: Startup buffering delay for media-like HTTP responses
 - `config.web_runtime.streaming.fixed_bitrate_kbps`: Fixed-bitrate media-response shaping value

@@ -210,6 +210,11 @@ type WebRuntimeConfig struct {
 	NetworkSimulation    NetworkSimulationConfig `json:"network_simulation,omitempty"`
 	Streaming            StreamingConfig         `json:"streaming,omitempty"`
 	DataFormatting       DataFormattingConfig    `json:"data_formatting,omitempty"`
+	// SourceIPs is a pool of local client IP addresses to bind outgoing
+	// connections to (LR-style "IP spoofing" / multiple IPs). VUsers are
+	// distributed across the pool so the test presents many distinct client
+	// addresses. The generator host must own these addresses.
+	SourceIPs []string `json:"source_ips,omitempty"`
 }
 
 type DownloadFiltersConfig struct {

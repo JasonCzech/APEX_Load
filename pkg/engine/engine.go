@@ -152,7 +152,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 			wg.Done()
 			continue
 		}
-		if err := vuProto.Init(ctx, protoConfig); err != nil {
+		if err := vuProto.Init(ctx, vuserProtoConfig(protoConfig, vuserID)); err != nil {
 			slog.Error("failed to init protocol for vuser", "vuser", vuserID, "err", err)
 			wg.Done()
 			continue
@@ -239,7 +239,7 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 				slog.Error("failed to create protocol for arrival worker", "arrival", workerID, "err", err)
 				return
 			}
-			if err := vuProto.Init(ctx, protoConfig); err != nil {
+			if err := vuProto.Init(ctx, vuserProtoConfig(protoConfig, workerID)); err != nil {
 				slog.Error("failed to init protocol for arrival worker", "arrival", workerID, "err", err)
 				return
 			}

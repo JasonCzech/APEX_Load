@@ -10,6 +10,51 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 	return buildProtoConfigWithSecretResolver(script, newDefaultSecretResolver())
 }
 
+// normalizeSourceIPs trims, drops blanks, and de-duplicates a source-IP pool.
+func normalizeSourceIPs(ips []string) []string {
+	if len(ips) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(ips))
+	out := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		trimmed := strings.TrimSpace(ip)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// vuserProtoConfig returns the proto config a specific VUser should initialize
+// with. When a source-IP pool is configured, each VUser is bound to one IP from
+// the pool (stable per VUser id), so the test presents many distinct client
+// addresses. Without a pool it returns the shared base config unchanged.
+func vuserProtoConfig(base map[string]any, vuserID int) map[string]any {
+	pool, ok := base["web_source_ips"].([]string)
+	if !ok || len(pool) == 0 {
+		return base
+	}
+	idx := vuserID % len(pool)
+	if idx < 0 {
+		idx += len(pool)
+	}
+	clone := make(map[string]any, len(base)+1)
+	for k, v := range base {
+		clone[k] = v
+	}
+	clone["web_source_ip"] = pool[idx]
+	return clone
+}
+
 func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResolver) map[string]any {
 	cfg := map[string]any{
 		"base_url": script.Config.BaseURL,
@@ -104,6 +149,9 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 		if networkCfg.PacketLossPct > 0 {
 			cfg["web_network_simulation_packet_loss_pct"] = networkCfg.PacketLossPct
 		}
+	}
+	if pool := normalizeSourceIPs(script.Config.WebRuntime.SourceIPs); len(pool) > 0 {
+		cfg["web_source_ips"] = pool
 	}
 	if streamingCfg := script.Config.WebRuntime.Streaming; streamingCfg.Mode != "" || streamingCfg.BufferSizeSeconds > 0 || streamingCfg.FixedBitrateKbps > 0 || streamingCfg.BandwidthEstimation != "" {
 		if streamingCfg.Mode != "" {

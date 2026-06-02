@@ -336,7 +336,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 		vuCancel()
 		return
 	}
-	if err := vuProto.Init(vuCtx, protoConfig); err != nil {
+	if err := vuProto.Init(vuCtx, vuserProtoConfig(protoConfig, vuserID)); err != nil {
 		slog.Error("failed to init protocol", "group", group.Name, "vuser", vuserID, "err", err)
 		vuCancel()
 		return
@@ -408,7 +408,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		mge.mu.Unlock()
 		return
 	}
-	if err := vuProto.Init(vuCtx, protoConfig); err != nil {
+	if err := vuProto.Init(vuCtx, vuserProtoConfig(protoConfig, vuserID)); err != nil {
 		slog.Error("failed to init protocol for open workload worker", "group", group.Name, "worker", vuserID, "err", err)
 		vuCancel()
 		mge.mu.Lock()

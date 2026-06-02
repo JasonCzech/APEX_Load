@@ -24,6 +24,9 @@ type transportConfig struct {
 	requestTimeout   time.Duration
 	keepAlive        time.Duration
 	disableKeepAlive bool
+	// sourceIP binds outgoing connections to a specific local address (LR-style
+	// "IP spoofing" / multiple client IPs). Nil = OS default.
+	sourceIP net.IP
 }
 
 func parseTransportConfig(config map[string]any) transportConfig {
@@ -59,6 +62,11 @@ func parseTransportConfig(config map[string]any) transportConfig {
 	if value, ok := config["keep_alive"].(bool); ok && !value {
 		settings.disableKeepAlive = true
 		settings.keepAlive = 0
+	}
+	if raw, ok := config["web_source_ip"].(string); ok {
+		if ip := net.ParseIP(strings.TrimSpace(raw)); ip != nil {
+			settings.sourceIP = ip
+		}
 	}
 
 	return settings
@@ -107,11 +115,17 @@ func buildTLSConfig(config map[string]any) (*tls.Config, error) {
 }
 
 func newTransport(settings transportConfig, tlsCfg *tls.Config) *http.Transport {
+	dialer := &net.Dialer{
+		Timeout:   settings.connectTimeout,
+		KeepAlive: settings.keepAlive,
+	}
+	if settings.sourceIP != nil {
+		// Bind outgoing connections to the assigned client IP so the test
+		// presents many distinct source addresses to the target.
+		dialer.LocalAddr = &net.TCPAddr{IP: settings.sourceIP}
+	}
 	return &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout:   settings.connectTimeout,
-			KeepAlive: settings.keepAlive,
-		}).DialContext,
+		DialContext:         dialer.DialContext,
 		MaxIdleConns:        settings.maxIdleConns,
 		MaxIdleConnsPerHost: settings.maxConnsPerHost,
 		MaxConnsPerHost:     settings.maxConnsPerHost,
