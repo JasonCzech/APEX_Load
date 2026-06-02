@@ -3329,7 +3329,73 @@ func (tr *TestRunner) evaluateQuotaBlockLocked(test *ManagedTest, excludeTestID 
 	if projectMaxVUsers > 0 && projectActiveVUsers+test.TotalVUsers > projectMaxVUsers {
 		return true, fmt.Sprintf("waiting for project VUser capacity (%d max vusers)", projectMaxVUsers)
 	}
+	if blocked, reason := tr.evaluateReservedCapacityBlockLocked(test, excludeTestID); blocked {
+		return true, reason
+	}
 	return false, ""
+}
+
+// evaluateReservedCapacityBlockLocked enforces reserved capacity pools at
+// admission: generators reserved for a project are protected from other
+// tenants. Each project may always consume up to its own reservation; beyond
+// that, all projects draw from a bounded shared pool. A test is held when
+// admitting it would push shared-pool usage past the shared capacity, so a
+// non-reserving (or over-reserving) project cannot starve the teams that
+// reserved capacity. Reservations also still drive fair-share queue priority.
+func (tr *TestRunner) evaluateReservedCapacityBlockLocked(test *ManagedTest, excludeTestID string) (bool, string) {
+	if test == nil {
+		return false, ""
+	}
+	totalReserved, projectReserved := capacityReservationTotals(tr.settings, normalizeProjectID(test.ProjectID))
+	if totalReserved <= 0 {
+		return false, "" // no reservations configured -> nothing to protect
+	}
+	effective := resolveCapacityAvailability(tr.settings).EffectiveAvailableGenerators
+	if effective <= 0 {
+		return false, "" // no capacity model -> don't gate on reservations
+	}
+	if totalReserved > effective {
+		totalReserved = effective
+	}
+	shared := maxInt(0, effective-totalReserved)
+
+	// This project's shared-pool contribution before and after admitting the test.
+	projectActive := tr.countActiveRecommendedGeneratorsForProjectLocked(normalizeProjectID(test.ProjectID))
+	if excludeTestID != "" {
+		if existing, ok := tr.tests[excludeTestID]; ok && reservationActiveStatus(existing.Status) && normalizeProjectID(existing.ProjectID) == normalizeProjectID(test.ProjectID) {
+			projectActive -= recommendedGeneratorCountForTest(existing)
+		}
+	}
+	g := recommendedGeneratorCountForTest(test)
+	sharedDelta := maxInt(0, projectActive+g-projectReserved) - maxInt(0, projectActive-projectReserved)
+
+	sharedUsedTotal := tr.sharedGeneratorUsageLocked(excludeTestID)
+	if sharedUsedTotal+sharedDelta > shared {
+		return true, fmt.Sprintf("waiting for shared generator capacity (%d of %d generators reserved for other projects)", totalReserved, effective)
+	}
+	return false, ""
+}
+
+// sharedGeneratorUsageLocked sums each project's draw on the shared generator
+// pool: a project's active generators above its own reservation.
+func (tr *TestRunner) sharedGeneratorUsageLocked(excludeTestID string) int {
+	byProject := make(map[string]int)
+	for id, test := range tr.tests {
+		if test == nil || id == excludeTestID || !reservationActiveStatus(test.Status) {
+			continue
+		}
+		byProject[normalizeProjectID(test.ProjectID)] += recommendedGeneratorCountForTest(test)
+	}
+	total := 0
+	for projectID, active := range byProject {
+		_, reserved := capacityReservationTotals(tr.settings, projectID)
+		total += maxInt(0, active-reserved)
+	}
+	return total
+}
+
+func reservationActiveStatus(status string) bool {
+	return status == "RUNNING" || status == "INITIALIZING" || status == "PAUSED"
 }
 
 func (tr *TestRunner) projectMaxConcurrentTests(projectID string) int {
