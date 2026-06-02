@@ -170,13 +170,15 @@ func TestCompetitiveParityStatusExposesEvidenceAndNonGoals(t *testing.T) {
 }
 
 func TestCompetitiveSupportMatrixDocumentsParityStatusClaims(t *testing.T) {
-	contentBytes, err := os.ReadFile(filepath.Join("..", "..", competitiveSupportMatrixEvidence))
+	// Strip any Markdown anchor (#section) from the evidence path before opening the file.
+	docPath := strings.SplitN(competitiveSupportMatrixEvidence, "#", 2)[0]
+	contentBytes, err := os.ReadFile(filepath.Join("..", "..", docPath))
 	if err != nil {
 		t.Fatalf("read competitive support matrix: %v", err)
 	}
 	content := string(contentBytes)
 	for _, required := range []string{
-		"Competitive Parity API Coverage",
+		"Competitive Parity API Dimensions",
 		"k6",
 		"NeoLoad",
 		"LoadRunner",

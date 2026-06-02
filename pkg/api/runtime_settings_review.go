@@ -418,7 +418,7 @@ func runtimeSettingsReportSupportRefs() RuntimeSettingsReportSupportRefs {
 	return RuntimeSettingsReportSupportRefs{
 		MatrixEndpoint: "/api/v1/runtime-settings/support-matrix",
 		ExportFormats:  []string{"json", "csv"},
-		Docs:           []string{"docs/RUNTIME_SETTINGS_PARITY.md", "docs/LOADRUNNER_RTS_REFERENCE.md"},
+		Docs:           []string{"docs/RUNTIME_SETTINGS_PARITY.md", "docs/COMPETITIVE_COMPARISON.md#loadrunner-rts-reference"},
 	}
 }
 

@@ -112,7 +112,7 @@ func buildRuntimeSettingsSupportResponse(now time.Time) RuntimeSettingsSupportRe
 				Decision:  "executed",
 				Status:    "decided",
 				Rationale: "APEX Load now maps LoadRunner-style streaming settings into HTTP runtime pacing for media-like responses, including startup buffer delay, fixed bitrate shaping, and adaptive bitrate estimation.",
-				Evidence:  []string{"docs/LOADRUNNER_RTS_REFERENCE.md", "docs/RUNTIME_SETTINGS_PARITY.md", "/api/v1/runtime-settings/support-matrix"},
+				Evidence:  []string{"docs/COMPETITIVE_COMPARISON.md#loadrunner-rts-reference", "docs/RUNTIME_SETTINGS_PARITY.md", "/api/v1/runtime-settings/support-matrix"},
 			},
 		},
 		Notes: []string{
@@ -136,7 +136,7 @@ func runtimeSettingsSupportMatrix() []RuntimeSettingsSupportEntry {
 			Status:              string(entry.Status),
 			ExecutionScope:      "imported Web HTTP/HTML and TruClient Mobile Web runtime settings mapped into APEX Load DSL/runtime fields",
 			ImportSources:       []string{"LoadRunner Web HTTP/HTML", "TruClient Mobile Web"},
-			Evidence:            []string{"pkg/convert/loadrunner/rts_support.go", "docs/LOADRUNNER_RTS_REFERENCE.md"},
+			Evidence:            []string{"pkg/convert/loadrunner/rts_support.go", "docs/COMPETITIVE_COMPARISON.md#loadrunner-rts-reference"},
 			RecommendedWorkflow: "Import, validate runtime parity, replay, then approve or export the RTS report.",
 			Notes:               entry.Notes,
 		})
@@ -166,7 +166,7 @@ func vugenWeb2RuntimeSupportEntries() []RuntimeSettingsSupportEntry {
 			Status:              string(entry.Status),
 			ExecutionScope:      "TruClient 2.0 - Web browser-profile runtime settings mapped into APEX Load browser, web runtime, logging, pacing, think-time, proxy, and capture config where executable.",
 			ImportSources:       []string{"TruClient 2.0 - Web", "VuGen Web 2.0"},
-			Evidence:            []string{"pkg/convert/loadrunner/converter_test.go::TestConvertZipProducesReviewDraftForTruClientWeb2Archive", "docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md"},
+			Evidence:            []string{"pkg/convert/loadrunner/converter_test.go::TestConvertZipProducesReviewDraftForTruClientWeb2Archive", "docs/COMPETITIVE_COMPARISON.md#vugen-web2-truclient"},
 			RecommendedWorkflow: "Import through LoadRunner ZIP acquisition, inspect the Web 2.0 review sections, run browser replay, then use the runtime report before promotion.",
 			Notes:               entry.Notes,
 		})
@@ -195,7 +195,7 @@ func vugenWeb2RuntimeSupportEntries() []RuntimeSettingsSupportEntry {
 			Status:              "executed",
 			ExecutionScope:      "Conversion is a governed review workflow; generated HTTP drafts still require validation, replay, and approval.",
 			ImportSources:       []string{"TruClient 2.0 - Web replay evidence"},
-			Evidence:            []string{"pkg/api/browser_to_http_conversion_test.go", "docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md"},
+			Evidence:            []string{"pkg/api/browser_to_http_conversion_test.go", "docs/COMPETITIVE_COMPARISON.md#vugen-web2-truclient"},
 			RecommendedWorkflow: "Keep the browser script as a canary, generate an HTTP draft from captured replay traffic, repair correlation/data issues, then assemble a paired scenario.",
 		},
 	)
@@ -305,7 +305,7 @@ func nativeRuntimeSupportEntries() []RuntimeSettingsSupportEntry {
 			Status:              "executed",
 			ExecutionScope:      "Native database/sql execution path with SQLite fixture coverage and driver-governed project packaging.",
 			ImportSources:       []string{"JSON DSL", "LoadRunner database import"},
-			Evidence:            []string{"pkg/protocol/database/database_test.go", "docs/LOADRUNNER_PROTOCOL_IMPORT_ROUTING.md"},
+			Evidence:            []string{"pkg/protocol/database/database_test.go", "docs/COMPETITIVE_COMPARISON.md#loadrunner-import-routing"},
 			RecommendedWorkflow: "Replay against non-production fixtures, keep read-only mode enabled for query checks, and export SQL/result evidence before approval.",
 		},
 		{
@@ -318,7 +318,7 @@ func nativeRuntimeSupportEntries() []RuntimeSettingsSupportEntry {
 			Status:              "executed",
 			ExecutionScope:      "Native Linux network protocol execution against controlled endpoint fixtures.",
 			ImportSources:       []string{"JSON DSL", "LoadRunner network import"},
-			Evidence:            []string{"pkg/protocol/network/network_test.go", "docs/LOADRUNNER_PROTOCOL_IMPORT_ROUTING.md"},
+			Evidence:            []string{"pkg/protocol/network/network_test.go", "docs/COMPETITIVE_COMPARISON.md#loadrunner-import-routing"},
 			RecommendedWorkflow: "Replay against local or allow-listed protocol fixtures, inspect transcript/record evidence, then approve endpoint policy.",
 		},
 		{
@@ -456,7 +456,7 @@ func runtimeSettingsProfilePresets() []RuntimeSettingsProfilePreset {
 				"requires_runtime_report": true,
 				"claim_policy":            "diagnostic_canary_only",
 			},
-			Evidence: []string{"docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md"},
+			Evidence: []string{"docs/COMPETITIVE_COMPARISON.md#vugen-web2-truclient"},
 		},
 		{
 			ID:                   "browser_canary",

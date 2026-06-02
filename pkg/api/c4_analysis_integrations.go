@@ -183,7 +183,7 @@ func (s *Server) handleListAPMIntegrationProfiles(w http.ResponseWriter, r *http
 			Status:            "supported",
 			Propagation:       "W3C trace-context",
 			CorrelationFields: []string{"traceparent", "trace_id", "span_id", "correlation_id", "dependency_type", "dependency_target"},
-			Evidence:          []string{"pkg/api/archive.go", "docs/PLATFORM_GAP_IMPLEMENTATION_PLAN.md"},
+			Evidence:          []string{"pkg/api/archive.go", "docs/COMPETITIVE_COMPARISON.md#gap-analysis"},
 		},
 	})
 }
@@ -226,7 +226,7 @@ func buildAPMIntegrationProfiles(settings SystemSettings) []APMIntegrationProfil
 			SupportedSignals:  baseSignals,
 			CorrelationFields: baseFields,
 			RequiredSettings:  []string{"notifications.webhooks[].format=dynatrace", "notifications.webhooks[].api_token", "notifications.webhooks[].entity_selector"},
-			Evidence:          []string{"pkg/api/notifications.go", "docs/PLATFORM_GAP_IMPLEMENTATION_PLAN.md"},
+			Evidence:          []string{"pkg/api/notifications.go", "docs/COMPETITIVE_COMPARISON.md#gap-analysis"},
 			SetupActions:      []string{"Enable a Dynatrace notification webhook in system settings.", "Pass W3C trace-context headers from scripts to the service under test."},
 		},
 		{
@@ -329,7 +329,7 @@ func (s *Server) handleListInfrastructureMonitorPacks(w http.ResponseWriter, r *
 				SetupActions: []string{"Publish broker metrics with queue.* or broker.* prefixes for root-cause correlation."},
 			},
 		},
-		Evidence: []string{"docs/K6_NEOLOAD_PARITY_PLAN.md", "docs/COMPETITIVE_SUPPORT_MATRIX.md"},
+		Evidence: []string{"docs/COMPETITIVE_COMPARISON.md#k6", "docs/COMPETITIVE_COMPARISON.md#support-matrix"},
 	})
 }
 

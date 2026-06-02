@@ -1,6 +1,6 @@
 # Enterprise Generator Fleet Model
 
-This document defines the scale-out inventory contract for Workstream P2 in `docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md`.
+This document defines the scale-out inventory contract for the APEX Load generator fleet.
 
 ## Fleet Inventory Contract
 

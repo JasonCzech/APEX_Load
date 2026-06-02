@@ -287,7 +287,7 @@ describe('MonitoringPage', () => {
           status: 'gap',
           competitors: ['NeoLoad'],
           summary: 'Native SAP GUI and Citrix protocols remain demand-gated.',
-          evidence: ['docs/K6_NEOLOAD_PARITY_PLAN.md#phase-c6-specialized-enterprise-protocol-decisions'],
+          evidence: ['docs/COMPETITIVE_COMPARISON.md#specialized-enterprise-protocols'],
           remaining: ['Publish explicit non-goal or coexistence guidance.'],
           decision: 'demand_gated_non_goal',
           evidence_level: 'docs',

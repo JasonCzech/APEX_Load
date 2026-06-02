@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const competitiveSupportMatrixEvidence = "docs/COMPETITIVE_SUPPORT_MATRIX.md"
+const competitiveSupportMatrixEvidence = "docs/COMPETITIVE_COMPARISON.md#support-matrix"
 
 type ParityStatusResponse struct {
 	GeneratedAt       time.Time                 `json:"generated_at"`
@@ -96,7 +96,7 @@ func buildParityStatus(now time.Time) ParityStatusResponse {
 			Name:        "Browser Testing",
 			Status:      "partial",
 			Summary:     "Browser replay, mobile profiles, client metrics, archive evidence, TruClient Mobile Web conversion, VuGen Web 2.0 review-profile migration evidence, selector/wait repair guidance, and code-owned benchmark artifacts support diagnostic browser canaries.",
-			Evidence:    []string{"/api/v1/system/browser-benchmarks", "/api/v1/browser-replay/sessions/{session_id}", "/api/v1/scripts/browser-to-http/preview", "docs/BROWSER_BENCHMARK_ARTIFACTS.md", "docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md", "examples/web-api/browser-canary-plus-protocol-load.json"},
+			Evidence:    []string{"/api/v1/system/browser-benchmarks", "/api/v1/browser-replay/sessions/{session_id}", "/api/v1/scripts/browser-to-http/preview", "docs/BROWSER_BENCHMARK_ARTIFACTS.md", "docs/COMPETITIVE_COMPARISON.md#vugen-web2-truclient", "examples/web-api/browser-canary-plus-protocol-load.json"},
 			Remaining:   []string{"Attach controlled raw benchmark output for each release generator image before raising browser density envelopes."},
 			ReleaseGate: true,
 		},
@@ -105,7 +105,7 @@ func buildParityStatus(now time.Time) ParityStatusResponse {
 			Name:        "VuGen Web 2.0 Migration",
 			Status:      "partial",
 			Summary:     "LoadRunner ZIP import recognizes TruClient 2.0 - Web, preserves source/profile metadata, exposes Web 2.0 runtime settings, replay evidence, migration readiness, and browser-to-HTTP preview workflows.",
-			Evidence:    []string{"/api/v1/scripts/import/loadrunner", "/api/v1/scripts/authoring/capabilities", "/api/v1/runtime-settings/support-matrix", "/api/v1/scripts/browser-to-http/preview", "docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md"},
+			Evidence:    []string{"/api/v1/scripts/import/loadrunner", "/api/v1/scripts/authoring/capabilities", "/api/v1/runtime-settings/support-matrix", "/api/v1/scripts/browser-to-http/preview", "docs/COMPETITIVE_COMPARISON.md#vugen-web2-truclient"},
 			Remaining:   []string{"Keep production readiness gated on replay evidence, selector repair, runtime parity review, and generated HTTP validation per import."},
 			ReleaseGate: true,
 		},
@@ -157,7 +157,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
 				"README.md#build--run",
-				"docs/K6_NEOLOAD_PARITY_PLAN.md#phase-c2-k6-aligned-developer-experience",
+				"docs/COMPETITIVE_COMPARISON.md#developer-experience",
 				".github/actions/apexload-run/action.yml",
 				"/api/v1/results/import",
 			},
@@ -248,7 +248,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 				"/api/v1/reports/profiles",
 				"/api/v1/results/import",
 				"docs/RUNTIME_TELEMETRY_SLA_PLAN.md",
-				"docs/PLATFORM_GAP_ANALYSIS.md#51-apm--observability-correlation",
+				"docs/COMPETITIVE_COMPARISON.md#apm-observability-correlation",
 			},
 			Remaining: []string{
 				"Deepen provider-specific APM fixtures, causal scoring, and packaged setup guides as connector evidence matures.",
@@ -264,7 +264,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Summary:     "APEX Load covers HTTP/API, SOAP, Java-over-HTTP, JMS, WebSocket, gRPC, HAR, JMeter, DevWeb, and LoadRunner migration paths, but native SAP GUI, Citrix, Oracle Forms, and desktop UI protocols remain demand-gated non-goals.",
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
-				"docs/K6_NEOLOAD_PARITY_PLAN.md#phase-c6-specialized-enterprise-protocol-decisions",
+				"docs/COMPETITIVE_COMPARISON.md#specialized-enterprise-protocols",
 				"docs/PROTOCOL_EXTENSION_PLAN.md",
 				"docs/BROWSER_CLIENT_METRICS_PLAN.md#non-goals",
 			},
@@ -283,8 +283,8 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
 				"README.md#quick-start",
-				"docs/K6_NEOLOAD_PARITY_PLAN.md#phase-c7-competitive-packaging-samples-and-trust",
-				"docs/LOADRUNNER_RTS_REFERENCE.md",
+				"docs/COMPETITIVE_COMPARISON.md#packaging-samples-and-trust",
+				"docs/COMPETITIVE_COMPARISON.md#loadrunner-rts-reference",
 			},
 			Remaining: []string{
 				"Publish canonical sample projects, one-command demo seeding, release notes with benchmark deltas, and a concise APEX Load versus k6 versus NeoLoad evaluator view.",

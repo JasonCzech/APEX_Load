@@ -1,6 +1,6 @@
 # Enterprise Governance Model
 
-This document defines APEX Load's project-first governance model for enterprise parity. It supports P1.6 through P1.9 in `docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md`.
+This document defines APEX Load's project-first governance model for enterprise parity.
 
 ## Ownership Model
 

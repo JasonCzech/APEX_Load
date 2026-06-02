@@ -107,7 +107,7 @@ func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 			RemainingGaps:       []string{"ODBC and Oracle client bridges require customer/client prerequisite validation beyond the native database/sql execution path"},
 			RecommendedWorkflow: "Author or import database scripts, validate read/write classification, replay against non-production fixtures, then approve.",
 			Source:              "license-bundles-2023",
-			Evidence:            []string{"pkg/protocol/database/database_test.go", "pkg/dsl/validate_test.go::TestValidateScriptIssues_DatabaseProtocolAllowsTransactionActionsWithoutTarget", "docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-db1-database-protocol-bundle"},
+			Evidence:            []string{"pkg/protocol/database/database_test.go", "pkg/dsl/validate_test.go::TestValidateScriptIssues_DatabaseProtocolAllowsTransactionActionsWithoutTarget", "docs/COMPETITIVE_COMPARISON.md#protocol-bundle-coverage"},
 		},
 		{
 			ID:                  "database-oracle-2tier",
@@ -124,7 +124,7 @@ func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 			RemainingGaps:       []string{"native Oracle client image, wallet/auth prerequisites, and benchmark evidence"},
 			RecommendedWorkflow: "Classify and preserve imported Oracle scripts until a project-approved Oracle client runner is available.",
 			Source:              "license-bundles-2023",
-			Evidence:            []string{"docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-db1-database-protocol-bundle"},
+			Evidence:            []string{"docs/COMPETITIVE_COMPARISON.md#protocol-bundle-coverage"},
 		},
 		networkBundleEntry("network-dns", "dns", "DNS", "supported", "native_linux", "go_generator", "P0", "10k DNS VUsers per generator pending benchmark", []string{"A/AAAA/CNAME/MX/NS/TXT lookups", "response record diagnostics", "DNS timing telemetry"}),
 		networkBundleEntry("network-ftp", "ftp", "FTP", "supported", "native_linux", "go_generator", "P0", "2k-5k FTP control-command VUsers per generator pending file-size mix", []string{"connect", "login", "NOOP/raw control commands", "response diagnostics"}),
@@ -148,7 +148,7 @@ func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 			RemainingGaps:       []string{"native MAPI runner and Microsoft client dependency model"},
 			RecommendedWorkflow: "Classify imported assets and prefer HTTP/Graph/EWS alternatives when performance objective allows.",
 			Source:              "license-bundles-2025",
-			Evidence:            []string{"pkg/api/protocol_bundle_support.go", "docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-net1-network-protocol-bundle"},
+			Evidence:            []string{"pkg/api/protocol_bundle_support.go", "docs/COMPETITIVE_COMPARISON.md#protocol-bundle-coverage"},
 		},
 		{
 			ID:                  "network-tuxedo",
@@ -165,7 +165,7 @@ func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 			RemainingGaps:       []string{"customer-backed Tuxedo client libraries and sample assets"},
 			RecommendedWorkflow: "Preserve source artifacts and require explicit feasibility decision before execution claims.",
 			Source:              "license-bundles-2025",
-			Evidence:            []string{"pkg/api/protocol_bundle_support.go", "docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-net1-network-protocol-bundle"},
+			Evidence:            []string{"pkg/api/protocol_bundle_support.go", "docs/COMPETITIVE_COMPARISON.md#protocol-bundle-coverage"},
 		},
 		oebEntry("oeb-devweb", "devweb", "DevWeb", "supported", "review_then_executable", "go_generator", "P0", []string{"existing DevWeb import support matrix", "Oracle E-Business review caveats"}),
 		oebEntry("oeb-jmeter", "jmeter", "JMeter", "supported", "review_then_executable", "go_generator", "P0", []string{"existing JMeter import", "Oracle E-Business review caveats"}),
@@ -188,7 +188,7 @@ func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 			RemainingGaps:       []string{"Oracle Forms/NCA runtime feasibility and representative fixture"},
 			RecommendedWorkflow: "Preserve NCA imports as governed review artifacts until client runner feasibility is approved.",
 			Source:              "license-bundles-2025",
-			Evidence:            []string{"pkg/api/oracle_ebusiness_review.go", "docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-oeb1-oracle-e-business-protocol-bundle"},
+			Evidence:            []string{"pkg/api/oracle_ebusiness_review.go", "docs/COMPETITIVE_COMPARISON.md#protocol-bundle-coverage"},
 		},
 		templateEntry("template-c", "c_vuser", "C Vuser", "review_only", "template_worker", "P1"),
 		templateEntry("template-cpp-dotnet", "cpp_dotnet", "C++ .NET", "review_only", "template_worker", "P1"),
@@ -212,7 +212,7 @@ func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 			RemainingGaps:       []string{"Windows runner bridge and SAP GUI client version certification"},
 			RecommendedWorkflow: "Govern entitlement first, import for review, then place only on SAP GUI-capable Windows runner pools.",
 			Source:              "sap-solutions-2024",
-			Evidence:            []string{"docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-sap1-foundation-entitlement-for-sap-gui"},
+			Evidence:            []string{"docs/COMPETITIVE_COMPARISON.md#protocol-bundle-coverage"},
 		},
 		{
 			ID:                  "sap-web",
@@ -231,7 +231,7 @@ func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 			RemainingGaps:       []string{"does not replace native SAP GUI desktop protocol parity"},
 			RecommendedWorkflow: "Use HTTP/API load for density and browser canaries for SAP Web/Fiori client evidence.",
 			Source:              "sap-solutions-2024",
-			Evidence:            []string{"docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-sap1-foundation-entitlement-for-sap-gui"},
+			Evidence:            []string{"docs/COMPETITIVE_COMPARISON.md#protocol-bundle-coverage"},
 		},
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
@@ -260,7 +260,7 @@ func networkBundleEntry(id, protocolName, displayName, status, posture, runner, 
 		ImportCoverage:      []string{"protocol classification", "connection settings", "credentials review", "unsupported source preservation"},
 		RecommendedWorkflow: "Author or import network scripts, validate credentials and endpoint policy, replay against controlled fixtures, then approve.",
 		Source:              "license-bundles-2025",
-		Evidence:            []string{"pkg/protocol/network/network_test.go", "pkg/dsl/validate_test.go::TestValidateScriptIssues_NetworkProtocolAllowsSupportedActions", "docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-net1-network-protocol-bundle"},
+		Evidence:            []string{"pkg/protocol/network/network_test.go", "pkg/dsl/validate_test.go::TestValidateScriptIssues_NetworkProtocolAllowsSupportedActions", "docs/COMPETITIVE_COMPARISON.md#protocol-bundle-coverage"},
 	}
 }
 
@@ -281,7 +281,7 @@ func oebEntry(id, protocolName, displayName, status, posture, runner, importance
 		ImportCoverage:      []string{"Oracle/Siebel token review", "parameter fit", "runtime setting parity", "unsupported source preservation"},
 		RecommendedWorkflow: "Import or author HTTP-backed Oracle E-Business flows, apply package correlation review, replay, then promote.",
 		Source:              "license-bundles-2025",
-		Evidence:            []string{"pkg/api/oracle_ebusiness_review.go", "pkg/api/oracle_ebusiness_review_test.go", "docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-oeb1-oracle-e-business-protocol-bundle"},
+		Evidence:            []string{"pkg/api/oracle_ebusiness_review.go", "pkg/api/oracle_ebusiness_review_test.go", "docs/COMPETITIVE_COMPARISON.md#protocol-bundle-coverage"},
 	}
 }
 
@@ -303,7 +303,7 @@ func templateEntry(id, protocolName, displayName, status, runner string, importa
 		RemainingGaps:       []string{"worker SDK/runtime images and language-specific sandboxing"},
 		RecommendedWorkflow: "Import for review and execute only through signed, project-approved worker images.",
 		Source:              "license-bundles-2025",
-		Evidence:            []string{"docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-tpl1-templates-protocol-bundle"},
+		Evidence:            []string{"docs/COMPETITIVE_COMPARISON.md#protocol-bundle-coverage"},
 	}
 }
 

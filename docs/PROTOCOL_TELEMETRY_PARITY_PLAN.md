@@ -97,7 +97,7 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ### 4. WebSocket Protocol (Not Yet Implemented)
 
-**Reference:** [DEVWEB_SUPPORT_PLAN.md](DEVWEB_SUPPORT_PLAN.md) Phase 1 covers execution (L1). This section defines L2 and L3.
+**Reference:** [COMPETITIVE_COMPARISON.md#devweb-import](COMPETITIVE_COMPARISON.md#devweb-import) Phase 1 covers execution (L1). This section defines L2 and L3.
 
 **L2 requirements:**
 - **Connection lifecycle timing** — handshake time, upgrade latency
@@ -129,7 +129,7 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ### 5. gRPC Protocol (Not Yet Implemented)
 
-**Reference:** [DEVWEB_SUPPORT_PLAN.md](DEVWEB_SUPPORT_PLAN.md) Phase 2 covers execution (L1). This section defines L2 and L3.
+**Reference:** [COMPETITIVE_COMPARISON.md#devweb-import](COMPETITIVE_COMPARISON.md#devweb-import) Phase 2 covers execution (L1). This section defines L2 and L3.
 
 **L2 requirements:**
 - **Per-method timing** — unary call latency by service/method
@@ -319,7 +319,7 @@ Each protocol's dashboard card follows the same layout pattern:
 - **Effort:** 5-7 days
 
 ### Stage 3: WebSocket + gRPC Deep Telemetry
-- Requires L1 implementation from [DEVWEB_SUPPORT_PLAN.md](DEVWEB_SUPPORT_PLAN.md) first
+- Requires L1 implementation from [COMPETITIVE_COMPARISON.md#devweb-import](COMPETITIVE_COMPARISON.md#devweb-import) first
 - WebSocket: handshake timing, message latency, throughput, backpressure, connection health
 - gRPC: per-method timing, stream throughput, protobuf overhead, status distribution
 - **Effort:** 6-8 days
@@ -372,6 +372,6 @@ Stages 2, 3, and 4 are independent of each other and can run in parallel after S
 
 - [MOBILE_UX_PLATFORM_STRATEGY.md](MOBILE_UX_PLATFORM_STRATEGY.md) defines the three-layer model this plan extends to all protocols.
 - [RUNTIME_TELEMETRY_SLA_PLAN.md](RUNTIME_TELEMETRY_SLA_PLAN.md) covers pipeline hardening and live telemetry freshness; this plan adds protocol-specific depth.
-- [DEVWEB_SUPPORT_PLAN.md](DEVWEB_SUPPORT_PLAN.md) provides L1 direction for WebSocket and gRPC; this plan adds L2 and L3.
+- [COMPETITIVE_COMPARISON.md#devweb-import](COMPETITIVE_COMPARISON.md#devweb-import) provides L1 direction for WebSocket and gRPC; this plan adds L2 and L3.
 - [PROTOCOL_EXTENSION_PLAN.md](PROTOCOL_EXTENSION_PLAN.md) provides L1 direction for SOAP and Java HTTP; this plan adds L2 and L3.
 - [BROWSER_CLIENT_METRICS_PLAN.md](BROWSER_CLIENT_METRICS_PLAN.md) is the most complete existing L2 example; this plan generalizes that depth beyond the browser protocol.

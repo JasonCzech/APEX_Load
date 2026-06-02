@@ -98,7 +98,7 @@ func nativeProtocolSupportMatrix() []NativeProtocolSupportEntry {
 			ImportSources:       []string{"JSON DSL", "LoadRunner database/ODBC SQL-style imports"},
 			RemainingGaps:       []string{"non-SQLite drivers require project-approved driver/client packaging"},
 			RecommendedWorkflow: "Replay against non-production fixtures with read-only guard enabled unless write behavior is explicitly approved.",
-			Evidence:            []string{"pkg/protocol/database/database_test.go", "docs/LOADRUNNER_PROTOCOL_IMPORT_ROUTING.md"},
+			Evidence:            []string{"pkg/protocol/database/database_test.go", "docs/COMPETITIVE_COMPARISON.md#loadrunner-import-routing"},
 		},
 		{
 			Protocol:            "network",
@@ -114,7 +114,7 @@ func nativeProtocolSupportMatrix() []NativeProtocolSupportEntry {
 			ImportSources:       []string{"JSON DSL", "LoadRunner DNS/FTP/SMTP/POP3/IMAP/LDAP/Winsock imports"},
 			RemainingGaps:       []string{"MAPI and Tuxedo remain review-only external-runner protocols"},
 			RecommendedWorkflow: "Replay only against controlled local or allow-listed fixtures, then approve endpoint and credential policy.",
-			Evidence:            []string{"pkg/protocol/network/network_test.go", "docs/LOADRUNNER_PROTOCOL_IMPORT_ROUTING.md"},
+			Evidence:            []string{"pkg/protocol/network/network_test.go", "docs/COMPETITIVE_COMPARISON.md#loadrunner-import-routing"},
 		},
 		{
 			Protocol:            "jms-solace",

@@ -1,6 +1,6 @@
 # Enterprise Platform Architecture Runbook
 
-This runbook defines the production reference architecture for APEX Load as a shared enterprise performance testing platform. It supports Workstream P1 in `docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md`.
+This runbook defines the production reference architecture for APEX Load as a shared enterprise performance testing platform.
 
 ## Reference Architecture
 

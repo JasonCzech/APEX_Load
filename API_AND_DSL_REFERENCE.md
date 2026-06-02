@@ -1054,7 +1054,7 @@ Emits JSON messages for all test events:
 | Streaming | `config.web_runtime.streaming.*` | Executed in HTTP runtime for media-like responses using buffer and bitrate pacing |
 | Additional attributes | `config.web_runtime.additional_attributes` | Compatibility-only metadata |
 
-See [docs/LOADRUNNER_RTS_REFERENCE.md](docs/LOADRUNNER_RTS_REFERENCE.md) for the broader Web HTTP/HTML mapping, including compatibility-only and non-applicable RTS concepts.
+See [docs/COMPETITIVE_COMPARISON.md#loadrunner-rts-reference](docs/COMPETITIVE_COMPARISON.md#loadrunner-rts-reference) for the broader Web HTTP/HTML mapping, including compatibility-only and non-applicable RTS concepts.
 
 ### Data Sources Section
 
