@@ -92,13 +92,25 @@ type NetworkLatencySummaryRecord struct {
 }
 
 type NetworkLatencyTargetRecord struct {
-	Name        string    `json:"name"`
-	Endpoint    string    `json:"endpoint"`
-	LatencyMs   float64   `json:"latency_ms"`
-	IP          string    `json:"ip,omitempty"`
-	Hops        int       `json:"hops,omitempty"`
-	LastSuccess bool      `json:"last_success"`
-	Timestamp   time.Time `json:"timestamp"`
+	Name           string    `json:"name"`
+	Endpoint       string    `json:"endpoint"`
+	LatencyMs      float64   `json:"latency_ms"`
+	ProbeTotalMs   float64   `json:"probe_total_ms,omitempty"`
+	DNSMs          float64   `json:"dns_ms,omitempty"`
+	ConnectMs      float64   `json:"connect_ms,omitempty"`
+	TLSMs          float64   `json:"tls_ms,omitempty"`
+	TTFBMs         float64   `json:"ttfb_ms,omitempty"`
+	HTTPStatus     int       `json:"http_status,omitempty"`
+	ProbeMethod    string    `json:"probe_method,omitempty"`
+	IP             string    `json:"ip,omitempty"`
+	Hops           int       `json:"hops,omitempty"`
+	LastSuccess    bool      `json:"last_success"`
+	JitterMs       float64   `json:"jitter_ms,omitempty"`
+	SuccessRatePct float64   `json:"success_rate_pct,omitempty"`
+	SampleCount    int       `json:"sample_count,omitempty"`
+	RouteStatus    string    `json:"route_status,omitempty"`
+	Error          string    `json:"error,omitempty"`
+	Timestamp      time.Time `json:"timestamp"`
 }
 
 type IntervalSummaryRecord struct {

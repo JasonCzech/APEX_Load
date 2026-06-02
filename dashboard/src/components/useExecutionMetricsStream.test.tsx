@@ -5,13 +5,15 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { WSMessage } from '../types'
-import { latencySeriesKeyForTarget } from './latencySeries'
+import { latencySeriesKeyForTarget, routeLatencyDetailSeriesKeyForTarget } from './latencySeries'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const useWebSocketMock = vi.fn()
 const edgeLatencyKey = latencySeriesKeyForTarget({ name: 'edge', endpoint: 'https://example.test' })
+const edgeDnsKey = routeLatencyDetailSeriesKeyForTarget({ name: 'edge', endpoint: 'https://example.test' }, 'dns')
+const edgeSuccessRateKey = routeLatencyDetailSeriesKeyForTarget({ name: 'edge', endpoint: 'https://example.test' }, 'successRate')
 
 vi.mock('../hooks/useWebSocket', () => ({
   useWebSocket: (...args: unknown[]) => useWebSocketMock(...args),
@@ -27,7 +29,11 @@ function MetricsStreamHarness({ status = 'RUNNING' }: { status?: 'RUNNING' | 'CO
       <span data-testid="tps">{String(latest?.tps ?? -1)}</span>
       <span data-testid="group-tps">{String(latest?.Checkout_tps ?? -1)}</span>
       <span data-testid="cpu">{String(latest?.cpuProcess ?? -1)}</span>
+      <span data-testid="impact-throttle">{String(latest?.containerCPUThrottledSecondsRate ?? -1)}</span>
+      <span data-testid="impact-net-errors">{String(latest?.netErrorsPerSec ?? -1)}</span>
       <span data-testid="route-latency">{String(latest?.[edgeLatencyKey] ?? -1)}</span>
+      <span data-testid="route-dns">{String(latest?.[edgeDnsKey] ?? -1)}</span>
+      <span data-testid="route-success">{String(latest?.[edgeSuccessRateKey] ?? -1)}</span>
       <span data-testid="latest-route-latency">{String(latestMetrics?.latency?.targets?.[0]?.latency_ms ?? -1)}</span>
       <span data-testid="delivery-lag">{String(latestMetrics?.telemetry?.delivery_lag_ms ?? -1)}</span>
       <span data-testid="end-to-end-age">{String(latestMetrics?.telemetry?.end_to_end_age_ms ?? -1)}</span>
@@ -102,6 +108,9 @@ describe('useExecutionMetricsStream', () => {
           net_recv_kbps: 50.19,
           disk_read_kbps: 10.17,
           disk_write_kbps: 20.16,
+          container_cpu_throttled_seconds_rate: 0.26,
+          net_error_in_per_sec: 2.14,
+          net_error_out_per_sec: 3.12,
         },
         telemetry: {
           collected_at: '2026-05-12T20:05:00.000Z',
@@ -118,6 +127,9 @@ describe('useExecutionMetricsStream', () => {
             name: 'edge',
             endpoint: 'https://example.test',
             latency_ms: 42.26,
+            probe_total_ms: 51.25,
+            dns_ms: 2.5,
+            success_rate_pct: 91.666,
             last_success: true,
             timestamp: '2026-05-12T20:05:00Z',
           }],
@@ -129,7 +141,11 @@ describe('useExecutionMetricsStream', () => {
     expect(readTestId('tps')).toBe('12.3')
     expect(readTestId('group-tps')).toBe('7.9')
     expect(readTestId('cpu')).toBe('44.4')
-    expect(readTestId('route-latency')).toBe('42.3')
+    expect(readTestId('impact-throttle')).toBe('0.3')
+    expect(readTestId('impact-net-errors')).toBe('5.3')
+    expect(readTestId('route-latency')).toBe('51.3')
+    expect(readTestId('route-dns')).toBe('2.5')
+    expect(readTestId('route-success')).toBe('91.7')
     expect(readTestId('delivery-lag')).toBe('350')
     expect(readTestId('end-to-end-age')).toBe('1250')
     expect(readTestId('transport-lag')).toBe('300')
@@ -165,6 +181,7 @@ describe('useExecutionMetricsStream', () => {
           name: 'edge',
           endpoint: 'https://example.test',
           latency_ms: 27.44,
+          probe_total_ms: 31.44,
           last_success: true,
           timestamp: '2026-05-12T20:05:05Z',
         }],
@@ -172,7 +189,7 @@ describe('useExecutionMetricsStream', () => {
     } as WSMessage)
 
     expect(readTestId('count')).toBe('1')
-    expect(readTestId('route-latency')).toBe('27.4')
+    expect(readTestId('route-latency')).toBe('31.4')
     expect(readTestId('latest-route-latency')).toBe('27.44')
   })
 

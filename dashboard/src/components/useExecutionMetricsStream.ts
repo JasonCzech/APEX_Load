@@ -2,7 +2,8 @@ import { useCallback, useState } from 'react'
 
 import { useWebSocket } from '../hooks/useWebSocket'
 import { LiveMetrics, MetricsHistoryPoint, NetworkLatency, TelemetryHealth, TestStatus, WSMessage } from '../types'
-import { latencySeriesKeyForTarget } from './latencySeries'
+import { resourceImpactHistoryValues } from './generatorImpact'
+import { routeLatencySeriesValuesForTarget } from './latencySeries'
 
 export const EXECUTION_STREAM_HISTORY_LIMIT = 300
 
@@ -42,7 +43,9 @@ function rounded(value: number | undefined, precision = 10) {
 
 function applyLatencyTargets(point: MetricsHistoryPoint, latency?: NetworkLatency) {
   latency?.targets?.forEach((target) => {
-    point[latencySeriesKeyForTarget(target)] = rounded(target.latency_ms)
+    Object.entries(routeLatencySeriesValuesForTarget(target)).forEach(([key, value]) => {
+      point[key] = rounded(value)
+    })
   })
   return point
 }
@@ -105,6 +108,11 @@ export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
       point.netRecv = rounded(resources.net_recv_kbps)
       point.diskRead = rounded(resources.disk_read_kbps)
       point.diskWrite = rounded(resources.disk_write_kbps)
+      Object.entries(resourceImpactHistoryValues(resources)).forEach(([key, value]) => {
+        if (typeof value === 'number') {
+          point[key] = rounded(value)
+        }
+      })
     }
 
     setLocalMetricsHistory((prev) => [...prev, applyLatencyTargets(point, msg.data?.latency)].slice(-EXECUTION_STREAM_HISTORY_LIMIT))

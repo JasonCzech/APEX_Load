@@ -148,6 +148,14 @@ func TestCompetitiveParityStatusExposesEvidenceAndNonGoals(t *testing.T) {
 				t.Fatalf("specialized protocol decision = %q, want demand_gated_non_goal", area.Decision)
 			}
 		}
+		if area.ID == "authoring_recording" || area.ID == "analysis_integrations" {
+			if area.Status != "supported" {
+				t.Fatalf("%s status = %q, want supported", area.ID, area.Status)
+			}
+			if area.Decision != "supported_for_current_scope" {
+				t.Fatalf("%s decision = %q, want supported_for_current_scope", area.ID, area.Decision)
+			}
+		}
 	}
 	for id, ok := range required {
 		if !ok {

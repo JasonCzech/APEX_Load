@@ -121,19 +121,53 @@ type TransactionEvent struct {
 }
 
 type ResourceSample struct {
-	Timestamp     time.Time          `json:"timestamp"`
-	TestID        string             `json:"test_id"`
-	TestName      string             `json:"test_name"`
-	ActiveVUsers  int64              `json:"active_vusers"`
-	CPUProcessPct float64            `json:"cpu_process_pct"`
-	CPUFreePct    float64            `json:"cpu_free_pct"`
-	MemProcessMB  float64            `json:"mem_process_mb"`
-	MemFreeMB     float64            `json:"mem_free_mb"`
-	NetSentKbps   float64            `json:"net_sent_kbps"`
-	NetRecvKbps   float64            `json:"net_recv_kbps"`
-	DiskReadKbps  float64            `json:"disk_read_kbps"`
-	DiskWriteKbps float64            `json:"disk_write_kbps"`
-	External      map[string]float64 `json:"external_metrics,omitempty"`
+	Timestamp                         time.Time          `json:"timestamp"`
+	TestID                            string             `json:"test_id"`
+	TestName                          string             `json:"test_name"`
+	ActiveVUsers                      int64              `json:"active_vusers"`
+	CPUProcessPct                     float64            `json:"cpu_process_pct"`
+	CPUFreePct                        float64            `json:"cpu_free_pct"`
+	MemProcessMB                      float64            `json:"mem_process_mb"`
+	MemFreeMB                         float64            `json:"mem_free_mb"`
+	NetSentKbps                       float64            `json:"net_sent_kbps"`
+	NetRecvKbps                       float64            `json:"net_recv_kbps"`
+	DiskReadKbps                      float64            `json:"disk_read_kbps"`
+	DiskWriteKbps                     float64            `json:"disk_write_kbps"`
+	CPUUserPct                        float64            `json:"cpu_user_pct,omitempty"`
+	CPUSystemPct                      float64            `json:"cpu_system_pct,omitempty"`
+	CPUIOWaitPct                      float64            `json:"cpu_iowait_pct,omitempty"`
+	CPUStealPct                       float64            `json:"cpu_steal_pct,omitempty"`
+	Load1                             float64            `json:"load1,omitempty"`
+	Load5                             float64            `json:"load5,omitempty"`
+	Load15                            float64            `json:"load15,omitempty"`
+	ThreadCount                       int32              `json:"thread_count,omitempty"`
+	OpenFDCount                       int32              `json:"open_fd_count,omitempty"`
+	GoroutineCount                    int32              `json:"goroutine_count,omitempty"`
+	HeapAllocMB                       float64            `json:"heap_alloc_mb,omitempty"`
+	HeapInUseMB                       float64            `json:"heap_in_use_mb,omitempty"`
+	GCCountDelta                      uint32             `json:"gc_count_delta,omitempty"`
+	GCPauseMs                         float64            `json:"gc_pause_ms,omitempty"`
+	ContainerCPULimitCores            float64            `json:"container_cpu_limit_cores,omitempty"`
+	ContainerCPUUsagePct              float64            `json:"container_cpu_usage_pct,omitempty"`
+	ContainerCPUThrottledPeriodsDelta uint64             `json:"container_cpu_throttled_periods_delta,omitempty"`
+	ContainerCPUThrottledSecondsRate  float64            `json:"container_cpu_throttled_seconds_rate,omitempty"`
+	ContainerMemoryWorkingSetMB       float64            `json:"container_memory_working_set_mb,omitempty"`
+	ContainerMemoryLimitMB            float64            `json:"container_memory_limit_mb,omitempty"`
+	ContainerMemoryUsagePct           float64            `json:"container_memory_usage_pct,omitempty"`
+	ContainerMemoryFailCountDelta     uint64             `json:"container_memory_fail_count_delta,omitempty"`
+	ContainerOOMKillCountDelta        uint64             `json:"container_oom_kill_count_delta,omitempty"`
+	NetDropInPerSec                   float64            `json:"net_drop_in_per_sec,omitempty"`
+	NetDropOutPerSec                  float64            `json:"net_drop_out_per_sec,omitempty"`
+	NetErrorInPerSec                  float64            `json:"net_error_in_per_sec,omitempty"`
+	NetErrorOutPerSec                 float64            `json:"net_error_out_per_sec,omitempty"`
+	TCPRetransmitsPerSec              float64            `json:"tcp_retransmits_per_sec,omitempty"`
+	TCPEstablished                    int                `json:"tcp_established,omitempty"`
+	TCPTimeWait                       int                `json:"tcp_time_wait,omitempty"`
+	EphemeralPortUtilizationPct       float64            `json:"ephemeral_port_utilization_pct,omitempty"`
+	DiskIOTimePct                     float64            `json:"disk_io_time_pct,omitempty"`
+	DiskWeightedIOTimePct             float64            `json:"disk_weighted_io_time_pct,omitempty"`
+	DiskInProgress                    uint64             `json:"disk_in_progress,omitempty"`
+	External                          map[string]float64 `json:"external_metrics,omitempty"`
 }
 
 type IntervalSummaryRecord struct {
@@ -439,12 +473,25 @@ type RunArchiveActionStats struct {
 }
 
 type RunArchiveResourcePeaks struct {
-	CPUProcessPct float64 `json:"cpu_process_pct"`
-	MemProcessMB  float64 `json:"mem_process_mb"`
-	NetSentKbps   float64 `json:"net_sent_kbps"`
-	NetRecvKbps   float64 `json:"net_recv_kbps"`
-	DiskReadKbps  float64 `json:"disk_read_kbps"`
-	DiskWriteKbps float64 `json:"disk_write_kbps"`
+	CPUProcessPct                    float64 `json:"cpu_process_pct"`
+	MemProcessMB                     float64 `json:"mem_process_mb"`
+	NetSentKbps                      float64 `json:"net_sent_kbps"`
+	NetRecvKbps                      float64 `json:"net_recv_kbps"`
+	DiskReadKbps                     float64 `json:"disk_read_kbps"`
+	DiskWriteKbps                    float64 `json:"disk_write_kbps"`
+	CPUIOWaitPct                     float64 `json:"cpu_iowait_pct,omitempty"`
+	CPUStealPct                      float64 `json:"cpu_steal_pct,omitempty"`
+	GCPauseMs                        float64 `json:"gc_pause_ms,omitempty"`
+	ContainerCPUUsagePct             float64 `json:"container_cpu_usage_pct,omitempty"`
+	ContainerCPUThrottledSecondsRate float64 `json:"container_cpu_throttled_seconds_rate,omitempty"`
+	ContainerMemoryUsagePct          float64 `json:"container_memory_usage_pct,omitempty"`
+	ContainerOOMKillCountDelta       uint64  `json:"container_oom_kill_count_delta,omitempty"`
+	NetDropInPerSec                  float64 `json:"net_drop_in_per_sec,omitempty"`
+	NetDropOutPerSec                 float64 `json:"net_drop_out_per_sec,omitempty"`
+	NetErrorInPerSec                 float64 `json:"net_error_in_per_sec,omitempty"`
+	NetErrorOutPerSec                float64 `json:"net_error_out_per_sec,omitempty"`
+	TCPRetransmitsPerSec             float64 `json:"tcp_retransmits_per_sec,omitempty"`
+	DiskIOTimePct                    float64 `json:"disk_io_time_pct,omitempty"`
 }
 
 type BrowserDiagnosticsBundle struct {
@@ -680,19 +727,53 @@ func (w *runArchiveWriter) RecordResourceSample(timestamp time.Time, activeVUser
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	record := ResourceSample{
-		Timestamp:     timestamp,
-		TestID:        w.manifest.TestID,
-		TestName:      w.manifest.TestName,
-		ActiveVUsers:  activeVUsers,
-		CPUProcessPct: resources.CPUProcessPct,
-		CPUFreePct:    resources.CPUFreePct,
-		MemProcessMB:  resources.MemProcessMb,
-		MemFreeMB:     resources.MemFreeMb,
-		NetSentKbps:   resources.NetSentKbps,
-		NetRecvKbps:   resources.NetRecvKbps,
-		DiskReadKbps:  resources.DiskReadKbps,
-		DiskWriteKbps: resources.DiskWriteKbps,
-		External:      cloneFloat64Map(resources.External),
+		Timestamp:                         timestamp,
+		TestID:                            w.manifest.TestID,
+		TestName:                          w.manifest.TestName,
+		ActiveVUsers:                      activeVUsers,
+		CPUProcessPct:                     resources.CPUProcessPct,
+		CPUFreePct:                        resources.CPUFreePct,
+		MemProcessMB:                      resources.MemProcessMb,
+		MemFreeMB:                         resources.MemFreeMb,
+		NetSentKbps:                       resources.NetSentKbps,
+		NetRecvKbps:                       resources.NetRecvKbps,
+		DiskReadKbps:                      resources.DiskReadKbps,
+		DiskWriteKbps:                     resources.DiskWriteKbps,
+		CPUUserPct:                        resources.CPUUserPct,
+		CPUSystemPct:                      resources.CPUSystemPct,
+		CPUIOWaitPct:                      resources.CPUIOWaitPct,
+		CPUStealPct:                       resources.CPUStealPct,
+		Load1:                             resources.Load1,
+		Load5:                             resources.Load5,
+		Load15:                            resources.Load15,
+		ThreadCount:                       resources.ThreadCount,
+		OpenFDCount:                       resources.OpenFDCount,
+		GoroutineCount:                    resources.GoroutineCount,
+		HeapAllocMB:                       resources.HeapAllocMB,
+		HeapInUseMB:                       resources.HeapInUseMB,
+		GCCountDelta:                      resources.GCCountDelta,
+		GCPauseMs:                         resources.GCPauseMs,
+		ContainerCPULimitCores:            resources.ContainerCPULimitCores,
+		ContainerCPUUsagePct:              resources.ContainerCPUUsagePct,
+		ContainerCPUThrottledPeriodsDelta: resources.ContainerCPUThrottledPeriodsDelta,
+		ContainerCPUThrottledSecondsRate:  resources.ContainerCPUThrottledSecondsRate,
+		ContainerMemoryWorkingSetMB:       resources.ContainerMemoryWorkingSetMB,
+		ContainerMemoryLimitMB:            resources.ContainerMemoryLimitMB,
+		ContainerMemoryUsagePct:           resources.ContainerMemoryUsagePct,
+		ContainerMemoryFailCountDelta:     resources.ContainerMemoryFailCountDelta,
+		ContainerOOMKillCountDelta:        resources.ContainerOOMKillCountDelta,
+		NetDropInPerSec:                   resources.NetDropInPerSec,
+		NetDropOutPerSec:                  resources.NetDropOutPerSec,
+		NetErrorInPerSec:                  resources.NetErrorInPerSec,
+		NetErrorOutPerSec:                 resources.NetErrorOutPerSec,
+		TCPRetransmitsPerSec:              resources.TCPRetransmitsPerSec,
+		TCPEstablished:                    resources.TCPEstablished,
+		TCPTimeWait:                       resources.TCPTimeWait,
+		EphemeralPortUtilizationPct:       resources.EphemeralPortUtilizationPct,
+		DiskIOTimePct:                     resources.DiskIOTimePct,
+		DiskWeightedIOTimePct:             resources.DiskWeightedIOTimePct,
+		DiskInProgress:                    resources.DiskInProgress,
+		External:                          cloneFloat64Map(resources.External),
 	}
 	if err := w.resourceEncoder.Encode(record); err != nil {
 		return err
@@ -1302,6 +1383,45 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		}
 		if sample.DiskWriteKbps > report.ResourcePeaks.DiskWriteKbps {
 			report.ResourcePeaks.DiskWriteKbps = sample.DiskWriteKbps
+		}
+		if sample.CPUIOWaitPct > report.ResourcePeaks.CPUIOWaitPct {
+			report.ResourcePeaks.CPUIOWaitPct = sample.CPUIOWaitPct
+		}
+		if sample.CPUStealPct > report.ResourcePeaks.CPUStealPct {
+			report.ResourcePeaks.CPUStealPct = sample.CPUStealPct
+		}
+		if sample.GCPauseMs > report.ResourcePeaks.GCPauseMs {
+			report.ResourcePeaks.GCPauseMs = sample.GCPauseMs
+		}
+		if sample.ContainerCPUUsagePct > report.ResourcePeaks.ContainerCPUUsagePct {
+			report.ResourcePeaks.ContainerCPUUsagePct = sample.ContainerCPUUsagePct
+		}
+		if sample.ContainerCPUThrottledSecondsRate > report.ResourcePeaks.ContainerCPUThrottledSecondsRate {
+			report.ResourcePeaks.ContainerCPUThrottledSecondsRate = sample.ContainerCPUThrottledSecondsRate
+		}
+		if sample.ContainerMemoryUsagePct > report.ResourcePeaks.ContainerMemoryUsagePct {
+			report.ResourcePeaks.ContainerMemoryUsagePct = sample.ContainerMemoryUsagePct
+		}
+		if sample.ContainerOOMKillCountDelta > report.ResourcePeaks.ContainerOOMKillCountDelta {
+			report.ResourcePeaks.ContainerOOMKillCountDelta = sample.ContainerOOMKillCountDelta
+		}
+		if sample.NetDropInPerSec > report.ResourcePeaks.NetDropInPerSec {
+			report.ResourcePeaks.NetDropInPerSec = sample.NetDropInPerSec
+		}
+		if sample.NetDropOutPerSec > report.ResourcePeaks.NetDropOutPerSec {
+			report.ResourcePeaks.NetDropOutPerSec = sample.NetDropOutPerSec
+		}
+		if sample.NetErrorInPerSec > report.ResourcePeaks.NetErrorInPerSec {
+			report.ResourcePeaks.NetErrorInPerSec = sample.NetErrorInPerSec
+		}
+		if sample.NetErrorOutPerSec > report.ResourcePeaks.NetErrorOutPerSec {
+			report.ResourcePeaks.NetErrorOutPerSec = sample.NetErrorOutPerSec
+		}
+		if sample.TCPRetransmitsPerSec > report.ResourcePeaks.TCPRetransmitsPerSec {
+			report.ResourcePeaks.TCPRetransmitsPerSec = sample.TCPRetransmitsPerSec
+		}
+		if sample.DiskIOTimePct > report.ResourcePeaks.DiskIOTimePct {
+			report.ResourcePeaks.DiskIOTimePct = sample.DiskIOTimePct
 		}
 		if sample.ActiveVUsers > report.Overview.PeakActiveVUsers {
 			report.Overview.PeakActiveVUsers = sample.ActiveVUsers

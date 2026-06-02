@@ -9,7 +9,7 @@ import {
   mergeArchiveResourceHistory,
   summarizeExecutionChartData,
 } from './testExecutionMetricsModel'
-import { latencySeriesKeyForTarget } from './latencySeries'
+import { latencySeriesKeyForTarget, routeLatencyDetailSeriesKeyForTarget } from './latencySeries'
 
 describe('testExecutionMetricsModel', () => {
   it('maps backend execution history into chart points with group and latency metrics', () => {
@@ -75,6 +75,12 @@ describe('testExecutionMetricsModel', () => {
           name: 'edge',
           endpoint: 'https://example.test',
           latency_ms: 42,
+          probe_total_ms: 51,
+          dns_ms: 2,
+          connect_ms: 10,
+          ttfb_ms: 45,
+          jitter_ms: 1.5,
+          success_rate_pct: 92,
           last_success: true,
           timestamp: '2026-05-12T20:00:00Z',
         }],
@@ -88,11 +94,22 @@ describe('testExecutionMetricsModel', () => {
         net_recv_kbps: 18,
         disk_read_kbps: 2,
         disk_write_kbps: 4,
+        cpu_iowait_pct: 7,
+        gc_pause_ms: 12,
+        container_cpu_usage_pct: 88,
+        container_cpu_throttled_seconds_rate: 0.25,
+        container_memory_usage_pct: 72,
+        net_drop_in_per_sec: 1,
+        net_drop_out_per_sec: 2,
+        tcp_retransmits_per_sec: 3,
+        disk_io_time_pct: 44,
       },
     }])
 
     expect(mapped).toHaveLength(1)
     const endpointKey = latencySeriesKeyForTarget({ name: 'edge', endpoint: 'https://example.test' })
+    const dnsKey = routeLatencyDetailSeriesKeyForTarget({ name: 'edge', endpoint: 'https://example.test' }, 'dns')
+    const successRateKey = routeLatencyDetailSeriesKeyForTarget({ name: 'edge', endpoint: 'https://example.test' }, 'successRate')
 
     expect(mapped[0]).toMatchObject({
       vusers: 12,
@@ -102,9 +119,19 @@ describe('testExecutionMetricsModel', () => {
       Checkout_tps: 4.5,
       Checkout_avgMs: 123,
       Checkout_vusers: 12,
-      [endpointKey]: 42,
+      [endpointKey]: 51,
+      [dnsKey]: 2,
+      [successRateKey]: 92,
       cpuProcess: 10,
       memProcess: 256,
+      cpuIOWait: 7,
+      gcPauseMs: 12,
+      containerCPUUsagePct: 88,
+      containerCPUThrottledSecondsRate: 0.25,
+      containerMemoryUsagePct: 72,
+      netDropsPerSec: 3,
+      tcpRetransmitsPerSec: 3,
+      diskIOTimePct: 44,
       jmsConsumerLagMs: 32,
       jmsPeakConsumerLagMs: 65,
     })
@@ -157,6 +184,13 @@ describe('testExecutionMetricsModel', () => {
       net_recv_kbps: 18,
       disk_read_kbps: 2,
       disk_write_kbps: 4,
+      cpu_steal_pct: 2,
+      gc_pause_ms: 9,
+      container_cpu_usage_pct: 66,
+      container_memory_usage_pct: 81,
+      net_error_in_per_sec: 4,
+      net_error_out_per_sec: 5,
+      disk_io_time_pct: 37,
     }])
 
     expect(mapped[0]).toMatchObject({
@@ -169,6 +203,12 @@ describe('testExecutionMetricsModel', () => {
       memProcess: 256,
       netSent: 12,
       diskWrite: 4,
+      cpuSteal: 2,
+      gcPauseMs: 9,
+      containerCPUUsagePct: 66,
+      containerMemoryUsagePct: 81,
+      netErrorsPerSec: 9,
+      diskIOTimePct: 37,
     })
   })
 
@@ -187,7 +227,21 @@ describe('testExecutionMetricsModel', () => {
       p90_ms: 130,
       p95_ms: 155,
       p99_ms: 220,
+      latency: {
+        targets: [{
+          name: 'edge',
+          endpoint: 'https://example.test',
+          latency_ms: 42,
+          probe_total_ms: 52,
+          ttfb_ms: 44,
+          last_success: true,
+          timestamp: '2026-05-12T20:00:01.123Z',
+        }],
+      },
     }])
+
+    const endpointKey = latencySeriesKeyForTarget({ name: 'edge', endpoint: 'https://example.test' })
+    const ttfbKey = routeLatencyDetailSeriesKeyForTarget({ name: 'edge', endpoint: 'https://example.test' }, 'ttfb')
 
     expect(mapped[0]).toMatchObject({
       timestampMs: Date.parse('2026-05-12T20:00:01.123Z'),
@@ -199,6 +253,8 @@ describe('testExecutionMetricsModel', () => {
       p90: 130,
       p95: 155,
       p99: 220,
+      [endpointKey]: 52,
+      [ttfbKey]: 44,
     })
   })
 
@@ -225,6 +281,8 @@ describe('testExecutionMetricsModel', () => {
       net_recv_kbps: 18,
       disk_read_kbps: 2,
       disk_write_kbps: 4,
+      container_cpu_throttled_seconds_rate: 0.5,
+      tcp_retransmits_per_sec: 6,
     }])
 
     const merged = mergeArchiveResourceHistory(baseHistory, resourceHistory)
@@ -238,6 +296,8 @@ describe('testExecutionMetricsModel', () => {
       memProcess: 256,
       netSent: 12,
       diskRead: 2,
+      containerCPUThrottledSecondsRate: 0.5,
+      tcpRetransmitsPerSec: 6,
     })
   })
 

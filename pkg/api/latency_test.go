@@ -2,8 +2,11 @@ package api
 
 import (
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -36,6 +39,160 @@ func TestMeasureEndpointLatency(t *testing.T) {
 	targetUnreachable := tr.measureEndpointLatency("127.0.0.1:65535", "http://127.0.0.1:65535")
 	if targetUnreachable.LastSuccess {
 		t.Error("expected failure for unreachable port")
+	}
+}
+
+func TestMeasureEndpointLatencyCapturesHTTPProbeDiagnostics(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	u, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse server URL: %v", err)
+	}
+	tr := NewTestRunner(1, NewHub(), nil)
+
+	target := tr.measureEndpointLatency(u.Host, server.URL)
+
+	if !target.LastSuccess {
+		t.Fatalf("expected HTTP probe success, got %#v", target)
+	}
+	if target.ProbeMethod != http.MethodHead {
+		t.Fatalf("probe method = %q, want HEAD", target.ProbeMethod)
+	}
+	if target.HTTPStatus != http.StatusNoContent {
+		t.Fatalf("HTTP status = %d, want %d", target.HTTPStatus, http.StatusNoContent)
+	}
+	if target.ProbeTotalMs <= 0 || target.TTFBMs <= 0 {
+		t.Fatalf("expected total and TTFB timings, got total=%v ttfb=%v", target.ProbeTotalMs, target.TTFBMs)
+	}
+	if target.LatencyMs <= 0 || target.ConnectMs <= 0 {
+		t.Fatalf("expected TCP/connect timing to remain populated, got latency=%v connect=%v", target.LatencyMs, target.ConnectMs)
+	}
+	if target.IP == "" {
+		t.Fatal("expected remote IP to be captured")
+	}
+	if target.RouteStatus != "local" {
+		t.Fatalf("route status = %q, want local", target.RouteStatus)
+	}
+}
+
+func TestMeasureEndpointLatencyFallsBackToGETWhenHEADRejected(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	u, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse server URL: %v", err)
+	}
+	tr := NewTestRunner(1, NewHub(), nil)
+
+	target := tr.measureEndpointLatency(u.Host, server.URL)
+
+	if !target.LastSuccess {
+		t.Fatalf("expected GET fallback success, got %#v", target)
+	}
+	if target.ProbeMethod != http.MethodGet {
+		t.Fatalf("probe method = %q, want GET", target.ProbeMethod)
+	}
+	if target.HTTPStatus != http.StatusAccepted {
+		t.Fatalf("HTTP status = %d, want %d", target.HTTPStatus, http.StatusAccepted)
+	}
+}
+
+func TestMeasureEndpointLatencyFallsBackToTCPOnHTTPFailure(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen tcp: %v", err)
+	}
+	defer ln.Close()
+
+	addr := ln.Addr().String()
+	accepted := make(chan struct{})
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		conn.Close()
+		close(accepted)
+	}()
+
+	tr := NewTestRunner(1, NewHub(), nil)
+	target := tr.measureEndpointLatency(addr, "http://"+addr)
+
+	if !target.LastSuccess {
+		t.Fatalf("expected TCP fallback success, got %#v", target)
+	}
+	if target.ProbeMethod != "tcp" {
+		t.Fatalf("probe method = %q, want tcp", target.ProbeMethod)
+	}
+	if target.Error == "" {
+		t.Fatal("expected HTTP failure context to be retained")
+	}
+	select {
+	case <-accepted:
+	case <-time.After(time.Second):
+		t.Fatal("expected TCP fallback to connect to listener")
+	}
+}
+
+func TestLatencyStabilityUsesRollingWindow(t *testing.T) {
+	tr := &TestRunner{}
+	test := &ManagedTest{ID: "test-latency"}
+	now := time.Date(2026, time.June, 2, 12, 0, 0, 0, time.UTC)
+	var latest LatencyTarget
+
+	for index := 0; index < latencyStabilityWindowSize+1; index++ {
+		latency := &NetworkLatency{Targets: []LatencyTarget{{
+			Name:         "edge",
+			Endpoint:     "https://example.test",
+			LatencyMs:    float64(10 + index),
+			ProbeTotalMs: float64(100 + index),
+			LastSuccess:  true,
+			Timestamp:    now.Add(time.Duration(index) * time.Second),
+		}}}
+		tr.mu.Lock()
+		tr.applyLatencyStabilityLocked(test, latency)
+		tr.mu.Unlock()
+		latest = latency.Targets[0]
+	}
+
+	if latest.SampleCount != latencyStabilityWindowSize {
+		t.Fatalf("sample count = %d, want %d", latest.SampleCount, latencyStabilityWindowSize)
+	}
+	if latest.SuccessRatePct != 100 {
+		t.Fatalf("success rate = %v, want 100", latest.SuccessRatePct)
+	}
+	if latest.JitterMs <= 0 {
+		t.Fatalf("expected jitter from varied samples, got %v", latest.JitterMs)
+	}
+
+	latency := &NetworkLatency{Targets: []LatencyTarget{{
+		Name:        "edge",
+		Endpoint:    "https://example.test",
+		LastSuccess: false,
+		Timestamp:   now.Add(20 * time.Second),
+	}}}
+	tr.mu.Lock()
+	tr.applyLatencyStabilityLocked(test, latency)
+	tr.mu.Unlock()
+	latest = latency.Targets[0]
+
+	if latest.SampleCount != latencyStabilityWindowSize {
+		t.Fatalf("sample count after failure = %d, want %d", latest.SampleCount, latencyStabilityWindowSize)
+	}
+	wantSuccessRate := float64(latencyStabilityWindowSize-1) / float64(latencyStabilityWindowSize) * 100
+	if latest.SuccessRatePct != wantSuccessRate {
+		t.Fatalf("success rate = %v, want %v", latest.SuccessRatePct, wantSuccessRate)
 	}
 }
 

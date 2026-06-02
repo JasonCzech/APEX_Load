@@ -271,7 +271,7 @@ export default function LibraryAssetSourcePanel({ kind, projectId, onRefreshLoca
         </label>
         <label className="project-redaction-rule-field">
           <span>Remote</span>
-          <select className="settings-select" value={selectedRemoteId} onChange={event => setSelectedRemoteId(event.target.value)}>
+          <select className="settings-input library-source-select" value={selectedRemoteId} onChange={event => setSelectedRemoteId(event.target.value)}>
             {remotes.length === 0 && <option value="">No remote configured</option>}
             {remotes.map(remote => (
               <option key={remote.id} value={remote.id}>{remote.name}</option>
@@ -280,7 +280,7 @@ export default function LibraryAssetSourcePanel({ kind, projectId, onRefreshLoca
         </label>
         <label className="project-redaction-rule-field">
           <span>Source</span>
-          <select className="settings-select" value={sourceFilter} onChange={event => setSourceFilter(event.target.value as LibrarySourceFilter)}>
+          <select className="settings-input library-source-select" value={sourceFilter} onChange={event => setSourceFilter(event.target.value as LibrarySourceFilter)}>
             {SOURCE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>

@@ -12,7 +12,7 @@ import {
   routeLatencySeriesKeys,
   type ChartConfig,
 } from './TestExecutionCharts'
-import { routeLatencySeriesLabel } from './latencySeries'
+import { routeLatencyDetailSeriesKey, routeLatencySeriesLabel } from './latencySeries'
 
 describe('chartStateForMonitorPreset', () => {
   it('applies role-specific chart order and hides non-preset charts', () => {
@@ -31,8 +31,9 @@ describe('chartStateForMonitorPreset', () => {
 
   it('keeps route latency series visible when the latest point has no latency sample', () => {
     const endpointKey = 'latency_https%3A%2F%2Fexample.test'
+    const dnsKey = routeLatencyDetailSeriesKey(endpointKey, 'dns')
     const history = [
-      { time: '10:00:00', vusers: 1, tps: 1, avgMs: 90, errorPct: 0, p50: 80, p90: 100, p99: 110, [endpointKey]: 42 },
+      { time: '10:00:00', vusers: 1, tps: 1, avgMs: 90, errorPct: 0, p50: 80, p90: 100, p99: 110, [endpointKey]: 42, [dnsKey]: 2 },
       { time: '10:00:01', vusers: 1, tps: 1, avgMs: 91, errorPct: 0, p50: 81, p90: 101, p99: 111 },
     ]
 
@@ -41,6 +42,7 @@ describe('chartStateForMonitorPreset', () => {
     expect(keys).toEqual([endpointKey])
     expect(latestRouteLatencyValues(history, keys)).toEqual({ [endpointKey]: 42 })
     expect(routeLatencySeriesLabel(endpointKey)).toBe('https://example.test')
+    expect(routeLatencySeriesLabel(dnsKey)).toBe('DNS · https://example.test')
   })
 
   it('exports graph CSV with chart-specific metric columns', () => {
@@ -107,6 +109,51 @@ describe('chartStateForMonitorPreset', () => {
       { key: 'p90', label: 'P90', color: 'var(--chart-3)', unit: 'ms' },
       { key: 'p95', label: 'P95', color: 'var(--chart-2)', unit: 'ms' },
       { key: 'p99', label: 'P99', color: 'var(--chart-4)', unit: 'ms' },
+    ])
+  })
+
+  it('builds route latency rows for total, phase, and stability modes', () => {
+    const chart: ChartConfig = { id: 'network_latency', title: 'Route Latency (ms)', type: 'line-network' }
+    const endpointKey = 'latency_https%3A%2F%2Fexample.test'
+
+    expect(chartMetricRows(chart, [], [endpointKey], ['#00a3ff'])).toEqual([
+      { key: endpointKey, label: 'https://example.test', color: '#00a3ff', unit: 'ms' },
+    ])
+    expect(chartMetricKeys(chart, [], [endpointKey], false, [], 'phases', endpointKey)).toEqual([
+      endpointKey,
+      routeLatencyDetailSeriesKey(endpointKey, 'dns'),
+      routeLatencyDetailSeriesKey(endpointKey, 'connect'),
+      routeLatencyDetailSeriesKey(endpointKey, 'tls'),
+      routeLatencyDetailSeriesKey(endpointKey, 'ttfb'),
+    ])
+    expect(chartMetricRows(chart, [], [endpointKey], ['#00a3ff'], false, [], 'stability', endpointKey)).toEqual([
+      { key: routeLatencyDetailSeriesKey(endpointKey, 'jitter'), label: 'Jitter', color: 'var(--chart-2)', unit: 'ms' },
+      { key: routeLatencyDetailSeriesKey(endpointKey, 'successRate'), label: 'Success Rate', color: 'var(--chart-5)', unit: '%' },
+    ])
+  })
+
+  it('builds generator impact diagnostic rows', () => {
+    const chart: ChartConfig = { id: 'generator_impact', title: 'Generator Impact', type: 'line-impact' }
+
+    expect(chartMetricKeys(chart, [], [])).toEqual([
+      'containerCPUUsagePct',
+      'containerCPUThrottledSecondsRate',
+      'containerMemoryUsagePct',
+      'gcPauseMs',
+      'netDropsPerSec',
+      'netErrorsPerSec',
+      'tcpRetransmitsPerSec',
+      'diskIOTimePct',
+    ])
+    expect(chartMetricRows(chart, [], [], ['#00a3ff']).map(row => row.label)).toEqual([
+      'Container CPU',
+      'CPU Throttle',
+      'Memory Limit',
+      'GC Pause',
+      'Net Drops',
+      'Net Errors',
+      'TCP Retransmits',
+      'Disk Busy',
     ])
   })
 

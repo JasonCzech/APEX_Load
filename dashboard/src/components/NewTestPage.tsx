@@ -5,7 +5,7 @@ import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
-import { formatTimeCompact } from '../utils/timeUtils'
+import { formatTimeCompact, parseDurationToSeconds } from '../utils/timeUtils'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import {
   buildEffectiveScenarioGroups,
@@ -17,14 +17,12 @@ import {
   buildRunDefaultEditDraft,
   buildRunLoadProfilePreview,
   buildRuntimeSettingsForRun,
-  effectiveGroupRuntimeSettings,
   emptyGroupEditDraft,
   formatGroupPlacement,
   generatorCanRunGroup,
   generatorDisabledReason,
   getEffectiveResourceBaseline,
   getEffectiveRunDuration,
-  getEffectiveRuntimeDefaults,
   GLOBAL_RUN_DEFAULT_KEYS,
   groupOverrideCount,
   groupOverrideKey,
@@ -68,6 +66,30 @@ type ScheduleDraft = {
   availability_end_time: string
 }
 
+type SortDirection = 'asc' | 'desc'
+type ScenarioSortField = 'name' | 'releases' | 'last_run_at' | 'vusers' | 'duration' | 'groups'
+const NO_RELEASE_FILTER = '__no_release__'
+type GroupEditChanges = {
+  vusers: boolean
+  initialization: boolean
+  ramp_up: boolean
+  ramp_down: boolean
+  iterations: boolean
+  log_level: boolean
+  auto_transactions: boolean
+  pacing: boolean
+  think_time: boolean
+  continue_on_error: boolean
+  snapshot_on_error: boolean
+  error_handling: boolean
+  browser_device_profile: boolean
+  browser_headless: boolean
+  browser_touch_mode: boolean
+  browser_orientation: boolean
+  browser: boolean
+  assignment: boolean
+}
+
 const LOAD_PROFILE_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2']
 
 function formatDate(value?: string) {
@@ -82,8 +104,62 @@ function formatScheduleTimestamp(value?: string) {
   return value ? new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Not scheduled'
 }
 
-function formatScenarioMode(value?: StoredScenario['scenario_mode']) {
-  return value === 'goal_oriented' ? 'Goal Oriented' : 'VUser Driven'
+function formatUtcScheduleClock(date: Date) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(date)
+}
+
+function formatTimeZoneClock(date: Date, timeZone: string) {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(date)
+  } catch {
+    return formatUtcScheduleClock(date)
+  }
+}
+
+function formatTimeZoneOffset(date: Date, timeZone: string) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(date)
+    const partValue = (type: string) => Number(parts.find(part => part.type === type)?.value || 0)
+    const zonedTime = Date.UTC(
+      partValue('year'),
+      partValue('month') - 1,
+      partValue('day'),
+      partValue('hour'),
+      partValue('minute'),
+      partValue('second'),
+    )
+    const offsetMinutes = Math.round((zonedTime - date.getTime()) / 60000)
+    const sign = offsetMinutes >= 0 ? '+' : '-'
+    const absoluteMinutes = Math.abs(offsetMinutes)
+    const hours = String(Math.floor(absoluteMinutes / 60)).padStart(2, '0')
+    const minutes = String(absoluteMinutes % 60).padStart(2, '0')
+    return `UTC${sign}${hours}:${minutes}`
+  } catch {
+    return 'UTC+00:00'
+  }
+}
+
+function formatTimeZoneOptionLabel(timeZone: string, date: Date) {
+  return `${timeZone.replace(/_/g, ' ')} - ${formatTimeZoneClock(date, timeZone)} ${formatTimeZoneOffset(date, timeZone)}`
 }
 
 function formatScheduleToken(value?: string) {
@@ -211,6 +287,11 @@ function formatScenarioWorkloadSummary(scenario: StoredScenario) {
   return `${groupCount} group${groupCount === 1 ? '' : 's'} · ${vusers} VUsers`
 }
 
+function formatScenarioReleaseSummary(scenario: StoredScenario) {
+  const releases = scenario.associated_releases || []
+  return releases.length ? releases.map(release => release.name).join(', ') : 'No releases'
+}
+
 function scenarioSearchText(scenario: StoredScenario) {
   return [
     scenario.name,
@@ -221,6 +302,13 @@ function scenarioSearchText(scenario: StoredScenario) {
     ...(scenario.data_pools || []).map(pool => `${pool.alias} ${pool.pool_name || pool.pool_id}`),
     ...(scenario.associated_releases || []).map(release => release.name),
   ].filter(Boolean).join(' ').toLowerCase()
+}
+
+function scenarioMatchesReleaseFilter(scenario: StoredScenario, releaseFilter: string) {
+  if (!releaseFilter) return true
+  const associatedReleases = scenario.associated_releases || []
+  if (releaseFilter === NO_RELEASE_FILTER) return associatedReleases.length === 0
+  return associatedReleases.some(release => release.id === releaseFilter || release.name === releaseFilter)
 }
 
 function buildDefaultScheduleDraft(scenario?: StoredScenario | null, releaseId?: string) {
@@ -240,6 +328,59 @@ function buildDefaultScheduleDraft(scenario?: StoredScenario | null, releaseId?:
   }
 }
 
+function SortIndicator({ active, direction }: { active: boolean, direction: SortDirection }) {
+  return <span className={`sort-icon ${active ? 'active' : ''}`}>{active ? (direction === 'asc' ? '↑' : '↓') : '↕'}</span>
+}
+
+function changedFieldClass(changed: boolean, base = '') {
+  return [base, changed ? 'new-test-field-changed' : ''].filter(Boolean).join(' ') || undefined
+}
+
+function ChangedBadge({ changed }: { changed: boolean }) {
+  return changed ? <em className="new-test-changed-pill">Changed</em> : null
+}
+
+function normalizeDraftText(value?: string) {
+  return String(value || '').trim()
+}
+
+function selectedTargetsChanged(left: string[], right: string[]) {
+  const normalize = (values: string[]) => values.filter(Boolean).slice().sort().join('\u0000')
+  return normalize(left) !== normalize(right)
+}
+
+function buildGroupEditChanges(draft: GroupEditDraft, baseline: GroupEditDraft): GroupEditChanges {
+  const continueOnErrorChanged = normalizeDraftText(draft.continue_on_error) !== normalizeDraftText(baseline.continue_on_error)
+  const snapshotOnErrorChanged = normalizeDraftText(draft.snapshot_on_error) !== normalizeDraftText(baseline.snapshot_on_error)
+  const browserDeviceProfileChanged = normalizeDraftText(draft.browser_device_profile) !== normalizeDraftText(baseline.browser_device_profile)
+  const browserHeadlessChanged = normalizeDraftText(draft.browser_headless) !== normalizeDraftText(baseline.browser_headless)
+  const browserTouchModeChanged = normalizeDraftText(draft.browser_touch_mode) !== normalizeDraftText(baseline.browser_touch_mode)
+  const browserOrientationChanged = normalizeDraftText(draft.browser_orientation) !== normalizeDraftText(baseline.browser_orientation)
+  return {
+    vusers: normalizeDraftText(draft.vusers) !== normalizeDraftText(baseline.vusers),
+    initialization: draft.initialization !== baseline.initialization,
+    ramp_up: normalizeDraftText(draft.ramp_up) !== normalizeDraftText(baseline.ramp_up),
+    ramp_down: normalizeDraftText(draft.ramp_down) !== normalizeDraftText(baseline.ramp_down),
+    iterations: normalizeDraftText(draft.iterations) !== normalizeDraftText(baseline.iterations),
+    log_level: normalizeDraftText(draft.log_level) !== normalizeDraftText(baseline.log_level),
+    auto_transactions: normalizeDraftText(draft.auto_transactions) !== normalizeDraftText(baseline.auto_transactions),
+    pacing: normalizeDraftText(draft.pacingType) !== normalizeDraftText(baseline.pacingType)
+      || normalizeDraftText(draft.pacingAmount) !== normalizeDraftText(baseline.pacingAmount),
+    think_time: normalizeDraftText(draft.thinkTimeMs) !== normalizeDraftText(baseline.thinkTimeMs)
+      || draft.thinkIgnore !== baseline.thinkIgnore,
+    continue_on_error: continueOnErrorChanged,
+    snapshot_on_error: snapshotOnErrorChanged,
+    error_handling: continueOnErrorChanged || snapshotOnErrorChanged,
+    browser_device_profile: browserDeviceProfileChanged,
+    browser_headless: browserHeadlessChanged,
+    browser_touch_mode: browserTouchModeChanged,
+    browser_orientation: browserOrientationChanged,
+    browser: browserDeviceProfileChanged || browserHeadlessChanged || browserTouchModeChanged || browserOrientationChanged,
+    assignment: draft.assignmentMode !== baseline.assignmentMode
+      || selectedTargetsChanged(draft.selectedTargets, baseline.selectedTargets),
+  }
+}
+
 export default function NewTestPage({ activeApplication, activeRelease, releases, initialScenarioId, onSelectTest, onCreateRelease, onOpenScenarioBuilder }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
@@ -250,6 +391,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [schedules, setSchedules] = useState<ScenarioSchedule[]>([])
   const [scheduleLoading, setScheduleLoading] = useState(false)
   const [scheduleSubmitting, setScheduleSubmitting] = useState(false)
+  const [scheduleClock, setScheduleClock] = useState(() => new Date())
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null)
   const [expandedScheduleId, setExpandedScheduleId] = useState<string | null>(null)
   const [scheduleOccurrenceLoading, setScheduleOccurrenceLoading] = useState<string | null>(null)
@@ -258,6 +400,10 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [runName, setRunName] = useState('')
   const [newReleaseName, setNewReleaseName] = useState('')
   const [scenarioQuery, setScenarioQuery] = useState('')
+  const [scenarioReleaseFilter, setScenarioReleaseFilter] = useState('')
+  const [scenarioSortField, setScenarioSortField] = useState<ScenarioSortField>('name')
+  const [scenarioSortDirection, setScenarioSortDirection] = useState<SortDirection>('asc')
+  const [expandedScenarioId, setExpandedScenarioId] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   const [confirmDeleteScheduleId, setConfirmDeleteScheduleId] = useState<string | null>(null)
@@ -294,6 +440,10 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   }, [activeProject?.id, api, initialScenarioId])
 
   useEffect(() => { refresh() }, [refresh])
+  useEffect(() => {
+    const timer = window.setInterval(() => setScheduleClock(new Date()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
   useEffect(() => {
     if (!initialScenarioId) return
     setScenarioId(prev => prev === initialScenarioId ? prev : initialScenarioId)
@@ -383,12 +533,62 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     () => scenario?.scripts.find(group => groupOverrideKey(group) === editingGroupKey),
     [editingGroupKey, scenario],
   )
+  const groupEditBaseline = useMemo(
+    () => editingGroup && scenario ? buildGroupEditDraft(editingGroup, scenario, runDefaultOverrides) : emptyGroupEditDraft(),
+    [editingGroup, runDefaultOverrides, scenario],
+  )
+  const groupEditChanges = useMemo(
+    () => buildGroupEditChanges(groupEditDraft, groupEditBaseline),
+    [groupEditBaseline, groupEditDraft],
+  )
+  const hasGroupEditChanges = useMemo(
+    () => Object.values(groupEditChanges).some(Boolean),
+    [groupEditChanges],
+  )
   const generatorByTarget = useMemo(() => new Map(generatorInventory.map(generator => [generator.target, generator])), [generatorInventory])
+  const scenarioReleaseFilterOptions = useMemo(() => {
+    const optionMap = new Map<string, string>()
+    releases.forEach(item => {
+      optionMap.set(item.name, item.name)
+    })
+    scenarios.forEach(item => {
+      (item.associated_releases || []).forEach(releaseItem => {
+        optionMap.set(releaseItem.name, releaseItem.name)
+      })
+    })
+    return Array.from(optionMap.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((left, right) => left.label.localeCompare(right.label))
+  }, [releases, scenarios])
+  const scenariosWithoutRelease = useMemo(
+    () => scenarios.some(item => !item.associated_releases || item.associated_releases.length === 0),
+    [scenarios],
+  )
   const filteredScenarios = useMemo(() => {
     const query = scenarioQuery.trim().toLowerCase()
-    if (!query) return scenarios
-    return scenarios.filter(item => scenarioSearchText(item).includes(query))
-  }, [scenarioQuery, scenarios])
+    return scenarios.filter(item => {
+      if (!scenarioMatchesReleaseFilter(item, scenarioReleaseFilter)) return false
+      return !query || scenarioSearchText(item).includes(query)
+    })
+  }, [scenarioQuery, scenarioReleaseFilter, scenarios])
+  const scenarioFiltersActive = Boolean(scenarioQuery.trim() || scenarioReleaseFilter)
+  const sortedScenarios = useMemo(() => {
+    const valueFor = (item: StoredScenario): string | number => {
+      if (scenarioSortField === 'last_run_at') return new Date(item.last_run_at || 0).getTime()
+      if (scenarioSortField === 'vusers') return totalScenarioVUsers(item)
+      if (scenarioSortField === 'duration') return parseDurationToSeconds(item.duration)
+      if (scenarioSortField === 'groups') return item.scripts.length
+      if (scenarioSortField === 'releases') return formatScenarioReleaseSummary(item).toLowerCase()
+      return item.name.toLowerCase()
+    }
+
+    return [...filteredScenarios].sort((left, right) => {
+      const leftValue = valueFor(left)
+      const rightValue = valueFor(right)
+      const result = leftValue < rightValue ? -1 : leftValue > rightValue ? 1 : left.name.localeCompare(right.name)
+      return scenarioSortDirection === 'asc' ? result : -result
+    })
+  }, [filteredScenarios, scenarioSortDirection, scenarioSortField])
   const refreshSchedules = useCallback(async (currentScenarioId: string) => {
     if (!currentScenarioId) {
       setSchedules([])
@@ -446,17 +646,6 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       { label: 'Bottleneck', value: bottleneckValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
     ]
   }, [draftEstimate?.capacity_advisory, effectiveRunDuration, effectiveScenarioGroups.length, estimateLoading, groupRunOverrides, protocols, release?.name, runName, runOverridesCount, scenario, totalVUsers])
-  const selectedScenarioSummaryItems = useMemo(() => {
-    if (!scenario) return []
-    return [
-      { label: 'Mode', value: formatScenarioMode(scenario.scenario_mode) },
-      { label: 'Created', value: formatDate(scenario.created_at) },
-      { label: 'Last Run', value: formatDate(scenario.last_run_at) },
-      { label: 'Script Groups', value: String(scenario.scripts.length) },
-      ...((scenario.result_count ?? 0) > 0 ? [{ label: 'Results', value: String(scenario.result_count) }] : []),
-      ...((scenario.data_pools?.length || 0) > 0 ? [{ label: 'Shared Data Pools', value: String(scenario.data_pools?.length || 0) }] : []),
-    ]
-  }, [scenario])
   const readiness = useMemo(() => {
     const checks = [
       { label: activeApplication ? `Application: ${activeApplication.name}` : 'Select an application', ready: !!activeApplication },
@@ -475,6 +664,11 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   useEffect(() => {
     if (scenario && !runName) setRunName(scenario.name)
   }, [scenario, runName])
+  useEffect(() => {
+    if (!scenarioId) {
+      setExpandedScenarioId('')
+    }
+  }, [scenarioId])
   useEffect(() => {
     void refreshSchedules(scenarioId)
   }, [refreshSchedules, scenarioId])
@@ -523,7 +717,6 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const step1Complete = Boolean(scenario && scenario.scripts.length > 0)
   const step2Complete = Boolean(activeApplication && release)
   const step3Complete = step1Complete
-  const step4Complete = step1Complete && step2Complete
 
   const createRelease = async () => {
     const name = newReleaseName.trim()
@@ -535,7 +728,17 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 
   const selectScenario = (nextScenarioId: string) => {
     setScenarioId(nextScenarioId)
+    setExpandedScenarioId(prev => prev === nextScenarioId ? '' : nextScenarioId)
     setRunName('')
+  }
+
+  const sortScenarios = (field: ScenarioSortField) => {
+    if (scenarioSortField === field) {
+      setScenarioSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
+      return
+    }
+    setScenarioSortField(field)
+    setScenarioSortDirection(field === 'last_run_at' || field === 'vusers' ? 'desc' : 'asc')
   }
 
   const createRun = async (start: boolean) => {
@@ -772,8 +975,9 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   }
 
   const openGroupEditor = (group: ScenarioScriptGroup) => {
+    if (!scenario) return
     const key = groupOverrideKey(group)
-    setGroupEditDraft(buildGroupEditDraft(group, groupRunOverrides[key]))
+    setGroupEditDraft(buildGroupEditDraft(group, scenario, runDefaultOverrides, groupRunOverrides[key]))
     setEditingGroupKey(key)
   }
 
@@ -790,23 +994,24 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 
   const saveGroupOverride = () => {
     if (!editingGroupKey || !editingGroup || !scenario) return
+    if (!hasGroupEditChanges) return
     const nextOverride: GroupRunOverride = {}
     const vusers = Number(groupEditDraft.vusers)
     if (!Number.isFinite(vusers) || vusers < 1) {
       setError('VUsers must be greater than 0 for a script group override.')
       return
     }
-    if (vusers !== editingGroup.vusers) nextOverride.vusers = vusers
+    if (groupEditChanges.vusers) nextOverride.vusers = vusers
     const rampUp = groupEditDraft.ramp_up.trim()
     const rampDown = groupEditDraft.ramp_down.trim()
-    if (rampUp !== (editingGroup.ramp_up || '')) nextOverride.ramp_up = rampUp
-    if (rampDown !== (editingGroup.ramp_down || '')) nextOverride.ramp_down = rampDown
-    if (groupEditDraft.initialization !== (editingGroup.initialization || 'at_runtime')) {
+    if (groupEditChanges.ramp_up) nextOverride.ramp_up = rampUp
+    if (groupEditChanges.ramp_down) nextOverride.ramp_down = rampDown
+    if (groupEditChanges.initialization) {
       nextOverride.initialization = groupEditDraft.initialization
     }
 
     const runtimeSettings: RuntimeSettingsOverride = {}
-    if (groupEditDraft.iterations.trim()) {
+    if (groupEditChanges.iterations) {
       const iterations = Number(groupEditDraft.iterations)
       if (!Number.isFinite(iterations) || iterations < 1) {
         setError('Iterations must be greater than 0 for a script group override.')
@@ -814,32 +1019,31 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       }
       runtimeSettings.iterations = iterations
     }
-    if (groupEditDraft.log_level) runtimeSettings.log_level = groupEditDraft.log_level
-    if (groupEditDraft.auto_transactions) runtimeSettings.auto_transactions = groupEditDraft.auto_transactions
-    if (groupEditDraft.pacingType) {
+    if (groupEditChanges.log_level) runtimeSettings.log_level = groupEditDraft.log_level
+    if (groupEditChanges.auto_transactions) runtimeSettings.auto_transactions = groupEditDraft.auto_transactions
+    if (groupEditChanges.pacing) {
       if (groupEditDraft.pacingType === 'none') {
         runtimeSettings.pacing = { type: 'none' }
       } else if (groupEditDraft.pacingType === 'fixed_interval') {
         runtimeSettings.pacing = { type: 'fixed_interval', interval_ms: groupEditDraft.pacingAmount ? Number(groupEditDraft.pacingAmount) : 0 }
       } else if (groupEditDraft.pacingType === 'tps') {
         runtimeSettings.pacing = { type: 'tps', tps: groupEditDraft.pacingAmount ? Number(groupEditDraft.pacingAmount) : 0 }
-      } else {
+      } else if (groupEditDraft.pacingType === 'fixed_delay') {
         runtimeSettings.pacing = { type: 'fixed_delay', delay_ms: groupEditDraft.pacingAmount ? Number(groupEditDraft.pacingAmount) : 0 }
       }
     }
-    if (groupEditDraft.thinkIgnore) {
+    if (groupEditChanges.think_time && groupEditDraft.thinkIgnore) {
       runtimeSettings.think_time = { type: 'fixed', mean_ms: groupEditDraft.thinkTimeMs ? Number(groupEditDraft.thinkTimeMs) : 0, ignore: true }
-    } else if (groupEditDraft.thinkTimeMs.trim()) {
+    } else if (groupEditChanges.think_time && groupEditDraft.thinkTimeMs.trim()) {
       runtimeSettings.think_time = { type: 'fixed', mean_ms: Number(groupEditDraft.thinkTimeMs), ignore: false }
     }
-    if (groupEditDraft.continue_on_error || groupEditDraft.snapshot_on_error) {
-      const defaults = getEffectiveRuntimeDefaults(scenario, runDefaultOverrides)
+    if (groupEditChanges.error_handling) {
       runtimeSettings.error_handling = {
-        continue_on_error: groupEditDraft.continue_on_error ? groupEditDraft.continue_on_error === 'true' : Boolean(defaults.continue_on_error),
-        snapshot_on_error: groupEditDraft.snapshot_on_error ? groupEditDraft.snapshot_on_error === 'true' : Boolean(defaults.snapshot_on_error),
+        continue_on_error: groupEditDraft.continue_on_error === 'true',
+        snapshot_on_error: groupEditDraft.snapshot_on_error === 'true',
       }
     }
-    if (groupEditDraft.browser_device_profile || groupEditDraft.browser_headless || groupEditDraft.browser_touch_mode || groupEditDraft.browser_orientation) {
+    if (groupEditChanges.browser) {
       runtimeSettings.browser = {
         ...(groupEditDraft.browser_device_profile ? { device_profile: groupEditDraft.browser_device_profile } : {}),
         ...(groupEditDraft.browser_headless ? { headless: groupEditDraft.browser_headless === 'true' } : {}),
@@ -850,7 +1054,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     if (hasRuntimeSettingsValues(runtimeSettings)) {
       nextOverride.runtime_settings = runtimeSettings
     }
-    if (groupEditDraft.assignmentMode === 'specific_hosts') {
+    if (groupEditChanges.assignment && groupEditDraft.assignmentMode === 'specific_hosts') {
       const selectedTargets = groupEditDraft.selectedTargets.filter(Boolean)
       if (selectedTargets.length === 0) {
         setError('Select at least one load generator host for group placement.')
@@ -1048,8 +1252,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
           <p className="page-subtitle">Choose the release context, scenario, and run setup.</p>
         </div>
         <div className="inline-create-row">
-          <button className={`btn ${pageMode === 'launch' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPageMode('launch')}>Launch Runs</button>
-          <button className={`btn ${pageMode === 'schedules' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPageMode('schedules')}>Schedules</button>
+          <button className="btn btn-accent-action" aria-pressed={pageMode === 'launch'} onClick={() => setPageMode('launch')}>Launch Runs</button>
+          <button className="btn btn-accent-action" aria-pressed={pageMode === 'schedules'} onClick={() => setPageMode('schedules')}>Schedules</button>
         </div>
       </div>
 
@@ -1099,9 +1303,10 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                   <div className="setting-info">
                     <span className="setting-label">Timezone</span>
                     <span className="setting-desc">IANA timezone used for cron and calendar windows</span>
+                    <span className="setting-desc schedule-current-utc">Current UTC: {formatUtcScheduleClock(scheduleClock)} UTC</span>
                   </div>
                   <select className="settings-input" value={scheduleDraft.timezone} onChange={(event) => setScheduleDraft(prev => ({ ...prev, timezone: event.target.value }))}>
-                    {COMMON_TIMEZONES.map(tz => <option key={tz} value={tz}>{tz.replace(/_/g, ' ')}</option>)}
+                    {COMMON_TIMEZONES.map(tz => <option key={tz} value={tz}>{formatTimeZoneOptionLabel(tz, scheduleClock)}</option>)}
                   </select>
                 </div>
                 <div className="setting-row">
@@ -1402,59 +1607,182 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
             <div className="settings-group">
               <div className="new-test-scenario-browser">
                 <div className="new-test-scenario-picker">
-                  <label className="library-search new-test-scenario-search">
-                    <span>Search scenarios</span>
-                    <input
-                      type="search"
-                      value={scenarioQuery}
-                      onChange={(event) => setScenarioQuery(event.target.value)}
-                      placeholder="Find by scenario, script, protocol, release, or data pool..."
-                    />
-                  </label>
-                  <div className="new-test-scenario-count">
-                    {scenarioQuery.trim() ? `${filteredScenarios.length} matching scenario${filteredScenarios.length === 1 ? '' : 's'}` : `${scenarios.length} available scenario${scenarios.length === 1 ? '' : 's'}`}
+                  <div className="new-test-scenario-toolbar">
+                    <label className="library-search new-test-scenario-filter">
+                      <span>Filter</span>
+                      <select
+                        aria-label="Filter by release"
+                        value={scenarioReleaseFilter}
+                        onChange={(event) => setScenarioReleaseFilter(event.target.value)}
+                      >
+                        <option value="">All releases</option>
+                        {scenariosWithoutRelease && <option value={NO_RELEASE_FILTER}>No release association</option>}
+                        {scenarioReleaseFilterOptions.map(option => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="library-search new-test-scenario-search">
+                      <span>Search scenarios</span>
+                      <input
+                        type="search"
+                        value={scenarioQuery}
+                        onChange={(event) => setScenarioQuery(event.target.value)}
+                        placeholder="Find by scenario, script, protocol, release, or data pool..."
+                      />
+                    </label>
+                    <div className="new-test-scenario-count">
+                      {scenarioFiltersActive ? `${filteredScenarios.length} matching scenario${filteredScenarios.length === 1 ? '' : 's'}` : `${scenarios.length} available scenario${scenarios.length === 1 ? '' : 's'}`}
+                    </div>
                   </div>
+                  {groupSaveNotice && (
+                    <div className="new-test-default-notice" role="status">{groupSaveNotice}</div>
+                  )}
                   {filteredScenarios.length > 0 ? (
-                    <div className="new-test-scenario-card-grid compact">
-                      {filteredScenarios.map(item => {
-                        const itemProtocols = scenarioProtocolList(item)
-                        const selected = item.id === scenarioId
-                        return (
-                          <button
-                            type="button"
-                            key={item.id}
-                            className={`new-test-scenario-card ${selected ? 'selected' : ''}`}
-                            onClick={() => selectScenario(item.id)}
-                          >
-                            <div className="new-test-scenario-card-top">
-                              <span className="new-test-scenario-card-title">{item.name}</span>
-                              <span className={`new-test-scenario-card-mode ${item.scenario_mode === 'goal_oriented' ? 'goal' : ''}`}>{formatScenarioModeShort(item.scenario_mode)}</span>
-                            </div>
-                            <span className="new-test-scenario-card-meta">{formatScenarioWorkloadSummary(item)} · {item.duration || 'No duration'}</span>
-                            <span className="new-test-scenario-card-meta">{itemProtocols.length ? itemProtocols.join(', ') : 'No protocol'}</span>
-                          </button>
-                        )
-                      })}
+                    <div className="new-test-table-wrap new-test-scenario-table-wrap">
+                      <div className="data-table">
+                        <table className="new-test-scenario-table">
+                          <thead>
+                            <tr>
+                              <th onClick={() => sortScenarios('name')} className="sortable">Scenario <SortIndicator active={scenarioSortField === 'name'} direction={scenarioSortDirection} /></th>
+                              <th onClick={() => sortScenarios('releases')} className="sortable">Releases <SortIndicator active={scenarioSortField === 'releases'} direction={scenarioSortDirection} /></th>
+                              <th onClick={() => sortScenarios('last_run_at')} className="sortable">Most Recent Run <SortIndicator active={scenarioSortField === 'last_run_at'} direction={scenarioSortDirection} /></th>
+                              <th onClick={() => sortScenarios('vusers')} className="sortable">VUsers <SortIndicator active={scenarioSortField === 'vusers'} direction={scenarioSortDirection} /></th>
+                              <th onClick={() => sortScenarios('duration')} className="sortable">Duration <SortIndicator active={scenarioSortField === 'duration'} direction={scenarioSortDirection} /></th>
+                              <th onClick={() => sortScenarios('groups')} className="sortable">Groups <SortIndicator active={scenarioSortField === 'groups'} direction={scenarioSortDirection} /></th>
+                              <th>Protocols</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sortedScenarios.map(item => {
+                              const itemProtocols = scenarioProtocolList(item)
+                              const selected = item.id === scenarioId
+                              const expanded = item.id === expandedScenarioId
+                              const groupsForDisplay = selected ? effectiveScenarioGroups : item.scripts
+                              return (
+                                <Fragment key={item.id}>
+                                  <tr
+                                    className={`new-test-scenario-table-row clickable-row ${selected ? 'selected' : ''}`}
+                                    onClick={() => selectScenario(item.id)}
+                                  >
+                                    <td className="cell-name">
+                                      <div className="new-test-scenario-name-cell">
+                                        <span className="new-test-row-expander" aria-hidden="true">{expanded ? 'v' : '>'}</span>
+                                        <span>{item.name}</span>
+                                        <span className={`new-test-scenario-card-mode ${item.scenario_mode === 'goal_oriented' ? 'goal' : ''}`}>{formatScenarioModeShort(item.scenario_mode)}</span>
+                                      </div>
+                                      <div className="new-test-scenario-card-meta">{formatScenarioWorkloadSummary(item)}</div>
+                                    </td>
+                                    <td>
+                                      <div className="new-test-release-token-list">
+                                        {(item.associated_releases || []).map((releaseItem, index) => (
+                                          <span key={`${releaseItem.id || releaseItem.name}-${index}`} className="script-health-token">{releaseItem.name}</span>
+                                        ))}
+                                        {(!item.associated_releases || item.associated_releases.length === 0) && <span className="cell-muted">No releases</span>}
+                                      </div>
+                                    </td>
+                                    <td className="cell-muted">{formatDate(item.last_run_at)}</td>
+                                    <td>{totalScenarioVUsers(item)}</td>
+                                    <td>{item.duration || 'Not set'}</td>
+                                    <td>{item.scripts.length}</td>
+                                    <td>
+                                      <div className="new-test-release-token-list">
+                                        {itemProtocols.length ? itemProtocols.map(protocol => <span key={protocol} className="protocol-badge">{protocol}</span>) : <span className="cell-muted">None</span>}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                  {expanded && (
+                                    <tr className="no-hover new-test-scenario-expanded-row">
+                                      <td colSpan={7}>
+                                        <div className="new-test-scenario-groups-panel">
+                                          <div className="new-test-scenario-groups-header">
+                                            <strong>Script Groups</strong>
+                                            <span>{formatCount(groupsForDisplay.length, 'group')}</span>
+                                          </div>
+                                          <div className="data-table">
+                                            <table className="new-test-script-table">
+                                              <colgroup>
+                                                <col className="new-test-script-col-group" />
+                                                <col className="new-test-script-col-script" />
+                                                <col className="new-test-script-col-protocol" />
+                                                <col className="new-test-script-col-workload" />
+                                                <col className="new-test-script-col-iterations" />
+                                                <col className="new-test-script-col-pacing" />
+                                                <col className="new-test-script-col-think" />
+                                                <col className="new-test-script-col-log" />
+                                                <col className="new-test-script-col-auto" />
+                                                <col className="new-test-script-col-error" />
+                                                <col className="new-test-script-col-placement" />
+                                              </colgroup>
+                                              <thead>
+                                                <tr>
+                                                  <th>Group</th>
+                                                  <th>Script</th>
+                                                  <th>Protocol</th>
+                                                  <th>Workload</th>
+                                                  <th>Iterations</th>
+                                                  <th>Pacing</th>
+                                                  <th>Think Time</th>
+                                                  <th>Log Level</th>
+                                                  <th>Auto Tx</th>
+                                                  <th>Error Handling</th>
+                                                  <th>Placement</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody>
+                                                {groupsForDisplay.length > 0 ? groupsForDisplay.map((group, index) => {
+                                                  const sourceGroup = item.scripts[index] || group
+                                                  const key = groupOverrideKey(sourceGroup)
+                                                  const override = selected ? groupRunOverrides[key] : undefined
+                                                  const runtimeValues = buildGroupRuntimeTableValues(sourceGroup, item, selected ? runDefaultOverrides : buildEmptyRunDefaultOverrides(), override)
+                                                  const rowOverridden = selected && hasGroupOverrideValues(override)
+                                                  return (
+                                                    <tr key={key} className={rowOverridden ? 'new-test-script-row overridden' : 'new-test-script-row'} onClick={() => { if (selected) openGroupEditor(sourceGroup) }}>
+                                                      <td className="cell-name">
+                                                        <span>{group.name || group.script_name}</span>
+                                                        {rowOverridden && <em className="new-test-override-pill">Run override</em>}
+                                                      </td>
+                                                      <td>{group.script_name || group.script_id}</td>
+                                                      <td><span className="protocol-badge">{group.protocol || 'http'}</span></td>
+                                                      <td>
+                                                        <div className="new-test-workload-stack">
+                                                          <strong>{group.vusers} VUsers</strong>
+                                                          <span>{group.ramp_up || 'No ramp up'} / {group.ramp_down || 'No ramp down'}</span>
+                                                          <span>{group.initialization === 'at_once' ? 'Init at once' : 'Init at runtime'}</span>
+                                                        </div>
+                                                      </td>
+                                                      <td className="new-test-runtime-cell">{runtimeValues.iterations}</td>
+                                                      <td className="new-test-runtime-cell">{runtimeValues.pacing}</td>
+                                                      <td className="new-test-runtime-cell">{runtimeValues.thinkTime}</td>
+                                                      <td className="new-test-runtime-cell">{runtimeValues.logLevel}</td>
+                                                      <td className="new-test-runtime-cell">{runtimeValues.autoTransactions}</td>
+                                                      <td className="new-test-runtime-cell">{runtimeValues.errorHandling}</td>
+                                                      <td className="new-test-runtime-cell">{formatGroupPlacement(override)}</td>
+                                                    </tr>
+                                                  )
+                                                }) : (
+                                                  <tr>
+                                                    <td colSpan={11} className="cell-muted">No script groups included in this scenario.</td>
+                                                  </tr>
+                                                )}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </Fragment>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   ) : (
                     <div className="new-test-empty compact">No scenarios match this search.</div>
                   )}
                 </div>
-                <aside className="new-test-scenario-facts" aria-label="Selected scenario details">
-                  <h4>Scenario Details</h4>
-                  {scenario ? (
-                    <dl className="new-test-scenario-list">
-                      {selectedScenarioSummaryItems.map(item => (
-                        <div key={item.label}>
-                          <dt>{item.label}</dt>
-                          <dd>{item.value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  ) : (
-                    <p>Select a scenario to review its details.</p>
-                  )}
-                </aside>
               </div>
             </div>
           </section>
@@ -1496,7 +1824,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                       <button className="btn btn-ghost btn-sm" onClick={() => { setShowNewRelease(false); setNewReleaseName('') }}>Cancel</button>
                     </div>
                   ) : (
-                    <button className="btn btn-ghost btn-sm new-test-add-release-link" onClick={() => setShowNewRelease(true)}>+ New Release</button>
+                    <button className="btn btn-ghost btn-sm btn-accent-action new-test-add-release-link" onClick={() => setShowNewRelease(true)}>+ New Release</button>
                   )}
                 </div>
               </div>
@@ -1507,7 +1835,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                 <span className={`new-test-step-index${step3Complete ? ' complete' : ''}`}>{step3Complete ? '✓' : '3'}</span>
                 <div>
                   <h3>Global Run Settings</h3>
-                  <p>Set run-wide behavior; script-specific runtime edits live in Script Groups.</p>
+                  <p>Run-wide defaults for duration, shakeout, baseline, and runtime behavior.</p>
                 </div>
               </div>
               {defaultSaveNotice && (
@@ -1560,81 +1888,6 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
             </section>
           </div>
 
-          <section className="new-test-step">
-            <div className="new-test-step-header">
-              <span className={`new-test-step-index${step4Complete ? ' complete' : ''}`}>{step4Complete ? '✓' : '4'}</span>
-              <div>
-                <h3>Script Groups</h3>
-                <p>Click a row to override workload or runtime settings for this run only.</p>
-              </div>
-            </div>
-            {groupSaveNotice && (
-              <div className="new-test-default-notice" role="status">{groupSaveNotice}</div>
-            )}
-            {scenario ? (
-              <div className="new-test-table-wrap">
-                <div className="data-table">
-                  <table className="new-test-script-table">
-                    <thead>
-	                      <tr>
-	                        <th>Group</th>
-	                        <th>Script</th>
-	                        <th>Protocol</th>
-	                        <th>Workload</th>
-	                        <th>Iterations</th>
-	                        <th>Pacing</th>
-	                        <th>Think Time</th>
-	                        <th>Log Level</th>
-	                        <th>Auto Tx</th>
-	                        <th>Error Handling</th>
-	                        <th>Browser</th>
-	                        <th>Placement</th>
-	                        <th aria-label="Actions" />
-	                      </tr>
-                    </thead>
-                    <tbody>
-                      {effectiveScenarioGroups.map((group, index) => {
-	                        const sourceGroup = scenario.scripts[index] || group
-	                        const key = groupOverrideKey(sourceGroup)
-	                        const override = groupRunOverrides[key]
-	                        const runtimeValues = buildGroupRuntimeTableValues(sourceGroup, scenario, runDefaultOverrides, override)
-	                        return (
-	                          <tr key={key} className={hasGroupOverrideValues(override) ? 'new-test-script-row overridden' : 'new-test-script-row'} onClick={() => openGroupEditor(sourceGroup)}>
-                            <td className="cell-name">
-                              <span>{group.name || group.script_name}</span>
-                              {hasGroupOverrideValues(override) && <em className="new-test-override-pill">Run override</em>}
-                            </td>
-                            <td>{group.script_name || group.script_id}</td>
-                            <td><span className="protocol-badge">{group.protocol || 'http'}</span></td>
-                            <td>
-                              <div className="new-test-workload-stack">
-                                <strong>{group.vusers} VUsers</strong>
-                                <span>{group.ramp_up || 'No ramp up'} / {group.ramp_down || 'No ramp down'}</span>
-                                <span>{group.initialization === 'at_once' ? 'Init at once' : 'Init at runtime'}</span>
-	                              </div>
-	                            </td>
-	                            <td className="new-test-runtime-cell">{runtimeValues.iterations}</td>
-	                            <td className="new-test-runtime-cell">{runtimeValues.pacing}</td>
-	                            <td className="new-test-runtime-cell">{runtimeValues.thinkTime}</td>
-	                            <td className="new-test-runtime-cell">{runtimeValues.logLevel}</td>
-	                            <td className="new-test-runtime-cell">{runtimeValues.autoTransactions}</td>
-	                            <td className="new-test-runtime-cell">{runtimeValues.errorHandling}</td>
-	                            <td className="new-test-runtime-cell">{runtimeValues.browser}</td>
-	                            <td className="new-test-runtime-cell">{formatGroupPlacement(override)}</td>
-	                            <td>
-                              <button className="btn btn-sm btn-secondary" type="button" onClick={(event) => { event.stopPropagation(); openGroupEditor(sourceGroup) }}>Edit</button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : (
-              <div className="new-test-empty">Select a scenario to preview and edit script groups.</div>
-            )}
-          </section>
         </div>
 
         <aside className="new-test-sidebar-column">
@@ -1807,29 +2060,29 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                 <section>
                   <h4>Workload</h4>
                   <div className="new-test-default-editor-grid">
-                    <label>
-                      <span>VUsers</span>
+                    <label className={changedFieldClass(groupEditChanges.vusers)}>
+                      <span>VUsers <ChangedBadge changed={groupEditChanges.vusers} /></span>
                       <input className="settings-input" type="number" min="1" value={groupEditDraft.vusers} onChange={event => setGroupEditDraft(prev => ({ ...prev, vusers: event.target.value }))} />
                     </label>
-                    <label>
-                      <span>Initialization</span>
+                    <label className={changedFieldClass(groupEditChanges.initialization)}>
+                      <span>Initialization <ChangedBadge changed={groupEditChanges.initialization} /></span>
                       <select className="settings-input" value={groupEditDraft.initialization} onChange={event => setGroupEditDraft(prev => ({ ...prev, initialization: event.target.value as 'at_runtime' | 'at_once' }))}>
                         <option value="at_runtime">At runtime</option>
                         <option value="at_once">At once</option>
                       </select>
                     </label>
-                    <label>
-                      <span>Ramp up</span>
+                    <label className={changedFieldClass(groupEditChanges.ramp_up)}>
+                      <span>Ramp up <ChangedBadge changed={groupEditChanges.ramp_up} /></span>
                       <input className="settings-input" value={groupEditDraft.ramp_up} onChange={event => setGroupEditDraft(prev => ({ ...prev, ramp_up: event.target.value }))} placeholder="Scenario default" />
                     </label>
-                    <label>
-                      <span>Ramp down</span>
+                    <label className={changedFieldClass(groupEditChanges.ramp_down)}>
+                      <span>Ramp down <ChangedBadge changed={groupEditChanges.ramp_down} /></span>
                       <input className="settings-input" value={groupEditDraft.ramp_down} onChange={event => setGroupEditDraft(prev => ({ ...prev, ramp_down: event.target.value }))} placeholder="Scenario default" />
                     </label>
                   </div>
                 </section>
                 <section>
-                  <h4>Load Generator Sharding</h4>
+                  <h4>Load Generator Sharding <ChangedBadge changed={groupEditChanges.assignment} /></h4>
                   <p className="new-test-inline-note">Saved host placement applies only to this run. Multiple hosts split this group by available capacity.</p>
                   <div className="new-test-placement-toggle" role="radiogroup" aria-label="Load generator placement">
                     <label className={groupEditDraft.assignmentMode === 'auto' ? 'selected' : ''}>
@@ -1896,32 +2149,30 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                 <section>
                   <h4>Runtime Settings</h4>
                   <div className="new-test-default-editor-grid">
-                    <label>
-                      <span>Iterations</span>
-                      <input className="settings-input" type="number" min="1" value={groupEditDraft.iterations} onChange={event => setGroupEditDraft(prev => ({ ...prev, iterations: event.target.value }))} placeholder="Use default" />
+                    <label className={changedFieldClass(groupEditChanges.iterations)}>
+                      <span>Iterations <ChangedBadge changed={groupEditChanges.iterations} /></span>
+                      <input className="settings-input" type="number" min="1" value={groupEditDraft.iterations} onChange={event => setGroupEditDraft(prev => ({ ...prev, iterations: event.target.value }))} placeholder="Duration driven" />
                     </label>
-                    <label>
-                      <span>Log level</span>
+                    <label className={changedFieldClass(groupEditChanges.log_level)}>
+                      <span>Log level <ChangedBadge changed={groupEditChanges.log_level} /></span>
                       <select className="settings-input" value={groupEditDraft.log_level} onChange={event => setGroupEditDraft(prev => ({ ...prev, log_level: event.target.value }))}>
-                        <option value="">Use default</option>
                         <option value="disabled">Disabled</option>
                         <option value="standard">Standard</option>
                         <option value="extended">Extended</option>
                       </select>
                     </label>
-                    <label>
-                      <span>Auto transactions</span>
+                    <label className={changedFieldClass(groupEditChanges.auto_transactions)}>
+                      <span>Auto transactions <ChangedBadge changed={groupEditChanges.auto_transactions} /></span>
                       <select className="settings-input" value={groupEditDraft.auto_transactions} onChange={event => setGroupEditDraft(prev => ({ ...prev, auto_transactions: event.target.value }))}>
-                        <option value="">Use default</option>
                         <option value="none">None</option>
                         <option value="per_action">Per Action</option>
                         <option value="per_iteration">Per Iteration</option>
                       </select>
                     </label>
-                    <label>
-                      <span>Pacing</span>
+                    <label className={changedFieldClass(groupEditChanges.pacing)}>
+                      <span>Pacing <ChangedBadge changed={groupEditChanges.pacing} /></span>
                       <select className="settings-input" value={groupEditDraft.pacingType} onChange={event => setGroupEditDraft(prev => ({ ...prev, pacingType: event.target.value, pacingAmount: event.target.value === 'none' ? '' : prev.pacingAmount }))}>
-                        <option value="">Use default</option>
+                        <option value="">Script timing</option>
                         <option value="none">None</option>
                         <option value="fixed_delay">Fixed delay</option>
                         <option value="fixed_interval">Fixed interval</option>
@@ -1929,31 +2180,29 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                       </select>
                     </label>
                     {groupEditDraft.pacingType && groupEditDraft.pacingType !== 'none' && (
-                      <label>
-                        <span>{groupEditDraft.pacingType === 'tps' ? 'Target TPS' : 'Milliseconds'}</span>
+                      <label className={changedFieldClass(groupEditChanges.pacing)}>
+                        <span>{groupEditDraft.pacingType === 'tps' ? 'Target TPS' : 'Milliseconds'} <ChangedBadge changed={groupEditChanges.pacing} /></span>
                         <input className="settings-input" type="number" min="0" value={groupEditDraft.pacingAmount} onChange={event => setGroupEditDraft(prev => ({ ...prev, pacingAmount: event.target.value }))} />
                       </label>
                     )}
-                    <label>
-                      <span>Think time mean (ms)</span>
-                      <input className="settings-input" type="number" min="0" value={groupEditDraft.thinkTimeMs} onChange={event => setGroupEditDraft(prev => ({ ...prev, thinkTimeMs: event.target.value }))} placeholder="Use default" disabled={groupEditDraft.thinkIgnore} />
+                    <label className={changedFieldClass(groupEditChanges.think_time)}>
+                      <span>Think time mean (ms) <ChangedBadge changed={groupEditChanges.think_time} /></span>
+                      <input className="settings-input" type="number" min="0" value={groupEditDraft.thinkTimeMs} onChange={event => setGroupEditDraft(prev => ({ ...prev, thinkTimeMs: event.target.value }))} placeholder="Script think time" disabled={groupEditDraft.thinkIgnore} />
                     </label>
-                    <label className="checkbox-label new-test-default-checkbox">
+                    <label className={changedFieldClass(groupEditChanges.think_time, 'checkbox-label new-test-default-checkbox')}>
                       <input type="checkbox" checked={groupEditDraft.thinkIgnore} onChange={event => setGroupEditDraft(prev => ({ ...prev, thinkIgnore: event.target.checked }))} />
-                      <span>Ignore think time</span>
+                      <span>Ignore think time <ChangedBadge changed={groupEditChanges.think_time} /></span>
                     </label>
-                    <label>
-                      <span>Continue on error</span>
+                    <label className={changedFieldClass(groupEditChanges.continue_on_error)}>
+                      <span>Continue on error <ChangedBadge changed={groupEditChanges.continue_on_error} /></span>
                       <select className="settings-input" value={groupEditDraft.continue_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, continue_on_error: event.target.value }))}>
-                        <option value="">Use default</option>
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>
                       </select>
                     </label>
-                    <label>
-                      <span>Snapshot on error</span>
+                    <label className={changedFieldClass(groupEditChanges.snapshot_on_error)}>
+                      <span>Snapshot on error <ChangedBadge changed={groupEditChanges.snapshot_on_error} /></span>
                       <select className="settings-input" value={groupEditDraft.snapshot_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, snapshot_on_error: event.target.value }))}>
-                        <option value="">Use default</option>
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>
                       </select>
@@ -1963,30 +2212,30 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                 <section>
                   <h4>Browser Runtime</h4>
                   <div className="new-test-default-editor-grid">
-                    <label>
-                      <span>Device profile</span>
-                      <input className="settings-input" value={groupEditDraft.browser_device_profile} onChange={event => setGroupEditDraft(prev => ({ ...prev, browser_device_profile: event.target.value }))} placeholder="Use default" />
+                    <label className={changedFieldClass(groupEditChanges.browser_device_profile)}>
+                      <span>Device profile <ChangedBadge changed={groupEditChanges.browser_device_profile} /></span>
+                      <input className="settings-input" value={groupEditDraft.browser_device_profile} onChange={event => setGroupEditDraft(prev => ({ ...prev, browser_device_profile: event.target.value }))} placeholder="Standard browser" />
                     </label>
-                    <label>
-                      <span>Orientation</span>
+                    <label className={changedFieldClass(groupEditChanges.browser_orientation)}>
+                      <span>Orientation <ChangedBadge changed={groupEditChanges.browser_orientation} /></span>
                       <select className="settings-input" value={groupEditDraft.browser_orientation} onChange={event => setGroupEditDraft(prev => ({ ...prev, browser_orientation: event.target.value }))}>
-                        <option value="">Use default</option>
+                        <option value="">Standard</option>
                         <option value="portrait">Portrait</option>
                         <option value="landscape">Landscape</option>
                       </select>
                     </label>
-                    <label>
-                      <span>Headless</span>
+                    <label className={changedFieldClass(groupEditChanges.browser_headless)}>
+                      <span>Headless <ChangedBadge changed={groupEditChanges.browser_headless} /></span>
                       <select className="settings-input" value={groupEditDraft.browser_headless} onChange={event => setGroupEditDraft(prev => ({ ...prev, browser_headless: event.target.value }))}>
-                        <option value="">Use default</option>
+                        <option value="">Standard</option>
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>
                       </select>
                     </label>
-                    <label>
-                      <span>Touch mode</span>
+                    <label className={changedFieldClass(groupEditChanges.browser_touch_mode)}>
+                      <span>Touch mode <ChangedBadge changed={groupEditChanges.browser_touch_mode} /></span>
                       <select className="settings-input" value={groupEditDraft.browser_touch_mode} onChange={event => setGroupEditDraft(prev => ({ ...prev, browser_touch_mode: event.target.value }))}>
-                        <option value="">Use default</option>
+                        <option value="">Standard</option>
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>
                       </select>
@@ -1997,7 +2246,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
               <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setEditingGroupKey(null)}>Cancel</button>
                 <button type="button" className="btn btn-secondary" onClick={clearGroupOverride}>Use Scenario Defaults</button>
-                <button type="button" className="btn btn-primary" onClick={saveGroupOverride}>Save For This Run</button>
+                <button type="button" className="btn btn-primary" onClick={saveGroupOverride} disabled={!hasGroupEditChanges}>Save For This Run</button>
               </div>
             </div>
           </div>

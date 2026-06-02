@@ -160,10 +160,43 @@ type HeartbeatResponse struct {
 }
 
 type GeneratorStats struct {
-	ActiveVUsers   int32
-	CPUPercent     float64
-	MemoryBytes    int64
-	GoroutineCount int32
+	ActiveVUsers                      int32
+	CPUPercent                        float64
+	MemoryBytes                       int64
+	GoroutineCount                    int32
+	CPUUserPct                        float64
+	CPUSystemPct                      float64
+	CPUIOWaitPct                      float64
+	CPUStealPct                       float64
+	Load1                             float64
+	Load5                             float64
+	Load15                            float64
+	ThreadCount                       int32
+	OpenFDCount                       int32
+	HeapAllocMB                       float64
+	HeapInUseMB                       float64
+	GCCountDelta                      uint32
+	GCPauseMs                         float64
+	ContainerCPULimitCores            float64
+	ContainerCPUUsagePct              float64
+	ContainerCPUThrottledPeriodsDelta uint64
+	ContainerCPUThrottledSecondsRate  float64
+	ContainerMemoryWorkingSetMB       float64
+	ContainerMemoryLimitMB            float64
+	ContainerMemoryUsagePct           float64
+	ContainerMemoryFailCountDelta     uint64
+	ContainerOOMKillCountDelta        uint64
+	NetDropInPerSec                   float64
+	NetDropOutPerSec                  float64
+	NetErrorInPerSec                  float64
+	NetErrorOutPerSec                 float64
+	TCPRetransmitsPerSec              float64
+	TCPEstablished                    int32
+	TCPTimeWait                       int32
+	EphemeralPortUtilizationPct       float64
+	DiskIOTimePct                     float64
+	DiskWeightedIOTimePct             float64
+	DiskInProgress                    uint64
 }
 
 type Client struct {
@@ -321,15 +354,7 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 	if err != nil {
 		return HeartbeatResponse{}, err
 	}
-	stats := GeneratorStats{}
-	if pong.GetStats() != nil {
-		stats = GeneratorStats{
-			ActiveVUsers:   pong.GetStats().GetActiveVusers(),
-			CPUPercent:     pong.GetStats().GetCpuPercent(),
-			MemoryBytes:    pong.GetStats().GetMemoryBytes(),
-			GoroutineCount: pong.GetStats().GetGoroutineCount(),
-		}
-	}
+	stats := generatorStatsFromProto(pong.GetStats())
 
 	return HeartbeatResponse{
 		GeneratorID:        pong.GetGeneratorId(),
@@ -419,15 +444,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		})
 	}
 
-	stats := GeneratorStats{}
-	if batch.GetStats() != nil {
-		stats = GeneratorStats{
-			ActiveVUsers:   batch.GetStats().GetActiveVusers(),
-			CPUPercent:     batch.GetStats().GetCpuPercent(),
-			MemoryBytes:    batch.GetStats().GetMemoryBytes(),
-			GoroutineCount: batch.GetStats().GetGoroutineCount(),
-		}
-	}
+	stats := generatorStatsFromProto(batch.GetStats())
 	var telemetry *MetricsTelemetry
 	if batch.GetTelemetry() != nil {
 		telemetry = &MetricsTelemetry{
@@ -477,9 +494,87 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 
 func toProtoStats(stats GeneratorStats) *pb.GeneratorStats {
 	return &pb.GeneratorStats{
-		ActiveVusers:   stats.ActiveVUsers,
-		CpuPercent:     stats.CPUPercent,
-		MemoryBytes:    stats.MemoryBytes,
-		GoroutineCount: stats.GoroutineCount,
+		ActiveVusers:                      stats.ActiveVUsers,
+		CpuPercent:                        stats.CPUPercent,
+		MemoryBytes:                       stats.MemoryBytes,
+		GoroutineCount:                    stats.GoroutineCount,
+		CpuUserPct:                        stats.CPUUserPct,
+		CpuSystemPct:                      stats.CPUSystemPct,
+		CpuIowaitPct:                      stats.CPUIOWaitPct,
+		CpuStealPct:                       stats.CPUStealPct,
+		Load1:                             stats.Load1,
+		Load5:                             stats.Load5,
+		Load15:                            stats.Load15,
+		ThreadCount:                       stats.ThreadCount,
+		OpenFdCount:                       stats.OpenFDCount,
+		HeapAllocMb:                       stats.HeapAllocMB,
+		HeapInUseMb:                       stats.HeapInUseMB,
+		GcCountDelta:                      stats.GCCountDelta,
+		GcPauseMs:                         stats.GCPauseMs,
+		ContainerCpuLimitCores:            stats.ContainerCPULimitCores,
+		ContainerCpuUsagePct:              stats.ContainerCPUUsagePct,
+		ContainerCpuThrottledPeriodsDelta: stats.ContainerCPUThrottledPeriodsDelta,
+		ContainerCpuThrottledSecondsRate:  stats.ContainerCPUThrottledSecondsRate,
+		ContainerMemoryWorkingSetMb:       stats.ContainerMemoryWorkingSetMB,
+		ContainerMemoryLimitMb:            stats.ContainerMemoryLimitMB,
+		ContainerMemoryUsagePct:           stats.ContainerMemoryUsagePct,
+		ContainerMemoryFailCountDelta:     stats.ContainerMemoryFailCountDelta,
+		ContainerOomKillCountDelta:        stats.ContainerOOMKillCountDelta,
+		NetDropInPerSec:                   stats.NetDropInPerSec,
+		NetDropOutPerSec:                  stats.NetDropOutPerSec,
+		NetErrorInPerSec:                  stats.NetErrorInPerSec,
+		NetErrorOutPerSec:                 stats.NetErrorOutPerSec,
+		TcpRetransmitsPerSec:              stats.TCPRetransmitsPerSec,
+		TcpEstablished:                    stats.TCPEstablished,
+		TcpTimeWait:                       stats.TCPTimeWait,
+		EphemeralPortUtilizationPct:       stats.EphemeralPortUtilizationPct,
+		DiskIoTimePct:                     stats.DiskIOTimePct,
+		DiskWeightedIoTimePct:             stats.DiskWeightedIOTimePct,
+		DiskInProgress:                    stats.DiskInProgress,
+	}
+}
+
+func generatorStatsFromProto(stats *pb.GeneratorStats) GeneratorStats {
+	if stats == nil {
+		return GeneratorStats{}
+	}
+	return GeneratorStats{
+		ActiveVUsers:                      stats.GetActiveVusers(),
+		CPUPercent:                        stats.GetCpuPercent(),
+		MemoryBytes:                       stats.GetMemoryBytes(),
+		GoroutineCount:                    stats.GetGoroutineCount(),
+		CPUUserPct:                        stats.GetCpuUserPct(),
+		CPUSystemPct:                      stats.GetCpuSystemPct(),
+		CPUIOWaitPct:                      stats.GetCpuIowaitPct(),
+		CPUStealPct:                       stats.GetCpuStealPct(),
+		Load1:                             stats.GetLoad1(),
+		Load5:                             stats.GetLoad5(),
+		Load15:                            stats.GetLoad15(),
+		ThreadCount:                       stats.GetThreadCount(),
+		OpenFDCount:                       stats.GetOpenFdCount(),
+		HeapAllocMB:                       stats.GetHeapAllocMb(),
+		HeapInUseMB:                       stats.GetHeapInUseMb(),
+		GCCountDelta:                      stats.GetGcCountDelta(),
+		GCPauseMs:                         stats.GetGcPauseMs(),
+		ContainerCPULimitCores:            stats.GetContainerCpuLimitCores(),
+		ContainerCPUUsagePct:              stats.GetContainerCpuUsagePct(),
+		ContainerCPUThrottledPeriodsDelta: stats.GetContainerCpuThrottledPeriodsDelta(),
+		ContainerCPUThrottledSecondsRate:  stats.GetContainerCpuThrottledSecondsRate(),
+		ContainerMemoryWorkingSetMB:       stats.GetContainerMemoryWorkingSetMb(),
+		ContainerMemoryLimitMB:            stats.GetContainerMemoryLimitMb(),
+		ContainerMemoryUsagePct:           stats.GetContainerMemoryUsagePct(),
+		ContainerMemoryFailCountDelta:     stats.GetContainerMemoryFailCountDelta(),
+		ContainerOOMKillCountDelta:        stats.GetContainerOomKillCountDelta(),
+		NetDropInPerSec:                   stats.GetNetDropInPerSec(),
+		NetDropOutPerSec:                  stats.GetNetDropOutPerSec(),
+		NetErrorInPerSec:                  stats.GetNetErrorInPerSec(),
+		NetErrorOutPerSec:                 stats.GetNetErrorOutPerSec(),
+		TCPRetransmitsPerSec:              stats.GetTcpRetransmitsPerSec(),
+		TCPEstablished:                    stats.GetTcpEstablished(),
+		TCPTimeWait:                       stats.GetTcpTimeWait(),
+		EphemeralPortUtilizationPct:       stats.GetEphemeralPortUtilizationPct(),
+		DiskIOTimePct:                     stats.GetDiskIoTimePct(),
+		DiskWeightedIOTimePct:             stats.GetDiskWeightedIoTimePct(),
+		DiskInProgress:                    stats.GetDiskInProgress(),
 	}
 }

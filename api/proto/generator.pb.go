@@ -1110,13 +1110,46 @@ func (x *TransactionMetric) GetSoapOperation() string {
 }
 
 type GeneratorStats struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ActiveVusers   int32                  `protobuf:"varint,1,opt,name=active_vusers,json=activeVusers,proto3" json:"active_vusers,omitempty"`
-	CpuPercent     float64                `protobuf:"fixed64,2,opt,name=cpu_percent,json=cpuPercent,proto3" json:"cpu_percent,omitempty"`
-	MemoryBytes    int64                  `protobuf:"varint,3,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
-	GoroutineCount int32                  `protobuf:"varint,4,opt,name=goroutine_count,json=goroutineCount,proto3" json:"goroutine_count,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                             protoimpl.MessageState `protogen:"open.v1"`
+	ActiveVusers                      int32                  `protobuf:"varint,1,opt,name=active_vusers,json=activeVusers,proto3" json:"active_vusers,omitempty"`
+	CpuPercent                        float64                `protobuf:"fixed64,2,opt,name=cpu_percent,json=cpuPercent,proto3" json:"cpu_percent,omitempty"`
+	MemoryBytes                       int64                  `protobuf:"varint,3,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
+	GoroutineCount                    int32                  `protobuf:"varint,4,opt,name=goroutine_count,json=goroutineCount,proto3" json:"goroutine_count,omitempty"`
+	CpuUserPct                        float64                `protobuf:"fixed64,5,opt,name=cpu_user_pct,json=cpuUserPct,proto3" json:"cpu_user_pct,omitempty"`
+	CpuSystemPct                      float64                `protobuf:"fixed64,6,opt,name=cpu_system_pct,json=cpuSystemPct,proto3" json:"cpu_system_pct,omitempty"`
+	CpuIowaitPct                      float64                `protobuf:"fixed64,7,opt,name=cpu_iowait_pct,json=cpuIowaitPct,proto3" json:"cpu_iowait_pct,omitempty"`
+	CpuStealPct                       float64                `protobuf:"fixed64,8,opt,name=cpu_steal_pct,json=cpuStealPct,proto3" json:"cpu_steal_pct,omitempty"`
+	Load1                             float64                `protobuf:"fixed64,9,opt,name=load1,proto3" json:"load1,omitempty"`
+	Load5                             float64                `protobuf:"fixed64,10,opt,name=load5,proto3" json:"load5,omitempty"`
+	Load15                            float64                `protobuf:"fixed64,11,opt,name=load15,proto3" json:"load15,omitempty"`
+	ThreadCount                       int32                  `protobuf:"varint,12,opt,name=thread_count,json=threadCount,proto3" json:"thread_count,omitempty"`
+	OpenFdCount                       int32                  `protobuf:"varint,13,opt,name=open_fd_count,json=openFdCount,proto3" json:"open_fd_count,omitempty"`
+	HeapAllocMb                       float64                `protobuf:"fixed64,14,opt,name=heap_alloc_mb,json=heapAllocMb,proto3" json:"heap_alloc_mb,omitempty"`
+	HeapInUseMb                       float64                `protobuf:"fixed64,15,opt,name=heap_in_use_mb,json=heapInUseMb,proto3" json:"heap_in_use_mb,omitempty"`
+	GcCountDelta                      uint32                 `protobuf:"varint,16,opt,name=gc_count_delta,json=gcCountDelta,proto3" json:"gc_count_delta,omitempty"`
+	GcPauseMs                         float64                `protobuf:"fixed64,17,opt,name=gc_pause_ms,json=gcPauseMs,proto3" json:"gc_pause_ms,omitempty"`
+	ContainerCpuLimitCores            float64                `protobuf:"fixed64,18,opt,name=container_cpu_limit_cores,json=containerCpuLimitCores,proto3" json:"container_cpu_limit_cores,omitempty"`
+	ContainerCpuUsagePct              float64                `protobuf:"fixed64,19,opt,name=container_cpu_usage_pct,json=containerCpuUsagePct,proto3" json:"container_cpu_usage_pct,omitempty"`
+	ContainerCpuThrottledPeriodsDelta uint64                 `protobuf:"varint,20,opt,name=container_cpu_throttled_periods_delta,json=containerCpuThrottledPeriodsDelta,proto3" json:"container_cpu_throttled_periods_delta,omitempty"`
+	ContainerCpuThrottledSecondsRate  float64                `protobuf:"fixed64,21,opt,name=container_cpu_throttled_seconds_rate,json=containerCpuThrottledSecondsRate,proto3" json:"container_cpu_throttled_seconds_rate,omitempty"`
+	ContainerMemoryWorkingSetMb       float64                `protobuf:"fixed64,22,opt,name=container_memory_working_set_mb,json=containerMemoryWorkingSetMb,proto3" json:"container_memory_working_set_mb,omitempty"`
+	ContainerMemoryLimitMb            float64                `protobuf:"fixed64,23,opt,name=container_memory_limit_mb,json=containerMemoryLimitMb,proto3" json:"container_memory_limit_mb,omitempty"`
+	ContainerMemoryUsagePct           float64                `protobuf:"fixed64,24,opt,name=container_memory_usage_pct,json=containerMemoryUsagePct,proto3" json:"container_memory_usage_pct,omitempty"`
+	ContainerMemoryFailCountDelta     uint64                 `protobuf:"varint,25,opt,name=container_memory_fail_count_delta,json=containerMemoryFailCountDelta,proto3" json:"container_memory_fail_count_delta,omitempty"`
+	ContainerOomKillCountDelta        uint64                 `protobuf:"varint,26,opt,name=container_oom_kill_count_delta,json=containerOomKillCountDelta,proto3" json:"container_oom_kill_count_delta,omitempty"`
+	NetDropInPerSec                   float64                `protobuf:"fixed64,27,opt,name=net_drop_in_per_sec,json=netDropInPerSec,proto3" json:"net_drop_in_per_sec,omitempty"`
+	NetDropOutPerSec                  float64                `protobuf:"fixed64,28,opt,name=net_drop_out_per_sec,json=netDropOutPerSec,proto3" json:"net_drop_out_per_sec,omitempty"`
+	NetErrorInPerSec                  float64                `protobuf:"fixed64,29,opt,name=net_error_in_per_sec,json=netErrorInPerSec,proto3" json:"net_error_in_per_sec,omitempty"`
+	NetErrorOutPerSec                 float64                `protobuf:"fixed64,30,opt,name=net_error_out_per_sec,json=netErrorOutPerSec,proto3" json:"net_error_out_per_sec,omitempty"`
+	TcpRetransmitsPerSec              float64                `protobuf:"fixed64,31,opt,name=tcp_retransmits_per_sec,json=tcpRetransmitsPerSec,proto3" json:"tcp_retransmits_per_sec,omitempty"`
+	TcpEstablished                    int32                  `protobuf:"varint,32,opt,name=tcp_established,json=tcpEstablished,proto3" json:"tcp_established,omitempty"`
+	TcpTimeWait                       int32                  `protobuf:"varint,33,opt,name=tcp_time_wait,json=tcpTimeWait,proto3" json:"tcp_time_wait,omitempty"`
+	EphemeralPortUtilizationPct       float64                `protobuf:"fixed64,34,opt,name=ephemeral_port_utilization_pct,json=ephemeralPortUtilizationPct,proto3" json:"ephemeral_port_utilization_pct,omitempty"`
+	DiskIoTimePct                     float64                `protobuf:"fixed64,35,opt,name=disk_io_time_pct,json=diskIoTimePct,proto3" json:"disk_io_time_pct,omitempty"`
+	DiskWeightedIoTimePct             float64                `protobuf:"fixed64,36,opt,name=disk_weighted_io_time_pct,json=diskWeightedIoTimePct,proto3" json:"disk_weighted_io_time_pct,omitempty"`
+	DiskInProgress                    uint64                 `protobuf:"varint,37,opt,name=disk_in_progress,json=diskInProgress,proto3" json:"disk_in_progress,omitempty"`
+	unknownFields                     protoimpl.UnknownFields
+	sizeCache                         protoimpl.SizeCache
 }
 
 func (x *GeneratorStats) Reset() {
@@ -1173,6 +1206,237 @@ func (x *GeneratorStats) GetMemoryBytes() int64 {
 func (x *GeneratorStats) GetGoroutineCount() int32 {
 	if x != nil {
 		return x.GoroutineCount
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetCpuUserPct() float64 {
+	if x != nil {
+		return x.CpuUserPct
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetCpuSystemPct() float64 {
+	if x != nil {
+		return x.CpuSystemPct
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetCpuIowaitPct() float64 {
+	if x != nil {
+		return x.CpuIowaitPct
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetCpuStealPct() float64 {
+	if x != nil {
+		return x.CpuStealPct
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetLoad1() float64 {
+	if x != nil {
+		return x.Load1
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetLoad5() float64 {
+	if x != nil {
+		return x.Load5
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetLoad15() float64 {
+	if x != nil {
+		return x.Load15
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetThreadCount() int32 {
+	if x != nil {
+		return x.ThreadCount
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetOpenFdCount() int32 {
+	if x != nil {
+		return x.OpenFdCount
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetHeapAllocMb() float64 {
+	if x != nil {
+		return x.HeapAllocMb
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetHeapInUseMb() float64 {
+	if x != nil {
+		return x.HeapInUseMb
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetGcCountDelta() uint32 {
+	if x != nil {
+		return x.GcCountDelta
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetGcPauseMs() float64 {
+	if x != nil {
+		return x.GcPauseMs
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetContainerCpuLimitCores() float64 {
+	if x != nil {
+		return x.ContainerCpuLimitCores
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetContainerCpuUsagePct() float64 {
+	if x != nil {
+		return x.ContainerCpuUsagePct
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetContainerCpuThrottledPeriodsDelta() uint64 {
+	if x != nil {
+		return x.ContainerCpuThrottledPeriodsDelta
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetContainerCpuThrottledSecondsRate() float64 {
+	if x != nil {
+		return x.ContainerCpuThrottledSecondsRate
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetContainerMemoryWorkingSetMb() float64 {
+	if x != nil {
+		return x.ContainerMemoryWorkingSetMb
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetContainerMemoryLimitMb() float64 {
+	if x != nil {
+		return x.ContainerMemoryLimitMb
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetContainerMemoryUsagePct() float64 {
+	if x != nil {
+		return x.ContainerMemoryUsagePct
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetContainerMemoryFailCountDelta() uint64 {
+	if x != nil {
+		return x.ContainerMemoryFailCountDelta
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetContainerOomKillCountDelta() uint64 {
+	if x != nil {
+		return x.ContainerOomKillCountDelta
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetNetDropInPerSec() float64 {
+	if x != nil {
+		return x.NetDropInPerSec
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetNetDropOutPerSec() float64 {
+	if x != nil {
+		return x.NetDropOutPerSec
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetNetErrorInPerSec() float64 {
+	if x != nil {
+		return x.NetErrorInPerSec
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetNetErrorOutPerSec() float64 {
+	if x != nil {
+		return x.NetErrorOutPerSec
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetTcpRetransmitsPerSec() float64 {
+	if x != nil {
+		return x.TcpRetransmitsPerSec
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetTcpEstablished() int32 {
+	if x != nil {
+		return x.TcpEstablished
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetTcpTimeWait() int32 {
+	if x != nil {
+		return x.TcpTimeWait
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetEphemeralPortUtilizationPct() float64 {
+	if x != nil {
+		return x.EphemeralPortUtilizationPct
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetDiskIoTimePct() float64 {
+	if x != nil {
+		return x.DiskIoTimePct
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetDiskWeightedIoTimePct() float64 {
+	if x != nil {
+		return x.DiskWeightedIoTimePct
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetDiskInProgress() uint64 {
+	if x != nil {
+		return x.DiskInProgress
 	}
 	return 0
 }
@@ -1832,13 +2096,48 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0fdependency_type\x18\x0e \x01(\tR\x0edependencyType\x12+\n" +
 	"\x11dependency_target\x18\x0f \x01(\tR\x10dependencyTarget\x12G\n" +
 	"\x10server_telemetry\x18\x10 \x01(\v2\x1c.apexload.v1.ServerTelemetryR\x0fserverTelemetry\x12%\n" +
-	"\x0esoap_operation\x18\x11 \x01(\tR\rsoapOperation\"\xa2\x01\n" +
+	"\x0esoap_operation\x18\x11 \x01(\tR\rsoapOperation\"\xc4\r\n" +
 	"\x0eGeneratorStats\x12#\n" +
 	"\ractive_vusers\x18\x01 \x01(\x05R\factiveVusers\x12\x1f\n" +
 	"\vcpu_percent\x18\x02 \x01(\x01R\n" +
 	"cpuPercent\x12!\n" +
 	"\fmemory_bytes\x18\x03 \x01(\x03R\vmemoryBytes\x12'\n" +
-	"\x0fgoroutine_count\x18\x04 \x01(\x05R\x0egoroutineCount\"\xb4\x01\n" +
+	"\x0fgoroutine_count\x18\x04 \x01(\x05R\x0egoroutineCount\x12 \n" +
+	"\fcpu_user_pct\x18\x05 \x01(\x01R\n" +
+	"cpuUserPct\x12$\n" +
+	"\x0ecpu_system_pct\x18\x06 \x01(\x01R\fcpuSystemPct\x12$\n" +
+	"\x0ecpu_iowait_pct\x18\a \x01(\x01R\fcpuIowaitPct\x12\"\n" +
+	"\rcpu_steal_pct\x18\b \x01(\x01R\vcpuStealPct\x12\x14\n" +
+	"\x05load1\x18\t \x01(\x01R\x05load1\x12\x14\n" +
+	"\x05load5\x18\n" +
+	" \x01(\x01R\x05load5\x12\x16\n" +
+	"\x06load15\x18\v \x01(\x01R\x06load15\x12!\n" +
+	"\fthread_count\x18\f \x01(\x05R\vthreadCount\x12\"\n" +
+	"\ropen_fd_count\x18\r \x01(\x05R\vopenFdCount\x12\"\n" +
+	"\rheap_alloc_mb\x18\x0e \x01(\x01R\vheapAllocMb\x12#\n" +
+	"\x0eheap_in_use_mb\x18\x0f \x01(\x01R\vheapInUseMb\x12$\n" +
+	"\x0egc_count_delta\x18\x10 \x01(\rR\fgcCountDelta\x12\x1e\n" +
+	"\vgc_pause_ms\x18\x11 \x01(\x01R\tgcPauseMs\x129\n" +
+	"\x19container_cpu_limit_cores\x18\x12 \x01(\x01R\x16containerCpuLimitCores\x125\n" +
+	"\x17container_cpu_usage_pct\x18\x13 \x01(\x01R\x14containerCpuUsagePct\x12P\n" +
+	"%container_cpu_throttled_periods_delta\x18\x14 \x01(\x04R!containerCpuThrottledPeriodsDelta\x12N\n" +
+	"$container_cpu_throttled_seconds_rate\x18\x15 \x01(\x01R containerCpuThrottledSecondsRate\x12D\n" +
+	"\x1fcontainer_memory_working_set_mb\x18\x16 \x01(\x01R\x1bcontainerMemoryWorkingSetMb\x129\n" +
+	"\x19container_memory_limit_mb\x18\x17 \x01(\x01R\x16containerMemoryLimitMb\x12;\n" +
+	"\x1acontainer_memory_usage_pct\x18\x18 \x01(\x01R\x17containerMemoryUsagePct\x12H\n" +
+	"!container_memory_fail_count_delta\x18\x19 \x01(\x04R\x1dcontainerMemoryFailCountDelta\x12B\n" +
+	"\x1econtainer_oom_kill_count_delta\x18\x1a \x01(\x04R\x1acontainerOomKillCountDelta\x12,\n" +
+	"\x13net_drop_in_per_sec\x18\x1b \x01(\x01R\x0fnetDropInPerSec\x12.\n" +
+	"\x14net_drop_out_per_sec\x18\x1c \x01(\x01R\x10netDropOutPerSec\x12.\n" +
+	"\x14net_error_in_per_sec\x18\x1d \x01(\x01R\x10netErrorInPerSec\x120\n" +
+	"\x15net_error_out_per_sec\x18\x1e \x01(\x01R\x11netErrorOutPerSec\x125\n" +
+	"\x17tcp_retransmits_per_sec\x18\x1f \x01(\x01R\x14tcpRetransmitsPerSec\x12'\n" +
+	"\x0ftcp_established\x18  \x01(\x05R\x0etcpEstablished\x12\"\n" +
+	"\rtcp_time_wait\x18! \x01(\x05R\vtcpTimeWait\x12C\n" +
+	"\x1eephemeral_port_utilization_pct\x18\" \x01(\x01R\x1bephemeralPortUtilizationPct\x12'\n" +
+	"\x10disk_io_time_pct\x18# \x01(\x01R\rdiskIoTimePct\x128\n" +
+	"\x19disk_weighted_io_time_pct\x18$ \x01(\x01R\x15diskWeightedIoTimePct\x12(\n" +
+	"\x10disk_in_progress\x18% \x01(\x04R\x0ediskInProgress\"\xb4\x01\n" +
 	"\rControlSignal\x126\n" +
 	"\x06adjust\x18\x01 \x01(\v2\x1c.apexload.v1.VUserAdjustmentH\x00R\x06adjust\x12.\n" +
 	"\x04stop\x18\x02 \x01(\v2\x18.apexload.v1.StopRequestH\x00R\x04stop\x121\n" +

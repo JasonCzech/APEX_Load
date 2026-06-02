@@ -3,16 +3,21 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
 	"net"
+	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"os"
+	"os/exec"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -120,6 +125,7 @@ type TestRunner struct {
 	execution     testExecutionBackend
 	notifier      *notificationDispatcher
 	notifications atomic.Value
+	routeCache    map[string]latencyRouteCacheEntry
 }
 
 type ManagedTest struct {
@@ -175,6 +181,7 @@ type ManagedTest struct {
 	goalControl                  *goalControllerState
 	executionBackend             testExecutionBackend
 	lastNetworkLatency           *NetworkLatency
+	latencyProbeSamples          map[string][]latencyProbeSample
 	remoteTarget                 string
 	remoteClient                 generatorClient
 	remoteMetricsStream          *generatorrpc.MetricsStream
@@ -239,35 +246,51 @@ type RunLogicGoalSnapshot struct {
 }
 
 type LiveMetrics struct {
-	Timestamp              time.Time                            `json:"timestamp"`
-	ActiveVUsers           int64                                `json:"active_vusers"`
-	TPS                    float64                              `json:"tps"`
-	TargetTPS              float64                              `json:"target_tps,omitempty"`
-	ThroughputGapPct       float64                              `json:"throughput_gap_pct,omitempty"`
-	ThroughputTargetMissed bool                                 `json:"throughput_target_missed,omitempty"`
-	AvgResponseMs          float64                              `json:"avg_response_ms"`
-	ErrorPct               float64                              `json:"error_pct"`
-	TotalTx                int64                                `json:"total_transactions"`
-	TotalErrors            int64                                `json:"total_errors"`
-	P50Ms                  float64                              `json:"p50_ms"`
-	P90Ms                  float64                              `json:"p90_ms"`
-	P95Ms                  float64                              `json:"p95_ms"`
-	P99Ms                  float64                              `json:"p99_ms"`
-	Transactions           map[string]*TxMetrics                `json:"transactions,omitempty"`
-	DependencyHealth       map[string]*TxMetrics                `json:"dependency_health,omitempty"`
-	DependencyMap          *LiveDependencyMap                   `json:"dependency_map,omitempty"`
-	ErrorPatterns          []LiveErrorPattern                   `json:"error_patterns,omitempty"`
-	SOAPOperations         map[string]*TxMetrics                `json:"soap_operations,omitempty"`
-	NetworkProfiles        map[string]*TxMetrics                `json:"network_profiles,omitempty"`
-	GroupMetrics           map[string]*GroupLiveMetrics         `json:"groups,omitempty"`
-	Browser                *BrowserLiveMetrics                  `json:"browser,omitempty"`
-	BrowserByDevice        map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
-	GoalStatus             *GoalStatus                          `json:"goal_status,omitempty"`
-	CapacityStatus         *LiveCapacityStatus                  `json:"capacity_status,omitempty"`
-	TelemetryStatus        *TelemetryRunHealth                  `json:"telemetry_status,omitempty"`
-	Telemetry              *TelemetryHealth                     `json:"telemetry,omitempty"`
-	Resources              *engine.SystemResources              `json:"resources,omitempty"`
-	Latency                *NetworkLatency                      `json:"latency,omitempty"`
+	Timestamp              time.Time                             `json:"timestamp"`
+	ActiveVUsers           int64                                 `json:"active_vusers"`
+	TPS                    float64                               `json:"tps"`
+	TargetTPS              float64                               `json:"target_tps,omitempty"`
+	ThroughputGapPct       float64                               `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed bool                                  `json:"throughput_target_missed,omitempty"`
+	AvgResponseMs          float64                               `json:"avg_response_ms"`
+	ErrorPct               float64                               `json:"error_pct"`
+	TotalTx                int64                                 `json:"total_transactions"`
+	TotalErrors            int64                                 `json:"total_errors"`
+	P50Ms                  float64                               `json:"p50_ms"`
+	P90Ms                  float64                               `json:"p90_ms"`
+	P95Ms                  float64                               `json:"p95_ms"`
+	P99Ms                  float64                               `json:"p99_ms"`
+	Transactions           map[string]*TxMetrics                 `json:"transactions,omitempty"`
+	DependencyHealth       map[string]*TxMetrics                 `json:"dependency_health,omitempty"`
+	DependencyMap          *LiveDependencyMap                    `json:"dependency_map,omitempty"`
+	ErrorPatterns          []LiveErrorPattern                    `json:"error_patterns,omitempty"`
+	SOAPOperations         map[string]*TxMetrics                 `json:"soap_operations,omitempty"`
+	NetworkProfiles        map[string]*TxMetrics                 `json:"network_profiles,omitempty"`
+	GroupMetrics           map[string]*GroupLiveMetrics          `json:"groups,omitempty"`
+	Browser                *BrowserLiveMetrics                   `json:"browser,omitempty"`
+	BrowserByDevice        map[string]*BrowserDeviceLiveMetrics  `json:"browser_by_device,omitempty"`
+	GoalStatus             *GoalStatus                           `json:"goal_status,omitempty"`
+	CapacityStatus         *LiveCapacityStatus                   `json:"capacity_status,omitempty"`
+	TelemetryStatus        *TelemetryRunHealth                   `json:"telemetry_status,omitempty"`
+	Telemetry              *TelemetryHealth                      `json:"telemetry,omitempty"`
+	Resources              *engine.SystemResources               `json:"resources,omitempty"`
+	GeneratorResources     map[string]*GeneratorResourceSnapshot `json:"generator_resources,omitempty"`
+	Latency                *NetworkLatency                       `json:"latency,omitempty"`
+}
+
+type GeneratorResourceSnapshot struct {
+	GeneratorID     string                  `json:"generator_id"`
+	Target          string                  `json:"target"`
+	Region          string                  `json:"region,omitempty"`
+	ActiveVUsers    int32                   `json:"active_vusers"`
+	TPS             float64                 `json:"tps,omitempty"`
+	ErrorPct        float64                 `json:"error_pct,omitempty"`
+	P95Ms           float64                 `json:"p95_ms,omitempty"`
+	P99Ms           float64                 `json:"p99_ms,omitempty"`
+	SaturationState string                  `json:"saturation_state,omitempty"`
+	ImpactReasons   []string                `json:"impact_reasons,omitempty"`
+	Resources       *engine.SystemResources `json:"resources,omitempty"`
+	Timestamp       time.Time               `json:"timestamp"`
 }
 
 type LiveCapacityStatus struct {
@@ -375,13 +398,25 @@ type NetworkLatency struct {
 }
 
 type LatencyTarget struct {
-	Name        string    `json:"name"`
-	Endpoint    string    `json:"endpoint"`
-	LatencyMs   float64   `json:"latency_ms"`
-	IP          string    `json:"ip,omitempty"`
-	Hops        int       `json:"hops,omitempty"`
-	LastSuccess bool      `json:"last_success"`
-	Timestamp   time.Time `json:"timestamp"`
+	Name           string    `json:"name"`
+	Endpoint       string    `json:"endpoint"`
+	LatencyMs      float64   `json:"latency_ms"`
+	ProbeTotalMs   float64   `json:"probe_total_ms,omitempty"`
+	DNSMs          float64   `json:"dns_ms,omitempty"`
+	ConnectMs      float64   `json:"connect_ms,omitempty"`
+	TLSMs          float64   `json:"tls_ms,omitempty"`
+	TTFBMs         float64   `json:"ttfb_ms,omitempty"`
+	HTTPStatus     int       `json:"http_status,omitempty"`
+	ProbeMethod    string    `json:"probe_method,omitempty"`
+	IP             string    `json:"ip,omitempty"`
+	Hops           int       `json:"hops,omitempty"`
+	LastSuccess    bool      `json:"last_success"`
+	JitterMs       float64   `json:"jitter_ms,omitempty"`
+	SuccessRatePct float64   `json:"success_rate_pct,omitempty"`
+	SampleCount    int       `json:"sample_count,omitempty"`
+	RouteStatus    string    `json:"route_status,omitempty"`
+	Error          string    `json:"error,omitempty"`
+	Timestamp      time.Time `json:"timestamp"`
 }
 
 type GoalStatus struct {
@@ -609,9 +644,23 @@ const (
 	jmsBrokerPressureMinLagMs              = 200.0
 	jmsBrokerPressureLagMultiplier         = 2.0
 	jmsBrokerPressureSendRecvRatio         = 1.5
+	latencyStabilityWindowSize             = 12
+	latencyRouteCacheTTL                   = 5 * time.Minute
 )
 
 var runtimeOverrideEnvPattern = regexp.MustCompile(`\{\{\s*env\.([^{}\s]+)\s*\}\}`)
+
+type latencyProbeSample struct {
+	totalMs   float64
+	success   bool
+	timestamp time.Time
+}
+
+type latencyRouteCacheEntry struct {
+	hops      int
+	status    string
+	checkedAt time.Time
+}
 
 type GeneratorAssignmentSettings struct {
 	Mode            string         `json:"mode,omitempty"`
@@ -677,6 +726,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 		usageStore:    store,
 		execution:     localExecutionBackend{},
 		notifier:      newNotificationDispatcher(nil),
+		routeCache:    make(map[string]latencyRouteCacheEntry),
 	}
 	tr.loadSystemSettings(maxTests)
 	tr.loadStoredScripts()
@@ -1041,13 +1091,25 @@ func networkLatencyRecordToLiveMetrics(record *storage.NetworkLatencySummaryReco
 	latency := &NetworkLatency{Targets: make([]LatencyTarget, 0, len(record.Targets))}
 	for _, target := range record.Targets {
 		latency.Targets = append(latency.Targets, LatencyTarget{
-			Name:        target.Name,
-			Endpoint:    target.Endpoint,
-			LatencyMs:   target.LatencyMs,
-			IP:          target.IP,
-			Hops:        target.Hops,
-			LastSuccess: target.LastSuccess,
-			Timestamp:   target.Timestamp,
+			Name:           target.Name,
+			Endpoint:       target.Endpoint,
+			LatencyMs:      target.LatencyMs,
+			ProbeTotalMs:   target.ProbeTotalMs,
+			DNSMs:          target.DNSMs,
+			ConnectMs:      target.ConnectMs,
+			TLSMs:          target.TLSMs,
+			TTFBMs:         target.TTFBMs,
+			HTTPStatus:     target.HTTPStatus,
+			ProbeMethod:    target.ProbeMethod,
+			IP:             target.IP,
+			Hops:           target.Hops,
+			LastSuccess:    target.LastSuccess,
+			JitterMs:       target.JitterMs,
+			SuccessRatePct: target.SuccessRatePct,
+			SampleCount:    target.SampleCount,
+			RouteStatus:    target.RouteStatus,
+			Error:          target.Error,
+			Timestamp:      target.Timestamp,
 		})
 	}
 	return latency
@@ -6707,6 +6769,7 @@ func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, live *LiveMetrics
 	wg.Wait()
 
 	tr.mu.Lock()
+	tr.applyLatencyStabilityLocked(test, latency)
 	live.Latency = cloneNetworkLatency(latency)
 	test.lastNetworkLatency = cloneNetworkLatency(latency)
 	if test.LiveMetrics != nil {
@@ -6716,12 +6779,14 @@ func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, live *LiveMetrics
 
 	// Broadcast the latency update specifically if needed,
 	// though it will be part of the next metrics broadcast too.
-	tr.hub.BroadcastJSON(map[string]any{
-		"type":       "latency_update",
-		"test_id":    test.ID,
-		"project_id": normalizeProjectID(test.ProjectID),
-		"latency":    latency,
-	})
+	if tr.hub != nil {
+		tr.hub.BroadcastJSON(map[string]any{
+			"type":       "latency_update",
+			"test_id":    test.ID,
+			"project_id": normalizeProjectID(test.ProjectID),
+			"latency":    latency,
+		})
+	}
 }
 
 func (tr *TestRunner) latencyEndpointsForTest(test *ManagedTest) map[string]string {
@@ -6951,45 +7016,377 @@ func cloneNetworkLatency(in *NetworkLatency) *NetworkLatency {
 	return out
 }
 
+func (tr *TestRunner) applyLatencyStabilityLocked(test *ManagedTest, latency *NetworkLatency) {
+	if test == nil || latency == nil {
+		return
+	}
+	if test.latencyProbeSamples == nil {
+		test.latencyProbeSamples = make(map[string][]latencyProbeSample)
+	}
+	for index := range latency.Targets {
+		target := &latency.Targets[index]
+		key := latencyTargetKey(*target)
+		samples := append(test.latencyProbeSamples[key], latencyProbeSample{
+			totalMs:   latencySampleValue(*target),
+			success:   target.LastSuccess,
+			timestamp: target.Timestamp,
+		})
+		if len(samples) > latencyStabilityWindowSize {
+			samples = samples[len(samples)-latencyStabilityWindowSize:]
+		}
+		test.latencyProbeSamples[key] = samples
+		target.SampleCount = len(samples)
+		if len(samples) == 0 {
+			continue
+		}
+		successes := 0
+		successValues := make([]float64, 0, len(samples))
+		for _, sample := range samples {
+			if sample.success {
+				successes++
+				if sample.totalMs > 0 {
+					successValues = append(successValues, sample.totalMs)
+				}
+			}
+		}
+		target.SuccessRatePct = float64(successes) / float64(len(samples)) * 100
+		target.JitterMs = latencyJitterMs(successValues)
+	}
+}
+
+func latencyTargetKey(target LatencyTarget) string {
+	return strings.TrimSpace(target.Endpoint) + "|" + strings.TrimSpace(target.Name)
+}
+
+func latencySampleValue(target LatencyTarget) float64 {
+	if target.ProbeTotalMs > 0 {
+		return target.ProbeTotalMs
+	}
+	return target.LatencyMs
+}
+
+func latencyJitterMs(values []float64) float64 {
+	if len(values) < 2 {
+		return 0
+	}
+	var sum float64
+	for _, value := range values {
+		sum += value
+	}
+	mean := sum / float64(len(values))
+	var variance float64
+	for _, value := range values {
+		diff := value - mean
+		variance += diff * diff
+	}
+	return math.Sqrt(variance / float64(len(values)))
+}
+
 func (tr *TestRunner) measureEndpointLatency(host, endpoint string) LatencyTarget {
-	target := LatencyTarget{
-		Name:      host,
-		Endpoint:  endpoint,
-		Timestamp: time.Now(),
+	if isHTTPProbeEndpoint(endpoint) {
+		target, err := tr.measureEndpointHTTPLatency(host, endpoint)
+		if err == nil {
+			tr.applyLatencyRouteMetadata(&target)
+			return target
+		}
+
+		target = tr.measureEndpointTCPLatency(host, endpoint)
+		if target.LastSuccess {
+			target.Error = fmt.Sprintf("HTTP probe failed; TCP fallback succeeded: %s", err.Error())
+		} else if target.Error == "" {
+			target.Error = err.Error()
+		}
+		tr.applyLatencyRouteMetadata(&target)
+		return target
 	}
 
+	target := tr.measureEndpointTCPLatency(host, endpoint)
+	tr.applyLatencyRouteMetadata(&target)
+	return target
+}
+
+func (tr *TestRunner) measureEndpointTCPLatency(host, endpoint string) LatencyTarget {
+	target := LatencyTarget{
+		Name:        host,
+		Endpoint:    endpoint,
+		ProbeMethod: "tcp",
+		Timestamp:   time.Now(),
+	}
 	start := time.Now()
 
-	// We'll use a simple TCP dial to measure base R/T latency to the host.
-	// This is more reliable than ICMP ping which is often blocked.
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
-
-	// Default to port 80 or 443 if not specified
-	dialHost := host
-	if !strings.Contains(host, ":") {
-		if strings.HasPrefix(endpoint, "https") {
-			dialHost += ":443"
-		} else {
-			dialHost += ":80"
-		}
-	}
-
+	dialHost := latencyDialHost(host, endpoint)
 	conn, err := dialer.Dial("tcp", dialHost)
 	if err != nil {
 		target.LastSuccess = false
+		target.Error = err.Error()
 		return target
 	}
 	defer conn.Close()
 
 	target.LatencyMs = float64(time.Since(start).Microseconds()) / 1000.0
+	target.ConnectMs = target.LatencyMs
+	target.ProbeTotalMs = target.LatencyMs
 	target.LastSuccess = true
 
 	if addr, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
 		target.IP = addr.IP.String()
 	}
 
-	// Note: hop count/route info typically requires raw sockets or external tools.
-	// We'll leave it as 0 for now or implement a basic traceroute later if requested.
-
 	return target
+}
+
+func (tr *TestRunner) measureEndpointHTTPLatency(host, endpoint string) (LatencyTarget, error) {
+	target, err := tr.performLatencyHTTPProbe(host, endpoint, http.MethodHead)
+	if err == nil && target.HTTPStatus != http.StatusMethodNotAllowed && target.HTTPStatus != http.StatusNotImplemented {
+		return target, nil
+	}
+	if err == nil {
+		err = fmt.Errorf("HEAD probe returned %d", target.HTTPStatus)
+	}
+	fallback, fallbackErr := tr.performLatencyHTTPProbe(host, endpoint, http.MethodGet)
+	if fallbackErr == nil {
+		return fallback, nil
+	}
+	return fallback, fmt.Errorf("%s; GET fallback failed: %w", err.Error(), fallbackErr)
+}
+
+func (tr *TestRunner) performLatencyHTTPProbe(host, endpoint string, method string) (LatencyTarget, error) {
+	target := LatencyTarget{
+		Name:        host,
+		Endpoint:    endpoint,
+		ProbeMethod: strings.ToUpper(method),
+		Timestamp:   time.Now(),
+	}
+	req, err := http.NewRequest(method, endpoint, nil)
+	if err != nil {
+		target.Error = err.Error()
+		return target, err
+	}
+
+	var dnsStart time.Time
+	var connectStart time.Time
+	var tlsStart time.Time
+	start := time.Now()
+	trace := &httptrace.ClientTrace{
+		DNSStart: func(_ httptrace.DNSStartInfo) {
+			dnsStart = time.Now()
+		},
+		DNSDone: func(_ httptrace.DNSDoneInfo) {
+			if !dnsStart.IsZero() {
+				target.DNSMs = durationMilliseconds(time.Since(dnsStart))
+			}
+		},
+		ConnectStart: func(_, _ string) {
+			connectStart = time.Now()
+		},
+		ConnectDone: func(_, _ string, _ error) {
+			if !connectStart.IsZero() {
+				target.ConnectMs = durationMilliseconds(time.Since(connectStart))
+				target.LatencyMs = target.ConnectMs
+			}
+		},
+		TLSHandshakeStart: func() {
+			tlsStart = time.Now()
+		},
+		TLSHandshakeDone: func(_ tls.ConnectionState, _ error) {
+			if !tlsStart.IsZero() {
+				target.TLSMs = durationMilliseconds(time.Since(tlsStart))
+			}
+		},
+		GotFirstResponseByte: func() {
+			target.TTFBMs = durationMilliseconds(time.Since(start))
+		},
+		GotConn: func(info httptrace.GotConnInfo) {
+			if addr, ok := info.Conn.RemoteAddr().(*net.TCPAddr); ok {
+				target.IP = addr.IP.String()
+			}
+		},
+	}
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	client := &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: newLatencyProbeTransport(),
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
+	target.ProbeTotalMs = durationMilliseconds(time.Since(start))
+	if target.LatencyMs == 0 && target.ConnectMs > 0 {
+		target.LatencyMs = target.ConnectMs
+	}
+	if err != nil {
+		target.LastSuccess = false
+		target.Error = err.Error()
+		return target, err
+	}
+	defer resp.Body.Close()
+	target.HTTPStatus = resp.StatusCode
+	target.LastSuccess = true
+	if target.TTFBMs == 0 {
+		target.TTFBMs = target.ProbeTotalMs
+	}
+	return target, nil
+}
+
+func newLatencyProbeTransport() *http.Transport {
+	return &http.Transport{
+		DisableKeepAlives:   true,
+		TLSHandshakeTimeout: 5 * time.Second,
+		DialContext: (&net.Dialer{
+			Timeout: 5 * time.Second,
+		}).DialContext,
+	}
+}
+
+func isHTTPProbeEndpoint(endpoint string) bool {
+	lower := strings.ToLower(strings.TrimSpace(endpoint))
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+}
+
+func latencyDialHost(host, endpoint string) string {
+	dialHost := strings.TrimSpace(host)
+	if _, _, err := net.SplitHostPort(dialHost); err == nil {
+		return dialHost
+	}
+	if strings.Contains(dialHost, ":") && strings.Count(dialHost, ":") > 1 {
+		return net.JoinHostPort(strings.Trim(dialHost, "[]"), defaultLatencyPort(endpoint))
+	}
+	if strings.Contains(dialHost, ":") {
+		return dialHost
+	}
+	return net.JoinHostPort(dialHost, defaultLatencyPort(endpoint))
+}
+
+func defaultLatencyPort(endpoint string) string {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(endpoint)), "https://") {
+		return "443"
+	}
+	return "80"
+}
+
+func durationMilliseconds(duration time.Duration) float64 {
+	return float64(duration.Microseconds()) / 1000.0
+}
+
+func (tr *TestRunner) applyLatencyRouteMetadata(target *LatencyTarget) {
+	if target == nil {
+		return
+	}
+	routeTarget := latencyRouteTarget(*target)
+	if routeTarget == "" {
+		target.RouteStatus = "unavailable"
+		return
+	}
+	hops, status := tr.routeMetadataForLatencyTarget(routeTarget)
+	target.Hops = hops
+	target.RouteStatus = status
+}
+
+func latencyRouteTarget(target LatencyTarget) string {
+	if strings.TrimSpace(target.IP) != "" {
+		return strings.TrimSpace(target.IP)
+	}
+	return trimLatencyHostPort(target.Name)
+}
+
+func trimLatencyHostPort(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		return strings.Trim(host, "[]")
+	}
+	return strings.Trim(value, "[]")
+}
+
+func (tr *TestRunner) routeMetadataForLatencyTarget(target string) (int, string) {
+	target = trimLatencyHostPort(target)
+	if target == "" {
+		return 0, "unavailable"
+	}
+	if isLatencyLoopbackTarget(target) {
+		return 0, "local"
+	}
+
+	now := time.Now()
+	tr.mu.RLock()
+	entry, ok := tr.routeCache[target]
+	tr.mu.RUnlock()
+	if ok && now.Sub(entry.checkedAt) < latencyRouteCacheTTL {
+		return entry.hops, entry.status
+	}
+
+	hops, status := measureLatencyRoute(target)
+	tr.mu.Lock()
+	if tr.routeCache == nil {
+		tr.routeCache = make(map[string]latencyRouteCacheEntry)
+	}
+	tr.routeCache[target] = latencyRouteCacheEntry{
+		hops:      hops,
+		status:    status,
+		checkedAt: now,
+	}
+	tr.mu.Unlock()
+	return hops, status
+}
+
+func isLatencyLoopbackTarget(target string) bool {
+	if strings.EqualFold(target, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(target); ip != nil {
+		return ip.IsLoopback()
+	}
+	ips, err := net.LookupIP(target)
+	if err != nil {
+		return false
+	}
+	for _, ip := range ips {
+		if ip.IsLoopback() {
+			return true
+		}
+	}
+	return false
+}
+
+func measureLatencyRoute(target string) (int, string) {
+	traceroutePath, err := exec.LookPath("traceroute")
+	if err != nil {
+		return 0, "unavailable"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, traceroutePath, "-m", "8", "-q", "1", "-w", "1", target).CombinedOutput()
+	if ctx.Err() != nil {
+		return 0, "timeout"
+	}
+	hops := parseTracerouteHopCount(string(output))
+	if hops > 0 {
+		return hops, "ok"
+	}
+	if err != nil {
+		return 0, "unavailable"
+	}
+	return 0, "unavailable"
+}
+
+func parseTracerouteHopCount(output string) int {
+	maxHop := 0
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		hop, err := strconv.Atoi(strings.TrimSuffix(fields[0], "."))
+		if err != nil {
+			continue
+		}
+		if hop > maxHop {
+			maxHop = hop
+		}
+	}
+	return maxHop
 }

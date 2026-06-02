@@ -13,10 +13,17 @@ import {
   YAxis,
 } from 'recharts'
 
-import { MetricsHistoryPoint } from '../types'
+import { LatencyTarget, LiveMetrics, MetricsHistoryPoint, NetworkLatency } from '../types'
+import { buildGeneratorImpactView, type GeneratorImpactVerdict } from './generatorImpact'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
 import { chartTooltipContentStyle } from './chartTooltipTheme'
-import { routeLatencySeriesLabel } from './latencySeries'
+import {
+  isRouteLatencyTotalSeriesKey,
+  latencySeriesKeyForTarget,
+  routeLatencyDetailSeriesKey,
+  routeLatencySeriesLabel,
+  routeLatencyTargetLabelFromKey,
+} from './latencySeries'
 import { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
 
 type ChartDomain = ComponentProps<typeof YAxis>['domain']
@@ -24,7 +31,7 @@ type ChartDomain = ComponentProps<typeof YAxis>['domain']
 export interface ChartConfig {
   id: string
   title: string
-  type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'line-io' | 'line-network'
+  type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'line-io' | 'line-network' | 'line-impact'
   dataKey?: string
   color?: string
   totalKey?: string
@@ -49,6 +56,8 @@ interface Props {
   groupNames: string[]
   groupColors: string[]
   showLoadImpact?: boolean
+  latestLatency?: NetworkLatency
+  latestMetrics?: LiveMetrics
 }
 
 export interface ChartMetricRow {
@@ -72,6 +81,7 @@ type ResponseTimeNetworkMode = 'end_to_end' | 'application'
 type ChartDropPosition = 'before' | 'after'
 type OverlayMetricKey = 'vusers' | 'avgMs' | 'tps'
 type ChartMargin = ComponentProps<typeof LineChart>['margin']
+export type RouteLatencyMode = 'total' | 'phases' | 'stability'
 
 const chartConfigs: ChartConfig[] = [
   { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
@@ -98,7 +108,38 @@ const chartConfigs: ChartConfig[] = [
     ],
   },
   { id: 'io', title: 'Network & Disk I/O (KB/s)', type: 'line-io' },
+  { id: 'generator_impact', title: 'Generator Impact', type: 'line-impact' },
   { id: 'network_latency', title: 'Route Latency (ms)', type: 'line-network' },
+]
+
+const routeLatencyModes: Array<{ id: RouteLatencyMode; label: string }> = [
+  { id: 'total', label: 'Total' },
+  { id: 'phases', label: 'Phases' },
+  { id: 'stability', label: 'Stability' },
+]
+
+const routeLatencyPhaseRows = [
+  { metric: 'total', label: 'Total', color: 'var(--text-muted)' },
+  { metric: 'dns', label: 'DNS', color: 'var(--chart-5)' },
+  { metric: 'connect', label: 'TCP Connect', color: 'var(--chart-1)' },
+  { metric: 'tls', label: 'TLS', color: 'var(--chart-3)' },
+  { metric: 'ttfb', label: 'TTFB', color: 'var(--chart-4)' },
+] as const
+
+const routeLatencyStabilityRows = [
+  { metric: 'jitter', label: 'Jitter', color: 'var(--chart-2)', unit: 'ms' },
+  { metric: 'successRate', label: 'Success Rate', color: 'var(--chart-5)', unit: '%' },
+] as const
+
+const generatorImpactMetricRows: ChartMetricRow[] = [
+  { key: 'containerCPUUsagePct', label: 'Container CPU', color: 'var(--chart-1)', unit: '%' },
+  { key: 'containerCPUThrottledSecondsRate', label: 'CPU Throttle', color: 'var(--chart-4)', unit: 's/s' },
+  { key: 'containerMemoryUsagePct', label: 'Memory Limit', color: 'var(--chart-5)', unit: '%' },
+  { key: 'gcPauseMs', label: 'GC Pause', color: 'var(--chart-2)', unit: 'ms' },
+  { key: 'netDropsPerSec', label: 'Net Drops', color: 'var(--chart-3)', unit: 'drops/s' },
+  { key: 'netErrorsPerSec', label: 'Net Errors', color: 'var(--danger)', unit: 'errors/s' },
+  { key: 'tcpRetransmitsPerSec', label: 'TCP Retransmits', color: 'var(--warning)', unit: 'retrans/s' },
+  { key: 'diskIOTimePct', label: 'Disk Busy', color: 'var(--chart-6)', unit: '%' },
 ]
 
 const overlayMetricRows: Record<OverlayMetricKey, ChartMetricRow> = {
@@ -150,6 +191,8 @@ function chartPrimaryYAxisLabel(chart: ChartConfig) {
       return 'Memory (MB)'
     case 'io':
       return 'Throughput (KB/s)'
+    case 'generator_impact':
+      return 'Impact metrics'
     case 'network_latency':
       return 'Route latency (ms)'
     default:
@@ -218,8 +261,8 @@ function normalizedChartOrder(order: string[]) {
 
 export const monitorPresets = [
   { id: 'run_operator', label: 'Run Operator', chartIds: ['vusers', 'tps', 'latency', 'errors'] },
-  { id: 'performance_engineer', label: 'Performance Engineer', chartIds: ['latency', 'tps', 'errors', 'cpu', 'mem', 'io', 'network_latency', 'vusers'] },
-  { id: 'platform_admin', label: 'Platform Admin', chartIds: ['cpu', 'mem', 'io', 'network_latency', 'vusers', 'tps'] },
+  { id: 'performance_engineer', label: 'Performance Engineer', chartIds: ['latency', 'tps', 'errors', 'cpu', 'mem', 'io', 'generator_impact', 'network_latency', 'vusers'] },
+  { id: 'platform_admin', label: 'Platform Admin', chartIds: ['cpu', 'mem', 'io', 'generator_impact', 'network_latency', 'vusers', 'tps'] },
   { id: 'release_approver', label: 'Release Approver', chartIds: ['latency', 'errors', 'tps'] },
 ] as const
 
@@ -273,6 +316,12 @@ function readStoredResponseTimeNetworkMode(): ResponseTimeNetworkMode {
     : 'end_to_end'
 }
 
+function readStoredRouteLatencyMode(): RouteLatencyMode {
+  if (typeof window === 'undefined') return 'total'
+  const stored = window.localStorage.getItem('apexload.execution.routeLatencyMode')
+  return stored === 'phases' || stored === 'stability' ? stored : 'total'
+}
+
 function sameStringArray(left: string[], right: string[]) {
   return left.length === right.length && left.every((value, index) => value === right[index])
 }
@@ -311,7 +360,7 @@ export function routeLatencySeriesKeys(data: MetricsHistoryPoint[]) {
   const keys = new Set<string>()
   data.forEach(point => {
     Object.keys(point)
-      .filter(key => key.startsWith('latency_') && typeof point[key] === 'number')
+      .filter(key => isRouteLatencyTotalSeriesKey(key) && typeof point[key] === 'number')
       .forEach(key => keys.add(key))
   })
   return Array.from(keys)
@@ -371,12 +420,64 @@ export function responseTimeDataWithoutNetworkLatency(data: MetricsHistoryPoint[
   })
 }
 
+function routeLatencyMetricKeysForMode(
+  latencyKeys: string[],
+  mode: RouteLatencyMode,
+  selectedLatencyKey?: string,
+) {
+  const selectedKey = selectedLatencyKey && latencyKeys.includes(selectedLatencyKey)
+    ? selectedLatencyKey
+    : latencyKeys[0]
+  if (mode === 'total' || !selectedKey) {
+    return latencyKeys
+  }
+  if (mode === 'phases') {
+    return routeLatencyPhaseRows.map(row => row.metric === 'total' ? selectedKey : routeLatencyDetailSeriesKey(selectedKey, row.metric))
+  }
+  return routeLatencyStabilityRows.map(row => routeLatencyDetailSeriesKey(selectedKey, row.metric))
+}
+
+function routeLatencyMetricRowsForMode(
+  latencyKeys: string[],
+  groupColors: string[],
+  mode: RouteLatencyMode,
+  selectedLatencyKey?: string,
+): ChartMetricRow[] {
+  const selectedKey = selectedLatencyKey && latencyKeys.includes(selectedLatencyKey)
+    ? selectedLatencyKey
+    : latencyKeys[0]
+  if (mode === 'total' || !selectedKey) {
+    return latencyKeys.map((key, index) => ({
+      key,
+      label: routeLatencySeriesLabel(key),
+      color: groupColors[index % groupColors.length],
+      unit: 'ms',
+    }))
+  }
+  if (mode === 'phases') {
+    return routeLatencyPhaseRows.map(row => ({
+      key: row.metric === 'total' ? selectedKey : routeLatencyDetailSeriesKey(selectedKey, row.metric),
+      label: row.label,
+      color: row.color,
+      unit: 'ms',
+    }))
+  }
+  return routeLatencyStabilityRows.map(row => ({
+    key: routeLatencyDetailSeriesKey(selectedKey, row.metric),
+    label: row.label,
+    color: row.color,
+    unit: row.unit,
+  }))
+}
+
 export function chartMetricKeys(
   chart: ChartConfig,
   groupNames: string[],
   latencyKeys: string[],
   includeVuserOverlay = false,
   overlayMetricKeys: OverlayMetricKey[] = [],
+  routeLatencyMode: RouteLatencyMode = 'total',
+  selectedRouteLatencyKey?: string,
 ) {
   let keys: string[]
   switch (chart.id) {
@@ -399,8 +500,11 @@ export function chartMetricKeys(
     case 'io':
       keys = ['netSent', 'netRecv', 'diskRead', 'diskWrite']
       break
+    case 'generator_impact':
+      keys = generatorImpactMetricRows.map(row => row.key)
+      break
     case 'network_latency':
-      keys = latencyKeys
+      keys = routeLatencyMetricKeysForMode(latencyKeys, routeLatencyMode, selectedRouteLatencyKey)
       break
     default:
       if (chart.keys) {
@@ -422,6 +526,8 @@ export function chartMetricRows(
   groupColors: string[],
   includeVuserOverlay = false,
   overlayMetricKeys: OverlayMetricKey[] = [],
+  routeLatencyMode: RouteLatencyMode = 'total',
+  selectedRouteLatencyKey?: string,
 ): ChartMetricRow[] {
   let rows: ChartMetricRow[]
   switch (chart.id) {
@@ -455,13 +561,11 @@ export function chartMetricRows(
         { key: 'diskWrite', label: 'Disk Write', color: 'var(--chart-6)', unit: 'KB/s' },
       ]
       break
+    case 'generator_impact':
+      rows = generatorImpactMetricRows
+      break
     case 'network_latency':
-      rows = latencyKeys.map((key, index) => ({
-        key,
-        label: routeLatencySeriesLabel(key),
-        color: groupColors[index % groupColors.length],
-        unit: 'ms',
-      }))
+      rows = routeLatencyMetricRowsForMode(latencyKeys, groupColors, routeLatencyMode, selectedRouteLatencyKey)
       break
     default:
       rows = chart.keys
@@ -502,8 +606,10 @@ export function graphCsvForChart(
   latencyKeys: string[],
   includeVuserOverlay = false,
   overlayMetricKeys: OverlayMetricKey[] = [],
+  routeLatencyMode: RouteLatencyMode = 'total',
+  selectedRouteLatencyKey?: string,
 ) {
-  const keys = ['time', ...chartMetricKeys(chart, groupNames, latencyKeys, includeVuserOverlay, overlayMetricKeys)]
+  const keys = ['time', ...chartMetricKeys(chart, groupNames, latencyKeys, includeVuserOverlay, overlayMetricKeys, routeLatencyMode, selectedRouteLatencyKey)]
   const rows = [
     keys.map(escapeCsvCell).join(','),
     ...data.map(point => keys.map(key => escapeCsvCell(point[key])).join(',')),
@@ -600,8 +706,10 @@ function latestGraphValuesText(
   latencyKeys: string[],
   latencyLatestValues: Record<string, number | undefined>,
   overlayMetricKeys: OverlayMetricKey[] = [],
+  routeLatencyMode: RouteLatencyMode = 'total',
+  selectedRouteLatencyKey?: string,
 ) {
-  const keys = chartMetricKeys(chart, groupNames, latencyKeys, false, overlayMetricKeys)
+  const keys = chartMetricKeys(chart, groupNames, latencyKeys, false, overlayMetricKeys, routeLatencyMode, selectedRouteLatencyKey)
   const lines = [`${chart.title}`]
   keys.forEach(key => {
     const value = chart.id === 'network_latency' ? latencyLatestValues[key] : latest[key]
@@ -617,6 +725,42 @@ function formatMetricValue(value: number | undefined, unit?: string) {
   const formatted = value.toLocaleString(undefined, { maximumFractionDigits })
   if (!unit) return formatted
   return unit === '%' || unit === 'ms' ? `${formatted}${unit}` : `${formatted} ${unit}`
+}
+
+function routeLatencyTargetForKey(latency: NetworkLatency | undefined, key?: string): LatencyTarget | undefined {
+  if (!latency?.targets?.length || !key) return undefined
+  return latency.targets.find(target => latencySeriesKeyForTarget(target) === key)
+}
+
+function routeProbeStatusLabel(target: LatencyTarget) {
+  if (target.http_status) return `HTTP ${target.http_status}`
+  return target.last_success ? 'Reachable' : 'Failed'
+}
+
+function generatorImpactVerdictLabel(verdict: GeneratorImpactVerdict) {
+  switch (verdict) {
+    case 'danger':
+      return 'Likely impact'
+    case 'warning':
+      return 'Watch'
+    case 'clear':
+      return 'Clear'
+    default:
+      return 'n/a'
+  }
+}
+
+function generatorImpactVerdictCopy(verdict: GeneratorImpactVerdict) {
+  switch (verdict) {
+    case 'danger':
+      return 'Saturation overlaps run degradation'
+    case 'warning':
+      return 'Saturation signal without confirmed overlap'
+    case 'clear':
+      return 'No generator saturation signals'
+    default:
+      return 'Waiting for generator resource samples'
+  }
 }
 
 export default function TestExecutionCharts({
@@ -636,6 +780,8 @@ export default function TestExecutionCharts({
   groupNames,
   groupColors,
   showLoadImpact = true,
+  latestLatency,
+  latestMetrics,
 }: Props) {
   const [chartOrder, setChartOrder] = useState<string[]>(() => readStoredArray('apexload.execution.chartOrder'))
   const [hiddenChartIds, setHiddenChartIds] = useState<string[]>(() => readStoredArray('apexload.execution.hiddenCharts'))
@@ -646,6 +792,8 @@ export default function TestExecutionCharts({
   const [timeAxisMode, setTimeAxisMode] = useState<ChartTimeAxisMode>(() => readStoredTimeAxisMode())
   const [chartDensity, setChartDensity] = useState<ChartDensityMode>(() => readStoredChartDensity())
   const [responseTimeNetworkMode, setResponseTimeNetworkMode] = useState<ResponseTimeNetworkMode>(() => readStoredResponseTimeNetworkMode())
+  const [routeLatencyMode, setRouteLatencyMode] = useState<RouteLatencyMode>(() => readStoredRouteLatencyMode())
+  const [selectedRouteLatencyKey, setSelectedRouteLatencyKey] = useState('')
   const [chartMenu, setChartMenu] = useState<{ chartId: string; x: number; y: number } | null>(null)
   const [chartDrawerOpen, setChartDrawerOpen] = useState(false)
   const [hoveredChartId, setHoveredChartId] = useState<string | null>(null)
@@ -704,6 +852,11 @@ export default function TestExecutionCharts({
   }, [responseTimeNetworkMode])
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('apexload.execution.routeLatencyMode', routeLatencyMode)
+  }, [routeLatencyMode])
+
+  useEffect(() => {
     if (!chartMenu) return
     const closeMenu = () => setChartMenu(null)
     const closeMenuOnOutsidePointerDown = (event: PointerEvent) => {
@@ -756,6 +909,9 @@ export default function TestExecutionCharts({
     })?.id ?? ''
   }, [hiddenChartIds, orderedCharts])
   const latencyKeys = useMemo(() => routeLatencySeriesKeys(filteredData), [filteredData])
+  const activeRouteLatencyKey = latencyKeys.includes(selectedRouteLatencyKey)
+    ? selectedRouteLatencyKey
+    : latencyKeys[0]
   const latencyLatestValues = useMemo(() => latestRouteLatencyValues(filteredData, latencyKeys), [filteredData, latencyKeys])
   const responseTimeChartData = useMemo(
     () => responseTimeNetworkMode === 'application'
@@ -772,6 +928,24 @@ export default function TestExecutionCharts({
     })
     return labels
   }, [filteredData])
+  const activeRouteLatencyTarget = useMemo(
+    () => routeLatencyTargetForKey(latestLatency, activeRouteLatencyKey),
+    [activeRouteLatencyKey, latestLatency],
+  )
+  const generatorImpactView = useMemo(
+    () => buildGeneratorImpactView(latestMetrics, filteredData),
+    [filteredData, latestMetrics],
+  )
+
+  useEffect(() => {
+    if (latencyKeys.length === 0) {
+      if (selectedRouteLatencyKey) setSelectedRouteLatencyKey('')
+      return
+    }
+    if (!selectedRouteLatencyKey || !latencyKeys.includes(selectedRouteLatencyKey)) {
+      setSelectedRouteLatencyKey(latencyKeys[0])
+    }
+  }, [latencyKeys, selectedRouteLatencyKey])
 
   if (filteredData.length <= 1) {
     return null
@@ -880,7 +1054,7 @@ export default function TestExecutionCharts({
     })
   }
 
-  const metricRowsForChart = (chart: ChartConfig) => chartMetricRows(chart, groupNames, latencyKeys, groupColors, false, overlayMetricKeysForChart(chart))
+  const metricRowsForChart = (chart: ChartConfig) => chartMetricRows(chart, groupNames, latencyKeys, groupColors, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey)
 
   const visibleMetricKeysForChart = (chart: ChartConfig, rows = metricRowsForChart(chart)) => {
     const availableKeys = rows.map(row => row.key)
@@ -948,13 +1122,17 @@ export default function TestExecutionCharts({
   }
 
   const exportChartCsv = (chart: ChartConfig) => {
-    downloadTextFile(`${safeFileName(displayTitleForChart(chart))}-data.csv`, graphCsvForChart(chart, chartDataFor(chart), groupNames, latencyKeys, false, overlayMetricKeysForChart(chart)), 'text/csv;charset=utf-8')
+    downloadTextFile(`${safeFileName(displayTitleForChart(chart))}-data.csv`, graphCsvForChart(chart, chartDataFor(chart), groupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey), 'text/csv;charset=utf-8')
   }
 
   const copyLatestValues = (chart: ChartConfig) => {
     const chartData = chartDataFor(chart)
     const chartLatest = chartData[chartData.length - 1] || latest
-    const text = latestGraphValuesText({ ...chart, title: displayTitleForChart(chart) }, chartLatest, groupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart))
+    const visibleKeys = chartMetricKeys(chart, groupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey)
+    const routeLatestValues = chart.id === 'network_latency'
+      ? latestRouteLatencyValues(chartData, visibleKeys)
+      : latencyLatestValues
+    const text = latestGraphValuesText({ ...chart, title: displayTitleForChart(chart) }, chartLatest, groupNames, latencyKeys, routeLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey)
     if (navigator.clipboard?.writeText) {
       void navigator.clipboard.writeText(text)
     }
@@ -1236,8 +1414,26 @@ export default function TestExecutionCharts({
       fontSize={11}
       width={82}
       domain={domain}
-      label={leftAxisLabel(chartPrimaryYAxisLabel(chart))}
+      label={leftAxisLabel(chart.id === 'network_latency' && routeLatencyMode === 'stability' ? 'Jitter (ms)' : chartPrimaryYAxisLabel(chart))}
     />
+  )
+
+  const routeLatencySuccessRateKey = activeRouteLatencyKey
+    ? routeLatencyDetailSeriesKey(activeRouteLatencyKey, 'successRate')
+    : ''
+
+  const renderRouteLatencySuccessAxis = (visibleMetricKeys: string[]) => (
+    routeLatencyMode === 'stability' && visibleMetricKeys.includes(routeLatencySuccessRateKey) ? (
+      <YAxis
+        yAxisId="successRate"
+        orientation="right"
+        stroke="var(--chart-5)"
+        fontSize={11}
+        width={86}
+        domain={[0, 100]}
+        label={rightAxisLabel('Success (%)')}
+      />
+    ) : null
   )
 
   const renderOverlayLines = (chart: ChartConfig, visibleMetricKeys: string[]) => {
@@ -1328,6 +1524,123 @@ export default function TestExecutionCharts({
     )
   }
 
+  const renderRouteLatencyDetails = () => {
+    if (!activeRouteLatencyKey) {
+      return null
+    }
+    if (!activeRouteLatencyTarget) {
+      return (
+        <div className="route-latency-details route-latency-details-empty">
+          Latest route details appear after the next latency probe.
+        </div>
+      )
+    }
+    const target = activeRouteLatencyTarget
+    const detailRows = [
+      { label: 'Target', value: routeLatencyTargetLabelFromKey(activeRouteLatencyKey) },
+      { label: 'IP', value: target.ip || 'n/a' },
+      { label: 'Probe', value: target.probe_method || 'tcp' },
+      { label: 'Status', value: routeProbeStatusLabel(target) },
+      { label: 'Route', value: target.route_status || 'unavailable' },
+      { label: 'Hops', value: target.hops && target.hops > 0 ? String(target.hops) : 'n/a' },
+      { label: 'Samples', value: target.sample_count ? String(target.sample_count) : 'n/a' },
+      { label: 'Success', value: formatMetricValue(target.success_rate_pct, '%') },
+      { label: 'Jitter', value: formatMetricValue(target.jitter_ms, 'ms') },
+      { label: 'Last error', value: target.error || 'None' },
+    ]
+    return (
+      <div className="route-latency-details" aria-label="Latest route latency details">
+        <div className="route-latency-detail-chips">
+          <span className={`route-latency-chip ${target.last_success ? 'ok' : 'alert'}`}>{routeProbeStatusLabel(target)}</span>
+          <span className="route-latency-chip">{target.probe_method || 'tcp'}</span>
+          <span className="route-latency-chip">{target.route_status || 'unavailable'}</span>
+          <span className="route-latency-chip">{formatMetricValue(target.probe_total_ms || target.latency_ms, 'ms')}</span>
+        </div>
+        <table className="route-latency-detail-table">
+          <tbody>
+            {detailRows.map(row => (
+              <tr key={row.label}>
+                <th>{row.label}</th>
+                <td>{row.value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  const renderGeneratorImpactDetails = () => {
+    const view = generatorImpactView
+    if (view.rows.length === 0) {
+      return (
+        <div className="generator-impact-details generator-impact-details-empty">
+          Generator resource samples unavailable.
+        </div>
+      )
+    }
+    return (
+      <div className="generator-impact-details" aria-label="Generator impact details">
+        <div className="generator-impact-summary">
+          <span className={`generator-impact-chip ${view.verdict}`}>{generatorImpactVerdictLabel(view.verdict)}</span>
+          <span>{generatorImpactVerdictCopy(view.verdict)}</span>
+        </div>
+        <div className="generator-impact-table-wrap">
+          <table className="generator-impact-table">
+            <thead>
+              <tr>
+                <th>Generator</th>
+                <th>VUsers</th>
+                <th>TPS</th>
+                <th>P95</th>
+                <th>Errors</th>
+                <th>Throttle</th>
+                <th>Mem</th>
+                <th>GC</th>
+                <th>Net</th>
+                <th>Disk</th>
+                <th>Reasons</th>
+              </tr>
+            </thead>
+            <tbody>
+              {view.rows.map(row => {
+                const netLoss = [row.metrics.netDropsPerSec, row.metrics.netErrorsPerSec, row.metrics.tcpRetransmitsPerSec]
+                  .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+                  .reduce((sum, value) => sum + value, 0)
+                const netLossValue = netLoss > 0 || row.metrics.netDropsPerSec !== undefined || row.metrics.netErrorsPerSec !== undefined || row.metrics.tcpRetransmitsPerSec !== undefined
+                  ? netLoss
+                  : undefined
+                return (
+                  <tr key={row.id}>
+                    <td>
+                      <span className="generator-impact-generator">
+                        <span className={`generator-impact-dot ${row.verdict}`}></span>
+                        <span>
+                          <strong>{row.id}</strong>
+                          <small>{[row.region, row.target].filter(Boolean).join(' · ') || 'n/a'}</small>
+                        </span>
+                      </span>
+                    </td>
+                    <td>{formatMetricValue(row.activeVusers)}</td>
+                    <td>{formatMetricValue(row.tps)}</td>
+                    <td>{formatMetricValue(row.p95Ms, 'ms')}</td>
+                    <td>{formatMetricValue(row.errorPct, '%')}</td>
+                    <td>{formatMetricValue(row.metrics.containerCPUThrottledSecondsRate, 's/s')}</td>
+                    <td>{formatMetricValue(row.metrics.containerMemoryUsagePct, '%')}</td>
+                    <td>{formatMetricValue(row.metrics.gcPauseMs, 'ms')}</td>
+                    <td>{formatMetricValue(netLossValue, '/s')}</td>
+                    <td>{formatMetricValue(row.metrics.diskIOTimePct, '%')}</td>
+                    <td>{row.reasons.length > 0 ? row.reasons.join(', ') : 'None'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <>
       {showLoadImpact && (
@@ -1375,7 +1688,10 @@ export default function TestExecutionCharts({
             const visibleMetricKeys = visibleMetricKeysForChart(chart, metricRows)
             const visibleOverlayKeysForTitle = visibleOverlayMetricKeys(chart, visibleMetricKeys)
             const chartTitle = chartTitleWithOverlays(chart, visibleOverlayKeysForTitle)
-            const chartMargin = chartMarginForOverlayKeys(visibleOverlayKeysForTitle)
+            const baseChartMargin = chartMarginForOverlayKeys(visibleOverlayKeysForTitle) ?? {}
+            const chartMargin = chart.id === 'network_latency' && routeLatencyMode === 'stability' && visibleMetricKeys.includes(routeLatencySuccessRateKey)
+              ? { ...baseChartMargin, right: Math.max(baseChartMargin.right ?? 0, 88) }
+              : baseChartMargin
             const metricAxisIdForChart = metricYAxisId(chart, visibleMetricKeys)
             const showMetric = (key: string) => visibleMetricKeys.includes(key)
             return (
@@ -1420,6 +1736,35 @@ export default function TestExecutionCharts({
                         />
                         <span>Include network latency</span>
                       </label>
+                    )}
+                    {chart.id === 'network_latency' && latencyKeys.length > 0 && (
+                      <div className="route-latency-card-controls">
+                        <div className="route-latency-mode-toggle" role="group" aria-label="Route latency mode">
+                          {routeLatencyModes.map(mode => (
+                            <button
+                              key={mode.id}
+                              className={`btn-chip ${routeLatencyMode === mode.id ? 'active' : ''}`}
+                              type="button"
+                              aria-pressed={routeLatencyMode === mode.id}
+                              onClick={() => setRouteLatencyMode(mode.id)}
+                            >
+                              {mode.label}
+                            </button>
+                          ))}
+                        </div>
+                        {latencyKeys.length > 1 && (
+                          <select
+                            className="route-latency-target-select"
+                            aria-label="Route latency target"
+                            value={activeRouteLatencyKey}
+                            onChange={event => setSelectedRouteLatencyKey(event.currentTarget.value)}
+                          >
+                            {latencyKeys.map(key => (
+                              <option key={key} value={key}>{routeLatencyTargetLabelFromKey(key)}</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
                     )}
                     <button
                       className="btn-icon btn-expand"
@@ -1532,7 +1877,7 @@ export default function TestExecutionCharts({
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </ComposedChart>
-            ) : chart.type === 'line-network' ? (
+            ) : chart.type === 'line-impact' ? (
               <LineChart
                 data={chartData}
                 syncId="metrics"
@@ -1546,15 +1891,48 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
+                {metricRows.map((row) => showMetric(row.key) && (
+                  <Line
+                    key={row.key}
+                    yAxisId={metricAxisIdForChart}
+                    type="monotone"
+                    dataKey={row.key}
+                    name={row.label}
+                    stroke={row.color}
+                    dot={false}
+                    strokeWidth={2}
+                    isAnimationActive={false}
+                  />
+                ))}
+                {renderOverlayLines(chart, visibleMetricKeys)}
+                {showRefArea && (
+                  <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
+                )}
+              </LineChart>
+            ) : chart.type === 'line-network' ? (
+              <LineChart
+                data={chartData}
+                syncId="metrics"
+                margin={chartMargin}
+                onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
+                onMouseUp={onZoom}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                {renderTimeAxis()}
+                {renderMetricAxis(chart, visibleMetricKeys)}
+                {renderRouteLatencySuccessAxis(visibleMetricKeys)}
+                {renderOverlayAxes(chart, visibleMetricKeys)}
+                {renderTooltip(chart.id)}
                 <Legend verticalAlign="bottom" height={36} />
-                {latencyKeys.map((key, index) => showMetric(key) && (
+                {metricRows.map((row) => showMetric(row.key) && (
                     <Line
-                      key={key}
-                      yAxisId={metricAxisIdForChart}
+                      key={row.key}
+                      yAxisId={row.key === routeLatencySuccessRateKey ? 'successRate' : metricAxisIdForChart}
                       type="monotone"
-                      dataKey={key}
-                      name={routeLatencySeriesLabel(key)}
-                      stroke={groupColors[index % groupColors.length]}
+                      dataKey={row.key}
+                      name={row.label}
+                      stroke={row.color}
                       dot={false}
                       strokeWidth={2}
                       isAnimationActive={false}
@@ -1592,6 +1970,8 @@ export default function TestExecutionCharts({
             )}
           </ResponsiveContainer>
 
+          {chart.id === 'network_latency' && (chartDensity === 'standard' || expandedChart === chart.id) && renderRouteLatencyDetails()}
+          {chart.id === 'generator_impact' && (chartDensity === 'standard' || expandedChart === chart.id) && renderGeneratorImpactDetails()}
           {(chartDensity === 'standard' || expandedChart === chart.id) && renderMetricsTable(chart, metricRows, visibleMetricKeys, chartData)}
             </div>
             )

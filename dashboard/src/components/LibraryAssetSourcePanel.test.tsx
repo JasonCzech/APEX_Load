@@ -110,6 +110,8 @@ describe('LibraryAssetSourcePanel', () => {
     expect(container.textContent).toContain('Local Checkout')
     expect(container.textContent).toContain('Host Checkout')
     expect(container.textContent).toContain('host only')
+    expect(styledLibrarySelects()).toHaveLength(2)
+    expect(styledLibrarySelects().map(select => select.parentElement?.querySelector('span')?.textContent)).toEqual(['Remote', 'Source'])
 
     const pullButton = findButton('Pull')
     expect(pullButton).toBeDefined()
@@ -191,6 +193,10 @@ function findButton(label: string) {
 
 function findButtons(label: string) {
   return Array.from(document.querySelectorAll('button')).filter(button => button.textContent?.trim() === label) as HTMLButtonElement[]
+}
+
+function styledLibrarySelects() {
+  return Array.from(document.querySelectorAll('select.library-source-select')) as HTMLSelectElement[]
 }
 
 async function flushPromises() {

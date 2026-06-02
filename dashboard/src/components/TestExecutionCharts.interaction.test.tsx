@@ -222,9 +222,9 @@ describe('TestExecutionCharts context menu', () => {
     await renderCharts()
 
     const mockCharts = Array.from(container.querySelectorAll('[data-testid="mock-chart"]'))
-    expect(mockCharts).toHaveLength(8)
-    expect(mockCharts.map(chart => chart.getAttribute('data-sync-id'))).toEqual(Array(8).fill('metrics'))
-    expect(Array.from(container.querySelectorAll('[data-testid="mock-tooltip"]')).map(tooltip => tooltip.getAttribute('data-label-display'))).toEqual(Array(8).fill('none'))
+    expect(mockCharts).toHaveLength(9)
+    expect(mockCharts.map(chart => chart.getAttribute('data-sync-id'))).toEqual(Array(9).fill('metrics'))
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-tooltip"]')).map(tooltip => tooltip.getAttribute('data-label-display'))).toEqual(Array(9).fill('none'))
 
     const tpsChart = mockCharts[1]
     await act(async () => {
@@ -241,10 +241,12 @@ describe('TestExecutionCharts context menu', () => {
       'none',
       'none',
       'none',
+      'none',
     ])
     expect(tooltips.map(tooltip => tooltip.getAttribute('data-label-text'))).toEqual([
       '',
       '10:00:01',
+      '',
       '',
       '',
       '',
@@ -405,7 +407,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(container.querySelector('.monitor-preset-buttons')).toBeNull()
     expect(container.querySelector('.charts-customize-panel')).toBeNull()
     expect(container.querySelector('.charts-toolbar')?.textContent).toContain('Runtime Graphs')
-    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('8 graphs')
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('9 graphs')
     expect(container.querySelector('.charts-config-drawer')).toBeNull()
 
     await act(async () => {
@@ -449,8 +451,8 @@ describe('TestExecutionCharts context menu', () => {
       errorRateGraphToggle?.click()
     })
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(7)
-    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('7 graphs')
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(8)
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('8 graphs')
     expect(window.localStorage.getItem('apexload.execution.hiddenCharts')).toContain('errors')
 
     await act(async () => {
@@ -469,7 +471,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(buttonByText('Standard')?.getAttribute('aria-pressed')).toBe('false')
     expect(buttonByText('6 Graphs')?.getAttribute('aria-pressed')).toBe('true')
     expect(window.localStorage.getItem('apexload.execution.chartDensity')).toBe('six_up')
-    expect(Array.from(container.querySelectorAll('[data-testid="mock-responsive-container"]')).map(container => container.getAttribute('data-height'))).toEqual(Array(7).fill('132'))
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-responsive-container"]')).map(container => container.getAttribute('data-height'))).toEqual(Array(8).fill('132'))
     expect(container.querySelector('.chart-metrics-table')).toBeNull()
 
     await act(async () => {
@@ -511,7 +513,7 @@ describe('TestExecutionCharts context menu', () => {
       }
     })
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(8)
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(9)
     expect(roleSelect?.value).toBe('')
 
     await act(async () => {
@@ -530,8 +532,54 @@ describe('TestExecutionCharts context menu', () => {
       resetButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(8)
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(9)
     expect(roleSelect?.value).toBe('')
+  })
+
+  it('switches the route latency graph between total, phase, and stability diagnostics', async () => {
+    await renderCharts()
+
+    const routeChart = () => Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Route Latency (ms)'))
+    const routeButton = (label: string) => Array.from(routeChart()?.querySelectorAll('button') ?? []).find(button => button.textContent === label)
+
+    expect(routeChart()?.querySelector('path[data-testid="mock-line"][data-key="latency_edge"][data-name="edge"]')).not.toBeNull()
+    expect(routeChart()?.textContent).toContain('HTTP 204')
+    expect(routeChart()?.textContent).toContain('192.0.2.10')
+    expect(routeChart()?.textContent).toContain('91.7%')
+
+    await act(async () => {
+      routeButton('Phases')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(window.localStorage.getItem('apexload.execution.routeLatencyMode')).toBe('phases')
+    expect(routeChart()?.querySelector('path[data-testid="mock-line"][data-key="latency_dns_edge"][data-name="DNS"]')).not.toBeNull()
+    expect(routeChart()?.querySelector('path[data-testid="mock-line"][data-key="latency_connect_edge"][data-name="TCP Connect"]')).not.toBeNull()
+    expect(routeChart()?.querySelector('path[data-testid="mock-line"][data-key="latency_ttfb_edge"][data-name="TTFB"]')).not.toBeNull()
+
+    await act(async () => {
+      routeButton('Stability')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(window.localStorage.getItem('apexload.execution.routeLatencyMode')).toBe('stability')
+    expect(axisLabels(routeChart())).toContain('Jitter (ms)')
+    expect(axisLabels(routeChart())).toContain('Success (%)')
+    expect(routeChart()?.querySelector('path[data-testid="mock-line"][data-key="latency_jitter_edge"][data-name="Jitter"]')).not.toBeNull()
+    expect(routeChart()?.querySelector('path[data-testid="mock-line"][data-key="latency_success_rate_edge"][data-name="Success Rate"][data-y-axis-id="successRate"]')).not.toBeNull()
+  })
+
+  it('renders generator impact metrics and per-generator verdict rows', async () => {
+    await renderCharts()
+
+    const impactChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Generator Impact'))
+
+    expect(impactChart?.querySelector('path[data-testid="mock-line"][data-key="containerCPUUsagePct"][data-name="Container CPU"]')).not.toBeNull()
+    expect(impactChart?.querySelector('path[data-testid="mock-line"][data-key="containerCPUThrottledSecondsRate"][data-name="CPU Throttle"]')).not.toBeNull()
+    expect(impactChart?.textContent).toContain('Likely impact')
+    expect(impactChart?.textContent).toContain('gen-a')
+    expect(impactChart?.textContent).toContain('gen-b')
+    expect(impactChart?.textContent).toContain('CPU saturation')
+    expect(impactChart?.textContent).toContain('Generator imbalance')
+    expect(impactChart?.textContent).toContain('n/a')
   })
 
   function menuActionTexts() {
@@ -585,8 +633,56 @@ describe('TestExecutionCharts context menu', () => {
       root.render(
         <TestExecutionCharts
           filteredData={[
-            { time: '10:00:00', vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p99: 130, latency_edge: 20 },
-            { time: '10:00:01', vusers: 4, tps: 2, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p99: 135, latency_edge: 27.4 },
+            {
+              time: '10:00:00',
+              vusers: 2,
+              tps: 1,
+              avgMs: 100,
+              errorPct: 0,
+              p50: 80,
+              p90: 100,
+              p99: 130,
+              latency_edge: 20,
+              latency_dns_edge: 2,
+              latency_connect_edge: 8,
+              latency_tls_edge: 3,
+              latency_ttfb_edge: 18,
+              latency_jitter_edge: 1,
+              latency_success_rate_edge: 100,
+              containerCPUUsagePct: 70,
+              containerCPUThrottledSecondsRate: 0.1,
+              containerMemoryUsagePct: 62,
+              gcPauseMs: 8,
+              netDropsPerSec: 0,
+              netErrorsPerSec: 0,
+              tcpRetransmitsPerSec: 0,
+              diskIOTimePct: 18,
+            },
+            {
+              time: '10:00:01',
+              vusers: 4,
+              tps: 2,
+              avgMs: 110,
+              errorPct: 0,
+              p50: 85,
+              p90: 105,
+              p99: 135,
+              latency_edge: 27.4,
+              latency_dns_edge: 3,
+              latency_connect_edge: 9,
+              latency_tls_edge: 4,
+              latency_ttfb_edge: 24,
+              latency_jitter_edge: 2.2,
+              latency_success_rate_edge: 91.7,
+              containerCPUUsagePct: 96,
+              containerCPUThrottledSecondsRate: 0.4,
+              containerMemoryUsagePct: 91,
+              gcPauseMs: 140,
+              netDropsPerSec: 2,
+              netErrorsPerSec: 1,
+              tcpRetransmitsPerSec: 3,
+              diskIOTimePct: 72,
+            },
           ]}
           expandedChart={expandedChart}
           onExpandedChartChange={vi.fn()}
@@ -603,6 +699,110 @@ describe('TestExecutionCharts context menu', () => {
           groupNames={[]}
           groupColors={['#00a3ff']}
           showLoadImpact={showLoadImpact}
+          latestLatency={{
+            targets: [{
+              name: 'edge',
+              endpoint: 'edge',
+              latency_ms: 21.4,
+              probe_total_ms: 27.4,
+              dns_ms: 3,
+              connect_ms: 9,
+              tls_ms: 4,
+              ttfb_ms: 24,
+              http_status: 204,
+              probe_method: 'HEAD',
+              ip: '192.0.2.10',
+              hops: 3,
+              last_success: true,
+              jitter_ms: 2.2,
+              success_rate_pct: 91.7,
+              sample_count: 12,
+              route_status: 'ok',
+              timestamp: '2026-05-12T20:05:05Z',
+            }],
+          }}
+          latestMetrics={{
+            timestamp: '2026-05-12T20:05:05Z',
+            active_vusers: 20,
+            tps: 4,
+            avg_response_ms: 110,
+            error_pct: 1,
+            total_transactions: 4,
+            total_errors: 1,
+            p50_ms: 85,
+            p90_ms: 105,
+            p95_ms: 1300,
+            p99_ms: 1500,
+            resources: {
+              cpu_process_pct: 96,
+              cpu_free_pct: 4,
+              mem_process_mb: 512,
+              mem_free_mb: 1024,
+              net_sent_kbps: 20,
+              net_recv_kbps: 18,
+              disk_read_kbps: 2,
+              disk_write_kbps: 3,
+              container_cpu_usage_pct: 96,
+              container_cpu_throttled_seconds_rate: 0.4,
+              container_memory_usage_pct: 91,
+              gc_pause_ms: 140,
+              net_drop_in_per_sec: 2,
+              net_error_in_per_sec: 1,
+              tcp_retransmits_per_sec: 3,
+              disk_io_time_pct: 72,
+            },
+            generator_resources: {
+              'gen-a': {
+                generator_id: 'gen-a',
+                target: '10.0.0.1',
+                region: 'east',
+                active_vusers: 16,
+                tps: 3.5,
+                p95_ms: 1300,
+                p99_ms: 1500,
+                error_pct: 1,
+                resources: {
+                  cpu_process_pct: 97,
+                  cpu_free_pct: 3,
+                  mem_process_mb: 512,
+                  mem_free_mb: 1024,
+                  net_sent_kbps: 20,
+                  net_recv_kbps: 18,
+                  disk_read_kbps: 2,
+                  disk_write_kbps: 3,
+                  container_cpu_usage_pct: 97,
+                  container_cpu_throttled_seconds_rate: 0.4,
+                  container_memory_usage_pct: 91,
+                  gc_pause_ms: 140,
+                  net_drop_in_per_sec: 2,
+                  tcp_retransmits_per_sec: 3,
+                  disk_io_time_pct: 72,
+                },
+                timestamp: '2026-05-12T20:05:05Z',
+              },
+              'gen-b': {
+                generator_id: 'gen-b',
+                target: '10.0.0.2',
+                region: 'west',
+                active_vusers: 4,
+                tps: 0.5,
+                p95_ms: 90,
+                p99_ms: 120,
+                error_pct: 0,
+                resources: {
+                  cpu_process_pct: 15,
+                  cpu_free_pct: 70,
+                  mem_process_mb: 128,
+                  mem_free_mb: 2048,
+                  net_sent_kbps: 5,
+                  net_recv_kbps: 4,
+                  disk_read_kbps: 0,
+                  disk_write_kbps: 0,
+                },
+                timestamp: '2026-05-12T20:05:05Z',
+              },
+            },
+          }}
         />,
       )
     })

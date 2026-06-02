@@ -114,15 +114,49 @@ type TelemetryMetrics struct {
 }
 
 type SystemResources struct {
-	CPUProcessPct float64            `json:"cpu_process_pct"`            // CPU used by vuser processes
-	CPUFreePct    float64            `json:"cpu_free_pct"`               // CPU headroom
-	MemProcessMb  float64            `json:"mem_process_mb"`             // Memory used by vuser processes
-	MemFreeMb     float64            `json:"mem_free_mb"`                // Total system memory free
-	NetSentKbps   float64            `json:"net_sent_kbps"`              // Network egress
-	NetRecvKbps   float64            `json:"net_recv_kbps"`              // Network ingress
-	DiskReadKbps  float64            `json:"disk_read_kbps"`             // Disk Read I/O
-	DiskWriteKbps float64            `json:"disk_write_kbps"`            // Disk Write I/O
-	External      map[string]float64 `json:"external_metrics,omitempty"` // Target-side imported metrics
+	CPUProcessPct                     float64            `json:"cpu_process_pct"` // CPU used by vuser processes
+	CPUFreePct                        float64            `json:"cpu_free_pct"`    // CPU headroom
+	MemProcessMb                      float64            `json:"mem_process_mb"`  // Memory used by vuser processes
+	MemFreeMb                         float64            `json:"mem_free_mb"`     // Total system memory free
+	NetSentKbps                       float64            `json:"net_sent_kbps"`   // Network egress
+	NetRecvKbps                       float64            `json:"net_recv_kbps"`   // Network ingress
+	DiskReadKbps                      float64            `json:"disk_read_kbps"`  // Disk Read I/O
+	DiskWriteKbps                     float64            `json:"disk_write_kbps"` // Disk Write I/O
+	CPUUserPct                        float64            `json:"cpu_user_pct,omitempty"`
+	CPUSystemPct                      float64            `json:"cpu_system_pct,omitempty"`
+	CPUIOWaitPct                      float64            `json:"cpu_iowait_pct,omitempty"`
+	CPUStealPct                       float64            `json:"cpu_steal_pct,omitempty"`
+	Load1                             float64            `json:"load1,omitempty"`
+	Load5                             float64            `json:"load5,omitempty"`
+	Load15                            float64            `json:"load15,omitempty"`
+	ThreadCount                       int32              `json:"thread_count,omitempty"`
+	OpenFDCount                       int32              `json:"open_fd_count,omitempty"`
+	GoroutineCount                    int32              `json:"goroutine_count,omitempty"`
+	HeapAllocMB                       float64            `json:"heap_alloc_mb,omitempty"`
+	HeapInUseMB                       float64            `json:"heap_in_use_mb,omitempty"`
+	GCCountDelta                      uint32             `json:"gc_count_delta,omitempty"`
+	GCPauseMs                         float64            `json:"gc_pause_ms,omitempty"`
+	ContainerCPULimitCores            float64            `json:"container_cpu_limit_cores,omitempty"`
+	ContainerCPUUsagePct              float64            `json:"container_cpu_usage_pct,omitempty"`
+	ContainerCPUThrottledPeriodsDelta uint64             `json:"container_cpu_throttled_periods_delta,omitempty"`
+	ContainerCPUThrottledSecondsRate  float64            `json:"container_cpu_throttled_seconds_rate,omitempty"`
+	ContainerMemoryWorkingSetMB       float64            `json:"container_memory_working_set_mb,omitempty"`
+	ContainerMemoryLimitMB            float64            `json:"container_memory_limit_mb,omitempty"`
+	ContainerMemoryUsagePct           float64            `json:"container_memory_usage_pct,omitempty"`
+	ContainerMemoryFailCountDelta     uint64             `json:"container_memory_fail_count_delta,omitempty"`
+	ContainerOOMKillCountDelta        uint64             `json:"container_oom_kill_count_delta,omitempty"`
+	NetDropInPerSec                   float64            `json:"net_drop_in_per_sec,omitempty"`
+	NetDropOutPerSec                  float64            `json:"net_drop_out_per_sec,omitempty"`
+	NetErrorInPerSec                  float64            `json:"net_error_in_per_sec,omitempty"`
+	NetErrorOutPerSec                 float64            `json:"net_error_out_per_sec,omitempty"`
+	TCPRetransmitsPerSec              float64            `json:"tcp_retransmits_per_sec,omitempty"`
+	TCPEstablished                    int                `json:"tcp_established,omitempty"`
+	TCPTimeWait                       int                `json:"tcp_time_wait,omitempty"`
+	EphemeralPortUtilizationPct       float64            `json:"ephemeral_port_utilization_pct,omitempty"`
+	DiskIOTimePct                     float64            `json:"disk_io_time_pct,omitempty"`
+	DiskWeightedIOTimePct             float64            `json:"disk_weighted_io_time_pct,omitempty"`
+	DiskInProgress                    uint64             `json:"disk_in_progress,omitempty"`
+	External                          map[string]float64 `json:"external_metrics,omitempty"` // Target-side imported metrics
 }
 
 type GroupMetrics struct {

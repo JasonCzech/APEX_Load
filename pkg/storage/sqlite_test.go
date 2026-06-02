@@ -878,12 +878,25 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 		},
 		"latency": map[string]any{
 			"targets": []map[string]any{{
-				"name":         "edge",
-				"endpoint":     "https://example.test",
-				"latency_ms":   42.5,
-				"ip":           "192.0.2.10",
-				"last_success": true,
-				"timestamp":    timestamp.Add(-100 * time.Millisecond),
+				"name":             "edge",
+				"endpoint":         "https://example.test",
+				"latency_ms":       42.5,
+				"probe_total_ms":   51.25,
+				"dns_ms":           2.5,
+				"connect_ms":       12.25,
+				"tls_ms":           8.5,
+				"ttfb_ms":          45.75,
+				"http_status":      204,
+				"probe_method":     "HEAD",
+				"ip":               "192.0.2.10",
+				"hops":             3,
+				"last_success":     true,
+				"jitter_ms":        1.75,
+				"success_rate_pct": 91.666,
+				"sample_count":     12,
+				"route_status":     "ok",
+				"error":            "previous HTTP probe failed",
+				"timestamp":        timestamp.Add(-100 * time.Millisecond),
 			}},
 		},
 		"telemetry": map[string]any{
@@ -944,6 +957,16 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 	}
 	if record.Latency == nil || len(record.Latency.Targets) != 1 || record.Latency.Targets[0].LatencyMs != 42.5 {
 		t.Fatalf("unexpected latency summary: %#v", record.Latency)
+	}
+	latencyTarget := record.Latency.Targets[0]
+	if latencyTarget.ProbeTotalMs != 51.25 || latencyTarget.DNSMs != 2.5 || latencyTarget.ConnectMs != 12.25 || latencyTarget.TLSMs != 8.5 || latencyTarget.TTFBMs != 45.75 {
+		t.Fatalf("unexpected route timing fields: %#v", latencyTarget)
+	}
+	if latencyTarget.HTTPStatus != 204 || latencyTarget.ProbeMethod != "HEAD" || latencyTarget.Hops != 3 || latencyTarget.RouteStatus != "ok" {
+		t.Fatalf("unexpected route metadata fields: %#v", latencyTarget)
+	}
+	if latencyTarget.JitterMs != 1.75 || latencyTarget.SuccessRatePct != 91.666 || latencyTarget.SampleCount != 12 || latencyTarget.Error != "previous HTTP probe failed" {
+		t.Fatalf("unexpected route stability fields: %#v", latencyTarget)
 	}
 	if !record.GeneratorPublishedAt.Equal(timestamp.Add(-400 * time.Millisecond)) {
 		t.Fatalf("generator_published_at = %s, want %s", record.GeneratorPublishedAt, timestamp.Add(-400*time.Millisecond))

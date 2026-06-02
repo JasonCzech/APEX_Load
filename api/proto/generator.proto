@@ -153,6 +153,39 @@ message GeneratorStats {
   double cpu_percent = 2;
   int64 memory_bytes = 3;
   int32 goroutine_count = 4;
+  double cpu_user_pct = 5;
+  double cpu_system_pct = 6;
+  double cpu_iowait_pct = 7;
+  double cpu_steal_pct = 8;
+  double load1 = 9;
+  double load5 = 10;
+  double load15 = 11;
+  int32 thread_count = 12;
+  int32 open_fd_count = 13;
+  double heap_alloc_mb = 14;
+  double heap_in_use_mb = 15;
+  uint32 gc_count_delta = 16;
+  double gc_pause_ms = 17;
+  double container_cpu_limit_cores = 18;
+  double container_cpu_usage_pct = 19;
+  uint64 container_cpu_throttled_periods_delta = 20;
+  double container_cpu_throttled_seconds_rate = 21;
+  double container_memory_working_set_mb = 22;
+  double container_memory_limit_mb = 23;
+  double container_memory_usage_pct = 24;
+  uint64 container_memory_fail_count_delta = 25;
+  uint64 container_oom_kill_count_delta = 26;
+  double net_drop_in_per_sec = 27;
+  double net_drop_out_per_sec = 28;
+  double net_error_in_per_sec = 29;
+  double net_error_out_per_sec = 30;
+  double tcp_retransmits_per_sec = 31;
+  int32 tcp_established = 32;
+  int32 tcp_time_wait = 33;
+  double ephemeral_port_utilization_pct = 34;
+  double disk_io_time_pct = 35;
+  double disk_weighted_io_time_pct = 36;
+  uint64 disk_in_progress = 37;
 }
 
 message ControlSignal {

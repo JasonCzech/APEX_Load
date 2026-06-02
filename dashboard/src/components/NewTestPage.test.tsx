@@ -166,6 +166,7 @@ describe('NewTestPage', () => {
     container.remove()
     consoleErrorSpy.mockRestore()
     vi.clearAllMocks()
+    vi.useRealTimers()
   })
 
   it('links from the scenario selection section to the scenario builder', async () => {
@@ -245,10 +246,15 @@ describe('NewTestPage', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Builder Created Scenario')
-    expect(container.textContent).toContain('Goal Oriented')
+    expect(container.textContent).toContain('Goal')
+    const selectedRow = container.querySelector('.new-test-scenario-table-row.selected')
+    expect(selectedRow?.textContent).toContain('Builder Created Scenario')
+    expect(container.querySelector('.new-test-scenario-expanded-row')).toBeNull()
+    await act(async () => {
+      selectedRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
     expect(container.textContent).toContain('Order API')
-    const selectedCard = container.querySelector('.new-test-scenario-card.selected')
-    expect(selectedCard?.textContent).toContain('Builder Created Scenario')
+    expect(container.querySelector('.new-test-scenario-expanded-row')?.textContent).toContain('Order API')
   })
 
   it('omits previously tested release tags without duplicate key warnings', async () => {
@@ -320,7 +326,7 @@ describe('NewTestPage', () => {
     }))
   })
 
-  it('filters and selects launch scenarios from workload cards', async () => {
+  it('sorts, filters, and expands launch scenarios from the scenario table', async () => {
     apiMock.listScenarios.mockResolvedValue({
       scenarios: [
         {
@@ -368,6 +374,37 @@ describe('NewTestPage', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('2 available scenarios')
+    expect(container.querySelector('.new-test-scenario-table')?.textContent).toContain('Most Recent Run')
+    expect(container.querySelector('.new-test-scenario-table')?.textContent).toContain('Releases')
+    expect(container.querySelector('.new-test-scenario-expanded-row')).toBeNull()
+    const releaseFilter = container.querySelector('.new-test-scenario-filter select') as HTMLSelectElement | null
+    const searchLabel = container.querySelector('.new-test-scenario-search')
+    expect(releaseFilter).toBeTruthy()
+    expect(searchLabel).toBeTruthy()
+    if (!releaseFilter || !searchLabel) return
+    const releaseFilterLabel = releaseFilter.closest('label')
+    expect(releaseFilterLabel).toBeTruthy()
+    if (!releaseFilterLabel) return
+    expect(releaseFilterLabel.compareDocumentPosition(searchLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(releaseFilter?.options[releaseFilter.selectedIndex]?.textContent).toBe('All releases')
+    await act(async () => {
+      setSelectValue(releaseFilter, 'PI29')
+    })
+    expect(container.textContent).toContain('1 matching scenario')
+    expect(scenarioRowTexts(container)).toHaveLength(1)
+    expect(scenarioRowTexts(container)[0]).toContain('Java Batch Review')
+    await act(async () => {
+      setSelectValue(releaseFilter, '')
+    })
+    expect(scenarioRowTexts(container)[0]).toContain('Checkout Smoke')
+
+    const vusersHeader = Array.from(container.querySelectorAll('.new-test-scenario-table th')).find(header => header.textContent?.includes('VUsers')) as HTMLElement | undefined
+    expect(vusersHeader).toBeTruthy()
+    await act(async () => {
+      vusersHeader?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(scenarioRowTexts(container)[0]).toContain('Java Batch Review')
+
     const searchInput = Array.from(container.querySelectorAll('input[type="search"]')).find(input => input.getAttribute('placeholder')?.includes('Find by scenario')) as HTMLInputElement | undefined
     expect(searchInput).toBeDefined()
     if (!searchInput) return
@@ -378,20 +415,22 @@ describe('NewTestPage', () => {
 
     expect(container.textContent).toContain('1 matching scenario')
     expect(container.textContent).toContain('Java Batch Review')
-    expect(container.querySelectorAll('.new-test-scenario-card')).toHaveLength(1)
+    expect(container.querySelectorAll('.new-test-scenario-table-row')).toHaveLength(1)
 
-    const javaCard = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Java Batch Review'))
-    expect(javaCard).toBeDefined()
-    if (!javaCard) return
+    const javaRow = Array.from(container.querySelectorAll('.new-test-scenario-table-row')).find(row => row.textContent?.includes('Java Batch Review'))
+    expect(javaRow).toBeDefined()
+    if (!javaRow) return
 
     await act(async () => {
-      javaCard.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      javaRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
 
-    expect(container.textContent).toContain('Goal Oriented')
+    expect(container.textContent).toContain('Goal')
     expect(container.textContent).toContain('40')
     expect(container.textContent).toContain('Batch Script')
+    expect(container.querySelector('.new-test-scenario-expanded-row')?.textContent).toContain('Iterations')
+    expect(container.querySelector('.new-test-scenario-expanded-row')?.textContent).toContain('Log Level')
 
     await act(async () => {
       setInputValue(searchInput, 'does-not-exist')
@@ -452,22 +491,30 @@ describe('NewTestPage', () => {
     expect(scenarioHeader).toBeTruthy()
     expect(setupHeader).toBeTruthy()
     expect(defaultsHeader).toBeTruthy()
-    expect(groupsHeader).toBeTruthy()
-    if (!scenarioHeader || !setupHeader || !defaultsHeader || !groupsHeader) return
+    expect(groupsHeader).toBeFalsy()
+    if (!scenarioHeader || !setupHeader || !defaultsHeader) return
     expect(scenarioHeader.compareDocumentPosition(setupHeader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(setupHeader.compareDocumentPosition(defaultsHeader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(defaultsHeader.compareDocumentPosition(groupsHeader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     const setupSettingsRow = setupHeader.closest('.new-test-run-config-row')
     expect(setupSettingsRow).toBeTruthy()
     expect(defaultsHeader.closest('.new-test-run-config-row')).toBe(setupSettingsRow)
     const scenarioSection = scenarioHeader.closest('.new-test-step')
-    const scenarioFacts = scenarioSection?.querySelector('.new-test-scenario-facts')
     expect(scenarioSection?.querySelector('.new-test-scenario-browser')).toBeTruthy()
+    expect(scenarioSection?.querySelector('.new-test-scenario-table')).toBeTruthy()
+    expect(scenarioSection?.querySelector('.new-test-scenario-facts')).toBeNull()
     expect(scenarioSection?.querySelector('.new-test-detail-grid.compact')).toBeNull()
-    expect(scenarioFacts?.textContent).toContain('Scenario Details')
-    expect(scenarioFacts?.textContent).toContain('Mode')
-    expect(scenarioFacts?.textContent).toContain('VUser Driven')
-    expect(scenarioFacts?.textContent).toContain('Script Groups')
+    expect(scenarioSection?.textContent).toContain('Most Recent Run')
+    expect(scenarioSection?.textContent).toContain('Releases')
+    expect(scenarioSection?.textContent).toContain('VUsers')
+    expect(scenarioSection?.textContent).toContain('Duration')
+    expect(scenarioSection?.textContent).toContain('PI28')
+    expect(scenarioSection?.querySelector('.new-test-scenario-expanded-row')).toBeNull()
+    const selectedScenarioRow = scenarioSection?.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
+    expect(selectedScenarioRow).toBeTruthy()
+    await act(async () => {
+      selectedScenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(scenarioSection?.querySelector('.new-test-scenario-expanded-row')?.textContent).toContain('Script Groups')
     const setupSection = setupHeader.closest('.new-test-step')
     expect(setupSection?.textContent).not.toContain('Application')
     expect(setupSection?.textContent).not.toContain('Previously Tested')
@@ -616,11 +663,20 @@ describe('NewTestPage', () => {
 
     await flushPromises()
 
-    const editButton = Array.from(container.querySelectorAll('.new-test-script-table button')).find(button => button.textContent === 'Edit')
-    expect(editButton).toBeTruthy()
+    expect(container.querySelector('.new-test-scenario-expanded-row')).toBeNull()
+    const scenarioRow = container.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
+    expect(scenarioRow).toBeTruthy()
+    await act(async () => {
+      scenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const scriptGroupRow = Array.from(container.querySelectorAll('.new-test-script-row')).find(row => row.textContent?.includes('Checkout')) as HTMLTableRowElement | undefined
+    expect(scriptGroupRow).toBeTruthy()
+    expect(container.querySelector('.new-test-script-table')?.textContent).not.toContain('Browser')
+    expect(container.querySelector('.new-test-script-table')?.textContent).not.toContain('Edit')
 
     await act(async () => {
-      editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      scriptGroupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     const modal = container.querySelector('.run-group-modal') as HTMLElement | null
@@ -637,6 +693,11 @@ describe('NewTestPage', () => {
     expect(logLevelSelect).toBeTruthy()
     expect(pacingSelect).toBeTruthy()
     if (!vusersInput || !iterationsInput || !logLevelSelect || !pacingSelect) return
+    expect(logLevelSelect.value).toBe('standard')
+    expect(pacingSelect.options[pacingSelect.selectedIndex]?.textContent).toBe('Script timing')
+    const initiallyDisabledSaveButton = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run') as HTMLButtonElement | undefined
+    expect(initiallyDisabledSaveButton?.disabled).toBe(true)
+    expect(modal.textContent).not.toContain('Use default')
 
     await act(async () => {
       setInputValue(vusersInput, '25')
@@ -644,6 +705,8 @@ describe('NewTestPage', () => {
       setSelectValue(logLevelSelect, 'extended')
       setSelectValue(pacingSelect, 'fixed_delay')
     })
+    expect(initiallyDisabledSaveButton?.disabled).toBe(false)
+    expect(modal.querySelectorAll('.new-test-changed-pill').length).toBeGreaterThanOrEqual(4)
 
     const pacingAmountInput = Array.from(modal.querySelectorAll('label')).find(label => label.textContent?.includes('Milliseconds'))?.querySelector('input') as HTMLInputElement | null
     expect(pacingAmountInput).toBeTruthy()
@@ -725,9 +788,17 @@ describe('NewTestPage', () => {
 
     await flushPromises()
 
-    const editButton = Array.from(container.querySelectorAll('.new-test-script-table button')).find(button => button.textContent === 'Edit')
+    expect(container.querySelector('.new-test-scenario-expanded-row')).toBeNull()
+    const scenarioRow = container.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
+    expect(scenarioRow).toBeTruthy()
     await act(async () => {
-      editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      scenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const scriptGroupRow = Array.from(container.querySelectorAll('.new-test-script-row')).find(row => row.textContent?.includes('Checkout')) as HTMLTableRowElement | undefined
+    expect(scriptGroupRow).toBeTruthy()
+    await act(async () => {
+      scriptGroupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     const modal = container.querySelector('.run-group-modal') as HTMLElement | null
@@ -783,6 +854,8 @@ describe('NewTestPage', () => {
   })
 
   it('surfaces governed schedule policies and approval actions', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-06-02T12:34:00Z'))
     apiMock.listScenarioSchedules.mockResolvedValue({
       schedules: [
         {
@@ -886,6 +959,11 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('rev 2')
     expect(container.textContent).toContain('owner Project Admin')
     expect(container.textContent).toContain('America/New_York')
+    expect(container.textContent).toContain('Current UTC: 12:34 UTC')
+    const timezoneSelect = Array.from(container.querySelectorAll('select')).find(select => Array.from(select.options).some(option => option.value === 'America/New_York')) as HTMLSelectElement | undefined
+    expect(timezoneSelect).toBeTruthy()
+    expect(Array.from(timezoneSelect?.options || []).find(option => option.value === 'UTC')?.textContent).toBe('UTC - 12:34 UTC+00:00')
+    expect(Array.from(timezoneSelect?.options || []).find(option => option.value === 'America/New_York')?.textContent).toBe('America/New York - 08:34 UTC-04:00')
     expect(container.textContent).toContain('1 blackout')
     expect(container.textContent).toContain('1 maintenance')
     expect(container.textContent).toContain('1 availability')
@@ -994,6 +1072,10 @@ function setSelectValue(select: HTMLSelectElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
   setter?.call(select, value)
   select.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+function scenarioRowTexts(root: HTMLElement) {
+  return Array.from(root.querySelectorAll('.new-test-scenario-table-row')).map(row => row.textContent || '')
 }
 
 function findControlByLabel<T extends HTMLElement>(root: HTMLElement, labelText: string, selector: string): T | null {

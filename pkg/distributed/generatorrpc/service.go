@@ -105,6 +105,7 @@ type Service struct {
 	executions       map[string]map[string]*groupExecution
 	archiveWriters   map[string]*archiveRecorder
 	archiveRecords   map[string]*storage.RunArchiveRecord
+	resCollector     *engine.ResourceCollector
 	executionEnabled bool
 	publishInterval  time.Duration
 	completionTimers map[string]*time.Timer
@@ -135,6 +136,7 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 		executions:       make(map[string]map[string]*groupExecution),
 		archiveWriters:   make(map[string]*archiveRecorder),
 		archiveRecords:   make(map[string]*storage.RunArchiveRecord),
+		resCollector:     engine.NewResourceCollector(),
 		publishInterval:  time.Second,
 		completionTimers: make(map[string]*time.Timer),
 		subscribers:      make(map[int]chan *pb.MetricsBatch),
@@ -461,11 +463,12 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			return err
 		}
 
+		stats := generatorStatsFromResources(s.collectResources(), s.activeVUsersLocked())
 		if err := stream.Send(&pb.HeartbeatPong{
 			GeneratorId:        s.generatorID,
 			TimestampUnixMs:    maxInt64(time.Now().UnixMilli(), ping.GetTimestampUnixMs()),
 			ActiveTestIds:      s.activeTestIDs(),
-			Stats:              toProtoStats(GeneratorStats{ActiveVUsers: s.activeVUsersLocked(), GoroutineCount: int32(runtime.NumGoroutine())}),
+			Stats:              toProtoStats(stats),
 			AvailableCapacity:  s.availableCapacityLocked(),
 			CpuLimitCores:      s.podResources.CPULimitCores,
 			MemoryLimitBytes:   s.podResources.MemoryLimitBytes,
@@ -483,6 +486,158 @@ func supportedProtocolNames() []string {
 	names := protocol.List()
 	sort.Strings(names)
 	return names
+}
+
+func (s *Service) collectResources() *engine.SystemResources {
+	if s == nil || s.resCollector == nil {
+		return nil
+	}
+	return s.resCollector.Collect()
+}
+
+func generatorStatsFromResources(resources *engine.SystemResources, activeVUsers int32) GeneratorStats {
+	stats := GeneratorStats{
+		ActiveVUsers:   activeVUsers,
+		GoroutineCount: int32(runtime.NumGoroutine()),
+	}
+	if resources == nil {
+		return stats
+	}
+	stats.CPUPercent = resources.CPUProcessPct
+	stats.MemoryBytes = int64(resources.MemProcessMb * 1024 * 1024)
+	stats.GoroutineCount = firstNonZeroInt32(resources.GoroutineCount, stats.GoroutineCount)
+	stats.CPUUserPct = resources.CPUUserPct
+	stats.CPUSystemPct = resources.CPUSystemPct
+	stats.CPUIOWaitPct = resources.CPUIOWaitPct
+	stats.CPUStealPct = resources.CPUStealPct
+	stats.Load1 = resources.Load1
+	stats.Load5 = resources.Load5
+	stats.Load15 = resources.Load15
+	stats.ThreadCount = resources.ThreadCount
+	stats.OpenFDCount = resources.OpenFDCount
+	stats.HeapAllocMB = resources.HeapAllocMB
+	stats.HeapInUseMB = resources.HeapInUseMB
+	stats.GCCountDelta = resources.GCCountDelta
+	stats.GCPauseMs = resources.GCPauseMs
+	stats.ContainerCPULimitCores = resources.ContainerCPULimitCores
+	stats.ContainerCPUUsagePct = resources.ContainerCPUUsagePct
+	stats.ContainerCPUThrottledPeriodsDelta = resources.ContainerCPUThrottledPeriodsDelta
+	stats.ContainerCPUThrottledSecondsRate = resources.ContainerCPUThrottledSecondsRate
+	stats.ContainerMemoryWorkingSetMB = resources.ContainerMemoryWorkingSetMB
+	stats.ContainerMemoryLimitMB = resources.ContainerMemoryLimitMB
+	stats.ContainerMemoryUsagePct = resources.ContainerMemoryUsagePct
+	stats.ContainerMemoryFailCountDelta = resources.ContainerMemoryFailCountDelta
+	stats.ContainerOOMKillCountDelta = resources.ContainerOOMKillCountDelta
+	stats.NetDropInPerSec = resources.NetDropInPerSec
+	stats.NetDropOutPerSec = resources.NetDropOutPerSec
+	stats.NetErrorInPerSec = resources.NetErrorInPerSec
+	stats.NetErrorOutPerSec = resources.NetErrorOutPerSec
+	stats.TCPRetransmitsPerSec = resources.TCPRetransmitsPerSec
+	stats.TCPEstablished = int32(resources.TCPEstablished)
+	stats.TCPTimeWait = int32(resources.TCPTimeWait)
+	stats.EphemeralPortUtilizationPct = resources.EphemeralPortUtilizationPct
+	stats.DiskIOTimePct = resources.DiskIOTimePct
+	stats.DiskWeightedIOTimePct = resources.DiskWeightedIOTimePct
+	stats.DiskInProgress = resources.DiskInProgress
+	return stats
+}
+
+func resourcesFromGeneratorStats(stats GeneratorStats) *engine.SystemResources {
+	return &engine.SystemResources{
+		CPUProcessPct:                     stats.CPUPercent,
+		MemProcessMb:                      float64(stats.MemoryBytes) / (1024 * 1024),
+		GoroutineCount:                    stats.GoroutineCount,
+		CPUUserPct:                        stats.CPUUserPct,
+		CPUSystemPct:                      stats.CPUSystemPct,
+		CPUIOWaitPct:                      stats.CPUIOWaitPct,
+		CPUStealPct:                       stats.CPUStealPct,
+		Load1:                             stats.Load1,
+		Load5:                             stats.Load5,
+		Load15:                            stats.Load15,
+		ThreadCount:                       stats.ThreadCount,
+		OpenFDCount:                       stats.OpenFDCount,
+		HeapAllocMB:                       stats.HeapAllocMB,
+		HeapInUseMB:                       stats.HeapInUseMB,
+		GCCountDelta:                      stats.GCCountDelta,
+		GCPauseMs:                         stats.GCPauseMs,
+		ContainerCPULimitCores:            stats.ContainerCPULimitCores,
+		ContainerCPUUsagePct:              stats.ContainerCPUUsagePct,
+		ContainerCPUThrottledPeriodsDelta: stats.ContainerCPUThrottledPeriodsDelta,
+		ContainerCPUThrottledSecondsRate:  stats.ContainerCPUThrottledSecondsRate,
+		ContainerMemoryWorkingSetMB:       stats.ContainerMemoryWorkingSetMB,
+		ContainerMemoryLimitMB:            stats.ContainerMemoryLimitMB,
+		ContainerMemoryUsagePct:           stats.ContainerMemoryUsagePct,
+		ContainerMemoryFailCountDelta:     stats.ContainerMemoryFailCountDelta,
+		ContainerOOMKillCountDelta:        stats.ContainerOOMKillCountDelta,
+		NetDropInPerSec:                   stats.NetDropInPerSec,
+		NetDropOutPerSec:                  stats.NetDropOutPerSec,
+		NetErrorInPerSec:                  stats.NetErrorInPerSec,
+		NetErrorOutPerSec:                 stats.NetErrorOutPerSec,
+		TCPRetransmitsPerSec:              stats.TCPRetransmitsPerSec,
+		TCPEstablished:                    int(stats.TCPEstablished),
+		TCPTimeWait:                       int(stats.TCPTimeWait),
+		EphemeralPortUtilizationPct:       stats.EphemeralPortUtilizationPct,
+		DiskIOTimePct:                     stats.DiskIOTimePct,
+		DiskWeightedIOTimePct:             stats.DiskWeightedIOTimePct,
+		DiskInProgress:                    stats.DiskInProgress,
+	}
+}
+
+func firstNonZeroInt32(values ...int32) int32 {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func mergeGeneratorStats(left GeneratorStats, right GeneratorStats) GeneratorStats {
+	left.ActiveVUsers += right.ActiveVUsers
+	left.CPUPercent += right.CPUPercent
+	left.MemoryBytes += right.MemoryBytes
+	left.GoroutineCount += right.GoroutineCount
+	left.ThreadCount += right.ThreadCount
+	left.OpenFDCount += right.OpenFDCount
+	left.GCCountDelta += right.GCCountDelta
+	left.ContainerCPUThrottledPeriodsDelta += right.ContainerCPUThrottledPeriodsDelta
+	left.ContainerMemoryFailCountDelta += right.ContainerMemoryFailCountDelta
+	left.ContainerOOMKillCountDelta += right.ContainerOOMKillCountDelta
+	left.DiskInProgress += right.DiskInProgress
+	left.CPUUserPct = maxFloat64(left.CPUUserPct, right.CPUUserPct)
+	left.CPUSystemPct = maxFloat64(left.CPUSystemPct, right.CPUSystemPct)
+	left.CPUIOWaitPct = maxFloat64(left.CPUIOWaitPct, right.CPUIOWaitPct)
+	left.CPUStealPct = maxFloat64(left.CPUStealPct, right.CPUStealPct)
+	left.Load1 = maxFloat64(left.Load1, right.Load1)
+	left.Load5 = maxFloat64(left.Load5, right.Load5)
+	left.Load15 = maxFloat64(left.Load15, right.Load15)
+	left.HeapAllocMB += right.HeapAllocMB
+	left.HeapInUseMB += right.HeapInUseMB
+	left.GCPauseMs += right.GCPauseMs
+	left.ContainerCPULimitCores += right.ContainerCPULimitCores
+	left.ContainerCPUUsagePct = maxFloat64(left.ContainerCPUUsagePct, right.ContainerCPUUsagePct)
+	left.ContainerCPUThrottledSecondsRate += right.ContainerCPUThrottledSecondsRate
+	left.ContainerMemoryWorkingSetMB += right.ContainerMemoryWorkingSetMB
+	left.ContainerMemoryLimitMB += right.ContainerMemoryLimitMB
+	left.ContainerMemoryUsagePct = maxFloat64(left.ContainerMemoryUsagePct, right.ContainerMemoryUsagePct)
+	left.NetDropInPerSec += right.NetDropInPerSec
+	left.NetDropOutPerSec += right.NetDropOutPerSec
+	left.NetErrorInPerSec += right.NetErrorInPerSec
+	left.NetErrorOutPerSec += right.NetErrorOutPerSec
+	left.TCPRetransmitsPerSec += right.TCPRetransmitsPerSec
+	left.TCPEstablished += right.TCPEstablished
+	left.TCPTimeWait += right.TCPTimeWait
+	left.EphemeralPortUtilizationPct = maxFloat64(left.EphemeralPortUtilizationPct, right.EphemeralPortUtilizationPct)
+	left.DiskIOTimePct = maxFloat64(left.DiskIOTimePct, right.DiskIOTimePct)
+	left.DiskWeightedIOTimePct = maxFloat64(left.DiskWeightedIOTimePct, right.DiskWeightedIOTimePct)
+	return left
+}
+
+func maxFloat64(left float64, right float64) float64 {
+	if right > left {
+		return right
+	}
+	return left
 }
 
 func (s *Service) activeTestIDs() []string {
@@ -602,10 +757,7 @@ func (s *Service) PublishMetrics(testID string, groupName string, stats Generato
 
 	if writer != nil {
 		if batch.GetStats() != nil {
-			_ = writer.RecordResourceSample(time.UnixMilli(batch.TimestampUnixMs), int64(batch.GetStats().GetActiveVusers()), &engine.SystemResources{
-				CPUProcessPct: batch.GetStats().GetCpuPercent(),
-				MemProcessMb:  float64(batch.GetStats().GetMemoryBytes()) / (1024 * 1024),
-			})
+			_ = writer.RecordResourceSample(time.UnixMilli(batch.TimestampUnixMs), int64(batch.GetStats().GetActiveVusers()), resourcesFromGeneratorStats(generatorStatsFromProto(batch.GetStats())))
 		}
 		totalErrors := int64(0)
 		totalDuration := 0.0
@@ -701,18 +853,22 @@ func (s *Service) metricsBatchLocked(testID string) *pb.MetricsBatch {
 		groupAssignments = assignment.groups
 	}
 	stats := GeneratorStats{}
-	for _, groupStats := range assignment.groupStats {
-		stats.CPUPercent += groupStats.CPUPercent
-		stats.MemoryBytes += groupStats.MemoryBytes
-		stats.GoroutineCount += groupStats.GoroutineCount
+	groupsWithActiveStats := make(map[string]bool, len(assignment.groupStats))
+	for groupName, groupStats := range assignment.groupStats {
+		stats = mergeGeneratorStats(stats, groupStats)
+		if groupStats.ActiveVUsers > 0 {
+			groupsWithActiveStats[groupName] = true
+		}
 	}
 	telemetry := mergeMetricsTelemetry(assignment.groupTelemetry)
 	transactions := make([]TransactionMetric, 0)
 	for _, groupTransactions := range assignment.groupTransactions {
 		transactions = append(transactions, groupTransactions...)
 	}
-	for _, activeVUsers := range groupAssignments {
-		stats.ActiveVUsers += activeVUsers
+	for groupName, activeVUsers := range groupAssignments {
+		if !groupsWithActiveStats[groupName] {
+			stats.ActiveVUsers += activeVUsers
+		}
 	}
 	if stats.ActiveVUsers == 0 && len(groupAssignments) == 0 {
 		stats.ActiveVUsers = assignment.vuserCount
@@ -980,11 +1136,7 @@ func (s *Service) publishExecutionSnapshot(testID string, groupName string, exec
 	stats := GeneratorStats{GoroutineCount: int32(runtime.NumGoroutine())}
 	telemetry := MetricsTelemetry{}
 	if ok {
-		stats.ActiveVUsers = int32(snapshot.ActiveVUsers)
-		if snapshot.Resources != nil {
-			stats.CPUPercent = snapshot.Resources.CPUProcessPct
-			stats.MemoryBytes = int64(snapshot.Resources.MemProcessMb * 1024 * 1024)
-		}
+		stats = generatorStatsFromResources(snapshot.Resources, int32(snapshot.ActiveVUsers))
 		telemetry.CollectedAtUnixMs = snapshot.Timestamp.UnixMilli()
 		now := time.Now()
 		telemetry.PublishedAtUnixMs = now.UnixMilli()

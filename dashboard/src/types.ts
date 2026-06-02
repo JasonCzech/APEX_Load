@@ -517,6 +517,7 @@ export interface IntervalSummaryRecord {
   p99_ms: number
   browser?: BrowserLiveMetrics
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
+  latency?: NetworkLatency
 }
 
 export interface ClientMetrics {
@@ -620,6 +621,19 @@ export interface RunArchiveResourcePeaks {
   net_recv_kbps: number
   disk_read_kbps: number
   disk_write_kbps: number
+  cpu_iowait_pct?: number
+  cpu_steal_pct?: number
+  gc_pause_ms?: number
+  container_cpu_usage_pct?: number
+  container_cpu_throttled_seconds_rate?: number
+  container_memory_usage_pct?: number
+  container_oom_kill_count_delta?: number
+  net_drop_in_per_sec?: number
+  net_drop_out_per_sec?: number
+  net_error_in_per_sec?: number
+  net_error_out_per_sec?: number
+  tcp_retransmits_per_sec?: number
+  disk_io_time_pct?: number
 }
 
 export interface ResourceSample {
@@ -635,6 +649,40 @@ export interface ResourceSample {
   net_recv_kbps: number
   disk_read_kbps: number
   disk_write_kbps: number
+  cpu_user_pct?: number
+  cpu_system_pct?: number
+  cpu_iowait_pct?: number
+  cpu_steal_pct?: number
+  load1?: number
+  load5?: number
+  load15?: number
+  thread_count?: number
+  open_fd_count?: number
+  goroutine_count?: number
+  heap_alloc_mb?: number
+  heap_in_use_mb?: number
+  gc_count_delta?: number
+  gc_pause_ms?: number
+  container_cpu_limit_cores?: number
+  container_cpu_usage_pct?: number
+  container_cpu_throttled_periods_delta?: number
+  container_cpu_throttled_seconds_rate?: number
+  container_memory_working_set_mb?: number
+  container_memory_limit_mb?: number
+  container_memory_usage_pct?: number
+  container_memory_fail_count_delta?: number
+  container_oom_kill_count_delta?: number
+  net_drop_in_per_sec?: number
+  net_drop_out_per_sec?: number
+  net_error_in_per_sec?: number
+  net_error_out_per_sec?: number
+  tcp_retransmits_per_sec?: number
+  tcp_established?: number
+  tcp_time_wait?: number
+  ephemeral_port_utilization_pct?: number
+  disk_io_time_pct?: number
+  disk_weighted_io_time_pct?: number
+  disk_in_progress?: number
   external_metrics?: Record<string, number>
 }
 
@@ -1078,7 +1126,23 @@ export interface LiveMetrics {
   telemetry_status?: TelemetryRunHealth
   telemetry?: TelemetryHealth
   resources?: SystemResources
+  generator_resources?: Record<string, GeneratorResourceSnapshot>
   latency?: NetworkLatency
+}
+
+export interface GeneratorResourceSnapshot {
+  generator_id: string
+  target: string
+  region?: string
+  active_vusers: number
+  tps?: number
+  error_pct?: number
+  p95_ms?: number
+  p99_ms?: number
+  saturation_state?: 'clear' | 'warning' | 'danger' | 'unknown' | string
+  impact_reasons?: string[]
+  resources?: SystemResources
+  timestamp: string
 }
 
 export interface BrowserLiveMetrics {
@@ -1190,9 +1254,21 @@ export interface LatencyTarget {
   name: string
   endpoint: string
   latency_ms: number
+  probe_total_ms?: number
+  dns_ms?: number
+  connect_ms?: number
+  tls_ms?: number
+  ttfb_ms?: number
+  http_status?: number
+  probe_method?: string
   ip?: string
   hops?: number
   last_success: boolean
+  jitter_ms?: number
+  success_rate_pct?: number
+  sample_count?: number
+  route_status?: string
+  error?: string
   timestamp: string
 }
 
@@ -1205,6 +1281,40 @@ export interface SystemResources {
   net_recv_kbps: number
   disk_read_kbps: number
   disk_write_kbps: number
+  cpu_user_pct?: number
+  cpu_system_pct?: number
+  cpu_iowait_pct?: number
+  cpu_steal_pct?: number
+  load1?: number
+  load5?: number
+  load15?: number
+  thread_count?: number
+  open_fd_count?: number
+  goroutine_count?: number
+  heap_alloc_mb?: number
+  heap_in_use_mb?: number
+  gc_count_delta?: number
+  gc_pause_ms?: number
+  container_cpu_limit_cores?: number
+  container_cpu_usage_pct?: number
+  container_cpu_throttled_periods_delta?: number
+  container_cpu_throttled_seconds_rate?: number
+  container_memory_working_set_mb?: number
+  container_memory_limit_mb?: number
+  container_memory_usage_pct?: number
+  container_memory_fail_count_delta?: number
+  container_oom_kill_count_delta?: number
+  net_drop_in_per_sec?: number
+  net_drop_out_per_sec?: number
+  net_error_in_per_sec?: number
+  net_error_out_per_sec?: number
+  tcp_retransmits_per_sec?: number
+  tcp_established?: number
+  tcp_time_wait?: number
+  ephemeral_port_utilization_pct?: number
+  disk_io_time_pct?: number
+  disk_weighted_io_time_pct?: number
+  disk_in_progress?: number
   external_metrics?: Record<string, number>
 }
 
@@ -1793,6 +1903,17 @@ export interface MetricsHistoryPoint {
   netRecv?: number
   diskRead?: number
   diskWrite?: number
+  cpuIOWait?: number
+  cpuSteal?: number
+  gcPauseMs?: number
+  containerCPUUsagePct?: number
+  containerCPUThrottledSecondsRate?: number
+  containerMemoryUsagePct?: number
+  containerOOMKillCountDelta?: number
+  netDropsPerSec?: number
+  netErrorsPerSec?: number
+  tcpRetransmitsPerSec?: number
+  diskIOTimePct?: number
   jmsConsumerLagMs?: number
   jmsPeakConsumerLagMs?: number
   [key: string]: string | number | undefined
@@ -1840,6 +1961,31 @@ export interface SystemInventoryGenerator {
   cpu_limit_cores: number
   memory_limit_bytes: number
   max_vusers: number
+  cpu_user_pct?: number
+  cpu_system_pct?: number
+  cpu_iowait_pct?: number
+  cpu_steal_pct?: number
+  thread_count?: number
+  open_fd_count?: number
+  heap_alloc_mb?: number
+  heap_in_use_mb?: number
+  gc_count_delta?: number
+  gc_pause_ms?: number
+  container_cpu_usage_pct?: number
+  container_cpu_throttled_periods_delta?: number
+  container_cpu_throttled_seconds_rate?: number
+  container_memory_working_set_mb?: number
+  container_memory_usage_pct?: number
+  container_memory_fail_count_delta?: number
+  container_oom_kill_count_delta?: number
+  net_drop_in_per_sec?: number
+  net_drop_out_per_sec?: number
+  net_error_in_per_sec?: number
+  net_error_out_per_sec?: number
+  tcp_retransmits_per_sec?: number
+  tcp_established?: number
+  tcp_time_wait?: number
+  disk_io_time_pct?: number
 }
 
 export interface SystemInventoryResponse {

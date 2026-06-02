@@ -2630,12 +2630,25 @@ func TestLoadStoredTestHistoryBuildsLiveMetricsFromTypedIntervalSummaries(t *tes
 				},
 				Latency: &storage.NetworkLatencySummaryRecord{
 					Targets: []storage.NetworkLatencyTargetRecord{{
-						Name:        "edge",
-						Endpoint:    "https://example.test",
-						LatencyMs:   42.5,
-						IP:          "192.0.2.10",
-						LastSuccess: true,
-						Timestamp:   time.Date(2026, time.May, 13, 17, 14, 59, 900000000, time.UTC),
+						Name:           "edge",
+						Endpoint:       "https://example.test",
+						LatencyMs:      42.5,
+						ProbeTotalMs:   51.25,
+						DNSMs:          2.5,
+						ConnectMs:      12.25,
+						TLSMs:          8.5,
+						TTFBMs:         45.75,
+						HTTPStatus:     204,
+						ProbeMethod:    "HEAD",
+						IP:             "192.0.2.10",
+						Hops:           3,
+						LastSuccess:    true,
+						JitterMs:       1.75,
+						SuccessRatePct: 91.666,
+						SampleCount:    12,
+						RouteStatus:    "ok",
+						Error:          "previous HTTP probe failed",
+						Timestamp:      time.Date(2026, time.May, 13, 17, 14, 59, 900000000, time.UTC),
 					}},
 				},
 				DroppedResults:           5,
@@ -2680,6 +2693,16 @@ func TestLoadStoredTestHistoryBuildsLiveMetricsFromTypedIntervalSummaries(t *tes
 	}
 	if testRun.LiveMetrics.Latency == nil || len(testRun.LiveMetrics.Latency.Targets) != 1 || testRun.LiveMetrics.Latency.Targets[0].LatencyMs != 42.5 {
 		t.Fatalf("expected network latency to round-trip from typed history, got %#v", testRun.LiveMetrics.Latency)
+	}
+	latencyTarget := testRun.LiveMetrics.Latency.Targets[0]
+	if latencyTarget.ProbeTotalMs != 51.25 || latencyTarget.DNSMs != 2.5 || latencyTarget.ConnectMs != 12.25 || latencyTarget.TLSMs != 8.5 || latencyTarget.TTFBMs != 45.75 {
+		t.Fatalf("expected route timing diagnostics to round-trip, got %#v", latencyTarget)
+	}
+	if latencyTarget.HTTPStatus != 204 || latencyTarget.ProbeMethod != "HEAD" || latencyTarget.Hops != 3 || latencyTarget.RouteStatus != "ok" {
+		t.Fatalf("expected route metadata to round-trip, got %#v", latencyTarget)
+	}
+	if latencyTarget.JitterMs != 1.75 || latencyTarget.SuccessRatePct != 91.666 || latencyTarget.SampleCount != 12 || latencyTarget.Error != "previous HTTP probe failed" {
+		t.Fatalf("expected route stability diagnostics to round-trip, got %#v", latencyTarget)
 	}
 }
 

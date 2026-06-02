@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -853,5 +854,107 @@ func TestRunArchiveWriterPersistsThroughputGapSummary(t *testing.T) {
 	}
 	if summaries[0].TelemetryStatus == nil || summaries[0].TelemetryStatus.Status != "degraded" || len(summaries[0].TelemetryStatus.Conditions) != 2 {
 		t.Fatalf("summary telemetry status = %#v, want degraded telemetry health persisted", summaries[0].TelemetryStatus)
+	}
+}
+
+func TestRunArchiveWriterPersistsEnhancedResourceFields(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	writer, err := newRunArchiveWriter(&ManagedTest{ID: "test-resource-impact", Name: "Resource Impact"}, RunArchiveProvenance{})
+	if err != nil {
+		t.Fatalf("newRunArchiveWriter returned error: %v", err)
+	}
+	timestamp := time.Date(2026, time.June, 2, 17, 0, 0, 0, time.UTC)
+	if err := writer.RecordResourceSample(timestamp, 8, &engine.SystemResources{
+		CPUProcessPct:                     96,
+		CPUFreePct:                        4,
+		MemProcessMb:                      512,
+		MemFreeMb:                         1024,
+		NetSentKbps:                       20,
+		NetRecvKbps:                       18,
+		DiskReadKbps:                      2,
+		DiskWriteKbps:                     3,
+		CPUIOWaitPct:                      12,
+		GCPauseMs:                         140,
+		ContainerCPUUsagePct:              97,
+		ContainerCPUThrottledPeriodsDelta: 3,
+		ContainerCPUThrottledSecondsRate:  0.4,
+		ContainerMemoryWorkingSetMB:       900,
+		ContainerMemoryLimitMB:            1024,
+		ContainerMemoryUsagePct:           91,
+		ContainerOOMKillCountDelta:        1,
+		NetDropInPerSec:                   2,
+		NetErrorOutPerSec:                 1,
+		TCPRetransmitsPerSec:              3,
+		EphemeralPortUtilizationPct:       7,
+		DiskIOTimePct:                     72,
+		DiskWeightedIOTimePct:             80,
+		DiskInProgress:                    2,
+	}); err != nil {
+		t.Fatalf("RecordResourceSample returned error: %v", err)
+	}
+	record, err := writer.Finalize("COMPLETE", timestamp, "", false, nil)
+	if err != nil {
+		t.Fatalf("Finalize returned error: %v", err)
+	}
+
+	resources, err := readAllArchiveResources(record)
+	if err != nil {
+		t.Fatalf("readAllArchiveResources returned error: %v", err)
+	}
+	if len(resources) != 1 {
+		t.Fatalf("resources len = %d, want 1", len(resources))
+	}
+	if resources[0].ContainerCPUThrottledSecondsRate != 0.4 || resources[0].ContainerMemoryUsagePct != 91 || resources[0].TCPRetransmitsPerSec != 3 {
+		t.Fatalf("resource sample = %#v, want enhanced fields persisted", resources[0])
+	}
+
+	report, err := buildRunArchiveReport(record)
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	if report.ResourcePeaks.ContainerCPUThrottledSecondsRate != 0.4 || report.ResourcePeaks.ContainerOOMKillCountDelta != 1 || report.ResourcePeaks.DiskIOTimePct != 72 {
+		t.Fatalf("resource peaks = %#v, want enhanced peaks", report.ResourcePeaks)
+	}
+
+	var csvBuf bytes.Buffer
+	if err := writeArchiveResourcesCSV(resources, &csvBuf); err != nil {
+		t.Fatalf("writeArchiveResourcesCSV returned error: %v", err)
+	}
+	for _, expected := range []string{"container_cpu_throttled_seconds_rate", "container_memory_usage_pct", "tcp_retransmits_per_sec", "disk_io_time_pct"} {
+		if !strings.Contains(csvBuf.String(), expected) {
+			t.Fatalf("resource csv missing %q:\n%s", expected, csvBuf.String())
+		}
+	}
+
+	parquetResources := toParquetResources(resources)
+	if len(parquetResources) != 1 || parquetResources[0].ContainerCPUThrottledSecondsRate != 0.4 || parquetResources[0].DiskWeightedIOTimePct != 80 {
+		t.Fatalf("parquet resources = %#v, want enhanced fields mapped", parquetResources)
+	}
+
+	oldArchiveDir := t.TempDir()
+	oldManifestPath := filepath.Join(oldArchiveDir, "manifest.json")
+	oldManifest := RunArchiveManifest{
+		SchemaVersion:       archiveSchemaVersion,
+		TestID:              "old-resource",
+		TestName:            "Old Resource",
+		ResourceSamplesFile: "resources.jsonl",
+	}
+	oldManifestBytes, err := json.Marshal(oldManifest)
+	if err != nil {
+		t.Fatalf("json.Marshal old manifest returned error: %v", err)
+	}
+	if err := os.WriteFile(oldManifestPath, oldManifestBytes, 0o644); err != nil {
+		t.Fatalf("WriteFile old manifest returned error: %v", err)
+	}
+	oldResource := `{"timestamp":"2026-06-02T17:00:00Z","test_id":"old-resource","cpu_process_pct":12,"mem_process_mb":256}` + "\n"
+	if err := os.WriteFile(filepath.Join(oldArchiveDir, "resources.jsonl"), []byte(oldResource), 0o644); err != nil {
+		t.Fatalf("WriteFile old resources returned error: %v", err)
+	}
+	oldResources, err := readAllArchiveResources(&storage.RunArchiveRecord{ArchivePath: oldArchiveDir, ManifestPath: oldManifestPath})
+	if err != nil {
+		t.Fatalf("readAllArchiveResources old record returned error: %v", err)
+	}
+	if len(oldResources) != 1 || oldResources[0].CPUProcessPct != 12 || oldResources[0].ContainerCPUUsagePct != 0 {
+		t.Fatalf("old resources = %#v, want old record read with missing enhanced fields zero-valued", oldResources)
 	}
 }

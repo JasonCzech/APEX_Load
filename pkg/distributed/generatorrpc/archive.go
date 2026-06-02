@@ -60,18 +60,46 @@ type archiveTransactionEvent struct {
 }
 
 type archiveResourceSample struct {
-	Timestamp     time.Time `json:"timestamp"`
-	TestID        string    `json:"test_id"`
-	TestName      string    `json:"test_name"`
-	ActiveVUsers  int64     `json:"active_vusers"`
-	CPUProcessPct float64   `json:"cpu_process_pct"`
-	CPUFreePct    float64   `json:"cpu_free_pct"`
-	MemProcessMB  float64   `json:"mem_process_mb"`
-	MemFreeMB     float64   `json:"mem_free_mb"`
-	NetSentKbps   float64   `json:"net_sent_kbps"`
-	NetRecvKbps   float64   `json:"net_recv_kbps"`
-	DiskReadKbps  float64   `json:"disk_read_kbps"`
-	DiskWriteKbps float64   `json:"disk_write_kbps"`
+	Timestamp                         time.Time `json:"timestamp"`
+	TestID                            string    `json:"test_id"`
+	TestName                          string    `json:"test_name"`
+	ActiveVUsers                      int64     `json:"active_vusers"`
+	CPUProcessPct                     float64   `json:"cpu_process_pct"`
+	CPUFreePct                        float64   `json:"cpu_free_pct"`
+	MemProcessMB                      float64   `json:"mem_process_mb"`
+	MemFreeMB                         float64   `json:"mem_free_mb"`
+	NetSentKbps                       float64   `json:"net_sent_kbps"`
+	NetRecvKbps                       float64   `json:"net_recv_kbps"`
+	DiskReadKbps                      float64   `json:"disk_read_kbps"`
+	DiskWriteKbps                     float64   `json:"disk_write_kbps"`
+	CPUUserPct                        float64   `json:"cpu_user_pct,omitempty"`
+	CPUSystemPct                      float64   `json:"cpu_system_pct,omitempty"`
+	CPUIOWaitPct                      float64   `json:"cpu_iowait_pct,omitempty"`
+	CPUStealPct                       float64   `json:"cpu_steal_pct,omitempty"`
+	ThreadCount                       int32     `json:"thread_count,omitempty"`
+	OpenFDCount                       int32     `json:"open_fd_count,omitempty"`
+	GoroutineCount                    int32     `json:"goroutine_count,omitempty"`
+	HeapAllocMB                       float64   `json:"heap_alloc_mb,omitempty"`
+	HeapInUseMB                       float64   `json:"heap_in_use_mb,omitempty"`
+	GCCountDelta                      uint32    `json:"gc_count_delta,omitempty"`
+	GCPauseMs                         float64   `json:"gc_pause_ms,omitempty"`
+	ContainerCPULimitCores            float64   `json:"container_cpu_limit_cores,omitempty"`
+	ContainerCPUUsagePct              float64   `json:"container_cpu_usage_pct,omitempty"`
+	ContainerCPUThrottledPeriodsDelta uint64    `json:"container_cpu_throttled_periods_delta,omitempty"`
+	ContainerCPUThrottledSecondsRate  float64   `json:"container_cpu_throttled_seconds_rate,omitempty"`
+	ContainerMemoryWorkingSetMB       float64   `json:"container_memory_working_set_mb,omitempty"`
+	ContainerMemoryLimitMB            float64   `json:"container_memory_limit_mb,omitempty"`
+	ContainerMemoryUsagePct           float64   `json:"container_memory_usage_pct,omitempty"`
+	ContainerMemoryFailCountDelta     uint64    `json:"container_memory_fail_count_delta,omitempty"`
+	ContainerOOMKillCountDelta        uint64    `json:"container_oom_kill_count_delta,omitempty"`
+	NetDropInPerSec                   float64   `json:"net_drop_in_per_sec,omitempty"`
+	NetDropOutPerSec                  float64   `json:"net_drop_out_per_sec,omitempty"`
+	NetErrorInPerSec                  float64   `json:"net_error_in_per_sec,omitempty"`
+	NetErrorOutPerSec                 float64   `json:"net_error_out_per_sec,omitempty"`
+	TCPRetransmitsPerSec              float64   `json:"tcp_retransmits_per_sec,omitempty"`
+	TCPEstablished                    int       `json:"tcp_established,omitempty"`
+	TCPTimeWait                       int       `json:"tcp_time_wait,omitempty"`
+	DiskIOTimePct                     float64   `json:"disk_io_time_pct,omitempty"`
 }
 
 type archiveIntervalSummary struct {
@@ -125,19 +153,47 @@ type parquetTransactionEvent struct {
 }
 
 type parquetResourceSample struct {
-	TimestampUnixMs  int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
-	TimestampRFC3339 string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TestID           string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TestName         string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	ActiveVUsers     int64   `parquet:"name=active_vusers, type=INT64"`
-	CPUProcessPct    float64 `parquet:"name=cpu_process_pct, type=DOUBLE"`
-	CPUFreePct       float64 `parquet:"name=cpu_free_pct, type=DOUBLE"`
-	MemProcessMB     float64 `parquet:"name=mem_process_mb, type=DOUBLE"`
-	MemFreeMB        float64 `parquet:"name=mem_free_mb, type=DOUBLE"`
-	NetSentKbps      float64 `parquet:"name=net_sent_kbps, type=DOUBLE"`
-	NetRecvKbps      float64 `parquet:"name=net_recv_kbps, type=DOUBLE"`
-	DiskReadKbps     float64 `parquet:"name=disk_read_kbps, type=DOUBLE"`
-	DiskWriteKbps    float64 `parquet:"name=disk_write_kbps, type=DOUBLE"`
+	TimestampUnixMs                   int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
+	TimestampRFC3339                  string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TestID                            string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TestName                          string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	ActiveVUsers                      int64   `parquet:"name=active_vusers, type=INT64"`
+	CPUProcessPct                     float64 `parquet:"name=cpu_process_pct, type=DOUBLE"`
+	CPUFreePct                        float64 `parquet:"name=cpu_free_pct, type=DOUBLE"`
+	MemProcessMB                      float64 `parquet:"name=mem_process_mb, type=DOUBLE"`
+	MemFreeMB                         float64 `parquet:"name=mem_free_mb, type=DOUBLE"`
+	NetSentKbps                       float64 `parquet:"name=net_sent_kbps, type=DOUBLE"`
+	NetRecvKbps                       float64 `parquet:"name=net_recv_kbps, type=DOUBLE"`
+	DiskReadKbps                      float64 `parquet:"name=disk_read_kbps, type=DOUBLE"`
+	DiskWriteKbps                     float64 `parquet:"name=disk_write_kbps, type=DOUBLE"`
+	CPUUserPct                        float64 `parquet:"name=cpu_user_pct, type=DOUBLE"`
+	CPUSystemPct                      float64 `parquet:"name=cpu_system_pct, type=DOUBLE"`
+	CPUIOWaitPct                      float64 `parquet:"name=cpu_iowait_pct, type=DOUBLE"`
+	CPUStealPct                       float64 `parquet:"name=cpu_steal_pct, type=DOUBLE"`
+	ThreadCount                       int32   `parquet:"name=thread_count, type=INT32"`
+	OpenFDCount                       int32   `parquet:"name=open_fd_count, type=INT32"`
+	GoroutineCount                    int32   `parquet:"name=goroutine_count, type=INT32"`
+	HeapAllocMB                       float64 `parquet:"name=heap_alloc_mb, type=DOUBLE"`
+	HeapInUseMB                       float64 `parquet:"name=heap_in_use_mb, type=DOUBLE"`
+	GCCountDelta                      int64   `parquet:"name=gc_count_delta, type=INT64"`
+	GCPauseMs                         float64 `parquet:"name=gc_pause_ms, type=DOUBLE"`
+	ContainerCPULimitCores            float64 `parquet:"name=container_cpu_limit_cores, type=DOUBLE"`
+	ContainerCPUUsagePct              float64 `parquet:"name=container_cpu_usage_pct, type=DOUBLE"`
+	ContainerCPUThrottledPeriodsDelta int64   `parquet:"name=container_cpu_throttled_periods_delta, type=INT64"`
+	ContainerCPUThrottledSecondsRate  float64 `parquet:"name=container_cpu_throttled_seconds_rate, type=DOUBLE"`
+	ContainerMemoryWorkingSetMB       float64 `parquet:"name=container_memory_working_set_mb, type=DOUBLE"`
+	ContainerMemoryLimitMB            float64 `parquet:"name=container_memory_limit_mb, type=DOUBLE"`
+	ContainerMemoryUsagePct           float64 `parquet:"name=container_memory_usage_pct, type=DOUBLE"`
+	ContainerMemoryFailCountDelta     int64   `parquet:"name=container_memory_fail_count_delta, type=INT64"`
+	ContainerOOMKillCountDelta        int64   `parquet:"name=container_oom_kill_count_delta, type=INT64"`
+	NetDropInPerSec                   float64 `parquet:"name=net_drop_in_per_sec, type=DOUBLE"`
+	NetDropOutPerSec                  float64 `parquet:"name=net_drop_out_per_sec, type=DOUBLE"`
+	NetErrorInPerSec                  float64 `parquet:"name=net_error_in_per_sec, type=DOUBLE"`
+	NetErrorOutPerSec                 float64 `parquet:"name=net_error_out_per_sec, type=DOUBLE"`
+	TCPRetransmitsPerSec              float64 `parquet:"name=tcp_retransmits_per_sec, type=DOUBLE"`
+	TCPEstablished                    int32   `parquet:"name=tcp_established, type=INT32"`
+	TCPTimeWait                       int32   `parquet:"name=tcp_time_wait, type=INT32"`
+	DiskIOTimePct                     float64 `parquet:"name=disk_io_time_pct, type=DOUBLE"`
 }
 
 type parquetIntervalSummary struct {
@@ -254,18 +310,46 @@ func (w *archiveRecorder) RecordResourceSample(timestamp time.Time, activeVUsers
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	record := archiveResourceSample{
-		Timestamp:     timestamp,
-		TestID:        w.manifest.TestID,
-		TestName:      w.manifest.TestName,
-		ActiveVUsers:  activeVUsers,
-		CPUProcessPct: resources.CPUProcessPct,
-		CPUFreePct:    resources.CPUFreePct,
-		MemProcessMB:  resources.MemProcessMb,
-		MemFreeMB:     resources.MemFreeMb,
-		NetSentKbps:   resources.NetSentKbps,
-		NetRecvKbps:   resources.NetRecvKbps,
-		DiskReadKbps:  resources.DiskReadKbps,
-		DiskWriteKbps: resources.DiskWriteKbps,
+		Timestamp:                         timestamp,
+		TestID:                            w.manifest.TestID,
+		TestName:                          w.manifest.TestName,
+		ActiveVUsers:                      activeVUsers,
+		CPUProcessPct:                     resources.CPUProcessPct,
+		CPUFreePct:                        resources.CPUFreePct,
+		MemProcessMB:                      resources.MemProcessMb,
+		MemFreeMB:                         resources.MemFreeMb,
+		NetSentKbps:                       resources.NetSentKbps,
+		NetRecvKbps:                       resources.NetRecvKbps,
+		DiskReadKbps:                      resources.DiskReadKbps,
+		DiskWriteKbps:                     resources.DiskWriteKbps,
+		CPUUserPct:                        resources.CPUUserPct,
+		CPUSystemPct:                      resources.CPUSystemPct,
+		CPUIOWaitPct:                      resources.CPUIOWaitPct,
+		CPUStealPct:                       resources.CPUStealPct,
+		ThreadCount:                       resources.ThreadCount,
+		OpenFDCount:                       resources.OpenFDCount,
+		GoroutineCount:                    resources.GoroutineCount,
+		HeapAllocMB:                       resources.HeapAllocMB,
+		HeapInUseMB:                       resources.HeapInUseMB,
+		GCCountDelta:                      resources.GCCountDelta,
+		GCPauseMs:                         resources.GCPauseMs,
+		ContainerCPULimitCores:            resources.ContainerCPULimitCores,
+		ContainerCPUUsagePct:              resources.ContainerCPUUsagePct,
+		ContainerCPUThrottledPeriodsDelta: resources.ContainerCPUThrottledPeriodsDelta,
+		ContainerCPUThrottledSecondsRate:  resources.ContainerCPUThrottledSecondsRate,
+		ContainerMemoryWorkingSetMB:       resources.ContainerMemoryWorkingSetMB,
+		ContainerMemoryLimitMB:            resources.ContainerMemoryLimitMB,
+		ContainerMemoryUsagePct:           resources.ContainerMemoryUsagePct,
+		ContainerMemoryFailCountDelta:     resources.ContainerMemoryFailCountDelta,
+		ContainerOOMKillCountDelta:        resources.ContainerOOMKillCountDelta,
+		NetDropInPerSec:                   resources.NetDropInPerSec,
+		NetDropOutPerSec:                  resources.NetDropOutPerSec,
+		NetErrorInPerSec:                  resources.NetErrorInPerSec,
+		NetErrorOutPerSec:                 resources.NetErrorOutPerSec,
+		TCPRetransmitsPerSec:              resources.TCPRetransmitsPerSec,
+		TCPEstablished:                    resources.TCPEstablished,
+		TCPTimeWait:                       resources.TCPTimeWait,
+		DiskIOTimePct:                     resources.DiskIOTimePct,
 	}
 	if err := w.resourceEncoder.Encode(record); err != nil {
 		return err
@@ -478,19 +562,47 @@ func toParquetResources(items []archiveResourceSample) []parquetResourceSample {
 	rows := make([]parquetResourceSample, 0, len(items))
 	for _, item := range items {
 		rows = append(rows, parquetResourceSample{
-			TimestampUnixMs:  item.Timestamp.UnixMilli(),
-			TimestampRFC3339: item.Timestamp.Format(time.RFC3339Nano),
-			TestID:           item.TestID,
-			TestName:         item.TestName,
-			ActiveVUsers:     item.ActiveVUsers,
-			CPUProcessPct:    item.CPUProcessPct,
-			CPUFreePct:       item.CPUFreePct,
-			MemProcessMB:     item.MemProcessMB,
-			MemFreeMB:        item.MemFreeMB,
-			NetSentKbps:      item.NetSentKbps,
-			NetRecvKbps:      item.NetRecvKbps,
-			DiskReadKbps:     item.DiskReadKbps,
-			DiskWriteKbps:    item.DiskWriteKbps,
+			TimestampUnixMs:                   item.Timestamp.UnixMilli(),
+			TimestampRFC3339:                  item.Timestamp.Format(time.RFC3339Nano),
+			TestID:                            item.TestID,
+			TestName:                          item.TestName,
+			ActiveVUsers:                      item.ActiveVUsers,
+			CPUProcessPct:                     item.CPUProcessPct,
+			CPUFreePct:                        item.CPUFreePct,
+			MemProcessMB:                      item.MemProcessMB,
+			MemFreeMB:                         item.MemFreeMB,
+			NetSentKbps:                       item.NetSentKbps,
+			NetRecvKbps:                       item.NetRecvKbps,
+			DiskReadKbps:                      item.DiskReadKbps,
+			DiskWriteKbps:                     item.DiskWriteKbps,
+			CPUUserPct:                        item.CPUUserPct,
+			CPUSystemPct:                      item.CPUSystemPct,
+			CPUIOWaitPct:                      item.CPUIOWaitPct,
+			CPUStealPct:                       item.CPUStealPct,
+			ThreadCount:                       item.ThreadCount,
+			OpenFDCount:                       item.OpenFDCount,
+			GoroutineCount:                    item.GoroutineCount,
+			HeapAllocMB:                       item.HeapAllocMB,
+			HeapInUseMB:                       item.HeapInUseMB,
+			GCCountDelta:                      int64(item.GCCountDelta),
+			GCPauseMs:                         item.GCPauseMs,
+			ContainerCPULimitCores:            item.ContainerCPULimitCores,
+			ContainerCPUUsagePct:              item.ContainerCPUUsagePct,
+			ContainerCPUThrottledPeriodsDelta: int64(item.ContainerCPUThrottledPeriodsDelta),
+			ContainerCPUThrottledSecondsRate:  item.ContainerCPUThrottledSecondsRate,
+			ContainerMemoryWorkingSetMB:       item.ContainerMemoryWorkingSetMB,
+			ContainerMemoryLimitMB:            item.ContainerMemoryLimitMB,
+			ContainerMemoryUsagePct:           item.ContainerMemoryUsagePct,
+			ContainerMemoryFailCountDelta:     int64(item.ContainerMemoryFailCountDelta),
+			ContainerOOMKillCountDelta:        int64(item.ContainerOOMKillCountDelta),
+			NetDropInPerSec:                   item.NetDropInPerSec,
+			NetDropOutPerSec:                  item.NetDropOutPerSec,
+			NetErrorInPerSec:                  item.NetErrorInPerSec,
+			NetErrorOutPerSec:                 item.NetErrorOutPerSec,
+			TCPRetransmitsPerSec:              item.TCPRetransmitsPerSec,
+			TCPEstablished:                    int32(item.TCPEstablished),
+			TCPTimeWait:                       int32(item.TCPTimeWait),
+			DiskIOTimePct:                     item.DiskIOTimePct,
 		})
 	}
 	return rows

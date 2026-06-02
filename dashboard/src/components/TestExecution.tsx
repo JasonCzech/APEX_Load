@@ -358,6 +358,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         groupNames={groupNames}
         groupColors={GROUP_COLORS}
         showLoadImpact={!(showArchiveSection && archiveReport)}
+        latestLatency={latestMetrics?.latency ?? test?.live_metrics?.latency}
+        latestMetrics={latestMetrics ?? test?.live_metrics}
       />
 
       <TestExecutionSummary

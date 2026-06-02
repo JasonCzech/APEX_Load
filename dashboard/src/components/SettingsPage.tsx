@@ -2769,7 +2769,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                     <span className="setting-desc">Use the dedicated Access page for CI, MCP, reporting, script import, and system automation key generation.</span>
                   </div>
                   <div className="settings-inline-actions">
-                    <button className="btn btn-secondary" type="button" onClick={() => onNavigate?.('access')} disabled={!canManageServiceAccounts || !onNavigate}>
+                    <button className="btn btn-secondary btn-accent-action" type="button" onClick={() => onNavigate?.('access')} disabled={!canManageServiceAccounts || !onNavigate}>
                       Open Access & API Keys
                     </button>
                   </div>

@@ -1,5 +1,6 @@
 import { IntervalSummaryRecord, LiveMetrics, MetricsHistoryPoint, ResourceSample, TestStatus } from '../types'
-import { latencySeriesKeyForTarget } from './latencySeries'
+import { resourceImpactHistoryValues } from './generatorImpact'
+import { routeLatencySeriesValuesForTarget } from './latencySeries'
 
 export interface ExecutionChartSummary {
   avgTps: number
@@ -28,6 +29,7 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
     netRecv: metric.resources?.net_recv_kbps,
     diskRead: metric.resources?.disk_read_kbps,
     diskWrite: metric.resources?.disk_write_kbps,
+    ...resourceImpactHistoryValues(metric.resources),
   }
 
   const jmsTransactions = Object.values(metric.transactions ?? {}).filter((tx) => tx.dependency_type?.startsWith('jms_') && tx.server_telemetry)
@@ -67,7 +69,7 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
 
   if (metric.latency?.targets) {
     metric.latency.targets.forEach((target) => {
-      point[latencySeriesKeyForTarget(target)] = target.latency_ms
+      Object.assign(point, routeLatencySeriesValuesForTarget(target))
     })
   }
 
@@ -110,6 +112,7 @@ export function mapArchiveResourceSamples(samples: ResourceSample[] | undefined)
         netRecv: sample.net_recv_kbps,
         diskRead: sample.disk_read_kbps,
         diskWrite: sample.disk_write_kbps,
+        ...resourceImpactHistoryValues(sample),
       }
     })
     .filter(point => typeof point.timestampMs === 'number')
@@ -123,7 +126,7 @@ export function mapArchiveSummarySamples(summaries: IntervalSummaryRecord[] | un
   return summaries
     .map((summary) => {
       const timestampMs = Date.parse(summary.timestamp)
-      return {
+      const point: MetricsHistoryPoint = {
         time: new Date(summary.timestamp).toLocaleTimeString(),
         timestampMs: Number.isNaN(timestampMs) ? undefined : timestampMs,
         vusers: summary.active_vusers,
@@ -135,6 +138,10 @@ export function mapArchiveSummarySamples(summaries: IntervalSummaryRecord[] | un
         p95: summary.p95_ms,
         p99: summary.p99_ms,
       }
+      summary.latency?.targets?.forEach((target) => {
+        Object.assign(point, routeLatencySeriesValuesForTarget(target))
+      })
+      return point
     })
     .filter(point => typeof point.timestampMs === 'number')
 }
@@ -179,6 +186,17 @@ export function mergeArchiveResourceHistory(
       netRecv: resourcePoint.netRecv,
       diskRead: resourcePoint.diskRead,
       diskWrite: resourcePoint.diskWrite,
+      cpuIOWait: resourcePoint.cpuIOWait,
+      cpuSteal: resourcePoint.cpuSteal,
+      gcPauseMs: resourcePoint.gcPauseMs,
+      containerCPUUsagePct: resourcePoint.containerCPUUsagePct,
+      containerCPUThrottledSecondsRate: resourcePoint.containerCPUThrottledSecondsRate,
+      containerMemoryUsagePct: resourcePoint.containerMemoryUsagePct,
+      containerOOMKillCountDelta: resourcePoint.containerOOMKillCountDelta,
+      netDropsPerSec: resourcePoint.netDropsPerSec,
+      netErrorsPerSec: resourcePoint.netErrorsPerSec,
+      tcpRetransmitsPerSec: resourcePoint.tcpRetransmitsPerSec,
+      diskIOTimePct: resourcePoint.diskIOTimePct,
     }
   })
 

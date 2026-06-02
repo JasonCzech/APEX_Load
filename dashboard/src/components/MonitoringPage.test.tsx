@@ -37,6 +37,7 @@ describe('MonitoringPage', () => {
   let root: Root
 
   beforeEach(() => {
+    window.localStorage.clear()
     apiMock.getHealth.mockResolvedValue({ status: 'ok', version: 'dev', ws_clients: 2, test_count: 1 })
     apiMock.getFleetProvisioner.mockResolvedValue(null)
     apiMock.getAPMIntegrationProfiles.mockResolvedValue({
@@ -230,9 +231,9 @@ describe('MonitoringPage', () => {
           name: 'Developer Script-As-Code Experience',
           status: 'partial',
           competitors: ['k6'],
-          summary: 'CLI and DSL workflows exist, but k6 conversion is incomplete.',
-          evidence: ['README.md#build--run'],
-          remaining: ['Add k6 result ingestion and local script explain output.'],
+          summary: 'CLI and DSL workflows exist, and k6 result import is supported, but k6 conversion/export is incomplete.',
+          evidence: ['README.md#build--run', '/api/v1/results/import'],
+          remaining: ['Add apexctl script validation/explain commands and constrained k6 HTTP conversion/export.'],
           decision: 'differentiate',
           evidence_level: 'docs+code',
         },
@@ -250,13 +251,13 @@ describe('MonitoringPage', () => {
         {
           id: 'authoring_recording',
           name: 'Authoring, Recording, And Guided Repair',
-          status: 'partial',
+          status: 'supported',
           competitors: ['k6', 'NeoLoad'],
-          summary: 'Imports and guided repair contracts exist; final workflow polish remains.',
-          evidence: ['/api/v1/scripts/import/loadrunner'],
-          remaining: ['Finish guided task flows and unify recorder/import/manual repair review.'],
-          decision: 'match_core_workflows',
-          evidence_level: 'api+docs+dashboard',
+          summary: 'Guided authoring, review approval, correlation repair, provenance review, and reusable components are supported for the current C5 scope.',
+          evidence: ['/api/v1/scripts/import/loadrunner', '/api/v1/scripts/authoring/sessions', '/api/v1/scripts/authoring/components'],
+          remaining: ['Expand public demo packs, competitive fixtures, and richer recorder examples.'],
+          decision: 'supported_for_current_scope',
+          evidence_level: 'api+docs+dashboard+tests',
         },
         {
           id: 'browser_testing',
@@ -272,13 +273,13 @@ describe('MonitoringPage', () => {
         {
           id: 'analysis_integrations',
           name: 'Analysis, APM, And Root-Cause Integrations',
-          status: 'partial',
+          status: 'supported',
           competitors: ['k6', 'NeoLoad'],
-          summary: 'Archive root-cause and APM primitives exist; provider workflows remain.',
-          evidence: ['/api/v1/tests/{id}/archive/ai-root-cause'],
-          remaining: ['Deepen APM profile setup guidance with provider-specific fixtures.'],
-          decision: 'match_packaged_analysis',
-          evidence_level: 'api+docs',
+          summary: 'APM profiles, monitor packs, root-cause summaries, SLA governance, report profiles, and external result ingestion are supported for C4 scope.',
+          evidence: ['/api/v1/integrations/apm/profiles', '/api/v1/monitoring/packs', '/api/v1/tests/{id}/archive/root-cause', '/api/v1/results/import'],
+          remaining: ['Deepen provider-specific APM fixtures, causal scoring, and packaged setup guides.'],
+          decision: 'supported_for_current_scope',
+          evidence_level: 'api+docs+dashboard+tests',
         },
         {
           id: 'specialized_enterprise_protocols',
@@ -296,9 +297,9 @@ describe('MonitoringPage', () => {
           name: 'Packaging, Samples, And Trust',
           status: 'partial',
           competitors: ['k6', 'NeoLoad'],
-          summary: 'Docs, CI templates, dashboard workflows, and samples exist; release packaging remains.',
+          summary: 'Docs, support matrix, CI templates, dashboard workflows, and samples exist; release packaging remains.',
           evidence: ['docs/API_USER_GUIDE.md'],
-          remaining: ['Publish canonical sample projects and one-command demo seeding.'],
+          remaining: ['Publish canonical sample projects, one-command demo seeding, and release notes with benchmark deltas.'],
           decision: 'evidence_gate',
           evidence_level: 'docs',
         },
@@ -361,6 +362,18 @@ describe('MonitoringPage', () => {
     vi.clearAllMocks()
   })
 
+  const clickMonitorTab = async (label: string) => {
+    const tab = Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]'))
+      .find(button => button.textContent?.startsWith(label))
+    expect(tab).not.toBeUndefined()
+    await act(async () => {
+      tab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
+  const visibleMonitorCardIds = () => Array.from(container.querySelectorAll<HTMLElement>('.monitoring-grid .monitor-card'))
+    .map(card => card.dataset.cardId)
+
   it('renders sampled telemetry diagnostics in the monitoring grid', async () => {
     await act(async () => {
       root.render(
@@ -393,31 +406,26 @@ describe('MonitoringPage', () => {
       )
     })
 
-    expect(container.textContent).toContain('Telemetry Diagnostics')
+    expect(container.textContent).toContain('Overview')
+    expect(container.textContent).toContain('Fleet')
+    expect(container.textContent).toContain('Telemetry')
+    expect(container.textContent).toContain('Schedules')
+    expect(container.textContent).toContain('Parity')
     expect(container.textContent).toContain('Controller')
     expect(container.textContent).toContain('Production Readiness')
-    expect(container.textContent).toContain('Parity')
     expect(container.textContent).toContain('Ready Checks')
     expect(container.textContent).toContain('4/6')
     expect(container.textContent).toContain('Generator RPC: some generator RPC targets are not reachable')
     expect(container.textContent).toContain('Auth Mode: development auth bypass is enabled')
-    expect(container.textContent).toContain('Parity Checklist')
-    expect(container.textContent).toContain('Tracked Areas')
-    expect(container.textContent).toContain('10/10')
-    expect(container.textContent).toMatch(/Fleet And Scale-Out\s*Partial/i)
-    expect(container.textContent).toMatch(/Browser Testing\s*Partial/i)
-    expect(container.textContent).toMatch(/AI-Assisted Workflows\s*Complete/i)
-    expect(container.textContent).toMatch(/VuGen Web 2\.0 Migration\s*Partial/i)
-    expect(container.textContent).toContain('Browser Benchmark Evidence')
-    expect(container.textContent).toContain('Desktop Chromium 1080p')
-    expect(container.textContent).toContain('2-5 VUsers/generator')
-    expect(container.textContent).toContain('High-density browser load claims are gated separately')
-    expect(container.textContent).toMatch(/Real-Time Monitoring\s*Partial/i)
-    expect(container.textContent).toContain('Release Gates')
-    expect(container.textContent).toContain('Competitive Parity')
-    expect(container.textContent).toContain('7/7 known limitations tracked across k6, NeoLoad')
     expect(container.textContent).toContain('Generator Inventory')
     expect(container.textContent).toContain('0/0 connected')
+    expect(visibleMonitorCardIds()).toEqual(['system-health', 'production-readiness', 'controller'])
+
+    await clickMonitorTab('Telemetry')
+
+    expect(visibleMonitorCardIds()).toEqual(['telemetry-diagnostics', 'apm-integrations', 'monitor-packs'])
+    expect(container.textContent).toContain('Telemetry Diagnostics')
+    expect(container.textContent).toContain('Parity')
     expect(container.textContent).toContain('danger')
     expect(container.textContent).toContain('1 danger')
     expect(container.textContent).toContain('Checkout: collector dropped 4 metric samples')
@@ -439,12 +447,74 @@ describe('MonitoringPage', () => {
     expect(apiMock.getFleetAlerts).toHaveBeenCalled()
     expect(apiMock.getFleetCapacity).toHaveBeenCalledWith({ project_id: 'project-1' })
     expect(apiMock.getSystemReadiness).toHaveBeenCalled()
+
+    const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Close')
+    await act(async () => {
+      closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await clickMonitorTab('Parity')
+
+    expect(visibleMonitorCardIds()).toEqual(['competitive-parity', 'parity-checklist'])
+    expect(container.textContent).toContain('Parity Checklist')
+    expect(container.textContent).toContain('Tracked Areas')
+    expect(container.textContent).toContain('10/10')
+    expect(container.textContent).toMatch(/Fleet And Scale-Out\s*Partial/i)
+    expect(container.textContent).toMatch(/Browser Testing\s*Partial/i)
+    expect(container.textContent).toMatch(/AI-Assisted Workflows\s*Complete/i)
+    expect(container.textContent).toMatch(/VuGen Web 2\.0 Migration\s*Partial/i)
+    expect(container.textContent).toContain('Browser Benchmark Evidence')
+    expect(container.textContent).toContain('Desktop Chromium 1080p')
+    expect(container.textContent).toContain('2-5 VUsers/generator')
+    expect(container.textContent).toContain('High-density browser load claims are gated separately')
+    expect(container.textContent).toMatch(/Real-Time Monitoring\s*Partial/i)
+    expect(container.textContent).toContain('Release Gates')
+    expect(container.textContent).toContain('Competitive Parity')
+    expect(container.textContent).toContain('7/7 known limitations tracked across k6, NeoLoad')
+
+    await clickMonitorTab('Fleet')
+
+    expect(visibleMonitorCardIds()).toEqual(['capacity', 'generators', 'fleet-alerts'])
+    expect(container.textContent).toContain('Generators')
+    expect(container.textContent).toContain('Fleet Alerts')
+    expect(container.textContent).toContain('No generator inventory was returned by the controller.')
+  })
+
+  it('keeps the parity checklist as the last monitoring card', async () => {
+    window.localStorage.setItem('apexload.monitoring.cardOrder', JSON.stringify([
+      'system-health',
+      'production-readiness',
+      'controller',
+      'telemetry-diagnostics',
+      'apm-integrations',
+      'monitor-packs',
+      'capacity',
+      'parity-checklist',
+      'competitive-parity',
+      'schedule-health',
+      'generators',
+      'fleet-alerts',
+      'run-timeline',
+    ]))
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    await clickMonitorTab('Parity')
+
+    const cardIds = visibleMonitorCardIds()
+    expect(cardIds).toContain('parity-checklist')
+    expect(cardIds).toContain('competitive-parity')
+    expect(cardIds[cardIds.length - 1]).toBe('parity-checklist')
   })
 
   it('renders C4 APM profiles and infrastructure monitor packs', async () => {
     await act(async () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
+
+    await clickMonitorTab('Telemetry')
 
     expect(container.textContent).toContain('APM Profiles')
     expect(container.textContent).toContain('1/2 ready')
@@ -477,6 +547,8 @@ describe('MonitoringPage', () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
 
+    await clickMonitorTab('Parity')
+
     expect(container.textContent).toContain('7/10 tracked')
     expect(container.textContent).toContain('Tracked Areas')
     expect(container.textContent).toContain('7/10')
@@ -493,6 +565,8 @@ describe('MonitoringPage', () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
 
+    await clickMonitorTab('Parity')
+
     const competitiveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('known limitations tracked'))
     expect(competitiveButton).not.toBeUndefined()
 
@@ -504,9 +578,14 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Developer Script-As-Code Experience')
     expect(container.textContent).toContain('Evidence Level')
     expect(container.textContent).toContain('docs + code')
-    expect(container.textContent).toContain('Add k6 result ingestion and local script explain output.')
+    expect(container.textContent).toContain('Add apexctl script validation/explain commands and constrained k6 HTTP conversion/export.')
+    expect(container.textContent).toMatch(/Authoring, Recording, And Guided Repair\s*Supported/i)
+    expect(container.textContent).toContain('api + docs + dashboard + tests')
+    expect(container.textContent).toContain('supported for current scope')
     expect(container.textContent).toContain('Browser Testing And Client UX Evidence')
     expect(container.textContent).toContain('api + docs + external evidence required')
+    expect(container.textContent).toMatch(/Analysis, APM, And Root-Cause Integrations\s*Supported/i)
+    expect(container.textContent).toContain('Deepen provider-specific APM fixtures, causal scoring, and packaged setup guides.')
     expect(container.textContent).toContain('Specialized Enterprise Protocol Breadth')
     expect(container.textContent).toContain('demand gated non goal')
     expect(container.textContent).toContain('Publish explicit non-goal or coexistence guidance.')
@@ -543,6 +622,8 @@ describe('MonitoringPage', () => {
         />,
       )
     })
+
+    await clickMonitorTab('Telemetry')
 
     const telemetryButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View details'))
     expect(telemetryButton).not.toBeUndefined()
@@ -588,6 +669,8 @@ describe('MonitoringPage', () => {
         />,
       )
     })
+
+    await clickMonitorTab('Telemetry')
 
     const telemetryButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View details'))
     expect(telemetryButton).not.toBeUndefined()
@@ -665,8 +748,11 @@ describe('MonitoringPage', () => {
     })
 
     expect(container.textContent).toContain('apexload-controller-0')
-  expect(container.textContent).toContain('healthy')
-  expect(container.textContent).toContain('1/1 connected')
+    expect(container.textContent).toContain('healthy')
+    expect(container.textContent).toContain('1/1 connected')
+
+    await clickMonitorTab('Fleet')
+
     expect(container.textContent).toContain('Generators')
     expect(container.textContent).toContain('1/1 online')
     expect(container.textContent).toContain('all connected')
@@ -767,6 +853,8 @@ describe('MonitoringPage', () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
 
+    await clickMonitorTab('Fleet')
+
     expect(container.textContent).toContain('Fleet Alerts')
     expect(container.textContent).toContain('5 alerts')
     expect(container.textContent).toContain('gen-a is cordoned')
@@ -796,6 +884,8 @@ describe('MonitoringPage', () => {
     await act(async () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
+
+    await clickMonitorTab('Schedules')
 
     expect(container.textContent).toContain('Schedule Health')
     expect(container.textContent).toContain('1 blocked')
@@ -834,6 +924,8 @@ describe('MonitoringPage', () => {
     await act(async () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
+
+    await clickMonitorTab('Schedules')
 
     expect(container.textContent).toContain('Run Timeline')
     expect(container.textContent).toContain('Checkout Capacity Queue')

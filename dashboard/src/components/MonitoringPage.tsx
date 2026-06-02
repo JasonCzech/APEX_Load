@@ -16,6 +16,17 @@ const EMPTY_PARITY_AREAS: ParityStatusResponse['areas'] = []
 const EMPTY_BROWSER_BENCHMARKS: NonNullable<ParityStatusResponse['browser_benchmarks']> = []
 type CompetitiveParityAreas = NonNullable<ParityStatusResponse['competitive_parity']>
 const EMPTY_COMPETITIVE_PARITY_AREAS: CompetitiveParityAreas = []
+const PINNED_LAST_MONITOR_CARD_ID = 'parity-checklist'
+
+const MONITOR_CATEGORIES = [
+  { id: 'overview', label: 'Overview', cardIds: ['system-health', 'production-readiness', 'controller'] },
+  { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts'] },
+  { id: 'telemetry', label: 'Telemetry', cardIds: ['telemetry-diagnostics', 'apm-integrations', 'monitor-packs'] },
+  { id: 'schedules', label: 'Schedules', cardIds: ['schedule-health', 'run-timeline'] },
+  { id: 'parity', label: 'Parity', cardIds: ['competitive-parity', 'parity-checklist'] },
+] as const
+
+type MonitorCategoryId = typeof MONITOR_CATEGORIES[number]['id']
 
 const EXPECTED_PARITY_AREAS: { id: string; name: string }[] = [
   { id: 'architecture', name: 'Platform Architecture' },
@@ -126,6 +137,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [isCompetitiveParityModalOpen, setIsCompetitiveParityModalOpen] = useState(false)
   const [customizing, setCustomizing] = useState(false)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
+  const [activeCategoryId, setActiveCategoryId] = useState<MonitorCategoryId>('overview')
   const [cardOrder, setCardOrder] = useState<string[]>(() => readStringArray('apexload.monitoring.cardOrder'))
   const [hiddenCardIds, setHiddenCardIds] = useState<string[]>(() => readStringArray('apexload.monitoring.hiddenCards'))
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
@@ -1120,9 +1132,18 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
 
   const visibleCards = orderedCards.filter(card => !hiddenCardIds.includes(card.id))
   const hiddenCards = orderedCards.filter(card => hiddenCardIds.includes(card.id))
+  const activeCategory = MONITOR_CATEGORIES.find(category => category.id === activeCategoryId) ?? MONITOR_CATEGORIES[0]
+  const activeCategoryCardIds = new Set<string>(activeCategory.cardIds)
+  const activeVisibleCards = visibleCards.filter(card => activeCategoryCardIds.has(card.id))
+  const activeHiddenCards = hiddenCards.filter(card => activeCategoryCardIds.has(card.id))
 
   const toggleCard = (id: string) => {
     setHiddenCardIds(prev => prev.includes(id) ? prev.filter(cardId => cardId !== id) : [...prev, id])
+  }
+
+  const selectCategory = (id: MonitorCategoryId) => {
+    setActiveCategoryId(id)
+    setDraggedCardId(null)
   }
 
   const resetCards = () => {
@@ -1200,7 +1221,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           {customizing && (
             <button className="btn btn-secondary btn-sm" type="button" onClick={resetCards}>Reset Cards</button>
           )}
-          <button className={`btn btn-sm ${customizing ? 'btn-primary' : 'btn-secondary'}`} type="button" onClick={() => setCustomizing(value => !value)}>
+          <button className="btn btn-sm btn-accent-action" type="button" onClick={() => setCustomizing(value => !value)}>
             {customizing ? 'Done' : 'Customize Cards'}
           </button>
         </div>
@@ -1218,9 +1239,28 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       </div>
 
-      {customizing && hiddenCards.length > 0 && (
+      <div className="monitor-tab-row" role="tablist" aria-label="Monitor categories">
+        {MONITOR_CATEGORIES.map(category => {
+          const visibleCount = category.cardIds.filter(id => !hiddenCardIds.includes(id)).length
+          return (
+            <button
+              key={category.id}
+              type="button"
+              role="tab"
+              aria-selected={category.id === activeCategoryId}
+              className={`monitor-tab ${category.id === activeCategoryId ? 'active' : ''}`}
+              onClick={() => selectCategory(category.id)}
+            >
+              <span>{category.label}</span>
+              <span className="monitor-tab-count">{visibleCount}/{category.cardIds.length}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {customizing && activeHiddenCards.length > 0 && (
         <div className="hidden-chart-list">
-          {hiddenCards.map(card => (
+          {activeHiddenCards.map(card => (
             <button key={card.id} className="hidden-chart-pill" type="button" onClick={() => toggleCard(card.id)}>
               Show {card.title}
             </button>
@@ -1228,10 +1268,16 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       )}
 
-      <div className={`monitoring-grid ${customizing ? 'is-customizing' : ''}`}>
-        {visibleCards.map(card => (
+      <div className="monitor-tab-panel" role="tabpanel" aria-label={`${activeCategory.label} monitors`}>
+        <div className={`monitoring-grid ${customizing ? 'is-customizing' : ''}`} data-active-category={activeCategory.id}>
+        {activeVisibleCards.length === 0 ? (
+          <div className="monitor-empty-category">
+            {customizing ? `All ${activeCategory.label} monitors are hidden.` : `No ${activeCategory.label} monitors are visible.`}
+          </div>
+        ) : activeVisibleCards.map(card => (
           <div
             key={card.id}
+            data-card-id={card.id}
             className={`monitor-card ${customizing ? 'editable' : ''} ${draggedCardId === card.id ? 'dragging' : ''}`}
             draggable={customizing}
             onDragStart={event => handleDragStart(event, card.id)}
@@ -1255,6 +1301,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             {card.content}
           </div>
         ))}
+        </div>
       </div>
 
       {isTelemetryModalOpen && telemetryDiagnostics.length > 0 && (
@@ -1667,7 +1714,12 @@ function readStringArray(key: string): string[] {
 function mergeOrder(order: string[], ids: string[]) {
   const retained = order.filter(id => ids.includes(id))
   const added = ids.filter(id => !retained.includes(id))
-  return [...retained, ...added]
+  return pinMonitorCardLast([...retained, ...added])
+}
+
+function pinMonitorCardLast(ids: string[]) {
+  if (!ids.includes(PINNED_LAST_MONITOR_CARD_ID)) return ids
+  return [...ids.filter(id => id !== PINNED_LAST_MONITOR_CARD_ID), PINNED_LAST_MONITOR_CARD_ID]
 }
 
 function moveId(ids: string[], draggedId: string, targetId: string) {

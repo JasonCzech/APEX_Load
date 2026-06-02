@@ -6,6 +6,8 @@ It complements `docs/K6_NEOLOAD_PARITY_PLAN.md` and feeds the competitive parity
 
 ## Evidence Baseline
 
+Competitive baseline last rechecked against the references below on 2026-06-02.
+
 External baseline references:
 
 - Grafana Cloud k6 introduction: https://grafana.com/docs/grafana-cloud/testing/k6/introduction/

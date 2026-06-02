@@ -2,6 +2,8 @@
 
 This guide is for engineers and operators who want to automate APEX Load from CI/CD, external release systems, or integration scripts. It focuses on the public REST and WebSocket API served by the controller.
 
+Last reviewed against `pkg/api/server.go` on June 2, 2026.
+
 ## Base URL
 
 The controller serves API endpoints under:
@@ -62,7 +64,9 @@ Useful auth endpoints:
 | `GET` | `/api/v1/auth/user-activity/export` | Export user activity as CSV. |
 | `GET` | `/api/v1/auth/service-accounts` | List service accounts. |
 | `POST` | `/api/v1/auth/service-accounts` | Create a service account and return its one-time API key. |
+| `PATCH` | `/api/v1/auth/service-accounts/{id}` | Update service-account metadata, roles, scopes, or active state. |
 | `POST` | `/api/v1/auth/service-accounts/{id}/rotate` | Rotate a service-account API key. |
+| `DELETE` | `/api/v1/auth/service-accounts/{id}` | Delete a service account. |
 | `GET` | `/api/v1/auth/audit-events` | Query audit events. |
 | `GET` | `/api/v1/auth/audit-events/export` | Export audit events as CSV. |
 
@@ -239,12 +243,19 @@ Import endpoints:
 | `POST` | `/api/v1/scripts/import/loadrunner/validate` | Validate a LoadRunner archive without saving. |
 | `GET` | `/api/v1/scripts/import/loadrunner/support-matrix` | LoadRunner protocol import support. |
 | `POST` | `/api/v1/scripts/import/jmeter` | Import a JMeter test plan. |
+| `POST` | `/api/v1/scripts/import/jmeter/save` | Save a reviewed JMeter import draft. |
+| `POST` | `/api/v1/scripts/import/jmeter/validate` | Validate a JMeter archive or plan without saving. |
+| `GET` | `/api/v1/scripts/import/jmeter/support-matrix` | JMeter import support matrix. |
 | `POST` | `/api/v1/scripts/import/har` | Import a HAR archive. |
 | `POST` | `/api/v1/scripts/import/openapi` | Generate HTTP/API drafts from OpenAPI or Swagger. |
 | `POST` | `/api/v1/scripts/import/postman` | Generate HTTP/API drafts from a Postman collection JSON file. |
 | `POST` | `/api/v1/scripts/import/wsdl` | Generate SOAP drafts from WSDL. |
 | `POST` | `/api/v1/scripts/import/devweb` | Import DevWeb-style assets. |
+| `GET` | `/api/v1/scripts/import/devweb/support-matrix` | DevWeb import support matrix. |
+| `GET` | `/api/v1/scripts/import/oracle-ebusiness/support-matrix` | Oracle E-Business/Siebel support matrix. |
+| `POST` | `/api/v1/scripts/import/oracle-ebusiness/review` | Review Oracle E-Business, Siebel, or Oracle NCA source for supported routes. |
 | `POST` | `/api/v1/scripts/import/sample` | Import raw HTTP, cURL, REST sample requests. |
+| `GET` | `/api/v1/scripts/web-api/support-matrix` | Web API execution support matrix. |
 
 ### 3. Assemble And Validate A Scenario
 
@@ -272,9 +283,18 @@ Useful scenario endpoints:
 | `DELETE` | `/api/v1/scenarios/{id}` | Delete a scenario. |
 | `GET` | `/api/v1/scenarios/load-models/support-matrix` | Supported load model features, including chaos-resilience workloads. |
 | `GET` | `/api/v1/scenarios/load-models/templates` | Starter load model templates, including `chaos-resilience-shakeout`. |
+| `GET` | `/api/v1/scenarios/{id}/results` | Runs linked to one scenario. |
 | `GET` | `/api/v1/scenarios/{id}/runtime-settings/report` | Runtime settings compatibility report. |
 | `GET` | `/api/v1/scenarios/{id}/data-pools` | Scenario data-pool bindings. |
 | `PUT` | `/api/v1/scenarios/{id}/data-pools` | Update scenario data-pool bindings. |
+| `GET` | `/api/v1/scenarios/{id}/schedules` | Scenario schedules. |
+| `POST` | `/api/v1/scenarios/{id}/schedules` | Create a schedule for a scenario. |
+| `PUT` | `/api/v1/scenarios/{id}/schedules/{schedule_id}` | Update a schedule. |
+| `DELETE` | `/api/v1/scenarios/{id}/schedules/{schedule_id}` | Delete a schedule. |
+| `GET` | `/api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences` | Occurrence and approval history for a schedule. |
+| `POST` | `/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/approve` | Approve a pending schedule occurrence. |
+| `POST` | `/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/reject` | Reject a pending schedule occurrence. |
+| `GET` | `/api/v1/schedules/health` | Scheduling health, queue, approval, and conflict signals. |
 
 ### 4. Run And Control Tests
 
@@ -292,6 +312,7 @@ Control endpoints:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/v1/tests` | List runs. |
+| `POST` | `/api/v1/tests/estimate` | Estimate capacity for a proposed run. |
 | `GET` | `/api/v1/tests/{id}` | Get run status and live summary. |
 | `POST` | `/api/v1/tests/{id}/start` | Start a queued run. |
 | `POST` | `/api/v1/tests/{id}/stop` | Gracefully stop a run. |
@@ -300,7 +321,12 @@ Control endpoints:
 | `POST` | `/api/v1/tests/{id}/resume` | Resume a paused run. |
 | `PATCH` | `/api/v1/tests/{id}/vusers` | Change VUser count for a group. Send `action: "run"` to apply `target_vusers`, or `action: "pause"` / `"stop"` to drive that group to zero. Include optional `ramp_duration`, such as `"2m"`, to add or remove VUsers gradually. |
 | `PATCH` | `/api/v1/tests/{id}/duration` | Extend or shorten duration. |
+| `PATCH` | `/api/v1/tests/{id}/move` | Move a run into another folder. |
+| `DELETE` | `/api/v1/tests/{id}` | Delete a run record. |
 | `GET` | `/api/v1/tests/{id}/metrics` | Current metrics snapshot. |
+| `GET` | `/api/v1/tests/{id}/sla-status` | SLA gate status for a run. |
+| `POST` | `/api/v1/tests/{id}/comparison-baseline/pin` | Pin a run as its release comparison baseline. |
+| `DELETE` | `/api/v1/tests/{id}/comparison-baseline/pin` | Remove the pinned comparison baseline. |
 
 When a gradual VUser change is in progress, `GET /api/v1/tests/{id}` includes `vuser_ramps` keyed by group name. Each ramp reports `start_vusers`, `target_vusers`, `started_at`, `ramp_duration`, and `ramp_duration_seconds` so clients can project the active ramp until it finishes.
 
@@ -324,14 +350,75 @@ Messages are JSON and include a `type` field such as `metrics_update`, `test_cre
 | `GET` | `/api/v1/tests/{id}/archive` | Full run archive. |
 | `GET` | `/api/v1/tests/{id}/archive/manifest` | Archive manifest. |
 | `GET` | `/api/v1/tests/{id}/archive/report` | Structured run report. |
+| `GET` | `/api/v1/tests/{id}/archive/files/{name}` | One named archive artifact. |
+| `GET` | `/api/v1/tests/{id}/archive/browser-diagnostics` | Browser replay diagnostics artifact. |
 | `GET` | `/api/v1/tests/{id}/archive/transactions` | Transaction data. |
 | `GET` | `/api/v1/tests/{id}/archive/resources` | Resource metrics. |
+| `GET` | `/api/v1/tests/{id}/archive/summaries` | Interval summaries. |
+| `GET` | `/api/v1/tests/{id}/archive/root-cause` | Deterministic root-cause analysis. |
+| `GET` | `/api/v1/tests/{id}/archive/ai-root-cause` | Governed AI root-cause assistance when policy allows it. |
 | `GET` | `/api/v1/tests/{id}/archive/comparison` | Baseline comparison. |
+| `POST` | `/api/v1/archives/retention/plan` | Preview archive-retention pruning. |
+| `POST` | `/api/v1/archives/retention/apply` | Apply archive-retention pruning. |
 | `GET` | `/api/v1/releases/{id}/trend/export` | Release trend CSV. |
 
 Some reporting endpoints accept `format` or `profile` query parameters where implemented, for example `format=html|json|csv|jsonl|parquet` and `profile=executive|engineer|audit`.
 
 Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array when run attribution exists. Each bucket follows the same usage bucket shape used by project and protocol summaries; historical runs without attribution are grouped as `unattributed`.
+
+### 7. Federate Library Sources
+
+Library APIs move reusable scripts, scenarios, results, and archives between this controller and a hosted team library. The dashboard surfaces these controls in the **Library Sources** boxes on Scripts and Scenarios. Remote definitions are system-admin managed; asset pull/push/import operations are scoped by project and the kind being moved.
+
+Useful library endpoints:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/library/capabilities` | Library feature and operation support advertised by this controller. |
+| `GET` | `/api/v1/library/catalog?kind=script|scenario|result&project_id=<id>` | Local asset catalog. |
+| `POST` | `/api/v1/library/export` | Export one local asset bundle for transfer. |
+| `POST` | `/api/v1/library/import` | Import a JSON library bundle. |
+| `POST` | `/api/v1/library/import/archive` | Import an uploaded archive bundle. |
+| `GET` | `/api/v1/library/results/{id}/archive` | Download a result archive from the library surface. |
+| `GET` / `POST` | `/api/v1/library/remotes` | List or create remote library hosts. |
+| `PUT` / `DELETE` | `/api/v1/library/remotes/{id}` | Update or delete a remote host. |
+| `POST` | `/api/v1/library/remotes/{id}/probe` | Probe remote health and credentials. |
+| `GET` | `/api/v1/library/remotes/{id}/catalog?kind=script|scenario|result&project_id=<id>` | Catalog assets on a remote host. |
+| `POST` | `/api/v1/library/remotes/{id}/pull` | Pull a remote asset into the local project. |
+| `POST` | `/api/v1/library/remotes/{id}/push` | Push a local asset to the remote host. |
+| `POST` | `/api/v1/library/remotes/{id}/diff` | Compare local and remote versions. |
+
+### 8. Record, Replay, And Debug
+
+Unified replay sessions use `/api/v1/replay/sessions/...` for draft and stored script replay. The older `/api/v1/script-debug/sessions/...` and `/api/v1/browser-replay/sessions/...` routes remain as compatibility/debug surfaces. The recorder routes manage proxy-captured HTTP traffic and conversion previews.
+
+Useful recorder and replay endpoints:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/replay/sessions/{session_id}` | Read a replay/debug session. |
+| `GET` | `/api/v1/replay/sessions/{session_id}/export?format=json|log` | Export replay evidence. |
+| `POST` | `/api/v1/replay/sessions/{session_id}/pause` | Pause replay. |
+| `POST` | `/api/v1/replay/sessions/{session_id}/resume` | Resume replay. |
+| `POST` | `/api/v1/replay/sessions/{session_id}/step` | Step replay at a breakpoint. |
+| `POST` | `/api/v1/replay/sessions/{session_id}/stop` | Stop replay. |
+| `PATCH` | `/api/v1/replay/sessions/{session_id}/breakpoints` | Replace replay breakpoints. |
+| `GET` | `/api/v1/browser-replay/sessions/{session_id}` | Read a browser replay session. |
+| `POST` | `/api/v1/browser-replay/sessions/{session_id}/pause` | Pause browser replay. |
+| `POST` | `/api/v1/browser-replay/sessions/{session_id}/resume` | Resume browser replay. |
+| `POST` | `/api/v1/browser-replay/sessions/{session_id}/stop` | Stop browser replay. |
+| `GET` | `/api/v1/recorder` | List recordings. |
+| `POST` | `/api/v1/recorder/start` | Start a recording proxy session. |
+| `GET` / `DELETE` | `/api/v1/recorder/{id}` | Read or delete one recording. |
+| `POST` | `/api/v1/recorder/{id}/pause` | Pause a recording. |
+| `POST` | `/api/v1/recorder/{id}/resume` | Resume a recording. |
+| `POST` | `/api/v1/recorder/{id}/stop` | Stop a recording. |
+| `PATCH` | `/api/v1/recorder/{id}/requests/{seq}` | Edit one recorded request. |
+| `POST` | `/api/v1/recorder/{id}/convert/preview` | Preview conversion to script DSL. |
+| `POST` | `/api/v1/recorder/{id}/convert` | Convert a recording to script DSL. |
+| `GET` | `/api/v1/recorder/{id}/export` | Export recording evidence. |
+| `GET` | `/api/v1/recorder/status` | Recorder proxy status. |
+| `GET` | `/api/v1/recorder/ca.pem` | Recorder CA certificate. |
 
 ## Endpoint Catalogue
 
@@ -377,6 +464,8 @@ Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array w
 | `GET` / `POST` | `/api/v1/applications/{id}/releases` |
 | `GET` / `PUT` / `DELETE` | `/api/v1/releases/{id}` |
 | `POST` | `/api/v1/releases/{id}/archive` |
+| `GET` | `/api/v1/releases/{id}/trend` |
+| `GET` | `/api/v1/releases/{id}/trend/export` |
 | `GET` | `/api/v1/releases/{id}/sla-governance` |
 | `POST` | `/api/v1/releases/{id}/sla-governance/waivers` |
 
@@ -400,6 +489,8 @@ Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array w
 | `GET` / `PUT` / `DELETE` | `/api/v1/scripts/authoring/sessions/{id}` |
 | `POST` | `/api/v1/scripts/authoring/sessions/{id}/approve` |
 | `POST` | `/api/v1/scripts/authoring/sessions/{id}/correlations/preview` |
+| `GET` | `/api/v1/correlations/rules` |
+| `POST` | `/api/v1/correlations/diagnose` |
 | `POST` | `/api/v1/scripts/{id}/validate` |
 | `POST` | `/api/v1/scripts/{id}/replay` |
 | `POST` | `/api/v1/scripts/{id}/replay/sessions` |
@@ -423,6 +514,49 @@ Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array w
 | `PATCH` | `/api/v1/replay/sessions/{session_id}/breakpoints` |
 | `GET` | `/api/v1/replay/sessions/{session_id}/export?format=json|log` |
 
+### Script Imports And Protocol Matrices
+
+| Method | Path |
+| --- | --- |
+| `POST` | `/api/v1/scripts/import/loadrunner` |
+| `POST` | `/api/v1/scripts/import/loadrunner/validate` |
+| `GET` | `/api/v1/scripts/import/loadrunner/support-matrix` |
+| `POST` | `/api/v1/scripts/import/jmeter` |
+| `POST` | `/api/v1/scripts/import/jmeter/save` |
+| `POST` | `/api/v1/scripts/import/jmeter/validate` |
+| `GET` | `/api/v1/scripts/import/jmeter/support-matrix` |
+| `POST` | `/api/v1/scripts/import/sample` |
+| `POST` | `/api/v1/scripts/import/devweb` |
+| `GET` | `/api/v1/scripts/import/devweb/support-matrix` |
+| `GET` | `/api/v1/scripts/import/oracle-ebusiness/support-matrix` |
+| `POST` | `/api/v1/scripts/import/oracle-ebusiness/review` |
+| `POST` | `/api/v1/scripts/import/har` |
+| `POST` | `/api/v1/scripts/import/openapi` |
+| `POST` | `/api/v1/scripts/import/postman` |
+| `POST` | `/api/v1/scripts/import/wsdl` |
+| `GET` | `/api/v1/scripts/web-api/support-matrix` |
+
+### Replay, Browser Replay, And Recorder
+
+| Method | Path |
+| --- | --- |
+| `GET` | `/api/v1/browser-replay/sessions/{session_id}` |
+| `POST` | `/api/v1/browser-replay/sessions/{session_id}/pause` |
+| `POST` | `/api/v1/browser-replay/sessions/{session_id}/resume` |
+| `POST` | `/api/v1/browser-replay/sessions/{session_id}/stop` |
+| `GET` | `/api/v1/recorder` |
+| `POST` | `/api/v1/recorder/start` |
+| `GET` / `DELETE` | `/api/v1/recorder/{id}` |
+| `POST` | `/api/v1/recorder/{id}/pause` |
+| `POST` | `/api/v1/recorder/{id}/resume` |
+| `POST` | `/api/v1/recorder/{id}/stop` |
+| `PATCH` | `/api/v1/recorder/{id}/requests/{seq}` |
+| `POST` | `/api/v1/recorder/{id}/convert/preview` |
+| `POST` | `/api/v1/recorder/{id}/convert` |
+| `GET` | `/api/v1/recorder/{id}/export` |
+| `GET` | `/api/v1/recorder/status` |
+| `GET` | `/api/v1/recorder/ca.pem` |
+
 ### Data Pools
 
 | Method | Path |
@@ -431,6 +565,19 @@ Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array w
 | `GET` / `PUT` / `DELETE` | `/api/v1/data-pools/{id}` |
 | `GET` / `POST` | `/api/v1/data-pools/{id}/rows` |
 | `PUT` / `DELETE` | `/api/v1/data-pools/{id}/rows/{row_id}` |
+
+### Scenarios And Load Models
+
+| Method | Path |
+| --- | --- |
+| `GET` / `POST` | `/api/v1/scenarios` |
+| `POST` | `/api/v1/scenarios/validate-load-model` |
+| `GET` / `PUT` / `DELETE` | `/api/v1/scenarios/{id}` |
+| `GET` | `/api/v1/scenarios/load-models/support-matrix` |
+| `GET` | `/api/v1/scenarios/load-models/templates` |
+| `GET` | `/api/v1/scenarios/{id}/results` |
+| `GET` | `/api/v1/scenarios/{id}/runtime-settings/report` |
+| `GET` / `PUT` | `/api/v1/scenarios/{id}/data-pools` |
 
 ### Scheduling
 
@@ -442,6 +589,39 @@ Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array w
 | `POST` | `/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/approve` |
 | `POST` | `/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/reject` |
 | `GET` | `/api/v1/schedules/health` |
+
+### Tests, Runs, And Archives
+
+| Method | Path |
+| --- | --- |
+| `GET` / `POST` | `/api/v1/tests` |
+| `POST` | `/api/v1/tests/estimate` |
+| `GET` / `DELETE` | `/api/v1/tests/{id}` |
+| `GET` | `/api/v1/tests/{id}/sla-status` |
+| `GET` | `/api/v1/tests/{id}/report` |
+| `POST` | `/api/v1/tests/{id}/start` |
+| `POST` | `/api/v1/tests/{id}/stop` |
+| `POST` | `/api/v1/tests/{id}/abort` |
+| `POST` | `/api/v1/tests/{id}/pause` |
+| `POST` | `/api/v1/tests/{id}/resume` |
+| `PATCH` | `/api/v1/tests/{id}/vusers` |
+| `PATCH` | `/api/v1/tests/{id}/duration` |
+| `PATCH` | `/api/v1/tests/{id}/move` |
+| `POST` | `/api/v1/tests/{id}/comparison-baseline/pin` |
+| `DELETE` | `/api/v1/tests/{id}/comparison-baseline/pin` |
+| `GET` | `/api/v1/tests/{id}/metrics` |
+| `GET` | `/api/v1/tests/{id}/archive` |
+| `GET` | `/api/v1/tests/{id}/archive/manifest` |
+| `GET` | `/api/v1/tests/{id}/archive/files/{name}` |
+| `GET` | `/api/v1/tests/{id}/archive/browser-diagnostics` |
+| `GET` | `/api/v1/tests/{id}/archive/transactions` |
+| `GET` | `/api/v1/tests/{id}/archive/resources` |
+| `GET` | `/api/v1/tests/{id}/archive/summaries` |
+| `GET` | `/api/v1/tests/{id}/archive/report` |
+| `GET` | `/api/v1/tests/{id}/archive/root-cause` |
+| `GET` | `/api/v1/tests/{id}/archive/ai-root-cause` |
+| `GET` | `/api/v1/tests/{id}/archive/comparison` |
+| `GET` | `/api/v1/tests/{id}/stream` |
 
 ### System, Fleet, Usage, And Parity
 
@@ -455,13 +635,38 @@ Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array w
 | `GET` / `POST` | `/api/v1/system/usage/snapshots` |
 | `GET` | `/api/v1/system/parity-status` |
 | `GET` | `/api/v1/system/browser-benchmarks` |
+| `GET` | `/api/v1/desktop/status` |
 | `GET` | `/api/v1/runtime-settings/support-matrix` |
 | `GET` | `/api/v1/protocol-bundles/support-matrix` |
+| `GET` | `/api/v1/protocols/native-support-matrix` |
+| `GET` | `/api/v1/integrations/apm/profiles` |
+| `GET` | `/api/v1/monitoring/packs` |
+| `GET` | `/api/v1/reports/profiles` |
 | `GET` | `/api/v1/fleet/alerts` |
 | `GET` | `/api/v1/fleet/capacity` |
+| `GET` | `/api/v1/fleet/provisioner` |
 | `PATCH` | `/api/v1/system/generators/drain` |
 | `GET` / `PUT` | `/api/v1/system/settings` |
+| `GET` | `/api/v1/ws` |
 | `GET` | `/metrics` |
+
+### Library Federation
+
+| Method | Path |
+| --- | --- |
+| `GET` | `/api/v1/library/capabilities` |
+| `GET` | `/api/v1/library/catalog` |
+| `POST` | `/api/v1/library/export` |
+| `POST` | `/api/v1/library/import` |
+| `POST` | `/api/v1/library/import/archive` |
+| `GET` | `/api/v1/library/results/{id}/archive` |
+| `GET` / `POST` | `/api/v1/library/remotes` |
+| `PUT` / `DELETE` | `/api/v1/library/remotes/{id}` |
+| `POST` | `/api/v1/library/remotes/{id}/probe` |
+| `GET` | `/api/v1/library/remotes/{id}/catalog` |
+| `POST` | `/api/v1/library/remotes/{id}/pull` |
+| `POST` | `/api/v1/library/remotes/{id}/push` |
+| `POST` | `/api/v1/library/remotes/{id}/diff` |
 
 ### AI Assistance And Integrations
 
@@ -473,11 +678,10 @@ Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array w
 | `POST` | `/api/v1/ai/drafts` |
 | `POST` | `/api/v1/ai/repairs` |
 | `POST` | `/api/v1/ai/explain` |
-| `GET` | `/api/v1/integrations/apm/profiles` |
-| `GET` | `/api/v1/monitoring/packs` |
-| `GET` | `/api/v1/reports/profiles` |
 | `POST` | `/api/v1/results/import` |
 | `GET` | `/api/v1/results/imports` |
+| `POST` | `/api/v1/archives/retention/plan` |
+| `POST` | `/api/v1/archives/retention/apply` |
 
 ## Operational Tips
 

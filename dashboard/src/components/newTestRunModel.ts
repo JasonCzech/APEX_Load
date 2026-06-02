@@ -611,36 +611,56 @@ export function emptyGroupEditDraft(): GroupEditDraft {
   }
 }
 
-export function buildGroupEditDraft(group: ScenarioScriptGroup, override?: GroupRunOverride): GroupEditDraft {
+function runtimePacingAmount(pacing?: RuntimeSettingsOverride['pacing']) {
+  if (pacing?.type === 'fixed_delay') return pacing.delay_ms
+  if (pacing?.type === 'fixed_interval') return pacing.interval_ms
+  if (pacing?.type === 'tps') return pacing.tps
+  return ''
+}
+
+function buildRuntimeGroupEditDraftValues(runtime: ReturnType<typeof effectiveGroupRuntimeSettings>): Pick<GroupEditDraft,
+  'iterations'
+  | 'log_level'
+  | 'auto_transactions'
+  | 'pacingType'
+  | 'pacingAmount'
+  | 'thinkTimeMs'
+  | 'thinkIgnore'
+  | 'continue_on_error'
+  | 'snapshot_on_error'
+  | 'browser_device_profile'
+  | 'browser_headless'
+  | 'browser_touch_mode'
+  | 'browser_orientation'
+> {
+  const pacingAmount = runtimePacingAmount(runtime.pacing)
+  return {
+    iterations: runtime.iterations === undefined ? '' : String(runtime.iterations),
+    log_level: runtime.log_level || 'standard',
+    auto_transactions: runtime.auto_transactions || 'none',
+    pacingType: runtime.pacing?.type || '',
+    pacingAmount: pacingAmount === undefined ? '' : String(pacingAmount),
+    thinkTimeMs: runtime.think_time?.mean_ms === undefined ? '' : String(runtime.think_time.mean_ms),
+    thinkIgnore: Boolean(runtime.think_time?.ignore),
+    continue_on_error: String(Boolean(runtime.continue_on_error)),
+    snapshot_on_error: String(Boolean(runtime.snapshot_on_error)),
+    browser_device_profile: runtime.browser?.device_profile || '',
+    browser_headless: runtime.browser?.headless === undefined ? '' : String(runtime.browser.headless),
+    browser_touch_mode: runtime.browser?.touch_mode === undefined ? '' : String(runtime.browser.touch_mode),
+    browser_orientation: runtime.browser?.orientation || '',
+  }
+}
+
+export function buildGroupEditDraft(group: ScenarioScriptGroup, scenario: StoredScenario, runDefaultOverrides: RunDefaultOverrides, override?: GroupRunOverride): GroupEditDraft {
   const effective = applyGroupOverride(group, override)
-  const runtime = override?.runtime_settings
-  const pacing = runtime?.pacing
-  const pacingAmount = pacing?.type === 'fixed_delay'
-    ? pacing.delay_ms
-    : pacing?.type === 'fixed_interval'
-      ? pacing.interval_ms
-      : pacing?.type === 'tps'
-        ? pacing.tps
-        : ''
+  const runtime = effectiveGroupRuntimeSettings(group, scenario, runDefaultOverrides, override)
   return {
     ...emptyGroupEditDraft(),
     vusers: String(effective.vusers || ''),
     ramp_up: effective.ramp_up || '',
     ramp_down: effective.ramp_down || '',
     initialization: effective.initialization || 'at_runtime',
-    iterations: runtime?.iterations === undefined ? '' : String(runtime.iterations),
-    log_level: runtime?.log_level || '',
-    auto_transactions: runtime?.auto_transactions || '',
-    pacingType: pacing?.type || '',
-    pacingAmount: pacingAmount === undefined ? '' : String(pacingAmount),
-    thinkTimeMs: runtime?.think_time?.mean_ms === undefined ? '' : String(runtime.think_time.mean_ms),
-    thinkIgnore: Boolean(runtime?.think_time?.ignore),
-    continue_on_error: runtime?.error_handling?.continue_on_error === undefined ? '' : String(runtime.error_handling.continue_on_error),
-    snapshot_on_error: runtime?.error_handling?.snapshot_on_error === undefined ? '' : String(runtime.error_handling.snapshot_on_error),
-    browser_device_profile: runtime?.browser?.device_profile || '',
-    browser_headless: runtime?.browser?.headless === undefined ? '' : String(runtime.browser.headless),
-    browser_touch_mode: runtime?.browser?.touch_mode === undefined ? '' : String(runtime.browser.touch_mode),
-    browser_orientation: runtime?.browser?.orientation || '',
+    ...buildRuntimeGroupEditDraftValues(runtime),
     assignmentMode: override?.assignment?.mode === 'specific_hosts' ? 'specific_hosts' : 'auto',
     selectedTargets: override?.assignment?.selected_targets || [],
   }

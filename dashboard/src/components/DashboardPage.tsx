@@ -481,7 +481,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           </p>
         </div>
         <div className="dash-customize-actions">
-          <button className="btn btn-secondary btn-sm" onClick={navigateToApiGuide} type="button">
+          <button className="btn btn-secondary btn-sm btn-accent-action" onClick={navigateToApiGuide} type="button">
             API Guide
           </button>
           {customizingCards && (
@@ -490,7 +490,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
             </button>
           )}
           <button
-            className={`btn btn-sm ${customizingCards ? 'btn-primary' : 'btn-secondary'}`}
+            className="btn btn-sm btn-accent-action"
             onClick={() => setCustomizingCards(value => !value)}
             type="button"
           >
