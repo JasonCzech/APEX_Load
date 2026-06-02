@@ -19,6 +19,7 @@ type parquetTransactionEvent struct {
 	TestID              string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	TestName            string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	Group               string  `parquet:"name=group_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	Region              string  `parquet:"name=region, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	ActionName          string  `parquet:"name=action_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	CorrelationID       string  `parquet:"name=correlation_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	TraceID             string  `parquet:"name=trace_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
@@ -163,6 +164,7 @@ func toParquetTransactions(items []TransactionEvent) []parquetTransactionEvent {
 			TestID:              item.TestID,
 			TestName:            item.TestName,
 			Group:               item.Group,
+			Region:              item.Region,
 			ActionName:          item.ActionName,
 			CorrelationID:       item.CorrelationID,
 			TraceID:             item.TraceID,

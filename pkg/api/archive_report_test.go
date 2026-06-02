@@ -564,6 +564,78 @@ func TestBuildRunArchiveReportGroupsByNetworkProfile(t *testing.T) {
 	}
 }
 
+func TestBuildRunArchiveReportGroupsByRegion(t *testing.T) {
+	tempDir := t.TempDir()
+	manifest := RunArchiveManifest{
+		TestID:                "test-region",
+		TestName:              "Region Run",
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "manifest.json"), manifestBytes, 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	transactions := []TransactionEvent{
+		{Timestamp: time.Now(), TestID: manifest.TestID, TestName: manifest.TestName, ActionName: "home", Region: "us-east", DurationMs: 100, Success: true},
+		{Timestamp: time.Now(), TestID: manifest.TestID, TestName: manifest.TestName, ActionName: "checkout", Region: "us-east", DurationMs: 300, Success: false},
+		{Timestamp: time.Now(), TestID: manifest.TestID, TestName: manifest.TestName, ActionName: "home", Region: "eu-west", DurationMs: 200, Success: true},
+	}
+	txFile, err := os.Create(filepath.Join(tempDir, manifest.TransactionsFile))
+	if err != nil {
+		t.Fatalf("create transactions: %v", err)
+	}
+	encoder := json.NewEncoder(txFile)
+	for _, tx := range transactions {
+		if err := encoder.Encode(tx); err != nil {
+			t.Fatalf("encode transaction: %v", err)
+		}
+	}
+	if err := txFile.Close(); err != nil {
+		t.Fatalf("close transactions: %v", err)
+	}
+	for _, name := range []string{manifest.ResourceSamplesFile, manifest.IntervalSummariesFile} {
+		if err := os.WriteFile(filepath.Join(tempDir, name), nil, 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{TestID: manifest.TestID, ArchivePath: tempDir, ManifestPath: filepath.Join(tempDir, "manifest.json")})
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	east := report.ByRegion["us-east"]
+	if east.Transactions != 2 || east.Errors != 1 || east.AvgResponseMs != 200 {
+		t.Fatalf("us-east stats = %#v, want two tx, one error, avg 200", east)
+	}
+	if report.ByRegion["eu-west"].Transactions != 1 || report.ByRegion["eu-west"].Errors != 0 {
+		t.Fatalf("eu-west stats = %#v, want one tx, no errors", report.ByRegion["eu-west"])
+	}
+}
+
+func TestRunArchiveWriterStampsRegionFromEnv(t *testing.T) {
+	t.Setenv("APEXLOAD_REGION", "ap-south")
+	w, err := newRunArchiveWriter(&ManagedTest{ID: "rgn-1", Name: "Region Stamp"}, RunArchiveProvenance{})
+	if err != nil {
+		t.Fatalf("new writer: %v", err)
+	}
+	if w.region != "ap-south" {
+		t.Fatalf("writer region = %q, want ap-south", w.region)
+	}
+	// A result without an explicit region inherits the writer's region; an
+	// explicit per-result region wins (the distributed multi-region path).
+	if got := firstNonEmpty("", w.region); got != "ap-south" {
+		t.Fatalf("inherited region = %q", got)
+	}
+	if got := firstNonEmpty("us-west", w.region); got != "us-west" {
+		t.Fatalf("explicit per-result region should win, got %q", got)
+	}
+}
+
 func TestBuildRunArchiveReportIncludesThroughputGapEvidence(t *testing.T) {
 	tempDir := t.TempDir()
 	manifest := RunArchiveManifest{

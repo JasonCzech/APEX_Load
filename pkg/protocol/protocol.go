@@ -209,6 +209,7 @@ type ThinkTimeConfig struct {
 type Result struct {
 	ActionName        string        // Name of the executed action
 	Group             string        // Group/transaction name for metrics
+	Region            string        // Generator region that produced this result (per-result override; empty = use writer region)
 	StartTime         time.Time     // When the action started
 	Duration          time.Duration // Time to execute action
 	CorrelationID     string        // Correlation or request id when the protocol exposes one

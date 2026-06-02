@@ -84,6 +84,7 @@ type TransactionEvent struct {
 	TestID            string                    `json:"test_id"`
 	TestName          string                    `json:"test_name"`
 	Group             string                    `json:"group,omitempty"`
+	Region            string                    `json:"region,omitempty"`
 	ActionName        string                    `json:"action_name,omitempty"`
 	CorrelationID     string                    `json:"correlation_id,omitempty"`
 	TraceID           string                    `json:"trace_id,omitempty"`
@@ -198,6 +199,7 @@ type RunArchiveReport struct {
 	ByAction            map[string]RunArchiveActionStats       `json:"by_action"`
 	BySOAPOperation     map[string]RunArchiveActionStats       `json:"by_soap_operation,omitempty"`
 	ByNetworkProfile    map[string]RunArchiveActionStats       `json:"by_network_profile,omitempty"`
+	ByRegion            map[string]RunArchiveActionStats       `json:"by_region,omitempty"`
 	BySOAPFaultCode     map[string]int64                       `json:"by_soap_fault_code,omitempty"`
 	BySOAPFaultCategory map[string]int64                       `json:"by_soap_fault_category,omitempty"`
 	SOAPFaultTimeline   []RunArchiveSOAPFaultTimelineBucket    `json:"soap_fault_timeline,omitempty"`
@@ -509,6 +511,7 @@ var archiveSnapshotLeadingTemplateBasePattern = regexp.MustCompile(`^\{\{\s*(?:v
 type runArchiveWriter struct {
 	mu              sync.Mutex
 	manifest        RunArchiveManifest
+	region          string
 	rootDir         string
 	manifestPath    string
 	txFile          *os.File
@@ -564,6 +567,7 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 			IntervalSummariesFile:        "interval_summaries.jsonl",
 			IntervalSummariesParquetFile: "interval_summaries.parquet",
 		},
+		region:          strings.TrimSpace(os.Getenv("APEXLOAD_REGION")),
 		rootDir:         archiveDir,
 		manifestPath:    filepath.Join(archiveDir, "manifest.json"),
 		txFile:          txFile,
@@ -627,6 +631,7 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		TestID:            w.manifest.TestID,
 		TestName:          w.manifest.TestName,
 		Group:             result.Group,
+		Region:            firstNonEmpty(result.Region, w.region),
 		ActionName:        result.ActionName,
 		CorrelationID:     result.CorrelationID,
 		TraceID:           traceIDFromCorrelationID(result.CorrelationID),
@@ -1097,6 +1102,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		ByAction:            make(map[string]RunArchiveActionStats),
 		BySOAPOperation:     make(map[string]RunArchiveActionStats),
 		ByNetworkProfile:    make(map[string]RunArchiveActionStats),
+		ByRegion:            make(map[string]RunArchiveActionStats),
 		BySOAPFaultCode:     make(map[string]int64),
 		BySOAPFaultCategory: make(map[string]int64),
 		BrowserByEngine:     make(map[string]*BrowserEngineLiveMetrics),
@@ -1132,6 +1138,9 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		}
 		if tx.NetworkProfile != "" {
 			report.ByNetworkProfile[tx.NetworkProfile] = mergeRunArchiveActionStats(report.ByNetworkProfile[tx.NetworkProfile], tx)
+		}
+		if tx.Region != "" {
+			report.ByRegion[tx.Region] = mergeRunArchiveActionStats(report.ByRegion[tx.Region], tx)
 		}
 		incrementArchiveCount(report.BySOAPFaultCode, archiveSOAPFaultCode(tx))
 		incrementArchiveCount(report.BySOAPFaultCategory, archiveSOAPFaultCategory(tx))
@@ -1236,6 +1245,12 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	}
 	if len(report.ByNetworkProfile) == 0 {
 		report.ByNetworkProfile = nil
+	}
+	for region, stats := range report.ByRegion {
+		report.ByRegion[region] = finalizeRunArchiveActionStats(stats)
+	}
+	if len(report.ByRegion) == 0 {
+		report.ByRegion = nil
 	}
 	if len(report.BySOAPFaultCode) == 0 {
 		report.BySOAPFaultCode = nil
