@@ -256,6 +256,14 @@ export interface RunArchiveExecutionSettingsSnapshot {
   }
 }
 
+export interface CapacityReservation {
+  project_id: string
+  reserved_generators: number
+  // Optional timeslot window (RFC3339). Omit both for an always-active reservation.
+  starts_at?: string
+  ends_at?: string
+}
+
 export interface RunArchiveProvenance {
   application_id?: string
   release_id?: string
@@ -2122,6 +2130,7 @@ export interface DashboardCapacityPlanningSettings {
   headroom_pct: number
   generator: DashboardCapacityGeneratorSettings
   availability: DashboardCapacityAvailabilitySettings
+  reservations?: CapacityReservation[]
 }
 
 export interface DashboardArchiveRetentionPolicy {

@@ -743,6 +743,51 @@ describe('SettingsPage', () => {
     }))
   })
 
+  it('adds a reserved capacity pool and saves it in the capacity settings', async () => {
+    apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
+
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const reservationSection = container.querySelector('[data-testid="capacity-reservations"]')
+    expect(reservationSection).toBeTruthy()
+    if (!reservationSection) return
+
+    const addButton = Array.from(reservationSection.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Add Reservation') as HTMLButtonElement | undefined
+    expect(addButton).toBeTruthy()
+    if (!addButton) return
+    await act(async () => {
+      addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const projectInput = reservationSection.querySelector('input[aria-label="Reservation project"]') as HTMLInputElement | null
+    const generatorsInput = reservationSection.querySelector('input[aria-label="Reserved generators"]') as HTMLInputElement | null
+    expect(projectInput).toBeTruthy()
+    expect(generatorsInput).toBeTruthy()
+    if (!projectInput || !generatorsInput) return
+
+    await setFieldValue(projectInput, 'payments')
+    await setFieldValue(generatorsInput, '4')
+
+    const saveButton = findButton('Save Changes')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
+      capacity_planning: expect.objectContaining({
+        reservations: [
+          expect.objectContaining({ project_id: 'payments', reserved_generators: 4 }),
+        ],
+      }),
+    }))
+  })
+
   it('applies live pod capacity to the generator cpu, memory, max vusers, and available generators fields when requested manually', async () => {
     apiMock.getSystemSettings.mockResolvedValue({
       general: {

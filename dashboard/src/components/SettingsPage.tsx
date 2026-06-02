@@ -5,7 +5,7 @@ import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
-import { ArchiveRetentionPlanResponse, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
+import { ArchiveRetentionPlanResponse, CapacityReservation, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import { mergeSettingsOrder, moveSettingsSection, readSettingsSectionArray, SETTINGS_SECTIONS, type SettingsSectionId } from './settingsSectionLayout'
@@ -43,6 +43,7 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
       source: 'configured',
       configured_available_generators: 1,
     },
+    reservations: [],
   },
   archive_retention: {
     enabled: false,
@@ -131,6 +132,24 @@ function parseOptionalWholeNumber(value: string): number | undefined {
   const parsed = Number(trimmed)
   if (!Number.isInteger(parsed) || parsed < 0) return undefined
   return parsed
+}
+
+// Convert a stored RFC3339 timestamp to the value a <input type="datetime-local">
+// expects (local time, minute precision). Empty/invalid -> ''.
+function toDatetimeLocal(iso?: string): string {
+  if (!iso) return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+// Convert a datetime-local input value back to an RFC3339 string the API accepts.
+function fromDatetimeLocal(value: string): string {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toISOString()
 }
 
 function parseOptionalNumber(value: string): number | undefined {
@@ -543,6 +562,17 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
   if (!Number.isInteger(settings.capacity_planning.availability.configured_available_generators) || settings.capacity_planning.availability.configured_available_generators < 1) {
     errors.push('Configured available generators must be an integer >= 1.')
   }
+  for (const reservation of settings.capacity_planning.reservations ?? []) {
+    if (!reservation.project_id.trim()) {
+      errors.push('Each capacity reservation requires a project.')
+    }
+    if (!Number.isInteger(reservation.reserved_generators) || reservation.reserved_generators < 0) {
+      errors.push('Reserved generators must be an integer >= 0.')
+    }
+    if (reservation.starts_at && reservation.ends_at && new Date(reservation.ends_at) < new Date(reservation.starts_at)) {
+      errors.push('Reservation end must not be before its start.')
+    }
+  }
   if (!Number.isInteger(settings.archive_retention.default_retention_days) || settings.archive_retention.default_retention_days < 1) {
     errors.push('Archive retention default days must be an integer >= 1.')
   }
@@ -648,6 +678,7 @@ function normalizeDashboardSystemSettings(settings: DashboardSystemSettings): Da
         ...DEFAULT_SETTINGS.capacity_planning.availability,
         ...settings.capacity_planning.availability,
       },
+      reservations: settings.capacity_planning.reservations ? [...settings.capacity_planning.reservations] : [],
     },
     archive_retention: {
       ...DEFAULT_SETTINGS.archive_retention,
@@ -1319,6 +1350,46 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
           ...prev.capacity_planning.availability,
           [key]: key === 'source' ? value : Math.max(0, Number(value) || 0),
         },
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
+  const addReservation = () => {
+    setSettings((prev) => ({
+      ...prev,
+      capacity_planning: {
+        ...prev.capacity_planning,
+        reservations: [...(prev.capacity_planning.reservations ?? []), { project_id: '', reserved_generators: 1 }],
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
+  const updateReservation = (index: number, patch: Partial<CapacityReservation>) => {
+    setSettings((prev) => {
+      const reservations = [...(prev.capacity_planning.reservations ?? [])]
+      const existing = reservations[index]
+      if (!existing) return prev
+      const next: CapacityReservation = { ...existing, ...patch }
+      // Empty datetime inputs clear the window bound entirely.
+      if (patch.starts_at === '') delete next.starts_at
+      if (patch.ends_at === '') delete next.ends_at
+      reservations[index] = next
+      return { ...prev, capacity_planning: { ...prev.capacity_planning, reservations } }
+    })
+    setSaveMessage('')
+    setRequestError('')
+  }
+
+  const removeReservation = (index: number) => {
+    setSettings((prev) => ({
+      ...prev,
+      capacity_planning: {
+        ...prev.capacity_planning,
+        reservations: (prev.capacity_planning.reservations ?? []).filter((_, i) => i !== index),
       },
     }))
     setSaveMessage('')
@@ -3148,6 +3219,50 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                 value={settings.capacity_planning.availability.configured_available_generators}
                 onChange={(e) => updateAvailability('configured_available_generators', e.target.value)}
               />
+            </div>
+            <div className="settings-subsection" data-testid="capacity-reservations">
+              <div className="settings-manager-summary">
+                <div>
+                  <span className="setting-label">Reserved Capacity Pools</span>
+                  <span className="setting-desc">Reserve generators for a project so other tenants are bounded to the shared pool. Add a time window to make it a timeslot; leave blank for an always-active reservation.</span>
+                </div>
+                <strong>{(settings.capacity_planning.reservations ?? []).length}</strong>
+              </div>
+              {(settings.capacity_planning.reservations ?? []).map((reservation, index) => (
+                <div key={`reservation-${index}`} className="capacity-reservation-row setting-row">
+                  <input
+                    className="settings-input"
+                    placeholder="Project ID"
+                    aria-label="Reservation project"
+                    value={reservation.project_id}
+                    onChange={event => updateReservation(index, { project_id: event.target.value })}
+                  />
+                  <input
+                    className="settings-input"
+                    inputMode="numeric"
+                    placeholder="Generators"
+                    aria-label="Reserved generators"
+                    value={String(reservation.reserved_generators)}
+                    onChange={event => updateReservation(index, { reserved_generators: Math.max(0, Number(event.target.value) || 0) })}
+                  />
+                  <input
+                    className="settings-input"
+                    type="datetime-local"
+                    aria-label="Reservation start"
+                    value={toDatetimeLocal(reservation.starts_at)}
+                    onChange={event => updateReservation(index, { starts_at: fromDatetimeLocal(event.target.value) })}
+                  />
+                  <input
+                    className="settings-input"
+                    type="datetime-local"
+                    aria-label="Reservation end"
+                    value={toDatetimeLocal(reservation.ends_at)}
+                    onChange={event => updateReservation(index, { ends_at: fromDatetimeLocal(event.target.value) })}
+                  />
+                  <button className="btn btn-ghost" type="button" onClick={() => removeReservation(index)}>Remove</button>
+                </div>
+              ))}
+              <button className="btn btn-secondary" type="button" onClick={addReservation}>Add Reservation</button>
             </div>
             <div className="settings-subsection">
               <div className="settings-manager-summary">
