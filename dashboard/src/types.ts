@@ -96,6 +96,8 @@ export interface ProjectSettings {
   redaction_rules?: RedactionRule[]
   max_concurrent_tests?: number
   max_vusers?: number
+  max_vusers_per_test?: number
+  max_test_duration_minutes?: number
 }
 
 export interface Application {

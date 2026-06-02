@@ -441,11 +441,15 @@ function buildProjectSettingsDraft(
   rules: DraftRedactionRule[],
   maxConcurrentTests: string,
   maxVUsers: string,
+  maxVUsersPerTest: string,
+  maxTestDurationMinutes: string,
 ) {
   const settings: {
     redaction_rules?: RedactionRule[]
     max_concurrent_tests?: number
     max_vusers?: number
+    max_vusers_per_test?: number
+    max_test_duration_minutes?: number
   } = {
     redaction_rules: normalizeProjectRedactionRules(rules),
   }
@@ -456,6 +460,14 @@ function buildProjectSettingsDraft(
   const parsedVUsers = parseOptionalWholeNumber(maxVUsers)
   if (parsedVUsers !== undefined) {
     settings.max_vusers = parsedVUsers
+  }
+  const parsedVUsersPerTest = parseOptionalWholeNumber(maxVUsersPerTest)
+  if (parsedVUsersPerTest !== undefined) {
+    settings.max_vusers_per_test = parsedVUsersPerTest
+  }
+  const parsedDuration = parseOptionalWholeNumber(maxTestDurationMinutes)
+  if (parsedDuration !== undefined) {
+    settings.max_test_duration_minutes = parsedDuration
   }
   return settings
 }
@@ -787,6 +799,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
   const [projectDraftRules, setProjectDraftRules] = useState<DraftRedactionRule[]>([])
   const [projectDraftMaxConcurrentTests, setProjectDraftMaxConcurrentTests] = useState('')
   const [projectDraftMaxVUsers, setProjectDraftMaxVUsers] = useState('')
+  const [projectDraftMaxVUsersPerTest, setProjectDraftMaxVUsersPerTest] = useState('')
+  const [projectDraftMaxTestDurationMinutes, setProjectDraftMaxTestDurationMinutes] = useState('')
   const [projectActionError, setProjectActionError] = useState('')
   const [projectActionMessage, setProjectActionMessage] = useState('')
   const [archiveRetentionPlan, setArchiveRetentionPlan] = useState<ArchiveRetentionPlanResponse | null>(null)
@@ -1075,10 +1089,12 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
       return (
         validateProjectDraft(projectDraftName, projectDraftRules) ||
         validateProjectQuotaField('Project max concurrent tests', projectDraftMaxConcurrentTests) ||
-        validateProjectQuotaField('Project max VUsers', projectDraftMaxVUsers)
+        validateProjectQuotaField('Project max VUsers', projectDraftMaxVUsers) ||
+        validateProjectQuotaField('Project max VUsers per test', projectDraftMaxVUsersPerTest) ||
+        validateProjectQuotaField('Project max test duration (minutes)', projectDraftMaxTestDurationMinutes)
       )
     },
-    [projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftName, projectDraftRules, selectedProject],
+    [projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, projectDraftName, projectDraftRules, selectedProject],
   )
   const projectHasUnsavedChanges = useMemo(() => {
     if (!selectedProject) {
@@ -1091,15 +1107,17 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
         toDraftRedactionRules(selectedProject.settings?.redaction_rules),
         selectedProject.settings?.max_concurrent_tests !== undefined ? String(selectedProject.settings.max_concurrent_tests) : '',
         selectedProject.settings?.max_vusers !== undefined ? String(selectedProject.settings.max_vusers) : '',
+        selectedProject.settings?.max_vusers_per_test !== undefined ? String(selectedProject.settings.max_vusers_per_test) : '',
+        selectedProject.settings?.max_test_duration_minutes !== undefined ? String(selectedProject.settings.max_test_duration_minutes) : '',
       ),
     }
     const draft = {
       name: projectDraftName.trim(),
-      settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers),
+      settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes),
     }
 
     return JSON.stringify(current) !== JSON.stringify(draft)
-  }, [projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftName, projectDraftRules, selectedProject])
+  }, [projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, projectDraftName, projectDraftRules, selectedProject])
   const customRuleCount = useMemo(
     () => normalizeProjectRedactionRules(projectDraftRules).length,
     [projectDraftRules],
@@ -1163,6 +1181,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
         setProjectDraftRules(toDraftRedactionRules(nextSelected?.settings?.redaction_rules))
         setProjectDraftMaxConcurrentTests(nextSelected?.settings?.max_concurrent_tests !== undefined ? String(nextSelected.settings.max_concurrent_tests) : '')
         setProjectDraftMaxVUsers(nextSelected?.settings?.max_vusers !== undefined ? String(nextSelected.settings.max_vusers) : '')
+        setProjectDraftMaxVUsersPerTest(nextSelected?.settings?.max_vusers_per_test !== undefined ? String(nextSelected.settings.max_vusers_per_test) : '')
+        setProjectDraftMaxTestDurationMinutes(nextSelected?.settings?.max_test_duration_minutes !== undefined ? String(nextSelected.settings.max_test_duration_minutes) : '')
         setProjectActionError('')
       } catch (error: unknown) {
         if (!cancelled) {
@@ -1586,6 +1606,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
     setProjectDraftRules(toDraftRedactionRules(project?.settings?.redaction_rules))
     setProjectDraftMaxConcurrentTests(project?.settings?.max_concurrent_tests !== undefined ? String(project.settings.max_concurrent_tests) : '')
     setProjectDraftMaxVUsers(project?.settings?.max_vusers !== undefined ? String(project.settings.max_vusers) : '')
+    setProjectDraftMaxVUsersPerTest(project?.settings?.max_vusers_per_test !== undefined ? String(project.settings.max_vusers_per_test) : '')
+    setProjectDraftMaxTestDurationMinutes(project?.settings?.max_test_duration_minutes !== undefined ? String(project.settings.max_test_duration_minutes) : '')
     setProjectActionError('')
     setProjectActionMessage('')
   }
@@ -1645,7 +1667,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
     try {
       const updated = await projectApi.updateProject(selectedProject.id, {
         name: projectDraftName.trim(),
-        settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers),
+        settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes),
       })
       const nextProjects = sortProjects(projects.map(project => (project.id === updated.id ? updated : project)))
       setProjects(nextProjects)
@@ -3455,6 +3477,42 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                       value={projectDraftMaxVUsers}
                       onChange={event => {
                         setProjectDraftMaxVUsers(event.target.value)
+                        setProjectActionError('')
+                        setProjectActionMessage('')
+                      }}
+                      placeholder="Unlimited"
+                    />
+                  </div>
+
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Project Max VUsers Per Test</span>
+                      <span className="setting-desc">Reject any single test requesting more than this many VUsers. Blank or 0 = no per-test cap.</span>
+                    </div>
+                    <input
+                      className="settings-input"
+                      inputMode="numeric"
+                      value={projectDraftMaxVUsersPerTest}
+                      onChange={event => {
+                        setProjectDraftMaxVUsersPerTest(event.target.value)
+                        setProjectActionError('')
+                        setProjectActionMessage('')
+                      }}
+                      placeholder="Unlimited"
+                    />
+                  </div>
+
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Project Max Test Duration (minutes)</span>
+                      <span className="setting-desc">Reject any single test longer than this many minutes. Blank or 0 = no duration cap.</span>
+                    </div>
+                    <input
+                      className="settings-input"
+                      inputMode="numeric"
+                      value={projectDraftMaxTestDurationMinutes}
+                      onChange={event => {
+                        setProjectDraftMaxTestDurationMinutes(event.target.value)
                         setProjectActionError('')
                         setProjectActionMessage('')
                       }}

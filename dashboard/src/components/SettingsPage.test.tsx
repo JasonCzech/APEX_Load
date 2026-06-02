@@ -850,11 +850,13 @@ describe('SettingsPage', () => {
     if (!projectSection) return
 
     const quotaInputs = Array.from(projectSection.querySelectorAll('input')).filter(input => input.placeholder === 'Unlimited') as HTMLInputElement[]
-    expect(quotaInputs).toHaveLength(2)
-    if (quotaInputs.length !== 2) return
+    expect(quotaInputs).toHaveLength(4)
+    if (quotaInputs.length !== 4) return
 
     await setFieldValue(quotaInputs[0], '3')
     await setFieldValue(quotaInputs[1], '400')
+    await setFieldValue(quotaInputs[2], '150')
+    await setFieldValue(quotaInputs[3], '30')
 
     const addRuleButton = findButton('Add Rule')
     expect(addRuleButton).toBeDefined()
@@ -902,6 +904,8 @@ describe('SettingsPage', () => {
         ],
         max_concurrent_tests: 3,
         max_vusers: 400,
+        max_vusers_per_test: 150,
+        max_test_duration_minutes: 30,
       },
     })
     expect(container.textContent).toContain('Saved project governance defaults for Customer Portal.')
@@ -946,8 +950,8 @@ describe('SettingsPage', () => {
     expect(projectSection.textContent).toContain('Current session can view this project but cannot change project governance.')
 
     const quotaInputs = Array.from(projectSection.querySelectorAll('input')).filter(input => input.placeholder === 'Unlimited') as HTMLInputElement[]
-    expect(quotaInputs).toHaveLength(2)
-    if (quotaInputs.length !== 2) return
+    expect(quotaInputs).toHaveLength(4)
+    if (quotaInputs.length !== 4) return
 
     await setFieldValue(quotaInputs[0], '3')
     const saveButton = findButton('Save Project Governance')
