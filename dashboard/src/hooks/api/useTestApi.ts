@@ -5,6 +5,8 @@ import {
   DraftCapacityEstimate,
   GeneratorAssignmentSettings,
   GoalConfig,
+  GoalSizingReport,
+  GoalSizingRequest,
   IntervalSummaryRecord,
   LoadModelSupportMatrixResponse,
   LoadModelTemplatesResponse,
@@ -241,6 +243,11 @@ export function useTestApi() {
     [],
   )
 
+  const sizeScenarioFromGoal = useCallback(
+    (data: GoalSizingRequest) => request<GoalSizingReport>('/scenarios/size-from-goal', { method: 'POST', body: JSON.stringify(data) }),
+    [],
+  )
+
   const startTest = useCallback(
     (id: string, options?: StartTestOptions) =>
       request<TestActionResponse>(`/tests/${id}/start`, {
@@ -413,6 +420,7 @@ export function useTestApi() {
       getLoadModelSupportMatrix,
       listLoadModelTemplates,
       validateScenarioLoadModel,
+      sizeScenarioFromGoal,
       startTest,
       pinComparisonBaseline,
       unpinComparisonBaseline,
@@ -451,6 +459,7 @@ export function useTestApi() {
       getLoadModelSupportMatrix,
       listLoadModelTemplates,
       validateScenarioLoadModel,
+      sizeScenarioFromGoal,
       startTest,
       pinComparisonBaseline,
       unpinComparisonBaseline,

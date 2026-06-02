@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -74,6 +75,47 @@ func (s *Server) handleValidateScenarioLoadModel(w http.ResponseWriter, r *http.
 		return
 	}
 	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *Server) handleSizeScenarioFromGoal(w http.ResponseWriter, r *http.Request) {
+	var req GoalSizingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if strings.TrimSpace(req.BaselineTestID) == "" {
+		writeError(w, http.StatusBadRequest, "baseline_test_id is required")
+		return
+	}
+	if _, ok := s.runner.GetTest(req.BaselineTestID); !ok {
+		writeError(w, http.StatusNotFound, "baseline test not found")
+		return
+	}
+	record, ok := s.runner.GetRunArchive(req.BaselineTestID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "baseline run archive not found")
+		return
+	}
+	if err := ensureArchiveMaterialized(record); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to materialize baseline archive: "+err.Error())
+		return
+	}
+	report, err := buildRunArchiveReport(record)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build baseline report: "+err.Error())
+		return
+	}
+	sizing, err := buildGoalSizingReport(report, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// Attach load-model validation best-effort: a validation error (e.g. a
+	// baseline script no longer in the library) should not hide the sizing math.
+	if validation, verr := s.runner.ValidateScenarioLoadModel(sizing.ScenarioDraft); verr == nil {
+		sizing.LoadModelValidation = validation
+	}
+	writeJSON(w, http.StatusOK, sizing)
 }
 
 func (s *Server) handleDeleteScenario(w http.ResponseWriter, r *http.Request) {

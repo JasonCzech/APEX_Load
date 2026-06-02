@@ -783,6 +783,7 @@ export interface RunArchiveReport {
   error_patterns?: RunArchiveErrorPattern[]
   summary_timeline?: RunArchiveSummaryPoint[]
   by_action: Record<string, RunArchiveActionStats>
+  by_group?: Record<string, RunArchiveActionStats>
   by_soap_operation?: Record<string, RunArchiveActionStats>
   by_network_profile?: Record<string, RunArchiveActionStats>
   by_region?: Record<string, RunArchiveActionStats>
@@ -2793,6 +2794,57 @@ export interface LoadModelValidationReport {
   peak_target_tps?: number
   capacity_advisory?: CapacityAdvisory
   assignment_recommendation?: AssignmentRecommendation
+}
+
+export interface GoalSizingGroupTarget {
+  script_id?: string
+  group?: string
+  name?: string
+  target_tps: number
+}
+
+export interface GoalSizingRequest {
+  baseline_test_id: string
+  name?: string
+  duration?: string
+  start_delay?: string
+  groups: GoalSizingGroupTarget[]
+  min_vusers?: number
+  max_vusers?: number
+}
+
+export interface GoalSizingGroupResult {
+  group: string
+  script_id?: string
+  baseline_art_ms: number
+  target_tps: number
+  computed_vusers: number
+  basis: 'group' | 'overview' | string
+}
+
+export interface GoalSizingScenarioDraftGroup {
+  name: string
+  script_id: string
+  vusers: number
+  ramp_up?: string
+}
+
+export interface GoalSizingScenarioDraft {
+  name: string
+  duration: string
+  start_delay?: string
+  scenario_mode?: ScenarioMode
+  goal_config?: GoalConfig
+  groups: GoalSizingScenarioDraftGroup[]
+}
+
+export interface GoalSizingReport {
+  baseline_test_id: string
+  groups: GoalSizingGroupResult[]
+  total_target_tps: number
+  total_vusers: number
+  scenario_draft: GoalSizingScenarioDraft
+  load_model_validation?: LoadModelValidationReport
 }
 
 export interface DraftCapacityEstimate {

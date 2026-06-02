@@ -1,6 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, ScenarioDataPoolBinding, ScenarioMode, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
+import { DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, ScenarioDataPoolBinding, ScenarioMode, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
@@ -11,6 +11,7 @@ import './CreateTestModal.css'
 import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { buildScenarioModelPreview, buildScenarioShapeCatalog, formatModelTimeLabel, ScenarioModelPreview, ScenarioSourceMode, ScenarioWizardStep, validateStageTimeline } from './scenarioWizardUtils'
+import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
 import DurationField from './DurationField'
 import PageViewToggle from './PageViewToggle'
 import LibraryAssetSourcePanel from './LibraryAssetSourcePanel'
@@ -646,6 +647,15 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
   const [estimateLoading, setEstimateLoading] = useState(false)
   const [estimateError, setEstimateError] = useState('')
   const [confirmDeleteScenarioId, setConfirmDeleteScenarioId] = useState<string | null>(null)
+  // Build-from-goal (Little's Law) sizing panel state.
+  const [goalSizingOpen, setGoalSizingOpen] = useState(false)
+  const [goalBaselineTests, setGoalBaselineTests] = useState<TestSummary[]>([])
+  const [goalBaselineId, setGoalBaselineId] = useState('')
+  const [goalBaselineGroups, setGoalBaselineGroups] = useState<BaselineGroupOption[]>([])
+  const [goalTargetTps, setGoalTargetTps] = useState<Record<string, string>>({})
+  const [goalSizingResult, setGoalSizingResult] = useState<GoalSizingReport | null>(null)
+  const [goalSizingLoading, setGoalSizingLoading] = useState(false)
+  const [goalSizingError, setGoalSizingError] = useState('')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [stageGroupIndex, setStageGroupIndex] = useState(0)
   const formGroups = useMemo(
@@ -1045,6 +1055,120 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
     }))
   }
 
+  const openGoalSizing = async () => {
+    if (!canManageTests) {
+      setError('Current session can view scenarios but cannot create or edit them.')
+      return
+    }
+    setGoalSizingOpen(true)
+    setGoalBaselineId('')
+    setGoalBaselineGroups([])
+    setGoalTargetTps({})
+    setGoalSizingResult(null)
+    setGoalSizingError('')
+    setWizardStep('start')
+    setShowForm(true)
+    setEditingId(null)
+    try {
+      const response = await api.listTests({ project_id: activeProject?.id })
+      setGoalBaselineTests((response.tests || []).filter(test => test.status === 'COMPLETE'))
+    } catch (err: unknown) {
+      setGoalSizingError(getErrorMessage(err, 'Unable to load completed runs'))
+    }
+  }
+
+  const selectGoalBaseline = async (testId: string) => {
+    setGoalBaselineId(testId)
+    setGoalBaselineGroups([])
+    setGoalTargetTps({})
+    setGoalSizingResult(null)
+    setGoalSizingError('')
+    if (!testId) return
+    try {
+      const report = await api.getTestArchiveReport(testId)
+      const options = baselineGroupOptions(report)
+      if (options.length === 0) {
+        setGoalSizingError('This run has no response-time data to size from.')
+        return
+      }
+      setGoalBaselineGroups(options)
+      setGoalTargetTps(Object.fromEntries(options.map(option => [option.group, ''])))
+    } catch (err: unknown) {
+      setGoalSizingError(getErrorMessage(err, 'Unable to load the baseline run report'))
+    }
+  }
+
+  const runGoalSizing = async () => {
+    setGoalSizingError('')
+    const groups = goalBaselineGroups
+      .map(option => ({ option, tps: Number(goalTargetTps[option.group]) }))
+      .filter(entry => Number.isFinite(entry.tps) && entry.tps > 0)
+    if (groups.length === 0) {
+      setGoalSizingError('Enter a target TPS greater than zero for at least one group.')
+      return
+    }
+    setGoalSizingLoading(true)
+    try {
+      const result = await api.sizeScenarioFromGoal({
+        baseline_test_id: goalBaselineId,
+        groups: groups.map(({ option, tps }) => ({
+          script_id: option.script_id,
+          group: option.basis === 'group' ? option.group : undefined,
+          target_tps: tps,
+        })),
+      })
+      setGoalSizingResult(result)
+    } catch (err: unknown) {
+      setGoalSizingResult(null)
+      setGoalSizingError(getErrorMessage(err, 'Unable to size scenario from goal'))
+    } finally {
+      setGoalSizingLoading(false)
+    }
+  }
+
+  const applyGoalSizing = () => {
+    if (!goalSizingResult) return
+    const draft = goalSizingResult.scenario_draft
+    const sizedGroups = goalSizedGroups(draft)
+    const goalFields = goalSizedGoalFields(draft)
+    setEditingId(null)
+    setForm(prev => ({
+      ...prev,
+      name: draft.name || prev.name,
+      duration: draft.duration || prev.duration,
+      scenario_mode: goalFields.scenario_mode,
+      goal_target_average_tps: goalFields.goal_target_average_tps,
+      goal_min_vusers: goalFields.goal_min_vusers,
+      goal_max_vusers: goalFields.goal_max_vusers,
+      groups: ensureScenarioGroups(
+        sizedGroups.map((group, index) => ({
+          name: group.name,
+          script_id: group.script_id || prev.groups[index]?.script_id || scripts[0]?.id || '',
+          vusers: group.vusers,
+          ramp_up: group.ramp_up,
+          ramp_down: '',
+          stages: [],
+          initialization: 'at_runtime' as const,
+        })),
+        scripts[0]?.id || '',
+      ),
+    }))
+    setSelectedShapeId('')
+    setSelectedLoadModelTemplateId('')
+    setSelectedCloneScenarioId('')
+    setScenarioSourceMode('shape')
+    setStageGroupIndex(0)
+    setLoadModelValidation(null)
+    setLoadModelValidationError('')
+    setGoalSizingOpen(false)
+    setWizardStep('scripts')
+  }
+
+  const closeGoalSizing = () => {
+    setGoalSizingOpen(false)
+    setWizardStep('start')
+  }
+
   const updateScenarioGroup = (index: number, patch: Partial<ScenarioFormGroup>) => {
     setForm(prev => ({
       ...prev,
@@ -1321,7 +1445,93 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
     )
   }
 
+  const renderGoalSizingPanel = () => {
+    const previewTotal = goalBaselineGroups.reduce((sum, option) => {
+      const tps = Number(goalTargetTps[option.group])
+      return sum + (Number.isFinite(tps) && tps > 0 ? littlesLawVUsers(tps, option.baseline_art_ms) : 0)
+    }, 0)
+    return (
+      <section className="scenario-wizard-panel" data-testid="goal-sizing-panel">
+        <div className="scenario-wizard-panel-header">
+          <div>
+            <h4>Build From Goal</h4>
+            <p>Pick a completed baseline run and a target throughput per group. APEX Load sizes VUsers with Little&apos;s Law (VUsers = target TPS × response time), then the goal controller converges at run time.</p>
+          </div>
+          <button type="button" className="mode-chip" onClick={closeGoalSizing}>Back</button>
+        </div>
+
+        <label className="settings-field">
+          <span>Baseline run</span>
+          <select value={goalBaselineId} onChange={event => void selectGoalBaseline(event.target.value)} aria-label="Baseline run">
+            <option value="">Select a completed run…</option>
+            {goalBaselineTests.map(test => (
+              <option key={test.id} value={test.id}>{test.name}</option>
+            ))}
+          </select>
+        </label>
+
+        {goalBaselineGroups.length > 0 && (
+          <div className="goal-sizing-groups">
+            <table className="settings-table">
+              <thead>
+                <tr><th>Group</th><th>Baseline ART</th><th>Target TPS</th><th>Est. VUsers</th></tr>
+              </thead>
+              <tbody>
+                {goalBaselineGroups.map(option => {
+                  const tps = Number(goalTargetTps[option.group])
+                  const estimate = Number.isFinite(tps) && tps > 0 ? littlesLawVUsers(tps, option.baseline_art_ms) : 0
+                  return (
+                    <tr key={option.group}>
+                      <td>{option.group}</td>
+                      <td>{Math.round(option.baseline_art_ms)} ms</td>
+                      <td>
+                        <input
+                          className="settings-input"
+                          type="number"
+                          min="0"
+                          step="1"
+                          aria-label={`Target TPS for ${option.group}`}
+                          value={goalTargetTps[option.group] ?? ''}
+                          onChange={event => setGoalTargetTps(prev => ({ ...prev, [option.group]: event.target.value }))}
+                        />
+                      </td>
+                      <td>{estimate > 0 ? estimate : '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            {previewTotal > 0 && <p className="goal-sizing-preview">Estimated total: <strong>{previewTotal} VUsers</strong></p>}
+            <button type="button" className="primary-button" onClick={() => void runGoalSizing()} disabled={goalSizingLoading}>
+              {goalSizingLoading ? 'Sizing…' : 'Size scenario'}
+            </button>
+          </div>
+        )}
+
+        {goalSizingError && <p className="form-error" role="alert">{goalSizingError}</p>}
+
+        {goalSizingResult && (
+          <div className="goal-sizing-result" data-testid="goal-sizing-result">
+            <p>{formatGoalSizingSummary(goalSizingResult)}</p>
+            <ul>
+              {goalSizingResult.groups.map(group => (
+                <li key={group.group}>{group.group}: <strong>{group.computed_vusers} VUsers</strong> ({group.target_tps} TPS × {Math.round(group.baseline_art_ms)} ms)</li>
+              ))}
+            </ul>
+            {goalSizingResult.load_model_validation?.capacity_advisory && (
+              <p className="goal-sizing-capacity">Capacity: {goalSizingResult.load_model_validation.capacity_advisory.recommended_generators} generator(s) recommended.</p>
+            )}
+            <button type="button" className="primary-button" onClick={applyGoalSizing}>Apply to scenario</button>
+          </div>
+        )}
+      </section>
+    )
+  }
+
   const renderWizardStep = () => {
+    if (goalSizingOpen) {
+      return renderGoalSizingPanel()
+    }
     if (wizardStep === 'start') {
       return (
         <section className="scenario-wizard-panel">
@@ -1339,6 +1549,11 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
               <span>Build from Workload Shape</span>
               <strong>Unified Catalog</strong>
               <small>Select a supported workload model and optionally apply one of its starter templates.</small>
+            </button>
+            <button type="button" className="scenario-source-card" onClick={() => void openGoalSizing()}>
+              <span>Build from Goal</span>
+              <strong>Little&apos;s Law Sizing</strong>
+              <small>Pick a completed baseline run and a target TPS per group; VUsers are sized automatically and tuned by the goal controller.</small>
             </button>
           </div>
         </section>

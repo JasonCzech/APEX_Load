@@ -231,6 +231,7 @@ type RunArchiveReport struct {
 	ErrorPatterns       []RunArchiveErrorPattern               `json:"error_patterns,omitempty"`
 	SummaryTimeline     []RunArchiveSummaryPoint               `json:"summary_timeline,omitempty"`
 	ByAction            map[string]RunArchiveActionStats       `json:"by_action"`
+	ByGroup             map[string]RunArchiveActionStats       `json:"by_group,omitempty"`
 	BySOAPOperation     map[string]RunArchiveActionStats       `json:"by_soap_operation,omitempty"`
 	ByNetworkProfile    map[string]RunArchiveActionStats       `json:"by_network_profile,omitempty"`
 	ByRegion            map[string]RunArchiveActionStats       `json:"by_region,omitempty"`
@@ -1181,6 +1182,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		SchemaVersion:       runArchiveReportSchemaVersion,
 		Manifest:            manifest,
 		ByAction:            make(map[string]RunArchiveActionStats),
+		ByGroup:             make(map[string]RunArchiveActionStats),
 		BySOAPOperation:     make(map[string]RunArchiveActionStats),
 		ByNetworkProfile:    make(map[string]RunArchiveActionStats),
 		ByRegion:            make(map[string]RunArchiveActionStats),
@@ -1212,6 +1214,9 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 
 		stats := report.ByAction[tx.ActionName]
 		report.ByAction[tx.ActionName] = mergeRunArchiveActionStats(stats, tx)
+		if tx.Group != "" {
+			report.ByGroup[tx.Group] = mergeRunArchiveActionStats(report.ByGroup[tx.Group], tx)
+		}
 		mergeArchiveSOAPFaultTimelineBucket(faultTimelineBuckets, tx)
 		mergeArchiveSOAPPayloadTimelineBucket(payloadTimelineBuckets, tx)
 		if operation := archiveSOAPOperation(tx); operation != "" {
@@ -1314,6 +1319,12 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.Web2Migration = buildRunArchiveWeb2MigrationEvidence(transactions)
 	for action, stats := range report.ByAction {
 		report.ByAction[action] = finalizeRunArchiveActionStats(stats)
+	}
+	for group, stats := range report.ByGroup {
+		report.ByGroup[group] = finalizeRunArchiveActionStats(stats)
+	}
+	if len(report.ByGroup) == 0 {
+		report.ByGroup = nil
 	}
 	for operation, stats := range report.BySOAPOperation {
 		report.BySOAPOperation[operation] = finalizeRunArchiveActionStats(stats)
