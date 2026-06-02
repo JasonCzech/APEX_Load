@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, type ReactElement } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 
@@ -12,11 +12,13 @@ describe('LibraryAssetSourcePanel', () => {
   let container: HTMLDivElement
   let root: Root
   let fetchMock: MockInstance<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>
+  let remoteOverride: Record<string, unknown>
 
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    remoteOverride = {}
     fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
       const method = init?.method || 'GET'
@@ -30,6 +32,7 @@ describe('LibraryAssetSourcePanel', () => {
             auth_method: 'service_account',
             credential_configured: true,
             status: 'healthy',
+            ...remoteOverride,
           }],
           count: 1,
         })
@@ -126,6 +129,27 @@ describe('LibraryAssetSourcePanel', () => {
     expect(container.textContent).toContain('Pushed 1 item.')
     expect(onRefreshLocal).toHaveBeenCalled()
   })
+
+  it('disables transfers when the selected remote has no configured credentials', async () => {
+    remoteOverride = { credential_configured: false }
+    await renderPanel(root, <LibraryAssetSourcePanel kind="script" projectId="project-1" />)
+
+    expect(container.textContent).toContain('credentials missing')
+    expect(container.textContent).toContain('Configure remote credentials in Settings first.')
+    expect(findButton('Pull')?.disabled).toBe(true)
+    expect(findButton('Push')?.disabled).toBe(true)
+    expect(transferCalls(fetchMock)).toHaveLength(0)
+  })
+
+  it('requires an explicit project mapping when the remote has no default project', async () => {
+    remoteOverride = { default_project_id: '' }
+    await renderPanel(root, <LibraryAssetSourcePanel kind="script" />)
+
+    expect(container.textContent).toContain('Set a project mapping before transferring assets.')
+    expect(findButton('Pull')?.disabled).toBe(true)
+    expect(findButton('Push')?.disabled).toBe(true)
+    expect(transferCalls(fetchMock)).toHaveLength(0)
+  })
 })
 
 function jsonResponse(body: unknown) {
@@ -142,5 +166,20 @@ function findButton(label: string) {
 async function flushPromises() {
   await act(async () => {
     await Promise.resolve()
+  })
+}
+
+async function renderPanel(root: Root, element: ReactElement) {
+  await act(async () => {
+    root.render(element)
+  })
+  await flushPromises()
+  await flushPromises()
+}
+
+function transferCalls(fetchMock: MockInstance<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>) {
+  return fetchMock.mock.calls.filter(([input]) => {
+    const url = String(input)
+    return url.includes('/api/v1/library/remotes/remote-1/pull') || url.includes('/api/v1/library/remotes/remote-1/push')
   })
 }
