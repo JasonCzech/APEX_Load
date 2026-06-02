@@ -61,10 +61,11 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 			if originalValue := firstNonEmpty(lower["originalvalue"]); originalValue != "" {
 				param.Values = []string{originalValue}
 			}
-		case strings.Contains(rawType, "random") && strings.Contains(rawType, "number"):
+		case isLoadRunnerRandomNumberType(rawType, lower):
 			param.Type = "random_number"
-			param.Min = atoiDefault(firstNonEmpty(lower["minimumvalue"], lower["min"], lower["startvalue"]), 0)
-			param.Max = atoiDefault(firstNonEmpty(lower["maximumvalue"], lower["max"], lower["endvalue"]), 100)
+			param.Min = atoiDefault(firstNonEmpty(lower["minimumvalue"], lower["minvalue"], lower["min"], lower["startvalue"]), 0)
+			param.Max = atoiDefault(firstNonEmpty(lower["maximumvalue"], lower["maxvalue"], lower["max"], lower["endvalue"]), 100)
+			param.PadWidth = loadRunnerIntegerFormatPadWidth(lower["format"])
 		case strings.Contains(rawType, "date"):
 			param.Type = "date_time"
 			param.Format = mapLoadRunnerTimeFormat(firstNonEmpty(lower["format"], lower["dateformat"], lower["datetimeformat"]))
@@ -141,6 +142,17 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 	}
 
 	return result
+}
+
+func isLoadRunnerRandomNumberType(rawType string, values map[string]string) bool {
+	if strings.Contains(rawType, "random") && strings.Contains(rawType, "number") {
+		return true
+	}
+	if rawType != "random" {
+		return false
+	}
+	return firstNonEmpty(values["minimumvalue"], values["min"], values["startvalue"], values["minvalue"]) != "" ||
+		firstNonEmpty(values["maximumvalue"], values["max"], values["endvalue"], values["maxvalue"]) != ""
 }
 
 func buildParameterDataSource(dataSourceName, dataFile, dataContent, column, delimiter, paramName string) dsl.DataSource {
@@ -482,10 +494,13 @@ func normalizeParameterType(rawType string) string {
 
 func loadRunnerIntegerFormatPadWidth(format string) int {
 	format = cleanConfigValue(format)
-	if !strings.HasPrefix(format, "%0") || !strings.HasSuffix(format, "d") {
+	if !strings.HasPrefix(format, "%0") {
 		return 0
 	}
-	width := strings.TrimSuffix(strings.TrimPrefix(format, "%0"), "d")
+	width := strings.TrimPrefix(format, "%0")
+	width = strings.TrimSuffix(width, "d")
+	width = strings.TrimSuffix(width, "u")
+	width = strings.TrimSuffix(width, "l")
 	return atoiDefault(width, 0)
 }
 

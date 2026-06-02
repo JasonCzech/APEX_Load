@@ -1,6 +1,7 @@
 package loadrunner
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/url"
@@ -51,6 +52,15 @@ type ConvertOptions struct {
 	HTTPConfig      *dsl.HTTPConfig   // Pre-built HTTP config to embed in script
 	RuntimeSettings *dsl.ScriptConfig // Broader runtime settings mapped from default.cfg
 }
+
+const regexOrdinalExpressionConfigPrefix = "__apexload_regex_ordinal__:"
+
+type regexOrdinalExpressionConfig struct {
+	Expression string `json:"expression"`
+	Ordinal    int    `json:"ordinal"`
+}
+
+var loadRunnerReplayOrdinalSuffix = regexp.MustCompile(`_\d+$`)
 
 // Convert transforms parsed LoadRunner action files into a APEX Load DSL Script.
 func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, error) {
@@ -108,6 +118,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	var pendingHeaders map[string]string
 	var pendingSourceMappings []SourceReviewMapping
 	var currentTransaction string
+	var lastRequestURL string
 	var thinkTimes []float64
 	var loadRunnerRuntimeControls []ParsedFunction
 
@@ -115,7 +126,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 	for _, fn := range allFunctions {
 		switch fn.Name {
-		case "web_reg_save_param":
+		case "web_reg_save_param", "web_reg_save_param_regexp":
 			ext := convertExtractor(fn)
 			if ext != nil {
 				pendingExtractors = append(pendingExtractors, *ext)
@@ -125,10 +136,20 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			}
 
 		case "web_reg_find":
-			assertion, warning := convertFindAssertion(fn)
+			assertion, saveCountExtractor, warning := convertFindAssertion(fn)
+			mapped := false
 			if assertion != nil {
 				pendingAssertions = append(pendingAssertions, *assertion)
 				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", assertion.Type, "assertion", "contributor", "Applied to the next converted request action.", LoadRunnerSupportExecutable))
+				mapped = true
+			}
+			if saveCountExtractor != nil {
+				pendingExtractors = append(pendingExtractors, *saveCountExtractor)
+				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", saveCountExtractor.Name, "extractor", "contributor", "Counts matches for SaveCount and applies the value to the next converted request action.", LoadRunnerSupportExecutable))
+				result.Stats.Extractors++
+				mapped = true
+			}
+			if mapped {
 				recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 			}
 			if warning != "" {
@@ -218,7 +239,10 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
 		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_service_call":
-			action, warnings := convertAction(fn, baseURL, currentTransaction, opts)
+			action, warnings := convertAction(fn, baseURL, currentTransaction, opts, lastRequestURL)
+			if contextURL := loadRunnerRequestContextURL(fn, lastRequestURL); contextURL != "" {
+				lastRequestURL = contextURL
+			}
 			if action != nil {
 				// Capture pre-attach counts so contributor mappings can point at the
 				// exact extractor/assertion index they land on in the generated action.
@@ -912,7 +936,7 @@ func applySOAPImportHints(action *dsl.Action, fn ParsedFunction) {
 }
 
 // convertAction converts a single web_ function to a DSL Action.
-func convertAction(fn ParsedFunction, baseURL, transaction string, opts ConvertOptions) (*dsl.Action, []string) {
+func convertAction(fn ParsedFunction, baseURL, transaction string, opts ConvertOptions, previousRequestURL string) (*dsl.Action, []string) {
 	var warnings []string
 
 	action := &dsl.Action{
@@ -936,10 +960,14 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, opts ConvertO
 	}
 
 	// Determine target URL (relative to base)
-	rawURL := fn.URL
+	rawURL := loadRunnerRequestContextURL(fn, previousRequestURL)
 	if rawURL == "" {
 		warnings = append(warnings, fmt.Sprintf("line %d: %s '%s' has no URL, skipping", fn.LineNumber, fn.Name, fn.StepName))
 		return nil, warnings
+	}
+	if fn.URL == "" && fn.Name == "web_submit_form" {
+		action.Metadata["inferred_url_from"] = "loadrunner_form_context"
+		action.Metadata["inferred_url_source"] = firstNonEmpty(firstNonEmptyArg(fn, "Referer"), previousRequestURL)
 	}
 
 	target := makeRelative(rawURL, baseURL)
@@ -964,11 +992,111 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, opts ConvertO
 	return action, warnings
 }
 
+func loadRunnerRequestContextURL(fn ParsedFunction, previousRequestURL string) string {
+	if strings.TrimSpace(fn.URL) != "" {
+		return strings.TrimSpace(fn.URL)
+	}
+	if fn.Name != "web_submit_form" {
+		return ""
+	}
+	return inferLoadRunnerSubmitFormURL(fn, previousRequestURL)
+}
+
+func inferLoadRunnerSubmitFormURL(fn ParsedFunction, previousRequestURL string) string {
+	candidate := cleanLoadRunnerSubmitFormStepName(fn.StepName)
+	if candidate == "" {
+		return ""
+	}
+	if isAbsoluteHTTPURL(candidate) {
+		return candidate
+	}
+	base := firstNonEmpty(firstNonEmptyArg(fn, "Referer"), previousRequestURL)
+	if base == "" {
+		return candidate
+	}
+	return resolveLoadRunnerRelativeURL(candidate, base)
+}
+
+func cleanLoadRunnerSubmitFormStepName(stepName string) string {
+	candidate := strings.TrimSpace(cleanConfigValue(stepName))
+	if candidate == "" {
+		return ""
+	}
+	withoutOrdinal := loadRunnerReplayOrdinalSuffix.ReplaceAllString(candidate, "")
+	if withoutOrdinal != candidate && strings.Contains(withoutOrdinal, ".") {
+		candidate = withoutOrdinal
+	}
+	return candidate
+}
+
+func isAbsoluteHTTPURL(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+}
+
+func resolveLoadRunnerRelativeURL(candidate, base string) string {
+	if !strings.ContainsAny(base, "{}") {
+		if parsedBase, err := url.Parse(base); err == nil && parsedBase.Scheme != "" {
+			if parsedRelative, relErr := url.Parse(candidate); relErr == nil {
+				return parsedBase.ResolveReference(parsedRelative).String()
+			}
+		}
+	}
+
+	base = stripURLQueryAndFragment(strings.TrimSpace(base))
+	if base == "" {
+		return candidate
+	}
+	if strings.HasPrefix(candidate, "/") {
+		if schemeIndex := strings.Index(base, "://"); schemeIndex >= 0 {
+			hostStart := schemeIndex + len("://")
+			if slashIndex := strings.Index(base[hostStart:], "/"); slashIndex >= 0 {
+				return base[:hostStart+slashIndex] + candidate
+			}
+			return base + candidate
+		}
+		return candidate
+	}
+	if !strings.HasSuffix(base, "/") {
+		if slashIndex := strings.LastIndex(base, "/"); slashIndex >= 0 {
+			base = base[:slashIndex+1]
+		} else {
+			base += "/"
+		}
+	}
+	return base + candidate
+}
+
+func stripURLQueryAndFragment(value string) string {
+	if index := strings.IndexAny(value, "?#"); index >= 0 {
+		return value[:index]
+	}
+	return value
+}
+
 // convertExtractor converts a web_reg_save_param to a DSL Extractor.
 func convertExtractor(fn ParsedFunction) *dsl.Extractor {
-	paramName := fn.StepName
+	paramName := canonicalLoadRunnerParameterName(firstNonEmpty(fn.StepName, firstNonEmptyArg(fn, "ParamName")))
 	if paramName == "" {
 		return nil
+	}
+
+	if fn.Name == "web_reg_save_param_regexp" {
+		expression := firstNonEmptyArg(fn, "RegExp")
+		if expression == "" {
+			return nil
+		}
+		ext := &dsl.Extractor{
+			Name:       paramName,
+			Source:     loadRunnerExtractorSource(firstNonEmptyArg(fn, "Scope")),
+			Type:       "regex",
+			Expression: unescapeLoadRunnerCString(expression),
+		}
+		if ordinal := parsePositiveInt(firstNonEmptyArg(fn, "Ordinal")); ordinal > 1 {
+			ext.Type = "regex_ordinal"
+			ext.Expression = encodeRegexOrdinalExpression(ext.Expression, ordinal)
+		}
+		return ext
 	}
 
 	lb := fn.Args["LB"]
@@ -985,10 +1113,12 @@ func convertExtractor(fn ParsedFunction) *dsl.Extractor {
 			}
 		}
 	}
+	lb = unescapeLoadRunnerCString(lb)
+	rb = unescapeLoadRunnerCString(rb)
 
 	ext := &dsl.Extractor{
 		Name:   paramName,
-		Source: "body",
+		Source: loadRunnerExtractorSource(firstNonEmptyArg(fn, "Scope")),
 	}
 
 	// If boundaries look like JSON path markers, use jsonpath
@@ -997,7 +1127,7 @@ func convertExtractor(fn ParsedFunction) *dsl.Extractor {
 		ext.Expression = regexp.QuoteMeta(lb) + "(.+?)" + regexp.QuoteMeta(rb)
 	} else if lb != "" || rb != "" {
 		ext.Type = "boundary"
-		ext.Expression = fmt.Sprintf("LB=%s|RB=%s", lb, rb)
+		ext.Expression = lb + "|||" + rb
 	} else {
 		ext.Type = "regex"
 		ext.Expression = "(.+?)"
@@ -1006,10 +1136,10 @@ func convertExtractor(fn ParsedFunction) *dsl.Extractor {
 	return ext
 }
 
-func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, string) {
+func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, string) {
 	text := firstNonEmptyArg(fn, "Text")
 	if text == "" {
-		return nil, fmt.Sprintf("line %d: web_reg_find '%s' — manual review recommended because no Text argument was found", fn.LineNumber, fn.StepName)
+		return nil, nil, fmt.Sprintf("line %d: web_reg_find '%s' — manual review recommended because no Text argument was found", fn.LineNumber, fn.StepName)
 	}
 
 	assertionType := "body_contains"
@@ -1019,15 +1149,58 @@ func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, string) {
 	}
 
 	warnings := make([]string, 0, 2)
+	var saveCountExtractor *dsl.Extractor
 	if saveCount := firstNonEmptyArg(fn, "SaveCount"); saveCount != "" {
-		warnings = append(warnings,
-			fmt.Sprintf("line %d: web_reg_find '%s' SaveCount=%s was not preserved; mapped to %s only", fn.LineNumber, fn.StepName, saveCount, assertionType))
+		if name := canonicalLoadRunnerParameterName(saveCount); name != "" {
+			saveCountExtractor = &dsl.Extractor{
+				Name:       name,
+				Source:     loadRunnerExtractorSource(firstNonEmptyArg(fn, "Search")),
+				Type:       "regex_count",
+				Expression: regexp.QuoteMeta(convertParamReferences(text)),
+			}
+		}
 	}
 
 	return &dsl.Assertion{
 		Type:  assertionType,
 		Value: convertParamReferences(text),
-	}, strings.Join(warnings, "; ")
+	}, saveCountExtractor, strings.Join(warnings, "; ")
+}
+
+func loadRunnerExtractorSource(scope string) string {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case "headers", "header":
+		return "header"
+	default:
+		return "body"
+	}
+}
+
+func encodeRegexOrdinalExpression(expression string, ordinal int) string {
+	payload, err := json.Marshal(regexOrdinalExpressionConfig{Expression: expression, Ordinal: ordinal})
+	if err != nil {
+		return expression
+	}
+	return regexOrdinalExpressionConfigPrefix + string(payload)
+}
+
+func unescapeLoadRunnerCString(value string) string {
+	if !strings.Contains(value, `\`) {
+		return value
+	}
+	decoded, err := strconv.Unquote(`"` + value + `"`)
+	if err != nil {
+		return value
+	}
+	return decoded
+}
+
+func parsePositiveInt(value string) int {
+	parsed, err := strconv.Atoi(strings.TrimSpace(cleanConfigValue(value)))
+	if err != nil || parsed <= 0 {
+		return 0
+	}
+	return parsed
 }
 
 func firstNonEmptyArg(fn ParsedFunction, key string) string {
@@ -1061,10 +1234,28 @@ func detectBaseURL(functions []ParsedFunction) string {
 	// Parse first URL to get base
 	parsed, err := url.Parse(urls[0])
 	if err != nil {
-		return urls[0]
+		return detectTemplatedBaseURL(urls[0])
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return detectTemplatedBaseURL(urls[0])
 	}
 
 	return fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+}
+
+func detectTemplatedBaseURL(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if schemeIndex := strings.Index(rawURL, "://"); schemeIndex >= 0 {
+		hostStart := schemeIndex + len("://")
+		hostEnd := len(rawURL)
+		if slashIndex := strings.Index(rawURL[hostStart:], "/"); slashIndex >= 0 {
+			hostEnd = hostStart + slashIndex
+		}
+		if hostEnd > hostStart {
+			return rawURL[:hostEnd]
+		}
+	}
+	return rawURL
 }
 
 // makeRelative strips the base URL from an absolute URL to create a relative path.

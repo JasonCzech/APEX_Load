@@ -21,10 +21,17 @@ const xpathFragmentExpressionPrefix = "__apexload_xpath_fragment__:"
 
 const xpathExpressionConfigPrefix = "__apexload_xpath_config__:"
 
+const regexOrdinalExpressionConfigPrefix = "__apexload_regex_ordinal__:"
+
 type xpathExpressionConfig struct {
 	Expression string            `json:"expression"`
 	Fragment   bool              `json:"fragment,omitempty"`
 	Namespaces map[string]string `json:"namespaces,omitempty"`
+}
+
+type regexOrdinalExpressionConfig struct {
+	Expression string `json:"expression"`
+	Ordinal    int    `json:"ordinal"`
 }
 
 func extract(ext protocol.Extractor, headers http.Header, body []byte) (string, error) {
@@ -86,6 +93,10 @@ func extractFromBody(ext protocol.Extractor, body []byte) (string, error) {
 		return extractXPath(ext.Expression, body)
 	case "regex":
 		return extractRegex(ext.Expression, body)
+	case "regex_count":
+		return extractRegexCount(ext.Expression, body)
+	case "regex_ordinal":
+		return extractRegexOrdinal(ext.Expression, body)
 	case "boundary":
 		return extractBoundary(ext.Expression, body)
 	default:
@@ -281,6 +292,52 @@ func extractRegex(expr string, body []byte) (string, error) {
 		return "", fmt.Errorf("no match for regex %q", expr)
 	}
 	return string(matches[1]), nil
+}
+
+func extractRegexCount(expr string, body []byte) (string, error) {
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		return "", fmt.Errorf("invalid regex: %w", err)
+	}
+	return fmt.Sprintf("%d", len(re.FindAll(body, -1))), nil
+}
+
+func extractRegexOrdinal(expr string, body []byte) (string, error) {
+	config, err := decodeRegexOrdinalExpression(expr)
+	if err != nil {
+		return "", err
+	}
+	re, err := regexp.Compile(config.Expression)
+	if err != nil {
+		return "", fmt.Errorf("invalid regex: %w", err)
+	}
+	matches := re.FindAllSubmatch(body, -1)
+	if len(matches) < config.Ordinal {
+		return "", fmt.Errorf("regex %q match ordinal %d not found", config.Expression, config.Ordinal)
+	}
+	match := matches[config.Ordinal-1]
+	if len(match) < 2 {
+		return "", fmt.Errorf("regex %q ordinal %d did not capture a value", config.Expression, config.Ordinal)
+	}
+	return string(match[1]), nil
+}
+
+func decodeRegexOrdinalExpression(expr string) (regexOrdinalExpressionConfig, error) {
+	if !strings.HasPrefix(expr, regexOrdinalExpressionConfigPrefix) {
+		return regexOrdinalExpressionConfig{Expression: expr, Ordinal: 1}, nil
+	}
+	var config regexOrdinalExpressionConfig
+	payload := strings.TrimPrefix(expr, regexOrdinalExpressionConfigPrefix)
+	if err := json.Unmarshal([]byte(payload), &config); err != nil {
+		return config, fmt.Errorf("invalid regex ordinal config: %w", err)
+	}
+	if strings.TrimSpace(config.Expression) == "" {
+		return config, fmt.Errorf("regex ordinal expression is required")
+	}
+	if config.Ordinal <= 0 {
+		return config, fmt.Errorf("regex ordinal must be greater than zero")
+	}
+	return config, nil
 }
 
 func extractBoundary(expr string, body []byte) (string, error) {

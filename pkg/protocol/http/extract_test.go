@@ -271,6 +271,33 @@ func TestExtractRegex_InvalidPattern(t *testing.T) {
 	}
 }
 
+func TestExtractRegexCount(t *testing.T) {
+	val, err := extractRegexCount(`Show Errors`, []byte(`OK Show Errors also Show Errors`))
+	if err != nil {
+		t.Fatalf("extractRegexCount: %v", err)
+	}
+	if val != "2" {
+		t.Fatalf("regex count = %q, want 2", val)
+	}
+}
+
+func TestExtractRegexOrdinal(t *testing.T) {
+	payload, err := json.Marshal(regexOrdinalExpressionConfig{
+		Expression: `/TD><TD>(.*?)</TD`,
+		Ordinal:    2,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	val, err := extractRegexOrdinal(regexOrdinalExpressionConfigPrefix+string(payload), []byte(`/TD><TD>first</TD /TD><TD>second</TD`))
+	if err != nil {
+		t.Fatalf("extractRegexOrdinal: %v", err)
+	}
+	if val != "second" {
+		t.Fatalf("regex ordinal = %q, want second", val)
+	}
+}
+
 func TestExtractBoundary(t *testing.T) {
 	body := []byte(`<input name="csrf" value="tok123" />`)
 

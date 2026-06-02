@@ -273,8 +273,8 @@ func TestConvert(t *testing.T) {
 	firstAction := findActionByName(t, result.Script.Actions, "Homepage")
 	if len(firstAction.Extractors) != 1 {
 		t.Errorf("expected 1 extractor on first action, got %d", len(firstAction.Extractors))
-	} else if firstAction.Extractors[0].Name != "SessionID" {
-		t.Errorf("expected extractor name 'SessionID', got '%s'", firstAction.Extractors[0].Name)
+	} else if firstAction.Extractors[0].Name != "sessionid" {
+		t.Errorf("expected extractor name 'sessionid', got '%s'", firstAction.Extractors[0].Name)
 	}
 
 	t.Logf("Converted %d LR functions → %d DSL actions, %d extractors, %d think times",
@@ -409,11 +409,113 @@ Action()
 
 	// And the indices must actually address the attached elements in order.
 	action := result.Script.Actions[0]
-	if len(action.Extractors) != 2 || action.Extractors[0].Name != "TokenA" || action.Extractors[1].Name != "TokenB" {
-		t.Fatalf("extractors = %#v, want [TokenA TokenB]", action.Extractors)
+	if len(action.Extractors) != 2 || action.Extractors[0].Name != "tokena" || action.Extractors[1].Name != "tokenb" {
+		t.Fatalf("extractors = %#v, want [tokena tokenb]", action.Extractors)
 	}
 	if len(action.Assertions) != 2 {
 		t.Fatalf("assertions = %#v, want 2 contributor assertions", action.Assertions)
+	}
+}
+
+func TestConvertInfersLoadRunnerFormTargetsAndIgnoresCommentedCode(t *testing.T) {
+	source := `Action()
+{
+	web_url("Login Page",
+		"URL=http://{server_url}/mi/login.jsp",
+		"Resource=0",
+		LAST);
+
+	/* web_url("Disabled",
+		"URL=http://{server_url}/mi/disabled.jsp",
+		LAST); */
+
+	web_submit_form("login.jsp_2",
+		"Snapshot=t2.inf",
+		ITEMDATA,
+		"Name=user", "Value={username}", ENDITEM,
+		// "Name=disabled", "Value=should_not_import", ENDITEM,
+		LAST);
+
+	return 0;
+}`
+	parsed, err := ParseActionFile("Action.c", source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(parsed.Functions) != 2 {
+		t.Fatalf("functions = %#v, want only live web_url and web_submit_form", parsed.Functions)
+	}
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %#v, want two converted actions", result.Script.Actions)
+	}
+	form := result.Script.Actions[1]
+	if form.Target != "/mi/login.jsp" {
+		t.Fatalf("form target = %q, want inferred /mi/login.jsp", form.Target)
+	}
+	if strings.Contains(form.Body, "disabled") {
+		t.Fatalf("form body included commented ITEMDATA: %s", form.Body)
+	}
+	if form.Metadata["inferred_url_from"] != "loadrunner_form_context" {
+		t.Fatalf("metadata = %#v, want inferred URL marker", form.Metadata)
+	}
+}
+
+func TestConvertPreservesSaveCountAndRegexpCorrelations(t *testing.T) {
+	source := `Action()
+{
+	web_reg_find("Search=Body",
+		"SaveCount=Error_Count",
+		"Text=Show Errors",
+		LAST);
+
+	web_reg_save_param_regexp(
+		"ParamName=equInstlmntInfo.instSeqNo",
+		"RegExp=/TD><TD>(.*?)</TD",
+		"Ordinal=2",
+		SEARCH_FILTERS,
+		"Scope=Body",
+		LAST);
+
+	web_url("Lookup",
+		"URL=https://example.com/app/lookup",
+		"Resource=0",
+		LAST);
+
+	return 0;
+}`
+	parsed, err := ParseActionFile("Action.c", source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want SaveCount preserved without warning", result.Warnings)
+	}
+	if result.Stats.Extractors != 2 {
+		t.Fatalf("extractor stats = %d, want SaveCount and regexp extractors", result.Stats.Extractors)
+	}
+	action := result.Script.Actions[0]
+	if len(action.Assertions) != 1 || action.Assertions[0].Type != "body_contains" {
+		t.Fatalf("assertions = %#v, want body_contains", action.Assertions)
+	}
+	if len(action.Extractors) != 2 {
+		t.Fatalf("extractors = %#v, want SaveCount and regexp extractors", action.Extractors)
+	}
+	if got := action.Extractors[0]; got.Name != "error_count" || got.Type != "regex_count" || got.Expression != "Show Errors" {
+		t.Fatalf("SaveCount extractor = %#v, want regex_count for error_count", got)
+	}
+	if got := action.Extractors[1]; got.Name != "equinstlmntinfo_instseqno" || got.Type != "regex_ordinal" || !strings.HasPrefix(got.Expression, regexOrdinalExpressionConfigPrefix) {
+		t.Fatalf("regexp extractor = %#v, want ordinal regex extractor", got)
 	}
 }
 
@@ -658,6 +760,13 @@ func TestConvertWebRegFindToAssertions(t *testing.T) {
 	if firstAssertions[0].Type != "body_contains" || firstAssertions[0].Value != "Welcome back" {
 		t.Fatalf("first mapped assertion = %#v, want body_contains on Welcome back", firstAssertions[0])
 	}
+	firstExtractors := result.Script.Actions[0].Extractors
+	if len(firstExtractors) != 1 {
+		t.Fatalf("first action extractors = %#v, want SaveCount extractor", firstExtractors)
+	}
+	if firstExtractors[0].Name != "welcomecount" || firstExtractors[0].Type != "regex_count" || firstExtractors[0].Expression != "Welcome back" {
+		t.Fatalf("first SaveCount extractor = %#v, want regex_count for welcomecount", firstExtractors[0])
+	}
 
 	secondAssertions := result.Script.Actions[1].Assertions
 	if len(secondAssertions) != 2 {
@@ -667,8 +776,8 @@ func TestConvertWebRegFindToAssertions(t *testing.T) {
 		t.Fatalf("second mapped assertion = %#v, want body_not_contains on Internal Server Error", secondAssertions[0])
 	}
 
-	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "SaveCount=welcomeCount") {
-		t.Fatalf("warnings = %#v, want SaveCount warning", result.Warnings)
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
 	}
 }
 
@@ -1110,13 +1219,22 @@ GenerateNewVal="EachIteration"
 OriginalValue=""
 ParamName="TimeStamp"
 Type="Time"
+
+[parameter:SIM]
+Format="%05lu"
+GenerateNewVal="EachOccurrence"
+MaxValue="99999"
+MinValue="11111"
+OriginalValue="10001"
+ParamName="SIM"
+Type="Random"
 `, nil)
 
 	if len(parsed.Warnings) != 0 {
 		t.Fatalf("warnings = %#v, want none", parsed.Warnings)
 	}
-	if len(parsed.Parameters) != 5 {
-		t.Fatalf("parameters = %#v, want five built-in parameters", parsed.Parameters)
+	if len(parsed.Parameters) != 6 {
+		t.Fatalf("parameters = %#v, want six built-in parameters", parsed.Parameters)
 	}
 	params := map[string]dsl.Parameter{}
 	for _, parameter := range parsed.Parameters {
@@ -1136,6 +1254,9 @@ Type="Time"
 	}
 	if got := params["timestamp"]; got.Type != "time" || got.Format != "2006-01-02T15:04:05Z" || got.Timezone != "UTC" {
 		t.Fatalf("TimeStamp = %#v, want mapped timestamp-style time parameter", got)
+	}
+	if got := params["sim"]; got.Type != "random_number" || got.Min != 11111 || got.Max != 99999 || got.Update != "each_occurrence" || got.PadWidth != 5 {
+		t.Fatalf("SIM = %#v, want LoadRunner Random mapped to numeric parameter", got)
 	}
 }
 

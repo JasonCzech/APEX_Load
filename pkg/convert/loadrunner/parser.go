@@ -100,16 +100,18 @@ func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 	var currentBlock strings.Builder
 	var rawBlock strings.Builder
 	inBlock := false
+	inComment := false
 	blockStartLine := 0
 
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
-		trimmed := strings.TrimSpace(line)
+		parseLine := stripCComments(line, &inComment)
+		trimmed := strings.TrimSpace(parseLine)
 
 		// Skip empty lines, comments
 		if !inBlock {
-			if trimmed == "" || strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") {
+			if trimmed == "" {
 				continue
 			}
 			// Skip standard includes and function declarations
@@ -130,6 +132,9 @@ func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 		}
 
 		if inBlock {
+			if trimmed == "" {
+				continue
+			}
 			currentBlock.WriteString(trimmed)
 			currentBlock.WriteString(" ")
 			rawBlock.WriteString(line)
@@ -150,6 +155,60 @@ func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 	}
 
 	return parsed, nil
+}
+
+func stripCComments(line string, inComment *bool) string {
+	var out strings.Builder
+	inString := false
+	var quote byte
+	escaped := false
+
+	for i := 0; i < len(line); i++ {
+		ch := line[i]
+		if inComment != nil && *inComment {
+			if ch == '*' && i+1 < len(line) && line[i+1] == '/' {
+				*inComment = false
+				i++
+			}
+			continue
+		}
+		if inString {
+			out.WriteByte(ch)
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == quote {
+				inString = false
+			}
+			continue
+		}
+		if ch == '"' || ch == '\'' {
+			inString = true
+			quote = ch
+			out.WriteByte(ch)
+			continue
+		}
+		if ch == '/' && i+1 < len(line) {
+			switch line[i+1] {
+			case '/':
+				return out.String()
+			case '*':
+				if inComment != nil {
+					*inComment = true
+				}
+				i++
+				continue
+			}
+		}
+		out.WriteByte(ch)
+	}
+
+	return out.String()
 }
 
 func isCControlCall(line string) bool {
@@ -208,6 +267,8 @@ func parseFunctionBlock(block string, filename string, lineNum int, endLine int,
 	case "web_service_call":
 		parseWebServiceCall(&fn, inner)
 	case "web_reg_save_param":
+		parseWebRegSaveParam(&fn, inner)
+	case "web_reg_save_param_regexp":
 		parseWebRegSaveParam(&fn, inner)
 	case "web_reg_find":
 		parseWebRegFind(&fn, inner)
@@ -495,11 +556,18 @@ func parseWebAddHeader(fn *ParsedFunction, inner string) {
 
 // extractNamedArgs pulls out "Key=Value" patterns from the inner string.
 func extractNamedArgs(fn *ParsedFunction, inner string) {
+	for _, arg := range fn.CallArgs {
+		if arg.Kind == "key_value" && arg.Name != "" {
+			fn.Args[arg.Name] = arg.Value
+		}
+	}
 	matches := reNamedArg.FindAllStringSubmatch(inner, -1)
 	for _, m := range matches {
 		key := m[1]
 		value := m[2]
-		fn.Args[key] = value
+		if _, exists := fn.Args[key]; !exists {
+			fn.Args[key] = value
+		}
 	}
 }
 
