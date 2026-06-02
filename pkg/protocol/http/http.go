@@ -40,6 +40,7 @@ type HTTP struct {
 	authHeader               string // pre-computed Authorization header value
 	maxRedirects             int    // -1 = no follow, 0 = default (10)
 	requestTimeout           time.Duration
+	networkProfile           string // assigned network-profile label (population mix)
 }
 
 var (
@@ -51,6 +52,7 @@ func (h *HTTP) Name() string { return "http" }
 
 func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.baseURL, _ = config["base_url"].(string)
+	h.networkProfile, _ = config["web_network_profile_label"].(string)
 	transportSettings := parseTransportConfig(config)
 	h.requestTimeout = transportSettings.requestTimeout
 
@@ -96,6 +98,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		StartTime:      time.Now(),
 		Extractions:    make(map[string]string),
 		DependencyType: "http",
+		NetworkProfile: h.networkProfile,
 	}
 
 	targetURL := h.resolveURL(action.Target)

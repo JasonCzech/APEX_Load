@@ -35,24 +35,101 @@ func normalizeSourceIPs(ips []string) []string {
 }
 
 // vuserProtoConfig returns the proto config a specific VUser should initialize
-// with. When a source-IP pool is configured, each VUser is bound to one IP from
-// the pool (stable per VUser id), so the test presents many distinct client
-// addresses. Without a pool it returns the shared base config unchanged.
+// with. Per-VUser overrides are layered on the shared base: a source-IP pool
+// binds each VUser to a stable client IP, and a network-profile mix assigns each
+// VUser a network condition by weighted share. Without either it returns the
+// shared base config unchanged.
 func vuserProtoConfig(base map[string]any, vuserID int) map[string]any {
-	pool, ok := base["web_source_ips"].([]string)
-	if !ok || len(pool) == 0 {
+	pool, hasPool := base["web_source_ips"].([]string)
+	profiles, hasProfiles := base["web_network_profiles"].([]dsl.NetworkProfileWeight)
+	if (!hasPool || len(pool) == 0) && (!hasProfiles || len(profiles) == 0) {
 		return base
 	}
-	idx := vuserID % len(pool)
-	if idx < 0 {
-		idx += len(pool)
-	}
-	clone := make(map[string]any, len(base)+1)
+	clone := make(map[string]any, len(base)+4)
 	for k, v := range base {
 		clone[k] = v
 	}
-	clone["web_source_ip"] = pool[idx]
+	if hasPool && len(pool) > 0 {
+		idx := vuserID % len(pool)
+		if idx < 0 {
+			idx += len(pool)
+		}
+		clone["web_source_ip"] = pool[idx]
+	}
+	if hasProfiles && len(profiles) > 0 {
+		if profile, ok := assignNetworkProfile(profiles, vuserID); ok {
+			injectNetworkSimulation(clone, profile)
+			clone["web_network_profile_label"] = profile.Name
+		}
+	}
 	return clone
+}
+
+// normalizeNetworkProfiles drops profiles with a blank name or non-positive
+// weight and trims names.
+func normalizeNetworkProfiles(profiles []dsl.NetworkProfileWeight) []dsl.NetworkProfileWeight {
+	out := make([]dsl.NetworkProfileWeight, 0, len(profiles))
+	for _, profile := range profiles {
+		name := strings.TrimSpace(profile.Name)
+		if name == "" || profile.Weight <= 0 {
+			continue
+		}
+		profile.Name = name
+		out = append(out, profile)
+	}
+	return out
+}
+
+// assignNetworkProfile deterministically maps a VUser id to a profile in
+// proportion to the profiles' weights (a 30/70 split puts 30% of ids on the
+// first profile), so the population mix is stable and evenly distributed.
+func assignNetworkProfile(profiles []dsl.NetworkProfileWeight, vuserID int) (dsl.NetworkProfileWeight, bool) {
+	normalized := normalizeNetworkProfiles(profiles)
+	if len(normalized) == 0 {
+		return dsl.NetworkProfileWeight{}, false
+	}
+	total := 0
+	for _, profile := range normalized {
+		total += profile.Weight
+	}
+	if total <= 0 {
+		return dsl.NetworkProfileWeight{}, false
+	}
+	pos := vuserID % total
+	if pos < 0 {
+		pos += total
+	}
+	for _, profile := range normalized {
+		if pos < profile.Weight {
+			return profile, true
+		}
+		pos -= profile.Weight
+	}
+	return normalized[len(normalized)-1], true
+}
+
+// injectNetworkSimulation writes a profile's shaping values into the proto
+// config using the same keys buildProtoConfig emits for NetworkSimulation.
+func injectNetworkSimulation(cfg map[string]any, profile dsl.NetworkProfileWeight) {
+	sim := profile.NetworkSimulationConfig
+	if sim.Mode != "" {
+		cfg["web_network_simulation_mode"] = sim.Mode
+	}
+	if sim.Preset != "" {
+		cfg["web_network_simulation_preset"] = sim.Preset
+	}
+	if sim.BandwidthKbps > 0 {
+		cfg["web_network_simulation_bandwidth_kbps"] = float64(sim.BandwidthKbps)
+	}
+	if sim.LatencyMs > 0 {
+		cfg["web_network_simulation_latency_ms"] = float64(sim.LatencyMs)
+	}
+	if sim.JitterMs > 0 {
+		cfg["web_network_simulation_jitter_ms"] = float64(sim.JitterMs)
+	}
+	if sim.PacketLossPct > 0 {
+		cfg["web_network_simulation_packet_loss_pct"] = sim.PacketLossPct
+	}
 }
 
 func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResolver) map[string]any {
@@ -152,6 +229,9 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	}
 	if pool := normalizeSourceIPs(script.Config.WebRuntime.SourceIPs); len(pool) > 0 {
 		cfg["web_source_ips"] = pool
+	}
+	if profiles := normalizeNetworkProfiles(script.Config.WebRuntime.NetworkProfiles); len(profiles) > 0 {
+		cfg["web_network_profiles"] = profiles
 	}
 	if streamingCfg := script.Config.WebRuntime.Streaming; streamingCfg.Mode != "" || streamingCfg.BufferSizeSeconds > 0 || streamingCfg.FixedBitrateKbps > 0 || streamingCfg.BandwidthEstimation != "" {
 		if streamingCfg.Mode != "" {

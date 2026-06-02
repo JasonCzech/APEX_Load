@@ -215,6 +215,12 @@ type WebRuntimeConfig struct {
 	// distributed across the pool so the test presents many distinct client
 	// addresses. The generator host must own these addresses.
 	SourceIPs []string `json:"source_ips,omitempty"`
+	// NetworkProfiles is a network-condition population mix: VUsers are
+	// distributed across the weighted profiles so a configurable share runs under
+	// each network condition (e.g. 30% 3G / 70% 4G). Per-profile response metrics
+	// surface in the archive's by_network_profile breakdown. Overrides
+	// NetworkSimulation when present.
+	NetworkProfiles []NetworkProfileWeight `json:"network_profiles,omitempty"`
 }
 
 type DownloadFiltersConfig struct {
@@ -235,6 +241,16 @@ type NetworkSimulationConfig struct {
 	LatencyMs     int     `json:"latency_ms,omitempty"`
 	JitterMs      int     `json:"jitter_ms,omitempty"`
 	PacketLossPct float64 `json:"packet_loss_pct,omitempty"`
+}
+
+// NetworkProfileWeight is one entry in a network-condition population mix: a
+// named network profile applied to a weighted share of VUsers (e.g. 30% "3g",
+// 70% "4g"). The embedded shaping config defines the conditions; Weight sets the
+// relative VUser share.
+type NetworkProfileWeight struct {
+	Name                    string `json:"name"`
+	Weight                  int    `json:"weight"`
+	NetworkSimulationConfig        // embedded: mode/preset/bandwidth/latency/jitter/loss
 }
 
 type StreamingConfig struct {
