@@ -7,6 +7,7 @@ import { useProject } from '../hooks/useProject'
 import { TestSummary, MetricsHistoryPoint, RunArchiveReport, SystemInventoryResponse } from '../types'
 import { downloadBlob } from '../utils/fileUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { ReleaseTrendPanel } from './ReleaseTrendPanel'
 import { chartTooltipContentStyle } from './chartTooltipTheme'
 import { type NavPage } from './Sidebar'
 import StatusBadge from './StatusBadge'
@@ -688,6 +689,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
               <button type="button" className="trend-preview-footer dash-card-button" onClick={navigateToResults}>
                 View {performanceTrend.length - trendPreviewRows.length} more archived run{performanceTrend.length - trendPreviewRows.length === 1 ? '' : 's'} in Results
               </button>
+            )}
+            {activeRelease?.id && (
+              <ReleaseTrendPanel releaseId={activeRelease.id} getReleaseTrend={api.getReleaseTrend} />
             )}
           </>
         )}

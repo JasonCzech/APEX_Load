@@ -256,6 +256,45 @@ export interface RunArchiveExecutionSettingsSnapshot {
   }
 }
 
+export interface ReleaseTrendDeltas {
+  error_pct_delta: number
+  avg_response_ms_delta: number
+  avg_response_pct_delta: number
+  peak_tps_delta: number
+  completeness_delta: number
+}
+
+export interface ReleaseTrendPoint {
+  run_id: string
+  run_name: string
+  status: string
+  completed_at: string
+  transactions: number
+  error_pct: number
+  avg_response_ms: number
+  peak_tps: number
+  peak_active_vusers: number
+  completeness_pct: number
+  sla_breached: boolean
+  telemetry_status?: string
+  deltas?: ReleaseTrendDeltas
+  regressions?: string[]
+}
+
+export interface ReleaseTrendSummary {
+  latest_regressed: boolean
+  latest_regressions?: string[]
+  avg_response_trend_pct: number
+  error_pct_trend: number
+}
+
+export interface ReleaseTrend {
+  release_id: string
+  run_count: number
+  points: ReleaseTrendPoint[]
+  summary: ReleaseTrendSummary
+}
+
 export interface CapacityReservation {
   project_id: string
   reserved_generators: number

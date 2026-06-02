@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react'
 
-import { Application, Release } from '../../types'
+import { Application, Release, ReleaseTrend } from '../../types'
 import { apiFetch, request } from '../apiClient'
 
 type DeleteEntityResponse = {
@@ -55,6 +55,8 @@ export function useApplicationApi() {
 
   const downloadReleaseTrend = useCallback((id: string) => fetchBlob(`/releases/${id}/trend/export`), [])
 
+  const getReleaseTrend = useCallback((id: string) => request<ReleaseTrend>(`/releases/${id}/trend`), [])
+
   const deleteRelease = useCallback((id: string) => request<DeleteEntityResponse>(`/releases/${id}`, { method: 'DELETE' }), [])
 
   return useMemo(
@@ -68,8 +70,9 @@ export function useApplicationApi() {
       updateRelease,
       archiveRelease,
       downloadReleaseTrend,
+      getReleaseTrend,
       deleteRelease,
     }),
-    [listApplications, createApplication, updateApplication, deleteApplication, listReleases, createRelease, updateRelease, archiveRelease, downloadReleaseTrend, deleteRelease],
+    [listApplications, createApplication, updateApplication, deleteApplication, listReleases, createRelease, updateRelease, archiveRelease, downloadReleaseTrend, getReleaseTrend, deleteRelease],
   )
 }
