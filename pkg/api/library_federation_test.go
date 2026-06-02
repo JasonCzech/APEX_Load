@@ -3,11 +3,15 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -233,6 +237,102 @@ func TestLibraryRemoteStatePersistsThroughSettingsStore(t *testing.T) {
 	}
 }
 
+func TestLibraryResultArchiveStreamsAndImportsMultipart(t *testing.T) {
+	host := NewServer(ServerConfig{})
+	target := NewServer(ServerConfig{})
+	script := host.runner.StoreScript(libraryTestScript("archive-script", "Archive Script", "team-project", "/archive"))
+	testRun, err := host.runner.CreateTest(CreateTestRequest{
+		Name:      "Archive Result",
+		Duration:  "1m",
+		ProjectID: "team-project",
+		Groups: []CreateGroupEntry{{
+			Name:     "archive",
+			ScriptID: script.ID,
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+	record := attachLibraryArchiveFixture(t, host, testRun)
+
+	exportBody := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "result", ID: testRun.ID})
+	exportResp := httptest.NewRecorder()
+	host.mux.ServeHTTP(exportResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/export", bytes.NewReader(exportBody)))
+	if exportResp.Code != http.StatusOK {
+		t.Fatalf("export result status = %d body=%s", exportResp.Code, exportResp.Body.String())
+	}
+	var bundle LibraryBundle
+	if err := json.NewDecoder(exportResp.Body).Decode(&bundle); err != nil {
+		t.Fatalf("decode result bundle: %v", err)
+	}
+	if len(bundle.Items) != 1 || bundle.Items[0].Result == nil {
+		t.Fatalf("bundle items = %#v, want one result item", bundle.Items)
+	}
+	result := bundle.Items[0].Result
+	if result.ArchiveTransfer != "stream" {
+		t.Fatalf("archive_transfer = %q, want stream", result.ArchiveTransfer)
+	}
+	if result.ArchiveZipB64 != "" {
+		t.Fatal("streaming result export should not populate legacy archive_zip_b64")
+	}
+	if result.ArchiveManifestHash != hashArchiveManifest(record) {
+		t.Fatalf("manifest hash = %q, want %q", result.ArchiveManifestHash, hashArchiveManifest(record))
+	}
+	if result.ArchiveSizeBytes != archiveDirectorySize(record.ArchivePath) {
+		t.Fatalf("archive size = %d, want %d", result.ArchiveSizeBytes, archiveDirectorySize(record.ArchivePath))
+	}
+
+	archiveResp := httptest.NewRecorder()
+	host.mux.ServeHTTP(archiveResp, httptest.NewRequest(http.MethodGet, "/api/v1/library/results/"+testRun.ID+"/archive", nil))
+	if archiveResp.Code != http.StatusOK {
+		t.Fatalf("archive stream status = %d body=%s", archiveResp.Code, archiveResp.Body.String())
+	}
+	if contentType := archiveResp.Header().Get("Content-Type"); contentType != "application/zip" {
+		t.Fatalf("archive content-type = %q, want application/zip", contentType)
+	}
+	if archiveResp.Body.Len() == 0 {
+		t.Fatal("archive stream was empty")
+	}
+
+	importBody, contentType := multipartArchiveImportBody(t, bundle, "mapped-project", archiveResp.Body.Bytes())
+	importReq := httptest.NewRequest(http.MethodPost, "/api/v1/library/import/archive", importBody)
+	importReq.Header.Set("Content-Type", contentType)
+	importResp := httptest.NewRecorder()
+	target.mux.ServeHTTP(importResp, importReq)
+	if importResp.Code != http.StatusCreated {
+		t.Fatalf("archive import status = %d body=%s", importResp.Code, importResp.Body.String())
+	}
+	var imported LibraryImportResponse
+	if err := json.NewDecoder(importResp.Body).Decode(&imported); err != nil {
+		t.Fatalf("decode archive import: %v", err)
+	}
+	if len(imported.Items) != 1 || imported.Items[0].Kind != "result" {
+		t.Fatalf("imported items = %#v, want one result import", imported.Items)
+	}
+	imports, err := target.listExternalResultImports(storage.ExternalResultImportFilter{ProjectID: "mapped-project", Provider: "apexload"})
+	if err != nil {
+		t.Fatalf("list external result imports: %v", err)
+	}
+	if len(imports) != 1 {
+		t.Fatalf("external result imports = %d, want 1", len(imports))
+	}
+	raw := imports[0].RawResult
+	if raw["archive_transfer"] != "stream" {
+		t.Fatalf("raw archive_transfer = %#v, want stream", raw["archive_transfer"])
+	}
+	if raw["imported_archive_manifest_hash"] != result.ArchiveManifestHash {
+		t.Fatalf("imported manifest hash = %#v, want %q", raw["imported_archive_manifest_hash"], result.ArchiveManifestHash)
+	}
+	archivePath, _ := raw["archive_path"].(string)
+	if archivePath == "" {
+		t.Fatal("imported raw result did not record archive_path")
+	}
+	if _, err := os.Stat(filepath.Join(archivePath, "manifest.json")); err != nil {
+		t.Fatalf("imported archive manifest missing: %v", err)
+	}
+}
+
 func createLibraryRemoteForTest(t *testing.T, server *Server, baseURL string, projectID string) LibraryRemote {
 	t.Helper()
 	server.libraryCreds = NewMemoryLibraryCredentialStore()
@@ -281,4 +381,97 @@ func marshalLibraryTestJSON(t *testing.T, value any) []byte {
 		t.Fatalf("marshal json: %v", err)
 	}
 	return payload
+}
+
+func attachLibraryArchiveFixture(t *testing.T, server *Server, testRun *ManagedTest) *storage.RunArchiveRecord {
+	t.Helper()
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	archiveDir := filepath.Join(t.TempDir(), "archive")
+	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+		t.Fatalf("create archive dir: %v", err)
+	}
+	manifest := RunArchiveManifest{
+		SchemaVersion:         archiveSchemaVersion,
+		TestID:                testRun.ID,
+		TestName:              testRun.Name,
+		CreatedAt:             now,
+		CompletedAt:           now,
+		Status:                "COMPLETE",
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+		TransactionCount:      1,
+		ResourceSampleCount:   0,
+		IntervalSummaryCount:  0,
+		SLABreached:           false,
+	}
+	writeLibraryArchiveFile(t, filepath.Join(archiveDir, "manifest.json"), manifest)
+	writeLibraryArchiveText(t, filepath.Join(archiveDir, "transactions.jsonl"), `{"action_name":"archive","duration_ms":42}`+"\n")
+	writeLibraryArchiveText(t, filepath.Join(archiveDir, "resources.jsonl"), "")
+	writeLibraryArchiveText(t, filepath.Join(archiveDir, "interval_summaries.jsonl"), "")
+
+	record := &storage.RunArchiveRecord{
+		TestID:           testRun.ID,
+		SchemaVersion:    archiveSchemaVersion,
+		ArchivePath:      archiveDir,
+		ManifestPath:     filepath.Join(archiveDir, "manifest.json"),
+		TransactionCount: 1,
+		CreatedAt:        now,
+		CompletedAt:      now,
+	}
+	server.runner.mu.Lock()
+	stored := server.runner.tests[testRun.ID]
+	if stored == nil {
+		server.runner.mu.Unlock()
+		t.Fatalf("test %s not found in runner", testRun.ID)
+	}
+	stored.Status = "COMPLETE"
+	stored.Archive = record
+	stored.EndedAt = &now
+	server.runner.archives[testRun.ID] = record
+	server.runner.mu.Unlock()
+	return record
+}
+
+func writeLibraryArchiveFile(t *testing.T, path string, value any) {
+	t.Helper()
+	payload, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal archive fixture: %v", err)
+	}
+	writeLibraryArchiveText(t, path, string(payload))
+}
+
+func writeLibraryArchiveText(t *testing.T, path string, value string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(value), 0o644); err != nil {
+		t.Fatalf("write archive fixture %s: %v", path, err)
+	}
+}
+
+func multipartArchiveImportBody(t *testing.T, bundle LibraryBundle, projectID string, archiveZip []byte) (*bytes.Buffer, string) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	bundlePart, err := writer.CreateFormField("bundle")
+	if err != nil {
+		t.Fatalf("create bundle part: %v", err)
+	}
+	if err := json.NewEncoder(bundlePart).Encode(bundle); err != nil {
+		t.Fatalf("write bundle part: %v", err)
+	}
+	if err := writer.WriteField("project_id", projectID); err != nil {
+		t.Fatalf("write project_id part: %v", err)
+	}
+	archivePart, err := writer.CreateFormFile("archive", "archive.zip")
+	if err != nil {
+		t.Fatalf("create archive part: %v", err)
+	}
+	if _, err := io.Copy(archivePart, bytes.NewReader(archiveZip)); err != nil {
+		t.Fatalf("write archive part: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	return &body, writer.FormDataContentType()
 }
