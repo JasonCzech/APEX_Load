@@ -70,6 +70,15 @@ func (s *Server) handleGetFleetAlerts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, FleetAlertsResponse{Alerts: alerts, Count: len(alerts)})
 }
 
+// handleGetFleetProvisioner reports the active generator provisioner — whether
+// generators are a static fleet or can be created on demand. The seam lets a
+// cloud provisioner (AWS/Azure/GCP/K8s) plug in via RegisterGeneratorProvisioner
+// and APEXLOAD_GENERATOR_PROVISIONER.
+func (s *Server) handleGetFleetProvisioner(w http.ResponseWriter, r *http.Request) {
+	provisioner := resolveGeneratorProvisioner(s.systemInventory)
+	writeJSON(w, http.StatusOK, provisioner.Describe())
+}
+
 func (s *Server) handleGetFleetCapacity(w http.ResponseWriter, r *http.Request) {
 	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
 	region := strings.TrimSpace(r.URL.Query().Get("region"))
