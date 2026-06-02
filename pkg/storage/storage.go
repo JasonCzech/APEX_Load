@@ -507,6 +507,11 @@ type ProjectSettings struct {
 	RedactionRules     []engine.RedactionRule `json:"redaction_rules,omitempty"`
 	MaxConcurrentTests int                    `json:"max_concurrent_tests,omitempty"`
 	MaxVUsers          int                    `json:"max_vusers,omitempty"`
+	// Per-test hard caps (reject at creation, not queue). MaxVUsersPerTest bounds
+	// a single test's VUser count; MaxTestDurationMinutes bounds a single test's
+	// duration. Zero means no limit.
+	MaxVUsersPerTest       int `json:"max_vusers_per_test,omitempty"`
+	MaxTestDurationMinutes int `json:"max_test_duration_minutes,omitempty"`
 }
 
 type Folder struct {

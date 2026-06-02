@@ -2150,6 +2150,9 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	if err := tr.enforceTestQuotaLocked(projectID, totalVUsers, dur, status); err != nil {
+		return nil, err
+	}
 	effectiveRuntimeSettings, err := tr.resolveEffectiveRuntimeSettings(projectID, req.RuntimeSettings)
 	if err != nil {
 		return nil, err
@@ -3357,6 +3360,41 @@ func (tr *TestRunner) projectMaxVUsers(projectID string) int {
 		return 0
 	}
 	return project.Settings.MaxVUsers
+}
+
+func (tr *TestRunner) projectSettings(projectID string) (storage.ProjectSettings, bool) {
+	if tr.projectStore == nil {
+		return storage.ProjectSettings{}, false
+	}
+	project, err := tr.projectStore.GetProject(normalizeProjectID(projectID))
+	if err != nil || project == nil {
+		return storage.ProjectSettings{}, false
+	}
+	return project.Settings, true
+}
+
+// enforceTestQuotaLocked applies per-test hard caps (VUser ceiling, max
+// duration) configured on the owning project. Unlike the aggregate concurrency
+// quotas (which queue), these reject outright at creation so a single oversized
+// test cannot be admitted. DRAFT tests are exempt — they are never executed.
+func (tr *TestRunner) enforceTestQuotaLocked(projectID string, totalVUsers int, dur time.Duration, status string) error {
+	if status == "DRAFT" {
+		return nil
+	}
+	settings, ok := tr.projectSettings(projectID)
+	if !ok {
+		return nil
+	}
+	if settings.MaxVUsersPerTest > 0 && totalVUsers > settings.MaxVUsersPerTest {
+		return fmt.Errorf("test exceeds project per-test VUser cap (%d requested, %d max)", totalVUsers, settings.MaxVUsersPerTest)
+	}
+	if settings.MaxTestDurationMinutes > 0 {
+		maxDur := time.Duration(settings.MaxTestDurationMinutes) * time.Minute
+		if dur > maxDur {
+			return fmt.Errorf("test exceeds project max duration (%s requested, %s max)", dur, maxDur)
+		}
+	}
+	return nil
 }
 
 func pendingAnchor(test *ManagedTest) time.Time {

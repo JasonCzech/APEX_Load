@@ -170,6 +170,12 @@ func validateProjectSettings(settings storage.ProjectSettings) error {
 	if settings.MaxVUsers < 0 {
 		return errProjectSettings("max_vusers must be greater than or equal to 0")
 	}
+	if settings.MaxVUsersPerTest < 0 {
+		return errProjectSettings("max_vusers_per_test must be greater than or equal to 0")
+	}
+	if settings.MaxTestDurationMinutes < 0 {
+		return errProjectSettings("max_test_duration_minutes must be greater than or equal to 0")
+	}
 	if len(settings.RedactionRules) == 0 {
 		return nil
 	}
