@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 
 import LibraryAssetSourcePanel from './LibraryAssetSourcePanel'
+import type { LibraryCatalogItem } from '../types/library'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -13,12 +14,23 @@ describe('LibraryAssetSourcePanel', () => {
   let root: Root
   let fetchMock: MockInstance<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>
   let remoteOverride: Record<string, unknown>
+  let remoteCatalogItems: LibraryCatalogItem[]
 
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
     remoteOverride = {}
+    remoteCatalogItems = [{
+      kind: 'script',
+      id: 'host-script',
+      name: 'Host Checkout',
+      project_id: 'project-1',
+      protocol: 'http',
+      content_hash: 'hosthash123456',
+      updated_at: '2026-05-02T00:00:00Z',
+      sync_status: 'host only',
+    }]
     fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
       const method = init?.method || 'GET'
@@ -55,17 +67,8 @@ describe('LibraryAssetSourcePanel', () => {
         return jsonResponse({
           remote: { id: 'remote-1', name: 'Team AKS', base_url: 'https://apexload.example.test' },
           catalog: {
-            items: [{
-              kind: 'script',
-              id: 'host-script',
-              name: 'Host Checkout',
-              project_id: 'project-1',
-              protocol: 'http',
-              content_hash: 'hosthash123456',
-              updated_at: '2026-05-02T00:00:00Z',
-              sync_status: 'host only',
-            }],
-            count: 1,
+            items: remoteCatalogItems,
+            count: remoteCatalogItems.length,
           },
         })
       }
@@ -150,6 +153,29 @@ describe('LibraryAssetSourcePanel', () => {
     expect(findButton('Push')?.disabled).toBe(true)
     expect(transferCalls(fetchMock)).toHaveLength(0)
   })
+
+  it('blocks transfer actions for conflicts while keeping compare available', async () => {
+    remoteCatalogItems = [{
+      kind: 'script',
+      id: 'host-script',
+      name: 'Host Checkout',
+      project_id: 'project-1',
+      protocol: 'http',
+      content_hash: 'hosthash123456',
+      updated_at: '2026-05-02T00:00:00Z',
+      sync_status: 'conflict',
+      local_item_id: 'local-script',
+      remote_item_id: 'host-script',
+    }]
+    await renderPanel(root, <LibraryAssetSourcePanel kind="script" projectId="project-1" />)
+
+    expect(container.textContent).toContain('conflict')
+    expect(findButton('Pull')?.disabled).toBe(true)
+    expect(findButton('Push')?.disabled).toBe(true)
+    expect(findButtons('Compare')).toHaveLength(2)
+    expect(findButtons('Compare').every(button => !button.disabled)).toBe(true)
+    expect(transferCalls(fetchMock)).toHaveLength(0)
+  })
 })
 
 function jsonResponse(body: unknown) {
@@ -161,6 +187,10 @@ function jsonResponse(body: unknown) {
 
 function findButton(label: string) {
   return Array.from(document.querySelectorAll('button')).find(button => button.textContent?.trim() === label) as HTMLButtonElement | undefined
+}
+
+function findButtons(label: string) {
+  return Array.from(document.querySelectorAll('button')).filter(button => button.textContent?.trim() === label) as HTMLButtonElement[]
 }
 
 async function flushPromises() {

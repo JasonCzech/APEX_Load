@@ -318,6 +318,8 @@ export default function LibraryAssetSourcePanel({ kind, projectId, onRefreshLoca
               const hostItem = source === 'Local' ? hostByLocalID.get(item.id) : item
               const href = source === 'K8s Host' ? hostLibraryHref(selectedRemote, item) : ''
               const localItemID = item.local_item_id
+              const transferBlockedByConflict = syncStatus === 'conflict'
+              const transferBlockTitle = transferBlockedByConflict ? 'Compare this conflict before transferring.' : actionBlockedReason
               return (
                 <tr key={`${source}:${item.kind}:${item.id}`}>
                   <td>{source}</td>
@@ -339,7 +341,7 @@ export default function LibraryAssetSourcePanel({ kind, projectId, onRefreshLoca
                     <div className="settings-inline-actions">
                       {source === 'Local' ? (
                         <>
-                          <button className="btn btn-sm btn-secondary" type="button" onClick={() => void pushLocalItem(item)} disabled={actionBlocked}>
+                          <button className="btn btn-sm btn-secondary" type="button" onClick={() => void pushLocalItem(item)} disabled={actionBlocked || transferBlockedByConflict} title={transferBlockTitle}>
                             Push
                           </button>
                           {hostItem?.local_item_id && (
@@ -350,7 +352,7 @@ export default function LibraryAssetSourcePanel({ kind, projectId, onRefreshLoca
                         </>
                       ) : (
                         <>
-                          <button className="btn btn-sm btn-secondary" type="button" onClick={() => void pullRemoteItem(item)} disabled={actionBlocked}>
+                          <button className="btn btn-sm btn-secondary" type="button" onClick={() => void pullRemoteItem(item)} disabled={actionBlocked || transferBlockedByConflict} title={transferBlockTitle}>
                             Pull
                           </button>
                           {localItemID && (
