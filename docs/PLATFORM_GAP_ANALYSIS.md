@@ -163,7 +163,7 @@ The distributed backend supports multiple generators but doesn't model geographi
 - **Latency baseline per region** — separate expected response times by region
 - **Region selector in Create Scenario** — dropdown or map-based selection
 
-**Current direction:** Generator region tags, region-weighted assignment, and inventory exposure are implemented. Prometheus now exports generator count, available capacity, and active VUsers by region, giving operators a first Grafana-ready regional visibility layer while deeper response-time-by-region analysis remains tied to archived transaction attribution.
+**Current direction:** Generator region tags, region-weighted assignment, and inventory exposure are implemented. Prometheus now exports generator count, available capacity, and active VUsers by region, giving operators a first Grafana-ready regional visibility layer. Per-region **response** metrics are now also archived: transactions are stamped with a region (`APEXLOAD_REGION`) and the run-archive report exposes `by_region` response-time/error stats (plus a Parquet `region` column). True multi-region attribution across the gRPC boundary — each generator stamping its own region per result — remains the next step.
 
 ---
 
@@ -269,6 +269,8 @@ The platform already has strong execution primitives, but an enterprise shared s
 - **Maintenance windows and blackout periods** — prevent tests during deploy windows or regulated business periods
 - **Usage accounting** — per-project historical usage for chargeback, governance, and planning
 - **Fair-share scheduling** — avoid one tenant monopolizing distributed capacity
+
+**Current direction:** Aggregate quotas are enforced today — global and per-project max concurrent tests and a per-project VUser pool, with queueing when capacity is unavailable. Per-test hard caps (`MaxVUsersPerTest`, `MaxTestDurationMinutes`) now reject oversized individual tests at creation. Remaining: cost-based approval policy, reserved capacity pools, usage accounting/chargeback, and fair-share scheduling.
 
 ---
 

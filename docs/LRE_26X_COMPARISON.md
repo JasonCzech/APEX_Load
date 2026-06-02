@@ -254,26 +254,59 @@ Ranked by leverage toward closing the LRE gap (functionality + usability), with 
 | **P2** | **Region/load-zone distribution + per-region response metrics** | Matches LRE geo testing; the distributed backend already exists, so this is incremental. | M |
 | **P3** | **Enterprise hardening** — real OTel instrumentation, PDF reports, Vault/mTLS, test-level approvals + quota enforcement | Individually small, collectively close the "governable shared service" gap. | M each |
 
-### Delivered in this iteration (P0, partial)
+### Delivered (P0–P3)
 
-Honest status — the P0 *core* is built and tested; these are real steps, not full LRE parity.
+Honest status — these are real, tested steps; cores landed, not full LRE parity.
 
+**P0**
 - **CI/CD ecosystem — substantially delivered.** `apexctl` now emits JUnit XML
   (`--junit`) and has `status` / `wait` subcommands that gate on SLA verdicts and
   exit codes (`cmd/apexctl/junit.go`, `commands.go`). Reusable GitHub composite
   action, Azure DevOps step template, and a Jenkinsfile ship under `ci/`, with
   [`docs/CICD_INTEGRATION.md`](CICD_INTEGRATION.md). **Still missing vs LRE:**
-  maintained marketplace plugins and Git script sync. Verdict moves ▼▼ → ▼.
-- **Correlation intelligence — core delivered.** The heuristic correlator is now a
-  ranked **rules engine** with per-response-family rules (ASP.NET WebForms state,
-  CSRF/auth/session JSON, session cookies, dynamic headers, redirects), confidence
-  scoring from reuse + value entropy, and a rule catalog
-  (`pkg/convert/correlate/rules.go`). New **replay-failure detection + guided
-  repair** (`repair.go`) compares a recording against a replay, flags stale values
-  that will break, and proposes the exact extractor — surfaced via
-  `GET /api/v1/correlations/rules` and `POST /api/v1/correlations/diagnose`.
-  **Still missing vs LRE:** training-run-based learning and the in-UI repair
-  workbench. Verdict moves ▼▼ → ▼.
+  maintained marketplace plugins and Git script sync. Verdict ▼▼ → ▼.
+- **Correlation intelligence — core delivered.** Ranked **rules engine** with
+  per-response-family rules (ASP.NET state, CSRF/auth/session JSON, cookies,
+  dynamic headers, redirects), confidence scoring, and a rule catalog
+  (`pkg/convert/correlate/rules.go`). **Replay-failure detection + guided repair**
+  (`repair.go`) surfaced via `GET /api/v1/correlations/rules` and
+  `POST /api/v1/correlations/diagnose`; confidence shown in the recorder import
+  review. **Still missing vs LRE:** training-run learning, full record-vs-replay
+  in-UI workbench. Verdict ▼▼ → ▼.
+
+**P1**
+- **Multi-run trend analysis — delivered.** `GET /api/v1/releases/{id}/trend`
+  returns an ordered run series with run-over-run deltas, per-run regression flags,
+  and a trajectory summary (`pkg/api/release_trend_analysis.go`). Closes part of
+  the offline-analysis gap; **still missing:** in-dashboard trend charts, graph
+  merge/correlate, PDF/report builder. Verdict ▼ → ▼ (narrowed).
+- **Benchmark evidence — delivered.** Reproducible harness-overhead benchmark
+  (~8 ns/op, 0 allocs) + CI guardrail + artifact doc
+  ([`docs/BENCHMARK_HARNESS_OVERHEAD.md`](BENCHMARK_HARNESS_OVERHEAD.md)). The
+  `<50µs` claim now has evidence for its hot-path component; **density (10k/pod)
+  remains unbenchmarked.**
+
+**P2**
+- **Per-region response metrics — delivered.** Region-weighted *distribution*
+  already existed; added the missing per-region response breakdown
+  (`by_region` archive stats + Parquet `region` column, stamped from
+  `APEXLOAD_REGION`). **Still missing:** true multi-region attribution across the
+  gRPC boundary (per-result region from each generator). Verdict ▼ → ▼ (narrowed).
+- **Browser/SPA fidelity — scoped, not built.** DOM-aware capture is a large,
+  separate effort; APEX continues to position browser VUsers crisply as
+  **diagnostic canaries** (see `docs/MOBILE_BROWSER_EMULATION_PLAN.md`,
+  `docs/COMPETITIVE_SUPPORT_MATRIX.md`) rather than claim TruClient parity. This is
+  a deliberate scope decision, not a hidden gap.
+
+**P3**
+- **Test-level quota enforcement — delivered.** Per-test hard caps
+  (`MaxVUsersPerTest`, `MaxTestDurationMinutes` on a project) reject oversized
+  tests at creation, complementing the existing aggregate concurrency/VUser quotas
+  (`pkg/api/runner.go enforceTestQuotaLocked`).
+- **Remaining P3 hardening — explicitly deferred** as scoped follow-ons (each its
+  own effort, not started here): real OpenTelemetry span instrumentation,
+  PDF/Word report export, Vault/Key Vault + mTLS, and test-level *approval*
+  workflows (distinct from quotas).
 
 ---
 

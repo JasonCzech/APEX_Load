@@ -80,6 +80,7 @@ POST   /api/v1/scripts/{id}/validate — Dry-run validation
 POST   /api/v1/scripts/{id}/export   — Export script JSON to disk
 GET    /api/v1/scripts/{id}/download — Download script as JSON file
 POST   /api/v1/scripts/import/loadrunner — Upload LR .zip, get converted DSL
+GET    /api/v1/releases/{id}/trend   — Multi-run trend analysis (deltas + regression flags)
 GET    /api/v1/correlations/rules    — Correlation detection rule catalog
 POST   /api/v1/correlations/diagnose — Replay-failure detection + ranked repair suggestions
 GET    /api/v1/system/health         — Health check
