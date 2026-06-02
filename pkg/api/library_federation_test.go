@@ -333,6 +333,80 @@ func TestLibraryResultArchiveStreamsAndImportsMultipart(t *testing.T) {
 	}
 }
 
+func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) {
+	host := NewServer(ServerConfig{})
+	local := NewServer(ServerConfig{})
+
+	hostScript := host.runner.StoreScript(libraryTestScript("host-archive-script", "Host Archive Script", "team-project", "/host-archive"))
+	hostTest, err := host.runner.CreateTest(CreateTestRequest{
+		Name:      "Hosted Archive Result",
+		Duration:  "1m",
+		ProjectID: "team-project",
+		Groups: []CreateGroupEntry{{
+			Name:     "host",
+			ScriptID: hostScript.ID,
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest host: %v", err)
+	}
+	hostRecord := attachLibraryArchiveFixture(t, host, hostTest)
+
+	hostHTTP := httptest.NewServer(host.mux)
+	defer hostHTTP.Close()
+	remote := createLibraryRemoteForTest(t, local, hostHTTP.URL, "team-project")
+
+	pullBody := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "result", ID: hostTest.ID})
+	pullResp := httptest.NewRecorder()
+	local.mux.ServeHTTP(pullResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/remotes/"+remote.ID+"/pull", bytes.NewReader(pullBody)))
+	if pullResp.Code != http.StatusCreated {
+		t.Fatalf("pull result status = %d body=%s", pullResp.Code, pullResp.Body.String())
+	}
+	var pulled LibraryRemoteTransferResponse
+	if err := json.NewDecoder(pullResp.Body).Decode(&pulled); err != nil {
+		t.Fatalf("decode pulled result: %v", err)
+	}
+	if pulled.Bundle == nil || len(pulled.Bundle.Items) != 1 || pulled.Bundle.Items[0].Result == nil {
+		t.Fatalf("pulled bundle = %#v, want one result item", pulled.Bundle)
+	}
+	assertLibraryArchiveImport(t, local, "team-project", hashArchiveManifest(hostRecord), 1)
+
+	localScript := local.runner.StoreScript(libraryTestScript("local-archive-script", "Local Archive Script", "team-project", "/local-archive"))
+	localTest, err := local.runner.CreateTest(CreateTestRequest{
+		Name:      "Desktop Archive Result",
+		Duration:  "1m",
+		ProjectID: "team-project",
+		Groups: []CreateGroupEntry{{
+			Name:     "local",
+			ScriptID: localScript.ID,
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest local: %v", err)
+	}
+	localRecord := attachLibraryArchiveFixture(t, local, localTest)
+
+	pushBody := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "result", ID: localTest.ID})
+	pushResp := httptest.NewRecorder()
+	local.mux.ServeHTTP(pushResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/remotes/"+remote.ID+"/push", bytes.NewReader(pushBody)))
+	if pushResp.Code != http.StatusOK {
+		t.Fatalf("push result status = %d body=%s", pushResp.Code, pushResp.Body.String())
+	}
+	var pushed LibraryRemoteTransferResponse
+	if err := json.NewDecoder(pushResp.Body).Decode(&pushed); err != nil {
+		t.Fatalf("decode pushed result: %v", err)
+	}
+	if pushed.Bundle == nil || len(pushed.Bundle.Items) != 1 || pushed.Bundle.Items[0].Result == nil {
+		t.Fatalf("pushed bundle = %#v, want one result item", pushed.Bundle)
+	}
+	if pushed.Bundle.Items[0].Result.ArchiveZipB64 != "" {
+		t.Fatal("remote result push should stream archives instead of base64 encoding them")
+	}
+	assertLibraryArchiveImport(t, host, "team-project", hashArchiveManifest(localRecord), 1)
+}
+
 func createLibraryRemoteForTest(t *testing.T, server *Server, baseURL string, projectID string) LibraryRemote {
 	t.Helper()
 	server.libraryCreds = NewMemoryLibraryCredentialStore()
@@ -356,6 +430,35 @@ func createLibraryRemoteForTest(t *testing.T, server *Server, baseURL string, pr
 		t.Fatal("remote response leaked api key")
 	}
 	return remote
+}
+
+func assertLibraryArchiveImport(t *testing.T, server *Server, projectID string, manifestHash string, wantCount int) {
+	t.Helper()
+	imports, err := server.listExternalResultImports(storage.ExternalResultImportFilter{ProjectID: projectID, Provider: "apexload"})
+	if err != nil {
+		t.Fatalf("list external result imports: %v", err)
+	}
+	if len(imports) != wantCount {
+		t.Fatalf("external result imports = %d, want %d", len(imports), wantCount)
+	}
+	lastImport := imports[len(imports)-1]
+	raw := lastImport.RawResult
+	if raw["archive_transfer"] != "stream" {
+		t.Fatalf("raw archive_transfer = %#v, want stream", raw["archive_transfer"])
+	}
+	if raw["archive_zip_b64"] != nil {
+		t.Fatalf("raw archive_zip_b64 = %#v, want absent", raw["archive_zip_b64"])
+	}
+	if raw["imported_archive_manifest_hash"] != manifestHash {
+		t.Fatalf("imported manifest hash = %#v, want %q", raw["imported_archive_manifest_hash"], manifestHash)
+	}
+	archivePath, _ := raw["archive_path"].(string)
+	if archivePath == "" {
+		t.Fatal("imported raw result did not record archive_path")
+	}
+	if _, err := os.Stat(filepath.Join(archivePath, "manifest.json")); err != nil {
+		t.Fatalf("imported archive manifest missing: %v", err)
+	}
 }
 
 func libraryTestScript(id string, name string, projectID string, target string) *dsl.Script {
