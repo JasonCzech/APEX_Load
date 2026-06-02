@@ -339,6 +339,110 @@ func TestHandleGetFleetCapacityFiltersRegionProtocolAndReservations(t *testing.T
 	}
 }
 
+func TestHandleGetFleetLoadZonesAggregatesCapacityAndLiveSignals(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{
+		{
+			Target:             "gen-a:9090",
+			GeneratorID:        "gen-a",
+			Region:             "us-east",
+			Status:             "connected",
+			SupportedProtocols: []string{"http", "grpc"},
+			DrainState:         "active",
+			AvailableCapacity:  800,
+			ActiveVUsers:       200,
+			MaxVUsers:          1000,
+			CompatibilityState: "compatible",
+		},
+		{
+			Target:             "gen-b:9090",
+			GeneratorID:        "gen-b",
+			Region:             "eu-west",
+			Status:             "connected",
+			SupportedProtocols: []string{"grpc"},
+			DrainState:         "active",
+			AvailableCapacity:  400,
+			ActiveVUsers:       100,
+			MaxVUsers:          1000,
+			CompatibilityState: "compatible",
+		},
+	}})
+	server.runner.StoreScript(&dsl.Script{
+		ID:        "script-zone-http",
+		Name:      "Zone HTTP",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "checkout",
+		Config:    dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Method: "GET", Target: "/"}},
+	})
+	testRun, err := server.runner.CreateTest(CreateTestRequest{
+		Name:     "Zone Weighted",
+		Duration: "30s",
+		ScriptID: "script-zone-http",
+		VUsers:   120,
+		Assignment: &GeneratorAssignmentSettings{
+			Mode:            generatorAssignmentModeLoadZoneWeighted,
+			LoadZoneWeights: map[string]int{"us-east": 100},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	server.runner.mu.Lock()
+	server.runner.tests[testRun.ID].Status = "RUNNING"
+	server.runner.tests[testRun.ID].LiveMetrics = &LiveMetrics{P95Ms: 320, P99Ms: 480, ErrorPct: 1.5}
+	server.runner.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/fleet/load-zones?protocol=http", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload FleetLoadZonesResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	east := findFleetLoadZone(payload.LoadZones, "us-east")
+	if east == nil {
+		t.Fatalf("load zones = %#v, want us-east", payload.LoadZones)
+	}
+	if east.TotalGenerators != 1 || east.EligibleGenerators != 1 || east.ActiveVUsers != 120 || east.P95Ms != 320 || east.ErrorPct != 1.5 {
+		t.Fatalf("east zone = %#v, want capacity and live metrics", east)
+	}
+	west := findFleetLoadZone(payload.LoadZones, "eu-west")
+	if west == nil || west.EligibleGenerators != 0 || len(west.RejectionReasons) == 0 || !strings.Contains(west.RejectionReasons[0], "does not support protocol http") {
+		t.Fatalf("west zone = %#v, want protocol rejection", west)
+	}
+}
+
+func TestNormalizeGeneratorAssignmentSettingsAcceptsLoadZoneWeights(t *testing.T) {
+	assignment, err := normalizeGeneratorAssignmentSettings(&GeneratorAssignmentSettings{
+		Mode:            generatorAssignmentModeLoadZoneWeighted,
+		LoadZoneWeights: map[string]int{"us-east": 70, "eu-west": 30},
+	})
+	if err != nil {
+		t.Fatalf("normalizeGeneratorAssignmentSettings returned error: %v", err)
+	}
+	if assignment.Mode != generatorAssignmentModeLoadZoneWeighted || assignment.LoadZoneWeights["us-east"] != 70 {
+		t.Fatalf("assignment = %#v", assignment)
+	}
+	if weights := effectiveRegionWeights(assignment); weights["eu-west"] != 30 {
+		t.Fatalf("effective weights = %#v", weights)
+	}
+}
+
+func findFleetLoadZone(zones []FleetLoadZone, id string) *FleetLoadZone {
+	for index := range zones {
+		if zones[index].ID == id {
+			return &zones[index]
+		}
+	}
+	return nil
+}
+
 func findFleetProjectSlots(slots []FleetProjectSlotAccounting, projectID string) *FleetProjectSlotAccounting {
 	for index := range slots {
 		if slots[index].ProjectID == projectID {

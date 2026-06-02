@@ -14,6 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/devweb"
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/jmeter"
+	"github.com/jasonczech/apexload/pkg/convert/k6"
 	"github.com/jasonczech/apexload/pkg/convert/loadrunner"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
@@ -45,6 +46,13 @@ type harImportRequest struct {
 	Data      []byte
 	ProjectID string
 	Opts      har.ConvertOptions
+}
+
+type k6ImportRequest struct {
+	Data      []byte
+	ProjectID string
+	Name      string
+	Opts      k6.ConvertOptions
 }
 
 type loadRunnerImportSummary struct {
@@ -175,6 +183,13 @@ func (s *Server) handleJMeterSupportMatrix(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+func (s *Server) handleK6SupportMatrix(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"support_matrix": k6.GetSupportMatrix(),
+		"notes":          k6.GetSupportMatrixNotes(),
+	})
+}
+
 func (s *Server) handleLoadRunnerSupportMatrix(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"support_matrix":            loadrunner.GetRTSSupportMatrix(),
@@ -270,6 +285,117 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
 		SourceReview:        result.SourceReview,
 	}))
+}
+
+// handleImportK6 handles POST /api/v1/scripts/import/k6.
+// It statically converts the supported HTTP subset and preserves unsupported
+// JavaScript/browser constructs as review diagnostics.
+func (s *Server) handleImportK6(w http.ResponseWriter, r *http.Request) {
+	importReq, ok := readK6ImportRequest(w, r)
+	if !ok {
+		return
+	}
+	result, err := k6.Convert(k6.ImportRequest{
+		Name:      importReq.Name,
+		ProjectID: importReq.ProjectID,
+		Content:   string(importReq.Data),
+		Options:   importReq.Opts,
+	})
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
+		return
+	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
+	attachSourceReviewToScript(result.Script, "k6", importReq.Name, result.SourceReview)
+	if issues := validateScript(result.Script); len(issues) > 0 {
+		result.Warnings = append(result.Warnings, issues...)
+	}
+	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+		Result:              result,
+		Script:              result.Script,
+		Warnings:            result.Warnings,
+		Stats:               result.Stats,
+		Assumptions:         result.Assumptions,
+		UnsupportedElements: result.Unsupported.Strings(),
+		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
+		SourceReview:        result.SourceReview,
+		Summary: map[string]any{
+			"import_mode":    "constrained_http_subset",
+			"execution_mode": "apexload_http",
+		},
+	}))
+}
+
+// handleExportK6 handles POST /api/v1/scripts/export/k6.
+func (s *Server) handleExportK6(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+	var req k6.ExportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	result, err := k6.Export(req)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "export failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func readK6ImportRequest(w http.ResponseWriter, r *http.Request) (*k6ImportRequest, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+	contentType := r.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/json") {
+		var req k6.ImportRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return nil, false
+		}
+		return &k6ImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
+	}
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
+			return nil, false
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "file field is required")
+			return nil, false
+		}
+		defer file.Close()
+		data, err := io.ReadAll(file)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
+			return nil, false
+		}
+		return &k6ImportRequest{
+			Data:      data,
+			ProjectID: r.FormValue("project_id"),
+			Name:      strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename)),
+			Opts: k6.ConvertOptions{
+				BaseURL:    r.FormValue("base_url"),
+				ScriptName: r.FormValue("script_name"),
+			},
+		}, true
+	}
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+		return nil, false
+	}
+	filename := r.URL.Query().Get("filename")
+	return &k6ImportRequest{
+		Data:      data,
+		ProjectID: r.URL.Query().Get("project_id"),
+		Name:      strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
+		Opts: k6.ConvertOptions{
+			BaseURL:    r.URL.Query().Get("base_url"),
+			ScriptName: r.URL.Query().Get("script_name"),
+		},
+	}, true
 }
 
 func readHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportRequest, bool) {

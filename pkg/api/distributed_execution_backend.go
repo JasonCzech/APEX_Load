@@ -1296,7 +1296,8 @@ type regionPlacementState struct {
 }
 
 func newRegionPlacementState(groups []TestGroup, assignment *GeneratorAssignmentSettings, targetSpecs []generatorTargetSpec) *regionPlacementState {
-	if assignment == nil || assignment.Mode != generatorAssignmentModeRegionWeighted || len(assignment.RegionWeights) == 0 {
+	weights := effectiveRegionWeights(assignment)
+	if assignment == nil || (assignment.Mode != generatorAssignmentModeRegionWeighted && assignment.Mode != generatorAssignmentModeLoadZoneWeighted) || len(weights) == 0 {
 		return nil
 	}
 	available := make(map[string]struct{})
@@ -1315,7 +1316,7 @@ func newRegionPlacementState(groups []TestGroup, assignment *GeneratorAssignment
 	for _, group := range groups {
 		totalVUsers += group.VUsers
 	}
-	for region, weight := range assignment.RegionWeights {
+	for region, weight := range weights {
 		if weight <= 0 {
 			continue
 		}
@@ -1328,7 +1329,7 @@ func newRegionPlacementState(groups []TestGroup, assignment *GeneratorAssignment
 	if totalWeight == 0 || totalVUsers == 0 {
 		return nil
 	}
-	for region, weight := range assignment.RegionWeights {
+	for region, weight := range weights {
 		if _, ok := weightedRegions[region]; !ok {
 			continue
 		}

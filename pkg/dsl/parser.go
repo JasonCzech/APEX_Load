@@ -25,6 +25,13 @@ func Parse(data []byte) (*Script, error) {
 	}
 
 	script := &wrapper.Script
+	if wrapper.Script.Name == "" && wrapper.Script.Protocol == "" && len(wrapper.Script.Actions) == 0 {
+		var direct Script
+		if err := json.Unmarshal(data, &direct); err != nil {
+			return nil, fmt.Errorf("parse script JSON: %w", err)
+		}
+		script = &direct
+	}
 	if err := ValidateScriptError(script); err != nil {
 		return nil, err
 	}

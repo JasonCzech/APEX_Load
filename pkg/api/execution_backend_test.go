@@ -244,6 +244,30 @@ func TestPlanDistributedGroupTargetsUsesRegionWeights(t *testing.T) {
 	}
 }
 
+func TestPlanDistributedGroupTargetsUsesLoadZoneWeights(t *testing.T) {
+	groups := []TestGroup{
+		{Name: "buyers", VUsers: 10, Protocol: "http"},
+		{Name: "browsers", VUsers: 10, Protocol: "http"},
+	}
+	loadByTarget := map[string]generatorLoadSnapshot{
+		"gen-a": {Target: "gen-a", AvailableCapacity: 50, SupportedProtocols: []string{"http"}},
+		"gen-b": {Target: "gen-b", AvailableCapacity: 50, SupportedProtocols: []string{"http"}},
+	}
+	assignment := &GeneratorAssignmentSettings{
+		Mode:            generatorAssignmentModeLoadZoneWeighted,
+		LoadZoneWeights: map[string]int{"us-east": 100},
+	}
+	targetSpecs := []generatorTargetSpec{
+		{Address: "gen-a", Region: "us-east", Protocols: []string{"http"}},
+		{Address: "gen-b", Region: "eu-west", Protocols: []string{"http"}},
+	}
+
+	assignments := planDistributedGroupTargets(groups, loadByTarget, []string{"gen-a", "gen-b"}, assignment, targetSpecs)
+	if assignments["buyers"] != "gen-a" || assignments["browsers"] != "gen-a" {
+		t.Fatalf("assignments = %#v, want load-zone weighted placement in us-east", assignments)
+	}
+}
+
 func TestPlanDistributedGroupTargetsUsesNegotiatedGeneratorProtocols(t *testing.T) {
 	groups := []TestGroup{{Name: "grpc-callers", Protocol: "grpc", VUsers: 5}}
 	loadByTarget := map[string]generatorLoadSnapshot{

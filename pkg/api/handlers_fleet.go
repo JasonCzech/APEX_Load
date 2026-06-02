@@ -41,6 +41,35 @@ type FleetCapacityResponse struct {
 	ProjectSlots        []FleetProjectSlotAccounting `json:"project_slots,omitempty"`
 }
 
+type FleetLoadZonesResponse struct {
+	LoadZones []FleetLoadZone `json:"load_zones"`
+	Count     int             `json:"count"`
+}
+
+type FleetLoadZone struct {
+	ID                  string   `json:"id"`
+	Name                string   `json:"name"`
+	Region              string   `json:"region"`
+	CostLabel           string   `json:"cost_label,omitempty"`
+	Tags                []string `json:"tags,omitempty"`
+	SupportedProtocols  []string `json:"supported_protocols,omitempty"`
+	BenchmarkEvidenceID string   `json:"benchmark_evidence_id,omitempty"`
+	BenchmarkEvidence   []string `json:"benchmark_evidence,omitempty"`
+	CapacityState       string   `json:"capacity_state"`
+	TotalGenerators     int      `json:"total_generators"`
+	EligibleGenerators  int      `json:"eligible_generators"`
+	ActiveSlots         int      `json:"active_slots"`
+	AvailableSlots      int      `json:"available_slots"`
+	MaxSlots            int      `json:"max_slots"`
+	ActiveVUsers        int      `json:"active_vusers,omitempty"`
+	QueuedVUsers        int      `json:"queued_vusers,omitempty"`
+	RejectedVUsers      int      `json:"rejected_vusers,omitempty"`
+	ErrorPct            float64  `json:"error_pct,omitempty"`
+	P95Ms               float64  `json:"p95_ms,omitempty"`
+	P99Ms               float64  `json:"p99_ms,omitempty"`
+	RejectionReasons    []string `json:"rejection_reasons,omitempty"`
+}
+
 type FleetProjectSlotAccounting struct {
 	ProjectID          string `json:"project_id"`
 	ActiveSlots        int    `json:"active_slots"`
@@ -85,6 +114,12 @@ func (s *Server) handleGetFleetCapacity(w http.ResponseWriter, r *http.Request) 
 	protocolName := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("protocol")))
 	capacity := buildFleetCapacity(s.systemInventory(r.Context()), s.runner.GetSystemSettings(), s.runner.ListTests(), projectID, region, protocolName)
 	writeJSON(w, http.StatusOK, capacity)
+}
+
+func (s *Server) handleGetFleetLoadZones(w http.ResponseWriter, r *http.Request) {
+	protocolName := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("protocol")))
+	zones := buildFleetLoadZones(s.systemInventory(r.Context()), s.runner.ListTests(), protocolName)
+	writeJSON(w, http.StatusOK, FleetLoadZonesResponse{LoadZones: zones, Count: len(zones)})
 }
 
 func (s *Server) handleSetGeneratorDrainState(w http.ResponseWriter, r *http.Request) {
@@ -293,6 +328,153 @@ func buildFleetCapacity(inventory SystemInventoryResponse, settings SystemSettin
 	out.CompatibleFeatures = sortedStringSet(featureSet)
 	out.RejectionReasons = sortedUniqueStrings(out.RejectionReasons)
 	return out
+}
+
+type zoneMetricAccumulator struct {
+	weight   int
+	errorPct float64
+	p95Ms    float64
+	p99Ms    float64
+	active   int
+	queued   int
+	rejected int
+}
+
+func buildFleetLoadZones(inventory SystemInventoryResponse, tests []*ManagedTest, protocolName string) []FleetLoadZone {
+	byID := map[string]*FleetLoadZone{}
+	protocols := map[string]map[string]struct{}{}
+	for _, generator := range inventory.Generators {
+		region := firstNonEmpty(strings.TrimSpace(generator.Region), "default")
+		zoneID := loadZoneID(region)
+		zone := byID[zoneID]
+		if zone == nil {
+			zone = &FleetLoadZone{
+				ID:                  zoneID,
+				Name:                loadZoneName(region),
+				Region:              region,
+				CostLabel:           "self-hosted",
+				Tags:                []string{"self-hosted", "region:" + region},
+				BenchmarkEvidenceID: "protocol-density-envelope:" + firstNonEmpty(protocolName, "mixed"),
+				BenchmarkEvidence:   []string{"docs/ENTERPRISE_AUTOSCALING_SIGNALS.md#protocol-density-envelopes", "/api/v1/fleet/capacity", "/api/v1/system/inventory"},
+			}
+			byID[zoneID] = zone
+			protocols[zoneID] = map[string]struct{}{}
+		}
+		zone.TotalGenerators++
+		zone.ActiveSlots += int(generator.ActiveVUsers)
+		zone.AvailableSlots += int(generator.AvailableCapacity)
+		zone.MaxSlots += int(generator.MaxVUsers)
+		for _, protocol := range generator.SupportedProtocols {
+			protocol = strings.TrimSpace(protocol)
+			if protocol != "" {
+				protocols[zoneID][protocol] = struct{}{}
+			}
+		}
+		reasons := generatorCapacityRejectionReasons(generator, protocolName)
+		if len(reasons) > 0 {
+			zone.RejectionReasons = append(zone.RejectionReasons, reasons...)
+			continue
+		}
+		zone.EligibleGenerators++
+	}
+
+	accumulators := map[string]*zoneMetricAccumulator{}
+	for _, test := range tests {
+		if test == nil {
+			continue
+		}
+		demand := capacityDemandByRegion(test)
+		for region, vusers := range demand {
+			if vusers <= 0 {
+				continue
+			}
+			zoneID := loadZoneID(region)
+			if _, ok := byID[zoneID]; !ok {
+				continue
+			}
+			acc := accumulators[zoneID]
+			if acc == nil {
+				acc = &zoneMetricAccumulator{}
+				accumulators[zoneID] = acc
+			}
+			switch test.Status {
+			case "RUNNING", "INITIALIZING", "PAUSED":
+				acc.active += vusers
+				if test.LiveMetrics != nil {
+					acc.weight += vusers
+					acc.errorPct += test.LiveMetrics.ErrorPct * float64(vusers)
+					acc.p95Ms += test.LiveMetrics.P95Ms * float64(vusers)
+					acc.p99Ms += test.LiveMetrics.P99Ms * float64(vusers)
+				}
+			case "QUEUED", "PENDING":
+				acc.queued += vusers
+			}
+			if test.CapacityAdvisory != nil && test.CapacityAdvisory.RequiresOverride {
+				acc.rejected += vusers
+			}
+		}
+	}
+
+	ids := make([]string, 0, len(byID))
+	for id := range byID {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := make([]FleetLoadZone, 0, len(ids))
+	for _, id := range ids {
+		zone := byID[id]
+		zone.SupportedProtocols = sortedStringSet(protocols[id])
+		zone.RejectionReasons = sortedUniqueStrings(zone.RejectionReasons)
+		zone.CapacityState = aggregateZoneCapacityState(*zone)
+		if acc := accumulators[id]; acc != nil {
+			zone.ActiveVUsers = acc.active
+			zone.QueuedVUsers = acc.queued
+			zone.RejectedVUsers = acc.rejected
+			if acc.weight > 0 {
+				zone.ErrorPct = acc.errorPct / float64(acc.weight)
+				zone.P95Ms = acc.p95Ms / float64(acc.weight)
+				zone.P99Ms = acc.p99Ms / float64(acc.weight)
+			}
+		}
+		out = append(out, *zone)
+	}
+	return out
+}
+
+func aggregateZoneCapacityState(zone FleetLoadZone) string {
+	if zone.TotalGenerators == 0 || zone.EligibleGenerators == 0 {
+		return "unavailable"
+	}
+	if zone.AvailableSlots <= 0 {
+		return "saturated"
+	}
+	if zone.MaxSlots > 0 && zone.AvailableSlots <= zone.MaxSlots/5 {
+		return "constrained"
+	}
+	return "available"
+}
+
+func loadZoneID(region string) string {
+	region = strings.TrimSpace(region)
+	if region == "" {
+		return "default"
+	}
+	return region
+}
+
+func loadZoneName(region string) string {
+	region = strings.TrimSpace(region)
+	if region == "" || region == "default" {
+		return "Default Load Zone"
+	}
+	parts := strings.FieldsFunc(region, func(r rune) bool { return r == '-' || r == '_' || r == '.' })
+	for i := range parts {
+		if parts[i] == "" {
+			continue
+		}
+		parts[i] = strings.ToUpper(parts[i][:1]) + strings.ToLower(parts[i][1:])
+	}
+	return strings.Join(parts, " ") + " Load Zone"
 }
 
 func buildFleetProjectSlotAccounting(settings SystemSettings, tests []*ManagedTest) []FleetProjectSlotAccounting {

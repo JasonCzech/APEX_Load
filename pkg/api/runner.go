@@ -632,20 +632,21 @@ type ScenarioScriptRef struct {
 }
 
 const (
-	generatorAssignmentModeAuto            = "auto"
-	generatorAssignmentModeSpecificHosts   = "specific_hosts"
-	generatorAssignmentModeRegionWeighted  = "region_weighted"
-	generatorShardStrategyCapacityWeighted = "capacity_weighted"
-	maxManagedTestHistory                  = 3600
-	telemetryDiagnosticSampleInterval      = 5 * time.Second
-	telemetrySustainedBreachWindow         = 15 * time.Second
-	maxTelemetryDiagnosticSamples          = 3
-	slowTransactionDiagnosticThresholdMs   = 1000.0
-	jmsBrokerPressureMinLagMs              = 200.0
-	jmsBrokerPressureLagMultiplier         = 2.0
-	jmsBrokerPressureSendRecvRatio         = 1.5
-	latencyStabilityWindowSize             = 12
-	latencyRouteCacheTTL                   = 5 * time.Minute
+	generatorAssignmentModeAuto             = "auto"
+	generatorAssignmentModeSpecificHosts    = "specific_hosts"
+	generatorAssignmentModeRegionWeighted   = "region_weighted"
+	generatorAssignmentModeLoadZoneWeighted = "load_zone_weighted"
+	generatorShardStrategyCapacityWeighted  = "capacity_weighted"
+	maxManagedTestHistory                   = 3600
+	telemetryDiagnosticSampleInterval       = 5 * time.Second
+	telemetrySustainedBreachWindow          = 15 * time.Second
+	maxTelemetryDiagnosticSamples           = 3
+	slowTransactionDiagnosticThresholdMs    = 1000.0
+	jmsBrokerPressureMinLagMs               = 200.0
+	jmsBrokerPressureLagMultiplier          = 2.0
+	jmsBrokerPressureSendRecvRatio          = 1.5
+	latencyStabilityWindowSize              = 12
+	latencyRouteCacheTTL                    = 5 * time.Minute
 )
 
 var runtimeOverrideEnvPattern = regexp.MustCompile(`\{\{\s*env\.([^{}\s]+)\s*\}\}`)
@@ -666,6 +667,7 @@ type GeneratorAssignmentSettings struct {
 	Mode            string         `json:"mode,omitempty"`
 	SelectedTargets []string       `json:"selected_targets,omitempty"`
 	RegionWeights   map[string]int `json:"region_weights,omitempty"`
+	LoadZoneWeights map[string]int `json:"load_zone_weights,omitempty"`
 	ShardStrategy   string         `json:"shard_strategy,omitempty"`
 }
 
@@ -2008,6 +2010,21 @@ func formatRegionWeightSummary(weights map[string]int) string {
 	return strings.Join(parts, ", ")
 }
 
+func assignmentWeightLabel(assignment *GeneratorAssignmentSettings) string {
+	if assignment != nil && assignment.Mode == generatorAssignmentModeLoadZoneWeighted {
+		return "load zone"
+	}
+	return "region"
+}
+
+func titleAssignmentWeightLabel(assignment *GeneratorAssignmentSettings) string {
+	label := assignmentWeightLabel(assignment)
+	if label == "load zone" {
+		return "Load-zone"
+	}
+	return "Region"
+}
+
 func adjustCapacityAdvisoryForAssignment(advisory *CapacityAdvisory, assignment *GeneratorAssignmentSettings, targetSpecs []generatorTargetSpec) *CapacityAdvisory {
 	if advisory == nil {
 		return nil
@@ -2029,17 +2046,17 @@ func adjustCapacityAdvisoryForAssignment(advisory *CapacityAdvisory, assignment 
 	case generatorAssignmentModeSpecificHosts:
 		selected = len(assignment.SelectedTargets)
 		warning = fmt.Sprintf("Selected hosts provide %d generator slot%s, but the scenario footprint recommends %%d.", selected, pluralSuffix(selected))
-	case generatorAssignmentModeRegionWeighted:
-		selected = matchingRegionWeightedTargets(targetSpecs, assignment.RegionWeights)
-		warning = fmt.Sprintf("Configured region weights match %d generator slot%s, but the scenario footprint recommends %%d.", selected, pluralSuffix(selected))
+	case generatorAssignmentModeRegionWeighted, generatorAssignmentModeLoadZoneWeighted:
+		selected = matchingRegionWeightedTargets(targetSpecs, effectiveRegionWeights(assignment))
+		warning = fmt.Sprintf("Configured %s weights match %d generator slot%s, but the scenario footprint recommends %%d.", assignmentWeightLabel(assignment), selected, pluralSuffix(selected))
 	default:
 		return advisory
 	}
 	if selected == 0 {
 		cloned := cloneCapacityAdvisory(advisory)
 		cloned.RequiresOverride = true
-		if assignment.Mode == generatorAssignmentModeRegionWeighted {
-			cloned.Warnings = append(cloned.Warnings, "No configured generators match the requested region weights on this controller.")
+		if assignment.Mode == generatorAssignmentModeRegionWeighted || assignment.Mode == generatorAssignmentModeLoadZoneWeighted {
+			cloned.Warnings = append(cloned.Warnings, "No configured generators match the requested "+assignmentWeightLabel(assignment)+" weights on this controller.")
 		}
 		return cloned
 	}
@@ -2055,17 +2072,17 @@ func adjustCapacityAdvisoryForAssignment(advisory *CapacityAdvisory, assignment 
 		cloned.ShortfallGenerators = cloned.RecommendedGenerators - selected
 		cloned.RequiresOverride = true
 		cloned.Warnings = append(cloned.Warnings, fmt.Sprintf(warning, cloned.RecommendedGenerators))
-		if assignment.Mode == generatorAssignmentModeRegionWeighted {
-			if missing := missingWeightedRegions(targetSpecs, assignment.RegionWeights); len(missing) > 0 {
-				cloned.Warnings = append(cloned.Warnings, fmt.Sprintf("No connected generator targets are tagged for region%s %s.", pluralSuffix(len(missing)), strings.Join(missing, ", ")))
+		if assignment.Mode == generatorAssignmentModeRegionWeighted || assignment.Mode == generatorAssignmentModeLoadZoneWeighted {
+			if missing := missingWeightedRegions(targetSpecs, effectiveRegionWeights(assignment)); len(missing) > 0 {
+				cloned.Warnings = append(cloned.Warnings, fmt.Sprintf("No connected generator targets are tagged for %s%s %s.", assignmentWeightLabel(assignment), pluralSuffix(len(missing)), strings.Join(missing, ", ")))
 			}
 		}
 		return cloned
 	}
 	cloned.RequiresOverride = false
-	if assignment.Mode == generatorAssignmentModeRegionWeighted {
-		if missing := missingWeightedRegions(targetSpecs, assignment.RegionWeights); len(missing) > 0 {
-			cloned.Warnings = append(cloned.Warnings, fmt.Sprintf("No connected generator targets are tagged for region%s %s.", pluralSuffix(len(missing)), strings.Join(missing, ", ")))
+	if assignment.Mode == generatorAssignmentModeRegionWeighted || assignment.Mode == generatorAssignmentModeLoadZoneWeighted {
+		if missing := missingWeightedRegions(targetSpecs, effectiveRegionWeights(assignment)); len(missing) > 0 {
+			cloned.Warnings = append(cloned.Warnings, fmt.Sprintf("No connected generator targets are tagged for %s%s %s.", assignmentWeightLabel(assignment), pluralSuffix(len(missing)), strings.Join(missing, ", ")))
 		}
 	}
 	return cloned
@@ -2107,8 +2124,8 @@ func (tr *TestRunner) buildAssignmentRecommendation(test *ManagedTest) *Assignme
 		}
 		return recommendation
 	}
-	if assignment.Mode == generatorAssignmentModeRegionWeighted {
-		recommendation.Summary = fmt.Sprintf("Region-weighted assignment will place groups across tagged generators using %s.", formatRegionWeightSummary(assignment.RegionWeights))
+	if assignment.Mode == generatorAssignmentModeRegionWeighted || assignment.Mode == generatorAssignmentModeLoadZoneWeighted {
+		recommendation.Summary = fmt.Sprintf("%s-weighted assignment will place groups across tagged generators using %s.", titleAssignmentWeightLabel(assignment), formatRegionWeightSummary(effectiveRegionWeights(assignment)))
 		if test.CapacityAdvisory.RequiresOverride {
 			recommendation.Warnings = append(recommendation.Warnings, test.CapacityAdvisory.Warnings...)
 		}
@@ -5388,10 +5405,11 @@ func capacityDemandByRegion(test *ManagedTest) map[string]int {
 		}
 		return out
 	}
-	if assignment.Mode == generatorAssignmentModeRegionWeighted && len(assignment.RegionWeights) > 0 {
+	if (assignment.Mode == generatorAssignmentModeRegionWeighted || assignment.Mode == generatorAssignmentModeLoadZoneWeighted) && len(effectiveRegionWeights(assignment)) > 0 {
+		weights := effectiveRegionWeights(assignment)
 		totalWeight := 0
-		regions := make([]string, 0, len(assignment.RegionWeights))
-		for region, weight := range assignment.RegionWeights {
+		regions := make([]string, 0, len(weights))
+		for region, weight := range weights {
 			if weight <= 0 {
 				continue
 			}
@@ -5405,7 +5423,7 @@ func capacityDemandByRegion(test *ManagedTest) map[string]int {
 			if index == len(regions)-1 {
 				vusers = test.TotalVUsers - allocated
 			} else {
-				vusers = test.TotalVUsers * assignment.RegionWeights[region] / totalWeight
+				vusers = test.TotalVUsers * weights[region] / totalWeight
 				allocated += vusers
 			}
 			out[firstNonEmpty(strings.TrimSpace(region), "unassigned")] += vusers

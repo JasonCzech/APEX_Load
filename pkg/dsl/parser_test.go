@@ -41,6 +41,25 @@ func TestParse_ValidScript(t *testing.T) {
 	}
 }
 
+func TestParse_ValidPlainScript(t *testing.T) {
+	input := `{
+		"name": "plain-script",
+		"protocol": "http",
+		"config": {"base_url": "https://example.com"},
+		"actions": [
+			{"name": "homepage", "type": "request", "method": "GET", "target": "/"}
+		]
+	}`
+
+	script, err := Parse([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if script.Name != "plain-script" || script.Protocol != "http" {
+		t.Fatalf("script = %#v", script)
+	}
+}
+
 func TestParse_MissingName(t *testing.T) {
 	input := `{"script": {"protocol": "http", "actions": [{"name": "a", "type": "request", "target": "/"}]}}`
 	_, err := Parse([]byte(input))

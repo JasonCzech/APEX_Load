@@ -310,6 +310,9 @@ POST   /api/v1/scripts/import/jmeter    — Convert a JMeter plan to DSL
 POST   /api/v1/scripts/import/jmeter/save — Save a reviewed JMeter import draft
 POST   /api/v1/scripts/import/jmeter/validate — Validate a JMeter import draft
 GET    /api/v1/scripts/import/jmeter/support-matrix — Get JMeter support matrix
+POST   /api/v1/scripts/import/k6       — Convert a constrained k6 HTTP subset to DSL
+POST   /api/v1/scripts/export/k6       — Export HTTP DSL to a reviewable k6 subset
+GET    /api/v1/scripts/import/k6/support-matrix — Get k6 subset support matrix
 POST   /api/v1/scripts/import/devweb   — Convert a DevWeb JavaScript file or archive to DSL
 GET    /api/v1/scripts/import/devweb/support-matrix — Get DevWeb construct support matrix
 POST   /api/v1/scripts/import/har      — Convert a HAR file to HTTP DSL
@@ -345,6 +348,7 @@ DELETE /api/v1/scenarios/{id}/schedules/{schedule_id} — Delete a recurring sch
 GET    /api/v1/system/health            — Health check
 GET    /api/v1/system/readiness         — Production readiness checks
 GET    /api/v1/system/inventory         — Controller and generator inventory
+GET    /api/v1/fleet/load-zones         — Named self-hosted load zones and capacity signals
 GET    /api/v1/system/usage             — Usage accounting rollups
 GET    /api/v1/system/parity-status     — Platform and competitive parity status
 PATCH  /api/v1/system/generators/drain  — Cordon, drain, or reactivate a generator
@@ -502,12 +506,13 @@ These are design targets, not yet backed by published benchmark artifacts. Do no
 - ✅ DSL parser and templating
 - ✅ Real-time metrics and WebSocket streaming
 - ✅ Distributed execution backend with multi-generator group fan-out, live controls, merged metrics, and staged archives
-- ✅ Capacity-aware generator placement for distributed test startup
+- ✅ Capacity-aware generator placement for distributed test startup, including self-hosted named load-zone summaries (`/api/v1/fleet/load-zones`)
 - ✅ Generator-loss detection and controlled failure handling during distributed execution
 - ✅ Runtime telemetry SLA hardening baseline now includes visible drop counters, bounded live history, end-to-end freshness, sampled telemetry diagnostics for transaction hotspots, schema-versioned typed telemetry retention, distributed telemetry propagation, first-class correlation/dependency metadata, and distributed lag-stage breakdowns from generator capture through controller fan-out
 - 🟡 Browser client metrics future plan for web-app synthetic UX telemetry
 - 🟡 JMS protocols (Solace, IBM MQ)
-- ✅ CI/CD gating: `apexctl` JUnit output + `status`/`wait` subcommands, with GitHub/Azure DevOps/Jenkins templates (see [docs/CICD_INTEGRATION.md](docs/CICD_INTEGRATION.md))
+- ✅ CI/CD gating: `apexctl` JUnit output + `status`/`wait` subcommands, local `apexctl script validate/explain`, with GitHub/Azure DevOps/Jenkins templates (see [docs/CICD_INTEGRATION.md](docs/CICD_INTEGRATION.md))
+- ✅ Evaluator trust pack: one-command demo seeding plus bounded k6 HTTP subset import/export (see [docs/EVALUATOR_TRUST_PACK.md](docs/EVALUATOR_TRUST_PACK.md))
 - ✅ Correlation rules engine + replay-failure detection & guided repair (`/api/v1/correlations/diagnose`)
 - ✅ Assisted authoring (deterministic-local draft/repair/explain over the DSL, via MCP)
 - 🟡 External LLM script generation (policy-gated; not wired by default)

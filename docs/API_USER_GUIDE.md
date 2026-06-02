@@ -246,6 +246,9 @@ Import endpoints:
 | `POST` | `/api/v1/scripts/import/jmeter/save` | Save a reviewed JMeter import draft. |
 | `POST` | `/api/v1/scripts/import/jmeter/validate` | Validate a JMeter archive or plan without saving. |
 | `GET` | `/api/v1/scripts/import/jmeter/support-matrix` | JMeter import support matrix. |
+| `POST` | `/api/v1/scripts/import/k6` | Import the constrained k6 HTTP subset into APEX Load DSL. |
+| `POST` | `/api/v1/scripts/export/k6` | Export an APEX HTTP script to a reviewable k6 HTTP subset script. |
+| `GET` | `/api/v1/scripts/import/k6/support-matrix` | k6 import/export support matrix. |
 | `POST` | `/api/v1/scripts/import/har` | Import a HAR archive. |
 | `POST` | `/api/v1/scripts/import/openapi` | Generate HTTP/API drafts from OpenAPI or Swagger. |
 | `POST` | `/api/v1/scripts/import/postman` | Generate HTTP/API drafts from a Postman collection JSON file. |
@@ -525,6 +528,9 @@ Useful recorder and replay endpoints:
 | `POST` | `/api/v1/scripts/import/jmeter/save` |
 | `POST` | `/api/v1/scripts/import/jmeter/validate` |
 | `GET` | `/api/v1/scripts/import/jmeter/support-matrix` |
+| `POST` | `/api/v1/scripts/import/k6` |
+| `POST` | `/api/v1/scripts/export/k6` |
+| `GET` | `/api/v1/scripts/import/k6/support-matrix` |
 | `POST` | `/api/v1/scripts/import/sample` |
 | `POST` | `/api/v1/scripts/import/devweb` |
 | `GET` | `/api/v1/scripts/import/devweb/support-matrix` |

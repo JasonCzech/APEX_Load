@@ -76,7 +76,7 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 | DevWeb import | Supported for import-review scope | `/api/v1/scripts/import/devweb`, `/api/v1/scripts/import/devweb/support-matrix` | Dynamic JavaScript runtime compatibility is review-only. |
 | HAR import | Supported | `/api/v1/scripts/import/sample`, `pkg/convert/har` | More guided repair affordances. |
 | Raw HTTP / cURL / REST samples | Supported | `/api/v1/scripts/import/sample`, `pkg/convert/sample` | Expand canonical sample projects. |
-| k6 script import/export | Gap | — | Implement constrained HTTP subset conversion. |
+| k6 script import/export | Supported for constrained HTTP subset | `/api/v1/scripts/import/k6`, `/api/v1/scripts/export/k6`, `/api/v1/scripts/import/k6/support-matrix` | Broader fixture coverage; APEX Load does not run k6 JavaScript. |
 | k6 result import | Supported for summary ingestion | `/api/v1/results/import` | Richer trend overlays after script conversion work. |
 | Gatling result import | Supported for summary ingestion | `/api/v1/results/import` | Gatling-specific fixture packs. |
 | NeoLoad project import | Gap | — | Demand-gate; prioritize coexistence and result ingestion first. |
@@ -103,7 +103,7 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 | Open + closed workload, pacing, think time | Supported | `pkg/engine/open_workload.go`, `pacing.go` | Benchmark-backed goal evidence. |
 | Staged ramps and arrival modeling | Supported | `pkg/engine`, `/api/v1/scenarios/validate-load-model` | Published benchmark evidence. |
 | Thresholds, SLAs, release gates | Partial | `docs/RUNTIME_TELEMETRY_SLA_PLAN.md`, archive report endpoints | First-class dashboard authoring for checks/thresholds. |
-| Distributed execution | Supported | `pkg/api/distributed_execution_backend.go` | Named load zones with benchmark envelopes. |
+| Distributed execution | Supported | `pkg/api/distributed_execution_backend.go`, `/api/v1/fleet/load-zones` | Publish benchmark envelopes per named self-hosted load zone. |
 | Scheduling and governance | Supported | `/api/v1/scenarios/{id}/schedules`, `/api/v1/schedules/health` | External environment calendar/conflict evidence. |
 | Auth, RBAC, audit, service accounts | Supported | `docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md`, `/api/v1/auth/access-matrix` | Native SAML out of scope; trusted-header/OIDC is the path. |
 
@@ -290,11 +290,11 @@ These areas correspond to the `competitive_parity` dimensions in `GET /api/v1/sy
 
 ### Developer Experience
 
-**Status: Partial.** APEX Load has CLI execution, JSON DSL validation, governed explain output, CI templates, and k6 result ingestion, but it is not yet as familiar or portable as k6's JavaScript-first local/cloud workflow.
+**Status: Partial.** APEX Load has CLI execution, local script validation/explain commands, governed explain output, CI templates, k6 result ingestion, and constrained k6 HTTP subset import/export, but it is not a JavaScript-first local/cloud workflow.
 
-**Evidence:** `README.md#build--run`, `.github/actions/apexload-run/action.yml`, `/api/v1/results/import`
+**Evidence:** `README.md#build--run`, `.github/actions/apexload-run/action.yml`, `/api/v1/results/import`, `/api/v1/scripts/import/k6`, `/api/v1/scripts/export/k6`
 
-**Remaining:** Add `apexctl script validate --format json` and `apexctl script explain` for local authoring feedback. Add constrained k6 HTTP subset conversion/export.
+**Remaining:** Expand k6 fixture coverage and keep unsupported JavaScript/browser constructs review-only.
 
 **Decision:** differentiate — APEX Load's controlled JSON DSL and governed CI APIs are deliberate architectural choices, not gaps to replicate.
 
@@ -314,11 +314,11 @@ These areas correspond to the `competitive_parity` dimensions in `GET /api/v1/sy
 
 ### Packaging, Samples, and Trust
 
-**Status: Partial.** APEX Load has docs, a support matrix, CI templates, dashboard workflows, and several sample/import paths. Evaluators still need canonical demos, one-command seeding, and release notes connecting claims to benchmark artifacts.
+**Status: Partial.** APEX Load has docs, a support matrix, CI templates, dashboard workflows, canonical sample projects, one-command demo seeding, and release evidence manifests. Evaluators still need release-specific benchmark deltas attached before scale claims are raised.
 
-**Evidence:** `README.md#quick-start`, `docs/CICD_INTEGRATION.md`
+**Evidence:** `README.md#quick-start`, `docs/CICD_INTEGRATION.md`, `docs/EVALUATOR_TRUST_PACK.md`, `docs/EVALUATOR_COMPETITIVE_ONE_PAGER.md`, `docs/RELEASE_EVIDENCE_MANIFEST.md`, `scripts/seed-evaluator-demo.sh`
 
-**Remaining:** Publish canonical sample projects, one-command demo seeding, release notes with benchmark deltas, and an evaluator-facing APEX Load vs k6 vs NeoLoad one-pager.
+**Remaining:** Attach release notes with benchmark deltas for each release candidate.
 
 ---
 
@@ -335,7 +335,7 @@ A comprehensive audit of APEX Load against enterprise performance testing platfo
 | CI/CD pipeline integration — JUnit XML, maintained marketplace plugins, Git script sync | Critical | JUnit + GitHub/ADO/Jenkins delivered; marketplace plugins pending |
 | Offline report depth — graph merge, per-txn drill-down, multi-run trend, PDF export | High | Archive + trend analysis delivered; graph merge and PDF pending |
 | Correlation intelligence depth | High | Rules engine + replay-failure detection delivered; full VuGen-class parity pending |
-| Named load zones with benchmark envelopes | High | Regional placement delivered; named zones pending |
+| Named load zones with benchmark envelopes | High | Named self-hosted zones delivered; benchmark envelopes pending |
 | Browser/SPA recording fidelity | Medium | Scoped as canary-only; DOM-aware capture is a separate large effort |
 | PDF/Word report export | Medium | HTML emitted; PDF/Word not started |
 | Vault / mTLS | Medium | Template refs + redaction exist; Vault/mTLS not started |

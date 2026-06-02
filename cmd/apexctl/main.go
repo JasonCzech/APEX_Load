@@ -31,6 +31,8 @@ func main() {
 	switch os.Args[1] {
 	case "run":
 		runTest()
+	case "script":
+		scriptCmd()
 	case "status":
 		statusCmd()
 	case "wait":
@@ -325,6 +327,7 @@ Usage:
 
 Commands:
   run       Execute a performance test
+  script    Validate or explain a JSON DSL script
   status    Print a test's current status + SLA verdict (exits 1 on breach/failure)
   wait      Block until a started test finishes, then report SLA verdict
   version   Print version information
@@ -348,6 +351,8 @@ Run Flags:
 
 Examples:
   apexctl run --script order-flow.json --vusers 100 --duration 5m
+  apexctl script validate --script order-flow.json --format json
+  apexctl script explain --script order-flow.json
 	apexctl run --script order-flow.json -env target_namespace=pr-123 --base-url https://preview.example.com
 	apexctl run --script order-flow.json --p95-latency-ms 800 --max-error-pct 2.5
   apexctl run --api http://localhost:8080 --script order-flow.json --format json

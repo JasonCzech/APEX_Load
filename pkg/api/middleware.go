@@ -870,7 +870,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
 	}
 
-	if (path == "/api/v1/system/inventory" || path == "/api/v1/system/usage" || path == "/api/v1/system/usage/export" || path == "/api/v1/system/usage/snapshots" || path == "/api/v1/system/parity-status" || path == "/api/v1/system/browser-benchmarks" || path == "/api/v1/desktop/status" || path == "/api/v1/runtime-settings/support-matrix" || path == "/api/v1/protocol-bundles/support-matrix" || path == "/api/v1/protocols/native-support-matrix" || path == "/api/v1/fleet/alerts" || path == "/api/v1/fleet/capacity") && method == http.MethodGet {
+	if (path == "/api/v1/system/inventory" || path == "/api/v1/system/usage" || path == "/api/v1/system/usage/export" || path == "/api/v1/system/usage/snapshots" || path == "/api/v1/system/parity-status" || path == "/api/v1/system/browser-benchmarks" || path == "/api/v1/desktop/status" || path == "/api/v1/runtime-settings/support-matrix" || path == "/api/v1/protocol-bundles/support-matrix" || path == "/api/v1/protocols/native-support-matrix" || path == "/api/v1/fleet/alerts" || path == "/api/v1/fleet/capacity" || path == "/api/v1/fleet/load-zones") && method == http.MethodGet {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
 
@@ -1330,7 +1330,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
 
-	if (path == "/api/v1/scripts/web-api/support-matrix" || path == "/api/v1/scripts/import/devweb/support-matrix" || path == "/api/v1/scripts/import/oracle-ebusiness/support-matrix") && method == http.MethodGet {
+	if (path == "/api/v1/scripts/web-api/support-matrix" || path == "/api/v1/scripts/import/devweb/support-matrix" || path == "/api/v1/scripts/import/k6/support-matrix" || path == "/api/v1/scripts/import/oracle-ebusiness/support-matrix") && method == http.MethodGet {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
 
@@ -1386,11 +1386,19 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}, true
 	}
 
-	if (path == "/api/v1/scripts/import/devweb" || path == "/api/v1/scripts/import/har" || path == "/api/v1/scripts/import/openapi" || path == "/api/v1/scripts/import/postman" || path == "/api/v1/scripts/import/wsdl") && method == http.MethodPost {
+	if (path == "/api/v1/scripts/import/devweb" || path == "/api/v1/scripts/import/har" || path == "/api/v1/scripts/import/k6" || path == "/api/v1/scripts/import/openapi" || path == "/api/v1/scripts/import/postman" || path == "/api/v1/scripts/import/wsdl") && method == http.MethodPost {
 		return accessRequirement{
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
 			ProjectLookup: resolveImportProjectIDFromJSONOrForm,
+		}, true
+	}
+
+	if path == "/api/v1/scripts/export/k6" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveK6ExportProjectID,
 		}, true
 	}
 
@@ -2188,6 +2196,27 @@ func resolveImportProjectIDFromJSONOrForm(r *http.Request, store storage.Store) 
 		return resolveImportProjectIDFromJSON(r, store)
 	}
 	return "", http.StatusBadRequest, "project_id is required for project-scoped import access"
+}
+
+func resolveK6ExportProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	var req struct {
+		ProjectID string `json:"project_id,omitempty"`
+		Script    *struct {
+			ProjectID string `json:"project_id,omitempty"`
+		} `json:"script,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if projectID := normalizeProjectID(req.ProjectID); projectID != "" {
+		return projectID, 0, ""
+	}
+	if req.Script != nil {
+		if projectID := normalizeProjectID(req.Script.ProjectID); projectID != "" {
+			return projectID, 0, ""
+		}
+	}
+	return "", http.StatusBadRequest, "project_id or script.project_id is required for project-scoped export access"
 }
 
 func resolveAIAssistanceProjectID(r *http.Request, store storage.Store) (string, int, string) {

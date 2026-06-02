@@ -640,6 +640,42 @@ GET /api/v1/scripts/web-api/support-matrix
 
 Returns the code-owned Web/API execution support matrix, benchmark envelopes, protocol diagnostics, and first-party sample project references. See `docs/WEB_API_EXECUTION_SUPPORT_MATRIX.md` for the current W1 parity evidence.
 
+#### Convert constrained k6 HTTP JavaScript to DSL
+
+```
+POST /api/v1/scripts/import/k6
+Content-Type: application/json
+
+{
+  "name": "Checkout smoke",
+  "project_id": "checkout",
+  "content": "import http from 'k6/http';\nimport { sleep, check } from 'k6';\nexport const options = { vus: 10, duration: '1m' };\nexport default function () { const res = http.get('https://api.example.com/orders'); check(res, { 'ok': r => r.status === 200 }); sleep(1); }"
+}
+```
+
+Imports the bounded evaluator subset of k6 HTTP scripts into APEX DSL: static `http.get/post/put/delete`, literal URLs, literal headers, literal request bodies, `check(...)` review metadata, simple `sleep(...)`, and basic `options` for VUs, duration, stages, and thresholds. Browser tests, custom JavaScript control flow, imported modules beyond `k6`/`k6/http`, and runtime-dynamic request construction are reported as unsupported or review-only diagnostics.
+
+#### Export HTTP DSL to constrained k6 JavaScript
+
+```
+POST /api/v1/scripts/export/k6
+Content-Type: application/json
+
+{
+  "script": { "name": "Checkout", "protocol": "http", "actions": [] }
+}
+```
+
+Returns a reviewable k6 HTTP script plus warnings, assumptions, and unsupported construct diagnostics for DSL features that do not map cleanly into the static k6 subset.
+
+#### k6 import/export support matrix
+
+```
+GET /api/v1/scripts/import/k6/support-matrix
+```
+
+Returns the code-owned k6 subset support matrix so evaluator materials can distinguish supported import/export behavior from review-only or rejected JavaScript constructs.
+
 #### Convert OpenAPI to HTTP DSL
 
 ```
@@ -909,6 +945,14 @@ GET /api/v1/system/parity-status
 ```
 
 Returns the release-gate parity checklist for platform areas plus a competitive parity section for k6 and NeoLoad dimensions. Each competitive item includes status, competitors, evidence pointers, remaining work, product decision, and evidence level so release reviews can separate supported claims from partial, bounded, or demand-gated gaps.
+
+#### Load zones
+
+```
+GET /api/v1/fleet/load-zones
+```
+
+Returns named self-hosted load zones derived from generator regions. Each zone includes display name, region, capacity envelope, cost label, tags, supported protocols, benchmark evidence id, active VUsers, error rate, p95/p99, and rejection reasons. Scenario assignment may use `assignment.mode: "load_zone_weighted"` with `load_zone_weights`; existing `region_weighted` behavior remains the fallback.
 
 #### Global WebSocket stream
 

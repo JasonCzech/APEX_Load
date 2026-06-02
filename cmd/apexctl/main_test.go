@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -29,6 +31,67 @@ func TestParseRunArgs_RuntimeOverrides(t *testing.T) {
 	if args.env["api_host"] != "preview.example.com" {
 		t.Fatalf("api_host = %q, want preview.example.com", args.env["api_host"])
 	}
+}
+
+func TestParseScriptArgs(t *testing.T) {
+	args := parseScriptArgs([]string{"validate", "--script", "examples/web-api/ecommerce-http.json", "--format", "json"})
+	if args.command != "validate" || args.script != "examples/web-api/ecommerce-http.json" || args.format != "json" {
+		t.Fatalf("args = %#v", args)
+	}
+}
+
+func TestValidateScriptFileAcceptsPlainScriptJSON(t *testing.T) {
+	path := writeTempScript(t, `{
+		"name": "plain",
+		"protocol": "http",
+		"config": {"base_url": "https://example.com"},
+		"actions": [{"name": "home", "type": "request", "method": "GET", "target": "/"}]
+	}`)
+	result := validateScriptFile(path)
+	if !result.Valid || result.Script != "plain" || result.Protocol != "http" || len(result.Issues) != 0 {
+		t.Fatalf("validation result = %#v", result)
+	}
+}
+
+func TestValidateScriptFileReportsIssues(t *testing.T) {
+	path := writeTempScript(t, `{"name": "", "protocol": "http", "actions": []}`)
+	result := validateScriptFile(path)
+	if result.Valid || len(result.Issues) == 0 {
+		t.Fatalf("validation result = %#v, want invalid issues", result)
+	}
+}
+
+func TestExplainScriptFileSummarizesAuthoringSignals(t *testing.T) {
+	path := writeTempScript(t, `{
+		"name": "explain",
+		"protocol": "http",
+		"generated_by": "unit-test",
+		"config": {"base_url": "https://example.com"},
+		"actions": [{
+			"name": "create",
+			"type": "request",
+			"method": "POST",
+			"target": "/orders",
+			"extractors": [{"name": "id", "source": "body", "type": "json_path", "expression": "$.id"}],
+			"assertions": [{"type": "status_code", "expected": 201}]
+		}]
+	}`)
+	result, err := explainScriptFile(path)
+	if err != nil {
+		t.Fatalf("explainScriptFile returned error: %v", err)
+	}
+	if result.Actions != 1 || result.Assertions != 1 || result.Extractors != 1 || result.GeneratedBy != "unit-test" {
+		t.Fatalf("explain result = %#v", result)
+	}
+}
+
+func writeTempScript(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "script.json")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	return path
 }
 
 func TestParseRunArgs_SLAFlags(t *testing.T) {
