@@ -13,6 +13,7 @@ const apiMock = {
   getParityStatus: vi.fn(),
   getFleetAlerts: vi.fn(),
   getFleetCapacity: vi.fn(),
+  getFleetProvisioner: vi.fn(),
   getScheduleHealth: vi.fn(),
   getSystemInventory: vi.fn(),
   getSystemReadiness: vi.fn(),
@@ -37,6 +38,7 @@ describe('MonitoringPage', () => {
 
   beforeEach(() => {
     apiMock.getHealth.mockResolvedValue({ status: 'ok', version: 'dev', ws_clients: 2, test_count: 1 })
+    apiMock.getFleetProvisioner.mockResolvedValue(null)
     apiMock.getAPMIntegrationProfiles.mockResolvedValue({
       generated_at: '2026-05-18T12:00:00Z',
       configured_count: 1,
@@ -601,6 +603,12 @@ describe('MonitoringPage', () => {
   })
 
   it('renders live generator inventory when the controller reports it', async () => {
+    apiMock.getFleetProvisioner.mockResolvedValue({
+      name: 'static-fleet',
+      can_provision: false,
+      supported_regions: ['us-east'],
+      description: 'Uses the pre-configured generator fleet; no on-demand provisioning.',
+    })
     apiMock.getFleetCapacity.mockResolvedValue({
       project_id: 'project-1',
       total_generators: 1,
@@ -673,6 +681,10 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('project-1: 250 active / 400 pending slots (reserved)')
     expect(container.textContent).toContain('fleet placement API')
     expect(container.textContent).toContain('http, browser')
+
+    expect(container.querySelector('[data-testid="fleet-provisioner"]')).toBeTruthy()
+    expect(container.textContent).toContain('Generator Provisioning')
+    expect(container.textContent).toContain('static fleet')
 
     const generatorButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('active VUsers across'))
     expect(generatorButton).not.toBeUndefined()

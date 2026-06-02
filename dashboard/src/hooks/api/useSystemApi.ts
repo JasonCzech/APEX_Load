@@ -24,6 +24,7 @@ import {
   ExternalResultImportsResponse,
   FleetAlertsResponse,
   FleetCapacityResponse,
+  ProvisionerInfo,
   HealthResponse,
   InfrastructureMonitorPacksResponse,
   ParityStatusResponse,
@@ -134,6 +135,7 @@ export function useSystemApi() {
   const getFleetCapacity = useCallback((params: { project_id?: string; region?: string; protocol?: string } = {}) =>
     request<FleetCapacityResponse>(`/fleet/capacity${buildQuery(params)}`),
   [])
+  const getFleetProvisioner = useCallback(() => request<ProvisionerInfo>('/fleet/provisioner'), [])
   const getUsageAccounting = useCallback((projectId?: string) => request<UsageAccountingResponse>(`/system/usage${buildQuery({ project_id: projectId })}`), [])
   const listUsageAccountingSnapshots = useCallback((projectId?: string) => request<UsageAccountingSnapshotsResponse>(`/system/usage/snapshots${buildQuery({ project_id: projectId, limit: 5 })}`), [])
   const captureUsageAccountingSnapshot = useCallback((projectId?: string) => request<UsageAccountingSnapshot>(`/system/usage/snapshots${buildQuery({ project_id: projectId })}`, { method: 'POST' }), [])
@@ -184,6 +186,7 @@ export function useSystemApi() {
       importExternalResults,
       getFleetAlerts,
       getFleetCapacity,
+      getFleetProvisioner,
       getUsageAccounting,
       listUsageAccountingSnapshots,
       captureUsageAccountingSnapshot,
@@ -193,6 +196,6 @@ export function useSystemApi() {
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getSystemInventory, getSystemReadiness, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, getFleetCapacity, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getSystemInventory, getSystemReadiness, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
   )
 }

@@ -256,6 +256,13 @@ export interface RunArchiveExecutionSettingsSnapshot {
   }
 }
 
+export interface ProvisionerInfo {
+  name: string
+  can_provision: boolean
+  supported_regions?: string[]
+  description: string
+}
+
 export interface ReleaseTrendDeltas {
   error_pct_delta: number
   avg_response_ms_delta: number

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, type DragEvent, type ReactNo
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
-import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ParityStatusResponse, ScenarioScheduleHealth, SystemInventoryResponse, SystemReadinessResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
+import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ParityStatusResponse, ProvisionerInfo, ScenarioScheduleHealth, SystemInventoryResponse, SystemReadinessResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
 import './CreateTestModal.css'
 
@@ -119,6 +119,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [monitorPacks, setMonitorPacks] = useState<InfrastructureMonitorPacksResponse | null>(null)
   const [fleetAlerts, setFleetAlerts] = useState<FleetAlert[]>([])
   const [fleetCapacity, setFleetCapacity] = useState<FleetCapacityResponse | null>(null)
+  const [provisioner, setProvisioner] = useState<ProvisionerInfo | null>(null)
   const [tests, setTests] = useState<TestSummary[]>([])
   const [isTelemetryModalOpen, setIsTelemetryModalOpen] = useState(false)
   const [isGeneratorsModalOpen, setIsGeneratorsModalOpen] = useState(false)
@@ -265,7 +266,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       return
     }
     try {
-      const [healthRes, testsRes, inventoryRes, readinessRes, scheduleHealthRes, parityStatusRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetCapacityRes] = await Promise.all([
+      const [healthRes, testsRes, inventoryRes, readinessRes, scheduleHealthRes, parityStatusRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetCapacityRes, provisionerRes] = await Promise.all([
         api.getHealth(),
         api.listTests(activeProject?.id ? { project_id: activeProject.id } : undefined).catch(() => ({ tests: [] })),
         api.getSystemInventory().catch(() => null),
@@ -276,6 +277,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         safeApiCall(() => api.getInfrastructureMonitorPacks(), null),
         api.getFleetAlerts().catch(() => ({ alerts: [] })),
         api.getFleetCapacity(activeProject?.id ? { project_id: activeProject.id } : undefined).catch(() => null),
+        api.getFleetProvisioner().catch(() => null),
       ])
       setHealth(healthRes)
       setTests(testsRes.tests || [])
@@ -287,6 +289,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       setMonitorPacks(monitorPacksRes)
       setFleetAlerts(fleetAlertsRes.alerts || [])
       setFleetCapacity(fleetCapacityRes)
+      setProvisioner(provisionerRes)
       setLastRefreshed(new Date())
     } catch {
       // API not available
@@ -627,6 +630,20 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               </div>
             ) : null
           })()}
+          {provisioner && (
+            <div className="monitor-row" data-testid="fleet-provisioner">
+              <span className="monitor-label">Generator Provisioning</span>
+              <span className="monitor-value" title={provisioner.description}>
+                <span className={`status-badge ${provisioner.can_provision ? 'status-running' : 'status-idle'}`}>
+                  {provisioner.can_provision ? 'on-demand' : 'static fleet'}
+                </span>
+                {' '}{provisioner.name}
+                {provisioner.supported_regions && provisioner.supported_regions.length > 0 && (
+                  <span className="cell-muted"> · {provisioner.supported_regions.join(', ')}</span>
+                )}
+              </span>
+            </div>
+          )}
           <div className="monitor-row">
             <span className="monitor-label">Effective Available</span>
             <span className="monitor-value">{fleetCapacity?.available_slots?.toLocaleString() ?? health?.capacity_availability?.effective_available_generators ?? '-'}</span>
