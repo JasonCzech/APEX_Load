@@ -644,25 +644,32 @@ func extractNamedArgs(fn *ParsedFunction, inner string) {
 
 // extractItemData attempts to extract ITEMDATA form field pairs.
 func extractItemData(fn *ParsedFunction, inner string) {
-	// Look for patterns like "Name=fieldname", "Value=fieldvalue" pairs
-	// These come after ITEMDATA marker in web_submit_data calls
-	parts := strings.Split(inner, "ITEMDATA")
-	if len(parts) < 2 {
-		return
-	}
-
-	itemSection := parts[1]
-	// Extract Name/Value pairs
-	nameMatches := regexp.MustCompile(`"Name=([^"]+)"`).FindAllStringSubmatch(itemSection, -1)
-	valueMatches := regexp.MustCompile(`"Value=([^"]*?)"`).FindAllStringSubmatch(itemSection, -1)
-
 	formData := make(map[string]string)
-	for i, nm := range nameMatches {
-		val := ""
-		if i < len(valueMatches) {
-			val = valueMatches[i][1]
+	currentName := ""
+	inItemData := false
+	for _, arg := range fn.CallArgs {
+		if arg.Kind == "macro" && strings.EqualFold(arg.Value, "ITEMDATA") {
+			inItemData = true
+			continue
 		}
-		formData[nm[1]] = val
+		if !inItemData {
+			continue
+		}
+		if arg.Kind == "macro" && strings.EqualFold(arg.Value, "ENDITEM") {
+			currentName = ""
+			continue
+		}
+		if arg.Kind != "key_value" {
+			continue
+		}
+		switch strings.ToLower(arg.Name) {
+		case "name":
+			currentName = arg.Value
+		case "value":
+			if currentName != "" {
+				formData[currentName] = arg.Value
+			}
+		}
 	}
 
 	if len(formData) > 0 {

@@ -125,6 +125,7 @@ export interface SalesforceTransactionCandidate {
   request_count: number
   aura_actions?: number
   ui_api_calls?: number
+  flow_kinds?: string[]
 }
 
 export interface SalesforceHARMatchCoverage {

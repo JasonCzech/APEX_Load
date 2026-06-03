@@ -1477,6 +1477,22 @@ func salesforceReviewItems(review *salesforce.Review) []string {
 	}
 	if len(review.Transactions) > 0 {
 		items = append(items, fmt.Sprintf("Transaction candidates: %d", len(review.Transactions)))
+		flowKinds := map[string]bool{}
+		for _, transaction := range review.Transactions {
+			for _, flowKind := range transaction.FlowKinds {
+				if strings.TrimSpace(flowKind) != "" {
+					flowKinds[flowKind] = true
+				}
+			}
+		}
+		if len(flowKinds) > 0 {
+			ordered := make([]string, 0, len(flowKinds))
+			for flowKind := range flowKinds {
+				ordered = append(ordered, flowKind)
+			}
+			sort.Strings(ordered)
+			items = append(items, "Salesforce flow kinds: "+strings.Join(ordered, ", "))
+		}
 	}
 	if review.CorrelationConfidence != "" {
 		items = append(items, "Correlation confidence: "+review.CorrelationConfidence)

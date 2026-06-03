@@ -1118,6 +1118,233 @@ Options=NOTHINK
 	}
 }
 
+func TestConvertZipSanitizedACCWLSFixtureShape(t *testing.T) {
+	archive := buildLoadRunnerZip(t, map[string]string{
+		"acc_wls_reg_1.usr": `[General]
+Type=Multi
+DefaultCfg=default.cfg
+ParameterFile=AIA_CashAndCarry_27May.prm
+ActiveTypes=QTWeb
+GenerateTypes=QTWeb
+ScriptLanguage=C
+
+[Actions]
+vuser_init=vuser_init.c
+Action=Action.c
+vuser_end=vuser_end.c
+
+[Transactions]
+T00_PKCEGeneratorAPI=
+T01_LaunchSFApp=
+S01_iPad_BuyFlow_AIA_T06_AddressSearchAndContinue=
+
+[SubTransactions]
+S01_iPad_BuyFlow_AIA_T06_AddressSearchAndContinue||aura_ApexActionController_BWC_ServiceAddressControllergetSearchResults=
+S01_iPad_BuyFlow_AIA_T06_AddressSearchAndContinue||ui.global.components.one.actionBar.ActionBarController/ACTION$getActions=
+`,
+		"default.cfg": `[General]
+DefaultRunLogic=default.usp
+AutomaticTransactions=0
+
+[ThinkTime]
+Options=NOTHINK
+
+[WEB]
+NavigatorBrowserLanguage=en-US
+HttpVer=1.1
+HTTPVer=1.1
+EnableHTTP2=1
+CustomUserAgent=SalesforceMobileSDK/12.0.1 Sanitized iPadOS/18.5 Salesforce1/254.060
+UseCustomAgent=1
+KeepAlive=1
+ProxyUseProxy=1
+ProxyHTTPHost=proxy.example.test
+ProxyHTTPSHost=proxy.example.test
+ProxyHTTPPort=3128
+ProxyHTTPSPort=3128
+ProxyUseSame=1
+BrowserAcceptLanguage=en-US,en;q=0.9
+ConnectTimeout=120
+ReceiveTimeout=120
+MaxRedirectionDepth=10
+`,
+		"AIA_CashAndCarry_27May.prm": `[parameter:P_UserName]
+ColumnName="username"
+GenerateNewVal="EachIteration"
+OutOfRangePolicy="ContinueWithLast"
+ParamName="P_UserName"
+SelectNextRow="Sequential"
+Table="p_UserName.dat"
+Type="Table"
+
+[parameter:P_FirstName]
+ColumnName="first_name"
+GenerateNewVal="EachIteration"
+ParamName="P_FirstName"
+SelectNextRow="Sequential"
+Table="P_FirstName.dat"
+Type="Table"
+`,
+		"p_UserName.dat":            "username\nsanitized.user@example.test\n",
+		"P_FirstName.dat":           "first_name\nSanitized\n",
+		"custom_body_variables.txt": "sanitized=true\n",
+		"globals.h":                 "/* sanitized globals */\n",
+		"lrw_custom_body.h":         "/* sanitized custom body helpers */\n",
+		"vuser_init.c": `
+vuser_init()
+{
+	web_add_auto_header("User-Agent", "SalesforceMobileSDK/12.0.1 Sanitized");
+	web_add_header("Accept-Language", "en-US,en;q=0.9");
+	web_reg_save_param_json("ParamName=AccessToken", "QueryString=$.access_token", LAST);
+	web_add_cookie("sid={SessionId}; DOMAIN=acme.lightning.force.com; PATH=/");
+	web_convert_param("PKCEVerifier", "SourceEncoding=PLAIN", "TargetEncoding=URL", LAST);
+	lr_start_transaction("T00_PKCEGeneratorAPI");
+	web_custom_request("PKCE Generator API",
+		"URL=https://mobileauth.salesforce.com/oauth/token",
+		"Method=POST",
+		"EncType=application/json",
+		"RecContentType=application/json",
+		"Body={\"code_verifier\":\"{PKCEVerifier}\"}",
+		LAST);
+	lr_end_transaction("T00_PKCEGeneratorAPI", LR_AUTO);
+	lr_start_transaction("T01_LaunchSFApp");
+	web_url("Launch SF App",
+		"URL=https://acme.my.salesforce.com/one/one.app",
+		LAST);
+	lr_end_transaction("T01_LaunchSFApp", LR_AUTO);
+	return 0;
+}
+`,
+		"Action.c": `
+Action()
+{
+	web_global_verification("Text=\"state\":\"ERROR\"", "Fail=Found", LAST);
+	lr_start_transaction("S01_iPad_BuyFlow_AIA_T06_AddressSearchAndContinue");
+	web_add_auto_header("X-SFDC-Page-Scope-Id", "{PageScopeId}");
+	web_add_header("Accept-Language", "en-US,en;q=0.9");
+	lr_start_sub_transaction("aura_ApexActionController_BWC_ServiceAddressControllergetSearchResults", "S01_iPad_BuyFlow_AIA_T06_AddressSearchAndContinue");
+	web_submit_data("Address Search Aura",
+		"Action=https://acme.lightning.force.com/aura",
+		"Method=POST",
+		"EncType=application/x-www-form-urlencoded",
+		"RecContentType=application/json",
+		ITEMDATA,
+		"Name=message", "Value={\"actions\":[{\"descriptor\":\"apex://BWC_ServiceAddressController/ACTION$getSearchResults\",\"params\":{\"search\":\"{P_UserName}\"}}]}", ENDITEM,
+		LAST);
+	lr_end_sub_transaction("aura_ApexActionController_BWC_ServiceAddressControllergetSearchResults", LR_AUTO);
+	web_custom_request("Record UI",
+		"URL=https://acme.my.salesforce.com/services/data/v60.0/ui-api/records/{AccountId}",
+		"Method=GET",
+		"RecContentType=application/json",
+		LAST);
+	web_revert_auto_header("X-SFDC-Page-Scope-Id", LAST);
+	web_custom_request("Checkout Aura",
+		"URL=https://acme.lightning.force.com/aura",
+		"Method=POST",
+		"EncType=application/json",
+		"Body={\"actions\":[{\"descriptor\":\"apex://DigitalAccountCreationUtil/ACTION$checkForRestrictedDomainFilters\",\"params\":{\"firstName\":\"{P_FirstName}\"}}]}",
+		LAST);
+	lr_end_transaction("S01_iPad_BuyFlow_AIA_T06_AddressSearchAndContinue", LR_AUTO);
+	return 0;
+}
+`,
+		"vuser_end.c": `
+vuser_end()
+{
+	web_url("Logout", "URL=https://acme.my.salesforce.com/secur/logout.jsp", LAST);
+	return 0;
+}
+`,
+	})
+
+	result, err := ConvertZip(archive, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script.Protocol != "http" {
+		t.Fatalf("protocol = %q, want http", result.Script.Protocol)
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.ImportMode != ImportModeExecutable {
+		t.Fatalf("detected protocol = %#v, want executable QTWeb import", result.DetectedProtocol)
+	}
+	initProtocolActions := 0
+	for _, action := range result.Script.Init {
+		if action.Method != "" && action.Target != "" {
+			initProtocolActions++
+		}
+	}
+	if initProtocolActions != 2 {
+		t.Fatalf("init protocol actions = %d, want PKCE and launch only once: %#v", initProtocolActions, result.Script.Init)
+	}
+	if len(result.Script.Teardown) != 1 {
+		t.Fatalf("teardown actions = %d, want logout action", len(result.Script.Teardown))
+	}
+	for _, action := range result.Script.Actions {
+		if strings.Contains(action.Name, "PKCE") || strings.Contains(action.Name, "Launch") {
+			t.Fatalf("init action duplicated in main actions: %#v", result.Script.Actions)
+		}
+	}
+	pkce := findActionByName(t, result.Script.Init, "PKCE_Generator_API")
+	if pkce.Target != "/oauth/token" {
+		t.Fatalf("PKCE target = %q, want relative mobileauth URL for detected base host", pkce.Target)
+	}
+	if got := pkce.Headers["Accept-Language"]; got != "en-US,en;q=0.9" {
+		t.Fatalf("Accept-Language = %q, want q-value preserved", got)
+	}
+	if len(pkce.Extractors) != 1 || pkce.Extractors[0].Name != "accesstoken" || pkce.Extractors[0].Type != "jsonpath" {
+		t.Fatalf("PKCE extractors = %#v, want JSON extractor from web_reg_save_param_json", pkce.Extractors)
+	}
+	launch := findActionByName(t, result.Script.Init, "Launch_SF_App")
+	if launch.Target != "https://acme.my.salesforce.com/one/one.app" {
+		t.Fatalf("launch target = %q, want absolute Salesforce URL because base host is mobileauth", launch.Target)
+	}
+	address := findActionByName(t, result.Script.Actions, "Address_Search_Aura")
+	if address.Target != "https://acme.lightning.force.com/aura" {
+		t.Fatalf("address target = %q, want absolute lightning URL", address.Target)
+	}
+	if got := address.Headers["Cookie"]; got != "sid={{var.sessionid}}" {
+		t.Fatalf("address cookie = %q, want persistent sanitized cookie substitution", got)
+	}
+	if got := address.Headers["X-SFDC-Page-Scope-Id"]; got != "{{var.pagescopeid}}" {
+		t.Fatalf("auto header = %q, want persistent parameterized page scope", got)
+	}
+	if strings.Contains(strings.ToLower(strings.Join(headerValues(address.Headers), "\n")), "application/json") {
+		t.Fatalf("RecContentType leaked into submit_data request headers: %#v", address.Headers)
+	}
+	if !strings.Contains(address.Body, "{{param.p_username}}") {
+		t.Fatalf("address body = %q, want parameterized username", address.Body)
+	}
+	checkout := findActionByName(t, result.Script.Actions, "Checkout_Aura")
+	if _, ok := checkout.Headers["X-SFDC-Page-Scope-Id"]; ok {
+		t.Fatalf("auto header should be reverted before checkout: %#v", checkout.Headers)
+	}
+	if got := checkout.Headers["Content-Type"]; got != "application/json" {
+		t.Fatalf("checkout content type = %q, want request EncType", got)
+	}
+	if !result.Script.Config.ThinkTime.Ignore {
+		t.Fatal("think time ignore = false, want NOTHINK from default.cfg")
+	}
+	if !strings.Contains(result.Script.Config.HTTP.UserAgent, "SalesforceMobileSDK/12.0.1 Sanitized") {
+		t.Fatalf("user agent = %q, want sanitized Salesforce mobile CustomUserAgent", result.Script.Config.HTTP.UserAgent)
+	}
+	params := map[string]dsl.Parameter{}
+	for _, parameter := range result.Script.Parameters {
+		params[parameter.Name] = parameter
+	}
+	if params["p_username"].OnExhaustion != "last" {
+		t.Fatalf("p_username parameter = %#v, want ContinueWithLast -> last", params["p_username"])
+	}
+	if len(result.Script.Config.WebRuntime.ContentChecks) != 1 {
+		t.Fatalf("content checks = %#v, want global verification", result.Script.Config.WebRuntime.ContentChecks)
+	}
+	if result.SourceReview == nil {
+		t.Fatal("source review missing")
+	}
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_custom_request", "init[2]", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_submit_data", "actions[2]", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "teardown[0]", "converted")
+}
+
 func TestBuildSourceReviewRedactsSecrets(t *testing.T) {
 	review := BuildSourceReview(map[string]string{
 		"Action.c": `Action()

@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
@@ -44,11 +46,12 @@ type EndpointObservation struct {
 }
 
 type TransactionCandidate struct {
-	Name         string `json:"name"`
-	Source       string `json:"source"`
-	RequestCount int    `json:"request_count"`
-	AuraActions  int    `json:"aura_actions,omitempty"`
-	UIAPICalls   int    `json:"ui_api_calls,omitempty"`
+	Name         string   `json:"name"`
+	Source       string   `json:"source"`
+	RequestCount int      `json:"request_count"`
+	AuraActions  int      `json:"aura_actions,omitempty"`
+	UIAPICalls   int      `json:"ui_api_calls,omitempty"`
+	FlowKinds    []string `json:"flow_kinds,omitempty"`
 }
 
 type MatchCoverage struct {
@@ -82,6 +85,9 @@ type actionRef struct {
 	URL         string
 	Method      string
 	Kind        string
+	FlowKind    string
+	Descriptor  string
+	Object      string
 	Transaction string
 	HARID       int
 }
@@ -123,6 +129,11 @@ type harLog struct {
 	} `json:"log"`
 }
 
+var (
+	auraDescriptorPattern = regexp.MustCompile(`(?i)"descriptor"\s*:\s*"([^"]+)"`)
+	jmesIdentifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+)
+
 func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
@@ -159,6 +170,9 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 	if opts.BuildNative && len(entries) == 0 {
 		review.Blockers = append(review.Blockers, "Salesforce native preview requires a HAR captured from the same recording for high-confidence correlation.")
 	}
+	if opts.BuildNative && len(entries) > 0 && review.HARMatchCoverage.CoveragePct < 80 {
+		review.Blockers = append(review.Blockers, "Salesforce native preview HAR coverage is below 80%; attach a HAR from the same recording that covers the missing imported requests.")
+	}
 	if review.Detected && len(review.AuraEndpoints) == 0 {
 		review.Blockers = append(review.Blockers, "No Salesforce Aura endpoints were detected; validate that the capture includes Lightning transaction traffic.")
 	}
@@ -189,6 +203,8 @@ func flattenRequestActions(script *dsl.Script) []actionRef {
 				continue
 			}
 			resolved := resolveActionURL(script.Config.BaseURL, action.Target)
+			evidence := salesforceActionEvidence(action, resolved)
+			descriptor := extractAuraDescriptor(evidence)
 			refs = append(refs, actionRef{
 				Phase:       phase,
 				Index:       index,
@@ -197,6 +213,9 @@ func flattenRequestActions(script *dsl.Script) []actionRef {
 				URL:         resolved,
 				Method:      method,
 				Kind:        classifySalesforceAction(action, resolved),
+				FlowKind:    classifySalesforceFlow(evidence, descriptor),
+				Descriptor:  descriptor,
+				Object:      classifySalesforceObject(evidence, descriptor),
 				Transaction: metadataString(action.Metadata, "loadrunner_transaction"),
 			})
 			seq++
@@ -341,6 +360,83 @@ func classifySalesforceAction(action *dsl.Action, rawURL string) string {
 	}
 }
 
+func salesforceActionEvidence(action *dsl.Action, rawURL string) string {
+	values := []string{rawURL}
+	if action != nil {
+		values = append(values, action.Name, action.Target, action.Body)
+		for key, value := range action.Metadata {
+			values = append(values, key)
+			switch typed := value.(type) {
+			case string:
+				values = append(values, typed)
+			case fmt.Stringer:
+				values = append(values, typed.String())
+			}
+		}
+	}
+	joined := strings.Join(values, " ")
+	if decoded, err := url.QueryUnescape(joined); err == nil && decoded != "" {
+		joined += " " + decoded
+	}
+	return joined
+}
+
+func extractAuraDescriptor(evidence string) string {
+	for _, match := range auraDescriptorPattern.FindAllStringSubmatch(evidence, -1) {
+		if len(match) >= 2 && strings.TrimSpace(match[1]) != "" {
+			return strings.TrimSpace(match[1])
+		}
+	}
+	return ""
+}
+
+func classifySalesforceFlow(evidence, descriptor string) string {
+	lower := strings.ToLower(evidence + " " + descriptor)
+	switch {
+	case containsAny(lower, "workorder", "work_order", "work order", "serviceappointment", "service appointment"):
+		return "work_order"
+	case containsAny(lower, "serviceaddress", "service address", "serviceavailability", "service availability", "getservices", "productoffer", "product offer", "rateplan", "rate plan", "cartreview"):
+		return "service"
+	case containsAny(lower, "account", "contact", "customer", "billing", "ban", "createguestrecords"):
+		return "account"
+	case containsAny(lower, "recordui", "recordwithfields", "recordid", "/ui-api/record", "/sobjects/"):
+		return "record"
+	case containsAny(lower, "submitorder", "checkout", "cartcheckout", "completeinteraction", "interaction"):
+		return "order"
+	case descriptor != "":
+		return "apex_action"
+	default:
+		return ""
+	}
+}
+
+func classifySalesforceObject(evidence, descriptor string) string {
+	combined := evidence + " " + descriptor
+	candidates := []struct {
+		token  string
+		object string
+	}{
+		{"WorkOrder", "WorkOrder"},
+		{"ServiceAppointment", "ServiceAppointment"},
+		{"ServiceAddress", "ServiceAddress"},
+		{"Account", "Account"},
+		{"Contact", "Contact"},
+		{"Order", "Order"},
+		{"Cart", "Cart"},
+		{"Interaction", "Interaction"},
+		{"Product", "Product"},
+		{"RecordUi", "Record"},
+		{"Record", "Record"},
+	}
+	lower := strings.ToLower(combined)
+	for _, candidate := range candidates {
+		if strings.Contains(lower, strings.ToLower(candidate.token)) {
+			return candidate.object
+		}
+	}
+	return ""
+}
+
 func salesforceHost(host string) string {
 	host = strings.ToLower(strings.TrimSpace(host))
 	switch {
@@ -426,7 +522,11 @@ func endpointObservations(refs []actionRef, kind string) []EndpointObservation {
 }
 
 func transactionCandidates(refs []actionRef) []TransactionCandidate {
-	counts := map[string]TransactionCandidate{}
+	type candidateAccumulator struct {
+		candidate TransactionCandidate
+		flowKinds map[string]bool
+	}
+	counts := map[string]*candidateAccumulator{}
 	for _, ref := range refs {
 		name := strings.TrimSpace(ref.Transaction)
 		source := "loadrunner_transaction"
@@ -437,21 +537,34 @@ func transactionCandidates(refs []actionRef) []TransactionCandidate {
 		if name == "" || name == "generic" {
 			name = "Salesforce HTTP Flow"
 		}
-		current := counts[source+":"+name]
-		current.Name = name
-		current.Source = source
-		current.RequestCount++
+		key := source + ":" + name
+		current := counts[key]
+		if current == nil {
+			current = &candidateAccumulator{flowKinds: map[string]bool{}}
+			counts[key] = current
+		}
+		current.candidate.Name = name
+		current.candidate.Source = source
+		current.candidate.RequestCount++
 		if ref.Kind == "aura" {
-			current.AuraActions++
+			current.candidate.AuraActions++
 		}
 		if ref.Kind == "ui_api" {
-			current.UIAPICalls++
+			current.candidate.UIAPICalls++
 		}
-		counts[source+":"+name] = current
+		if ref.FlowKind != "" {
+			current.flowKinds[ref.FlowKind] = true
+		}
 	}
 	out := make([]TransactionCandidate, 0, len(counts))
 	for _, item := range counts {
-		out = append(out, item)
+		flowKinds := make([]string, 0, len(item.flowKinds))
+		for flowKind := range item.flowKinds {
+			flowKinds = append(flowKinds, flowKind)
+		}
+		sort.Strings(flowKinds)
+		item.candidate.FlowKinds = flowKinds
+		out = append(out, item.candidate)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].RequestCount == out[j].RequestCount {
@@ -473,10 +586,6 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 	ensureMetadata(clone)["salesforce_native_preview"] = true
 
 	cloneRefs := flattenRequestActions(clone)
-	harByID := make(map[int]harEntry, len(entries))
-	for _, entry := range entries {
-		harByID[entry.ID] = entry
-	}
 	harIDToRef := make(map[int]*actionRef)
 	for refIndex, harID := range matches {
 		if refIndex >= len(cloneRefs) {
@@ -492,9 +601,12 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 			ref.Action.Metadata = map[string]any{}
 		}
 		ref.Action.Metadata["salesforce"] = map[string]any{
-			"classification": ref.Kind,
-			"sequence":       ref.Sequence,
-			"har_match_id":   ref.HARID,
+			"classification":  ref.Kind,
+			"flow_kind":       ref.FlowKind,
+			"object":          ref.Object,
+			"aura_descriptor": ref.Descriptor,
+			"sequence":        ref.Sequence,
+			"har_match_id":    ref.HARID,
 		}
 		if ref.Kind == "aura" {
 			addAssertionIfMissing(ref.Action, dsl.Assertion{Type: "body_not_contains", Value: `"state":"ERROR"`})
@@ -565,7 +677,143 @@ func detectCorrelations(entries []harEntry) []correlate.Correlation {
 			ResponseHeaders: entry.ResponseHeaders,
 		})
 	}
-	return correlate.Detect(observations)
+	correlations := correlate.Detect(observations)
+	seenValues := make(map[string]bool, len(correlations))
+	for _, corr := range correlations {
+		seenValues[corr.Value] = true
+	}
+	correlations = append(correlations, detectNestedJSONCorrelations(observations, seenValues)...)
+	sort.SliceStable(correlations, func(i, j int) bool {
+		if correlations[i].Confidence != correlations[j].Confidence {
+			return correlations[i].Confidence > correlations[j].Confidence
+		}
+		if correlations[i].FoundInID == correlations[j].FoundInID {
+			return correlations[i].Name < correlations[j].Name
+		}
+		return correlations[i].FoundInID < correlations[j].FoundInID
+	})
+	return correlations
+}
+
+func detectNestedJSONCorrelations(observations []correlate.Observation, seenValues map[string]bool) []correlate.Correlation {
+	correlations := make([]correlate.Correlation, 0)
+	for index, observation := range observations {
+		candidates := nestedJSONCandidates(observation.ResponseBody)
+		for _, candidate := range candidates {
+			if candidate.Value == "" || seenValues[candidate.Value] {
+				continue
+			}
+			usedIn := make([]int, 0)
+			for later := index + 1; later < len(observations); later++ {
+				if correlate.ObservationContains(observations[later], candidate.Value) {
+					usedIn = append(usedIn, observations[later].ID)
+				}
+			}
+			if len(usedIn) == 0 {
+				continue
+			}
+			seenValues[candidate.Value] = true
+			correlations = append(correlations, correlate.Correlation{
+				Name:        candidate.Name,
+				Source:      candidate.Source,
+				Expression:  candidate.Expression,
+				ExtractType: candidate.ExtractType,
+				FoundInID:   observation.ID,
+				UsedInIDs:   usedIn,
+				Value:       candidate.Value,
+				SampleValue: correlate.Truncate(candidate.Value, 80),
+				RuleID:      candidate.RuleID,
+				Confidence:  candidate.BaseConfidence,
+				Reasons:     []string{candidate.Reason},
+			})
+		}
+	}
+	return correlations
+}
+
+func nestedJSONCandidates(body string) []correlate.Candidate {
+	if strings.TrimSpace(body) == "" {
+		return nil
+	}
+	var decoded any
+	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
+		return nil
+	}
+	candidates := make([]correlate.Candidate, 0)
+	var walk func(value any, path string, key string)
+	walk = func(value any, path string, key string) {
+		switch typed := value.(type) {
+		case map[string]any:
+			for childKey, childValue := range typed {
+				walk(childValue, appendJMESPath(path, childKey), childKey)
+			}
+		case []any:
+			for index, childValue := range typed {
+				walk(childValue, fmt.Sprintf("%s[%d]", path, index), key)
+			}
+		case string:
+			if len(typed) >= 6 && dynamicJSONKey(key) {
+				candidates = append(candidates, nestedJSONCandidate(key, typed, path, false))
+			}
+		case float64:
+			if dynamicJSONKey(key) {
+				value := strconv.FormatFloat(typed, 'f', -1, 64)
+				if len(value) >= 4 {
+					candidates = append(candidates, nestedJSONCandidate(key, value, path, true))
+				}
+			}
+		}
+	}
+	walk(decoded, "", "")
+	return candidates
+}
+
+func nestedJSONCandidate(key, value, expression string, numeric bool) correlate.Candidate {
+	ruleID := correlate.RuleJSONDynamicID
+	confidence := 0.62
+	reason := "Nested JSON field " + key + " looks like a dynamic identifier"
+	lower := strings.ToLower(key)
+	switch {
+	case strings.Contains(lower, "csrf"), strings.Contains(lower, "xsrf"):
+		ruleID = correlate.RuleJSONCSRFToken
+		confidence = 0.9
+	case strings.Contains(lower, "access_token"), strings.Contains(lower, "id_token"), strings.Contains(lower, "refresh_token"), strings.Contains(lower, "token"):
+		ruleID = correlate.RuleJSONAuthToken
+		confidence = 0.84
+	case strings.Contains(lower, "session"), strings.Contains(lower, "sid"):
+		ruleID = correlate.RuleJSONSessionID
+		confidence = 0.84
+	case numeric:
+		ruleID = correlate.RuleJSONNumericID
+		confidence = 0.52
+		reason = "Nested JSON numeric id field " + key
+	}
+	return correlate.Candidate{
+		Name:           "corr_" + correlate.Slug(key),
+		Value:          value,
+		Source:         "body",
+		ExtractType:    "jmespath",
+		Expression:     expression,
+		RuleID:         ruleID,
+		BaseConfidence: confidence,
+		Reason:         reason,
+	}
+}
+
+func appendJMESPath(path, key string) string {
+	segment := key
+	if !jmesIdentifierPattern.MatchString(key) {
+		segment = strconv.Quote(key)
+	}
+	if path == "" {
+		return segment
+	}
+	return path + "." + segment
+}
+
+func dynamicJSONKey(key string) bool {
+	lower := strings.ToLower(strings.TrimSpace(key))
+	return containsAny(lower, "token", "access_token", "id_token", "refresh_token", "session", "sessionid", "sid", "csrf", "xsrf", "auth", "nonce", "state", "recordid", "record_id", "interactionid", "interaction_id", "workorderid", "work_order_id", "accountid", "account_id", "contactid", "contact_id", "orderid", "order_id", "cartid", "cart_id", "id")
 }
 
 func correlationSummaries(correlations []correlate.Correlation) []CorrelationCandidate {
@@ -655,4 +903,13 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func containsAny(value string, needles ...string) bool {
+	for _, needle := range needles {
+		if strings.Contains(value, needle) {
+			return true
+		}
+	}
+	return false
 }

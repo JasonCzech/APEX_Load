@@ -1677,7 +1677,7 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	rc.ConnectTimeoutSec = parseInt(httpSection["ConnectTimeout"])
 	rc.ReceiveTimeoutSec = parseInt(httpSection["ReceiveTimeout"])
 	rc.StepTimeoutSec = parseInt(httpSection["StepDownloadTimeout"])
-	if version := strings.TrimSpace(httpSection["HTTPVersion"]); version != "" {
+	if version := strings.TrimSpace(firstNonBlank(httpSection["HTTPVersion"], httpSection["HTTPVer"], httpSection["HttpVer"])); version != "" {
 		rc.HTTPVersion = version
 	}
 	if keepAlive, ok := parseBoolExplicit(httpSection["KeepAlive"]); ok {
@@ -1686,18 +1686,25 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	if redirects := parseInt(httpSection["MaxRedirections"]); redirects > 0 {
 		rc.MaxRedirects = redirects
 	}
+	if redirects := parseInt(httpSection["MaxRedirectionDepth"]); redirects > 0 {
+		rc.MaxRedirects = redirects
+	}
 	rc.MaxConnsPerHost = firstNonZeroInt(httpSection["MaxConnectionsPerHost"], httpSection["MaxConnections"], httpSection["MaxConnectionsPerHostHTTP"])
 
 	proxySection := findSection(sections, "Proxy", "WEB", "Web")
 	rc.ProxyMode = normalizeEnum(strings.TrimSpace(firstNonBlank(proxySection["Mode"], proxySection["ProxyMode"], proxySection["Type"])))
 	rc.ProxyURL = strings.TrimSpace(firstNonBlank(proxySection["ProxyServer"], proxySection["ProxyURL"], proxySection["Server"]))
-	rc.ProxyUser = strings.TrimSpace(firstNonBlank(proxySection["ProxyUserName"], proxySection["UserName"]))
+	if rc.ProxyURL == "" {
+		rc.ProxyURL = buildRuntimeProxyURL(proxySection)
+	}
+	rc.ProxyUser = strings.TrimSpace(firstNonBlank(proxySection["ProxyUserName"], proxySection["UserName"], proxySection["ProxyUser"]))
 	rc.ProxyPass = strings.TrimSpace(firstNonBlank(proxySection["ProxyPassword"], proxySection["Password"]))
 
 	browserSection := findSection(sections, "Browser Emulation", "Browser", "WEB", "Web")
-	rc.UserAgent = strings.TrimSpace(browserSection["UserAgent"])
-	rc.AcceptLanguage = strings.TrimSpace(browserSection["AcceptLanguage"])
-	rc.UseGzip = strings.Contains(strings.ToLower(browserSection["AcceptEncoding"]), "gzip")
+	rc.UserAgent = strings.TrimSpace(firstNonBlank(browserSection["CustomUserAgent"], browserSection["UserAgent"], browserSection["BrowserUserAgent"]))
+	rc.AcceptLanguage = strings.TrimSpace(firstNonBlank(browserSection["AcceptLanguage"], browserSection["BrowserAcceptLanguage"], browserSection["NavigatorBrowserLanguage"], browserSection["NavigatorUserLanguage"]))
+	acceptEncoding := firstNonBlank(browserSection["AcceptEncoding"], browserSection["BrowserAcceptEncoding"])
+	rc.UseGzip = strings.Contains(strings.ToLower(acceptEncoding), "gzip")
 	rc.CacheEnabled = parseBool(browserSection["CacheEnabled"])
 	rc.CacheContentURLs = parseBool(firstNonBlank(browserSection["CacheContentURLs"], browserSection["CacheURLsRequiringContent"]))
 	rc.CheckNewerVersions = parseBool(firstNonBlank(browserSection["CheckNewerVersions"], browserSection["CheckForNewerPages"]))
@@ -2030,6 +2037,28 @@ func firstNonZeroInt(values ...string) int {
 		}
 	}
 	return 0
+}
+
+func buildRuntimeProxyURL(section map[string]string) string {
+	host := strings.TrimSpace(firstNonBlank(section["ProxyHTTPSHost"], section["ProxyHTTPHost"]))
+	if host == "" {
+		return ""
+	}
+	port := firstNonZeroInt(section["ProxyHTTPSPort"], section["ProxyHTTPPort"])
+	scheme := "http"
+	if strings.TrimSpace(section["ProxyHTTPSHost"]) != "" {
+		scheme = "https"
+	}
+	if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
+		if port > 0 && !strings.Contains(strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://"), ":") {
+			return strings.TrimRight(host, "/") + ":" + strconv.Itoa(port)
+		}
+		return host
+	}
+	if port > 0 {
+		return fmt.Sprintf("%s://%s:%d", scheme, host, port)
+	}
+	return scheme + "://" + host
 }
 
 func parseBool(value string) bool {
