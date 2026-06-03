@@ -24,7 +24,7 @@ type LibraryAssetSourcePanelProps = {
 }
 
 type LibraryAssetRow = {
-  source: 'Local' | 'K8s Host'
+  source: 'Local' | 'Hosted Library'
   item: LibraryCatalogItem
   syncStatus: string
 }
@@ -32,7 +32,7 @@ type LibraryAssetRow = {
 const SOURCE_OPTIONS: Array<{ value: LibrarySourceFilter; label: string }> = [
   { value: 'all', label: 'All' },
   { value: 'local', label: 'Local' },
-  { value: 'host', label: 'K8s Host' },
+  { value: 'host', label: 'Hosted Library' },
 ]
 
 const KIND_LABELS: Record<LibraryKind, string> = {
@@ -156,7 +156,7 @@ export default function LibraryAssetSourcePanel({ kind, projectId, onRefreshLoca
 
   const remoteRows = useMemo<LibraryAssetRow[]>(() => (
     sourceFilter === 'local' ? [] : remoteItems.map(item => ({
-      source: 'K8s Host',
+      source: 'Hosted Library',
       item,
       syncStatus: item.sync_status || 'host only',
     }))
@@ -259,7 +259,7 @@ export default function LibraryAssetSourcePanel({ kind, projectId, onRefreshLoca
           <p className="library-toolbar-subtitle">{sourceDescription(kind)}</p>
         </div>
         <div className="library-source-summary">
-          <span className={`script-health-token ${libraryStatusTone(selectedRemote?.status)}`}>{selectedRemote?.status || 'no host'}</span>
+          <span className={`script-health-token ${libraryStatusTone(selectedRemote?.status)}`}>{selectedRemote?.status || 'no hosted library'}</span>
           <span className={`script-health-token ${credentialsReady ? 'healthy' : 'danger'}`}>{credentialsReady ? 'credentials ready' : 'credentials missing'}</span>
         </div>
       </div>
@@ -316,7 +316,7 @@ export default function LibraryAssetSourcePanel({ kind, projectId, onRefreshLoca
           <tbody>
             {rows.map(({ source, item, syncStatus }) => {
               const hostItem = source === 'Local' ? hostByLocalID.get(item.id) : item
-              const href = source === 'K8s Host' ? hostLibraryHref(selectedRemote, item) : ''
+              const href = source === 'Hosted Library' ? hostLibraryHref(selectedRemote, item) : ''
               const localItemID = item.local_item_id
               const transferBlockedByConflict = syncStatus === 'conflict'
               const transferBlockTitle = transferBlockedByConflict ? 'Compare this conflict before transferring.' : actionBlockedReason
@@ -360,7 +360,7 @@ export default function LibraryAssetSourcePanel({ kind, projectId, onRefreshLoca
                               Compare
                             </button>
                           )}
-                          {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer">Open on Host</a>}
+                          {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer">Open in Hosted Library</a>}
                         </>
                       )}
                     </div>
