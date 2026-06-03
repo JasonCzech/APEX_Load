@@ -113,6 +113,11 @@ export default function LinkedCodePane({
   const viewRef = useRef<EditorView | null>(null)
   const clickRef = useRef(onLineClick)
   clickRef.current = onLineClick
+  // Suppress the scroll on the first highlight after the editor mounts: the
+  // initial mapping is auto-selected when the review opens, and scrolling there
+  // would drag the whole page down to this pane (away from the Save button).
+  // Subsequent selection changes are user-driven, so scrolling is wanted.
+  const hasAppliedRangeRef = useRef(false)
 
   const extensions = useMemo<Extension[]>(() => {
     const exts: Extension[] = [
@@ -138,17 +143,26 @@ export default function LinkedCodePane({
   }, [language, gutterStatuses])
 
   // Apply the linked-line highlight and scroll it into view whenever the active
-  // range (or the underlying document) changes.
+  // range (or the underlying document) changes. Depend on the range's line
+  // numbers rather than the object identity: callers rebuild the range object on
+  // every render, so keying on the object would re-dispatch scrollIntoView on
+  // unrelated re-renders (e.g. a 2s status poll), yanking the page back to the
+  // highlighted line.
+  const activeStartLine = activeRange?.startLine ?? null
+  const activeEndLine = activeRange?.endLine ?? null
   useEffect(() => {
     const view = viewRef.current
     if (!view) return
-    const effects: StateEffect<unknown>[] = [setLinkedRange.of(activeRange ?? null)]
-    if (activeRange && activeRange.startLine >= 1 && activeRange.startLine <= view.state.doc.lines) {
-      const line = view.state.doc.line(activeRange.startLine)
+    const isInitialRange = !hasAppliedRangeRef.current
+    hasAppliedRangeRef.current = true
+    const range = activeStartLine != null ? { startLine: activeStartLine, endLine: activeEndLine ?? activeStartLine } : null
+    const effects: StateEffect<unknown>[] = [setLinkedRange.of(range)]
+    if (!isInitialRange && range && range.startLine >= 1 && range.startLine <= view.state.doc.lines) {
+      const line = view.state.doc.line(range.startLine)
       effects.push(EditorView.scrollIntoView(line.from, { y: 'center' }))
     }
     view.dispatch({ effects })
-  }, [activeRange, value])
+  }, [activeStartLine, activeEndLine, value])
 
   return (
     <div className="linked-code-pane" role="region" aria-label={ariaLabel}>

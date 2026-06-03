@@ -4,6 +4,7 @@ import { type ScriptDefinition, type SourceReview, type SourceReviewFile, type S
 import { canCopyTextToClipboard, copyTextToClipboard } from '../utils/clipboardUtils'
 import { buildDslDocument, lineRangeForTargetPath } from './dslJsonPointers'
 import {
+  type MappingCategory,
   computeCoverage,
   dslLineStatus,
   lineStatusForSource,
@@ -119,6 +120,7 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
   const [selectedMappingId, setSelectedMappingId] = useState('')
   const [selectedFilePath, setSelectedFilePath] = useState('')
   const [filter, setFilter] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState<MappingCategory | ''>('')
   const [sortField, setSortField] = useState<SortField>('source')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [copied, setCopied] = useState<'source' | 'dsl' | ''>('')
@@ -147,13 +149,18 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
     const nextMapping = mappings[0]
     setSelectedMappingId(nextMapping?.id || '')
     setSelectedFilePath(nextMapping?.source_file || files[0]?.path || '')
+    setCategoryFilter('')
     setCopied('')
   }, [files, mappings])
 
   const filteredMappings = useMemo(() => {
     const needle = filter.trim().toLowerCase()
-    const next = needle
-      ? mappings.filter(mapping => [
+    let next = mappings
+    if (categoryFilter) {
+      next = next.filter(mapping => statusCategory(mapping.status) === categoryFilter)
+    }
+    if (needle) {
+      next = next.filter(mapping => [
         mapping.source_file,
         mapping.function,
         mapping.target_path,
@@ -162,9 +169,9 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
         mapping.support_mode,
         mapping.notes,
       ].some(value => String(value || '').toLowerCase().includes(needle)))
-      : mappings
+    }
     return [...next].sort((a, b) => compareText(mappingSortValue(a, sortField), mappingSortValue(b, sortField), sortDirection))
-  }, [filter, mappings, sortDirection, sortField])
+  }, [filter, mappings, sortDirection, sortField, categoryFilter])
 
   if (files.length === 0 && mappings.length === 0) {
     return null
@@ -175,6 +182,10 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
     setSelectedMappingId(mapping.id)
     if (mapping.source_file) setSelectedFilePath(mapping.source_file)
     setCopied('')
+  }
+
+  const toggleCategoryFilter = (category: MappingCategory) => {
+    setCategoryFilter(current => (current === category ? '' : category))
   }
 
   const selectSourceFile = (filePath: string) => {
@@ -237,17 +248,24 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
       </div>
 
       <div className="source-map-coverage" role="group" aria-label="Conversion coverage">
-        {coverageChips.map(chip => (
-          <span
-            key={chip.key}
-            className={`source-map-status ${CATEGORY_CLASS[chip.key]}`}
-            title={chip.tooltip}
-            data-tooltip={chip.tooltip}
-            tabIndex={0}
-          >
-            {chip.label}: {chip.value}
-          </span>
-        ))}
+        {coverageChips.map(chip => {
+          const category = chip.key as MappingCategory
+          const active = categoryFilter === category
+          return (
+            <button
+              key={chip.key}
+              type="button"
+              className={`source-map-status source-map-status-filter ${CATEGORY_CLASS[chip.key]}${active ? ' active' : ''}`}
+              title={chip.tooltip}
+              data-tooltip={chip.tooltip}
+              aria-pressed={active}
+              disabled={chip.value === 0}
+              onClick={() => toggleCategoryFilter(category)}
+            >
+              {chip.label}: {chip.value}
+            </button>
+          )
+        })}
         {dslDocument && (
           <span
             className={`source-map-status ${coverage.dslWithoutOrigin > 0 ? 'unsupported' : 'converted'}`}

@@ -313,6 +313,42 @@
   font-weight: 600;
 }
 
+.source-map-status-filter {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.source-map-status-filter:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.source-map-status-filter:not(:disabled):hover {
+  border-color: var(--text-secondary);
+}
+
+.source-map-status-filter.active.converted {
+  background: var(--success);
+  border-color: var(--success);
+  color: var(--bg-primary);
+}
+
+.source-map-status-filter.active.preserved {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-primary);
+}
+
+.source-map-status-filter.active.review_only,
+.source-map-status-filter.active.unsupported {
+  background: var(--warning);
+  border-color: var(--warning);
+  color: var(--bg-primary);
+}
+
 .linked-code-pane {
   min-width: 0;
 }

@@ -173,6 +173,80 @@ describe('SourceMappingReview', () => {
     expect(withoutOrigin?.dataset.tooltip).toContain('no traceable source mapping')
   })
 
+  it('filters the mapping table when a coverage pill is toggled', async () => {
+    const mixedReview = {
+      source_files: sourceReview.source_files,
+      mappings: [
+        { ...sourceReview.mappings[0] },
+        {
+          id: 'lr-think',
+          source_file: 'Action.c',
+          start_line: 4,
+          end_line: 4,
+          function: 'lr_think_time',
+          target_path: '',
+          target_name: '',
+          target_kind: 'review',
+          status: 'unsupported',
+          support_mode: '',
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={mixedReview} script={script} />)
+    })
+    await flushPromises()
+
+    const rowText = () =>
+      Array.from(container.querySelectorAll('.source-map-table tbody tr')).map(row => row.textContent || '')
+
+    // Both mappings visible before any filter.
+    expect(rowText().some(text => text.includes('web_url'))).toBe(true)
+    expect(rowText().some(text => text.includes('lr_think_time'))).toBe(true)
+
+    const unsupportedPill = Array.from(container.querySelectorAll('.source-map-status-filter')).find(
+      pill => pill.textContent?.includes('Unsupported:'),
+    ) as HTMLButtonElement | undefined
+    expect(unsupportedPill).toBeDefined()
+
+    await act(async () => {
+      unsupportedPill?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(unsupportedPill?.getAttribute('aria-pressed')).toBe('true')
+    expect(rowText().some(text => text.includes('lr_think_time'))).toBe(true)
+    expect(rowText().some(text => text.includes('web_url'))).toBe(false)
+
+    // Toggling the same pill again clears the filter.
+    await act(async () => {
+      unsupportedPill?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(unsupportedPill?.getAttribute('aria-pressed')).toBe('false')
+    expect(rowText().some(text => text.includes('web_url'))).toBe(true)
+  })
+
+  it('disables coverage pills that have no matching mappings', async () => {
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />)
+    })
+    await flushPromises()
+
+    const unsupportedPill = Array.from(container.querySelectorAll('.source-map-status-filter')).find(
+      pill => pill.textContent?.includes('Unsupported:'),
+    ) as HTMLButtonElement | undefined
+    const convertedPill = Array.from(container.querySelectorAll('.source-map-status-filter')).find(
+      pill => pill.textContent?.includes('Converted:'),
+    ) as HTMLButtonElement | undefined
+
+    // Fixture has no unsupported mappings, so that pill is disabled.
+    expect(unsupportedPill?.disabled).toBe(true)
+    expect(convertedPill?.disabled).toBe(false)
+  })
+
   it('clears the stale DSL selection when the selected source file has no mapping', async () => {
     await act(async () => {
       root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />)
