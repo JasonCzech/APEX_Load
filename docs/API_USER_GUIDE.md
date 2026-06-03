@@ -358,6 +358,7 @@ Messages are JSON and include a `type` field such as `metrics_update`, `test_cre
 | `GET` | `/api/v1/tests/{id}/archive/transactions` | Transaction data. |
 | `GET` | `/api/v1/tests/{id}/archive/resources` | Resource metrics. |
 | `GET` | `/api/v1/tests/{id}/archive/summaries` | Interval summaries. |
+| `GET` | `/api/v1/tests/{id}/archive/analysis` | Merged action/dependency graph plus paged transaction drilldown. |
 | `GET` | `/api/v1/tests/{id}/archive/root-cause` | Deterministic root-cause analysis. |
 | `GET` | `/api/v1/tests/{id}/archive/ai-root-cause` | Governed AI root-cause assistance when policy allows it. |
 | `GET` | `/api/v1/tests/{id}/archive/comparison` | Baseline comparison. |
@@ -624,6 +625,7 @@ Useful recorder and replay endpoints:
 | `GET` | `/api/v1/tests/{id}/archive/resources` |
 | `GET` | `/api/v1/tests/{id}/archive/summaries` |
 | `GET` | `/api/v1/tests/{id}/archive/report` |
+| `GET` | `/api/v1/tests/{id}/archive/analysis` |
 | `GET` | `/api/v1/tests/{id}/archive/root-cause` |
 | `GET` | `/api/v1/tests/{id}/archive/ai-root-cause` |
 | `GET` | `/api/v1/tests/{id}/archive/comparison` |

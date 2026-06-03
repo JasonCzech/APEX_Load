@@ -154,8 +154,8 @@ Legend: **▲ APEX leads** · **= parity** · **▼ APEX trails** · **▼▼ AP
 
 | Capability | APEX | LRE 26.x | Verdict |
 | --- | --- | --- | --- |
-| Auto-correlation | Rules engine + replay-failure detection + guided repair (`pkg/convert/correlate/`) | Full rules engine per protocol + design studio + learning from record/replay | **▼** |
-| Correlation depth | ~40–50% of LRE capability (post C0 delivery) | LRE's defining moat | **▼** |
+| Auto-correlation | Response-family rule packs, replay-failure detection, stale-literal evidence, and guided/batch repair (`pkg/convert/correlate/`) | Full rules engine per protocol + design studio + learning from record/replay | **▼** |
+| Correlation depth | Improved for HTTP/API, HTML, JSON, XML/SOAP, redirects, WebSocket, and JMS IDs; still narrower than VuGen | LRE's defining moat | **▼** |
 
 **Load Modeling and Execution**
 
@@ -171,7 +171,7 @@ Legend: **▲ APEX leads** · **= parity** · **▼ APEX trails** · **▼▼ AP
 
 | Capability | APEX | LRE 26.x | Verdict |
 | --- | --- | --- | --- |
-| Offline analysis depth | Good archive + comparison; lighter | Analysis: graph merge, page diagnostics, deep drill-down | **▼** |
+| Offline analysis depth | Archive report/comparison plus merged graph and transaction drilldown (`/api/v1/tests/{id}/archive/analysis`); still lighter than Analysis | Analysis: graph merge, page diagnostics, deep drill-down | **▼** |
 | Multi-run trending | Release trend cards; `GET /api/v1/releases/{id}/trend` | Rich trend reports | **▼** |
 | Report output | HTML + archive comparison + baseline pin; no PDF | HTML/PDF/Word, custom templates | **▼** |
 | Open results format | Parquet/JSONL | Proprietary .lrr/.lra | **▲** |
@@ -211,9 +211,9 @@ These overstatements existed in earlier docs and are now corrected:
 
 | Priority | Gap | Effort |
 | --- | --- | --- |
-| P0 | Correlation intelligence — per-response-family rules, record/replay diff, guided repair | L |
+| P0 | Correlation intelligence — broaden response-family fixtures and UI-assisted medium-confidence review | M |
 | P0 | CI/CD ecosystem — maintained marketplace plugins, Git script sync | M |
-| P1 | Offline analysis depth — graph merge, per-page drill-down, PDF report builder | L |
+| P1 | Offline analysis depth — dashboard graph UX and PDF report builder | M |
 | P1 | Benchmark evidence — publish one reproducible density benchmark | S–M |
 | P2 | Browser/SPA recording fidelity — DOM-aware capture or crisp canary scoping | L |
 | P2 | Region/load-zone distribution with per-region response metrics | M |
@@ -333,8 +333,8 @@ A comprehensive audit of APEX Load against enterprise performance testing platfo
 | Gap | Impact | Status |
 | --- | --- | --- |
 | CI/CD pipeline integration — JUnit XML, maintained marketplace plugins, Git script sync | Critical | JUnit + GitHub/ADO/Jenkins delivered; marketplace plugins pending |
-| Offline report depth — graph merge, per-txn drill-down, multi-run trend, PDF export | High | Archive + trend analysis delivered; graph merge and PDF pending |
-| Correlation intelligence depth | High | Rules engine + replay-failure detection delivered; full VuGen-class parity pending |
+| Offline report depth — graph merge, per-txn drill-down, multi-run trend, PDF export | High | Archive + trend analysis plus graph/drilldown API delivered; dashboard graph UX and PDF pending |
+| Correlation intelligence depth | High | Response-family rule packs + replay stale-literal evidence delivered; full VuGen-class parity pending |
 | Named load zones with benchmark envelopes | High | Named self-hosted zones delivered; benchmark envelopes pending |
 | Browser/SPA recording fidelity | Medium | Scoped as canary-only; DOM-aware capture is a separate large effort |
 | PDF/Word report export | Medium | HTML emitted; PDF/Word not started |

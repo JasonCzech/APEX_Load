@@ -2851,6 +2851,78 @@ func TestApplyAuthoringCorrelationPersistsDraftAndReviewState(t *testing.T) {
 	}
 }
 
+func TestBatchAuthoringCorrelationAppliesHighConfidenceAndBlocksMediumRisk(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store})
+	body := []byte(`{
+		"project_id":"project-authoring",
+		"source":"loadrunner",
+		"name":"Correlation batch",
+		"status":"reviewing",
+		"draft":{
+			"name":"Correlated Flow",
+			"version":"1.0.0",
+			"protocol":"http",
+			"config":{"base_url":"https://example.test"},
+			"actions":[
+				{"name":"Login","type":"request","method":"POST","target":"/login"},
+				{"name":"Cart","type":"request","method":"GET","target":"/cart?csrf=csrf-high-123456&order=order-medium-123456"}
+			]
+		}
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(body))
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created storage.AuthoringSession
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created session: %v", err)
+	}
+
+	applyBody := []byte(`{
+		"apply": true,
+		"auto_apply_high_confidence": true,
+		"repairs": [
+			{"name":"corr_csrf","expression":"$.csrf","sample_value":"csrf-high-123456","found_action_index":1,"used_action_indexes":[2],"confidence":0.91,"severity":"error"},
+			{"name":"corr_order","expression":"$.order","sample_value":"order-medium-123456","found_action_index":1,"used_action_indexes":[2],"confidence":0.62,"severity":"error"}
+		]
+	}`)
+	applyReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+created.ID+"/correlations/preview", bytes.NewReader(applyBody))
+	applyResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(applyResp, applyReq)
+	if applyResp.Code != http.StatusOK {
+		t.Fatalf("batch apply status = %d, want %d body=%s", applyResp.Code, http.StatusOK, applyResp.Body.String())
+	}
+	var applied authoringCorrelationPreviewResponse
+	if err := json.Unmarshal(applyResp.Body.Bytes(), &applied); err != nil {
+		t.Fatalf("unmarshal batch apply response: %v", err)
+	}
+	if !applied.Applied || applied.AppliedCount != 1 || !applied.Blocked {
+		t.Fatalf("batch response = %#v, want one applied and blocked medium risk", applied)
+	}
+	if len(applied.ReviewRequired) != 1 || applied.ReviewRequired[0] != "corr_order" {
+		t.Fatalf("review_required = %#v, want corr_order", applied.ReviewRequired)
+	}
+	persisted, err := store.GetAuthoringSession(created.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession returned error: %v", err)
+	}
+	target := persisted.Draft.Actions[1].Target
+	if !strings.Contains(target, "{{var.corr_csrf}}") || strings.Contains(target, "{{var.corr_order}}") {
+		t.Fatalf("target = %q, want only high-confidence repair applied", target)
+	}
+	state, ok := persisted.ReviewState["last_correlation_batch_preview"].(map[string]any)
+	if !ok || state["blocked"] != true {
+		t.Fatalf("review state = %#v, want blocked batch metadata", persisted.ReviewState)
+	}
+}
+
 type reviewSection struct {
 	Key      string   `json:"key"`
 	Severity string   `json:"severity"`

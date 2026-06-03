@@ -126,3 +126,58 @@ func TestSetCookieSessionVsOtherConfidence(t *testing.T) {
 		t.Fatalf("JSESSIONID should be session cookie rule, got %s", correlations[0].RuleID)
 	}
 }
+
+func TestDetectExpandedResponseFamilies(t *testing.T) {
+	observations := []Observation{
+		{
+			ID: 1,
+			ResponseBody: `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Header><wsa:MessageID>urn:uuid:msg-123456789</wsa:MessageID></soap:Header>
+  <soap:Body><m:CreateOrderResponse correlationId="soap-corr-abcdef123456">ok</m:CreateOrderResponse></soap:Body>
+</soap:Envelope>`,
+			ResponseHeaders: map[string]string{
+				"Location":         "https://idp.example.test/callback?code=code-abcdef123456&state=state-abcdef123456",
+				"JMSCorrelationID": "jms-corr-abcdef123456",
+			},
+		},
+		{
+			ID:             2,
+			RequestURL:     "https://client.example.test/callback?code=code-abcdef123456&state=state-abcdef123456",
+			RequestBody:    "message=urn:uuid:msg-123456789&soap=soap-corr-abcdef123456",
+			RequestHeaders: map[string]string{"JMSCorrelationID": "jms-corr-abcdef123456"},
+		},
+	}
+
+	correlations := Detect(observations)
+	wantRules := map[string]bool{
+		RuleXMLSOAPToken:     false,
+		RuleLocationParam:    false,
+		RuleJMSCorrelationID: false,
+	}
+	for _, c := range correlations {
+		if _, ok := wantRules[c.RuleID]; ok {
+			wantRules[c.RuleID] = true
+		}
+	}
+	for rule, found := range wantRules {
+		if !found {
+			t.Fatalf("missing rule %s in correlations: %#v", rule, correlations)
+		}
+	}
+}
+
+func TestDetectWebSocketCorrelationID(t *testing.T) {
+	observations := []Observation{
+		{ID: 1, ResponseBody: `{"subscriptionId":"sub-abcdef123456","messageId":"msg-abcdef123456"}`},
+		{ID: 2, RequestBody: `{"ack":"msg-abcdef123456","subscriptionId":"sub-abcdef123456"}`},
+	}
+	correlations := Detect(observations)
+	if len(correlations) < 2 {
+		t.Fatalf("expected websocket correlations, got %#v", correlations)
+	}
+	for _, c := range correlations {
+		if c.RuleID != RuleWebSocketID {
+			t.Fatalf("expected websocket rule, got %#v", c)
+		}
+	}
+}

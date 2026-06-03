@@ -3,6 +3,7 @@ package correlate
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // RepairSeverity ranks how likely a finding is to break the replay.
@@ -31,17 +32,23 @@ type SuggestedExtractor struct {
 // migration assistant: it tells the user *which* step will break, *why*, and the
 // exact extractor to add.
 type RepairSuggestion struct {
-	RuleID        string              `json:"rule_id"`
-	Severity      RepairSeverity      `json:"severity"`
-	Title         string              `json:"title"`
-	Detail        string              `json:"detail"`
-	SourceStepID  int                 `json:"source_step_id"`
-	FailingStepID int                 `json:"failing_step_id,omitempty"`
-	RecordedValue string              `json:"recorded_value,omitempty"`
-	ReplayValue   string              `json:"replay_value,omitempty"`
-	Suggestion    string              `json:"suggestion"`
-	Extractor     *SuggestedExtractor `json:"extractor,omitempty"`
-	Confidence    float64             `json:"confidence"`
+	RuleID         string              `json:"rule_id"`
+	SourceFamily   ResponseFamily      `json:"source_family,omitempty"`
+	Severity       RepairSeverity      `json:"severity"`
+	Title          string              `json:"title"`
+	Detail         string              `json:"detail"`
+	SourceStepID   int                 `json:"source_step_id"`
+	FailingStepID  int                 `json:"failing_step_id,omitempty"`
+	UsedInIDs      []int               `json:"used_in_ids,omitempty"`
+	UsageCount     int                 `json:"usage_count,omitempty"`
+	AffectedFields []string            `json:"affected_fields,omitempty"`
+	RecordedValue  string              `json:"recorded_value,omitempty"`
+	ReplayValue    string              `json:"replay_value,omitempty"`
+	Suggestion     string              `json:"suggestion"`
+	Extractor      *SuggestedExtractor `json:"extractor,omitempty"`
+	Confidence     float64             `json:"confidence"`
+	ConfidenceBand string              `json:"confidence_band"`
+	ReviewAction   string              `json:"review_action"`
 }
 
 // DiagnoseReplay compares a recording against a replay of the same flow (steps
@@ -66,14 +73,19 @@ func DiagnoseReplay(recorded, replay []Observation) []RepairSuggestion {
 			// The recording extracted this value here, but the replay response no
 			// longer exposes it — the boundary or JSON path likely drifted.
 			suggestions = append(suggestions, RepairSuggestion{
-				RuleID:       c.RuleID,
-				Severity:     SeverityWarning,
-				Title:        "Correlation source missing on replay",
-				Detail:       fmt.Sprintf("Step %d no longer exposes %q in its response; the recorded boundary may have changed.", c.FoundInID, c.Name),
-				SourceStepID: c.FoundInID,
-				Suggestion:   fmt.Sprintf("Re-check the extractor for %s (expression %q) against the current response.", c.Name, c.Expression),
-				Extractor:    extractorFor(c),
-				Confidence:   c.Confidence,
+				RuleID:         c.RuleID,
+				SourceFamily:   FamilyForRule(c.RuleID),
+				Severity:       SeverityWarning,
+				Title:          "Correlation source missing on replay",
+				Detail:         fmt.Sprintf("Step %d no longer exposes %q in its response; the recorded boundary may have changed.", c.FoundInID, c.Name),
+				SourceStepID:   c.FoundInID,
+				UsedInIDs:      append([]int(nil), c.UsedInIDs...),
+				UsageCount:     len(c.UsedInIDs),
+				Suggestion:     fmt.Sprintf("Re-check the extractor for %s (expression %q) against the current response.", c.Name, c.Expression),
+				Extractor:      extractorFor(c),
+				Confidence:     c.Confidence,
+				ConfidenceBand: confidenceBand(c.Confidence),
+				ReviewAction:   reviewActionFor(SeverityWarning, c.Confidence),
 			})
 			continue
 		}
@@ -91,19 +103,26 @@ func DiagnoseReplay(recorded, replay []Observation) []RepairSuggestion {
 			if !ok {
 				continue
 			}
-			if ObservationContains(ru, c.Value) && !ObservationContains(ru, replayValue) {
+			affectedFields := ObservationUsageFields(ru, c.Value)
+			if len(affectedFields) > 0 && !ObservationContains(ru, replayValue) {
 				suggestions = append(suggestions, RepairSuggestion{
-					RuleID:        c.RuleID,
-					Severity:      SeverityError,
-					Title:         "Stale value replayed (missing correlation)",
-					Detail:        fmt.Sprintf("Step %d replays the recorded value for %s, but step %d now returns a different value — the server will reject the stale value.", usedID, c.Name, c.FoundInID),
-					SourceStepID:  c.FoundInID,
-					FailingStepID: usedID,
-					RecordedValue: Truncate(c.Value, 80),
-					ReplayValue:   Truncate(replayValue, 80),
-					Suggestion:    fmt.Sprintf("Capture %s from step %d and substitute {{var.%s}} in step %d.", c.Name, c.FoundInID, c.Name, usedID),
-					Extractor:     extractorFor(c),
-					Confidence:    c.Confidence,
+					RuleID:         c.RuleID,
+					SourceFamily:   FamilyForRule(c.RuleID),
+					Severity:       SeverityError,
+					Title:          "Stale value replayed (missing correlation)",
+					Detail:         fmt.Sprintf("Step %d replays the recorded value for %s, but step %d now returns a different value — the server will reject the stale value.", usedID, c.Name, c.FoundInID),
+					SourceStepID:   c.FoundInID,
+					FailingStepID:  usedID,
+					UsedInIDs:      append([]int(nil), c.UsedInIDs...),
+					UsageCount:     len(c.UsedInIDs),
+					AffectedFields: affectedFields,
+					RecordedValue:  Truncate(c.Value, 80),
+					ReplayValue:    Truncate(replayValue, 80),
+					Suggestion:     fmt.Sprintf("Capture %s from step %d and substitute {{var.%s}} in step %d.", c.Name, c.FoundInID, c.Name, usedID),
+					Extractor:      extractorFor(c),
+					Confidence:     c.Confidence,
+					ConfidenceBand: confidenceBand(c.Confidence),
+					ReviewAction:   reviewActionFor(SeverityError, c.Confidence),
 				})
 			}
 		}
@@ -120,6 +139,30 @@ func DiagnoseReplay(recorded, replay []Observation) []RepairSuggestion {
 		return suggestions[i].FailingStepID < suggestions[j].FailingStepID
 	})
 	return suggestions
+}
+
+func ObservationUsageFields(observation Observation, value string) []string {
+	if value == "" {
+		return nil
+	}
+	fields := make([]string, 0, 4)
+	if strings.Contains(observation.RequestURL, value) {
+		fields = append(fields, "request_url")
+	}
+	if strings.Contains(observation.RequestBody, value) {
+		fields = append(fields, "request_body")
+	}
+	keys := make([]string, 0, len(observation.RequestHeaders))
+	for key := range observation.RequestHeaders {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if strings.Contains(observation.RequestHeaders[key], value) {
+			fields = append(fields, "request_headers."+key)
+		}
+	}
+	return fields
 }
 
 // HasBlockingRepairs reports whether any suggestion is severe enough to fail a
@@ -160,4 +203,25 @@ func extractorFor(c Correlation) *SuggestedExtractor {
 		ExtractType: c.ExtractType,
 		Expression:  c.Expression,
 	}
+}
+
+func confidenceBand(confidence float64) string {
+	switch {
+	case confidence >= 0.8:
+		return "high"
+	case confidence >= 0.6:
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
+func reviewActionFor(severity RepairSeverity, confidence float64) string {
+	if severity == SeverityError && confidence >= 0.8 {
+		return "auto_apply_available"
+	}
+	if severity == SeverityError {
+		return "manual_review_required"
+	}
+	return "review_extractor_boundary"
 }

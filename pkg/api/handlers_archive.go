@@ -259,6 +259,56 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, report)
 }
 
+func (s *Server) handleGetRunArchiveAnalysis(w http.ResponseWriter, r *http.Request) {
+	currentRecord, ok := s.requireRunArchive(w, r)
+	if !ok {
+		return
+	}
+	page, ok := parseArchivePage(w, r)
+	if !ok {
+		return
+	}
+	filter, ok := parseTransactionEventFilter(w, r)
+	if !ok {
+		return
+	}
+	currentID := r.PathValue("id")
+	currentName := currentID
+	if test, ok := s.runner.GetTest(currentID); ok {
+		currentName = test.Name
+	}
+	currentRun, err := archiveAnalysisRunFromRecord(currentID, currentName, currentRecord, filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read archive transactions: "+err.Error())
+		return
+	}
+
+	var baselineRun *archiveAnalysisRun
+	if baselineID := strings.TrimSpace(r.URL.Query().Get("baseline_id")); baselineID != "" {
+		if _, ok := s.runner.GetTest(baselineID); !ok {
+			writeError(w, http.StatusNotFound, "baseline test not found")
+			return
+		}
+		baselineRecord, ok := s.runner.GetRunArchive(baselineID)
+		if !ok {
+			writeError(w, http.StatusNotFound, "baseline archive not found")
+			return
+		}
+		baselineName := baselineID
+		if test, ok := s.runner.GetTest(baselineID); ok {
+			baselineName = test.Name
+		}
+		run, err := archiveAnalysisRunFromRecord(baselineID, baselineName, baselineRecord, filter)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to read baseline archive transactions: "+err.Error())
+			return
+		}
+		baselineRun = &run
+	}
+
+	writeJSON(w, http.StatusOK, buildRunArchiveAnalysis(currentRun, baselineRun, filter, page))
+}
+
 func (s *Server) handleGetRunArchiveComparison(w http.ResponseWriter, r *http.Request) {
 	currentRecord, ok := s.requireRunArchive(w, r)
 	if !ok {

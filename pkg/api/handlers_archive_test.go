@@ -321,6 +321,40 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("analysis graph and drilldown", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/analysis?baseline_id="+baselineID+"&limit=5&action=step-1", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("analysis status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		var payload RunArchiveAnalysisResponse
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("unmarshal analysis: %v", err)
+		}
+		if payload.SchemaVersion != runArchiveAnalysisSchemaVersion || payload.BaselineID != baselineID {
+			t.Fatalf("analysis metadata = %#v", payload)
+		}
+		if payload.Total == 0 || len(payload.Transactions) == 0 {
+			t.Fatalf("analysis drilldown total=%d transactions=%d, want rows", payload.Total, len(payload.Transactions))
+		}
+		if payload.Transactions[0].ActionName != "step-1" || len(payload.Transactions[0].Path) == 0 {
+			t.Fatalf("drilldown row = %#v, want step path", payload.Transactions[0])
+		}
+		actionNode := findArchiveAnalysisNode(payload.Graph.Nodes, "action", "step-1")
+		if actionNode == nil || len(actionNode.Runs) != 2 {
+			t.Fatalf("action node = %#v, want baseline/current merged runs", actionNode)
+		}
+		dependencyNode := findArchiveAnalysisNode(payload.Graph.Nodes, "dependency", "http:archive.example.test")
+		if dependencyNode == nil {
+			t.Fatalf("nodes = %#v, want dependency node", payload.Graph.Nodes)
+		}
+		if !hasArchiveAnalysisEdge(payload.Graph.Edges, "action_dependency", actionNode.ID, dependencyNode.ID) {
+			t.Fatalf("edges = %#v, want action_dependency edge", payload.Graph.Edges)
+		}
+	})
+
 	t.Run("csv report", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=csv", nil)
 		resp := httptest.NewRecorder()
@@ -511,6 +545,24 @@ func TestArchiveReportReturnsNotFoundWhenManifestMissing(t *testing.T) {
 func archiveReportCSVHasRow(rows [][]string, section string, key string, metric string) bool {
 	for _, row := range rows {
 		if len(row) >= 4 && row[0] == section && row[1] == key && row[2] == metric {
+			return true
+		}
+	}
+	return false
+}
+
+func findArchiveAnalysisNode(nodes []RunArchiveAnalysisNode, kind string, label string) *RunArchiveAnalysisNode {
+	for i := range nodes {
+		if nodes[i].Kind == kind && nodes[i].Label == label {
+			return &nodes[i]
+		}
+	}
+	return nil
+}
+
+func hasArchiveAnalysisEdge(edges []RunArchiveAnalysisEdge, kind string, from string, to string) bool {
+	for _, edge := range edges {
+		if edge.Kind == kind && edge.From == from && edge.To == to {
 			return true
 		}
 	}

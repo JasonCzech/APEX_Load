@@ -847,8 +847,9 @@ Returns HAR file with `Content-Type: application/json`.
 ### Correlation Intelligence
 
 The correlation engine detects dynamic values that must be correlated (auth/CSRF
-tokens, session cookies, ASP.NET state fields, dynamic headers, redirects) and
-ranks them by confidence. Recorder/import flows run detection automatically; the
+tokens, session cookies, ASP.NET state fields, JSON IDs, XML/SOAP tokens,
+Location query parameters, dynamic headers, WebSocket IDs, and JMS correlation
+IDs) and ranks them by confidence. Recorder/import flows run detection automatically; the
 endpoints below expose the rule catalog and a record-vs-replay diagnosis.
 
 #### List correlation rules
@@ -908,17 +909,35 @@ Each step accepts `id`, `request_url`, `request_body`, `request_headers`,
       "detail": "Step 2 replays the recorded value for corr_csrf_token, but step 1 now returns a different value…",
       "source_step_id": 1,
       "failing_step_id": 2,
+      "source_family": "json",
+      "affected_fields": ["request_body"],
+      "usage_count": 1,
       "recorded_value": "AAA-recorded",
       "replay_value": "BBB-replayed",
       "suggestion": "Capture corr_csrf_token from step 1 and substitute {{var.corr_csrf_token}} in step 2.",
       "extractor": { "name": "corr_csrf_token", "source": "body", "extract_type": "jsonpath", "expression": "$.csrf_token" },
-      "confidence": 0.94
+      "confidence": 0.94,
+      "confidence_band": "high",
+      "review_action": "auto_apply_available"
     }
   ],
   "blocking": true,
   "counts": { "errors": 1, "warnings": 0 }
 }
 ```
+
+#### Archive analysis graph and drilldown
+
+```
+GET /api/v1/tests/test-789/archive/analysis?baseline_id=baseline-123&action=Checkout&limit=100
+```
+
+Returns a compact offline-analysis payload built from archived transaction JSONL.
+The graph merges baseline/current action, group, region, dependency, and source
+transaction nodes with per-run stats. The `transactions` array is a paged
+drilldown of matching current-run transaction rows using the same filters as the
+archive transaction endpoint (`action`, `group`, `trace_id`, `dependency_type`,
+`dependency_target`, `success`, duration/byte bounds, and time range).
 
 ### System
 

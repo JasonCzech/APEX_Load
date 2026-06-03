@@ -8,28 +8,37 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type authoringCorrelationPreviewRequest struct {
-	Name               string `json:"name"`
-	Source             string `json:"source,omitempty"`
-	Type               string `json:"type,omitempty"`
-	Expression         string `json:"expression"`
-	SampleValue        string `json:"sample_value,omitempty"`
-	FoundAction        string `json:"found_action,omitempty"`
-	FoundActionIndex   *int   `json:"found_action_index,omitempty"`
-	UsedActionIndexes  []int  `json:"used_action_indexes,omitempty"`
-	ReplaceSampleValue *bool  `json:"replace_sample_value,omitempty"`
-	Apply              bool   `json:"apply,omitempty"`
+	Name                    string                               `json:"name"`
+	Source                  string                               `json:"source,omitempty"`
+	Type                    string                               `json:"type,omitempty"`
+	Expression              string                               `json:"expression"`
+	SampleValue             string                               `json:"sample_value,omitempty"`
+	FoundAction             string                               `json:"found_action,omitempty"`
+	FoundActionIndex        *int                                 `json:"found_action_index,omitempty"`
+	UsedActionIndexes       []int                                `json:"used_action_indexes,omitempty"`
+	ReplaceSampleValue      *bool                                `json:"replace_sample_value,omitempty"`
+	Apply                   bool                                 `json:"apply,omitempty"`
+	Confidence              float64                              `json:"confidence,omitempty"`
+	Severity                string                               `json:"severity,omitempty"`
+	Repairs                 []authoringCorrelationPreviewRequest `json:"repairs,omitempty"`
+	AutoApplyHighConfidence bool                                 `json:"auto_apply_high_confidence,omitempty"`
 }
 
 type authoringCorrelationPreviewResponse struct {
-	SessionID       string                     `json:"session_id"`
-	Applied         bool                       `json:"applied"`
-	Extractor       dsl.Extractor              `json:"extractor"`
-	Draft           *dsl.Script                `json:"draft"`
-	Changes         []authoringCorrelationDiff `json:"changes"`
-	AuthoringHealth AuthoringHealth            `json:"authoring_health"`
+	SessionID       string                            `json:"session_id"`
+	Applied         bool                              `json:"applied"`
+	Extractor       dsl.Extractor                     `json:"extractor"`
+	Draft           *dsl.Script                       `json:"draft"`
+	Changes         []authoringCorrelationDiff        `json:"changes"`
+	AuthoringHealth AuthoringHealth                   `json:"authoring_health"`
+	Items           []authoringCorrelationPreviewItem `json:"items,omitempty"`
+	ReviewRequired  []string                          `json:"review_required,omitempty"`
+	Blocked         bool                              `json:"blocked,omitempty"`
+	AppliedCount    int                               `json:"applied_count,omitempty"`
 }
 
 type authoringCorrelationDiff struct {
@@ -37,6 +46,17 @@ type authoringCorrelationDiff struct {
 	Path   string `json:"path"`
 	Before string `json:"before,omitempty"`
 	After  string `json:"after,omitempty"`
+}
+
+type authoringCorrelationPreviewItem struct {
+	Name         string                     `json:"name"`
+	Applied      bool                       `json:"applied"`
+	ReviewStatus string                     `json:"review_status"`
+	Confidence   float64                    `json:"confidence,omitempty"`
+	Severity     string                     `json:"severity,omitempty"`
+	Extractor    dsl.Extractor              `json:"extractor"`
+	Changes      []authoringCorrelationDiff `json:"changes,omitempty"`
+	Error        string                     `json:"error,omitempty"`
 }
 
 func (s *Server) handlePreviewAuthoringCorrelation(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +72,10 @@ func (s *Server) handlePreviewAuthoringCorrelation(w http.ResponseWriter, r *htt
 	var req authoringCorrelationPreviewRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if len(req.Repairs) > 0 {
+		s.handleBatchAuthoringCorrelationPreview(w, r, session, req)
 		return
 	}
 	extractor, err := buildGuidedCorrelationExtractor(req)
@@ -99,6 +123,112 @@ func (s *Server) handlePreviewAuthoringCorrelation(w http.ResponseWriter, r *htt
 		Draft:           draft,
 		Changes:         changes,
 		AuthoringHealth: validation.AuthoringHealth,
+	})
+}
+
+func (s *Server) handleBatchAuthoringCorrelationPreview(w http.ResponseWriter, r *http.Request, session *storage.AuthoringSession, req authoringCorrelationPreviewRequest) {
+	draft := cloneScriptDefinition(session.Draft)
+	items := make([]authoringCorrelationPreviewItem, 0, len(req.Repairs))
+	allChanges := make([]authoringCorrelationDiff, 0)
+	reviewRequired := make([]string, 0)
+	appliedCount := 0
+	blocked := false
+
+	for _, repair := range req.Repairs {
+		extractor, err := buildGuidedCorrelationExtractor(repair)
+		item := authoringCorrelationPreviewItem{
+			Name:       strings.TrimSpace(repair.Name),
+			Confidence: repair.Confidence,
+			Severity:   strings.TrimSpace(repair.Severity),
+			Extractor:  extractor,
+		}
+		if err != nil {
+			item.Error = err.Error()
+			item.ReviewStatus = "invalid"
+			reviewRequired = append(reviewRequired, item.Name)
+			items = append(items, item)
+			continue
+		}
+
+		highConfidence := repair.Confidence >= 0.8
+		highRisk := strings.EqualFold(strings.TrimSpace(repair.Severity), "error")
+		shouldApply := !req.Apply || !req.AutoApplyHighConfidence || highConfidence
+		if req.Apply && req.AutoApplyHighConfidence && !highConfidence {
+			item.ReviewStatus = "review_required"
+			reviewRequired = append(reviewRequired, extractor.Name)
+			if highRisk {
+				blocked = true
+			}
+			items = append(items, item)
+			continue
+		}
+
+		changes, err := applyGuidedCorrelation(draft, repair, extractor)
+		if err != nil {
+			item.Error = err.Error()
+			item.ReviewStatus = "invalid"
+			reviewRequired = append(reviewRequired, extractor.Name)
+			if highRisk {
+				blocked = true
+			}
+			items = append(items, item)
+			continue
+		}
+		item.Changes = changes
+		item.Applied = req.Apply && shouldApply
+		if item.Applied {
+			appliedCount++
+			item.ReviewStatus = "applied"
+		} else if highConfidence {
+			item.ReviewStatus = "preview_high_confidence"
+		} else {
+			item.ReviewStatus = "review_required"
+			reviewRequired = append(reviewRequired, extractor.Name)
+			if highRisk {
+				blocked = true
+			}
+		}
+		allChanges = append(allChanges, changes...)
+		items = append(items, item)
+	}
+
+	validation := buildScriptValidationResponse("", draft)
+	if req.Apply && appliedCount > 0 {
+		session.Draft = draft
+		session.Status = "editing"
+		session.UpdatedAt = time.Now()
+		session.LastAccessedAt = session.UpdatedAt
+		session.ReviewState = cloneReviewState(session.ReviewState)
+		if session.ReviewState == nil {
+			session.ReviewState = map[string]any{}
+		}
+		session.ReviewState["last_correlation_batch_preview"] = map[string]any{
+			"total":           len(req.Repairs),
+			"applied":         appliedCount,
+			"review_required": reviewRequired,
+			"blocked":         blocked,
+			"applied_at":      session.UpdatedAt.Format(time.RFC3339Nano),
+			"health_state":    validation.AuthoringHealth.Status,
+		}
+		if err := s.saveAuthoringSession(session); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		s.recordAuditEvent(r, "script.authoring_session.correlation.batch_apply", "success", "authoring_session", session.ID, session.ProjectID, map[string]any{"applied": appliedCount, "review_required": len(reviewRequired), "blocked": blocked})
+	} else {
+		s.recordAuditEvent(r, "script.authoring_session.correlation.batch_preview", "success", "authoring_session", session.ID, session.ProjectID, map[string]any{"repairs": len(req.Repairs), "review_required": len(reviewRequired), "blocked": blocked})
+	}
+
+	writeJSON(w, http.StatusOK, authoringCorrelationPreviewResponse{
+		SessionID:       session.ID,
+		Applied:         req.Apply && appliedCount > 0,
+		Draft:           draft,
+		Changes:         allChanges,
+		AuthoringHealth: validation.AuthoringHealth,
+		Items:           items,
+		ReviewRequired:  uniqueStringsPreserveOrder(reviewRequired),
+		Blocked:         blocked,
+		AppliedCount:    appliedCount,
 	})
 }
 

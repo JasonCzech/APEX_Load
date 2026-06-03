@@ -17,20 +17,27 @@ const (
 	RuleJSONDynamicID    = "json.dynamic_id"
 	RuleHTMLHiddenToken  = "html.hidden_token"
 	RuleASPNetState      = "html.aspnet_state"
+	RuleXMLSOAPToken     = "xml.soap_token"
+	RuleXMLDynamicID     = "xml.dynamic_id"
 	RuleSetCookieSession = "cookie.session"
 	RuleSetCookieOther   = "cookie.other"
 	RuleDynamicHeader    = "header.dynamic"
 	RuleLocationRedirect = "header.location"
+	RuleLocationParam    = "header.location_param"
+	RuleWebSocketID      = "messaging.websocket_id"
+	RuleJMSCorrelationID = "messaging.jms_correlation_id"
 )
 
 // ResponseFamily groups rules by the kind of response they inspect.
 type ResponseFamily string
 
 const (
-	FamilyJSON   ResponseFamily = "json"
-	FamilyHTML   ResponseFamily = "html"
-	FamilyHeader ResponseFamily = "header"
-	FamilyCookie ResponseFamily = "cookie"
+	FamilyJSON    ResponseFamily = "json"
+	FamilyHTML    ResponseFamily = "html"
+	FamilyXML     ResponseFamily = "xml"
+	FamilyHeader  ResponseFamily = "header"
+	FamilyCookie  ResponseFamily = "cookie"
+	FamilyMessage ResponseFamily = "messaging"
 )
 
 // RuleInfo documents a detection rule for UX/catalog surfaces (e.g. an API that
@@ -52,11 +59,16 @@ func RuleCatalog() []RuleInfo {
 		{RuleASPNetState, FamilyHTML, "ASP.NET state field", "WebForms __VIEWSTATE / __EVENTVALIDATION style hidden fields that change every request.", 0.95},
 		{RuleHTMLHiddenToken, FamilyHTML, "Hidden anti-CSRF/state token", "Hidden form inputs named like csrf, xsrf, token, nonce, state, viewstate, authenticity.", 0.9},
 		{RuleJSONCSRFToken, FamilyJSON, "JSON CSRF token", "JSON fields whose name contains csrf/xsrf.", 0.9},
+		{RuleXMLSOAPToken, FamilyXML, "XML/SOAP token", "XML/SOAP elements or attributes named like token, csrf, nonce, session, MessageID, RelatesTo, or CorrelationID.", 0.88},
+		{RuleJMSCorrelationID, FamilyMessage, "JMS correlation id", "JMSCorrelationID/JMSMessageID response fields, properties, or headers that later requests/messages reuse.", 0.88},
 		{RuleJSONAuthToken, FamilyJSON, "JSON auth token", "JSON fields named like access_token, id_token, refresh_token, token.", 0.85},
 		{RuleJSONSessionID, FamilyJSON, "JSON session id", "JSON fields named like session_id, sid.", 0.85},
+		{RuleWebSocketID, FamilyMessage, "WebSocket correlation id", "WebSocket message ids, subscription ids, operation ids, and correlation ids returned by server messages.", 0.84},
 		{RuleSetCookieSession, FamilyCookie, "Session cookie", "Set-Cookie values for session/auth/csrf cookies.", 0.8},
 		{RuleDynamicHeader, FamilyHeader, "Dynamic response header", "Response headers that look dynamic (token/auth/id/csrf).", 0.8},
+		{RuleLocationParam, FamilyHeader, "Redirect query parameter", "Dynamic code/state/token/session/id values extracted from Location redirect query parameters.", 0.78},
 		{RuleJSONDynamicID, FamilyJSON, "JSON dynamic id", "JSON token-shaped string fields ending in id.", 0.6},
+		{RuleXMLDynamicID, FamilyXML, "XML dynamic id", "XML/SOAP id-shaped elements or attributes with reusable values.", 0.6},
 		{RuleLocationRedirect, FamilyHeader, "Redirect target", "Location header that may carry a one-time code/state.", 0.6},
 		{RuleSetCookieOther, FamilyCookie, "Other cookie", "Set-Cookie values that are not obviously session-scoped.", 0.55},
 		{RuleJSONNumericID, FamilyJSON, "JSON numeric id", "JSON numeric id fields with 4+ digits.", 0.5},
@@ -138,10 +150,14 @@ func FamilyForRule(ruleID string) ResponseFamily {
 		return FamilyJSON
 	case strings.HasPrefix(ruleID, "html."):
 		return FamilyHTML
+	case strings.HasPrefix(ruleID, "xml."):
+		return FamilyXML
 	case strings.HasPrefix(ruleID, "cookie."):
 		return FamilyCookie
 	case strings.HasPrefix(ruleID, "header."):
 		return FamilyHeader
+	case strings.HasPrefix(ruleID, "messaging."):
+		return FamilyMessage
 	default:
 		return ""
 	}

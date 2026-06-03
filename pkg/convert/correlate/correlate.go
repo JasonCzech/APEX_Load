@@ -2,6 +2,7 @@ package correlate
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -63,7 +64,9 @@ var (
 	nonWordCorrelationChars = regexp.MustCompile(`[^a-z0-9]+`)
 	setCookieValuePattern   = regexp.MustCompile(`(?i)([A-Za-z0-9_.\-]+)=([^;\s,]{4,})`)
 	// ASP.NET WebForms hidden state fields (__VIEWSTATE, __EVENTVALIDATION, …).
-	aspNetHiddenPattern = regexp.MustCompile(`(?i)<input[^>]*\bname="(__[A-Za-z0-9]+)"[^>]*\bvalue="([^"]*)"`)
+	aspNetHiddenPattern    = regexp.MustCompile(`(?i)<input[^>]*\bname="(__[A-Za-z0-9]+)"[^>]*\bvalue="([^"]*)"`)
+	xmlElementTokenPattern = regexp.MustCompile(`(?is)<(?:[A-Za-z0-9_.-]+:)?([A-Za-z0-9_.-]*(?:token|session|csrf|xsrf|nonce|state|messageid|relatesto|correlationid|correlation|requestid|id)[A-Za-z0-9_.-]*)\b[^>]*>\s*([^<\s][^<]{5,})\s*</(?:[A-Za-z0-9_.-]+:)?[A-Za-z0-9_.-]+>`)
+	xmlAttrTokenPattern    = regexp.MustCompile(`(?is)\b(?:[A-Za-z0-9_.-]+:)?([A-Za-z0-9_.-]*(?:token|session|csrf|xsrf|nonce|state|messageid|relatesto|correlationid|correlation|requestid|id)[A-Za-z0-9_.-]*)\s*=\s*"([^"]{6,})"`)
 )
 
 func Detect(observations []Observation) []Correlation {
@@ -122,6 +125,7 @@ func Candidates(responseBody string, responseHeaders map[string]string) []Candid
 	candidates = append(candidates, aspNetHiddenCandidates(responseBody)...)
 	candidates = append(candidates, htmlInputCandidates(responseBody)...)
 	candidates = append(candidates, jsonCandidates(responseBody)...)
+	candidates = append(candidates, xmlCandidates(responseBody)...)
 	candidates = append(candidates, headerCandidates(responseHeaders)...)
 	return candidates
 }
@@ -233,6 +237,13 @@ func jsonCandidates(body string) []Candidate {
 func classifyJSONKey(key string) (string, float64) {
 	lower := strings.ToLower(key)
 	switch {
+	case strings.Contains(lower, "jmscorrelationid"), strings.Contains(lower, "jmsmessageid"),
+		strings.Contains(lower, "jms_correlation"), strings.Contains(lower, "jms_message"):
+		return RuleJMSCorrelationID, 0.88
+	case strings.Contains(lower, "websocket"), strings.Contains(lower, "subscriptionid"),
+		strings.Contains(lower, "operationid"), strings.Contains(lower, "messageid"),
+		strings.Contains(lower, "correlationid"), strings.Contains(lower, "correlation_id"):
+		return RuleWebSocketID, 0.84
 	case strings.Contains(lower, "csrf"), strings.Contains(lower, "xsrf"):
 		return RuleJSONCSRFToken, 0.9
 	case strings.Contains(lower, "access_token"), strings.Contains(lower, "id_token"),
@@ -304,6 +315,77 @@ func aspNetHiddenCandidates(body string) []Candidate {
 	return candidates
 }
 
+func xmlCandidates(body string) []Candidate {
+	candidates := make([]Candidate, 0)
+	for _, match := range xmlElementTokenPattern.FindAllStringSubmatch(body, -1) {
+		if len(match) < 3 {
+			continue
+		}
+		name := match[1]
+		value := strings.TrimSpace(match[2])
+		if value == "" {
+			continue
+		}
+		ruleID, base := classifyXMLName(name)
+		candidates = append(candidates, Candidate{
+			Name:           "corr_" + Slug(name),
+			Value:          value,
+			Source:         "body",
+			ExtractType:    "xpath",
+			Expression:     "//*[local-name()='" + localXMLName(name) + "']/text()",
+			RuleID:         ruleID,
+			BaseConfidence: base,
+			Reason:         "XML/SOAP element " + name + " looks dynamic",
+		})
+	}
+	for _, match := range xmlAttrTokenPattern.FindAllStringSubmatch(body, -1) {
+		if len(match) < 3 {
+			continue
+		}
+		name := match[1]
+		value := strings.TrimSpace(match[2])
+		if value == "" {
+			continue
+		}
+		ruleID, base := classifyXMLName(name)
+		candidates = append(candidates, Candidate{
+			Name:           "corr_" + Slug(name),
+			Value:          value,
+			Source:         "body",
+			ExtractType:    "xpath",
+			Expression:     "//*[@*[local-name()='" + localXMLName(name) + "']]",
+			RuleID:         ruleID,
+			BaseConfidence: base,
+			Reason:         "XML/SOAP attribute " + name + " looks dynamic",
+		})
+	}
+	return candidates
+}
+
+func classifyXMLName(name string) (string, float64) {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.Contains(lower, "jmscorrelationid"), strings.Contains(lower, "jmsmessageid"):
+		return RuleJMSCorrelationID, 0.88
+	case strings.Contains(lower, "messageid"), strings.Contains(lower, "relatesto"),
+		strings.Contains(lower, "correlationid"), strings.Contains(lower, "correlation"):
+		return RuleXMLSOAPToken, 0.88
+	case strings.Contains(lower, "token"), strings.Contains(lower, "session"),
+		strings.Contains(lower, "csrf"), strings.Contains(lower, "xsrf"),
+		strings.Contains(lower, "nonce"), strings.Contains(lower, "state"):
+		return RuleXMLSOAPToken, 0.88
+	default:
+		return RuleXMLDynamicID, 0.6
+	}
+}
+
+func localXMLName(name string) string {
+	if _, after, ok := strings.Cut(name, ":"); ok {
+		return after
+	}
+	return name
+}
+
 func headerCandidates(headers map[string]string) []Candidate {
 	candidates := make([]Candidate, 0)
 	// Deterministic key order so equal-confidence output is stable.
@@ -323,17 +405,47 @@ func headerCandidates(headers map[string]string) []Candidate {
 			continue
 		}
 		if lowerKey == "location" {
-			// A redirect target frequently carries a one-time code/state that the
-			// next request must echo back. Capture the whole value for review.
+			locationMatches := locationCandidates(key, value)
+			candidates = append(candidates, locationMatches...)
+			if len(locationMatches) == 0 {
+				// A redirect target frequently carries a one-time code/state that the
+				// next request must echo back. Capture the whole value for review.
+				candidates = append(candidates, Candidate{
+					Name:           "corr_location",
+					Value:          value,
+					Source:         "header",
+					ExtractType:    "header",
+					Expression:     key,
+					RuleID:         RuleLocationRedirect,
+					BaseConfidence: 0.6,
+					Reason:         "Location redirect target may carry a one-time code/state",
+				})
+			}
+			continue
+		}
+		if isJMSHeaderName(lowerKey) {
 			candidates = append(candidates, Candidate{
-				Name:           "corr_location",
+				Name:           "corr_" + Slug(lowerKey),
 				Value:          value,
 				Source:         "header",
 				ExtractType:    "header",
 				Expression:     key,
-				RuleID:         RuleLocationRedirect,
-				BaseConfidence: 0.6,
-				Reason:         "Location redirect target may carry a one-time code/state",
+				RuleID:         RuleJMSCorrelationID,
+				BaseConfidence: 0.88,
+				Reason:         "JMS correlation/message header " + key,
+			})
+			continue
+		}
+		if isWebSocketHeaderName(lowerKey) {
+			candidates = append(candidates, Candidate{
+				Name:           "corr_" + Slug(lowerKey),
+				Value:          value,
+				Source:         "header",
+				ExtractType:    "header",
+				Expression:     key,
+				RuleID:         RuleWebSocketID,
+				BaseConfidence: 0.84,
+				Reason:         "WebSocket correlation header " + key,
 			})
 			continue
 		}
@@ -349,6 +461,40 @@ func headerCandidates(headers map[string]string) []Candidate {
 			RuleID:         RuleDynamicHeader,
 			BaseConfidence: 0.8,
 			Reason:         "Response header " + key + " looks dynamic (token/auth/id)",
+		})
+	}
+	return candidates
+}
+
+func locationCandidates(headerName string, value string) []Candidate {
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return nil
+	}
+	params := parsed.Query()
+	if len(params) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(params))
+	for key := range params {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	candidates := make([]Candidate, 0, len(keys))
+	for _, key := range keys {
+		values := params[key]
+		if len(values) == 0 || !dynamicLocationParamName(key) || len(values[0]) < 4 {
+			continue
+		}
+		candidates = append(candidates, Candidate{
+			Name:           "corr_location_" + Slug(key),
+			Value:          values[0],
+			Source:         "header",
+			ExtractType:    "header_query",
+			Expression:     headerName + "?" + key,
+			RuleID:         RuleLocationParam,
+			BaseConfidence: 0.78,
+			Reason:         "Location query parameter " + key + " looks dynamic",
 		})
 	}
 	return candidates
@@ -395,4 +541,30 @@ func dynamicHeaderName(lowerKey string) bool {
 		strings.Contains(lowerKey, "auth") ||
 		strings.Contains(lowerKey, "csrf") ||
 		strings.Contains(lowerKey, "xsrf")
+}
+
+func dynamicLocationParamName(key string) bool {
+	lower := strings.ToLower(key)
+	return strings.Contains(lower, "code") ||
+		strings.Contains(lower, "state") ||
+		strings.Contains(lower, "token") ||
+		strings.Contains(lower, "session") ||
+		strings.Contains(lower, "csrf") ||
+		strings.Contains(lower, "xsrf") ||
+		strings.Contains(lower, "nonce") ||
+		strings.Contains(lower, "id")
+}
+
+func isJMSHeaderName(lowerKey string) bool {
+	return strings.Contains(lowerKey, "jmscorrelationid") ||
+		strings.Contains(lowerKey, "jms-correlation-id") ||
+		strings.Contains(lowerKey, "jmsmessageid") ||
+		strings.Contains(lowerKey, "jms-message-id")
+}
+
+func isWebSocketHeaderName(lowerKey string) bool {
+	return strings.Contains(lowerKey, "websocket-correlation") ||
+		strings.Contains(lowerKey, "websocket-message") ||
+		strings.Contains(lowerKey, "ws-correlation") ||
+		strings.Contains(lowerKey, "ws-message")
 }

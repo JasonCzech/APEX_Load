@@ -35,6 +35,12 @@ func TestDiagnoseReplayDetectsStaleValue(t *testing.T) {
 	if s.Extractor == nil || s.Extractor.Name != "corr_csrf_token" {
 		t.Fatalf("expected csrf extractor fix, got %#v", s.Extractor)
 	}
+	if s.SourceFamily != FamilyJSON || s.ConfidenceBand != "high" || s.ReviewAction != "auto_apply_available" {
+		t.Fatalf("unexpected evidence fields: %#v", s)
+	}
+	if len(s.AffectedFields) != 1 || s.AffectedFields[0] != "request_body" || s.UsageCount != 1 {
+		t.Fatalf("affected fields/usage = %#v/%d, want request_body and one usage", s.AffectedFields, s.UsageCount)
+	}
 	if !HasBlockingRepairs(suggestions) {
 		t.Fatalf("a stale value should be a blocking repair")
 	}

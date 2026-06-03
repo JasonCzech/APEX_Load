@@ -269,6 +269,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/resources", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveResources)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/summaries", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveSummaries)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/report", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveReport)))))
+	s.mux.Handle("GET /api/v1/tests/{id}/archive/analysis", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveAnalysis)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/root-cause", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveRootCause)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/ai-root-cause", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveAIRootCause)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/comparison", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveComparison)))))

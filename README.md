@@ -282,6 +282,7 @@ WS     /api/v1/ws                       — Global WebSocket stream
 GET    /api/v1/tests/{id}/archive                    — Download full archive bundle
 GET    /api/v1/tests/{id}/archive/browser-diagnostics — Download browser evidence bundle
 GET    /api/v1/tests/{id}/archive/report             — Get archive report JSON
+GET    /api/v1/tests/{id}/archive/analysis           — Get merged graph + transaction drilldown analysis
 GET    /api/v1/tests/{id}/report                     — Get standalone HTML report
 ```
 
@@ -513,7 +514,7 @@ These are design targets, not yet backed by published benchmark artifacts. Do no
 - 🟡 JMS protocols (Solace, IBM MQ)
 - ✅ CI/CD gating: `apexctl` JUnit output + `status`/`wait` subcommands, local `apexctl script validate/explain`, with GitHub/Azure DevOps/Jenkins templates (see [docs/CICD_INTEGRATION.md](docs/CICD_INTEGRATION.md))
 - ✅ Evaluator trust pack: one-command demo seeding plus bounded k6 HTTP subset import/export (see [docs/EVALUATOR_TRUST_PACK.md](docs/EVALUATOR_TRUST_PACK.md))
-- ✅ Correlation rules engine + replay-failure detection & guided repair (`/api/v1/correlations/diagnose`)
+- ✅ Correlation rules engine + replay-failure detection, response-family rule packs, stale-literal evidence, and guided/batch repair (`/api/v1/correlations/diagnose`)
 - ✅ Assisted authoring (deterministic-local draft/repair/explain over the DSL, via MCP)
 - 🟡 External LLM script generation (policy-gated; not wired by default)
 
