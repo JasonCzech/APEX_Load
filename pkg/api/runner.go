@@ -4404,11 +4404,12 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		}
 	}
 
-	if live.TotalTx > 0 {
-		live.ErrorPct = float64(live.TotalErrors) / float64(live.TotalTx) * 100
+	transactionAttempts := live.TotalTx + live.TotalErrors
+	if transactionAttempts > 0 {
+		live.ErrorPct = float64(live.TotalErrors) / float64(transactionAttempts) * 100
 	}
 
-	for name, am := range snap.ByAction {
+	for name, am := range snap.ByTransaction {
 		live.Transactions[name] = buildTxMetricsFromAction(name, am)
 	}
 

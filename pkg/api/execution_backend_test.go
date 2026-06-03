@@ -744,7 +744,7 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 		if !ok {
 			t.Fatalf("expected managed test %q to exist after metrics update", testRun.ID)
 		}
-		if updated.LiveMetrics != nil && updated.LiveMetrics.TotalTx == 3 {
+		if updated.LiveMetrics != nil && updated.LiveMetrics.TotalTx == 2 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -1049,7 +1049,7 @@ func TestDistributedExecutionBackendRunsRemoteEngine(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected managed test %q to exist", testRun.ID)
 		}
-		if updated.LiveMetrics != nil && updated.LiveMetrics.TotalTx > 0 && updated.LiveMetrics.Transactions["Home"] != nil {
+		if updated.LiveMetrics != nil && updated.LiveMetrics.TotalTx > 0 && updated.LiveMetrics.Transactions["Checkout"] != nil {
 			if updated.LiveMetrics.TotalErrors != 0 {
 				t.Fatalf("total errors = %d, want 0", updated.LiveMetrics.TotalErrors)
 			}
@@ -1162,7 +1162,7 @@ func TestDistributedExecutionBackendRunsRemoteMultiGroupEngine(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected managed test %q to exist", testRun.ID)
 		}
-		if updated.LiveMetrics != nil && updated.LiveMetrics.TotalTx > 0 && updated.LiveMetrics.Transactions["Buyers Home"] != nil && updated.LiveMetrics.Transactions["Admins Home"] != nil {
+		if updated.LiveMetrics != nil && updated.LiveMetrics.TotalTx > 0 && updated.LiveMetrics.Transactions["Buyers"] != nil && updated.LiveMetrics.Transactions["Admins"] != nil {
 			if updated.LiveMetrics.GroupMetrics["buyers"] == nil || updated.LiveMetrics.GroupMetrics["admins"] == nil {
 				t.Fatalf("expected group live metrics for both remote groups, got %#v", updated.LiveMetrics.GroupMetrics)
 			}

@@ -207,43 +207,44 @@ type ThinkTimeConfig struct {
 
 // Result contains the outcome of a single action execution.
 type Result struct {
-	ActionName        string        // Name of the executed action
-	Group             string        // Group/transaction name for metrics
-	Region            string        // Generator region that produced this result (per-result override; empty = use writer region)
-	StartTime         time.Time     // When the action started
-	Duration          time.Duration // Time to execute action
-	CorrelationID     string        // Correlation or request id when the protocol exposes one
-	NetworkProfile    string        // Effective network emulation profile used for this result
-	DependencyType    string        // Classified dependency type (http, jms_queue, etc.)
-	DependencyTarget  string        // Classified downstream target (host, queue, topic, etc.)
-	DNSTime           time.Duration // DNS lookup time (if applicable)
-	ConnectTime       time.Duration // Connection establishment time (if applicable)
-	TLSTime           time.Duration
-	TTFB              time.Duration
-	BytesSent         int64
-	BytesReceived     int64
-	StatusCode        int
-	Success           bool
-	ErrorMessage      string
-	ResponseBody      string
-	Extractions       map[string]string
-	PageURL           string
-	PageTitle         string
-	HTML              string
-	ScreenshotBase64  string
-	ConsoleEntries    []ConsoleEntry
-	NetworkEntries    []NetworkEntry
-	DOMSummary        *DOMSummary
-	ClientMetrics     *ClientMetrics
-	ServerTelemetry   *ServerTelemetry
-	ProtocolEvidence  map[string]any
-	Snapshot          *ErrorSnapshot // populated when snapshot_on_error is enabled
-	SourceStepID      string
-	SourceStepIndex   int
-	SourceAction      string
-	SourceActionName  string
-	SourceTransaction string
-	SourceProfile     string
+	ActionName          string        // Name of the executed action
+	BusinessTransaction bool          // True when this sample represents a completed business transaction
+	Group               string        // Group/transaction name for metrics
+	Region              string        // Generator region that produced this result (per-result override; empty = use writer region)
+	StartTime           time.Time     // When the action started
+	Duration            time.Duration // Time to execute action
+	CorrelationID       string        // Correlation or request id when the protocol exposes one
+	NetworkProfile      string        // Effective network emulation profile used for this result
+	DependencyType      string        // Classified dependency type (http, jms_queue, etc.)
+	DependencyTarget    string        // Classified downstream target (host, queue, topic, etc.)
+	DNSTime             time.Duration // DNS lookup time (if applicable)
+	ConnectTime         time.Duration // Connection establishment time (if applicable)
+	TLSTime             time.Duration
+	TTFB                time.Duration
+	BytesSent           int64
+	BytesReceived       int64
+	StatusCode          int
+	Success             bool
+	ErrorMessage        string
+	ResponseBody        string
+	Extractions         map[string]string
+	PageURL             string
+	PageTitle           string
+	HTML                string
+	ScreenshotBase64    string
+	ConsoleEntries      []ConsoleEntry
+	NetworkEntries      []NetworkEntry
+	DOMSummary          *DOMSummary
+	ClientMetrics       *ClientMetrics
+	ServerTelemetry     *ServerTelemetry
+	ProtocolEvidence    map[string]any
+	Snapshot            *ErrorSnapshot // populated when snapshot_on_error is enabled
+	SourceStepID        string
+	SourceStepIndex     int
+	SourceAction        string
+	SourceActionName    string
+	SourceTransaction   string
+	SourceProfile       string
 }
 
 // ErrorSnapshot captures full request/response data for post-test debugging.

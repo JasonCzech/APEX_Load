@@ -47,6 +47,7 @@ type MetricsSnapshot struct {
 	P95                    time.Duration
 	P99                    time.Duration
 	ByAction               map[string]*ActionMetrics
+	ByTransaction          map[string]*ActionMetrics
 	ByDependencyTarget     map[string]*ActionMetrics `json:"by_dependency_target,omitempty"`
 	BySOAPOperation        map[string]*ActionMetrics `json:"by_soap_operation,omitempty"`
 	ByNetworkProfile       map[string]*ActionMetrics `json:"by_network_profile,omitempty"`
@@ -234,10 +235,6 @@ func (mc *MetricsCollector) SetGroupTargetTPS(group string, target float64) {
 }
 
 func (mc *MetricsCollector) Record(r *protocol.Result) {
-	mc.current.totalTransactions.Add(1)
-	if !r.Success {
-		mc.current.totalErrors.Add(1)
-	}
 	select {
 	case mc.ch <- r:
 	default:
@@ -281,18 +278,38 @@ func (mc *MetricsCollector) TotalErrors() int64 {
 
 // RecordTransaction records an automatic transaction as a synthetic result.
 // This is used by the auto-transactions feature to track per-action or per-iteration timings.
-func (mc *MetricsCollector) RecordTransaction(name string, duration time.Duration, success bool, group string) {
+func (mc *MetricsCollector) RecordTransaction(name string, duration time.Duration, success bool, group string) *protocol.Result {
 	r := &protocol.Result{
-		ActionName: "tx:" + name,
-		Group:      group,
-		StartTime:  time.Now().Add(-duration),
-		Duration:   duration,
-		Success:    success,
+		ActionName:          name,
+		BusinessTransaction: true,
+		Group:               group,
+		StartTime:           time.Now().Add(-duration),
+		Duration:            duration,
+		Success:             success,
 	}
 	if !success {
 		r.ErrorMessage = "transaction failed"
 	}
-	// Don't count transactions in the main counters — they are synthetic
+	mc.RecordTransactionResult(r)
+	return r
+}
+
+func (mc *MetricsCollector) RecordTransactionResult(r *protocol.Result) {
+	if r == nil {
+		return
+	}
+	r.BusinessTransaction = true
+	if r.ActionName == "" {
+		r.ActionName = "transaction"
+	}
+	if r.StartTime.IsZero() {
+		r.StartTime = time.Now().Add(-r.Duration)
+	}
+	if r.Success {
+		mc.current.totalTransactions.Add(1)
+	} else {
+		mc.current.totalErrors.Add(1)
+	}
 	select {
 	case mc.ch <- r:
 	default:
@@ -357,6 +374,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		Window:             window,
 		ActiveVUsers:       mc.current.activeVUsers.Load(),
 		ByAction:           make(map[string]*ActionMetrics),
+		ByTransaction:      make(map[string]*ActionMetrics),
 		ByDependencyTarget: make(map[string]*ActionMetrics),
 		BySOAPOperation:    make(map[string]*ActionMetrics),
 		ByNetworkProfile:   make(map[string]*ActionMetrics),
@@ -376,6 +394,8 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 
 	var totalDuration time.Duration
 	td := NewTDigest(200)
+	transactionDigests := make(map[string]*TDigest)
+	transactionDurationSum := make(map[string]time.Duration)
 	actionDigests := make(map[string]*TDigest)
 	actionDurationSum := make(map[string]time.Duration)
 	dependencyDigests := make(map[string]*TDigest)
@@ -388,106 +408,126 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	groupDurationSum := make(map[string]time.Duration)
 
 	for _, r := range results {
-		snap.Transactions++
-		if !r.Success {
-			snap.Errors++
-		}
-		totalDuration += r.Duration
-		td.Add(float64(r.Duration))
-
-		am, ok := snap.ByAction[r.ActionName]
-		if !ok {
-			am = &ActionMetrics{
-				Name:        r.ActionName,
-				MinDuration: r.Duration,
-				MaxDuration: r.Duration,
+		if r.BusinessTransaction {
+			if r.Success {
+				snap.Transactions++
+			} else {
+				snap.Errors++
 			}
-			snap.ByAction[r.ActionName] = am
-		}
-		mergeActionResult(am, r)
-		recordDurationSample(actionDigests, actionDurationSum, r.ActionName, r.Duration)
+			totalDuration += r.Duration
+			td.Add(float64(r.Duration))
 
-		if dependencyTarget := strings.TrimSpace(r.DependencyTarget); dependencyTarget != "" {
-			dm, ok := snap.ByDependencyTarget[dependencyTarget]
+			tm, ok := snap.ByTransaction[r.ActionName]
 			if !ok {
-				dm = &ActionMetrics{
-					Name:        dependencyTarget,
+				tm = &ActionMetrics{
+					Name:        r.ActionName,
 					MinDuration: r.Duration,
 					MaxDuration: r.Duration,
 				}
-				snap.ByDependencyTarget[dependencyTarget] = dm
+				snap.ByTransaction[r.ActionName] = tm
 			}
-			mergeActionResult(dm, r)
-			recordDurationSample(dependencyDigests, dependencyDurationSum, dependencyTarget, r.Duration)
-		}
+			mergeActionResult(tm, r)
+			recordDurationSample(transactionDigests, transactionDurationSum, r.ActionName, r.Duration)
 
-		if operation := soapOperationFromResult(r); operation != "" {
-			om, ok := snap.BySOAPOperation[operation]
-			if !ok {
-				om = &ActionMetrics{
-					Name:        operation,
-					MinDuration: r.Duration,
-					MaxDuration: r.Duration,
-				}
-				snap.BySOAPOperation[operation] = om
-			}
-			mergeActionResult(om, r)
-			recordDurationSample(soapDigests, soapDurationSum, operation, r.Duration)
-		}
-
-		if profile := strings.TrimSpace(r.NetworkProfile); profile != "" {
-			pm, ok := snap.ByNetworkProfile[profile]
-			if !ok {
-				pm = &ActionMetrics{
-					Name:        profile,
-					MinDuration: r.Duration,
-					MaxDuration: r.Duration,
-				}
-				snap.ByNetworkProfile[profile] = pm
-			}
-			mergeActionResult(pm, r)
-			recordDurationSample(networkProfileDigests, networkProfileDurationSum, profile, r.Duration)
-		}
-
-		if r.Group != "" {
-			gm, ok := snap.ByGroup[r.Group]
-			if !ok {
-				gm = &GroupMetrics{Name: r.Group}
-				snap.ByGroup[r.Group] = gm
-			}
-			gm.Transactions++
-			if !r.Success {
-				gm.Errors++
-			}
-			groupDurationSum[r.Group] += r.Duration
-			if _, ok := groupDigests[r.Group]; !ok {
-				groupDigests[r.Group] = NewTDigest(200)
-			}
-			groupDigests[r.Group].Add(float64(r.Duration))
-		}
-		if r.ClientMetrics != nil {
-			if snap.Browser == nil {
-				snap.Browser = &BrowserMetricsSummary{}
-			}
-			mergeBrowserMetricsSummary(snap.Browser, r.ClientMetrics)
-			if profile := r.ClientMetrics.DeviceProfile; profile != "" {
-				metrics, ok := snap.BrowserByDevice[profile]
+			if r.Group != "" {
+				gm, ok := snap.ByGroup[r.Group]
 				if !ok {
-					metrics = &BrowserDeviceMetrics{
-						DeviceProfile:  profile,
-						DevicePlatform: r.ClientMetrics.DevicePlatform,
-						DeviceTier:     r.ClientMetrics.DeviceTier,
-						BrowserEngine:  r.ClientMetrics.BrowserEngine,
-					}
-					snap.BrowserByDevice[profile] = metrics
+					gm = &GroupMetrics{Name: r.Group}
+					snap.ByGroup[r.Group] = gm
 				}
-				mergeBrowserDeviceMetrics(metrics, r.ClientMetrics)
+				if r.Success {
+					gm.Transactions++
+				} else {
+					gm.Errors++
+				}
+				groupDurationSum[r.Group] += r.Duration
+				if _, ok := groupDigests[r.Group]; !ok {
+					groupDigests[r.Group] = NewTDigest(200)
+				}
+				groupDigests[r.Group].Add(float64(r.Duration))
+			}
+		}
+
+		if !r.BusinessTransaction {
+			am, ok := snap.ByAction[r.ActionName]
+			if !ok {
+				am = &ActionMetrics{
+					Name:        r.ActionName,
+					MinDuration: r.Duration,
+					MaxDuration: r.Duration,
+				}
+				snap.ByAction[r.ActionName] = am
+			}
+			mergeActionResult(am, r)
+			recordDurationSample(actionDigests, actionDurationSum, r.ActionName, r.Duration)
+
+			if dependencyTarget := strings.TrimSpace(r.DependencyTarget); dependencyTarget != "" {
+				dm, ok := snap.ByDependencyTarget[dependencyTarget]
+				if !ok {
+					dm = &ActionMetrics{
+						Name:        dependencyTarget,
+						MinDuration: r.Duration,
+						MaxDuration: r.Duration,
+					}
+					snap.ByDependencyTarget[dependencyTarget] = dm
+				}
+				mergeActionResult(dm, r)
+				recordDurationSample(dependencyDigests, dependencyDurationSum, dependencyTarget, r.Duration)
+			}
+
+			if operation := soapOperationFromResult(r); operation != "" {
+				om, ok := snap.BySOAPOperation[operation]
+				if !ok {
+					om = &ActionMetrics{
+						Name:        operation,
+						MinDuration: r.Duration,
+						MaxDuration: r.Duration,
+					}
+					snap.BySOAPOperation[operation] = om
+				}
+				mergeActionResult(om, r)
+				recordDurationSample(soapDigests, soapDurationSum, operation, r.Duration)
+			}
+
+			if profile := strings.TrimSpace(r.NetworkProfile); profile != "" {
+				pm, ok := snap.ByNetworkProfile[profile]
+				if !ok {
+					pm = &ActionMetrics{
+						Name:        profile,
+						MinDuration: r.Duration,
+						MaxDuration: r.Duration,
+					}
+					snap.ByNetworkProfile[profile] = pm
+				}
+				mergeActionResult(pm, r)
+				recordDurationSample(networkProfileDigests, networkProfileDurationSum, profile, r.Duration)
+			}
+
+			if r.ClientMetrics != nil {
+				if snap.Browser == nil {
+					snap.Browser = &BrowserMetricsSummary{}
+				}
+				mergeBrowserMetricsSummary(snap.Browser, r.ClientMetrics)
+				if profile := r.ClientMetrics.DeviceProfile; profile != "" {
+					metrics, ok := snap.BrowserByDevice[profile]
+					if !ok {
+						metrics = &BrowserDeviceMetrics{
+							DeviceProfile:  profile,
+							DevicePlatform: r.ClientMetrics.DevicePlatform,
+							DeviceTier:     r.ClientMetrics.DeviceTier,
+							BrowserEngine:  r.ClientMetrics.BrowserEngine,
+						}
+						snap.BrowserByDevice[profile] = metrics
+					}
+					mergeBrowserDeviceMetrics(metrics, r.ClientMetrics)
+				}
 			}
 		}
 	}
 
-	if snap.Transactions > 0 {
-		snap.AvgDuration = totalDuration / time.Duration(snap.Transactions)
+	transactionAttempts := snap.Transactions + snap.Errors
+	if transactionAttempts > 0 {
+		snap.AvgDuration = totalDuration / time.Duration(transactionAttempts)
 		snap.TPS = float64(snap.Transactions) / window.Seconds()
 
 		snap.P50 = time.Duration(td.Quantile(0.50))
@@ -499,9 +539,10 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 
 	for name, gm := range snap.ByGroup {
 		gm.TargetTPS = groupTargets[name]
-		if gm.Transactions > 0 {
+		groupAttempts := gm.Transactions + gm.Errors
+		if groupAttempts > 0 {
 			gd := groupDigests[name]
-			gm.AvgDuration = groupDurationSum[name] / time.Duration(gm.Transactions)
+			gm.AvgDuration = groupDurationSum[name] / time.Duration(groupAttempts)
 			gm.TPS = float64(gm.Transactions) / window.Seconds()
 			gm.P50 = time.Duration(gd.Quantile(0.50))
 			gm.P90 = time.Duration(gd.Quantile(0.90))
@@ -511,6 +552,12 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	}
 	for name, am := range snap.ByAction {
 		finalizeActionMetrics(am, actionDurationSum[name], actionDigests[name])
+	}
+	for name, am := range snap.ByTransaction {
+		finalizeActionMetrics(am, transactionDurationSum[name], transactionDigests[name])
+	}
+	if len(snap.ByTransaction) == 0 {
+		snap.ByTransaction = nil
 	}
 	for name, am := range snap.ByDependencyTarget {
 		finalizeActionMetrics(am, dependencyDurationSum[name], dependencyDigests[name])

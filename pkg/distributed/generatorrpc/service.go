@@ -53,6 +53,13 @@ type transactionBuffer struct {
 }
 
 func (b *transactionBuffer) RecordResult(result *protocol.Result) error {
+	if result == nil || !result.BusinessTransaction {
+		return nil
+	}
+	return b.RecordTransaction(result)
+}
+
+func (b *transactionBuffer) RecordTransaction(result *protocol.Result) error {
 	if result == nil {
 		return nil
 	}
@@ -760,6 +767,7 @@ func (s *Service) PublishMetrics(testID string, groupName string, stats Generato
 			_ = writer.RecordResourceSample(time.UnixMilli(batch.TimestampUnixMs), int64(batch.GetStats().GetActiveVusers()), resourcesFromGeneratorStats(generatorStatsFromProto(batch.GetStats())))
 		}
 		totalErrors := int64(0)
+		totalSuccess := int64(0)
 		totalDuration := 0.0
 		durations := make([]float64, 0, len(batch.Transactions))
 		for _, tx := range batch.Transactions {
@@ -767,6 +775,8 @@ func (s *Service) PublishMetrics(testID string, groupName string, stats Generato
 			durations = append(durations, tx.DurationMs)
 			if !tx.Success {
 				totalErrors++
+			} else {
+				totalSuccess++
 			}
 		}
 		avgResponse := 0.0
@@ -776,10 +786,10 @@ func (s *Service) PublishMetrics(testID string, groupName string, stats Generato
 		_ = writer.RecordIntervalSummary(archiveIntervalSummary{
 			Timestamp:     time.UnixMilli(batch.TimestampUnixMs),
 			ActiveVUsers:  int64(batch.GetStats().GetActiveVusers()),
-			TPS:           float64(len(batch.Transactions)),
+			TPS:           float64(totalSuccess),
 			AvgResponseMs: avgResponse,
-			ErrorPct:      errorPct(totalErrors, int64(len(batch.Transactions))),
-			TotalTx:       int64(len(batch.Transactions)),
+			ErrorPct:      errorPct(totalErrors, totalSuccess+totalErrors),
+			TotalTx:       totalSuccess,
 			TotalErrors:   totalErrors,
 			P50Ms:         percentileValue(durations, 0.50),
 			P90Ms:         percentileValue(durations, 0.90),
@@ -1243,6 +1253,19 @@ func (s *combinedSink) RecordResult(result *protocol.Result) error {
 			continue
 		}
 		if err := sink.RecordResult(result); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *combinedSink) RecordTransaction(result *protocol.Result) error {
+	for _, sink := range s.sinks {
+		transactionSink, ok := sink.(engine.TransactionSink)
+		if !ok {
+			continue
+		}
+		if err := transactionSink.RecordTransaction(result); err != nil {
 			return err
 		}
 	}

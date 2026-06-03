@@ -30,6 +30,10 @@ type ResultSink interface {
 	RecordResult(result *protocol.Result) error
 }
 
+type TransactionSink interface {
+	RecordTransaction(result *protocol.Result) error
+}
+
 type MultiGroupConfig struct {
 	Groups       []GroupConfig
 	Duration     time.Duration

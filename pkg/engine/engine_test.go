@@ -191,6 +191,67 @@ func TestEngine_RunStopsAtGlobalIterationGoal(t *testing.T) {
 	}
 }
 
+func TestEngine_RunCountsMultiActionIterationAsSingleTransaction(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "multi-action-iteration",
+		Protocol: "stub",
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{Iterations: 3},
+		},
+		Actions: []dsl.Action{
+			{Name: "home", Type: "request", Target: "/"},
+			{Name: "search", Type: "request", Target: "/search"},
+			{Name: "cart", Type: "request", Target: "/cart"},
+			{Name: "checkout", Type: "request", Target: "/checkout"},
+			{Name: "confirm", Type: "request", Target: "/confirm"},
+		},
+	}
+	e, err := New(Config{Script: script, VUsers: 1, Duration: time.Second})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	result, err := e.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.TotalTransactions != 3 {
+		t.Fatalf("total transactions = %d, want one per successful script iteration", result.TotalTransactions)
+	}
+}
+
+func TestEngine_RunCountsExplicitTransactionsWithinScript(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "explicit-transactions",
+		Protocol: "stub",
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{Iterations: 1},
+		},
+		Actions: []dsl.Action{
+			{Name: "Login", Type: "loadrunner_transaction", Params: map[string]any{"function": "lr_start_transaction"}},
+			{Name: "login-page", Type: "request", Target: "/login"},
+			{Name: "Login", Type: "loadrunner_transaction", Params: map[string]any{"function": "lr_end_transaction"}},
+			{Name: "Checkout", Type: "loadrunner_transaction", Params: map[string]any{"function": "lr_start_transaction"}},
+			{Name: "cart", Type: "request", Target: "/cart"},
+			{Name: "payment", Type: "request", Target: "/payment"},
+			{Name: "confirm", Type: "request", Target: "/confirm"},
+			{Name: "Checkout", Type: "loadrunner_transaction", Params: map[string]any{"function": "lr_end_transaction"}},
+		},
+	}
+	e, err := New(Config{Script: script, VUsers: 1, Duration: time.Second})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	result, err := e.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.TotalTransactions != 2 {
+		t.Fatalf("total transactions = %d, want two successful explicit transactions", result.TotalTransactions)
+	}
+}
+
 func TestEngine_RunStopsAtGlobalTransactionGoal(t *testing.T) {
 	script := &dsl.Script{
 		Name:     "global-transaction-goal",

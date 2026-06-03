@@ -111,7 +111,9 @@ func (vu *VUser) Run(ctx context.Context) {
 		Ignore:     cfg.ThinkTime.Ignore,
 	}
 
-	autoTx := cfg.RunLogic.AutoTransactions
+	autoTx := normalizeAutoTransactionMode(cfg.RunLogic.AutoTransactions)
+	actionTxMode := autoTx == "per_action"
+	iterationTxMode := autoTx == "per_iteration" || (autoTx == "none" && !scriptHasExplicitTransactions(vu.Script))
 	maxIter := cfg.RunLogic.Iterations
 	continueOnError := cfg.ErrorHandling.ContinueOnError
 
@@ -126,6 +128,9 @@ func (vu *VUser) Run(ctx context.Context) {
 			break
 		}
 		if ctx.Err() != nil {
+			break
+		}
+		if iterationTxMode && vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartTransaction() {
 			break
 		}
 		if pacingCfg.Type == "tps" && !pacingCfg.RateLimiter.WaitContext(ctx) {
@@ -149,9 +154,24 @@ func (vu *VUser) Run(ctx context.Context) {
 		}
 
 		// Track iteration-level transaction
-		var iterTxStart time.Time
-		if autoTx == "per_iteration" {
-			iterTxStart = time.Now()
+		iterTxStart := time.Now()
+		iterTxDuration := time.Duration(0)
+		var iterTransactionSource *protocol.Result
+		iterTxRecorded := false
+		recordIterationTransaction := func(success bool) {
+			if !iterationTxMode || iterTxRecorded {
+				return
+			}
+			duration := iterTxDuration
+			if duration <= 0 {
+				duration = time.Since(iterTxStart)
+			}
+			var source *protocol.Result
+			if !success {
+				source = iterTransactionSource
+			}
+			vu.recordTransaction(vu.iterationTransactionName(), duration, success, source)
+			iterTxRecorded = true
 		}
 
 		iterSuccess := true
@@ -170,6 +190,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					logger.Error("action error", "action", action.Name, "err", err)
 					iterSuccess = false
 					if !continueOnError {
+						recordIterationTransaction(false)
 						goto teardown
 					}
 				}
@@ -177,13 +198,13 @@ func (vu *VUser) Run(ctx context.Context) {
 			}
 
 			resolved := vu.resolveAction(action)
-			if vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartTransaction() {
+			if actionTxMode && vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartTransaction() {
 				goto teardown
 			}
 
 			// Track action-level transaction
 			var actionTxStart time.Time
-			if autoTx == "per_action" {
+			if actionTxMode {
 				actionTxStart = time.Now()
 			}
 
@@ -191,25 +212,32 @@ func (vu *VUser) Run(ctx context.Context) {
 			if err != nil {
 				logger.Error("action error", "action", action.Name, "err", err)
 				iterSuccess = false
+				if actionTxMode {
+					vu.recordTransaction(action.Name, time.Since(actionTxStart), false, nil)
+				}
 				if !continueOnError {
+					recordIterationTransaction(false)
 					goto teardown
 				}
 				continue
 			}
 
 			vu.recordResult(result, cfg.ErrorHandling)
+			iterTxDuration += result.Duration
 
 			// Record auto-transaction for this action
-			if autoTx == "per_action" {
-				vu.Metrics.RecordTransaction(action.Name, time.Since(actionTxStart), result.Success, vu.Group)
+			if actionTxMode {
+				vu.recordTransaction(action.Name, time.Since(actionTxStart), result.Success, result)
 			}
 
 			if !result.Success {
 				iterSuccess = false
+				iterTransactionSource = result
 				if logCfg.OnErrorOnly || logCfg.Level == "extended" {
 					logger.Error("action failed", actionLogAttrs(action.Name, resolved, result, logCfg, true)...)
 				}
 				if !continueOnError {
+					recordIterationTransaction(false)
 					goto teardown
 				}
 			} else if logCfg.Level == "extended" {
@@ -246,10 +274,7 @@ func (vu *VUser) Run(ctx context.Context) {
 		}
 
 		// Record iteration-level transaction
-		if autoTx == "per_iteration" {
-			txName := fmt.Sprintf("iteration_%d", iteration+1)
-			vu.Metrics.RecordTransaction(txName, time.Since(iterTxStart), iterSuccess, vu.Group)
-		}
+		recordIterationTransaction(iterSuccess)
 
 		iteration++
 
@@ -342,6 +367,90 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	if vu.ResultSink != nil {
 		_ = vu.ResultSink.RecordResult(result)
 	}
+}
+
+func (vu *VUser) recordTransaction(name string, duration time.Duration, success bool, source *protocol.Result) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "transaction"
+	}
+	if duration < 0 {
+		duration = 0
+	}
+	tx := &protocol.Result{
+		ActionName:          name,
+		BusinessTransaction: true,
+		Group:               vu.Group,
+		StartTime:           time.Now().Add(-duration),
+		Duration:            duration,
+		Success:             success,
+	}
+	if source != nil {
+		tx.StartTime = source.StartTime
+		if tx.StartTime.IsZero() {
+			tx.StartTime = time.Now().Add(-duration)
+		}
+		tx.Region = source.Region
+		tx.CorrelationID = source.CorrelationID
+		tx.NetworkProfile = source.NetworkProfile
+		tx.DependencyType = source.DependencyType
+		tx.DependencyTarget = source.DependencyTarget
+		tx.DNSTime = source.DNSTime
+		tx.ConnectTime = source.ConnectTime
+		tx.TLSTime = source.TLSTime
+		tx.TTFB = source.TTFB
+		tx.BytesSent = source.BytesSent
+		tx.BytesReceived = source.BytesReceived
+		tx.StatusCode = source.StatusCode
+		tx.ErrorMessage = source.ErrorMessage
+		tx.Extractions = source.Extractions
+		tx.ServerTelemetry = source.ServerTelemetry
+		tx.SourceStepID = source.SourceStepID
+		tx.SourceStepIndex = source.SourceStepIndex
+		tx.SourceAction = source.SourceAction
+		tx.SourceActionName = source.SourceActionName
+		tx.SourceTransaction = source.SourceTransaction
+		tx.SourceProfile = source.SourceProfile
+	}
+	if !success && tx.ErrorMessage == "" {
+		tx.ErrorMessage = "transaction failed"
+	}
+	if vu.Metrics != nil {
+		vu.Metrics.RecordTransactionResult(tx)
+	}
+	if sink, ok := vu.ResultSink.(TransactionSink); ok {
+		_ = sink.RecordTransaction(tx)
+	}
+}
+
+func (vu *VUser) iterationTransactionName() string {
+	if vu != nil && vu.Script != nil {
+		if name := strings.TrimSpace(vu.Script.Name); name != "" {
+			return name
+		}
+	}
+	return "script_iteration"
+}
+
+func normalizeAutoTransactionMode(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "none"
+	}
+	return value
+}
+
+func scriptHasExplicitTransactions(script *dsl.Script) bool {
+	if script == nil {
+		return false
+	}
+	for _, action := range script.Actions {
+		switch strings.ToLower(strings.TrimSpace(action.Type)) {
+		case "loadrunner_transaction", "transaction":
+			return true
+		}
+	}
+	return false
 }
 
 func networkProfileLabel(config dsl.NetworkSimulationConfig) string {
@@ -489,9 +598,7 @@ func (vu *VUser) handleLoadRunnerTransactionAction(action dsl.Action) {
 				start = time.Unix(0, nanos)
 			}
 		}
-		if vu.Metrics != nil {
-			vu.Metrics.RecordTransaction(name, time.Since(start), success, vu.Group)
-		}
+		vu.recordTransaction(name, time.Since(start), success, nil)
 		vu.Variables[loadRunnerTransactionStatusKey(name)] = strconv.FormatBool(success)
 	case strings.Contains(function, "status"):
 		if len(args) > 1 {

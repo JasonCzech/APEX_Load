@@ -1391,7 +1391,7 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 		P90:                    350 * time.Millisecond,
 		P95:                    400 * time.Millisecond,
 		P99:                    600 * time.Millisecond,
-		ByAction: map[string]*engine.ActionMetrics{
+		ByTransaction: map[string]*engine.ActionMetrics{
 			"login": {
 				Name:             "login",
 				DependencyType:   "http",
@@ -1530,8 +1530,9 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	if live.AvgResponseMs != 250 {
 		t.Fatalf("expected avg response 250ms, got %v", live.AvgResponseMs)
 	}
-	if live.ErrorPct != 12.5 {
-		t.Fatalf("expected error pct 12.5, got %v", live.ErrorPct)
+	expectedErrorPct := float64(5) / float64(45) * 100
+	if live.ErrorPct != expectedErrorPct {
+		t.Fatalf("expected error pct %v, got %v", expectedErrorPct, live.ErrorPct)
 	}
 	if live.Resources != resources {
 		t.Fatal("expected resources pointer to be preserved")
@@ -3217,8 +3218,9 @@ func TestProcessMetricsSnapshotBroadcastsAlertAndStopRequest(t *testing.T) {
 	if testRun.Status != "STOPPING" {
 		t.Fatalf("expected test status STOPPING, got %q", testRun.Status)
 	}
-	if testRun.LiveMetrics == nil || testRun.LiveMetrics.ErrorPct != 10 {
-		t.Fatalf("expected live metrics with 10%% error rate, got %#v", testRun.LiveMetrics)
+	expectedErrorPct := float64(2) / float64(22) * 100
+	if testRun.LiveMetrics == nil || testRun.LiveMetrics.ErrorPct != expectedErrorPct {
+		t.Fatalf("expected live metrics with %v%% error rate, got %#v", expectedErrorPct, testRun.LiveMetrics)
 	}
 
 	messageTypes := make([]string, 0, 5)

@@ -1991,15 +1991,18 @@ func summarizeGeneratorBatchTransactions(transactions []generatorrpc.Transaction
 	}
 	durations := make([]float64, 0, len(transactions))
 	errors := 0
+	successes := 0
 	for _, tx := range transactions {
 		durations = append(durations, tx.DurationMs)
 		if !tx.Success {
 			errors++
+		} else {
+			successes++
 		}
 	}
 	sort.Float64s(durations)
 	errorPct := float64(errors) / float64(len(transactions)) * 100
-	return percentileValue(durations, 0.95), percentileValue(durations, 0.99), errorPct, float64(len(transactions))
+	return percentileValue(durations, 0.95), percentileValue(durations, 0.99), errorPct, float64(successes)
 }
 
 func classifyGeneratorImpact(resources *engine.SystemResources, p95Ms float64, errorPct float64) (string, []string) {
@@ -2083,10 +2086,13 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	durationsByName := make(map[string][]float64)
 	durationsByDependencyTarget := make(map[string][]float64)
 	durationsBySOAPOperation := make(map[string][]float64)
+	transactionAttempts := int64(0)
 	for _, tx := range batch.Transactions {
-		live.TotalTx++
+		transactionAttempts++
 		if !tx.Success {
 			live.TotalErrors++
+		} else {
+			live.TotalTx++
 		}
 		live.AvgResponseMs += tx.DurationMs
 		durationsByName[tx.Name] = append(durationsByName[tx.Name], tx.DurationMs)
@@ -2118,9 +2124,10 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		}
 	}
 
-	if live.TotalTx > 0 {
-		live.ErrorPct = float64(live.TotalErrors) / float64(live.TotalTx) * 100
-		live.AvgResponseMs /= float64(live.TotalTx)
+	if transactionAttempts > 0 {
+		live.TPS = float64(live.TotalTx)
+		live.ErrorPct = float64(live.TotalErrors) / float64(transactionAttempts) * 100
+		live.AvgResponseMs /= float64(transactionAttempts)
 	}
 
 	names := make([]string, 0, len(durationsByName))

@@ -585,8 +585,8 @@ func TestServiceWithExecutionRunsAssignedScript(t *testing.T) {
 			t.Fatalf("Receive metrics batch: %v", err)
 		}
 		if len(batch.Transactions) > 0 {
-			if batch.Transactions[0].Name != "Home" {
-				t.Fatalf("transaction name = %q, want Home", batch.Transactions[0].Name)
+			if batch.Transactions[0].Name != "Checkout" {
+				t.Fatalf("transaction name = %q, want Checkout script iteration", batch.Transactions[0].Name)
 			}
 			break
 		}

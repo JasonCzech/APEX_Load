@@ -83,7 +83,7 @@ func TestEngineRunsWebSocketScriptThroughProtocol(t *testing.T) {
 	if result.TotalErrors != 0 {
 		t.Fatalf("TotalErrors = %d, want 0", result.TotalErrors)
 	}
-	if result.TotalTransactions != 4 {
-		t.Fatalf("TotalTransactions = %d, want 4", result.TotalTransactions)
+	if result.TotalTransactions != 1 {
+		t.Fatalf("TotalTransactions = %d, want 1 successful script iteration", result.TotalTransactions)
 	}
 }

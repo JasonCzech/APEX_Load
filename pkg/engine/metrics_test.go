@@ -31,11 +31,21 @@ func TestMetricsCollector_RecordAndCount(t *testing.T) {
 	mc.Record(&protocol.Result{Success: false, ActionName: "b"})
 	mc.Record(&protocol.Result{Success: true, ActionName: "c"})
 
-	if got := mc.TotalTransactions(); got != 3 {
-		t.Errorf("TotalTransactions = %d, want 3", got)
+	if got := mc.TotalTransactions(); got != 0 {
+		t.Errorf("TotalTransactions after raw actions = %d, want 0", got)
+	}
+	if got := mc.TotalErrors(); got != 0 {
+		t.Errorf("TotalErrors after raw actions = %d, want 0", got)
+	}
+
+	mc.RecordTransaction("iteration", 10*time.Millisecond, true, "buyers")
+	mc.RecordTransaction("iteration", 10*time.Millisecond, false, "buyers")
+
+	if got := mc.TotalTransactions(); got != 1 {
+		t.Errorf("TotalTransactions after business transactions = %d, want 1", got)
 	}
 	if got := mc.TotalErrors(); got != 1 {
-		t.Errorf("TotalErrors = %d, want 1", got)
+		t.Errorf("TotalErrors after business transactions = %d, want 1", got)
 	}
 }
 
@@ -88,20 +98,14 @@ func TestMetricsCollector_AggregateProducesSnapshot(t *testing.T) {
 	if !ok {
 		t.Fatal("expected a snapshot after aggregation")
 	}
-	if snap.Transactions != 10 {
-		t.Errorf("transactions = %d, want 10", snap.Transactions)
+	if snap.Transactions != 0 {
+		t.Errorf("transactions = %d, want 0 for raw action samples", snap.Transactions)
 	}
 	if snap.Errors != 0 {
 		t.Errorf("errors = %d, want 0", snap.Errors)
 	}
-	if snap.P50 == 0 {
-		t.Error("P50 should be non-zero")
-	}
-	if snap.P90 == 0 {
-		t.Error("P90 should be non-zero")
-	}
-	if snap.P99 == 0 {
-		t.Error("P99 should be non-zero")
+	if action := snap.ByAction["test"]; action == nil || action.Count != 10 {
+		t.Fatalf("raw action count = %#v, want 10", action)
 	}
 }
 
@@ -174,9 +178,9 @@ func TestMetricsCollector_ByGroup(t *testing.T) {
 	mc.Start(50 * time.Millisecond)
 	defer mc.Stop()
 
-	mc.Record(&protocol.Result{ActionName: "a", Group: "buyers", Success: true, Duration: 10 * time.Millisecond})
-	mc.Record(&protocol.Result{ActionName: "b", Group: "buyers", Success: true, Duration: 20 * time.Millisecond})
-	mc.Record(&protocol.Result{ActionName: "c", Group: "sellers", Success: true, Duration: 5 * time.Millisecond})
+	mc.RecordTransaction("checkout", 10*time.Millisecond, true, "buyers")
+	mc.RecordTransaction("checkout", 20*time.Millisecond, true, "buyers")
+	mc.RecordTransaction("listing", 5*time.Millisecond, true, "sellers")
 
 	time.Sleep(150 * time.Millisecond)
 
@@ -204,10 +208,10 @@ func TestMetricsCollector_TracksThroughputTargetGap(t *testing.T) {
 	mc.SetGroupTargetTPS("buyers", 6)
 
 	snap := mc.computeSnapshot([]*protocol.Result{
-		{ActionName: "a", Group: "buyers", Success: true, Duration: 10 * time.Millisecond},
-		{ActionName: "b", Group: "buyers", Success: true, Duration: 12 * time.Millisecond},
-		{ActionName: "c", Group: "buyers", Success: true, Duration: 14 * time.Millisecond},
-		{ActionName: "d", Group: "buyers", Success: true, Duration: 16 * time.Millisecond},
+		{ActionName: "a", BusinessTransaction: true, Group: "buyers", Success: true, Duration: 10 * time.Millisecond},
+		{ActionName: "b", BusinessTransaction: true, Group: "buyers", Success: true, Duration: 12 * time.Millisecond},
+		{ActionName: "c", BusinessTransaction: true, Group: "buyers", Success: true, Duration: 14 * time.Millisecond},
+		{ActionName: "d", BusinessTransaction: true, Group: "buyers", Success: true, Duration: 16 * time.Millisecond},
 	}, time.Second)
 
 	if snap.TargetTPS != 8 {
@@ -360,9 +364,9 @@ func TestMetricsCollector_RecordTransaction(t *testing.T) {
 		t.Fatal("expected snapshot")
 	}
 
-	_, ok = snap.ByAction["tx:iteration_1"]
+	_, ok = snap.ByTransaction["iteration_1"]
 	if !ok {
-		t.Error("expected synthetic transaction in ByAction")
+		t.Error("expected synthetic transaction in ByTransaction")
 	}
 }
 
@@ -647,13 +651,9 @@ func TestMetricsCollector_PercentilesViaTDigest(t *testing.T) {
 	mc.Start(50 * time.Millisecond)
 	defer mc.Stop()
 
-	// Feed 100 results with durations 1ms..100ms
+	// Feed 100 business transactions with durations 1ms..100ms
 	for i := 1; i <= 100; i++ {
-		mc.Record(&protocol.Result{
-			ActionName: "test",
-			Success:    true,
-			Duration:   time.Duration(i) * time.Millisecond,
-		})
+		mc.RecordTransaction("test", time.Duration(i)*time.Millisecond, true, "")
 	}
 
 	time.Sleep(150 * time.Millisecond)
