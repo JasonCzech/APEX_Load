@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 
-import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, MetricsHistoryPoint, RunArchiveActionStats, RunArchiveReport, RunArchiveSOAPFaultTimelineBucket, RunArchiveSOAPPayloadTimelineBucket, TestSummary, TransactionEvent } from '../types'
+import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, MetricsHistoryPoint, RunArchiveAnalysisEdge, RunArchiveAnalysisNode, RunArchiveAnalysisResponse, RunArchiveAnalysisStats, RunArchiveActionStats, RunArchiveReport, RunArchiveSOAPFaultTimelineBucket, RunArchiveSOAPPayloadTimelineBucket, RunArchiveTransactionDrilldown, TestSummary, TransactionEvent } from '../types'
 import BrowserBreakdownChart from './BrowserBreakdownChart'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
 import LoadImpactMetricGraphs from './LoadImpactMetricGraphs'
@@ -42,6 +42,9 @@ interface Props {
   archiveError: string
   archiveLoading: boolean
   archiveReport: RunArchiveReport | null
+  archiveAnalysis?: RunArchiveAnalysisResponse | null
+  archiveAnalysisLoading?: boolean
+  archiveAnalysisError?: string
   loadImpactData?: MetricsHistoryPoint[]
   loadImpactLoading?: boolean
   loadImpactError?: string
@@ -226,6 +229,74 @@ function formatArchiveCountSummary(counts?: Record<string, number>) {
 
 function formatArchiveFlag(enabled: boolean | undefined, truthy = 'Enabled', falsy = 'Disabled') {
   return enabled ? truthy : falsy
+}
+
+function formatArchiveAnalysisKind(value?: string): string {
+  const labels: Record<string, string> = {
+    action: 'Action',
+    dependency: 'Dependency',
+    group: 'Group',
+    region: 'Region',
+    source_transaction: 'Source Transaction',
+    action_dependency: 'Action to Dependency',
+    group_action: 'Group to Action',
+    region_action: 'Region to Action',
+    source_transaction_action: 'Source to Action',
+  }
+  if (!value) return 'Unknown'
+  if (labels[value]) return labels[value]
+  return value
+    .split('_')
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function archiveAnalysisCurrentStats(runs: RunArchiveAnalysisStats[] = [], testID: string): RunArchiveAnalysisStats | undefined {
+  return runs.find(run => run.run_id === testID) || runs[runs.length - 1]
+}
+
+function archiveAnalysisBaselineStats(runs: RunArchiveAnalysisStats[] = [], testID: string): RunArchiveAnalysisStats | undefined {
+  return runs.find(run => run.run_id !== testID)
+}
+
+function formatArchiveAnalysisStats(stats?: RunArchiveAnalysisStats): string {
+  if (!stats) return 'n/a'
+  return `${stats.transactions.toLocaleString()} tx · ${stats.error_pct.toFixed(2)}% err · avg ${stats.avg_response_ms.toFixed(1)} ms`
+}
+
+function sortArchiveAnalysisNodes(nodes: RunArchiveAnalysisNode[], testID: string): RunArchiveAnalysisNode[] {
+  return [...nodes].sort((left, right) => {
+    const leftStats = archiveAnalysisCurrentStats(left.runs, testID)
+    const rightStats = archiveAnalysisCurrentStats(right.runs, testID)
+    const txDelta = (rightStats?.transactions || 0) - (leftStats?.transactions || 0)
+    if (txDelta !== 0) return txDelta
+    const errorDelta = (rightStats?.errors || 0) - (leftStats?.errors || 0)
+    if (errorDelta !== 0) return errorDelta
+    return `${left.kind}:${left.label}`.localeCompare(`${right.kind}:${right.label}`)
+  })
+}
+
+function sortArchiveAnalysisEdges(edges: RunArchiveAnalysisEdge[], testID: string): RunArchiveAnalysisEdge[] {
+  return [...edges].sort((left, right) => {
+    const leftStats = archiveAnalysisCurrentStats(left.runs, testID)
+    const rightStats = archiveAnalysisCurrentStats(right.runs, testID)
+    const txDelta = (rightStats?.transactions || 0) - (leftStats?.transactions || 0)
+    if (txDelta !== 0) return txDelta
+    const errorDelta = (rightStats?.errors || 0) - (leftStats?.errors || 0)
+    if (errorDelta !== 0) return errorDelta
+    return left.id.localeCompare(right.id)
+  })
+}
+
+function formatArchiveAnalysisPath(row: RunArchiveTransactionDrilldown): string {
+  if (row.path && row.path.length > 0) return row.path.join(' / ')
+  return [row.region, row.group, row.source_transaction, row.action_name, row.dependency_target].filter(Boolean).join(' / ') || 'n/a'
+}
+
+function formatArchiveAnalysisDependency(row: RunArchiveTransactionDrilldown): string {
+  if (row.dependency_type && row.dependency_target) return `${row.dependency_type}: ${row.dependency_target}`
+  return row.dependency_target || row.dependency_type || 'n/a'
 }
 
 function formatGeneratorInventoryLabel(target?: string) {
@@ -610,6 +681,9 @@ export default function TestExecutionArchive({
   archiveError,
   archiveLoading,
   archiveReport,
+  archiveAnalysis = null,
+  archiveAnalysisLoading = false,
+  archiveAnalysisError = '',
   loadImpactData = [],
   loadImpactLoading = false,
   loadImpactError = '',
@@ -668,6 +742,11 @@ export default function TestExecutionArchive({
   const runtimeBrowserSummary = formatBrowserRuntimeSummary(archiveReport?.manifest.provenance?.runtime_settings?.browser)
   const compactMetadataPanels = archiveReport ? buildArchiveCompactPanels(archiveReport, test, runtimeBrowserSummary) : []
   const selectedActionStats = archiveReport?.by_action?.[selectedArchiveAction]
+  const archiveAnalysisNodes = sortArchiveAnalysisNodes(archiveAnalysis?.graph.nodes || [], test.id)
+  const archiveAnalysisEdges = sortArchiveAnalysisEdges(archiveAnalysis?.graph.edges || [], test.id)
+  const archiveAnalysisNodeByID = new Map((archiveAnalysis?.graph.nodes || []).map(node => [node.id, node]))
+  const showArchiveAnalysis = archiveAnalysisLoading || Boolean(archiveAnalysis) || Boolean(archiveAnalysisError)
+  const archiveAnalysisHasBaseline = Boolean(archiveAnalysis?.baseline_id)
   const renderArchiveSortButton = (key: ArchiveTransactionSortKey, label: string) => {
     const active = archiveTransactionSort?.key === key
     return (
@@ -1100,6 +1179,144 @@ export default function TestExecutionArchive({
                     </button>
                   )}
                 </>
+              )}
+            </div>
+          )}
+
+          {showArchiveAnalysis && (
+            <div className="tx-section archive-summary-section archive-analysis-section" data-testid="archive-analysis-section">
+              <div className="archive-section-header archive-section-header-stack">
+                <div>
+                  <h3 className="chart-title">Archive Analysis</h3>
+                  <p className="archive-section-copy">Merged graph and filtered transaction path evidence from the archived run.</p>
+                </div>
+                <div className="archive-filter-bar">
+                  {archiveAnalysis && (
+                    <>
+                      <span className="archive-chip">{archiveAnalysis.graph.nodes.length} nodes</span>
+                      <span className="archive-chip">{archiveAnalysis.graph.edges.length} link{archiveAnalysis.graph.edges.length === 1 ? '' : 's'}</span>
+                      {archiveAnalysis.baseline_id && <span className="archive-chip">Baseline {archiveAnalysis.baseline_id}</span>}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {archiveAnalysisError && <p className="scenario-script-status error">{archiveAnalysisError}</p>}
+              {archiveAnalysisLoading && <p className="scenario-script-status">Loading archive analysis…</p>}
+
+              {!archiveAnalysisLoading && archiveAnalysis && archiveAnalysisNodes.length === 0 && archiveAnalysisEdges.length === 0 ? (
+                <p className="scenario-script-status">No archive analysis graph loaded for current filters.</p>
+              ) : null}
+
+              {archiveAnalysis && (archiveAnalysisNodes.length > 0 || archiveAnalysisEdges.length > 0) && (
+                <div className="archive-analysis-grid">
+                  <div className="archive-analysis-panel">
+                    <div className="archive-section-header archive-subsection-header">
+                      <div>
+                        <h3 className="chart-title">Graph Nodes</h3>
+                      </div>
+                    </div>
+                    <table className="tx-table archive-analysis-table" data-testid="archive-analysis-nodes">
+                      <thead>
+                        <tr>
+                          <th>Type</th>
+                          <th>Node</th>
+                          <th>Current</th>
+                          {archiveAnalysisHasBaseline && <th>Baseline</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {archiveAnalysisNodes.slice(0, 10).map(node => {
+                          const currentStats = archiveAnalysisCurrentStats(node.runs, test.id)
+                          const baselineStats = archiveAnalysisBaselineStats(node.runs, test.id)
+                          return (
+                            <tr key={node.id}>
+                              <td><span className="archive-analysis-kind">{formatArchiveAnalysisKind(node.kind)}</span></td>
+                              <td className="tx-name">{node.label}</td>
+                              <td>{formatArchiveAnalysisStats(currentStats)}</td>
+                              {archiveAnalysisHasBaseline && <td>{formatArchiveAnalysisStats(baselineStats)}</td>}
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="archive-analysis-panel">
+                    <div className="archive-section-header archive-subsection-header">
+                      <div>
+                        <h3 className="chart-title">Graph Links</h3>
+                      </div>
+                    </div>
+                    <table className="tx-table archive-analysis-table" data-testid="archive-analysis-edges">
+                      <thead>
+                        <tr>
+                          <th>Link</th>
+                          <th>From</th>
+                          <th>To</th>
+                          <th>Current</th>
+                          {archiveAnalysisHasBaseline && <th>Baseline</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {archiveAnalysisEdges.slice(0, 10).map(edge => {
+                          const currentStats = archiveAnalysisCurrentStats(edge.runs, test.id)
+                          const baselineStats = archiveAnalysisBaselineStats(edge.runs, test.id)
+                          const fromNode = archiveAnalysisNodeByID.get(edge.from)
+                          const toNode = archiveAnalysisNodeByID.get(edge.to)
+                          return (
+                            <tr key={edge.id}>
+                              <td><span className="archive-analysis-kind">{formatArchiveAnalysisKind(edge.kind)}</span></td>
+                              <td className="tx-name">{fromNode?.label || edge.from}</td>
+                              <td className="tx-name">{toNode?.label || edge.to}</td>
+                              <td>{formatArchiveAnalysisStats(currentStats)}</td>
+                              {archiveAnalysisHasBaseline && <td>{formatArchiveAnalysisStats(baselineStats)}</td>}
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {archiveAnalysis && archiveAnalysis.transactions.length > 0 && (
+                <div className="archive-analysis-drilldown">
+                  <div className="archive-section-header archive-subsection-header">
+                    <div>
+                      <h3 className="chart-title">Analysis Drill-Down</h3>
+                    </div>
+                    <span className="archive-chip">
+                      {archiveAnalysis.total > 0 ? `${archiveAnalysis.offset + 1}-${archiveAnalysis.offset + archiveAnalysis.transactions.length} of ${archiveAnalysis.total}` : '0 events'}
+                    </span>
+                  </div>
+                  <div className="archive-events-table-wrap">
+                    <table className="tx-table archive-analysis-table" data-testid="archive-analysis-drilldown">
+                      <thead>
+                        <tr>
+                          <th>Time</th>
+                          <th>Action</th>
+                          <th>Dependency</th>
+                          <th>Path</th>
+                          <th>Status</th>
+                          <th>Duration</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {archiveAnalysis.transactions.map(row => (
+                          <tr key={`${row.run_id}-${row.index}-${row.timestamp}`} className={!row.success ? 'archive-error-row' : ''}>
+                            <td className="archive-time-cell">{formatArchiveTime(row.timestamp)}</td>
+                            <td className="tx-name">{row.action_name || row.source_action || 'n/a'}</td>
+                            <td>{formatArchiveAnalysisDependency(row)}</td>
+                            <td className="archive-analysis-path">{formatArchiveAnalysisPath(row)}</td>
+                            <td className={row.success ? '' : 'error-cell'}>{row.status_code || (row.success ? 'OK' : 'ERR')}</td>
+                            <td>{row.duration_ms.toFixed(1)} ms</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
             </div>
           )}

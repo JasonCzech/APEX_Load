@@ -798,6 +798,74 @@ export interface RunArchiveReport {
   resource_peaks: RunArchiveResourcePeaks
 }
 
+export interface RunArchiveAnalysisStats {
+  run_id: string
+  run_name?: string
+  transactions: number
+  errors: number
+  error_pct: number
+  avg_response_ms: number
+  min_response_ms?: number
+  max_response_ms?: number
+  p95_ms?: number
+  p99_ms?: number
+  bytes_received?: number
+}
+
+export interface RunArchiveAnalysisNode {
+  id: string
+  kind: string
+  label: string
+  runs: RunArchiveAnalysisStats[]
+}
+
+export interface RunArchiveAnalysisEdge {
+  id: string
+  from: string
+  to: string
+  kind: string
+  runs: RunArchiveAnalysisStats[]
+}
+
+export interface RunArchiveAnalysisGraph {
+  nodes: RunArchiveAnalysisNode[]
+  edges: RunArchiveAnalysisEdge[]
+}
+
+export interface RunArchiveTransactionDrilldown {
+  index: number
+  timestamp: string
+  run_id: string
+  group?: string
+  region?: string
+  action_name?: string
+  dependency_type?: string
+  dependency_target?: string
+  duration_ms: number
+  status_code?: number
+  success: boolean
+  error_message?: string
+  bytes_received?: number
+  trace_id?: string
+  correlation_id?: string
+  source_transaction?: string
+  source_action?: string
+  path?: string[]
+}
+
+export interface RunArchiveAnalysisResponse {
+  schema_version: string
+  test_id: string
+  baseline_id?: string
+  graph: RunArchiveAnalysisGraph
+  transactions: RunArchiveTransactionDrilldown[]
+  count: number
+  total: number
+  limit: number
+  offset: number
+  filters?: Record<string, unknown>
+}
+
 export interface RunArchiveReportProfile {
   id: string
   label: string

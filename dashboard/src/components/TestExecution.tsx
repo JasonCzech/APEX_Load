@@ -127,6 +127,9 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     archiveError,
     archiveLoading,
     archiveReport,
+    archiveAnalysis,
+    archiveAnalysisLoading,
+    archiveAnalysisError,
     archiveActionEntries,
     selectedArchiveAction,
     onSelectedArchiveActionChange,
@@ -292,6 +295,9 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
           archiveError={archiveError}
           archiveLoading={archiveLoading}
           archiveReport={archiveReport}
+          archiveAnalysis={archiveAnalysis}
+          archiveAnalysisLoading={archiveAnalysisLoading}
+          archiveAnalysisError={archiveAnalysisError}
           loadImpactData={archiveLoadImpactData}
           loadImpactLoading={archiveSummariesLoading || archiveResourcesLoading}
           loadImpactError={archiveLoadImpactError}

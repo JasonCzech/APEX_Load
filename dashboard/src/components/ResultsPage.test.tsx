@@ -12,6 +12,7 @@ const apiMock = {
   getReleaseSLAGovernance: vi.fn(),
   listExternalResultImports: vi.fn(),
   getTestArchiveReport: vi.fn(),
+  getTestArchiveAnalysis: vi.fn(),
   getTestArchiveSummaries: vi.fn(),
   deleteTest: vi.fn(),
   downloadTestArchive: vi.fn(),

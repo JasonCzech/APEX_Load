@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { RunArchiveReport, TestSummary, TransactionEvent } from '../types'
+import type { RunArchiveAnalysisResponse, RunArchiveReport, TestSummary, TransactionEvent } from '../types'
 import { formatSnapshotRequestSection, formatSnapshotResponseSection } from '../utils/snapshotFormatUtils'
 import { formatSOAPFaultSummary } from './soapFaultUtils'
 import TestExecutionArchive from './TestExecutionArchive'
@@ -282,6 +282,72 @@ describe('TestExecutionArchive', () => {
     },
   }
 
+  const archiveAnalysis: RunArchiveAnalysisResponse = {
+    schema_version: 'apexload.archive_analysis.v1',
+    test_id: 'test-1',
+    baseline_id: 'baseline-1',
+    graph: {
+      nodes: [
+        {
+          id: 'action:CreateOrder',
+          kind: 'action',
+          label: 'CreateOrder',
+          runs: [
+            { run_id: 'baseline-1', run_name: 'Baseline', transactions: 2, errors: 0, error_pct: 0, avg_response_ms: 90 },
+            { run_id: 'test-1', run_name: 'SOAP Fault Test', transactions: 4, errors: 1, error_pct: 25, avg_response_ms: 140 },
+          ],
+        },
+        {
+          id: 'dependency:soap:orders',
+          kind: 'dependency',
+          label: 'soap:orders',
+          runs: [
+            { run_id: 'baseline-1', run_name: 'Baseline', transactions: 2, errors: 0, error_pct: 0, avg_response_ms: 90 },
+            { run_id: 'test-1', run_name: 'SOAP Fault Test', transactions: 4, errors: 1, error_pct: 25, avg_response_ms: 140 },
+          ],
+        },
+      ],
+      edges: [
+        {
+          id: 'action_dependency:action:CreateOrder->dependency:soap:orders',
+          kind: 'action_dependency',
+          from: 'action:CreateOrder',
+          to: 'dependency:soap:orders',
+          runs: [
+            { run_id: 'baseline-1', run_name: 'Baseline', transactions: 2, errors: 0, error_pct: 0, avg_response_ms: 90 },
+            { run_id: 'test-1', run_name: 'SOAP Fault Test', transactions: 4, errors: 1, error_pct: 25, avg_response_ms: 140 },
+          ],
+        },
+      ],
+    },
+    transactions: [
+      {
+        index: 0,
+        timestamp: '2026-05-14T20:00:30Z',
+        run_id: 'test-1',
+        group: 'buyers',
+        region: 'us-east',
+        action_name: 'CreateOrder',
+        dependency_type: 'soap',
+        dependency_target: 'orders',
+        duration_ms: 140,
+        status_code: 500,
+        success: false,
+        error_message: 'soap fault',
+        bytes_received: 512,
+        trace_id: 'trace-1',
+        correlation_id: 'corr-1',
+        source_transaction: 'Checkout Flow',
+        source_action: 'Create Order',
+        path: ['us-east', 'buyers', 'Checkout Flow', 'CreateOrder', 'soap:orders'],
+      },
+    ],
+    count: 1,
+    total: 1,
+    limit: 10,
+    offset: 0,
+  }
+
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -357,6 +423,9 @@ describe('TestExecutionArchive', () => {
           archiveError=""
           archiveLoading={false}
           archiveReport={archiveReport}
+          archiveAnalysis={archiveAnalysis}
+          archiveAnalysisLoading={false}
+          archiveAnalysisError=""
           onDownloadBrowserDiagnostics={onDownloadBrowserDiagnostics}
           onDownloadArchiveArtifact={onDownloadArchiveArtifact}
           archiveActionEntries={[]}
@@ -399,6 +468,21 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Summary Timeline')
     expect(container.textContent).toContain('2026-05-14 20:00Z')
     expect(container.textContent).toContain('120.0 ms')
+    expect(container.querySelector('[data-testid="archive-analysis-section"]')).toBeTruthy()
+    expect(container.querySelector('[data-testid="archive-analysis-nodes"]')).toBeTruthy()
+    expect(container.querySelector('[data-testid="archive-analysis-edges"]')).toBeTruthy()
+    expect(container.querySelector('[data-testid="archive-analysis-drilldown"]')).toBeTruthy()
+    expect(container.textContent).toContain('Archive Analysis')
+    expect(container.textContent).toContain('2 nodes')
+    expect(container.textContent).toContain('1 link')
+    expect(container.textContent).toContain('Baseline baseline-1')
+    expect(container.textContent).toContain('Action to Dependency')
+    expect(container.textContent).toContain('CreateOrder')
+    expect(container.textContent).toContain('soap:orders')
+    expect(container.textContent).toContain('4 tx · 25.00% err · avg 140.0 ms')
+    expect(container.textContent).toContain('2 tx · 0.00% err · avg 90.0 ms')
+    expect(container.textContent).toContain('us-east / buyers / Checkout Flow / CreateOrder / soap:orders')
+    expect(container.textContent).toContain('soap: orders')
     expect(container.textContent).toContain('Run Provenance')
     expect(container.textContent).toContain('Target 2.0 TPS')
     expect(container.textContent).toContain('Throughput Gap')

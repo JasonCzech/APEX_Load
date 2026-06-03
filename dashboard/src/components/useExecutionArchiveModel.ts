@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useApi } from '../hooks/useApi'
 import {
+  RunArchiveAnalysisResponse,
   RunArchiveActionStats,
   RunArchiveReport,
   TestSummary,
@@ -49,6 +50,9 @@ interface ExecutionArchiveModel {
   archiveError: string
   archiveLoading: boolean
   archiveReport: RunArchiveReport | null
+  archiveAnalysis: RunArchiveAnalysisResponse | null
+  archiveAnalysisLoading: boolean
+  archiveAnalysisError: string
   archiveActionEntries: Array<[string, RunArchiveActionStats]>
   selectedArchiveAction: string
   onSelectedArchiveActionChange: (value: string) => void
@@ -109,11 +113,14 @@ function parseTimeFilter(value: string): string | undefined {
 export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArchiveModel {
   const api = useApi()
   const [archiveReport, setArchiveReport] = useState<RunArchiveReport | null>(null)
+  const [archiveAnalysis, setArchiveAnalysis] = useState<RunArchiveAnalysisResponse | null>(null)
   const [archiveTransactions, setArchiveTransactions] = useState<TransactionEvent[]>([])
   const [archiveTransactionsTotal, setArchiveTransactionsTotal] = useState(0)
   const [archiveLoading, setArchiveLoading] = useState(false)
+  const [archiveAnalysisLoading, setArchiveAnalysisLoading] = useState(false)
   const [archiveTransactionsLoading, setArchiveTransactionsLoading] = useState(false)
   const [archiveError, setArchiveError] = useState('')
+  const [archiveAnalysisError, setArchiveAnalysisError] = useState('')
   const [selectedArchiveAction, setSelectedArchiveAction] = useState('')
   const [selectedArchiveSOAPOperation, setSelectedArchiveSOAPOperation] = useState('')
   const [selectedArchiveGroup, setSelectedArchiveGroup] = useState('')
@@ -128,15 +135,46 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
   const testID = test?.id || ''
   const testStatus = test?.status
   const archiveCompletedAt = test?.archive?.completed_at || ''
+  const archiveAnalysisBaselineID = test?.comparison_baseline?.source_test_id || ''
+  const archiveTransactionQueryParams = useMemo(() => ({
+    action: selectedArchiveAction,
+    soap_operation: selectedArchiveSOAPOperation || undefined,
+    group: selectedArchiveGroup || undefined,
+    success: archiveErrorsOnly ? false : undefined,
+    time_from: parseTimeFilter(archiveTransactionFilters.timeFrom),
+    time_to: parseTimeFilter(archiveTransactionFilters.timeTo),
+    status: archiveTransactionFilters.status.trim() || undefined,
+    min_duration_ms: parseNumberFilter(archiveTransactionFilters.minDurationMs),
+    max_duration_ms: parseNumberFilter(archiveTransactionFilters.maxDurationMs),
+    min_bytes: parseNumberFilter(archiveTransactionFilters.minBytes),
+    max_bytes: parseNumberFilter(archiveTransactionFilters.maxBytes),
+    error_contains: archiveTransactionFilters.errorContains.trim() || undefined,
+    sort_by: archiveTransactionSort?.key,
+    sort_dir: archiveTransactionSort?.direction,
+    limit: archivePageSize,
+    offset: archiveTransactionsOffset,
+  }), [
+    archiveErrorsOnly,
+    archivePageSize,
+    archiveTransactionFilters,
+    archiveTransactionSort,
+    archiveTransactionsOffset,
+    selectedArchiveAction,
+    selectedArchiveGroup,
+    selectedArchiveSOAPOperation,
+  ])
 
   useEffect(() => {
     if (!hasArchive || !isTerminalStatus(testStatus)) {
       setArchiveReport(null)
+      setArchiveAnalysis(null)
       setArchiveTransactions([])
       setArchiveTransactionsTotal(0)
       setArchiveLoading(false)
+      setArchiveAnalysisLoading(false)
       setArchiveTransactionsLoading(false)
       setArchiveError('')
+      setArchiveAnalysisError('')
       setSelectedArchiveAction('')
       setSelectedArchiveSOAPOperation('')
       setSelectedArchiveGroup('')
@@ -194,24 +232,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
     const loadArchiveTransactions = async () => {
       setArchiveTransactionsLoading(true)
       try {
-        const response = await api.getTestArchiveTransactions(testID, {
-          action: selectedArchiveAction,
-          soap_operation: selectedArchiveSOAPOperation || undefined,
-          group: selectedArchiveGroup || undefined,
-          success: archiveErrorsOnly ? false : undefined,
-          time_from: parseTimeFilter(archiveTransactionFilters.timeFrom),
-          time_to: parseTimeFilter(archiveTransactionFilters.timeTo),
-          status: archiveTransactionFilters.status.trim() || undefined,
-          min_duration_ms: parseNumberFilter(archiveTransactionFilters.minDurationMs),
-          max_duration_ms: parseNumberFilter(archiveTransactionFilters.maxDurationMs),
-          min_bytes: parseNumberFilter(archiveTransactionFilters.minBytes),
-          max_bytes: parseNumberFilter(archiveTransactionFilters.maxBytes),
-          error_contains: archiveTransactionFilters.errorContains.trim() || undefined,
-          sort_by: archiveTransactionSort?.key,
-          sort_dir: archiveTransactionSort?.direction,
-          limit: archivePageSize,
-          offset: archiveTransactionsOffset,
-        })
+        const response = await api.getTestArchiveTransactions(testID, archiveTransactionQueryParams)
         if (cancelled) return
         setArchiveTransactions(response.transactions || [])
         setArchiveTransactionsTotal(response.total || 0)
@@ -232,7 +253,59 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
     return () => {
       cancelled = true
     }
-  }, [api, archiveErrorsOnly, archivePageSize, archiveTransactionFilters, archiveTransactionSort, archiveTransactionsOffset, hasArchive, selectedArchiveAction, selectedArchiveGroup, selectedArchiveSOAPOperation, testID, testStatus])
+  }, [api, archiveTransactionQueryParams, hasArchive, selectedArchiveAction, testID, testStatus])
+
+  useEffect(() => {
+    if (!hasArchive || !isTerminalStatus(testStatus) || !selectedArchiveAction) {
+      setArchiveAnalysis(null)
+      setArchiveAnalysisLoading(false)
+      setArchiveAnalysisError('')
+      return
+    }
+
+    let cancelled = false
+
+    const loadArchiveAnalysis = async () => {
+      const baselineID = archiveAnalysisBaselineID && archiveAnalysisBaselineID !== testID ? archiveAnalysisBaselineID : undefined
+      setArchiveAnalysisLoading(true)
+      setArchiveAnalysisError('')
+      try {
+        const response = await api.getTestArchiveAnalysis(testID, {
+          ...archiveTransactionQueryParams,
+          baseline_id: baselineID,
+        })
+        if (cancelled) return
+        setArchiveAnalysis(response)
+      } catch (error: unknown) {
+        if (cancelled) return
+        if (baselineID) {
+          try {
+            const response = await api.getTestArchiveAnalysis(testID, archiveTransactionQueryParams)
+            if (cancelled) return
+            setArchiveAnalysis(response)
+            setArchiveAnalysisError(`${getErrorMessage(error, 'Unable to load baseline archive analysis')} Showing current archive only.`)
+          } catch (fallbackError: unknown) {
+            if (cancelled) return
+            setArchiveAnalysis(null)
+            setArchiveAnalysisError(getErrorMessage(fallbackError, 'Unable to load archive analysis'))
+          }
+          return
+        }
+        setArchiveAnalysis(null)
+        setArchiveAnalysisError(getErrorMessage(error, 'Unable to load archive analysis'))
+      } finally {
+        if (!cancelled) {
+          setArchiveAnalysisLoading(false)
+        }
+      }
+    }
+
+    loadArchiveAnalysis()
+
+    return () => {
+      cancelled = true
+    }
+  }, [api, archiveAnalysisBaselineID, archiveTransactionQueryParams, hasArchive, selectedArchiveAction, testID, testStatus])
 
   const archiveActionEntries = useMemo(() => {
     if (!archiveReport) return []
@@ -351,6 +424,9 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
     archiveError,
     archiveLoading,
     archiveReport,
+    archiveAnalysis,
+    archiveAnalysisLoading,
+    archiveAnalysisError,
     archiveActionEntries,
     selectedArchiveAction,
     onSelectedArchiveActionChange,

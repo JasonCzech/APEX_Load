@@ -2422,6 +2422,50 @@
   gap: 16px;
 }
 
+.archive-analysis-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.archive-analysis-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.archive-analysis-panel,
+.archive-analysis-drilldown {
+  min-width: 0;
+}
+
+.archive-analysis-panel {
+  overflow-x: auto;
+}
+
+.archive-analysis-table {
+  min-width: 620px;
+}
+
+.archive-analysis-kind {
+  display: inline-flex;
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--subtle-fill-strong);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.archive-analysis-path {
+  max-width: 280px;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 .archive-action-section,
 .archive-drilldown-section {
   min-width: 0;

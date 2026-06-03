@@ -12,6 +12,7 @@ const apiMock = {
   getHealth: vi.fn(),
   getSystemInventory: vi.fn(),
   getTestArchiveReport: vi.fn(),
+  getTestArchiveAnalysis: vi.fn(),
   downloadReleaseTrend: vi.fn(),
 }
 

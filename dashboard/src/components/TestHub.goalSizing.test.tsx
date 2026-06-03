@@ -18,6 +18,7 @@ const apiMock = {
   estimateTest: vi.fn(),
   listTests: vi.fn(),
   getTestArchiveReport: vi.fn(),
+  getTestArchiveAnalysis: vi.fn(),
   sizeScenarioFromGoal: vi.fn(),
 }
 

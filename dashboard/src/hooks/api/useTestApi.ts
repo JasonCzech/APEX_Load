@@ -13,6 +13,7 @@ import {
   LoadModelValidationReport,
   LiveMetrics,
   ResourceSample,
+  RunArchiveAnalysisResponse,
   RunArchiveManifest,
   RunArchiveReport,
   RuntimeSettingsOverride,
@@ -175,6 +176,9 @@ type AdjustDurationResponse = {
 type ArchiveTransactionsResponse = ArchivePage<TransactionEvent>
 type ArchiveResourcesResponse = ArchivePage<ResourceSample>
 type ArchiveSummariesResponse = ArchivePage<IntervalSummaryRecord>
+type ArchiveAnalysisParams = ArchiveTransactionsParams & {
+  baseline_id?: string
+}
 
 function buildQuery(params?: Record<string, string | number | boolean | undefined>) {
   const query = new URLSearchParams()
@@ -375,6 +379,32 @@ export function useTestApi() {
 
   const getTestArchiveReport = useCallback((id: string) => request<RunArchiveReport>(`/tests/${id}/archive/report`), [])
 
+  const getTestArchiveAnalysis = useCallback(
+    (id: string, params?: ArchiveAnalysisParams) => {
+      const suffix = buildQuery({
+        baseline_id: params?.baseline_id,
+        limit: params?.limit,
+        offset: params?.offset,
+        action: params?.action,
+        soap_operation: params?.soap_operation,
+        group: params?.group,
+        success: params?.success,
+        time_from: params?.time_from,
+        time_to: params?.time_to,
+        status: params?.status,
+        min_duration_ms: params?.min_duration_ms,
+        max_duration_ms: params?.max_duration_ms,
+        min_bytes: params?.min_bytes,
+        max_bytes: params?.max_bytes,
+        error_contains: params?.error_contains,
+        sort_by: params?.sort_by,
+        sort_dir: params?.sort_dir,
+      })
+      return request<RunArchiveAnalysisResponse>(`/tests/${id}/archive/analysis${suffix}`)
+    },
+    [],
+  )
+
   const downloadTestArchive = useCallback((id: string) => fetchBlob(`/tests/${id}/archive`), [])
 
   const downloadTestArchiveComparison = useCallback(
@@ -434,6 +464,7 @@ export function useTestApi() {
       getTestArchiveResources,
       getTestArchiveSummaries,
       getTestArchiveReport,
+      getTestArchiveAnalysis,
       downloadTestArchive,
       downloadTestArchiveComparison,
       downloadTestArchiveBrowserDiagnostics,
@@ -483,6 +514,7 @@ export function useTestApi() {
       getTestArchiveResources,
       getTestArchiveSummaries,
       getTestArchiveReport,
+      getTestArchiveAnalysis,
       downloadTestArchive,
       downloadTestArchiveComparison,
       downloadTestArchiveBrowserDiagnostics,

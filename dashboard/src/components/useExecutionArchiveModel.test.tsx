@@ -13,6 +13,7 @@ import { useExecutionArchiveModel } from './useExecutionArchiveModel'
 const apiMock = {
   getTestArchiveReport: vi.fn(),
   getTestArchiveTransactions: vi.fn(),
+  getTestArchiveAnalysis: vi.fn(),
   downloadTestArchive: vi.fn(),
   downloadTestArchiveBrowserDiagnostics: vi.fn(),
   downloadTestArchiveArtifact: vi.fn(),
@@ -37,6 +38,9 @@ function ArchiveHarness({ test }: { test: TestSummary | null }) {
       <span data-testid="group">{model.selectedArchiveGroup || 'all'}</span>
       <span data-testid="offset">{String(model.archiveTransactionsOffset)}</span>
       <span data-testid="rows">{String(model.archiveTransactions.length)}</span>
+      <span data-testid="analysis-loading">{model.archiveAnalysisLoading ? 'loading' : 'idle'}</span>
+      <span data-testid="analysis-nodes">{String(model.archiveAnalysis?.graph.nodes.length ?? 0)}</span>
+      <span data-testid="analysis-error">{model.archiveAnalysisError || 'none'}</span>
       <span data-testid="page-start">{String(model.archivePageStart)}</span>
       <span data-testid="page-end">{String(model.archivePageEnd)}</span>
       <span data-testid="expanded">{model.expandedArchiveEvent || 'none'}</span>
@@ -61,6 +65,7 @@ describe('useExecutionArchiveModel', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    apiMock.getTestArchiveAnalysis.mockResolvedValue(buildArchiveAnalysisResponse())
   })
 
   afterEach(async () => {
@@ -168,11 +173,114 @@ describe('useExecutionArchiveModel', () => {
       limit: 10,
       offset: 0,
     })
+    expect(apiMock.getTestArchiveAnalysis).toHaveBeenCalledWith('test-1', {
+      action: 'Login',
+      soap_operation: undefined,
+      group: undefined,
+      success: undefined,
+      ...defaultArchiveTransactionQuery(),
+      limit: 10,
+      offset: 0,
+      baseline_id: undefined,
+    })
     expect(readTestId('loading')).toBe('idle')
+    expect(readTestId('analysis-loading')).toBe('idle')
     expect(readTestId('action')).toBe('Login')
     expect(readTestId('rows')).toBe('1')
+    expect(readTestId('analysis-nodes')).toBe('1')
     expect(readTestId('page-start')).toBe('1')
     expect(readTestId('page-end')).toBe('1')
+  })
+
+  it('falls back to current-run archive analysis when a baseline archive cannot be read', async () => {
+    apiMock.getTestArchiveReport.mockResolvedValue({
+      manifest: {
+        schema_version: 'v1',
+        test_id: 'test-1',
+        test_name: 'Checkout',
+        created_at: '2026-05-12T20:00:00Z',
+        transactions_file: 'transactions.jsonl',
+        resource_samples_file: 'resources.jsonl',
+        interval_summaries_file: 'interval_summaries.jsonl',
+        transaction_count: 3,
+        resource_sample_count: 1,
+        interval_summary_count: 1,
+      },
+      overview: {
+        transactions: 3,
+        errors: 0,
+        error_pct: 0,
+        avg_response_ms: 120,
+        min_response_ms: 80,
+        max_response_ms: 220,
+        resource_samples: 1,
+        interval_summaries: 1,
+        peak_tps: 15,
+        peak_active_vusers: 10,
+      },
+      by_action: {
+        Login: {
+          transactions: 3,
+          errors: 0,
+          error_pct: 0,
+          avg_response_ms: 120,
+          min_response_ms: 80,
+          max_response_ms: 220,
+        },
+      },
+      by_soap_operation: {},
+      resource_peaks: {
+        cpu_process_pct: 10,
+        mem_process_mb: 200,
+        net_sent_kbps: 11,
+        net_recv_kbps: 12,
+        disk_read_kbps: 13,
+        disk_write_kbps: 14,
+      },
+    })
+    apiMock.getTestArchiveTransactions.mockResolvedValue({
+      transactions: [],
+      total: 0,
+      count: 0,
+      limit: 10,
+      offset: 0,
+    })
+    apiMock.getTestArchiveAnalysis
+      .mockRejectedValueOnce(new Error('baseline archive not found'))
+      .mockResolvedValueOnce(buildArchiveAnalysisResponse())
+
+    await act(async () => {
+      root.render(<ArchiveHarness test={{
+        ...buildArchivedTest(),
+        comparison_baseline: {
+          source_test_id: 'baseline-1',
+          source_test_name: 'Baseline',
+        },
+      }} />)
+    })
+    await flushPromises()
+
+    expect(apiMock.getTestArchiveAnalysis).toHaveBeenNthCalledWith(1, 'test-1', {
+      action: 'Login',
+      soap_operation: undefined,
+      group: undefined,
+      success: undefined,
+      ...defaultArchiveTransactionQuery(),
+      limit: 10,
+      offset: 0,
+      baseline_id: 'baseline-1',
+    })
+    expect(apiMock.getTestArchiveAnalysis).toHaveBeenNthCalledWith(2, 'test-1', {
+      action: 'Login',
+      soap_operation: undefined,
+      group: undefined,
+      success: undefined,
+      ...defaultArchiveTransactionQuery(),
+      limit: 10,
+      offset: 0,
+    })
+    expect(readTestId('analysis-nodes')).toBe('1')
+    expect(readTestId('analysis-error')).toContain('Showing current archive only')
   })
 
   it('keeps an expanded transaction inspection open across test object refreshes', async () => {
@@ -607,6 +715,35 @@ function buildArchivedTest(): TestSummary {
       created_at: '2026-05-12T20:00:00Z',
       completed_at: '2026-05-12T20:05:00Z',
     },
+  }
+}
+
+function buildArchiveAnalysisResponse() {
+  return {
+    schema_version: 'apexload.archive_analysis.v1',
+    test_id: 'test-1',
+    graph: {
+      nodes: [
+        {
+          id: 'action:Login',
+          kind: 'action',
+          label: 'Login',
+          runs: [{
+            run_id: 'test-1',
+            transactions: 3,
+            errors: 0,
+            error_pct: 0,
+            avg_response_ms: 120,
+          }],
+        },
+      ],
+      edges: [],
+    },
+    transactions: [],
+    count: 0,
+    total: 0,
+    limit: 10,
+    offset: 0,
   }
 }
 
