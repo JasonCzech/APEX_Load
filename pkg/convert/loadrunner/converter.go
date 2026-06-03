@@ -1697,6 +1697,7 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	if rc.ProxyURL == "" {
 		rc.ProxyURL = buildRuntimeProxyURL(proxySection)
 	}
+	rc.ProxyURL = normalizeRuntimeProxyURL(rc.ProxyURL)
 	rc.ProxyUser = strings.TrimSpace(firstNonBlank(proxySection["ProxyUserName"], proxySection["UserName"], proxySection["ProxyUser"]))
 	rc.ProxyPass = strings.TrimSpace(firstNonBlank(proxySection["ProxyPassword"], proxySection["Password"]))
 
@@ -2059,6 +2060,24 @@ func buildRuntimeProxyURL(section map[string]string) string {
 		return fmt.Sprintf("%s://%s:%d", scheme, host, port)
 	}
 	return scheme + "://" + host
+}
+
+func normalizeRuntimeProxyURL(rawURL string) string {
+	trimmed := strings.TrimSpace(rawURL)
+	if trimmed == "" {
+		return ""
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") {
+		return trimmed
+	}
+	switch parsed.Port() {
+	case "3128", "8080", "8888":
+		parsed.Scheme = "http"
+		return parsed.String()
+	default:
+		return trimmed
+	}
 }
 
 func parseBool(value string) bool {

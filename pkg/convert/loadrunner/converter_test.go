@@ -1813,6 +1813,52 @@ Chain=base64,gzip mode=decode,html_unescape,xml_to_json,url_encode,html_escape
 	}
 }
 
+func TestParseRuntimeCfgNormalizesConnectProxyURLs(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     string
+		wantURL string
+	}{
+		{
+			name: "explicit https proxy on connect port",
+			cfg: `[Proxy]
+Mode=custom
+ProxyServer=https://proxy.example.test:8888
+`,
+			wantURL: "http://proxy.example.test:8888",
+		},
+		{
+			name: "synthesized https proxy host on connect port",
+			cfg: `[Proxy]
+ProxyHTTPSHost=proxy.example.test
+ProxyHTTPSPort=8888
+`,
+			wantURL: "http://proxy.example.test:8888",
+		},
+		{
+			name: "intentional https proxy port",
+			cfg: `[Proxy]
+Mode=custom
+ProxyServer=https://proxy.example.test:4443
+`,
+			wantURL: "https://proxy.example.test:4443",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runtimeCfg := ParseRuntimeCfg(tt.cfg)
+			config := runtimeCfg.ToScriptConfig()
+			if config == nil {
+				t.Fatal("expected script config to be created")
+			}
+			if config.HTTP.ProxyMode != "custom" || config.HTTP.Proxy.URL != tt.wantURL {
+				t.Fatalf("proxy config = %#v, want custom proxy URL %q", config.HTTP, tt.wantURL)
+			}
+		})
+	}
+}
+
 func TestConvertZipPreservesRecordedResourceURLs(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
