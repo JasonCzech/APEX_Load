@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +20,8 @@ import (
 
 //go:embed static
 var StaticFS embed.FS
+
+var dashboardAssetRefPattern = regexp.MustCompile(`(?:href|src)="/(assets/[^"]+\.(?:css|js))"`)
 
 type Server struct {
 	httpServer     *http.Server
@@ -485,15 +488,22 @@ func (s *Server) routes(allowedOrigins []string) {
 	// Dashboard static files — serve from embedded FS, fallback to index.html for SPA routing
 	staticSub, err := fs.Sub(StaticFS, "static")
 	if err != nil {
-		slog.Warn("embedded static files not available, dashboard will 404")
+		slog.Warn("embedded static files not available, dashboard will show build instructions")
 		s.mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.HasPrefix(r.URL.Path, "/api/") {
 				http.NotFound(w, r)
 				return
 			}
-			setDashboardStaticHeaders(w)
-			w.Header().Set("Content-Type", "text/html")
-			w.Write([]byte("<!DOCTYPE html><html><body><h1>APEX Load</h1><p>Dashboard not built. Run: cd dashboard && npm run build</p></body></html>"))
+			serveDashboardBuildMissing(w)
+		}))
+	} else if ok, reason := dashboardStaticReady(staticSub); !ok {
+		slog.Warn("embedded static files incomplete, dashboard will show build instructions", "reason", reason)
+		s.mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				http.NotFound(w, r)
+				return
+			}
+			serveDashboardBuildMissing(w)
 		}))
 	} else {
 		fileServer := http.FileServer(http.FS(staticSub))
@@ -514,6 +524,33 @@ func (s *Server) routes(allowedOrigins []string) {
 			fileServer.ServeHTTP(w, r)
 		}))
 	}
+}
+
+func dashboardStaticReady(staticFS fs.FS) (bool, string) {
+	index, err := fs.ReadFile(staticFS, "index.html")
+	if err != nil {
+		return false, "missing dashboard index.html"
+	}
+	matches := dashboardAssetRefPattern.FindAllSubmatch(index, -1)
+	if len(matches) == 0 {
+		return false, "dashboard index.html does not reference bundled JS/CSS assets"
+	}
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		assetPath := string(match[1])
+		if _, err := fs.Stat(staticFS, assetPath); err != nil {
+			return false, fmt.Sprintf("dashboard asset %s is missing", assetPath)
+		}
+	}
+	return true, ""
+}
+
+func serveDashboardBuildMissing(w http.ResponseWriter) {
+	setDashboardStaticHeaders(w)
+	w.Header().Set("Content-Type", "text/html")
+	w.Write([]byte("<!DOCTYPE html><html><body><h1>APEX Load</h1><p>Dashboard not built. Run: cd dashboard && npm run build</p></body></html>"))
 }
 
 func setDashboardStaticHeaders(w http.ResponseWriter) {
