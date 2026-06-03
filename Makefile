@@ -1,7 +1,10 @@
 .PHONY: all build test clean generator controller apexctl proto lint docker-generator docker-controller k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-smoke-test
 
-VERSION ?= 0.1.0
-LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
+VERSION    ?= 0.1.0
+COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null)
+BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+BI := github.com/jasonczech/apexload/pkg/buildinfo
+LDFLAGS := -ldflags "-s -w -X $(BI).Version=$(VERSION) -X $(BI).Commit=$(COMMIT) -X $(BI).BuildTime=$(BUILD_TIME)"
 GOFLAGS := -trimpath
 
 all: build
@@ -34,10 +37,10 @@ clean:
 	rm -rf bin/ coverage.out coverage.html
 
 docker-generator:
-	docker build --build-arg BINARY=generator -t apexload-generator:$(VERSION) -f Dockerfile .
+	docker build --build-arg BINARY=generator --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_TIME=$(BUILD_TIME) -t apexload-generator:$(VERSION) -f Dockerfile .
 
 docker-controller:
-	docker build --build-arg BINARY=controller -t apexload-controller:$(VERSION) -f Dockerfile .
+	docker build --build-arg BINARY=controller --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_TIME=$(BUILD_TIME) -t apexload-controller:$(VERSION) -f Dockerfile .
 
 k8s-local-preflight:
 	./deployments/k8s/local/preflight.sh

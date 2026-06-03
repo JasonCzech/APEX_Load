@@ -1,0 +1,107 @@
+.build-badge {
+  position: relative;
+  --wails-draggable: no-drag;
+}
+
+.build-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--control-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.build-badge-pill:hover {
+  color: var(--text-primary);
+  border-color: var(--border-subtle);
+}
+
+.build-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.build-badge-pill.cluster {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+  color: var(--success-text);
+}
+
+.build-badge-pill.cluster .build-badge-dot {
+  background: var(--success);
+}
+
+.build-badge-pill.container {
+  background: var(--info-bg);
+  border-color: var(--info-border);
+  color: var(--info-text);
+}
+
+.build-badge-pill.container .build-badge-dot {
+  background: var(--info);
+}
+
+.build-badge-env {
+  text-transform: capitalize;
+}
+
+.build-badge-version {
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+.build-badge-popover {
+  position: absolute;
+  left: 0;
+  z-index: 200;
+  min-width: 220px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.build-badge-popover.down {
+  top: calc(100% + 8px);
+}
+
+.build-badge-popover.up {
+  bottom: calc(100% + 8px);
+}
+
+.build-badge-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 12px;
+}
+
+.build-badge-row-label {
+  color: var(--text-muted);
+}
+
+.build-badge-row-value {
+  color: var(--text-primary);
+  font-weight: 500;
+  text-align: right;
+}
+
+.build-badge-row-value.mono {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+}

@@ -1988,9 +1988,19 @@ export interface MetricsHistoryPoint {
   [key: string]: string | number | undefined
 }
 
+export interface VersionResponse {
+  version: string
+  commit?: string
+  build_time?: string
+  go_version?: string
+  environment: string
+}
+
 export interface HealthResponse {
   status: string
   version: string
+  environment?: string
+  build_time?: string
   ws_clients: number
   test_count: number
   capacity_availability?: {

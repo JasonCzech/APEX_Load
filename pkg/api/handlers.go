@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/convert/loadrunner"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
@@ -569,14 +570,21 @@ func (s *Server) handleAdjustDuration(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleSystemVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, buildinfo.Get())
+}
+
 func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	settings := s.runner.GetSystemSettings()
 	availability := resolveCapacityAvailability(settings)
+	build := buildinfo.Get()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":     "healthy",
-		"version":    "0.1.0",
-		"ws_clients": s.hub.ClientCount(),
-		"test_count": len(s.runner.tests),
+		"status":      "healthy",
+		"version":     build.Version,
+		"environment": build.Environment,
+		"build_time":  build.BuildTime,
+		"ws_clients":  s.hub.ClientCount(),
+		"test_count":  len(s.runner.tests),
 		"capacity_availability": map[string]any{
 			"source":                          availability.Source,
 			"configured_available_generators": availability.ConfiguredAvailableGenerators,

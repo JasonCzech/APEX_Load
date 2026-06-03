@@ -3,6 +3,7 @@ import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useAuthApi } from '../hooks/api/useAuthApi'
 import { useDevView } from '../hooks/DevViewProvider'
 import { Application, DashboardAuthStatus, Domain, Project, Release } from '../types'
+import BuildBadge from './BuildBadge'
 import ProjectModal from './ProjectModal'
 import './Sidebar.css'
 
@@ -448,9 +449,12 @@ export default function Sidebar({
                 </div>
               </div>
             )}
-            <div className={`sidebar-status ${connectionClass}`}>
-              <span className="status-dot" />
-              <span className="status-text">{connectionLabel}</span>
+            <div className="sidebar-footer-row">
+              <div className={`sidebar-status ${connectionClass}`}>
+                <span className="status-dot" />
+                <span className="status-text">{connectionLabel}</span>
+              </div>
+              <BuildBadge placement="up" />
             </div>
           </div>
         )}
