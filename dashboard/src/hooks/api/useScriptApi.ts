@@ -140,6 +140,17 @@ type AuthoringSessionApprovalResponse = {
   authoring_health: AuthoringHealth
 }
 
+type LoadRunnerImportOptions = {
+  name?: string
+  base_url?: string
+  include_assertions?: boolean
+  preserve_transactions?: boolean
+  migration_block_statuses?: string[]
+  project_id?: string
+  har_file?: File
+  salesforce_native?: boolean
+}
+
 export type BrowserToHTTPPreviewRequest = {
   name?: string
   project_id?: string
@@ -391,15 +402,17 @@ export function useScriptApi() {
   )
 
   const importLoadRunner = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; preserve_transactions?: boolean; migration_block_statuses?: string[]; project_id?: string }): Promise<LoadRunnerImportResult> => {
+    async (file: File, options?: LoadRunnerImportOptions): Promise<LoadRunnerImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
+      if (options?.har_file) formData.append('har_file', options.har_file)
       if (options?.name) formData.append('name', options.name)
       if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.preserve_transactions !== undefined) formData.append('preserve_transactions', String(options.preserve_transactions))
       if (options?.migration_block_statuses?.length) formData.append('migration_block_statuses', options.migration_block_statuses.join(','))
+      if (options?.salesforce_native) formData.append('salesforce_native', 'true')
 
       const res = await apiFetch('/scripts/import/loadrunner', {
         method: 'POST',
@@ -415,15 +428,17 @@ export function useScriptApi() {
   )
 
   const validateLoadRunnerImport = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; preserve_transactions?: boolean; migration_block_statuses?: string[]; project_id?: string }): Promise<LoadRunnerImportResult> => {
+    async (file: File, options?: LoadRunnerImportOptions): Promise<LoadRunnerImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
+      if (options?.har_file) formData.append('har_file', options.har_file)
       if (options?.name) formData.append('name', options.name)
       if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.preserve_transactions !== undefined) formData.append('preserve_transactions', String(options.preserve_transactions))
       if (options?.migration_block_statuses?.length) formData.append('migration_block_statuses', options.migration_block_statuses.join(','))
+      if (options?.salesforce_native) formData.append('salesforce_native', 'true')
 
       const res = await apiFetch('/scripts/import/loadrunner/validate', {
         method: 'POST',

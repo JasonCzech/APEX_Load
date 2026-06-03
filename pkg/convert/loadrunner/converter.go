@@ -79,7 +79,12 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	// Collect all functions across action files in order
 	var allFunctions []ParsedFunction
 	for _, a := range actions {
-		allFunctions = append(allFunctions, a.Functions...)
+		for _, fn := range a.Functions {
+			if fn.Phase == "" {
+				fn.Phase = a.Phase
+			}
+			allFunctions = append(allFunctions, fn)
+		}
 		result.Stats.TotalFunctions += len(a.Functions)
 	}
 
@@ -116,6 +121,8 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	var pendingExtractors []dsl.Extractor
 	var pendingAssertions []dsl.Assertion
 	var pendingHeaders map[string]string
+	var autoHeaders map[string]string
+	var persistentCookies []ParsedCookie
 	var pendingSourceMappings []SourceReviewMapping
 	var currentTransaction string
 	var lastRequestURL string
@@ -126,7 +133,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 	for _, fn := range allFunctions {
 		switch fn.Name {
-		case "web_reg_save_param", "web_reg_save_param_regexp":
+		case "web_reg_save_param", "web_reg_save_param_regexp", "web_reg_save_param_json":
 			ext := convertExtractor(fn)
 			if ext != nil {
 				pendingExtractors = append(pendingExtractors, *ext)
@@ -156,14 +163,52 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				result.Warnings = append(result.Warnings, warning)
 			}
 
-		case "web_add_header", "web_add_auto_header":
+		case "web_global_verification":
+			if check, warning := convertGlobalVerification(fn); check != nil {
+				result.Script.Config.WebRuntime.ContentChecks = append(result.Script.Config.WebRuntime.ContentChecks, *check)
+				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.web_runtime.content_checks", check.Text, "config", "converted", "Mapped to a global HTTP content check.", LoadRunnerSupportExecutable))
+				recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
+			} else if warning != "" {
+				result.Warnings = append(result.Warnings, warning)
+			}
+
+		case "web_add_header":
 			if pendingHeaders == nil {
 				pendingHeaders = make(map[string]string)
 			}
 			for k, v := range fn.Headers {
-				pendingHeaders[k] = v
+				pendingHeaders[k] = convertParamReferences(v)
 			}
 			pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", firstNonEmpty(fn.StepName, fn.Name), "headers", "contributor", "Applied to the next converted request action.", LoadRunnerSupportExecutable))
+			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
+
+		case "web_add_auto_header":
+			if autoHeaders == nil {
+				autoHeaders = make(map[string]string)
+			}
+			for k, v := range fn.Headers {
+				autoHeaders[k] = convertParamReferences(v)
+			}
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers", firstNonEmpty(fn.StepName, fn.Name), "headers", "converted", "Applied as a persistent auto header until reverted.", LoadRunnerSupportExecutable))
+			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
+
+		case "web_revert_auto_header":
+			headerName := firstLoadRunnerControlArg(fn)
+			if headerName != "" && autoHeaders != nil {
+				deleteHeaderCaseInsensitive(autoHeaders, headerName)
+			}
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers", firstNonEmpty(headerName, fn.Name), "headers", "converted", "Reverted a persistent LoadRunner auto header.", LoadRunnerSupportExecutable))
+			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
+
+		case "web_add_cookie":
+			for _, cookie := range fn.Cookies {
+				if cookie.Name == "" {
+					continue
+				}
+				cookie.Value = convertParamReferences(cookie.Value)
+				persistentCookies = append(persistentCookies, cookie)
+			}
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers.Cookie", firstNonEmpty(fn.StepName, fn.Name), "headers", "converted", "Mapped to Cookie headers on matching downstream HTTP requests.", LoadRunnerSupportExecutable))
 			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
 		case "lr_start_transaction":
@@ -272,6 +317,17 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					}
 					pendingHeaders = nil
 				}
+				if len(autoHeaders) > 0 {
+					if action.Headers == nil {
+						action.Headers = make(map[string]string)
+					}
+					for k, v := range autoHeaders {
+						if _, exists := headerValueCaseInsensitive(action.Headers, k); !exists {
+							action.Headers[k] = v
+						}
+					}
+				}
+				applyPersistentCookies(action, persistentCookies, rawURLForCookieMatch(fn, lastRequestURL))
 
 				applySOAPImportHints(action, fn)
 
@@ -289,8 +345,8 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					action.Name = fmt.Sprintf("%s_%d", action.Name, actionNameCounts[action.Name])
 				}
 
-				actionIndex := len(result.Script.Actions)
-				targetPath := fmt.Sprintf("actions[%d]", actionIndex)
+				actionIndex := actionCountForPhase(result.Script, fn.Phase)
+				targetPath := sourceReviewActionPath(fn.Phase, actionIndex)
 				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, targetPath, action.Name, "action", "converted", "Converted to a generated APEX Load action.", LoadRunnerSupportExecutable))
 				// Contributors (extractors, assertions, headers) were collected in source
 				// order ahead of this request, so the Nth extractor/assertion mapping lines
@@ -315,7 +371,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				}
 				pendingSourceMappings = nil
 
-				result.Script.Actions = append(result.Script.Actions, *action)
+				appendActionForPhase(result.Script, fn.Phase, *action)
 				result.Stats.ConvertedActions++
 				recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 			}
@@ -349,14 +405,14 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		}
 	}
 
-	// Mark actions with think_time_after (all except last)
+	// Mark main actions with think_time_after (all except last)
 	for i := range result.Script.Actions {
 		if i < len(result.Script.Actions)-1 {
 			result.Script.Actions[i].ThinkTimeAfter = true
 		}
 	}
 
-	if len(result.Script.Actions) == 0 {
+	if len(result.Script.Init)+len(result.Script.Actions)+len(result.Script.Teardown) == 0 {
 		return nil, fmt.Errorf("no request actions could be converted from the LoadRunner script")
 	}
 
@@ -892,6 +948,23 @@ func firstHeaderValue(headers map[string]string, key string) string {
 	return ""
 }
 
+func headerValueCaseInsensitive(headers map[string]string, key string) (string, bool) {
+	for headerKey, value := range headers {
+		if strings.EqualFold(headerKey, key) {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+func deleteHeaderCaseInsensitive(headers map[string]string, key string) {
+	for headerKey := range headers {
+		if strings.EqualFold(headerKey, key) {
+			delete(headers, headerKey)
+		}
+	}
+}
+
 func applySOAPImportHints(action *dsl.Action, fn ParsedFunction) {
 	if action == nil || !isSOAPFunction(fn) {
 		return
@@ -948,6 +1021,7 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, opts ConvertO
 	name := sanitizeName(fn.StepName)
 	if opts.PreserveTransactions && transaction != "" {
 		name = sanitizeName(transaction) + "_" + name
+		action.Metadata["loadrunner_transaction"] = transaction
 	}
 	action.Name = name
 
@@ -972,15 +1046,21 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, opts ConvertO
 
 	target := makeRelative(rawURL, baseURL)
 	action.Target = target
+	action.Metadata["original_url"] = rawURL
 
 	// Apply headers
 	for k, v := range fn.Headers {
-		action.Headers[k] = v
+		action.Headers[k] = convertParamReferences(v)
+	}
+	if contentType := requestContentTypeFromFunction(fn); contentType != "" {
+		if _, exists := headerValueCaseInsensitive(action.Headers, "Content-Type"); !exists {
+			action.Headers["Content-Type"] = convertParamReferences(contentType)
+		}
 	}
 
 	// Apply body
 	if fn.Body != "" {
-		action.Body = fn.Body
+		action.Body = unescapeLoadRunnerCString(fn.Body)
 		// Convert LoadRunner parameter syntax {ParamName} to template syntax.
 		// Known .prm-backed parameters are rewritten from var to param after all archive files are parsed.
 		action.Body = convertParamReferences(action.Body)
@@ -1000,6 +1080,70 @@ func loadRunnerRequestContextURL(fn ParsedFunction, previousRequestURL string) s
 		return ""
 	}
 	return inferLoadRunnerSubmitFormURL(fn, previousRequestURL)
+}
+
+func requestContentTypeFromFunction(fn ParsedFunction) string {
+	for _, key := range []string{"EncType", "ContentType", "Content-Type"} {
+		if value := firstNonEmptyArg(fn, key); strings.TrimSpace(value) != "" {
+			return unescapeLoadRunnerCString(value)
+		}
+	}
+	return ""
+}
+
+func rawURLForCookieMatch(fn ParsedFunction, currentRequestURL string) string {
+	if currentRequestURL != "" {
+		return currentRequestURL
+	}
+	return loadRunnerRequestContextURL(fn, "")
+}
+
+func applyPersistentCookies(action *dsl.Action, cookies []ParsedCookie, rawURL string) {
+	if action == nil || len(cookies) == 0 {
+		return
+	}
+	matches := make([]string, 0, len(cookies))
+	for _, cookie := range cookies {
+		if cookie.Name == "" || !cookieMatchesURL(cookie, rawURL) {
+			continue
+		}
+		matches = append(matches, cookie.Name+"="+convertParamReferences(cookie.Value))
+	}
+	if len(matches) == 0 {
+		return
+	}
+	if action.Headers == nil {
+		action.Headers = make(map[string]string)
+	}
+	if existing, ok := headerValueCaseInsensitive(action.Headers, "Cookie"); ok && strings.TrimSpace(existing) != "" {
+		matches = append([]string{existing}, matches...)
+		deleteHeaderCaseInsensitive(action.Headers, "Cookie")
+	}
+	action.Headers["Cookie"] = strings.Join(matches, "; ")
+}
+
+func cookieMatchesURL(cookie ParsedCookie, rawURL string) bool {
+	if strings.TrimSpace(cookie.Domain) == "" && strings.TrimSpace(cookie.Path) == "" {
+		return true
+	}
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsed.Hostname() == "" {
+		return true
+	}
+	domain := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(cookie.Domain)), ".")
+	host := strings.ToLower(parsed.Hostname())
+	if domain != "" && host != domain && !strings.HasSuffix(host, "."+domain) {
+		return false
+	}
+	path := strings.TrimSpace(cookie.Path)
+	if path == "" {
+		return true
+	}
+	requestPath := parsed.EscapedPath()
+	if requestPath == "" {
+		requestPath = "/"
+	}
+	return strings.HasPrefix(requestPath, path)
 }
 
 func inferLoadRunnerSubmitFormURL(fn ParsedFunction, previousRequestURL string) string {
@@ -1099,6 +1243,25 @@ func convertExtractor(fn ParsedFunction) *dsl.Extractor {
 		return ext
 	}
 
+	if fn.Name == "web_reg_save_param_json" {
+		expression := firstNonEmptyArg(fn, "QueryString")
+		if expression == "" {
+			expression = firstNonEmptyArg(fn, "JSONPath")
+		}
+		if expression == "" {
+			expression = firstNonEmptyArg(fn, "Query")
+		}
+		if expression == "" {
+			return nil
+		}
+		return &dsl.Extractor{
+			Name:       paramName,
+			Source:     loadRunnerExtractorSource(firstNonEmptyArg(fn, "Scope")),
+			Type:       "jsonpath",
+			Expression: unescapeLoadRunnerCString(expression),
+		}
+	}
+
 	lb := fn.Args["LB"]
 	rb := fn.Args["RB"]
 
@@ -1134,6 +1297,26 @@ func convertExtractor(fn ParsedFunction) *dsl.Extractor {
 	}
 
 	return ext
+}
+
+func convertGlobalVerification(fn ParsedFunction) (*dsl.ContentCheckConfig, string) {
+	text := firstNonEmptyArg(fn, "Text")
+	if text == "" {
+		text = fn.StepName
+	}
+	text = unescapeLoadRunnerCString(text)
+	if strings.TrimSpace(text) == "" {
+		return nil, fmt.Sprintf("line %d: web_global_verification has no Text argument", fn.LineNumber)
+	}
+	failIfFound := strings.EqualFold(strings.TrimSpace(firstNonEmptyArg(fn, "Fail")), "Found")
+	if strings.TrimSpace(firstNonEmptyArg(fn, "Fail")) == "" {
+		failIfFound = true
+	}
+	return &dsl.ContentCheckConfig{
+		Text:        convertParamReferences(text),
+		Scope:       normalizeEnum(firstNonEmpty(firstNonEmptyArg(fn, "Search"), firstNonEmptyArg(fn, "Scope"), "any_response")),
+		FailIfFound: &failIfFound,
+	}, ""
 }
 
 func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, string) {
@@ -1260,20 +1443,40 @@ func detectTemplatedBaseURL(rawURL string) string {
 
 // makeRelative strips the base URL from an absolute URL to create a relative path.
 func makeRelative(rawURL, baseURL string) string {
-	if baseURL != "" && strings.HasPrefix(rawURL, baseURL) {
-		rel := strings.TrimPrefix(rawURL, baseURL)
-		if rel == "" {
-			rel = "/"
+	rawURL = strings.TrimSpace(rawURL)
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL != "" {
+		if strings.HasPrefix(rawURL, baseURL) {
+			rel := strings.TrimPrefix(rawURL, baseURL)
+			if rel == "" {
+				rel = "/"
+			}
+			return rel
 		}
-		return rel
+		if rel, ok := sameOriginRelativeTarget(rawURL, baseURL); ok {
+			return rel
+		}
 	}
 
-	// Try to extract just the path
 	parsed, err := url.Parse(rawURL)
-	if err != nil {
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return rawURL
 	}
+	return rawURL
+}
 
+func sameOriginRelativeTarget(rawURL, baseURL string) (string, bool) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", false
+	}
+	base, err := url.Parse(baseURL)
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return "", false
+	}
+	if !strings.EqualFold(parsed.Scheme, base.Scheme) || !strings.EqualFold(parsed.Host, base.Host) {
+		return "", false
+	}
 	path := parsed.Path
 	if parsed.RawQuery != "" {
 		path += "?" + parsed.RawQuery
@@ -1281,7 +1484,7 @@ func makeRelative(rawURL, baseURL string) string {
 	if path == "" {
 		path = "/"
 	}
-	return path
+	return path, true
 }
 
 func collectRecordedResourceURLs(functions []ParsedFunction) []string {
@@ -1470,7 +1673,7 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	}
 
 	sections := ParseConfigSections(content)
-	httpSection := findSection(sections, "HTTP", "Internet Protocol", "Preferences", "Internet Protocol Preferences")
+	httpSection := findSection(sections, "HTTP", "Internet Protocol", "Preferences", "Internet Protocol Preferences", "WEB", "Web")
 	rc.ConnectTimeoutSec = parseInt(httpSection["ConnectTimeout"])
 	rc.ReceiveTimeoutSec = parseInt(httpSection["ReceiveTimeout"])
 	rc.StepTimeoutSec = parseInt(httpSection["StepDownloadTimeout"])
@@ -1485,13 +1688,13 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	}
 	rc.MaxConnsPerHost = firstNonZeroInt(httpSection["MaxConnectionsPerHost"], httpSection["MaxConnections"], httpSection["MaxConnectionsPerHostHTTP"])
 
-	proxySection := findSection(sections, "Proxy")
+	proxySection := findSection(sections, "Proxy", "WEB", "Web")
 	rc.ProxyMode = normalizeEnum(strings.TrimSpace(firstNonBlank(proxySection["Mode"], proxySection["ProxyMode"], proxySection["Type"])))
 	rc.ProxyURL = strings.TrimSpace(firstNonBlank(proxySection["ProxyServer"], proxySection["ProxyURL"], proxySection["Server"]))
 	rc.ProxyUser = strings.TrimSpace(firstNonBlank(proxySection["ProxyUserName"], proxySection["UserName"]))
 	rc.ProxyPass = strings.TrimSpace(firstNonBlank(proxySection["ProxyPassword"], proxySection["Password"]))
 
-	browserSection := findSection(sections, "Browser Emulation", "Browser")
+	browserSection := findSection(sections, "Browser Emulation", "Browser", "WEB", "Web")
 	rc.UserAgent = strings.TrimSpace(browserSection["UserAgent"])
 	rc.AcceptLanguage = strings.TrimSpace(browserSection["AcceptLanguage"])
 	rc.UseGzip = strings.Contains(strings.ToLower(browserSection["AcceptEncoding"]), "gzip")
@@ -1533,6 +1736,9 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 
 	thinkTimeSection := findSection(sections, "Think Time", "ThinkTime")
 	rc.ThinkTimeIgnore = parseBool(firstNonBlank(thinkTimeSection["Ignore"], thinkTimeSection["IgnoreThinkTime"]))
+	if strings.Contains(normalizeEnum(thinkTimeSection["Options"]), "nothink") {
+		rc.ThinkTimeIgnore = true
+	}
 	rc.ThinkTimeMultiplier = parseFloat(firstNonBlank(thinkTimeSection["Multiplier"], thinkTimeSection["MultiplyRecordedThinkTimeBy"]))
 	rc.ThinkTimeLimitMs = parseFloat(firstNonBlank(thinkTimeSection["LimitMs"], thinkTimeSection["LimitThinkTimeMs"]))
 

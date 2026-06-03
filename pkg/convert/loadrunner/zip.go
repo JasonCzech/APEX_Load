@@ -175,29 +175,11 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		return result, nil
 	}
 
-	// Determine which .c files to parse
-	actionFileNames := []string{"Action.c"}
-	if projectConfig != nil && len(projectConfig.ActionFiles) > 0 {
-		actionFileNames = projectConfig.ActionFiles
-	}
-
-	// Also look for vuser_init.c and vuser_end.c
-	initFile := "vuser_init.c"
-	endFile := "vuser_end.c"
-
-	// Parse action files
+	// Parse each lifecycle/action file once. Some .usr [Actions] blocks include
+	// vuser_init.c and vuser_end.c, so a naive "parse init, parse [Actions],
+	// parse end" sequence duplicates setup and cleanup requests.
 	var parsedActions []*ParsedAction
-
-	// Parse init if exists
-	if content, ok := findFile(files, initFile); ok {
-		parsed, err := ParseActionFile(initFile, content)
-		if err == nil && len(parsed.Functions) > 0 {
-			parsedActions = append(parsedActions, parsed)
-		}
-	}
-
-	// Parse main action files
-	for _, actionFile := range actionFileNames {
+	for _, actionFile := range orderedLoadRunnerActionFiles(projectConfig, files) {
 		content, ok := findFile(files, actionFile)
 		if !ok {
 			// Try case-insensitive
@@ -212,16 +194,12 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		if ok {
 			parsed, err := ParseActionFile(actionFile, content)
 			if err == nil {
+				parsed.Phase = loadRunnerActionPhase(actionFile)
+				for index := range parsed.Functions {
+					parsed.Functions[index].Phase = parsed.Phase
+				}
 				parsedActions = append(parsedActions, parsed)
 			}
-		}
-	}
-
-	// Parse end if exists
-	if content, ok := findFile(files, endFile); ok {
-		parsed, err := ParseActionFile(endFile, content)
-		if err == nil && len(parsed.Functions) > 0 {
-			parsedActions = append(parsedActions, parsed)
 		}
 	}
 
@@ -285,6 +263,56 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	result.SourceReview = BuildSourceReview(files, sourceReviewMappings(result))
 	attachLoadRunnerMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames, nil)
 	return result, nil
+}
+
+func orderedLoadRunnerActionFiles(projectConfig *ProjectConfig, files map[string]string) []string {
+	candidates := []string{"vuser_init.c"}
+	if projectConfig != nil && len(projectConfig.ActionFiles) > 0 {
+		candidates = append(candidates, projectConfig.ActionFiles...)
+	} else {
+		candidates = append(candidates, "Action.c")
+	}
+	candidates = append(candidates, "vuser_end.c")
+
+	ordered := make([]string, 0, len(candidates))
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		name := strings.TrimSpace(candidate)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(filepath.Base(name))
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		if _, ok := findFile(files, name); !ok {
+			found := false
+			for fileName := range files {
+				if strings.EqualFold(filepath.Base(fileName), filepath.Base(name)) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+		seen[key] = struct{}{}
+		ordered = append(ordered, name)
+	}
+	return ordered
+}
+
+func loadRunnerActionPhase(fileName string) string {
+	base := strings.ToLower(filepath.Base(strings.TrimSpace(fileName)))
+	switch base {
+	case "vuser_init.c":
+		return "init"
+	case "vuser_end.c":
+		return "teardown"
+	default:
+		return "action"
+	}
 }
 
 func ptrDetectedProtocol(detected DetectedProtocol) *DetectedProtocol {

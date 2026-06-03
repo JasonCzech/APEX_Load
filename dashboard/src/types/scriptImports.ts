@@ -101,8 +101,67 @@ export interface LoadRunnerImportSummary {
   detected_protocol?: DetectedLoadRunnerProtocol
   review_artifact?: LoadRunnerReviewArtifact
   source_review?: SourceReview
+  salesforce_review?: SalesforceReview
   import_mode?: string
   unsupported_function_count: number
+}
+
+export interface SalesforceDomainObservation {
+  host: string
+  kind: string
+  count: number
+}
+
+export interface SalesforceEndpointObservation {
+  method?: string
+  path: string
+  host?: string
+  count: number
+}
+
+export interface SalesforceTransactionCandidate {
+  name: string
+  source: string
+  request_count: number
+  aura_actions?: number
+  ui_api_calls?: number
+}
+
+export interface SalesforceHARMatchCoverage {
+  har_provided: boolean
+  imported_requests: number
+  matched_requests: number
+  coverage_pct: number
+}
+
+export interface SalesforceCorrelationCandidate {
+  name: string
+  source: string
+  expression: string
+  found_in_seq: number
+  used_in_seqs?: number[]
+  rule_id?: string
+  confidence?: number
+  reasons?: string[]
+}
+
+export interface SalesforceNativePreview {
+  script?: ScriptDefinition
+  correlations?: SalesforceCorrelationCandidate[]
+}
+
+export interface SalesforceReview {
+  detected: boolean
+  domains?: SalesforceDomainObservation[]
+  aura_endpoints?: SalesforceEndpointObservation[]
+  lightning_endpoints?: SalesforceEndpointObservation[]
+  login_flow?: SalesforceEndpointObservation[]
+  transactions?: SalesforceTransactionCandidate[]
+  correlation_confidence?: string
+  har_match_coverage: SalesforceHARMatchCoverage
+  blockers?: string[]
+  next_actions?: string[]
+  native_preview?: SalesforceNativePreview
 }
 
 export interface LoadRunnerProtocolSupportEntry {

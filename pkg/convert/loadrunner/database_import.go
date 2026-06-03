@@ -195,6 +195,9 @@ func sourceFunctionMetadata(fn ParsedFunction) map[string]any {
 	if fn.Filename != "" {
 		metadata["source_file"] = fn.Filename
 	}
+	if phase := normalizeLoadRunnerPhase(fn.Phase); phase != "" {
+		metadata["phase"] = phase
+	}
 	if fn.EndLine > 0 && fn.EndLine != fn.LineNumber {
 		metadata["source_end_line"] = fn.EndLine
 	}

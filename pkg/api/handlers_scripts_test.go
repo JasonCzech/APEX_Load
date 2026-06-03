@@ -781,6 +781,111 @@ UpdateValueOn=Each Iteration
 	}
 }
 
+func TestHandleValidateLoadRunnerImportReturnsSalesforceNativePreview(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("salesforce_native", "true"); err != nil {
+		t.Fatalf("WriteField returned error: %v", err)
+	}
+
+	part, err := writer.CreateFormFile("file", "salesforce.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	zipWriter := zip.NewWriter(part)
+	addZipEntry := func(name string, content string) {
+		entry, err := zipWriter.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addZipEntry("Salesforce.usr", `[General]
+Type=Web
+
+[Actions]
+Action1=Action.c
+`)
+	addZipEntry("Action.c", `
+Action()
+{
+	web_url("Login", "URL=https://attone--perfhyper2.sandbox.my.salesforce.com/login", LAST);
+	web_custom_request("Aura",
+		"URL=https://attone--perfhyper2.sandbox.lightning.force.com/aura",
+		"Method=POST",
+		"EncType=application/json",
+		"Body={\"descriptor\":\"apex://AccountController/ACTION$get\",\"token\":\"tok-abcdef123456\"}",
+		LAST);
+	return 0;
+}
+`)
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	harPart, err := writer.CreateFormFile("har_file", "salesforce.har")
+	if err != nil {
+		t.Fatalf("CreateFormFile har returned error: %v", err)
+	}
+	har := `{
+	  "log": {"entries": [
+	    {"request": {"method": "GET", "url": "https://attone--perfhyper2.sandbox.my.salesforce.com/login", "headers": []}, "response": {"headers": [], "content": {"text": "{\"access_token\":\"tok-abcdef123456\"}"}}},
+	    {"request": {"method": "POST", "url": "https://attone--perfhyper2.sandbox.lightning.force.com/aura", "headers": [], "postData": {"text": "{\"token\":\"tok-abcdef123456\"}"}}, "response": {"headers": [], "content": {"text": "{\"actions\":[{\"state\":\"SUCCESS\"}]}"}}}
+	  ]}
+	}`
+	if _, err := harPart.Write([]byte(har)); err != nil {
+		t.Fatalf("Write har returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner/validate", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Summary struct {
+			SalesforceReview struct {
+				Detected         bool `json:"detected"`
+				HARMatchCoverage struct {
+					MatchedRequests  int `json:"matched_requests"`
+					ImportedRequests int `json:"imported_requests"`
+				} `json:"har_match_coverage"`
+				NativePreview struct {
+					Script *dsl.Script `json:"script"`
+				} `json:"native_preview"`
+			} `json:"salesforce_review"`
+		} `json:"summary"`
+		ReviewSections []struct {
+			Key string `json:"key"`
+		} `json:"review_sections"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if !result.Summary.SalesforceReview.Detected {
+		t.Fatalf("salesforce review = %#v, want detected", result.Summary.SalesforceReview)
+	}
+	if result.Summary.SalesforceReview.HARMatchCoverage.MatchedRequests != 2 || result.Summary.SalesforceReview.HARMatchCoverage.ImportedRequests != 2 {
+		t.Fatalf("coverage = %#v, want 2/2", result.Summary.SalesforceReview.HARMatchCoverage)
+	}
+	if result.Summary.SalesforceReview.NativePreview.Script == nil {
+		t.Fatal("native preview script missing")
+	}
+	if !reviewSectionsContain(result.ReviewSections, "salesforce_review") {
+		t.Fatalf("review sections = %#v, want salesforce_review", result.ReviewSections)
+	}
+}
+
 func TestHandleImportLoadRunnerSummarizesRuntimeSettingParity(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
@@ -3360,4 +3465,19 @@ func assertReviewSection(t *testing.T, sections any, wantKey string, wantSeverit
 		t.Fatalf("review section %q items = %#v, want item %q", wantKey, items.Interface(), wantItem)
 	}
 	t.Fatalf("review_sections = %#v, want section %q", sections, wantKey)
+}
+
+func reviewSectionsContain(sections any, wantKey string) bool {
+	value := reflect.ValueOf(sections)
+	if value.Kind() != reflect.Slice {
+		return false
+	}
+	for i := 0; i < value.Len(); i++ {
+		section := value.Index(i)
+		key := section.FieldByName("Key")
+		if key.IsValid() && key.String() == wantKey {
+			return true
+		}
+	}
+	return false
 }

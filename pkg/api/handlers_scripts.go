@@ -16,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/jmeter"
 	"github.com/jasonczech/apexload/pkg/convert/k6"
 	"github.com/jasonczech/apexload/pkg/convert/loadrunner"
+	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -28,10 +29,12 @@ type jmeterImportRequest struct {
 }
 
 type loadRunnerImportRequest struct {
-	Data            []byte
-	ProjectID       string
-	Opts            loadrunner.ConvertOptions
-	ReadinessPolicy loadrunner.RuntimeSettingMigrationPolicy
+	Data             []byte
+	HARData          []byte
+	ProjectID        string
+	Opts             loadrunner.ConvertOptions
+	ReadinessPolicy  loadrunner.RuntimeSettingMigrationPolicy
+	SalesforceNative bool
 }
 
 type devWebImportRequest struct {
@@ -68,6 +71,7 @@ type loadRunnerImportSummary struct {
 	SourceScriptType            string                                       `json:"source_script_type,omitempty"`
 	SourceProfile               string                                       `json:"source_profile,omitempty"`
 	Web2MigrationReadiness      *web2MigrationReadinessReport                `json:"web2_migration_readiness,omitempty"`
+	SalesforceReview            *salesforce.Review                           `json:"salesforce_review,omitempty"`
 	DetectedProtocol            *loadrunner.DetectedProtocol                 `json:"detected_protocol,omitempty"`
 	ReviewArtifact              *loadrunner.ReviewArtifact                   `json:"review_artifact,omitempty"`
 	SourceReview                *loadrunner.SourceReview                     `json:"source_review,omitempty"`
@@ -104,6 +108,7 @@ func (s *Server) handleImportLoadRunner(w http.ResponseWriter, r *http.Request) 
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
+	attachSalesforceReviewToLoadRunnerResult(result, importReq)
 
 	writeLoadRunnerImportResponse(w, http.StatusOK, result, importReq.ReadinessPolicy)
 }
@@ -124,8 +129,44 @@ func (s *Server) handleValidateLoadRunnerImport(w http.ResponseWriter, r *http.R
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
+	attachSalesforceReviewToLoadRunnerResult(result, importReq)
 
 	writeLoadRunnerImportResponse(w, http.StatusOK, result, importReq.ReadinessPolicy)
+}
+
+func attachSalesforceReviewToLoadRunnerResult(result *loadrunner.ConvertResult, importReq *loadRunnerImportRequest) {
+	if result == nil || result.Script == nil || importReq == nil {
+		return
+	}
+	if !importReq.SalesforceNative && len(importReq.HARData) == 0 {
+		return
+	}
+	review, err := salesforce.Analyze(result.Script, salesforce.AnalyzeOptions{
+		BuildNative: importReq.SalesforceNative,
+		HARData:     importReq.HARData,
+	})
+	if err != nil {
+		result.Warnings = append(result.Warnings, "Salesforce review failed: "+err.Error())
+		return
+	}
+	if review == nil || (!review.Detected && !importReq.SalesforceNative) {
+		return
+	}
+	preserved := ensureScriptImportPreserved(result.Script, "loadrunner")
+	preserved["salesforce_review"] = review
+}
+
+func ensureScriptImportPreserved(script *dsl.Script, source string) map[string]any {
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{Source: source}
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = map[string]any{}
+	}
+	return script.Metadata.Import.Preserved
 }
 
 // handleImportJMeter handles POST /api/v1/scripts/import/jmeter.
@@ -575,10 +616,11 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 }
 
 func readLoadRunnerImportRequest(w http.ResponseWriter, r *http.Request) (*loadRunnerImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, 100<<20)
 
 	contentType := r.Header.Get("Content-Type")
 	var data []byte
+	var harData []byte
 
 	if strings.HasPrefix(contentType, "application/zip") ||
 		strings.HasPrefix(contentType, "application/x-zip-compressed") ||
@@ -590,8 +632,8 @@ func readLoadRunnerImportRequest(w http.ResponseWriter, r *http.Request) (*loadR
 		}
 		data = body
 	} else {
-		if err := r.ParseMultipartForm(50 << 20); err != nil {
-			writeError(w, http.StatusBadRequest, "failed to parse multipart form (max 50MB): "+err.Error())
+		if err := r.ParseMultipartForm(100 << 20); err != nil {
+			writeError(w, http.StatusBadRequest, "failed to parse multipart form (max 100MB): "+err.Error())
 			return nil, false
 		}
 		file, _, err := r.FormFile("file")
@@ -606,6 +648,15 @@ func readLoadRunnerImportRequest(w http.ResponseWriter, r *http.Request) (*loadR
 			return nil, false
 		}
 		data = body
+		if harFile, _, err := r.FormFile("har_file"); err == nil {
+			defer harFile.Close()
+			harBody, readErr := io.ReadAll(harFile)
+			if readErr != nil {
+				writeError(w, http.StatusBadRequest, "failed to read uploaded HAR file: "+readErr.Error())
+				return nil, false
+			}
+			harData = harBody
+		}
 	}
 
 	if len(data) == 0 {
@@ -614,8 +665,10 @@ func readLoadRunnerImportRequest(w http.ResponseWriter, r *http.Request) (*loadR
 	}
 
 	return &loadRunnerImportRequest{
-		Data:      data,
-		ProjectID: firstNonEmpty(r.FormValue("project_id"), r.URL.Query().Get("project_id")),
+		Data:             data,
+		HARData:          harData,
+		ProjectID:        firstNonEmpty(r.FormValue("project_id"), r.URL.Query().Get("project_id")),
+		SalesforceNative: parseBoolDefault(firstNonEmpty(r.FormValue("salesforce_native"), r.URL.Query().Get("salesforce_native")), false),
 		Opts: loadrunner.ConvertOptions{
 			ScriptName:           r.FormValue("name"),
 			BaseURL:              r.FormValue("base_url"),
@@ -750,6 +803,17 @@ func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, un
 			Title:       "Resolve blocking runtime settings before promotion",
 			Description: "The selected migration block policy matched imported runtime settings that are not fully executable in APEX Load yet.",
 			Action:      "Review the blocking runtime settings, adjust the generated APEX Load config where possible, or relax the migration block policy before saving the script.",
+		})
+	}
+
+	if summary.SalesforceReview != nil && len(summary.SalesforceReview.Blockers) > 0 {
+		suggestions = append(suggestions, scriptImportRepairSuggestion{
+			ID:          "salesforce:native-preview-blockers",
+			Category:    "salesforce",
+			Severity:    "blocker",
+			Title:       "Resolve Salesforce native preview blockers",
+			Description: "The exact replay script was imported, but the Salesforce native preview needs additional evidence or correlation review before promotion.",
+			Action:      "Attach a HAR captured from the same LoadRunner recording, review Salesforce transaction grouping and correlations, then rerun the native preview.",
 		})
 	}
 
@@ -1370,7 +1434,60 @@ func buildLoadRunnerImportReviewSections(warnings []string, result *loadrunner.C
 		})
 	}
 
+	if summary.SalesforceReview != nil {
+		severity := "info"
+		if len(summary.SalesforceReview.Blockers) > 0 {
+			severity = "blocker"
+		} else if summary.SalesforceReview.HARMatchCoverage.HARProvided && summary.SalesforceReview.HARMatchCoverage.CoveragePct < 80 {
+			severity = "warning"
+		}
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "salesforce_review",
+			Title:    "Salesforce Native Review",
+			Severity: severity,
+			Summary:  salesforceReviewSummary(summary.SalesforceReview),
+			Items:    salesforceReviewItems(summary.SalesforceReview),
+		})
+	}
+
 	return sections
+}
+
+func salesforceReviewSummary(review *salesforce.Review) string {
+	if review == nil {
+		return ""
+	}
+	if !review.Detected {
+		return "Salesforce native review ran but did not detect Salesforce traffic."
+	}
+	coverage := review.HARMatchCoverage
+	return fmt.Sprintf("Detected Salesforce traffic across %d domain(s); HAR matched %d of %d imported request(s) (%.1f%%).", len(review.Domains), coverage.MatchedRequests, coverage.ImportedRequests, coverage.CoveragePct)
+}
+
+func salesforceReviewItems(review *salesforce.Review) []string {
+	if review == nil {
+		return nil
+	}
+	items := make([]string, 0)
+	for _, domain := range review.Domains {
+		items = append(items, fmt.Sprintf("Domain: %s (%s, %d request(s))", domain.Host, domain.Kind, domain.Count))
+	}
+	if len(review.AuraEndpoints) > 0 {
+		items = append(items, fmt.Sprintf("Aura endpoints detected: %d", len(review.AuraEndpoints)))
+	}
+	if len(review.Transactions) > 0 {
+		items = append(items, fmt.Sprintf("Transaction candidates: %d", len(review.Transactions)))
+	}
+	if review.CorrelationConfidence != "" {
+		items = append(items, "Correlation confidence: "+review.CorrelationConfidence)
+	}
+	for _, blocker := range review.Blockers {
+		items = append(items, "Blocker: "+blocker)
+	}
+	for _, action := range review.NextActions {
+		items = append(items, "Next action: "+action)
+	}
+	return items
 }
 
 func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedElements []string, readinessPolicy loadrunner.RuntimeSettingMigrationPolicy) loadRunnerImportSummary {
@@ -1417,6 +1534,7 @@ func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedE
 	if isWeb2TrueClientInspection(summary.TrueClientInspection) {
 		summary.Web2MigrationReadiness = buildWeb2MigrationReadinessReport(result, summary)
 	}
+	summary.SalesforceReview = salesforceReviewValue(preserved["salesforce_review"])
 
 	return summary
 }
@@ -1434,9 +1552,30 @@ func persistLoadRunnerImportSummary(result *loadrunner.ConvertResult, summary lo
 	if summary.Web2MigrationReadiness != nil {
 		result.Script.Metadata.Import.Preserved["web2_migration_readiness"] = summary.Web2MigrationReadiness
 	}
+	if summary.SalesforceReview != nil {
+		result.Script.Metadata.Import.Preserved["salesforce_review"] = summary.SalesforceReview
+	}
 	if summary.SourceReview != nil {
 		result.Script.Metadata.Import.Preserved["source_review"] = summary.SourceReview
 	}
+}
+
+func salesforceReviewValue(value any) *salesforce.Review {
+	if value == nil {
+		return nil
+	}
+	if review, ok := value.(*salesforce.Review); ok {
+		return review
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var review salesforce.Review
+	if err := json.Unmarshal(data, &review); err != nil {
+		return nil
+	}
+	return &review
 }
 
 func runtimeSettingsParityValue(value any) []loadrunner.RuntimeSettingParityEntry {

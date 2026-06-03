@@ -370,6 +370,12 @@ func generateSelectedValue(values []string, param dsl.Parameter, state *paramete
 				state.nextIndex = 0
 			case "empty":
 				return "", -1, true
+			case "last":
+				index := len(values) - 1
+				if state.hasRowPick && state.lastIndex >= 0 && state.lastIndex < len(values) {
+					index = state.lastIndex
+				}
+				return values[index], index, true
 			default:
 				return "", -1, false
 			}
@@ -391,6 +397,8 @@ func generateSelectedValue(values []string, param dsl.Parameter, state *paramete
 				state.nextIndex = 0
 			case "empty":
 				return "", -1, true
+			case "last":
+				return values[len(values)-1], len(values) - 1, true
 			default:
 				return "", -1, false
 			}
@@ -409,6 +417,11 @@ func handleCounterExhaustion(param dsl.Parameter, state *parameterState) (string
 		return "wrapped", true
 	case "empty":
 		return "", true
+	case "last":
+		if param.End != 0 {
+			state.counter = param.End
+		}
+		return "last", true
 	default:
 		return "", false
 	}

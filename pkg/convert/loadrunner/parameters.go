@@ -605,7 +605,11 @@ func parseParameterSameLineAs(value string) string {
 func mapParameterExhaustion(value string) string {
 	value = strings.ToLower(value)
 	switch {
-	case strings.Contains(value, "continue"), strings.Contains(value, "wrap"), strings.Contains(value, "cycle"):
+	case strings.Contains(value, "continuewithlast"), strings.Contains(value, "continue_with_last"), strings.Contains(value, "continue with last"):
+		return "last"
+	case strings.Contains(value, "wrap"), strings.Contains(value, "cycle"):
+		return "wrap"
+	case strings.Contains(value, "continue"):
 		return "wrap"
 	case strings.Contains(value, "empty"):
 		return "empty"

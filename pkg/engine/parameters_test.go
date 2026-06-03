@@ -103,6 +103,54 @@ func TestParameterRuntime_DataSourceParameter(t *testing.T) {
 	}
 }
 
+func TestParameterRuntime_OnExhaustionLastKeepsFinalValue(t *testing.T) {
+	provider, err := NewDataProvider([]dsl.DataSource{{
+		Name:           "users",
+		Type:           "csv",
+		InlineData:     "username\nalice\nbob\n",
+		FirstRowHeader: true,
+	}})
+	if err != nil {
+		t.Fatalf("NewDataProvider: %v", err)
+	}
+
+	runtime := NewParameterRuntime([]dsl.Parameter{{
+		Name:         "username",
+		Type:         "file",
+		DataSource:   "users",
+		Column:       "username",
+		Selection:    "sequential",
+		Update:       "each_occurrence",
+		OnExhaustion: "last",
+	}}, provider, 0)
+
+	for index, want := range []string{"alice", "bob", "bob", "bob"} {
+		got, ok := runtime.ResolveNamed("username")
+		if !ok || got != want {
+			t.Fatalf("resolve %d = %q/%v, want %q/true", index, got, ok, want)
+		}
+	}
+}
+
+func TestParameterRuntime_CounterOnExhaustionLastKeepsEndValue(t *testing.T) {
+	runtime := NewParameterRuntime([]dsl.Parameter{{
+		Name:         "account",
+		Type:         "counter",
+		Update:       "each_occurrence",
+		Start:        7,
+		End:          9,
+		Step:         1,
+		OnExhaustion: "last",
+	}}, nil, 0)
+
+	for index, want := range []string{"7", "8", "9", "9", "9"} {
+		got, ok := runtime.ResolveNamed("account")
+		if !ok || got != want {
+			t.Fatalf("resolve %d = %q/%v, want %q/true", index, got, ok, want)
+		}
+	}
+}
+
 func TestParameterRuntime_SameLineParameterUsesReferencedRow(t *testing.T) {
 	seed := int64(17)
 	provider, err := NewDataProvider([]dsl.DataSource{{

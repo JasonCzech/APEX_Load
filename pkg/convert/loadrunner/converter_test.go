@@ -851,6 +851,33 @@ func TestConvertParamReferences(t *testing.T) {
 	}
 }
 
+func buildLoadRunnerZip(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, content := range files {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func headerValues(headers map[string]string) []string {
+	values := make([]string, 0, len(headers))
+	for _, value := range headers {
+		values = append(values, value)
+	}
+	return values
+}
+
 func TestParseUSRFile(t *testing.T) {
 	content := `[General]
 Type=Web
@@ -983,6 +1010,111 @@ UpdateValueOn=Each Occurrence
 	}
 	if strings.Contains(string(sourceReviewPayload), "raw-secret-token") || strings.Contains(string(sourceReviewPayload), "raw-secret-password") {
 		t.Fatalf("source review leaked raw secret literals: %s", string(sourceReviewPayload))
+	}
+}
+
+func TestConvertZipPreservesSalesforceReplayFidelity(t *testing.T) {
+	archive := buildLoadRunnerZip(t, map[string]string{
+		"Salesforce.usr": `[General]
+Type=Web
+RuntimeSettings=default.cfg
+
+[Actions]
+Action0=vuser_init.c
+Action1=Action.c
+`,
+		"vuser_init.c": `
+vuser_init()
+{
+	web_add_auto_header("X-B3-TraceId", "{TraceId}");
+	web_add_header("accept-language", "en-US,en;q=0.9");
+	web_reg_save_param_json("ParamName=c_access_token", "QueryString=$.access_token", LAST);
+	web_add_cookie("sid={c_lightning_sid}; DOMAIN=attone--perfhyper2.sandbox.lightning.force.com; PATH=/");
+	web_url("Init Login", "URL=https://attone--perfhyper2.sandbox.my.salesforce.com/login", LAST);
+	return 0;
+}
+`,
+		"Action.c": `
+Action()
+{
+	web_global_verification("Text=\"state\":\"ERROR\"", "Fail=Found", LAST);
+	web_url("Lightning Aura", "URL=https://attone--perfhyper2.sandbox.lightning.force.com/aura", LAST);
+	web_revert_auto_header("X-B3-TraceId", LAST);
+	web_url("After Revert", "URL=https://attone--perfhyper2.sandbox.lightning.force.com/one/one.app", LAST);
+	web_custom_request("Aura Post",
+		"URL=https://attone--perfhyper2.sandbox.lightning.force.com/aura",
+		"Method=POST",
+		"RecContentType=text/html",
+		"EncType=application/json",
+		"Body={\"token\":\"{c_access_token}\"}",
+		LAST);
+	return 0;
+}
+`,
+		"default.cfg": `[WEB]
+ConnectTimeout=30
+ReceiveTimeout=45
+HTTPVersion=2
+UserAgent=Salesforce Mobile
+AcceptLanguage=en-US,en;q=0.9
+
+[ThinkTime]
+Options=NOTHINK
+`,
+	})
+
+	result, err := ConvertZip(archive, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if len(result.Script.Init) != 1 {
+		t.Fatalf("init actions = %d, want 1: %#v", len(result.Script.Init), result.Script.Init)
+	}
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("main actions = %d, want 3: %#v", len(result.Script.Actions), result.Script.Actions)
+	}
+	init := result.Script.Init[0]
+	if init.Target != "/login" {
+		t.Fatalf("init target = %q, want /login", init.Target)
+	}
+	if got := init.Headers["accept-language"]; got != "en-US,en;q=0.9" {
+		t.Fatalf("accept-language = %q, want full q header", got)
+	}
+	if got := init.Headers["X-B3-TraceId"]; got != "{{var.traceid}}" {
+		t.Fatalf("auto header on init = %q, want parameterized trace id", got)
+	}
+	if len(init.Extractors) != 1 || init.Extractors[0].Type != "jsonpath" || init.Extractors[0].Expression != "$.access_token" {
+		t.Fatalf("init extractors = %#v, want JSONPath access token extractor", init.Extractors)
+	}
+
+	lightning := result.Script.Actions[0]
+	if lightning.Target != "https://attone--perfhyper2.sandbox.lightning.force.com/aura" {
+		t.Fatalf("lightning target = %q, want absolute foreign host", lightning.Target)
+	}
+	if got := lightning.Headers["X-B3-TraceId"]; got != "{{var.traceid}}" {
+		t.Fatalf("auto header on lightning = %q, want parameterized trace id", got)
+	}
+	if got := lightning.Headers["Cookie"]; got != "sid={{var.c_lightning_sid}}" {
+		t.Fatalf("cookie header = %q, want parameterized lightning sid", got)
+	}
+	if _, ok := result.Script.Actions[1].Headers["X-B3-TraceId"]; ok {
+		t.Fatalf("auto header should be removed after web_revert_auto_header: %#v", result.Script.Actions[1].Headers)
+	}
+	auraPost := result.Script.Actions[2]
+	if got := auraPost.Headers["Content-Type"]; got != "application/json" {
+		t.Fatalf("content-type = %q, want request EncType application/json", got)
+	}
+	if strings.Contains(strings.ToLower(strings.Join(headerValues(auraPost.Headers), "\n")), "text/html") {
+		t.Fatalf("RecContentType leaked into request headers: %#v", auraPost.Headers)
+	}
+	if !strings.Contains(auraPost.Body, "{{var.c_access_token}}") {
+		t.Fatalf("body = %q, want parameterized access token", auraPost.Body)
+	}
+	if len(result.Script.Config.WebRuntime.ContentChecks) != 1 {
+		t.Fatalf("content checks = %#v, want one global verification", result.Script.Config.WebRuntime.ContentChecks)
+	}
+	if !result.Script.Config.ThinkTime.Ignore {
+		t.Fatalf("think time ignore = false, want NOTHINK mapped")
 	}
 }
 
@@ -1257,6 +1389,15 @@ Type="Random"
 	}
 	if got := params["sim"]; got.Type != "random_number" || got.Min != 11111 || got.Max != 99999 || got.Update != "each_occurrence" || got.PadWidth != 5 {
 		t.Fatalf("SIM = %#v, want LoadRunner Random mapped to numeric parameter", got)
+	}
+}
+
+func TestMapParameterExhaustionPreservesContinueWithLast(t *testing.T) {
+	if got := mapParameterExhaustion("ContinueWithLast"); got != "last" {
+		t.Fatalf("ContinueWithLast mapped to %q, want last", got)
+	}
+	if got := mapParameterExhaustion("Continue with last"); got != "last" {
+		t.Fatalf("Continue with last mapped to %q, want last", got)
 	}
 }
 

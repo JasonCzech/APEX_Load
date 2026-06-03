@@ -20,10 +20,20 @@ type ParsedFunction struct {
 	Method     string            // HTTP method (for web_custom_request)
 	URL        string            // Target URL
 	Action     string            // Action/target URL for form submissions
+	Cookies    []ParsedCookie    // Cookies added through web_add_cookie
+	Phase      string            // init, action, or teardown
 	LineNumber int               // Source line number for diagnostics
 	Filename   string            // Source file containing the function
 	EndLine    int               // Source line where the function call ends
 	RawBlock   string            // Original source block for source review
+}
+
+type ParsedCookie struct {
+	Name   string
+	Value  string
+	Domain string
+	Path   string
+	Raw    string
 }
 
 // ParsedArgument represents a single top-level C function call argument.
@@ -38,6 +48,7 @@ type ParsedArgument struct {
 // ParsedAction represents a parsed .c action file.
 type ParsedAction struct {
 	Filename  string
+	Phase     string
 	Functions []ParsedFunction
 }
 
@@ -266,11 +277,11 @@ func parseFunctionBlock(block string, filename string, lineNum int, endLine int,
 		parseWebCustomRequest(&fn, inner)
 	case "web_service_call":
 		parseWebServiceCall(&fn, inner)
-	case "web_reg_save_param":
+	case "web_reg_save_param", "web_reg_save_param_json":
 		parseWebRegSaveParam(&fn, inner)
 	case "web_reg_save_param_regexp":
 		parseWebRegSaveParam(&fn, inner)
-	case "web_reg_find":
+	case "web_reg_find", "web_global_verification":
 		parseWebRegFind(&fn, inner)
 	case "lr_think_time":
 		parseLRThinkTime(&fn, inner)
@@ -278,10 +289,12 @@ func parseFunctionBlock(block string, filename string, lineNum int, endLine int,
 		if len(fn.RawArgs) > 0 {
 			fn.StepName = fn.RawArgs[0]
 		}
-	case "lr_continue_on_error", "lr_error_message", "lr_exit", "web_cache_cleanup", "web_cleanup_cookies", "web_set_sockets_option", "web_set_timeout":
+	case "lr_continue_on_error", "lr_error_message", "lr_exit", "web_cache_cleanup", "web_cleanup_cookies", "web_set_sockets_option", "web_set_timeout", "web_convert_param", "web_revert_auto_header":
 		parseLoadRunnerRuntimeControl(&fn, inner)
 	case "web_add_header", "web_add_auto_header":
 		parseWebAddHeader(&fn, inner)
+	case "web_add_cookie":
+		parseWebAddCookie(&fn, inner)
 	default:
 		if len(fn.RawArgs) > 0 {
 			fn.StepName = fn.RawArgs[0]
@@ -483,21 +496,26 @@ func parseWebCustomRequest(fn *ParsedFunction, inner string) {
 	if len(fn.RawArgs) > 0 {
 		fn.StepName = fn.RawArgs[0]
 	}
+	extractNamedArgs(fn, inner)
 
 	if m := reURLArg.FindStringSubmatch(inner); len(m) > 1 {
 		fn.URL = m[1]
 	}
+	if fn.Args["URL"] != "" {
+		fn.URL = fn.Args["URL"]
+	}
 	if m := reMethodArg.FindStringSubmatch(inner); len(m) > 1 {
 		fn.Method = m[1]
+	}
+	if fn.Args["Method"] != "" {
+		fn.Method = fn.Args["Method"]
 	}
 	if m := reBodyArg.FindStringSubmatch(inner); len(m) > 1 {
 		fn.Body = m[1]
 	}
-	if m := reRecContentType.FindStringSubmatch(inner); len(m) > 1 {
-		fn.Headers["Content-Type"] = m[1]
+	if fn.Args["Body"] != "" {
+		fn.Body = fn.Args["Body"]
 	}
-
-	extractNamedArgs(fn, inner)
 }
 
 func parseWebServiceCall(fn *ParsedFunction, inner string) {
@@ -505,20 +523,25 @@ func parseWebServiceCall(fn *ParsedFunction, inner string) {
 		fn.StepName = fn.RawArgs[0]
 	}
 	fn.Method = "POST"
+	extractNamedArgs(fn, inner)
 
 	if m := reURLArg.FindStringSubmatch(inner); len(m) > 1 {
 		fn.URL = m[1]
 	} else if m := reActionArg.FindStringSubmatch(inner); len(m) > 1 {
 		fn.URL = m[1]
 	}
+	if fn.Args["URL"] != "" {
+		fn.URL = fn.Args["URL"]
+	} else if fn.Args["Action"] != "" {
+		fn.URL = fn.Args["Action"]
+	}
 	if m := reBodyArg.FindStringSubmatch(inner); len(m) > 1 {
 		fn.Body = m[1]
 	}
-	if m := reRecContentType.FindStringSubmatch(inner); len(m) > 1 {
-		fn.Headers["Content-Type"] = m[1]
+	if fn.Args["Body"] != "" {
+		fn.Body = fn.Args["Body"]
 	}
 
-	extractNamedArgs(fn, inner)
 	if soapAction, ok := fn.Args["SOAPAction"]; ok && soapAction != "" {
 		fn.Headers["SOAPAction"] = soapAction
 	}
@@ -548,10 +571,58 @@ func parseLRThinkTime(fn *ParsedFunction, inner string) {
 
 func parseWebAddHeader(fn *ParsedFunction, inner string) {
 	// web_add_header("Header-Name", "Header-Value")
-	if len(fn.RawArgs) >= 2 {
-		fn.StepName = fn.RawArgs[0]
-		fn.Headers[fn.RawArgs[0]] = fn.RawArgs[1]
+	stringArgs := positionalStringArguments(fn.CallArgs)
+	if len(stringArgs) >= 2 {
+		fn.StepName = stringArgs[0]
+		fn.Headers[stringArgs[0]] = stringArgs[1]
 	}
+}
+
+func parseWebAddCookie(fn *ParsedFunction, inner string) {
+	stringArgs := positionalStringArguments(fn.CallArgs)
+	if len(stringArgs) == 0 {
+		return
+	}
+	rawCookie := stringArgs[0]
+	fn.StepName = rawCookie
+	fn.Cookies = append(fn.Cookies, parseLoadRunnerCookie(rawCookie))
+	extractNamedArgs(fn, inner)
+}
+
+func positionalStringArguments(args []ParsedArgument) []string {
+	values := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg.Kind == "macro" {
+			continue
+		}
+		if arg.Kind == "string" || arg.Kind == "key_value" {
+			values = append(values, cleanConfigValue(arg.Raw))
+		}
+	}
+	return values
+}
+
+func parseLoadRunnerCookie(raw string) ParsedCookie {
+	cookie := ParsedCookie{Raw: raw, Path: "/"}
+	segments := strings.Split(raw, ";")
+	for index, segment := range segments {
+		key, value, found := strings.Cut(strings.TrimSpace(segment), "=")
+		if !found {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		switch {
+		case index == 0:
+			cookie.Name = key
+			cookie.Value = value
+		case strings.EqualFold(key, "domain"):
+			cookie.Domain = value
+		case strings.EqualFold(key, "path"):
+			cookie.Path = value
+		}
+	}
+	return cookie
 }
 
 // extractNamedArgs pulls out "Key=Value" patterns from the inner string.

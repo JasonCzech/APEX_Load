@@ -830,10 +830,10 @@ describe('LoadRunnerImport', () => {
     })
 
     const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[]
-    expect(checkboxes).toHaveLength(5)
+    expect(checkboxes).toHaveLength(6)
     await act(async () => {
       checkboxes[1].dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      checkboxes[2].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      checkboxes[3].dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
@@ -859,6 +859,173 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('Validation Review')
     expect(container.textContent).toContain('validation review')
     expect(container.textContent).toContain('Unsupported LoadRunner Functions (1)')
+  })
+
+  it('passes Salesforce HAR evidence and opens the native preview draft', async () => {
+    const onEdit = vi.fn()
+    const nativeScript = {
+      name: 'Demo Salesforce Native Preview',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://acme.my.salesforce.com' },
+      actions: [
+        {
+          name: 'Salesforce Login',
+          type: 'request',
+          method: 'POST',
+          target: '/login',
+        },
+        {
+          name: 'Open Account',
+          type: 'request',
+          method: 'POST',
+          target: '/aura',
+        },
+      ],
+    }
+    apiMock.validateLoadRunnerImport.mockResolvedValueOnce({
+      script: {
+        name: 'Demo LoadRunner Script',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://acme.my.salesforce.com' },
+        actions: [
+          {
+            name: 'Homepage',
+            type: 'request',
+            method: 'GET',
+            target: '/',
+          },
+          {
+            name: 'Aura Action',
+            type: 'request',
+            method: 'POST',
+            target: '/aura',
+          },
+        ],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [
+        {
+          key: 'salesforce_review',
+          title: 'Salesforce Review',
+          severity: 'info',
+          summary: 'Detected Salesforce domains with HAR coverage.',
+          items: ['Domain: acme.my.salesforce.com'],
+        },
+      ],
+      repair_suggestions: [],
+      summary: {
+        project_file: 'Demo.usr',
+        unsupported_function_count: 0,
+        salesforce_review: {
+          detected: true,
+          domains: [{ host: 'acme.my.salesforce.com', kind: 'my_salesforce', count: 2 }],
+          aura_endpoints: [{ method: 'POST', path: '/aura', host: 'acme.my.salesforce.com', count: 1 }],
+          transactions: [{ name: 'Open Account', source: 'loadrunner_transaction', request_count: 2, aura_actions: 1 }],
+          correlation_confidence: 'medium',
+          har_match_coverage: {
+            har_provided: true,
+            imported_requests: 2,
+            matched_requests: 2,
+            coverage_pct: 100,
+          },
+          native_preview: {
+            script: nativeScript,
+            correlations: [
+              {
+                name: 'sid',
+                source: 'har_response',
+                expression: '$.sid',
+                found_in_seq: 1,
+                used_in_seqs: [2],
+                confidence: 0.87,
+              },
+            ],
+          },
+        },
+      },
+      stats: {
+        total_functions: 2,
+        converted_actions: 2,
+        extractors: 1,
+        think_times: 0,
+        transactions: 1,
+        skipped: 0,
+      },
+    })
+
+    await act(async () => {
+      root.render(<LoadRunnerImport onEdit={onEdit} />)
+    })
+
+    const fileInputs = Array.from(container.querySelectorAll('input[type="file"]')) as HTMLInputElement[]
+    const zipInput = fileInputs[0]
+    const harInput = fileInputs[1]
+    expect(zipInput).toBeDefined()
+    expect(harInput).toBeDefined()
+    if (!zipInput || !harInput) {
+      return
+    }
+
+    const zipFile = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
+    const harFile = new File(['{"log":{"entries":[]}}'], 'demo.har', { type: 'application/json' })
+    await act(async () => {
+      Object.defineProperty(zipInput, 'files', {
+        configurable: true,
+        value: [zipFile],
+      })
+      zipInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Object.defineProperty(harInput, 'files', {
+        configurable: true,
+        value: [harFile],
+      })
+      harInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('HAR: demo.har')
+    expect(container.textContent).toContain('demo.har')
+
+    const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[]
+    await act(async () => {
+      checkboxes[2]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
+    expect(validateButton).toBeDefined()
+    if (!validateButton) {
+      return
+    }
+
+    await act(async () => {
+      validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.validateLoadRunnerImport).toHaveBeenCalledWith(zipFile, expect.objectContaining({
+      har_file: harFile,
+      salesforce_native: true,
+    }))
+    expect(container.textContent).toContain('Exact Replay')
+    expect(container.textContent).toContain('Salesforce Native Preview')
+    expect(container.textContent).toContain('2/2 matched (100.0%)')
+    expect(container.textContent).toContain('Draft Ready')
+    expect(container.textContent).toContain('Salesforce Review')
+
+    const openNativePreview = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Native Preview'))
+    expect(openNativePreview).toBeDefined()
+    if (!openNativePreview) {
+      return
+    }
+    await act(async () => {
+      openNativePreview.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onEdit).toHaveBeenCalledWith(nativeScript)
   })
 
   it('disables saving while migration readiness is blocked by the active policy', async () => {
@@ -2017,7 +2184,7 @@ describe('LoadRunnerImport', () => {
     ])
 
     const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[]
-    expect(checkboxes[2]?.checked).toBe(false)
+    expect(checkboxes[3]?.checked).toBe(false)
     expect(container.textContent).toContain('Selected migration block policy: Blocked, Compatibility Only')
     expect(container.textContent).toContain('Reviewed migration block policy: Blocked, Compatibility Only')
     expect(container.textContent).toContain('Conversion refreshed with migration block policy: Blocked, Compatibility Only.')
@@ -2046,7 +2213,7 @@ describe('LoadRunnerImport', () => {
         migration_block_statuses: ['blocked', 'partial', 'compatibility_only'],
       },
     ])
-    expect(checkboxes[2]?.checked).toBe(true)
+    expect(checkboxes[3]?.checked).toBe(true)
     expect(container.textContent).toContain('Selected migration block policy: Blocked, Partial, Compatibility Only')
     expect(container.textContent).toContain('Reviewed migration block policy: Blocked, Partial, Compatibility Only')
     expect(container.textContent).toContain('Conversion refreshed with migration block policy: Blocked, Partial, Compatibility Only.')
@@ -2091,7 +2258,7 @@ describe('LoadRunnerImport', () => {
 
     const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[]
     await act(async () => {
-      checkboxes[2]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      checkboxes[3]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(container.textContent).toContain('Selected migration block policy: Blocked, Compatibility Only')

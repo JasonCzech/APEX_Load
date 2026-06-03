@@ -11,13 +11,61 @@ func appendLoadRunnerAction(result *ConvertResult, fn ParsedFunction, action dsl
 	if result == nil || result.Script == nil {
 		return
 	}
-	actionIndex := len(result.Script.Actions)
-	mapping := sourceReviewMappingForFunction(fn, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", statusForSupportMode(mode), notes)
+	actionIndex := actionCountForPhase(result.Script, fn.Phase)
+	mapping := sourceReviewMappingForFunction(fn, sourceReviewActionPath(fn.Phase, actionIndex), action.Name, "action", statusForSupportMode(mode), notes)
 	mapping.SupportMode = string(mode)
 	appendSourceReviewMapping(result, mapping)
-	result.Script.Actions = append(result.Script.Actions, action)
+	appendActionForPhase(result.Script, fn.Phase, action)
 	result.Stats.ConvertedActions++
 	recordLoadRunnerFunctionSupport(result, mode)
+}
+
+func actionCountForPhase(script *dsl.Script, phase string) int {
+	if script == nil {
+		return 0
+	}
+	switch normalizeLoadRunnerPhase(phase) {
+	case "init":
+		return len(script.Init)
+	case "teardown":
+		return len(script.Teardown)
+	default:
+		return len(script.Actions)
+	}
+}
+
+func appendActionForPhase(script *dsl.Script, phase string, action dsl.Action) {
+	if script == nil {
+		return
+	}
+	switch normalizeLoadRunnerPhase(phase) {
+	case "init":
+		script.Init = append(script.Init, action)
+	case "teardown":
+		script.Teardown = append(script.Teardown, action)
+	default:
+		script.Actions = append(script.Actions, action)
+	}
+}
+
+func sourceReviewActionPath(phase string, index int) string {
+	switch normalizeLoadRunnerPhase(phase) {
+	case "init":
+		return fmt.Sprintf("init[%d]", index)
+	case "teardown":
+		return fmt.Sprintf("teardown[%d]", index)
+	default:
+		return fmt.Sprintf("actions[%d]", index)
+	}
+}
+
+func normalizeLoadRunnerPhase(phase string) string {
+	switch strings.ToLower(strings.TrimSpace(phase)) {
+	case "init", "teardown":
+		return strings.ToLower(strings.TrimSpace(phase))
+	default:
+		return "action"
+	}
 }
 
 func statusForSupportMode(mode LoadRunnerSupportMode) string {

@@ -125,6 +125,36 @@
 .lr-import-actions-card .lr-subtitle {
   margin: 0;
 }
+.lr-har-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.lr-har-panel h4 {
+  margin: 0 0 3px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.lr-har-panel p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lr-har-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
 .lr-import-action-buttons {
   display: grid;
   grid-template-columns: 1fr;
@@ -258,6 +288,78 @@
 }
 .lr-review-row .lr-warnings + .lr-warnings {
   border-left: 1px solid var(--border);
+}
+.lr-salesforce-lanes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.lr-salesforce-lane {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.lr-salesforce-lane.blocked {
+  border-color: color-mix(in srgb, var(--warning) 42%, var(--border));
+}
+.lr-salesforce-lane-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+.lr-salesforce-lane-header div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.lr-salesforce-lane-header strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.lr-salesforce-lane-header span,
+.lr-salesforce-lane-header small {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.lr-salesforce-lane dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.lr-salesforce-lane dl div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px;
+}
+.lr-salesforce-lane dt {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.lr-salesforce-lane dd {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lr-salesforce-blockers {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: var(--warning);
+  font-size: 12px;
+  line-height: 1.6;
 }
 .lr-review-section {
   padding: 10px 0;
@@ -443,6 +545,20 @@
 
   .lr-modal-header {
     flex-direction: column;
+  }
+
+  .lr-har-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .lr-har-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .lr-salesforce-lane dl div {
+    grid-template-columns: 1fr;
   }
 
   .lr-preserved-header {

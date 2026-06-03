@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
-import { type DetectedLoadRunnerProtocol, type ImportRepairSuggestion, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerProtocolSupportEntry, type LoadRunnerReviewArtifact, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse } from '../types/scriptImports'
+import { type DetectedLoadRunnerProtocol, type ImportRepairSuggestion, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerProtocolSupportEntry, type LoadRunnerReviewArtifact, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse, type SalesforceReview } from '../types/scriptImports'
 import { type BrowserReplaySession } from '../types'
 import { type LoadRunnerSourceReview, type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -41,8 +41,38 @@ function isLoadRunnerZipFile(file: File) {
   return lowerName.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
 }
 
+function isHARFile(file: File) {
+  const lowerName = file.name.toLowerCase()
+  return lowerName.endsWith('.har') || lowerName.endsWith('.json') || file.type === 'application/json'
+}
+
 function formatLoadRunnerFileSize(file: File) {
   return `${(file.size / 1024).toFixed(1)} KB`
+}
+
+function formatSalesforceCoverage(review?: SalesforceReview | null) {
+  const coverage = review?.har_match_coverage
+  if (!coverage?.har_provided) return 'No HAR matched'
+  return `${coverage.matched_requests}/${coverage.imported_requests} matched (${coverage.coverage_pct.toFixed(1)}%)`
+}
+
+function salesforceDomainSummary(review?: SalesforceReview | null) {
+  const domains = review?.domains || []
+  if (domains.length === 0) return 'No Salesforce domains detected'
+  return domains.slice(0, 3).map(domain => domain.host).join(', ')
+}
+
+function salesforceTransactionCount(review?: SalesforceReview | null) {
+  return review?.transactions?.length || 0
+}
+
+function scriptActionCount(script?: ScriptDefinition | null) {
+  if (!script) return 0
+  const phaseActions = (phase: 'init' | 'actions' | 'teardown') => {
+    const value = (script as ScriptDefinition & Record<string, unknown>)[phase]
+    return Array.isArray(value) ? value.length : 0
+  }
+  return phaseActions('init') + phaseActions('actions') + phaseActions('teardown')
 }
 
 function loadRunnerImportStatusLabel(status: LoadRunnerImportQueueStatus) {
@@ -66,6 +96,7 @@ function buildLoadRunnerImportQueueItem(file: File, id: string): LoadRunnerImpor
   return {
     id,
     file,
+    harFile: null,
     status: 'queued',
     result: null,
     reviewMode: null,
@@ -123,6 +154,7 @@ type LoadRunnerImportQueueStatus = 'queued' | 'validating' | 'validated' | 'conv
 interface LoadRunnerImportQueueItem {
   id: string
   file: File
+  harFile: File | null
   status: LoadRunnerImportQueueStatus
   result: LoadRunnerImportResult | null
   reviewMode: ReviewMode | null
@@ -159,6 +191,7 @@ type ImportOptions = {
   base_url: string
   include_assertions: boolean
   preserve_transactions: boolean
+  salesforce_native: boolean
   block_partial: boolean
   block_compatibility_only: boolean
   block_non_applicable: boolean
@@ -171,6 +204,7 @@ const DEFAULT_IMPORT_OPTIONS: ImportOptions = {
   base_url: '',
   include_assertions: true,
   preserve_transactions: true,
+  salesforce_native: false,
   block_partial: true,
   block_compatibility_only: true,
   block_non_applicable: false,
@@ -315,6 +349,7 @@ function findUnsupportedRepairSuggestion(repairSuggestions: ImportRepairSuggesti
 export default function LoadRunnerImport({ projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
+  const harFileRef = useRef<HTMLInputElement>(null)
   const itemCounterRef = useRef(0)
   const [importItems, setImportItems] = useState<LoadRunnerImportQueueItem[]>([])
   const [selectedItemId, setSelectedItemId] = useState('')
@@ -335,6 +370,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     [importItems, selectedItemId],
   )
   const file = selectedItem?.file ?? null
+  const selectedHARFile = selectedItem?.harFile ?? null
   const result = selectedItem?.result ?? null
   const reviewMode = selectedItem?.reviewMode ?? null
   const replayValidationLoading = selectedItem?.replayValidationLoading ?? false
@@ -353,6 +389,8 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const importMetadata = getImportMetadata(importedScript || undefined)
   const importSummary = getImportSummary(importMetadata)
   const reviewSummary: LoadRunnerImportSummary | null = result?.summary || null
+  const salesforceReview = reviewSummary?.salesforce_review || null
+  const salesforceNativeScript = salesforceReview?.native_preview?.script || null
   const sourceReview = reviewSummary?.source_review || getSourceReviewFromMetadata(importMetadata)
   const projectSections = getSummaryList(reviewSummary?.project_sections).length > 0
     ? getSummaryList(reviewSummary?.project_sections)
@@ -464,6 +502,11 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const openImportedScriptInEditor = (focus?: DraftEditorFocus) => {
     if (!importedScript || !onEdit) return
     onEdit(importedScript, focus)
+  }
+
+  const openSalesforceNativePreviewInEditor = () => {
+    if (!salesforceNativeScript || !onEdit) return
+    onEdit(salesforceNativeScript)
   }
 
   const openImportedRuntimeSettingsInEditor = (area: string) => {
@@ -620,6 +663,22 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
           })
         }
         break
+      case 'salesforce_review':
+        if (onEdit && salesforceNativeScript) {
+          buttons.push({
+            key: 'review-salesforce-native-preview',
+            label: 'Open Native Preview',
+            onClick: openSalesforceNativePreviewInEditor,
+          })
+        }
+        if (onEdit) {
+          buttons.push({
+            key: 'review-salesforce-exact-replay',
+            label: 'Open Exact Replay',
+            onClick: () => openImportedScriptInEditor(),
+          })
+        }
+        break
       default:
         break
     }
@@ -739,6 +798,9 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     if (fileRef.current) {
       fileRef.current.value = ''
     }
+    if (harFileRef.current) {
+      harFileRef.current.value = ''
+    }
   }
 
   const handleDrop = (e: React.DragEvent) => {
@@ -750,6 +812,31 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     addFilesToQueue(e.target.files)
     e.target.value = ''
+  }
+
+  const handleHARFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const nextFile = Array.from(e.target.files || [])[0]
+    e.target.value = ''
+    if (!selectedItem || !nextFile) return
+    if (!isHARFile(nextFile)) {
+      updateImportItem(selectedItem.id, {
+        error: 'Please attach a HAR or JSON file captured from the same Salesforce recording.',
+      })
+      return
+    }
+    updateImportItem(selectedItem.id, {
+      harFile: nextFile,
+      error: '',
+      notice: '',
+    })
+  }
+
+  const clearSelectedHARFile = () => {
+    if (!selectedItem) return
+    updateImportItem(selectedItem.id, { harFile: null, notice: '', error: '' })
+    if (harFileRef.current) {
+      harFileRef.current.value = ''
+    }
   }
 
   const runReview = async (
@@ -798,6 +885,8 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
           include_assertions: reviewOptions.include_assertions,
           preserve_transactions: reviewOptions.preserve_transactions,
           migration_block_statuses: buildMigrationBlockStatuses(reviewOptions),
+          ...(item.harFile ? { har_file: item.harFile } : {}),
+          ...(reviewOptions.salesforce_native ? { salesforce_native: true } : {}),
         })
         successCount += 1
         updateImportItem(item.id, {
@@ -974,7 +1063,10 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                 >
                   <span className="lr-file-row-main">
                     <strong>{item.file.name}</strong>
-                    <small>{formatLoadRunnerFileSize(item.file)} · {loadRunnerImportStatusLabel(item.status)}</small>
+                    <small>
+                      {formatLoadRunnerFileSize(item.file)} · {loadRunnerImportStatusLabel(item.status)}
+                      {item.harFile ? ` · HAR: ${item.harFile.name}` : ''}
+                    </small>
                   </span>
                   <button
                     type="button"
@@ -1027,6 +1119,10 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
               <span>Preserve transaction names in generated actions</span>
             </label>
             <label className="lr-checkbox">
+              <input type="checkbox" checked={options.salesforce_native} onChange={e => setOptions(o => ({ ...o, salesforce_native: e.target.checked }))} />
+              <span>Build Salesforce native preview</span>
+            </label>
+            <label className="lr-checkbox">
               <input type="checkbox" checked={options.block_partial} onChange={e => setOptions(o => ({ ...o, block_partial: e.target.checked }))} />
               <span>Treat partial runtime settings as blockers</span>
             </label>
@@ -1062,6 +1158,23 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
           <div>
             <h3 className="lr-section-title">Validation / Conversion</h3>
             <p className="lr-subtitle">{queuedFileCount} ZIP file{queuedFileCount === 1 ? '' : 's'} queued</p>
+          </div>
+          <input ref={harFileRef} type="file" accept=".har,.json,application/json" onChange={handleHARFileSelect} hidden />
+          <div className="lr-har-panel">
+            <div>
+              <h4>Salesforce HAR</h4>
+              <p>{selectedHARFile ? selectedHARFile.name : 'No HAR attached to the selected script'}</p>
+            </div>
+            <div className="lr-har-actions">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => harFileRef.current?.click()} disabled={!selectedItem}>
+                {selectedHARFile ? 'Replace HAR' : 'Attach HAR'}
+              </button>
+              {selectedHARFile && (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={clearSelectedHARFile}>
+                  Remove
+                </button>
+              )}
+            </div>
           </div>
           <div className="lr-import-action-buttons">
             <button className="btn btn-secondary btn-lg" onClick={() => runReview('validate')} disabled={queuedFileCount === 0 || workingMode !== null}>
@@ -1233,6 +1346,69 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
               </div>
             )}
 
+            {salesforceReview && (
+              <div className="lr-salesforce-lanes">
+                <div className="lr-salesforce-lane">
+                  <div className="lr-salesforce-lane-header">
+                    <div>
+                      <strong>Exact Replay</strong>
+                      <span>Primary Output</span>
+                    </div>
+                    <small>{scriptActionCount(importedScript)} actions</small>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Domains</dt>
+                      <dd>{salesforceDomainSummary(salesforceReview)}</dd>
+                    </div>
+                    <div>
+                      <dt>HAR Coverage</dt>
+                      <dd>{formatSalesforceCoverage(salesforceReview)}</dd>
+                    </div>
+                  </dl>
+                  {onEdit && renderEditorActionButtons([
+                    {
+                      key: 'salesforce-exact-open',
+                      label: 'Open Exact Replay',
+                      onClick: () => openImportedScriptInEditor(),
+                    },
+                  ], sectionActionStyle)}
+                </div>
+
+                <div className={`lr-salesforce-lane ${salesforceNativeScript ? '' : 'blocked'}`}>
+                  <div className="lr-salesforce-lane-header">
+                    <div>
+                      <strong>Salesforce Native Preview</strong>
+                      <span>{salesforceNativeScript ? 'Draft Ready' : 'Needs Evidence'}</span>
+                    </div>
+                    <small>{salesforceTransactionCount(salesforceReview)} transactions</small>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Correlation</dt>
+                      <dd>{salesforceReview.correlation_confidence || 'unknown'}</dd>
+                    </div>
+                    <div>
+                      <dt>Correlations</dt>
+                      <dd>{salesforceReview.native_preview?.correlations?.length || 0}</dd>
+                    </div>
+                  </dl>
+                  {salesforceReview.blockers?.length ? (
+                    <ul className="lr-salesforce-blockers">
+                      {salesforceReview.blockers.slice(0, 4).map((blocker, index) => <li key={index}>{blocker}</li>)}
+                    </ul>
+                  ) : null}
+                  {onEdit && salesforceNativeScript && renderEditorActionButtons([
+                    {
+                      key: 'salesforce-native-open',
+                      label: 'Open Native Preview',
+                      onClick: openSalesforceNativePreviewInEditor,
+                    },
+                  ], sectionActionStyle)}
+                </div>
+              </div>
+            )}
+
             {/* Stats */}
             <div className="lr-stats-grid">
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.converted_actions}</span><span className="lr-stat-label">Actions</span></div>
@@ -1362,6 +1538,20 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                               onClick: () => openImportedScriptInEditor(),
                             },
                           ])
+                        )}
+                        {!suggestion.target_action && suggestion.category === 'salesforce' && onEdit && (
+                          renderEditorActionButtons([
+                            salesforceNativeScript ? {
+                              key: `${suggestion.id}:native-preview`,
+                              label: 'Open Native Preview',
+                              onClick: openSalesforceNativePreviewInEditor,
+                            } : null,
+                            {
+                              key: `${suggestion.id}:exact-replay`,
+                              label: 'Open Exact Replay',
+                              onClick: () => openImportedScriptInEditor(),
+                            },
+                          ].filter((button): button is EditorActionButton => Boolean(button)))
                         )}
                       </div>
                     )})}

@@ -525,8 +525,8 @@ func validateParameterIssues(script *Script) []string {
 		if param.Selection != "" && !isAllowedValue(param.Selection, "sequential", "random", "unique") {
 			issues = append(issues, fmt.Sprintf("%s %q: selection must be sequential, random, or unique", label, name))
 		}
-		if param.OnExhaustion != "" && !isAllowedValue(param.OnExhaustion, "wrap", "empty", "error") {
-			issues = append(issues, fmt.Sprintf("%s %q: on_exhaustion must be wrap, empty, or error", label, name))
+		if param.OnExhaustion != "" && !isAllowedValue(param.OnExhaustion, "wrap", "empty", "error", "last") {
+			issues = append(issues, fmt.Sprintf("%s %q: on_exhaustion must be wrap, empty, error, or last", label, name))
 		}
 		if sameLineAs := strings.TrimSpace(param.SameLineAs); sameLineAs != "" {
 			reference, ok := parametersByName[strings.ToLower(sameLineAs)]
