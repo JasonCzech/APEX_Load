@@ -259,20 +259,24 @@ describe('TestHub', () => {
 
     await clickWizardStep('Scripts')
 
-    const inputs = Array.from(container.querySelectorAll('input'))
-    const nameInput = inputs.find(input => input.placeholder === 'Scenario name')
-    const vusersInput = inputs.find(input => input.getAttribute('type') === 'number')
-
+    const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
     expect(nameInput).toBeDefined()
-    expect(vusersInput).toBeDefined()
-    if (!nameInput || !vusersInput) return
+    if (!nameInput) return
 
     await act(async () => {
       setInputValue(nameInput, 'Checkout Scenario')
-      setInputValue(vusersInput, '25')
     })
 
     await clickWizardStep('Run Settings')
+    const loadGroupCard = container.querySelector('.scenario-script-group-card')
+    const vusersInput = loadGroupCard ? Array.from(loadGroupCard.querySelectorAll('input')).find(input => input.getAttribute('type') === 'number') : undefined
+    expect(vusersInput).toBeDefined()
+    if (!vusersInput) return
+
+    await act(async () => {
+      setInputValue(vusersInput, '25')
+    })
+
     const durationField = getDurationFieldByLabel(container, 'Duration')
     const durationInput = durationField?.input
     const durationUnit = durationField?.select
@@ -529,7 +533,10 @@ describe('TestHub', () => {
     const secondGroupInitSelect = Array.from(groupCards[1].querySelectorAll('select')).find(select => select.textContent?.includes('Init/teardown once per group')) as HTMLSelectElement | undefined
     expect(secondGroupInitSelect?.value).toBe('at_once')
 
-    const secondGroupVUsers = Array.from(groupCards[1].querySelectorAll('input')).find(input => input.type === 'number')
+    await clickWizardStep('Run Settings')
+    const loadGroupCards = Array.from(container.querySelectorAll('.scenario-script-group-card'))
+    expect(loadGroupCards).toHaveLength(2)
+    const secondGroupVUsers = Array.from(loadGroupCards[1].querySelectorAll('input')).find(input => input.type === 'number')
     expect(secondGroupVUsers).toBeDefined()
     if (!secondGroupVUsers) return
 
@@ -703,14 +710,12 @@ describe('TestHub', () => {
       templateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    let inputs = Array.from(container.querySelectorAll('input'))
+    await clickWizardStep('Run Settings')
     const rampUpField = getDurationFieldByLabel(container, 'Ramp Up')
 
     expect(rampUpField?.input.value).toBe('2')
     expect(rampUpField?.select.value).toBe('m')
 
-    await clickWizardStep('Run Settings')
-    inputs = Array.from(container.querySelectorAll('input'))
     const durationField = getDurationFieldByLabel(container, 'Duration')
     const modeSelect = Array.from(container.querySelectorAll('select')).find(select => select.value === 'goal_oriented') as HTMLSelectElement | undefined
 
@@ -1131,6 +1136,72 @@ describe('TestHub', () => {
     expect(container.textContent).not.toContain('Duplicate')
     expect(container.textContent).not.toContain('Delete')
     expect(container.textContent).toContain('Read-only')
+  })
+
+  it('shows the scenario name in the builder header on every step once it is set', async () => {
+    const onSelectTest = vi.fn()
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+    await flushPromises()
+
+    await clickWizardStep('Scripts')
+    const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
+    expect(nameInput).toBeDefined()
+    if (!nameInput) return
+
+    await act(async () => {
+      setInputValue(nameInput, 'Header Visible Scenario')
+    })
+
+    const headerName = () => container.querySelector('.scenario-builder-name')?.textContent
+    expect(headerName()).toBe('Header Visible Scenario')
+
+    await clickWizardStep('Run Settings')
+    expect(headerName()).toBe('Header Visible Scenario')
+
+    await clickWizardStep('Review')
+    expect(headerName()).toBe('Header Visible Scenario')
+  })
+
+  it('prompts for a scenario name on the review step instead of erroring when saving without one', async () => {
+    const onSelectTest = vi.fn()
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+    await flushPromises()
+
+    await clickWizardStep('Scripts')
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save Scenario')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    // No scenario created and no error surfaced; the user is taken to review with a name prompt.
+    expect(apiMock.createScenario).not.toHaveBeenCalled()
+    expect(container.textContent).not.toContain('required')
+    const promptInput = container.querySelector('.scenario-name-prompt input') as HTMLInputElement | null
+    expect(promptInput).toBeTruthy()
+    if (!promptInput) return
+
+    await act(async () => {
+      setInputValue(promptInput, 'Late Named Scenario')
+    })
+
+    const saveButtonAfter = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save Scenario')
+    await act(async () => {
+      saveButtonAfter?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({ name: 'Late Named Scenario' }))
   })
 })
 

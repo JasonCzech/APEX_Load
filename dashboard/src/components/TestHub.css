@@ -371,6 +371,32 @@
   margin-bottom: 4px;
 }
 
+.scenario-builder-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.scenario-name-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent, #6366f1);
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.scenario-name-prompt > span {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+}
+
 .scenario-builder-progress {
   display: flex;
   flex-wrap: wrap;

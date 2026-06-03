@@ -721,7 +721,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
   }, [scriptLibraryQuery, scripts])
   const showScenarioLibrary = !showForm
   const showScriptLibrary = showForm && wizardStep === 'scripts'
-  const showModelPreview = showForm && wizardStep !== 'start'
+  const showModelPreview = showForm && wizardStep !== 'start' && wizardStep !== 'scripts'
 
   const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form) => {
     const dataPoolsPayload = draftForm.data_pool_id ? [{
@@ -1161,7 +1161,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
     setLoadModelValidation(null)
     setLoadModelValidationError('')
     setGoalSizingOpen(false)
-    setWizardStep('scripts')
+    setWizardStep('run')
   }
 
   const closeGoalSizing = () => {
@@ -1290,8 +1290,13 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
       setError('Current session can view scenarios but cannot create or edit them.')
       return null
     }
-    if (!form.name.trim() || form.groups.length === 0 || form.groups.some(group => !group.script_id)) {
-      setError('Scenario name and at least one script group are required.')
+    if (!form.name.trim()) {
+      setError('')
+      setWizardStep('review')
+      return null
+    }
+    if (form.groups.length === 0 || form.groups.some(group => !group.script_id)) {
+      setError('At least one script group with a selected script is required.')
       return null
     }
     if (!isValidDurationInput(form.duration)) {
@@ -1638,7 +1643,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
           <div className="scenario-wizard-panel-header">
             <div>
               <h4>Scripts And Groups</h4>
-              <p>Add each script participating in the scenario and tune its VUsers, ramp, and initialization scope.</p>
+              <p>Add each script participating in the scenario and set its initialization scope. Tune VUsers and ramp on the Run Settings step.</p>
             </div>
             <button type="button" className="btn btn-secondary btn-sm" onClick={addScenarioGroup}>+ Add Script Group</button>
           </div>
@@ -1669,36 +1674,6 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
                     </select>
                   </label>
                   <label className="scenario-field">
-                    <span>VUsers</span>
-                    <div className="scenario-vuser-field">
-                      <input
-                        className="scenario-vuser-slider"
-                        type="range"
-                        min={1}
-                        max={Math.max(100, Number(group.vusers) * 2 || 100)}
-                        value={group.vusers}
-                        onChange={event => updateScenarioGroup(index, { vusers: Number(event.target.value) })}
-                      />
-                      <input className="settings-input" type="number" min={1} value={group.vusers} onChange={event => updateScenarioGroup(index, { vusers: Number(event.target.value) })} />
-                    </div>
-                  </label>
-                  <DurationField
-                    className="scenario-field"
-                    label="Ramp Up"
-                    value={group.ramp_up}
-                    allowEmpty
-                    compact
-                    onChange={value => updateScenarioGroup(index, { ramp_up: value })}
-                  />
-                  <DurationField
-                    className="scenario-field"
-                    label="Ramp Down"
-                    value={group.ramp_down}
-                    allowEmpty
-                    compact
-                    onChange={value => updateScenarioGroup(index, { ramp_down: value })}
-                  />
-                  <label className="scenario-field">
                     <span>Initialization Scope</span>
                     <select className="settings-input" value={group.initialization} onChange={event => updateScenarioGroup(index, { initialization: event.target.value as ScenarioFormGroup['initialization'] })}>
                       <option value="at_runtime">Init/teardown per VUser</option>
@@ -1718,7 +1693,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
         <section className="scenario-wizard-panel">
           <div className="scenario-wizard-panel-header">
             <h4>Run Settings</h4>
-            <p>Configure duration, mode, goals, stage modeling, browser defaults, and generator assignment.</p>
+            <p>Configure VUsers, ramp, duration, mode, goals, stage modeling, browser defaults, and generator assignment.</p>
           </div>
           <div className="settings-grid scenario-core-grid">
             <DurationField
@@ -1750,6 +1725,56 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
                 ))}
               </select>
             </label>
+          </div>
+          <div className="scenario-subpanel">
+            <div className="scenario-assignment-header">
+              <div>
+                <h4>Load Per Group</h4>
+                <p>Set the VUser count and simple ramp for each script group participating in this scenario.</p>
+              </div>
+            </div>
+            <div className="scenario-script-group-list">
+              {formGroups.map((group, index) => (
+                <div key={`${group.script_id || 'group'}-load-${index}`} className="scenario-script-group-card">
+                  <div className="scenario-script-group-title">
+                    <strong>{group.name || `Group ${index + 1}`}</strong>
+                    <span className="scenario-assignment-copy secondary">{scripts.find(script => script.id === group.script_id)?.name || 'Unassigned script'}</span>
+                  </div>
+                  <div className="settings-grid scenario-group-grid">
+                    <label className="scenario-field">
+                      <span>VUsers</span>
+                      <div className="scenario-vuser-field">
+                        <input
+                          className="scenario-vuser-slider"
+                          type="range"
+                          min={1}
+                          max={Math.max(100, Number(group.vusers) * 2 || 100)}
+                          value={group.vusers}
+                          onChange={event => updateScenarioGroup(index, { vusers: Number(event.target.value) })}
+                        />
+                        <input className="settings-input" type="number" min={1} value={group.vusers} onChange={event => updateScenarioGroup(index, { vusers: Number(event.target.value) })} />
+                      </div>
+                    </label>
+                    <DurationField
+                      className="scenario-field"
+                      label="Ramp Up"
+                      value={group.ramp_up}
+                      allowEmpty
+                      compact
+                      onChange={value => updateScenarioGroup(index, { ramp_up: value })}
+                    />
+                    <DurationField
+                      className="scenario-field"
+                      label="Ramp Down"
+                      value={group.ramp_down}
+                      allowEmpty
+                      compact
+                      onChange={value => updateScenarioGroup(index, { ramp_down: value })}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
           <div className="scenario-subpanel">
             <div className="scenario-assignment-header">
@@ -1961,8 +1986,21 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
             {loadModelValidationLoading ? 'Validating...' : 'Validate Load Model'}
           </button>
         </div>
+        {!form.name.trim() && (
+          <label className="scenario-field scenario-name-prompt">
+            <span>Name this scenario to save it</span>
+            <input
+              className="settings-input"
+              value={form.name}
+              autoFocus
+              placeholder="Scenario name"
+              aria-label="Scenario name"
+              onChange={event => setForm({ ...form, name: event.target.value })}
+            />
+          </label>
+        )}
         <div className="scenario-review-grid">
-          <div className="scenario-review-card"><span>Name</span><strong>{form.name || 'Unnamed scenario'}</strong></div>
+          <div className="scenario-review-card"><span>Name</span><strong>{form.name.trim() || 'Unnamed scenario'}</strong></div>
           <div className="scenario-review-card"><span>Shape</span><strong>{shapeLabel}</strong></div>
           <div className="scenario-review-card"><span>Scripts</span><strong>{formGroups.length} group{formGroups.length === 1 ? '' : 's'}</strong></div>
           <div className="scenario-review-card"><span>Data</span><strong>{dataPoolLabel}</strong></div>
@@ -2020,7 +2058,9 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
           <div className="scenario-builder-header">
             <div>
               <h3 className="section-title">{editingId ? 'Edit Scenario' : 'Scenario Builder Wizard'}</h3>
-              <p className="page-subtitle">Choose a source, compose scripts, tune run settings, attach data, and validate the planned model.</p>
+              {form.name.trim()
+                ? <p className="scenario-builder-name" aria-label="Scenario name">{form.name.trim()}</p>
+                : <p className="page-subtitle">Choose a source, compose scripts, tune run settings, attach data, and validate the planned model.</p>}
             </div>
             <div className="scenario-builder-progress">
               <span className={requiredDraftReady ? 'ready' : ''}>Draft</span>
