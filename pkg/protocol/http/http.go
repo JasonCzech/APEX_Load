@@ -2,6 +2,8 @@ package http
 
 import (
 	"bytes"
+	"compress/flate"
+	"compress/zlib"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
@@ -17,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/andybalholm/brotli"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -235,7 +238,14 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 	responseHeaders := cloneHTTPHeaders(resp.Header)
 
-	respBody := buf.Bytes()
+	respBody := append([]byte(nil), buf.Bytes()...)
+	respBody, responseHeaders, err = decodeHTTPResponseContent(respBody, resp.Header, responseHeaders)
+	if err != nil {
+		result.Duration = time.Since(result.StartTime)
+		result.ErrorMessage = err.Error()
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, buf.Bytes())
+		return result, nil
+	}
 	formattedBody, err := applyDataFormattingChain(respBody, h.dataFormattingAutoDetect, h.dataFormattingChain)
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
@@ -270,6 +280,90 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 
 	return result, nil
+}
+
+func decodeHTTPResponseContent(body []byte, headers http.Header, snapshotHeaders map[string]string) ([]byte, map[string]string, error) {
+	encodings := responseContentEncodings(headers)
+	if len(encodings) == 0 {
+		return body, snapshotHeaders, nil
+	}
+
+	decoded := append([]byte(nil), body...)
+	decodedAny := false
+	for i := len(encodings) - 1; i >= 0; i-- {
+		encoding := encodings[i]
+		if encoding == "identity" {
+			continue
+		}
+		var err error
+		switch encoding {
+		case "gzip", "x-gzip":
+			decoded, err = decodeGzipBody(decoded)
+		case "deflate":
+			decoded, err = decodeDeflateBody(decoded)
+		case "br":
+			decoded, err = decodeBrotliBody(decoded)
+		default:
+			return body, snapshotHeaders, fmt.Errorf("unsupported response content encoding %q", encoding)
+		}
+		if err != nil {
+			return body, snapshotHeaders, fmt.Errorf("decode response content encoding %q: %w", encoding, err)
+		}
+		decodedAny = true
+	}
+	if decodedAny {
+		snapshotHeaders = decodedResponseHeaders(snapshotHeaders)
+	}
+	return decoded, snapshotHeaders, nil
+}
+
+func responseContentEncodings(headers http.Header) []string {
+	if len(headers) == 0 {
+		return nil
+	}
+	values := headers.Values("Content-Encoding")
+	encodings := make([]string, 0, len(values))
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			encoding := strings.ToLower(strings.TrimSpace(part))
+			if encoding != "" {
+				encodings = append(encodings, encoding)
+			}
+		}
+	}
+	return encodings
+}
+
+func decodeDeflateBody(body []byte) ([]byte, error) {
+	zlibReader, err := zlib.NewReader(bytes.NewReader(body))
+	if err == nil {
+		defer zlibReader.Close()
+		return io.ReadAll(zlibReader)
+	}
+
+	flateReader := flate.NewReader(bytes.NewReader(body))
+	defer flateReader.Close()
+	return io.ReadAll(flateReader)
+}
+
+func decodeBrotliBody(body []byte) ([]byte, error) {
+	return io.ReadAll(brotli.NewReader(bytes.NewReader(body)))
+}
+
+func decodedResponseHeaders(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	decoded := cloneStringMap(headers)
+	for key := range decoded {
+		if strings.EqualFold(key, "Content-Encoding") || strings.EqualFold(key, "Content-Length") {
+			delete(decoded, key)
+		}
+	}
+	if len(decoded) == 0 {
+		return nil
+	}
+	return decoded
 }
 
 func ensureTraceparentHeader(headers http.Header) string {

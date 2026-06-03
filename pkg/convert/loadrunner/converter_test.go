@@ -825,6 +825,55 @@ func TestConvertSOAPCustomRequest(t *testing.T) {
 	}
 }
 
+func TestConvertSOAPCustomRequestCollapsesMultilineCStringBody(t *testing.T) {
+	parsed, err := ParseActionFile("Action.c", `
+#include "web_api.h"
+
+Action()
+{
+	web_add_header("SOAPAction", "urn:GetQuote");
+
+	web_custom_request("GetQuote",
+		"URL=https://example.com/services/quotes",
+		"Method=POST",
+		"Body=<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\">\r\n"
+		"  <soapenv:Body>\r\n"
+		"    <GetQuote xmlns=\"urn:quotes\"><Symbol>STORM</Symbol></GetQuote>\r\n"
+		"  </soapenv:Body>\r\n"
+		"</soapenv:Envelope>",
+		"RecContentType=text/xml; charset=utf-8",
+		LAST);
+
+	return 0;
+}
+`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{IncludeAssertions: true})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
+	}
+
+	body := result.Script.Actions[0].Body
+	if strings.Contains(body, `" "`) {
+		t.Fatalf("body retained adjacent C string separator: %q", body)
+	}
+	if strings.Contains(body, `\"`) {
+		t.Fatalf("body retained escaped XML quotes: %q", body)
+	}
+	if !strings.Contains(body, `xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"`) {
+		t.Fatalf("body = %q, want decoded XML namespace quotes", body)
+	}
+	if !strings.Contains(body, "\r\n  <soapenv:Body>\r\n") {
+		t.Fatalf("body = %q, want preserved CRLF line breaks", body)
+	}
+}
+
 func TestSanitizeName(t *testing.T) {
 	tests := map[string]string{
 		"Login Page":      "Login_Page",

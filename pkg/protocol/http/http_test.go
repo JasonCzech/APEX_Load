@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -856,6 +857,78 @@ func TestHTTP_Execute_AppliesGzipDataFormattingBeforeExtractionAndAssertions(t *
 	}
 	if result.ResponseBody != `{"access_token":"abc123","expires_in":3600}` {
 		t.Fatalf("response body = %q, want decoded json", result.ResponseBody)
+	}
+}
+
+func TestHTTP_Execute_DecodesContentEncodingForAssertionsAndSnapshots(t *testing.T) {
+	payload := `<soap:Envelope><soap:Body><Success>true</Success></soap:Body></soap:Envelope>`
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write([]byte(payload)); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	compressedBody := compressed.Bytes()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Accept-Encoding") != "gzip" {
+			http.Error(w, "missing gzip accept encoding", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Content-Length", strconv.Itoa(len(compressedBody)))
+		w.Header().Set("Content-Type", "text/xml;charset=UTF-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(compressedBody)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url":        ts.URL,
+		"accept_encoding": "gzip",
+	})
+
+	passing, _ := h.Execute(context.Background(), &protocol.Action{
+		Name:   "gzip-success",
+		Method: http.MethodGet,
+		Target: "/soap",
+		Assertions: []protocol.Assertion{{
+			Type:  "body_contains",
+			Value: "<Success>true</Success>",
+		}},
+	})
+	if !passing.Success {
+		t.Fatalf("decoded gzip assertion should pass, error: %s", passing.ErrorMessage)
+	}
+	if passing.ResponseBody != payload {
+		t.Fatalf("response body = %q, want decoded SOAP payload", passing.ResponseBody)
+	}
+
+	failing, _ := h.Execute(context.Background(), &protocol.Action{
+		Name:   "gzip-failure-snapshot",
+		Method: http.MethodGet,
+		Target: "/soap",
+		Assertions: []protocol.Assertion{{
+			Type:  "status_code",
+			Value: "201",
+		}},
+	})
+	if failing.Success {
+		t.Fatal("status-code assertion should fail")
+	}
+	if failing.Snapshot == nil {
+		t.Fatal("Snapshot = nil, want populated snapshot on assertion failure")
+	}
+	if failing.Snapshot.ResponseBody != payload {
+		t.Fatalf("snapshot response body = %q, want decoded SOAP payload", failing.Snapshot.ResponseBody)
+	}
+	if _, ok := failing.Snapshot.ResponseHeaders["Content-Encoding"]; ok {
+		t.Fatalf("snapshot response headers retained Content-Encoding: %#v", failing.Snapshot.ResponseHeaders)
+	}
+	if _, ok := failing.Snapshot.ResponseHeaders["Content-Length"]; ok {
+		t.Fatalf("snapshot response headers retained Content-Length: %#v", failing.Snapshot.ResponseHeaders)
 	}
 }
 

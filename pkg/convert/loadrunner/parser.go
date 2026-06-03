@@ -787,6 +787,9 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 
 func cleanConfigValue(value string) string {
 	trimmed := strings.TrimSpace(value)
+	if decoded, ok := decodeAdjacentCStringLiterals(trimmed); ok {
+		return strings.TrimSpace(decoded)
+	}
 	if len(trimmed) >= 2 {
 		first := trimmed[0]
 		last := trimmed[len(trimmed)-1]
@@ -795,6 +798,72 @@ func cleanConfigValue(value string) string {
 		}
 	}
 	return strings.TrimSpace(trimmed)
+}
+
+func decodeAdjacentCStringLiterals(value string) (string, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || trimmed[0] != '"' {
+		return "", false
+	}
+
+	var out strings.Builder
+	found := false
+	for i := 0; i < len(trimmed); {
+		for i < len(trimmed) && isASCIIWhitespace(trimmed[i]) {
+			i++
+		}
+		if i >= len(trimmed) {
+			break
+		}
+		if trimmed[i] != '"' {
+			return "", false
+		}
+
+		start := i
+		i++
+		escaped := false
+		closed := false
+		for i < len(trimmed) {
+			ch := trimmed[i]
+			if escaped {
+				escaped = false
+				i++
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				i++
+				continue
+			}
+			if ch == '"' {
+				i++
+				closed = true
+				break
+			}
+			i++
+		}
+		if !closed {
+			return "", false
+		}
+
+		decoded, err := strconv.Unquote(trimmed[start:i])
+		if err != nil {
+			return "", false
+		}
+		out.WriteString(decoded)
+		found = true
+	}
+
+	return out.String(), found
+}
+
+func isASCIIWhitespace(ch byte) bool {
+	switch ch {
+	case ' ', '\t', '\r', '\n', '\f', '\v':
+		return true
+	default:
+		return false
+	}
 }
 
 // extractThinkTime extracts think time value in seconds from an lr_think_time call.
