@@ -43,6 +43,7 @@ describe('ResultsPage', () => {
       tests: [
         {
           id: 'run-a',
+          ref_key: 'LOC-RUN-20260512-001',
           name: 'iPhone Checkout',
           status: 'COMPLETE',
           total_vusers: 10,
@@ -50,10 +51,11 @@ describe('ResultsPage', () => {
           created_at: '2026-05-12T18:00:00Z',
           ended_at: '2026-05-12T18:05:00Z',
           groups: [{ name: 'buyers', script_id: 'script-1', script_name: 'Checkout', protocol: 'browser', vusers: 10 }],
-          archive: { transaction_count: 1000 },
+          archive: { ref_key: 'LOC-RUN-20260512-001', transaction_count: 1000 },
         },
         {
           id: 'run-b',
+          ref_key: 'LOC-RUN-20260512-002',
           name: 'iPad Checkout',
           status: 'COMPLETE',
           total_vusers: 12,
@@ -61,7 +63,7 @@ describe('ResultsPage', () => {
           created_at: '2026-05-12T19:00:00Z',
           ended_at: '2026-05-12T19:05:00Z',
           groups: [{ name: 'buyers', script_id: 'script-2', script_name: 'Checkout', protocol: 'browser', vusers: 12 }],
-          archive: { transaction_count: 1100 },
+          archive: { ref_key: 'LOC-RUN-20260512-002', transaction_count: 1100 },
         },
       ],
     })
@@ -315,23 +317,25 @@ describe('ResultsPage', () => {
       tests: [
         {
           id: 'run-a',
+          ref_key: 'LOC-RUN-20260512-001',
           name: 'Checkout',
           status: 'COMPLETE',
           total_vusers: 10,
           duration: '5m',
           created_at: '2026-05-12T18:00:00Z',
           ended_at: '2026-05-12T18:05:00Z',
-          archive: { transaction_count: 1000 },
+          archive: { ref_key: 'LOC-RUN-20260512-001', transaction_count: 1000 },
         },
         {
           id: 'run-b',
+          ref_key: 'LOC-RUN-20260512-002',
           name: 'Checkout',
           status: 'COMPLETE',
           total_vusers: 12,
           duration: '5m',
           created_at: '2026-05-12T19:00:00Z',
           ended_at: '2026-05-12T19:05:00Z',
-          archive: { transaction_count: 1100 },
+          archive: { ref_key: 'LOC-RUN-20260512-002', transaction_count: 1100 },
         },
       ],
     })
@@ -392,10 +396,10 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
-    expect(container.textContent).toContain('Run ID run-a')
-    expect(container.textContent).toContain('Run ID run-b')
-    expect(container.textContent).toContain('Checkout (run-a)')
-    expect(container.textContent).toContain('Checkout (run-b)')
+    expect(container.textContent).toContain('LOC-RUN-20260512-001')
+    expect(container.textContent).toContain('LOC-RUN-20260512-002')
+    expect(container.textContent).toContain('Checkout (LOC-RUN-20260512-001)')
+    expect(container.textContent).toContain('Checkout (LOC-RUN-20260512-002)')
     expect(container.textContent).toContain('Search')
     expect(container.textContent).toContain('Run')
     expect(container.textContent).toContain('Avg ART')
@@ -568,6 +572,10 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('k6')
     expect(container.textContent).toContain('checkout-smoke.json')
     expect(container.textContent).toContain('1,200 tx / 0.25% errors')
+    expect(container.textContent).toContain('Library Sources')
+
+    const pageText = container.textContent || ''
+    expect(pageText.indexOf('Release Results')).toBeLessThan(pageText.indexOf('Library Sources'))
 
     const rootCauseLink = container.querySelector('a[href="/api/v1/tests/run-a/archive/root-cause"]') as HTMLAnchorElement | null
     expect(rootCauseLink).toBeTruthy()

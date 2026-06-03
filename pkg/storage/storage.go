@@ -322,6 +322,7 @@ type Release struct {
 
 type Scenario struct {
 	ID               string    `json:"id"`
+	RefKey           string    `json:"ref_key,omitempty"`
 	Name             string    `json:"name"`
 	Duration         string    `json:"duration"`
 	StartDelay       string    `json:"start_delay,omitempty"`
@@ -526,6 +527,7 @@ type Folder struct {
 
 type RunArchiveRecord struct {
 	TestID               string    `json:"test_id"`
+	RefKey               string    `json:"ref_key,omitempty"`
 	SchemaVersion        string    `json:"schema_version"`
 	ArchiveBackend       string    `json:"archive_backend,omitempty"`
 	ArchivePath          string    `json:"archive_path"`
@@ -542,6 +544,7 @@ type RunArchiveRecord struct {
 // TestRecord represents a persisted test run.
 type TestRecord struct {
 	ID                   string     `json:"id"`
+	RefKey               string     `json:"ref_key,omitempty"`
 	Name                 string     `json:"name"`
 	Status               string     `json:"status"`
 	ApplicationID        string     `json:"application_id,omitempty"`

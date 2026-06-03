@@ -1,5 +1,6 @@
 import TestExecutionQueuedRunActions from './TestExecutionQueuedRunActions'
 import StatusBadge from './StatusBadge'
+import ReferenceKeyBadge from './ReferenceKeyBadge'
 
 import { TestSummary } from '../types'
 
@@ -31,6 +32,7 @@ export default function TestExecutionHeader({
         <h2>{test.name}</h2>
         <div className="exec-meta">
           <StatusBadge status={test.status} />
+          <ReferenceKeyBadge value={test.ref_key} />
           <span className="meta-item">{test.total_vusers} VUsers</span>
           <span className="meta-item">{test.duration}</span>
           {isMultiGroup && (

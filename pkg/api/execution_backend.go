@@ -194,6 +194,9 @@ func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime t
 	}
 
 	archiveRecord, archiveErr := a.recorder.Finalize(finalStatus, endTime, finalError, slaBreached, slaDetails)
+	if archiveRecord != nil && test != nil && archiveRecord.RefKey == "" {
+		archiveRecord.RefKey = test.RefKey
+	}
 	if archiveErr != nil {
 		return archiveRecord, "FAILED", appendRunError(finalError, "archive finalize failed", archiveErr)
 	}

@@ -760,6 +760,7 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 
 	script := &dsl.Script{
 		ID:       "script-context",
+		RefKey:   "LOC-SCR-0001-v1",
 		Name:     "Checkout",
 		Protocol: "http",
 		Version:  "1.0",
@@ -769,9 +770,17 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 	if err := store.SaveScript(script); err != nil {
 		t.Fatalf("SaveScript returned error: %v", err)
 	}
+	roundScript, err := store.GetScript(script.ID)
+	if err != nil {
+		t.Fatalf("GetScript returned error: %v", err)
+	}
+	if roundScript.RefKey != script.RefKey {
+		t.Fatalf("script ref key = %q, want %q", roundScript.RefKey, script.RefKey)
+	}
 
 	scenario := &Scenario{
 		ID:           "scenario-1",
+		RefKey:       "LOC-SCN-0001",
 		Name:         "Checkout Smoke",
 		Duration:     "2m",
 		ScenarioMode: "vuser_driven",
@@ -797,12 +806,16 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 	if roundTrip.Name != scenario.Name || len(scripts) != 1 || scripts[0].ScriptID != script.ID {
 		t.Fatalf("unexpected scenario round trip: %#v scripts=%#v", roundTrip, scripts)
 	}
+	if roundTrip.RefKey != scenario.RefKey {
+		t.Fatalf("scenario ref key = %q, want %q", roundTrip.RefKey, scenario.RefKey)
+	}
 	if len(scripts[0].Stages) != 2 || scripts[0].Stages[0].Type != "ramp_up" || scripts[0].Stages[0].TargetVUsers != 25 {
 		t.Fatalf("scenario stages = %#v, want persisted staged load model", scripts[0].Stages)
 	}
 
 	record := &TestRecord{
 		ID:            "test-1",
+		RefKey:        "LOC-RUN-20260603-001",
 		Name:          scenario.Name,
 		Status:        "COMPLETE",
 		ApplicationID: app.ID,
@@ -816,11 +829,38 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 	if err := store.SaveTest(record); err != nil {
 		t.Fatalf("SaveTest returned error: %v", err)
 	}
+	roundTest, err := store.GetTest(record.ID)
+	if err != nil {
+		t.Fatalf("GetTest returned error: %v", err)
+	}
+	if roundTest.RefKey != record.RefKey {
+		t.Fatalf("test ref key = %q, want %q", roundTest.RefKey, record.RefKey)
+	}
+	archive := &RunArchiveRecord{
+		TestID:           record.ID,
+		RefKey:           record.RefKey,
+		SchemaVersion:    archiveRecordSchemaVersion,
+		ArchivePath:      "/tmp/apexload/archive",
+		ManifestPath:     "/tmp/apexload/archive/manifest.json",
+		TransactionCount: 10,
+		CreatedAt:        time.Now(),
+		CompletedAt:      time.Now(),
+	}
+	if err := store.SaveRunArchive(archive); err != nil {
+		t.Fatalf("SaveRunArchive returned error: %v", err)
+	}
+	roundArchive, err := store.GetRunArchive(record.ID)
+	if err != nil {
+		t.Fatalf("GetRunArchive returned error: %v", err)
+	}
+	if roundArchive.RefKey != archive.RefKey {
+		t.Fatalf("archive ref key = %q, want %q", roundArchive.RefKey, archive.RefKey)
+	}
 	filtered, err := store.ListTestsByContext(app.ID, release.ID, scenario.ID)
 	if err != nil {
 		t.Fatalf("ListTestsByContext returned error: %v", err)
 	}
-	if len(filtered) != 1 || filtered[0].ReleaseID != release.ID || filtered[0].ScenarioID != scenario.ID {
+	if len(filtered) != 1 || filtered[0].ReleaseID != release.ID || filtered[0].ScenarioID != scenario.ID || filtered[0].RefKey != record.RefKey {
 		t.Fatalf("unexpected filtered tests: %#v", filtered)
 	}
 

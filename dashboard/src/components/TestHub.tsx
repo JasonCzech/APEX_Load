@@ -15,6 +15,7 @@ import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goa
 import DurationField from './DurationField'
 import PageViewToggle from './PageViewToggle'
 import LibraryAssetSourcePanel from './LibraryAssetSourcePanel'
+import ReferenceKeyBadge from './ReferenceKeyBadge'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -1423,7 +1424,12 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
               <tbody>
                 {getSortedInnerRuns(runs).map(run => (
                   <tr key={run.id} className="clickable-row" onClick={(event) => { event.stopPropagation(); onSelectTest(run.id) }}>
-                    <td className="cell-name">{run.name}</td>
+                    <td className="cell-name">
+                      <div>{run.name}</div>
+                      <div className="script-table-meta">
+                        <ReferenceKeyBadge value={run.ref_key} />
+                      </div>
+                    </td>
                     <td>{run.status}</td>
                     <td className="cell-mono">{run.release_id || '—'}</td>
                     <td className="cell-muted">{formatDateTime(run.start_time || run.created_at)}</td>
@@ -2235,6 +2241,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
                     <td className="cell-name">
                       <div>{scenario.name}</div>
                       <div className="scenario-table-assignment">
+                        <ReferenceKeyBadge value={scenario.ref_key} />
                         <span className={`scenario-table-assignment-badge ${scenario.assignment?.mode === 'specific_hosts' ? 'manual' : 'auto'}`}>
                           {scenarioAssignmentSummary(scenario).badge}
                         </span>

@@ -4,6 +4,7 @@ import "time"
 
 type Script struct {
 	ID            string          `json:"id"`
+	RefKey        string          `json:"ref_key,omitempty"`
 	Name          string          `json:"name"`
 	Version       string          `json:"version"`
 	Protocol      string          `json:"protocol"`

@@ -2,6 +2,7 @@ import { Fragment } from 'react'
 
 import { StoredScript, TestSummary } from '../types'
 import { ScriptLibrarySortField, ScriptRunSortField } from './useScriptsLibraryModel'
+import ReferenceKeyBadge from './ReferenceKeyBadge'
 
 interface Props {
   scripts: StoredScript[]
@@ -121,6 +122,7 @@ export default function ScriptsLibraryTable({
                     <div className="script-table-meta">
                       <span className="protocol-badge">{script.protocol}</span>
                       <span className="script-health-token">v{script.version || '—'}</span>
+                      <ReferenceKeyBadge value={script.ref_key} />
                       <span className="cell-muted">Created {formatDate(script.created_at)}</span>
                     </div>
                   </td>
@@ -203,7 +205,12 @@ export default function ScriptsLibraryTable({
                               <tbody>
                                 {getSortedInnerRuns(scriptRuns[script.id] || []).map((run) => (
                                   <tr key={run.id} className="clickable-row" onClick={(event) => { event.stopPropagation(); onSelectScenario?.(run.id) }}>
-                                    <td className="cell-name">{run.name}</td>
+                                    <td className="cell-name">
+                                      <div>{run.name}</div>
+                                      <div className="script-table-meta">
+                                        <ReferenceKeyBadge value={run.ref_key} />
+                                      </div>
+                                    </td>
                                     <td>{run.status}</td>
                                     <td className="cell-mono">{run.scenario_id || '—'}</td>
                                     <td className="cell-mono">{run.release_id || '—'}</td>

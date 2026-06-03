@@ -21,6 +21,7 @@ import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import StatusBadge from './StatusBadge'
 import LibraryAssetSourcePanel from './LibraryAssetSourcePanel'
+import ReferenceKeyBadge from './ReferenceKeyBadge'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -223,7 +224,7 @@ function formatShortRunId(id: string) {
 
 function formatComparisonRunLabel(test: TestSummary) {
   const name = test.name || 'Unnamed run'
-  return `${name} (${formatShortRunId(test.id)})`
+  return `${name} (${test.ref_key || formatShortRunId(test.id)})`
 }
 
 function getComparisonChartMetricConfig(metric: ComparisonChartMetric): ComparisonChartMetricConfig {
@@ -867,12 +868,6 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
         </section>
       </div>
 
-      <LibraryAssetSourcePanel
-        kind="result"
-        projectId={activeRelease.project_id || activeApplication.project_id}
-        onRefreshLocal={() => refresh()}
-      />
-
       <div className="results-filter-bar">
         <input
           className="settings-input"
@@ -970,7 +965,11 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                         <div>
                           <h4>{test.name}</h4>
                           <p>{formatDate(test.start_time || test.created_at)}</p>
-                          <span className="results-run-id" title={test.id}>Run ID {formatShortRunId(test.id)}</span>
+                          {test.ref_key ? (
+                            <ReferenceKeyBadge value={test.ref_key} />
+                          ) : (
+                            <span className="results-run-id" title={test.id}>Run ID {formatShortRunId(test.id)}</span>
+                          )}
                         </div>
                         <StatusBadge status={resolveStatus(test, testStatuses)} />
                       </div>
@@ -1265,7 +1264,16 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                         onChange={event => toggleSelect(test.id, event)}
                       />
                     </td>
-                    <td className="cell-name">{test.name}</td>
+                    <td className="cell-name">
+                      <div>{test.name}</div>
+                      <div className="script-table-meta">
+                        {test.ref_key ? (
+                          <ReferenceKeyBadge value={test.ref_key} />
+                        ) : (
+                          <span className="results-run-id" title={test.id}>Run ID {formatShortRunId(test.id)}</span>
+                        )}
+                      </div>
+                    </td>
                     <td><StatusBadge status={resolveStatus(test, testStatuses)} /></td>
                     <td>{test.total_vusers}</td>
                     <td>{test.groups?.length || 1}</td>
@@ -1313,6 +1321,12 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
           </div>
         )}
       </div>
+
+      <LibraryAssetSourcePanel
+        kind="result"
+        projectId={activeRelease.project_id || activeApplication.project_id}
+        onRefreshLocal={() => refresh()}
+      />
     </div>
   )
 }

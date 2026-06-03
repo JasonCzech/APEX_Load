@@ -412,6 +412,7 @@ export interface ScriptParameterDefinition {
 
 export interface ScriptDefinition {
   id?: string
+  ref_key?: string
   name: string
   version: string
   protocol: string

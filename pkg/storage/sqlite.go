@@ -432,6 +432,7 @@ func (s *SQLiteStore) init() error {
 		)`,
 		`CREATE TABLE IF NOT EXISTS scenarios (
 			id TEXT PRIMARY KEY,
+			ref_key TEXT,
 			name TEXT NOT NULL,
 			duration TEXT NOT NULL,
 			start_delay TEXT,
@@ -589,6 +590,7 @@ func (s *SQLiteStore) init() error {
 		)`,
 		`CREATE TABLE IF NOT EXISTS scripts (
 			id TEXT PRIMARY KEY,
+			ref_key TEXT,
 			name TEXT,
 			protocol TEXT,
 			version TEXT,
@@ -608,6 +610,7 @@ func (s *SQLiteStore) init() error {
 		)`,
 		`CREATE TABLE IF NOT EXISTS tests (
 			id TEXT PRIMARY KEY,
+			ref_key TEXT,
 			name TEXT,
 			status TEXT,
 			application_id TEXT,
@@ -673,6 +676,7 @@ func (s *SQLiteStore) init() error {
 		)`,
 		`CREATE TABLE IF NOT EXISTS run_archives (
 			test_id TEXT PRIMARY KEY,
+			ref_key TEXT,
 			schema_version TEXT,
 			archive_backend TEXT,
 			archive_path TEXT,
@@ -893,9 +897,29 @@ func (s *SQLiteStore) init() error {
 		{`ALTER TABLE scenario_schedules ADD COLUMN conflict_summary TEXT`, "scenario_schedules.conflict_summary"},
 		{`ALTER TABLE scenario_schedules ADD COLUMN next_required_action TEXT`, "scenario_schedules.next_required_action"},
 		{`ALTER TABLE scenario_schedules ADD COLUMN pending_approval_id TEXT`, "scenario_schedules.pending_approval_id"},
+		{`ALTER TABLE scripts ADD COLUMN ref_key TEXT`, "scripts.ref_key"},
+		{`ALTER TABLE scenarios ADD COLUMN ref_key TEXT`, "scenarios.ref_key"},
+		{`ALTER TABLE tests ADD COLUMN ref_key TEXT`, "tests.ref_key"},
+		{`ALTER TABLE run_archives ADD COLUMN ref_key TEXT`, "run_archives.ref_key"},
 	} {
 		if _, err := s.db.Exec(migration.query); err != nil && !isDuplicateColumnErr(err) {
 			return fmt.Errorf("failed to add %s column: %w", migration.name, err)
+		}
+	}
+
+	// Unique indexes guard against duplicate reference keys. Partial indexes
+	// skip NULL/empty values so legacy rows awaiting backfill do not collide.
+	for _, idx := range []struct {
+		query string
+		name  string
+	}{
+		{`CREATE UNIQUE INDEX IF NOT EXISTS idx_scripts_ref_key ON scripts(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_scripts_ref_key"},
+		{`CREATE UNIQUE INDEX IF NOT EXISTS idx_scenarios_ref_key ON scenarios(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_scenarios_ref_key"},
+		{`CREATE UNIQUE INDEX IF NOT EXISTS idx_tests_ref_key ON tests(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_tests_ref_key"},
+		{`CREATE UNIQUE INDEX IF NOT EXISTS idx_run_archives_ref_key ON run_archives(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_run_archives_ref_key"},
+	} {
+		if _, err := s.db.Exec(idx.query); err != nil {
+			return fmt.Errorf("failed to create %s: %w", idx.name, err)
 		}
 	}
 
@@ -1525,12 +1549,12 @@ func (s *SQLiteStore) SaveScenario(scenario *Scenario, scripts []ScenarioScript)
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`INSERT INTO scenarios (id, name, duration, start_delay, scenario_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, goal_config_json, runtime_settings_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name, duration=excluded.duration, start_delay=excluded.start_delay, scenario_mode=excluded.scenario_mode,
+	if _, err := tx.Exec(`INSERT INTO scenarios (id, ref_key, name, duration, start_delay, scenario_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, goal_config_json, runtime_settings_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET ref_key=excluded.ref_key, name=excluded.name, duration=excluded.duration, start_delay=excluded.start_delay, scenario_mode=excluded.scenario_mode,
 		shakeout_enabled=excluded.shakeout_enabled, resource_baseline_enabled=excluded.resource_baseline_enabled,
 		assignment_json=excluded.assignment_json, goal_config_json=excluded.goal_config_json, runtime_settings_json=excluded.runtime_settings_json, updated_at=excluded.updated_at`,
-		scenario.ID, scenario.Name, scenario.Duration, scenario.StartDelay, scenario.ScenarioMode, scenario.ScriptShakeout, scenario.ResourceBaseline, string(assignmentJSON), string(goalJSON), string(runtimeJSON), scenario.CreatedAt, scenario.UpdatedAt); err != nil {
+		scenario.ID, scenario.RefKey, scenario.Name, scenario.Duration, scenario.StartDelay, scenario.ScenarioMode, scenario.ScriptShakeout, scenario.ResourceBaseline, string(assignmentJSON), string(goalJSON), string(runtimeJSON), scenario.CreatedAt, scenario.UpdatedAt); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM scenario_scripts WHERE scenario_id = ?`, scenario.ID); err != nil {
@@ -1801,8 +1825,8 @@ func (s *SQLiteStore) GetSchedulerLease(name string) (*SchedulerLease, error) {
 func (s *SQLiteStore) GetScenario(id string) (*Scenario, []ScenarioScript, error) {
 	var scenario Scenario
 	var assignmentJSON, goalJSON, runtimeJSON string
-	err := s.db.QueryRow(`SELECT id, name, duration, COALESCE(start_delay, ''), COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), created_at, updated_at FROM scenarios WHERE id = ?`, id).Scan(
-		&scenario.ID, &scenario.Name, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &scenario.CreatedAt, &scenario.UpdatedAt)
+	err := s.db.QueryRow(`SELECT id, COALESCE(ref_key, ''), name, duration, COALESCE(start_delay, ''), COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), created_at, updated_at FROM scenarios WHERE id = ?`, id).Scan(
+		&scenario.ID, &scenario.RefKey, &scenario.Name, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &scenario.CreatedAt, &scenario.UpdatedAt)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1823,7 +1847,7 @@ func (s *SQLiteStore) GetScenario(id string) (*Scenario, []ScenarioScript, error
 }
 
 func (s *SQLiteStore) ListScenarios() ([]*Scenario, error) {
-	rows, err := s.db.Query(`SELECT id, name, duration, COALESCE(start_delay, ''), COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), created_at, updated_at FROM scenarios ORDER BY updated_at DESC`)
+	rows, err := s.db.Query(`SELECT id, COALESCE(ref_key, ''), name, duration, COALESCE(start_delay, ''), COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), created_at, updated_at FROM scenarios ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -1832,7 +1856,7 @@ func (s *SQLiteStore) ListScenarios() ([]*Scenario, error) {
 	for rows.Next() {
 		var scenario Scenario
 		var assignmentJSON, goalJSON, runtimeJSON string
-		if err := rows.Scan(&scenario.ID, &scenario.Name, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &scenario.CreatedAt, &scenario.UpdatedAt); err != nil {
+		if err := rows.Scan(&scenario.ID, &scenario.RefKey, &scenario.Name, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &scenario.CreatedAt, &scenario.UpdatedAt); err != nil {
 			return nil, err
 		}
 		if assignmentJSON != "" && assignmentJSON != "null" {
@@ -2513,19 +2537,20 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 	}
 	script.UpdatedAt = time.Now()
 
-	query := `INSERT INTO scripts (id, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	query := `INSERT INTO scripts (id, ref_key, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(id) DO UPDATE SET
-			  name=excluded.name, protocol=excluded.protocol, version=excluded.version, 
+			  ref_key=excluded.ref_key,
+			  name=excluded.name, protocol=excluded.protocol, version=excluded.version,
 			  project_id=excluded.project_id, folder_id=excluded.folder_id,
 			  generated_by=excluded.generated_by, generated_from=excluded.generated_from,
 			  metadata_json=excluded.metadata_json,
-			  config=excluded.config, data_sources=excluded.data_sources, parameters=excluded.parameters, 
-			  init=excluded.init, actions=excluded.actions, teardown=excluded.teardown, 
+			  config=excluded.config, data_sources=excluded.data_sources, parameters=excluded.parameters,
+			  init=excluded.init, actions=excluded.actions, teardown=excluded.teardown,
 			  updated_at=excluded.updated_at`
 
 	_, err := s.db.Exec(query,
-		script.ID, script.Name, script.Protocol, script.Version, script.ProjectID, script.FolderID,
+		script.ID, script.RefKey, script.Name, script.Protocol, script.Version, script.ProjectID, script.FolderID,
 		script.GeneratedBy, script.GeneratedFrom,
 		string(metadataJSON), string(configJSON), string(dataSourcesJSON), string(parametersJSON), string(initJSON), string(actionsJSON), string(teardownJSON),
 		script.CreatedAt, script.UpdatedAt)
@@ -2536,10 +2561,10 @@ func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
 	var script dsl.Script
 	var metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string
 
-	query := `SELECT id, name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, COALESCE(parameters, ''), init, actions, teardown, created_at, updated_at
+	query := `SELECT id, COALESCE(ref_key, ''), name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, COALESCE(parameters, ''), init, actions, teardown, created_at, updated_at
 			  FROM scripts WHERE id = ?`
 	err := s.db.QueryRow(query, id).Scan(
-		&script.ID, &script.Name, &script.Protocol, &script.Version,
+		&script.ID, &script.RefKey, &script.Name, &script.Protocol, &script.Version,
 		&script.ProjectID, &script.FolderID,
 		&script.GeneratedBy, &script.GeneratedFrom,
 		&metadataJSON, &configJSON, &dataSourcesJSON, &parametersJSON, &initJSON, &actionsJSON, &teardownJSON,
@@ -2565,7 +2590,7 @@ func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
 
 func (s *SQLiteStore) ListScripts(projectID string, folderID *string) ([]*dsl.Script, error) {
 	args := []any{}
-	query := `SELECT id, name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, COALESCE(parameters, ''), init, actions, teardown, created_at, updated_at FROM scripts`
+	query := `SELECT id, COALESCE(ref_key, ''), name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, COALESCE(parameters, ''), init, actions, teardown, created_at, updated_at FROM scripts`
 	var filters []string
 	if projectID != "" {
 		filters = append(filters, `project_id = ?`)
@@ -2594,7 +2619,7 @@ func (s *SQLiteStore) ListScripts(projectID string, folderID *string) ([]*dsl.Sc
 		var script dsl.Script
 		var metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string
 		err := rows.Scan(
-			&script.ID, &script.Name, &script.Protocol, &script.Version,
+			&script.ID, &script.RefKey, &script.Name, &script.Protocol, &script.Version,
 			&script.ProjectID, &script.FolderID,
 			&script.GeneratedBy, &script.GeneratedFrom,
 			&metadataJSON, &configJSON, &dataSourcesJSON, &parametersJSON, &initJSON, &actionsJSON, &teardownJSON,
@@ -2732,9 +2757,10 @@ func (s *SQLiteStore) SaveTest(test *TestRecord) error {
 	runtimeSettingsJSON, _ := json.Marshal(test.RuntimeSettings)
 	goalConfigJSON, _ := json.Marshal(test.GoalConfig)
 
-	query := `INSERT INTO tests (id, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, total_vusers, duration_ns, start_time, pending_since, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, groups_json, runtime_settings_json, goal_config_json)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	query := `INSERT INTO tests (id, ref_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, total_vusers, duration_ns, start_time, pending_since, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, groups_json, runtime_settings_json, goal_config_json)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(id) DO UPDATE SET
+			  ref_key=excluded.ref_key,
 			  name=excluded.name, status=excluded.status, application_id=excluded.application_id, release_id=excluded.release_id, scenario_id=excluded.scenario_id,
 			  project_id=excluded.project_id, folder_id=excluded.folder_id,
 			  scenario_mode=excluded.scenario_mode, shakeout_enabled=excluded.shakeout_enabled,
@@ -2745,7 +2771,7 @@ func (s *SQLiteStore) SaveTest(test *TestRecord) error {
 			  started_by_subject=excluded.started_by_subject, started_by_display_name=excluded.started_by_display_name, groups_json=excluded.groups_json,
 			  runtime_settings_json=excluded.runtime_settings_json, goal_config_json=excluded.goal_config_json`
 
-	_, err := s.db.Exec(query, test.ID, test.Name, test.Status, test.ApplicationID, test.ReleaseID, test.ScenarioID, test.ProjectID, test.FolderID, test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, string(assignmentJSON), test.TotalVUsers, test.Duration, test.StartTime, test.PendingSince, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON))
+	_, err := s.db.Exec(query, test.ID, test.RefKey, test.Name, test.Status, test.ApplicationID, test.ReleaseID, test.ScenarioID, test.ProjectID, test.FolderID, test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, string(assignmentJSON), test.TotalVUsers, test.Duration, test.StartTime, test.PendingSince, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON))
 	return err
 }
 
@@ -2754,7 +2780,7 @@ func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
 	var groupsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON string
 
 	query := testSelectColumns() + ` FROM tests WHERE id = ?`
-	err := s.db.QueryRow(query, id).Scan(&test.ID, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON)
+	err := s.db.QueryRow(query, id).Scan(&test.ID, &test.RefKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -2773,7 +2799,7 @@ func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
 }
 
 func testSelectColumns() string {
-	return `SELECT id, name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, pending_since, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '')`
+	return `SELECT id, COALESCE(ref_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, pending_since, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '')`
 }
 
 func (s *SQLiteStore) ListTests(projectID string, folderID *string) ([]*TestRecord, error) {
@@ -2806,7 +2832,7 @@ func (s *SQLiteStore) ListTests(projectID string, folderID *string) ([]*TestReco
 	for rows.Next() {
 		var test TestRecord
 		var groupsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON string
-		if err := rows.Scan(&test.ID, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
+		if err := rows.Scan(&test.ID, &test.RefKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(groupsJSON), &test.Groups)
@@ -2853,7 +2879,7 @@ func (s *SQLiteStore) ListTestsByContext(applicationID string, releaseID string,
 	for rows.Next() {
 		var test TestRecord
 		var groupsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON string
-		if err := rows.Scan(&test.ID, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
+		if err := rows.Scan(&test.ID, &test.RefKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(groupsJSON), &test.Groups)
@@ -3315,9 +3341,10 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 		return errors.New("run archive record is nil")
 	}
 	record.SchemaVersion = normalizeTelemetrySchemaVersion(record.SchemaVersion, archiveRecordSchemaVersion)
-	_, err := s.db.Exec(`INSERT INTO run_archives (test_id, schema_version, archive_backend, archive_path, manifest_path, archive_uri, manifest_uri, transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := s.db.Exec(`INSERT INTO run_archives (test_id, ref_key, schema_version, archive_backend, archive_path, manifest_path, archive_uri, manifest_uri, transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(test_id) DO UPDATE SET
+		ref_key=excluded.ref_key,
 		schema_version=excluded.schema_version,
 		archive_backend=excluded.archive_backend,
 		archive_path=excluded.archive_path,
@@ -3330,6 +3357,7 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 		created_at=excluded.created_at,
 		completed_at=excluded.completed_at`,
 		record.TestID,
+		record.RefKey,
 		record.SchemaVersion,
 		record.ArchiveBackend,
 		record.ArchivePath,
@@ -3347,8 +3375,9 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 
 func (s *SQLiteStore) GetRunArchive(testID string) (*RunArchiveRecord, error) {
 	var record RunArchiveRecord
-	err := s.db.QueryRow(`SELECT test_id, schema_version, COALESCE(archive_backend, ''), archive_path, manifest_path, COALESCE(archive_uri, ''), COALESCE(manifest_uri, ''), transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at FROM run_archives WHERE test_id = ?`, testID).Scan(
+	err := s.db.QueryRow(`SELECT test_id, COALESCE(ref_key, ''), schema_version, COALESCE(archive_backend, ''), archive_path, manifest_path, COALESCE(archive_uri, ''), COALESCE(manifest_uri, ''), transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at FROM run_archives WHERE test_id = ?`, testID).Scan(
 		&record.TestID,
+		&record.RefKey,
 		&record.SchemaVersion,
 		&record.ArchiveBackend,
 		&record.ArchivePath,

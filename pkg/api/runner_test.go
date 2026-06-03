@@ -18,6 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/refkey"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -42,6 +43,7 @@ type metricsStoreSpy struct {
 	leasesByName          map[string]*storage.SchedulerLease
 	auditEvents           []*storage.AuditEvent
 	usageSnapshots        []*storage.UsageAccountingSnapshot
+	settings              map[string]string
 }
 
 var runnerTestProtocolCounter atomic.Uint64
@@ -374,8 +376,19 @@ func (s *metricsStoreSpy) GetRunArchive(testID string) (*storage.RunArchiveRecor
 	}
 	return s.archiveByTestID[testID], nil
 }
-func (s *metricsStoreSpy) SaveSetting(key string, value string) error { return nil }
-func (s *metricsStoreSpy) GetSetting(key string) (string, error)      { return "", nil }
+func (s *metricsStoreSpy) SaveSetting(key string, value string) error {
+	if s.settings == nil {
+		s.settings = make(map[string]string)
+	}
+	s.settings[key] = value
+	return nil
+}
+func (s *metricsStoreSpy) GetSetting(key string) (string, error) {
+	if s.settings == nil {
+		return "", nil
+	}
+	return s.settings[key], nil
+}
 func (s *metricsStoreSpy) SaveServiceAccount(account *storage.ServiceAccount) error {
 	return nil
 }
@@ -1298,13 +1311,17 @@ func TestRunArtifactsFinalizePersistsArchiveRecord(t *testing.T) {
 		},
 	}
 
-	archiveRecord, finalStatus, finalError := artifacts.finalize(nil, "COMPLETE", time.Now(), "")
+	testRun := &ManagedTest{ID: "test-1", RefKey: "LOC-RUN-20260603-001"}
+	archiveRecord, finalStatus, finalError := artifacts.finalize(testRun, "COMPLETE", time.Now(), "")
 
 	if archiveRecord != record {
 		t.Fatalf("expected archive record %p, got %p", record, archiveRecord)
 	}
 	if finalStatus != "COMPLETE" || finalError != "" {
 		t.Fatalf("unexpected finalize outcome status=%q error=%q", finalStatus, finalError)
+	}
+	if archiveRecord.RefKey != testRun.RefKey {
+		t.Fatalf("archive ref key = %q, want %q", archiveRecord.RefKey, testRun.RefKey)
 	}
 	if persisted != 1 {
 		t.Fatalf("expected archive record persistence once, got %d", persisted)
@@ -3067,6 +3084,139 @@ func TestScriptAndTestCrudPersistThroughStoreHelpers(t *testing.T) {
 	}
 	if len(store.deletedTestIDs) != 1 || store.deletedTestIDs[0] != testRun.ID {
 		t.Fatalf("expected DeleteTest store call for %s, got %#v", testRun.ID, store.deletedTestIDs)
+	}
+}
+
+func TestRunnerAssignsReferenceKeysAndResolvesLookups(t *testing.T) {
+	t.Setenv("APEXLOAD_ENVIRONMENT", "local")
+	hub := NewHub()
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, hub, store)
+
+	stored := runner.StoreScript(&dsl.Script{
+		ID:       "script-ref-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}},
+	})
+	if stored.RefKey != "LOC-SCR-0001-v1" {
+		t.Fatalf("script ref key = %q, want LOC-SCR-0001-v1", stored.RefKey)
+	}
+
+	updated, ok := runner.UpdateScript(stored.RefKey, &dsl.Script{
+		Name:     "Checkout Updated",
+		Protocol: "http",
+		Version:  "1.1.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "Cart", Type: "request", Method: "GET", Target: "/cart"}},
+	})
+	if !ok {
+		t.Fatal("expected UpdateScript by ref key to succeed")
+	}
+	if updated.RefKey != "LOC-SCR-0001-v2" {
+		t.Fatalf("updated script ref key = %q, want LOC-SCR-0001-v2", updated.RefKey)
+	}
+	if resolved, ok := runner.GetScript(updated.RefKey); !ok || resolved.ID != stored.ID {
+		t.Fatalf("GetScript by ref key = %#v ok=%v, want script %q", resolved, ok, stored.ID)
+	}
+
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Checkout Scenario",
+		Duration: "30s",
+		Groups: []CreateGroupEntry{{
+			ScriptID: stored.ID,
+			VUsers:   2,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	if scenario.RefKey != "LOC-SCN-0001" {
+		t.Fatalf("scenario ref key = %q, want LOC-SCN-0001", scenario.RefKey)
+	}
+	if resolved, ok := runner.GetScenario(scenario.RefKey); !ok || resolved.ID != scenario.ID {
+		t.Fatalf("GetScenario by ref key = %#v ok=%v, want scenario %q", resolved, ok, scenario.ID)
+	}
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:       "Checkout Run",
+		ScenarioID: scenario.RefKey,
+		Duration:   "30s",
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	parts, ok := refkey.Parse(testRun.RefKey)
+	if !ok || parts.Env != "LOC" || parts.Type != refkey.TypeRun || parts.Seq != 1 {
+		t.Fatalf("run ref key parsed as %#v ok=%v from %q, want LOC run seq 1", parts, ok, testRun.RefKey)
+	}
+	if resolved, ok := runner.GetTest(testRun.RefKey); !ok || resolved.ID != testRun.ID {
+		t.Fatalf("GetTest by ref key = %#v ok=%v, want test %q", resolved, ok, testRun.ID)
+	}
+}
+
+func TestRunnerReferenceKeySequencesPersistAcrossRestart(t *testing.T) {
+	t.Setenv("APEXLOAD_ENVIRONMENT", "local")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	first := NewTestRunner(2, NewHub(), store)
+	script := first.StoreScript(&dsl.Script{
+		ID:       "script-persist-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}},
+	})
+	scenario, err := first.StoreScenario(CreateScenarioRequest{
+		Name:     "Checkout Persisted",
+		Duration: "30s",
+		Groups:   []CreateGroupEntry{{ScriptID: script.ID, VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	run, err := first.CreateTest(CreateTestRequest{
+		Name:       "First Persisted Run",
+		ScenarioID: scenario.ID,
+		Duration:   "30s",
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	if run.RefKey == "" {
+		t.Fatal("expected first run to get a ref key")
+	}
+
+	second := NewTestRunner(2, NewHub(), store)
+	nextScript := second.StoreScript(&dsl.Script{
+		ID:       "script-persist-2",
+		Name:     "Search",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "Search", Type: "request", Method: "GET", Target: "/search"}},
+	})
+	if nextScript.RefKey != "LOC-SCR-0002-v1" {
+		t.Fatalf("next script ref key after restart = %q, want LOC-SCR-0002-v1", nextScript.RefKey)
+	}
+	nextRun, err := second.CreateTest(CreateTestRequest{
+		Name:       "Second Persisted Run",
+		ScenarioID: scenario.RefKey,
+		Duration:   "30s",
+	})
+	if err != nil {
+		t.Fatalf("second CreateTest returned error: %v", err)
+	}
+	parts, ok := refkey.Parse(nextRun.RefKey)
+	if !ok || parts.Type != refkey.TypeRun || parts.Seq != 2 {
+		t.Fatalf("next run ref key parsed as %#v ok=%v from %q, want run seq 2", parts, ok, nextRun.RefKey)
 	}
 }
 

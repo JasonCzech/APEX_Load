@@ -361,6 +361,7 @@ export interface RunArchiveErrorPattern {
 
 export interface TestSummary {
   id: string
+  ref_key?: string
   name: string
   status: TestStatus
   application_id?: string
@@ -427,6 +428,7 @@ export interface VUserRampStatus {
 
 export interface RunArchiveRecord {
   test_id: string
+  ref_key?: string
   schema_version: string
   archive_path: string
   manifest_path: string
@@ -1467,6 +1469,7 @@ export interface GroupLiveMetrics {
 
 export interface StoredScript {
   id: string
+  ref_key?: string
   name: string
   protocol: string
   version: string
@@ -1578,6 +1581,7 @@ export interface AuthoringHealthInput {
 
 export interface StoredScenario {
   id: string
+  ref_key?: string
   name: string
   duration: string
   start_delay?: string
