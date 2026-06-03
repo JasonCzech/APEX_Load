@@ -27,6 +27,20 @@ pkg/api/static/assets/
 ehthumbs.db
 Thumbs.db
 
+# macOS/File Provider duplicate conflict copies
+* ([0-9]).*
+* [0-9].go
+* [0-9].ts
+* [0-9].tsx
+* [0-9].json
+* [0-9].yaml
+* [0-9].yml
+* [0-9].md
+* [0-9].py
+* [0-9].zip
+Dockerfile [0-9]
+apexctl ([0-9])
+
 # IDEs and Editors
 .vscode/
 .idea/
