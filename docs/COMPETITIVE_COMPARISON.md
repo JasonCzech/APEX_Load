@@ -213,11 +213,11 @@ These overstatements existed in earlier docs and are now corrected:
 | --- | --- | --- |
 | P0 | Correlation intelligence — broaden response-family fixtures and UI-assisted medium-confidence review | M |
 | P0 | CI/CD ecosystem — maintained marketplace plugins, Git script sync | M |
-| P1 | Offline analysis depth — dashboard graph UX and PDF report builder | M |
+| P1 | Offline analysis depth — multi-run trend polish and report profile hardening | M |
 | P1 | Benchmark evidence — publish one reproducible density benchmark | S–M |
 | P2 | Browser/SPA recording fidelity — DOM-aware capture or crisp canary scoping | L |
 | P2 | Region/load-zone distribution with per-region response metrics | M |
-| P3 | Enterprise hardening — real OTel spans, PDF reports, Vault/mTLS, test-level quota enforcement | M each |
+| P3 | Enterprise hardening — real OTel spans, Vault/mTLS, test-level quota enforcement | M each |
 
 ---
 
@@ -333,11 +333,11 @@ A comprehensive audit of APEX Load against enterprise performance testing platfo
 | Gap | Impact | Status |
 | --- | --- | --- |
 | CI/CD pipeline integration — JUnit XML, maintained marketplace plugins, Git script sync | Critical | JUnit + GitHub/ADO/Jenkins delivered; marketplace plugins pending |
-| Offline report depth — graph merge, per-txn drill-down, multi-run trend, PDF export | High | Archive + trend analysis plus graph/drilldown API delivered; dashboard graph UX and PDF pending |
+| Offline report depth — graph merge, per-txn drill-down, multi-run trend, PDF export | High | Archive + trend analysis, graph/drilldown API/dashboard UX, and executive/engineer PDF export delivered; heavier custom report tooling pending |
 | Correlation intelligence depth | High | Response-family rule packs + replay stale-literal evidence delivered; full VuGen-class parity pending |
 | Named load zones with benchmark envelopes | High | Named self-hosted zones delivered; benchmark envelopes pending |
 | Browser/SPA recording fidelity | Medium | Scoped as canary-only; DOM-aware capture is a separate large effort |
-| PDF/Word report export | Medium | HTML emitted; PDF/Word not started |
+| PDF/Word report export | Medium | Executive/engineer PDF export emitted from archive report profiles; Word export deferred |
 | Vault / mTLS | Medium | Template refs + redaction exist; Vault/mTLS not started |
 | OpenTelemetry span instrumentation | Medium | `traceparent` header propagated; full span export not started |
 | SAML | Medium | OIDC + trusted-header is the recommended path; SAML out of scope |

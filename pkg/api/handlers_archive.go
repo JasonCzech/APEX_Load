@@ -243,7 +243,8 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
 		return
 	}
-	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "csv") {
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format"))) {
+	case "csv":
 		testID := r.PathValue("id")
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+testID+".csv\"")
@@ -253,6 +254,24 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 				return
 			}
 			writeError(w, http.StatusInternalServerError, "failed to write archive report csv: "+err.Error())
+		}
+		return
+	case "pdf":
+		profileID := r.URL.Query().Get("profile")
+		profile, ok := lookupRunArchiveReportProfile(profileID)
+		if !ok {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown report profile %q", profileID))
+			return
+		}
+		if !runArchiveReportProfileSupportsFormat(profile, "pdf") {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("report profile %q does not support pdf export", profile.ID))
+			return
+		}
+		testID := r.PathValue("id")
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+testID+"-"+profile.ID+".pdf\"")
+		if err := writeRunArchiveReportPDFWithProfile(report, w, profile.ID); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to write archive report pdf: "+err.Error())
 		}
 		return
 	}

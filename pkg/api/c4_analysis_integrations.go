@@ -338,7 +338,7 @@ func (s *Server) handleListReportProfiles(w http.ResponseWriter, r *http.Request
 		GeneratedAt:     time.Now().UTC(),
 		DefaultProfile:  "engineer",
 		Profiles:        buildRunArchiveReportProfiles(),
-		DownloadFormats: []string{"html", "json", "csv", "jsonl", "parquet"},
+		DownloadFormats: []string{"html", "json", "csv", "pdf", "jsonl", "parquet"},
 	})
 }
 

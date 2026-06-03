@@ -366,7 +366,7 @@ Messages are JSON and include a `type` field such as `metrics_update`, `test_cre
 | `POST` | `/api/v1/archives/retention/apply` | Apply archive-retention pruning. |
 | `GET` | `/api/v1/releases/{id}/trend/export` | Release trend CSV. |
 
-Some reporting endpoints accept `format` or `profile` query parameters where implemented, for example `format=html|json|csv|jsonl|parquet` and `profile=executive|engineer|audit`.
+Some reporting endpoints accept `format` or `profile` query parameters where implemented, for example `format=html|json|csv|pdf|jsonl|parquet` and `profile=executive|engineer|audit`.
 
 Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array when run attribution exists. Each bucket follows the same usage bucket shape used by project and protocol summaries; historical runs without attribution are grouped as `unattributed`.
 

@@ -323,6 +323,9 @@ func TestBuildRunArchiveReportDeclaresSchemaCompatibility(t *testing.T) {
 	if len(report.ReportProfiles) != 3 || report.ReportProfiles[0].ID != "executive" || report.ReportProfiles[2].ID != "audit" {
 		t.Fatalf("report profiles = %#v, want executive, engineer, audit", report.ReportProfiles)
 	}
+	if !runArchiveReportProfileSupportsFormat(report.ReportProfiles[0], "pdf") || !runArchiveReportProfileSupportsFormat(report.ReportProfiles[1], "pdf") || runArchiveReportProfileSupportsFormat(report.ReportProfiles[2], "pdf") {
+		t.Fatalf("report profile pdf formats = %#v, want executive+engineer pdf only", report.ReportProfiles)
+	}
 	if report.Compatibility.Status != "compatible" || report.Compatibility.ManifestSchemaVersion != archiveSchemaVersion {
 		t.Fatalf("compatibility = %#v, want compatible archive schema", report.Compatibility)
 	}
@@ -333,7 +336,7 @@ func TestBuildRunArchiveReportDeclaresSchemaCompatibility(t *testing.T) {
 	for _, output := range report.Compatibility.Outputs {
 		outputs[output.Format] = output
 	}
-	for _, format := range []string{"json", "standalone_html", "csv", "transaction_jsonl", "resource_jsonl", "interval_summary_jsonl", "transactions_parquet", "resources_parquet", "interval_summaries_parquet"} {
+	for _, format := range []string{"json", "standalone_html", "csv", "pdf", "transaction_jsonl", "resource_jsonl", "interval_summary_jsonl", "transactions_parquet", "resources_parquet", "interval_summaries_parquet"} {
 		if outputs[format].Status != "compatible" {
 			t.Fatalf("output %q = %#v, want compatible", format, outputs[format])
 		}

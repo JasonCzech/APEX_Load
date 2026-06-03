@@ -65,6 +65,9 @@ func TestC4ProfileCatalogEndpoints(t *testing.T) {
 	if profiles.DefaultProfile != "engineer" || len(profiles.Profiles) != 3 {
 		t.Fatalf("report profiles = %#v, want executive/engineer/audit catalog", profiles)
 	}
+	if !stringSliceContains(profiles.DownloadFormats, "pdf") {
+		t.Fatalf("download formats = %#v, want pdf", profiles.DownloadFormats)
+	}
 }
 
 func TestRunArchiveRootCauseSummarizesSLAAndTelemetryFindings(t *testing.T) {

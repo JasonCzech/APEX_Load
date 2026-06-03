@@ -1107,6 +1107,9 @@ export default function TestExecutionArchive({
                     {profile.export_formats.includes('csv') && (
                       <a className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'csv', profile.id)} target="_blank" rel="noreferrer">{profile.label} CSV</a>
                     )}
+                    {profile.export_formats.includes('pdf') && (
+                      <a className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'pdf', profile.id)} target="_blank" rel="noreferrer">{profile.label} PDF</a>
+                    )}
                     {profile.export_formats.includes('jsonl') && (
                       <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_file || 'transactions.jsonl')}>{profile.label} JSONL</button>
                     )}

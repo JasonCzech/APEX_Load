@@ -53,6 +53,7 @@ describe('TestExecutionArchive', () => {
         { format: 'json', artifact: 'archive/report', schema_version: 'apexload.archive_report.v1', status: 'compatible' },
         { format: 'standalone_html', artifact: 'report', schema_version: 'apexload.archive_report.v1', status: 'compatible' },
         { format: 'transactions_parquet', artifact: 'transactions.parquet', schema_version: 'apexload.archive.v1', status: 'missing' },
+        { format: 'pdf', artifact: 'archive/report?format=pdf', schema_version: 'apexload.archive_report.v1', status: 'compatible' },
         { format: 'csv', status: 'unsupported', reason: 'CSV archive exports are not registered for this report schema yet.' },
       ],
     },
@@ -73,8 +74,8 @@ describe('TestExecutionArchive', () => {
       runtime_override_fields: ['browser', 'log_level'],
     },
     report_profiles: [
-      { id: 'executive', label: 'Executive', description: 'Decision-focused summary.', export_formats: ['html', 'csv'], included_sections: ['overview'] },
-      { id: 'engineer', label: 'Engineer', description: 'Engineering drilldown.', export_formats: ['html', 'jsonl'], included_sections: ['actions'] },
+      { id: 'executive', label: 'Executive', description: 'Decision-focused summary.', export_formats: ['html', 'csv', 'pdf'], included_sections: ['overview'] },
+      { id: 'engineer', label: 'Engineer', description: 'Engineering drilldown.', export_formats: ['html', 'pdf', 'jsonl'], included_sections: ['actions'] },
       { id: 'audit', label: 'Audit', description: 'Governance package.', export_formats: ['html', 'json'], included_sections: ['evidence'] },
     ],
     manifest: {
@@ -521,8 +522,14 @@ describe('TestExecutionArchive', () => {
     expect(container.querySelector('a[href="/api/v1/tests/test-1/archive/report"]')).toBeTruthy()
     const profileCsvLink = Array.from(container.querySelectorAll('a')).find(anchor => anchor.getAttribute('href') === '/api/v1/tests/test-1/archive/report?format=csv&profile=executive')
     expect(profileCsvLink).toBeTruthy()
+    const profilePdfLinks = Array.from(container.querySelectorAll('a')).map(anchor => anchor.getAttribute('href'))
+    expect(profilePdfLinks).toContain('/api/v1/tests/test-1/archive/report?format=pdf&profile=executive')
+    expect(profilePdfLinks).toContain('/api/v1/tests/test-1/archive/report?format=pdf&profile=engineer')
+    expect(profilePdfLinks).not.toContain('/api/v1/tests/test-1/archive/report?format=pdf&profile=audit')
     expect(container.textContent).toContain('Executive HTML')
     expect(container.textContent).toContain('Executive CSV')
+    expect(container.textContent).toContain('Executive PDF')
+    expect(container.textContent).toContain('Engineer PDF')
     expect(container.textContent).toContain('Engineer JSONL')
     expect(container.textContent).toContain('overview')
     expect(container.textContent).toContain('Error Patterns')

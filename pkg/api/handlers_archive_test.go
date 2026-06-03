@@ -404,6 +404,56 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("pdf report", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=pdf&profile=engineer", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("pdf report status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		if got := resp.Header().Get("Content-Type"); !strings.Contains(got, "application/pdf") {
+			t.Fatalf("pdf report content type = %q, want application/pdf", got)
+		}
+		if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "apexload-archive-report-"+testRun.ID+"-engineer.pdf") {
+			t.Fatalf("pdf report content disposition = %q, want engineer pdf filename", got)
+		}
+		body := resp.Body.String()
+		if !strings.HasPrefix(body, "%PDF-1.4") || !strings.Contains(body, "APEX Load Archive Report") || !strings.Contains(body, "Top Actions") {
+			t.Fatalf("pdf report body missing expected PDF report content:\n%s", body)
+		}
+	})
+
+	t.Run("executive pdf report omits drilldown", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=pdf&profile=executive", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("executive pdf report status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		body := resp.Body.String()
+		if !strings.Contains(body, "Profile: Executive") {
+			t.Fatalf("executive pdf body missing profile label:\n%s", body)
+		}
+		if strings.Contains(body, "Top Actions") {
+			t.Fatalf("executive pdf report should omit action drilldown:\n%s", body)
+		}
+	})
+
+	t.Run("audit pdf report unsupported", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=pdf&profile=audit", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("audit pdf report status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+		}
+		if !strings.Contains(resp.Body.String(), "does not support pdf export") {
+			t.Fatalf("audit pdf error = %q, want unsupported pdf profile", resp.Body.String())
+		}
+	})
+
 	t.Run("audit csv report includes evidence inventory", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=csv&profile=audit", nil)
 		resp := httptest.NewRecorder()
