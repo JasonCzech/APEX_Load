@@ -1,0 +1,62 @@
+{
+  "name": "GRPC_Inventory",
+  "version": "1.0.0",
+  "protocol": "grpc",
+  "generated_by": "apexload-sample-pack",
+  "generated_from": "web-api-sample",
+  "config": {
+    "base_url": "inventory.example.test:443",
+    "think_time": {
+      "type": "fixed",
+      "mean_ms": 500
+    },
+    "pacing": {
+      "type": "none"
+    },
+    "grpc": {
+      "use_reflection": true,
+      "timeout_ms": 30000,
+      "metadata": {
+        "authorization": "Bearer {{env.INVENTORY_API_TOKEN}}"
+      }
+    },
+    "error_handling": {
+      "continue_on_error": false
+    },
+    "run_logic": {
+      "iterations": 0,
+      "auto_transactions": "per_action"
+    },
+    "log": {
+      "level": "standard"
+    }
+  },
+  "data_sources": [
+    {
+      "name": "inventory_items",
+      "type": "csv",
+      "inline_data": "sku,warehouse\nSKU-123,east\nSKU-456,west\n",
+      "strategy": "sequential",
+      "delimiter": ",",
+      "first_row_header": true,
+      "columns": ["sku", "warehouse"]
+    }
+  ],
+  "actions": [
+    {
+      "name": "GetAvailability",
+      "type": "grpc_unary",
+      "target": "inventory.InventoryService/GetAvailability",
+      "body": "{\n  \"sku\": \"{{data.inventory_items.sku}}\",\n  \"warehouse\": \"{{data.inventory_items.warehouse}}\"\n}"
+    },
+    {
+      "name": "WatchAvailability",
+      "type": "grpc_server_stream",
+      "target": "inventory.InventoryService/WatchAvailability",
+      "body": "{\n  \"sku\": \"{{data.inventory_items.sku}}\"\n}",
+      "params": {
+        "max_messages": 3
+      }
+    }
+  ]
+}

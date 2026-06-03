@@ -1,0 +1,62 @@
+{
+  "name": "WebSocket_Order_Feed",
+  "version": "1.0.0",
+  "protocol": "websocket",
+  "generated_by": "apexload-sample-pack",
+  "generated_from": "web-api-sample",
+  "config": {
+    "base_url": "wss://stream.example.test",
+    "think_time": {
+      "type": "fixed",
+      "mean_ms": 500
+    },
+    "pacing": {
+      "type": "none"
+    },
+    "websocket": {
+      "read_timeout_ms": 30000,
+      "write_timeout_ms": 10000,
+      "max_message_size": 1048576,
+      "subprotocol": "orders.v1"
+    },
+    "error_handling": {
+      "continue_on_error": false
+    },
+    "run_logic": {
+      "iterations": 0,
+      "auto_transactions": "per_action"
+    },
+    "log": {
+      "level": "standard"
+    }
+  },
+  "actions": [
+    {
+      "name": "Connect_Order_Feed",
+      "type": "ws_connect",
+      "target": "wss://stream.example.test/orders"
+    },
+    {
+      "name": "Subscribe_Orders",
+      "type": "ws_send",
+      "target": "/orders",
+      "body": "{\"type\":\"subscribe\",\"topic\":\"orders.created\"}",
+      "params": {
+        "type": "text"
+      }
+    },
+    {
+      "name": "Receive_Order_Event",
+      "type": "ws_receive",
+      "target": "/orders",
+      "params": {
+        "timeout_ms": 30000
+      }
+    },
+    {
+      "name": "Close_Order_Feed",
+      "type": "ws_close",
+      "target": "/orders"
+    }
+  ]
+}

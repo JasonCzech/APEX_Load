@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: stormrunner-local
+resources:
+  - namespace.yaml
+  - controller-pvc.yaml
+  - controller-service.yaml
+  - controller-deployment.yaml
+  - generator-service.yaml
+  - generator-statefulset.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: stormrunner
+      app.kubernetes.io/managed-by: kustomize

@@ -143,7 +143,6 @@ type SOAPFaultHandlingConfig struct {
 type DatabaseConfig struct {
 	Driver             string `json:"driver,omitempty"`
 	DSN                string `json:"dsn,omitempty"`
-	DSNSecret          string `json:"dsn_secret,omitempty"`
 	MaxOpenConns       int    `json:"max_open_conns,omitempty"`
 	MaxIdleConns       int    `json:"max_idle_conns,omitempty"`
 	ConnMaxLifetimeMs  int    `json:"conn_max_lifetime_ms,omitempty"`
@@ -210,17 +209,6 @@ type WebRuntimeConfig struct {
 	NetworkSimulation    NetworkSimulationConfig `json:"network_simulation,omitempty"`
 	Streaming            StreamingConfig         `json:"streaming,omitempty"`
 	DataFormatting       DataFormattingConfig    `json:"data_formatting,omitempty"`
-	// SourceIPs is a pool of local client IP addresses to bind outgoing
-	// connections to (LR-style "IP spoofing" / multiple IPs). VUsers are
-	// distributed across the pool so the test presents many distinct client
-	// addresses. The generator host must own these addresses.
-	SourceIPs []string `json:"source_ips,omitempty"`
-	// NetworkProfiles is a network-condition population mix: VUsers are
-	// distributed across the weighted profiles so a configurable share runs under
-	// each network condition (e.g. 30% 3G / 70% 4G). Per-profile response metrics
-	// surface in the archive's by_network_profile breakdown. Overrides
-	// NetworkSimulation when present.
-	NetworkProfiles []NetworkProfileWeight `json:"network_profiles,omitempty"`
 }
 
 type DownloadFiltersConfig struct {
@@ -241,16 +229,6 @@ type NetworkSimulationConfig struct {
 	LatencyMs     int     `json:"latency_ms,omitempty"`
 	JitterMs      int     `json:"jitter_ms,omitempty"`
 	PacketLossPct float64 `json:"packet_loss_pct,omitempty"`
-}
-
-// NetworkProfileWeight is one entry in a network-condition population mix: a
-// named network profile applied to a weighted share of VUsers (e.g. 30% "3g",
-// 70% "4g"). The embedded shaping config defines the conditions; Weight sets the
-// relative VUser share.
-type NetworkProfileWeight struct {
-	Name                    string `json:"name"`
-	Weight                  int    `json:"weight"`
-	NetworkSimulationConfig        // embedded: mode/preset/bandwidth/latency/jitter/loss
 }
 
 type StreamingConfig struct {
@@ -419,7 +397,6 @@ type Parameter struct {
 	Update        string   `json:"update,omitempty"`
 	Selection     string   `json:"selection,omitempty"`
 	OnExhaustion  string   `json:"on_exhaustion,omitempty"`
-	SameLineAs    string   `json:"same_line_as,omitempty"`
 	DataSource    string   `json:"data_source,omitempty"`
 	Column        string   `json:"column,omitempty"`
 	Format        string   `json:"format,omitempty"`
@@ -447,7 +424,6 @@ type Action struct {
 	Value          string                 `json:"value,omitempty"`
 	Headers        map[string]string      `json:"headers,omitempty"`
 	Body           string                 `json:"body,omitempty"`
-	BodyEncoding   string                 `json:"body_encoding,omitempty"`
 	Params         map[string]any         `json:"params,omitempty"`
 	WaitFor        *WaitCondition         `json:"wait_for,omitempty"`
 	Capture        *BrowserCaptureOptions `json:"capture,omitempty"`

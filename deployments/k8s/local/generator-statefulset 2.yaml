@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: stormrunner-generator
+  labels:
+    app.kubernetes.io/name: stormrunner-generator
+    app.kubernetes.io/component: generator
+spec:
+  serviceName: stormrunner-generator
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stormrunner-generator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: stormrunner-generator
+        app.kubernetes.io/component: generator
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: generator
+          image: stormrunner-generator:0.1.0
+          imagePullPolicy: Never
+          ports:
+            - name: grpc
+              containerPort: 9090
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
