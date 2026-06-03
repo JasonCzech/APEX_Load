@@ -378,6 +378,13 @@
   color: var(--text-primary);
 }
 
+.sidebar-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .sidebar-status {
   display: flex;
   align-items: center;

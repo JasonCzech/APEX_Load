@@ -6,7 +6,13 @@ RUN go mod download
 COPY . .
 
 ARG BINARY=generator
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" -o /app ./cmd/${BINARY}
+ARG VERSION=dev
+ARG COMMIT=
+ARG BUILD_TIME=
+ARG BI=github.com/jasonczech/apexload/pkg/buildinfo
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
+	-ldflags "-s -w -X ${BI}.Version=${VERSION} -X ${BI}.Commit=${COMMIT} -X ${BI}.BuildTime=${BUILD_TIME}" \
+	-o /app ./cmd/${BINARY}
 
 FROM alpine:3.20
 ARG BINARY=generator
