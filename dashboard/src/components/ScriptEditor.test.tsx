@@ -601,7 +601,54 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('[aria-label="Script Debugger"]')).not.toBeNull()
     expect(container.querySelector('[aria-label="Script JSON"]')).not.toBeNull()
     expect(findCenterTab(container, 'Script JSON')).not.toBeUndefined()
+    expect(findCenterTab(container, 'Browser Replay')).toBeUndefined()
     expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"Checkout Flow"')
+  })
+
+  it('selects the Browser Replay center tab for browser scripts in Debug mode', async () => {
+    const browserScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'browser',
+      config: {
+        ...initialScript.config,
+        base_url: 'https://shop.example.com',
+        browser: {
+          engine: 'chromium',
+          headless: true,
+        },
+      },
+      actions: [
+        {
+          name: 'Open Home',
+          type: 'browser_navigate',
+          target: '/',
+          selector: '',
+          value: '',
+          capture: { screenshot: false, full_page: false, html: false },
+          think_time_after: true,
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={browserScript} />)
+    })
+
+    expect(findCenterTab(container, 'Browser Replay')).toBeUndefined()
+
+    const debugTab = findOpenDebuggerButton(container)
+    expect(debugTab).toBeDefined()
+    if (!debugTab) return
+
+    await act(async () => {
+      debugTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(findCenterTab(container, 'Browser Replay')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.browser-debugger-main')).not.toBeNull()
+    expect(container.textContent).toContain('Browser Replay Cockpit')
+    expect(container.textContent).toContain('No screenshot yet')
   })
 
   it('shows imported lifecycle phases in the author outline and debug rail', async () => {
@@ -3482,6 +3529,295 @@ describe('ScriptEditor', () => {
         }),
       }),
     }))
+  })
+
+  it('runs Browser Replay with per-action screenshots and updates the cockpit from timeline selection', async () => {
+    const replayReport = {
+      group: 'Checkout Flow-debug',
+      protocol: 'browser',
+      started_at: '2026-05-14T20:00:00Z',
+      completed_at: '2026-05-14T20:00:02Z',
+      success: true,
+      runtime_profile: {
+        browser_engine: 'chromium',
+        device_profile: 'desktop_1080p',
+        capture_mode: 'per_action',
+        headless: true,
+      },
+      events: [
+        {
+          phase: 'action',
+          action_index: 0,
+          action_name: 'Open Home',
+          action_type: 'browser_navigate',
+          target: '/',
+          success: true,
+          started_at: '2026-05-14T20:00:00Z',
+          completed_at: '2026-05-14T20:00:01Z',
+          duration_ms: 76,
+          page_url: 'https://shop.example.com/',
+          page_title: 'Home',
+          screenshot_base64: btoa('home-png'),
+          dom_summary: { title: 'Home', ready_state: 'complete', visible_text: ['Home'] },
+        },
+        {
+          phase: 'action',
+          action_index: 1,
+          action_name: 'Submit Search',
+          action_type: 'browser_click',
+          target: '#old-submit',
+          selector: '#old-submit',
+          success: true,
+          started_at: '2026-05-14T20:00:01Z',
+          completed_at: '2026-05-14T20:00:02Z',
+          duration_ms: 91,
+          page_url: 'https://shop.example.com/search?q=boots',
+          page_title: 'Search Results',
+          screenshot_base64: btoa('search-png'),
+          console_entries: [{ level: 'info', text: 'Search completed' }],
+          network_entries: [{ method: 'GET', url: 'https://shop.example.com/api/search?q=boots', status_code: 200, duration_ms: 18 }],
+          dom_summary: { title: 'Search Results', ready_state: 'complete', visible_text: ['Boots'] },
+        },
+      ],
+    }
+    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce(debugSessionResponse(replayReport))
+
+    const browserScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'browser',
+      config: {
+        ...initialScript.config,
+        base_url: 'https://shop.example.com',
+        browser: {
+          engine: 'chromium',
+          headless: true,
+          capture_screenshots: 'on_error',
+        },
+      },
+      actions: [
+        {
+          name: 'Open Home',
+          type: 'browser_navigate',
+          target: '/',
+          selector: '',
+          value: '',
+          capture: { screenshot: false, full_page: false, html: false },
+          think_time_after: true,
+        },
+        {
+          name: 'Submit Search',
+          type: 'browser_click',
+          target: '#old-submit',
+          selector: '#old-submit',
+          value: '',
+          capture: { screenshot: false, full_page: false, html: false },
+          think_time_after: true,
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={browserScript} />)
+    })
+
+    const replayButton = findDebuggerRunButton(container, 'Run Browser Replay')
+    expect(replayButton).toBeDefined()
+    if (!replayButton) {
+      return
+    }
+
+    await act(async () => {
+      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalledWith(expect.objectContaining({
+      browser: expect.objectContaining({
+        capture_screenshots: 'per_action',
+      }),
+      script: expect.objectContaining({
+        config: expect.objectContaining({
+          browser: expect.objectContaining({
+            capture_screenshots: 'on_error',
+          }),
+        }),
+      }),
+    }))
+    expect(findCenterTab(container, 'Browser Replay')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.browser-debugger-main')).not.toBeNull()
+    expect(container.querySelector('.browser-address')?.textContent).toContain('Search Results')
+
+    const firstTimelineRow = Array.from(container.querySelectorAll('.browser-debugger-timeline-row'))
+      .find(row => row.textContent?.includes('Open Home')) as HTMLButtonElement | undefined
+    expect(firstTimelineRow).toBeDefined()
+    if (!firstTimelineRow) {
+      return
+    }
+
+    await act(async () => {
+      firstTimelineRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('.browser-debugger-timeline-row.active')?.textContent).toContain('Open Home')
+    expect(container.querySelector('.browser-address')?.textContent).toContain('Home')
+  })
+
+  it('applies suggested browser selectors through editor history', async () => {
+    const replayReport = {
+      group: 'Checkout Flow-debug',
+      protocol: 'browser',
+      started_at: '2026-05-14T20:00:00Z',
+      completed_at: '2026-05-14T20:00:02Z',
+      success: false,
+      events: [
+        {
+          phase: 'action',
+          action_index: 0,
+          action_name: 'Open Home',
+          action_type: 'browser_navigate',
+          target: '/',
+          success: true,
+          started_at: '2026-05-14T20:00:00Z',
+          completed_at: '2026-05-14T20:00:01Z',
+          duration_ms: 76,
+          page_url: 'https://shop.example.com/',
+          page_title: 'Home',
+          screenshot_base64: btoa('home-png'),
+        },
+        {
+          phase: 'action',
+          action_index: 1,
+          action_name: 'Submit Search',
+          action_type: 'browser_click',
+          target: '#old-submit',
+          selector: '#old-submit',
+          success: false,
+          error_message: 'button not found',
+          started_at: '2026-05-14T20:00:01Z',
+          completed_at: '2026-05-14T20:00:02Z',
+          duration_ms: 91,
+          page_url: 'https://shop.example.com/search',
+          page_title: 'Search',
+          screenshot_base64: btoa('search-png'),
+          diagnosis: {
+            category: 'selector',
+            severity: 'error',
+            cause: 'Selector did not match an element.',
+            evidence: 'The DOM exposes a stable test id.',
+            action: 'Use the suggested locator.',
+            suggested_locator: '[data-testid="search-submit"]',
+          },
+        },
+      ],
+    }
+    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce(debugSessionResponse(replayReport))
+
+    const browserScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'browser',
+      config: {
+        ...initialScript.config,
+        base_url: 'https://shop.example.com',
+        browser: {
+          engine: 'chromium',
+          headless: true,
+          capture_screenshots: 'on_error',
+        },
+      },
+      actions: [
+        {
+          name: 'Open Home',
+          type: 'browser_navigate',
+          target: '/',
+          selector: '',
+          value: '',
+          capture: { screenshot: false, full_page: false, html: false },
+          think_time_after: true,
+        },
+        {
+          name: 'Submit Search',
+          type: 'browser_click',
+          target: '#old-submit',
+          selector: '#old-submit',
+          value: '',
+          capture: { screenshot: false, full_page: false, html: false },
+          think_time_after: true,
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={browserScript} />)
+    })
+
+    const replayButton = findDebuggerRunButton(container, 'Run Browser Replay')
+    expect(replayButton).toBeDefined()
+    if (!replayButton) {
+      return
+    }
+
+    await act(async () => {
+      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const applyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Use suggested selector'))
+    expect(applyButton).toBeDefined()
+    if (!applyButton) {
+      return
+    }
+
+    await act(async () => {
+      applyButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Updated selector for Submit Search.')
+    const scriptJsonTab = findCenterTab(container, 'Script JSON')
+    expect(scriptJsonTab).toBeDefined()
+    if (!scriptJsonTab) {
+      return
+    }
+
+    await act(async () => {
+      scriptJsonTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const activeJsonEditor = () => container.querySelector('.center-tab-panel.active textarea') as HTMLTextAreaElement | null
+    const parseActiveEditorScript = () => {
+      const parsed = JSON.parse(activeJsonEditor()?.value || '{}') as { script?: ScriptDefinition } & ScriptDefinition
+      return parsed.script || parsed
+    }
+    const repairedScript = parseActiveEditorScript()
+    expect(repairedScript.actions[1].selector).toBe('[data-testid="search-submit"]')
+
+    const authorTab = findWorkspaceTab(container, 'Author')
+    expect(authorTab).toBeDefined()
+    if (!authorTab) {
+      return
+    }
+
+    await act(async () => {
+      authorTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('1 undo')
+    const undoButton = findButtonByText(container, 'Undo')
+    expect(undoButton).toBeDefined()
+    if (!undoButton) {
+      return
+    }
+
+    await act(async () => {
+      undoButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const restoredScript = parseActiveEditorScript()
+    expect(restoredScript.actions[1].selector).toBe('#old-submit')
   })
 
   it('renders browser_select actions with selector and value fields', async () => {

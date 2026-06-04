@@ -133,6 +133,7 @@ type CenterWorkbenchTabId =
   | 'imported-metadata'
   | 'conversion-mapping'
   | 'parameter-data'
+  | 'browser-replay'
   | 'object-descriptors'
   | 'http-conversion'
 type DebuggerTab = 'request' | 'browser'
@@ -177,6 +178,7 @@ const AUTHORING_COMPONENT_GROUPS = [
 ] as const
 
 const SCRIPT_JSON_TAB_ID: CenterWorkbenchTabId = 'script-json'
+const BROWSER_REPLAY_TAB_ID: CenterWorkbenchTabId = 'browser-replay'
 const CENTER_TABS_STORAGE_PREFIX = 'scriptEditorCenterTabs'
 const CENTER_WORKBENCH_TAB_IDS: readonly CenterWorkbenchTabId[] = [
   'script-json',
@@ -185,6 +187,7 @@ const CENTER_WORKBENCH_TAB_IDS: readonly CenterWorkbenchTabId[] = [
   'imported-metadata',
   'conversion-mapping',
   'parameter-data',
+  'browser-replay',
   'object-descriptors',
   'http-conversion',
 ]
@@ -1657,6 +1660,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       descriptors.push({ id: 'object-descriptors', label: 'Object Descriptors', title: 'Object Descriptors', closeable: true })
     }
     if (isBrowserScript) {
+      descriptors.splice(1, 0, { id: BROWSER_REPLAY_TAB_ID, label: 'Browser Replay', title: 'Browser Replay Cockpit', closeable: false })
       descriptors.push({ id: 'http-conversion', label: 'HTTP Conversion', title: 'Browser To HTTP Conversion Review', closeable: true })
     }
     return descriptors
@@ -1683,7 +1687,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     })
   }, [availableCenterTabIds])
   const closeCenterTab = useCallback((tabId: CenterWorkbenchTabId) => {
-    if (tabId === SCRIPT_JSON_TAB_ID) return
+    if (tabId === SCRIPT_JSON_TAB_ID || tabId === BROWSER_REPLAY_TAB_ID) return
     setCenterTabPanelElements(prev => prev[tabId] ? { ...prev, [tabId]: null } : prev)
     setCenterTabsState(prev => {
       if (!prev.tabs.includes(tabId)) return prev
@@ -1759,6 +1763,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       return { ...prev, tabs: nextTabs }
     })
   }, [importMetadata, sourceReview])
+  useEffect(() => {
+    if (workspaceTab === 'debug' && isBrowserScript) {
+      openCenterTab(BROWSER_REPLAY_TAB_ID)
+    }
+  }, [isBrowserScript, openCenterTab, workspaceTab])
   useEffect(() => {
     if (centerTabsHydratedKey !== centerTabsStorageKey) return
     try {
@@ -1885,6 +1894,46 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setJsonText(formatScriptJson(nextScript))
     setJsonDirty(false)
   }, [pushEditorHistory, script, setJsonDirty, setJsonText, setScript])
+
+  const applyReplaySuggestedLocator = useCallback((event: ReplayActionEvent, locator: string) => {
+    const nextLocator = locator.trim()
+    if (!nextLocator) return
+    const phase = normalizeDebugPhase(event.phase || 'action')
+    if (phase !== 'action') {
+      setError('Suggested selectors can only be applied to script action steps.')
+      setSuccess('')
+      return
+    }
+    const actionIndex = typeof event.action_index === 'number'
+      ? event.action_index
+      : (() => {
+        const eventTarget = (event.selector || event.target || '').trim()
+        const matches = script.actions
+          .map((action, index) => ({ action, index }))
+          .filter(({ action }) => {
+            const actionTarget = (action.selector || action.target || '').trim()
+            return Boolean(event.action_name && action.name === event.action_name)
+              || Boolean(eventTarget && actionTarget === eventTarget)
+          })
+        return matches.length === 1 ? matches[0].index : -1
+      })()
+    if (actionIndex < 0 || actionIndex >= script.actions.length) {
+      setError('Suggested selector could not be mapped to a script action.')
+      setSuccess('')
+      return
+    }
+    const currentAction = script.actions[actionIndex]
+    const nextScript: ScriptData = {
+      ...script,
+      actions: script.actions.map((action, index) => (
+        index === actionIndex ? { ...action, selector: nextLocator } : action
+      )),
+    }
+    replaceScriptWithHistory(nextScript)
+    setActiveAction(actionIndex)
+    setError('')
+    setSuccess(`Updated selector for ${currentAction.name || `Action ${actionIndex + 1}`}.`)
+  }, [replaceScriptWithHistory, script])
 
   const recordAssistantChange = useCallback((title: string, summary: string) => {
     setAssistantChangeLog((previous) => [
@@ -3129,12 +3178,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setWorkspaceTab(nextTab)
     if (nextTab === 'debug') {
       setDebuggerTab('request')
+      if (isBrowserScript) {
+        openCenterTab(BROWSER_REPLAY_TAB_ID)
+      }
     }
   }
 
   const openReplayDebugger = (openSettings = false) => {
     activateWorkspaceTab('debug')
-    setDebuggerTab('request')
     if (openSettings) setDebuggerSettingsOpen(true)
   }
 
@@ -3150,15 +3201,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       const variables = parseReplayVariablesText(replayOptions.variablesText)
       const replaySessionId = createReplaySessionId()
       const startPaused = options?.startPaused ?? replayOptions.startPaused
-      const payload = {
-        ...buildReplayStartPayload(currentScript, {
+      const baseReplayPayload = buildReplayStartPayload(currentScript, {
         projectId,
         groupName: replayOptions.groupName,
         replaySessionId,
         variables,
         ignoreThinkTime: replayOptions.ignoreThinkTime,
         startPaused,
-        }),
+      })
+      const payload = {
+        ...baseReplayPayload,
+        browser: currentScript.protocol === 'browser'
+          ? { ...(baseReplayPayload.browser || {}), capture_screenshots: 'per_action' }
+          : baseReplayPayload.browser,
         group_name: replayOptions.groupName.trim() || `${currentScript.name || 'script'}-debug`,
         start_paused: startPaused,
         breakpoints: debugBreakpoints,
@@ -4518,6 +4573,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     return jsonParseMessage ? renderBlockedCenterDocument(title) : content
   }
   const renderCenterTabPanel = (tabId: CenterWorkbenchTabId) => {
+    if (tabId === BROWSER_REPLAY_TAB_ID && isBrowserScript) {
+      return (
+        <BrowserReplayDebugger
+          sessionId={activeReplaySessionId}
+          session={browserReplaySession}
+          report={replayReport}
+          running={replaying}
+          variant="main"
+          selectedEventIndex={expandedReplayEvent}
+          onSelectEvent={setExpandedReplayEvent}
+          onApplySuggestedLocator={applyReplaySuggestedLocator}
+        />
+      )
+    }
     if (tabId !== SCRIPT_JSON_TAB_ID) return null
     return (
       <>
@@ -5132,6 +5201,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         running={replaying}
                         selectedEventIndex={expandedReplayEvent}
                         onSelectEvent={setExpandedReplayEvent}
+                        onApplySuggestedLocator={applyReplaySuggestedLocator}
                       />
                     ) : !replayReport ? (
                       <div className="debugger-empty">No debugger session yet. Place optional breakpoints in the gutter, adjust settings, then press Run.</div>

@@ -2024,10 +2024,100 @@
   color: var(--danger);
 }
 
+.browser-debugger-main {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+}
+
+.browser-debugger-main .browser-debugger-header {
+  align-items: center;
+  background: color-mix(in srgb, var(--bg-secondary) 78%, var(--bg-primary));
+}
+
+.browser-debugger-runtime-chips,
+.browser-debugger-state-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.browser-debugger-runtime-chips {
+  margin-top: 8px;
+}
+
+.browser-debugger-runtime-chips span {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.browser-debugger-state-strip {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+
+.browser-debugger-current-action,
+.browser-debugger-failure-pin {
+  flex: 1 1 260px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--subtle-fill);
+}
+
+.browser-debugger-failure-pin {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.browser-debugger-current-action span,
+.browser-debugger-failure-pin span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.browser-debugger-current-action strong,
+.browser-debugger-failure-pin strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.browser-debugger-current-action small,
+.browser-debugger-failure-pin small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .browser-debugger-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
   min-height: 360px;
+}
+
+.browser-debugger-main .browser-debugger-layout {
+  flex: 1;
+  min-height: 560px;
+  grid-template-columns: minmax(0, 1.65fr) minmax(360px, 0.95fr);
 }
 
 .browser-viewport {
@@ -2079,11 +2169,20 @@
   background: var(--code-bg);
 }
 
+.browser-debugger-main .browser-viewport-stage {
+  flex: 1;
+  min-height: 520px;
+}
+
 .browser-viewport-stage img {
   display: block;
   max-width: 100%;
   max-height: 520px;
   object-fit: contain;
+}
+
+.browser-debugger-main .browser-viewport-stage img {
+  max-height: 760px;
 }
 
 .browser-viewport-image-button {
@@ -2112,6 +2211,10 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+.browser-debugger-main .browser-debugger-side {
+  min-height: 0;
 }
 
 .browser-debugger-metrics {
@@ -2151,6 +2254,12 @@
   padding: 12px;
   border-bottom: 1px solid var(--border);
   background: rgba(148, 163, 184, 0.04);
+}
+
+.browser-debugger-main .browser-debugger-details {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .browser-debugger-details-header {
@@ -2366,11 +2475,20 @@
   color: var(--danger);
 }
 
+.browser-debugger-detail-item.suggested {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: rgba(59, 130, 246, 0.07);
+}
+
 .browser-debugger-events {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   max-height: 420px;
+}
+
+.browser-debugger-main .browser-debugger-events {
+  max-height: 260px;
 }
 
 .browser-debugger-event {

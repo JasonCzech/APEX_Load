@@ -5,6 +5,8 @@ import {
   BrowserReplayReport,
   BrowserReplaySession,
   ClientMetrics,
+  type ReplayRuntimeProfile,
+  type ScriptDebugAction,
 } from '../types'
 import { formatConsoleEntries, formatNetworkEntries } from './scriptEditorUtils'
 
@@ -13,13 +15,21 @@ function eventStatus(event?: BrowserReplayEvent | null): string {
   return event.success ? 'success' : 'error'
 }
 
+type BrowserReplayDebuggerVariant = 'panel' | 'main'
+type BrowserReplaySessionLike = BrowserReplaySession & {
+  current_action?: ScriptDebugAction
+  log_level?: string
+}
+
 interface Props {
   sessionId?: string | null
-  session?: BrowserReplaySession | null
+  session?: BrowserReplaySessionLike | null
   report?: BrowserReplayReport | null
   running: boolean
+  variant?: BrowserReplayDebuggerVariant
   selectedEventIndex?: number | null
   onSelectEvent?: (index: number) => void
+  onApplySuggestedLocator?: (event: BrowserReplayEvent, locator: string) => void
 }
 
 interface BrowserReplayScreenshotDialogProps {
@@ -140,14 +150,40 @@ function formatSelectedEventDetails(event: BrowserReplayEvent, index: number): s
   ].filter(Boolean).join('\n')
 }
 
+function suggestedLocatorForEvent(event?: BrowserReplayEvent | null): string {
+  if (!event) return ''
+  const diagnosedLocator = event.diagnosis?.suggested_locator?.trim()
+  if (diagnosedLocator) return diagnosedLocator
+  for (const suggestion of event.repair_suggestions || []) {
+    const fields = suggestion.fields || {}
+    const locator = (fields.selector || fields.locator || fields.target || '').trim()
+    if (locator) return locator
+  }
+  return ''
+}
+
+function runtimeProfileChips(profile?: ReplayRuntimeProfile, fallbackLogLevel?: string) {
+  if (!profile) return []
+  return [
+    profile.browser_engine ? `Engine ${profile.browser_engine}` : '',
+    profile.device_profile ? `Device ${profile.device_profile}` : '',
+    profile.capture_mode ? `Capture ${profile.capture_mode}` : '',
+    typeof profile.headless === 'boolean' ? (profile.headless ? 'Headless' : 'Headed') : '',
+    profile.log_level || fallbackLogLevel ? `Log ${profile.log_level || fallbackLogLevel}` : '',
+  ].filter(Boolean)
+}
+
 export default function BrowserReplayDebugger({
   sessionId,
   session,
   report,
   running,
+  variant = 'panel',
   selectedEventIndex,
   onSelectEvent,
+  onApplySuggestedLocator,
 }: Props) {
+  const mainVariant = variant === 'main'
   const events = session?.events?.length ? session.events : report?.events || []
   const viewportEvent = findViewportEvent(events, selectedEventIndex)
   const selectedEvent = typeof selectedEventIndex === 'number' && selectedEventIndex >= 0
@@ -172,6 +208,11 @@ export default function BrowserReplayDebugger({
   const selectedClientMetrics = eventClientMetrics(selectedEvent)
   const selectedConsoleText = useMemo(() => formatConsoleEntries(selectedConsoleEntries), [selectedConsoleEntries])
   const selectedNetworkText = useMemo(() => formatNetworkEntries(selectedNetworkEntries), [selectedNetworkEntries])
+  const suggestedLocator = suggestedLocatorForEvent(selectedEvent)
+  const failingEvent = events.find(event => !event.success) || null
+  const runtimeProfile = session?.runtime_profile || report?.runtime_profile || report?.artifact_manifest?.runtime_profile
+  const runtimeChips = runtimeProfileChips(runtimeProfile, session?.log_level)
+  const currentAction = session?.current_action
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [expandedPreviewKeys, setExpandedPreviewKeys] = useState<Record<string, boolean>>({})
   const [isScreenshotDialogOpen, setIsScreenshotDialogOpen] = useState(false)
@@ -238,14 +279,38 @@ export default function BrowserReplayDebugger({
   }
 
   return (
-    <div className="browser-debugger">
+    <div className={`browser-debugger${mainVariant ? ' browser-debugger-main' : ''}`}>
       <div className="browser-debugger-header">
         <div>
-          <h4>Browser Debugger</h4>
+          <h4>{mainVariant ? 'Browser Replay Cockpit' : 'Browser Debugger'}</h4>
           <p>{pageURL || sessionId || 'Waiting for the first browser event'}</p>
+          {mainVariant && runtimeChips.length > 0 && (
+            <div className="browser-debugger-runtime-chips" aria-label="Replay Runtime">
+              {runtimeChips.map(chip => <span key={chip}>{chip}</span>)}
+            </div>
+          )}
         </div>
         <span className={`browser-debugger-status ${status}`}>{status}</span>
       </div>
+
+      {mainVariant && (currentAction || failingEvent) && (
+        <div className="browser-debugger-state-strip">
+          {currentAction && (
+            <div className="browser-debugger-current-action">
+              <span>Selected Action</span>
+              <strong>{currentAction.action_name || `${currentAction.phase} ${currentAction.action_index + 1}`}</strong>
+              <small>{currentAction.action_type} {currentAction.target || currentAction.selector || ''}</small>
+            </div>
+          )}
+          {failingEvent && (
+            <div className="browser-debugger-failure-pin">
+              <span>Failure</span>
+              <strong>{eventLabel(failingEvent, events.indexOf(failingEvent))}</strong>
+              <small>{failingEvent.error_message || failingEvent.diagnosis?.cause || 'Review the selected event evidence.'}</small>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="browser-debugger-layout">
         <div className="browser-viewport">
@@ -312,6 +377,15 @@ export default function BrowserReplayDebugger({
                     onClick={() => setAllPreviewsExpanded(!allPreviewArtifactsExpanded)}
                   >
                     {allPreviewArtifactsExpanded ? 'Collapse all' : 'Expand all'}
+                  </button>
+                )}
+                {selectedEvent && suggestedLocator && onApplySuggestedLocator && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-secondary"
+                    onClick={() => onApplySuggestedLocator(selectedEvent, suggestedLocator)}
+                  >
+                    Use suggested selector
                   </button>
                 )}
                 {selectedEvent && (
@@ -407,6 +481,13 @@ export default function BrowserReplayDebugger({
                   <span>Core Web Vitals</span>
                   <strong>{timelineVitalsSummary(selectedClientMetrics)}</strong>
                 </div>
+                {suggestedLocator && (
+                  <div className="browser-debugger-detail-item browser-debugger-detail-item-wide suggested">
+                    <span>Suggested Selector</span>
+                    <strong>{suggestedLocator}</strong>
+                    {selectedEvent.diagnosis?.evidence && <small>{selectedEvent.diagnosis.evidence}</small>}
+                  </div>
+                )}
                 <div className="browser-debugger-detail-item">
                   <div className="browser-debugger-detail-item-header">
                     <span>Console Entries</span>
@@ -523,6 +604,7 @@ export default function BrowserReplayDebugger({
             ) : events.map((event, index) => (
               <button
                 key={`${event.phase}-${event.action_name}-${index}`}
+                type="button"
                 className={`browser-debugger-event ${(selectedEvent === event) ? 'active' : ''} ${event.success ? 'success' : 'error'}`}
                 onClick={() => onSelectEvent?.(index)}
               >

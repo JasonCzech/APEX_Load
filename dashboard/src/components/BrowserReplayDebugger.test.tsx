@@ -325,4 +325,85 @@ describe('BrowserReplayDebugger', () => {
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Source Step: Txn Checkout · Step 4 · Click Checkout'))
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Source Profile: vugen_web2'))
   })
+
+  it('renders the main replay cockpit with runtime context and selector repair', async () => {
+    const onApplySuggestedLocator = vi.fn()
+    const mainReport: BrowserReplayReport = {
+      ...report,
+      runtime_profile: {
+        browser_engine: 'chromium',
+        device_profile: 'desktop_1080p',
+        capture_mode: 'per_action',
+        headless: true,
+        log_level: 'debug',
+      },
+      events: [
+        { ...report.events[0], action_index: 0 },
+        {
+          ...report.events[1],
+          action_index: 1,
+          diagnosis: {
+            category: 'selector',
+            severity: 'error',
+            cause: 'Selector did not match an element.',
+            evidence: 'The DOM contains a stable data-testid locator.',
+            action: 'Use the suggested locator.',
+            suggested_locator: '[data-testid="search-submit"]',
+          },
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(
+        <BrowserReplayDebugger
+          report={mainReport}
+          session={{
+            id: 'debug-session-1',
+            group: 'browser-replay',
+            protocol: 'browser',
+            status: 'paused',
+            started_at: '2026-05-14T20:00:00Z',
+            current_event_index: 1,
+            runtime_profile: mainReport.runtime_profile,
+            current_action: {
+              phase: 'action',
+              action_index: 1,
+              event_index: 1,
+              action_name: 'SubmitSearch',
+              action_type: 'click',
+              target: '#search-submit',
+            },
+            events: mainReport.events,
+          }}
+          running={false}
+          variant="main"
+          selectedEventIndex={1}
+          onApplySuggestedLocator={onApplySuggestedLocator}
+        />,
+      )
+    })
+
+    expect(container.querySelector('.browser-debugger-main')).not.toBeNull()
+    expect(container.textContent).toContain('Browser Replay Cockpit')
+    expect(container.textContent).toContain('Engine chromium')
+    expect(container.textContent).toContain('Device desktop_1080p')
+    expect(container.textContent).toContain('Capture per_action')
+    expect(container.textContent).toContain('Headless')
+    expect(container.textContent).toContain('Selected Action')
+    expect(container.textContent).toContain('Failure')
+    expect(container.textContent).toContain('[data-testid="search-submit"]')
+
+    const applyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Use suggested selector'))
+    expect(applyButton).toBeDefined()
+    if (!applyButton) {
+      return
+    }
+
+    await act(async () => {
+      applyButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onApplySuggestedLocator).toHaveBeenCalledWith(mainReport.events[1], '[data-testid="search-submit"]')
+  })
 })
