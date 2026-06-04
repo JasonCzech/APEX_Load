@@ -4,6 +4,8 @@ import type { BrowserToHTTPPreviewResponse } from '../hooks/api/useScriptApi'
 import { useWebSocket } from '../hooks/useWebSocket'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
+import { RangeSetBuilder, StateEffect, StateField } from '@codemirror/state'
+import { Decoration, type DecorationSet, EditorView } from '@codemirror/view'
 import { apexCodeMirrorTheme } from './codeMirrorTheme'
 import {
   BrowserReplayEvent,
@@ -57,6 +59,7 @@ import {
   type MigrationAssistantSuggestion,
   type ScriptRepairSuggestion,
 } from './scriptAuthoringAssist'
+import { buildDslDocument, lineRangeForTargetPath, type LineRange } from './dslJsonPointers'
 import {
   formatSnapshotRequestSection,
   formatSnapshotResponseSection,
@@ -112,10 +115,11 @@ type ValidationEvidence = Pick<ScriptValidationResponse, 'data_source_fit' | 'ai
 type ReplaySnapshot = BrowserReplaySnapshot
 type ReplayActionEvent = BrowserReplayEvent
 type ReplayReport = BrowserReplayReport
-type WorkspaceTab = 'author' | 'debug' | 'json'
+type WorkbenchMode = 'author' | 'debug'
 type DebuggerTab = 'request' | 'browser'
 type DebuggerBottomTab = 'console' | 'timeline' | 'problems' | 'output'
 type DebuggerResizeKind = 'rail' | 'vars' | 'bottom'
+type JsonDraftParseResult = { ok: true; script: ScriptData } | { ok: false; message: string }
 
 type BrowserEngineName = 'chromium' | 'webkit'
 
@@ -154,9 +158,63 @@ const DEBUGGER_LAYOUT_LIMITS: Record<DebuggerResizeKind, { max: number; min: num
   bottom: { min: 140, max: 640, step: 24 },
 }
 
+const setScriptCodeRange = StateEffect.define<LineRange | null>()
+
+function buildScriptCodeDecorations(state: EditorView['state'], range: LineRange | null): DecorationSet {
+  if (!range) return Decoration.none
+  const builder = new RangeSetBuilder<Decoration>()
+  const lineDeco = Decoration.line({ class: 'script-code-active-line' })
+  const start = Math.max(1, range.startLine)
+  const end = Math.min(state.doc.lines, range.endLine)
+  for (let lineNo = start; lineNo <= end; lineNo += 1) {
+    const line = state.doc.line(lineNo)
+    builder.add(line.from, line.from, lineDeco)
+  }
+  return builder.finish()
+}
+
+const scriptCodeRangeField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(decorations, tr) {
+    let next = decorations.map(tr.changes)
+    for (const effect of tr.effects) {
+      if (effect.is(setScriptCodeRange)) {
+        next = buildScriptCodeDecorations(tr.state, effect.value)
+      }
+    }
+    return next
+  },
+  provide: field => EditorView.decorations.from(field),
+})
+
 function clampDebuggerPaneSize(kind: DebuggerResizeKind, value: number) {
   const limits = DEBUGGER_LAYOUT_LIMITS[kind]
   return Math.min(limits.max, Math.max(limits.min, Math.round(value)))
+}
+
+function formatScriptJson(script: ScriptData) {
+  return JSON.stringify({ script }, null, 2)
+}
+
+function parseScriptJsonDraft(text: string): JsonDraftParseResult {
+  if (!text.trim()) {
+    return { ok: false, message: 'Script JSON is empty.' }
+  }
+  try {
+    const parsed = JSON.parse(text) as ScriptData | { script?: ScriptData }
+    const script = 'script' in parsed && parsed.script ? parsed.script : parsed as ScriptData
+    return { ok: true, script }
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? `Script JSON is invalid: ${error.message}` : 'Script JSON is invalid.' }
+  }
+}
+
+function codePathForDebugRow(row?: { phase: string; actionIndex: number } | null) {
+  if (!row) return ''
+  if (row.phase === 'action') return `script.actions[${row.actionIndex}]`
+  if (row.phase === 'init') return `script.init[${row.actionIndex}]`
+  if (row.phase === 'teardown') return `script.teardown[${row.actionIndex}]`
+  return ''
 }
 
 function defaultExtractorForProtocol(protocol: string) {
@@ -219,6 +277,102 @@ function sanitizeDownloadName(value: string | undefined, fallback: string) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
   return normalized || fallback
+}
+
+interface ScriptCodePaneProps {
+  value: string
+  status: 'synced' | 'dirty' | 'invalid'
+  statusMessage: string
+  activePath: string
+  activeRange: LineRange | null
+  actionCount: number
+  className?: string
+  onApply: () => void
+  onChange: (value: string) => void
+  onCopy: () => void
+  onDownload: () => void
+  onFormat: () => void
+  onReset: () => void
+}
+
+function ScriptCodePane({
+  value,
+  status,
+  statusMessage,
+  activePath,
+  activeRange,
+  actionCount,
+  className = '',
+  onApply,
+  onChange,
+  onCopy,
+  onDownload,
+  onFormat,
+  onReset,
+}: ScriptCodePaneProps) {
+  const viewRef = useRef<EditorView | null>(null)
+  const [editorReadyVersion, setEditorReadyVersion] = useState(0)
+  const extensions = useMemo(() => [
+    json(),
+    apexCodeMirrorTheme,
+    scriptCodeRangeField,
+    EditorView.lineWrapping,
+  ], [])
+  const activeStartLine = activeRange?.startLine ?? null
+  const activeEndLine = activeRange?.endLine ?? null
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    const range = activeStartLine != null ? { startLine: activeStartLine, endLine: activeEndLine ?? activeStartLine } : null
+    const effects: StateEffect<unknown>[] = [setScriptCodeRange.of(range)]
+    if (range && range.startLine >= 1 && range.startLine <= view.state.doc.lines) {
+      const line = view.state.doc.line(range.startLine)
+      effects.push(EditorView.scrollIntoView(line.from, { y: 'center' }))
+    }
+    view.dispatch({ effects })
+  }, [activeStartLine, activeEndLine, editorReadyVersion, value])
+
+  return (
+    <section className={`script-code-pane ${className}`} aria-label="Script JSON">
+      <div className="script-code-toolbar">
+        <div className="script-code-title">
+          <strong>{'{ }'} Script JSON</strong>
+          <span>{activePath || `${actionCount} action${actionCount === 1 ? '' : 's'}`}</span>
+        </div>
+        <div className="script-code-status-row">
+          <span className={`script-code-status ${status}`}>{statusMessage}</span>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onFormat}>Format</button>
+          <button type="button" className="btn btn-sm btn-secondary" onClick={onApply} disabled={status === 'invalid'}>
+            Apply JSON
+          </button>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onReset} disabled={!value}>
+            Reset
+          </button>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onCopy}>Copy</button>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onDownload}>Download</button>
+        </div>
+      </div>
+      <div className="script-code-editor" data-dirty={status === 'dirty' ? 'true' : 'false'} data-invalid={status === 'invalid' ? 'true' : 'false'}>
+        <CodeMirror
+          value={value}
+          onChange={onChange}
+          extensions={extensions}
+          theme="none"
+          basicSetup={{
+            lineNumbers: true,
+            foldGutter: true,
+            highlightActiveLine: true,
+            highlightActiveLineGutter: true,
+          }}
+          onCreateEditor={view => {
+            viewRef.current = view
+            setEditorReadyVersion(version => version + 1)
+          }}
+        />
+      </div>
+    </section>
+  )
 }
 
 function applyValidationRuntimeSettingsMetadata(script: ScriptDefinition, validation: ScriptValidationResponse): ScriptDefinition {
@@ -1140,7 +1294,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     expandedReplayEvent,
     hydrateEditorState,
     isParameterDialogOpen,
-    jsonMode,
+    jsonDirty,
     jsonText,
     openDataEditor,
     openSections,
@@ -1166,7 +1320,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setExpandedReplayBrowserArtifacts,
     setExpandedReplayEvent,
     setIsParameterDialogOpen,
-    setJsonMode,
+    setJsonDirty,
     setJsonText,
     setOpenDataEditor,
     setOpenSections,
@@ -1215,10 +1369,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [httpConversionPreview, setHttpConversionPreview] = useState<BrowserToHTTPPreviewResponse | null>(null)
   const [httpConversionGenerating, setHttpConversionGenerating] = useState(false)
   const [httpConversionError, setHttpConversionError] = useState('')
-  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>(() => {
+  const [workspaceTab, setWorkspaceTab] = useState<WorkbenchMode>(() => {
     try {
-      const value = window.localStorage.getItem('scriptEditorWorkspaceTab')
-      return value === 'debug' || value === 'json' ? value : 'author'
+      const value = window.localStorage.getItem('scriptEditorWorkbenchMode') || window.localStorage.getItem('scriptEditorWorkspaceTab')
+      return value === 'debug' ? 'debug' : 'author'
     } catch {
       return 'author'
     }
@@ -1246,22 +1400,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     try { const val = window.localStorage.getItem('debuggerBottomHeight'); return val ? clampDebuggerPaneSize('bottom', parseInt(val, 10) || DEBUGGER_LAYOUT_DEFAULTS.bottom) : DEBUGGER_LAYOUT_DEFAULTS.bottom } catch { return DEBUGGER_LAYOUT_DEFAULTS.bottom }
   })
   const [activeDebuggerResize, setActiveDebuggerResize] = useState<DebuggerResizeKind | null>(null)
-  const jsonWorkspaceHydrated = useRef(false)
 
   useEffect(() => {
     try {
-      window.localStorage.setItem('scriptEditorWorkspaceTab', workspaceTab)
+      window.localStorage.setItem('scriptEditorWorkbenchMode', workspaceTab)
       window.localStorage.setItem('debuggerRailWidth', debuggerRailWidth.toString())
       window.localStorage.setItem('debuggerVarsWidth', debuggerVarsWidth.toString())
       window.localStorage.setItem('debuggerBottomHeight', debuggerBottomHeight.toString())
     } catch { /* storage may be unavailable */ }
   }, [workspaceTab, debuggerRailWidth, debuggerVarsWidth, debuggerBottomHeight])
+  const formattedScriptJson = useMemo(() => formatScriptJson(script), [script])
   useEffect(() => {
-    if (workspaceTab !== 'json' || jsonMode || jsonWorkspaceHydrated.current) return
-    setJsonText(JSON.stringify({ script }, null, 2))
-    setJsonMode(true)
-    jsonWorkspaceHydrated.current = true
-  }, [jsonMode, script, setJsonMode, setJsonText, workspaceTab])
+    if (jsonDirty || jsonText === formattedScriptJson) return
+    setJsonText(formattedScriptJson)
+  }, [formattedScriptJson, jsonDirty, jsonText, setJsonText])
   const debuggerSettingsRef = useRef<HTMLDivElement | null>(null)
   const debuggerSettingsBtnRef = useRef<HTMLButtonElement | null>(null)
   const importedCorrelationFocusTargets = importSummary.correlationSuggestions.map((correlation) => {
@@ -1371,8 +1523,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const replaceScriptWithHistory = useCallback((nextScript: ScriptData, beforeScript: ScriptData = script) => {
     pushEditorHistory(beforeScript)
     setScript(nextScript)
-    if (jsonMode) setJsonText(JSON.stringify({ script: nextScript }, null, 2))
-  }, [jsonMode, pushEditorHistory, script, setJsonText, setScript])
+    setJsonText(formatScriptJson(nextScript))
+    setJsonDirty(false)
+  }, [pushEditorHistory, script, setJsonDirty, setJsonText, setScript])
 
   const recordAssistantChange = useCallback((title: string, summary: string) => {
     setAssistantChangeLog((previous) => [
@@ -1392,7 +1545,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       const nextPast = previous.past.slice(0, -1)
       const current = JSON.parse(JSON.stringify(script)) as ScriptData
       setScript(priorScript)
-      if (jsonMode) setJsonText(JSON.stringify({ script: priorScript }, null, 2))
+      setJsonText(formatScriptJson(priorScript))
+      setJsonDirty(false)
       setSuccess('Undid the last guided authoring change.')
       setError('')
       return {
@@ -1400,7 +1554,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         future: [current, ...previous.future].slice(0, 30),
       }
     })
-  }, [jsonMode, script, setError, setJsonText, setScript, setSuccess])
+  }, [script, setError, setJsonDirty, setJsonText, setScript, setSuccess])
 
   const redoEditorChange = useCallback(() => {
     setEditorHistory(previous => {
@@ -1408,7 +1562,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       if (!nextScript) return previous
       const current = JSON.parse(JSON.stringify(script)) as ScriptData
       setScript(nextScript)
-      if (jsonMode) setJsonText(JSON.stringify({ script: nextScript }, null, 2))
+      setJsonText(formatScriptJson(nextScript))
+      setJsonDirty(false)
       setSuccess('Redid the guided authoring change.')
       setError('')
       return {
@@ -1416,7 +1571,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         future: remainingFuture,
       }
     })
-  }, [jsonMode, script, setError, setJsonText, setScript, setSuccess])
+  }, [script, setError, setJsonDirty, setJsonText, setScript, setSuccess])
 
   useEffect(() => {
     if (!isParameterDialogOpen) return
@@ -2432,13 +2587,63 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     })
   }
 
+  const jsonDraftParse = useMemo(() => parseScriptJsonDraft(jsonText), [jsonText])
+  const currentDraftScript = jsonDraftParse.ok ? jsonDraftParse.script : script
+  const jsonParseMessage = jsonDraftParse.ok ? '' : jsonDraftParse.message
+  const jsonStatus: ScriptCodePaneProps['status'] = jsonParseMessage ? 'invalid' : jsonDirty ? 'dirty' : 'synced'
+  const jsonStatusMessage = jsonParseMessage ? 'Invalid JSON' : jsonDirty ? 'Unsaved JSON edits' : 'Synced'
+
   const resolveCurrentScript = (): ScriptData => {
-    if (!jsonMode) return script
-    const parsed = JSON.parse(jsonText) as ScriptData | { script?: ScriptData }
-    if ('script' in parsed && parsed.script) {
-      return parsed.script
+    const parsed = parseScriptJsonDraft(jsonText)
+    if (!parsed.ok) {
+      throw new Error(parsed.message)
     }
-    return parsed as ScriptData
+    return parsed.script
+  }
+
+  const commitJsonDraft = (nextScript: ScriptData, message?: string) => {
+    setScript(nextScript)
+    setJsonText(formatScriptJson(nextScript))
+    setJsonDirty(false)
+    setError('')
+    if (message) setSuccess(message)
+  }
+
+  const handleApplyJsonDraft = () => {
+    setSuccess('')
+    const parsed = parseScriptJsonDraft(jsonText)
+    if (!parsed.ok) {
+      setError(parsed.message)
+      setDebuggerBottomTab('problems')
+      return
+    }
+    commitJsonDraft(parsed.script, 'Applied script JSON to the authoring tools.')
+  }
+
+  const handleFormatJsonDraft = () => {
+    setSuccess('')
+    const parsed = parseScriptJsonDraft(jsonText)
+    if (!parsed.ok) {
+      setError(parsed.message)
+      setDebuggerBottomTab('problems')
+      return
+    }
+    const formatted = formatScriptJson(parsed.script)
+    setJsonText(formatted)
+    setJsonDirty(formatted !== formattedScriptJson)
+    setError('')
+  }
+
+  const handleResetJsonDraft = () => {
+    setJsonText(formatScriptJson(script))
+    setJsonDirty(false)
+    setError('')
+    setSuccess('Reset script JSON from the structured editor.')
+  }
+
+  const handleCodePaneChange = (value: string) => {
+    setJsonText(value)
+    setJsonDirty(value !== formattedScriptJson)
   }
 
   const handleSave = async () => {
@@ -2453,11 +2658,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       } else {
         savedScript = await api.createScript(currentScript, projectId, folderId)
       }
-      if (jsonMode) setScript(currentScript)
+      commitJsonDraft(currentScript)
       setSuccess('Script saved successfully!')
       onSave?.(savedScript)
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to save script'))
+      if (getErrorMessage(e, '').includes('Script JSON is invalid')) {
+        setDebuggerBottomTab('problems')
+      }
     } finally { setSaving(false) }
   }
 
@@ -2470,7 +2678,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setValidating(true)
     try {
       const currentScript = resolveCurrentScript()
-      const res = scriptId
+      const res = scriptId && !jsonDirty
         ? await api.validateScript(scriptId)
         : replayConfiguredVariables
           ? await api.validateDraftScript(currentScript, projectId, folderId, replayConfiguredVariables)
@@ -2484,8 +2692,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         authoring_health: res.authoring_health,
       })
       setWarnings(validationWarnings)
-      if (jsonMode || validationScript !== currentScript) {
-        setScript(validationScript)
+      if (jsonDirty || validationScript !== currentScript) {
+        commitJsonDraft(validationScript)
       }
       if (res.valid) {
         setSuccess(validationWarnings.length > 0 ? 'Script validation passed with warnings.' : 'Script validation passed.')
@@ -2498,6 +2706,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       setValidationEvidence(null)
       setValidationReplayPreflight(null)
       setError(getErrorMessage(e, 'Script validation failed'))
+      if (getErrorMessage(e, '').includes('Script JSON is invalid')) {
+        setDebuggerBottomTab('problems')
+      }
     } finally {
       setValidating(false)
     }
@@ -2506,10 +2717,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const handleGenerateBrowserHTTPPreview = async () => {
     setHttpConversionError('')
     setSuccess('')
-    const currentScript = resolveCurrentScript()
-    const networkEntries = replayNetworkEntriesForConversion(replayReport, browserReplaySession)
     setHttpConversionGenerating(true)
     try {
+      const currentScript = resolveCurrentScript()
+      const networkEntries = replayNetworkEntriesForConversion(replayReport, browserReplaySession)
       const res = await api.previewBrowserToHTTP({
         name: `${currentScript.name || 'Browser Script'} HTTP Draft`,
         project_id: projectId || currentScript.project_id,
@@ -2524,33 +2735,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       setHttpConversionPreview(null)
       setWarnings(normalizeWarnings(getErrorWarnings(e)))
       setHttpConversionError(getErrorMessage(e, 'Failed to generate HTTP draft preview'))
+      if (getErrorMessage(e, '').includes('Script JSON is invalid')) {
+        setDebuggerBottomTab('problems')
+      }
     } finally {
       setHttpConversionGenerating(false)
     }
   }
 
-  const activateWorkspaceTab = (nextTab: WorkspaceTab) => {
-    if (nextTab === 'json') {
-      if (!jsonMode) {
-        setJsonText(JSON.stringify({ script }, null, 2))
-        setJsonMode(true)
-      }
-      setWorkspaceTab('json')
-      return
-    }
-
-    if (jsonMode) {
-      try {
-        const parsed = JSON.parse(jsonText)
-        setScript(parsed.script || parsed)
-        setJsonMode(false)
-      } catch {
-        setError('Invalid JSON')
-        setWorkspaceTab('json')
-        return
-      }
-    }
-
+  const activateWorkspaceTab = (nextTab: WorkbenchMode) => {
     setWorkspaceTab(nextTab)
     if (nextTab === 'debug') {
       setDebuggerTab('request')
@@ -2616,7 +2809,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       const res = scriptId
         ? await api.startScriptDebugSession(scriptId, payload)
         : await api.startDraftScriptDebugSession(payload)
-      if (jsonMode) setScript(currentScript)
+      commitJsonDraft(currentScript)
       const replayWarnings = normalizeWarnings(res.warnings)
       setValidationReplayPreflight(res.preflight || res.session?.preflight || null)
       if (res.session) {
@@ -2655,6 +2848,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       const message = getErrorMessage(e, 'Replay failed')
       setWarnings(replayWarnings)
       setError(issues || message)
+      if (message.includes('Script JSON is invalid')) {
+        setDebuggerBottomTab('problems')
+      }
       setReplayReport(null)
       setActiveReplaySessionId(null)
       setBrowserReplaySession(null)
@@ -2936,10 +3132,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setSuccess('Exported browser replay bundle ZIP.')
   }
 
-  const toggleJsonMode = () => {
-    activateWorkspaceTab(workspaceTab === 'json' ? 'author' : 'json')
-  }
-
   const methodColor = (m: string) => {
     switch (m) {
       case 'GET': return 'var(--success)'
@@ -3028,6 +3220,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     : null
   const debugRowPositionByKey = new Map(debugActionRows.map((row, position) => [debugBreakpointKey(row.phase, row.actionIndex), position]))
   const debugRailFilterText = debugRailFilter.trim().toLowerCase()
+  const scriptDslDocument = useMemo(() => buildDslDocument({ script }), [script])
+  const selectedDebugCodeRow = workspaceTab === 'debug'
+    ? debugActionRows[selectedReplayEventIndex ?? 0] || null
+    : null
+  const scriptCodeActivePath = workspaceTab === 'debug'
+    ? codePathForDebugRow(selectedDebugCodeRow)
+    : activeAction !== null
+      ? `script.actions[${activeAction}]`
+      : ''
+  const scriptCodeActiveRange = jsonDirty || jsonParseMessage
+    ? null
+    : lineRangeForTargetPath(scriptDslDocument.ranges, scriptCodeActivePath)
+  const scriptCodeStatusPath = scriptCodeActivePath.replace(/^script\./, '')
 
   useEffect(() => {
     if (!debugRawAutoScroll || !debugRawOutputRef.current) return
@@ -3768,7 +3973,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       : activeReplaySessionId || browserReplaySession
         ? 'Active'
         : ''
-  const problemCount = errorCount + warningCount + warnings.length + (error ? 1 : 0)
+  const problemCount = errorCount + warningCount + warnings.length + (error ? 1 : 0) + (jsonParseMessage ? 1 : 0)
   const actionProblemRows = actionIssueBuckets.flatMap((issues, actionIndex) =>
     issues.map(issue => ({ issue, actionIndex })),
   )
@@ -3819,15 +4024,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         <div className="editor-title-row">
           <h2>{scriptId ? 'Edit Script' : 'Create Script'}</h2>
           <div className="editor-actions">
-            {importMetadata && (
-              <button className="btn btn-ghost" type="button" onClick={() => openEditorSection('import')}>
-                Imported Metadata
-              </button>
-            )}
-            <button className="btn btn-ghost" onClick={handleValidateScript} disabled={saving || replaying || validating || !script.name}>
+            <button className="btn btn-ghost" onClick={handleValidateScript} disabled={saving || replaying || validating || !currentDraftScript.name}>
               {validating ? 'Validating…' : (scriptId ? 'Validate Saved Script' : 'Validate Draft')}
             </button>
-            <button className="btn btn-primary" onClick={handleSave} disabled={saving || validating || !script.name}>
+            <button className="btn btn-primary" onClick={handleSave} disabled={saving || validating || !currentDraftScript.name}>
               {saving ? 'Saving…' : 'Save Script'}
             </button>
             {onClose && <button className="btn btn-ghost" onClick={onClose}>✕</button>}
@@ -3848,12 +4048,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             >
               Debug
             </button>
-            <button type="button" role="tab" aria-selected={workspaceTab === 'json'} className={workspaceTab === 'json' ? 'active' : ''} onClick={toggleJsonMode}>
-              {'{ } JSON'}
-            </button>
           </div>
           <div className="script-ide-quick-actions" role="group" aria-label="Quick actions">
-            <button type="button" className="debugger-icon-btn" title={replayStartButtonLabel} onClick={() => void handleReplay()} disabled={replaying || saving || !script.name || script.actions.length === 0}>
+            <button type="button" className="debugger-icon-btn" title={replayStartButtonLabel} onClick={() => void handleReplay()} disabled={replaying || saving || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0}>
               <span className="debugger-icon" aria-hidden="true">&#9654;</span>
               <span>{replaying ? 'Running…' : replayReport ? 'Restart' : 'Run'}</span>
             </button>
@@ -4312,6 +4509,22 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     aria-valuenow={debuggerRailWidth}
                   />
                 </aside>
+
+                <ScriptCodePane
+                  value={jsonText}
+                  status={jsonStatus}
+                  statusMessage={jsonStatusMessage}
+                  activePath={scriptCodeStatusPath}
+                  activeRange={scriptCodeActiveRange}
+                  actionCount={currentDraftScript.actions?.length || 0}
+                  className="debugger-code-center"
+                  onApply={handleApplyJsonDraft}
+                  onChange={handleCodePaneChange}
+                  onCopy={() => void navigator.clipboard?.writeText(jsonText)}
+                  onDownload={() => downloadTextFile(jsonText || formatScriptJson(script), `${sanitizeDownloadName(currentDraftScript.name, 'script')}.json`)}
+                  onFormat={handleFormatJsonDraft}
+                  onReset={handleResetJsonDraft}
+                />
 
                 <section className="debugger-center" aria-label="Action detail">
                   <div className="debugger-center-tabs" role="tablist">
@@ -4803,6 +5016,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         <div className="debugger-empty">No validation warnings or authoring issues are currently reported.</div>
                       ) : (
                         <div className="debugger-problem-list">
+                          {jsonParseMessage && (
+                            <div className="debugger-problem-row error">
+                              <span>JSON</span>
+                              <strong>{jsonParseMessage}</strong>
+                            </div>
+                          )}
                           {error && (
                             <div className="debugger-problem-row error">
                               <span>Error</span>
@@ -6409,17 +6628,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           </div>
 
           {/* Actions List + Detail */}
-          {workspaceTab === 'json' && (
-            <div className="json-editor script-ide-json-editor" role="tabpanel" aria-label="JSON script editor">
-              <textarea
-                value={jsonText}
-                onChange={event => setJsonText(event.target.value)}
-                spellCheck={false}
-                aria-label="Script JSON"
-              />
-            </div>
-          )}
-
           {workspaceTab === 'author' && (
           <div className="actions-layout" role="tabpanel" aria-label="Authoring workspace">
             <div className="actions-content-grid">
@@ -6443,31 +6651,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     <span><strong>{outlineSummary.parameterRefCount}</strong> params</span>
                     <span><strong>{outlineSummary.waitCount}</strong> waits</span>
                     <span><strong>{outlineSummary.assertionCount}</strong> checks</span>
-                  </div>
-                  <div className="editor-step-outline" aria-label="Graphical step outline">
-                    {outlineSummary.actions.map((item) => (
-                      <button
-                        key={`${item.index}-${item.name}`}
-                        type="button"
-                        className={`editor-step-outline-row ${activeAction === item.index ? 'active' : ''}`}
-                        onClick={() => selectSidebarAction(item.index)}
-                      >
-                        <span className="editor-step-outline-index">{item.index + 1}</span>
-                        <span className="editor-step-outline-main">
-                          <strong>{item.name}</strong>
-                          <small>{item.type}{item.target ? ` • ${item.target}` : ''}</small>
-                        </span>
-                        <span className="editor-step-outline-badges">
-                          {item.hasTransaction && <span className="outline-badge txn">Txn</span>}
-                          {item.parameterRefs.length > 0 && <span className="outline-badge param">P{item.parameterRefs.length}</span>}
-                          {item.hasWait && <span className="outline-badge wait">Wait</span>}
-                          {item.assertionCount > 0 && <span className="outline-badge assert">A{item.assertionCount}</span>}
-                        </span>
-                      </button>
-                    ))}
-                    {outlineSummary.actions.length === 0 && (
-                      <div className="editor-step-outline-empty">Add actions to build the executable outline.</div>
-                    )}
                   </div>
                 </div>
                 <div className="actions-sidebar-header">
@@ -6535,6 +6718,22 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </div>
                 </div>
               </div>
+
+              <ScriptCodePane
+                value={jsonText}
+                status={jsonStatus}
+                statusMessage={jsonStatusMessage}
+                activePath={scriptCodeStatusPath}
+                activeRange={scriptCodeActiveRange}
+                actionCount={currentDraftScript.actions?.length || 0}
+                className="author-code-center"
+                onApply={handleApplyJsonDraft}
+                onChange={handleCodePaneChange}
+                onCopy={() => void navigator.clipboard?.writeText(jsonText)}
+                onDownload={() => downloadTextFile(jsonText || formatScriptJson(script), `${sanitizeDownloadName(currentDraftScript.name, 'script')}.json`)}
+                onFormat={handleFormatJsonDraft}
+                onReset={handleResetJsonDraft}
+              />
 
               {/* Action Detail */}
               <div className="action-detail">
@@ -9894,8 +10093,8 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [warnings, setWarnings] = useState<string[]>([])
-  const [jsonMode, setJsonMode] = useState(false)
-  const [jsonText, setJsonText] = useState('')
+  const [jsonDirty, setJsonDirty] = useState(false)
+  const [jsonText, setJsonText] = useState(() => formatScriptJson(initialScript || { ...EMPTY_SCRIPT }))
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     config: false,
     actions: true,
@@ -9936,7 +10135,8 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     if (scriptHasImportMetadata(nextScript)) {
       setOpenSections(prev => ({ ...prev, import: true }))
     }
-    setJsonText(JSON.stringify({ script: nextScript }, null, 2))
+    setJsonText(formatScriptJson(nextScript))
+    setJsonDirty(false)
     setActiveAction(null)
     setIsParameterDialogOpen(false)
     setPendingParameterDraft(null)
@@ -9974,7 +10174,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     hydrateEditorState,
     importBaselineScript,
     isParameterDialogOpen,
-    jsonMode,
+    jsonDirty,
     jsonText,
     openDataEditor,
     openSections,
@@ -9999,7 +10199,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     setExpandedReplayBrowserArtifacts,
     setExpandedReplayEvent,
     setIsParameterDialogOpen,
-    setJsonMode,
+    setJsonDirty,
     setJsonText,
     setOpenDataEditor,
     setOpenSections,

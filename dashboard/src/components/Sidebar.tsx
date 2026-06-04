@@ -398,66 +398,64 @@ export default function Sidebar({
       </nav>
 
       <div className="sidebar-footer">
-        {!collapsed && (
-          <div className="sidebar-footer-meta">
-            {authStatus?.authenticated && authStatus.user && identityName && (
-              <div className="sidebar-identity" title={identityTitle}>
-                <div className="sidebar-identity-avatar" aria-hidden="true">{identityInitials}</div>
-                <div className="sidebar-identity-copy">
-                  <span className="sidebar-identity-name">{identityName}</span>
-                  {identityMeta && <span className="sidebar-identity-meta">{identityMeta}</span>}
-                  {sessionExpiryNotice && <span className="sidebar-identity-session">{sessionExpiryNotice}</span>}
-                  {logoutURL && (canPostLogout ? (
-                    <button
-                      type="button"
-                      className="sidebar-identity-action sidebar-identity-action-button"
-                      onClick={handleLogout}
-                      disabled={logoutPending}
-                    >
-                      {logoutPending ? 'Signing out…' : 'Sign out'}
-                    </button>
-                  ) : (
-                    <a className="sidebar-identity-action" href={logoutURL}>Sign out</a>
-                  ))}
-                  {logoutError && <span className="sidebar-identity-meta">{logoutError}</span>}
-                </div>
-              </div>
-            )}
-            {isDevDashboard && (
-              <div className="dev-view-control" aria-label="Development preview mode">
-                <div className="dev-view-label-row">
-                  <span>Dev View</span>
-                  {isDevUserPreview && <span className="dev-view-badge">Editor preview</span>}
-                </div>
-                <div className="dev-view-segmented" role="group" aria-label="Development dashboard view">
+        <div className="sidebar-footer-meta">
+          {!collapsed && authStatus?.authenticated && authStatus.user && identityName && (
+            <div className="sidebar-identity" title={identityTitle}>
+              <div className="sidebar-identity-avatar" aria-hidden="true">{identityInitials}</div>
+              <div className="sidebar-identity-copy">
+                <span className="sidebar-identity-name">{identityName}</span>
+                {identityMeta && <span className="sidebar-identity-meta">{identityMeta}</span>}
+                {sessionExpiryNotice && <span className="sidebar-identity-session">{sessionExpiryNotice}</span>}
+                {logoutURL && (canPostLogout ? (
                   <button
                     type="button"
-                    className={devViewMode === 'admin' ? 'active' : ''}
-                    aria-pressed={devViewMode === 'admin'}
-                    onClick={() => setDevViewMode('admin')}
+                    className="sidebar-identity-action sidebar-identity-action-button"
+                    onClick={handleLogout}
+                    disabled={logoutPending}
                   >
-                    Admin
+                    {logoutPending ? 'Signing out…' : 'Sign out'}
                   </button>
-                  <button
-                    type="button"
-                    className={devViewMode === 'user' ? 'active' : ''}
-                    aria-pressed={devViewMode === 'user'}
-                    onClick={() => setDevViewMode('user')}
-                  >
-                    User
-                  </button>
-                </div>
+                ) : (
+                  <a className="sidebar-identity-action" href={logoutURL}>Sign out</a>
+                ))}
+                {logoutError && <span className="sidebar-identity-meta">{logoutError}</span>}
               </div>
-            )}
-            <div className="sidebar-footer-row">
-              <div className={`sidebar-status ${connectionClass}`}>
-                <span className="status-dot" />
-                <span className="status-text">{connectionLabel}</span>
-              </div>
-              <BuildBadge placement="up" />
             </div>
+          )}
+          {!collapsed && isDevDashboard && (
+            <div className="dev-view-control" aria-label="Development preview mode">
+              <div className="dev-view-label-row">
+                <span>Dev View</span>
+                {isDevUserPreview && <span className="dev-view-badge">Editor preview</span>}
+              </div>
+              <div className="dev-view-segmented" role="group" aria-label="Development dashboard view">
+                <button
+                  type="button"
+                  className={devViewMode === 'admin' ? 'active' : ''}
+                  aria-pressed={devViewMode === 'admin'}
+                  onClick={() => setDevViewMode('admin')}
+                >
+                  Admin
+                </button>
+                <button
+                  type="button"
+                  className={devViewMode === 'user' ? 'active' : ''}
+                  aria-pressed={devViewMode === 'user'}
+                  onClick={() => setDevViewMode('user')}
+                >
+                  User
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="sidebar-footer-row">
+            <div className={`sidebar-status ${connectionClass}`} title={connectionLabel}>
+              <span className="status-dot" />
+              <span className="status-text">{connectionLabel}</span>
+            </div>
+            <BuildBadge placement="up" />
           </div>
-        )}
+        </div>
         <button
           className="collapse-btn"
           onClick={() => setCollapsed(!collapsed)}

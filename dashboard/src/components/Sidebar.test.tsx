@@ -12,9 +12,15 @@ import Sidebar from './Sidebar'
 const authApiMock = {
   logout: vi.fn(),
 }
+const systemApiMock = {
+  getVersion: vi.fn(),
+}
 
 vi.mock('../hooks/api/useAuthApi', () => ({
   useAuthApi: () => authApiMock,
+}))
+vi.mock('../hooks/api/useSystemApi', () => ({
+  useSystemApi: () => systemApiMock,
 }))
 
 describe('Sidebar', () => {
@@ -33,6 +39,13 @@ describe('Sidebar', () => {
         ...originalLocation,
         assign: vi.fn(),
       },
+    })
+    systemApiMock.getVersion.mockResolvedValue({
+      build_time: '2026-06-04T14:00:00Z',
+      commit: 'abc1234',
+      environment: 'local',
+      go_version: 'go1.26',
+      version: '1.2.3',
     })
   })
 
@@ -232,6 +245,36 @@ describe('Sidebar', () => {
     const labels = Array.from(container.querySelectorAll('.sidebar-nav .nav-label')).map(label => label.textContent)
 
     expect(labels.slice(0, 3)).toEqual(['Dashboard', 'New Test', 'Results'])
+  })
+
+  it('keeps live status and build info visible when the sidebar is collapsed', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('.sidebar-footer .sidebar-status')).not.toBeNull()
+    expect(container.querySelector('.sidebar-footer .build-badge')).not.toBeNull()
+
+    const collapseButton = container.querySelector('.collapse-btn') as HTMLButtonElement | null
+    expect(collapseButton).not.toBeNull()
+    if (!collapseButton) {
+      return
+    }
+
+    await act(async () => {
+      collapseButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
+    expect(container.querySelector('.sidebar.collapsed .sidebar-footer .sidebar-status')).not.toBeNull()
+    expect(container.querySelector('.sidebar.collapsed .sidebar-footer .build-badge')).not.toBeNull()
   })
 
   it('shows Access navigation only when service-account management is allowed', async () => {

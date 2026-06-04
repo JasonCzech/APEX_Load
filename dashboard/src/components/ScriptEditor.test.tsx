@@ -51,6 +51,16 @@ vi.mock('../hooks/useWebSocket', () => ({
   useWebSocket: vi.fn(),
 }))
 
+vi.mock('@uiw/react-codemirror', () => ({
+  default: ({ value = '', onChange }: { value?: string; onChange?: (value: string) => void }) => (
+    <textarea
+      data-testid="codemirror-mock"
+      value={value}
+      onChange={event => onChange?.(event.currentTarget.value)}
+    />
+  ),
+}))
+
 vi.mock('./scriptEditorUtils', async () => {
   const actual = await vi.importActual<typeof import('./scriptEditorUtils')>('./scriptEditorUtils')
   return {
@@ -115,6 +125,12 @@ function findButtonByTitle(root: ParentNode, title: string) {
 
 function findWorkspaceTab(root: ParentNode, label: string) {
   return Array.from(root.querySelectorAll('button[role="tab"]')).find(button => button.textContent?.trim() === label)
+}
+
+function changeTextareaValue(textarea: HTMLTextAreaElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+  setter?.call(textarea, value)
+  textarea.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
 function findOpenDebuggerButton(root: ParentNode) {
@@ -350,13 +366,14 @@ describe('ScriptEditor', () => {
     vi.clearAllMocks()
   })
 
-  it('shows a page-header imported metadata button only for imported scripts', async () => {
+  it('keeps imported metadata in the outline instead of duplicating it in the page header', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
 
     let headerActions = container.querySelector('.editor-header .editor-actions')
     expect(headerActions?.textContent).not.toContain('Imported Metadata')
+    expect(container.querySelector('.editor-outline-nav')?.textContent).not.toContain('Imported Metadata')
 
     const importedScript: ScriptDefinition = {
       ...initialScript,
@@ -376,12 +393,13 @@ describe('ScriptEditor', () => {
     })
 
     headerActions = container.querySelector('.editor-header .editor-actions')
-    const headerButton = Array.from(headerActions?.querySelectorAll('button') || [])
+    expect(headerActions?.textContent).not.toContain('Imported Metadata')
+    const outlineButton = Array.from(container.querySelector('.editor-outline-nav')?.querySelectorAll('button') || [])
       .find(button => button.textContent === 'Imported Metadata')
-    expect(headerButton).toBeDefined()
+    expect(outlineButton).toBeDefined()
 
     await act(async () => {
-      headerButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      outlineButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     const metadataSection = container.querySelector('#imported-metadata-section')
@@ -441,14 +459,15 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={sequenceScript} />)
     })
 
-    expect(container.textContent).toContain('HTTP sequence')
     const groupedAction = Array.from(container.querySelectorAll('.action-item'))
       .find(item => item.textContent?.includes('S01_iPad_BuyFlow_AIA_T06_AddressSearchAndContinue'))
     expect(groupedAction).toBeDefined()
+    expect(groupedAction?.textContent).toContain('SEQ')
     await act(async () => {
       groupedAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    expect(container.querySelector('.action-editor-panel')?.textContent).toContain('S01_iPad_BuyFlow_AIA_T06_AddressSearchAndContinue')
     expect(container.textContent).toContain('Grouped Requests')
     expect(container.textContent).toContain('2 requests')
     expect(container.textContent).toContain('Address_Search_Aura')
@@ -522,6 +541,129 @@ describe('ScriptEditor', () => {
     expect(configDialog?.className).not.toContain('open')
   })
 
+  it('keeps the script JSON pane visible in Author and Debug workbench modes', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    expect(findWorkspaceTab(container, '{ } JSON')).toBeUndefined()
+    expect(container.querySelector('[aria-label="Script JSON"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Script JSON"]')?.textContent).toContain('Synced')
+    expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"Checkout Flow"')
+
+    const debugTab = findOpenDebuggerButton(container)
+    expect(debugTab).toBeDefined()
+    if (!debugTab) return
+
+    await act(async () => {
+      debugTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[aria-label="Script Debugger"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Script JSON"]')).not.toBeNull()
+    expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"Checkout Flow"')
+  })
+
+  it('applies valid manual JSON edits into the structured authoring tools and save payload', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
+    })
+
+    const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
+    expect(codeArea).not.toBeNull()
+    if (!codeArea) return
+
+    const editedScript = {
+      ...initialScript,
+      name: 'Checkout JSON Draft',
+      actions: [
+        ...initialScript.actions,
+        {
+          name: 'Get Cart',
+          type: 'request',
+          method: 'GET',
+          target: '/cart',
+          headers: {},
+          extractors: [],
+          assertions: [{ type: 'status_code', expected: 200 }],
+        },
+      ],
+    }
+
+    await act(async () => {
+      changeTextareaValue(codeArea, JSON.stringify({ script: editedScript }, null, 2))
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('.script-code-status.dirty')?.textContent).toContain('Unsaved JSON edits')
+
+    const applyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Apply JSON')
+    expect(applyButton).toBeDefined()
+    if (!applyButton) return
+
+    await act(async () => {
+      applyButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect((container.querySelector('input[placeholder="My_Test_Script"]') as HTMLInputElement | null)?.value).toBe('Checkout JSON Draft')
+    expect(container.querySelector('.action-list')?.textContent).toContain('Get Cart')
+
+    const saveButton = Array.from(container.querySelectorAll('.editor-header .editor-actions button')).find(button => button.textContent === 'Save Script')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Checkout JSON Draft',
+      actions: expect.arrayContaining([expect.objectContaining({ name: 'Get Cart' })]),
+    }), 'project-1', undefined)
+  })
+
+  it('blocks save for invalid manual JSON and pins the error in Problems', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
+    })
+
+    const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
+    expect(codeArea).not.toBeNull()
+    if (!codeArea) return
+
+    await act(async () => {
+      changeTextareaValue(codeArea, '{ "script": ')
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('.script-code-status.invalid')?.textContent).toContain('Invalid JSON')
+
+    const saveButton = Array.from(container.querySelectorAll('.editor-header .editor-actions button')).find(button => button.textContent === 'Save Script')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+
+    const debugTab = findOpenDebuggerButton(container)
+    expect(debugTab).toBeDefined()
+    if (!debugTab) return
+
+    await act(async () => {
+      debugTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[aria-label="Problems"]')?.textContent).toContain('Script JSON is invalid')
+  })
+
   it('renders a graphical browser outline with transactions, waits, parameters, and assertions', async () => {
     const browserScript: ScriptDefinition = {
       ...initialScript,
@@ -558,15 +700,12 @@ describe('ScriptEditor', () => {
     expect(outlineSummary?.textContent).toContain('1 waits')
     expect(outlineSummary?.textContent).toContain('1 checks')
 
-    const outline = container.querySelector('[aria-label="Graphical step outline"]')
-    expect(outline?.textContent).toContain('Open login')
-    expect(outline?.textContent).toContain('browser_navigate')
-    expect(outline?.textContent).toContain('Txn')
-    expect(outline?.textContent).toContain('P1')
-    expect(outline?.textContent).toContain('Wait')
-    expect(outline?.textContent).toContain('A1')
+    expect(container.querySelector('[aria-label="Graphical step outline"]')).toBeNull()
+    expect(container.querySelectorAll('.editor-step-outline-row')).toHaveLength(0)
 
-    const submitRow = Array.from(container.querySelectorAll('.editor-step-outline-row')).find(row => row.textContent?.includes('Submit login'))
+    const actionRows = Array.from(container.querySelectorAll('.action-item'))
+    expect(actionRows).toHaveLength(2)
+    const submitRow = actionRows.find(row => row.textContent?.includes('Submit login'))
     expect(submitRow).toBeDefined()
     if (!submitRow) {
       return
@@ -1390,7 +1529,8 @@ describe('ScriptEditor', () => {
     expect(activeAction?.textContent).toContain('Complete Checkout')
     expect(container.querySelector('#imported-metadata-section')).toBeNull()
 
-    const reopenMetadataButton = Array.from(container.querySelector('.editor-header .editor-actions')?.querySelectorAll('button') || []).find(button =>
+    expect(container.querySelector('.editor-header .editor-actions')?.textContent).not.toContain('Imported Metadata')
+    const reopenMetadataButton = Array.from(container.querySelector('.editor-outline-nav')?.querySelectorAll('button') || []).find(button =>
       button.textContent?.trim() === 'Imported Metadata',
     )
     expect(reopenMetadataButton).toBeDefined()
