@@ -75,11 +75,17 @@ __pycache__/
 
 # Data and Logs
 *.db
+*.db.backup*
 *.db-journal
 *.db-shm
 *.db-wal
 *.log
 artifacts/
+
+# Imported script fixtures should not be committed from local import testing
+examples/*.jmx
+examples/sample-import-*.json
+examples/loadrunner/
 
 # Playwright screenshot output
 output/playwright/

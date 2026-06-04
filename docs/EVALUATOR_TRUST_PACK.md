@@ -20,8 +20,6 @@ The seed script loads:
 | gRPC | `examples/web-api/grpc-inventory.json` |
 | WebSocket | `examples/web-api/websocket-order-feed.json` |
 | JMS | `examples/web-api/jms-order-flow.json` |
-| JMeter import | `examples/jmeter-http-smoke.jmx` |
-| LoadRunner import | `examples/loadrunner/bbc-random-links.zip` |
 
 ## Evidence Rules
 

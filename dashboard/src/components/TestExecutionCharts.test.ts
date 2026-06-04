@@ -5,6 +5,7 @@ import {
   chartMetricRows,
   chartMetricSummary,
   chartStateForMonitorPreset,
+  formatGraphOverlayMetricValue,
   formatRelativeRunTime,
   graphCsvForChart,
   latestRouteLatencyValues,
@@ -221,6 +222,14 @@ describe('chartStateForMonitorPreset', () => {
       max: 4,
       samples: 2,
     })
+  })
+
+  it('formats graph overlay metric values with at most two decimals', () => {
+    expect(formatGraphOverlayMetricValue(123.4567)).toBe('123.46')
+    expect(formatGraphOverlayMetricValue(9.999)).toBe('10')
+    expect(formatGraphOverlayMetricValue(2)).toBe('2')
+    expect(formatGraphOverlayMetricValue(Number.NaN)).toBe('n/a')
+    expect(formatGraphOverlayMetricValue('n/a')).toBe('n/a')
   })
 
   it('formats relative run time labels for graph axes', () => {

@@ -727,6 +727,15 @@ function formatMetricValue(value: number | undefined, unit?: string) {
   return unit === '%' || unit === 'ms' ? `${formatted}${unit}` : `${formatted} ${unit}`
 }
 
+export function formatGraphOverlayMetricValue(value: unknown): string | number {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : 'n/a'
+  }
+  if (typeof value === 'string') return value
+  if (value === undefined || value === null) return 'n/a'
+  return String(value)
+}
+
 function routeLatencyTargetForKey(latency: NetworkLatency | undefined, key?: string): LatencyTarget | undefined {
   if (!latency?.targets?.length || !key) return undefined
   return latency.targets.find(target => latencySeriesKeyForTarget(target) === key)
@@ -987,6 +996,7 @@ export default function TestExecutionCharts({
         contentStyle={{ ...chartTooltipContentStyle, borderRadius: 8 }}
         labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: showTimeLabel ? 4 : 0, display: showTimeLabel ? undefined : 'none' }}
         labelFormatter={(value) => showTimeLabel ? formatXAxisLabel(value) : ''}
+        formatter={(value, name) => [formatGraphOverlayMetricValue(value), name]}
         isAnimationActive={false}
       />
     )

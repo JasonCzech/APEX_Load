@@ -95,19 +95,6 @@ print(f"seeded scenario: {created.get('name', payload['name'])} ({created.get('i
 PY
 }
 
-import_jmeter() {
-  curl -fsS -X POST "$API/api/v1/scripts/import/jmeter?project_id=$PROJECT_ID" \
-    -H "Content-Type: application/xml" \
-    --data-binary @"$ROOT/examples/jmeter-http-smoke.jmx" >/dev/null
-  echo "seeded import preview: JMeter HTTP smoke"
-}
-
-import_loadrunner() {
-  curl -fsS -X POST "$API/api/v1/scripts/import/loadrunner?project_id=$PROJECT_ID" \
-    -F "file=@$ROOT/examples/loadrunner/bbc-random-links.zip" >/dev/null
-  echo "seeded import preview: LoadRunner BBC random links"
-}
-
 main() {
   echo "Seeding APEX Load evaluator demo pack into $API (project: $PROJECT_ID)"
   local http_id
@@ -120,8 +107,6 @@ main() {
   post_scenario_template "examples/web-api/browser-canary-plus-protocol-load.json" \
     "examples/web-api/ecommerce-http.json=$http_id" \
     "examples/web-api/websocket-order-feed.json=$websocket_id"
-  import_jmeter
-  import_loadrunner
   echo "Evaluator demo seed complete."
 }
 

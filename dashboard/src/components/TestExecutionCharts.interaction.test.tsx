@@ -33,18 +33,25 @@ vi.mock('recharts', () => {
     </svg>
   )
   const MockTooltip = ({
+    formatter,
     labelFormatter,
     labelStyle,
   }: {
+    formatter?: (value: unknown, name: unknown) => ReactNode | [ReactNode, ReactNode]
     labelFormatter?: (value: string | number) => ReactNode
     labelStyle?: { display?: string }
-  }) => (
-    <g
-      data-testid="mock-tooltip"
-      data-label-display={labelStyle?.display ?? ''}
-      data-label-text={labelFormatter ? String(labelFormatter('10:00:01') ?? '') : ''}
-    />
-  )
+  }) => {
+    const formatted = formatter?.(123.4567, 'TPS')
+    const formattedValue = Array.isArray(formatted) ? formatted[0] : formatted
+    return (
+      <g
+        data-testid="mock-tooltip"
+        data-label-display={labelStyle?.display ?? ''}
+        data-label-text={labelFormatter ? String(labelFormatter('10:00:01') ?? '') : ''}
+        data-formatted-value={formattedValue === undefined ? '' : String(formattedValue)}
+      />
+    )
+  }
 
   return {
     Area: ({ dataKey, name, yAxisId }: { dataKey?: string; name?: string; yAxisId?: string | number }) => (
@@ -254,6 +261,7 @@ describe('TestExecutionCharts context menu', () => {
       '',
       '',
     ])
+    expect(tooltips.every(tooltip => tooltip.getAttribute('data-formatted-value') === '123.46')).toBe(true)
   })
 
   it('filters graph series from the metric table rows', async () => {
