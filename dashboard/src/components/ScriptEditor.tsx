@@ -1167,6 +1167,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [httpConversionGenerating, setHttpConversionGenerating] = useState(false)
   const [httpConversionError, setHttpConversionError] = useState('')
   const [debugBreakpoints, setDebugBreakpoints] = useState<ScriptDebugBreakpoint[]>([])
+  const [breakpointDialogOpen, setBreakpointDialogOpen] = useState(false)
   const [debuggerTab, setDebuggerTab] = useState<DebuggerTab>('timeline')
   const [debugRawLevel, setDebugRawLevel] = useState<ScriptDebugLogLevel | 'all'>('all')
   const [debugRawSearch, setDebugRawSearch] = useState('')
@@ -2050,6 +2051,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   const removeAction = (idx: number) => {
     setScript(prev => ({ ...prev, actions: prev.actions.filter((_, i) => i !== idx) }))
+    setDebugBreakpoints(prev => prev
+      .filter(bp => bp.phase !== 'action' || bp.action_index !== idx)
+      .map(bp => bp.phase === 'action' && bp.action_index > idx ? { ...bp, action_index: bp.action_index - 1 } : bp))
     if (activeAction === idx) setActiveAction(null)
     else if (activeAction !== null && activeAction > idx) setActiveAction(activeAction - 1)
   }
@@ -2062,6 +2066,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       ;[actions[idx], actions[newIdx]] = [actions[newIdx], actions[idx]]
       return { ...prev, actions }
     })
+    setDebugBreakpoints(prev => prev.map(bp => {
+      if (bp.phase !== 'action') return bp
+      if (bp.action_index === idx) return { ...bp, action_index: newIdx }
+      if (bp.action_index === newIdx) return { ...bp, action_index: idx }
+      return bp
+    }))
     setActiveAction(newIdx)
   }
 
@@ -2392,12 +2402,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }
   }
 
+  const openReplayDebugger = () => {
+    setOpenSections(prev => ({ ...prev, replay: true }))
+    setDebuggerTab('timeline')
+  }
+
   const handleReplay = async () => {
     setError('')
     setSuccess('')
     setWarnings([])
-    setOpenSections(prev => ({ ...prev, replay: true }))
-    setDebuggerTab('timeline')
+    openReplayDebugger()
     setReplaying(true)
     let debugSessionStarted = false
     try {
@@ -2539,6 +2553,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       setSuccess('Stepping debugger…')
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to step debugger'))
+    }
+  }
+
+  const clearDebugBreakpoints = async () => {
+    setDebugBreakpoints([])
+    if (!activeReplaySessionId || !browserReplaySession || ['completed', 'failed', 'stopped'].includes(browserReplaySession.status)) {
+      return
+    }
+    try {
+      const res = await api.updateScriptDebugBreakpoints(activeReplaySessionId, [])
+      if (res?.session) setBrowserReplaySession(res.session)
+      setError('')
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, 'Failed to clear debugger breakpoints'))
     }
   }
 
@@ -2803,6 +2831,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       })))
     : []
   const isReplayPaused = browserReplaySession?.status === 'paused'
+  const replayStartButtonLabel = replayOptions.startPaused
+    ? (isBrowserScript ? 'Start Browser Step Through' : 'Start Step Through')
+    : (isBrowserScript ? 'Run Browser Replay' : 'Run Replay')
   const scriptPhases = script as ScriptData & { init?: Action[]; teardown?: Action[] }
   const debugActionRows = [
     ...(scriptPhases.init || []).map((action: Action, index: number) => ({ phase: 'init', actionIndex: index, action })),
@@ -2810,6 +2841,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     ...(scriptPhases.teardown || []).map((action: Action, index: number) => ({ phase: 'teardown', actionIndex: index, action })),
   ]
   const debugBreakpointKeys = new Set(debugBreakpoints.map(bp => debugBreakpointKey(bp.phase, bp.action_index)))
+  const breakpointSummary = `${debugBreakpoints.length} selected across ${debugActionRows.length} executable action${debugActionRows.length === 1 ? '' : 's'}`
   const debugRawSearchText = debugRawSearch.trim().toLowerCase()
   const debugFilteredLogs = (browserReplaySession?.logs || [])
     .slice(debugRawClearedAt)
@@ -3392,10 +3424,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     },
     {
       key: 'replay',
-      label: 'Replay',
+      label: 'Debug/Replay',
       status: replayReport?.completed_at ? (replayReport.success ? 'done' : 'failed') : 'needs replay',
-      action: handleReplay,
-      disabled: replaying || saving || validating || !script.name || script.actions.length === 0,
+      action: openReplayDebugger,
+      disabled: saving || validating,
     },
     {
       key: 'save',
@@ -3412,6 +3444,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         <div className="editor-title-row">
           <h2>{scriptId ? 'Edit Script' : 'Create Script'}</h2>
           <div className="editor-actions">
+            {importMetadata && (
+              <button className="btn btn-ghost" type="button" onClick={() => openEditorSection('import')}>
+                Imported Metadata
+              </button>
+            )}
             <button className="btn btn-ghost" onClick={toggleJsonMode}>
               {jsonMode ? '◧ Form' : '{ } JSON'}
             </button>
@@ -3423,8 +3460,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 Stop Debugger
               </button>
             )}
-            <button className="btn btn-ghost" onClick={handleReplay} disabled={replaying || saving || validating || !script.name || script.actions.length === 0}>
-              {replaying ? (isBrowserScript ? 'Browser Replay…' : 'Replaying…') : (isBrowserScript ? 'Browser Replay' : 'Replay')}
+            <button className="btn btn-ghost" onClick={openReplayDebugger} disabled={saving || validating}>
+              {isBrowserScript ? 'Browser Replay' : 'Debug/Replay'}
             </button>
             <button className="btn btn-primary" onClick={handleSave} disabled={saving || validating || !script.name}>
               {saving ? 'Saving…' : 'Save Script'}
@@ -3643,7 +3680,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       checked={replayOptions.startPaused}
                       onChange={e => setReplayOptions(prev => ({ ...prev, startPaused: e.target.checked }))}
                     />
-                    <span>Start paused</span>
+                    <span>Step through</span>
                   </label>
                   <label className="full-width replay-variables-field">
                     <span>Debugger Variables JSON</span>
@@ -3690,42 +3727,67 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   <div className="debug-breakpoint-header">
                     <div>
                       <strong>Breakpoints</strong>
-                      <span>{debugBreakpoints.length} selected across {debugActionRows.length} executable action{debugActionRows.length === 1 ? '' : 's'}</span>
+                      <span>{breakpointSummary}</span>
                     </div>
-                    {debugBreakpoints.length > 0 && (
-                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => void (async () => {
-                        setDebugBreakpoints([])
-                        if (activeReplaySessionId && browserReplaySession && !['completed', 'failed', 'stopped'].includes(browserReplaySession.status)) {
-                          const res = await api.updateScriptDebugBreakpoints(activeReplaySessionId, [])
-                          if (res?.session) setBrowserReplaySession(res.session)
-                        }
-                      })()}>
-                        Clear
+                    <div className="debug-breakpoint-actions">
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => setBreakpointDialogOpen(true)}>
+                        Breakpoints
                       </button>
-                    )}
-                  </div>
-                  <div className="debug-breakpoint-list">
-                    {debugActionRows.length === 0 ? (
-                      <div className="debug-breakpoint-empty">Add actions before placing breakpoints.</div>
-                    ) : debugActionRows.map(({ phase, actionIndex, action }) => {
-                      const key = debugBreakpointKey(phase, actionIndex)
-                      const active = debugBreakpointKeys.has(key)
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          className={`debug-breakpoint-row ${active ? 'active' : ''}`}
-                          onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
-                        >
-                          <span className="debug-breakpoint-dot" />
-                          <span>{formatDebugPhaseLabel(phase)} {actionIndex + 1}</span>
-                          <strong>{action.name || 'Unnamed action'}</strong>
-                          <small>{action.method || action.type || 'action'} {action.target || action.selector || ''}</small>
+                      {debugBreakpoints.length > 0 && (
+                        <button type="button" className="btn btn-sm btn-ghost" onClick={() => void clearDebugBreakpoints()}>
+                          Clear
                         </button>
-                      )
-                    })}
+                      )}
+                    </div>
                   </div>
                 </div>
+                {breakpointDialogOpen && (
+                  <div className="editor-dialog-backdrop breakpoint-dialog-backdrop" onClick={() => setBreakpointDialogOpen(false)}>
+                    <div className="editor-dialog breakpoint-dialog" role="dialog" aria-modal="true" aria-label="Breakpoints" onClick={event => event.stopPropagation()}>
+                      <div className="editor-dialog-header">
+                        <div>
+                          <h3>Breakpoints</h3>
+                          <p>{breakpointSummary}</p>
+                        </div>
+                        <div className="replay-panel-actions" style={{ justifyContent: 'flex-end' }}>
+                          {debugBreakpoints.length > 0 && (
+                            <button type="button" className="btn btn-sm btn-ghost" onClick={() => void clearDebugBreakpoints()}>
+                              Clear All
+                            </button>
+                          )}
+                          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setBreakpointDialogOpen(false)}>
+                            Close
+                          </button>
+                        </div>
+                      </div>
+                      <div className="breakpoint-dialog-body">
+                        {debugActionRows.length === 0 ? (
+                          <div className="debug-breakpoint-empty">Add actions before placing breakpoints.</div>
+                        ) : (
+                          <div className="debug-breakpoint-list breakpoint-dialog-list">
+                            {debugActionRows.map(({ phase, actionIndex, action }) => {
+                              const key = debugBreakpointKey(phase, actionIndex)
+                              const active = debugBreakpointKeys.has(key)
+                              return (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  className={`debug-breakpoint-row ${active ? 'active' : ''}`}
+                                  onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
+                                >
+                                  <span className="debug-breakpoint-dot" />
+                                  <span>{formatDebugPhaseLabel(phase)} {actionIndex + 1}</span>
+                                  <strong>{action.name || 'Unnamed action'}</strong>
+                                  <small>{action.method || action.type || 'action'} {action.target || action.selector || ''}</small>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-end' }}>
                   {isBrowserScript && replayReport && (
                     <button className="btn btn-sm btn-ghost" onClick={handleDownloadBrowserReplayBundle}>
@@ -3753,12 +3815,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     </button>
                   )}
                   <button className="btn btn-sm btn-accent" onClick={handleReplay} disabled={replaying || saving || !script.name || script.actions.length === 0}>
-                    {replaying ? (isBrowserScript ? 'Running Browser Replay…' : 'Running…') : (isBrowserScript ? 'Run Browser Replay' : 'Run Replay')}
+                    {replaying ? (isBrowserScript ? 'Running Browser Replay…' : 'Running…') : replayStartButtonLabel}
                   </button>
                 </div>
 
                 {!replayReport ? (
-                  <div className="replay-empty-state">No debugger session has been started yet. Place optional breakpoints, choose a log level, and start the debugger for the current draft.</div>
+                  <div className="replay-empty-state">No debugger session has been started yet. Choose step through, place optional breakpoints, or start the debugger for the current draft.</div>
                 ) : (
                   <div className="replay-report">
                     <div className={`replay-live-banner ${replaying ? 'running' : replayReport.success ? 'success' : 'error'}`}>
@@ -6077,25 +6139,41 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </div>
                 </div>
                 <div className="action-list">
-                  {script.actions.map((a, i) => (
-                    <div key={i} className={`action-item ${activeAction === i ? 'active' : ''}`} onClick={() => setActiveAction(i)}>
-                      <span className="action-method" style={{ color: methodColor(a.type) }}>{a.type}</span>
-                      <span className="action-name-text">{a.name || 'Unnamed'}</span>
-                      <div className="action-item-signals">
-                        {(a.extractors || []).length > 0 && <span className="action-signal-pill">E{a.extractors?.length || 0}</span>}
-                        {actionIssueBuckets[i]?.length > 0 && (
-                          <span className={`action-signal-pill ${actionIssueBuckets[i].some((issue) => issue.severity === 'error') ? 'error' : 'warning'}`}>
-                            {actionIssueBuckets[i].length}
-                          </span>
-                        )}
+                  {script.actions.map((a, i) => {
+                    const actionBreakpointActive = debugBreakpointKeys.has(debugBreakpointKey('action', i))
+                    const actionBreakpointLabel = `${actionBreakpointActive ? 'Remove' : 'Set'} breakpoint on action ${i + 1}`
+                    return (
+                      <div key={i} className={`action-item ${activeAction === i ? 'active' : ''} ${actionBreakpointActive ? 'has-breakpoint' : ''}`} onClick={() => setActiveAction(i)}>
+                        <button
+                          type="button"
+                          className={`action-breakpoint-button ${actionBreakpointActive ? 'active' : ''}`}
+                          aria-label={actionBreakpointLabel}
+                          title={actionBreakpointLabel}
+                          onClick={event => {
+                            event.stopPropagation()
+                            void toggleDebugBreakpoint('action', i)
+                          }}
+                        >
+                          <span aria-hidden="true" />
+                        </button>
+                        <span className="action-method" style={{ color: methodColor(a.type) }}>{a.type}</span>
+                        <span className="action-name-text">{a.name || 'Unnamed'}</span>
+                        <div className="action-item-signals">
+                          {(a.extractors || []).length > 0 && <span className="action-signal-pill">E{a.extractors?.length || 0}</span>}
+                          {actionIssueBuckets[i]?.length > 0 && (
+                            <span className={`action-signal-pill ${actionIssueBuckets[i].some((issue) => issue.severity === 'error') ? 'error' : 'warning'}`}>
+                              {actionIssueBuckets[i].length}
+                            </span>
+                          )}
+                        </div>
+                        <div className="action-item-actions">
+                          <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, -1) }} disabled={i === 0}>↑</button>
+                          <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, 1) }} disabled={i === script.actions.length - 1}>↓</button>
+                          <button className="btn-icon danger" onClick={e => { e.stopPropagation(); removeAction(i) }}>✕</button>
+                        </div>
                       </div>
-                      <div className="action-item-actions">
-                        <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, -1) }} disabled={i === 0}>↑</button>
-                        <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, 1) }} disabled={i === script.actions.length - 1}>↓</button>
-                        <button className="btn-icon danger" onClick={e => { e.stopPropagation(); removeAction(i) }}>✕</button>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                   {script.actions.length === 0 && (
                     <div className="action-empty">No actions yet. Click "+ Add" to create one.</div>
                   )}
