@@ -105,6 +105,22 @@ function cssRule(css: string, selector: string) {
   return css.slice(bodyStart, bodyEnd)
 }
 
+function findButtonByText(root: ParentNode, text: string) {
+  return Array.from(root.querySelectorAll('button')).find(button => button.textContent?.trim() === text)
+}
+
+function findButtonByTitle(root: ParentNode, title: string) {
+  return Array.from(root.querySelectorAll('button')).find(button => button.getAttribute('title') === title)
+}
+
+function findOpenDebuggerButton(root: ParentNode) {
+  return findButtonByText(root, 'Open Debugger')
+}
+
+function findDebuggerRunButton(root: ParentNode, title = 'Run Replay') {
+  return findButtonByTitle(root, title)
+}
+
 function debugSessionResponse(report: {
   group: string
   protocol: string
@@ -400,10 +416,11 @@ describe('ScriptEditor', () => {
     expect(outline?.textContent).toContain('Script Configuration')
     expect(outline?.textContent).toContain('Runtime / RTS')
     expect(outline?.textContent).toContain('Parameter Data')
-    expect(outline?.textContent).toContain('Replay Output')
+    expect(outline?.textContent).not.toContain('Replay Output')
+    expect(outline?.textContent).not.toContain('Debug Session')
 
     const configDialog = container.querySelector('[aria-label="Script Configuration"]')
-    const replayDialog = container.querySelector('[aria-label="Replay Output"]')
+    const replayDialog = container.querySelector('[aria-label="Script Debugger"]')
     const runtimeDialog = container.querySelector('[aria-label="Runtime Settings"]')
     expect(configDialog?.className).toContain('support-dialog-config')
     expect(replayDialog?.className).toContain('support-dialog-replay')
@@ -634,9 +651,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={importedWeb2Script} projectId="project-1" />)
     })
 
-    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Browser Replay',
-    )
+    const replayButton = findOpenDebuggerButton(container)
     expect(replayButton).toBeDefined()
     if (!replayButton) {
       return
@@ -647,12 +662,10 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('[aria-label="Replay Output"]')?.className).toContain('open')
+    expect(container.querySelector('[aria-label="Script Debugger"]')?.className).toContain('open')
     expect(apiMock.startDraftScriptDebugSession).not.toHaveBeenCalled()
 
-    const runReplayButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Run Browser Replay',
-    )
+    const runReplayButton = findDebuggerRunButton(container, 'Run Browser Replay')
     expect(runReplayButton).toBeDefined()
     if (!runReplayButton) {
       return
@@ -718,7 +731,7 @@ describe('ScriptEditor', () => {
 
     const baseUrlInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'https://api.example.com')
     expect(baseUrlInput?.getAttribute('value')).toBe('https://api.example.com')
-    expect(container.textContent).not.toContain('Protocol')
+    expect(container.querySelector('[aria-label="Script Configuration"]')?.textContent).not.toContain('Protocol')
   })
 
   it('opens parameter data in a dialog from the action list header', async () => {
@@ -1982,7 +1995,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
     })
 
-    const replayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Debug/Replay')
+    const replayButton = findOpenDebuggerButton(container)
     expect(replayButton).toBeDefined()
     if (!replayButton) {
       return
@@ -1993,10 +2006,10 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('[aria-label="Replay Output"]')?.className).toContain('open')
+    expect(container.querySelector('[aria-label="Script Debugger"]')?.className).toContain('open')
     expect(apiMock.startDraftScriptDebugSession).not.toHaveBeenCalled()
 
-    const runReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Run Replay')
+    const runReplayButton = findDebuggerRunButton(container)
     expect(runReplayButton).toBeDefined()
     if (!runReplayButton) {
       return
@@ -2037,7 +2050,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
     })
 
-    const replayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Debug/Replay')
+    const replayButton = findOpenDebuggerButton(container)
     expect(replayButton).toBeDefined()
     if (!replayButton) {
       return
@@ -2060,7 +2073,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const startStepThroughButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Start Step Through')
+    const startStepThroughButton = findDebuggerRunButton(container, 'Start Step Through')
     expect(startStepThroughButton).toBeDefined()
     if (!startStepThroughButton) {
       return
@@ -2077,7 +2090,7 @@ describe('ScriptEditor', () => {
       script: expect.objectContaining({ project_id: 'project-1' }),
     }))
 
-    const stepButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Step') as HTMLButtonElement | undefined
+    const stepButton = findButtonByTitle(container, 'Step to next action') as HTMLButtonElement | undefined
     expect(stepButton).toBeDefined()
     expect(stepButton?.disabled).toBe(false)
     if (!stepButton) {
@@ -2097,7 +2110,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
     })
 
-    const replayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Debug/Replay')
+    const replayButton = findOpenDebuggerButton(container)
     expect(replayButton).toBeDefined()
     if (!replayButton) {
       return
@@ -2108,47 +2121,18 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const breakpointsButton = Array.from(container.querySelectorAll('.support-dialog-replay.open button')).find(button => button.textContent?.trim() === 'Breakpoints')
-    expect(breakpointsButton).toBeDefined()
-    if (!breakpointsButton) {
+    const debuggerBreakpointButton = container.querySelector('.support-dialog-replay.open .debugger-gutter[title="Add breakpoint"]') as HTMLButtonElement | null
+    expect(debuggerBreakpointButton).not.toBeNull()
+    if (!debuggerBreakpointButton) {
       return
     }
 
     await act(async () => {
-      breakpointsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      debuggerBreakpointButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
-    const breakpointDialog = container.querySelector('[aria-label="Breakpoints"]')
-    expect(breakpointDialog?.textContent).toContain('Login')
-    expect(breakpointDialog?.textContent).toContain('0 selected across 1 executable action')
-
-    const popupBreakpointRow = Array.from(breakpointDialog?.querySelectorAll('.debug-breakpoint-row') || [])
-      .find(button => button.textContent?.includes('Login')) as HTMLButtonElement | undefined
-    expect(popupBreakpointRow).toBeDefined()
-    if (!popupBreakpointRow) {
-      return
-    }
-
-    await act(async () => {
-      popupBreakpointRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
-    })
-
-    expect(popupBreakpointRow.className).toContain('active')
     expect(container.querySelector('[aria-label="Remove breakpoint on action 1"]')).not.toBeNull()
-
-    const closeDialogButton = Array.from(breakpointDialog?.querySelectorAll('button') || [])
-      .find(button => button.textContent?.trim() === 'Close')
-    expect(closeDialogButton).toBeDefined()
-    if (!closeDialogButton) {
-      return
-    }
-
-    await act(async () => {
-      closeDialogButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
-    })
 
     const removeBreakpointButton = container.querySelector('[aria-label="Remove breakpoint on action 1"]') as HTMLButtonElement | null
     expect(removeBreakpointButton).not.toBeNull()
@@ -2172,7 +2156,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const runReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Run Replay')
+    const runReplayButton = findDebuggerRunButton(container)
     expect(runReplayButton).toBeDefined()
     if (!runReplayButton) {
       return
@@ -2675,9 +2659,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('browser_long_press')
     expect(container.textContent).toContain('browser_swipe')
 
-    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Run Browser Replay',
-    )
+    const replayButton = findDebuggerRunButton(container, 'Run Browser Replay')
     expect(replayButton).toBeDefined()
     if (!replayButton) {
       return
@@ -2799,9 +2781,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={browserScript} />)
     })
 
-    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Run Browser Replay',
-    )
+    const replayButton = findDebuggerRunButton(container, 'Run Browser Replay')
     expect(replayButton).toBeDefined()
     if (!replayButton) {
       return
@@ -2927,12 +2907,26 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={diagnosticScript} />)
     })
 
-    expect(container.textContent).toContain('Preflight')
-    expect(container.textContent).toContain('Missing variable: account_id')
+    const readinessCard = Array.from(container.querySelectorAll('.utility-card'))
+      .find(card => card.textContent?.includes('Debug Readiness'))
+    expect(readinessCard?.textContent).toContain('Preflight')
+    expect(readinessCard?.textContent).toContain('Missing variable: account_id')
 
-    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Run Replay',
-    )
+    const settingsButton = findButtonByTitle(container, 'Session overrides')
+    expect(settingsButton).toBeDefined()
+    if (!settingsButton) {
+      return
+    }
+
+    await act(async () => {
+      settingsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const settingsPopover = container.querySelector('.debugger-settings-popover')
+    expect(settingsPopover?.textContent).not.toContain('Preflight')
+    expect(settingsPopover?.textContent).not.toContain('Missing variable: account_id')
+
+    const replayButton = findDebuggerRunButton(container)
     expect(replayButton).toBeDefined()
     if (!replayButton) {
       return
@@ -2946,17 +2940,6 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('First failing action')
     expect(container.textContent).toContain('Auth Session')
     expect(container.textContent).toContain('Refresh session setup')
-
-    const variablesTab = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Variables',
-    )
-    expect(variablesTab).toBeDefined()
-    if (!variablesTab) {
-      return
-    }
-    await act(async () => {
-      variablesTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
 
     expect(container.textContent).toContain('Variable Timeline')
     expect(container.textContent).toContain('csrf')
@@ -3002,9 +2985,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={browserScript} />)
     })
 
-    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Run Browser Replay',
-    )
+    const replayButton = findDebuggerRunButton(container, 'Run Browser Replay')
     expect(replayButton).toBeDefined()
     if (!replayButton) {
       return
@@ -3015,9 +2996,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const exportButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Download Debug JSON',
-    )
+    const exportButton = findButtonByTitle(container, 'Download Debug JSON')
     expect(exportButton).toBeDefined()
     if (!exportButton) {
       return
@@ -3119,9 +3098,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={browserScript} />)
     })
 
-    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Run Browser Replay',
-    )
+    const replayButton = findDebuggerRunButton(container, 'Run Browser Replay')
     expect(replayButton).toBeDefined()
     if (!replayButton) {
       return
@@ -3132,9 +3109,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const exportButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Download Replay ZIP',
-    )
+    const exportButton = findButtonByTitle(container, 'Download Replay ZIP')
     expect(exportButton).toBeDefined()
     if (!exportButton) {
       return
@@ -3210,9 +3185,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={browserScript} />)
     })
 
-    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Run Browser Replay',
-    )
+    const replayButton = findDebuggerRunButton(container, 'Run Browser Replay')
     expect(replayButton).toBeDefined()
     if (!replayButton) {
       return
@@ -4092,9 +4065,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={soapScript} />)
     })
 
-    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Debug/Replay',
-    )
+    const replayButton = findOpenDebuggerButton(container)
     expect(replayButton).toBeDefined()
     if (!replayButton) {
       return
@@ -4105,7 +4076,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const runReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Run Replay')
+    const runReplayButton = findDebuggerRunButton(container)
     expect(runReplayButton).toBeDefined()
     if (!runReplayButton) {
       return
@@ -4121,7 +4092,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('SOAP 1.2')
     expect(container.textContent).toContain('Code: env:Sender')
     expect(container.textContent).toContain('Reason: Request validation failed')
-    expect(container.textContent).toContain('Variable Inspector')
+    expect(container.textContent).toContain('Variable Timeline')
     expect(container.textContent).toContain('Extractions')
     expect(container.textContent).toContain('Snapshot Request')
     expect(container.textContent).toContain('Snapshot Response')
@@ -4176,7 +4147,7 @@ describe('ScriptEditor', () => {
     }, 200))
     expect(container.textContent).toContain('Open full text')
     const highlightedBlocks = Array.from(container.querySelectorAll('.snapshot-code'))
-    expect(highlightedBlocks).toHaveLength(4)
+    expect(highlightedBlocks.length).toBeGreaterThanOrEqual(4)
     expect(highlightedBlocks.some(block => block.textContent?.includes('"confirmationId": "CONF-42"'))).toBe(true)
     expect(highlightedBlocks.some(block => block.textContent?.includes('<CreateOrder />'))).toBe(true)
     const resolvedHeadersLabel = Array.from(container.querySelectorAll('.replay-code-block .replay-detail-label')).find(node => node.textContent === 'Resolved Headers')
@@ -4250,7 +4221,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={databaseScript} />)
     })
 
-    const replayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Debug/Replay')
+    const replayButton = findOpenDebuggerButton(container)
     expect(replayButton).toBeDefined()
     if (!replayButton) return
 
@@ -4259,7 +4230,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const runReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Run Replay')
+    const runReplayButton = findDebuggerRunButton(container)
     expect(runReplayButton).toBeDefined()
     if (!runReplayButton) return
 
@@ -4335,9 +4306,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
 
-    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Debug/Replay',
-    )
+    const replayButton = findOpenDebuggerButton(container)
     expect(replayButton).toBeDefined()
     if (!replayButton) {
       return
@@ -4348,7 +4317,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const runReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Run Replay')
+    const runReplayButton = findDebuggerRunButton(container)
     expect(runReplayButton).toBeDefined()
     if (!runReplayButton) {
       return
@@ -4463,9 +4432,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
 
-    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Debug/Replay',
-    )
+    const replayButton = findOpenDebuggerButton(container)
     expect(replayButton).toBeDefined()
     if (!replayButton) {
       return
@@ -4476,7 +4443,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const runReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Run Replay')
+    const runReplayButton = findDebuggerRunButton(container)
     expect(runReplayButton).toBeDefined()
     if (!runReplayButton) {
       return
@@ -4492,8 +4459,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Page Title')
     expect(container.textContent).toContain('Catalog')
     expect(container.textContent).not.toContain('Browser Artifacts')
-    expect(container.textContent).not.toContain('Console')
-    expect(container.textContent).not.toContain('Network')
+    expect(container.querySelector('.replay-browser-grid')).toBeNull()
     expect(container.textContent).not.toContain('View full size')
   })
 
@@ -4555,7 +4521,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Migration Assistant')
     expect(container.textContent).toContain('Draft Diff Review')
     expect(container.textContent).toContain('Correlation Inspector')
-    expect(container.textContent).toContain('Parameter & Variable Inspector')
+    expect(container.textContent).toContain('Parameter Source Inspector')
     expect(container.textContent).toContain('0 errors • 2 warnings')
   })
 

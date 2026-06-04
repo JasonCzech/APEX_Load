@@ -2946,6 +2946,21 @@
   border: 1px solid var(--border);
   background: var(--bg-primary);
 }
+.debug-readiness-card .replay-preflight-card {
+  margin-top: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+.debug-readiness-card .replay-preflight-header {
+  margin-bottom: 8px;
+}
+.debug-readiness-card .replay-preflight-meta {
+  justify-content: flex-start;
+}
+.debug-readiness-card .replay-preflight-checks {
+  grid-template-columns: 1fr;
+}
 .utility-card-header {
   display: flex;
   align-items: flex-start;

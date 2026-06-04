@@ -629,6 +629,43 @@ function replayPreflightStatusLabel(preflight?: ReplayPreflight | null) {
   return 'Ready'
 }
 
+function ReplayPreflightCard({ preflight }: { preflight: ReplayPreflight }) {
+  return (
+    <div className={`replay-preflight-card ${preflight.valid ? 'ready' : 'attention'}`}>
+      <div className="replay-preflight-header">
+        <div>
+          <span className="replay-detail-label">Preflight</span>
+          <strong>{replayPreflightStatusLabel(preflight)}</strong>
+        </div>
+        <div className="replay-preflight-meta">
+          <span>{preflight.action_count} action{preflight.action_count === 1 ? '' : 's'}</span>
+          <span>{preflight.data_source_count} data source{preflight.data_source_count === 1 ? '' : 's'}</span>
+          {preflight.browser_required && <span>Browser runtime</span>}
+        </div>
+      </div>
+      <div className="replay-preflight-checks">
+        {(preflight.checks || []).map(check => (
+          <div key={check.id} className={`replay-preflight-check ${check.status}`}>
+            <span>{check.label}</span>
+            <strong>{check.status === 'pass' ? 'Ready' : check.status === 'warn' ? 'Note' : 'Needs work'}</strong>
+            {check.detail && <small>{check.detail}</small>}
+          </div>
+        ))}
+      </div>
+      {((preflight.missing_variables?.length || 0) > 0 || (preflight.missing_secrets?.length || 0) > 0) && (
+        <div className="replay-preflight-alerts">
+          {(preflight.missing_variables || []).map(name => (
+            <span key={`missing-var-${name}`}>Missing variable: {name}</span>
+          ))}
+          {(preflight.missing_secrets || []).map(name => (
+            <span key={`missing-secret-${name}`}>Missing secret: {name}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function decodeBase64Bytes(value: string): Uint8Array {
   const decoded = atob(value)
   const bytes = new Uint8Array(decoded.length)
@@ -3575,6 +3612,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setError('')
   }
 
+  const debugSessionAvailable = Boolean(replayReport || activeReplaySessionId || browserReplaySession)
+  const debugEvidenceStatus = replayReport?.completed_at
+    ? (replayReport.success ? 'passed' : 'failed')
+    : activeReplaySessionId || browserReplaySession
+      ? 'in progress'
+      : 'missing'
+
   const convergenceItems = [
     {
       key: 'validate',
@@ -3592,9 +3636,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     },
     {
       key: 'replay',
-      label: 'Debug/Replay',
-      status: replayReport?.completed_at ? (replayReport.success ? 'done' : 'failed') : 'needs replay',
-      action: openReplayDebugger,
+      label: 'Debug Evidence',
+      status: debugEvidenceStatus,
+      action: debugSessionAvailable ? openReplayDebugger : undefined,
+      actionLabel: 'Open',
       disabled: saving || validating,
     },
     {
@@ -3629,7 +3674,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               </button>
             )}
             <button className="btn btn-ghost" onClick={openReplayDebugger} disabled={saving || validating}>
-              {isBrowserScript ? 'Browser Replay' : 'Debug/Replay'}
+              Open Debugger
             </button>
             <button className="btn btn-primary" onClick={handleSave} disabled={saving || validating || !script.name}>
               {saving ? 'Saving…' : 'Save Script'}
@@ -3867,7 +3912,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   ref={debuggerSettingsBtnRef}
                   type="button"
                   className={`debugger-icon-btn ${debuggerSettingsOpen ? 'active' : ''}`}
-                  title="Run configuration"
+                  title="Session overrides"
                   aria-pressed={debuggerSettingsOpen}
                   onClick={() => setDebuggerSettingsOpen(open => !open)}
                 >
@@ -3897,10 +3942,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             {debuggerSettingsOpen && (
               <div className="debugger-settings-popover" ref={debuggerSettingsRef}>
                 <div className="debugger-settings-head">
-                  <strong>Run configuration</strong>
+                  <strong>Session Overrides</strong>
                   <button type="button" className="btn btn-sm btn-ghost" onClick={() => setDebuggerSettingsOpen(false)}>Done</button>
                 </div>
-                <p className="replay-panel-subtitle">Interactive debugger with breakpoints, stepping, variable inspection, raw output, and browser evidence when the script captures it.</p>
+                <p className="replay-panel-subtitle">Temporary settings for this debugger session. They do not change saved Runtime / RTS settings.</p>
                 <div className="replay-options-grid">
                   <label>
                     <span>Debugger Group</span>
@@ -3938,7 +3983,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     <span>Step through (start paused)</span>
                   </label>
                   <div className="full-width replay-variables-field">
-                    <span>Debugger Variables JSON</span>
+                    <span>Session Variables JSON</span>
                     <div className="replay-variables-editor" style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden', marginTop: '6px' }}>
                       <CodeMirror
                         value={replayOptions.variablesText}
@@ -3953,38 +3998,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       />
                     </div>
                   </div>
-                </div>
-                <div className={`replay-preflight-card ${replayPreflight.valid ? 'ready' : 'attention'}`}>
-                  <div className="replay-preflight-header">
-                    <div>
-                      <span className="replay-detail-label">Preflight</span>
-                      <strong>{replayPreflightStatusLabel(replayPreflight)}</strong>
-                    </div>
-                    <div className="replay-preflight-meta">
-                      <span>{replayPreflight.action_count} action{replayPreflight.action_count === 1 ? '' : 's'}</span>
-                      <span>{replayPreflight.data_source_count} data source{replayPreflight.data_source_count === 1 ? '' : 's'}</span>
-                      {replayPreflight.browser_required && <span>Browser runtime</span>}
-                    </div>
-                  </div>
-                  <div className="replay-preflight-checks">
-                    {(replayPreflight.checks || []).map(check => (
-                      <div key={check.id} className={`replay-preflight-check ${check.status}`}>
-                        <span>{check.label}</span>
-                        <strong>{check.status === 'pass' ? 'Ready' : check.status === 'warn' ? 'Note' : 'Needs work'}</strong>
-                        {check.detail && <small>{check.detail}</small>}
-                      </div>
-                    ))}
-                  </div>
-                  {((replayPreflight.missing_variables?.length || 0) > 0 || (replayPreflight.missing_secrets?.length || 0) > 0) && (
-                    <div className="replay-preflight-alerts">
-                      {(replayPreflight.missing_variables || []).map(name => (
-                        <span key={`missing-var-${name}`}>Missing variable: {name}</span>
-                      ))}
-                      {(replayPreflight.missing_secrets || []).map(name => (
-                        <span key={`missing-secret-${name}`}>Missing secret: {name}</span>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
             )}
@@ -5000,7 +5013,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     {httpConversionGenerating ? 'Generating...' : 'Generate HTTP Draft Preview'}
                   </button>
                   <button type="button" className="btn btn-secondary" onClick={() => openEditorSection('replay')}>
-                    Open Replay Output
+                    Open Debugger
                   </button>
                   <button type="button" className="btn btn-secondary" onClick={() => openEditorSection('parameter-data')}>
                     Review Parameter Data
@@ -6365,7 +6378,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     {objectDescriptorReview.rows.length > 0 && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('object-descriptors')}>Object Descriptors</button>}
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('parameter-data')}>Parameter Data</button>
                     {isBrowserScript && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('http-conversion')}>HTTP Conversion Review</button>}
-                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('replay')}>Replay Output</button>
+                    {debugSessionAvailable && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('replay')}>Debug Session</button>}
                   </div>
                   <div className="editor-outline-metrics" aria-label="Script outline summary">
                     <span><strong>{outlineSummary.browserActionCount || outlineSummary.actionCount}</strong> {isBrowserScript ? 'browser' : 'actions'}</span>
@@ -6516,10 +6529,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   )}
                 </div>
 
+                <div className="utility-card debug-readiness-card">
+                  <div className="utility-card-header">
+                    <strong>Debug Readiness</strong>
+                    <span>{replayPreflightStatusLabel(replayPreflight)}</span>
+                  </div>
+                  <ReplayPreflightCard preflight={replayPreflight} />
+                </div>
+
                 <div className="utility-card">
                   <div className="utility-card-header">
                     <strong>Convergence Checklist</strong>
-                    <span>validate • repair • replay • save</span>
+                    <span>validate • repair • debug evidence • save</span>
                   </div>
                   <div className="utility-checklist">
                     {convergenceItems.map(item => (
@@ -6530,7 +6551,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         </div>
                         {item.action && (
                           <button type="button" className="btn btn-sm btn-secondary" onClick={item.action} disabled={item.disabled}>
-                            {item.label}
+                            {item.actionLabel || item.label}
                           </button>
                         )}
                       </div>
@@ -6712,7 +6733,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
                 <div className="utility-card">
                   <div className="utility-card-header">
-                    <strong>Parameter & Variable Inspector</strong>
+                    <strong>Parameter Source Inspector</strong>
                     <button type="button" className="btn btn-sm btn-ghost" onClick={() => setIsParameterDialogOpen(true)}>
                       Open
                     </button>
