@@ -948,8 +948,12 @@ describe('LoadRunnerImport', () => {
         },
       },
       stats: {
-        total_functions: 2,
-        converted_actions: 2,
+        total_functions: 1539,
+        converted_actions: 88,
+        logical_actions: 88,
+        raw_request_actions: 537,
+        collapsed_requests: 449,
+        transaction_markers: 946,
         extractors: 1,
         think_times: 0,
         transactions: 1,
@@ -1015,6 +1019,10 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('2/2 matched (100.0%)')
     expect(container.textContent).toContain('Draft Ready')
     expect(container.textContent).toContain('Salesforce Review')
+    expect(container.textContent).toContain('Logical Actions')
+    expect(container.textContent).toContain('Raw Requests')
+    expect(container.textContent).toContain('Collapsed')
+    expect(container.textContent).toContain('LR Markers')
 
     const openNativePreview = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Native Preview'))
     expect(openNativePreview).toBeDefined()

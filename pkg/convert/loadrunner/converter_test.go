@@ -232,8 +232,11 @@ func TestConvert(t *testing.T) {
 	}
 
 	// Verify stats
-	if result.Stats.ConvertedActions < 4 {
-		t.Errorf("expected at least 4 converted actions, got %d", result.Stats.ConvertedActions)
+	if result.Stats.ConvertedActions != 3 || result.Stats.LogicalActions != 3 {
+		t.Errorf("converted/logical actions = %d/%d, want 3/3", result.Stats.ConvertedActions, result.Stats.LogicalActions)
+	}
+	if result.Stats.RawRequestActions != 4 || result.Stats.CollapsedRequests != 1 {
+		t.Errorf("raw/collapsed request actions = %d/%d, want 4/1", result.Stats.RawRequestActions, result.Stats.CollapsedRequests)
 	}
 
 	if result.Stats.Extractors != 1 {
@@ -253,14 +256,17 @@ func TestConvert(t *testing.T) {
 	if len(result.Stats.UnsupportedFuncs) != 0 {
 		t.Fatalf("unsupported funcs = %#v, want none", result.Stats.UnsupportedFuncs)
 	}
-	if result.Stats.CustomCallFunctions != 1 {
-		t.Fatalf("custom_call_functions = %d, want web_set_max_html_param_len preserved as custom review action", result.Stats.CustomCallFunctions)
+	if result.Stats.CustomCallFunctions != 0 {
+		t.Fatalf("custom_call_functions = %d, want metadata-only helper functions to stay out of visible actions", result.Stats.CustomCallFunctions)
+	}
+	if result.Stats.TransactionMarkers != 2 {
+		t.Fatalf("transaction_markers = %d, want start and end markers", result.Stats.TransactionMarkers)
 	}
 	if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 {
 		t.Fatal("expected source review mappings")
 	}
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "actions[1]", "converted")
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_reg_save_param", "actions[1].extractors[0]", "contributor")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "actions[0].params.requests[0]", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_reg_save_param", "actions[0].params.requests[0].extractors[0]", "contributor")
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_think_time", "config.think_time", "converted")
 	assertSourceReviewFunctionStatus(t, result.SourceReview.Mappings, "web_set_max_html_param_len", "review_only")
 
@@ -270,7 +276,10 @@ func TestConvert(t *testing.T) {
 	}
 
 	// First action (Homepage) should have the extractor attached
-	firstAction := findActionByName(t, result.Script.Actions, "Homepage")
+	if result.Script.Actions[0].Type != "http_sequence" || result.Script.Actions[0].Name != "Login" {
+		t.Fatalf("first action = %#v, want logical Login http_sequence", result.Script.Actions[0])
+	}
+	firstAction := sequenceChildByName(t, result.Script.Actions[0], "Homepage")
 	if len(firstAction.Extractors) != 1 {
 		t.Errorf("expected 1 extractor on first action, got %d", len(firstAction.Extractors))
 	} else if firstAction.Extractors[0].Name != "sessionid" {
@@ -319,6 +328,47 @@ func findActionByName(t *testing.T, actions []dsl.Action, name string) dsl.Actio
 		}
 	}
 	t.Fatalf("missing action named %q in %#v", name, actions)
+	return dsl.Action{}
+}
+
+func sequenceChildByName(t *testing.T, sequence dsl.Action, name string) dsl.Action {
+	t.Helper()
+	if sequence.Type != "http_sequence" {
+		t.Fatalf("action %q type = %q, want http_sequence", sequence.Name, sequence.Type)
+	}
+	rawRequests, ok := sequence.Params["requests"]
+	if !ok {
+		t.Fatalf("sequence %q missing params.requests: %#v", sequence.Name, sequence.Params)
+	}
+	values, ok := rawRequests.([]map[string]any)
+	if !ok {
+		if generic, genericOK := rawRequests.([]any); genericOK {
+			values = make([]map[string]any, 0, len(generic))
+			for _, value := range generic {
+				entry, entryOK := value.(map[string]any)
+				if !entryOK {
+					t.Fatalf("sequence request entry = %#v, want object", value)
+				}
+				values = append(values, entry)
+			}
+		} else {
+			t.Fatalf("sequence %q params.requests = %#v, want []map[string]any", sequence.Name, rawRequests)
+		}
+	}
+	for _, entry := range values {
+		payload, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatalf("json.Marshal(sequence child) returned error: %v", err)
+		}
+		var child dsl.Action
+		if err := json.Unmarshal(payload, &child); err != nil {
+			t.Fatalf("json.Unmarshal(sequence child) returned error: %v", err)
+		}
+		if child.Name == name {
+			return child
+		}
+	}
+	t.Fatalf("missing sequence child named %q in %#v", name, rawRequests)
 	return dsl.Action{}
 }
 
@@ -730,11 +780,19 @@ func TestConvertPreserveTransactionsOption(t *testing.T) {
 		t.Fatalf("convert without transactions error: %v", err)
 	}
 
-	if got := firstProtocolAction(t, withTransactions.Script.Actions).Name; got != "Login_Homepage" {
-		t.Fatalf("preserved action name = %q, want Login_Homepage", got)
+	withSequence := firstProtocolAction(t, withTransactions.Script.Actions)
+	if withSequence.Name != "Login" || withSequence.Type != "http_sequence" {
+		t.Fatalf("preserved logical action = %#v, want Login http_sequence", withSequence)
 	}
-	if got := firstProtocolAction(t, withoutTransactions.Script.Actions).Name; got != "Homepage" {
-		t.Fatalf("non-preserved action name = %q, want Homepage", got)
+	if got := sequenceChildByName(t, withSequence, "Login_Homepage").Name; got != "Login_Homepage" {
+		t.Fatalf("preserved child action name = %q, want Login_Homepage", got)
+	}
+	withoutSequence := firstProtocolAction(t, withoutTransactions.Script.Actions)
+	if withoutSequence.Name != "Login" || withoutSequence.Type != "http_sequence" {
+		t.Fatalf("non-preserved logical action = %#v, want Login http_sequence", withoutSequence)
+	}
+	if got := sequenceChildByName(t, withoutSequence, "Homepage").Name; got != "Homepage" {
+		t.Fatalf("non-preserved child action name = %q, want Homepage", got)
 	}
 }
 
@@ -1162,8 +1220,32 @@ Options=NOTHINK
 	if len(result.Script.Config.WebRuntime.ContentChecks) != 1 {
 		t.Fatalf("content checks = %#v, want one global verification", result.Script.Config.WebRuntime.ContentChecks)
 	}
+	if result.Script.Config.WebRuntime.ContentChecks[0].Scope != "any_response" {
+		t.Fatalf("content check scope = %q, want any_response", result.Script.Config.WebRuntime.ContentChecks[0].Scope)
+	}
 	if !result.Script.Config.ThinkTime.Ignore {
 		t.Fatalf("think time ignore = false, want NOTHINK mapped")
+	}
+}
+
+func TestNormalizeLoadRunnerContentCheckScope(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "loadrunner body", value: "Body", want: "any_response"},
+		{name: "loadrunner all", value: "All", want: "any_response"},
+		{name: "main document", value: "Main Document", want: "main_document"},
+		{name: "resource", value: "Embedded Resources", want: "resource"},
+		{name: "unknown fallback", value: "Some LoadRunner Scope", want: "any_response"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := normalizeLoadRunnerContentCheckScope(test.value); got != test.want {
+				t.Fatalf("normalizeLoadRunnerContentCheckScope(%q) = %q, want %q", test.value, got, test.want)
+			}
+		})
 	}
 }
 
@@ -1347,7 +1429,17 @@ vuser_end()
 	if launch.Target != "https://acme.my.salesforce.com/one/one.app" {
 		t.Fatalf("launch target = %q, want absolute Salesforce URL because base host is mobileauth", launch.Target)
 	}
-	address := findActionByName(t, result.Script.Actions, "Address_Search_Aura")
+	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Type != "http_sequence" {
+		t.Fatalf("main actions = %#v, want one logical http_sequence transaction", result.Script.Actions)
+	}
+	sequence := result.Script.Actions[0]
+	if sequence.Name != "S01_iPad_BuyFlow_AIA_T06_AddressSearchAndContinue" {
+		t.Fatalf("sequence name = %q, want LoadRunner transaction name", sequence.Name)
+	}
+	if sequence.Metadata["loadrunner_request_count"] != 3 {
+		t.Fatalf("sequence request count metadata = %#v, want 3", sequence.Metadata["loadrunner_request_count"])
+	}
+	address := sequenceChildByName(t, sequence, "Address_Search_Aura")
 	if address.Target != "https://acme.lightning.force.com/aura" {
 		t.Fatalf("address target = %q, want absolute lightning URL", address.Target)
 	}
@@ -1363,7 +1455,7 @@ vuser_end()
 	if !strings.Contains(address.Body, "{{param.p_username}}") {
 		t.Fatalf("address body = %q, want parameterized username", address.Body)
 	}
-	checkout := findActionByName(t, result.Script.Actions, "Checkout_Aura")
+	checkout := sequenceChildByName(t, sequence, "Checkout_Aura")
 	if _, ok := checkout.Headers["X-SFDC-Page-Scope-Id"]; ok {
 		t.Fatalf("auto header should be reverted before checkout: %#v", checkout.Headers)
 	}
@@ -1389,8 +1481,8 @@ vuser_end()
 	if result.SourceReview == nil {
 		t.Fatal("source review missing")
 	}
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_custom_request", "init[2]", "converted")
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_submit_data", "actions[2]", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_custom_request", "init[0]", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_submit_data", "actions[0].params.requests[0]", "converted")
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "teardown[0]", "converted")
 }
 
@@ -2088,8 +2180,8 @@ func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
 	if result.Script.Config.BaseURL != "https://shop.example.test" {
 		t.Fatalf("base_url = %q, want https://shop.example.test", result.Script.Config.BaseURL)
 	}
-	if result.Stats.ConvertedActions != 7 {
-		t.Fatalf("converted_actions = %d, want 7 including native transaction actions", result.Stats.ConvertedActions)
+	if result.Stats.ConvertedActions != 2 || result.Stats.LogicalActions != 2 {
+		t.Fatalf("converted/logical actions = %d/%d, want two logical actions", result.Stats.ConvertedActions, result.Stats.LogicalActions)
 	}
 	if result.Stats.Transactions != 1 {
 		t.Fatalf("transactions = %d, want 1", result.Stats.Transactions)
@@ -2365,8 +2457,43 @@ func convertedAssertionCount(actions []dsl.Action) int {
 	count := 0
 	for _, action := range actions {
 		count += len(action.Assertions)
+		if action.Type == "http_sequence" {
+			for _, child := range sequenceChildren(action) {
+				count += len(child.Assertions)
+			}
+		}
 	}
 	return count
+}
+
+func sequenceChildren(sequence dsl.Action) []dsl.Action {
+	rawRequests, ok := sequence.Params["requests"]
+	if !ok {
+		return nil
+	}
+	values, ok := rawRequests.([]map[string]any)
+	if !ok {
+		if generic, genericOK := rawRequests.([]any); genericOK {
+			values = make([]map[string]any, 0, len(generic))
+			for _, value := range generic {
+				if entry, entryOK := value.(map[string]any); entryOK {
+					values = append(values, entry)
+				}
+			}
+		}
+	}
+	children := make([]dsl.Action, 0, len(values))
+	for _, entry := range values {
+		payload, err := json.Marshal(entry)
+		if err != nil {
+			continue
+		}
+		var child dsl.Action
+		if err := json.Unmarshal(payload, &child); err == nil {
+			children = append(children, child)
+		}
+	}
+	return children
 }
 
 func assertRuntimeSettingParityEntry(t *testing.T, entries []RuntimeSettingParityEntry, wantID string, wantStatus RuntimeSettingStatus) {

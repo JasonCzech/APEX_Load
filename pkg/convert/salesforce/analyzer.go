@@ -192,33 +192,51 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 func flattenRequestActions(script *dsl.Script) []actionRef {
 	refs := make([]actionRef, 0, len(script.Init)+len(script.Actions)+len(script.Teardown))
 	seq := 1
+	appendRef := func(phase string, index int, action *dsl.Action, inheritedTransaction string) {
+		method := strings.ToUpper(strings.TrimSpace(action.Method))
+		if method == "" {
+			method = strings.ToUpper(strings.TrimSpace(action.Type))
+		}
+		if method == "" || strings.TrimSpace(action.Target) == "" || isEngineAction(action.Type) {
+			return
+		}
+		resolved := resolveActionURL(script.Config.BaseURL, action.Target)
+		evidence := salesforceActionEvidence(action, resolved)
+		descriptor := extractAuraDescriptor(evidence)
+		refs = append(refs, actionRef{
+			Phase:       phase,
+			Index:       index,
+			Sequence:    seq,
+			Action:      action,
+			URL:         resolved,
+			Method:      method,
+			Kind:        classifySalesforceAction(action, resolved),
+			FlowKind:    classifySalesforceFlow(evidence, descriptor),
+			Descriptor:  descriptor,
+			Object:      classifySalesforceObject(evidence, descriptor),
+			Transaction: firstNonEmpty(metadataString(action.Metadata, "loadrunner_transaction"), metadataString(action.Metadata, "source_transaction"), inheritedTransaction),
+		})
+		seq++
+	}
 	appendRefs := func(phase string, actions []dsl.Action) {
 		for index := range actions {
 			action := &actions[index]
-			method := strings.ToUpper(strings.TrimSpace(action.Method))
-			if method == "" {
-				method = strings.ToUpper(strings.TrimSpace(action.Type))
-			}
-			if method == "" || strings.TrimSpace(action.Target) == "" || isEngineAction(action.Type) {
+			if strings.EqualFold(action.Type, "http_sequence") {
+				transaction := firstNonEmpty(metadataString(action.Metadata, "loadrunner_transaction"), metadataString(action.Metadata, "source_transaction"))
+				children := salesforceSequenceChildren(*action)
+				for childIndex := range children {
+					child := children[childIndex]
+					if child.Metadata == nil {
+						child.Metadata = map[string]any{}
+					}
+					if child.Metadata["loadrunner_transaction"] == nil && transaction != "" {
+						child.Metadata["loadrunner_transaction"] = transaction
+					}
+					appendRef(phase, index, &child, transaction)
+				}
 				continue
 			}
-			resolved := resolveActionURL(script.Config.BaseURL, action.Target)
-			evidence := salesforceActionEvidence(action, resolved)
-			descriptor := extractAuraDescriptor(evidence)
-			refs = append(refs, actionRef{
-				Phase:       phase,
-				Index:       index,
-				Sequence:    seq,
-				Action:      action,
-				URL:         resolved,
-				Method:      method,
-				Kind:        classifySalesforceAction(action, resolved),
-				FlowKind:    classifySalesforceFlow(evidence, descriptor),
-				Descriptor:  descriptor,
-				Object:      classifySalesforceObject(evidence, descriptor),
-				Transaction: metadataString(action.Metadata, "loadrunner_transaction"),
-			})
-			seq++
+			appendRef(phase, index, action, "")
 		}
 	}
 	appendRefs("init", script.Init)
@@ -234,6 +252,42 @@ func isEngineAction(actionType string) bool {
 	default:
 		return false
 	}
+}
+
+func salesforceSequenceChildren(action dsl.Action) []dsl.Action {
+	if action.Params == nil {
+		return nil
+	}
+	rawRequests, ok := action.Params["requests"]
+	if !ok {
+		return nil
+	}
+	var values []any
+	switch typed := rawRequests.(type) {
+	case []any:
+		values = typed
+	case []map[string]any:
+		values = make([]any, len(typed))
+		for index := range typed {
+			values[index] = typed[index]
+		}
+	case []dsl.Action:
+		return append([]dsl.Action(nil), typed...)
+	default:
+		return nil
+	}
+	children := make([]dsl.Action, 0, len(values))
+	for _, value := range values {
+		payload, err := json.Marshal(value)
+		if err != nil {
+			continue
+		}
+		var child dsl.Action
+		if err := json.Unmarshal(payload, &child); err == nil && strings.TrimSpace(child.Target) != "" {
+			children = append(children, child)
+		}
+	}
+	return children
 }
 
 func resolveActionURL(baseURL, target string) string {

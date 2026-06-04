@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -116,6 +117,35 @@ func (vu *VUser) Run(ctx context.Context) {
 	iterationTxMode := autoTx == "per_iteration" || (autoTx == "none" && !scriptHasExplicitTransactions(vu.Script))
 	maxIter := cfg.RunLogic.Iterations
 	continueOnError := cfg.ErrorHandling.ContinueOnError
+	applyActionThinkTime := func(action dsl.Action) {
+		if !action.ThinkTimeAfter {
+			return
+		}
+		thinkCfg := globalThinkCfg
+		if action.ThinkTime.Type != "" {
+			thinkCfg = protocol.ThinkTimeConfig{
+				Type:       action.ThinkTime.Type,
+				MeanMs:     action.ThinkTime.MeanMs,
+				StdMs:      action.ThinkTime.StdMs,
+				MinMs:      action.ThinkTime.MinMs,
+				MaxMs:      action.ThinkTime.MaxMs,
+				Multiplier: action.ThinkTime.Multiplier,
+				LimitMs:    action.ThinkTime.LimitMs,
+				Ignore:     action.ThinkTime.Ignore,
+			}
+			// Inherit global multiplier/limit/ignore if not set per-action.
+			if thinkCfg.Multiplier == 0 {
+				thinkCfg.Multiplier = globalThinkCfg.Multiplier
+			}
+			if thinkCfg.LimitMs == 0 {
+				thinkCfg.LimitMs = globalThinkCfg.LimitMs
+			}
+			if globalThinkCfg.Ignore {
+				thinkCfg.Ignore = true
+			}
+		}
+		applyThinkTime(thinkCfg)
+	}
 
 	// --- Main iteration loop ---
 	iteration := 0
@@ -197,6 +227,39 @@ func (vu *VUser) Run(ctx context.Context) {
 				continue
 			}
 
+			if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
+				if vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartTransaction() {
+					goto teardown
+				}
+				result, err := vu.executeHTTPSequenceAction(ctx, action, cfg.ErrorHandling)
+				if err != nil {
+					logger.Error("action error", "action", action.Name, "err", err)
+					iterSuccess = false
+					if !continueOnError {
+						recordIterationTransaction(false)
+						goto teardown
+					}
+					continue
+				}
+				iterTxDuration += result.Duration
+				vu.recordTransaction(action.Name, result.Duration, result.Success, result)
+				if !result.Success {
+					iterSuccess = false
+					iterTransactionSource = result
+					if logCfg.OnErrorOnly || logCfg.Level == "extended" {
+						logger.Error("action failed", actionLogAttrs(action.Name, vu.resolveAction(action), result, logCfg, true)...)
+					}
+					if !continueOnError {
+						recordIterationTransaction(false)
+						goto teardown
+					}
+				} else if logCfg.Level == "extended" {
+					logger.Info("action ok", actionLogAttrs(action.Name, vu.resolveAction(action), result, logCfg, false)...)
+				}
+				applyActionThinkTime(action)
+				continue
+			}
+
 			resolved := vu.resolveAction(action)
 			if actionTxMode && vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartTransaction() {
 				goto teardown
@@ -244,33 +307,7 @@ func (vu *VUser) Run(ctx context.Context) {
 				logger.Info("action ok", actionLogAttrs(action.Name, resolved, result, logCfg, false)...)
 			}
 
-			// Apply think time
-			if action.ThinkTimeAfter {
-				thinkCfg := globalThinkCfg
-				if action.ThinkTime.Type != "" {
-					thinkCfg = protocol.ThinkTimeConfig{
-						Type:       action.ThinkTime.Type,
-						MeanMs:     action.ThinkTime.MeanMs,
-						StdMs:      action.ThinkTime.StdMs,
-						MinMs:      action.ThinkTime.MinMs,
-						MaxMs:      action.ThinkTime.MaxMs,
-						Multiplier: action.ThinkTime.Multiplier,
-						LimitMs:    action.ThinkTime.LimitMs,
-						Ignore:     action.ThinkTime.Ignore,
-					}
-					// Inherit global multiplier/limit/ignore if not set per-action
-					if thinkCfg.Multiplier == 0 {
-						thinkCfg.Multiplier = globalThinkCfg.Multiplier
-					}
-					if thinkCfg.LimitMs == 0 {
-						thinkCfg.LimitMs = globalThinkCfg.LimitMs
-					}
-					if globalThinkCfg.Ignore {
-						thinkCfg.Ignore = true
-					}
-				}
-				applyThinkTime(thinkCfg)
-			}
+			applyActionThinkTime(action)
 		}
 
 		// Record iteration-level transaction
@@ -448,6 +485,10 @@ func scriptHasExplicitTransactions(script *dsl.Script) bool {
 		switch strings.ToLower(strings.TrimSpace(action.Type)) {
 		case "loadrunner_transaction", "transaction":
 			return true
+		case "http_sequence":
+			if sourceMetadataString(action.Metadata, "source_transaction") != "" || sourceMetadataString(action.Metadata, "loadrunner_transaction") != "" {
+				return true
+			}
 		}
 	}
 	return false
@@ -1363,6 +1404,163 @@ func (vu *VUser) executeWithRetry(ctx context.Context, action *protocol.Action, 
 	}
 
 	return lastResult, nil
+}
+
+func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Action, errCfg dsl.ErrorHandlingConfig) (*protocol.Result, error) {
+	children, err := httpSequenceChildActions(action)
+	start := time.Now()
+	aggregate := &protocol.Result{
+		ActionName:          action.Name,
+		StartTime:           start,
+		Success:             true,
+		BusinessTransaction: true,
+		Group:               vu.Group,
+		Extractions:         make(map[string]string),
+	}
+	if len(action.Metadata) > 0 {
+		applyProtocolResultSourceMetadata(aggregate, vu.interpolateAnyMap(action.Metadata))
+	}
+	if err != nil {
+		aggregate.Success = false
+		aggregate.ErrorMessage = err.Error()
+		aggregate.Duration = time.Since(start)
+		return aggregate, nil
+	}
+	for index, child := range children {
+		if ctx.Err() != nil {
+			aggregate.Success = false
+			aggregate.ErrorMessage = ctx.Err().Error()
+			aggregate.Duration = time.Since(start)
+			return aggregate, ctx.Err()
+		}
+		resolved := vu.resolveAction(child)
+		result, execErr := vu.executeWithRetry(ctx, resolved, errCfg)
+		if execErr != nil {
+			aggregate.Success = false
+			aggregate.ErrorMessage = execErr.Error()
+			aggregate.Duration = time.Since(start)
+			return aggregate, nil
+		}
+		if result == nil {
+			continue
+		}
+		vu.recordResult(result, errCfg)
+		copySequenceSourceResult(aggregate, result)
+		for key, value := range result.Extractions {
+			aggregate.Extractions[key] = value
+		}
+		if !result.Success {
+			aggregate.Success = false
+			aggregate.ErrorMessage = firstEngineValue(result.ErrorMessage, fmt.Sprintf("http_sequence child %d failed", index+1))
+			if !errCfg.ContinueOnError {
+				break
+			}
+		}
+	}
+	aggregate.Duration = time.Since(start)
+	return aggregate, nil
+}
+
+func httpSequenceChildActions(action dsl.Action) ([]dsl.Action, error) {
+	if action.Params == nil {
+		return nil, fmt.Errorf("http_sequence %q requires params.requests", action.Name)
+	}
+	rawRequests, ok := action.Params["requests"]
+	if !ok {
+		return nil, fmt.Errorf("http_sequence %q requires params.requests", action.Name)
+	}
+	var values []any
+	switch typed := rawRequests.(type) {
+	case []any:
+		values = typed
+	case []dsl.Action:
+		values = make([]any, len(typed))
+		for i := range typed {
+			values[i] = typed[i]
+		}
+	case []map[string]any:
+		values = make([]any, len(typed))
+		for i := range typed {
+			values[i] = typed[i]
+		}
+	default:
+		return nil, fmt.Errorf("http_sequence %q params.requests must be an array", action.Name)
+	}
+	if len(values) == 0 {
+		return nil, fmt.Errorf("http_sequence %q requires at least one child request", action.Name)
+	}
+	children := make([]dsl.Action, 0, len(values))
+	for index, value := range values {
+		child, err := httpSequenceChildAction(value)
+		if err != nil {
+			return nil, fmt.Errorf("http_sequence %q child %d: %w", action.Name, index+1, err)
+		}
+		if child.Name == "" {
+			child.Name = fmt.Sprintf("%s_%d", action.Name, index+1)
+		}
+		if child.Type == "" {
+			child.Type = child.Method
+		}
+		if child.Method == "" {
+			child.Method = child.Type
+		}
+		if child.Metadata == nil {
+			child.Metadata = map[string]any{}
+		}
+		for _, key := range []string{"source_transaction", "loadrunner_transaction"} {
+			if child.Metadata[key] == nil && action.Metadata != nil && action.Metadata[key] != nil {
+				child.Metadata[key] = action.Metadata[key]
+			}
+		}
+		children = append(children, child)
+	}
+	return children, nil
+}
+
+func httpSequenceChildAction(value any) (dsl.Action, error) {
+	if action, ok := value.(dsl.Action); ok {
+		return action, nil
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return dsl.Action{}, err
+	}
+	var action dsl.Action
+	if err := json.Unmarshal(payload, &action); err != nil {
+		return dsl.Action{}, err
+	}
+	if strings.TrimSpace(action.Target) == "" {
+		return dsl.Action{}, fmt.Errorf("missing target")
+	}
+	return action, nil
+}
+
+func copySequenceSourceResult(target *protocol.Result, source *protocol.Result) {
+	if target == nil || source == nil {
+		return
+	}
+	target.Region = source.Region
+	target.CorrelationID = source.CorrelationID
+	target.NetworkProfile = source.NetworkProfile
+	target.DependencyType = source.DependencyType
+	target.DependencyTarget = source.DependencyTarget
+	target.DNSTime += source.DNSTime
+	target.ConnectTime += source.ConnectTime
+	target.TLSTime += source.TLSTime
+	target.TTFB += source.TTFB
+	target.BytesSent += source.BytesSent
+	target.BytesReceived += source.BytesReceived
+	target.StatusCode = source.StatusCode
+	target.ServerTelemetry = source.ServerTelemetry
+	target.SourceStepID = source.SourceStepID
+	target.SourceStepIndex = source.SourceStepIndex
+	target.SourceAction = source.SourceAction
+	target.SourceActionName = source.SourceActionName
+	target.SourceTransaction = firstEngineValue(target.SourceTransaction, source.SourceTransaction)
+	target.SourceProfile = source.SourceProfile
+	if source.ErrorMessage != "" {
+		target.ErrorMessage = source.ErrorMessage
+	}
 }
 
 func applyProtocolResultSourceMetadata(result *protocol.Result, metadata map[string]any) {

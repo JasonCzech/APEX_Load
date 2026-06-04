@@ -1411,12 +1411,13 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
 
             {/* Stats */}
             <div className="lr-stats-grid">
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.converted_actions}</span><span className="lr-stat-label">Actions</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.logical_actions ?? result.stats.converted_actions}</span><span className="lr-stat-label">Logical Actions</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.raw_request_actions ?? result.stats.converted_actions}</span><span className="lr-stat-label">Raw Requests</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.collapsed_requests ?? 0}</span><span className="lr-stat-label">Collapsed</span></div>
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.extractors}</span><span className="lr-stat-label">Extractors</span></div>
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.transactions}</span><span className="lr-stat-label">Transactions</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.think_times}</span><span className="lr-stat-label">Think Times</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.transaction_markers ?? 0}</span><span className="lr-stat-label">LR Markers</span></div>
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.total_functions}</span><span className="lr-stat-label">Total LR Functions</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.skipped}</span><span className="lr-stat-label">Skipped</span></div>
             </div>
 
             {unsupportedFunctions.length > 0 && (

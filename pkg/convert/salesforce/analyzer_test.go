@@ -222,6 +222,58 @@ func TestAnalyzeClassifiesSalesforceObjectFlowsAndNestedJMESPath(t *testing.T) {
 	}
 }
 
+func TestAnalyzeFlattensHTTPSequenceChildren(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "Grouped SF Import",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{{
+			Name:   "Address Search",
+			Type:   "http_sequence",
+			Method: "SEQUENCE",
+			Target: "https://acme.lightning.force.com/aura",
+			Metadata: map[string]any{
+				"loadrunner_transaction": "S01_AddressSearch",
+			},
+			Params: map[string]any{
+				"requests": []map[string]any{{
+					"name":   "Address Search Aura",
+					"type":   "POST",
+					"method": "POST",
+					"target": "https://acme.lightning.force.com/aura",
+					"body":   `{"descriptor":"apex://BWC_ServiceAddressController/ACTION$getSearchResults","params":{"query":"100 Main"}}`,
+				}, {
+					"name":   "Record UI",
+					"type":   "GET",
+					"method": "GET",
+					"target": "https://acme.my.salesforce.com/services/data/v60.0/ui-api/records/001SANITIZED",
+				}},
+			},
+		}},
+	}
+
+	review, err := Analyze(script, AnalyzeOptions{})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if !review.Detected {
+		t.Fatal("Salesforce traffic was not detected")
+	}
+	if len(review.Transactions) != 1 {
+		t.Fatalf("transactions = %#v, want one grouped transaction", review.Transactions)
+	}
+	transaction := review.Transactions[0]
+	if transaction.Name != "S01_AddressSearch" || transaction.Source != "loadrunner_transaction" {
+		t.Fatalf("transaction = %#v, want grouped LoadRunner transaction", transaction)
+	}
+	if transaction.RequestCount != 2 || transaction.AuraActions != 1 || transaction.UIAPICalls != 1 {
+		t.Fatalf("transaction counts = %#v, want two child requests with Aura and UI API counts", transaction)
+	}
+	if !containsString(transaction.FlowKinds, "service") || !containsString(transaction.FlowKinds, "record") {
+		t.Fatalf("flow kinds = %#v, want service and record child classifications", transaction.FlowKinds)
+	}
+}
+
 func TestAnalyzeHandlesHAREdgeCases(t *testing.T) {
 	script := &dsl.Script{
 		Name:     "SF HAR Edges",

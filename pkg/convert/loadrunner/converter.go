@@ -29,6 +29,11 @@ type ConvertResult struct {
 type ConvertStats struct {
 	TotalFunctions            int      `json:"total_functions"`
 	ConvertedActions          int      `json:"converted_actions"`
+	LogicalActions            int      `json:"logical_actions,omitempty"`
+	RawRequestActions         int      `json:"raw_request_actions,omitempty"`
+	CollapsedRequests         int      `json:"collapsed_requests,omitempty"`
+	TransactionMarkers        int      `json:"transaction_markers,omitempty"`
+	ContributorFunctions      int      `json:"contributor_functions,omitempty"`
 	Extractors                int      `json:"extractors"`
 	ThinkTimes                int      `json:"think_times"`
 	Transactions              int      `json:"transactions"`
@@ -125,6 +130,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	var persistentCookies []ParsedCookie
 	var pendingSourceMappings []SourceReviewMapping
 	var currentTransaction string
+	var currentSubTransaction string
 	var lastRequestURL string
 	var thinkTimes []float64
 	var loadRunnerRuntimeControls []ParsedFunction
@@ -139,6 +145,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				pendingExtractors = append(pendingExtractors, *ext)
 				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", ext.Name, "extractor", "contributor", "Applied to the next converted request action.", LoadRunnerSupportExecutable))
 				result.Stats.Extractors++
+				result.Stats.ContributorFunctions++
 				recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 			}
 
@@ -148,12 +155,14 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			if assertion != nil {
 				pendingAssertions = append(pendingAssertions, *assertion)
 				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", assertion.Type, "assertion", "contributor", "Applied to the next converted request action.", LoadRunnerSupportExecutable))
+				result.Stats.ContributorFunctions++
 				mapped = true
 			}
 			if saveCountExtractor != nil {
 				pendingExtractors = append(pendingExtractors, *saveCountExtractor)
 				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", saveCountExtractor.Name, "extractor", "contributor", "Counts matches for SaveCount and applies the value to the next converted request action.", LoadRunnerSupportExecutable))
 				result.Stats.Extractors++
+				result.Stats.ContributorFunctions++
 				mapped = true
 			}
 			if mapped {
@@ -167,6 +176,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			if check, warning := convertGlobalVerification(fn); check != nil {
 				result.Script.Config.WebRuntime.ContentChecks = append(result.Script.Config.WebRuntime.ContentChecks, *check)
 				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.web_runtime.content_checks", check.Text, "config", "converted", "Mapped to a global HTTP content check.", LoadRunnerSupportExecutable))
+				result.Stats.ContributorFunctions++
 				recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 			} else if warning != "" {
 				result.Warnings = append(result.Warnings, warning)
@@ -180,6 +190,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				pendingHeaders[k] = convertParamReferences(v)
 			}
 			pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", firstNonEmpty(fn.StepName, fn.Name), "headers", "contributor", "Applied to the next converted request action.", LoadRunnerSupportExecutable))
+			result.Stats.ContributorFunctions++
 			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
 		case "web_add_auto_header":
@@ -190,6 +201,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				autoHeaders[k] = convertParamReferences(v)
 			}
 			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers", firstNonEmpty(fn.StepName, fn.Name), "headers", "converted", "Applied as a persistent auto header until reverted.", LoadRunnerSupportExecutable))
+			result.Stats.ContributorFunctions++
 			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
 		case "web_revert_auto_header":
@@ -198,6 +210,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				deleteHeaderCaseInsensitive(autoHeaders, headerName)
 			}
 			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers", firstNonEmpty(headerName, fn.Name), "headers", "converted", "Reverted a persistent LoadRunner auto header.", LoadRunnerSupportExecutable))
+			result.Stats.ContributorFunctions++
 			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
 		case "web_add_cookie":
@@ -209,21 +222,40 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				persistentCookies = append(persistentCookies, cookie)
 			}
 			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers.Cookie", firstNonEmpty(fn.StepName, fn.Name), "headers", "converted", "Mapped to Cookie headers on matching downstream HTTP requests.", LoadRunnerSupportExecutable))
+			result.Stats.ContributorFunctions++
 			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
 		case "lr_start_transaction":
-			if action, mode, ok := convertLoadRunnerFunctionAction(fn); ok {
-				appendLoadRunnerAction(result, fn, action, mode, "Converted to a native LoadRunner transaction action.")
-			}
 			currentTransaction = fn.StepName
+			currentSubTransaction = ""
 			pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", fn.StepName, "transaction", "contributor", "Applied to generated action names until the transaction ends.", LoadRunnerSupportExecutable))
 			result.Stats.Transactions++
+			result.Stats.TransactionMarkers++
+			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
 		case "lr_end_transaction":
-			if action, mode, ok := convertLoadRunnerFunctionAction(fn); ok {
-				appendLoadRunnerAction(result, fn, action, mode, "Converted to a native LoadRunner transaction action.")
-			}
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.loadrunner_transaction_groups", fn.StepName, "transaction", "contributor", "Closed a LoadRunner transaction group.", LoadRunnerSupportExecutable))
+			result.Stats.TransactionMarkers++
+			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 			currentTransaction = ""
+			currentSubTransaction = ""
+
+		case "lr_start_sub_transaction":
+			currentSubTransaction = fn.StepName
+			if currentTransaction == "" {
+				if parent := loadRunnerControlArgAt(fn, 1); parent != "" {
+					currentTransaction = parent
+				}
+			}
+			pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", firstNonEmpty(fn.StepName, currentTransaction), "transaction", "contributor", "Applied as a LoadRunner subtransaction on generated child requests.", LoadRunnerSupportExecutable))
+			result.Stats.TransactionMarkers++
+			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
+
+		case "lr_end_sub_transaction":
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.loadrunner_transaction_groups", fn.StepName, "transaction", "contributor", "Closed a LoadRunner subtransaction group.", LoadRunnerSupportExecutable))
+			result.Stats.TransactionMarkers++
+			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
+			currentSubTransaction = ""
 
 		case "lr_think_time":
 			sec, ok := ExtractThinkTimeSeconds(fn)
@@ -231,6 +263,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				thinkTimes = append(thinkTimes, sec)
 				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.think_time", "Think Time", "config", "converted", "Contributes to generated think-time distribution.", LoadRunnerSupportExecutable))
 				result.Stats.ThinkTimes++
+				result.Stats.ContributorFunctions++
 				recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 			}
 
@@ -238,6 +271,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			loadRunnerRuntimeControls = append(loadRunnerRuntimeControls, fn)
 			applyLoadRunnerContinueOnError(result, fn)
 			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.error_handling.continue_on_error", "Continue On Error", "config", "converted", "Mapped from LoadRunner runtime control.", LoadRunnerSupportExecutable))
+			result.Stats.ContributorFunctions++
 			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
 		case "lr_error_message":
@@ -260,6 +294,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				"mapped_to": "config.web_runtime.additional_attributes.web_cache_cleanup",
 			})
 			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.web_runtime.additional_attributes.web_cache_cleanup", "Web Cache Cleanup", "config", "converted", "Mapped from LoadRunner runtime control.", LoadRunnerSupportExecutable))
+			result.Stats.ContributorFunctions++
 			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
 		case "web_cleanup_cookies":
@@ -269,22 +304,25 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				"mapped_to": "config.web_runtime.additional_attributes.web_cleanup_cookies",
 			})
 			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.web_runtime.additional_attributes.web_cleanup_cookies", "Web Cleanup Cookies", "config", "converted", "Mapped from LoadRunner runtime control.", LoadRunnerSupportExecutable))
+			result.Stats.ContributorFunctions++
 			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
 		case "web_set_sockets_option":
 			loadRunnerRuntimeControls = append(loadRunnerRuntimeControls, fn)
 			details := applyLoadRunnerSocketOption(result, fn)
 			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, stringMapValue(details, "mapped_to", "config.web_runtime.additional_attributes.web_set_sockets_option"), firstNonEmpty(stringMapValue(details, "option", ""), "Socket Option"), "config", "converted", "Mapped from LoadRunner runtime control.", LoadRunnerSupportExecutable))
+			result.Stats.ContributorFunctions++
 			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
 		case "web_set_timeout":
 			loadRunnerRuntimeControls = append(loadRunnerRuntimeControls, fn)
 			details := applyLoadRunnerTimeout(result, fn)
 			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, stringMapValue(details, "mapped_to", "config.web_runtime.additional_attributes.web_set_timeout"), firstNonEmpty(stringMapValue(details, "timeout", ""), "Timeout"), "config", "converted", "Mapped from LoadRunner runtime control.", LoadRunnerSupportExecutable))
+			result.Stats.ContributorFunctions++
 			recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 
 		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_service_call":
-			action, warnings := convertAction(fn, baseURL, currentTransaction, opts, lastRequestURL)
+			action, warnings := convertAction(fn, baseURL, currentTransaction, currentSubTransaction, opts, lastRequestURL)
 			if contextURL := loadRunnerRequestContextURL(fn, lastRequestURL); contextURL != "" {
 				lastRequestURL = contextURL
 			}
@@ -373,11 +411,24 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 				appendActionForPhase(result.Script, fn.Phase, *action)
 				result.Stats.ConvertedActions++
+				result.Stats.RawRequestActions++
 				recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 			}
 			result.Warnings = append(result.Warnings, warnings...)
 
 		default:
+			if isLoadRunnerMetadataOnlyContributor(fn.Name) {
+				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.loadrunner_contributor_functions", firstNonEmpty(fn.StepName, fn.Name), "review", "review_only", "Preserved as LoadRunner import metadata; it does not create a visible script action.", LoadRunnerSupportReviewOnly))
+				result.Stats.ContributorFunctions++
+				recordLoadRunnerFunctionSupport(result, LoadRunnerSupportReviewOnly)
+				continue
+			}
+			if def, ok := lookupLoadRunnerFunction(fn.Name); ok && def.Family == "transaction" {
+				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.loadrunner_transaction_groups", firstNonEmpty(fn.StepName, fn.Name), "transaction", "contributor", "Preserved as a LoadRunner transaction marker; it does not create a visible script action.", def.SupportMode))
+				result.Stats.TransactionMarkers++
+				recordLoadRunnerFunctionSupport(result, def.SupportMode)
+				continue
+			}
 			if action, mode, ok := convertLoadRunnerFunctionAction(fn); ok {
 				appendLoadRunnerAction(result, fn, action, mode, loadRunnerSupportNotes(fn, mode))
 				continue
@@ -387,6 +438,8 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, "metadata.import.preserved.unsupported_functions", fn.Name, "unsupported", "review_only", "No executable APEX Load mapping exists for this LoadRunner function yet."))
 		}
 	}
+
+	compactLoadRunnerHTTPActions(result)
 
 	// Configure think time from collected lr_think_time values
 	if len(thinkTimes) > 0 {
@@ -713,11 +766,15 @@ func ensureLoadRunnerImportPreserved(script *dsl.Script) map[string]any {
 }
 
 func firstLoadRunnerControlArg(fn ParsedFunction) string {
+	return loadRunnerControlArgAt(fn, 0)
+}
+
+func loadRunnerControlArgAt(fn ParsedFunction, index int) string {
 	args := loadRunnerControlArgs(fn)
-	if len(args) == 0 {
+	if index < 0 || index >= len(args) {
 		return ""
 	}
-	return args[0]
+	return args[index]
 }
 
 func loadRunnerControlArgs(fn ParsedFunction) []string {
@@ -749,6 +806,15 @@ func loadRunnerControlArgs(fn ParsedFunction) []string {
 		args = append(args, fn.RawArgs...)
 	}
 	return args
+}
+
+func isLoadRunnerMetadataOnlyContributor(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "web_set_max_html_param_len", "web_convert_param":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseLoadRunnerBool(value string) (bool, bool) {
@@ -1009,7 +1075,7 @@ func applySOAPImportHints(action *dsl.Action, fn ParsedFunction) {
 }
 
 // convertAction converts a single web_ function to a DSL Action.
-func convertAction(fn ParsedFunction, baseURL, transaction string, opts ConvertOptions, previousRequestURL string) (*dsl.Action, []string) {
+func convertAction(fn ParsedFunction, baseURL, transaction string, subTransaction string, opts ConvertOptions, previousRequestURL string) (*dsl.Action, []string) {
 	var warnings []string
 
 	action := &dsl.Action{
@@ -1019,9 +1085,19 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, opts ConvertO
 
 	// Determine name
 	name := sanitizeName(fn.StepName)
-	if opts.PreserveTransactions && transaction != "" {
-		name = sanitizeName(transaction) + "_" + name
+	if transaction != "" {
 		action.Metadata["loadrunner_transaction"] = transaction
+		action.Metadata["source_transaction"] = transaction
+		if opts.PreserveTransactions {
+			name = sanitizeName(transaction) + "_" + name
+		}
+	}
+	if subTransaction != "" {
+		action.Metadata["loadrunner_subtransaction"] = subTransaction
+		action.Metadata["source_subtransaction"] = subTransaction
+		if _, exists := action.Metadata["source_action_name"]; !exists {
+			action.Metadata["source_action_name"] = subTransaction
+		}
 	}
 	action.Name = name
 
@@ -1314,9 +1390,29 @@ func convertGlobalVerification(fn ParsedFunction) (*dsl.ContentCheckConfig, stri
 	}
 	return &dsl.ContentCheckConfig{
 		Text:        convertParamReferences(text),
-		Scope:       normalizeEnum(firstNonEmpty(firstNonEmptyArg(fn, "Search"), firstNonEmptyArg(fn, "Scope"), "any_response")),
+		Scope:       normalizeLoadRunnerContentCheckScope(firstNonEmpty(firstNonEmptyArg(fn, "Search"), firstNonEmptyArg(fn, "Scope"), "any_response")),
 		FailIfFound: &failIfFound,
 	}, ""
+}
+
+func normalizeLoadRunnerContentCheckScope(value string) string {
+	scope := normalizeEnum(value)
+	switch scope {
+	case "", "all", "any", "body", "header", "headers", "response", "global", "any_response":
+		return "any_response"
+	case "main", "page", "document", "html", "main_document":
+		return "main_document"
+	case "resource", "resources", "embedded_resource", "embedded_resources":
+		return "resource"
+	default:
+		if strings.Contains(scope, "resource") {
+			return "resource"
+		}
+		if strings.Contains(scope, "document") || strings.Contains(scope, "main") {
+			return "main_document"
+		}
+		return "any_response"
+	}
 }
 
 func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, string) {
@@ -1786,7 +1882,7 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 		failIfFound := !hasExplicitFalse(contentCheckSection["FailIfFound"])
 		rc.ContentChecks = append(rc.ContentChecks, dsl.ContentCheckConfig{
 			Text:        text,
-			Scope:       normalizeEnum(firstNonBlank(contentCheckSection["Scope"], "any_response")),
+			Scope:       normalizeLoadRunnerContentCheckScope(firstNonBlank(contentCheckSection["Scope"], "any_response")),
 			FailIfFound: &failIfFound,
 		})
 	}

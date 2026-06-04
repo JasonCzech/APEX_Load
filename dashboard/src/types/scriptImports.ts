@@ -82,6 +82,11 @@ export interface LoadRunnerReviewArtifact {
 export interface LoadRunnerConvertStats {
   total_functions: number
   converted_actions: number
+  logical_actions?: number
+  raw_request_actions?: number
+  collapsed_requests?: number
+  transaction_markers?: number
+  contributor_functions?: number
   extractors: number
   think_times: number
   transactions: number

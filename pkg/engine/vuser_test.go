@@ -24,6 +24,16 @@ type loggingProtocol struct {
 	executeCalls int
 }
 
+type sequenceProtocol struct {
+	failFirst bool
+	actions   []*protocol.Action
+}
+
+type sequenceCaptureSink struct {
+	results      []*protocol.Result
+	transactions []*protocol.Result
+}
+
 func (p *iterationResetProtocol) Name() string { return "browser" }
 func (p *iterationResetProtocol) Init(_ context.Context, _ map[string]any) error {
 	p.initCalls++
@@ -53,6 +63,42 @@ func (p *loggingProtocol) Execute(_ context.Context, action *protocol.Action) (*
 }
 func (p *loggingProtocol) Teardown(_ context.Context) error    { return nil }
 func (p *loggingProtocol) HealthCheck(_ context.Context) error { return nil }
+
+func (p *sequenceProtocol) Name() string { return "http" }
+func (p *sequenceProtocol) Init(_ context.Context, _ map[string]any) error {
+	return nil
+}
+func (p *sequenceProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	p.actions = append(p.actions, action)
+	result := &protocol.Result{
+		ActionName:       action.Name,
+		Success:          true,
+		Duration:         time.Millisecond,
+		DependencyType:   "http",
+		DependencyTarget: action.Target,
+		Extractions:      map[string]string{},
+	}
+	if p.failFirst && len(p.actions) == 1 {
+		result.Success = false
+		result.ErrorMessage = "first child failed"
+	}
+	if action.Name == "Login" {
+		result.Extractions["token"] = "abc123"
+	}
+	return result, nil
+}
+func (p *sequenceProtocol) Teardown(_ context.Context) error    { return nil }
+func (p *sequenceProtocol) HealthCheck(_ context.Context) error { return nil }
+
+func (s *sequenceCaptureSink) RecordResult(result *protocol.Result) error {
+	s.results = append(s.results, result)
+	return nil
+}
+
+func (s *sequenceCaptureSink) RecordTransaction(result *protocol.Result) error {
+	s.transactions = append(s.transactions, result)
+	return nil
+}
 
 func TestVUser_Interpolate(t *testing.T) {
 	vu := &VUser{
@@ -438,6 +484,118 @@ func TestVUser_Run_LogsExtendedOptions(t *testing.T) {
 		if !strings.Contains(logOutput, expected) {
 			t.Fatalf("log output missing %q: %s", expected, logOutput)
 		}
+	}
+}
+
+func TestVUser_Run_HTTPSequencePropagatesExtractionsAndRecordsOneTransaction(t *testing.T) {
+	protoStub := &sequenceProtocol{}
+	sink := &sequenceCaptureSink{}
+	vu := &VUser{
+		ID:         1,
+		Group:      "Checkout",
+		Proto:      protoStub,
+		Variables:  map[string]string{},
+		Metrics:    NewMetricsCollector(16),
+		ResultSink: sink,
+		Script: &dsl.Script{
+			Name:     "Imported",
+			Protocol: "http",
+			Config: dsl.ScriptConfig{
+				RunLogic: dsl.RunLogicConfig{Iterations: 1},
+			},
+			Actions: []dsl.Action{{
+				Name: "CheckoutFlow",
+				Type: "http_sequence",
+				Params: map[string]any{
+					"requests": []map[string]any{{
+						"name":   "Login",
+						"type":   "POST",
+						"method": "POST",
+						"target": "/login",
+						"body":   "user=ada",
+					}, {
+						"name":   "Checkout",
+						"type":   "POST",
+						"method": "POST",
+						"target": "/checkout",
+						"body":   "token={{var.token}}",
+					}},
+				},
+				Metadata: map[string]any{"source_transaction": "CheckoutFlow"},
+			}},
+		},
+	}
+
+	vu.Run(context.Background())
+
+	if len(protoStub.actions) != 2 {
+		t.Fatalf("executed children = %d, want 2", len(protoStub.actions))
+	}
+	if protoStub.actions[0].Name != "Login" || protoStub.actions[1].Name != "Checkout" {
+		t.Fatalf("child order = [%s %s], want Login then Checkout", protoStub.actions[0].Name, protoStub.actions[1].Name)
+	}
+	if got := string(protoStub.actions[1].Body); got != "token=abc123" {
+		t.Fatalf("checkout body = %q, want token from first child extraction", got)
+	}
+	if len(sink.results) != 2 {
+		t.Fatalf("recorded child results = %d, want 2", len(sink.results))
+	}
+	if len(sink.transactions) != 1 {
+		t.Fatalf("recorded transactions = %d, want one logical transaction", len(sink.transactions))
+	}
+	if tx := sink.transactions[0]; tx.ActionName != "CheckoutFlow" || !tx.Success || tx.SourceTransaction != "CheckoutFlow" {
+		t.Fatalf("transaction = %#v, want successful CheckoutFlow source transaction", tx)
+	}
+}
+
+func TestVUser_Run_HTTPSequenceContinueOnErrorRunsRemainingChildren(t *testing.T) {
+	protoStub := &sequenceProtocol{failFirst: true}
+	sink := &sequenceCaptureSink{}
+	vu := &VUser{
+		ID:         1,
+		Group:      "Checkout",
+		Proto:      protoStub,
+		Variables:  map[string]string{},
+		Metrics:    NewMetricsCollector(16),
+		ResultSink: sink,
+		Script: &dsl.Script{
+			Name:     "Imported",
+			Protocol: "http",
+			Config: dsl.ScriptConfig{
+				RunLogic:      dsl.RunLogicConfig{Iterations: 1},
+				ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true},
+			},
+			Actions: []dsl.Action{{
+				Name: "CheckoutFlow",
+				Type: "http_sequence",
+				Params: map[string]any{
+					"requests": []map[string]any{{
+						"name":   "Login",
+						"type":   "POST",
+						"method": "POST",
+						"target": "/login",
+					}, {
+						"name":   "Checkout",
+						"type":   "POST",
+						"method": "POST",
+						"target": "/checkout",
+					}},
+				},
+				Metadata: map[string]any{"source_transaction": "CheckoutFlow"},
+			}},
+		},
+	}
+
+	vu.Run(context.Background())
+
+	if len(protoStub.actions) != 2 {
+		t.Fatalf("executed children = %d, want both children despite first failure", len(protoStub.actions))
+	}
+	if len(sink.transactions) != 1 {
+		t.Fatalf("recorded transactions = %d, want one logical transaction", len(sink.transactions))
+	}
+	if tx := sink.transactions[0]; tx.Success || tx.ErrorMessage == "" {
+		t.Fatalf("transaction = %#v, want failed logical transaction with an error", tx)
 	}
 }
 

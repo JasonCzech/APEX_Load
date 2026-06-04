@@ -290,6 +290,11 @@ func rewriteKnownParameterReferencesAny(value any, names map[string]struct{}) an
 			typed[index] = rewriteKnownParameterReferencesAny(item, names)
 		}
 		return typed
+	case []map[string]any:
+		for index, item := range typed {
+			typed[index] = rewriteKnownParameterReferencesAny(item, names).(map[string]any)
+		}
+		return typed
 	case []string:
 		for index, item := range typed {
 			typed[index] = rewriteKnownParameterReferences(item, names)

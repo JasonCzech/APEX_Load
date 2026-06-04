@@ -387,6 +387,62 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.support-dialog-import.open')?.textContent).toContain('checkout.usr')
   })
 
+  it('renders grouped HTTP sequence actions with child request details', async () => {
+    const sequenceScript: ScriptDefinition = {
+      ...initialScript,
+      actions: [{
+        name: 'S01_iPad_BuyFlow_AIA_T06_AddressSearchAndContinue',
+        type: 'http_sequence',
+        method: 'SEQUENCE',
+        target: '/aura',
+        metadata: {
+          source_transaction: 'S01_iPad_BuyFlow_AIA_T06_AddressSearchAndContinue',
+          loadrunner_request_count: 2,
+        },
+        params: {
+          requests: [{
+            name: 'Address_Search_Aura',
+            type: 'POST',
+            method: 'POST',
+            target: '/aura',
+            body: 'message={{param.p_username}}',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            metadata: {
+              source_subtransaction: 'ACTION$execute_getSearchResults',
+            },
+            extractors: [{ name: 'csrf', source: 'body', type: 'jsonpath', expression: '$.csrf' }],
+          }, {
+            name: 'Checkout_Aura',
+            type: 'POST',
+            method: 'POST',
+            target: '/aura',
+            assertions: [{ type: 'status_code', expected: 200 }],
+          }],
+        },
+      }],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={sequenceScript} />)
+    })
+
+    expect(container.textContent).toContain('HTTP sequence')
+    const groupedAction = Array.from(container.querySelectorAll('.action-item'))
+      .find(item => item.textContent?.includes('S01_iPad_BuyFlow_AIA_T06_AddressSearchAndContinue'))
+    expect(groupedAction).toBeDefined()
+    await act(async () => {
+      groupedAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Grouped Requests')
+    expect(container.textContent).toContain('2 requests')
+    expect(container.textContent).toContain('Address_Search_Aura')
+    expect(container.textContent).toContain('Checkout_Aura')
+    expect(container.textContent).toContain('ACTION$execute_getSearchResults')
+    expect(container.querySelector('.action-list')?.textContent).toContain('R2')
+    expect(container.querySelector('.action-list')?.textContent).toContain('E1')
+  })
+
   it('layers the parameter data dialog above the sticky app chrome', async () => {
     // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
     const { readFileSync } = await import('node:fs')

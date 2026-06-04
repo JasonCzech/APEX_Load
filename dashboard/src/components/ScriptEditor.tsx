@@ -354,18 +354,102 @@ function actionHasWait(action: Action) {
   return action.type === 'browser_wait'
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function asHeaders(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) return undefined
+  const headers: Record<string, string> = {}
+  Object.entries(value).forEach(([key, headerValue]) => {
+    if (typeof headerValue === 'string') headers[key] = headerValue
+  })
+  return Object.keys(headers).length > 0 ? headers : undefined
+}
+
+function asExtractors(value: unknown): Action['extractors'] {
+  if (!Array.isArray(value)) return undefined
+  return value.filter(isRecord).map(item => ({
+    name: asString(item.name),
+    source: asString(item.source),
+    type: asString(item.type),
+    expression: asString(item.expression),
+  })).filter(item => item.name || item.expression)
+}
+
+function asAssertions(value: unknown): Action['assertions'] {
+  if (!Array.isArray(value)) return undefined
+  return value.filter(isRecord).map(item => ({
+    type: asString(item.type),
+    expected: item.expected,
+    value: asString(item.value),
+    max: typeof item.max === 'number' ? item.max : undefined,
+  })).filter(item => item.type)
+}
+
+function httpSequenceRequests(action: Action): Action[] {
+  if (action.type !== 'http_sequence') return []
+  const rawRequests = action.params?.requests
+  if (!Array.isArray(rawRequests)) return []
+  return rawRequests.filter(isRecord).map((request, index) => {
+    const method = asString(request.method) || asString(request.type) || 'GET'
+    const metadata = isRecord(request.metadata) ? request.metadata : undefined
+    return {
+      name: asString(request.name) || `${action.name || 'Request'} ${index + 1}`,
+      type: asString(request.type) || method,
+      method,
+      target: asString(request.target),
+      headers: asHeaders(request.headers),
+      body: asString(request.body),
+      body_encoding: asString(request.body_encoding) || undefined,
+      params: isRecord(request.params) ? request.params : undefined,
+      metadata,
+      extractors: asExtractors(request.extractors),
+      assertions: asAssertions(request.assertions),
+    }
+  })
+}
+
+function actionRequestCount(action: Action) {
+  return httpSequenceRequests(action).length
+}
+
+function actionExtractorCount(action: Action) {
+  return (action.extractors?.length || 0) + httpSequenceRequests(action).reduce((count, request) => count + (request.extractors?.length || 0), 0)
+}
+
+function actionAssertionCount(action: Action) {
+  return (action.assertions?.length || 0) + httpSequenceRequests(action).reduce((count, request) => count + (request.assertions?.length || 0), 0)
+}
+
+function actionDisplayType(action: Action) {
+  return action.type === 'http_sequence' ? 'HTTP sequence' : (action.type || action.method || 'action')
+}
+
+function actionDisplayTarget(action: Action) {
+  const requests = httpSequenceRequests(action)
+  if (requests.length === 0) return action.selector || action.target || action.method || ''
+  const firstTarget = requests[0]?.target || action.target
+  return `${requests.length} requests${firstTarget ? ` • ${firstTarget}` : ''}`
+}
+
 function buildScriptOutlineSummary(script: ScriptData): ScriptOutlineSummary {
   const autoTransactions = script.config.run_logic?.auto_transactions
   const actions = script.actions.map((action, index) => {
     const isBrowserAction = action.type.startsWith('browser_')
-    const assertionCount = action.assertions?.length || 0
-    const parameterRefs = extractParameterReferences(action)
-    const hasTransaction = autoTransactions === 'per_action' || Boolean(action.metadata?.transaction || action.metadata?.transaction_name)
+    const assertionCount = actionAssertionCount(action)
+    const sequenceRefs = httpSequenceRequests(action).flatMap(request => extractParameterReferences(request))
+    const parameterRefs = [...new Set([...extractParameterReferences(action), ...sequenceRefs])]
+    const hasTransaction = autoTransactions === 'per_action' || Boolean(action.metadata?.transaction || action.metadata?.transaction_name || action.metadata?.source_transaction || action.metadata?.loadrunner_transaction)
     return {
       index,
       name: action.name || `Action ${index + 1}`,
-      type: action.type || action.method || 'action',
-      target: action.selector || action.target || action.method || '',
+      type: actionDisplayType(action),
+      target: actionDisplayTarget(action),
       isBrowserAction,
       hasTransaction,
       hasWait: actionHasWait(action),
@@ -2793,6 +2877,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       case 'PUT': return 'var(--warning)'
       case 'DELETE': return 'var(--danger)'
       case 'PATCH': return 'var(--chart-6)'
+      case 'http_sequence': return 'var(--accent)'
       case 'jms_publish': return 'var(--info)'
       case 'jms_consume': return 'var(--success)'
       case 'jms_request_reply': return 'var(--chart-6)'
@@ -6535,6 +6620,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   {script.actions.map((a, i) => {
                     const actionBreakpointActive = debugBreakpointKeys.has(debugBreakpointKey('action', i))
                     const actionBreakpointLabel = `${actionBreakpointActive ? 'Remove' : 'Set'} breakpoint on action ${i + 1}`
+                    const requestCount = actionRequestCount(a)
+                    const extractorCount = actionExtractorCount(a)
                     return (
                       <div key={i} className={`action-item ${activeAction === i ? 'active' : ''} ${actionBreakpointActive ? 'has-breakpoint' : ''}`} onClick={() => setActiveAction(i)}>
                         <button
@@ -6549,10 +6636,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         >
                           <span aria-hidden="true" />
                         </button>
-                        <span className="action-method" style={{ color: methodColor(a.type) }}>{a.type}</span>
+                        <span className="action-method" style={{ color: methodColor(a.type) }}>{a.type === 'http_sequence' ? 'SEQ' : a.type}</span>
                         <span className="action-name-text">{a.name || 'Unnamed'}</span>
                         <div className="action-item-signals">
-                          {(a.extractors || []).length > 0 && <span className="action-signal-pill">E{a.extractors?.length || 0}</span>}
+                          {requestCount > 0 && <span className="action-signal-pill">R{requestCount}</span>}
+                          {extractorCount > 0 && <span className="action-signal-pill">E{extractorCount}</span>}
                           {actionIssueBuckets[i]?.length > 0 && (
                             <span className={`action-signal-pill ${actionIssueBuckets[i].some((issue) => issue.severity === 'error') ? 'error' : 'warning'}`}>
                               {actionIssueBuckets[i].length}
@@ -9271,6 +9359,7 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
   const isGrpcScript = protocol === 'grpc'
   const isDatabaseScript = protocol === 'database'
   const isNetworkScript = protocol === 'network'
+  const isHTTPSequence = action.type === 'http_sequence'
   const { selectionState, openSelectionMenu, openParameterEditor } = useActionParameterMenu({
     index,
     onBeginParameterEdit,
@@ -9281,114 +9370,120 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
     <div className="action-editor-panel">
       <ActionEditorHeader action={action} issues={issues} methodColor={methodColor} />
 
-      <ActionCoreFields
-        action={action}
-        index={index}
-        protocol={protocol}
-        isBrowserScript={isBrowserScript}
-        isJmsScript={isJmsScript}
-        onUpdate={onUpdate}
-      />
-
-      {isBrowserScript && (
-        <BrowserActionFields action={action} index={index} onUpdate={onUpdate} />
-      )}
-
-      {isWebSocketScript ? (
-        <WebSocketActionFields
-          action={action}
-          index={index}
-          onAddAssertion={onAddAssertion}
-          onAddExtractor={onAddExtractor}
-          onAddHeader={onAddHeader}
-          onRemoveAssertion={onRemoveAssertion}
-          onRemoveExtractor={onRemoveExtractor}
-          onRemoveHeader={onRemoveHeader}
-          onSelectionMenu={openSelectionMenu}
-          onUpdate={onUpdate}
-          onUpdateAssertion={onUpdateAssertion}
-          onUpdateExtractor={onUpdateExtractor}
-          onUpdateHeader={onUpdateHeader}
-        />
-      ) : isGrpcScript ? (
-        <GrpcActionFields
-          action={action}
-          index={index}
-          onAddAssertion={onAddAssertion}
-          onAddExtractor={onAddExtractor}
-          onAddHeader={onAddHeader}
-          onRemoveAssertion={onRemoveAssertion}
-          onRemoveExtractor={onRemoveExtractor}
-          onRemoveHeader={onRemoveHeader}
-          onSelectionMenu={openSelectionMenu}
-          onUpdate={onUpdate}
-          onUpdateAssertion={onUpdateAssertion}
-          onUpdateExtractor={onUpdateExtractor}
-          onUpdateHeader={onUpdateHeader}
-        />
-      ) : isDatabaseScript ? (
-        <DatabaseActionFields
-          action={action}
-          index={index}
-          onAddAssertion={onAddAssertion}
-          onAddExtractor={onAddExtractor}
-          onRemoveAssertion={onRemoveAssertion}
-          onRemoveExtractor={onRemoveExtractor}
-          onSelectionMenu={openSelectionMenu}
-          onUpdate={onUpdate}
-          onUpdateAssertion={onUpdateAssertion}
-          onUpdateExtractor={onUpdateExtractor}
-        />
-      ) : isNetworkScript ? (
-        <NetworkActionFields
-          action={action}
-          index={index}
-          onAddAssertion={onAddAssertion}
-          onAddExtractor={onAddExtractor}
-          onRemoveAssertion={onRemoveAssertion}
-          onRemoveExtractor={onRemoveExtractor}
-          onSelectionMenu={openSelectionMenu}
-          onUpdate={onUpdate}
-          onUpdateAssertion={onUpdateAssertion}
-          onUpdateExtractor={onUpdateExtractor}
-        />
-      ) : isJmsScript ? (
-        <JmsActionFields
-          action={action}
-          index={index}
-          onAddHeader={onAddHeader}
-          onAddMetadata={onAddMetadata}
-          onAddAssertion={onAddAssertion}
-          onAddExtractor={onAddExtractor}
-          onRemoveAssertion={onRemoveAssertion}
-          onRemoveExtractor={onRemoveExtractor}
-          onRemoveHeader={onRemoveHeader}
-          onRemoveMetadata={onRemoveMetadata}
-          onUpdate={onUpdate}
-          onUpdateAssertion={onUpdateAssertion}
-          onUpdateExtractor={onUpdateExtractor}
-          onUpdateHeader={onUpdateHeader}
-          onUpdateMetadata={onUpdateMetadata}
-          onSelectionMenu={openSelectionMenu}
-        />
+      {isHTTPSequence ? (
+        <HTTPSequenceFields action={action} index={index} onUpdate={onUpdate} />
       ) : (
-        <HttpActionFields
-          action={action}
-          index={index}
-          isBrowserScript={isBrowserScript}
-          isSoapScript={isSoapScript}
-          onAddAssertion={onAddAssertion}
-          onAddExtractor={onAddExtractor}
-          onAddHeader={onAddHeader}
-          onRemoveAssertion={onRemoveAssertion}
-          onRemoveExtractor={onRemoveExtractor}
-          onRemoveHeader={onRemoveHeader}
-          onUpdate={onUpdate}
-          onUpdateAssertion={onUpdateAssertion}
-          onUpdateExtractor={onUpdateExtractor}
-          onUpdateHeader={onUpdateHeader}
-          onSelectionMenu={openSelectionMenu}
-        />
+        <>
+          <ActionCoreFields
+            action={action}
+            index={index}
+            protocol={protocol}
+            isBrowserScript={isBrowserScript}
+            isJmsScript={isJmsScript}
+            onUpdate={onUpdate}
+          />
+
+          {isBrowserScript && (
+            <BrowserActionFields action={action} index={index} onUpdate={onUpdate} />
+          )}
+
+          {isWebSocketScript ? (
+            <WebSocketActionFields
+              action={action}
+              index={index}
+              onAddAssertion={onAddAssertion}
+              onAddExtractor={onAddExtractor}
+              onAddHeader={onAddHeader}
+              onRemoveAssertion={onRemoveAssertion}
+              onRemoveExtractor={onRemoveExtractor}
+              onRemoveHeader={onRemoveHeader}
+              onSelectionMenu={openSelectionMenu}
+              onUpdate={onUpdate}
+              onUpdateAssertion={onUpdateAssertion}
+              onUpdateExtractor={onUpdateExtractor}
+              onUpdateHeader={onUpdateHeader}
+            />
+          ) : isGrpcScript ? (
+            <GrpcActionFields
+              action={action}
+              index={index}
+              onAddAssertion={onAddAssertion}
+              onAddExtractor={onAddExtractor}
+              onAddHeader={onAddHeader}
+              onRemoveAssertion={onRemoveAssertion}
+              onRemoveExtractor={onRemoveExtractor}
+              onRemoveHeader={onRemoveHeader}
+              onSelectionMenu={openSelectionMenu}
+              onUpdate={onUpdate}
+              onUpdateAssertion={onUpdateAssertion}
+              onUpdateExtractor={onUpdateExtractor}
+              onUpdateHeader={onUpdateHeader}
+            />
+          ) : isDatabaseScript ? (
+            <DatabaseActionFields
+              action={action}
+              index={index}
+              onAddAssertion={onAddAssertion}
+              onAddExtractor={onAddExtractor}
+              onRemoveAssertion={onRemoveAssertion}
+              onRemoveExtractor={onRemoveExtractor}
+              onSelectionMenu={openSelectionMenu}
+              onUpdate={onUpdate}
+              onUpdateAssertion={onUpdateAssertion}
+              onUpdateExtractor={onUpdateExtractor}
+            />
+          ) : isNetworkScript ? (
+            <NetworkActionFields
+              action={action}
+              index={index}
+              onAddAssertion={onAddAssertion}
+              onAddExtractor={onAddExtractor}
+              onRemoveAssertion={onRemoveAssertion}
+              onRemoveExtractor={onRemoveExtractor}
+              onSelectionMenu={openSelectionMenu}
+              onUpdate={onUpdate}
+              onUpdateAssertion={onUpdateAssertion}
+              onUpdateExtractor={onUpdateExtractor}
+            />
+          ) : isJmsScript ? (
+            <JmsActionFields
+              action={action}
+              index={index}
+              onAddHeader={onAddHeader}
+              onAddMetadata={onAddMetadata}
+              onAddAssertion={onAddAssertion}
+              onAddExtractor={onAddExtractor}
+              onRemoveAssertion={onRemoveAssertion}
+              onRemoveExtractor={onRemoveExtractor}
+              onRemoveHeader={onRemoveHeader}
+              onRemoveMetadata={onRemoveMetadata}
+              onUpdate={onUpdate}
+              onUpdateAssertion={onUpdateAssertion}
+              onUpdateExtractor={onUpdateExtractor}
+              onUpdateHeader={onUpdateHeader}
+              onUpdateMetadata={onUpdateMetadata}
+              onSelectionMenu={openSelectionMenu}
+            />
+          ) : (
+            <HttpActionFields
+              action={action}
+              index={index}
+              isBrowserScript={isBrowserScript}
+              isSoapScript={isSoapScript}
+              onAddAssertion={onAddAssertion}
+              onAddExtractor={onAddExtractor}
+              onAddHeader={onAddHeader}
+              onRemoveAssertion={onRemoveAssertion}
+              onRemoveExtractor={onRemoveExtractor}
+              onRemoveHeader={onRemoveHeader}
+              onUpdate={onUpdate}
+              onUpdateAssertion={onUpdateAssertion}
+              onUpdateExtractor={onUpdateExtractor}
+              onUpdateHeader={onUpdateHeader}
+              onSelectionMenu={openSelectionMenu}
+            />
+          )}
+        </>
       )}
 
       <ActionThinkTimeToggle action={action} index={index} onUpdate={onUpdate} />
@@ -9406,6 +9501,77 @@ const DATABASE_ACTION_TYPES = ['db_health', 'db_begin', 'db_query', 'db_exec', '
 const NETWORK_ACTION_TYPES = ['network_health', 'dns_query', 'tcp_request', 'udp_request', 'ftp_command', 'smtp_send', 'pop3_command', 'imap_command', 'ldap_bind', 'ldap_search']
 const HTTP_ACTION_TYPES = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 
+interface HTTPSequenceFieldsProps {
+  action: Action
+  index: number
+  onUpdate: (i: number, f: keyof Action, v: unknown) => void
+}
+
+function HTTPSequenceFields({ action, index, onUpdate }: HTTPSequenceFieldsProps) {
+  const requests = httpSequenceRequests(action)
+  const sourceTransaction = asString(action.metadata?.source_transaction) || asString(action.metadata?.loadrunner_transaction)
+  const subtransactions = requests
+    .map(request => asString(request.metadata?.source_subtransaction) || asString(request.metadata?.loadrunner_subtransaction))
+    .filter(Boolean)
+  const uniqueSubtransactions = [...new Set(subtransactions)]
+  return (
+    <>
+      <div className="form-grid">
+        <label><span>Name</span><input value={action.name} onChange={e => onUpdate(index, 'name', e.target.value)} /></label>
+        <label><span>Action Type</span><input value="HTTP sequence" readOnly /></label>
+        <label className="full-width"><span>Source Transaction</span><input value={sourceTransaction || action.name || ''} readOnly /></label>
+      </div>
+      <div className="sub-section http-sequence-section">
+        <div className="sub-header">
+          <h4>Grouped Requests</h4>
+          <span className="sequence-summary">{requests.length} request{requests.length === 1 ? '' : 's'}{uniqueSubtransactions.length > 0 ? ` • ${uniqueSubtransactions.length} subtransaction${uniqueSubtransactions.length === 1 ? '' : 's'}` : ''}</span>
+        </div>
+        <div className="http-sequence-table-wrap">
+          <table className="http-sequence-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Method</th>
+                <th>Name</th>
+                <th>Target</th>
+                <th>Signals</th>
+              </tr>
+            </thead>
+            <tbody>
+              {requests.map((request, requestIndex) => {
+                const subtransaction = asString(request.metadata?.source_subtransaction) || asString(request.metadata?.loadrunner_subtransaction)
+                const signalParts = [
+                  request.body ? 'Body' : '',
+                  request.headers && Object.keys(request.headers).length > 0 ? `${Object.keys(request.headers).length} headers` : '',
+                  request.extractors?.length ? `${request.extractors.length} extractors` : '',
+                  request.assertions?.length ? `${request.assertions.length} checks` : '',
+                ].filter(Boolean)
+                return (
+                  <tr key={`${request.name}-${requestIndex}`}>
+                    <td>{requestIndex + 1}</td>
+                    <td><span className="sequence-method">{request.method || request.type}</span></td>
+                    <td>
+                      <strong>{request.name}</strong>
+                      {subtransaction && <small>{subtransaction}</small>}
+                    </td>
+                    <td className="sequence-target">{request.target}</td>
+                    <td>{signalParts.join(', ') || 'Request'}</td>
+                  </tr>
+                )
+              })}
+              {requests.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="sequence-empty">No grouped child requests were found on this action.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  )
+}
+
 interface ActionEditorHeaderProps {
   action: Action
   issues: AuthoringIssue[]
@@ -9413,10 +9579,11 @@ interface ActionEditorHeaderProps {
 }
 
 function ActionEditorHeader({ action, issues, methodColor }: ActionEditorHeaderProps) {
+  const badgeLabel = action.type === 'http_sequence' ? 'SEQ' : action.type
   return (
     <>
       <div className="action-editor-top">
-        <span className="action-badge" style={{ background: methodColor(action.type), color: '#fff' }}>{action.type}</span>
+        <span className="action-badge" style={{ background: methodColor(action.type), color: '#fff' }}>{badgeLabel}</span>
         <h3>{action.name || 'Unnamed Action'}</h3>
         {issues.length > 0 && (
           <div className="action-editor-issue-pills">

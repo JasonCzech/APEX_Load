@@ -70,6 +70,11 @@ func ValidateScriptIssues(script *Script) []string {
 			continue
 		}
 
+		if action.Type == "http_sequence" {
+			issues = append(issues, validateHTTPSequenceActionIssues(i, action)...)
+			continue
+		}
+
 		if action.Target == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing target", i, action.Name))
 		}
@@ -97,6 +102,67 @@ func ValidateScriptIssues(script *Script) []string {
 	issues = append(issues, validateGoalConfigIssues(script.GoalConfig)...)
 
 	return issues
+}
+
+func validateHTTPSequenceActionIssues(index int, action Action) []string {
+	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
+	var issues []string
+	requests, ok := action.Params["requests"]
+	if !ok {
+		return []string{fmt.Sprintf("%s: http_sequence requires params.requests", label)}
+	}
+	switch typed := requests.(type) {
+	case []any:
+		if len(typed) == 0 {
+			issues = append(issues, fmt.Sprintf("%s: http_sequence requires at least one child request", label))
+		}
+		for requestIndex, value := range typed {
+			request, ok := value.(map[string]any)
+			if !ok {
+				issues = append(issues, fmt.Sprintf("%s.params.requests[%d]: must be an object", label, requestIndex))
+				continue
+			}
+			issues = append(issues, validateHTTPSequenceRequestIssues(label, requestIndex, request)...)
+		}
+	default:
+		issues = append(issues, fmt.Sprintf("%s: http_sequence params.requests must be an array", label))
+	}
+	return issues
+}
+
+func validateHTTPSequenceRequestIssues(label string, requestIndex int, request map[string]any) []string {
+	var issues []string
+	name := stringAnyValue(request["name"])
+	method := strings.ToUpper(strings.TrimSpace(firstNonEmptyString(stringAnyValue(request["method"]), stringAnyValue(request["type"]))))
+	target := stringAnyValue(request["target"])
+	childLabel := fmt.Sprintf("%s.params.requests[%d] %q", label, requestIndex, name)
+	switch method {
+	case "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS":
+	default:
+		issues = append(issues, fmt.Sprintf("%s: unsupported HTTP method/type %q", childLabel, method))
+	}
+	if strings.TrimSpace(target) == "" {
+		issues = append(issues, fmt.Sprintf("%s: missing target", childLabel))
+	}
+	return issues
+}
+
+func stringAnyValue(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	default:
+		return ""
+	}
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func protocolAllowsEmptyBaseURL(protocolName string) bool {
