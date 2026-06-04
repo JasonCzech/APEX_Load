@@ -630,11 +630,35 @@ export interface ScriptValidationAuthoringHealth {
   }>
 }
 
+export interface ReplayPreflightCheck {
+  id: string
+  label: string
+  status: 'pass' | 'warn' | 'fail' | string
+  detail?: string
+}
+
+export interface ReplayPreflight {
+  valid: boolean
+  action_count: number
+  expected_action_count: number
+  data_source_count: number
+  parameter_count: number
+  browser_required?: boolean
+  missing_variables?: string[]
+  required_secrets?: string[]
+  missing_secrets?: string[]
+  runtime_prerequisites?: string[]
+  issues?: string[]
+  warnings?: string[]
+  checks?: ReplayPreflightCheck[]
+}
+
 export interface ScriptValidationResponse {
   script_id: string
   valid: boolean
   issues: string[]
   warnings?: string[]
+  preflight?: ReplayPreflight
   runtime_settings_parity?: ScriptValidationRuntimeSettingParity[]
   runtime_settings_status_counts?: Record<string, number>
   migration_readiness?: ScriptValidationMigrationReadiness

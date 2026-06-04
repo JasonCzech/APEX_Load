@@ -51,6 +51,11 @@ type storeTx struct {
 	dialect storeDialect
 }
 
+type optionalSchemaMigration struct {
+	name  string
+	query string
+}
+
 const (
 	intervalSummarySchemaVersionV1 = "apexload.interval-summary.v1"
 	intervalSummarySchemaVersion   = "apexload.interval-summary.v4"
@@ -788,123 +793,79 @@ func (s *SQLiteStore) init() error {
 		}
 	}
 
-	if _, err := s.db.Exec(`ALTER TABLE tests ADD COLUMN runtime_settings_json TEXT`); err != nil {
-		if err.Error() != "SQL logic error: duplicate column name: runtime_settings_json (1)" {
-			return fmt.Errorf("failed to add runtime_settings_json column: %w", err)
-		}
-	}
-
-	if _, err := s.db.Exec(`ALTER TABLE tests ADD COLUMN scenario_mode TEXT`); err != nil {
-		if err.Error() != "SQL logic error: duplicate column name: scenario_mode (1)" {
-			return fmt.Errorf("failed to add scenario_mode column: %w", err)
-		}
-	}
-
-	if _, err := s.db.Exec(`ALTER TABLE tests ADD COLUMN goal_config_json TEXT`); err != nil {
-		if err.Error() != "SQL logic error: duplicate column name: goal_config_json (1)" {
-			return fmt.Errorf("failed to add goal_config_json column: %w", err)
-		}
-	}
-
-	if _, err := s.db.Exec(`ALTER TABLE tests ADD COLUMN shakeout_enabled INTEGER DEFAULT 0`); err != nil {
-		if !isDuplicateColumnErr(err) {
-			return fmt.Errorf("failed to add shakeout_enabled column: %w", err)
-		}
-	}
-
-	if _, err := s.db.Exec(`ALTER TABLE tests ADD COLUMN resource_baseline_enabled INTEGER DEFAULT 0`); err != nil {
-		if !isDuplicateColumnErr(err) {
-			return fmt.Errorf("failed to add resource_baseline_enabled column: %w", err)
-		}
-	}
-
-	if _, err := s.db.Exec(`ALTER TABLE scenarios ADD COLUMN assignment_json TEXT`); err != nil && !isDuplicateColumnErr(err) {
-		return fmt.Errorf("failed to add scenarios.assignment_json column: %w", err)
-	}
-
-	if _, err := s.db.Exec(`ALTER TABLE scenarios ADD COLUMN start_delay TEXT`); err != nil && !isDuplicateColumnErr(err) {
-		return fmt.Errorf("failed to add scenarios.start_delay column: %w", err)
-	}
-
-	if _, err := s.db.Exec(`ALTER TABLE tests ADD COLUMN assignment_json TEXT`); err != nil && !isDuplicateColumnErr(err) {
-		return fmt.Errorf("failed to add tests.assignment_json column: %w", err)
-	}
-
-	if _, err := s.db.Exec(`ALTER TABLE scripts ADD COLUMN metadata_json TEXT`); err != nil {
-		if !isDuplicateColumnErr(err) {
-			return fmt.Errorf("failed to add metadata_json column: %w", err)
-		}
-	}
-
-	for _, migration := range []struct {
-		query string
-		name  string
-	}{
-		{`ALTER TABLE projects ADD COLUMN settings_json TEXT`, "projects.settings_json"},
-		{`ALTER TABLE projects ADD COLUMN domain_id TEXT REFERENCES domains(id)`, "projects.domain_id"},
-		{`ALTER TABLE projects ADD COLUMN category_id TEXT REFERENCES repository_categories(id)`, "projects.category_id"},
-		{`ALTER TABLE applications ADD COLUMN project_id TEXT REFERENCES projects(id)`, "applications.project_id"},
-		{`ALTER TABLE releases ADD COLUMN project_id TEXT REFERENCES projects(id)`, "releases.project_id"},
-		{`ALTER TABLE scripts ADD COLUMN project_id TEXT REFERENCES projects(id)`, "scripts.project_id"},
-		{`ALTER TABLE scripts ADD COLUMN folder_id TEXT REFERENCES folders(id)`, "scripts.folder_id"},
-		{`ALTER TABLE scripts ADD COLUMN parameters TEXT`, "scripts.parameters"},
-		{`ALTER TABLE tests ADD COLUMN project_id TEXT REFERENCES projects(id)`, "tests.project_id"},
-		{`ALTER TABLE tests ADD COLUMN folder_id TEXT REFERENCES folders(id)`, "tests.folder_id"},
-		{`ALTER TABLE tests ADD COLUMN application_id TEXT REFERENCES applications(id)`, "tests.application_id"},
-		{`ALTER TABLE tests ADD COLUMN release_id TEXT REFERENCES releases(id)`, "tests.release_id"},
-		{`ALTER TABLE tests ADD COLUMN scenario_id TEXT REFERENCES scenarios(id)`, "tests.scenario_id"},
-		{`ALTER TABLE tests ADD COLUMN pending_since DATETIME`, "tests.pending_since"},
-		{`ALTER TABLE tests ADD COLUMN baseline_pinned INTEGER DEFAULT 0`, "tests.baseline_pinned"},
-		{`ALTER TABLE tests ADD COLUMN baseline_pinned_at DATETIME`, "tests.baseline_pinned_at"},
-		{`ALTER TABLE shared_data_pools ADD COLUMN project_id TEXT REFERENCES projects(id)`, "shared_data_pools.project_id"},
-		{`ALTER TABLE releases ADD COLUMN archived_at DATETIME`, "releases.archived_at"},
-		{`ALTER TABLE test_interval_summaries ADD COLUMN schema_version TEXT`, "test_interval_summaries.schema_version"},
-		{`ALTER TABLE run_archives ADD COLUMN schema_version TEXT`, "run_archives.schema_version"},
-		{`ALTER TABLE run_archives ADD COLUMN archive_backend TEXT`, "run_archives.archive_backend"},
-		{`ALTER TABLE run_archives ADD COLUMN archive_uri TEXT`, "run_archives.archive_uri"},
-		{`ALTER TABLE run_archives ADD COLUMN manifest_uri TEXT`, "run_archives.manifest_uri"},
-		{`ALTER TABLE test_interval_summaries ADD COLUMN generator_published_at DATETIME`, "test_interval_summaries.generator_published_at"},
-		{`ALTER TABLE test_interval_summaries ADD COLUMN controller_received_at DATETIME`, "test_interval_summaries.controller_received_at"},
-		{`ALTER TABLE test_interval_summaries ADD COLUMN generator_processing_lag_ms REAL`, "test_interval_summaries.generator_processing_lag_ms"},
-		{`ALTER TABLE test_interval_summaries ADD COLUMN transport_lag_ms REAL`, "test_interval_summaries.transport_lag_ms"},
-		{`ALTER TABLE test_interval_summaries ADD COLUMN controller_fanout_lag_ms REAL`, "test_interval_summaries.controller_fanout_lag_ms"},
-		{`ALTER TABLE test_interval_summaries ADD COLUMN browser_json TEXT`, "test_interval_summaries.browser_json"},
-		{`ALTER TABLE test_interval_summaries ADD COLUMN browser_by_device_json TEXT`, "test_interval_summaries.browser_by_device_json"},
-		{`ALTER TABLE test_interval_summaries ADD COLUMN latency_json TEXT`, "test_interval_summaries.latency_json"},
-		{`ALTER TABLE service_accounts ADD COLUMN active INTEGER NOT NULL DEFAULT 1`, "service_accounts.active"},
-		{`ALTER TABLE service_accounts ADD COLUMN expires_at DATETIME`, "service_accounts.expires_at"},
-		{`ALTER TABLE service_accounts ADD COLUMN key_rotated_at DATETIME`, "service_accounts.key_rotated_at"},
-		{`ALTER TABLE service_accounts ADD COLUMN rotation_interval_days INTEGER`, "service_accounts.rotation_interval_days"},
-		{`ALTER TABLE service_accounts ADD COLUMN scopes_json TEXT`, "service_accounts.scopes_json"},
-		{`ALTER TABLE service_accounts ADD COLUMN domain_roles_json TEXT`, "service_accounts.domain_roles_json"},
-		{`ALTER TABLE service_accounts ADD COLUMN repository_roles_json TEXT`, "service_accounts.repository_roles_json"},
-		{`ALTER TABLE audit_events ADD COLUMN domain_id TEXT`, "audit_events.domain_id"},
-		{`ALTER TABLE tests ADD COLUMN created_by_subject TEXT`, "tests.created_by_subject"},
-		{`ALTER TABLE tests ADD COLUMN created_by_display_name TEXT`, "tests.created_by_display_name"},
-		{`ALTER TABLE tests ADD COLUMN started_by_subject TEXT`, "tests.started_by_subject"},
-		{`ALTER TABLE tests ADD COLUMN started_by_display_name TEXT`, "tests.started_by_display_name"},
-		{`ALTER TABLE scenario_scripts ADD COLUMN stages_json TEXT`, "scenario_scripts.stages_json"},
-		{`ALTER TABLE scenario_schedules ADD COLUMN project_id TEXT`, "scenario_schedules.project_id"},
-		{`ALTER TABLE scenario_schedules ADD COLUMN owner_subject TEXT`, "scenario_schedules.owner_subject"},
-		{`ALTER TABLE scenario_schedules ADD COLUMN owner_display_name TEXT`, "scenario_schedules.owner_display_name"},
-		{`ALTER TABLE scenario_schedules ADD COLUMN governance_json TEXT`, "scenario_schedules.governance_json"},
-		{`ALTER TABLE scenario_schedules ADD COLUMN blackout_windows_json TEXT`, "scenario_schedules.blackout_windows_json"},
-		{`ALTER TABLE scenario_schedules ADD COLUMN maintenance_windows_json TEXT`, "scenario_schedules.maintenance_windows_json"},
-		{`ALTER TABLE scenario_schedules ADD COLUMN availability_windows_json TEXT`, "scenario_schedules.availability_windows_json"},
-		{`ALTER TABLE scenario_schedules ADD COLUMN revision INTEGER DEFAULT 1`, "scenario_schedules.revision"},
-		{`ALTER TABLE scenario_schedules ADD COLUMN approval_policy TEXT`, "scenario_schedules.approval_policy"},
-		{`ALTER TABLE scenario_schedules ADD COLUMN missed_run_policy TEXT`, "scenario_schedules.missed_run_policy"},
-		{`ALTER TABLE scenario_schedules ADD COLUMN conflict_summary TEXT`, "scenario_schedules.conflict_summary"},
-		{`ALTER TABLE scenario_schedules ADD COLUMN next_required_action TEXT`, "scenario_schedules.next_required_action"},
-		{`ALTER TABLE scenario_schedules ADD COLUMN pending_approval_id TEXT`, "scenario_schedules.pending_approval_id"},
-		{`ALTER TABLE scripts ADD COLUMN ref_key TEXT`, "scripts.ref_key"},
-		{`ALTER TABLE scenarios ADD COLUMN ref_key TEXT`, "scenarios.ref_key"},
-		{`ALTER TABLE tests ADD COLUMN ref_key TEXT`, "tests.ref_key"},
-		{`ALTER TABLE run_archives ADD COLUMN ref_key TEXT`, "run_archives.ref_key"},
-	} {
-		if _, err := s.db.Exec(migration.query); err != nil && !isDuplicateColumnErr(err) {
-			return fmt.Errorf("failed to add %s column: %w", migration.name, err)
-		}
+	if err := s.applyOptionalSchemaMigrations([]optionalSchemaMigration{
+		{name: "tests.runtime_settings_json", query: `ALTER TABLE tests ADD COLUMN runtime_settings_json TEXT`},
+		{name: "tests.scenario_mode", query: `ALTER TABLE tests ADD COLUMN scenario_mode TEXT`},
+		{name: "tests.goal_config_json", query: `ALTER TABLE tests ADD COLUMN goal_config_json TEXT`},
+		{name: "tests.shakeout_enabled", query: `ALTER TABLE tests ADD COLUMN shakeout_enabled INTEGER DEFAULT 0`},
+		{name: "tests.resource_baseline_enabled", query: `ALTER TABLE tests ADD COLUMN resource_baseline_enabled INTEGER DEFAULT 0`},
+		{name: "scenarios.assignment_json", query: `ALTER TABLE scenarios ADD COLUMN assignment_json TEXT`},
+		{name: "scenarios.start_delay", query: `ALTER TABLE scenarios ADD COLUMN start_delay TEXT`},
+		{name: "tests.assignment_json", query: `ALTER TABLE tests ADD COLUMN assignment_json TEXT`},
+		{name: "scripts.metadata_json", query: `ALTER TABLE scripts ADD COLUMN metadata_json TEXT`},
+		{name: "projects.settings_json", query: `ALTER TABLE projects ADD COLUMN settings_json TEXT`},
+		{name: "projects.domain_id", query: `ALTER TABLE projects ADD COLUMN domain_id TEXT REFERENCES domains(id)`},
+		{name: "projects.category_id", query: `ALTER TABLE projects ADD COLUMN category_id TEXT REFERENCES repository_categories(id)`},
+		{name: "applications.project_id", query: `ALTER TABLE applications ADD COLUMN project_id TEXT REFERENCES projects(id)`},
+		{name: "releases.project_id", query: `ALTER TABLE releases ADD COLUMN project_id TEXT REFERENCES projects(id)`},
+		{name: "scripts.project_id", query: `ALTER TABLE scripts ADD COLUMN project_id TEXT REFERENCES projects(id)`},
+		{name: "scripts.folder_id", query: `ALTER TABLE scripts ADD COLUMN folder_id TEXT REFERENCES folders(id)`},
+		{name: "scripts.parameters", query: `ALTER TABLE scripts ADD COLUMN parameters TEXT`},
+		{name: "tests.project_id", query: `ALTER TABLE tests ADD COLUMN project_id TEXT REFERENCES projects(id)`},
+		{name: "tests.folder_id", query: `ALTER TABLE tests ADD COLUMN folder_id TEXT REFERENCES folders(id)`},
+		{name: "tests.application_id", query: `ALTER TABLE tests ADD COLUMN application_id TEXT REFERENCES applications(id)`},
+		{name: "tests.release_id", query: `ALTER TABLE tests ADD COLUMN release_id TEXT REFERENCES releases(id)`},
+		{name: "tests.scenario_id", query: `ALTER TABLE tests ADD COLUMN scenario_id TEXT REFERENCES scenarios(id)`},
+		{name: "tests.pending_since", query: `ALTER TABLE tests ADD COLUMN pending_since DATETIME`},
+		{name: "tests.baseline_pinned", query: `ALTER TABLE tests ADD COLUMN baseline_pinned INTEGER DEFAULT 0`},
+		{name: "tests.baseline_pinned_at", query: `ALTER TABLE tests ADD COLUMN baseline_pinned_at DATETIME`},
+		{name: "shared_data_pools.project_id", query: `ALTER TABLE shared_data_pools ADD COLUMN project_id TEXT REFERENCES projects(id)`},
+		{name: "releases.archived_at", query: `ALTER TABLE releases ADD COLUMN archived_at DATETIME`},
+		{name: "test_interval_summaries.schema_version", query: `ALTER TABLE test_interval_summaries ADD COLUMN schema_version TEXT`},
+		{name: "run_archives.schema_version", query: `ALTER TABLE run_archives ADD COLUMN schema_version TEXT`},
+		{name: "run_archives.archive_backend", query: `ALTER TABLE run_archives ADD COLUMN archive_backend TEXT`},
+		{name: "run_archives.archive_uri", query: `ALTER TABLE run_archives ADD COLUMN archive_uri TEXT`},
+		{name: "run_archives.manifest_uri", query: `ALTER TABLE run_archives ADD COLUMN manifest_uri TEXT`},
+		{name: "test_interval_summaries.generator_published_at", query: `ALTER TABLE test_interval_summaries ADD COLUMN generator_published_at DATETIME`},
+		{name: "test_interval_summaries.controller_received_at", query: `ALTER TABLE test_interval_summaries ADD COLUMN controller_received_at DATETIME`},
+		{name: "test_interval_summaries.generator_processing_lag_ms", query: `ALTER TABLE test_interval_summaries ADD COLUMN generator_processing_lag_ms REAL`},
+		{name: "test_interval_summaries.transport_lag_ms", query: `ALTER TABLE test_interval_summaries ADD COLUMN transport_lag_ms REAL`},
+		{name: "test_interval_summaries.controller_fanout_lag_ms", query: `ALTER TABLE test_interval_summaries ADD COLUMN controller_fanout_lag_ms REAL`},
+		{name: "test_interval_summaries.browser_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN browser_json TEXT`},
+		{name: "test_interval_summaries.browser_by_device_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN browser_by_device_json TEXT`},
+		{name: "test_interval_summaries.latency_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN latency_json TEXT`},
+		{name: "service_accounts.active", query: `ALTER TABLE service_accounts ADD COLUMN active INTEGER NOT NULL DEFAULT 1`},
+		{name: "service_accounts.expires_at", query: `ALTER TABLE service_accounts ADD COLUMN expires_at DATETIME`},
+		{name: "service_accounts.key_rotated_at", query: `ALTER TABLE service_accounts ADD COLUMN key_rotated_at DATETIME`},
+		{name: "service_accounts.rotation_interval_days", query: `ALTER TABLE service_accounts ADD COLUMN rotation_interval_days INTEGER`},
+		{name: "service_accounts.scopes_json", query: `ALTER TABLE service_accounts ADD COLUMN scopes_json TEXT`},
+		{name: "service_accounts.domain_roles_json", query: `ALTER TABLE service_accounts ADD COLUMN domain_roles_json TEXT`},
+		{name: "service_accounts.repository_roles_json", query: `ALTER TABLE service_accounts ADD COLUMN repository_roles_json TEXT`},
+		{name: "audit_events.domain_id", query: `ALTER TABLE audit_events ADD COLUMN domain_id TEXT`},
+		{name: "tests.created_by_subject", query: `ALTER TABLE tests ADD COLUMN created_by_subject TEXT`},
+		{name: "tests.created_by_display_name", query: `ALTER TABLE tests ADD COLUMN created_by_display_name TEXT`},
+		{name: "tests.started_by_subject", query: `ALTER TABLE tests ADD COLUMN started_by_subject TEXT`},
+		{name: "tests.started_by_display_name", query: `ALTER TABLE tests ADD COLUMN started_by_display_name TEXT`},
+		{name: "scenario_scripts.stages_json", query: `ALTER TABLE scenario_scripts ADD COLUMN stages_json TEXT`},
+		{name: "scenario_schedules.project_id", query: `ALTER TABLE scenario_schedules ADD COLUMN project_id TEXT`},
+		{name: "scenario_schedules.owner_subject", query: `ALTER TABLE scenario_schedules ADD COLUMN owner_subject TEXT`},
+		{name: "scenario_schedules.owner_display_name", query: `ALTER TABLE scenario_schedules ADD COLUMN owner_display_name TEXT`},
+		{name: "scenario_schedules.governance_json", query: `ALTER TABLE scenario_schedules ADD COLUMN governance_json TEXT`},
+		{name: "scenario_schedules.blackout_windows_json", query: `ALTER TABLE scenario_schedules ADD COLUMN blackout_windows_json TEXT`},
+		{name: "scenario_schedules.maintenance_windows_json", query: `ALTER TABLE scenario_schedules ADD COLUMN maintenance_windows_json TEXT`},
+		{name: "scenario_schedules.availability_windows_json", query: `ALTER TABLE scenario_schedules ADD COLUMN availability_windows_json TEXT`},
+		{name: "scenario_schedules.revision", query: `ALTER TABLE scenario_schedules ADD COLUMN revision INTEGER DEFAULT 1`},
+		{name: "scenario_schedules.approval_policy", query: `ALTER TABLE scenario_schedules ADD COLUMN approval_policy TEXT`},
+		{name: "scenario_schedules.missed_run_policy", query: `ALTER TABLE scenario_schedules ADD COLUMN missed_run_policy TEXT`},
+		{name: "scenario_schedules.conflict_summary", query: `ALTER TABLE scenario_schedules ADD COLUMN conflict_summary TEXT`},
+		{name: "scenario_schedules.next_required_action", query: `ALTER TABLE scenario_schedules ADD COLUMN next_required_action TEXT`},
+		{name: "scenario_schedules.pending_approval_id", query: `ALTER TABLE scenario_schedules ADD COLUMN pending_approval_id TEXT`},
+		{name: "scripts.ref_key", query: `ALTER TABLE scripts ADD COLUMN ref_key TEXT`},
+		{name: "scenarios.ref_key", query: `ALTER TABLE scenarios ADD COLUMN ref_key TEXT`},
+		{name: "tests.ref_key", query: `ALTER TABLE tests ADD COLUMN ref_key TEXT`},
+		{name: "run_archives.ref_key", query: `ALTER TABLE run_archives ADD COLUMN ref_key TEXT`},
+	}); err != nil {
+		return err
 	}
 
 	// Unique indexes guard against duplicate reference keys. Partial indexes
@@ -937,6 +898,15 @@ func (s *SQLiteStore) init() error {
 		return err
 	}
 	return s.ensureLegacyApplication()
+}
+
+func (s *SQLiteStore) applyOptionalSchemaMigrations(migrations []optionalSchemaMigration) error {
+	for _, migration := range migrations {
+		if _, err := s.db.Exec(migration.query); err != nil && !isDuplicateColumnErr(err) {
+			return fmt.Errorf("failed to apply schema migration %s: %w", migration.name, err)
+		}
+	}
+	return nil
 }
 
 func isDuplicateColumnErr(err error) bool {

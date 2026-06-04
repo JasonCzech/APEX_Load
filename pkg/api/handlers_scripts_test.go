@@ -2496,6 +2496,41 @@ func TestDraftValidationReturnsBlockedAuthoringHealth(t *testing.T) {
 	}
 }
 
+func TestDraftValidationReturnsReplayPreflightWithSeededVariables(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	body := []byte(`{
+		"variables":{"account_id":"acct-123"},
+		"script":{
+			"name":"debug-preflight",
+			"version":"1.0.0",
+			"protocol":"http",
+			"config":{"base_url":"https://example.test"},
+			"actions":[{"name":"Account","type":"request","target":"/accounts/{{var.account_id}}"}]
+		}
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(body))
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload scriptValidationResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload.Preflight == nil {
+		t.Fatal("expected validation response to include replay preflight")
+	}
+	if !payload.Preflight.Valid {
+		t.Fatalf("preflight valid = false, missing variables=%v warnings=%v issues=%v", payload.Preflight.MissingVariables, payload.Preflight.Warnings, payload.Preflight.Issues)
+	}
+	if payload.Preflight.ActionCount != 1 {
+		t.Fatalf("action count = %d, want 1", payload.Preflight.ActionCount)
+	}
+}
+
 func TestDraftValidationReturnsDataSourceFitHealth(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	body := []byte(`{"script":{

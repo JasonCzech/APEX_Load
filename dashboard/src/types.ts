@@ -1,4 +1,6 @@
-import { type BrowserConfig, type PacingConfig, type ScriptActionDefinition, type ScriptDefinition, type ThinkTimeConfig } from './types/scripts'
+import { type BrowserConfig, type PacingConfig, type ReplayPreflight, type ScriptActionDefinition, type ScriptDefinition, type ThinkTimeConfig } from './types/scripts'
+
+export type { ReplayPreflight, ReplayPreflightCheck } from './types/scripts'
 
 export interface TestGroup {
   name: string
@@ -1723,29 +1725,6 @@ export interface ReplayDiagnosisSummary {
   first_failure_event_id?: string
   first_failure_action?: string
   first_failure_cause?: string
-}
-
-export interface ReplayPreflightCheck {
-  id: string
-  label: string
-  status: 'pass' | 'warn' | 'fail' | string
-  detail?: string
-}
-
-export interface ReplayPreflight {
-  valid: boolean
-  action_count: number
-  expected_action_count: number
-  data_source_count: number
-  parameter_count: number
-  browser_required?: boolean
-  missing_variables?: string[]
-  required_secrets?: string[]
-  missing_secrets?: string[]
-  runtime_prerequisites?: string[]
-  issues?: string[]
-  warnings?: string[]
-  checks?: ReplayPreflightCheck[]
 }
 
 export interface BrowserReplaySnapshot {

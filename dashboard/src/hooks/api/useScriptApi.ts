@@ -235,8 +235,8 @@ export function useScriptApi() {
   const validateScript = useCallback((id: string) => request<ScriptValidationResponse>(`/scripts/${id}/validate`, { method: 'POST' }), [])
 
   const validateDraftScript = useCallback(
-    (script: ScriptDefinition, projectId?: string, folderId?: string | null) =>
-      request<ScriptValidationResponse>('/scripts/validate', { method: 'POST', body: JSON.stringify({ script, project_id: projectId, folder_id: folderId }) }),
+    (script: ScriptDefinition, projectId?: string, folderId?: string | null, variables?: Record<string, string>) =>
+      request<ScriptValidationResponse>('/scripts/validate', { method: 'POST', body: JSON.stringify({ script, project_id: projectId, folder_id: folderId, variables }) }),
     [],
   )
 

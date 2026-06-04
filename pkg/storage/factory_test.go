@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -56,5 +57,54 @@ func TestRewriteSQLForPostgres(t *testing.T) {
 	}
 	if !strings.Contains(got, "TIMESTAMPTZ") || !strings.Contains(got, "BOOLEAN DEFAULT FALSE") {
 		t.Fatalf("rewritten ddl did not normalize timestamp/bool types: %s", got)
+	}
+}
+
+func TestSQLiteInitIsIdempotent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "apexload.db")
+	store, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("first NewSQLiteStore returned error: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("first Close returned error: %v", err)
+	}
+
+	store, err = NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("second NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+}
+
+func TestIsDuplicateColumnErrRecognizesSQLiteAndPostgresMessages(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "sqlite duplicate column",
+			err:  errors.New("SQL logic error: duplicate column name: runtime_settings_json (1)"),
+			want: true,
+		},
+		{
+			name: "postgres duplicate column",
+			err:  errors.New(`ERROR: column "runtime_settings_json" of relation "tests" already exists (SQLSTATE 42701)`),
+			want: true,
+		},
+		{
+			name: "different ddl error",
+			err:  errors.New("ERROR: relation tests does not exist"),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isDuplicateColumnErr(tt.err); got != tt.want {
+				t.Fatalf("isDuplicateColumnErr() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

@@ -34,6 +34,7 @@ import {
   type ScriptValidationResponse,
 } from '../types/scripts'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
+import ReplayPreflightCard, { replayPreflightStatusLabel } from './ReplayPreflightCard'
 import SourceMappingReview from './SourceMappingReview'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
@@ -516,7 +517,7 @@ function hasStructuredReplaySnapshot(snapshot?: ReplaySnapshot | null) {
   )
 }
 
-const REPLAY_TEMPLATE_REF_PATTERN = /\{\{\s*(var|env)\.([a-zA-Z0-9_.-]+)/g
+const REPLAY_TEMPLATE_REF_PATTERN = /\{\{\s*(var|env|data|param)\.([a-zA-Z0-9_.-]+)/g
 
 function safeParseReplayVariables(text: string): Record<string, string> | undefined {
   try {
@@ -620,50 +621,6 @@ function buildLocalReplayPreflight(script: ScriptData, variables?: Record<string
 
 function formatReplayDiagnosisCategory(category?: string) {
   return (category || 'diagnosis').replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
-}
-
-function replayPreflightStatusLabel(preflight?: ReplayPreflight | null) {
-  if (!preflight) return 'Not checked'
-  if (!preflight.valid) return 'Needs attention'
-  if ((preflight.checks || []).some(check => check.status === 'warn')) return 'Ready with notes'
-  return 'Ready'
-}
-
-function ReplayPreflightCard({ preflight }: { preflight: ReplayPreflight }) {
-  return (
-    <div className={`replay-preflight-card ${preflight.valid ? 'ready' : 'attention'}`}>
-      <div className="replay-preflight-header">
-        <div>
-          <span className="replay-detail-label">Preflight</span>
-          <strong>{replayPreflightStatusLabel(preflight)}</strong>
-        </div>
-        <div className="replay-preflight-meta">
-          <span>{preflight.action_count} action{preflight.action_count === 1 ? '' : 's'}</span>
-          <span>{preflight.data_source_count} data source{preflight.data_source_count === 1 ? '' : 's'}</span>
-          {preflight.browser_required && <span>Browser runtime</span>}
-        </div>
-      </div>
-      <div className="replay-preflight-checks">
-        {(preflight.checks || []).map(check => (
-          <div key={check.id} className={`replay-preflight-check ${check.status}`}>
-            <span>{check.label}</span>
-            <strong>{check.status === 'pass' ? 'Ready' : check.status === 'warn' ? 'Note' : 'Needs work'}</strong>
-            {check.detail && <small>{check.detail}</small>}
-          </div>
-        ))}
-      </div>
-      {((preflight.missing_variables?.length || 0) > 0 || (preflight.missing_secrets?.length || 0) > 0) && (
-        <div className="replay-preflight-alerts">
-          {(preflight.missing_variables || []).map(name => (
-            <span key={`missing-var-${name}`}>Missing variable: {name}</span>
-          ))}
-          {(preflight.missing_secrets || []).map(name => (
-            <span key={`missing-secret-${name}`}>Missing secret: {name}</span>
-          ))}
-        </div>
-      )}
-    </div>
-  )
 }
 
 function decodeBase64Bytes(value: string): Uint8Array {
@@ -1307,6 +1264,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [authoringComponents, setAuthoringComponents] = useState<AuthoringComponent[]>([])
   const [componentLibraryStatus, setComponentLibraryStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [validationEvidence, setValidationEvidence] = useState<ValidationEvidence | null>(null)
+  const [validationReplayPreflight, setValidationReplayPreflight] = useState<ReplayPreflight | null>(null)
   const authoringIssues = collectAuthoringIssues(script)
   const actionIssueBuckets = groupIssuesByAction(authoringIssues, script.actions.length)
   const scriptLevelIssues = authoringIssues.filter((issue) => typeof issue.actionIndex !== 'number')
@@ -2390,6 +2348,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const handleSave = async () => {
     setError(''); setSuccess(''); setWarnings([]); setSaving(true)
     setValidationEvidence(null)
+    setValidationReplayPreflight(null)
     try {
       const currentScript = resolveCurrentScript()
       let savedScript: StoredScript
@@ -2411,14 +2370,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setSuccess('')
     setWarnings([])
     setValidationEvidence(null)
+    setValidationReplayPreflight(null)
     setValidating(true)
     try {
       const currentScript = resolveCurrentScript()
       const res = scriptId
         ? await api.validateScript(scriptId)
-        : await api.validateDraftScript(currentScript, projectId, folderId)
+        : replayConfiguredVariables
+          ? await api.validateDraftScript(currentScript, projectId, folderId, replayConfiguredVariables)
+          : await api.validateDraftScript(currentScript, projectId, folderId)
       const validationScript = applyValidationRuntimeSettingsMetadata(currentScript, res)
       const validationWarnings = normalizeWarnings(res.warnings)
+      setValidationReplayPreflight(res.preflight || null)
       setValidationEvidence({
         data_source_fit: res.data_source_fit,
         ai_guardrails: res.ai_guardrails,
@@ -2437,6 +2400,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       const validationWarnings = normalizeWarnings(getErrorWarnings(e))
       setWarnings(validationWarnings)
       setValidationEvidence(null)
+      setValidationReplayPreflight(null)
       setError(getErrorMessage(e, 'Script validation failed'))
     } finally {
       setValidating(false)
@@ -2529,6 +2493,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         : await api.startDraftScriptDebugSession(payload)
       if (jsonMode) setScript(currentScript)
       const replayWarnings = normalizeWarnings(res.warnings)
+      setValidationReplayPreflight(res.preflight || res.session?.preflight || null)
       if (res.session) {
         setBrowserReplaySession(res.session)
         if (res.session.report) {
@@ -2885,7 +2850,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     ? buildReplayVariableDiffs(replaySeedVariables, replayReport.events)
     : []
   const replayConfiguredVariables = safeParseReplayVariables(replayOptions.variablesText)
-  const replayPreflight = browserReplaySession?.preflight || buildLocalReplayPreflight(script, replayConfiguredVariables)
+  const replayPreflight = browserReplaySession?.preflight || validationReplayPreflight || buildLocalReplayPreflight(script, replayConfiguredVariables)
+
+  useEffect(() => {
+    setValidationReplayPreflight(null)
+  }, [script.actions, script.data_sources, script.name, script.parameters, script.protocol, replayOptions.variablesText])
   const replayFailingEventIndex = replayReport?.events.findIndex(event => !event.success) ?? -1
   const replayFailingEvent = replayReport && replayFailingEventIndex >= 0 ? replayReport.events[replayFailingEventIndex] : null
   const replayVariableTimeline = replayReport

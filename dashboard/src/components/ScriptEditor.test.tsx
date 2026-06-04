@@ -2345,6 +2345,48 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('AI-generated drafts require replay evidence before promotion.')
   })
 
+  it('uses backend validation preflight for edit-page debug readiness', async () => {
+    apiMock.validateDraftScript.mockResolvedValueOnce({
+      script_id: '',
+      valid: true,
+      issues: [],
+      warnings: [],
+      preflight: {
+        valid: false,
+        action_count: 1,
+        expected_action_count: 1,
+        data_source_count: 0,
+        parameter_count: 0,
+        missing_variables: ['backend_only_account'],
+        checks: [
+          { id: 'variables', label: 'Variable readiness', status: 'fail', detail: 'backend_only_account' },
+        ],
+      },
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
+    })
+
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Validate Draft',
+    )
+    expect(validateButton).toBeDefined()
+    if (!validateButton) {
+      return
+    }
+
+    await act(async () => {
+      validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const readinessCard = Array.from(container.querySelectorAll('.utility-card'))
+      .find(card => card.textContent?.includes('Debug Readiness'))
+    expect(readinessCard?.textContent).toContain('Variable readiness')
+    expect(readinessCard?.textContent).toContain('Missing variable: backend_only_account')
+  })
+
   it('refreshes imported runtime parity metadata from validation responses', async () => {
     const importedScript: ScriptDefinition = {
       ...initialScript,

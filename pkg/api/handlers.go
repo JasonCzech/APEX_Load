@@ -386,9 +386,10 @@ func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Request) {
 	var wrapper struct {
-		ProjectID string     `json:"project_id,omitempty"`
-		FolderID  *string    `json:"folder_id,omitempty"`
-		Script    dsl.Script `json:"script"`
+		ProjectID string            `json:"project_id,omitempty"`
+		FolderID  *string           `json:"folder_id,omitempty"`
+		Script    dsl.Script        `json:"script"`
+		Variables map[string]string `json:"variables,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&wrapper); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
@@ -403,7 +404,7 @@ func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Reques
 		script.FolderID = wrapper.FolderID
 	}
 
-	writeJSON(w, http.StatusOK, buildScriptValidationResponse("", script))
+	writeJSON(w, http.StatusOK, buildScriptValidationResponseWithVariables("", script, wrapper.Variables))
 }
 
 func (s *Server) handleMoveScript(w http.ResponseWriter, r *http.Request) {
@@ -831,6 +832,7 @@ type scriptValidationResponse struct {
 	Valid                       bool                                         `json:"valid"`
 	Issues                      []string                                     `json:"issues"`
 	Warnings                    []string                                     `json:"warnings,omitempty"`
+	Preflight                   *ReplayPreflight                             `json:"preflight,omitempty"`
 	RuntimeSettingsParity       []loadrunner.RuntimeSettingParityEntry       `json:"runtime_settings_parity,omitempty"`
 	RuntimeSettingsStatusCounts map[string]int                               `json:"runtime_settings_status_counts,omitempty"`
 	MigrationReadiness          *loadrunner.RuntimeSettingMigrationReadiness `json:"migration_readiness,omitempty"`
@@ -840,8 +842,13 @@ type scriptValidationResponse struct {
 }
 
 func buildScriptValidationResponse(scriptID string, script *dsl.Script) scriptValidationResponse {
+	return buildScriptValidationResponseWithVariables(scriptID, script, nil)
+}
+
+func buildScriptValidationResponseWithVariables(scriptID string, script *dsl.Script, variables map[string]string) scriptValidationResponse {
 	issues := validateScript(script)
 	warnings := validationWarnings(script)
+	preflight := buildReplayPreflight(script, variables, issues, warnings)
 	parity := buildValidationRuntimeSettingsParity(script)
 	counts := loadrunner.RuntimeSettingStatusCounts(parity)
 	readiness := loadrunner.BuildRTSMigrationReadiness(parity, validationRuntimeSettingMigrationPolicy(script))
@@ -853,6 +860,7 @@ func buildScriptValidationResponse(scriptID string, script *dsl.Script) scriptVa
 		Valid:                       len(issues) == 0,
 		Issues:                      issues,
 		Warnings:                    warnings,
+		Preflight:                   preflight,
 		RuntimeSettingsParity:       parity,
 		RuntimeSettingsStatusCounts: counts,
 		MigrationReadiness:          readiness,
