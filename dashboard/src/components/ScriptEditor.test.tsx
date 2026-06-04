@@ -425,13 +425,11 @@ describe('ScriptEditor', () => {
     expect(outline?.textContent).not.toContain('Debug Session')
 
     const configDialog = container.querySelector('[aria-label="Script Configuration"]')
-    const replayDialog = container.querySelector('[aria-label="Script Debugger"]')
     const runtimeDialog = container.querySelector('[aria-label="Runtime Settings"]')
     expect(configDialog?.className).toContain('support-dialog-config')
-    expect(replayDialog?.className).toContain('script-ide-debugger')
     expect(runtimeDialog?.className).toContain('support-dialog-runtime')
     expect(configDialog?.className).not.toContain('open')
-    expect(replayDialog?.className).not.toContain('open')
+    expect(container.querySelector('[aria-label="Script Debugger"]')).toBeNull()
     expect(runtimeDialog?.className).not.toContain('open')
 
     const configLauncher = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Script Configuration'))
@@ -2039,6 +2037,86 @@ describe('ScriptEditor', () => {
     expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalledWith(expect.objectContaining({
       script: expect.objectContaining({ project_id: 'project-1' }),
     }))
+  })
+
+  it('keeps the debugger shell scoped to the Debug workspace after a session exists', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
+    })
+
+    expect(container.querySelector('[aria-label="Script Debugger"]')).toBeNull()
+    expect(container.querySelector('.editor-outline-list')?.textContent).not.toContain('Debug Session')
+
+    const debugTab = findOpenDebuggerButton(container)
+    expect(debugTab).toBeDefined()
+    if (!debugTab) {
+      return
+    }
+
+    await act(async () => {
+      debugTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const debuggerShell = container.querySelector('[aria-label="Script Debugger"]')
+    expect(debuggerShell).not.toBeNull()
+    expect(debuggerShell?.className).toContain('open')
+    expect(debuggerShell?.querySelector('[aria-label="Debugger controls"]')).toBeNull()
+    expect(container.querySelectorAll('button[title="Run Replay"]')).toHaveLength(1)
+    expect(container.querySelectorAll('button[title="Step to next action"]')).toHaveLength(1)
+    expect(container.querySelectorAll('button[title="Stop debugger"]')).toHaveLength(1)
+    expect(container.querySelectorAll('button[title="Session overrides"]')).toHaveLength(1)
+
+    const runReplayButton = findDebuggerRunButton(container)
+    expect(runReplayButton).toBeDefined()
+    if (!runReplayButton) {
+      return
+    }
+
+    await act(async () => {
+      runReplayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('.script-ide-tabs button[data-debug-status="Passed"]')).not.toBeNull()
+
+    const authorTab = findWorkspaceTab(container, 'Author')
+    expect(authorTab).toBeDefined()
+    if (!authorTab) {
+      return
+    }
+
+    await act(async () => {
+      authorTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[aria-label="Script Debugger"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Authoring workspace"]')).not.toBeNull()
+  })
+
+  it('runs from Author by switching into the Debug workspace', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
+    })
+
+    expect(container.querySelector('[aria-label="Script Debugger"]')).toBeNull()
+    expect(apiMock.startDraftScriptDebugSession).not.toHaveBeenCalled()
+
+    const runReplayButton = findDebuggerRunButton(container)
+    expect(runReplayButton).toBeDefined()
+    if (!runReplayButton) {
+      return
+    }
+
+    await act(async () => {
+      runReplayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('[aria-label="Script Debugger"]')?.className).toContain('open')
+    expect(container.querySelector('[aria-label="Authoring workspace"]')).toBeNull()
   })
 
   it('starts paused and enables stepping when step-through mode is selected', async () => {

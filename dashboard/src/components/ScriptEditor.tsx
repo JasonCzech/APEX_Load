@@ -1096,14 +1096,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       return 'author'
     }
   })
-  const [debugDockCollapsed, setDebugDockCollapsed] = useState(() => {
-    try {
-      const value = window.localStorage.getItem('scriptEditorDebugDockCollapsed')
-      return value === null ? true : value === 'true'
-    } catch {
-      return true
-    }
-  })
   const [debugBreakpoints, setDebugBreakpoints] = useState<ScriptDebugBreakpoint[]>([])
   const [debuggerTab, setDebuggerTab] = useState<DebuggerTab>('request')
   const [debuggerMaximized, setDebuggerMaximized] = useState(false)
@@ -1131,12 +1123,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   useEffect(() => {
     try {
       window.localStorage.setItem('scriptEditorWorkspaceTab', workspaceTab)
-      window.localStorage.setItem('scriptEditorDebugDockCollapsed', debugDockCollapsed ? 'true' : 'false')
       window.localStorage.setItem('debuggerRailWidth', debuggerRailWidth.toString())
       window.localStorage.setItem('debuggerVarsWidth', debuggerVarsWidth.toString())
       window.localStorage.setItem('debuggerBottomHeight', debuggerBottomHeight.toString())
     } catch { /* storage may be unavailable */ }
-  }, [workspaceTab, debugDockCollapsed, debuggerRailWidth, debuggerVarsWidth, debuggerBottomHeight])
+  }, [workspaceTab, debuggerRailWidth, debuggerVarsWidth, debuggerBottomHeight])
   useEffect(() => {
     if (workspaceTab !== 'json' || jsonMode || jsonWorkspaceHydrated.current) return
     setJsonText(JSON.stringify({ script }, null, 2))
@@ -2408,14 +2399,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
     setWorkspaceTab(nextTab)
     if (nextTab === 'debug') {
-      setDebugDockCollapsed(false)
       setDebuggerTab('request')
     }
   }
 
   const openReplayDebugger = (openSettings = false) => {
     activateWorkspaceTab('debug')
-    setDebugDockCollapsed(false)
     setDebuggerTab('request')
     if (openSettings) setDebuggerSettingsOpen(true)
   }
@@ -2560,6 +2549,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }
 
   const handleStepReplay = async () => {
+    openReplayDebugger(false)
     if (!activeReplaySessionId || !browserReplaySession) {
       await handleReplay({ startPaused: true })
       return
@@ -2988,7 +2978,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         if (debuggerSettingsOpen) { setDebuggerSettingsOpen(false); return }
         if (workspaceTab === 'debug') {
           setWorkspaceTab('author')
-          setDebugDockCollapsed(true)
         }
         return
       }
@@ -3606,28 +3595,22 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setError('')
   }
 
-  const debugSessionAvailable = Boolean(replayReport || activeReplaySessionId || browserReplaySession)
   const debugEvidenceStatus = replayReport?.completed_at
     ? (replayReport.success ? 'passed' : 'failed')
     : activeReplaySessionId || browserReplaySession
       ? 'in progress'
       : 'missing'
+  const debugWorkspaceStatusLabel = replaying
+    ? (isReplayPaused ? 'Paused' : 'Running')
+    : replayReport?.completed_at
+      ? (replayReport.success ? 'Passed' : 'Failed')
+      : activeReplaySessionId || browserReplaySession
+        ? 'Active'
+        : ''
   const problemCount = errorCount + warningCount + warnings.length + (error ? 1 : 0)
   const actionProblemRows = actionIssueBuckets.flatMap((issues, actionIndex) =>
     issues.map(issue => ({ issue, actionIndex })),
   )
-  const openProblemsDock = () => {
-    setDebuggerBottomTab('problems')
-    setDebugDockCollapsed(false)
-  }
-  const openDebugOutputDock = () => {
-    setDebuggerBottomTab('output')
-    setDebugDockCollapsed(false)
-  }
-  const openVariablesInspector = () => {
-    activateWorkspaceTab('debug')
-    setDebuggerTab('request')
-  }
   const toggleSelectedBreakpoint = () => {
     const selectedRow = workspaceTab === 'debug'
       ? debugActionRows[selectedReplayEventIndex ?? 0]
@@ -3694,7 +3677,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             <button type="button" role="tab" aria-selected={workspaceTab === 'author'} className={workspaceTab === 'author' ? 'active' : ''} onClick={() => activateWorkspaceTab('author')}>
               Author
             </button>
-            <button type="button" role="tab" aria-selected={workspaceTab === 'debug'} className={workspaceTab === 'debug' ? 'active' : ''} onClick={() => activateWorkspaceTab('debug')}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={workspaceTab === 'debug'}
+              className={workspaceTab === 'debug' ? 'active' : ''}
+              data-debug-status={debugWorkspaceStatusLabel || undefined}
+              onClick={() => activateWorkspaceTab('debug')}
+            >
               Debug
             </button>
             <button type="button" role="tab" aria-selected={workspaceTab === 'json'} className={workspaceTab === 'json' ? 'active' : ''} onClick={toggleJsonMode}>
@@ -3722,26 +3712,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               <span className="debugger-icon" aria-hidden="true">●</span>
               <span>Breakpoint</span>
             </button>
-            <button type="button" className={`debugger-icon-btn ${debuggerSettingsOpen ? 'active' : ''}`} title="Session overrides" onClick={() => { activateWorkspaceTab('debug'); setDebuggerSettingsOpen(open => !open) }}>
+            <button
+              ref={debuggerSettingsBtnRef}
+              type="button"
+              className={`debugger-icon-btn ${debuggerSettingsOpen ? 'active' : ''}`}
+              title="Session overrides"
+              aria-pressed={debuggerSettingsOpen}
+              onClick={() => {
+                activateWorkspaceTab('debug')
+                setDebuggerTab('request')
+                setDebuggerSettingsOpen(open => !open)
+              }}
+            >
               <span className="debugger-icon" aria-hidden="true">&#9881;</span>
               <span>Settings</span>
-            </button>
-            <button type="button" className="debugger-icon-btn" title="Open Problems" onClick={openProblemsDock}>
-              <span className="debugger-icon" aria-hidden="true">!</span>
-              <span>Problems{problemCount > 0 ? ` ${problemCount}` : ''}</span>
-            </button>
-            <button type="button" className="debugger-icon-btn" title="Open Variables" onClick={openVariablesInspector}>
-              <span className="debugger-icon" aria-hidden="true">{'{}'}</span>
-              <span>Variables</span>
-            </button>
-            <button type="button" className="debugger-icon-btn" title="Open Debug Output" onClick={openDebugOutputDock}>
-              <span className="debugger-icon" aria-hidden="true">&gt;_</span>
-              <span>Output</span>
             </button>
             {replayReport && (
               <button type="button" className="debugger-icon-btn" title="Download Debug JSON" onClick={handleDownloadBrowserReplayExport}>
                 <span className="debugger-icon" aria-hidden="true">&#8675;</span>
-                <span>JSON</span>
+                <span>Export</span>
               </button>
             )}
           </div>
@@ -3906,8 +3895,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             )}
           </div>
 
+          {workspaceTab === 'debug' && (
           <div
-            className={`config-panel replay-panel script-ide-debugger debugger-dialog ${replayReport ? 'has-report' : ''} ${debuggerMaximized ? 'maximized' : ''} ${workspaceTab === 'debug' || !debugDockCollapsed || debugSessionAvailable ? 'open' : ''} ${debugDockCollapsed && workspaceTab !== 'debug' ? 'collapsed' : ''}`}
+            className={`config-panel replay-panel script-ide-debugger debugger-dialog open ${replayReport ? 'has-report' : ''} ${debuggerMaximized ? 'maximized' : ''}`}
             role="region"
             aria-label="Script Debugger"
           >
@@ -3915,48 +3905,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               <div className="debugger-toolbar-group debugger-toolbar-title">
                 <span className={`debugger-status-dot ${debuggerStatusState}`} aria-hidden="true" />
                 <h3 className="panel-title">Script Debugger</h3>
-              </div>
-              <div className="debugger-toolbar-group debugger-toolbar-controls" role="group" aria-label="Debugger controls">
-                <button
-                  type="button"
-                  className="debugger-icon-btn"
-                  title={replayStartButtonLabel}
-                  onClick={() => void handleReplay()}
-                  disabled={replaying || saving || !script.name || script.actions.length === 0}
-                >
-                  <span className="debugger-icon" aria-hidden="true">&#9654;</span>
-                  <span>{replaying ? 'Running…' : replayReport ? 'Restart' : 'Run'}</span>
-                </button>
-                <button
-                  type="button"
-                  className="debugger-icon-btn"
-                  title={isReplayPaused ? 'Continue' : 'Pause'}
-                  onClick={handlePauseResumeReplay}
-                  disabled={!activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped'}
-                >
-                  <span className="debugger-icon" aria-hidden="true">{isReplayPaused ? '▶' : '⏸'}</span>
-                  <span>{isReplayPaused ? 'Continue' : 'Pause'}</span>
-                </button>
-                <button
-                  type="button"
-                  className="debugger-icon-btn"
-                  title="Step to next action"
-                  onClick={() => void handleStepReplay()}
-                  disabled={stepReplayDisabled}
-                >
-                  <span className="debugger-icon" aria-hidden="true">&#10551;</span>
-                  <span>Step</span>
-                </button>
-                <button
-                  type="button"
-                  className="debugger-icon-btn"
-                  title="Stop debugger"
-                  onClick={handleStopReplay}
-                  disabled={!activeReplaySessionId || !replaying}
-                >
-                  <span className="debugger-icon" aria-hidden="true">&#9209;</span>
-                  <span>Stop</span>
-                </button>
               </div>
               <div className="debugger-toolbar-group debugger-toolbar-right">
                 {isBrowserScript && replayReport && (
@@ -3971,17 +3919,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     <span>JSON</span>
                   </button>
                 )}
-                <button
-                  ref={debuggerSettingsBtnRef}
-                  type="button"
-                  className={`debugger-icon-btn ${debuggerSettingsOpen ? 'active' : ''}`}
-                  title="Session overrides"
-                  aria-pressed={debuggerSettingsOpen}
-                  onClick={() => setDebuggerSettingsOpen(open => !open)}
-                >
-                  <span className="debugger-icon" aria-hidden="true">&#9881;</span>
-                  <span>Settings</span>
-                </button>
                 <button
                   type="button"
                   className="debugger-icon-btn"
@@ -3999,29 +3936,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   onClick={() => setDebuggerMaximized(value => !value)}
                 >
                   <span className="debugger-icon" aria-hidden="true">{debuggerMaximized ? '❐' : '⛶'}</span>
-                </button>
-                {workspaceTab !== 'debug' && (
-                  <button
-                    type="button"
-                    className="debugger-icon-btn"
-                    title="Open Debug workspace"
-                    onClick={() => activateWorkspaceTab('debug')}
-                  >
-                    <span className="debugger-icon" aria-hidden="true">↥</span>
-                    <span>Debug</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="debugger-icon-btn debugger-icon-btn-square"
-                  title={workspaceTab === 'debug' ? 'Return to Author' : 'Collapse debug dock'}
-                  onClick={() => {
-                    setDebuggerSettingsOpen(false)
-                    setDebugDockCollapsed(true)
-                    if (workspaceTab === 'debug') setWorkspaceTab('author')
-                  }}
-                >
-                  <span className="debugger-icon" aria-hidden="true">&#10005;</span>
                 </button>
               </div>
             </div>
@@ -4119,7 +4033,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     className="btn btn-sm btn-ghost"
                     onClick={() => {
                       activateWorkspaceTab('debug')
-                      setDebugDockCollapsed(false)
                       setDebuggerTab('request')
                       setExpandedReplayEvent(replayFailingEventIndex)
                     }}
@@ -4787,6 +4700,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               </div>
             </div>
           </div>
+          )}
 
           {importMetadata && (
             <div className={`import-metadata-panel config-panel editor-support-dialog support-dialog-import ${openSections['import'] ? 'open' : ''}`} style={{ padding: 0 }} role="dialog" aria-modal="true" aria-label="Imported Metadata">
@@ -6576,7 +6490,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     {objectDescriptorReview.rows.length > 0 && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('object-descriptors')}>Object Descriptors</button>}
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('parameter-data')}>Parameter Data</button>
                     {isBrowserScript && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('http-conversion')}>HTTP Conversion Review</button>}
-                    {debugSessionAvailable && <button className="editor-outline-link" type="button" onClick={() => activateWorkspaceTab('debug')}>Debug Session</button>}
                   </div>
                   <div className="editor-outline-metrics" aria-label="Script outline summary">
                     <span><strong>{outlineSummary.browserActionCount || outlineSummary.actionCount}</strong> {isBrowserScript ? 'browser' : 'actions'}</span>

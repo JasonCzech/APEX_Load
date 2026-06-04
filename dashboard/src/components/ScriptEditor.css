@@ -32,6 +32,9 @@
   background: var(--bg-primary);
 }
 .script-ide-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-height: 30px;
   padding: 5px 10px;
   border: 1px solid transparent;
@@ -41,6 +44,16 @@
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+}
+.script-ide-tabs button[data-debug-status]::after {
+  content: attr(data-debug-status);
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.36);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
 }
 .script-ide-tabs button:hover,
 .script-ide-tabs button.active {
@@ -3649,17 +3662,6 @@
 .editor-body.workspace-debug .script-ide-debugger {
   min-height: calc(100vh - 220px);
 }
-.script-ide-debugger.collapsed {
-  min-height: 0;
-  max-height: none;
-}
-.script-ide-debugger.collapsed .debugger-toolbar {
-  border-bottom: none;
-}
-.script-ide-debugger.collapsed .debugger-body,
-.script-ide-debugger.collapsed .debugger-statusbar {
-  display: none;
-}
 .script-ide-debugger.maximized.open {
   position: fixed;
   inset: 16px;
@@ -3858,12 +3860,12 @@
   width: 14px;
   cursor: col-resize;
 }
-.debugger-resizer-col:not(.debugger-resizer-vars) { right: -12px; }
-.debugger-resizer-vars { left: -12px; }
+.debugger-resizer-col:not(.debugger-resizer-vars) { right: -1px; }
+.debugger-resizer-vars { left: -1px; }
 .debugger-resizer-row {
   left: 8px;
   right: 8px;
-  top: -12px;
+  top: -1px;
   height: 14px;
   cursor: row-resize;
 }
