@@ -51,15 +51,45 @@ vi.mock('../hooks/useWebSocket', () => ({
   useWebSocket: vi.fn(),
 }))
 
-vi.mock('@uiw/react-codemirror', () => ({
-  default: ({ value = '', onChange }: { value?: string; onChange?: (value: string) => void }) => (
-    <textarea
-      data-testid="codemirror-mock"
-      value={value}
-      onChange={event => onChange?.(event.currentTarget.value)}
-    />
-  ),
-}))
+vi.mock('@uiw/react-codemirror', async () => {
+  const { useEffect, useRef } = await import('react')
+  const CodeMirrorMock = ({ value = '', onChange, onCreateEditor }: {
+    value?: string
+    onChange?: (value: string) => void
+    onCreateEditor?: (view: unknown) => void
+  }) => {
+    const ref = useRef<HTMLTextAreaElement | null>(null)
+    const created = useRef(false)
+    useEffect(() => {
+      if (created.current || !onCreateEditor) return
+      created.current = true
+      // Minimal EditorView stand-in: reports the textarea's live selection + value so the
+      // production right-click handler (which reads view.state) can be exercised under test.
+      onCreateEditor({
+        dispatch: () => {},
+        get state() {
+          const el = ref.current
+          const from = el?.selectionStart ?? 0
+          const to = el?.selectionEnd ?? 0
+          const doc = el?.value ?? value
+          return {
+            selection: { main: { from, to } },
+            doc: { toString: () => doc, lines: 1, line: () => ({ from: 0 }) },
+          }
+        },
+      })
+    }, [onCreateEditor, value])
+    return (
+      <textarea
+        data-testid="codemirror-mock"
+        ref={ref}
+        value={value}
+        onChange={event => onChange?.(event.currentTarget.value)}
+      />
+    )
+  }
+  return { default: CodeMirrorMock }
+})
 
 vi.mock('./scriptEditorUtils', async () => {
   const actual = await vi.importActual<typeof import('./scriptEditorUtils')>('./scriptEditorUtils')
@@ -409,7 +439,7 @@ describe('ScriptEditor', () => {
     const metadataSection = container.querySelector('#imported-metadata-section')
     const actionDetail = container.querySelector('.action-detail')
     expect(metadataSection?.textContent).toContain('checkout.usr')
-    expect(actionDetail?.contains(metadataSection)).toBe(false)
+    expect(actionDetail).toBeNull()
     expect(container.querySelector('.author-code-center')?.contains(metadataSection)).toBe(true)
     expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
     expect(metadataSection?.getAttribute('role')).toBeNull()
@@ -567,6 +597,72 @@ describe('ScriptEditor', () => {
     expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"Checkout Flow"')
   })
 
+  it('shows imported lifecycle phases in the author outline and debug rail', async () => {
+    const lifecycleScript: ScriptDefinition = {
+      ...initialScript,
+      init: [{
+        name: 'Init Login',
+        type: 'request',
+        method: 'POST',
+        target: '/session',
+        headers: {},
+        body: '{}',
+        extractors: [{ name: 'token', source: 'body', type: 'jsonpath', expression: '$.token' }],
+      }],
+      actions: [{
+        ...initialScript.actions[0],
+        name: 'Checkout',
+        target: '/checkout',
+      }],
+      teardown: [{
+        name: 'Logout',
+        type: 'request',
+        method: 'POST',
+        target: '/logout',
+        headers: {},
+        body: '',
+      }],
+      metadata: {
+        import: {
+          source: 'loadrunner',
+          source_script_name: 'checkout.usr',
+          preserved: {},
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={lifecycleScript} />)
+    })
+
+    const outlineText = container.querySelector('.editor-outline-metrics')?.textContent?.replace(/\s+/g, ' ') || ''
+    expect(outlineText).toContain('1 init')
+    expect(outlineText).toContain('1 actions')
+    expect(outlineText).toContain('1 end')
+    expect(Array.from(container.querySelectorAll('.action-phase-label')).map(label => label.textContent)).toEqual([
+      'Init',
+      'Action',
+      'Teardown',
+    ])
+
+    const initRow = Array.from(container.querySelectorAll('.action-item')).find(row => row.textContent?.includes('Init Login'))
+    expect(initRow).toBeDefined()
+    await act(async () => {
+      initRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('[aria-label="Script JSON"]')?.textContent).toContain('init[0]')
+
+    const debugTab = findOpenDebuggerButton(container)
+    await act(async () => {
+      debugTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[aria-label="Script Debugger"]')?.textContent).toContain('3 actions planned')
+    expect(container.querySelector('[aria-label="Script Debugger"]')?.textContent).toContain('Init 1')
+    expect(container.querySelector('[aria-label="Script Debugger"]')?.textContent).toContain('Teardown 1')
+  })
+
   it('opens and focuses center documents from outline controls', async () => {
     const importedScript: ScriptDefinition = {
       ...initialScript,
@@ -618,6 +714,99 @@ describe('ScriptEditor', () => {
     })
     expect(findCenterTab(container, 'Parameter Data')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('[aria-label="Parameter Data"]')?.textContent).toContain('Manage parameters and reusable parameter data')
+  })
+
+  it('only exposes the Imported Metadata center tab for scripts with actual import metadata', async () => {
+    const staleImportShellScript: ScriptDefinition = {
+      ...initialScript,
+      metadata: {
+        import: {},
+      },
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={staleImportShellScript} />)
+    })
+
+    expect(findCenterTab(container, 'Imported Metadata')).toBeUndefined()
+    expect(container.querySelector('#imported-metadata-section')).toBeNull()
+    expect(container.querySelector('.editor-outline-nav')?.textContent).not.toContain('Imported Metadata')
+  })
+
+  it('lets the debug request and response pane close to expand the center workbench', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    const debugTab = findOpenDebuggerButton(container)
+    expect(debugTab).toBeDefined()
+    await act(async () => {
+      debugTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('.debugger-center')).toBeNull()
+    expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-collapsed')).toBe(true)
+
+    const showDetails = findButtonByTitle(container, 'Show request and response panel')
+    expect(showDetails).toBeDefined()
+    await act(async () => {
+      showDetails?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.debugger-center')).not.toBeNull()
+    const closeDetails = findButtonByTitle(container, 'Close request and response panel')
+    expect(closeDetails).toBeDefined()
+    await act(async () => {
+      closeDetails?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.debugger-center')).toBeNull()
+    expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-collapsed')).toBe(true)
+    expect(container.querySelector('[aria-label="Script JSON"]')).not.toBeNull()
+  })
+
+  it('collapses and restores the right sidebars from Author and Debug modes', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    expect(container.querySelector('.editor-utility-sidebar')).not.toBeNull()
+    const collapseAuthorSidebar = container.querySelector('.editor-utility-sidebar button[aria-label="Collapse right sidebar"]') as HTMLButtonElement | null
+    expect(collapseAuthorSidebar).not.toBeNull()
+    await act(async () => {
+      collapseAuthorSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.editor-utility-sidebar')).toBeNull()
+    const showAuthorSidebar = findButtonByTitle(container, 'Show right sidebar')
+    expect(showAuthorSidebar).toBeDefined()
+    await act(async () => {
+      showAuthorSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.editor-utility-sidebar')).not.toBeNull()
+
+    const debugTab = findOpenDebuggerButton(container)
+    await act(async () => {
+      debugTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('.debugger-variables-panel')).toBeNull()
+    expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-variables-collapsed')).toBe(true)
+    const showDebugSidebar = findButtonByTitle(container, 'Show right sidebar')
+    expect(showDebugSidebar).toBeDefined()
+    await act(async () => {
+      showDebugSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.debugger-variables-panel')).not.toBeNull()
+
+    const collapseDebugSidebar = container.querySelector('.debugger-variables-panel button[aria-label="Collapse right sidebar"]') as HTMLButtonElement | null
+    expect(collapseDebugSidebar).not.toBeNull()
+    await act(async () => {
+      collapseDebugSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.debugger-variables-panel')).toBeNull()
+    expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-variables-collapsed')).toBe(true)
   })
 
   it('persists center tab order and drops unavailable document tabs', async () => {
@@ -1398,7 +1587,8 @@ describe('ScriptEditor', () => {
     expect(baseUrlInput?.getAttribute('value')).toBe('https://search.example.com')
     expect(container.textContent).toContain('Search')
     expect(container.textContent).not.toContain('session_id')
-    expect(container.textContent).toContain('Select an action to edit its details')
+    expect(container.querySelector('.action-detail')).toBeNull()
+    expect(container.textContent).not.toContain('Select an action to edit its details')
   })
 
   it('shows imported correlation suggestions inside the metadata panel', async () => {
@@ -1580,9 +1770,12 @@ describe('ScriptEditor', () => {
     const metadataSection = container.querySelector('#imported-metadata-section')
     const actionDetail = container.querySelector('.action-detail')
     expect(metadataSection?.classList.contains('open')).toBe(true)
-    expect(actionDetail?.contains(metadataSection)).toBe(false)
+    expect(actionDetail).toBeNull()
     expect(container.querySelector('.author-code-center')?.contains(metadataSection)).toBe(true)
     expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
+    expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Conversion Mapping')
+    expect(findCenterTab(container, 'Conversion Mapping')).toBeDefined()
+    expect(container.querySelector('[aria-label="Conversion Mapping"]')?.textContent).toContain('Action.c:3')
     expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Authoring Signals')
     expect(metadataSection?.classList.contains('editor-support-dialog')).toBe(false)
     expect(metadataSection?.getAttribute('role')).toBeNull()
@@ -2545,6 +2738,8 @@ describe('ScriptEditor', () => {
       breakpoints: [],
       script: expect.objectContaining({ project_id: 'project-1' }),
     }))
+    expect(container.querySelector('.debugger-center')).not.toBeNull()
+    expect(container.querySelector('.debugger-center')?.textContent).toContain('Get Products')
 
     const stepButton = findButtonByTitle(container, 'Step to next action') as HTMLButtonElement | undefined
     expect(stepButton).toBeDefined()
@@ -2655,8 +2850,16 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
+    expect(container.querySelector('[aria-label="Resize variables panel"]')).toBeNull()
+    const showDebugSidebar = findButtonByTitle(container, 'Show right sidebar')
+    expect(showDebugSidebar).toBeDefined()
+    await act(async () => {
+      showDebugSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
     const actionsResizer = container.querySelector('[aria-label="Resize actions panel"]') as HTMLDivElement | null
-    const variablesResizer = container.querySelector('[aria-label="Resize variables panel"]') as HTMLDivElement | null
+    let variablesResizer = container.querySelector('[aria-label="Resize variables panel"]') as HTMLDivElement | null
     const bottomResizer = container.querySelector('[aria-label="Resize bottom panel"]') as HTMLDivElement | null
     expect(actionsResizer).not.toBeNull()
     expect(variablesResizer).not.toBeNull()
@@ -2664,23 +2867,24 @@ describe('ScriptEditor', () => {
     if (!actionsResizer || !variablesResizer || !bottomResizer) {
       return
     }
+    const openVariablesResizer = variablesResizer
 
     expect(actionsResizer.getAttribute('role')).toBe('separator')
     expect(actionsResizer.getAttribute('aria-orientation')).toBe('vertical')
     expect(actionsResizer.getAttribute('aria-valuenow')).toBe('260')
-    expect(variablesResizer.getAttribute('aria-valuenow')).toBe('320')
+    expect(openVariablesResizer.getAttribute('aria-valuenow')).toBe('320')
     expect(bottomResizer.getAttribute('aria-orientation')).toBe('horizontal')
     expect(bottomResizer.getAttribute('aria-valuenow')).toBe('220')
 
     await act(async () => {
       actionsResizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
-      variablesResizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+      openVariablesResizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
       bottomResizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
       await Promise.resolve()
     })
 
     expect(actionsResizer.getAttribute('aria-valuenow')).toBe('284')
-    expect(variablesResizer.getAttribute('aria-valuenow')).toBe('344')
+    expect(openVariablesResizer.getAttribute('aria-valuenow')).toBe('344')
     expect(bottomResizer.getAttribute('aria-valuenow')).toBe('244')
 
     const resetLayoutButton = findButtonByTitle(container, 'Reset debugger layout')
@@ -2695,8 +2899,17 @@ describe('ScriptEditor', () => {
     })
 
     expect(actionsResizer.getAttribute('aria-valuenow')).toBe('260')
-    expect(variablesResizer.getAttribute('aria-valuenow')).toBe('320')
     expect(bottomResizer.getAttribute('aria-valuenow')).toBe('220')
+    expect(container.querySelector('[aria-label="Resize variables panel"]')).toBeNull()
+
+    const restoredDebugSidebar = findButtonByTitle(container, 'Show right sidebar')
+    expect(restoredDebugSidebar).toBeDefined()
+    await act(async () => {
+      restoredDebugSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    variablesResizer = container.querySelector('[aria-label="Resize variables panel"]') as HTMLDivElement | null
+    expect(variablesResizer?.getAttribute('aria-valuenow')).toBe('320')
   })
 
   it('surfaces script load failures when fetching by id', async () => {
@@ -3962,7 +4175,14 @@ describe('ScriptEditor', () => {
 
     expect(contentGrid).not.toBeNull()
     expect(sidebar?.parentElement).toBe(contentGrid)
-    expect(detail?.parentElement).toBe(contentGrid)
+    expect(detail).toBeNull()
+
+    const firstAction = container.querySelector('.action-item')
+    await act(async () => {
+      firstAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.action-detail')?.parentElement).toBe(contentGrid)
   })
 
   it('parameterizes selected body text from the action editor context menu', async () => {
@@ -4094,6 +4314,137 @@ describe('ScriptEditor', () => {
       button.textContent?.includes('Edit parameter'),
     )
     expect(editButton).toBeDefined()
+  })
+
+  it('parameterizes a selected string value from the Script JSON context menu', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    const editorWrapper = container.querySelector('.script-code-editor') as HTMLElement | null
+    const textarea = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
+    expect(editorWrapper).not.toBeNull()
+    expect(textarea).not.toBeNull()
+    if (!editorWrapper || !textarea) {
+      return
+    }
+
+    const start = textarea.value.indexOf('/login')
+    const end = start + '/login'.length
+    expect(start).toBeGreaterThan(-1)
+    textarea.focus()
+    textarea.setSelectionRange(start, end)
+
+    await act(async () => {
+      editorWrapper.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 90, clientY: 60 }))
+    })
+
+    const parameterizeButton = Array.from(container.querySelectorAll('.action-parameter-menu button')).find(button =>
+      button.textContent?.includes('Parameterize selection'),
+    )
+    expect(parameterizeButton).toBeDefined()
+    if (!parameterizeButton) {
+      return
+    }
+
+    await act(async () => {
+      parameterizeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const draftPanel = container.querySelector('.parameter-draft-panel')
+    expect(draftPanel).not.toBeNull()
+    expect(draftPanel?.textContent).toContain('Script JSON')
+
+    const saveButton = Array.from(container.querySelectorAll('.parameter-draft-panel button')).find(button =>
+      button.textContent?.includes('Save To Parameter Data'),
+    )
+    expect(saveButton).toBeDefined()
+    if (!saveButton) {
+      return
+    }
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    // The new parameter is created and its row is focused for type selection.
+    expect(container.textContent).toContain('login')
+
+    // Switching back to the Script JSON tab confirms the value became a template reference.
+    const jsonTab = findCenterTab(container, 'Script JSON')
+    expect(jsonTab).toBeDefined()
+    await act(async () => {
+      jsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const refreshedTextarea = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
+    expect(refreshedTextarea?.value).toContain('{{param.login}}')
+  })
+
+  it('offers Edit parameter when selecting an existing token in the Script JSON', async () => {
+    const scriptWithToken: ScriptDefinition = {
+      ...initialScript,
+      actions: [
+        {
+          ...initialScript.actions[0],
+          body: '{{param.session_id}}',
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={scriptWithToken} />)
+    })
+
+    const editorWrapper = container.querySelector('.script-code-editor') as HTMLElement | null
+    const textarea = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
+    if (!editorWrapper || !textarea) {
+      expect(editorWrapper).not.toBeNull()
+      return
+    }
+
+    const token = '{{param.session_id}}'
+    const start = textarea.value.indexOf(token)
+    const end = start + token.length
+    expect(start).toBeGreaterThan(-1)
+    textarea.focus()
+    textarea.setSelectionRange(start, end)
+
+    await act(async () => {
+      editorWrapper.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 90, clientY: 60 }))
+    })
+
+    const editButton = Array.from(container.querySelectorAll('.action-parameter-menu button')).find(button =>
+      button.textContent?.includes('Edit parameter'),
+    )
+    expect(editButton).toBeDefined()
+  })
+
+  it('does not offer parameterize when selecting a JSON property key', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    const editorWrapper = container.querySelector('.script-code-editor') as HTMLElement | null
+    const textarea = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
+    if (!editorWrapper || !textarea) {
+      expect(editorWrapper).not.toBeNull()
+      return
+    }
+
+    const start = textarea.value.indexOf('target')
+    const end = start + 'target'.length
+    expect(start).toBeGreaterThan(-1)
+    textarea.focus()
+    textarea.setSelectionRange(start, end)
+
+    await act(async () => {
+      editorWrapper.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 90, clientY: 60 }))
+    })
+
+    const parameterizeButton = Array.from(container.querySelectorAll('.action-parameter-menu button')).find(button =>
+      button.textContent?.includes('Parameterize selection'),
+    )
+    expect(parameterizeButton).toBeUndefined()
   })
 
   it('renders SOAP protocol settings and action fields for SOAP drafts', async () => {

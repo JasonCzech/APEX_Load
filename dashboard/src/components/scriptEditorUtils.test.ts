@@ -6,8 +6,60 @@ import {
   inferDelimiter,
   parseInlineData,
   parseReplayVariablesText,
+  resolveJsonStringSelection,
 } from './scriptEditorUtils'
 import { type ScriptDefinition } from '../types/scripts'
+
+describe('resolveJsonStringSelection', () => {
+  const text = JSON.stringify(
+    { script: { name: 'Order Flow', config: { base_url: 'https://api.example.com' } } },
+    null,
+    2,
+  )
+  const offsetsOf = (needle: string) => {
+    const from = text.indexOf(needle)
+    return { from, to: from + needle.length }
+  }
+
+  it('accepts a selection inside a string value and clamps to the interior', () => {
+    const { from, to } = offsetsOf('Order Flow')
+    const result = resolveJsonStringSelection(text, from, to)
+    expect(result.ok).toBe(true)
+    expect(result.selectedText).toBe('Order Flow')
+    expect(text.slice(result.innerFrom, result.innerTo)).toBe('Order Flow')
+  })
+
+  it('accepts a partial selection inside a string value', () => {
+    const { from, to } = offsetsOf('api.example.com')
+    const result = resolveJsonStringSelection(text, from, to)
+    expect(result.ok).toBe(true)
+    expect(result.selectedText).toBe('api.example.com')
+  })
+
+  it('clamps a selection that includes the surrounding quotes', () => {
+    const { from, to } = offsetsOf('"Order Flow"')
+    const result = resolveJsonStringSelection(text, from, to)
+    expect(result.ok).toBe(true)
+    expect(result.selectedText).toBe('Order Flow')
+  })
+
+  it('rejects a selection over a property key', () => {
+    const { from, to } = offsetsOf('base_url')
+    expect(resolveJsonStringSelection(text, from, to).ok).toBe(false)
+  })
+
+  it('rejects a selection that spans structural tokens', () => {
+    const from = text.indexOf('Order Flow') + 'Order Flow'.length
+    const to = text.indexOf('base_url')
+    expect(to).toBeGreaterThan(from)
+    expect(resolveJsonStringSelection(text, from, to).ok).toBe(false)
+  })
+
+  it('rejects an empty selection', () => {
+    const from = text.indexOf('Order Flow')
+    expect(resolveJsonStringSelection(text, from, from).ok).toBe(false)
+  })
+})
 
 describe('scriptEditorUtils replay handoff helpers', () => {
   it('parses replay variables text into string values', () => {

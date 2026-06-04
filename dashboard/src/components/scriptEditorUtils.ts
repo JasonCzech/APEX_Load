@@ -1,3 +1,4 @@
+import { jsonLanguage } from '@codemirror/lang-json'
 import {
   type BrowserReplayStartRequest,
   BrowserReplayConsoleEntry,
@@ -621,6 +622,56 @@ export function ensureUniqueParameterName(requested: string, parameters: Paramet
     next = `${base}_${suffix}`
   }
   return next
+}
+
+export interface JsonStringSelection {
+  ok: boolean
+  innerFrom: number
+  innerTo: number
+  selectedText: string
+}
+
+type JsonSyntaxNode = { name: string; from: number; to: number; parent: JsonSyntaxNode | null }
+
+const REJECTED_JSON_SELECTION: JsonStringSelection = { ok: false, innerFrom: 0, innerTo: 0, selectedText: '' }
+
+/**
+ * Resolve a raw text selection (offsets into `text`) to a JSON string value that can be safely
+ * parameterized. Returns `ok: true` only when the selection lies inside a single JSON String value
+ * (not a property key and not spanning structural tokens). The returned `innerFrom`/`innerTo` are
+ * clamped to the string interior so an inserted `{{param.x}}` token stays between the quotes and the
+ * JSON remains valid.
+ */
+export function resolveJsonStringSelection(text: string, from: number, to: number): JsonStringSelection {
+  const start = Math.min(from, to)
+  const end = Math.max(from, to)
+  if (start === end) return REJECTED_JSON_SELECTION
+
+  let node: JsonSyntaxNode | null
+  try {
+    node = jsonLanguage.parser.parse(text).resolveInner(start, 1)
+  } catch {
+    return REJECTED_JSON_SELECTION
+  }
+
+  // Climb to the enclosing String value. Property keys parse as `PropertyName`, never `String`,
+  // so keys (and structural selections) fall through to a rejection.
+  while (node && node.name !== 'String') {
+    node = node.parent
+  }
+  if (!node) return REJECTED_JSON_SELECTION
+
+  // The selection must stay within the string token (the surrounding quotes are allowed).
+  if (start < node.from || end > node.to) return REJECTED_JSON_SELECTION
+
+  const innerFrom = Math.max(start, node.from + 1)
+  const innerTo = Math.min(end, node.to - 1)
+  if (innerTo <= innerFrom) return REJECTED_JSON_SELECTION
+
+  const selectedText = text.slice(innerFrom, innerTo)
+  if (!selectedText.trim()) return REJECTED_JSON_SELECTION
+
+  return { ok: true, innerFrom, innerTo, selectedText }
 }
 
 export function formatReplayTime(value?: string): string {

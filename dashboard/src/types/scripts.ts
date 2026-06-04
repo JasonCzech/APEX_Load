@@ -420,7 +420,9 @@ export interface ScriptDefinition {
   folder_id?: string | null
   metadata?: ScriptMetadata
   config: ScriptConfig
+  init?: ScriptActionDefinition[]
   actions: ScriptActionDefinition[]
+  teardown?: ScriptActionDefinition[]
   data_sources?: ScriptDataSource[]
   parameters?: ScriptParameterDefinition[]
   created_at?: string
