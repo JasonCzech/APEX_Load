@@ -2,6 +2,9 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type Mouse
 import { useApi } from '../hooks/useApi'
 import type { BrowserToHTTPPreviewResponse } from '../hooks/api/useScriptApi'
 import { useWebSocket } from '../hooks/useWebSocket'
+import CodeMirror from '@uiw/react-codemirror'
+import { json } from '@codemirror/lang-json'
+import { apexCodeMirrorTheme } from './codeMirrorTheme'
 import {
   BrowserReplayEvent,
   BrowserReplayNetworkEntry,
@@ -1178,9 +1181,23 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const debugRawOutputRef = useRef<HTMLDivElement | null>(null)
   const [debugRailFilter, setDebugRailFilter] = useState('')
   const [debugRailFailuresOnly, setDebugRailFailuresOnly] = useState(false)
-  const [debuggerRailWidth, setDebuggerRailWidth] = useState(260)
-  const [debuggerVarsWidth, setDebuggerVarsWidth] = useState(320)
-  const [debuggerBottomHeight, setDebuggerBottomHeight] = useState(220)
+  const [debuggerRailWidth, setDebuggerRailWidth] = useState(() => {
+    try { const val = window.localStorage.getItem('debuggerRailWidth'); return val ? parseInt(val, 10) || 260 : 260 } catch { return 260 }
+  })
+  const [debuggerVarsWidth, setDebuggerVarsWidth] = useState(() => {
+    try { const val = window.localStorage.getItem('debuggerVarsWidth'); return val ? parseInt(val, 10) || 320 : 320 } catch { return 320 }
+  })
+  const [debuggerBottomHeight, setDebuggerBottomHeight] = useState(() => {
+    try { const val = window.localStorage.getItem('debuggerBottomHeight'); return val ? parseInt(val, 10) || 220 : 220 } catch { return 220 }
+  })
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('debuggerRailWidth', debuggerRailWidth.toString())
+      window.localStorage.setItem('debuggerVarsWidth', debuggerVarsWidth.toString())
+      window.localStorage.setItem('debuggerBottomHeight', debuggerBottomHeight.toString())
+    } catch { /* storage may be unavailable */ }
+  }, [debuggerRailWidth, debuggerVarsWidth, debuggerBottomHeight])
   const debuggerSettingsRef = useRef<HTMLDivElement | null>(null)
   const debuggerSettingsBtnRef = useRef<HTMLButtonElement | null>(null)
   const importedCorrelationFocusTargets = importSummary.correlationSuggestions.map((correlation) => {
@@ -3920,14 +3937,22 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     />
                     <span>Step through (start paused)</span>
                   </label>
-                  <label className="full-width replay-variables-field">
+                  <div className="full-width replay-variables-field">
                     <span>Debugger Variables JSON</span>
-                    <textarea
-                      value={replayOptions.variablesText}
-                      onChange={e => setReplayOptions(prev => ({ ...prev, variablesText: e.target.value }))}
-                      spellCheck={false}
-                    />
-                  </label>
+                    <div className="replay-variables-editor" style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden', marginTop: '6px' }}>
+                      <CodeMirror
+                        value={replayOptions.variablesText}
+                        onChange={value => setReplayOptions(prev => ({ ...prev, variablesText: value }))}
+                        extensions={[json(), apexCodeMirrorTheme]}
+                        theme="none"
+                        maxHeight="200px"
+                        basicSetup={{
+                          lineNumbers: true,
+                          foldGutter: true,
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
                 <div className={`replay-preflight-card ${replayPreflight.valid ? 'ready' : 'attention'}`}>
                   <div className="replay-preflight-header">
@@ -4032,7 +4057,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   {debugActionRows.length === 0 ? (
                     <div className="debugger-rail-empty">Add actions to the script to debug.</div>
                   ) : (
-                    <div className="debugger-rail-list">
+                    <div
+                      className="debugger-rail-list"
+                      tabIndex={0}
+                      onKeyDown={e => {
+                        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                          e.preventDefault()
+                          const dir = e.key === 'ArrowDown' ? 1 : -1
+                          const current = selectedReplayEventIndex ?? 0
+                          const next = Math.max(0, Math.min(debugActionRows.length - 1, current + dir))
+                          setExpandedReplayEvent(next)
+                        }
+                      }}
+                    >
                       {(() => {
                         const rows = debugActionRows.map(({ phase, actionIndex, action }, position) => {
                           const rowKey = debugBreakpointKey(phase, actionIndex)
@@ -4062,6 +4099,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               <button
                                 type="button"
                                 className="debugger-action-row-main"
+                                onDoubleClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
                                 onClick={() => {
                                   if (phase === 'action') setActiveAction(actionIndex)
                                   if (rowEvent) {
