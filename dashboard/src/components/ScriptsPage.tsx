@@ -375,7 +375,6 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
               </button>
             ))}
           </div>
-          <LibraryAssetSourcePanel kind="script" projectId={activeProject?.id} onRefreshLocal={refresh} />
           <ScriptsLibraryTable
             scripts={sortedScripts}
             sortField={sortField}
@@ -395,6 +394,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
             canManageScripts={canManageScripts}
             emptyMessage={libraryQuery.trim() || healthFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
           />
+          <LibraryAssetSourcePanel kind="script" projectId={activeProject?.id} onRefreshLocal={refresh} />
         </div>
       </div>
     </ScriptsAuthoringShell>

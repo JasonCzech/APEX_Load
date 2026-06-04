@@ -2222,7 +2222,6 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
             />
           </label>
         </div>
-        <LibraryAssetSourcePanel kind="scenario" projectId={activeProject?.id} onRefreshLocal={refresh} />
         <div className="data-table">
           <table>
             <thead>
@@ -2308,6 +2307,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
             </tbody>
           </table>
         </div>
+        <LibraryAssetSourcePanel kind="scenario" projectId={activeProject?.id} onRefreshLocal={refresh} />
       </div>
       )}
 
