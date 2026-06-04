@@ -1280,10 +1280,9 @@
   justify-content: space-between;
   gap: 12px;
   align-items: flex-start;
-  margin-bottom: 10px;
 }
 
-.debug-breakpoint-header div {
+.debug-breakpoint-header > div:not(.debug-breakpoint-actions) {
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -1298,6 +1297,27 @@
 .debug-breakpoint-empty {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.debug-breakpoint-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.breakpoint-dialog {
+  width: min(780px, calc(100vw - 48px));
+}
+
+.breakpoint-dialog-body {
+  padding: 16px 20px 20px;
+  overflow: auto;
+}
+
+.breakpoint-dialog-list {
+  max-height: min(460px, calc(100vh - 210px));
 }
 
 .debug-breakpoint-list {
@@ -2754,8 +2774,39 @@
 }
 .action-item:hover { background: var(--bg-hover); }
 .action-item.active { background: rgba(99,102,241,0.1); border-left: 3px solid var(--accent); }
+.action-item.has-breakpoint { background: rgba(239, 68, 68, 0.06); }
 .action-method { font-family: 'SF Mono', monospace; font-size: 11px; font-weight: 700; min-width: 48px; }
 .action-name-text { font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+.action-breakpoint-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+}
+.action-breakpoint-button span {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--text-muted);
+  border-radius: 999px;
+}
+.action-breakpoint-button:hover {
+  border-color: rgba(239, 68, 68, 0.55);
+}
+.action-breakpoint-button.active {
+  border-color: rgba(239, 68, 68, 0.72);
+  background: rgba(239, 68, 68, 0.12);
+}
+.action-breakpoint-button.active span {
+  border-color: var(--danger);
+  background: var(--danger);
+}
 .action-item-signals {
   display: flex;
   align-items: center;
