@@ -212,12 +212,23 @@
   --support-dialog-max-height: 78vh;
 }
 .support-dialog-replay {
-  --support-dialog-width: 760px;
-  --support-dialog-max-height: 72vh;
+  --support-dialog-width: 1040px;
+  --support-dialog-max-height: 78vh;
 }
 .support-dialog-replay.has-report {
-  --support-dialog-width: 980px;
-  --support-dialog-max-height: 86vh;
+  --support-dialog-width: 1200px;
+  --support-dialog-max-height: 88vh;
+}
+.editor-support-dialog.debugger-dialog.maximized.open {
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  height: auto;
+  transform: none;
 }
 .support-dialog-runtime {
   --support-dialog-top: 112px;
@@ -3552,4 +3563,601 @@
   .replay-panel-actions .btn {
     width: 100%;
   }
+}
+
+/* ============================================================
+   Script Debugger — IDE-style shell
+   ============================================================ */
+.editor-support-dialog.debugger-dialog.open {
+  padding: 0;
+}
+
+/* Toolbar */
+.debugger-toolbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+.debugger-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.debugger-toolbar-title {
+  gap: 8px;
+  min-width: 0;
+}
+.debugger-toolbar-title .panel-title {
+  margin: 0;
+}
+.debugger-toolbar-controls {
+  padding: 0 6px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+.debugger-toolbar-right {
+  margin-left: auto;
+}
+.debugger-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+}
+.debugger-status-dot.running {
+  background: var(--accent);
+  animation: debugger-pulse 1.4s ease-in-out infinite;
+}
+.debugger-status-dot.paused { background: var(--warning, #f59e0b); }
+.debugger-status-dot.success { background: var(--success); }
+.debugger-status-dot.error { background: var(--danger); }
+@keyframes debugger-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.45); }
+  70% { box-shadow: 0 0 0 6px rgba(99, 102, 241, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+}
+
+.debugger-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.debugger-icon-btn:hover:not(:disabled) {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+.debugger-icon-btn.active {
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--accent);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+.debugger-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.debugger-icon-btn-square {
+  padding: 6px 8px;
+}
+.debugger-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* Settings popover */
+.debugger-settings-popover {
+  position: absolute;
+  top: 54px;
+  right: 12px;
+  z-index: 20;
+  width: min(440px, calc(100% - 24px));
+  max-height: 70vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card, var(--bg-secondary));
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.28);
+}
+.debugger-settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.debugger-settings-head strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+/* Body shell */
+.debugger-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  overflow: hidden;
+}
+.debugger-live-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(99,102,241,0.02));
+}
+.debugger-live-strip.success {
+  background: linear-gradient(135deg, rgba(34,197,94,0.12), rgba(34,197,94,0.03));
+  border-color: rgba(34, 197, 94, 0.28);
+}
+.debugger-live-strip.error {
+  background: linear-gradient(135deg, rgba(239,68,68,0.12), rgba(239,68,68,0.03));
+  border-color: rgba(239, 68, 68, 0.28);
+}
+.debugger-live-strip-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.debugger-live-strip-text strong { color: var(--text-primary); font-size: 13px; }
+.debugger-live-strip-text span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.debugger-live-strip-time { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.debugger-failure-pin { flex-shrink: 0; }
+
+.debugger-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--rail-w, 260px) minmax(0, 1fr) var(--vars-w, 320px);
+  grid-template-rows: minmax(0, 1fr) var(--bottom-h, 220px);
+  grid-template-areas:
+    "rail center variables"
+    "bottom bottom bottom";
+  gap: 10px;
+}
+
+/* Drag-to-resize handles */
+.debugger-resizer {
+  position: absolute;
+  z-index: 5;
+}
+.debugger-resizer-col {
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+}
+.debugger-resizer-col:not(.debugger-resizer-vars) { right: -9px; }
+.debugger-resizer-vars { left: -9px; }
+.debugger-resizer-row {
+  left: 0;
+  right: 0;
+  top: -9px;
+  height: 8px;
+  cursor: row-resize;
+}
+.debugger-resizer::after {
+  content: '';
+  position: absolute;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+.debugger-resizer-col::after { top: 0; bottom: 0; left: 3px; width: 2px; }
+.debugger-resizer-row::after { left: 0; right: 0; top: 3px; height: 2px; }
+.debugger-resizer:hover::after { background: var(--accent); }
+
+/* Left rail */
+.debugger-rail {
+  position: relative;
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+.debugger-rail-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.debugger-rail-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.debugger-rail-filter input[type="text"],
+.debugger-rail-filter > input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 5px 8px;
+}
+.debugger-rail-filter .replay-checkbox { white-space: nowrap; font-size: 11px; }
+.debugger-rail-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.debugger-rail-header-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.debugger-rail-header-meta small { color: var(--text-muted); font-size: 11px; }
+.debugger-rail-empty {
+  padding: 16px 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.debugger-rail-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.debugger-action-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+.debugger-action-row.selected {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+.debugger-action-row.current {
+  border-color: rgba(245, 158, 11, 0.5);
+}
+.debugger-gutter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 8px 0 0 8px;
+}
+.debugger-breakpoint-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: transparent;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.debugger-gutter:hover .debugger-breakpoint-dot {
+  border-color: var(--danger);
+  background: rgba(239, 68, 68, 0.25);
+}
+.debugger-gutter.active .debugger-breakpoint-dot {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.debugger-action-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 8px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+.debugger-action-row-main:disabled { cursor: default; }
+.debugger-action-row-main strong {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.debugger-action-row-main small {
+  color: var(--text-muted);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.debugger-action-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.debugger-action-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.debugger-action-status.pass { background: var(--success); }
+.debugger-action-status.fail { background: var(--danger); }
+.debugger-action-status.current { background: var(--warning, #f59e0b); }
+.debugger-action-status.pending { background: var(--border); }
+
+/* Center */
+.debugger-center {
+  grid-area: center;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+.debugger-center-tabs,
+.debugger-bottom-tabs {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 8px 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.debugger-center-tabs button,
+.debugger-bottom-tabs button {
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.debugger-center-tabs button.active,
+.debugger-bottom-tabs button.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+.debugger-center-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+.debugger-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.debugger-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.debugger-detail-head strong { color: var(--text-primary); font-size: 14px; }
+.debugger-detail-head .replay-event-target {
+  color: var(--text-muted);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+}
+.debugger-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 120px;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* Current/upcoming action card */
+.debugger-current-action {
+  gap: 10px;
+}
+.debugger-current-badge {
+  align-self: flex-start;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.debugger-current-badge.paused {
+  background: rgba(245, 158, 11, 0.16);
+  color: var(--warning, #f59e0b);
+}
+.debugger-current-badge.running {
+  background: rgba(99, 102, 241, 0.14);
+  color: var(--accent);
+}
+.debugger-current-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Variables */
+.debugger-variables-panel {
+  position: relative;
+  grid-area: variables;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+.debugger-pane-header {
+  flex-shrink: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.debugger-variables-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Bottom panel */
+.debugger-bottom {
+  position: relative;
+  grid-area: bottom;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+.debugger-bottom .debug-raw-panel,
+.debugger-console,
+.debugger-timeline {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: none;
+  border-radius: 0;
+  padding: 10px;
+  overflow: hidden;
+}
+.debugger-console .debug-raw-output {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+.debug-log-empty { color: #64748b; padding: 6px; }
+.debug-log-line {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: #cbd5f5;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border-left: 2px solid transparent;
+}
+.debug-log-line.level-error { color: #fca5a5; border-left-color: #ef4444; }
+.debug-log-line.level-warn { color: #fcd34d; border-left-color: #f59e0b; }
+.debug-log-line.level-info { color: #cbd5f5; }
+.debug-log-line.level-debug { color: #93c5fd; }
+.debug-log-line.level-trace { color: #94a3b8; }
+.debug-log-line.jumpable { cursor: pointer; }
+.debug-log-line.jumpable:hover { background: rgba(99, 102, 241, 0.18); }
+.debug-log-line:disabled { cursor: default; }
+.debugger-timeline {
+  overflow: auto;
+}
+
+/* Status bar */
+.debugger-statusbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.debugger-statusbar-item { white-space: nowrap; }
+
+/* Responsive */
+@media (max-width: 960px) {
+  .debugger-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: 220px 320px 260px 260px;
+    grid-template-areas:
+      "rail"
+      "center"
+      "variables"
+      "bottom";
+    overflow: auto;
+  }
+  .debugger-resizer { display: none; }
 }

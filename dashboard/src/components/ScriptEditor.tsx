@@ -106,7 +106,7 @@ type ValidationEvidence = Pick<ScriptValidationResponse, 'data_source_fit' | 'ai
 type ReplaySnapshot = BrowserReplaySnapshot
 type ReplayActionEvent = BrowserReplayEvent
 type ReplayReport = BrowserReplayReport
-type DebuggerTab = 'timeline' | 'variables' | 'request' | 'raw' | 'browser'
+type DebuggerTab = 'request' | 'browser'
 
 type BrowserEngineName = 'chromium' | 'webkit'
 
@@ -1167,13 +1167,22 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [httpConversionGenerating, setHttpConversionGenerating] = useState(false)
   const [httpConversionError, setHttpConversionError] = useState('')
   const [debugBreakpoints, setDebugBreakpoints] = useState<ScriptDebugBreakpoint[]>([])
-  const [breakpointDialogOpen, setBreakpointDialogOpen] = useState(false)
-  const [debuggerTab, setDebuggerTab] = useState<DebuggerTab>('timeline')
+  const [debuggerTab, setDebuggerTab] = useState<DebuggerTab>('request')
+  const [debuggerMaximized, setDebuggerMaximized] = useState(false)
+  const [debuggerSettingsOpen, setDebuggerSettingsOpen] = useState(false)
+  const [debuggerBottomTab, setDebuggerBottomTab] = useState<'console' | 'timeline'>('console')
   const [debugRawLevel, setDebugRawLevel] = useState<ScriptDebugLogLevel | 'all'>('all')
   const [debugRawSearch, setDebugRawSearch] = useState('')
   const [debugRawAutoScroll, setDebugRawAutoScroll] = useState(true)
   const [debugRawClearedAt, setDebugRawClearedAt] = useState(0)
-  const debugRawOutputRef = useRef<HTMLPreElement | null>(null)
+  const debugRawOutputRef = useRef<HTMLDivElement | null>(null)
+  const [debugRailFilter, setDebugRailFilter] = useState('')
+  const [debugRailFailuresOnly, setDebugRailFailuresOnly] = useState(false)
+  const [debuggerRailWidth, setDebuggerRailWidth] = useState(260)
+  const [debuggerVarsWidth, setDebuggerVarsWidth] = useState(320)
+  const [debuggerBottomHeight, setDebuggerBottomHeight] = useState(220)
+  const debuggerSettingsRef = useRef<HTMLDivElement | null>(null)
+  const debuggerSettingsBtnRef = useRef<HTMLButtonElement | null>(null)
   const importedCorrelationFocusTargets = importSummary.correlationSuggestions.map((correlation) => {
     const foundAtActionIndex = findActionIndexByImportedLocation(script.actions, correlation.found_at)
     const foundAtLabel = formatImportedLocationLabel(script.actions, correlation.found_at, foundAtActionIndex)
@@ -1531,7 +1540,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         group: session.group || prev.group,
         protocol: session.protocol || prev.protocol,
         started_at: session.started_at || prev.started_at,
-        final_variables: session.report?.final_variables || prev.final_variables,
+        completed_at: '',
+        success: true,
+        error: undefined,
+        events: session.events || [],
+        final_variables: session.report?.final_variables,
       } : {
         group: session.group || 'script-debug',
         protocol: session.protocol || 'http',
@@ -2404,7 +2417,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   const openReplayDebugger = () => {
     setOpenSections(prev => ({ ...prev, replay: true }))
-    setDebuggerTab('timeline')
+    setDebuggerTab('request')
+    setDebuggerSettingsOpen(!replayReport)
   }
 
   const handleReplay = async () => {
@@ -2851,11 +2865,148 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       return formatDebugLogEntry(entry).toLowerCase().includes(debugRawSearchText)
     })
   const debugRawOutputText = debugFilteredLogs.map(formatDebugLogEntry).join('\n\n')
+  const debuggerStatusState = replaying
+    ? (isReplayPaused ? 'paused' : 'running')
+    : replayReport
+      ? (replayReport.success ? 'success' : 'error')
+      : 'idle'
+  const selectedReplayEventIndex = replayReport && expandedReplayEvent != null && expandedReplayEvent >= 0 && expandedReplayEvent < replayReport.events.length
+    ? expandedReplayEvent
+    : null
+  const selectedReplayEvent = selectedReplayEventIndex != null && replayReport ? replayReport.events[selectedReplayEventIndex] : null
+  const currentDebugActionKey = browserReplaySession?.current_action
+    ? debugBreakpointKey(browserReplaySession.current_action.phase, browserReplaySession.current_action.action_index)
+    : null
+  const debugRowPositionByKey = new Map(debugActionRows.map((row, position) => [debugBreakpointKey(row.phase, row.actionIndex), position]))
+  const debugRailFilterText = debugRailFilter.trim().toLowerCase()
 
   useEffect(() => {
     if (!debugRawAutoScroll || !debugRawOutputRef.current) return
     debugRawOutputRef.current.scrollTop = debugRawOutputRef.current.scrollHeight
   }, [debugRawAutoScroll, debugRawOutputText])
+
+  // Persist breakpoints per script so they survive closing/reopening the debugger.
+  const breakpointStorageKey = scriptId ? `apexload.debug.breakpoints.${scriptId}` : null
+  const breakpointsLoadedRef = useRef(false)
+  useEffect(() => {
+    breakpointsLoadedRef.current = false
+    if (!breakpointStorageKey) return
+    try {
+      const raw = window.localStorage.getItem(breakpointStorageKey)
+      if (raw) setDebugBreakpoints(JSON.parse(raw))
+    } catch { /* ignore malformed persisted breakpoints */ }
+    breakpointsLoadedRef.current = true
+  }, [breakpointStorageKey])
+  useEffect(() => {
+    if (!breakpointStorageKey || !breakpointsLoadedRef.current) return
+    try { window.localStorage.setItem(breakpointStorageKey, JSON.stringify(debugBreakpoints)) } catch { /* storage may be unavailable */ }
+  }, [breakpointStorageKey, debugBreakpoints])
+
+  // Close the settings popover on outside click.
+  useEffect(() => {
+    if (!debuggerSettingsOpen) return
+    const onDown = (event: globalThis.MouseEvent) => {
+      const target = event.target as Node
+      if (debuggerSettingsRef.current?.contains(target)) return
+      if (debuggerSettingsBtnRef.current?.contains(target)) return
+      setDebuggerSettingsOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    return () => window.removeEventListener('mousedown', onDown)
+  }, [debuggerSettingsOpen])
+
+  // Drag-to-resize handler for the IDE shell panels.
+  const startDebuggerDrag = (kind: 'rail' | 'vars' | 'bottom', event: React.MouseEvent) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startY = event.clientY
+    const startRail = debuggerRailWidth
+    const startVars = debuggerVarsWidth
+    const startBottom = debuggerBottomHeight
+    const onMove = (ev: globalThis.MouseEvent) => {
+      if (kind === 'rail') setDebuggerRailWidth(Math.min(520, Math.max(160, startRail + (ev.clientX - startX))))
+      else if (kind === 'vars') setDebuggerVarsWidth(Math.min(560, Math.max(200, startVars - (ev.clientX - startX))))
+      else setDebuggerBottomHeight(Math.min(620, Math.max(120, startBottom - (ev.clientY - startY))))
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      document.body.style.userSelect = ''
+    }
+    document.body.style.userSelect = 'none'
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  // IDE-style keyboard shortcuts, active while the debugger dialog is open.
+  useEffect(() => {
+    if (!openSections['replay']) return
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (debuggerSettingsOpen) { setDebuggerSettingsOpen(false); return }
+        toggleSection('replay')
+        return
+      }
+      const target = event.target as HTMLElement | null
+      const typing = !!target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)
+      if (typing) return
+      if (event.key === 'F5') {
+        event.preventDefault()
+        if (event.shiftKey) {
+          if (replaying) void handleStopReplay()
+        } else if (replaying) {
+          if (isReplayPaused) void handlePauseResumeReplay()
+        } else if (!saving && script.name && script.actions.length > 0) {
+          void handleReplay()
+        }
+        return
+      }
+      if (event.key === 'F10') {
+        event.preventDefault()
+        if (replaying && isReplayPaused) void handleStepReplay()
+        return
+      }
+      if ((event.metaKey || event.ctrlKey) && (event.key === 'b' || event.key === 'B')) {
+        event.preventDefault()
+        const position = selectedReplayEventIndex ?? 0
+        const row = debugActionRows[position]
+        if (row) void toggleDebugBreakpoint(row.phase, row.actionIndex)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [openSections, debuggerSettingsOpen, replaying, isReplayPaused, saving, script.name, script.actions.length, selectedReplayEventIndex, debugActionRows, handleReplay, handlePauseResumeReplay, handleStepReplay, handleStopReplay, toggleDebugBreakpoint, toggleSection])
+
+  // Reconcile session state by polling while a debug session is active. This is a
+  // safety net for live updates that arrive before activeReplaySessionId is registered
+  // (e.g. a breakpoint on the first action pauses before the start response resolves),
+  // which the WebSocket handler would otherwise drop.
+  useEffect(() => {
+    if (!activeReplaySessionId || !replaying) return
+    let cancelled = false
+    const reconcile = async () => {
+      try {
+        const res = await api.getScriptDebugSession(activeReplaySessionId)
+        if (cancelled || !res?.session) return
+        const session = res.session
+        setBrowserReplaySession(session)
+        const done = session.status === 'completed' || session.status === 'failed' || session.status === 'stopped'
+        setReplayReport(prev => {
+          if (!prev) return done ? (session.report || prev) : prev
+          // Merge live events while a run is in flight; only adopt the terminal
+          // report (completed_at/success) once the session has actually finished.
+          return {
+            ...prev,
+            events: session.events && session.events.length ? session.events : prev.events,
+            ...(done && session.report ? session.report : {}),
+          }
+        })
+      } catch { /* transient; next tick retries */ }
+    }
+    void reconcile()
+    const timer = window.setInterval(reconcile, 1200)
+    return () => { cancelled = true; window.clearInterval(timer) }
+  }, [activeReplaySessionId, replaying, api])
 
   const addDataSource = () => {
     const nextIndex = (script.data_sources?.length || 0) + 1
@@ -3634,18 +3785,105 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             )}
           </div>
 
-          <div className={`config-panel replay-panel editor-support-dialog support-dialog-replay ${replayReport ? 'has-report' : ''} ${openSections['replay'] ? 'open' : ''}`} role="dialog" aria-modal="true" aria-label="Replay Output">
-            <button className="panel-header-toggle" onClick={() => toggleSection('replay')}>
-              <div className="panel-title-row">
-                <div>
-                  <h3 className="panel-title">Script Debugger {replaying && <span className="replaying-dot" />}</h3>
-                </div>
+          <div className={`config-panel replay-panel editor-support-dialog support-dialog-replay debugger-dialog ${replayReport ? 'has-report' : ''} ${debuggerMaximized ? 'maximized' : ''} ${openSections['replay'] ? 'open' : ''}`} role="dialog" aria-modal="true" aria-label="Script Debugger">
+            <div className="debugger-toolbar">
+              <div className="debugger-toolbar-group debugger-toolbar-title">
+                <span className={`debugger-status-dot ${debuggerStatusState}`} aria-hidden="true" />
+                <h3 className="panel-title">Script Debugger</h3>
               </div>
-              <span className="chevron">Close</span>
-            </button>
-            {(
-              <div className="panel-body">
-                <p className="replay-panel-subtitle">Run an interactive debugger session with breakpoints, stepping, variable inspection, raw output, and browser evidence when the script captures it.</p>
+              <div className="debugger-toolbar-group debugger-toolbar-controls" role="group" aria-label="Debugger controls">
+                <button
+                  type="button"
+                  className="debugger-icon-btn"
+                  title={replayStartButtonLabel}
+                  onClick={handleReplay}
+                  disabled={replaying || saving || !script.name || script.actions.length === 0}
+                >
+                  <span className="debugger-icon" aria-hidden="true">&#9654;</span>
+                  <span>{replaying ? 'Running…' : replayReport ? 'Restart' : 'Run'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="debugger-icon-btn"
+                  title={isReplayPaused ? 'Continue' : 'Pause'}
+                  onClick={handlePauseResumeReplay}
+                  disabled={!activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped'}
+                >
+                  <span className="debugger-icon" aria-hidden="true">{isReplayPaused ? '▶' : '⏸'}</span>
+                  <span>{isReplayPaused ? 'Continue' : 'Pause'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="debugger-icon-btn"
+                  title="Step to next action"
+                  onClick={handleStepReplay}
+                  disabled={!activeReplaySessionId || !replaying || !isReplayPaused}
+                >
+                  <span className="debugger-icon" aria-hidden="true">&#10551;</span>
+                  <span>Step</span>
+                </button>
+                <button
+                  type="button"
+                  className="debugger-icon-btn"
+                  title="Stop debugger"
+                  onClick={handleStopReplay}
+                  disabled={!activeReplaySessionId || !replaying}
+                >
+                  <span className="debugger-icon" aria-hidden="true">&#9209;</span>
+                  <span>Stop</span>
+                </button>
+              </div>
+              <div className="debugger-toolbar-group debugger-toolbar-right">
+                {isBrowserScript && replayReport && (
+                  <button type="button" className="debugger-icon-btn" title="Download Replay ZIP" onClick={handleDownloadBrowserReplayBundle}>
+                    <span className="debugger-icon" aria-hidden="true">&#8675;</span>
+                    <span>ZIP</span>
+                  </button>
+                )}
+                {replayReport && (
+                  <button type="button" className="debugger-icon-btn" title="Download Debug JSON" onClick={handleDownloadBrowserReplayExport}>
+                    <span className="debugger-icon" aria-hidden="true">&#8675;</span>
+                    <span>JSON</span>
+                  </button>
+                )}
+                <button
+                  ref={debuggerSettingsBtnRef}
+                  type="button"
+                  className={`debugger-icon-btn ${debuggerSettingsOpen ? 'active' : ''}`}
+                  title="Run configuration"
+                  aria-pressed={debuggerSettingsOpen}
+                  onClick={() => setDebuggerSettingsOpen(open => !open)}
+                >
+                  <span className="debugger-icon" aria-hidden="true">&#9881;</span>
+                  <span>Settings</span>
+                </button>
+                <button
+                  type="button"
+                  className="debugger-icon-btn debugger-icon-btn-square"
+                  title={debuggerMaximized ? 'Restore' : 'Maximize'}
+                  aria-pressed={debuggerMaximized}
+                  onClick={() => setDebuggerMaximized(value => !value)}
+                >
+                  <span className="debugger-icon" aria-hidden="true">{debuggerMaximized ? '❐' : '⛶'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="debugger-icon-btn debugger-icon-btn-square"
+                  title="Close debugger"
+                  onClick={() => toggleSection('replay')}
+                >
+                  <span className="debugger-icon" aria-hidden="true">&#10005;</span>
+                </button>
+              </div>
+            </div>
+
+            {debuggerSettingsOpen && (
+              <div className="debugger-settings-popover" ref={debuggerSettingsRef}>
+                <div className="debugger-settings-head">
+                  <strong>Run configuration</strong>
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => setDebuggerSettingsOpen(false)}>Done</button>
+                </div>
+                <p className="replay-panel-subtitle">Interactive debugger with breakpoints, stepping, variable inspection, raw output, and browser evidence when the script captures it.</p>
                 <div className="replay-options-grid">
                   <label>
                     <span>Debugger Group</span>
@@ -3680,7 +3918,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       checked={replayOptions.startPaused}
                       onChange={e => setReplayOptions(prev => ({ ...prev, startPaused: e.target.checked }))}
                     />
-                    <span>Step through</span>
+                    <span>Step through (start paused)</span>
                   </label>
                   <label className="full-width replay-variables-field">
                     <span>Debugger Variables JSON</span>
@@ -3723,184 +3961,141 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     </div>
                   )}
                 </div>
-                <div className="debug-breakpoint-planner">
-                  <div className="debug-breakpoint-header">
-                    <div>
-                      <strong>Breakpoints</strong>
-                      <span>{breakpointSummary}</span>
-                    </div>
-                    <div className="debug-breakpoint-actions">
-                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => setBreakpointDialogOpen(true)}>
-                        Breakpoints
-                      </button>
-                      {debugBreakpoints.length > 0 && (
-                        <button type="button" className="btn btn-sm btn-ghost" onClick={() => void clearDebugBreakpoints()}>
-                          Clear
-                        </button>
-                      )}
-                    </div>
+              </div>
+            )}
+
+            <div className="debugger-body">
+              {(replaying || replayReport) && (
+                <div className={`debugger-live-strip ${debuggerStatusState}`}>
+                  <span className="replay-live-badge">{replaying ? (isReplayPaused ? 'Paused' : 'Streaming live') : replayReport?.success ? 'Finished' : 'Failed'}</span>
+                  <div className="debugger-live-strip-text">
+                    <strong>{replayLatestActivity?.title || 'Debugger status available'}</strong>
+                    {replayLatestActivity?.detail && <span>{replayLatestActivity.detail}</span>}
                   </div>
+                  <span className="debugger-live-strip-time">{formatReplayTime(replayLatestActivity?.timestamp || replayReport?.completed_at || replayReport?.started_at)}</span>
                 </div>
-                {breakpointDialogOpen && (
-                  <div className="editor-dialog-backdrop breakpoint-dialog-backdrop" onClick={() => setBreakpointDialogOpen(false)}>
-                    <div className="editor-dialog breakpoint-dialog" role="dialog" aria-modal="true" aria-label="Breakpoints" onClick={event => event.stopPropagation()}>
-                      <div className="editor-dialog-header">
-                        <div>
-                          <h3>Breakpoints</h3>
-                          <p>{breakpointSummary}</p>
-                        </div>
-                        <div className="replay-panel-actions" style={{ justifyContent: 'flex-end' }}>
-                          {debugBreakpoints.length > 0 && (
-                            <button type="button" className="btn btn-sm btn-ghost" onClick={() => void clearDebugBreakpoints()}>
-                              Clear All
-                            </button>
-                          )}
-                          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setBreakpointDialogOpen(false)}>
-                            Close
-                          </button>
-                        </div>
+              )}
+              {replayReport?.error && <p className="replay-report-error">{replayReport.error}</p>}
+              {replayFailingEvent && (
+                <div className="replay-failure-pin debugger-failure-pin">
+                  <div>
+                    <span className="replay-detail-label">First failing action</span>
+                    <strong>{replayFailingEvent.action_name || `Action ${replayFailingEventIndex + 1}`}</strong>
+                    <p>{replayFailingEvent.diagnosis?.cause || replayFailingEvent.error_message || 'Replay action failed.'}</p>
+                    {replayFailingEvent.diagnosis && (
+                      <div className="replay-diagnosis-chip-row">
+                        <span className="replay-diagnosis-chip">{formatReplayDiagnosisCategory(replayFailingEvent.diagnosis.category)}</span>
+                        {replayFailingEvent.diagnosis.evidence && <span>{replayFailingEvent.diagnosis.evidence}</span>}
                       </div>
-                      <div className="breakpoint-dialog-body">
-                        {debugActionRows.length === 0 ? (
-                          <div className="debug-breakpoint-empty">Add actions before placing breakpoints.</div>
-                        ) : (
-                          <div className="debug-breakpoint-list breakpoint-dialog-list">
-                            {debugActionRows.map(({ phase, actionIndex, action }) => {
-                              const key = debugBreakpointKey(phase, actionIndex)
-                              const active = debugBreakpointKeys.has(key)
-                              return (
-                                <button
-                                  key={key}
-                                  type="button"
-                                  className={`debug-breakpoint-row ${active ? 'active' : ''}`}
-                                  onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
-                                >
-                                  <span className="debug-breakpoint-dot" />
-                                  <span>{formatDebugPhaseLabel(phase)} {actionIndex + 1}</span>
-                                  <strong>{action.name || 'Unnamed action'}</strong>
-                                  <small>{action.method || action.type || 'action'} {action.target || action.selector || ''}</small>
-                                </button>
-                              )
-                            })}
-                          </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    onClick={() => {
+                      setDebuggerTab('request')
+                      setExpandedReplayEvent(replayFailingEventIndex)
+                    }}
+                  >
+                    Inspect
+                  </button>
+                </div>
+              )}
+
+              <div
+                className="debugger-shell"
+                style={{
+                  '--rail-w': `${debuggerRailWidth}px`,
+                  '--vars-w': `${debuggerVarsWidth}px`,
+                  '--bottom-h': `${debuggerBottomHeight}px`,
+                } as React.CSSProperties}
+              >
+                <aside className="debugger-rail" aria-label="Actions">
+                  <div className="debugger-rail-header">
+                    <div className="debugger-rail-header-top">
+                      <span>Actions</span>
+                      <div className="debugger-rail-header-meta">
+                        <small>{breakpointSummary}</small>
+                        {debugBreakpoints.length > 0 && (
+                          <button type="button" className="btn btn-sm btn-ghost" onClick={() => void clearDebugBreakpoints()}>Clear</button>
                         )}
                       </div>
                     </div>
+                    <div className="debugger-rail-filter">
+                      <input value={debugRailFilter} onChange={e => setDebugRailFilter(e.target.value)} placeholder="Filter actions" aria-label="Filter actions" />
+                      <label className="checkbox-label replay-checkbox">
+                        <input type="checkbox" checked={debugRailFailuresOnly} onChange={e => setDebugRailFailuresOnly(e.target.checked)} />
+                        <span>Failures</span>
+                      </label>
+                    </div>
                   </div>
-                )}
-                <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-end' }}>
-                  {isBrowserScript && replayReport && (
-                    <button className="btn btn-sm btn-ghost" onClick={handleDownloadBrowserReplayBundle}>
-                      Download Replay ZIP
-                    </button>
-                  )}
-                  {replayReport && (
-                    <button className="btn btn-sm btn-ghost" onClick={handleDownloadBrowserReplayExport}>
-                      Download Debug JSON
-                    </button>
-                  )}
-                  {activeReplaySessionId && (
-                    <button className="btn btn-sm btn-ghost" onClick={handlePauseResumeReplay} disabled={!replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped'}>
-                      {isReplayPaused ? 'Continue' : 'Pause'}
-                    </button>
-                  )}
-                  {activeReplaySessionId && (
-                    <button className="btn btn-sm btn-ghost" onClick={handleStepReplay} disabled={!replaying || !isReplayPaused}>
-                      Step
-                    </button>
-                  )}
-                  {activeReplaySessionId && (
-                    <button className="btn btn-sm btn-ghost" onClick={handleStopReplay} disabled={!replaying}>
-                      Stop
-                    </button>
-                  )}
-                  <button className="btn btn-sm btn-accent" onClick={handleReplay} disabled={replaying || saving || !script.name || script.actions.length === 0}>
-                    {replaying ? (isBrowserScript ? 'Running Browser Replay…' : 'Running…') : replayStartButtonLabel}
-                  </button>
-                </div>
-
-                {!replayReport ? (
-                  <div className="replay-empty-state">No debugger session has been started yet. Choose step through, place optional breakpoints, or start the debugger for the current draft.</div>
-                ) : (
-                  <div className="replay-report">
-                    <div className={`replay-live-banner ${replaying ? 'running' : replayReport.success ? 'success' : 'error'}`}>
-                      <div className="replay-live-banner-main">
-                        <span className="replay-live-badge">{replaying ? (isReplayPaused ? 'Paused' : 'Streaming live') : 'Debugger finished'}</span>
-                        <strong>{replayLatestActivity?.title || 'Debugger status available'}</strong>
-                        <span>{replayLatestActivity?.detail || 'Inspect the timeline below for action-by-action execution details.'}</span>
-                      </div>
-                      <div className="replay-live-banner-meta">
-                        <span>{replayReport.events.length} / {script.actions.length} actions reported</span>
-                        <span>{formatReplayTime(replayLatestActivity?.timestamp || replayReport.completed_at || replayReport.started_at)}</span>
-                      </div>
-                    </div>
-                    <div className="replay-summary-grid">
-                      <div className="replay-summary-card">
-                        <span>Status</span>
-                        <strong className={replayStatusLabel === 'Failed' ? 'text-danger' : replayStatusLabel === 'Running' ? '' : 'text-success'}>{replayStatusLabel}</strong>
-                      </div>
-                      <div className="replay-summary-card">
-                        <span>Group</span>
-                        <strong>{replayReport.group || 'replay'}</strong>
-                      </div>
-                      <div className="replay-summary-card">
-                        <span>Protocol</span>
-                        <strong>{replayReport.protocol}</strong>
-                      </div>
-                      <div className="replay-summary-card">
-                        <span>Events</span>
-                        <strong>{replayReport.events.length}</strong>
-                      </div>
-                      <div className="replay-summary-card">
-                        <span>Completed</span>
-                        <strong>{formatReplayTime(replayReport.completed_at)}</strong>
-                      </div>
-                    </div>
-                    {replayReport.error && <p className="replay-report-error">{replayReport.error}</p>}
-                    {replayFailingEvent && (
-                      <div className="replay-failure-pin">
-                        <div>
-                          <span className="replay-detail-label">First failing action</span>
-                          <strong>{replayFailingEvent.action_name || `Action ${replayFailingEventIndex + 1}`}</strong>
-                          <p>{replayFailingEvent.diagnosis?.cause || replayFailingEvent.error_message || 'Replay action failed.'}</p>
-                          {replayFailingEvent.diagnosis && (
-                            <div className="replay-diagnosis-chip-row">
-                              <span className="replay-diagnosis-chip">{formatReplayDiagnosisCategory(replayFailingEvent.diagnosis.category)}</span>
-                              {replayFailingEvent.diagnosis.evidence && <span>{replayFailingEvent.diagnosis.evidence}</span>}
+                  {debugActionRows.length === 0 ? (
+                    <div className="debugger-rail-empty">Add actions to the script to debug.</div>
+                  ) : (
+                    <div className="debugger-rail-list">
+                      {(() => {
+                        const rows = debugActionRows.map(({ phase, actionIndex, action }, position) => {
+                          const rowKey = debugBreakpointKey(phase, actionIndex)
+                          const breakpointActive = debugBreakpointKeys.has(rowKey)
+                          const rowEvent = replayReport?.events[position]
+                          const isCurrentRow = currentDebugActionKey === rowKey
+                          const isSelectedRow = selectedReplayEventIndex === position
+                          const rowStatus = rowEvent ? (rowEvent.success ? 'pass' : 'fail') : isCurrentRow ? 'current' : 'pending'
+                          const haystack = `${action.name || ''} ${action.target || ''} ${action.selector || ''} ${rowEvent?.action_name || ''} ${rowEvent?.target || ''}`.toLowerCase()
+                          if (debugRailFilterText && !haystack.includes(debugRailFilterText)) return null
+                          if (debugRailFailuresOnly && !(rowEvent && !rowEvent.success)) return null
+                          return (
+                            <div
+                              key={rowKey}
+                              className={`debugger-action-row ${rowStatus} ${isSelectedRow ? 'selected' : ''} ${isCurrentRow ? 'current' : ''}`}
+                              ref={node => { replayEventRefs.current[position] = node }}
+                            >
+                              <button
+                                type="button"
+                                className={`debugger-gutter ${breakpointActive ? 'active' : ''}`}
+                                title={breakpointActive ? 'Remove breakpoint' : 'Add breakpoint'}
+                                aria-label={breakpointActive ? 'Remove breakpoint' : 'Add breakpoint'}
+                                onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
+                              >
+                                <span className="debugger-breakpoint-dot" />
+                              </button>
+                              <button
+                                type="button"
+                                className="debugger-action-row-main"
+                                onClick={() => {
+                                  if (phase === 'action') setActiveAction(actionIndex)
+                                  if (rowEvent) {
+                                    setExpandedReplayEvent(position)
+                                    if (debuggerTab === 'browser' && !isBrowserScript) setDebuggerTab('request')
+                                  }
+                                }}
+                              >
+                                <span className="debugger-action-row-head">
+                                  <span className="replay-event-phase">{formatDebugPhaseLabel(phase)} {actionIndex + 1}</span>
+                                  <span className={`debugger-action-status ${rowStatus}`} aria-hidden="true" />
+                                </span>
+                                <strong>{action.name || rowEvent?.action_name || 'Unnamed action'}</strong>
+                                <small>{(rowEvent?.method || action.method || rowEvent?.action_type || action.type || 'action')} {rowEvent?.target || action.target || action.selector || ''}</small>
+                              </button>
                             </div>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-ghost"
-                          onClick={() => {
-                            setDebuggerTab('request')
-                            setExpandedReplayEvent(replayFailingEventIndex)
-                          }}
-                        >
-                          Inspect
-                        </button>
-                      </div>
-                    )}
-                    <div className="debugger-tabs" role="tablist" aria-label="Debugger panels">
-                      {[
-                        ['timeline', 'Timeline'],
-                        ['variables', 'Variables'],
-                        ['request', 'Request / Response'],
-                        ['raw', 'Raw Output'],
-                        ...(isBrowserScript ? [['browser', 'Browser Evidence']] : []),
-                      ].map(([id, label]) => (
-                        <button
-                          key={id}
-                          type="button"
-                          className={debuggerTab === id ? 'active' : ''}
-                          onClick={() => setDebuggerTab(id as DebuggerTab)}
-                        >
-                          {label}
-                        </button>
-                      ))}
+                          )
+                        }).filter(Boolean)
+                        return rows.length > 0 ? rows : <div className="debugger-rail-empty">No actions match the filter.</div>
+                      })()}
                     </div>
-                    {debuggerTab === 'browser' && isBrowserScript && (
+                  )}
+                  <div className="debugger-resizer debugger-resizer-col" onMouseDown={e => startDebuggerDrag('rail', e)} role="separator" aria-label="Resize actions panel" />
+                </aside>
+
+                <section className="debugger-center" aria-label="Action detail">
+                  <div className="debugger-center-tabs" role="tablist">
+                    <button type="button" role="tab" aria-selected={debuggerTab === 'request'} className={debuggerTab === 'request' ? 'active' : ''} onClick={() => setDebuggerTab('request')}>Request / Response</button>
+                    {isBrowserScript && (
+                      <button type="button" role="tab" aria-selected={debuggerTab === 'browser'} className={debuggerTab === 'browser' ? 'active' : ''} onClick={() => setDebuggerTab('browser')}>Browser Evidence</button>
+                    )}
+                  </div>
+                  <div className="debugger-center-body">
+                    {debuggerTab === 'browser' && isBrowserScript ? (
                       <BrowserReplayDebugger
                         sessionId={activeReplaySessionId}
                         session={browserReplaySession}
@@ -3909,105 +4104,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         selectedEventIndex={expandedReplayEvent}
                         onSelectEvent={setExpandedReplayEvent}
                       />
-                    )}
-                    {debuggerTab === 'timeline' && replayActivity.length > 0 && (
-                      <div className="replay-activity-card">
-                        <h4>Execution Timeline</h4>
-                        <div className="replay-activity-list">
-                          {replayActivity.map(item => (
-                            <div key={item.id} className={`replay-activity-item ${item.kind} ${item.success === false ? 'error' : item.success === true ? 'success' : ''}`}>
-                              <div className="replay-activity-marker" />
-                              <div className="replay-activity-content">
-                                <div className="replay-activity-header-row">
-                                  <strong>{item.title}</strong>
-                                  <span>{formatReplayTime(item.timestamp)}</span>
-                                </div>
-                                {item.detail && <div className="replay-activity-detail">{item.detail}</div>}
-                                {item.changedVariables && item.changedVariables.length > 0 && (
-                                  <div className="replay-variable-chip-row">
-                                    {item.changedVariables.map(name => (
-                                      <span key={`${item.id}-${name}`} className="replay-variable-chip">{name}</span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {debuggerTab === 'variables' && replayVariableInspector && (
-                      <div className="replay-variables-card">
-                        <h4>{replaying ? 'Live Variables' : 'Variable Inspector'}</h4>
-                        {Object.keys(replayVariableInspector).length > 0 ? (
-                          <SnapshotBodyPreview
-                            body={JSON.stringify(replayVariableInspector, null, 2)}
-                            headers={{ 'Content-Type': 'application/json' }}
-                          />
-                        ) : (
-                          <div className="replay-variables-empty">
-                            {replaying
-                              ? 'No replay variables have been captured yet.'
-                              : 'Replay completed without any extracted or seeded variables.'}
-                          </div>
-                        )}
-                        {replayVariableTimeline.length > 0 && (
-                          <div className="replay-variable-timeline">
-                            <h5>Variable Timeline</h5>
-                            {replayVariableTimeline.map(item => (
-                              <button
-                                key={item.key}
-                                type="button"
-                                className="replay-variable-timeline-row"
-                                onClick={() => {
-                                  setDebuggerTab('request')
-                                  setExpandedReplayEvent(item.index)
-                                }}
-                              >
-                                <span>{item.name}</span>
-                                <strong>{item.action}</strong>
-                                <small>{item.previous ?? 'unset'} {'->'} {item.next}</small>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {debuggerTab === 'raw' && (
-                      <div className="debug-raw-panel">
-                        <div className="debug-raw-toolbar">
-                          <label>
-                            <span>Level</span>
-                            <select value={debugRawLevel} onChange={e => setDebugRawLevel(e.target.value as ScriptDebugLogLevel | 'all')}>
-                              <option value="all">All</option>
-                              {DEBUG_LOG_LEVELS.map(level => <option key={level} value={level}>{level.toUpperCase()}+</option>)}
-                            </select>
-                          </label>
-                          <label>
-                            <span>Search</span>
-                            <input value={debugRawSearch} onChange={e => setDebugRawSearch(e.target.value)} placeholder="Filter raw output" />
-                          </label>
-                          <label className="checkbox-label replay-checkbox">
-                            <input type="checkbox" checked={debugRawAutoScroll} onChange={e => setDebugRawAutoScroll(e.target.checked)} />
-                            <span>Auto-scroll</span>
-                          </label>
-                          <button type="button" className="btn btn-sm btn-ghost" onClick={() => void navigator.clipboard?.writeText(debugRawOutputText)}>
-                            Copy
-                          </button>
-                          <button type="button" className="btn btn-sm btn-ghost" onClick={() => downloadTextFile(debugRawOutputText || 'No raw output captured', `${sanitizeDownloadName(script.name, 'script')}-debug.log`)}>
-                            Download
-                          </button>
-                          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setDebugRawClearedAt(browserReplaySession?.logs?.length || 0)}>
-                            Clear View
-                          </button>
-                        </div>
-                        <pre ref={debugRawOutputRef} className="debug-raw-output">{debugRawOutputText || 'No raw output captured yet.'}</pre>
-                      </div>
-                    )}
-                    {(debuggerTab === 'timeline' || debuggerTab === 'request') && (
-                    <div className="replay-events-list">
-                      {replayReport.events.map((event, index) => {
-                        const isOpen = expandedReplayEvent === index
+                    ) : !replayReport ? (
+                      <div className="debugger-empty">No debugger session yet. Place optional breakpoints in the gutter, adjust settings, then press Run.</div>
+                    ) : selectedReplayEvent && selectedReplayEventIndex != null ? (
+                      (() => {
+                        const event = selectedReplayEvent
+                        const index = selectedReplayEventIndex
                         const variableDiff = replayVariableDiffs[index] || {}
                         const changedVariables = Object.entries(variableDiff)
                         const snapshotSoapFault = event.snapshot ? extractSOAPFaultSummaryFromBody(event.snapshot.response_body) : null
@@ -4019,33 +4121,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         const replayHTML = event.html || event.snapshot?.html
                         const replayScreenshotBase64 = event.screenshot_base64 || event.snapshot?.screenshot_base64
                         return (
-                          <div
-                            key={`${event.phase}-${event.action_name}-${index}`}
-                            className={`replay-event-card ${event.success ? 'success' : 'error'}`}
-                            ref={node => {
-                              replayEventRefs.current[index] = node
-                            }}
-                          >
-                            <button className="replay-event-header" onClick={() => setExpandedReplayEvent(isOpen ? null : index)}>
-                              <div className="replay-event-header-main">
-                                <span className="replay-event-phase">{event.phase}</span>
-                                <strong>{event.action_name || 'Unnamed action'}</strong>
-                                <span className="replay-event-target">{event.method || event.action_type} {event.target}</span>
-                              </div>
-                              <div className="replay-event-header-meta">
-                                {changedVariables.length > 0 && (
-                                  <span className="replay-event-diff-count">{changedVariables.length} variable{changedVariables.length === 1 ? '' : 's'} changed</span>
-                                )}
-                                {event.diagnosis && (
-                                  <span className="replay-diagnosis-chip">{formatReplayDiagnosisCategory(event.diagnosis.category)}</span>
-                                )}
-                                <span className={event.success ? 'text-success' : 'text-danger'}>{event.success ? `HTTP ${event.status_code || 'OK'}` : event.error_message || 'Failed'}</span>
-                                <span>{event.duration_ms.toFixed(1)} ms</span>
-                                <span>{isOpen ? '▾' : '▸'}</span>
-                              </div>
-                            </button>
-                            {isOpen && (
-                              <div className="replay-event-body">
+                          <div className="debugger-detail">
+                            <div className="debugger-detail-head">
+                              <span className="replay-event-phase">{event.phase}</span>
+                              <strong>{event.action_name || 'Unnamed action'}</strong>
+                              <span className="replay-event-target">{event.method || event.action_type} {event.target}</span>
+                              <span className={event.success ? 'text-success' : 'text-danger'}>{event.success ? `HTTP ${event.status_code || 'OK'}` : event.error_message || 'Failed'}</span>
+                              <span>{event.duration_ms.toFixed(1)} ms</span>
+                            </div>
+                            <div className="replay-event-body">
                                 <div className="replay-event-detail-grid">
                                   <div>
                                     <span className="replay-detail-label">Started</span>
@@ -4307,17 +4391,164 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                     </div>
                                   )
                                 )}
-                              </div>
-                            )}
+                            </div>
                           </div>
                         )
-                      })}
-                    </div>
+                      })()
+                    ) : (replaying && browserReplaySession?.current_action) ? (
+                      (() => {
+                        const ca = browserReplaySession?.current_action
+                        if (!ca) return null
+                        return (
+                          <div className="debugger-detail debugger-current-action">
+                            <span className={`debugger-current-badge ${isReplayPaused ? 'paused' : 'running'}`}>{isReplayPaused ? 'Paused — about to execute' : 'Executing'}</span>
+                            <div className="debugger-detail-head">
+                              <span className="replay-event-phase">{formatDebugPhaseLabel(ca.phase)} {ca.action_index + 1}</span>
+                              <strong>{ca.action_name || 'Next action'}</strong>
+                              <span className="replay-event-target">{ca.method || ca.action_type} {ca.target || ca.selector}</span>
+                            </div>
+                            {isReplayPaused && <p className="debugger-current-hint">Press Step (F10) to execute this action, or Continue (F5) to run to the next breakpoint.</p>}
+                          </div>
+                        )
+                      })()
+                    ) : (
+                      <div className="debugger-empty">Select an action from the list to inspect its request and response.</div>
                     )}
                   </div>
-                )}
+                </section>
+
+                <aside className="debugger-variables-panel" aria-label="Variables">
+                  <div className="debugger-resizer debugger-resizer-col debugger-resizer-vars" onMouseDown={e => startDebuggerDrag('vars', e)} role="separator" aria-label="Resize variables panel" />
+                  <div className="debugger-pane-header">{replaying ? 'Live Variables' : 'Variables'}</div>
+                  <div className="debugger-variables-body">
+                    {replayVariableInspector && Object.keys(replayVariableInspector).length > 0 ? (
+                      <SnapshotBodyPreview
+                        body={JSON.stringify(replayVariableInspector, null, 2)}
+                        headers={{ 'Content-Type': 'application/json' }}
+                      />
+                    ) : (
+                      <div className="replay-variables-empty">
+                        {replaying ? 'No replay variables captured yet.' : replayReport ? 'No extracted or seeded variables.' : 'Variables appear here once a debugger session runs.'}
+                      </div>
+                    )}
+                    {replayVariableTimeline.length > 0 && (
+                      <div className="replay-variable-timeline">
+                        <h5>Variable Timeline</h5>
+                        {replayVariableTimeline.map(item => (
+                          <button
+                            key={item.key}
+                            type="button"
+                            className="replay-variable-timeline-row"
+                            onClick={() => {
+                              setDebuggerTab('request')
+                              setExpandedReplayEvent(item.index)
+                            }}
+                          >
+                            <span>{item.name}</span>
+                            <strong>{item.action}</strong>
+                            <small>{item.previous ?? 'unset'} {'->'} {item.next}</small>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </aside>
+
+                <section className="debugger-bottom" aria-label="Console and timeline">
+                  <div className="debugger-resizer debugger-resizer-row" onMouseDown={e => startDebuggerDrag('bottom', e)} role="separator" aria-label="Resize bottom panel" />
+                  <div className="debugger-bottom-tabs" role="tablist">
+                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'console'} className={debuggerBottomTab === 'console' ? 'active' : ''} onClick={() => setDebuggerBottomTab('console')}>Console</button>
+                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'timeline'} className={debuggerBottomTab === 'timeline' ? 'active' : ''} onClick={() => setDebuggerBottomTab('timeline')}>Timeline</button>
+                  </div>
+                  {debuggerBottomTab === 'console' ? (
+                    <div className="debug-raw-panel debugger-console">
+                      <div className="debug-raw-toolbar">
+                        <label>
+                          <span>Level</span>
+                          <select value={debugRawLevel} onChange={e => setDebugRawLevel(e.target.value as ScriptDebugLogLevel | 'all')}>
+                            <option value="all">All</option>
+                            {DEBUG_LOG_LEVELS.map(level => <option key={level} value={level}>{level.toUpperCase()}+</option>)}
+                          </select>
+                        </label>
+                        <label>
+                          <span>Search</span>
+                          <input value={debugRawSearch} onChange={e => setDebugRawSearch(e.target.value)} placeholder="Filter raw output" />
+                        </label>
+                        <label className="checkbox-label replay-checkbox">
+                          <input type="checkbox" checked={debugRawAutoScroll} onChange={e => setDebugRawAutoScroll(e.target.checked)} />
+                          <span>Auto-scroll</span>
+                        </label>
+                        <button type="button" className="btn btn-sm btn-ghost" onClick={() => void navigator.clipboard?.writeText(debugRawOutputText)}>Copy</button>
+                        <button type="button" className="btn btn-sm btn-ghost" onClick={() => downloadTextFile(debugRawOutputText || 'No raw output captured', `${sanitizeDownloadName(script.name, 'script')}-debug.log`)}>Download</button>
+                        <button type="button" className="btn btn-sm btn-ghost" onClick={() => setDebugRawClearedAt(browserReplaySession?.logs?.length || 0)}>Clear View</button>
+                      </div>
+                      <div ref={debugRawOutputRef} className="debug-raw-output">
+                        {debugFilteredLogs.length === 0 ? (
+                          <span className="debug-log-empty">No raw output captured yet.</span>
+                        ) : (
+                          debugFilteredLogs.map(entry => {
+                            const jumpPosition = entry.phase ? debugRowPositionByKey.get(debugBreakpointKey(entry.phase, entry.action_index ?? 0)) : undefined
+                            const canJump = jumpPosition != null && !!replayReport?.events[jumpPosition]
+                            return (
+                              <button
+                                key={entry.id}
+                                type="button"
+                                className={`debug-log-line level-${entry.level} ${canJump ? 'jumpable' : ''}`}
+                                disabled={!canJump}
+                                onClick={() => {
+                                  if (jumpPosition == null) return
+                                  setDebuggerTab('request')
+                                  setExpandedReplayEvent(jumpPosition)
+                                }}
+                              >
+                                {formatDebugLogEntry(entry)}
+                              </button>
+                            )
+                          })
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="debugger-timeline">
+                      {replayActivity.length > 0 ? (
+                        <div className="replay-activity-list">
+                          {replayActivity.map(item => (
+                            <div key={item.id} className={`replay-activity-item ${item.kind} ${item.success === false ? 'error' : item.success === true ? 'success' : ''}`}>
+                              <div className="replay-activity-marker" />
+                              <div className="replay-activity-content">
+                                <div className="replay-activity-header-row">
+                                  <strong>{item.title}</strong>
+                                  <span>{formatReplayTime(item.timestamp)}</span>
+                                </div>
+                                {item.detail && <div className="replay-activity-detail">{item.detail}</div>}
+                                {item.changedVariables && item.changedVariables.length > 0 && (
+                                  <div className="replay-variable-chip-row">
+                                    {item.changedVariables.map(name => (
+                                      <span key={`${item.id}-${name}`} className="replay-variable-chip">{name}</span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="debugger-empty">Execution timeline will populate as the debugger runs.</div>
+                      )}
+                    </div>
+                  )}
+                </section>
               </div>
-            )}
+
+              <div className="debugger-statusbar">
+                <span className={`debugger-statusbar-item ${replayStatusLabel === 'Failed' ? 'text-danger' : replayStatusLabel === 'Running' ? '' : 'text-success'}`}>{replayReport ? replayStatusLabel : 'Idle'}</span>
+                <span className="debugger-statusbar-item">Group: {replayReport?.group || replayOptions.groupName || 'replay'}</span>
+                <span className="debugger-statusbar-item">Protocol: {replayReport?.protocol || script.protocol}</span>
+                <span className="debugger-statusbar-item">{replayReport ? `${replayReport.events.length} / ${script.actions.length} actions` : `${debugActionRows.length} actions planned`}</span>
+                {replayReport?.completed_at && <span className="debugger-statusbar-item">Completed {formatReplayTime(replayReport.completed_at)}</span>}
+                {debugBreakpoints.length > 0 && <span className="debugger-statusbar-item">{debugBreakpoints.length} breakpoint{debugBreakpoints.length === 1 ? '' : 's'}</span>}
+              </div>
+            </div>
           </div>
 
           {importMetadata && (
