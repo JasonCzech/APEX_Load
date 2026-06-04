@@ -114,6 +114,7 @@ type ReplayReport = BrowserReplayReport
 type WorkspaceTab = 'author' | 'debug' | 'json'
 type DebuggerTab = 'request' | 'browser'
 type DebuggerBottomTab = 'console' | 'timeline' | 'problems' | 'output'
+type DebuggerResizeKind = 'rail' | 'vars' | 'bottom'
 
 type BrowserEngineName = 'chromium' | 'webkit'
 
@@ -141,6 +142,21 @@ const AUTHORING_COMPONENT_GROUPS = [
 
 const WEBKIT_INSTALL_ADVISORY = 'WebKit execution requires Playwright WebKit assets installed on the controller host. Run go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install webkit before running browser tests or replay sessions.'
 const DEBUG_LOG_LEVELS: ScriptDebugLogLevel[] = ['error', 'warn', 'info', 'debug', 'trace']
+const DEBUGGER_LAYOUT_DEFAULTS: Record<DebuggerResizeKind, number> = {
+  rail: 260,
+  vars: 320,
+  bottom: 220,
+}
+const DEBUGGER_LAYOUT_LIMITS: Record<DebuggerResizeKind, { max: number; min: number; step: number }> = {
+  rail: { min: 180, max: 560, step: 24 },
+  vars: { min: 220, max: 600, step: 24 },
+  bottom: { min: 140, max: 640, step: 24 },
+}
+
+function clampDebuggerPaneSize(kind: DebuggerResizeKind, value: number) {
+  const limits = DEBUGGER_LAYOUT_LIMITS[kind]
+  return Math.min(limits.max, Math.max(limits.min, Math.round(value)))
+}
 
 function defaultExtractorForProtocol(protocol: string) {
   switch (protocol) {
@@ -1101,14 +1117,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [debugRailFilter, setDebugRailFilter] = useState('')
   const [debugRailFailuresOnly, setDebugRailFailuresOnly] = useState(false)
   const [debuggerRailWidth, setDebuggerRailWidth] = useState(() => {
-    try { const val = window.localStorage.getItem('debuggerRailWidth'); return val ? parseInt(val, 10) || 260 : 260 } catch { return 260 }
+    try { const val = window.localStorage.getItem('debuggerRailWidth'); return val ? clampDebuggerPaneSize('rail', parseInt(val, 10) || DEBUGGER_LAYOUT_DEFAULTS.rail) : DEBUGGER_LAYOUT_DEFAULTS.rail } catch { return DEBUGGER_LAYOUT_DEFAULTS.rail }
   })
   const [debuggerVarsWidth, setDebuggerVarsWidth] = useState(() => {
-    try { const val = window.localStorage.getItem('debuggerVarsWidth'); return val ? parseInt(val, 10) || 320 : 320 } catch { return 320 }
+    try { const val = window.localStorage.getItem('debuggerVarsWidth'); return val ? clampDebuggerPaneSize('vars', parseInt(val, 10) || DEBUGGER_LAYOUT_DEFAULTS.vars) : DEBUGGER_LAYOUT_DEFAULTS.vars } catch { return DEBUGGER_LAYOUT_DEFAULTS.vars }
   })
   const [debuggerBottomHeight, setDebuggerBottomHeight] = useState(() => {
-    try { const val = window.localStorage.getItem('debuggerBottomHeight'); return val ? parseInt(val, 10) || 220 : 220 } catch { return 220 }
+    try { const val = window.localStorage.getItem('debuggerBottomHeight'); return val ? clampDebuggerPaneSize('bottom', parseInt(val, 10) || DEBUGGER_LAYOUT_DEFAULTS.bottom) : DEBUGGER_LAYOUT_DEFAULTS.bottom } catch { return DEBUGGER_LAYOUT_DEFAULTS.bottom }
   })
+  const [activeDebuggerResize, setActiveDebuggerResize] = useState<DebuggerResizeKind | null>(null)
   const jsonWorkspaceHydrated = useRef(false)
 
   useEffect(() => {
@@ -2902,6 +2919,39 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     return () => window.removeEventListener('mousedown', onDown)
   }, [debuggerSettingsOpen])
 
+  const resetDebuggerLayout = () => {
+    setDebuggerRailWidth(DEBUGGER_LAYOUT_DEFAULTS.rail)
+    setDebuggerVarsWidth(DEBUGGER_LAYOUT_DEFAULTS.vars)
+    setDebuggerBottomHeight(DEBUGGER_LAYOUT_DEFAULTS.bottom)
+  }
+
+  const handleDebuggerResizeKeyDown = (kind: DebuggerResizeKind, event: React.KeyboardEvent<HTMLDivElement>) => {
+    const limits = DEBUGGER_LAYOUT_LIMITS[kind]
+    const step = limits.step * (event.shiftKey ? 2 : 1)
+    const currentValue = kind === 'rail' ? debuggerRailWidth : kind === 'vars' ? debuggerVarsWidth : debuggerBottomHeight
+    let nextValue: number | null = null
+
+    if (kind === 'bottom') {
+      if (event.key === 'ArrowUp') nextValue = currentValue + step
+      else if (event.key === 'ArrowDown') nextValue = currentValue - step
+    } else if (kind === 'rail') {
+      if (event.key === 'ArrowRight') nextValue = currentValue + step
+      else if (event.key === 'ArrowLeft') nextValue = currentValue - step
+    } else {
+      if (event.key === 'ArrowLeft') nextValue = currentValue + step
+      else if (event.key === 'ArrowRight') nextValue = currentValue - step
+    }
+
+    if (event.key === 'Home') nextValue = limits.min
+    if (event.key === 'End') nextValue = limits.max
+
+    if (nextValue === null) return
+    event.preventDefault()
+    if (kind === 'rail') setDebuggerRailWidth(clampDebuggerPaneSize('rail', nextValue))
+    else if (kind === 'vars') setDebuggerVarsWidth(clampDebuggerPaneSize('vars', nextValue))
+    else setDebuggerBottomHeight(clampDebuggerPaneSize('bottom', nextValue))
+  }
+
   // Drag-to-resize handler for the IDE shell panels.
   const startDebuggerDrag = (kind: 'rail' | 'vars' | 'bottom', event: React.MouseEvent) => {
     event.preventDefault()
@@ -2910,19 +2960,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     const startRail = debuggerRailWidth
     const startVars = debuggerVarsWidth
     const startBottom = debuggerBottomHeight
+    setActiveDebuggerResize(kind)
     const onMove = (ev: globalThis.MouseEvent) => {
-      if (kind === 'rail') setDebuggerRailWidth(Math.min(520, Math.max(160, startRail + (ev.clientX - startX))))
-      else if (kind === 'vars') setDebuggerVarsWidth(Math.min(560, Math.max(200, startVars - (ev.clientX - startX))))
-      else setDebuggerBottomHeight(Math.min(620, Math.max(120, startBottom - (ev.clientY - startY))))
+      if (kind === 'rail') setDebuggerRailWidth(clampDebuggerPaneSize('rail', startRail + (ev.clientX - startX)))
+      else if (kind === 'vars') setDebuggerVarsWidth(clampDebuggerPaneSize('vars', startVars - (ev.clientX - startX)))
+      else setDebuggerBottomHeight(clampDebuggerPaneSize('bottom', startBottom - (ev.clientY - startY)))
     }
     const onUp = () => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('blur', onUp)
       document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+      setActiveDebuggerResize(null)
     }
     document.body.style.userSelect = 'none'
+    document.body.style.cursor = kind === 'bottom' ? 'row-resize' : 'col-resize'
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
+    window.addEventListener('blur', onUp)
   }
 
   // IDE-style keyboard shortcuts, active on the editor page unless the user is typing.
@@ -3928,6 +3984,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 </button>
                 <button
                   type="button"
+                  className="debugger-icon-btn"
+                  title="Reset debugger layout"
+                  onClick={resetDebuggerLayout}
+                >
+                  <span className="debugger-icon" aria-hidden="true">&#8635;</span>
+                  <span>Layout</span>
+                </button>
+                <button
+                  type="button"
                   className="debugger-icon-btn debugger-icon-btn-square"
                   title={debuggerMaximized ? 'Restore' : 'Maximize'}
                   aria-pressed={debuggerMaximized}
@@ -4065,7 +4130,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               )}
 
               <div
-                className="debugger-shell"
+                className={`debugger-shell ${activeDebuggerResize ? `resizing resizing-${activeDebuggerResize}` : ''}`}
                 style={{
                   '--rail-w': `${debuggerRailWidth}px`,
                   '--vars-w': `${debuggerVarsWidth}px`,
@@ -4159,7 +4224,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       })()}
                     </div>
                   )}
-                  <div className="debugger-resizer debugger-resizer-col" onMouseDown={e => startDebuggerDrag('rail', e)} role="separator" aria-label="Resize actions panel" />
+                  <div
+                    className={`debugger-resizer debugger-resizer-col ${activeDebuggerResize === 'rail' ? 'active' : ''}`}
+                    onKeyDown={e => handleDebuggerResizeKeyDown('rail', e)}
+                    onMouseDown={e => startDebuggerDrag('rail', e)}
+                    role="separator"
+                    tabIndex={0}
+                    title="Resize actions panel"
+                    aria-label="Resize actions panel"
+                    aria-orientation="vertical"
+                    aria-valuemax={DEBUGGER_LAYOUT_LIMITS.rail.max}
+                    aria-valuemin={DEBUGGER_LAYOUT_LIMITS.rail.min}
+                    aria-valuenow={debuggerRailWidth}
+                  />
                 </aside>
 
                 <section className="debugger-center" aria-label="Action detail">
@@ -4493,7 +4570,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 </section>
 
                 <aside className="debugger-variables-panel" aria-label="Variables">
-                  <div className="debugger-resizer debugger-resizer-col debugger-resizer-vars" onMouseDown={e => startDebuggerDrag('vars', e)} role="separator" aria-label="Resize variables panel" />
+                  <div
+                    className={`debugger-resizer debugger-resizer-col debugger-resizer-vars ${activeDebuggerResize === 'vars' ? 'active' : ''}`}
+                    onKeyDown={e => handleDebuggerResizeKeyDown('vars', e)}
+                    onMouseDown={e => startDebuggerDrag('vars', e)}
+                    role="separator"
+                    tabIndex={0}
+                    title="Resize variables panel"
+                    aria-label="Resize variables panel"
+                    aria-orientation="vertical"
+                    aria-valuemax={DEBUGGER_LAYOUT_LIMITS.vars.max}
+                    aria-valuemin={DEBUGGER_LAYOUT_LIMITS.vars.min}
+                    aria-valuenow={debuggerVarsWidth}
+                  />
                   <div className="debugger-pane-header">{replaying ? 'Live Variables' : 'Variables'}</div>
                   <div className="debugger-variables-body">
                     {replayVariableInspector && Object.keys(replayVariableInspector).length > 0 ? (
@@ -4530,7 +4619,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 </aside>
 
                 <section className="debugger-bottom" aria-label="Debug dock">
-                  <div className="debugger-resizer debugger-resizer-row" onMouseDown={e => startDebuggerDrag('bottom', e)} role="separator" aria-label="Resize bottom panel" />
+                  <div
+                    className={`debugger-resizer debugger-resizer-row ${activeDebuggerResize === 'bottom' ? 'active' : ''}`}
+                    onKeyDown={e => handleDebuggerResizeKeyDown('bottom', e)}
+                    onMouseDown={e => startDebuggerDrag('bottom', e)}
+                    role="separator"
+                    tabIndex={0}
+                    title="Resize bottom panel"
+                    aria-label="Resize bottom panel"
+                    aria-orientation="horizontal"
+                    aria-valuemax={DEBUGGER_LAYOUT_LIMITS.bottom.max}
+                    aria-valuemin={DEBUGGER_LAYOUT_LIMITS.bottom.min}
+                    aria-valuenow={debuggerBottomHeight}
+                  />
                   <div className="debugger-bottom-tabs" role="tablist">
                     <button type="button" role="tab" aria-selected={debuggerBottomTab === 'console'} className={debuggerBottomTab === 'console' ? 'active' : ''} onClick={() => setDebuggerBottomTab('console')}>Console</button>
                     <button type="button" role="tab" aria-selected={debuggerBottomTab === 'timeline'} className={debuggerBottomTab === 'timeline' ? 'active' : ''} onClick={() => setDebuggerBottomTab('timeline')}>Timeline</button>

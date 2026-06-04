@@ -2199,6 +2199,66 @@ describe('ScriptEditor', () => {
     }))
   })
 
+  it('resizes debugger panels with accessible splitters and resets the layout', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
+    })
+
+    const debugTab = findOpenDebuggerButton(container)
+    expect(debugTab).toBeDefined()
+    if (!debugTab) {
+      return
+    }
+
+    await act(async () => {
+      debugTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const actionsResizer = container.querySelector('[aria-label="Resize actions panel"]') as HTMLDivElement | null
+    const variablesResizer = container.querySelector('[aria-label="Resize variables panel"]') as HTMLDivElement | null
+    const bottomResizer = container.querySelector('[aria-label="Resize bottom panel"]') as HTMLDivElement | null
+    expect(actionsResizer).not.toBeNull()
+    expect(variablesResizer).not.toBeNull()
+    expect(bottomResizer).not.toBeNull()
+    if (!actionsResizer || !variablesResizer || !bottomResizer) {
+      return
+    }
+
+    expect(actionsResizer.getAttribute('role')).toBe('separator')
+    expect(actionsResizer.getAttribute('aria-orientation')).toBe('vertical')
+    expect(actionsResizer.getAttribute('aria-valuenow')).toBe('260')
+    expect(variablesResizer.getAttribute('aria-valuenow')).toBe('320')
+    expect(bottomResizer.getAttribute('aria-orientation')).toBe('horizontal')
+    expect(bottomResizer.getAttribute('aria-valuenow')).toBe('220')
+
+    await act(async () => {
+      actionsResizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+      variablesResizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+      bottomResizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(actionsResizer.getAttribute('aria-valuenow')).toBe('284')
+    expect(variablesResizer.getAttribute('aria-valuenow')).toBe('344')
+    expect(bottomResizer.getAttribute('aria-valuenow')).toBe('244')
+
+    const resetLayoutButton = findButtonByTitle(container, 'Reset debugger layout')
+    expect(resetLayoutButton).toBeDefined()
+    if (!resetLayoutButton) {
+      return
+    }
+
+    await act(async () => {
+      resetLayoutButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(actionsResizer.getAttribute('aria-valuenow')).toBe('260')
+    expect(variablesResizer.getAttribute('aria-valuenow')).toBe('320')
+    expect(bottomResizer.getAttribute('aria-valuenow')).toBe('220')
+  })
+
   it('surfaces script load failures when fetching by id', async () => {
     apiMock.getScript.mockRejectedValueOnce(new Error('Network unavailable'))
 

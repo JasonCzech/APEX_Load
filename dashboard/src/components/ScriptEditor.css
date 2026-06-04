@@ -3846,32 +3846,96 @@
 /* Drag-to-resize handles */
 .debugger-resizer {
   position: absolute;
-  z-index: 5;
+  z-index: 12;
+  border: 0;
+  background: transparent;
+  outline: none;
+  touch-action: none;
 }
 .debugger-resizer-col {
-  top: 0;
-  bottom: 0;
-  width: 8px;
+  top: 8px;
+  bottom: 8px;
+  width: 14px;
   cursor: col-resize;
 }
-.debugger-resizer-col:not(.debugger-resizer-vars) { right: -9px; }
-.debugger-resizer-vars { left: -9px; }
+.debugger-resizer-col:not(.debugger-resizer-vars) { right: -12px; }
+.debugger-resizer-vars { left: -12px; }
 .debugger-resizer-row {
-  left: 0;
-  right: 0;
-  top: -9px;
-  height: 8px;
+  left: 8px;
+  right: 8px;
+  top: -12px;
+  height: 14px;
   cursor: row-resize;
 }
+.debugger-resizer::before,
 .debugger-resizer::after {
   content: '';
   position: absolute;
-  background: transparent;
-  transition: background 0.12s ease;
+  border-radius: 999px;
+  transition: background 0.12s ease, opacity 0.12s ease, transform 0.12s ease;
 }
-.debugger-resizer-col::after { top: 0; bottom: 0; left: 3px; width: 2px; }
-.debugger-resizer-row::after { left: 0; right: 0; top: 3px; height: 2px; }
-.debugger-resizer:hover::after { background: var(--accent); }
+.debugger-resizer::after {
+  background: rgba(148, 163, 184, 0.34);
+}
+.debugger-resizer-col::before {
+  top: 50%;
+  left: 3px;
+  width: 8px;
+  height: 30px;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(148, 163, 184, 0.7) 1.5px, transparent 2px),
+    radial-gradient(circle at 50% 50%, rgba(148, 163, 184, 0.7) 1.5px, transparent 2px),
+    radial-gradient(circle at 50% 80%, rgba(148, 163, 184, 0.7) 1.5px, transparent 2px);
+  opacity: 0.5;
+  transform: translateY(-50%);
+}
+.debugger-resizer-col::after {
+  top: 0;
+  bottom: 0;
+  left: 6px;
+  width: 2px;
+}
+.debugger-resizer-row::before {
+  top: 3px;
+  left: 50%;
+  width: 36px;
+  height: 8px;
+  background:
+    radial-gradient(circle at 20% 50%, rgba(148, 163, 184, 0.7) 1.5px, transparent 2px),
+    radial-gradient(circle at 50% 50%, rgba(148, 163, 184, 0.7) 1.5px, transparent 2px),
+    radial-gradient(circle at 80% 50%, rgba(148, 163, 184, 0.7) 1.5px, transparent 2px);
+  opacity: 0.5;
+  transform: translateX(-50%);
+}
+.debugger-resizer-row::after {
+  left: 0;
+  right: 0;
+  top: 6px;
+  height: 2px;
+}
+.debugger-resizer:hover::before,
+.debugger-resizer:focus-visible::before,
+.debugger-resizer.active::before {
+  opacity: 1;
+}
+.debugger-resizer:hover::after,
+.debugger-resizer:focus-visible::after,
+.debugger-resizer.active::after {
+  background: var(--accent);
+}
+.debugger-resizer:focus-visible::before {
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.24);
+}
+.debugger-shell.resizing {
+  user-select: none;
+}
+.debugger-shell.resizing-rail,
+.debugger-shell.resizing-vars {
+  cursor: col-resize;
+}
+.debugger-shell.resizing-bottom {
+  cursor: row-resize;
+}
 
 /* Left rail */
 .debugger-rail {
