@@ -2166,14 +2166,18 @@ func (s *Server) handleExportScript(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&req)
 	}
 
-	outputDir := req.OutputDir
-	if outputDir == "" {
-		outputDir = "." // Current working directory
+	filename := req.Filename
+	if strings.TrimSpace(filename) == "" {
+		filename = stored.Name + ".json"
 	}
 
-	filename := req.Filename
-	if filename == "" {
-		filename = sanitizeFilename(stored.Name) + ".json"
+	// Confine the export to APEXLOAD_EXPORT_DIR (default ./exports). The
+	// caller-supplied output directory and filename are untrusted: the filename
+	// is always sanitized and the directory is rooted so "../" cannot escape.
+	fullPath, err := resolveConfinedExportPath(exportBaseDir(), req.OutputDir, filename)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid export path")
+		return
 	}
 
 	// Wrap in the standard script envelope
@@ -2187,22 +2191,20 @@ func (s *Server) handleExportScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fullPath := filepath.Join(outputDir, filename)
-
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to create output directory: "+err.Error())
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create output directory")
 		return
 	}
 
-	if err := os.WriteFile(fullPath, data, 0644); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to write script file: "+err.Error())
+	if err := os.WriteFile(fullPath, data, 0o644); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to write script file")
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"exported": true,
 		"path":     fullPath,
-		"filename": filename,
+		"filename": filepath.Base(fullPath),
 		"size":     len(data),
 	})
 }

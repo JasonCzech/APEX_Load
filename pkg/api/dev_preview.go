@@ -16,6 +16,11 @@ const (
 )
 
 func devPreviewModeForRequest(settings AuthSettings, r *http.Request) (string, bool) {
+	// Dev-preview headers grant ambient roles and must never be honored in a
+	// hardened production deployment, regardless of persisted auth settings.
+	if productionMode() {
+		return "", false
+	}
 	if settings.Mode != authModeDev {
 		return "", false
 	}

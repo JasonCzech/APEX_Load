@@ -83,6 +83,7 @@ func NewServer(cfg ServerConfig) *Server {
 	}
 
 	hub := NewHub()
+	hub.SetAllowedOrigins(cfg.AllowedOrigins)
 	cache := cfg.Cache
 	if cache == nil {
 		cache = configuredCacheBackend()
@@ -126,11 +127,12 @@ func NewServer(cfg ServerConfig) *Server {
 	s.routes(cfg.AllowedOrigins)
 
 	s.httpServer = &http.Server{
-		Addr:         cfg.Addr,
-		Handler:      s.mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:           cfg.Addr,
+		Handler:        securityHeadersMiddleware(bodyLimitMiddleware(s.mux)),
+		ReadTimeout:    15 * time.Second,
+		WriteTimeout:   60 * time.Second,
+		IdleTimeout:    120 * time.Second,
+		MaxHeaderBytes: 1 << 20, // 1 MiB
 	}
 
 	return s
@@ -559,7 +561,26 @@ func setDashboardStaticHeaders(w http.ResponseWriter) {
 	w.Header().Set("Feature-Policy", "clipboard-write 'self'")
 }
 
+// enforceAuthPosture fails closed when the server is configured for production
+// but the effective auth mode bypasses authentication. In non-production it
+// only warns loudly so operators know the API is unauthenticated.
+func (s *Server) enforceAuthPosture() error {
+	mode := normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode
+	if !isAuthBypassMode(mode) {
+		return nil
+	}
+	if productionMode() {
+		return fmt.Errorf("refusing to start: auth mode %q bypasses authentication but APEXLOAD_ENV=production; configure %q or %q auth", mode, authModeOIDC, authModeTrustedHeaders)
+	}
+	slog.Warn("auth is in a bypass mode — all API endpoints are unauthenticated; do not use this configuration in production",
+		"auth_mode", mode)
+	return nil
+}
+
 func (s *Server) Start() error {
+	if err := s.enforceAuthPosture(); err != nil {
+		return err
+	}
 	// Start websocket broadcast loop before serving HTTP requests.
 	go s.hub.Run()
 	s.startCacheFanout()

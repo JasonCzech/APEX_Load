@@ -16,10 +16,24 @@ spec:
         app.kubernetes.io/name: apexload-controller
         app.kubernetes.io/component: controller
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: controller
           image: apexload-controller:0.1.0
           imagePullPolicy: Never
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           ports:
             - name: http
               containerPort: 8080
@@ -39,6 +53,10 @@ spec:
               value: /var/lib/apexload/archives
             - name: APEXLOAD_ARCHIVE_BACKEND
               value: filesystem
+            # Confine script exports to the writable data volume (the container
+            # root filesystem is read-only).
+            - name: APEXLOAD_EXPORT_DIR
+              value: /var/lib/apexload/exports
             - name: APEXLOAD_GENERATOR_TIMEOUT
               value: 10s
             - name: APEXLOAD_GENERATORS
@@ -70,6 +88,8 @@ spec:
           volumeMounts:
             - name: controller-data
               mountPath: /var/lib/apexload
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             httpGet:
               path: /api/v1/system/health
@@ -93,3 +113,5 @@ spec:
         - name: controller-data
           persistentVolumeClaim:
             claimName: apexload-controller-data
+        - name: tmp
+          emptyDir: {}

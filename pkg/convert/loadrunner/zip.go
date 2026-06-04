@@ -13,6 +13,14 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
+// Decompression-bomb guards: bound the uncompressed size of any single entry
+// and of the archive as a whole, independent of the (already capped) compressed
+// upload size.
+const (
+	maxLoadRunnerEntryBytes = 64 << 20  // 64 MiB per file
+	maxLoadRunnerTotalBytes = 512 << 20 // 512 MiB total uncompressed
+)
+
 // ConvertZip processes a ZIP archive containing a LoadRunner script folder
 // and returns the converted APEX Load DSL script.
 func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
@@ -23,6 +31,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 
 	// Read all files from the zip
 	files := make(map[string]string)
+	var totalUncompressed int64
 	for _, f := range reader.File {
 		if f.FileInfo().IsDir() {
 			continue
@@ -31,10 +40,18 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		if err != nil {
 			continue
 		}
-		data, err := io.ReadAll(rc)
+		// Read at most one byte beyond the per-entry cap so we can detect overflow.
+		data, err := io.ReadAll(io.LimitReader(rc, maxLoadRunnerEntryBytes+1))
 		rc.Close()
 		if err != nil {
 			continue
+		}
+		if int64(len(data)) > maxLoadRunnerEntryBytes {
+			return nil, fmt.Errorf("zip entry %q exceeds the maximum allowed uncompressed size", filepath.Base(f.Name))
+		}
+		totalUncompressed += int64(len(data))
+		if totalUncompressed > maxLoadRunnerTotalBytes {
+			return nil, fmt.Errorf("zip archive exceeds the maximum allowed total uncompressed size")
 		}
 		// Normalize path: strip leading directory prefix if all files share one
 		name := filepath.Base(f.Name)

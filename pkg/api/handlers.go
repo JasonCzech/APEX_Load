@@ -2,9 +2,12 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -984,7 +987,29 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
+	// Never leak internal error detail (DB errors, file paths, stack context) to
+	// clients on 5xx responses. Log the real message server-side under a
+	// correlation ID and return a generic message referencing that ID.
+	if status >= http.StatusInternalServerError {
+		ref := newErrorReference()
+		slog.Error("internal server error", "ref", ref, "status", status, "detail", msg)
+		writeJSON(w, status, map[string]string{
+			"error": "internal server error",
+			"ref":   ref,
+		})
+		return
+	}
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// newErrorReference returns a short opaque ID correlating a client-visible 5xx
+// response with the detailed server-side log entry.
+func newErrorReference() string {
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "unknown"
+	}
+	return hex.EncodeToString(buf[:])
 }
 
 type SLABreachReport struct {

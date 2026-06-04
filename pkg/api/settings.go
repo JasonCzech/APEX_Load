@@ -623,6 +623,10 @@ func validateAuthSettings(settings AuthSettings) error {
 		mode = authModeDev
 	}
 
+	if productionMode() && isAuthBypassMode(mode) {
+		return fmt.Errorf("auth.mode %q bypasses authentication and is not permitted in production; set auth.mode to %q or %q (or unset APEXLOAD_ENV/APEXLOAD_REQUIRE_AUTH)", strings.TrimSpace(settings.Mode), authModeOIDC, authModeTrustedHeaders)
+	}
+
 	switch mode {
 	case "", authModeDev:
 		return nil

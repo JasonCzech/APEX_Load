@@ -44,6 +44,8 @@ func TestToParquetResourcesIncludesExternalMetricsJSON(t *testing.T) {
 }
 
 func TestExternalMetricCollectorCollectsConfiguredPrometheusMetrics(t *testing.T) {
+	// httptest binds to loopback; allow private outbound for the SSRF guard.
+	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`target_cpu_pct 81.5
@@ -90,6 +92,8 @@ func TestAttachExternalMetricsCreatesResourceSnapshot(t *testing.T) {
 }
 
 func TestRunArtifactsEnrichLiveMetricsAttachesExternalResources(t *testing.T) {
+	// httptest binds to loopback; allow private outbound for the SSRF guard.
+	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("target_mem_mb 512\n"))
 	}))

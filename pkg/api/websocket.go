@@ -12,12 +12,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 4096,
-	CheckOrigin:     func(r *http.Request) bool { return true },
-}
-
 type Hub struct {
 	clients           map[*Client]bool
 	clientsMu         sync.RWMutex
@@ -31,6 +25,27 @@ type Hub struct {
 	fanout            FanoutBus
 	fanoutChannel     string
 	fanoutOrigin      string
+	allowedOrigins    []string
+}
+
+// SetAllowedOrigins configures the Origin allow-list enforced during the
+// WebSocket upgrade. It shares originAllowed with the CORS middleware so the
+// two policies cannot drift.
+func (h *Hub) SetAllowedOrigins(origins []string) {
+	if h == nil {
+		return
+	}
+	h.allowedOrigins = append([]string(nil), origins...)
+}
+
+func (h *Hub) upgrader() websocket.Upgrader {
+	return websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 4096,
+		CheckOrigin: func(r *http.Request) bool {
+			return originAllowed(h.allowedOrigins, r)
+		},
+	}
 }
 
 type HubStats struct {
@@ -198,7 +213,8 @@ func (h *Hub) Stats() HubStats {
 }
 
 func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request, testID string, projectID string) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+	up := h.upgrader()
+	conn, err := up.Upgrade(w, r, nil)
 	if err != nil {
 		slog.Error("websocket upgrade failed", "err", err)
 		return

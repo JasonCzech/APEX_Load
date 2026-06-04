@@ -1,0 +1,64 @@
+# Ingress hardening for APEX Load. Egress is intentionally NOT restricted:
+# load generators must reach arbitrary targets under test, and the controller
+# must reach external identity providers, webhooks, and metric endpoints.
+#
+#   - default-deny all ingress
+#   - allow ingress to the controller HTTP API (:8080)
+#   - allow ingress to generator gRPC (:9090) only from the controller
+#
+# Tighten the controller ingress `from` selector to your ingress controller or
+# trusted namespaces in a real deployment; it is left open here so the dashboard
+# is reachable in a local cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apexload-default-deny-ingress
+  labels:
+    app.kubernetes.io/name: apexload
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apexload-controller-ingress
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-controller
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apexload-generator-ingress
+  labels:
+    app.kubernetes.io/name: apexload-generator
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-generator
+  policyTypes:
+    - Ingress
+  ingress:
+    # Accept gRPC only from the controller.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apexload-controller
+      ports:
+        - protocol: TCP
+          port: 9090

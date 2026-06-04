@@ -65,7 +65,7 @@ type notificationDispatcher struct {
 
 func newNotificationDispatcher(client *http.Client) *notificationDispatcher {
 	if client == nil {
-		client = &http.Client{Timeout: 5 * time.Second}
+		client = newSSRFSafeHTTPClient(5 * time.Second)
 	}
 	return &notificationDispatcher{client: client}
 }
@@ -91,6 +91,9 @@ func validateNotificationsSettings(settings NotificationsSettings) error {
 		parsedURL, err := url.ParseRequestURI(webhook.URL)
 		if err != nil || parsedURL == nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
 			return fmt.Errorf("%s.url must be a valid http or https URL", prefix)
+		}
+		if err := validateOutboundURL(webhook.URL); err != nil {
+			return fmt.Errorf("%s.url is not an allowed destination: %w", prefix, err)
 		}
 		switch webhook.Format {
 		case notificationFormatSlack, notificationFormatTeams, notificationFormatDynatrace:
@@ -309,12 +312,12 @@ func fallbackNotificationValue(value string) string {
 func (d *notificationDispatcher) postJSON(webhook NotificationWebhookSettings, payload any) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		slog.Warn("notification marshal failed", "format", webhook.Format, "url", webhook.URL, "err", err)
+		slog.Warn("notification marshal failed", "format", webhook.Format, "url", redactURL(webhook.URL), "err", err)
 		return
 	}
 	req, err := http.NewRequest(http.MethodPost, webhook.URL, bytes.NewReader(body))
 	if err != nil {
-		slog.Warn("notification request build failed", "format", webhook.Format, "url", webhook.URL, "err", err)
+		slog.Warn("notification request build failed", "format", webhook.Format, "url", redactURL(webhook.URL), "err", err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -323,11 +326,11 @@ func (d *notificationDispatcher) postJSON(webhook NotificationWebhookSettings, p
 	}
 	resp, err := d.client.Do(req)
 	if err != nil {
-		slog.Warn("notification delivery failed", "format", webhook.Format, "url", webhook.URL, "err", err)
+		slog.Warn("notification delivery failed", "format", webhook.Format, "url", redactURL(webhook.URL), "err", err)
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= http.StatusBadRequest {
-		slog.Warn("notification delivery returned error status", "format", webhook.Format, "url", webhook.URL, "status", resp.StatusCode)
+		slog.Warn("notification delivery returned error status", "format", webhook.Format, "url", redactURL(webhook.URL), "status", resp.StatusCode)
 	}
 }

@@ -146,6 +146,8 @@ func TestValidateNotificationsAllowsTelemetryEvents(t *testing.T) {
 }
 
 func TestBroadcastEventDispatchesConfiguredNotificationWebhook(t *testing.T) {
+	// httptest binds to loopback; allow private outbound for the SSRF guard.
+	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
 	received := make(chan map[string]any, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -194,6 +196,8 @@ func TestBroadcastEventDispatchesConfiguredNotificationWebhook(t *testing.T) {
 }
 
 func TestBroadcastEventDispatchesDynatraceWebhookWithAPIToken(t *testing.T) {
+	// httptest binds to loopback; allow private outbound for the SSRF guard.
+	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
 	received := make(chan map[string]any, 1)
 	headers := make(chan string, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

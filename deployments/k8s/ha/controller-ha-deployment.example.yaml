@@ -18,6 +18,14 @@ spec:
         app.kubernetes.io/component: controller
     spec:
       terminationGracePeriodSeconds: 45
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -32,14 +40,33 @@ spec:
         - name: controller
           image: ghcr.io/jasonczech/apexload-controller:latest
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           ports:
             - name: http
               containerPort: 8080
+          env:
+            # Fail closed: refuse to start in a bypass (unauthenticated) auth
+            # mode. Configure auth.mode=oidc or trusted_headers in settings.
+            - name: APEXLOAD_ENV
+              value: production
+            # Script exports are confined here; root filesystem is read-only.
+            - name: APEXLOAD_EXPORT_DIR
+              value: /var/lib/apexload/exports
           envFrom:
             - configMapRef:
                 name: apexload-data-platform
             - secretRef:
                 name: apexload-data-platform
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: data
+              mountPath: /var/lib/apexload
           readinessProbe:
             httpGet:
               path: /api/v1/system/readiness
@@ -60,6 +87,13 @@ spec:
             limits:
               cpu: "2"
               memory: 4Gi
+      volumes:
+        # Ephemeral scratch for the read-only-root container. In HA, point
+        # APEXLOAD_EXPORT_DIR / persistence at shared storage instead.
+        - name: tmp
+          emptyDir: {}
+        - name: data
+          emptyDir: {}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

@@ -18,10 +18,27 @@ spec:
         app.kubernetes.io/component: generator
     spec:
       terminationGracePeriodSeconds: 30
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: generator
           image: apexload-generator:0.1.0
           imagePullPolicy: Never
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           ports:
             - name: grpc
               containerPort: 9090
@@ -42,3 +59,6 @@ spec:
             limits:
               cpu: "2"
               memory: 2Gi
+      volumes:
+        - name: tmp
+          emptyDir: {}

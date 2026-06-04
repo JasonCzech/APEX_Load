@@ -28,7 +28,7 @@ type externalMetricTarget struct {
 
 func newExternalMetricCollector(client *http.Client) *externalMetricCollector {
 	if client == nil {
-		client = &http.Client{Timeout: 2 * time.Second}
+		client = newSSRFSafeHTTPClient(2 * time.Second)
 	}
 	return &externalMetricCollector{client: client}
 }
@@ -51,6 +51,9 @@ func (c *externalMetricCollector) collect(ctx context.Context, targets []externa
 }
 
 func (c *externalMetricCollector) collectOne(ctx context.Context, target externalMetricTarget) (float64, bool) {
+	if err := validateOutboundURL(target.URL); err != nil {
+		return 0, false
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.URL, nil)
 	if err != nil {
 		return 0, false

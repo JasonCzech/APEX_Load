@@ -464,6 +464,11 @@ func clearAuthCookie(w http.ResponseWriter, settings AuthSettings, name string, 
 }
 
 func authCookieSecure(settings AuthSettings) bool {
+	// In a hardened production deployment, session cookies must always carry the
+	// Secure attribute regardless of how the redirect URL is spelled.
+	if productionMode() {
+		return true
+	}
 	parsed, err := url.Parse(settings.RedirectURL)
 	if err != nil {
 		return false

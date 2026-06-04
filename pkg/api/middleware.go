@@ -2316,20 +2316,16 @@ func decodeRequestBody(r *http.Request, target any) error {
 }
 
 func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
-	originSet := make(map[string]bool, len(allowedOrigins))
-	for _, o := range allowedOrigins {
-		originSet[strings.ToLower(o)] = true
-	}
-	allowAll := len(allowedOrigins) == 0
-
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			origin := r.Header.Get("Origin")
+			origin := strings.TrimSpace(r.Header.Get("Origin"))
 
-			if allowAll || originSet[strings.ToLower(origin)] {
+			// Only ever reflect an Origin we have explicitly validated. When no
+			// allow-list is configured this permits same-origin requests only —
+			// never an arbitrary reflected origin.
+			if origin != "" && originAllowed(allowedOrigins, r) {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
-			} else if allowAll {
-				w.Header().Set("Access-Control-Allow-Origin", "*")
+				w.Header().Add("Vary", "Origin")
 			}
 
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
@@ -2344,6 +2340,55 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// defaultMaxRequestBodyBytes is a global backstop for request body size. It is
+// set above the largest explicit per-handler http.MaxBytesReader limit (100 MiB
+// for LoadRunner imports) so handlers with their own, smaller limit always win,
+// while handlers that decode the body without any limit are still bounded.
+const defaultMaxRequestBodyBytes = 128 << 20
+
+// bodyLimitMiddleware caps request body size as a defense against memory-
+// exhaustion DoS on handlers that decode the body without their own limit.
+func bodyLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Limit only methods that carry a body; leave GET/HEAD (incl. the
+		// WebSocket upgrade, which hijacks the connection) untouched.
+		if r.Body != nil && isMutatingMethod(r.Method) {
+			r.Body = http.MaxBytesReader(w, r.Body, defaultMaxRequestBodyBytes)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// securityHeadersMiddleware applies baseline security response headers to every
+// response (API, dashboard, and WebSocket handshakes). HSTS is only emitted on
+// requests that arrived over TLS (directly or via a TLS-terminating proxy).
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	// The bundled dashboard loads the Inter webfont from Google Fonts; allow
+	// those specific origins for stylesheet and font fetches.
+	const csp = "default-src 'self'; " +
+		"script-src 'self'; " +
+		"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+		"img-src 'self' data: blob:; " +
+		"font-src 'self' data: https://fonts.gstatic.com; " +
+		"connect-src 'self' ws: wss:; " +
+		"worker-src 'self' blob:; " +
+		"object-src 'none'; " +
+		"base-uri 'self'; " +
+		"form-action 'self'; " +
+		"frame-ancestors 'none'"
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Content-Security-Policy", csp)
+		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {
