@@ -1,4 +1,5 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useApi } from '../hooks/useApi'
 import type { BrowserToHTTPPreviewResponse } from '../hooks/api/useScriptApi'
 import { useWebSocket } from '../hooks/useWebSocket'
@@ -116,10 +117,30 @@ type ReplaySnapshot = BrowserReplaySnapshot
 type ReplayActionEvent = BrowserReplayEvent
 type ReplayReport = BrowserReplayReport
 type WorkbenchMode = 'author' | 'debug'
+type CenterWorkbenchTabId =
+  | 'script-json'
+  | 'configuration'
+  | 'runtime-settings'
+  | 'imported-metadata'
+  | 'parameter-data'
+  | 'object-descriptors'
+  | 'http-conversion'
 type DebuggerTab = 'request' | 'browser'
 type DebuggerBottomTab = 'console' | 'timeline' | 'problems' | 'output'
 type DebuggerResizeKind = 'rail' | 'vars' | 'bottom'
 type JsonDraftParseResult = { ok: true; script: ScriptData } | { ok: false; message: string }
+
+interface CenterWorkbenchTabDescriptor {
+  id: CenterWorkbenchTabId
+  label: string
+  title: string
+  closeable: boolean
+}
+
+interface CenterTabsState {
+  tabs: CenterWorkbenchTabId[]
+  activeTabId: CenterWorkbenchTabId
+}
 
 type BrowserEngineName = 'chromium' | 'webkit'
 
@@ -144,6 +165,52 @@ const AUTHORING_COMPONENT_GROUPS = [
   { kind: 'data_pool', label: 'Data Pools' },
   { kind: 'teardown', label: 'Teardown Blocks' },
 ] as const
+
+const SCRIPT_JSON_TAB_ID: CenterWorkbenchTabId = 'script-json'
+const CENTER_TABS_STORAGE_PREFIX = 'scriptEditorCenterTabs'
+const CENTER_WORKBENCH_TAB_IDS: readonly CenterWorkbenchTabId[] = [
+  'script-json',
+  'configuration',
+  'runtime-settings',
+  'imported-metadata',
+  'parameter-data',
+  'object-descriptors',
+  'http-conversion',
+]
+
+function isCenterWorkbenchTabId(value: unknown): value is CenterWorkbenchTabId {
+  return typeof value === 'string' && CENTER_WORKBENCH_TAB_IDS.includes(value as CenterWorkbenchTabId)
+}
+
+function defaultCenterTabsState(): CenterTabsState {
+  return {
+    tabs: [SCRIPT_JSON_TAB_ID, 'configuration', 'runtime-settings'],
+    activeTabId: SCRIPT_JSON_TAB_ID,
+  }
+}
+
+function readCenterTabsState(storageKey: string): CenterTabsState {
+  if (typeof window === 'undefined') return defaultCenterTabsState()
+  try {
+    const raw = window.localStorage.getItem(storageKey)
+    if (!raw) return defaultCenterTabsState()
+    const parsed = JSON.parse(raw) as Partial<CenterTabsState>
+    const tabs = Array.isArray(parsed.tabs)
+      ? parsed.tabs.filter(isCenterWorkbenchTabId)
+      : []
+    const normalizedTabs = [SCRIPT_JSON_TAB_ID, ...tabs.filter(tab => tab !== SCRIPT_JSON_TAB_ID)]
+    const activeTabId = isCenterWorkbenchTabId(parsed.activeTabId) && normalizedTabs.includes(parsed.activeTabId)
+      ? parsed.activeTabId
+      : SCRIPT_JSON_TAB_ID
+    return {
+      tabs: normalizedTabs,
+      activeTabId,
+    }
+  } catch {
+    return defaultCenterTabsState()
+  }
+}
+
 
 const WEBKIT_INSTALL_ADVISORY = 'WebKit execution requires Playwright WebKit assets installed on the controller host. Run go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install webkit before running browser tests or replay sessions.'
 const DEBUG_LOG_LEVELS: ScriptDebugLogLevel[] = ['error', 'warn', 'info', 'debug', 'trace']
@@ -370,6 +437,110 @@ function ScriptCodePane({
             setEditorReadyVersion(version => version + 1)
           }}
         />
+      </div>
+    </section>
+  )
+}
+
+interface CenterTabbedPaneProps {
+  activeTabId: CenterWorkbenchTabId
+  ariaLabel: string
+  className?: string
+  onCloseTab: (tabId: CenterWorkbenchTabId) => void
+  onPanelElement: (tabId: CenterWorkbenchTabId, element: HTMLDivElement | null) => void
+  onSelectTab: (tabId: CenterWorkbenchTabId) => void
+  renderTabPanel: (tabId: CenterWorkbenchTabId) => ReactNode
+  tabs: CenterWorkbenchTabDescriptor[]
+}
+
+function CenterTabbedPane({
+  activeTabId,
+  ariaLabel,
+  className = '',
+  onCloseTab,
+  onPanelElement,
+  onSelectTab,
+  renderTabPanel,
+  tabs,
+}: CenterTabbedPaneProps) {
+  const activeTab = tabs.find(tab => tab.id === activeTabId) || tabs[0]
+
+  const handleTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (tabs.length === 0) return
+    let nextIndex = index
+    if (event.key === 'ArrowRight') {
+      nextIndex = (index + 1) % tabs.length
+    } else if (event.key === 'ArrowLeft') {
+      nextIndex = (index - 1 + tabs.length) % tabs.length
+    } else if (event.key === 'Home') {
+      nextIndex = 0
+    } else if (event.key === 'End') {
+      nextIndex = tabs.length - 1
+    } else {
+      return
+    }
+    event.preventDefault()
+    onSelectTab(tabs[nextIndex].id)
+  }
+
+  return (
+    <section className={`center-tabbed-pane ${className}`} aria-label={ariaLabel}>
+      <div className="center-tab-strip" role="tablist" aria-label={`${ariaLabel} tabs`}>
+        {tabs.map((tab, index) => {
+          const selected = tab.id === activeTab.id
+          const tabButtonId = `center-tab-${tab.id}`
+          const panelId = `center-tab-panel-${tab.id}`
+          return (
+            <div key={tab.id} className={`center-tab-item ${selected ? 'active' : ''} ${!tab.closeable ? 'pinned' : ''}`}>
+              <button
+                type="button"
+                id={tabButtonId}
+                role="tab"
+                aria-controls={panelId}
+                aria-selected={selected}
+                className="center-tab-button"
+                tabIndex={selected ? 0 : -1}
+                title={tab.title}
+                onClick={() => onSelectTab(tab.id)}
+                onKeyDown={event => handleTabKeyDown(event, index)}
+              >
+                <span className="center-tab-dot" aria-hidden="true" />
+                <span className="center-tab-label">{tab.label}</span>
+              </button>
+              {tab.closeable && (
+                <button
+                  type="button"
+                  className="center-tab-close"
+                  aria-label={`Close ${tab.label}`}
+                  title={`Close ${tab.label}`}
+                  onClick={() => onCloseTab(tab.id)}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <div className="center-tab-panels">
+        {tabs.map(tab => {
+          const selected = tab.id === activeTab.id
+          return (
+            <div
+              key={tab.id}
+              id={`center-tab-panel-${tab.id}`}
+              ref={element => {
+                if (element) onPanelElement(tab.id, element)
+              }}
+              role="tabpanel"
+              aria-labelledby={`center-tab-${tab.id}`}
+              className={`center-tab-panel ${selected ? 'active' : ''}`}
+              hidden={!selected}
+            >
+              {renderTabPanel(tab.id)}
+            </div>
+          )
+        })}
       </div>
     </section>
   )
@@ -1293,7 +1464,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     expandedReplayBrowserArtifacts,
     expandedReplayEvent,
     hydrateEditorState,
-    isParameterDialogOpen,
     jsonDirty,
     jsonText,
     openDataEditor,
@@ -1319,7 +1489,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setError,
     setExpandedReplayBrowserArtifacts,
     setExpandedReplayEvent,
-    setIsParameterDialogOpen,
     setJsonDirty,
     setJsonText,
     setOpenDataEditor,
@@ -1341,7 +1510,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     toggleSection,
     validating,
     warnings,
-    closeParameterDialog,
     closeReplayScreenshot,
   } = useScriptEditorState(initialScript)
   const isBrowserScript = script.protocol === 'browser'
@@ -1377,6 +1545,68 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       return 'author'
     }
   })
+  const centerTabsStorageKey = useMemo(
+    () => `${CENTER_TABS_STORAGE_PREFIX}:${scriptId || 'draft'}`,
+    [scriptId],
+  )
+  const [centerTabsState, setCenterTabsState] = useState<CenterTabsState>(() => readCenterTabsState(centerTabsStorageKey))
+  const [centerTabsHydratedKey, setCenterTabsHydratedKey] = useState(centerTabsStorageKey)
+  const [centerTabPanelElements, setCenterTabPanelElements] = useState<Partial<Record<CenterWorkbenchTabId, HTMLDivElement | null>>>({})
+  const centerTabDescriptors = useMemo<CenterWorkbenchTabDescriptor[]>(() => {
+    const descriptors: CenterWorkbenchTabDescriptor[] = [
+      { id: 'script-json', label: 'Script JSON', title: 'Script JSON', closeable: false },
+      { id: 'configuration', label: 'Configuration', title: 'Script Configuration', closeable: true },
+      { id: 'runtime-settings', label: 'Runtime Settings', title: 'Runtime Settings and RTS', closeable: true },
+      { id: 'parameter-data', label: 'Parameter Data', title: 'Parameter Data', closeable: true },
+    ]
+    if (importMetadata) {
+      descriptors.push({ id: 'imported-metadata', label: 'Imported Metadata', title: 'Imported Metadata', closeable: true })
+    }
+    if (objectDescriptorReview.rows.length > 0) {
+      descriptors.push({ id: 'object-descriptors', label: 'Object Descriptors', title: 'Object Descriptors', closeable: true })
+    }
+    if (isBrowserScript) {
+      descriptors.push({ id: 'http-conversion', label: 'HTTP Conversion', title: 'Browser To HTTP Conversion Review', closeable: true })
+    }
+    return descriptors
+  }, [importMetadata, isBrowserScript, objectDescriptorReview.rows.length])
+  const centerTabDescriptorById = useMemo(() => {
+    return new Map(centerTabDescriptors.map(tab => [tab.id, tab]))
+  }, [centerTabDescriptors])
+  const availableCenterTabIds = useMemo(() => new Set(centerTabDescriptors.map(tab => tab.id)), [centerTabDescriptors])
+  const visibleCenterTabs = useMemo(() => {
+    return centerTabsState.tabs
+      .map(tabId => centerTabDescriptorById.get(tabId))
+      .filter((tab): tab is CenterWorkbenchTabDescriptor => Boolean(tab))
+  }, [centerTabDescriptorById, centerTabsState.tabs])
+  const selectCenterTab = useCallback((tabId: CenterWorkbenchTabId) => {
+    if (!availableCenterTabIds.has(tabId)) return
+    setCenterTabsState(prev => prev.activeTabId === tabId ? prev : { ...prev, activeTabId: tabId })
+  }, [availableCenterTabIds])
+  const openCenterTab = useCallback((tabId: CenterWorkbenchTabId) => {
+    if (!availableCenterTabIds.has(tabId)) return
+    setCenterTabsState(prev => {
+      const tabs = prev.tabs.includes(tabId) ? prev.tabs : [...prev.tabs, tabId]
+      if (tabs === prev.tabs && prev.activeTabId === tabId) return prev
+      return { tabs, activeTabId: tabId }
+    })
+  }, [availableCenterTabIds])
+  const closeCenterTab = useCallback((tabId: CenterWorkbenchTabId) => {
+    if (tabId === SCRIPT_JSON_TAB_ID) return
+    setCenterTabPanelElements(prev => prev[tabId] ? { ...prev, [tabId]: null } : prev)
+    setCenterTabsState(prev => {
+      if (!prev.tabs.includes(tabId)) return prev
+      const nextTabs = prev.tabs.filter(candidate => candidate !== tabId)
+      const activeTabId = prev.activeTabId === tabId ? SCRIPT_JSON_TAB_ID : prev.activeTabId
+      return { tabs: nextTabs.length > 0 ? nextTabs : [SCRIPT_JSON_TAB_ID], activeTabId }
+    })
+  }, [])
+  const setCenterTabPanelElement = useCallback((tabId: CenterWorkbenchTabId, element: HTMLDivElement | null) => {
+    setCenterTabPanelElements(prev => {
+      if (prev[tabId] === element) return prev
+      return { ...prev, [tabId]: element }
+    })
+  }, [])
   const [debugBreakpoints, setDebugBreakpoints] = useState<ScriptDebugBreakpoint[]>([])
   const [debuggerTab, setDebuggerTab] = useState<DebuggerTab>('request')
   const [debuggerMaximized, setDebuggerMaximized] = useState(false)
@@ -1409,6 +1639,34 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       window.localStorage.setItem('debuggerBottomHeight', debuggerBottomHeight.toString())
     } catch { /* storage may be unavailable */ }
   }, [workspaceTab, debuggerRailWidth, debuggerVarsWidth, debuggerBottomHeight])
+  useEffect(() => {
+    setCenterTabsState(readCenterTabsState(centerTabsStorageKey))
+    setCenterTabsHydratedKey(centerTabsStorageKey)
+    setCenterTabPanelElements({})
+  }, [centerTabsStorageKey])
+  useEffect(() => {
+    setCenterTabsState(prev => {
+      const nextTabs = [SCRIPT_JSON_TAB_ID, ...prev.tabs.filter(tabId => tabId !== SCRIPT_JSON_TAB_ID && availableCenterTabIds.has(tabId))]
+      const activeTabId = nextTabs.includes(prev.activeTabId) ? prev.activeTabId : SCRIPT_JSON_TAB_ID
+      if (activeTabId === prev.activeTabId && nextTabs.length === prev.tabs.length && nextTabs.every((tabId, index) => tabId === prev.tabs[index])) {
+        return prev
+      }
+      return { tabs: nextTabs, activeTabId }
+    })
+  }, [availableCenterTabIds])
+  useEffect(() => {
+    if (!importMetadata) return
+    setCenterTabsState(prev => {
+      if (prev.tabs.includes('imported-metadata')) return prev
+      return { ...prev, tabs: [...prev.tabs, 'imported-metadata'] }
+    })
+  }, [importMetadata])
+  useEffect(() => {
+    if (centerTabsHydratedKey !== centerTabsStorageKey) return
+    try {
+      window.localStorage.setItem(centerTabsStorageKey, JSON.stringify(centerTabsState))
+    } catch { /* storage may be unavailable */ }
+  }, [centerTabsHydratedKey, centerTabsState, centerTabsStorageKey])
   const formattedScriptJson = useMemo(() => formatScriptJson(script), [script])
   useEffect(() => {
     if (jsonDirty || jsonText === formattedScriptJson) return
@@ -1464,14 +1722,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }
   })
   const openImportedDataSourceReview = useCallback((sourceName?: string | null) => {
-    setIsParameterDialogOpen(true)
+    openCenterTab('parameter-data')
     const sourceIndex = findDataSourceIndexByName(script.data_sources, sourceName)
     if (sourceIndex !== null) {
       setOpenDataEditor(sourceIndex)
     }
-  }, [script.data_sources, setIsParameterDialogOpen, setOpenDataEditor])
+  }, [openCenterTab, script.data_sources, setOpenDataEditor])
   const openImportedRuntimeSettings = useCallback((area?: string | null) => {
     const sectionId = getImportedRuntimeSectionId(area)
+    openCenterTab('runtime-settings')
     setOpenSections(prev => {
       const next: Record<string, boolean> = { ...prev, runtime: true }
       if (sectionId) {
@@ -1479,7 +1738,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       }
       return next
     })
-  }, [setOpenSections])
+  }, [openCenterTab, setOpenSections])
   const selectedBrowserEngine = script.config.browser?.engine || 'chromium'
   const [assistantChangeLog, setAssistantChangeLog] = useState<AssistantChangeLogItem[]>([])
   const [editorHistory, setEditorHistory] = useState<EditorHistory>({ past: [], future: [] })
@@ -1574,17 +1833,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }, [script, setError, setJsonDirty, setJsonText, setScript, setSuccess])
 
   useEffect(() => {
-    if (!isParameterDialogOpen) return
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeParameterDialog()
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [closeParameterDialog, isParameterDialogOpen])
-
-  useEffect(() => {
     if (!replayScreenshotSelection) return
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1599,6 +1847,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setAssistantChangeLog([])
     setEditorHistory({ past: [], future: [] })
   }, [importBaselineScript, initialScript, scriptId])
+  const hydratedInitialScriptRef = useRef<{ script: ScriptData; scriptId?: string | null } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -1708,6 +1957,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   useEffect(() => {
     if (!initialScript) return
+    const hydrated = hydratedInitialScriptRef.current
+    if (hydrated?.script === initialScript && hydrated.scriptId === scriptId) return
+    hydratedInitialScriptRef.current = { script: initialScript, scriptId }
     hydrateEditorState(initialScript)
 
 		const focusedActionIndex = findActionIndexByName(initialScript.actions, initialFocusedActionName)
@@ -1717,11 +1969,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 		}
 
     if (initialFocusedSection === 'runtime') {
+      openCenterTab('runtime-settings')
       setOpenSections(prev => ({ ...prev, runtime: true }))
     }
 
     if (initialFocusedRuntimeArea) {
       const sectionId = getImportedRuntimeSectionId(initialFocusedRuntimeArea)
+      openCenterTab('runtime-settings')
       setOpenSections(prev => {
         const next: Record<string, boolean> = { ...prev, runtime: true }
         if (sectionId) {
@@ -1732,19 +1986,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }
 
     if (initialFocusedSection === 'parameter-data') {
-      setIsParameterDialogOpen(true)
+      openCenterTab('parameter-data')
     }
 
     const focusedDataSourceIndex = findDataSourceIndexByName(initialScript.data_sources, initialFocusedDataSourceName)
     if (focusedDataSourceIndex !== null) {
-      setIsParameterDialogOpen(true)
+      openCenterTab('parameter-data')
       setOpenDataEditor(focusedDataSourceIndex)
     }
-  }, [hydrateEditorState, initialFocusedActionName, initialFocusedDataSourceName, initialFocusedRuntimeArea, initialFocusedSection, initialScript, setActiveAction, setIsParameterDialogOpen, setOpenDataEditor, setOpenSections])
+  }, [hydrateEditorState, initialFocusedActionName, initialFocusedDataSourceName, initialFocusedRuntimeArea, initialFocusedSection, initialScript, openCenterTab, scriptId, setActiveAction, setOpenDataEditor, setOpenSections])
 
   const selectAuthorAction = (index: number | null) => {
     setActiveAction(index)
-    setOpenSections(prev => prev.import ? { ...prev, import: false } : prev)
   }
 
   const focusSourceMappingForAction = (index: number) => {
@@ -1759,7 +2012,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }
 
   const selectSidebarAction = (index: number) => {
-    if (openSections['import'] && sourceReview) {
+    if (centerTabsState.tabs.includes('imported-metadata') && sourceReview) {
       setActiveAction(index)
       focusSourceMappingForAction(index)
       return
@@ -2692,7 +2945,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         authoring_health: res.authoring_health,
       })
       setWarnings(validationWarnings)
-      if (jsonDirty || validationScript !== currentScript) {
+      if (jsonDirty || currentScript.metadata?.import || validationScript !== currentScript) {
         commitJsonDraft(validationScript)
       }
       if (res.valid) {
@@ -3506,7 +3759,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       return { ...prev, parameters }
     })
 
-    setIsParameterDialogOpen(true)
+    openCenterTab('parameter-data')
     setError('')
     setSuccess(existingName ? `Updated parameter ${resolvedName}.` : `Created parameter ${resolvedName}.`)
     return resolvedName
@@ -3514,7 +3767,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   const beginParameterEditFromActionEditor = (draft: ActionEditorParameterDraft) => {
     setPendingParameterDraft(draft)
-    setIsParameterDialogOpen(true)
+    openCenterTab('parameter-data')
     setError('')
   }
 
@@ -3820,7 +4073,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   const scanForAutoParameters = () => {
     const candidates = buildAutoParameterCandidates(script)
-    setIsParameterDialogOpen(true)
+    openCenterTab('parameter-data')
     setParameterCandidates(candidates)
     if (candidates.length === 0) {
       setSuccess('No strong parameterization candidates were detected.')
@@ -3912,17 +4165,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }
 
   const openEditorSection = (section: 'config' | 'replay' | 'runtime' | 'import' | 'parameter-data' | 'object-descriptors' | 'http-conversion') => {
-    if (section === 'parameter-data') {
-      setIsParameterDialogOpen(true)
-      return
+    const tabBySection: Record<typeof section, CenterWorkbenchTabId> = {
+      config: 'configuration',
+      replay: 'script-json',
+      runtime: 'runtime-settings',
+      import: 'imported-metadata',
+      'parameter-data': 'parameter-data',
+      'object-descriptors': 'object-descriptors',
+      'http-conversion': 'http-conversion',
     }
+    openCenterTab(tabBySection[section])
     setOpenSections(prev => ({ ...prev, [section]: true }))
-    if (section === 'import') {
-      setActiveAction(null)
-      window.requestAnimationFrame(() => {
-        document.getElementById('imported-metadata-section')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-      })
-    }
   }
 
   const applyObjectDescriptorCandidate = (row: Web2ObjectDescriptorRow, candidate: Web2SelectorCandidate) => {
@@ -4017,6 +4270,57 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       disabled: saving || validating || !script.name,
     },
   ]
+  const renderBlockedCenterDocument = (title: string) => (
+    <section className="center-document center-document-blocked" aria-label={title}>
+      <div className="center-document-header">
+        <div>
+          <h3 className="panel-title">{title}</h3>
+          <p>Fix or reset the Script JSON draft before editing structured script tools.</p>
+        </div>
+        <button type="button" className="btn btn-sm btn-secondary" onClick={() => selectCenterTab(SCRIPT_JSON_TAB_ID)}>
+          Open Script JSON
+        </button>
+      </div>
+      <div className="center-document-blocked-body">
+        <strong>Script JSON is invalid</strong>
+        <span>{jsonParseMessage || 'The current JSON draft could not be parsed.'}</span>
+      </div>
+    </section>
+  )
+  const renderStructuredCenterDocument = (title: string, content: ReactNode) => {
+    return jsonParseMessage ? renderBlockedCenterDocument(title) : content
+  }
+  const renderCenterTabPanel = (tabId: CenterWorkbenchTabId) => {
+    if (tabId !== SCRIPT_JSON_TAB_ID) return null
+    return (
+      <ScriptCodePane
+        value={jsonText}
+        status={jsonStatus}
+        statusMessage={jsonStatusMessage}
+        activePath={scriptCodeStatusPath}
+        activeRange={scriptCodeActiveRange}
+        actionCount={currentDraftScript.actions?.length || 0}
+        onApply={handleApplyJsonDraft}
+        onChange={handleCodePaneChange}
+        onCopy={() => void navigator.clipboard?.writeText(jsonText)}
+        onDownload={() => downloadTextFile(jsonText || formatScriptJson(script), `${sanitizeDownloadName(currentDraftScript.name, 'script')}.json`)}
+        onFormat={handleFormatJsonDraft}
+        onReset={handleResetJsonDraft}
+      />
+    )
+  }
+  const renderCenterWorkbench = (className: string, ariaLabel: string) => (
+    <CenterTabbedPane
+      activeTabId={centerTabsState.activeTabId}
+      ariaLabel={ariaLabel}
+      className={className}
+      onCloseTab={closeCenterTab}
+      onPanelElement={setCenterTabPanelElement}
+      onSelectTab={selectCenterTab}
+      renderTabPanel={renderCenterTabPanel}
+      tabs={visibleCenterTabs.length > 0 ? visibleCenterTabs : centerTabDescriptors.slice(0, 1)}
+    />
+  )
 
   return (
     <div className="script-editor">
@@ -4073,13 +4377,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             <button
               ref={debuggerSettingsBtnRef}
               type="button"
-              className={`debugger-icon-btn ${debuggerSettingsOpen ? 'active' : ''}`}
+              className={`debugger-icon-btn ${centerTabsState.activeTabId === 'runtime-settings' ? 'active' : ''}`}
               title="Session overrides"
-              aria-pressed={debuggerSettingsOpen}
+              aria-pressed={centerTabsState.activeTabId === 'runtime-settings'}
               onClick={() => {
                 activateWorkspaceTab('debug')
                 setDebuggerTab('request')
-                setDebuggerSettingsOpen(open => !open)
+                setDebuggerSettingsOpen(false)
+                openCenterTab('runtime-settings')
               }}
             >
               <span className="debugger-icon" aria-hidden="true">&#9881;</span>
@@ -4114,12 +4419,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           </div>
 
           {/* Script Config Panel */}
-          <div className={`config-panel editor-support-dialog support-dialog-config ${openSections['config'] ? 'open' : ''}`} role="dialog" aria-modal="true" aria-label="Script Configuration">
-            <button className="panel-header-toggle" onClick={() => toggleSection('config')}>
-              <h3 className="panel-title">Script Configuration</h3>
-              <span className="chevron">Close</span>
-            </button>
-            {(
+          {centerTabPanelElements.configuration && createPortal(
+            renderStructuredCenterDocument('Script Configuration', (
+              <section className="center-document config-panel center-document-config" aria-label="Script Configuration">
+                <div className="center-document-header">
+                  <div>
+                    <h3 className="panel-title">Script Configuration</h3>
+                    <p>Connection defaults for this script draft.</p>
+                  </div>
+                </div>
               <div className="panel-body">
                 <div className="form-grid">
                   {showProtocolSelector && (
@@ -4250,8 +4558,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </div>
                 )}
               </div>
-            )}
-          </div>
+            </section>
+            )), centerTabPanelElements.configuration)}
 
           {workspaceTab === 'debug' && (
           <div
@@ -4510,21 +4818,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   />
                 </aside>
 
-                <ScriptCodePane
-                  value={jsonText}
-                  status={jsonStatus}
-                  statusMessage={jsonStatusMessage}
-                  activePath={scriptCodeStatusPath}
-                  activeRange={scriptCodeActiveRange}
-                  actionCount={currentDraftScript.actions?.length || 0}
-                  className="debugger-code-center"
-                  onApply={handleApplyJsonDraft}
-                  onChange={handleCodePaneChange}
-                  onCopy={() => void navigator.clipboard?.writeText(jsonText)}
-                  onDownload={() => downloadTextFile(jsonText || formatScriptJson(script), `${sanitizeDownloadName(currentDraftScript.name, 'script')}.json`)}
-                  onFormat={handleFormatJsonDraft}
-                  onReset={handleResetJsonDraft}
-                />
+                {renderCenterWorkbench('debugger-code-center', 'Debugger center workbench')}
 
                 <section className="debugger-center" aria-label="Action detail">
                   <div className="debugger-center-tabs" role="tablist">
@@ -5082,17 +5376,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           </div>
           )}
 
-          {objectDescriptorReview.rows.length > 0 && (
-            <div className={`config-panel editor-support-dialog support-dialog-object ${openSections['object-descriptors'] ? 'open' : ''}`} style={{ padding: 0 }} role="dialog" aria-modal="true" aria-label="Object Descriptors">
-              <button className="panel-header-toggle" onClick={() => toggleSection('object-descriptors')} style={{ padding: '16px 20px' }}>
-                <div className="panel-title-row" style={{ marginBottom: 0 }}>
+          {objectDescriptorReview.rows.length > 0 && centerTabPanelElements['object-descriptors'] && createPortal(
+            renderStructuredCenterDocument('Object Descriptors', (
+              <section className="center-document config-panel center-document-object" style={{ padding: 0 }} aria-label="Object Descriptors">
+                <div className="center-document-header">
                   <div>
                     <h3 className="panel-title">Object Descriptors</h3>
                     <p>Review imported TruClient object IDs, current selectors, and extracted fallback candidates.</p>
                   </div>
                 </div>
-                <span className="chevron">Close</span>
-              </button>
               <div className="panel-body" style={{ padding: '0 20px 20px' }}>
                 <div className="import-metadata-grid">
                   <div className="import-metadata-card">
@@ -5170,20 +5462,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   ))}
                 </div>
               </div>
-            </div>
-          )}
+              </section>
+            )), centerTabPanelElements['object-descriptors'])}
 
-          {isBrowserScript && (
-            <div className={`config-panel editor-support-dialog support-dialog-conversion ${openSections['http-conversion'] ? 'open' : ''}`} style={{ padding: 0 }} role="dialog" aria-modal="true" aria-label="Browser To HTTP Conversion Review">
-              <button className="panel-header-toggle" onClick={() => toggleSection('http-conversion')} style={{ padding: '16px 20px' }}>
-                <div className="panel-title-row" style={{ marginBottom: 0 }}>
+          {isBrowserScript && centerTabPanelElements['http-conversion'] && createPortal(
+            renderStructuredCenterDocument('Browser To HTTP Conversion Review', (
+              <section className="center-document config-panel center-document-conversion" style={{ padding: 0 }} aria-label="Browser To HTTP Conversion Review">
+                <div className="center-document-header">
                   <div>
                     <h3 className="panel-title">Browser To HTTP Conversion Review</h3>
                     <p>Gate generated HTTP load scripts behind replay, network, correlation, and approval evidence.</p>
                   </div>
                 </div>
-                <span className="chevron">Close</span>
-              </button>
               <div className="panel-body" style={{ padding: '0 20px 20px' }}>
                 <div className="import-metadata-grid">
                   <div className="import-metadata-card">
@@ -5288,16 +5578,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </button>
                 </div>
               </div>
-            </div>
-          )}
+              </section>
+            )), centerTabPanelElements['http-conversion'])}
 
           {/* Runtime Settings Panels */}
-          <div className={`runtime-settings config-panel editor-support-dialog support-dialog-runtime ${openSections['runtime'] ? 'open' : ''}`} style={{ padding: 0 }} role="dialog" aria-modal="true" aria-label="Runtime Settings">
-            <button className="panel-header-toggle" onClick={() => toggleSection('runtime')} style={{ padding: '16px 20px', borderBottom: openSections['runtime'] ? '1px solid var(--border)' : 'none' }}>
-              <h3 className="panel-title">Runtime Settings & RTS</h3>
-              <span className="chevron">Close</span>
-            </button>
-            {(
+          {centerTabPanelElements['runtime-settings'] && createPortal(
+            renderStructuredCenterDocument('Runtime Settings', (
+              <section className="center-document runtime-settings config-panel center-document-runtime" style={{ padding: 0 }} aria-label="Runtime Settings">
+                <div className="center-document-header">
+                  <div>
+                    <h3 className="panel-title">Runtime Settings & RTS</h3>
+                    <p>Execution, pacing, browser, protocol, and LoadRunner RTS compatibility controls.</p>
+                  </div>
+                </div>
               <div className="runtime-settings-grid" style={{ padding: 20 }}>
                 {/* Think Time */}
                 <div className={`settings-section ${openSections['think'] ? 'open' : ''}`}>
@@ -6624,8 +6917,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   )}
                 </div>
               </div>
-            )}
-          </div>
+              </section>
+            )), centerTabPanelElements['runtime-settings'])}
 
           {/* Actions List + Detail */}
           {workspaceTab === 'author' && (
@@ -6656,7 +6949,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <div className="actions-sidebar-header">
                   <h3 className="panel-title" style={{ fontSize: 11 }}>Action List</h3>
                   <div className="actions-sidebar-controls">
-                    <button className="btn btn-sm btn-ghost" onClick={() => setIsParameterDialogOpen(true)}>Parameter Data</button>
+                    <button className="btn btn-sm btn-ghost" onClick={() => openCenterTab('parameter-data')}>Parameter Data</button>
                     <button className="btn btn-sm btn-accent" onClick={addAction}>+ Add</button>
                   </div>
                 </div>
@@ -6719,26 +7012,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 </div>
               </div>
 
-              <ScriptCodePane
-                value={jsonText}
-                status={jsonStatus}
-                statusMessage={jsonStatusMessage}
-                activePath={scriptCodeStatusPath}
-                activeRange={scriptCodeActiveRange}
-                actionCount={currentDraftScript.actions?.length || 0}
-                className="author-code-center"
-                onApply={handleApplyJsonDraft}
-                onChange={handleCodePaneChange}
-                onCopy={() => void navigator.clipboard?.writeText(jsonText)}
-                onDownload={() => downloadTextFile(jsonText || formatScriptJson(script), `${sanitizeDownloadName(currentDraftScript.name, 'script')}.json`)}
-                onFormat={handleFormatJsonDraft}
-                onReset={handleResetJsonDraft}
-              />
+              {renderCenterWorkbench('author-code-center', 'Author center workbench')}
 
-              {/* Action Detail */}
-              <div className="action-detail">
-                {importMetadata && openSections['import'] ? (
-                  <section id="imported-metadata-section" className="import-metadata-panel config-panel imported-metadata-section open" aria-label="Imported Metadata">
+              {importMetadata && centerTabPanelElements['imported-metadata'] && createPortal(
+                renderStructuredCenterDocument('Imported Metadata', (
+                  <section id="imported-metadata-section" className="center-document import-metadata-panel config-panel imported-metadata-section open" aria-label="Imported Metadata">
                     <div className="import-metadata-header">
                       <div>
                         <h3 className="panel-title">Imported Metadata</h3>
@@ -6952,7 +7230,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       </details>
                     </div>
                   </section>
-                ) : activeAction !== null && script.actions[activeAction] ? (
+                )), centerTabPanelElements['imported-metadata'])}
+
+              {/* Action Detail */}
+              <div className="action-detail">
+                {activeAction !== null && script.actions[activeAction] ? (
                   <ActionEditor
                     action={script.actions[activeAction]}
                     index={activeAction}
@@ -7208,7 +7490,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <div className="utility-card">
                   <div className="utility-card-header">
                     <strong>Parameter Source Inspector</strong>
-                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => setIsParameterDialogOpen(true)}>
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => openCenterTab('parameter-data')}>
                       Open
                     </button>
                   </div>
@@ -7269,8 +7551,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           </div>
           )}
 
-          {isParameterDialogOpen && (
-            <ParameterDataDialog
+          {centerTabPanelElements['parameter-data'] && createPortal(
+            renderStructuredCenterDocument('Parameter Data', (
+              <ParameterDataDialog
               dataEditorMode={dataEditorMode}
               dataSourceHistory={dataSourceHistory}
               onAddDataColumn={addDataColumn}
@@ -7284,7 +7567,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               onApplyPendingParameterDraft={applyPendingParameterDraft}
               onAutoFixDataSource={autoFixDataSource}
               onClearPendingParameterDraft={clearPendingParameterDraft}
-              onClose={closeParameterDialog}
               onExportDataSourceFile={exportDataSourceFile}
               onImportDataSourceFile={importDataSourceFile}
               onMergeParameterSources={mergeParameterSourceFiles}
@@ -7311,8 +7593,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               parameterCandidates={parameterCandidates}
               pendingParameterDraft={pendingParameterDraft}
               script={script}
+              variant="document"
             />
-          )}
+            )), centerTabPanelElements['parameter-data'])}
 
           {replayScreenshotSelection && (
             <ReplayScreenshotDialog
@@ -7398,7 +7681,7 @@ interface ParameterDataDialogProps {
   onApplyPendingParameterDraft: () => void
   onAutoFixDataSource: (idx: number) => void
   onClearPendingParameterDraft: () => void
-  onClose: () => void
+  onClose?: () => void
   onExportDataSourceFile: (source: DataSourceConfig, idx: number) => void
   onImportDataSourceFile: (idx: number, file: File | null) => void
   onMergeParameterSources: () => void
@@ -7425,6 +7708,7 @@ interface ParameterDataDialogProps {
   parameterCandidates: ParameterCandidate[]
   pendingParameterDraft: ActionEditorParameterDraft | null
   script: ScriptData
+  variant?: 'modal' | 'document'
 }
 
 function ParameterDataDialog({
@@ -7468,6 +7752,7 @@ function ParameterDataDialog({
   parameterCandidates,
   pendingParameterDraft,
   script,
+  variant = 'modal',
 }: ParameterDataDialogProps) {
   const [isNamedParametersOpen, setIsNamedParametersOpen] = useState(true)
   const [isDataSourcesOpen, setIsDataSourcesOpen] = useState(true)
@@ -7508,14 +7793,12 @@ function ParameterDataDialog({
     }
   }
 
-  return (
-    <div className="editor-dialog-backdrop" onClick={onClose}>
+  const dialog = (
       <div
-        className="editor-dialog parameter-data-dialog"
-        role="dialog"
-        aria-modal="true"
+        className={`editor-dialog parameter-data-dialog ${variant === 'document' ? 'parameter-data-document' : ''}`}
+        role={variant === 'document' ? 'region' : 'dialog'}
+        aria-modal={variant === 'document' ? undefined : true}
         aria-label="Parameter Data"
-        onClick={event => event.stopPropagation()}
       >
         <div className="editor-dialog-header">
           <div>
@@ -7534,7 +7817,7 @@ function ParameterDataDialog({
             >
               Merge Source Files
             </button>
-            <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
+            {onClose && <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>}
           </div>
         </div>
         <div className="editor-dialog-body">
@@ -7595,6 +7878,15 @@ function ParameterDataDialog({
             script={script}
           />
         </div>
+      </div>
+  )
+
+  if (variant === 'document') return dialog
+
+  return (
+    <div className="editor-dialog-backdrop" onClick={onClose}>
+      <div onClick={event => event.stopPropagation()}>
+        {dialog}
       </div>
     </div>
   )

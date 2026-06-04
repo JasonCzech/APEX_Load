@@ -127,6 +127,10 @@ function findWorkspaceTab(root: ParentNode, label: string) {
   return Array.from(root.querySelectorAll('button[role="tab"]')).find(button => button.textContent?.trim() === label)
 }
 
+function findCenterTab(root: ParentNode, label: string) {
+  return Array.from(root.querySelectorAll('.center-tab-button')).find(button => button.textContent?.trim() === label)
+}
+
 function changeTextareaValue(textarea: HTMLTextAreaElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
   setter?.call(textarea, value)
@@ -405,7 +409,8 @@ describe('ScriptEditor', () => {
     const metadataSection = container.querySelector('#imported-metadata-section')
     const actionDetail = container.querySelector('.action-detail')
     expect(metadataSection?.textContent).toContain('checkout.usr')
-    expect(actionDetail?.contains(metadataSection)).toBe(true)
+    expect(actionDetail?.contains(metadataSection)).toBe(false)
+    expect(container.querySelector('.author-code-center')?.contains(metadataSection)).toBe(true)
     expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
     expect(metadataSection?.getAttribute('role')).toBeNull()
     expect(metadataSection?.classList.contains('editor-support-dialog')).toBe(false)
@@ -416,7 +421,7 @@ describe('ScriptEditor', () => {
       firstAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('#imported-metadata-section')).toBeNull()
+    expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
     expect(container.querySelector('.action-editor-panel')).not.toBeNull()
   })
 
@@ -516,8 +521,8 @@ describe('ScriptEditor', () => {
 
     const configDialog = container.querySelector('[aria-label="Script Configuration"]')
     const runtimeDialog = container.querySelector('[aria-label="Runtime Settings"]')
-    expect(configDialog?.className).toContain('support-dialog-config')
-    expect(runtimeDialog?.className).toContain('support-dialog-runtime')
+    expect(configDialog?.className).toContain('center-document-config')
+    expect(runtimeDialog?.className).toContain('center-document-runtime')
     expect(configDialog?.className).not.toContain('open')
     expect(container.querySelector('[aria-label="Script Debugger"]')).toBeNull()
     expect(runtimeDialog?.className).not.toContain('open')
@@ -530,15 +535,8 @@ describe('ScriptEditor', () => {
       configLauncher.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(configDialog?.className).toContain('open')
-
-    const closeButton = configDialog?.querySelector('.panel-header-toggle')
-    expect(closeButton).toBeTruthy()
-    await act(async () => {
-      closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(configDialog?.className).not.toContain('open')
+    const activeCenterTab = Array.from(container.querySelectorAll('.center-tab-button')).find(button => button.textContent?.trim() === 'Configuration')
+    expect(activeCenterTab?.getAttribute('aria-selected')).toBe('true')
   })
 
   it('keeps the script JSON pane visible in Author and Debug workbench modes', async () => {
@@ -547,6 +545,9 @@ describe('ScriptEditor', () => {
     })
 
     expect(findWorkspaceTab(container, '{ } JSON')).toBeUndefined()
+    expect(findWorkspaceTab(container, 'JSON')).toBeUndefined()
+    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('button[aria-label="Close Script JSON"]')).toBeNull()
     expect(container.querySelector('[aria-label="Script JSON"]')).not.toBeNull()
     expect(container.querySelector('[aria-label="Script JSON"]')?.textContent).toContain('Synced')
     expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"Checkout Flow"')
@@ -562,7 +563,97 @@ describe('ScriptEditor', () => {
 
     expect(container.querySelector('[aria-label="Script Debugger"]')).not.toBeNull()
     expect(container.querySelector('[aria-label="Script JSON"]')).not.toBeNull()
+    expect(findCenterTab(container, 'Script JSON')).not.toBeUndefined()
     expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"Checkout Flow"')
+  })
+
+  it('opens and focuses center documents from outline controls', async () => {
+    const importedScript: ScriptDefinition = {
+      ...initialScript,
+      metadata: {
+        import: {
+          source: 'loadrunner',
+          source_script_name: 'checkout.usr',
+          preserved: {},
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={importedScript} />)
+    })
+
+    const closeImported = findButtonByText(container, '×')
+    if (closeImported?.getAttribute('aria-label') === 'Close Imported Metadata') {
+      await act(async () => {
+        closeImported.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+    }
+
+    const configLauncher = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Script Configuration'))
+    expect(configLauncher).toBeDefined()
+    await act(async () => {
+      configLauncher?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(findCenterTab(container, 'Configuration')?.getAttribute('aria-selected')).toBe('true')
+
+    const runtimeLauncher = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Runtime / RTS'))
+    expect(runtimeLauncher).toBeDefined()
+    await act(async () => {
+      runtimeLauncher?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(findCenterTab(container, 'Runtime Settings')?.getAttribute('aria-selected')).toBe('true')
+
+    const importedLauncher = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Imported Metadata'))
+    expect(importedLauncher).toBeDefined()
+    await act(async () => {
+      importedLauncher?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(findCenterTab(container, 'Imported Metadata')?.getAttribute('aria-selected')).toBe('true')
+
+    const parameterLauncher = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Parameter Data'))
+    expect(parameterLauncher).toBeDefined()
+    await act(async () => {
+      parameterLauncher?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(findCenterTab(container, 'Parameter Data')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('[aria-label="Parameter Data"]')?.textContent).toContain('Manage parameters and reusable parameter data')
+  })
+
+  it('persists center tab order and drops unavailable document tabs', async () => {
+    window.localStorage.setItem('scriptEditorCenterTabs:draft', JSON.stringify({
+      tabs: ['script-json', 'parameter-data', 'configuration'],
+      activeTabId: 'parameter-data',
+    }))
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    expect(findCenterTab(container, 'Parameter Data')?.getAttribute('aria-selected')).toBe('true')
+    expect(Array.from(container.querySelectorAll('.center-tab-button')).map(button => button.textContent?.trim())).toEqual([
+      'Script JSON',
+      'Parameter Data',
+      'Configuration',
+    ])
+
+    await act(async () => {
+      root.unmount()
+    })
+    container.innerHTML = ''
+    root = createRoot(container)
+    window.localStorage.setItem('scriptEditorCenterTabs:draft', JSON.stringify({
+      tabs: ['script-json', 'imported-metadata', 'parameter-data'],
+      activeTabId: 'imported-metadata',
+    }))
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+      await Promise.resolve()
+    })
+
+    expect(findCenterTab(container, 'Imported Metadata')).toBeUndefined()
+    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
   })
 
   it('applies valid manual JSON edits into the structured authoring tools and save payload', async () => {
@@ -640,6 +731,14 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.script-code-status.invalid')?.textContent).toContain('Invalid JSON')
+
+    const configTab = findCenterTab(container, 'Configuration')
+    expect(configTab).toBeDefined()
+    await act(async () => {
+      configTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.center-document-blocked')?.textContent).toContain('Script JSON is invalid')
+    expect(container.querySelector('.center-document-blocked')?.textContent).toContain('Fix or reset the Script JSON draft')
 
     const saveButton = Array.from(container.querySelectorAll('.editor-header .editor-actions button')).find(button => button.textContent === 'Save Script')
     expect(saveButton).toBeDefined()
@@ -779,7 +878,7 @@ describe('ScriptEditor', () => {
     })
 
     const descriptorDialog = container.querySelector('[aria-label="Object Descriptors"]')
-    expect(descriptorDialog?.className).toContain('open')
+    expect(descriptorDialog?.className).toContain('center-document-object')
     expect(descriptorDialog?.textContent).toContain('obj_checkout')
     expect(descriptorDialog?.textContent).toContain('[data-testid="checkout"]')
     expect(descriptorDialog?.textContent).toContain('Frame: main-frame')
@@ -803,7 +902,7 @@ describe('ScriptEditor', () => {
     })
 
     const conversionDialog = container.querySelector('[aria-label="Browser To HTTP Conversion Review"]')
-    expect(conversionDialog?.className).toContain('open')
+    expect(conversionDialog?.className).toContain('center-document-conversion')
     expect(conversionDialog?.textContent).toContain('Run browser replay before generating an HTTP draft.')
     expect(conversionDialog?.textContent).toContain('Generate HTTP Draft Preview')
     expect(conversionDialog?.textContent).toContain('Review Runtime Settings')
@@ -1481,7 +1580,8 @@ describe('ScriptEditor', () => {
     const metadataSection = container.querySelector('#imported-metadata-section')
     const actionDetail = container.querySelector('.action-detail')
     expect(metadataSection?.classList.contains('open')).toBe(true)
-    expect(actionDetail?.contains(metadataSection)).toBe(true)
+    expect(actionDetail?.contains(metadataSection)).toBe(false)
+    expect(container.querySelector('.author-code-center')?.contains(metadataSection)).toBe(true)
     expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
     expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Authoring Signals')
     expect(metadataSection?.classList.contains('editor-support-dialog')).toBe(false)
@@ -1505,7 +1605,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
-    expect(container.querySelector('.action-editor-panel')).toBeNull()
+    expect(container.querySelector('.action-editor-panel')).not.toBeNull()
     const activeSidebarAction = container.querySelector('.action-item.active') as HTMLDivElement | null
     expect(activeSidebarAction?.textContent).toContain('Complete Checkout')
     const activeMappingRow = container.querySelector('.source-map-table tbody tr.active') as HTMLTableRowElement | null
@@ -1527,7 +1627,7 @@ describe('ScriptEditor', () => {
     const activeAction = container.querySelector('.action-item.active') as HTMLDivElement | null
     expect(activeAction).not.toBeNull()
     expect(activeAction?.textContent).toContain('Complete Checkout')
-    expect(container.querySelector('#imported-metadata-section')).toBeNull()
+    expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
 
     expect(container.querySelector('.editor-header .editor-actions')?.textContent).not.toContain('Imported Metadata')
     const reopenMetadataButton = Array.from(container.querySelector('.editor-outline-nav')?.querySelectorAll('button') || []).find(button =>
@@ -3391,9 +3491,9 @@ describe('ScriptEditor', () => {
       settingsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const settingsPopover = container.querySelector('.debugger-settings-popover')
-    expect(settingsPopover?.textContent).not.toContain('Preflight')
-    expect(settingsPopover?.textContent).not.toContain('Missing variable: account_id')
+    const runtimeDocument = container.querySelector('[aria-label="Runtime Settings"]')
+    expect(runtimeDocument?.textContent).not.toContain('Preflight')
+    expect(runtimeDocument?.textContent).not.toContain('Missing variable: account_id')
 
     const replayButton = findDebuggerRunButton(container)
     expect(replayButton).toBeDefined()
