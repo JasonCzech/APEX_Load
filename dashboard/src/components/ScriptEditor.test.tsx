@@ -113,8 +113,12 @@ function findButtonByTitle(root: ParentNode, title: string) {
   return Array.from(root.querySelectorAll('button')).find(button => button.getAttribute('title') === title)
 }
 
+function findWorkspaceTab(root: ParentNode, label: string) {
+  return Array.from(root.querySelectorAll('button[role="tab"]')).find(button => button.textContent?.trim() === label)
+}
+
 function findOpenDebuggerButton(root: ParentNode) {
-  return findButtonByText(root, 'Open Debugger')
+  return findWorkspaceTab(root, 'Debug')
 }
 
 function findDebuggerRunButton(root: ParentNode, title = 'Run Replay') {
@@ -206,6 +210,7 @@ describe('ScriptEditor', () => {
   }
 
   beforeEach(() => {
+    window.localStorage.clear()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -423,7 +428,7 @@ describe('ScriptEditor', () => {
     const replayDialog = container.querySelector('[aria-label="Script Debugger"]')
     const runtimeDialog = container.querySelector('[aria-label="Runtime Settings"]')
     expect(configDialog?.className).toContain('support-dialog-config')
-    expect(replayDialog?.className).toContain('support-dialog-replay')
+    expect(replayDialog?.className).toContain('script-ide-debugger')
     expect(runtimeDialog?.className).toContain('support-dialog-runtime')
     expect(configDialog?.className).not.toContain('open')
     expect(replayDialog?.className).not.toContain('open')
@@ -673,6 +678,17 @@ describe('ScriptEditor', () => {
 
     await act(async () => {
       runReplayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const authorTab = findWorkspaceTab(container, 'Author')
+    expect(authorTab).toBeDefined()
+    if (!authorTab) {
+      return
+    }
+
+    await act(async () => {
+      authorTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
@@ -2121,7 +2137,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const debuggerBreakpointButton = container.querySelector('.support-dialog-replay.open .debugger-gutter[title="Add breakpoint"]') as HTMLButtonElement | null
+    const debuggerBreakpointButton = container.querySelector('.script-ide-debugger.open .debugger-gutter[title="Add breakpoint"]') as HTMLButtonElement | null
     expect(debuggerBreakpointButton).not.toBeNull()
     if (!debuggerBreakpointButton) {
       return
@@ -2129,6 +2145,17 @@ describe('ScriptEditor', () => {
 
     await act(async () => {
       debuggerBreakpointButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const authorTab = findWorkspaceTab(container, 'Author')
+    expect(authorTab).toBeDefined()
+    if (!authorTab) {
+      return
+    }
+
+    await act(async () => {
+      authorTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 

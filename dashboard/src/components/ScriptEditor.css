@@ -8,6 +8,50 @@
 .editor-title-row { display: flex; justify-content: space-between; align-items: center; }
 .editor-title-row h2 { font-size: 20px; }
 .editor-actions { display: flex; gap: 8px; align-items: center; }
+.script-ide-command-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+.script-ide-tabs,
+.script-ide-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.script-ide-tabs {
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+}
+.script-ide-tabs button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.script-ide-tabs button:hover,
+.script-ide-tabs button.active {
+  border-color: rgba(99, 102, 241, 0.35);
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--text-primary);
+}
+.script-ide-quick-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
 .editor-toast {
   padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 500;
   animation: slideIn 0.2s ease;
@@ -100,12 +144,18 @@
 
 /* JSON mode */
 .json-editor { flex: 1; margin-top: 16px; }
+.script-ide-json-editor {
+  margin-top: 0;
+}
 .json-editor textarea {
   width: 100%; height: calc(100vh - 240px); resize: none;
   background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 16px;
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; font-size: 13px; line-height: 1.6;
   outline: none;
+}
+.script-ide-json-editor textarea {
+  min-height: 520px;
 }
 .json-editor textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(99,102,241,0.15); }
 
@@ -3583,8 +3633,40 @@
 /* ============================================================
    Script Debugger — IDE-style shell
    ============================================================ */
-.editor-support-dialog.debugger-dialog.open {
+.editor-support-dialog.debugger-dialog.open,
+.script-ide-debugger.open {
   padding: 0;
+}
+.script-ide-debugger {
+  display: none;
+  min-height: min(760px, calc(100vh - 230px));
+  max-height: calc(100vh - 210px);
+  overflow: hidden;
+}
+.script-ide-debugger.open {
+  display: flex;
+}
+.editor-body.workspace-debug .script-ide-debugger {
+  min-height: calc(100vh - 220px);
+}
+.script-ide-debugger.collapsed {
+  min-height: 0;
+  max-height: none;
+}
+.script-ide-debugger.collapsed .debugger-toolbar {
+  border-bottom: none;
+}
+.script-ide-debugger.collapsed .debugger-body,
+.script-ide-debugger.collapsed .debugger-statusbar {
+  display: none;
+}
+.script-ide-debugger.maximized.open {
+  position: fixed;
+  inset: 16px;
+  z-index: 180;
+  max-height: none;
+  min-height: 0;
+  box-shadow: 0 24px 54px rgba(15, 23, 42, 0.34);
 }
 
 /* Toolbar */
@@ -4147,6 +4229,109 @@
 .debugger-timeline {
   overflow: auto;
 }
+.debugger-problems,
+.debug-output-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  overflow: hidden;
+}
+.debugger-problems-header,
+.debug-output-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.debugger-problems-header div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.debugger-problems-header strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.debugger-problems-header span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.debugger-problem-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  overflow: auto;
+}
+.debugger-problem-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  text-align: left;
+}
+.debugger-problem-row.warning {
+  border-color: rgba(245, 158, 11, 0.28);
+}
+.debugger-problem-row.error {
+  border-color: rgba(239, 68, 68, 0.32);
+}
+button.debugger-problem-row {
+  cursor: pointer;
+}
+button.debugger-problem-row:hover {
+  border-color: rgba(99, 102, 241, 0.42);
+  background: rgba(99, 102, 241, 0.08);
+}
+.debugger-problem-row span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.debugger-problem-row strong {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.debugger-problem-row small {
+  grid-column: 2;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.debug-output-toolbar {
+  justify-content: flex-end;
+}
+.debug-output-panel pre {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 8px;
+  background: #0b1020;
+  color: #dbeafe;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 /* Status bar */
 .debugger-statusbar {
@@ -4165,6 +4350,31 @@
 
 /* Responsive */
 @media (max-width: 960px) {
+  .editor-title-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .editor-actions {
+    flex-wrap: wrap;
+  }
+  .editor-actions .btn {
+    min-width: 0;
+  }
+  .script-ide-command-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .script-ide-tabs,
+  .script-ide-quick-actions {
+    width: 100%;
+  }
+  .script-ide-tabs button {
+    flex: 1;
+  }
+  .script-ide-quick-actions {
+    justify-content: flex-start;
+  }
   .debugger-shell {
     grid-template-columns: 1fr;
     grid-template-rows: 220px 320px 260px 260px;
