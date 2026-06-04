@@ -50,14 +50,14 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 			appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, "metadata.import.preserved.unsupported_functions", fn.Name, "unsupported", "review_only", "No executable database mapping exists for this LoadRunner function yet."))
 			continue
 		}
-		actionIndex := len(result.Script.Actions)
-		appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "Converted to a generated APEX Load database action.", LoadRunnerSupportExecutable))
-		result.Script.Actions = append(result.Script.Actions, action)
+		actionIndex := actionCountForPhase(result.Script, fn.Phase)
+		appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, sourceReviewActionPath(fn.Phase, actionIndex), action.Name, "action", "converted", "Converted to a generated APEX Load database action.", LoadRunnerSupportExecutable))
+		appendActionForPhase(result.Script, fn.Phase, action)
 		result.Stats.ConvertedActions++
 		recordLoadRunnerFunctionSupport(result, LoadRunnerSupportExecutable)
 	}
 
-	if len(result.Script.Actions) == 0 {
+	if len(result.Script.Init)+len(result.Script.Actions)+len(result.Script.Teardown) == 0 {
 		result.Script = nil
 		result.ReviewArtifact = NewReviewArtifact(markDetectedReviewOnly(detected, "No executable SQL statements were found in the database script."), nil, actions, map[string]any{
 			"reason": "no_database_actions",

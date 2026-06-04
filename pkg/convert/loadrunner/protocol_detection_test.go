@@ -110,6 +110,90 @@ func TestConvertZipRoutesDatabaseAndNetworkImports(t *testing.T) {
 	}
 }
 
+func TestConvertZipPreservesDatabaseAndNetworkLifecyclePhases(t *testing.T) {
+	dbResult, err := ConvertZip(buildLoadRunnerZip(t, map[string]string{
+		"Database.usr": `[General]
+Type=ODBC
+
+[Actions]
+Action0=vuser_init.c
+Action1=Action.c
+Action2=vuser_end.c
+`,
+		"vuser_init.c": `vuser_init()
+{
+    lrd_stmt("create table setup_users(id int)", LAST);
+    return 0;
+}`,
+		"Action.c": `Action()
+{
+    lrd_stmt("select id from setup_users", LAST);
+    return 0;
+}`,
+		"vuser_end.c": `vuser_end()
+{
+    lrd_stmt("drop table setup_users", LAST);
+    return 0;
+}`,
+	}), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("database ConvertZip returned error: %v", err)
+	}
+	if dbResult.Script == nil || dbResult.Script.Protocol != "database" {
+		t.Fatalf("database script = %#v, want database script", dbResult.Script)
+	}
+	if len(dbResult.Script.Init) != 1 || len(dbResult.Script.Actions) != 1 || len(dbResult.Script.Teardown) != 1 {
+		t.Fatalf("database lifecycle = init:%d action:%d teardown:%d, want 1/1/1", len(dbResult.Script.Init), len(dbResult.Script.Actions), len(dbResult.Script.Teardown))
+	}
+	if dbResult.Script.Init[0].Type != "db_exec" || dbResult.Script.Actions[0].Type != "db_query" || dbResult.Script.Teardown[0].Type != "db_exec" {
+		t.Fatalf("database lifecycle actions = %#v/%#v/%#v, want exec/query/exec", dbResult.Script.Init[0], dbResult.Script.Actions[0], dbResult.Script.Teardown[0])
+	}
+	assertSourceReviewMapping(t, dbResult.SourceReview.Mappings, "lrd_stmt", "init[0]", "converted")
+	assertSourceReviewMapping(t, dbResult.SourceReview.Mappings, "lrd_stmt", "actions[0]", "converted")
+	assertSourceReviewMapping(t, dbResult.SourceReview.Mappings, "lrd_stmt", "teardown[0]", "converted")
+
+	networkResult, err := ConvertZip(buildLoadRunnerZip(t, map[string]string{
+		"Network.usr": `[General]
+Type=DNS
+
+[Actions]
+Action0=vuser_init.c
+Action1=Action.c
+Action2=vuser_end.c
+`,
+		"vuser_init.c": `vuser_init()
+{
+    dns_query("Warm DNS", "Domain=init.example.test", "RecordType=A", LAST);
+    return 0;
+}`,
+		"Action.c": `Action()
+{
+    dns_query("Lookup", "Domain=app.example.test", "RecordType=MX", LAST);
+    return 0;
+}`,
+		"vuser_end.c": `vuser_end()
+{
+    dns_query("Cleanup DNS", "Domain=end.example.test", "RecordType=TXT", LAST);
+    return 0;
+}`,
+	}), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("network ConvertZip returned error: %v", err)
+	}
+	if networkResult.Script == nil || networkResult.Script.Protocol != "network" || networkResult.Script.Config.Network.Subprotocol != "dns" {
+		t.Fatalf("network script = %#v, want DNS network script", networkResult.Script)
+	}
+	if len(networkResult.Script.Init) != 1 || len(networkResult.Script.Actions) != 1 || len(networkResult.Script.Teardown) != 1 {
+		t.Fatalf("network lifecycle = init:%d action:%d teardown:%d, want 1/1/1", len(networkResult.Script.Init), len(networkResult.Script.Actions), len(networkResult.Script.Teardown))
+	}
+	if networkResult.Script.Init[0].Target != "init.example.test" || networkResult.Script.Actions[0].Target != "app.example.test" || networkResult.Script.Teardown[0].Target != "end.example.test" {
+		t.Fatalf("network targets = %#v/%#v/%#v, want phase-specific DNS targets", networkResult.Script.Init[0], networkResult.Script.Actions[0], networkResult.Script.Teardown[0])
+	}
+	assertSourceReviewMapping(t, networkResult.SourceReview.Mappings, "dns_query", "init[0]", "converted")
+	assertSourceReviewMapping(t, networkResult.SourceReview.Mappings, "dns_query", "actions[0]", "converted")
+	assertSourceReviewMapping(t, networkResult.SourceReview.Mappings, "dns_query", "teardown[0]", "converted")
+}
+
 func TestConvertZipReturnsReviewArtifactForExternalRunnerProtocol(t *testing.T) {
 	result, err := ConvertZip(buildLoadRunnerProtocolZip(t, "SAP GUI", `Action()
 {
