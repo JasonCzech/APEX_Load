@@ -1238,7 +1238,7 @@ describe('ScriptEditor', () => {
                 {
                   path: 'Action.c',
                   language: 'c',
-                  content: 'Action()\n{\n\tweb_url("Login", "URL=https://example.com/login", LAST);\n}',
+                  content: 'Action()\n{\n\tweb_url("Login", "URL=https://example.com/login", LAST);\n\tweb_submit_data("Complete Checkout", "Action=https://example.com/checkout", LAST);\n}',
                   original_bytes: 80,
                   redacted: true,
                 },
@@ -1252,6 +1252,17 @@ describe('ScriptEditor', () => {
                   function: 'web_url',
                   target_path: 'actions[0]',
                   target_name: 'Login',
+                  target_kind: 'action',
+                  status: 'converted',
+                },
+                {
+                  id: 'checkout-action',
+                  source_file: 'Action.c',
+                  start_line: 4,
+                  end_line: 4,
+                  function: 'web_submit_data',
+                  target_path: 'actions[1]',
+                  target_name: 'Complete Checkout',
                   target_kind: 'action',
                   status: 'converted',
                 },
@@ -1347,6 +1358,20 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('abc123')
     expect(container.textContent).toContain('Open Step 1')
     expect(container.textContent).toContain('Open Step 2')
+
+    const sidebarActions = container.querySelectorAll('.action-item')
+    expect(sidebarActions.length).toBeGreaterThan(1)
+    await act(async () => {
+      sidebarActions[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
+    expect(container.querySelector('.action-editor-panel')).toBeNull()
+    const activeSidebarAction = container.querySelector('.action-item.active') as HTMLDivElement | null
+    expect(activeSidebarAction?.textContent).toContain('Complete Checkout')
+    const activeMappingRow = container.querySelector('.source-map-table tbody tr.active') as HTMLTableRowElement | null
+    expect(activeMappingRow?.dataset.mappingId).toBe('checkout-action')
+    expect(activeMappingRow?.dataset.targetPath).toBe('actions[1]')
 
     const openDependentStepButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.trim() === 'Open Step 2',

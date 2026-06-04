@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 
 import { type ScriptDefinition, type SourceReview, type SourceReviewFile, type SourceReviewMapping } from '../types/scripts'
 import { canCopyTextToClipboard, copyTextToClipboard } from '../utils/clipboardUtils'
@@ -23,6 +23,9 @@ type SortField = 'source' | 'function' | 'target' | 'status'
 type SortDirection = 'asc' | 'desc'
 
 interface Props {
+  focusRequestId?: number
+  focusedMappingId?: string
+  id?: string
   sourceReview?: SourceReview | null
   script?: ScriptDefinition | null
   title?: string
@@ -114,7 +117,7 @@ const COVERAGE_TOOLTIPS: Record<string, string> = {
   dslWithoutOrigin: 'Generated DSL actions, parameters, or data sources with no traceable source mapping.',
 }
 
-export default function SourceMappingReview({ sourceReview, script, title = 'Source Mapping' }: Props) {
+export default function SourceMappingReview({ focusRequestId = 0, focusedMappingId = '', id, sourceReview, script, title = 'Source Mapping' }: Props) {
   const files = useMemo(() => normalizeFiles(sourceReview), [sourceReview])
   const mappings = useMemo(() => normalizeMappings(sourceReview), [sourceReview])
   const [selectedMappingId, setSelectedMappingId] = useState('')
@@ -124,6 +127,7 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
   const [sortField, setSortField] = useState<SortField>('source')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [copied, setCopied] = useState<'source' | 'dsl' | ''>('')
+  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
 
   const selectedMapping = useMemo(
     () => mappings.find(mapping => mapping.id === selectedMappingId) || null,
@@ -153,6 +157,17 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
     setCopied('')
   }, [files, mappings])
 
+  useEffect(() => {
+    if (!focusedMappingId) return
+    const nextMapping = mappings.find(mapping => mapping.id === focusedMappingId)
+    if (!nextMapping) return
+    setSelectedMappingId(nextMapping.id)
+    if (nextMapping.source_file) setSelectedFilePath(nextMapping.source_file)
+    setCategoryFilter('')
+    setFilter('')
+    setCopied('')
+  }, [focusedMappingId, focusRequestId, mappings])
+
   const filteredMappings = useMemo(() => {
     const needle = filter.trim().toLowerCase()
     let next = mappings
@@ -172,6 +187,13 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
     }
     return [...next].sort((a, b) => compareText(mappingSortValue(a, sortField), mappingSortValue(b, sortField), sortDirection))
   }, [filter, mappings, sortDirection, sortField, categoryFilter])
+
+  useEffect(() => {
+    if (!focusedMappingId) return
+    window.requestAnimationFrame(() => {
+      rowRefs.current[focusedMappingId]?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    })
+  }, [filteredMappings, focusedMappingId, focusRequestId, selectedMappingId])
 
   if (files.length === 0 && mappings.length === 0) {
     return null
@@ -235,7 +257,7 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
   ]
 
   return (
-    <section className="source-map-review">
+    <section id={id} className="source-map-review">
       <div className="source-map-header">
         <div>
           <h4>{title}</h4>
@@ -309,7 +331,10 @@ export default function SourceMappingReview({ sourceReview, script, title = 'Sou
             {filteredMappings.map(mapping => (
               <tr
                 key={mapping.id}
+                ref={node => { rowRefs.current[mapping.id] = node }}
                 className={mapping.id === selectedMapping?.id ? 'active' : ''}
+                data-mapping-id={mapping.id}
+                data-target-path={mapping.target_path || ''}
                 onClick={() => selectMapping(mapping)}
               >
                 <td className="cell-mono">{formatSourceRange(mapping)}</td>

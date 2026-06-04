@@ -29,6 +29,7 @@ import {
   type ScriptDataSource,
   type ScriptImportMetadata,
   type LoadRunnerSourceReview,
+  type LoadRunnerSourceReviewMapping,
   type ScriptParameterDefinition,
   type ScriptValidationResponse,
   type ReplayPreflight,
@@ -486,6 +487,48 @@ function readSourceReview(metadata?: ScriptImportMetadata | null): LoadRunnerSou
 
 function scriptHasImportMetadata(script?: ScriptData | null): boolean {
   return Boolean(script?.metadata?.import)
+}
+
+function normalizeMappingText(value: unknown): string {
+  return String(value || '').trim().toLowerCase()
+}
+
+function mappingTargetsAction(mapping: LoadRunnerSourceReviewMapping, actionIndex: number): boolean {
+  const targetPath = mapping.target_path || ''
+  const actionPath = `actions[${actionIndex}]`
+  return targetPath === actionPath || targetPath.startsWith(`${actionPath}.`) || targetPath.startsWith(`${actionPath}[`)
+}
+
+function sourceMappingActionScore(mapping: LoadRunnerSourceReviewMapping, action: Action | undefined, actionIndex: number): number {
+  const targetPath = mapping.target_path || ''
+  const actionPath = `actions[${actionIndex}]`
+  let score = mapping.start_line || 0
+  if (targetPath === actionPath) score -= 10000
+  else if (targetPath.startsWith(`${actionPath}.params.requests[`)) score -= 9000
+  else if (mappingTargetsAction(mapping, actionIndex)) score -= 8000
+  if (mapping.status === 'converted') score -= 1000
+  if (mapping.target_kind === 'action') score -= 500
+  if (mapping.support_mode === 'executable') score -= 100
+  const targetName = normalizeMappingText(mapping.target_name)
+  const actionName = normalizeMappingText(action?.name)
+  const sourceTransaction = normalizeMappingText(action?.metadata?.source_transaction || action?.metadata?.loadrunner_transaction || action?.metadata?.transaction_name || action?.metadata?.transaction)
+  if (actionName && targetName === actionName) score -= 250
+  if (sourceTransaction && targetName === sourceTransaction) score -= 250
+  return score
+}
+
+function findSourceMappingForAction(sourceReview: LoadRunnerSourceReview | null, action: Action | undefined, actionIndex: number): LoadRunnerSourceReviewMapping | null {
+  const mappings = (sourceReview?.mappings || []).filter(mapping => mapping && mapping.id)
+  if (mappings.length === 0 || !action || actionIndex < 0) return null
+  const actionName = normalizeMappingText(action.name)
+  const sourceTransaction = normalizeMappingText(action.metadata?.source_transaction || action.metadata?.loadrunner_transaction || action.metadata?.transaction_name || action.metadata?.transaction)
+  const matches = mappings.filter(mapping => {
+    if (mappingTargetsAction(mapping, actionIndex)) return true
+    const targetName = normalizeMappingText(mapping.target_name)
+    return Boolean(targetName && (targetName === actionName || targetName === sourceTransaction))
+  })
+  if (matches.length === 0) return null
+  return [...matches].sort((a, b) => sourceMappingActionScore(a, action, actionIndex) - sourceMappingActionScore(b, action, actionIndex))[0] || null
 }
 
 function readString(value: unknown) {
@@ -1189,6 +1232,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [debugRawSearch, setDebugRawSearch] = useState('')
   const [debugRawAutoScroll, setDebugRawAutoScroll] = useState(true)
   const [debugRawClearedAt, setDebugRawClearedAt] = useState(0)
+  const [sourceMappingFocus, setSourceMappingFocus] = useState<{ mappingId: string; requestId: number }>({ mappingId: '', requestId: 0 })
   const debugRawOutputRef = useRef<HTMLDivElement | null>(null)
   const [debugRailFilter, setDebugRailFilter] = useState('')
   const [debugRailFailuresOnly, setDebugRailFailuresOnly] = useState(false)
@@ -1546,6 +1590,26 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const selectAuthorAction = (index: number | null) => {
     setActiveAction(index)
     setOpenSections(prev => prev.import ? { ...prev, import: false } : prev)
+  }
+
+  const focusSourceMappingForAction = (index: number) => {
+    const mapping = findSourceMappingForAction(sourceReview, script.actions[index], index)
+    setSourceMappingFocus(prev => ({
+      mappingId: mapping?.id || '',
+      requestId: prev.requestId + 1,
+    }))
+    window.requestAnimationFrame(() => {
+      document.getElementById('imported-source-mapping')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    })
+  }
+
+  const selectSidebarAction = (index: number) => {
+    if (openSections['import'] && sourceReview) {
+      setActiveAction(index)
+      focusSourceMappingForAction(index)
+      return
+    }
+    selectAuthorAction(index)
   }
 
   useEffect(() => {
@@ -6386,7 +6450,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         key={`${item.index}-${item.name}`}
                         type="button"
                         className={`editor-step-outline-row ${activeAction === item.index ? 'active' : ''}`}
-                        onClick={() => selectAuthorAction(item.index)}
+                        onClick={() => selectSidebarAction(item.index)}
                       >
                         <span className="editor-step-outline-index">{item.index + 1}</span>
                         <span className="editor-step-outline-main">
@@ -6420,7 +6484,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     const requestCount = actionRequestCount(a)
                     const extractorCount = actionExtractorCount(a)
                     return (
-                      <div key={i} className={`action-item ${activeAction === i ? 'active' : ''} ${actionBreakpointActive ? 'has-breakpoint' : ''}`} onClick={() => selectAuthorAction(i)}>
+                      <div key={i} className={`action-item ${activeAction === i ? 'active' : ''} ${actionBreakpointActive ? 'has-breakpoint' : ''}`} onClick={() => selectSidebarAction(i)}>
                         <button
                           type="button"
                           className={`action-breakpoint-button ${actionBreakpointActive ? 'active' : ''}`}
@@ -6474,7 +6538,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
               {/* Action Detail */}
               <div className="action-detail">
-                {importMetadata && openSections['import'] && activeAction === null ? (
+                {importMetadata && openSections['import'] ? (
                   <section id="imported-metadata-section" className="import-metadata-panel config-panel imported-metadata-section open" aria-label="Imported Metadata">
                     <div className="import-metadata-header">
                       <div>
@@ -6486,7 +6550,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
                     <div className="import-metadata-body">
                       {sourceReview && (
-                        <SourceMappingReview sourceReview={sourceReview} script={script} title="Source Mapping" />
+                        <SourceMappingReview
+                          focusRequestId={sourceMappingFocus.requestId}
+                          focusedMappingId={sourceMappingFocus.mappingId}
+                          id="imported-source-mapping"
+                          sourceReview={sourceReview}
+                          script={script}
+                          title="Source Mapping"
+                        />
                       )}
 
                       {importSummary.parameterFileSections.length > 0 && (
