@@ -378,10 +378,18 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).toContain('Starter Templates')
     expect(container.textContent).toContain('Blank & Assisted Editors')
     expect(container.textContent).toContain('Reusable Blocks')
+    expect(container.querySelectorAll('.script-create-category-tabs [role="tab"]')).toHaveLength(3)
+    expect(container.querySelectorAll('.script-create-table-list')).toHaveLength(1)
+    expect(container.querySelector('.script-create-choice-groups .script-create-option')).toBeNull()
     expect(container.textContent).toContain('HTTP Smoke')
-    expect(container.textContent).toContain('OAuth Bearer Token Flow')
     expect(container.textContent).toMatch(/ci smoke\s*api\s*ci\s*smoke/i)
-    expect(container.textContent).toMatch(/Suggested:\s*3 VUsers\s*\/\s*2m/i)
+    expect(container.textContent).toMatch(/3 VUsers\s*\/\s*2m/i)
+
+    await clickButton('Reusable Blocks')
+    expect(container.querySelectorAll('.script-create-table-list')).toHaveLength(1)
+    expect(container.textContent).toContain('OAuth Bearer Token Flow')
+
+    await clickButton('Starter Templates')
 
     await clickButton('HTTP Smoke')
     expect(actions.startTemplateScript).toHaveBeenCalledWith(expect.objectContaining({

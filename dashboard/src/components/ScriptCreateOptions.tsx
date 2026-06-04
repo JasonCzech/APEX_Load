@@ -34,6 +34,7 @@ interface Props {
 
 type ExistingScriptSortKey = 'name' | 'health' | 'usage' | 'associated_releases' | 'created_at' | 'last_run'
 type ExistingScriptSortDirection = 'asc' | 'desc'
+type StartNewCategory = 'templates' | 'editors' | 'blocks'
 
 function formatScriptStatus(status?: string) {
   return status ? status.replace(/_/g, ' ') : 'not scored'
@@ -164,6 +165,7 @@ export default function ScriptCreateOptions({
   const [existingScriptProtocol, setExistingScriptProtocol] = useState('all')
   const [existingScriptHealth, setExistingScriptHealth] = useState('all')
   const [existingScriptSort, setExistingScriptSort] = useState<{ key: ExistingScriptSortKey; direction: ExistingScriptSortDirection }>({ key: 'name', direction: 'asc' })
+  const [startNewCategory, setStartNewCategory] = useState<StartNewCategory>('templates')
 
   const existingScriptProtocols = useMemo(() => {
     return Array.from(new Set(scripts.map(script => script.protocol).filter(Boolean))).sort((a, b) => a.localeCompare(b))
@@ -207,6 +209,97 @@ export default function ScriptCreateOptions({
     setExistingScriptHealth('all')
     setExistingScriptSort({ key: 'name', direction: 'asc' })
   }
+
+  const blankEditorRows: Array<{
+    id: string
+    type: string
+    typeClass?: string
+    name: string
+    description: string
+    primary?: boolean
+    onSelect: () => void
+  }> = [
+    {
+      id: 'api',
+      type: 'API',
+      name: 'API Visual Editor',
+      description: 'Build a protocol-level script from requests and reusable action definitions.',
+      primary: true,
+      onSelect: onStartApiScript,
+    },
+    {
+      id: 'soap',
+      type: 'SOAP',
+      name: 'Web Services (SOAP)',
+      description: 'Create a SOAP draft with WS-Security, namespaces, fault handling, and SOAPAction support.',
+      onSelect: onStartSoapScript,
+    },
+    {
+      id: 'java-http',
+      type: 'JAVA',
+      name: 'Java over HTTP',
+      description: 'Create a first-class Java-over-HTTP draft with the java_serialized_object_base64 codec and choose embedded or sidecar helper execution on the HTTP transport.',
+      onSelect: onStartJavaHttpScript,
+    },
+    {
+      id: 'websocket',
+      type: 'WS',
+      name: 'WebSocket Script',
+      description: 'Model connect, send, receive, ping, close, handshake headers, message assertions, and transcript evidence.',
+      onSelect: onStartWebSocketScript,
+    },
+    {
+      id: 'grpc',
+      type: 'gRPC',
+      name: 'gRPC Script',
+      description: 'Start unary or streaming calls with reflection/proto setup, metadata, status checks, and message-count assertions.',
+      onSelect: onStartGrpcScript,
+    },
+    {
+      id: 'database',
+      type: 'DB',
+      name: 'Database Script',
+      description: 'Author query, exec, transaction, bind, row/scalar assertion, extractor, and read-only fixture flows.',
+      onSelect: onStartDatabaseScript,
+    },
+    {
+      id: 'network',
+      type: 'NET',
+      name: 'Network Protocol Script',
+      description: 'Build DNS, TCP, UDP, FTP, SMTP, POP3, IMAP, LDAP, and Winsock-style probes with transcript evidence.',
+      onSelect: onStartNetworkScript,
+    },
+    {
+      id: 'sample',
+      type: 'API',
+      name: 'Build From Sample',
+      description: 'Generate an API script from sample traffic or payload examples.',
+      onSelect: onOpenSampleImport,
+    },
+    {
+      id: 'web',
+      type: 'WEB',
+      typeClass: 'web',
+      name: 'Web/HTML Visual Editor',
+      description: 'Build a browser-level script that interacts with the page like a user.',
+      primary: true,
+      onSelect: onStartWebScript,
+    },
+    {
+      id: 'jms',
+      type: 'JMS',
+      typeClass: 'jms',
+      name: 'JMS Solace Script',
+      description: 'Create a reusable JMS script draft for Solace publish/consume flows.',
+      primary: true,
+      onSelect: onStartJmsScript,
+    },
+  ]
+  const startNewCategoryTabs: Array<{ id: StartNewCategory, label: string, count: number }> = [
+    { id: 'templates', label: 'Starter Templates', count: templates.length },
+    { id: 'editors', label: 'Blank & Assisted Editors', count: blankEditorRows.length },
+    { id: 'blocks', label: 'Reusable Blocks', count: components.length },
+  ]
 
   useEffect(() => {
     let cancelled = false
@@ -396,110 +489,149 @@ export default function ScriptCreateOptions({
               <h3>Start New Script</h3>
               <p>Choose a starter template, compose a reusable block, or open a blank protocol editor for a new draft.</p>
             </div>
+            <div className="script-create-category-tabs" role="tablist" aria-label="Start new script categories">
+              {startNewCategoryTabs.map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={startNewCategory === tab.id}
+                  className={startNewCategory === tab.id ? 'active' : ''}
+                  onClick={() => setStartNewCategory(tab.id)}
+                >
+                  <span>{tab.label}</span>
+                  <strong>{tab.count}</strong>
+                </button>
+              ))}
+            </div>
             <div className="script-create-choice-groups">
-              <div className="script-create-choice-group">
+              {startNewCategory === 'templates' && (
+              <div className="script-create-choice-group" role="tabpanel" aria-label="Starter Templates">
                 <h4>Starter Templates</h4>
-                <div className="script-create-grid">
-                  {templates.length > 0 ? templates.map(template => (
-                    <button key={template.id} className="script-create-option" type="button" onClick={() => onStartTemplateScript(template.script)}>
-                      <span className="script-create-type-badge">{template.protocol.toUpperCase()}</span>
-                      <h3>{template.name}</h3>
-                      <p>{template.description}</p>
-                      <div className="script-create-template-tags">
-                        <span className="tag-chip use-case">{template.use_case.replace(/_/g, ' ')}</span>
-                        {template.tags?.slice(0, 3).map(tag => (
-                          <span key={tag} className="tag-chip">{tag}</span>
+                {templates.length > 0 ? (
+                  <div className="script-create-table-list">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Protocol</th>
+                          <th>Template</th>
+                          <th>Use Case</th>
+                          <th>Tags</th>
+                          <th>Suggested Scenario</th>
+                          <th style={{ textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {templates.map(template => (
+                          <tr key={template.id}>
+                            <td><span className="script-create-type-badge inline">{template.protocol.toUpperCase()}</span></td>
+                            <td className="cell-name">
+                              <div>{template.name}</div>
+                              <div className="script-create-table-description">{template.description}</div>
+                            </td>
+                            <td><span className="tag-chip use-case">{template.use_case.replace(/_/g, ' ')}</span></td>
+                            <td>
+                              <div className="script-create-template-tags compact">
+                                {template.tags?.slice(0, 3).map(tag => (
+                                  <span key={tag} className="tag-chip">{tag}</span>
+                                ))}
+                                {!template.tags?.length && <span className="cell-muted">No tags</span>}
+                              </div>
+                            </td>
+                            <td className="cell-muted">
+                              {template.recommended_scenario
+                                ? `${template.recommended_scenario.vusers || 1} VUsers / ${template.recommended_scenario.duration || 'script default'}`
+                                : 'Not specified'}
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              <button type="button" className="btn btn-sm btn-secondary" onClick={() => onStartTemplateScript(template.script)}>Use {template.name}</button>
+                            </td>
+                          </tr>
                         ))}
-                      </div>
-                      {template.recommended_scenario && (
-                        <div className="script-create-recommendation" title="A starting recommendation only — not applied automatically. Set load when you create a scenario.">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                          <span>Suggested: {template.recommended_scenario.vusers || 1} VUsers / {template.recommended_scenario.duration || 'script default'}</span>
-                        </div>
-                      )}
-                    </button>
-                  )) : (
-                    <div className="script-create-empty">No starter templates are available from this controller.</div>
-                  )}
-                </div>
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="script-create-empty">No starter templates are available from this controller.</div>
+                )}
               </div>
+              )}
 
-              <div className="script-create-choice-group">
+              {startNewCategory === 'editors' && (
+              <div className="script-create-choice-group" role="tabpanel" aria-label="Blank & Assisted Editors">
                 <h4>Blank & Assisted Editors</h4>
-                <div className="script-create-grid">
-                  <button className="script-create-option primary" onClick={onStartApiScript}>
-                    <span className="script-create-type-badge">API</span>
-                    <h3>API Visual Editor</h3>
-                    <p>Build a protocol-level script from requests and reusable action definitions.</p>
-                  </button>
-                  <button className="script-create-option" onClick={onStartSoapScript}>
-                    <span className="script-create-type-badge">SOAP</span>
-                    <h3>Web Services (SOAP)</h3>
-                    <p>Create a SOAP draft with WS-Security, namespaces, fault handling, and SOAPAction support.</p>
-                  </button>
-                  <button className="script-create-option" onClick={onStartJavaHttpScript}>
-                    <span className="script-create-type-badge">JAVA</span>
-                    <h3>Java over HTTP</h3>
-                    <p>Create a first-class Java-over-HTTP draft with the `java_serialized_object_base64` codec and choose embedded or sidecar helper execution on the HTTP transport.</p>
-                  </button>
-                  <button className="script-create-option" onClick={onStartWebSocketScript}>
-                    <span className="script-create-type-badge">WS</span>
-                    <h3>WebSocket Script</h3>
-                    <p>Model connect, send, receive, ping, close, handshake headers, message assertions, and transcript evidence.</p>
-                  </button>
-                  <button className="script-create-option" onClick={onStartGrpcScript}>
-                    <span className="script-create-type-badge">gRPC</span>
-                    <h3>gRPC Script</h3>
-                    <p>Start unary or streaming calls with reflection/proto setup, metadata, status checks, and message-count assertions.</p>
-                  </button>
-                  <button className="script-create-option" onClick={onStartDatabaseScript}>
-                    <span className="script-create-type-badge">DB</span>
-                    <h3>Database Script</h3>
-                    <p>Author query, exec, transaction, bind, row/scalar assertion, extractor, and read-only fixture flows.</p>
-                  </button>
-                  <button className="script-create-option" onClick={onStartNetworkScript}>
-                    <span className="script-create-type-badge">NET</span>
-                    <h3>Network Protocol Script</h3>
-                    <p>Build DNS, TCP, UDP, FTP, SMTP, POP3, IMAP, LDAP, and Winsock-style probes with transcript evidence.</p>
-                  </button>
-                  <button className="script-create-option" onClick={onOpenSampleImport}>
-                    <span className="script-create-type-badge">API</span>
-                    <h3>Build From Sample</h3>
-                    <p>Generate an API script from sample traffic or payload examples.</p>
-                  </button>
-                  <button className="script-create-option primary" onClick={onStartWebScript}>
-                    <span className="script-create-type-badge web">WEB</span>
-                    <h3>Web/HTML Visual Editor</h3>
-                    <p>Build a browser-level script that interacts with the page like a user.</p>
-                  </button>
-                  <button className="script-create-option primary" onClick={onStartJmsScript}>
-                    <span className="script-create-type-badge jms">JMS</span>
-                    <h3>JMS Solace Script</h3>
-                    <p>Create a reusable JMS script draft for Solace publish/consume flows.</p>
-                  </button>
+                <div className="script-create-table-list">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Type</th>
+                        <th>Editor</th>
+                        <th>Description</th>
+                        <th>Mode</th>
+                        <th style={{ textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {blankEditorRows.map(row => (
+                        <tr key={row.id}>
+                          <td><span className={`script-create-type-badge inline ${row.typeClass || ''}`}>{row.type}</span></td>
+                          <td className="cell-name">{row.name}</td>
+                          <td><div className="script-create-table-description">{row.description}</div></td>
+                          <td><span className={`script-health-token ${row.primary ? 'healthy' : ''}`}>{row.primary ? 'Primary' : 'Standard'}</span></td>
+                          <td style={{ textAlign: 'right' }}>
+                            <button type="button" className="btn btn-sm btn-secondary" onClick={row.onSelect}>Open {row.name}</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
+              )}
 
-              <div className="script-create-choice-group">
+              {startNewCategory === 'blocks' && (
+              <div className="script-create-choice-group" role="tabpanel" aria-label="Reusable Blocks">
                 <h4>Reusable Blocks</h4>
-                <div className="script-create-component-list">
-                  {components.length > 0 ? components.map(component => (
-                    <button key={component.id} type="button" className="script-create-component" onClick={() => onComposeComponent(component)}>
-                      <div>
-                        <span className="script-create-type-badge inline">{component.kind.replace(/_/g, ' ')}</span>
-                        <h3>{component.name}</h3>
-                        <p>{component.summary}</p>
-                      </div>
-                      <div className="script-create-component-meta">
-                        <span>{component.protocols.includes('*') ? 'All protocols' : component.protocols.join(', ')}</span>
-                        {component.tags?.length ? <span>{component.tags.slice(0, 3).join(' / ')}</span> : null}
-                      </div>
-                    </button>
-                  )) : (
-                    <div className="script-create-empty">No reusable blocks are available from this controller.</div>
-                  )}
-                </div>
+                {components.length > 0 ? (
+                  <div className="script-create-table-list">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Kind</th>
+                          <th>Block</th>
+                          <th>Protocols</th>
+                          <th>Tags</th>
+                          <th style={{ textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {components.map(component => (
+                          <tr key={component.id}>
+                            <td><span className="script-create-type-badge inline">{component.kind.replace(/_/g, ' ')}</span></td>
+                            <td className="cell-name">
+                              <div>{component.name}</div>
+                              <div className="script-create-table-description">{component.summary}</div>
+                            </td>
+                            <td>{component.protocols.includes('*') ? 'All protocols' : component.protocols.join(', ')}</td>
+                            <td>
+                              <div className="script-create-template-tags compact">
+                                {component.tags?.slice(0, 3).map(tag => <span key={tag} className="tag-chip">{tag}</span>)}
+                                {!component.tags?.length && <span className="cell-muted">No tags</span>}
+                              </div>
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              <button type="button" className="btn btn-sm btn-secondary" onClick={() => onComposeComponent(component)}>Compose {component.name}</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="script-create-empty">No reusable blocks are available from this controller.</div>
+                )}
               </div>
+              )}
             </div>
           </section>
         )}

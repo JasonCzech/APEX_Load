@@ -1636,6 +1636,103 @@
   gap: 12px;
 }
 
+.script-create-category-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.script-create-category-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 8px 4px 10px;
+}
+
+.script-create-category-tabs button:hover,
+.script-create-category-tabs button.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+.script-create-category-tabs button strong {
+  min-width: 22px;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 7px;
+  text-align: center;
+}
+
+.script-create-category-tabs button.active strong {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.script-create-table-list {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+}
+
+.script-create-table-list table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+}
+
+.script-create-table-list th,
+.script-create-table-list td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  text-align: left;
+  vertical-align: top;
+}
+
+.script-create-table-list th {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.script-create-table-list tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.script-create-table-list tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.script-create-table-list .script-create-type-badge.inline {
+  margin-bottom: 0;
+}
+
+.script-create-table-description {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .script-create-choice-groups,
 .script-create-import-groups {
   display: grid;
@@ -1916,6 +2013,10 @@
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 12px;
+}
+
+.script-create-template-tags.compact {
+  margin-bottom: 0;
 }
 
 .tag-chip {

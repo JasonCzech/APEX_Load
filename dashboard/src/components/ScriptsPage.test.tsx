@@ -293,6 +293,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Model From Existing Script')
 
     await clickButton('Start New Script')
+    await clickButton('Blank & Assisted Editors')
 
     const sampleButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Build From Sample'))
     expect(sampleButton).toBeDefined()
@@ -440,8 +441,14 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Starter Templates')
     expect(container.textContent).toContain('Blank & Assisted Editors')
     expect(container.textContent).toContain('Reusable Blocks')
+    expect(container.querySelectorAll('.script-create-category-tabs [role="tab"]')).toHaveLength(3)
+    expect(container.querySelector('.script-create-choice-groups .script-create-option')).toBeNull()
+
+    await clickButton('Blank & Assisted Editors')
+
     expect(container.textContent).toContain('API Visual Editor')
     expect(container.textContent).toContain('Build From Sample')
+    expect(container.querySelectorAll('.script-create-table-list')).toHaveLength(1)
     expect(container.textContent).not.toContain('Use Template')
     expect(container.textContent).not.toContain('Build Manually')
   })
@@ -912,6 +919,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     await clickButton('Start New Script')
+    await clickButton('Blank & Assisted Editors')
 
     expect(container.textContent).toContain('Blank & Assisted Editors')
     expect(container.textContent).toContain('Web Services (SOAP)')
@@ -952,6 +960,7 @@ describe('ScriptsPage', () => {
     })
 
     await clickButton('Start New Script')
+    await clickButton('Blank & Assisted Editors')
 
     const javaButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Java over HTTP'))
     expect(javaButton).toBeDefined()
@@ -1014,7 +1023,11 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Starter Templates')
     expect(container.textContent).toContain('Reusable Blocks')
     expect(container.textContent).toContain('Browser Checkout Canary')
+
+    await clickButton('Reusable Blocks')
     expect(container.textContent).toContain('Browser Login Transaction')
+
+    await clickButton('Starter Templates')
 
     const templateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Browser Checkout Canary'))
     expect(templateButton).toBeDefined()
@@ -1053,6 +1066,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
     await flushPromises()
     await clickButton('Start New Script')
+    await clickButton('Reusable Blocks')
 
     expect(container.textContent).toContain('Reusable Blocks')
     expect(container.textContent).toContain('OAuth Bearer Token Flow')
