@@ -484,8 +484,8 @@ function readSourceReview(metadata?: ScriptImportMetadata | null): LoadRunnerSou
   return value as LoadRunnerSourceReview
 }
 
-function scriptHasSourceReview(script?: ScriptData | null): boolean {
-  return Boolean(readSourceReview(script?.metadata?.import))
+function scriptHasImportMetadata(script?: ScriptData | null): boolean {
+  return Boolean(script?.metadata?.import)
 }
 
 function readString(value: unknown) {
@@ -1514,6 +1514,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 		const focusedActionIndex = findActionIndexByName(initialScript.actions, initialFocusedActionName)
 		if (focusedActionIndex !== null) {
 			setActiveAction(focusedActionIndex)
+      setOpenSections(prev => ({ ...prev, import: false }))
 		}
 
     if (initialFocusedSection === 'runtime') {
@@ -1541,6 +1542,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       setOpenDataEditor(focusedDataSourceIndex)
     }
   }, [hydrateEditorState, initialFocusedActionName, initialFocusedDataSourceName, initialFocusedRuntimeArea, initialFocusedSection, initialScript, setActiveAction, setIsParameterDialogOpen, setOpenDataEditor, setOpenSections])
+
+  const selectAuthorAction = (index: number | null) => {
+    setActiveAction(index)
+    setOpenSections(prev => prev.import ? { ...prev, import: false } : prev)
+  }
 
   useEffect(() => {
     if (!scriptId || initialScript) return
@@ -2060,7 +2066,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       }
       return next
     })
-    if (shouldSelectFirstAction) setActiveAction(0)
+    if (shouldSelectFirstAction) selectAuthorAction(0)
   }
 
   const addAction = () => {
@@ -2086,7 +2092,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       assertions: template.assertions || [],
     })) as Action
     setScript(prev => ({ ...prev, actions: [...prev.actions, a] }))
-    setActiveAction(script.actions.length)
+    selectAuthorAction(script.actions.length)
   }
 
   const addActionTemplate = (templateKey: string) => {
@@ -2095,7 +2101,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     const nextAction = JSON.parse(JSON.stringify(template.action)) as Action
     pushEditorHistory(script)
     setScript(prev => ({ ...prev, actions: [...prev.actions, nextAction] }))
-    setActiveAction(script.actions.length)
+    selectAuthorAction(script.actions.length)
     setSuccess(`Added starter block: ${template.label}.`)
     setError('')
   }
@@ -2105,8 +2111,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setDebugBreakpoints(prev => prev
       .filter(bp => bp.phase !== 'action' || bp.action_index !== idx)
       .map(bp => bp.phase === 'action' && bp.action_index > idx ? { ...bp, action_index: bp.action_index - 1 } : bp))
-    if (activeAction === idx) setActiveAction(null)
-    else if (activeAction !== null && activeAction > idx) setActiveAction(activeAction - 1)
+    if (activeAction === idx) selectAuthorAction(null)
+    else if (activeAction !== null && activeAction > idx) selectAuthorAction(activeAction - 1)
   }
 
   const moveAction = (idx: number, dir: -1 | 1) => {
@@ -2123,7 +2129,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       if (bp.action_index === newIdx) return { ...bp, action_index: idx }
       return bp
     }))
-    setActiveAction(newIdx)
+    selectAuthorAction(newIdx)
   }
 
   const updateAction = (idx: number, field: keyof Action, value: unknown) => {
@@ -3642,6 +3648,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       return
     }
     setOpenSections(prev => ({ ...prev, [section]: true }))
+    if (section === 'import') {
+      setActiveAction(null)
+      window.requestAnimationFrame(() => {
+        document.getElementById('imported-metadata-section')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      })
+    }
   }
 
   const applyObjectDescriptorCandidate = (row: Web2ObjectDescriptorRow, candidate: Web2SelectorCandidate) => {
@@ -3650,7 +3662,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       return
     }
     updateAction(row.actionIndex, 'selector', candidate.value)
-    setActiveAction(row.actionIndex)
+    selectAuthorAction(row.actionIndex)
     setSuccess(`Applied ${candidate.kind} selector to ${row.label}.`)
     setError('')
   }
@@ -3675,7 +3687,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     const result = applyAuthoringComponentToScript(script, component)
     replaceScriptWithHistory(result.script)
     recordAssistantChange(`Inserted ${component.name}`, result.summary)
-    setActiveAction(result.script.actions.length > 0 ? result.script.actions.length - 1 : null)
+    selectAuthorAction(result.script.actions.length > 0 ? result.script.actions.length - 1 : null)
     setSuccess(result.summary)
     setError('')
   }
@@ -4751,7 +4763,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               type="button"
                               className={`debugger-problem-row ${issue.severity} action-problem`}
                               onClick={() => {
-                                setActiveAction(actionIndex)
+                                selectAuthorAction(actionIndex)
                                 activateWorkspaceTab('author')
                               }}
                             >
@@ -4785,221 +4797,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               </div>
             </div>
           </div>
-          )}
-
-          {importMetadata && (
-            <div className={`import-metadata-panel config-panel editor-support-dialog support-dialog-import ${openSections['import'] ? 'open' : ''}`} style={{ padding: 0 }} role="dialog" aria-modal="true" aria-label="Imported Metadata">
-              <button className="panel-header-toggle" onClick={() => toggleSection('import')} style={{ padding: '16px 20px' }}>
-                <div className="import-metadata-header" style={{ marginBottom: 0 }}>
-                  <div>
-                    <h3 className="panel-title">Imported Metadata</h3>
-                  </div>
-                  <span className="import-source-chip">{importMetadata.source || 'loadrunner'}</span>
-                </div>
-                <span className="chevron">Close</span>
-              </button>
-
-              {(
-                <div className="panel-body" style={{ padding: '0 20px 20px' }}>
-                  <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 14 }}>This script retains source-specific import metadata that APEX Load uses during review but does not edit directly.</p>
-                  <div className="import-metadata-grid">
-                    <div className="import-metadata-card">
-                      <span>Source Script</span>
-                      <strong>{importMetadata.source_script_name || script.name}</strong>
-                    </div>
-                    <div className="import-metadata-card">
-                      <span>Project Sections</span>
-                      <strong>{importSummary.projectSections.length}</strong>
-                      <small>{importSummary.projectSections.join(', ') || 'None captured'}</small>
-                    </div>
-                    <div className="import-metadata-card">
-                      <span>Runtime Files</span>
-                      <strong>{importSummary.runtimeFiles.length}</strong>
-                      <small>{importSummary.runtimeFiles.join(', ') || 'None found'}</small>
-                    </div>
-                    <div className="import-metadata-card">
-                      <span>Unsupported Functions</span>
-                      <strong>{importSummary.unsupportedFunctions.length}</strong>
-                      <small>{importSummary.unsupportedFunctions.slice(0, 4).join(', ') || 'None'}</small>
-                    </div>
-                    <div className="import-metadata-card">
-                      <span>Parameter Files</span>
-                      <strong>{importSummary.parameterFiles.length}</strong>
-                      <small>{importSummary.parameterFiles.join(', ') || 'None found'}</small>
-                    </div>
-                    <div className="import-metadata-card">
-                      <span>Correlation Suggestions</span>
-                      <strong>{importSummary.correlationSuggestions.length}</strong>
-                      <small>{importSummary.correlationSuggestions.length > 0 ? 'Imported from the conversion preview' : 'None detected'}</small>
-                    </div>
-                    <div className="import-metadata-card">
-                      <span>Generated Data Sources</span>
-                      <strong>{importedDataSourceSummaries.length}</strong>
-                      <small>{importedDataSourceSummaries.length > 0 ? importedDataSourceSummaries.map((source) => source.name).join(', ') : 'None generated'}</small>
-                    </div>
-                    <div className="import-metadata-card">
-                      <span>Runtime Setting Parity</span>
-                      <strong>{importSummary.runtimeSettingsParity.length}</strong>
-                      <small>{runtimeSettingParitySummary || 'No classified runtime settings found'}</small>
-                    </div>
-                    <div className="import-metadata-card">
-                      <span>Migration Readiness</span>
-                      <strong>{importSummary.runtimeSettingReadiness ? `${importSummary.runtimeSettingReadiness.score_pct}%` : 'N/A'}</strong>
-                      <small>{runtimeSettingReadinessSummary || 'No migration readiness score captured'}</small>
-                    </div>
-                  </div>
-
-                  {importSummary.runtimeSettingReadiness && (
-                    <div className="import-correlation-section">
-                      <h4>Migration Readiness</h4>
-                      <p>{runtimeSettingReadinessSummary}</p>
-                      {importSummary.runtimeSettingReadiness.blocking_settings.length > 0 && (
-                        <div className="import-correlation-list">
-                          {importSummary.runtimeSettingReadiness.blocking_settings.map((entry) => (
-                            <div key={`readiness-${entry.id}`} className="import-correlation-card">
-                              <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
-                              <span>{entry.concept}</span>
-                              <span>{entry.runtime_files.length > 0 ? entry.runtime_files.join(', ') : 'No runtime file recorded'}</span>
-                              {getImportedRuntimeSectionId(entry.area) && (
-                                <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-                                  <button className="btn btn-secondary btn-sm" type="button" onClick={() => openImportedRuntimeSettings(entry.area)}>
-                                    {`Open ${entry.area} Settings`}
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {importSummary.runtimeSettingsParity.length > 0 && (
-                    <div className="import-correlation-section">
-                      <h4>Runtime Settings Parity</h4>
-                      <p>These imported LoadRunner runtime settings were classified against APEX Load&apos;s code-owned support matrix.</p>
-                      <div className="import-correlation-list">
-                        {importSummary.runtimeSettingsParity.map((entry) => (
-                          <div key={entry.id} className="import-correlation-card">
-                            <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
-                            <span>{entry.concept}</span>
-                            <span>{entry.runtime_files.length > 0 ? entry.runtime_files.join(', ') : 'No runtime file recorded'}</span>
-                            {getImportedRuntimeSectionId(entry.area) && (
-                              <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-                                <button className="btn btn-secondary btn-sm" type="button" onClick={() => openImportedRuntimeSettings(entry.area)}>
-                                  {`Open ${entry.area} Settings`}
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {importSummary.correlationSuggestions.length > 0 && (
-                    <div className="import-correlation-section">
-                      <h4>Correlation Suggestions</h4>
-                      <p>Review the imported extractor mappings before you rename variables or rewrite dependent requests.</p>
-                      <div className="import-correlation-list">
-                        {importedCorrelationFocusTargets.map(({ correlation, foundAtActionIndex, foundAtLabel, usedAtLocations, usedAtTargets }) => (
-                          <div key={`${correlation.name}:${correlation.expression}:${correlation.found_at}`} className="import-correlation-card">
-                            <strong>{correlation.name}</strong>
-                            <span>{correlation.source} via {correlation.expression}</span>
-                            <div className="import-correlation-flow">
-                              <div className="import-correlation-flow-row">
-                                <span className="import-correlation-flow-label">Found In</span>
-                                <span className="import-correlation-flow-value">{foundAtLabel}</span>
-                              </div>
-                              {usedAtLocations.length > 0 && (
-                                <div className="import-correlation-flow-row">
-                                  <span className="import-correlation-flow-label">Used In</span>
-                                  <div className="import-correlation-flow-tags">
-                                    {usedAtLocations.map(({ location, label }) => (
-                                      <span key={`${correlation.name}:${location}:label`} className="import-correlation-flow-chip">{label}</span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                            {correlation.sample_value && <code>{correlation.sample_value}</code>}
-                            {(foundAtActionIndex !== null || usedAtTargets.length > 0) && (
-                              <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-                                {foundAtActionIndex !== null && (
-                                  <button className="btn btn-secondary btn-sm" type="button" onClick={() => setActiveAction(foundAtActionIndex)}>
-                                    Open {correlation.found_at}
-                                  </button>
-                                )}
-                                {usedAtTargets.map(({ location, actionIndex }) => (
-                                  <button key={`${correlation.name}:${location}`} className="btn btn-secondary btn-sm" type="button" onClick={() => setActiveAction(actionIndex)}>
-                                    Open {location}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {importSummary.parameterFileSections.length > 0 && (
-                    <div className="import-correlation-section">
-                      <h4>Parameter File Mappings</h4>
-                      <p>These preserved LoadRunner parameter definitions show how the converter mapped file-backed data into APEX Load data sources.</p>
-                      <div className="import-correlation-list">
-                        {importedParameterFileMappings.map(({ section, sourceName }) => (
-                          <div key={`${section.file}:${section.name}`} className="import-correlation-card">
-                            <strong>{section.file}: {section.name}</strong>
-                            <span>{formatImportParameterMapping(section.values)}</span>
-                            {sourceName && <span>Generated source: {sourceName}</span>}
-                            {sourceName && (
-                              <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-                                <button className="btn btn-secondary btn-sm" type="button" onClick={() => openImportedDataSourceReview(sourceName)}>
-                                  Open Mapped Data Source
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {importedDataSourceSummaries.length > 0 && (
-                    <div className="import-correlation-section">
-                      <h4>Generated Data Sources</h4>
-                      <p>These data sources were created from the imported parameter files and are ready for review in the editor.</p>
-                      <div className="import-correlation-list">
-                        {importedDataSourceSummaries.map((source) => (
-                          <div key={source.name} className="import-correlation-card">
-                            <strong>{source.name}</strong>
-                            <span>{source.type} • {source.rows} row{source.rows === 1 ? '' : 's'}</span>
-                            <span>{typeof source.columns === 'number'
-                              ? `${source.columns} column${source.columns === 1 ? '' : 's'}`
-                              : source.columns.join(', ') || 'No columns'}</span>
-                            <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-                              <button className="btn btn-secondary btn-sm" type="button" onClick={() => openImportedDataSourceReview(source.name)}>
-                                Open In Parameter Data
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {sourceReview && (
-                    <SourceMappingReview sourceReview={sourceReview} script={script} title="Source Mapping" />
-                  )}
-
-                  <details className="import-metadata-details">
-                    <summary>View preserved metadata JSON</summary>
-                    <pre>{JSON.stringify(importMetadata, null, 2)}</pre>
-                  </details>
-                </div>
-              )}
-            </div>
           )}
 
           {objectDescriptorReview.rows.length > 0 && (
@@ -5045,7 +4842,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           <span>{row.descriptorId} · {row.status}</span>
                         </div>
                         {row.actionIndex !== null && (
-                          <button type="button" className="btn btn-sm btn-secondary" onClick={() => setActiveAction(row.actionIndex)}>
+                          <button type="button" className="btn btn-sm btn-secondary" onClick={() => selectAuthorAction(row.actionIndex)}>
                             Select Action
                           </button>
                         )}
@@ -6589,7 +6386,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         key={`${item.index}-${item.name}`}
                         type="button"
                         className={`editor-step-outline-row ${activeAction === item.index ? 'active' : ''}`}
-                        onClick={() => setActiveAction(item.index)}
+                        onClick={() => selectAuthorAction(item.index)}
                       >
                         <span className="editor-step-outline-index">{item.index + 1}</span>
                         <span className="editor-step-outline-main">
@@ -6623,7 +6420,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     const requestCount = actionRequestCount(a)
                     const extractorCount = actionExtractorCount(a)
                     return (
-                      <div key={i} className={`action-item ${activeAction === i ? 'active' : ''} ${actionBreakpointActive ? 'has-breakpoint' : ''}`} onClick={() => setActiveAction(i)}>
+                      <div key={i} className={`action-item ${activeAction === i ? 'active' : ''} ${actionBreakpointActive ? 'has-breakpoint' : ''}`} onClick={() => selectAuthorAction(i)}>
                         <button
                           type="button"
                           className={`action-breakpoint-button ${actionBreakpointActive ? 'active' : ''}`}
@@ -6677,7 +6474,215 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
               {/* Action Detail */}
               <div className="action-detail">
-                {activeAction !== null && script.actions[activeAction] ? (
+                {importMetadata && openSections['import'] && activeAction === null ? (
+                  <section id="imported-metadata-section" className="import-metadata-panel config-panel imported-metadata-section open" aria-label="Imported Metadata">
+                    <div className="import-metadata-header">
+                      <div>
+                        <h3 className="panel-title">Imported Metadata</h3>
+                        <p>This script retains source-specific import metadata that APEX Load uses during review but does not edit directly.</p>
+                      </div>
+                      <span className="import-source-chip">{importMetadata.source || 'loadrunner'}</span>
+                    </div>
+
+                    <div className="import-metadata-body">
+                      {sourceReview && (
+                        <SourceMappingReview sourceReview={sourceReview} script={script} title="Source Mapping" />
+                      )}
+
+                      {importSummary.parameterFileSections.length > 0 && (
+                        <div className="import-correlation-section">
+                          <h4>Parameter File Mappings</h4>
+                          <p>These preserved LoadRunner parameter definitions show how the converter mapped file-backed data into APEX Load data sources.</p>
+                          <div className="import-correlation-list">
+                            {importedParameterFileMappings.map(({ section, sourceName }) => (
+                              <div key={`${section.file}:${section.name}`} className="import-correlation-card">
+                                <strong>{section.file}: {section.name}</strong>
+                                <span>{formatImportParameterMapping(section.values)}</span>
+                                {sourceName && <span>Generated source: {sourceName}</span>}
+                                {sourceName && (
+                                  <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                                    <button className="btn btn-secondary btn-sm" type="button" onClick={() => openImportedDataSourceReview(sourceName)}>
+                                      Open Mapped Data Source
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="import-metadata-grid">
+                        <div className="import-metadata-card">
+                          <span>Source Script</span>
+                          <strong>{importMetadata.source_script_name || script.name}</strong>
+                        </div>
+                        <div className="import-metadata-card">
+                          <span>Project Sections</span>
+                          <strong>{importSummary.projectSections.length}</strong>
+                          <small>{importSummary.projectSections.join(', ') || 'None captured'}</small>
+                        </div>
+                        <div className="import-metadata-card">
+                          <span>Runtime Files</span>
+                          <strong>{importSummary.runtimeFiles.length}</strong>
+                          <small>{importSummary.runtimeFiles.join(', ') || 'None found'}</small>
+                        </div>
+                        <div className="import-metadata-card">
+                          <span>Unsupported Functions</span>
+                          <strong>{importSummary.unsupportedFunctions.length}</strong>
+                          <small>{importSummary.unsupportedFunctions.slice(0, 4).join(', ') || 'None'}</small>
+                        </div>
+                        <div className="import-metadata-card">
+                          <span>Parameter Files</span>
+                          <strong>{importSummary.parameterFiles.length}</strong>
+                          <small>{importSummary.parameterFiles.join(', ') || 'None found'}</small>
+                        </div>
+                        <div className="import-metadata-card">
+                          <span>Correlation Suggestions</span>
+                          <strong>{importSummary.correlationSuggestions.length}</strong>
+                          <small>{importSummary.correlationSuggestions.length > 0 ? 'Imported from the conversion preview' : 'None detected'}</small>
+                        </div>
+                        <div className="import-metadata-card">
+                          <span>Generated Data Sources</span>
+                          <strong>{importedDataSourceSummaries.length}</strong>
+                          <small>{importedDataSourceSummaries.length > 0 ? importedDataSourceSummaries.map((source) => source.name).join(', ') : 'None generated'}</small>
+                        </div>
+                        <div className="import-metadata-card">
+                          <span>Runtime Setting Parity</span>
+                          <strong>{importSummary.runtimeSettingsParity.length}</strong>
+                          <small>{runtimeSettingParitySummary || 'No classified runtime settings found'}</small>
+                        </div>
+                        <div className="import-metadata-card">
+                          <span>Migration Readiness</span>
+                          <strong>{importSummary.runtimeSettingReadiness ? `${importSummary.runtimeSettingReadiness.score_pct}%` : 'N/A'}</strong>
+                          <small>{runtimeSettingReadinessSummary || 'No migration readiness score captured'}</small>
+                        </div>
+                      </div>
+
+                      {importSummary.runtimeSettingReadiness && (
+                        <div className="import-correlation-section">
+                          <h4>Migration Readiness</h4>
+                          <p>{runtimeSettingReadinessSummary}</p>
+                          {importSummary.runtimeSettingReadiness.blocking_settings.length > 0 && (
+                            <div className="import-correlation-list">
+                              {importSummary.runtimeSettingReadiness.blocking_settings.map((entry) => (
+                                <div key={`readiness-${entry.id}`} className="import-correlation-card">
+                                  <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
+                                  <span>{entry.concept}</span>
+                                  <span>{entry.runtime_files.length > 0 ? entry.runtime_files.join(', ') : 'No runtime file recorded'}</span>
+                                  {getImportedRuntimeSectionId(entry.area) && (
+                                    <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                                      <button className="btn btn-secondary btn-sm" type="button" onClick={() => openImportedRuntimeSettings(entry.area)}>
+                                        {`Open ${entry.area} Settings`}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {importSummary.runtimeSettingsParity.length > 0 && (
+                        <div className="import-correlation-section">
+                          <h4>Runtime Settings Parity</h4>
+                          <p>These imported LoadRunner runtime settings were classified against APEX Load&apos;s code-owned support matrix.</p>
+                          <div className="import-correlation-list">
+                            {importSummary.runtimeSettingsParity.map((entry) => (
+                              <div key={entry.id} className="import-correlation-card">
+                                <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
+                                <span>{entry.concept}</span>
+                                <span>{entry.runtime_files.length > 0 ? entry.runtime_files.join(', ') : 'No runtime file recorded'}</span>
+                                {getImportedRuntimeSectionId(entry.area) && (
+                                  <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                                    <button className="btn btn-secondary btn-sm" type="button" onClick={() => openImportedRuntimeSettings(entry.area)}>
+                                      {`Open ${entry.area} Settings`}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {importSummary.correlationSuggestions.length > 0 && (
+                        <div className="import-correlation-section">
+                          <h4>Correlation Suggestions</h4>
+                          <p>Review the imported extractor mappings before you rename variables or rewrite dependent requests.</p>
+                          <div className="import-correlation-list">
+                            {importedCorrelationFocusTargets.map(({ correlation, foundAtActionIndex, foundAtLabel, usedAtLocations, usedAtTargets }) => (
+                              <div key={`${correlation.name}:${correlation.expression}:${correlation.found_at}`} className="import-correlation-card">
+                                <strong>{correlation.name}</strong>
+                                <span>{correlation.source} via {correlation.expression}</span>
+                                <div className="import-correlation-flow">
+                                  <div className="import-correlation-flow-row">
+                                    <span className="import-correlation-flow-label">Found In</span>
+                                    <span className="import-correlation-flow-value">{foundAtLabel}</span>
+                                  </div>
+                                  {usedAtLocations.length > 0 && (
+                                    <div className="import-correlation-flow-row">
+                                      <span className="import-correlation-flow-label">Used In</span>
+                                      <div className="import-correlation-flow-tags">
+                                        {usedAtLocations.map(({ location, label }) => (
+                                          <span key={`${correlation.name}:${location}:label`} className="import-correlation-flow-chip">{label}</span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                                {correlation.sample_value && <code>{correlation.sample_value}</code>}
+                                {(foundAtActionIndex !== null || usedAtTargets.length > 0) && (
+                                  <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                                    {foundAtActionIndex !== null && (
+                                      <button className="btn btn-secondary btn-sm" type="button" onClick={() => selectAuthorAction(foundAtActionIndex)}>
+                                        Open {correlation.found_at}
+                                      </button>
+                                    )}
+                                    {usedAtTargets.map(({ location, actionIndex }) => (
+                                      <button key={`${correlation.name}:${location}`} className="btn btn-secondary btn-sm" type="button" onClick={() => selectAuthorAction(actionIndex)}>
+                                        Open {location}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {importedDataSourceSummaries.length > 0 && (
+                        <div className="import-correlation-section">
+                          <h4>Generated Data Sources</h4>
+                          <p>These data sources were created from the imported parameter files and are ready for review in the editor.</p>
+                          <div className="import-correlation-list">
+                            {importedDataSourceSummaries.map((source) => (
+                              <div key={source.name} className="import-correlation-card">
+                                <strong>{source.name}</strong>
+                                <span>{source.type} • {source.rows} row{source.rows === 1 ? '' : 's'}</span>
+                                <span>{typeof source.columns === 'number'
+                                  ? `${source.columns} column${source.columns === 1 ? '' : 's'}`
+                                  : source.columns.join(', ') || 'No columns'}</span>
+                                <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                                  <button className="btn btn-secondary btn-sm" type="button" onClick={() => openImportedDataSourceReview(source.name)}>
+                                    Open In Parameter Data
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <details className="import-metadata-details">
+                        <summary>View preserved metadata JSON</summary>
+                        <pre>{JSON.stringify(importMetadata, null, 2)}</pre>
+                      </details>
+                    </div>
+                  </section>
+                ) : activeAction !== null && script.actions[activeAction] ? (
                   <ActionEditor
                     action={script.actions[activeAction]}
                     index={activeAction}
@@ -6914,12 +6919,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           <p>{foundAtLabel}{usedAtTargets.length > 0 ? ` -> ${usedAtTargets.map((target) => target.label).join(', ')}` : ''}</p>
                           <div className="utility-inline-actions">
                             {foundAtActionIndex !== null && (
-                              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setActiveAction(foundAtActionIndex)}>
+                              <button type="button" className="btn btn-sm btn-ghost" onClick={() => selectAuthorAction(foundAtActionIndex)}>
                                 Open source
                               </button>
                             )}
                             {usedAtTargets.slice(0, 2).map((target) => (
-                              <button key={`${correlation.name}:${target.location}`} type="button" className="btn btn-sm btn-ghost" onClick={() => setActiveAction(target.actionIndex)}>
+                              <button key={`${correlation.name}:${target.location}`} type="button" className="btn btn-sm btn-ghost" onClick={() => selectAuthorAction(target.actionIndex)}>
                                 Open use
                               </button>
                             ))}
@@ -6980,7 +6985,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       <ul className="utility-list">
                         {extractorInspectorItems.map((item) => (
                           <li key={item.id} className="utility-list-item">
-                            <button type="button" className="utility-link-button" onClick={() => setActiveAction(item.actionIndex)}>
+                            <button type="button" className="utility-link-button" onClick={() => selectAuthorAction(item.actionIndex)}>
                               {item.label}
                             </button>
                           </li>
@@ -9824,7 +9829,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     config: false,
     actions: true,
     runtime: false,
-    import: scriptHasSourceReview(initialScript),
+    import: scriptHasImportMetadata(initialScript),
     replay: false,
   })
   const [isParameterDialogOpen, setIsParameterDialogOpen] = useState(false)
@@ -9857,7 +9862,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
   const hydrateEditorState = useCallback((nextScript: ScriptData) => {
     setScript(nextScript)
     setImportBaselineScript(nextScript.metadata?.import ? JSON.parse(JSON.stringify(nextScript)) as ScriptData : null)
-    if (scriptHasSourceReview(nextScript)) {
+    if (scriptHasImportMetadata(nextScript)) {
       setOpenSections(prev => ({ ...prev, import: true }))
     }
     setJsonText(JSON.stringify({ script: nextScript }, null, 2))

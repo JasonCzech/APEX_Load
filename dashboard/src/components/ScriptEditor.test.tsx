@@ -384,7 +384,22 @@ describe('ScriptEditor', () => {
       headerButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('.support-dialog-import.open')?.textContent).toContain('checkout.usr')
+    const metadataSection = container.querySelector('#imported-metadata-section')
+    const actionDetail = container.querySelector('.action-detail')
+    expect(metadataSection?.textContent).toContain('checkout.usr')
+    expect(actionDetail?.contains(metadataSection)).toBe(true)
+    expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
+    expect(metadataSection?.getAttribute('role')).toBeNull()
+    expect(metadataSection?.classList.contains('editor-support-dialog')).toBe(false)
+    expect(container.querySelector('.support-dialog-import')).toBeNull()
+
+    const firstAction = container.querySelector('.action-item')
+    await act(async () => {
+      firstAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('#imported-metadata-section')).toBeNull()
+    expect(container.querySelector('.action-editor-panel')).not.toBeNull()
   })
 
   it('renders grouped HTTP sequence actions with child request details', async () => {
@@ -1283,15 +1298,16 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={importedScript} />)
     })
 
-    expect(container.textContent).toContain('Imported Metadata')
-  expect(container.textContent).toContain('Runtime Setting Parity')
-  expect(container.textContent).toContain('1 Executed, 1 Partial')
+    const pageText = container.textContent || ''
+    expect(pageText).toContain('Imported Metadata')
+    expect(pageText).toContain('Runtime Setting Parity')
+    expect(pageText).toContain('1 Executed, 1 Partial')
     expect(container.textContent).toContain('Migration Readiness')
     expect(container.textContent).toContain('72%')
     expect(container.textContent).toContain('Blocking runtime settings matched the selected block statuses')
-  expect(container.textContent).toContain('Executed: Run Logic')
-  expect(container.textContent).toContain('Iterations')
-  expect(container.textContent).toContain('default.cfg')
+    expect(pageText).toContain('Executed: Run Logic')
+    expect(pageText).toContain('Iterations')
+    expect(pageText).toContain('default.cfg')
     expect(container.textContent).toContain('Open Run Logic Settings')
     expect(container.textContent).toContain('Open Logging Settings')
     expect(container.textContent).toContain('Parameter Files')
@@ -1307,10 +1323,20 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('2 rows')
     expect(container.textContent).toContain('Open In Parameter Data')
     expect(container.textContent).toContain('Source Mapping')
+    expect(pageText.indexOf('Source Mapping')).toBeLessThan(pageText.indexOf('Parameter File Mappings'))
+    expect(pageText.indexOf('Source Mapping')).toBeLessThan(pageText.indexOf('Source Script'))
     expect(container.textContent).toContain('Action.c:3')
     expect(container.textContent).toContain('web_url')
     expect(container.textContent).toContain('"target": "/login"')
-    expect(container.querySelector('.support-dialog-import')?.classList.contains('open')).toBe(true)
+    const metadataSection = container.querySelector('#imported-metadata-section')
+    const actionDetail = container.querySelector('.action-detail')
+    expect(metadataSection?.classList.contains('open')).toBe(true)
+    expect(actionDetail?.contains(metadataSection)).toBe(true)
+    expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
+    expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Authoring Signals')
+    expect(metadataSection?.classList.contains('editor-support-dialog')).toBe(false)
+    expect(metadataSection?.getAttribute('role')).toBeNull()
+    expect(container.querySelector('.support-dialog-import')).toBeNull()
     expect(container.textContent).toContain('Correlation Suggestions')
     expect(container.textContent).toContain('session_id')
     expect(container.textContent).toContain('response via $.sessionId')
@@ -1337,6 +1363,21 @@ describe('ScriptEditor', () => {
     const activeAction = container.querySelector('.action-item.active') as HTMLDivElement | null
     expect(activeAction).not.toBeNull()
     expect(activeAction?.textContent).toContain('Complete Checkout')
+    expect(container.querySelector('#imported-metadata-section')).toBeNull()
+
+    const reopenMetadataButton = Array.from(container.querySelector('.editor-header .editor-actions')?.querySelectorAll('button') || []).find(button =>
+      button.textContent?.trim() === 'Imported Metadata',
+    )
+    expect(reopenMetadataButton).toBeDefined()
+    if (!reopenMetadataButton) {
+      return
+    }
+
+    await act(async () => {
+      reopenMetadataButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
 
     const openRunLogicSettingsButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.trim() === 'Open Run Logic Settings',

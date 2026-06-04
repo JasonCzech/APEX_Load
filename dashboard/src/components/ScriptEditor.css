@@ -335,6 +335,21 @@
   border-radius: var(--radius);
   padding: 16px 20px;
 }
+.imported-metadata-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  scroll-margin-top: 92px;
+}
+.import-metadata-body {
+  display: grid;
+  gap: 18px;
+}
+.imported-metadata-section .source-map-review {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
 .panel-title {
   font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em;
   color: var(--text-secondary); font-weight: 600; margin: 0;
