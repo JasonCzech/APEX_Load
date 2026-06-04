@@ -1,0 +1,4464 @@
+openapi: 3.0.3
+info:
+  title: APEX Load API
+  description: 'Kubernetes-native performance testing platform REST API.
+
+
+    All endpoints and their required roles are automatically extracted from the API
+    routing layer.'
+  version: 1.0.0
+servers:
+- url: http://localhost:8080
+  description: Local development server
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+- bearerAuth: []
+paths:
+  /api/v1/domains:
+    post:
+      summary: Create Domain
+      description: '**Handler:** `handleCreateDomain`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateDomain
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Domains
+    get:
+      summary: List Domains
+      description: '**Handler:** `handleListDomains`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListDomains
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Domains
+  /api/v1/domains/{id}:
+    get:
+      summary: Get Domain
+      description: '**Handler:** `handleGetDomain`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetDomain
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Domains
+    put:
+      summary: Update Domain
+      description: '**Handler:** `handleUpdateDomain`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateDomain
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Domains
+    delete:
+      summary: Delete Domain
+      description: '**Handler:** `handleDeleteDomain`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDeleteDomain
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Domains
+  /api/v1/domains/{id}/application-repository:
+    get:
+      summary: Get Application Repository
+      description: '**Handler:** `handleGetApplicationRepository`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetApplicationRepository
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Domains
+    put:
+      summary: Update Application Repository
+      description: '**Handler:** `handleUpdateApplicationRepository`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateApplicationRepository
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Domains
+  /api/v1/domains/{id}/application-repository/categories:
+    get:
+      summary: List Repository Categories
+      description: '**Handler:** `handleListRepositoryCategories`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListRepositoryCategories
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Domains
+    post:
+      summary: Create Repository Category
+      description: '**Handler:** `handleCreateRepositoryCategory`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateRepositoryCategory
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Domains
+  /api/v1/application-repository/categories/{id}:
+    put:
+      summary: Update Repository Category
+      description: '**Handler:** `handleUpdateRepositoryCategory`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateRepositoryCategory
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Application-repository
+    delete:
+      summary: Delete Repository Category
+      description: '**Handler:** `handleDeleteRepositoryCategory`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDeleteRepositoryCategory
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Application-repository
+  /api/v1/applications:
+    post:
+      summary: Create Application
+      description: '**Handler:** `handleCreateApplication`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateApplication
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Applications
+    get:
+      summary: List Applications
+      description: '**Handler:** `handleListApplications`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListApplications
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Applications
+  /api/v1/applications/{id}:
+    get:
+      summary: Get Application
+      description: '**Handler:** `handleGetApplication`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetApplication
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Applications
+    put:
+      summary: Update Application
+      description: '**Handler:** `handleUpdateApplication`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateApplication
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Applications
+    delete:
+      summary: Delete Application
+      description: '**Handler:** `handleDeleteApplication`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDeleteApplication
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Applications
+  /api/v1/applications/{id}/releases:
+    post:
+      summary: Create Release
+      description: '**Handler:** `handleCreateRelease`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateRelease
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Applications
+    get:
+      summary: List Releases
+      description: '**Handler:** `handleListReleases`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListReleases
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Applications
+  /api/v1/releases/{id}:
+    get:
+      summary: Get Release
+      description: '**Handler:** `handleGetRelease`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetRelease
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Releases
+    put:
+      summary: Update Release
+      description: '**Handler:** `handleUpdateRelease`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateRelease
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Releases
+    delete:
+      summary: Delete Release
+      description: '**Handler:** `handleDeleteRelease`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDeleteRelease
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Releases
+  /api/v1/releases/{id}/archive:
+    post:
+      summary: Archive Release
+      description: '**Handler:** `handleArchiveRelease`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleArchiveRelease
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Releases
+  /api/v1/releases/{id}/trend:
+    get:
+      summary: Get Release Trend
+      description: '**Handler:** `handleGetReleaseTrend`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetReleaseTrend
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Releases
+  /api/v1/releases/{id}/trend/export:
+    get:
+      summary: Get Release Trend Export
+      description: '**Handler:** `handleGetReleaseTrendExport`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetReleaseTrendExport
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Releases
+  /api/v1/releases/{id}/sla-governance:
+    get:
+      summary: Get Release S L A Governance
+      description: '**Handler:** `handleGetReleaseSLAGovernance`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetReleaseSLAGovernance
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Releases
+  /api/v1/releases/{id}/sla-governance/waivers:
+    post:
+      summary: Create Release S L A Waiver
+      description: '**Handler:** `handleCreateReleaseSLAWaiver`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateReleaseSLAWaiver
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Releases
+  /api/v1/projects:
+    post:
+      summary: Create Project
+      description: '**Handler:** `handleCreateProject`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateProject
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Projects
+    get:
+      summary: List Projects
+      description: '**Handler:** `handleListProjects`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListProjects
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Projects
+  /api/v1/projects/{id}:
+    get:
+      summary: Get Project
+      description: '**Handler:** `handleGetProject`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetProject
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Projects
+    put:
+      summary: Update Project
+      description: '**Handler:** `handleUpdateProject`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateProject
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Projects
+    delete:
+      summary: Delete Project
+      description: '**Handler:** `handleDeleteProject`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDeleteProject
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Projects
+  /api/v1/projects/{id}/releases:
+    post:
+      summary: Create Project Release
+      description: '**Handler:** `handleCreateProjectRelease`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateProjectRelease
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Projects
+    get:
+      summary: List Project Releases
+      description: '**Handler:** `handleListProjectReleases`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListProjectReleases
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Projects
+  /api/v1/projects/{pid}/folders:
+    post:
+      summary: Create Folder
+      description: '**Handler:** `handleCreateFolder`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateFolder
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: pid
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Projects
+    get:
+      summary: List Folders
+      description: '**Handler:** `handleListFolders`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListFolders
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: pid
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Projects
+  /api/v1/folders/{id}:
+    put:
+      summary: Update Folder
+      description: '**Handler:** `handleUpdateFolder`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateFolder
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Folders
+    delete:
+      summary: Delete Folder
+      description: '**Handler:** `handleDeleteFolder`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDeleteFolder
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Folders
+  /api/v1/tests:
+    post:
+      summary: Create Test
+      description: '**Handler:** `handleCreateTest`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateTest
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Tests
+    get:
+      summary: List Tests
+      description: '**Handler:** `handleListTests`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListTests
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Tests
+  /api/v1/tests/estimate:
+    post:
+      summary: Estimate Test
+      description: '**Handler:** `handleEstimateTest`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleEstimateTest
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Tests
+  /api/v1/tests/{id}:
+    get:
+      summary: Get Test
+      description: '**Handler:** `handleGetTest`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetTest
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+    delete:
+      summary: Delete Test
+      description: '**Handler:** `handleDeleteTest`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDeleteTest
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/sla-status:
+    get:
+      summary: Get Test S L A Status
+      description: '**Handler:** `handleGetTestSLAStatus`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetTestSLAStatus
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/report:
+    get:
+      summary: Get Test H T M L Report
+      description: '**Handler:** `handleGetTestHTMLReport`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetTestHTMLReport
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/start:
+    post:
+      summary: Start Test
+      description: '**Handler:** `handleStartTest`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleStartTest
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/comparison-baseline/pin:
+    post:
+      summary: Pin Comparison Baseline
+      description: '**Handler:** `handlePinComparisonBaseline`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handlePinComparisonBaseline
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+    delete:
+      summary: Unpin Comparison Baseline
+      description: '**Handler:** `handleUnpinComparisonBaseline`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUnpinComparisonBaseline
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/stop:
+    post:
+      summary: Stop Test
+      description: '**Handler:** `handleStopTest`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleStopTest
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/abort:
+    post:
+      summary: Abort Test
+      description: '**Handler:** `handleAbortTest`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleAbortTest
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/pause:
+    post:
+      summary: Pause Test
+      description: '**Handler:** `handlePauseTest`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handlePauseTest
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/resume:
+    post:
+      summary: Resume Test
+      description: '**Handler:** `handleResumeTest`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleResumeTest
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/vusers:
+    patch:
+      summary: Scale V Users
+      description: '**Handler:** `handleScaleVUsers`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleScaleVUsers
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/duration:
+    patch:
+      summary: Adjust Duration
+      description: '**Handler:** `handleAdjustDuration`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleAdjustDuration
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/move:
+    patch:
+      summary: Move Test
+      description: '**Handler:** `handleMoveTest`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleMoveTest
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/metrics:
+    get:
+      summary: Get Metrics
+      description: '**Handler:** `handleGetMetrics`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetMetrics
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/archive:
+    get:
+      summary: Download Run Archive
+      description: '**Handler:** `handleDownloadRunArchive`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDownloadRunArchive
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/archive/manifest:
+    get:
+      summary: Get Run Archive Manifest
+      description: '**Handler:** `handleGetRunArchiveManifest`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetRunArchiveManifest
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/archive/files/{name}:
+    get:
+      summary: Download Run Archive Artifact
+      description: '**Handler:** `handleDownloadRunArchiveArtifact`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDownloadRunArchiveArtifact
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/archive/browser-diagnostics:
+    get:
+      summary: Download Run Archive Browser Diagnostics
+      description: '**Handler:** `handleDownloadRunArchiveBrowserDiagnostics`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDownloadRunArchiveBrowserDiagnostics
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/archive/transactions:
+    get:
+      summary: Get Run Archive Transactions
+      description: '**Handler:** `handleGetRunArchiveTransactions`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetRunArchiveTransactions
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/archive/resources:
+    get:
+      summary: Get Run Archive Resources
+      description: '**Handler:** `handleGetRunArchiveResources`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetRunArchiveResources
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/archive/summaries:
+    get:
+      summary: Get Run Archive Summaries
+      description: '**Handler:** `handleGetRunArchiveSummaries`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetRunArchiveSummaries
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/archive/report:
+    get:
+      summary: Get Run Archive Report
+      description: '**Handler:** `handleGetRunArchiveReport`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetRunArchiveReport
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/archive/analysis:
+    get:
+      summary: Get Run Archive Analysis
+      description: '**Handler:** `handleGetRunArchiveAnalysis`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetRunArchiveAnalysis
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/archive/root-cause:
+    get:
+      summary: Get Run Archive Root Cause
+      description: '**Handler:** `handleGetRunArchiveRootCause`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetRunArchiveRootCause
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/archive/ai-root-cause:
+    get:
+      summary: Get Run Archive A I Root Cause
+      description: '**Handler:** `handleGetRunArchiveAIRootCause`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetRunArchiveAIRootCause
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/archive/comparison:
+    get:
+      summary: Get Run Archive Comparison
+      description: '**Handler:** `handleGetRunArchiveComparison`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetRunArchiveComparison
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/archives/retention/plan:
+    post:
+      summary: Plan Archive Retention
+      description: '**Handler:** `handlePlanArchiveRetention`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handlePlanArchiveRetention
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Archives
+  /api/v1/archives/retention/apply:
+    post:
+      summary: Apply Archive Retention
+      description: '**Handler:** `handleApplyArchiveRetention`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleApplyArchiveRetention
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Archives
+  /api/v1/scenarios:
+    post:
+      summary: Create Scenario
+      description: '**Handler:** `handleCreateScenario`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateScenario
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scenarios
+    get:
+      summary: List Scenarios
+      description: '**Handler:** `handleListScenarios`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListScenarios
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scenarios
+  /api/v1/scenarios/validate-load-model:
+    post:
+      summary: Validate Scenario Load Model
+      description: '**Handler:** `handleValidateScenarioLoadModel`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleValidateScenarioLoadModel
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scenarios
+  /api/v1/scenarios/size-from-goal:
+    post:
+      summary: Size Scenario From Goal
+      description: '**Handler:** `handleSizeScenarioFromGoal`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleSizeScenarioFromGoal
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scenarios
+  /api/v1/scenarios/{id}:
+    get:
+      summary: Get Scenario
+      description: '**Handler:** `handleGetScenario`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetScenario
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scenarios
+    put:
+      summary: Update Scenario
+      description: '**Handler:** `handleUpdateScenario`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateScenario
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scenarios
+    delete:
+      summary: Delete Scenario
+      description: '**Handler:** `handleDeleteScenario`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDeleteScenario
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scenarios
+  /api/v1/scenarios/load-models/support-matrix:
+    get:
+      summary: Load Model Support Matrix
+      description: '**Handler:** `handleLoadModelSupportMatrix`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLoadModelSupportMatrix
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scenarios
+  /api/v1/scenarios/load-models/templates:
+    get:
+      summary: Load Model Templates
+      description: '**Handler:** `handleLoadModelTemplates`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLoadModelTemplates
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scenarios
+  /api/v1/scenarios/{id}/schedules:
+    post:
+      summary: Create Scenario Schedule
+      description: '**Handler:** `handleCreateScenarioSchedule`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateScenarioSchedule
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scenarios
+    get:
+      summary: List Scenario Schedules
+      description: '**Handler:** `handleListScenarioSchedules`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListScenarioSchedules
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scenarios
+  /api/v1/scenarios/{id}/schedules/{schedule_id}:
+    put:
+      summary: Update Scenario Schedule
+      description: '**Handler:** `handleUpdateScenarioSchedule`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateScenarioSchedule
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: schedule_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scenarios
+    delete:
+      summary: Delete Scenario Schedule
+      description: '**Handler:** `handleDeleteScenarioSchedule`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDeleteScenarioSchedule
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: schedule_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scenarios
+  /api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences:
+    get:
+      summary: List Scenario Schedule Occurrences
+      description: '**Handler:** `handleListScenarioScheduleOccurrences`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListScenarioScheduleOccurrences
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: schedule_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scenarios
+  /api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/approve:
+    post:
+      summary: Approve Scenario Schedule Approval
+      description: '**Handler:** `handleApproveScenarioScheduleApproval`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleApproveScenarioScheduleApproval
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: schedule_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: approval_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scenarios
+  /api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/reject:
+    post:
+      summary: Reject Scenario Schedule Approval
+      description: '**Handler:** `handleRejectScenarioScheduleApproval`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleRejectScenarioScheduleApproval
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: schedule_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: approval_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scenarios
+  /api/v1/schedules/health:
+    get:
+      summary: Scenario Schedule Health
+      description: '**Handler:** `handleScenarioScheduleHealth`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleScenarioScheduleHealth
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Schedules
+  /api/v1/scenarios/{id}/results:
+    get:
+      summary: Scenario Results
+      description: '**Handler:** `handleScenarioResults`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleScenarioResults
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scenarios
+  /api/v1/scenarios/{id}/runtime-settings/report:
+    get:
+      summary: Get Scenario Runtime Settings Report
+      description: '**Handler:** `handleGetScenarioRuntimeSettingsReport`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetScenarioRuntimeSettingsReport
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scenarios
+  /api/v1/scenarios/{id}/data-pools:
+    get:
+      summary: List Scenario Data Pools
+      description: '**Handler:** `handleListScenarioDataPools`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListScenarioDataPools
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scenarios
+    put:
+      summary: Update Scenario Data Pools
+      description: '**Handler:** `handleUpdateScenarioDataPools`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateScenarioDataPools
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scenarios
+  /api/v1/data-pools:
+    post:
+      summary: Create Data Pool
+      description: '**Handler:** `handleCreateDataPool`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateDataPool
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Data-pools
+    get:
+      summary: List Data Pools
+      description: '**Handler:** `handleListDataPools`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListDataPools
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Data-pools
+  /api/v1/data-pools/{id}:
+    get:
+      summary: Get Data Pool
+      description: '**Handler:** `handleGetDataPool`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetDataPool
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Data-pools
+    put:
+      summary: Update Data Pool
+      description: '**Handler:** `handleUpdateDataPool`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateDataPool
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Data-pools
+    delete:
+      summary: Delete Data Pool
+      description: '**Handler:** `handleDeleteDataPool`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDeleteDataPool
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Data-pools
+  /api/v1/data-pools/{id}/rows:
+    get:
+      summary: List Data Pool Rows
+      description: '**Handler:** `handleListDataPoolRows`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListDataPoolRows
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Data-pools
+    post:
+      summary: Create Data Pool Row
+      description: '**Handler:** `handleCreateDataPoolRow`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateDataPoolRow
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Data-pools
+  /api/v1/data-pools/{id}/rows/{row_id}:
+    put:
+      summary: Update Data Pool Row
+      description: '**Handler:** `handleUpdateDataPoolRow`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateDataPoolRow
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: row_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Data-pools
+    delete:
+      summary: Delete Data Pool Row
+      description: '**Handler:** `handleDeleteDataPoolRow`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDeleteDataPoolRow
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: row_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Data-pools
+  /api/v1/scripts:
+    post:
+      summary: Create Script
+      description: '**Handler:** `handleCreateScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+    get:
+      summary: List Scripts
+      description: '**Handler:** `handleListScripts`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListScripts
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/{id}:
+    get:
+      summary: Get Script
+      description: '**Handler:** `handleGetScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+    put:
+      summary: Update Script
+      description: '**Handler:** `handleUpdateScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+    delete:
+      summary: Delete Script
+      description: '**Handler:** `handleDeleteScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDeleteScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+  /api/v1/scripts/{id}/move:
+    patch:
+      summary: Move Script
+      description: '**Handler:** `handleMoveScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleMoveScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+  /api/v1/scripts/validate:
+    post:
+      summary: Validate Draft Script
+      description: '**Handler:** `handleValidateDraftScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleValidateDraftScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/replay:
+    post:
+      summary: Replay Draft Script
+      description: '**Handler:** `handleReplayDraftScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleReplayDraftScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/replay/sessions:
+    post:
+      summary: Start Replay Session Draft Script
+      description: '**Handler:** `handleStartReplaySessionDraftScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleStartReplaySessionDraftScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/debug/sessions:
+    post:
+      summary: Start Script Debug Draft Script
+      description: '**Handler:** `handleStartScriptDebugDraftScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleStartScriptDebugDraftScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/browser-replay/sessions:
+    post:
+      summary: Start Browser Replay Draft Script
+      description: '**Handler:** `handleStartBrowserReplayDraftScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleStartBrowserReplayDraftScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/browser-to-http/preview:
+    post:
+      summary: Preview Browser To H T T P
+      description: '**Handler:** `handlePreviewBrowserToHTTP`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handlePreviewBrowserToHTTP
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/authoring/capabilities:
+    get:
+      summary: Authoring Capabilities
+      description: '**Handler:** `handleAuthoringCapabilities`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleAuthoringCapabilities
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/authoring/templates:
+    get:
+      summary: Authoring Templates
+      description: '**Handler:** `handleAuthoringTemplates`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleAuthoringTemplates
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/authoring/components:
+    get:
+      summary: Authoring Components
+      description: '**Handler:** `handleAuthoringComponents`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleAuthoringComponents
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/authoring/sessions:
+    post:
+      summary: Create Authoring Session
+      description: '**Handler:** `handleCreateAuthoringSession`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateAuthoringSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+    get:
+      summary: List Authoring Sessions
+      description: '**Handler:** `handleListAuthoringSessions`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListAuthoringSessions
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/authoring/sessions/{id}:
+    get:
+      summary: Get Authoring Session
+      description: '**Handler:** `handleGetAuthoringSession`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetAuthoringSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+    put:
+      summary: Update Authoring Session
+      description: '**Handler:** `handleUpdateAuthoringSession`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateAuthoringSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+    delete:
+      summary: Delete Authoring Session
+      description: '**Handler:** `handleDeleteAuthoringSession`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDeleteAuthoringSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+  /api/v1/scripts/authoring/sessions/{id}/approve:
+    post:
+      summary: Approve Authoring Session
+      description: '**Handler:** `handleApproveAuthoringSession`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleApproveAuthoringSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+  /api/v1/scripts/authoring/sessions/{id}/correlations/preview:
+    post:
+      summary: Preview Authoring Correlation
+      description: '**Handler:** `handlePreviewAuthoringCorrelation`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handlePreviewAuthoringCorrelation
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+  /api/v1/correlations/rules:
+    get:
+      summary: List Correlation Rules
+      description: '**Handler:** `handleListCorrelationRules`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListCorrelationRules
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Correlations
+  /api/v1/correlations/diagnose:
+    post:
+      summary: Diagnose Correlations
+      description: '**Handler:** `handleDiagnoseCorrelations`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDiagnoseCorrelations
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Correlations
+  /api/v1/scripts/{id}/validate:
+    post:
+      summary: Validate Script
+      description: '**Handler:** `handleValidateScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleValidateScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+  /api/v1/scripts/{id}/replay:
+    post:
+      summary: Replay Script
+      description: '**Handler:** `handleReplayScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleReplayScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+  /api/v1/scripts/{id}/replay/sessions:
+    post:
+      summary: Start Replay Session Script
+      description: '**Handler:** `handleStartReplaySessionScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleStartReplaySessionScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+  /api/v1/scripts/{id}/debug/sessions:
+    post:
+      summary: Start Script Debug Script
+      description: '**Handler:** `handleStartScriptDebugScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleStartScriptDebugScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+  /api/v1/scripts/{id}/browser-replay/sessions:
+    post:
+      summary: Start Browser Replay Script
+      description: '**Handler:** `handleStartBrowserReplayScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleStartBrowserReplayScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+  /api/v1/scripts/{id}/export:
+    post:
+      summary: Export Script
+      description: '**Handler:** `handleExportScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleExportScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+  /api/v1/scripts/{id}/download:
+    get:
+      summary: Download Script
+      description: '**Handler:** `handleDownloadScript`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDownloadScript
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+  /api/v1/scripts/{id}/runtime-settings/report:
+    get:
+      summary: Get Script Runtime Settings Report
+      description: '**Handler:** `handleGetScriptRuntimeSettingsReport`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetScriptRuntimeSettingsReport
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Scripts
+  /api/v1/scripts/import/loadrunner:
+    post:
+      summary: Import Load Runner
+      description: '**Handler:** `handleImportLoadRunner`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleImportLoadRunner
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/loadrunner/validate:
+    post:
+      summary: Validate Load Runner Import
+      description: '**Handler:** `handleValidateLoadRunnerImport`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleValidateLoadRunnerImport
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/loadrunner/support-matrix:
+    get:
+      summary: Load Runner Support Matrix
+      description: '**Handler:** `handleLoadRunnerSupportMatrix`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLoadRunnerSupportMatrix
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/jmeter:
+    post:
+      summary: Import J Meter
+      description: '**Handler:** `handleImportJMeter`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleImportJMeter
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/jmeter/save:
+    post:
+      summary: Save J Meter Import
+      description: '**Handler:** `handleSaveJMeterImport`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleSaveJMeterImport
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/jmeter/validate:
+    post:
+      summary: Validate J Meter Import
+      description: '**Handler:** `handleValidateJMeterImport`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleValidateJMeterImport
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/jmeter/support-matrix:
+    get:
+      summary: J Meter Support Matrix
+      description: '**Handler:** `handleJMeterSupportMatrix`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleJMeterSupportMatrix
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/web-api/support-matrix:
+    get:
+      summary: Web A P I Execution Support Matrix
+      description: '**Handler:** `handleWebAPIExecutionSupportMatrix`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleWebAPIExecutionSupportMatrix
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/sample:
+    post:
+      summary: Import Sample
+      description: '**Handler:** `handleImportSample`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleImportSample
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/k6:
+    post:
+      summary: Import K6
+      description: '**Handler:** `handleImportK6`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleImportK6
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/export/k6:
+    post:
+      summary: Export K6
+      description: '**Handler:** `handleExportK6`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleExportK6
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/k6/support-matrix:
+    get:
+      summary: K6 Support Matrix
+      description: '**Handler:** `handleK6SupportMatrix`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleK6SupportMatrix
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/devweb:
+    post:
+      summary: Import Dev Web
+      description: '**Handler:** `handleImportDevWeb`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleImportDevWeb
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/devweb/support-matrix:
+    get:
+      summary: Dev Web Support Matrix
+      description: '**Handler:** `handleDevWebSupportMatrix`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDevWebSupportMatrix
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/oracle-ebusiness/support-matrix:
+    get:
+      summary: Oracle E Business Support Matrix
+      description: '**Handler:** `handleOracleEBusinessSupportMatrix`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleOracleEBusinessSupportMatrix
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/oracle-ebusiness/review:
+    post:
+      summary: Review Oracle E Business Import
+      description: '**Handler:** `handleReviewOracleEBusinessImport`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleReviewOracleEBusinessImport
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/har:
+    post:
+      summary: Import H A R
+      description: '**Handler:** `handleImportHAR`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleImportHAR
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/openapi:
+    post:
+      summary: Import Open A P I
+      description: '**Handler:** `handleImportOpenAPI`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleImportOpenAPI
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/postman:
+    post:
+      summary: Import Postman
+      description: '**Handler:** `handleImportPostman`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleImportPostman
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/scripts/import/wsdl:
+    post:
+      summary: Import W S D L
+      description: '**Handler:** `handleImportWSDL`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleImportWSDL
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Scripts
+  /api/v1/ai/authoring/contract:
+    get:
+      summary: A I Authoring Contract
+      description: '**Handler:** `handleAIAuthoringContract`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleAIAuthoringContract
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Ai
+  /api/v1/ai/policy:
+    get:
+      summary: A I Policy
+      description: '**Handler:** `handleAIPolicy`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleAIPolicy
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Ai
+  /api/v1/ai/review-queue:
+    get:
+      summary: A I Review Queue
+      description: '**Handler:** `handleAIReviewQueue`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleAIReviewQueue
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Ai
+  /api/v1/ai/drafts:
+    post:
+      summary: A I Draft Generation
+      description: '**Handler:** `handleAIDraftGeneration`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleAIDraftGeneration
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Ai
+  /api/v1/ai/repairs:
+    post:
+      summary: A I Repair Suggestions
+      description: '**Handler:** `handleAIRepairSuggestions`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleAIRepairSuggestions
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Ai
+  /api/v1/ai/explain:
+    post:
+      summary: A I Explain
+      description: '**Handler:** `handleAIExplain`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleAIExplain
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Ai
+  /api/v1/browser-replay/sessions/{session_id}:
+    get:
+      summary: Get Browser Replay Session
+      description: '**Handler:** `handleGetBrowserReplaySession`
+
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleGetBrowserReplaySession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser-replay
+  /api/v1/browser-replay/sessions/{session_id}/pause:
+    post:
+      summary: Pause Browser Replay Session
+      description: '**Handler:** `handlePauseBrowserReplaySession`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handlePauseBrowserReplaySession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser-replay
+  /api/v1/browser-replay/sessions/{session_id}/resume:
+    post:
+      summary: Resume Browser Replay Session
+      description: '**Handler:** `handleResumeBrowserReplaySession`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleResumeBrowserReplaySession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser-replay
+  /api/v1/browser-replay/sessions/{session_id}/stop:
+    post:
+      summary: Stop Browser Replay Session
+      description: '**Handler:** `handleStopBrowserReplaySession`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleStopBrowserReplaySession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Browser-replay
+  /api/v1/script-debug/sessions/{session_id}:
+    get:
+      summary: Get Script Debug Session
+      description: '**Handler:** `handleGetScriptDebugSession`
+
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleGetScriptDebugSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Script-debug
+  /api/v1/script-debug/sessions/{session_id}/export:
+    get:
+      summary: Export Script Debug Session
+      description: '**Handler:** `handleExportScriptDebugSession`
+
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleExportScriptDebugSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Script-debug
+  /api/v1/script-debug/sessions/{session_id}/pause:
+    post:
+      summary: Pause Script Debug Session
+      description: '**Handler:** `handlePauseScriptDebugSession`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handlePauseScriptDebugSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Script-debug
+  /api/v1/script-debug/sessions/{session_id}/resume:
+    post:
+      summary: Resume Script Debug Session
+      description: '**Handler:** `handleResumeScriptDebugSession`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleResumeScriptDebugSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Script-debug
+  /api/v1/script-debug/sessions/{session_id}/step:
+    post:
+      summary: Step Script Debug Session
+      description: '**Handler:** `handleStepScriptDebugSession`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleStepScriptDebugSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Script-debug
+  /api/v1/script-debug/sessions/{session_id}/stop:
+    post:
+      summary: Stop Script Debug Session
+      description: '**Handler:** `handleStopScriptDebugSession`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleStopScriptDebugSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Script-debug
+  /api/v1/script-debug/sessions/{session_id}/breakpoints:
+    patch:
+      summary: Update Script Debug Breakpoints
+      description: '**Handler:** `handleUpdateScriptDebugBreakpoints`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleUpdateScriptDebugBreakpoints
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Script-debug
+  /api/v1/replay/sessions/{session_id}:
+    get:
+      summary: Get Script Debug Session
+      description: '**Handler:** `handleGetScriptDebugSession`
+
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleGetScriptDebugSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Replay
+  /api/v1/replay/sessions/{session_id}/export:
+    get:
+      summary: Export Script Debug Session
+      description: '**Handler:** `handleExportScriptDebugSession`
+
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleExportScriptDebugSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Replay
+  /api/v1/replay/sessions/{session_id}/pause:
+    post:
+      summary: Pause Script Debug Session
+      description: '**Handler:** `handlePauseScriptDebugSession`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handlePauseScriptDebugSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Replay
+  /api/v1/replay/sessions/{session_id}/resume:
+    post:
+      summary: Resume Script Debug Session
+      description: '**Handler:** `handleResumeScriptDebugSession`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleResumeScriptDebugSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Replay
+  /api/v1/replay/sessions/{session_id}/step:
+    post:
+      summary: Step Script Debug Session
+      description: '**Handler:** `handleStepScriptDebugSession`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleStepScriptDebugSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Replay
+  /api/v1/replay/sessions/{session_id}/stop:
+    post:
+      summary: Stop Script Debug Session
+      description: '**Handler:** `handleStopScriptDebugSession`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleStopScriptDebugSession
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Replay
+  /api/v1/replay/sessions/{session_id}/breakpoints:
+    patch:
+      summary: Update Script Debug Breakpoints
+      description: '**Handler:** `handleUpdateScriptDebugBreakpoints`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleUpdateScriptDebugBreakpoints
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Replay
+  /api/v1/recorder/start:
+    post:
+      summary: Start Recording
+      description: '**Handler:** `handleStartRecording`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleStartRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      tags:
+      - Recorder
+  /api/v1/recorder/{id}/pause:
+    post:
+      summary: Pause Recording
+      description: '**Handler:** `handlePauseRecording`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handlePauseRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Recorder
+  /api/v1/recorder/{id}/resume:
+    post:
+      summary: Resume Recording
+      description: '**Handler:** `handleResumeRecording`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleResumeRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Recorder
+  /api/v1/recorder/{id}/stop:
+    post:
+      summary: Stop Recording
+      description: '**Handler:** `handleStopRecording`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleStopRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Recorder
+  /api/v1/recorder/{id}:
+    get:
+      summary: Get Recording
+      description: '**Handler:** `handleGetRecording`
+
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleGetRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Recorder
+    delete:
+      summary: Delete Recording
+      description: '**Handler:** `handleDeleteRecording`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleDeleteRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Recorder
+  /api/v1/recorder:
+    get:
+      summary: List Recordings
+      description: '**Handler:** `handleListRecordings`
+
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleListRecordings
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+      - Recorder
+  /api/v1/recorder/{id}/requests/{seq}:
+    patch:
+      summary: Update Recorded Request
+      description: '**Handler:** `handleUpdateRecordedRequest`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleUpdateRecordedRequest
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: seq
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Recorder
+  /api/v1/recorder/{id}/convert/preview:
+    post:
+      summary: Preview Recording Conversion
+      description: '**Handler:** `handlePreviewRecordingConversion`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handlePreviewRecordingConversion
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Recorder
+  /api/v1/recorder/{id}/convert:
+    post:
+      summary: Convert Recording
+      description: '**Handler:** `handleConvertRecording`
+
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleConvertRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Recorder
+  /api/v1/recorder/{id}/export:
+    get:
+      summary: Export Recording
+      description: '**Handler:** `handleExportRecording`
+
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      operationId: handleExportRecording
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Recorder
+  /api/v1/recorder/status:
+    get:
+      summary: Recorder Status
+      description: '**Handler:** `handleRecorderStatus`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleRecorderStatus
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Recorder
+  /api/v1/recorder/ca.pem:
+    get:
+      summary: Recorder C A Cert
+      description: '**Handler:** `handleRecorderCACert`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleRecorderCACert
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Recorder
+  /api/v1/auth/login:
+    get:
+      summary: O I D C Login
+      description: '**Handler:** `handleOIDCLogin`
+
+
+        **Access Control:** Public / No Authentication Required'
+      operationId: handleOIDCLogin
+      responses:
+        '200':
+          description: Successful operation
+      tags:
+      - Auth
+  /api/v1/auth/callback:
+    get:
+      summary: O I D C Callback
+      description: '**Handler:** `handleOIDCCallback`
+
+
+        **Access Control:** Public / No Authentication Required'
+      operationId: handleOIDCCallback
+      responses:
+        '200':
+          description: Successful operation
+      tags:
+      - Auth
+  /api/v1/auth/logout:
+    post:
+      summary: O I D C Logout
+      description: '**Handler:** `handleOIDCLogout`
+
+
+        **Access Control:** Public / No Authentication Required'
+      operationId: handleOIDCLogout
+      responses:
+        '200':
+          description: Successful operation
+      tags:
+      - Auth
+  /api/v1/auth/me:
+    get:
+      summary: Get Auth Status
+      description: '**Handler:** `handleGetAuthStatus`
+
+
+        **Access Control:** Public / No Authentication Required'
+      operationId: handleGetAuthStatus
+      responses:
+        '200':
+          description: Successful operation
+      tags:
+      - Auth
+  /api/v1/auth/diagnostics:
+    get:
+      summary: Get Auth Diagnostics
+      description: '**Handler:** `handleGetAuthDiagnostics`
+
+
+        **Access Control:** Public / No Authentication Required'
+      operationId: handleGetAuthDiagnostics
+      responses:
+        '200':
+          description: Successful operation
+      tags:
+      - Auth
+  /api/v1/auth/roles:
+    get:
+      summary: Get Auth Role Catalog
+      description: '**Handler:** `handleGetAuthRoleCatalog`
+
+
+        **Access Control:** Public / No Authentication Required'
+      operationId: handleGetAuthRoleCatalog
+      responses:
+        '200':
+          description: Successful operation
+      tags:
+      - Auth
+  /api/v1/auth/access-matrix:
+    get:
+      summary: Get Auth Access Matrix
+      description: '**Handler:** `handleGetAuthAccessMatrix`
+
+
+        **Access Control:** Public / No Authentication Required'
+      operationId: handleGetAuthAccessMatrix
+      responses:
+        '200':
+          description: Successful operation
+      tags:
+      - Auth
+  /api/v1/auth/effective-access:
+    get:
+      summary: Get Auth Effective Access
+      description: '**Handler:** `handleGetAuthEffectiveAccess`
+
+
+        **Access Control:** Public / No Authentication Required'
+      operationId: handleGetAuthEffectiveAccess
+      responses:
+        '200':
+          description: Successful operation
+      tags:
+      - Auth
+  /api/v1/auth/users:
+    get:
+      summary: List Users
+      description: '**Handler:** `handleListUsers`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListUsers
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Auth
+    post:
+      summary: Create User
+      description: '**Handler:** `handleCreateUser`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateUser
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Auth
+  /api/v1/auth/users/{id}:
+    get:
+      summary: Get User
+      description: '**Handler:** `handleGetUser`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetUser
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Auth
+    patch:
+      summary: Update User
+      description: '**Handler:** `handleUpdateUser`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateUser
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Auth
+  /api/v1/auth/users/{id}/bindings:
+    post:
+      summary: Create User Binding
+      description: '**Handler:** `handleCreateUserBinding`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateUserBinding
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Auth
+  /api/v1/auth/users/{id}/bindings/{binding_id}:
+    delete:
+      summary: Delete User Binding
+      description: '**Handler:** `handleDeleteUserBinding`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDeleteUserBinding
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: binding_id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Auth
+  /api/v1/auth/users/{id}/disable:
+    post:
+      summary: Disable User
+      description: '**Handler:** `handleDisableUser`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDisableUser
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Auth
+  /api/v1/auth/users/{id}/enable:
+    post:
+      summary: Enable User
+      description: '**Handler:** `handleEnableUser`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleEnableUser
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Auth
+  /api/v1/auth/user-activity:
+    get:
+      summary: Get User Activity
+      description: '**Handler:** `handleGetUserActivity`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetUserActivity
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Auth
+  /api/v1/auth/user-activity/export:
+    get:
+      summary: Export User Activity
+      description: '**Handler:** `handleExportUserActivity`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleExportUserActivity
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Auth
+  /api/v1/auth/service-accounts:
+    get:
+      summary: List Service Accounts
+      description: '**Handler:** `handleListServiceAccounts`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListServiceAccounts
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Auth
+    post:
+      summary: Create Service Account
+      description: '**Handler:** `handleCreateServiceAccount`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateServiceAccount
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Auth
+  /api/v1/auth/service-accounts/{id}:
+    patch:
+      summary: Update Service Account
+      description: '**Handler:** `handleUpdateServiceAccount`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateServiceAccount
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Auth
+    delete:
+      summary: Delete Service Account
+      description: '**Handler:** `handleDeleteServiceAccount`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDeleteServiceAccount
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Auth
+  /api/v1/auth/service-accounts/{id}/rotate:
+    post:
+      summary: Rotate Service Account
+      description: '**Handler:** `handleRotateServiceAccount`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleRotateServiceAccount
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Auth
+  /api/v1/auth/audit-events:
+    get:
+      summary: List Audit Events
+      description: '**Handler:** `handleListAuditEvents`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListAuditEvents
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Auth
+  /api/v1/auth/audit-events/export:
+    get:
+      summary: Export Audit Events
+      description: '**Handler:** `handleExportAuditEvents`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleExportAuditEvents
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Auth
+  /api/v1/system/health:
+    get:
+      summary: Health Check
+      description: '**Handler:** `handleHealthCheck`
+
+
+        **Access Control:** Public / No Authentication Required'
+      operationId: handleHealthCheck
+      responses:
+        '200':
+          description: Successful operation
+      tags:
+      - System
+  /api/v1/system/version:
+    get:
+      summary: System Version
+      description: '**Handler:** `handleSystemVersion`
+
+
+        **Access Control:** Public / No Authentication Required'
+      operationId: handleSystemVersion
+      responses:
+        '200':
+          description: Successful operation
+      tags:
+      - System
+  /api/v1/system/readiness:
+    get:
+      summary: System Readiness
+      description: '**Handler:** `handleSystemReadiness`
+
+
+        **Access Control:** Public / No Authentication Required'
+      operationId: handleSystemReadiness
+      responses:
+        '200':
+          description: Successful operation
+      tags:
+      - System
+  /metrics:
+    get:
+      summary: Prometheus Metrics
+      description: '**Handler:** `handlePrometheusMetrics`
+
+
+        **Access Control:** Public / No Authentication Required'
+      operationId: handlePrometheusMetrics
+      responses:
+        '200':
+          description: Successful operation
+  /api/v1/system/inventory:
+    get:
+      summary: Get System Inventory
+      description: '**Handler:** `handleGetSystemInventory`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetSystemInventory
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - System
+  /api/v1/system/usage:
+    get:
+      summary: Get Usage Accounting
+      description: '**Handler:** `handleGetUsageAccounting`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetUsageAccounting
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - System
+  /api/v1/system/usage/export:
+    get:
+      summary: Export Usage Accounting
+      description: '**Handler:** `handleExportUsageAccounting`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleExportUsageAccounting
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - System
+  /api/v1/system/usage/snapshots:
+    get:
+      summary: List Usage Accounting Snapshots
+      description: '**Handler:** `handleListUsageAccountingSnapshots`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListUsageAccountingSnapshots
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - System
+    post:
+      summary: Create Usage Accounting Snapshot
+      description: '**Handler:** `handleCreateUsageAccountingSnapshot`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateUsageAccountingSnapshot
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - System
+  /api/v1/system/parity-status:
+    get:
+      summary: Get Parity Status
+      description: '**Handler:** `handleGetParityStatus`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetParityStatus
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - System
+  /api/v1/system/browser-benchmarks:
+    get:
+      summary: Get Browser Benchmark Evidence
+      description: '**Handler:** `handleGetBrowserBenchmarkEvidence`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetBrowserBenchmarkEvidence
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - System
+  /api/v1/desktop/status:
+    get:
+      summary: Desktop Status
+      description: '**Handler:** `handleDesktopStatus`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleDesktopStatus
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Desktop
+  /api/v1/runtime-settings/support-matrix:
+    get:
+      summary: Runtime Settings Support Matrix
+      description: '**Handler:** `handleRuntimeSettingsSupportMatrix`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleRuntimeSettingsSupportMatrix
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Runtime-settings
+  /api/v1/protocol-bundles/support-matrix:
+    get:
+      summary: Protocol Bundle Support Matrix
+      description: '**Handler:** `handleProtocolBundleSupportMatrix`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleProtocolBundleSupportMatrix
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Protocol-bundles
+  /api/v1/protocols/native-support-matrix:
+    get:
+      summary: Native Protocol Support Matrix
+      description: '**Handler:** `handleNativeProtocolSupportMatrix`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleNativeProtocolSupportMatrix
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Protocols
+  /api/v1/integrations/apm/profiles:
+    get:
+      summary: List A P M Integration Profiles
+      description: '**Handler:** `handleListAPMIntegrationProfiles`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListAPMIntegrationProfiles
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Integrations
+  /api/v1/monitoring/packs:
+    get:
+      summary: List Infrastructure Monitor Packs
+      description: '**Handler:** `handleListInfrastructureMonitorPacks`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListInfrastructureMonitorPacks
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Monitoring
+  /api/v1/reports/profiles:
+    get:
+      summary: List Report Profiles
+      description: '**Handler:** `handleListReportProfiles`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListReportProfiles
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Reports
+  /api/v1/library/capabilities:
+    get:
+      summary: Library Capabilities
+      description: '**Handler:** `handleLibraryCapabilities`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLibraryCapabilities
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Library
+  /api/v1/library/catalog:
+    get:
+      summary: Library Catalog
+      description: '**Handler:** `handleLibraryCatalog`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLibraryCatalog
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Library
+  /api/v1/library/export:
+    post:
+      summary: Library Export
+      description: '**Handler:** `handleLibraryExport`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLibraryExport
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Library
+  /api/v1/library/import:
+    post:
+      summary: Library Import
+      description: '**Handler:** `handleLibraryImport`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLibraryImport
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Library
+  /api/v1/library/import/archive:
+    post:
+      summary: Library Import Archive
+      description: '**Handler:** `handleLibraryImportArchive`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLibraryImportArchive
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Library
+  /api/v1/library/results/{id}/archive:
+    get:
+      summary: Library Result Archive
+      description: '**Handler:** `handleLibraryResultArchive`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLibraryResultArchive
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Library
+  /api/v1/library/remotes:
+    get:
+      summary: Library List Remotes
+      description: '**Handler:** `handleLibraryListRemotes`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLibraryListRemotes
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Library
+    post:
+      summary: Library Create Remote
+      description: '**Handler:** `handleLibraryCreateRemote`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLibraryCreateRemote
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Library
+  /api/v1/library/remotes/{id}:
+    put:
+      summary: Library Update Remote
+      description: '**Handler:** `handleLibraryUpdateRemote`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLibraryUpdateRemote
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Library
+    delete:
+      summary: Library Delete Remote
+      description: '**Handler:** `handleLibraryDeleteRemote`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLibraryDeleteRemote
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Library
+  /api/v1/library/remotes/{id}/probe:
+    post:
+      summary: Library Probe Remote
+      description: '**Handler:** `handleLibraryProbeRemote`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLibraryProbeRemote
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Library
+  /api/v1/library/remotes/{id}/catalog:
+    get:
+      summary: Library Remote Catalog
+      description: '**Handler:** `handleLibraryRemoteCatalog`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLibraryRemoteCatalog
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Library
+  /api/v1/library/remotes/{id}/pull:
+    post:
+      summary: Library Remote Pull
+      description: '**Handler:** `handleLibraryRemotePull`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLibraryRemotePull
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Library
+  /api/v1/library/remotes/{id}/push:
+    post:
+      summary: Library Remote Push
+      description: '**Handler:** `handleLibraryRemotePush`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLibraryRemotePush
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Library
+  /api/v1/library/remotes/{id}/diff:
+    post:
+      summary: Library Remote Diff
+      description: '**Handler:** `handleLibraryRemoteDiff`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleLibraryRemoteDiff
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Library
+  /api/v1/results/import:
+    post:
+      summary: Import External Results
+      description: '**Handler:** `handleImportExternalResults`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleImportExternalResults
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Results
+  /api/v1/results/imports:
+    get:
+      summary: List External Result Imports
+      description: '**Handler:** `handleListExternalResultImports`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListExternalResultImports
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Results
+  /api/v1/fleet/alerts:
+    get:
+      summary: Get Fleet Alerts
+      description: '**Handler:** `handleGetFleetAlerts`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetFleetAlerts
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Fleet
+  /api/v1/fleet/capacity:
+    get:
+      summary: Get Fleet Capacity
+      description: '**Handler:** `handleGetFleetCapacity`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetFleetCapacity
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Fleet
+  /api/v1/fleet/load-zones:
+    get:
+      summary: Get Fleet Load Zones
+      description: '**Handler:** `handleGetFleetLoadZones`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetFleetLoadZones
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Fleet
+  /api/v1/fleet/provisioner:
+    get:
+      summary: Get Fleet Provisioner
+      description: '**Handler:** `handleGetFleetProvisioner`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetFleetProvisioner
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Fleet
+  /api/v1/system/generators/drain:
+    patch:
+      summary: Set Generator Drain State
+      description: '**Handler:** `handleSetGeneratorDrainState`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleSetGeneratorDrainState
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - System
+  /api/v1/system/settings:
+    get:
+      summary: Get System Settings
+      description: '**Handler:** `handleGetSystemSettings`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetSystemSettings
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - System
+    put:
+      summary: Update System Settings
+      description: '**Handler:** `handleUpdateSystemSettings`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateSystemSettings
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - System
+  /api/v1/ws:
+    get:
+      summary: Web Socket
+      description: '**Handler:** `handleWebSocket`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleWebSocket
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Ws
+  /api/v1/tests/{id}/stream:
+    get:
+      summary: Test Stream
+      description: '**Handler:** `handleTestStream`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleTestStream
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
