@@ -5,9 +5,10 @@ import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import AuthoringSessionsPanel from './AuthoringSessionsPanel'
 import ScriptsAuthoringShell from './ScriptsAuthoringShell'
-import ScriptsLibraryTable from './ScriptsLibraryTable'
+import ScriptsLibraryTable, { type ScriptLibraryFederation } from './ScriptsLibraryTable'
 import PageViewToggle from './PageViewToggle'
-import LibraryAssetSourcePanel from './LibraryAssetSourcePanel'
+import LibraryFederationControls from './LibraryFederationControls'
+import { useLibraryFederation } from './useLibraryFederation'
 import { type ScriptDefinition } from '../types/scripts'
 import { useScriptsLibraryModel } from './useScriptsLibraryModel'
 import { type ImportedSaveResult, type ScriptsAuthoringSubView, useScriptsAuthoringState } from './useScriptsAuthoringState'
@@ -186,6 +187,34 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     scripts: filteredScripts,
     projectId: activeProject?.id,
   })
+
+  const federation = useLibraryFederation({ kind: 'script', projectId: activeProject?.id, onRefreshLocal: refresh })
+
+  const knownScriptIds = useMemo(() => new Set(scripts.map(script => script.id)), [scripts])
+
+  const federationRemoteRows = useMemo(() => {
+    const query = libraryQuery.trim().toLowerCase()
+    return federation.remoteItems.filter(item => {
+      // On "all", local scripts already cover assets that exist on both sides; only
+      // surface remote-only entries so each asset appears once. "host" shows everything.
+      if (federation.sourceFilter === 'all' && item.local_item_id && knownScriptIds.has(item.local_item_id)) return false
+      if (!query) return true
+      return [item.name, item.protocol, item.project_id].filter(Boolean).join(' ').toLowerCase().includes(query)
+    })
+  }, [federation.remoteItems, federation.sourceFilter, knownScriptIds, libraryQuery])
+
+  const scriptFederation = useMemo<ScriptLibraryFederation>(() => ({
+    sourceFilter: federation.sourceFilter,
+    remoteRows: federationRemoteRows,
+    actionBlocked: federation.actionBlocked,
+    actionBlockedReason: federation.actionBlockedReason,
+    onPushScript: (script) => void federation.pushLocalItem({ kind: 'script', id: script.id, name: script.name }),
+    onPullRemote: (item) => void federation.pullRemoteItem(item),
+    onCompare: (localId, remoteItem) => void federation.compareItems(localId, remoteItem),
+    hostItemForLocal: federation.hostItemForLocal,
+    syncStatusForLocal: federation.syncStatusForLocal,
+    remoteItemHref: federation.remoteItemHref,
+  }), [federation, federationRemoteRows])
 
   useEffect(() => { refresh() }, [refresh])
   useEffect(() => { refreshAuthoringSessions() }, [refreshAuthoringSessions])
@@ -375,6 +404,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
               </button>
             ))}
           </div>
+          <LibraryFederationControls kind="script" federation={federation} />
           <ScriptsLibraryTable
             scripts={sortedScripts}
             sortField={sortField}
@@ -393,8 +423,8 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
             onDelete={(id) => { void handleDelete(id) }}
             canManageScripts={canManageScripts}
             emptyMessage={libraryQuery.trim() || healthFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
+            federation={scriptFederation}
           />
-          <LibraryAssetSourcePanel kind="script" projectId={activeProject?.id} onRefreshLocal={refresh} />
         </div>
       </div>
     </ScriptsAuthoringShell>

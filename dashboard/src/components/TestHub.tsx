@@ -14,7 +14,9 @@ import { buildScenarioModelPreview, buildScenarioShapeCatalog, formatModelTimeLa
 import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
 import DurationField from './DurationField'
 import PageViewToggle from './PageViewToggle'
-import LibraryAssetSourcePanel from './LibraryAssetSourcePanel'
+import LibraryFederationControls from './LibraryFederationControls'
+import { useLibraryFederation } from './useLibraryFederation'
+import { formatLibraryDateTime, libraryStatusTone, shortLibraryHash } from './libraryFederationUtils'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
 
 interface Props {
@@ -882,6 +884,22 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
       return 0
     })
   }, [scenarios, scenarioQuery, sortField, sortDirection])
+
+  const scenarioFederation = useLibraryFederation({ kind: 'scenario', projectId: activeProject?.id, onRefreshLocal: refresh })
+
+  const knownScenarioIds = useMemo(() => new Set(scenarios.map(scenario => scenario.id)), [scenarios])
+
+  const federationRemoteScenarioRows = useMemo(() => {
+    if (scenarioFederation.sourceFilter === 'local') return []
+    const query = scenarioQuery.trim().toLowerCase()
+    return scenarioFederation.remoteItems.filter(item => {
+      if (scenarioFederation.sourceFilter === 'all' && item.local_item_id && knownScenarioIds.has(item.local_item_id)) return false
+      if (!query) return true
+      return [item.name, item.protocol, item.project_id].filter(Boolean).join(' ').toLowerCase().includes(query)
+    })
+  }, [scenarioFederation.remoteItems, scenarioFederation.sourceFilter, knownScenarioIds, scenarioQuery])
+
+  const showLocalScenarios = scenarioFederation.sourceFilter !== 'host'
 
   const handleSort = (field: typeof sortField) => {
     if (sortField === field) setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
@@ -2222,10 +2240,12 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
             />
           </label>
         </div>
+        <LibraryFederationControls kind="scenario" federation={scenarioFederation} />
         <div className="data-table">
           <table>
             <thead>
               <tr>
+                <th>Source</th>
                 <th onClick={() => handleSort('name')} className="sortable">Scenario <SortIndicator active={sortField === 'name'} direction={sortDirection} /></th>
                 <th onClick={() => handleSort('scripts')} className="sortable">Workload <SortIndicator active={sortField === 'scripts'} direction={sortDirection} /></th>
                 <th onClick={() => handleSort('associated_releases')} className="sortable">Releases <SortIndicator active={sortField === 'associated_releases'} direction={sortDirection} /></th>
@@ -2234,9 +2254,19 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
               </tr>
             </thead>
             <tbody>
-              {sorted.map(scenario => (
+              {showLocalScenarios && sorted.map(scenario => {
+                const syncStatus = scenarioFederation.syncStatusForLocal(scenario.id)
+                const hostItem = scenarioFederation.hostItemForLocal(scenario.id)
+                const conflict = syncStatus === 'conflict'
+                return (
                 <Fragment key={scenario.id}>
                   <tr className="clickable-row" onClick={() => toggleScenarioRuns(scenario)}>
+                    <td>
+                      <span className="script-health-token">Local</span>
+                      <div className="script-table-meta">
+                        <span className={`script-health-token ${libraryStatusTone(syncStatus)}`}>{syncStatus}</span>
+                      </div>
+                    </td>
                     <td className="cell-name">
                       <div>{scenario.name}</div>
                       <div className="scenario-table-assignment">
@@ -2282,6 +2312,15 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
                           <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); openEdit(scenario) }}>Edit</button>
                           <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); duplicateScenario(scenario) }}>Duplicate</button>
                           <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); setConfirmDeleteScenarioId(scenario.id) }}>Delete</button>
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={(event) => { event.stopPropagation(); void scenarioFederation.pushLocalItem({ kind: 'scenario', id: scenario.id, name: scenario.name }) }}
+                            disabled={scenarioFederation.actionBlocked || conflict}
+                            title={conflict ? 'Compare this conflict before transferring.' : scenarioFederation.actionBlockedReason}
+                          >Push</button>
+                          {hostItem?.local_item_id && (
+                            <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); void scenarioFederation.compareItems(scenario.id, hostItem) }}>Compare</button>
+                          )}
                         </>
                       ) : (
                         <span className="cell-muted">Read-only</span>
@@ -2290,16 +2329,61 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
                   </tr>
                   {expandedScenarioId === scenario.id && (
                     <tr className="no-hover">
-                      <td colSpan={5} style={{ background: 'var(--bg-primary)' }}>
+                      <td colSpan={6} style={{ background: 'var(--bg-primary)' }}>
                         {renderScenarioRunsContent(scenario)}
                       </td>
                     </tr>
                   )}
                 </Fragment>
-              ))}
-              {sorted.length === 0 && (
+                )
+              })}
+              {federationRemoteScenarioRows.map(item => {
+                const syncStatus = item.sync_status || 'host only'
+                const conflict = syncStatus === 'conflict'
+                const href = scenarioFederation.remoteItemHref(item)
+                return (
+                  <tr key={`remote:${item.kind}:${item.id}`} className="no-hover">
+                    <td>
+                      <span className="script-health-token">Remote</span>
+                      <div className="script-table-meta">
+                        <span className={`script-health-token ${libraryStatusTone(syncStatus)}`}>{syncStatus}</span>
+                      </div>
+                    </td>
+                    <td className="cell-name">
+                      <div>{item.name || item.id}</div>
+                      <div className="scenario-table-assignment-detail">Project {item.project_id || 'unmapped'} · Hash {shortLibraryHash(item.content_hash)}</div>
+                    </td>
+                    <td>
+                      <div className="scenario-table-workload">
+                        <span>{item.dependencies?.length ? `${item.dependencies.length} dependencies` : 'No referenced scripts'}</span>
+                      </div>
+                    </td>
+                    <td className="cell-muted">—</td>
+                    <td className="cell-muted">{formatLibraryDateTime(item.updated_at)}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      {canManageTests ? (
+                        <>
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => void scenarioFederation.pullRemoteItem(item)}
+                            disabled={scenarioFederation.actionBlocked || conflict}
+                            title={conflict ? 'Compare this conflict before transferring.' : scenarioFederation.actionBlockedReason}
+                          >Pull</button>
+                          {item.local_item_id && (
+                            <button className="btn btn-sm btn-ghost" onClick={() => void scenarioFederation.compareItems(item.local_item_id!, item)}>Compare</button>
+                          )}
+                          {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer">Open in Remote Library</a>}
+                        </>
+                      ) : (
+                        <span className="cell-muted">Read-only</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+              {(!showLocalScenarios || sorted.length === 0) && federationRemoteScenarioRows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="cell-muted">
+                  <td colSpan={6} className="cell-muted">
                     {scenarioQuery.trim() ? 'No scenarios match this search.' : 'No scenarios yet. Create a scenario from an existing script.'}
                   </td>
                 </tr>
@@ -2307,7 +2391,6 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
             </tbody>
           </table>
         </div>
-        <LibraryAssetSourcePanel kind="scenario" projectId={activeProject?.id} onRefreshLocal={refresh} />
       </div>
       )}
 

@@ -1,8 +1,23 @@
 import { Fragment } from 'react'
 
 import { StoredScript, TestSummary } from '../types'
+import { LibraryCatalogItem, LibrarySourceFilter } from '../types/library'
+import { formatLibraryDateTime, libraryStatusTone, shortLibraryHash } from './libraryFederationUtils'
 import { ScriptLibrarySortField, ScriptRunSortField } from './useScriptsLibraryModel'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
+
+export interface ScriptLibraryFederation {
+  sourceFilter: LibrarySourceFilter
+  remoteRows: LibraryCatalogItem[]
+  actionBlocked: boolean
+  actionBlockedReason?: string
+  onPushScript: (script: StoredScript) => void
+  onPullRemote: (item: LibraryCatalogItem) => void
+  onCompare: (localId: string, remoteItem: LibraryCatalogItem) => void
+  hostItemForLocal: (localId: string) => LibraryCatalogItem | undefined
+  syncStatusForLocal: (localId: string) => string
+  remoteItemHref: (item: LibraryCatalogItem) => string
+}
 
 interface Props {
   scripts: StoredScript[]
@@ -22,6 +37,7 @@ interface Props {
   onDelete: (id: string) => void
   canManageScripts?: boolean
   emptyMessage?: string
+  federation?: ScriptLibraryFederation
 }
 
 function formatDate(value?: string) {
@@ -72,6 +88,14 @@ function authoringHealthSummary(script: StoredScript) {
   return { blockers, warnings: warnings + reviews, topInputs: inputs.slice(0, 3) }
 }
 
+function remoteItemMetadata(item: LibraryCatalogItem) {
+  return [
+    `Project ${item.project_id || 'unmapped'}`,
+    `Hash ${shortLibraryHash(item.content_hash)}`,
+    item.dependencies?.length ? `${item.dependencies.length} dependencies` : '',
+  ].filter(Boolean)
+}
+
 function SortIndicator({ active, direction }: { active: boolean, direction: 'asc' | 'desc' }) {
   return (
     <span className={`sort-icon ${active ? 'active' : ''}`}>
@@ -98,12 +122,21 @@ export default function ScriptsLibraryTable({
   onDelete,
   canManageScripts = true,
   emptyMessage = 'No scripts yet.',
+  federation,
 }: Props) {
+  const showSource = Boolean(federation)
+  const columnCount = showSource ? 6 : 5
+  const showLocal = !federation || federation.sourceFilter !== 'host'
+  const localScripts = showLocal ? scripts : []
+  const remoteRows = federation && federation.sourceFilter !== 'local' ? federation.remoteRows : []
+  const isEmpty = localScripts.length === 0 && remoteRows.length === 0
+
   return (
     <div className="data-table">
       <table>
         <thead>
           <tr>
+            {showSource && <th>Source</th>}
             <th onClick={() => onSort('name')} className="sortable">Script <SortIndicator active={sortField === 'name'} direction={sortDirection} /></th>
             <th onClick={() => onSort('authoring_health')} className="sortable">Health <SortIndicator active={sortField === 'authoring_health'} direction={sortDirection} /></th>
             <th onClick={() => onSort('scenario_count')} className="sortable">Usage <SortIndicator active={sortField === 'scenario_count'} direction={sortDirection} /></th>
@@ -112,11 +145,22 @@ export default function ScriptsLibraryTable({
           </tr>
         </thead>
         <tbody>
-          {scripts.map((script) => {
+          {localScripts.map((script) => {
             const healthSummary = authoringHealthSummary(script)
+            const hostItem = federation?.hostItemForLocal(script.id)
+            const syncStatus = federation?.syncStatusForLocal(script.id) || 'local only'
+            const conflict = syncStatus === 'conflict'
             return (
               <Fragment key={script.id}>
                 <tr key={script.id} className="clickable-row" onClick={() => onToggleScriptRuns(script)}>
+                  {showSource && (
+                    <td>
+                      <span className="script-health-token">Local</span>
+                      <div className="script-table-meta">
+                        <span className={`script-health-token ${libraryStatusTone(syncStatus)}`}>{syncStatus}</span>
+                      </div>
+                    </td>
+                  )}
                   <td className="cell-name">
                     <div>{script.name}</div>
                     <div className="script-table-meta">
@@ -149,6 +193,19 @@ export default function ScriptsLibraryTable({
                       <>
                         <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onEdit(script.id) }}>Edit</button>
                         <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); onDelete(script.id) }}>Delete</button>
+                        {federation && (
+                          <>
+                            <button
+                              className="btn btn-sm btn-secondary"
+                              onClick={(event) => { event.stopPropagation(); federation.onPushScript(script) }}
+                              disabled={federation.actionBlocked || conflict}
+                              title={conflict ? 'Compare this conflict before transferring.' : federation.actionBlockedReason}
+                            >Push</button>
+                            {hostItem?.local_item_id && (
+                              <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); federation.onCompare(script.id, hostItem) }}>Compare</button>
+                            )}
+                          </>
+                        )}
                       </>
                     ) : (
                       <span className="cell-muted">Read-only</span>
@@ -157,7 +214,7 @@ export default function ScriptsLibraryTable({
                 </tr>
                 {expandedScriptId === script.id && (
                   <tr className="no-hover">
-                    <td colSpan={5} style={{ background: 'var(--bg-primary)' }}>
+                    <td colSpan={columnCount} style={{ background: 'var(--bg-primary)' }}>
                       <div style={{ padding: '10px 4px' }}>
                         <div className="cell-muted" style={{ marginBottom: 8 }}>
                           Linked Scenario Runs {loadingRunsFor === script.id ? '(loading...)' : `(${(scriptRuns[script.id] || []).length})`}
@@ -229,7 +286,55 @@ export default function ScriptsLibraryTable({
               </Fragment>
             )
           })}
-          {scripts.length === 0 && <tr><td colSpan={5} className="cell-muted">{emptyMessage}</td></tr>}
+          {federation && remoteRows.map((item) => {
+            const syncStatus = item.sync_status || 'host only'
+            const conflict = syncStatus === 'conflict'
+            const href = federation.remoteItemHref(item)
+            return (
+              <tr key={`remote:${item.kind}:${item.id}`} className="no-hover">
+                <td>
+                  <span className="script-health-token">Remote</span>
+                  <div className="script-table-meta">
+                    <span className={`script-health-token ${libraryStatusTone(syncStatus)}`}>{syncStatus}</span>
+                  </div>
+                </td>
+                <td className="cell-name">
+                  <div>{item.name || item.id}</div>
+                  <div className="script-table-meta">
+                    {item.protocol && <span className="protocol-badge">{item.protocol}</span>}
+                    {item.version && <span className="script-health-token">v{item.version}</span>}
+                    {item.has_archive && <span className="script-health-token healthy">archive</span>}
+                  </div>
+                </td>
+                <td className="cell-muted">—</td>
+                <td>
+                  <div className="script-table-usage">
+                    {remoteItemMetadata(item).map(piece => <span key={piece}>{piece}</span>)}
+                  </div>
+                </td>
+                <td className="cell-muted">{formatLibraryDateTime(item.updated_at)}</td>
+                <td style={{ textAlign: 'right' }}>
+                  {canManageScripts ? (
+                    <>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={() => federation.onPullRemote(item)}
+                        disabled={federation.actionBlocked || conflict}
+                        title={conflict ? 'Compare this conflict before transferring.' : federation.actionBlockedReason}
+                      >Pull</button>
+                      {item.local_item_id && (
+                        <button className="btn btn-sm btn-ghost" onClick={() => federation.onCompare(item.local_item_id!, item)}>Compare</button>
+                      )}
+                      {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer">Open in Remote Library</a>}
+                    </>
+                  ) : (
+                    <span className="cell-muted">Read-only</span>
+                  )}
+                </td>
+              </tr>
+            )
+          })}
+          {isEmpty && <tr><td colSpan={columnCount} className="cell-muted">{emptyMessage}</td></tr>}
         </tbody>
       </table>
     </div>
