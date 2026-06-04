@@ -8,7 +8,6 @@ import { apexCodeMirrorTheme } from './codeMirrorTheme'
 import {
   BrowserReplayEvent,
   BrowserReplayNetworkEntry,
-  ReplayPreflight,
   BrowserReplayReport,
   ScriptDebugBreakpoint,
   ScriptDebugAction,
@@ -32,9 +31,11 @@ import {
   type LoadRunnerSourceReview,
   type ScriptParameterDefinition,
   type ScriptValidationResponse,
+  type ReplayPreflight,
 } from '../types/scripts'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
 import ReplayPreflightCard, { replayPreflightStatusLabel } from './ReplayPreflightCard'
+import { buildLocalReplayPreflight } from './replayPreflightUtils'
 import SourceMappingReview from './SourceMappingReview'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
@@ -517,105 +518,11 @@ function hasStructuredReplaySnapshot(snapshot?: ReplaySnapshot | null) {
   )
 }
 
-const REPLAY_TEMPLATE_REF_PATTERN = /\{\{\s*(var|env|data|param)\.([a-zA-Z0-9_.-]+)/g
-
 function safeParseReplayVariables(text: string): Record<string, string> | undefined {
   try {
     return parseReplayVariablesText(text)
   } catch {
     return undefined
-  }
-}
-
-function buildLocalReplayPreflight(script: ScriptData, variables?: Record<string, string>): ReplayPreflight {
-  const phases = script as ScriptData & { init?: Action[]; teardown?: Action[] }
-  const orderedActions = [
-    ...(phases.init || []),
-    ...(script.actions || []),
-    ...(phases.teardown || []),
-  ]
-  const availableVariables = new Set<string>([
-    ...Object.keys(variables || {}),
-    ...(script.parameters || []).map(parameter => parameter.name).filter(Boolean),
-  ])
-  const missingVariables = new Set<string>()
-  const requiredSecrets = new Set<string>()
-
-  orderedActions.forEach(action => {
-    const payload = JSON.stringify(action)
-    REPLAY_TEMPLATE_REF_PATTERN.lastIndex = 0
-    let match = REPLAY_TEMPLATE_REF_PATTERN.exec(payload)
-    while (match) {
-      const [, kind, name] = match
-      if (kind === 'var' && !availableVariables.has(name)) {
-        missingVariables.add(name)
-      }
-      if (kind === 'env') {
-        requiredSecrets.add(name)
-      }
-      match = REPLAY_TEMPLATE_REF_PATTERN.exec(payload)
-    }
-    ;(action.extractors || []).forEach(extractor => {
-      if (extractor.name) availableVariables.add(extractor.name)
-    })
-  })
-
-  const dataWarnings = (script.data_sources || [])
-    .filter(source => !source.path && !source.inline_data)
-    .map(source => `${source.name || 'Data source'} needs a file path or inline data.`)
-  const missingVariableList = Array.from(missingVariables).sort()
-  const requiredSecretList = Array.from(requiredSecrets).sort()
-  const browserRequired = script.protocol === 'browser'
-  const runtimePrerequisites = browserRequired
-    ? [
-        `Browser engine: ${script.config.browser?.engine || 'chromium'}`,
-        `Screenshot capture: ${script.config.browser?.capture_screenshots || 'per_action'}`,
-      ]
-    : [`Adapter: ${script.protocol}`]
-
-  return {
-    valid: missingVariableList.length === 0 && dataWarnings.length === 0,
-    action_count: orderedActions.length,
-    expected_action_count: orderedActions.length,
-    data_source_count: script.data_sources?.length || 0,
-    parameter_count: script.parameters?.length || 0,
-    browser_required: browserRequired,
-    missing_variables: missingVariableList,
-    required_secrets: requiredSecretList,
-    runtime_prerequisites: runtimePrerequisites,
-    warnings: dataWarnings,
-    checks: [
-      {
-        id: 'validation',
-        label: 'Script validation',
-        status: script.name && script.actions.length > 0 ? 'pass' : 'fail',
-        detail: script.name && script.actions.length > 0 ? 'Ready' : 'Script name and actions are required.',
-      },
-      {
-        id: 'variables',
-        label: 'Variable readiness',
-        status: missingVariableList.length > 0 ? 'fail' : 'pass',
-        detail: missingVariableList.length > 0 ? missingVariableList.join(', ') : 'All replay variables are seeded or extracted before use.',
-      },
-      {
-        id: 'secrets',
-        label: 'Secret bindings',
-        status: requiredSecretList.length > 0 ? 'warn' : 'pass',
-        detail: requiredSecretList.length > 0 ? requiredSecretList.join(', ') : 'No environment secret references detected.',
-      },
-      {
-        id: 'data_sources',
-        label: 'Data source readiness',
-        status: dataWarnings.length > 0 ? 'fail' : (script.data_sources?.length ? 'warn' : 'pass'),
-        detail: dataWarnings.length > 0 ? dataWarnings.join('; ') : `${script.data_sources?.length || 0} data source${(script.data_sources?.length || 0) === 1 ? '' : 's'} configured.`,
-      },
-      {
-        id: 'runtime',
-        label: 'Runtime prerequisites',
-        status: browserRequired ? 'warn' : 'pass',
-        detail: runtimePrerequisites.join('; '),
-      },
-    ],
   }
 }
 

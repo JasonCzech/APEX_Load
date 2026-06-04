@@ -1,4 +1,4 @@
-import type { ReplayPreflight } from '../types'
+import type { ReplayPreflight } from '../types/scripts'
 
 export function replayPreflightStatusLabel(preflight?: ReplayPreflight | null) {
   if (!preflight) return 'Not checked'
