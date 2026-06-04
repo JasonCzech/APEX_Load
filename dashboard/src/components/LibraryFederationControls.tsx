@@ -14,12 +14,21 @@ function sourceDescription(kind: LibraryKind) {
   return 'Pull or promote authored scripts between local and remote libraries.'
 }
 
+function remoteStatusLabel(status?: string) {
+  return status || 'No Remote Library'
+}
+
+function credentialsLabel(ready: boolean) {
+  return ready ? 'Credentials Ready' : 'Credentials Missing'
+}
+
 type LibraryFederationControlsProps = {
   kind: LibraryKind
   federation: UseLibraryFederationResult
+  onConfigureRemotes?: () => void
 }
 
-export default function LibraryFederationControls({ kind, federation }: LibraryFederationControlsProps) {
+export default function LibraryFederationControls({ kind, federation, onConfigureRemotes }: LibraryFederationControlsProps) {
   const {
     remotes,
     selectedRemoteId,
@@ -48,8 +57,26 @@ export default function LibraryFederationControls({ kind, federation }: LibraryF
           <p className="library-toolbar-subtitle">{sourceDescription(kind)}</p>
         </div>
         <div className="library-source-summary">
-          <span className={`script-health-token ${libraryStatusTone(selectedRemote?.status)}`}>{selectedRemote?.status || 'no remote library'}</span>
-          <span className={`script-health-token ${credentialsReady ? 'healthy' : 'danger'}`}>{credentialsReady ? 'credentials ready' : 'credentials missing'}</span>
+          {onConfigureRemotes ? (
+            <button
+              type="button"
+              className={`script-health-token library-source-pill-link ${libraryStatusTone(selectedRemote?.status)}`}
+              onClick={onConfigureRemotes}
+              title="Manage remote libraries in Settings > Integrations"
+            >{remoteStatusLabel(selectedRemote?.status)}</button>
+          ) : (
+            <span className={`script-health-token ${libraryStatusTone(selectedRemote?.status)}`}>{remoteStatusLabel(selectedRemote?.status)}</span>
+          )}
+          {onConfigureRemotes ? (
+            <button
+              type="button"
+              className={`script-health-token library-source-pill-link ${credentialsReady ? 'healthy' : 'danger'}`}
+              onClick={onConfigureRemotes}
+              title="Configure remote credentials in Settings > Integrations"
+            >{credentialsLabel(credentialsReady)}</button>
+          ) : (
+            <span className={`script-health-token ${credentialsReady ? 'healthy' : 'danger'}`}>{credentialsLabel(credentialsReady)}</span>
+          )}
         </div>
       </div>
 

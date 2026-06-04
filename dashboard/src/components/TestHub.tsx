@@ -14,6 +14,7 @@ import { buildScenarioModelPreview, buildScenarioShapeCatalog, formatModelTimeLa
 import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
 import DurationField from './DurationField'
 import PageViewToggle from './PageViewToggle'
+import { type NavPage } from './Sidebar'
 import LibraryFederationControls from './LibraryFederationControls'
 import { useLibraryFederation } from './useLibraryFederation'
 import { formatLibraryDateTime, libraryStatusTone, shortLibraryHash } from './libraryFederationUtils'
@@ -23,6 +24,7 @@ interface Props {
   testStatuses: Record<string, string>
   onSelectTest: (id: string) => void
   onCreateTestFromScenario?: (scenarioId: string) => void
+  onNavigate?: (page: NavPage) => void
 }
 
 interface ScenarioFormState {
@@ -616,7 +618,7 @@ function ScenarioModelPreviewPanel({
   )
 }
 
-function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
+function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [scenarios, setScenarios] = useState<StoredScenario[]>([])
@@ -638,6 +640,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
   const [form, setForm] = useState<ScenarioFormState>(emptyScenarioForm())
   const [error, setError] = useState('')
   const [scenarioQuery, setScenarioQuery] = useState('')
+  const [scenarioReleaseFilter, setScenarioReleaseFilter] = useState('all')
   const [scriptLibraryQuery, setScriptLibraryQuery] = useState('')
   const [sortField, setSortField] = useState<'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_at' | 'result_count'>('last_run_at')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
@@ -871,11 +874,24 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
     return () => { cancelled = true }
   }, [api, buildScenarioDraftPayload, form, showBrowserRuntimeSettings, showForm])
 
+  const scenarioReleaseOptions = useMemo(() => {
+    const names = new Set<string>()
+    scenarios.forEach(scenario => (scenario.associated_releases || []).forEach(release => release.name && names.add(release.name)))
+    return Array.from(names).sort((a, b) => a.localeCompare(b))
+  }, [scenarios])
+
+  const openRemoteSettings = useCallback(() => {
+    try { window.localStorage.setItem('apexload.settings.focusSection', 'integrations') } catch { /* storage unavailable */ }
+    onNavigate?.('settings')
+  }, [onNavigate])
+
   const sorted = useMemo(() => {
     const query = scenarioQuery.trim().toLowerCase()
-    const filteredScenarios = query
-      ? scenarios.filter(scenario => scenarioSearchText(scenario).includes(query))
-      : scenarios
+    const filteredScenarios = scenarios.filter(scenario => {
+      if (scenarioReleaseFilter !== 'all' && !(scenario.associated_releases || []).some(release => release.name === scenarioReleaseFilter)) return false
+      if (!query) return true
+      return scenarioSearchText(scenario).includes(query)
+    })
     return [...filteredScenarios].sort((a, b) => {
       const aValue = getScenarioSortValue(a, sortField)
       const bValue = getScenarioSortValue(b, sortField)
@@ -883,7 +899,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
       return 0
     })
-  }, [scenarios, scenarioQuery, sortField, sortDirection])
+  }, [scenarios, scenarioQuery, scenarioReleaseFilter, sortField, sortDirection])
 
   const scenarioFederation = useLibraryFederation({ kind: 'scenario', projectId: activeProject?.id, onRefreshLocal: refresh })
 
@@ -891,13 +907,14 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
 
   const federationRemoteScenarioRows = useMemo(() => {
     if (scenarioFederation.sourceFilter === 'local') return []
+    if (scenarioReleaseFilter !== 'all') return []
     const query = scenarioQuery.trim().toLowerCase()
     return scenarioFederation.remoteItems.filter(item => {
       if (scenarioFederation.sourceFilter === 'all' && item.local_item_id && knownScenarioIds.has(item.local_item_id)) return false
       if (!query) return true
       return [item.name, item.protocol, item.project_id].filter(Boolean).join(' ').toLowerCase().includes(query)
     })
-  }, [scenarioFederation.remoteItems, scenarioFederation.sourceFilter, knownScenarioIds, scenarioQuery])
+  }, [scenarioFederation.remoteItems, scenarioFederation.sourceFilter, knownScenarioIds, scenarioQuery, scenarioReleaseFilter])
 
   const showLocalScenarios = scenarioFederation.sourceFilter !== 'host'
 
@@ -2227,20 +2244,36 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
           <div>
             <h3 className="section-title">Scenario Library ({scenarios.length})</h3>
             <p className="library-toolbar-subtitle">
-              {scenarioQuery.trim() ? `${sorted.length} matching scenario${sorted.length === 1 ? '' : 's'}` : 'Search by scenario, script, data pool, release, host, or browser profile.'}
+              {scenarioQuery.trim() || scenarioReleaseFilter !== 'all' ? `${sorted.length} matching scenario${sorted.length === 1 ? '' : 's'}` : 'Search by scenario, script, data pool, release, host, or browser profile.'}
             </p>
           </div>
-          <label className="library-search">
-            <span>Search scenarios</span>
-            <input
-              type="search"
-              value={scenarioQuery}
-              onChange={(event) => setScenarioQuery(event.target.value)}
-              placeholder="Find scenarios..."
-            />
-          </label>
+          <div className="library-toolbar-filters">
+            <label className="library-search">
+              <span>Associated release</span>
+              <select
+                className="library-release-filter"
+                value={scenarioReleaseFilter}
+                onChange={(event) => setScenarioReleaseFilter(event.target.value)}
+              >
+                <option value="all">All releases</option>
+                {scenarioReleaseFilter !== 'all' && !scenarioReleaseOptions.includes(scenarioReleaseFilter) && (
+                  <option value={scenarioReleaseFilter}>{scenarioReleaseFilter}</option>
+                )}
+                {scenarioReleaseOptions.map(name => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </label>
+            <label className="library-search">
+              <span>Search scenarios</span>
+              <input
+                type="search"
+                value={scenarioQuery}
+                onChange={(event) => setScenarioQuery(event.target.value)}
+                placeholder="Find scenarios..."
+              />
+            </label>
+          </div>
         </div>
-        <LibraryFederationControls kind="scenario" federation={scenarioFederation} />
+        <LibraryFederationControls kind="scenario" federation={scenarioFederation} onConfigureRemotes={openRemoteSettings} />
         <div className="data-table">
           <table>
             <thead>
@@ -2248,7 +2281,8 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
                 <th>Source</th>
                 <th onClick={() => handleSort('name')} className="sortable">Scenario <SortIndicator active={sortField === 'name'} direction={sortDirection} /></th>
                 <th onClick={() => handleSort('scripts')} className="sortable">Workload <SortIndicator active={sortField === 'scripts'} direction={sortDirection} /></th>
-                <th onClick={() => handleSort('associated_releases')} className="sortable">Releases <SortIndicator active={sortField === 'associated_releases'} direction={sortDirection} /></th>
+                <th onClick={() => handleSort('associated_releases')} className="sortable">Associated Releases <SortIndicator active={sortField === 'associated_releases'} direction={sortDirection} /></th>
+                <th onClick={() => handleSort('created_at')} className="sortable">Create Date <SortIndicator active={sortField === 'created_at'} direction={sortDirection} /></th>
                 <th onClick={() => handleSort('last_run_at')} className="sortable">Last Run <SortIndicator active={sortField === 'last_run_at'} direction={sortDirection} /></th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
@@ -2293,9 +2327,9 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
                     <td>
                       <div className="scenario-table-workload">
                         <strong>{releaseList(scenario)}</strong>
-                        <span>Created {formatDate(scenario.created_at)}</span>
                       </div>
                     </td>
+                    <td className="cell-muted">{formatDate(scenario.created_at)}</td>
                     <td className="cell-muted">
                       <div className="scenario-table-workload">
                         <strong>{formatDate(scenario.last_run_at)}</strong>
@@ -2329,7 +2363,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
                   </tr>
                   {expandedScenarioId === scenario.id && (
                     <tr className="no-hover">
-                      <td colSpan={6} style={{ background: 'var(--bg-primary)' }}>
+                      <td colSpan={7} style={{ background: 'var(--bg-primary)' }}>
                         {renderScenarioRunsContent(scenario)}
                       </td>
                     </tr>
@@ -2359,6 +2393,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
                       </div>
                     </td>
                     <td className="cell-muted">—</td>
+                    <td className="cell-muted">—</td>
                     <td className="cell-muted">{formatLibraryDateTime(item.updated_at)}</td>
                     <td style={{ textAlign: 'right' }}>
                       {canManageTests ? (
@@ -2383,8 +2418,8 @@ function TestHub({ onSelectTest, onCreateTestFromScenario }: Props) {
               })}
               {(!showLocalScenarios || sorted.length === 0) && federationRemoteScenarioRows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="cell-muted">
-                    {scenarioQuery.trim() ? 'No scenarios match this search.' : 'No scenarios yet. Create a scenario from an existing script.'}
+                  <td colSpan={7} className="cell-muted">
+                    {scenarioQuery.trim() || scenarioReleaseFilter !== 'all' ? 'No scenarios match these filters.' : 'No scenarios yet. Create a scenario from an existing script.'}
                   </td>
                 </tr>
               )}

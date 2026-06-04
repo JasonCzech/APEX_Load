@@ -408,6 +408,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               testStatuses={testStatuses}
               onSelectTest={navigateToTest}
               onCreateTestFromScenario={navigateToNewTestForScenario}
+              onNavigate={handleNavigate}
             />
           )}
           {view.page === 'new-test' && (
@@ -436,6 +437,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               initialMode={scriptMode}
               initialEditId={scriptEditId}
               onSelectScenario={navigateToTest}
+              onNavigate={handleNavigate}
             />
           )}
           {view.page === 'results' && (

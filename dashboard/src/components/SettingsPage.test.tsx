@@ -523,6 +523,7 @@ describe('SettingsPage', () => {
     container.remove()
     vi.clearAllMocks()
     downloadBlobMock.mockReset()
+    window.localStorage.removeItem('apexload.settings.focusSection')
   })
 
   it('offers Sepia in the dashboard theme selector', async () => {
@@ -545,6 +546,24 @@ describe('SettingsPage', () => {
     await setFieldValue(themeSelect, 'sepia')
 
     expect(onThemeChange).toHaveBeenCalledWith('sepia')
+  })
+
+  it('opens the requested integrations section from navigation handoff', async () => {
+    window.localStorage.setItem('apexload.settings.focusSection', 'integrations')
+
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    const integrationsSection = container.querySelector('#settings-section-integrations')
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(integrationsSection).toBeTruthy()
+    expect(generalSection).toBeTruthy()
+    expect(integrationsSection?.hasAttribute('hidden')).toBe(false)
+    expect(generalSection?.hasAttribute('hidden')).toBe(true)
+    expect(window.localStorage.getItem('apexload.settings.focusSection')).toBeNull()
   })
 
   it('defaults generator capacity fields to the connected live pod capacity when settings are still at the stock defaults', async () => {

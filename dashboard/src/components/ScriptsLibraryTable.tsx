@@ -125,7 +125,7 @@ export default function ScriptsLibraryTable({
   federation,
 }: Props) {
   const showSource = Boolean(federation)
-  const columnCount = showSource ? 6 : 5
+  const columnCount = (showSource ? 1 : 0) + 7
   const showLocal = !federation || federation.sourceFilter !== 'host'
   const localScripts = showLocal ? scripts : []
   const remoteRows = federation && federation.sourceFilter !== 'local' ? federation.remoteRows : []
@@ -140,6 +140,8 @@ export default function ScriptsLibraryTable({
             <th onClick={() => onSort('name')} className="sortable">Script <SortIndicator active={sortField === 'name'} direction={sortDirection} /></th>
             <th onClick={() => onSort('authoring_health')} className="sortable">Health <SortIndicator active={sortField === 'authoring_health'} direction={sortDirection} /></th>
             <th onClick={() => onSort('scenario_count')} className="sortable">Usage <SortIndicator active={sortField === 'scenario_count'} direction={sortDirection} /></th>
+            <th onClick={() => onSort('associated_releases')} className="sortable">Associated Releases <SortIndicator active={sortField === 'associated_releases'} direction={sortDirection} /></th>
+            <th onClick={() => onSort('created_at')} className="sortable">Create Date <SortIndicator active={sortField === 'created_at'} direction={sortDirection} /></th>
             <th onClick={() => onSort('last_run_at')} className="sortable">Last Run <SortIndicator active={sortField === 'last_run_at'} direction={sortDirection} /></th>
             <th style={{ textAlign: 'right' }}>Actions</th>
           </tr>
@@ -167,7 +169,6 @@ export default function ScriptsLibraryTable({
                       <span className="protocol-badge">{script.protocol}</span>
                       <span className="script-health-token">v{script.version || '—'}</span>
                       <ReferenceKeyBadge value={script.ref_key} />
-                      <span className="cell-muted">Created {formatDate(script.created_at)}</span>
                     </div>
                   </td>
                   <td>
@@ -183,10 +184,15 @@ export default function ScriptsLibraryTable({
                   <td>
                     <div className="script-table-usage">
                       <strong>{formatScenarioCount(script)}</strong>
-                      <span>{releaseList(script)}</span>
                       <span>{scenarioRunReleaseList(script)}</span>
                     </div>
                   </td>
+                  <td>
+                    <div className="script-table-usage">
+                      <span>{releaseList(script)}</span>
+                    </div>
+                  </td>
+                  <td className="cell-muted">{formatDate(script.created_at)}</td>
                   <td className="cell-muted">{formatDate(script.last_run_at)}</td>
                   <td style={{ textAlign: 'right' }}>
                     {canManageScripts ? (
@@ -312,6 +318,8 @@ export default function ScriptsLibraryTable({
                     {remoteItemMetadata(item).map(piece => <span key={piece}>{piece}</span>)}
                   </div>
                 </td>
+                <td className="cell-muted">—</td>
+                <td className="cell-muted">—</td>
                 <td className="cell-muted">{formatLibraryDateTime(item.updated_at)}</td>
                 <td style={{ textAlign: 'right' }}>
                   {canManageScripts ? (

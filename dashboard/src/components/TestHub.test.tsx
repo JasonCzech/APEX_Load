@@ -24,8 +24,21 @@ const apiMock = {
   getAuthEffectiveAccess: vi.fn(),
 }
 
+const libraryApiMock = {
+  listRemotes: vi.fn(),
+  localCatalog: vi.fn(),
+  remoteCatalog: vi.fn(),
+  pullRemoteItem: vi.fn(),
+  pushLocalItem: vi.fn(),
+  compareItems: vi.fn(),
+}
+
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
+}))
+
+vi.mock('../hooks/api/useLibraryApi', () => ({
+  useLibraryApi: () => libraryApiMock,
 }))
 
 vi.mock('../hooks/useProject', () => ({
@@ -220,6 +233,9 @@ describe('TestHub', () => {
     apiMock.updateScenario.mockResolvedValue({ id: 'scenario-1' })
     apiMock.deleteScenario.mockResolvedValue({ deleted: 'scenario-1' })
     apiMock.listScenarioResults.mockResolvedValue({ tests: [], count: 0 })
+    libraryApiMock.listRemotes.mockResolvedValue({ remotes: [], count: 0 })
+    libraryApiMock.localCatalog.mockResolvedValue({ items: [], count: 0 })
+    libraryApiMock.remoteCatalog.mockResolvedValue({ catalog: { items: [], count: 0 } })
     apiMock.getAuthEffectiveAccess.mockResolvedValue({
       enabled: false,
       authenticated: false,
@@ -232,6 +248,7 @@ describe('TestHub', () => {
         },
       ],
     })
+    window.localStorage.removeItem('apexload.settings.focusSection')
   })
 
   afterEach(async () => {
@@ -240,6 +257,7 @@ describe('TestHub', () => {
     })
     container.remove()
     vi.clearAllMocks()
+    window.localStorage.removeItem('apexload.settings.focusSection')
   })
 
   it('creates a scenario from the typed form payload', async () => {
@@ -329,7 +347,7 @@ describe('TestHub', () => {
         },
         scripts: [{ script_id: 'script-1', script_name: 'Checkout Flow', vusers: 25 }],
         data_pools: [],
-        associated_releases: [],
+        associated_releases: [{ id: 'release-29', name: 'PI29', application_id: 'app-1' }],
         result_count: 0,
         created_at: '2026-05-12T00:00:00Z',
         last_run_at: '2026-05-13T00:00:00Z',
@@ -346,10 +364,12 @@ describe('TestHub', () => {
     const libraryHeaders = Array.from(container.querySelectorAll('th')).map(th => th.textContent || '')
     expect(libraryHeaders.some(header => header.includes('Scenario'))).toBe(true)
     expect(libraryHeaders.some(header => header.includes('Workload'))).toBe(true)
-    expect(libraryHeaders.some(header => header.includes('Releases'))).toBe(true)
+    expect(libraryHeaders.some(header => header.includes('Associated Releases'))).toBe(true)
+    expect(libraryHeaders.some(header => header.includes('Create Date'))).toBe(true)
     expect(container.textContent).toContain('Pinned Checkout')
     expect(container.textContent).toContain('Specific Hosts')
     expect(container.textContent).toContain('gen-a, gen-b')
+    expect(container.textContent).toContain('PI29')
     expect(container.textContent).toContain('No data pools')
     expect(container.textContent).toContain('0 results')
 
@@ -369,7 +389,7 @@ describe('TestHub', () => {
     })
 
     expect(container.textContent).toContain('0 matching scenarios')
-    expect(container.textContent).toContain('No scenarios match this search.')
+    expect(container.textContent).toContain('No scenarios match these filters.')
 
     await act(async () => {
       setInputValue(searchInput, '')
@@ -387,6 +407,105 @@ describe('TestHub', () => {
 
     expect(apiMock.listScenarioResults).toHaveBeenCalledWith('scenario-1')
     expect(container.textContent).toContain('No runs for this scenario yet.')
+  })
+
+  it('filters the scenario library by associated release', async () => {
+    const onSelectTest = vi.fn()
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-checkout',
+          name: 'Checkout Release Scenario',
+          duration: '5m',
+          assignment: { mode: 'auto' },
+          scripts: [{ script_id: 'script-1', script_name: 'Checkout Flow', vusers: 25 }],
+          data_pools: [],
+          associated_releases: [{ id: 'release-29', name: 'PI29', application_id: 'app-1' }],
+          result_count: 0,
+          created_at: '2026-05-12T00:00:00Z',
+          last_run_at: '2026-05-13T00:00:00Z',
+        },
+        {
+          id: 'scenario-payments',
+          name: 'Payments Release Scenario',
+          duration: '5m',
+          assignment: { mode: 'auto' },
+          scripts: [{ script_id: 'script-1', script_name: 'Checkout Flow', vusers: 10 }],
+          data_pools: [],
+          associated_releases: [{ id: 'release-30', name: 'PI30', application_id: 'app-1' }],
+          result_count: 0,
+          created_at: '2026-05-13T00:00:00Z',
+          last_run_at: '',
+        },
+      ],
+      count: 2,
+    })
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+
+    await flushPromises()
+
+    const releaseFilter = container.querySelector('select.library-release-filter') as HTMLSelectElement | null
+    expect(releaseFilter).toBeTruthy()
+    if (!releaseFilter) return
+
+    expect(Array.from(releaseFilter.options).map(option => option.textContent)).toEqual(['All releases', 'PI29', 'PI30'])
+
+    await act(async () => {
+      setSelectValue(releaseFilter, 'PI29')
+    })
+
+    expect(container.textContent).toContain('1 matching scenario')
+    expect(container.textContent).toContain('Checkout Release Scenario')
+    expect(container.textContent).not.toContain('Payments Release Scenario')
+
+    await act(async () => {
+      setSelectValue(releaseFilter, 'PI30')
+    })
+
+    expect(container.textContent).toContain('Payments Release Scenario')
+    expect(container.textContent).not.toContain('Checkout Release Scenario')
+
+    await act(async () => {
+      setSelectValue(releaseFilter, 'release-that-does-not-exist')
+    })
+
+    expect(container.textContent).toContain('0 matching scenarios')
+    expect(container.textContent).toContain('No scenarios match these filters.')
+  })
+
+  it('routes scenario library source pills to integrations settings', async () => {
+    const onSelectTest = vi.fn()
+    const onNavigate = vi.fn()
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} onNavigate={onNavigate} />)
+    })
+
+    await flushPromises()
+
+    const noRemoteButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('No Remote Library'))
+    const credentialsButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Credentials Missing'))
+    expect(noRemoteButton).toBeDefined()
+    expect(credentialsButton).toBeDefined()
+    if (!noRemoteButton || !credentialsButton) return
+
+    await act(async () => {
+      noRemoteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onNavigate).toHaveBeenCalledWith('settings')
+    expect(window.localStorage.getItem('apexload.settings.focusSection')).toBe('integrations')
+
+    window.localStorage.removeItem('apexload.settings.focusSection')
+    await act(async () => {
+      credentialsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onNavigate).toHaveBeenCalledWith('settings')
+    expect(window.localStorage.getItem('apexload.settings.focusSection')).toBe('integrations')
   })
 
   it('clones an existing scenario draft with data pool bindings from the wizard source step', async () => {

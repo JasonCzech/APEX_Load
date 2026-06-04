@@ -22,8 +22,21 @@ const apiMock = {
   getAuthEffectiveAccess: vi.fn(),
 }
 
+const libraryApiMock = {
+  listRemotes: vi.fn(),
+  localCatalog: vi.fn(),
+  remoteCatalog: vi.fn(),
+  pullRemoteItem: vi.fn(),
+  pushLocalItem: vi.fn(),
+  compareItems: vi.fn(),
+}
+
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
+}))
+
+vi.mock('../hooks/api/useLibraryApi', () => ({
+  useLibraryApi: () => libraryApiMock,
 }))
 
 vi.mock('../hooks/useProject', () => ({
@@ -213,6 +226,9 @@ describe('ScriptsPage', () => {
       changes: [{ kind: 'extractor_added', path: 'actions[0].extractors' }],
       authoring_health: { score: 100, status: 'ready', inputs: [] },
     })
+    libraryApiMock.listRemotes.mockResolvedValue({ remotes: [], count: 0 })
+    libraryApiMock.localCatalog.mockResolvedValue({ items: [], count: 0 })
+    libraryApiMock.remoteCatalog.mockResolvedValue({ catalog: { items: [], count: 0 } })
     apiMock.getAuthEffectiveAccess.mockResolvedValue({
       enabled: false,
       authenticated: false,
@@ -225,6 +241,7 @@ describe('ScriptsPage', () => {
         },
       ],
     })
+    window.localStorage.removeItem('apexload.settings.focusSection')
   })
 
   afterEach(async () => {
@@ -233,6 +250,7 @@ describe('ScriptsPage', () => {
     })
     container.remove()
     vi.clearAllMocks()
+    window.localStorage.removeItem('apexload.settings.focusSection')
   })
 
   it('routes sample import edit handoff through the draft editor and into persisted edit mode after save', async () => {
@@ -472,6 +490,99 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('0 matching scripts')
     expect(container.textContent).toContain('No scripts match these filters.')
     expect(container.textContent).not.toContain('Existing Script')
+  })
+
+  it('filters the script library by associated release and shows release and create date columns', async () => {
+    apiMock.listScripts.mockResolvedValueOnce({
+      scripts: [
+        {
+          id: 'script-checkout',
+          name: 'Checkout Script',
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-12T20:00:00Z',
+          scenario_count: 1,
+          associated_releases: [{ id: 'release-29', name: 'PI29', application_id: 'app-1' }],
+          scenario_run_releases: [],
+          last_run_at: '',
+        },
+        {
+          id: 'script-payments',
+          name: 'Payments Script',
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-13T20:00:00Z',
+          scenario_count: 1,
+          associated_releases: [{ id: 'release-30', name: 'PI30', application_id: 'app-1' }],
+          scenario_run_releases: [],
+          last_run_at: '',
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    const headers = Array.from(container.querySelectorAll('th')).map(th => th.textContent || '')
+    expect(headers.some(header => header.includes('Associated Releases'))).toBe(true)
+    expect(headers.some(header => header.includes('Create Date'))).toBe(true)
+    expect(container.textContent).toContain('Checkout Script')
+    expect(container.textContent).toContain('Payments Script')
+
+    const releaseFilter = container.querySelector('select.library-release-filter') as HTMLSelectElement | null
+    expect(releaseFilter).toBeTruthy()
+    if (!releaseFilter) return
+
+    expect(Array.from(releaseFilter.options).map(option => option.textContent)).toEqual(['All releases', 'PI29', 'PI30'])
+
+    await act(async () => {
+      setSelectValue(releaseFilter, 'PI29')
+    })
+
+    expect(container.textContent).toContain('1 matching script')
+    expect(container.textContent).toContain('Checkout Script')
+    expect(container.textContent).not.toContain('Payments Script')
+
+    await act(async () => {
+      setSelectValue(releaseFilter, 'PI30')
+    })
+
+    expect(container.textContent).toContain('Payments Script')
+    expect(container.textContent).not.toContain('Checkout Script')
+  })
+
+  it('routes script library source pills to integrations settings', async () => {
+    const onNavigate = vi.fn()
+
+    await act(async () => {
+      root.render(<ScriptsPage onNavigate={onNavigate} />)
+    })
+
+    await flushPromises()
+
+    const noRemoteButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('No Remote Library'))
+    const credentialsButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Credentials Missing'))
+    expect(noRemoteButton).toBeDefined()
+    expect(credentialsButton).toBeDefined()
+    if (!noRemoteButton || !credentialsButton) return
+
+    await act(async () => {
+      noRemoteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onNavigate).toHaveBeenCalledWith('settings')
+    expect(window.localStorage.getItem('apexload.settings.focusSection')).toBe('integrations')
+
+    window.localStorage.removeItem('apexload.settings.focusSection')
+    await act(async () => {
+      credentialsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onNavigate).toHaveBeenCalledWith('settings')
+    expect(window.localStorage.getItem('apexload.settings.focusSection')).toBe('integrations')
   })
 
   it('filters the script library by authoring health categories', async () => {
@@ -1267,6 +1378,13 @@ function setInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
   setter?.call(input, value)
   input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+function setSelectValue(select: HTMLSelectElement, value: string) {
+  const prototype = Object.getPrototypeOf(select) as HTMLSelectElement
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+  setter?.call(select, value)
+  select.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
 async function clickButton(label: string) {

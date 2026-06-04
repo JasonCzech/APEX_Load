@@ -9,6 +9,7 @@ import ScriptsLibraryTable, { type ScriptLibraryFederation } from './ScriptsLibr
 import PageViewToggle from './PageViewToggle'
 import LibraryFederationControls from './LibraryFederationControls'
 import { useLibraryFederation } from './useLibraryFederation'
+import { type NavPage } from './Sidebar'
 import { type ScriptDefinition } from '../types/scripts'
 import { useScriptsLibraryModel } from './useScriptsLibraryModel'
 import { type ImportedSaveResult, type ScriptsAuthoringSubView, useScriptsAuthoringState } from './useScriptsAuthoringState'
@@ -17,6 +18,7 @@ interface Props {
   initialMode?: ScriptsAuthoringSubView
   initialEditId?: string
   onSelectScenario?: (id: string) => void
+  onNavigate?: (page: NavPage) => void
 }
 
 type AuthoringHealthFilter = 'all' | 'blocked' | 'needs_replay' | 'missing_data' | 'runtime_warning' | 'ai_guardrail'
@@ -101,7 +103,7 @@ function cloneScriptDraft(source: ScriptDefinition, fallbackName: string, projec
   return cloned
 }
 
-export default function ScriptsPage({ initialMode = 'list', initialEditId, onSelectScenario }: Props) {
+export default function ScriptsPage({ initialMode = 'list', initialEditId, onSelectScenario, onNavigate }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [scripts, setScripts] = useState<StoredScript[]>([])
@@ -110,7 +112,13 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   const [correlationErrors, setCorrelationErrors] = useState<Record<string, string>>({})
   const [libraryQuery, setLibraryQuery] = useState('')
   const [healthFilter, setHealthFilter] = useState<AuthoringHealthFilter>('all')
+  const [releaseFilter, setReleaseFilter] = useState('all')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
+
+  const openRemoteSettings = useCallback(() => {
+    try { window.localStorage.setItem('apexload.settings.focusSection', 'integrations') } catch { /* storage unavailable */ }
+    onNavigate?.('settings')
+  }, [onNavigate])
 
   const refresh = useCallback(async () => {
     try {
@@ -146,14 +154,21 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     [effectiveAuthAccessResources],
   )
 
+  const releaseOptions = useMemo(() => {
+    const names = new Set<string>()
+    scripts.forEach(script => (script.associated_releases || []).forEach(release => release.name && names.add(release.name)))
+    return Array.from(names).sort((a, b) => a.localeCompare(b))
+  }, [scripts])
+
   const filteredScripts = useMemo(() => {
     const query = libraryQuery.trim().toLowerCase()
     return scripts.filter(script => {
       if (!scriptMatchesHealthFilter(script, healthFilter)) return false
+      if (releaseFilter !== 'all' && !(script.associated_releases || []).some(release => release.name === releaseFilter)) return false
       if (!query) return true
       return scriptSearchText(script).includes(query)
     })
-  }, [healthFilter, libraryQuery, scripts])
+  }, [healthFilter, libraryQuery, releaseFilter, scripts])
 
   const healthFilterCounts = useMemo(() => {
     return healthFilters.reduce<Record<AuthoringHealthFilter, number>>((acc, filter) => {
@@ -193,6 +208,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   const knownScriptIds = useMemo(() => new Set(scripts.map(script => script.id)), [scripts])
 
   const federationRemoteRows = useMemo(() => {
+    if (releaseFilter !== 'all') return []
     const query = libraryQuery.trim().toLowerCase()
     return federation.remoteItems.filter(item => {
       // On "all", local scripts already cover assets that exist on both sides; only
@@ -201,7 +217,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
       if (!query) return true
       return [item.name, item.protocol, item.project_id].filter(Boolean).join(' ').toLowerCase().includes(query)
     })
-  }, [federation.remoteItems, federation.sourceFilter, knownScriptIds, libraryQuery])
+  }, [federation.remoteItems, federation.sourceFilter, knownScriptIds, libraryQuery, releaseFilter])
 
   const scriptFederation = useMemo<ScriptLibraryFederation>(() => ({
     sourceFilter: federation.sourceFilter,
@@ -378,18 +394,34 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
             <div>
               <h3 className="section-title">Script Library ({scripts.length})</h3>
               <p className="library-toolbar-subtitle">
-                {libraryQuery.trim() ? `${sortedScripts.length} matching script${sortedScripts.length === 1 ? '' : 's'}` : 'Search by script, protocol, health, or release.'}
+                {libraryQuery.trim() || releaseFilter !== 'all' ? `${sortedScripts.length} matching script${sortedScripts.length === 1 ? '' : 's'}` : 'Search by script, protocol, health, or release.'}
               </p>
             </div>
-            <label className="library-search">
-              <span>Search scripts</span>
-              <input
-                type="search"
-                value={libraryQuery}
-                onChange={(event) => setLibraryQuery(event.target.value)}
-                placeholder="Find scripts..."
-              />
-            </label>
+            <div className="library-toolbar-filters">
+              <label className="library-search">
+                <span>Associated release</span>
+                <select
+                  className="library-release-filter"
+                  value={releaseFilter}
+                  onChange={(event) => setReleaseFilter(event.target.value)}
+                >
+                  <option value="all">All releases</option>
+                  {releaseFilter !== 'all' && !releaseOptions.includes(releaseFilter) && (
+                    <option value={releaseFilter}>{releaseFilter}</option>
+                  )}
+                  {releaseOptions.map(name => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </label>
+              <label className="library-search">
+                <span>Search scripts</span>
+                <input
+                  type="search"
+                  value={libraryQuery}
+                  onChange={(event) => setLibraryQuery(event.target.value)}
+                  placeholder="Find scripts..."
+                />
+              </label>
+            </div>
           </div>
           <div className="library-health-filters" aria-label="Authoring health filters">
             {healthFilters.map(filter => (
@@ -404,7 +436,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
               </button>
             ))}
           </div>
-          <LibraryFederationControls kind="script" federation={federation} />
+          <LibraryFederationControls kind="script" federation={federation} onConfigureRemotes={openRemoteSettings} />
           <ScriptsLibraryTable
             scripts={sortedScripts}
             sortField={sortField}
@@ -422,7 +454,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
             onEdit={(id) => { void handleEdit(id) }}
             onDelete={(id) => { void handleDelete(id) }}
             canManageScripts={canManageScripts}
-            emptyMessage={libraryQuery.trim() || healthFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
+            emptyMessage={libraryQuery.trim() || healthFilter !== 'all' || releaseFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
             federation={scriptFederation}
           />
         </div>

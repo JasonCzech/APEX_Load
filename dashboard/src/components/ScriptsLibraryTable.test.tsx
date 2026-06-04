@@ -5,7 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ScriptsLibraryTable, { type ScriptLibraryFederation } from './ScriptsLibraryTable'
-import type { StoredScript } from '../types'
+import type { StoredScript, TestSummary } from '../types'
 import type { LibraryCatalogItem } from '../types/library'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -61,7 +61,7 @@ const baseProps = {
   innerSortField: 'name' as const,
   innerSortDirection: 'asc' as const,
   onInnerSort: vi.fn(),
-  getSortedInnerRuns: (runs: never[]) => runs,
+  getSortedInnerRuns: (runs: TestSummary[]) => runs,
   onEdit: vi.fn(),
   onDelete: vi.fn(),
 }

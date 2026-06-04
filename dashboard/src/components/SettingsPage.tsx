@@ -1170,8 +1170,10 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
     const targetSection = window.localStorage.getItem('apexload.settings.focusSection') as SettingsSectionId | null
     if (!targetSection) return
     window.localStorage.removeItem('apexload.settings.focusSection')
+    if (!SETTINGS_SECTIONS.some(section => section.id === targetSection)) return
+    setActiveSection(targetSection)
     window.setTimeout(() => {
-      document.getElementById(`settings-section-${targetSection}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      document.getElementById(`settings-section-${targetSection}`)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
     }, 150)
   }, [])
 
