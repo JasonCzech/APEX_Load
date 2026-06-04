@@ -357,7 +357,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
       <div className="page">
         <div className="page-header">
           <div>
-            <h2>Scripts</h2>
+            <h2>Script Library</h2>
             <p className="page-subtitle">Reusable scripts. Release associations are inferred from actual test usage.</p>
           </div>
           {canManageScripts && (
@@ -371,7 +371,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
               }}
               options={[
                 { value: 'library', label: 'Script Library' },
-                { value: 'create-options', label: 'Create Script Options' },
+                { value: 'create-options', label: 'Script Builder' },
               ]}
             />
           )}
@@ -390,39 +390,40 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
               onApplyCorrelation={(session, payload) => { void handleApplyAuthoringCorrelation(session, payload) }}
             />
           )}
-          <div className="library-toolbar">
-            <div>
-              <h3 className="section-title">Script Library ({scripts.length})</h3>
-              <p className="library-toolbar-subtitle">
-                {libraryQuery.trim() || releaseFilter !== 'all' ? `${sortedScripts.length} matching script${sortedScripts.length === 1 ? '' : 's'}` : 'Search by script, protocol, health, or release.'}
-              </p>
-            </div>
-            <div className="library-toolbar-filters">
-              <label className="library-search">
-                <span>Associated release</span>
-                <select
-                  className="library-release-filter"
-                  value={releaseFilter}
-                  onChange={(event) => setReleaseFilter(event.target.value)}
-                >
-                  <option value="all">All releases</option>
-                  {releaseFilter !== 'all' && !releaseOptions.includes(releaseFilter) && (
-                    <option value={releaseFilter}>{releaseFilter}</option>
-                  )}
-                  {releaseOptions.map(name => <option key={name} value={name}>{name}</option>)}
-                </select>
-              </label>
-              <label className="library-search">
-                <span>Search scripts</span>
-                <input
-                  type="search"
-                  value={libraryQuery}
-                  onChange={(event) => setLibraryQuery(event.target.value)}
-                  placeholder="Find scripts..."
-                />
-              </label>
-            </div>
-          </div>
+          <LibraryFederationControls
+            kind="script"
+            federation={federation}
+            onConfigureRemotes={openRemoteSettings}
+            summaryText={libraryQuery.trim() || releaseFilter !== 'all' ? `${sortedScripts.length} matching script${sortedScripts.length === 1 ? '' : 's'}` : 'Search by script, protocol, health, or release.'}
+            filterControls={(
+              <>
+                <label className="project-redaction-rule-field">
+                  <span>Associated Release</span>
+                  <select
+                    className="settings-input library-source-select library-release-filter"
+                    value={releaseFilter}
+                    onChange={(event) => setReleaseFilter(event.target.value)}
+                  >
+                    <option value="all">All releases</option>
+                    {releaseFilter !== 'all' && !releaseOptions.includes(releaseFilter) && (
+                      <option value={releaseFilter}>{releaseFilter}</option>
+                    )}
+                    {releaseOptions.map(name => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                </label>
+                <label className="project-redaction-rule-field">
+                  <span>Search Release</span>
+                  <input
+                    className="settings-input"
+                    type="search"
+                    value={libraryQuery}
+                    onChange={(event) => setLibraryQuery(event.target.value)}
+                    placeholder="Find releases or scripts..."
+                  />
+                </label>
+              </>
+            )}
+          />
           <div className="library-health-filters" aria-label="Authoring health filters">
             {healthFilters.map(filter => (
               <button
@@ -436,7 +437,6 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
               </button>
             ))}
           </div>
-          <LibraryFederationControls kind="script" federation={federation} onConfigureRemotes={openRemoteSettings} />
           <ScriptsLibraryTable
             scripts={sortedScripts}
             sortField={sortField}

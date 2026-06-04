@@ -3,6 +3,7 @@ import { type AuthoringComponent, type AuthoringTemplate, type StoredScript } fr
 import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import PageViewToggle from './PageViewToggle'
+import ReferenceKeyBadge from './ReferenceKeyBadge'
 
 interface Props {
   onBack: () => void
@@ -31,7 +32,7 @@ interface Props {
   onStartExistingScript?: (script: StoredScript) => void
 }
 
-type ExistingScriptSortKey = 'name' | 'protocol' | 'health' | 'usage' | 'last_run'
+type ExistingScriptSortKey = 'name' | 'health' | 'usage' | 'associated_releases' | 'created_at' | 'last_run'
 type ExistingScriptSortDirection = 'asc' | 'desc'
 
 function formatScriptStatus(status?: string) {
@@ -53,6 +54,46 @@ function getScriptReleaseNames(script: StoredScript) {
   return Array.from(new Set(releases.map(release => release.name).filter(Boolean)))
 }
 
+function releaseList(script: StoredScript) {
+  const releases = script.associated_releases || []
+  if (releases.length === 0) return 'No releases yet'
+  return releases.map(release => release.name).join(', ')
+}
+
+function scenarioRunReleaseList(script: StoredScript) {
+  const releases = script.scenario_run_releases || []
+  if (releases.length === 0) return 'No scenario-run releases yet'
+  return releases.map(release => release.name).join(', ')
+}
+
+function formatScenarioCount(script: StoredScript) {
+  const count = script.scenario_count || 0
+  return `${count} scenario${count === 1 ? '' : 's'}`
+}
+
+function authoringHealthLabel(script: StoredScript) {
+  const health = script.authoring_health
+  if (!health) return 'Unknown'
+  const status = health.status === 'needs_review' ? 'Needs Review' : health.status === 'ready' ? 'Ready' : health.status.charAt(0).toUpperCase() + health.status.slice(1)
+  return `${status} · ${health.score}`
+}
+
+function authoringHealthClass(script: StoredScript) {
+  const status = script.authoring_health?.status
+  if (status === 'blocked') return 'danger'
+  if (status === 'needs_review') return 'warning'
+  if (status === 'healthy' || status === 'ready') return 'healthy'
+  return ''
+}
+
+function authoringHealthSummary(script: StoredScript) {
+  const inputs = script.authoring_health?.inputs || []
+  const blockers = inputs.filter(input => input.status === 'blocker').length
+  const warnings = inputs.filter(input => input.status === 'warning').length
+  const reviews = inputs.filter(input => input.status === 'needs_review').length
+  return { blockers, warnings: warnings + reviews }
+}
+
 function getExistingScriptSearchText(script: StoredScript) {
   return [
     script.name,
@@ -70,6 +111,14 @@ function compareExistingScripts(a: StoredScript, b: StoredScript, key: ExistingS
   if (key === 'usage') {
     return (a.scenario_count || 0) - (b.scenario_count || 0)
   }
+  if (key === 'associated_releases') {
+    return (a.associated_releases || []).length - (b.associated_releases || []).length
+  }
+  if (key === 'created_at') {
+    const aTime = Date.parse(a.created_at || '')
+    const bTime = Date.parse(b.created_at || '')
+    return (Number.isNaN(aTime) ? 0 : aTime) - (Number.isNaN(bTime) ? 0 : bTime)
+  }
   if (key === 'last_run') {
     const aTime = Date.parse(a.last_run_at || a.created_at || '')
     const bTime = Date.parse(b.last_run_at || b.created_at || '')
@@ -77,9 +126,6 @@ function compareExistingScripts(a: StoredScript, b: StoredScript, key: ExistingS
   }
   if (key === 'health') {
     return `${a.authoring_health?.status || 'not_scored'} ${a.authoring_health?.score ?? -1}`.localeCompare(`${b.authoring_health?.status || 'not_scored'} ${b.authoring_health?.score ?? -1}`)
-  }
-  if (key === 'protocol') {
-    return (a.protocol || '').localeCompare(b.protocol || '')
   }
   return a.name.localeCompare(b.name)
 }
@@ -146,7 +192,7 @@ export default function ScriptCreateOptions({
       if (prev.key === key) {
         return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
       }
-      return { key, direction: key === 'usage' || key === 'last_run' ? 'desc' : 'asc' }
+      return { key, direction: key === 'usage' || key === 'associated_releases' || key === 'created_at' || key === 'last_run' ? 'desc' : 'asc' }
     })
   }
 
@@ -201,7 +247,7 @@ export default function ScriptCreateOptions({
           }}
           options={[
             { value: 'library', label: 'Script Library' },
-            { value: 'create-options', label: 'Create Script Options' },
+            { value: 'create-options', label: 'Script Builder' },
           ]}
         />
       </div>
@@ -276,35 +322,56 @@ export default function ScriptCreateOptions({
                 <table className="script-create-existing-table">
                   <thead>
                     <tr>
+                      <th>Source</th>
                       <th><button type="button" onClick={() => requestExistingScriptSort('name')}>{renderExistingSortLabel('name', 'Script')}</button></th>
-                      <th><button type="button" onClick={() => requestExistingScriptSort('protocol')}>{renderExistingSortLabel('protocol', 'Protocol')}</button></th>
                       <th><button type="button" onClick={() => requestExistingScriptSort('health')}>{renderExistingSortLabel('health', 'Health')}</button></th>
                       <th><button type="button" onClick={() => requestExistingScriptSort('usage')}>{renderExistingSortLabel('usage', 'Usage')}</button></th>
-                      <th>Releases</th>
+                      <th><button type="button" onClick={() => requestExistingScriptSort('associated_releases')}>{renderExistingSortLabel('associated_releases', 'Associated Releases')}</button></th>
+                      <th><button type="button" onClick={() => requestExistingScriptSort('created_at')}>{renderExistingSortLabel('created_at', 'Create Date')}</button></th>
                       <th><button type="button" onClick={() => requestExistingScriptSort('last_run')}>{renderExistingSortLabel('last_run', 'Last Run')}</button></th>
-                      <th>Action</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {visibleExistingScripts.map(script => {
-                      const releaseNames = getScriptReleaseNames(script)
+                      const healthSummary = authoringHealthSummary(script)
                       return (
                         <tr key={script.id}>
-                          <td>
+                          <td><span className="script-health-token">Local</span></td>
+                          <td className="cell-name">
                             <button type="button" className="script-create-existing-name" onClick={() => onStartExistingScript?.(script)}>
                               {script.name}
                             </button>
-                            <span className="script-create-existing-meta">v{script.version || '—'}</span>
+                            <div className="script-table-meta">
+                              <span className="protocol-badge">{script.protocol}</span>
+                              <span className="script-health-token">v{script.version || '—'}</span>
+                              <ReferenceKeyBadge value={script.ref_key} />
+                            </div>
                           </td>
-                          <td><span className="script-create-type-badge inline">{script.protocol.toUpperCase()}</span></td>
                           <td>
-                            <span className={`script-create-health-pill ${script.authoring_health?.status || 'not_scored'}`}>{formatScriptStatus(script.authoring_health?.status)}</span>
-                            <span className="script-create-existing-meta">{script.authoring_health?.score ?? '—'} score</span>
+                            <span className={`protocol-badge ${authoringHealthClass(script)}`}>{authoringHealthLabel(script)}</span>
+                            {script.authoring_health && (
+                              <div className="script-health-inline">
+                                {healthSummary.blockers > 0 && <span className="script-health-token danger">{healthSummary.blockers} blockers</span>}
+                                {healthSummary.warnings > 0 && <span className="script-health-token warning">{healthSummary.warnings} warnings</span>}
+                                {healthSummary.blockers === 0 && healthSummary.warnings === 0 && <span className="script-health-token healthy">ready</span>}
+                              </div>
+                            )}
                           </td>
-                          <td>{script.scenario_count || 0} scenario{script.scenario_count === 1 ? '' : 's'}</td>
-                          <td>{releaseNames.length > 0 ? releaseNames.join(', ') : 'No releases'}</td>
-                          <td>{formatShortDate(script.last_run_at)}</td>
                           <td>
+                            <div className="script-table-usage">
+                              <strong>{formatScenarioCount(script)}</strong>
+                              <span>{scenarioRunReleaseList(script)}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="script-table-usage">
+                              <span>{releaseList(script)}</span>
+                            </div>
+                          </td>
+                          <td className="cell-muted">{formatShortDate(script.created_at)}</td>
+                          <td className="cell-muted">{formatShortDate(script.last_run_at)}</td>
+                          <td style={{ textAlign: 'right' }}>
                             <button type="button" className="script-create-existing-action" onClick={() => onStartExistingScript?.(script)}>Model</button>
                           </td>
                         </tr>

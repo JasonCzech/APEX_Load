@@ -423,11 +423,14 @@
 .center-document-blocked-body strong {
   color: var(--danger);
 }
-.parameter-data-document {
+.editor-dialog.parameter-data-document {
   width: 100%;
+  max-width: none;
+  min-width: 0;
   min-height: 0;
   max-height: none;
-  flex: 1;
+  flex: 1 1 auto;
+  align-self: stretch;
   border: 0;
   border-radius: 0;
   background: var(--bg-primary);

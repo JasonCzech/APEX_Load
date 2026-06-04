@@ -82,7 +82,7 @@ describe('TestHub', () => {
   const clickWizardStep = async (text: string) => {
     let button = Array.from(container.querySelectorAll('.scenario-wizard-step')).find(item => item.textContent?.includes(text))
     if (!button) {
-      await clickButton('Scenario Builder Wizard')
+      await clickButton('Scenario Builder')
       button = Array.from(container.querySelectorAll('.scenario-wizard-step')).find(item => item.textContent?.includes(text))
     }
     expect(button).toBeDefined()
@@ -361,6 +361,12 @@ describe('TestHub', () => {
 
     await flushPromises()
 
+    expect(container.textContent).toContain('Scenario Library')
+    expect(container.textContent).not.toContain('Scenario Library (')
+    expect(container.textContent).toContain('Library Sources')
+    expect(container.textContent).toContain('Associated Release')
+    expect(container.textContent).toContain('Search Release')
+    expect(container.textContent).not.toContain('Asset Type')
     const libraryHeaders = Array.from(container.querySelectorAll('th')).map(th => th.textContent || '')
     expect(libraryHeaders.some(header => header.includes('Scenario'))).toBe(true)
     expect(libraryHeaders.some(header => header.includes('Workload'))).toBe(true)
@@ -524,8 +530,8 @@ describe('TestHub', () => {
         data_pools: [{ pool_id: 'pool-1', pool_name: 'Customers', alias: 'customers', access_mode: 'consume', selection_strategy: 'unique' }],
         associated_releases: [],
         result_count: 0,
-        created_at: '2026-05-12T00:00:00Z',
-        updated_at: '2026-05-12T00:00:00Z',
+        created_at: '2026-05-12T12:00:00Z',
+        updated_at: '2026-05-12T12:00:00Z',
         script_count: 1,
       }],
       count: 1,
@@ -551,18 +557,30 @@ describe('TestHub', () => {
 
     await flushPromises()
 
-    await clickButton('Scenario Builder Wizard')
+    await clickButton('Scenario Builder')
     await clickButton('Model from Existing Scenario')
-    await clickButton('Pinned Checkout')
+    const cloneRow = Array.from(container.querySelectorAll('.scenario-clone-table tbody tr')).find(row => row.textContent?.includes('Pinned Checkout'))
+    expect(cloneRow).toBeDefined()
+    await act(async () => {
+      cloneRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
     await flushPromises()
 
     expect(container.textContent).toContain('20 peak VUsers')
     expect(container.textContent).toContain('Choose Scenario To Model')
     expect(container.textContent).not.toContain('Existing Scripts Library')
     expect(container.textContent).not.toContain('Scenario Library (')
+    expect(container.textContent).toContain('Associated Releases')
+    expect(container.textContent).toContain('Create Date')
+    expect(container.textContent).toContain('Last Run')
+    expect(container.querySelector('.scenario-clone-card')).toBeNull()
     expect(apiMock.listScenarioResults).toHaveBeenCalledWith('scenario-source')
-    const selectedCloneCard = Array.from(container.querySelectorAll('.scenario-clone-card.selected')).find(card => card.textContent?.includes('Pinned Checkout'))
-    expect(selectedCloneCard).toBeDefined()
+    const selectedCloneRow = Array.from(container.querySelectorAll('.scenario-clone-table tr.selected')).find(row => row.textContent?.includes('Pinned Checkout'))
+    expect(selectedCloneRow).toBeDefined()
+    expect(selectedCloneRow?.textContent).toContain('Local')
+    expect(selectedCloneRow?.textContent).toContain('Checkout Flow')
+    expect(selectedCloneRow?.textContent).toContain('No releases yet')
+    expect(selectedCloneRow?.textContent).toContain('May 12, 2026')
     const chart = container.querySelector('[data-testid="scenario-model-chart"]')
     const runPanel = container.querySelector('.scenario-source-runs-panel')
     expect(runPanel).toBeDefined()
@@ -972,9 +990,9 @@ describe('TestHub', () => {
     expect(container.querySelector('.scenario-builder')).toBeNull()
     expect(container.textContent).not.toContain('Existing Scripts Library')
 
-    await clickButton('Scenario Builder Wizard')
+    await clickButton('Scenario Builder')
 
-    expect(container.textContent).toContain('Scenario Builder Wizard')
+    expect(container.textContent).toContain('Scenario Builder')
     expect(container.textContent).not.toContain('Model Preview')
     expect(container.textContent).not.toContain('Scenario Library (')
     expect(container.textContent).not.toContain('Existing Scripts Library')

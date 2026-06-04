@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 
 import { StoredScript, TestSummary } from '../types'
 import { LibraryCatalogItem, LibrarySourceFilter } from '../types/library'
-import { formatLibraryDateTime, libraryStatusTone, shortLibraryHash } from './libraryFederationUtils'
+import { formatLibraryDateTime, shortLibraryHash } from './libraryFederationUtils'
 import { ScriptLibrarySortField, ScriptRunSortField } from './useScriptsLibraryModel'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
 
@@ -158,9 +158,6 @@ export default function ScriptsLibraryTable({
                   {showSource && (
                     <td>
                       <span className="script-health-token">Local</span>
-                      <div className="script-table-meta">
-                        <span className={`script-health-token ${libraryStatusTone(syncStatus)}`}>{syncStatus}</span>
-                      </div>
                     </td>
                   )}
                   <td className="cell-name">
@@ -300,9 +297,6 @@ export default function ScriptsLibraryTable({
               <tr key={`remote:${item.kind}:${item.id}`} className="no-hover">
                 <td>
                   <span className="script-health-token">Remote</span>
-                  <div className="script-table-meta">
-                    <span className={`script-health-token ${libraryStatusTone(syncStatus)}`}>{syncStatus}</span>
-                  </div>
                 </td>
                 <td className="cell-name">
                   <div>{item.name || item.id}</div>

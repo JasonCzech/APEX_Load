@@ -519,11 +519,15 @@ describe('ScriptEditor', () => {
     const editorCss = readFileSync(`${cwd}/src/components/ScriptEditor.css`, 'utf8') as string
     const backdropRule = cssRule(editorCss, '.editor-dialog-backdrop')
     const dialogRule = cssRule(editorCss, '.parameter-data-dialog')
+    const documentDialogRule = cssRule(editorCss, '.editor-dialog.parameter-data-document')
     const gridScrollRule = cssRule(editorCss, '.parameter-grid-scroll')
     const gridHeaderRule = cssRule(editorCss, '.parameter-grid thead th')
 
     expect(backdropRule).toContain('z-index: 220;')
     expect(dialogRule).toContain('width: min(1440px, calc(100vw - 48px));')
+    expect(documentDialogRule).toContain('width: 100%;')
+    expect(documentDialogRule).toContain('max-width: none;')
+    expect(documentDialogRule).toContain('align-self: stretch;')
     expect(gridScrollRule).toContain('max-height: min(440px, 45vh);')
     expect(gridHeaderRule).toContain('position: sticky;')
     expect(gridHeaderRule).toContain('top: 0;')
@@ -536,7 +540,10 @@ describe('ScriptEditor', () => {
 
     expect(container.querySelector('.editor-support-toolbar')).toBeNull()
     const namePanel = container.querySelector('.script-name-panel')
+    const commandBar = container.querySelector('.script-ide-command-bar')
     expect(namePanel).toBeTruthy()
+    expect(commandBar).toBeTruthy()
+    expect(Boolean(namePanel!.compareDocumentPosition(commandBar!) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
     expect(namePanel?.textContent).toContain('Script Name')
     expect(namePanel?.textContent).not.toContain('Runtime / RTS')
     expect(namePanel?.textContent).not.toContain('Replay Output')

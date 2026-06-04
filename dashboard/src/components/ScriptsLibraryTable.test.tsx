@@ -99,6 +99,8 @@ describe('ScriptsLibraryTable federation', () => {
     expect(container.textContent).toContain('Local Checkout')
     expect(container.textContent).toContain('Remote')
     expect(container.textContent).toContain('Host Only Script')
+    const sourceCells = Array.from(container.querySelectorAll('tbody > tr > td:first-child')).map(cell => cell.textContent?.trim())
+    expect(sourceCells).toEqual(['Local', 'Remote'])
 
     const pushButton = findButton('Push')
     expect(pushButton).toBeDefined()

@@ -4568,6 +4568,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             {onClose && <button className="btn btn-ghost" onClick={onClose}>✕</button>}
           </div>
         </div>
+        <div className="script-name-panel" aria-label="Script identity">
+          <label className="script-name-field">
+            <span>Script Name</span>
+            <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
+          </label>
+        </div>
         <div className="script-ide-command-bar" aria-label="Script IDE command bar">
           <div className="script-ide-tabs" role="tablist" aria-label="Script workspace">
             <button type="button" role="tab" aria-selected={workspaceTab === 'author'} className={workspaceTab === 'author' ? 'active' : ''} onClick={() => activateWorkspaceTab('author')}>
@@ -4694,13 +4700,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       </div>
 
       <div className={`editor-body workspace-${workspaceTab}`}>
-          <div className="script-name-panel" aria-label="Script identity">
-            <label className="script-name-field">
-              <span>Script Name</span>
-              <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
-            </label>
-          </div>
-
           {/* Script Config Panel */}
           {centerTabPanelElements.configuration && createPortal(
             renderStructuredCenterDocument('Script Configuration', (

@@ -287,7 +287,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('warnings · warning · 1')
     expect(container.textContent).toContain('Validation warnings need review before promotion.')
 
-    await clickButton('Create Script Options')
+    await clickButton('Script Builder')
 
     expect(container.textContent).toContain('Create Script')
     expect(container.textContent).toContain('Model From Existing Script')
@@ -338,7 +338,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('script-id:saved-script-1')
   })
 
-  it('toggles between the script library and create script options', async () => {
+  it('toggles between the script library and script builder', async () => {
     await act(async () => {
       root.render(<ScriptsPage />)
     })
@@ -347,24 +347,40 @@ describe('ScriptsPage', () => {
 
     let toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
     expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('true')
-    expect(toggleButtons.find(button => button.textContent?.includes('Create Script Options'))?.getAttribute('aria-pressed')).toBe('false')
-    expect(container.textContent).toContain('Script Library (1)')
+    expect(toggleButtons.find(button => button.textContent?.includes('Script Builder'))?.getAttribute('aria-pressed')).toBe('false')
+    expect(container.textContent).toContain('Script Library')
+    expect(container.textContent).not.toContain('Script Library (')
     expect(container.textContent).not.toContain('Model From Existing Script')
+    expect(container.textContent).toContain('Library Sources')
+    expect(container.textContent).toContain('Associated Release')
+    expect(container.textContent).toContain('Search Release')
+    expect(container.textContent).not.toContain('Asset Type')
+    expect(container.textContent).not.toContain('Select a remote library first.')
 
-    await clickButton('Create Script Options')
+    await clickButton('Script Builder')
 
     toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
     expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('false')
-    expect(toggleButtons.find(button => button.textContent?.includes('Create Script Options'))?.getAttribute('aria-pressed')).toBe('true')
+    expect(toggleButtons.find(button => button.textContent?.includes('Script Builder'))?.getAttribute('aria-pressed')).toBe('true')
     expect(container.textContent).toContain('Model From Existing Script')
     expect(container.textContent).not.toContain('Script Library (')
+    const builderHeaders = Array.from(container.querySelectorAll('.script-create-existing-table th')).map(header => header.textContent || '')
+    expect(builderHeaders.some(header => header.includes('Source'))).toBe(true)
+    expect(builderHeaders.some(header => header.includes('Script'))).toBe(true)
+    expect(builderHeaders.some(header => header.includes('Health'))).toBe(true)
+    expect(builderHeaders.some(header => header.includes('Usage'))).toBe(true)
+    expect(builderHeaders.some(header => header.includes('Associated Releases'))).toBe(true)
+    expect(builderHeaders.some(header => header.includes('Create Date'))).toBe(true)
+    expect(builderHeaders.some(header => header.includes('Last Run'))).toBe(true)
+    expect(builderHeaders.some(header => header.includes('Actions'))).toBe(true)
 
     await clickButton('Script Library')
 
     toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
     expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('true')
-    expect(toggleButtons.find(button => button.textContent?.includes('Create Script Options'))?.getAttribute('aria-pressed')).toBe('false')
-    expect(container.textContent).toContain('Script Library (1)')
+    expect(toggleButtons.find(button => button.textContent?.includes('Script Builder'))?.getAttribute('aria-pressed')).toBe('false')
+    expect(container.textContent).toContain('Script Library')
+    expect(container.textContent).not.toContain('Script Library (')
     expect(container.textContent).not.toContain('Model From Existing Script')
   })
 
@@ -925,7 +941,7 @@ describe('ScriptsPage', () => {
       closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const createButtonAgain = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Create Script'))
+    const createButtonAgain = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Script Builder'))
     expect(createButtonAgain).toBeDefined()
     if (!createButtonAgain) {
       return

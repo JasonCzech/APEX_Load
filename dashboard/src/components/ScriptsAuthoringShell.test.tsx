@@ -273,6 +273,17 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).toContain('3 of 3 scripts')
     expect(container.textContent).toContain('PI30')
     expect(container.textContent).toContain('PI31')
+    const headers = Array.from(container.querySelectorAll('.script-create-existing-table th')).map(header => header.textContent || '')
+    expect(headers.some(header => header.includes('Source'))).toBe(true)
+    expect(headers.some(header => header.includes('Script'))).toBe(true)
+    expect(headers.some(header => header.includes('Health'))).toBe(true)
+    expect(headers.some(header => header.includes('Usage'))).toBe(true)
+    expect(headers.some(header => header.includes('Associated Releases'))).toBe(true)
+    expect(headers.some(header => header.includes('Create Date'))).toBe(true)
+    expect(headers.some(header => header.includes('Last Run'))).toBe(true)
+    expect(headers.some(header => header.includes('Actions'))).toBe(true)
+    const firstSourceCell = container.querySelector('.script-create-existing-table tbody tr td:first-child')
+    expect(firstSourceCell?.textContent?.trim()).toBe('Local')
 
     const searchInput = container.querySelector('input[aria-label="Search existing scripts"]') as HTMLInputElement | null
     expect(searchInput).not.toBeNull()

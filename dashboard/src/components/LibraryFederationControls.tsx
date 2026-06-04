@@ -1,12 +1,7 @@
+import { type ReactNode } from 'react'
 import { LibraryKind, LibrarySourceFilter } from '../types/library'
 import { libraryStatusTone } from './libraryFederationUtils'
 import { LIBRARY_SOURCE_OPTIONS, type UseLibraryFederationResult } from './useLibraryFederation'
-
-const KIND_LABELS: Record<LibraryKind, string> = {
-  script: 'Scripts',
-  scenario: 'Scenarios',
-  result: 'Results',
-}
 
 function sourceDescription(kind: LibraryKind) {
   if (kind === 'result') return 'Move completed result archives between this controller and a remote team library.'
@@ -25,10 +20,12 @@ function credentialsLabel(ready: boolean) {
 type LibraryFederationControlsProps = {
   kind: LibraryKind
   federation: UseLibraryFederationResult
+  filterControls?: ReactNode
   onConfigureRemotes?: () => void
+  summaryText?: string
 }
 
-export default function LibraryFederationControls({ kind, federation, onConfigureRemotes }: LibraryFederationControlsProps) {
+export default function LibraryFederationControls({ kind, federation, filterControls, onConfigureRemotes, summaryText }: LibraryFederationControlsProps) {
   const {
     remotes,
     selectedRemoteId,
@@ -48,13 +45,14 @@ export default function LibraryFederationControls({ kind, federation, onConfigur
     actionBlockedReason,
     refreshCatalogs,
   } = federation
+  const generalBlockedReason = selectedRemoteId ? actionBlockedReason : ''
 
   return (
     <div className="library-source-controls">
       <div className="library-source-header">
         <div>
           <h3 className="section-title">Library Sources</h3>
-          <p className="library-toolbar-subtitle">{sourceDescription(kind)}</p>
+          <p className="library-toolbar-subtitle">{summaryText || sourceDescription(kind)}</p>
         </div>
         <div className="library-source-summary">
           {onConfigureRemotes ? (
@@ -81,10 +79,7 @@ export default function LibraryFederationControls({ kind, federation, onConfigur
       </div>
 
       <div className="library-source-toolbar">
-        <label className="project-redaction-rule-field">
-          <span>Asset Type</span>
-          <input className="settings-input" value={KIND_LABELS[kind]} readOnly />
-        </label>
+        {filterControls}
         <label className="project-redaction-rule-field">
           <span>Remote</span>
           <select className="settings-input library-source-select" value={selectedRemoteId} onChange={event => setSelectedRemoteId(event.target.value)}>
@@ -113,7 +108,7 @@ export default function LibraryFederationControls({ kind, federation, onConfigur
         </button>
       </div>
 
-      {actionBlockedReason && <p className="settings-notice">{actionBlockedReason}</p>}
+      {generalBlockedReason && <p className="settings-notice">{generalBlockedReason}</p>}
       {actionMessage && <p className="settings-notice">{actionMessage}</p>}
       {diffMessage && <p className="settings-notice">{diffMessage}</p>}
       {actionError && <p className="settings-error-inline">{actionError}</p>}

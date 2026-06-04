@@ -1625,23 +1625,98 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate }: Props) 
                 <span>Search existing scenarios</span>
                 <input type="search" value={scenarioCloneQuery} onChange={event => setScenarioCloneQuery(event.target.value)} placeholder="Scenario, script, data pool, release..." />
               </label>
-              <div className="scenario-clone-list">
-                {filteredCloneScenarios.map(scenario => (
-                  <button
-                    key={scenario.id}
-                    type="button"
-                    className={`scenario-clone-card ${selectedCloneScenarioId === scenario.id ? 'selected' : ''}`}
-                    aria-pressed={selectedCloneScenarioId === scenario.id}
-                    onClick={() => cloneScenarioDraft(scenario)}
-                  >
-                    <div>
-                      <strong>{scenario.name}</strong>
-                      <span>{formatScenarioScripts(scenario)}</span>
-                    </div>
-                    <small>{scenario.duration} · {scenarioAssignmentSummary(scenario).badge} · {formatScenarioDataPools(scenario)}</small>
-                  </button>
-                ))}
-                {filteredCloneScenarios.length === 0 && <p className="scenario-assignment-copy secondary">No scenarios match this source search.</p>}
+              <div className="data-table scenario-clone-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Source</th>
+                      <th>Scenario</th>
+                      <th>Workload</th>
+                      <th>Associated Releases</th>
+                      <th>Create Date</th>
+                      <th>Last Run</th>
+                      <th style={{ textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredCloneScenarios.map(scenario => {
+                      const selected = selectedCloneScenarioId === scenario.id
+                      const assignment = scenarioAssignmentSummary(scenario)
+                      const browserRuntimeSummary = formatBrowserRuntimeSummary(scenario.runtime_settings?.browser)
+                      return (
+                        <tr
+                          key={scenario.id}
+                          className={`clickable-row ${selected ? 'selected' : ''}`}
+                          aria-selected={selected}
+                          tabIndex={0}
+                          onClick={() => cloneScenarioDraft(scenario)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              cloneScenarioDraft(scenario)
+                            }
+                          }}
+                        >
+                          <td>
+                            <span className="script-health-token">Local</span>
+                          </td>
+                          <td className="cell-name">
+                            <div>{scenario.name}</div>
+                            <div className="scenario-table-assignment">
+                              <ReferenceKeyBadge value={scenario.ref_key} />
+                              <span className={`scenario-table-assignment-badge ${scenario.assignment?.mode === 'specific_hosts' ? 'manual' : 'auto'}`}>
+                                {assignment.badge}
+                              </span>
+                              <span className="scenario-table-assignment-detail">{assignment.detail}</span>
+                            </div>
+                            {browserRuntimeSummary && (
+                              <div className="scenario-table-browser">
+                                <span className="scenario-table-browser-badge">Browser</span>
+                                <span className="scenario-table-assignment-detail">{browserRuntimeSummary}</span>
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            <div className="scenario-table-workload">
+                              <strong>{formatScenarioScripts(scenario)}</strong>
+                              <span>{formatScenarioDataPools(scenario)}</span>
+                              <span>{formatScenarioResultCount(scenario)}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="scenario-table-workload">
+                              <strong>{releaseList(scenario)}</strong>
+                            </div>
+                          </td>
+                          <td className="cell-muted">{formatDate(scenario.created_at)}</td>
+                          <td className="cell-muted">
+                            <div className="scenario-table-workload">
+                              <strong>{formatDate(scenario.last_run_at)}</strong>
+                              <span>{formatScenarioResultCount(scenario)}</span>
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <button
+                              className={`btn btn-sm ${selected ? 'btn-primary' : 'btn-secondary'}`}
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                cloneScenarioDraft(scenario)
+                              }}
+                            >
+                              {selected ? 'Selected' : 'Model'}
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                    {filteredCloneScenarios.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="cell-muted">No scenarios match this source search.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </>
           ) : (
@@ -2074,7 +2149,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate }: Props) 
     <div className="page">
       <div className="page-header">
         <div>
-          <h2>Scenarios</h2>
+          <h2>{showForm ? 'Scenario Builder' : 'Scenario Library'}</h2>
           <p className="page-subtitle">Reusable scenario definitions linked to scripts, releases, and results.</p>
         </div>
         <PageViewToggle
@@ -2087,7 +2162,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate }: Props) 
           }}
           options={[
             { value: 'library', label: 'Scenario Library' },
-            { value: 'builder', label: 'Scenario Builder Wizard', disabled: !canManageTests },
+            { value: 'builder', label: 'Scenario Builder', disabled: !canManageTests },
           ]}
         />
       </div>
@@ -2098,7 +2173,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate }: Props) 
         <div className="page-section scenario-builder">
           <div className="scenario-builder-header">
             <div>
-              <h3 className="section-title">{editingId ? 'Edit Scenario' : 'Scenario Builder Wizard'}</h3>
+              <h3 className="section-title">{editingId ? 'Edit Scenario' : 'Scenario Builder'}</h3>
               {form.name.trim()
                 ? <p className="scenario-builder-name" aria-label="Scenario name">{form.name.trim()}</p>
                 : <p className="page-subtitle">Choose a source, compose scripts, tune run settings, attach data, and validate the planned model.</p>}
@@ -2240,40 +2315,40 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate }: Props) 
 
       {showScenarioLibrary && (
       <div className="page-section">
-        <div className="library-toolbar">
-          <div>
-            <h3 className="section-title">Scenario Library ({scenarios.length})</h3>
-            <p className="library-toolbar-subtitle">
-              {scenarioQuery.trim() || scenarioReleaseFilter !== 'all' ? `${sorted.length} matching scenario${sorted.length === 1 ? '' : 's'}` : 'Search by scenario, script, data pool, release, host, or browser profile.'}
-            </p>
-          </div>
-          <div className="library-toolbar-filters">
-            <label className="library-search">
-              <span>Associated release</span>
-              <select
-                className="library-release-filter"
-                value={scenarioReleaseFilter}
-                onChange={(event) => setScenarioReleaseFilter(event.target.value)}
-              >
-                <option value="all">All releases</option>
-                {scenarioReleaseFilter !== 'all' && !scenarioReleaseOptions.includes(scenarioReleaseFilter) && (
-                  <option value={scenarioReleaseFilter}>{scenarioReleaseFilter}</option>
-                )}
-                {scenarioReleaseOptions.map(name => <option key={name} value={name}>{name}</option>)}
-              </select>
-            </label>
-            <label className="library-search">
-              <span>Search scenarios</span>
-              <input
-                type="search"
-                value={scenarioQuery}
-                onChange={(event) => setScenarioQuery(event.target.value)}
-                placeholder="Find scenarios..."
-              />
-            </label>
-          </div>
-        </div>
-        <LibraryFederationControls kind="scenario" federation={scenarioFederation} onConfigureRemotes={openRemoteSettings} />
+        <LibraryFederationControls
+          kind="scenario"
+          federation={scenarioFederation}
+          onConfigureRemotes={openRemoteSettings}
+          summaryText={scenarioQuery.trim() || scenarioReleaseFilter !== 'all' ? `${sorted.length} matching scenario${sorted.length === 1 ? '' : 's'}` : 'Search by scenario, script, data pool, release, host, or browser profile.'}
+          filterControls={(
+            <>
+              <label className="project-redaction-rule-field">
+                <span>Associated Release</span>
+                <select
+                  className="settings-input library-source-select library-release-filter"
+                  value={scenarioReleaseFilter}
+                  onChange={(event) => setScenarioReleaseFilter(event.target.value)}
+                >
+                  <option value="all">All releases</option>
+                  {scenarioReleaseFilter !== 'all' && !scenarioReleaseOptions.includes(scenarioReleaseFilter) && (
+                    <option value={scenarioReleaseFilter}>{scenarioReleaseFilter}</option>
+                  )}
+                  {scenarioReleaseOptions.map(name => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </label>
+              <label className="project-redaction-rule-field">
+                <span>Search Release</span>
+                <input
+                  className="settings-input"
+                  type="search"
+                  value={scenarioQuery}
+                  onChange={(event) => setScenarioQuery(event.target.value)}
+                  placeholder="Find releases or scenarios..."
+                />
+              </label>
+            </>
+          )}
+        />
         <div className="data-table">
           <table>
             <thead>

@@ -125,7 +125,7 @@ describe('TestHub build-from-goal', () => {
     await flush()
 
     // Open the scenario builder, then the Build-from-goal panel.
-    await act(async () => { findButton(container, 'Scenario Builder Wizard')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await act(async () => { findButton(container, 'Scenario Builder')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await act(async () => { findButton(container, 'Build from Goal')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flush()
 

@@ -1728,7 +1728,7 @@
 
 .script-create-existing-table {
   width: 100%;
-  min-width: 920px;
+  min-width: 1120px;
   border-collapse: collapse;
   table-layout: fixed;
   font-size: 13px;
@@ -1769,27 +1769,39 @@
 
 .script-create-existing-table th:nth-child(1),
 .script-create-existing-table td:nth-child(1) {
-  width: 24%;
+  width: 9%;
 }
 
 .script-create-existing-table th:nth-child(2),
 .script-create-existing-table td:nth-child(2) {
-  width: 10%;
+  width: 23%;
 }
 
 .script-create-existing-table th:nth-child(3),
 .script-create-existing-table td:nth-child(3) {
-  width: 14%;
+  width: 17%;
 }
 
 .script-create-existing-table th:nth-child(4),
 .script-create-existing-table td:nth-child(4) {
-  width: 12%;
+  width: 15%;
 }
 
 .script-create-existing-table th:nth-child(5),
 .script-create-existing-table td:nth-child(5) {
-  width: 18%;
+  width: 17%;
+}
+
+.script-create-existing-table th:nth-child(6),
+.script-create-existing-table td:nth-child(6),
+.script-create-existing-table th:nth-child(7),
+.script-create-existing-table td:nth-child(7) {
+  width: 10%;
+}
+
+.script-create-existing-table th:nth-child(8),
+.script-create-existing-table td:nth-child(8) {
+  width: 9%;
 }
 
 .script-create-existing-table tbody tr:hover {
@@ -5257,7 +5269,7 @@
 
 .library-source-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
@@ -5288,9 +5300,14 @@
 
 .library-source-toolbar {
   display: grid;
-  grid-template-columns: minmax(130px, 0.8fr) minmax(150px, 1fr) minmax(120px, 0.8fr) minmax(180px, 1.1fr) auto auto;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 12px;
   align-items: end;
+}
+
+.library-source-toolbar > .btn,
+.library-source-toolbar > .library-federation-checkbox {
+  align-self: end;
 }
 
 .settings-input.library-source-select {
