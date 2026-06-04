@@ -8088,7 +8088,6 @@ function ParameterDataDialog({
   dataSourceHistory,
   onAddDataColumn,
   onAddDataRow,
-  onAddDataSource,
   onAddParameter,
   onApplyDedupeHeaders,
   onApplyFillHeaders,
@@ -8253,7 +8252,6 @@ function ParameterDataDialog({
             onUpdateDataCell={onUpdateDataCell}
             onUpdateDataColumnName={onUpdateDataColumnName}
             onUpdateDataSource={onUpdateDataSource}
-            openDataEditor={openDataEditor}
             selectedParameter={selectedParameter}
             script={script}
           />
@@ -9700,7 +9698,6 @@ interface ParameterDataSourcesSectionProps {
   onUpdateDataCell: (idx: number, rowIdx: number, colIdx: number, value: string) => void
   onUpdateDataColumnName: (idx: number, colIdx: number, value: string) => void
   onUpdateDataSource: (idx: number, field: keyof DataSourceConfig, value: unknown, trackHistory?: boolean) => void
-  openDataEditor: number | null
   selectedParameter: ParameterConfig | null
   script: ScriptData
 }
@@ -9729,7 +9726,6 @@ function ParameterDataSourcesSection({
   onUpdateDataCell,
   onUpdateDataColumnName,
   onUpdateDataSource,
-  openDataEditor,
   selectedParameter,
   script,
 }: ParameterDataSourcesSectionProps) {
