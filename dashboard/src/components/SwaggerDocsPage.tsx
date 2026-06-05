@@ -1,0 +1,362 @@
+import { useMemo, useState } from 'react'
+import swaggerYaml from '../../../docs/swagger.yaml?raw'
+
+type SwaggerParameter = {
+  name: string
+  location: string
+  required: boolean
+  type: string
+}
+
+type SwaggerResponse = {
+  status: string
+  description: string
+}
+
+export type SwaggerOperation = {
+  method: string
+  path: string
+  summary: string
+  description: string
+  operationId: string
+  roles: string
+  tags: string[]
+  parameters: SwaggerParameter[]
+  responses: SwaggerResponse[]
+}
+
+export type SwaggerDocument = {
+  title: string
+  description: string
+  version: string
+  serverUrl: string
+  operations: SwaggerOperation[]
+}
+
+const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options'])
+
+function countLeadingSpaces(line: string) {
+  return line.match(/^ */)?.[0].length || 0
+}
+
+function cleanYamlValue(value: string) {
+  let next = value.trim()
+  if (next.startsWith("'")) next = next.slice(1)
+  if (next.endsWith("'")) next = next.slice(0, -1)
+  return next
+    .replace(/''/g, "'")
+    .replace(/\r/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function stripMarkdown(value: string) {
+  return value
+    .replace(/\*\*/g, '')
+    .replace(/`/g, '')
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+    .trim()
+}
+
+function readBlockScalar(lines: string[], startIndex: number, fieldIndent: number) {
+  const line = lines[startIndex]
+  const firstValue = line.slice(line.indexOf(':') + 1)
+  const parts = [firstValue]
+  let index = startIndex + 1
+  while (index < lines.length) {
+    const nextLine = lines[index]
+    const trimmed = nextLine.trim()
+    if (trimmed) {
+      const indent = countLeadingSpaces(nextLine)
+      const isNextField = indent <= fieldIndent && /^[A-Za-z0-9_-]+:/.test(trimmed)
+      const isNextMethod = indent <= 4 && HTTP_METHODS.has(trimmed.replace(':', '').toLowerCase())
+      const isNextPath = indent <= 2 && trimmed.startsWith('/')
+      if (isNextField || isNextMethod || isNextPath) {
+        break
+      }
+    }
+    parts.push(trimmed)
+    index += 1
+  }
+  return cleanYamlValue(parts.join('\n'))
+}
+
+function readField(lines: string[], fieldName: string, fieldIndent: number) {
+  const prefix = `${' '.repeat(fieldIndent)}${fieldName}:`
+  const index = lines.findIndex(line => line.startsWith(prefix))
+  if (index < 0) return ''
+  return readBlockScalar(lines, index, fieldIndent)
+}
+
+function parseTags(lines: string[]) {
+  const tags: string[] = []
+  const tagIndex = lines.findIndex(line => /^      tags:\s*$/.test(line))
+  if (tagIndex < 0) return tags
+  for (let index = tagIndex + 1; index < lines.length; index += 1) {
+    const match = lines[index].match(/^      -\s+(.+)$/)
+    if (!match) break
+    tags.push(cleanYamlValue(match[1]))
+  }
+  return tags
+}
+
+function parseParameters(lines: string[]) {
+  const parameters: SwaggerParameter[] = []
+  const start = lines.findIndex(line => /^      parameters:\s*$/.test(line))
+  if (start < 0) return parameters
+  let current: SwaggerParameter | null = null
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (/^      [A-Za-z0-9_-]+:/.test(line)) break
+    const nameMatch = line.match(/^      - name:\s*(.+)$/)
+    if (nameMatch) {
+      current = { name: cleanYamlValue(nameMatch[1]), location: '', required: false, type: '' }
+      parameters.push(current)
+      continue
+    }
+    if (!current) continue
+    const locationMatch = line.match(/^        in:\s*(.+)$/)
+    if (locationMatch) current.location = cleanYamlValue(locationMatch[1])
+    const requiredMatch = line.match(/^        required:\s*(.+)$/)
+    if (requiredMatch) current.required = cleanYamlValue(requiredMatch[1]).toLowerCase() === 'true'
+    const typeMatch = line.match(/^          type:\s*(.+)$/)
+    if (typeMatch) current.type = cleanYamlValue(typeMatch[1])
+  }
+  return parameters
+}
+
+function parseResponses(lines: string[]) {
+  const responses: SwaggerResponse[] = []
+  const start = lines.findIndex(line => /^      responses:\s*$/.test(line))
+  if (start < 0) return responses
+  let current: SwaggerResponse | null = null
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (/^      [A-Za-z0-9_-]+:/.test(line)) break
+    const statusMatch = line.match(/^        ['"]?([^:'"]+)['"]?:\s*$/)
+    if (statusMatch) {
+      current = { status: statusMatch[1], description: '' }
+      responses.push(current)
+      continue
+    }
+    if (!current) continue
+    const descriptionMatch = line.match(/^          description:\s*(.+)$/)
+    if (descriptionMatch) current.description = cleanYamlValue(descriptionMatch[1])
+  }
+  return responses
+}
+
+function parseOperation(path: string, method: string, lines: string[]): SwaggerOperation {
+  const summary = readField(lines, 'summary', 6) || `${method.toUpperCase()} ${path}`
+  return {
+    method: method.toUpperCase(),
+    path,
+    summary,
+    description: readField(lines, 'description', 6),
+    operationId: readField(lines, 'operationId', 6),
+    roles: readField(lines, 'x-roles', 6),
+    tags: parseTags(lines),
+    parameters: parseParameters(lines),
+    responses: parseResponses(lines),
+  }
+}
+
+export function parseSwaggerDocument(source: string): SwaggerDocument {
+  const lines = source.split('\n')
+  const title = cleanYamlValue(lines.find(line => /^  title:\s+/.test(line))?.replace(/^  title:\s+/, '') || 'APEX Load API')
+  const version = cleanYamlValue(lines.find(line => /^  version:\s+/.test(line))?.replace(/^  version:\s+/, '') || '')
+  const serverUrl = cleanYamlValue(lines.find(line => /^- url:\s+/.test(line))?.replace(/^- url:\s+/, '') || '')
+  const descriptionIndex = lines.findIndex(line => /^  description:\s+/.test(line))
+  const description = descriptionIndex >= 0 ? readBlockScalar(lines, descriptionIndex, 2) : ''
+  const operations: SwaggerOperation[] = []
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const pathMatch = lines[index].match(/^  (\/.+):\s*$/)
+    if (!pathMatch) continue
+    const path = pathMatch[1]
+    let cursor = index + 1
+    while (cursor < lines.length) {
+      const methodMatch = lines[cursor].match(/^    ([a-z]+):\s*$/)
+      if (!methodMatch) {
+        if (/^  \/.+:\s*$/.test(lines[cursor])) break
+        cursor += 1
+        continue
+      }
+      const method = methodMatch[1]
+      if (!HTTP_METHODS.has(method)) {
+        cursor += 1
+        continue
+      }
+      const operationStart = cursor + 1
+      let operationEnd = operationStart
+      while (operationEnd < lines.length && !/^    [a-z]+:\s*$/.test(lines[operationEnd]) && !/^  \/.+:\s*$/.test(lines[operationEnd])) {
+        operationEnd += 1
+      }
+      operations.push(parseOperation(path, method, lines.slice(operationStart, operationEnd)))
+      cursor = operationEnd
+      if (cursor < lines.length && /^  \/.+:\s*$/.test(lines[cursor])) break
+    }
+  }
+
+  return { title, description, version, serverUrl, operations }
+}
+
+function operationMatches(operation: SwaggerOperation, query: string, tag: string) {
+  const normalizedQuery = query.trim().toLowerCase()
+  const matchesTag = tag === 'all' || operation.tags.includes(tag)
+  if (!matchesTag) return false
+  if (!normalizedQuery) return true
+  return [
+    operation.method,
+    operation.path,
+    operation.summary,
+    operation.description,
+    operation.operationId,
+    operation.roles,
+    ...operation.tags,
+  ].join(' ').toLowerCase().includes(normalizedQuery)
+}
+
+function groupByTag(operations: SwaggerOperation[]) {
+  return operations.reduce<Record<string, SwaggerOperation[]>>((groups, operation) => {
+    const tag = operation.tags[0] || 'Other'
+    groups[tag] = groups[tag] || []
+    groups[tag].push(operation)
+    return groups
+  }, {})
+}
+
+function descriptionLines(description: string) {
+  return description
+    .split(/\n+/)
+    .map(stripMarkdown)
+    .filter(Boolean)
+}
+
+export default function SwaggerDocsPage() {
+  const document = useMemo(() => parseSwaggerDocument(swaggerYaml), [])
+  const tags = useMemo(() => Array.from(new Set(document.operations.flatMap(operation => operation.tags.length ? operation.tags : ['Other']))).sort(), [document.operations])
+  const [query, setQuery] = useState('')
+  const [tag, setTag] = useState('all')
+  const filteredOperations = useMemo(
+    () => document.operations.filter(operation => operationMatches(operation, query, tag)),
+    [document.operations, query, tag],
+  )
+  const groupedOperations = useMemo(() => groupByTag(filteredOperations), [filteredOperations])
+
+  return (
+    <div className="page swagger-docs-page">
+      <div className="page-header">
+        <div>
+          <h2>Swagger Docs</h2>
+          <p className="page-subtitle">{stripMarkdown(document.description) || 'Interactive API reference generated from the APEX Load OpenAPI document.'}</p>
+        </div>
+        <a className="btn btn-secondary btn-sm btn-accent-action" href="#/docs">API Guide</a>
+      </div>
+
+      <section className="swagger-docs-hero" aria-labelledby="swagger-docs-title">
+        <div>
+          <span className="api-guide-kicker">OpenAPI</span>
+          <h3 id="swagger-docs-title">{document.title}</h3>
+          <p>{document.serverUrl || 'http://localhost:8080'} · Version {document.version || '1.0.0'}</p>
+        </div>
+        <div className="swagger-docs-stats">
+          <div><span>Operations</span><strong>{document.operations.length}</strong></div>
+          <div><span>Tags</span><strong>{tags.length}</strong></div>
+          <div><span>Auth</span><strong>Bearer</strong></div>
+        </div>
+      </section>
+
+      <section className="swagger-docs-controls" aria-label="Swagger documentation filters">
+        <label>
+          <span>Search APIs</span>
+          <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search method, path, summary, role..." />
+        </label>
+        <label>
+          <span>Tag</span>
+          <select value={tag} onChange={event => setTag(event.target.value)}>
+            <option value="all">All tags</option>
+            {tags.map(nextTag => <option key={nextTag} value={nextTag}>{nextTag}</option>)}
+          </select>
+        </label>
+      </section>
+
+      <section className="swagger-docs-results" aria-live="polite">
+        <div className="api-guide-section-header">
+          <h3>API Reference</h3>
+          <p>{filteredOperations.length} endpoint{filteredOperations.length === 1 ? '' : 's'} shown.</p>
+        </div>
+        {filteredOperations.length === 0 ? (
+          <div className="api-guide-callout">
+            <h3>No APIs Found</h3>
+            <p>Clear the search or choose another tag to see the generated OpenAPI endpoints.</p>
+          </div>
+        ) : Object.entries(groupedOperations).map(([group, operations]) => (
+          <div className="swagger-docs-tag-group" key={group}>
+            <h4>{group}</h4>
+            <div className="swagger-docs-operation-list">
+              {operations.map(operation => (
+                <details className="swagger-operation-card" key={`${operation.method}-${operation.path}-${operation.operationId}`}>
+                  <summary>
+                    <span className={`swagger-method swagger-method-${operation.method.toLowerCase()}`}>{operation.method}</span>
+                    <code>{operation.path}</code>
+                    <strong>{operation.summary}</strong>
+                  </summary>
+                  <div className="swagger-operation-detail">
+                    {descriptionLines(operation.description).map(line => <p key={line}>{line}</p>)}
+                    <dl>
+                      <div>
+                        <dt>Operation ID</dt>
+                        <dd><code>{operation.operationId || 'n/a'}</code></dd>
+                      </div>
+                      <div>
+                        <dt>Access Control</dt>
+                        <dd>{operation.roles || 'Public or inherited'}</dd>
+                      </div>
+                    </dl>
+                    <div className="swagger-detail-grid">
+                      <div>
+                        <h5>Parameters</h5>
+                        {operation.parameters.length > 0 ? (
+                          <table>
+                            <thead><tr><th>Name</th><th>In</th><th>Required</th><th>Type</th></tr></thead>
+                            <tbody>
+                              {operation.parameters.map(parameter => (
+                                <tr key={`${operation.operationId}-${parameter.location}-${parameter.name}`}>
+                                  <td><code>{parameter.name}</code></td>
+                                  <td>{parameter.location || 'n/a'}</td>
+                                  <td>{parameter.required ? 'Yes' : 'No'}</td>
+                                  <td>{parameter.type || 'string'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        ) : <p>No parameters.</p>}
+                      </div>
+                      <div>
+                        <h5>Responses</h5>
+                        {operation.responses.length > 0 ? (
+                          <table>
+                            <thead><tr><th>Status</th><th>Description</th></tr></thead>
+                            <tbody>
+                              {operation.responses.map(response => (
+                                <tr key={`${operation.operationId}-${response.status}`}>
+                                  <td><code>{response.status}</code></td>
+                                  <td>{response.description || 'Response'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        ) : <p>No documented responses.</p>}
+                      </div>
+                    </div>
+                  </div>
+                </details>
+              ))}
+            </div>
+          </div>
+        ))}
+      </section>
+    </div>
+  )
+}

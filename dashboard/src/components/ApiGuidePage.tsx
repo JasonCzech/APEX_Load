@@ -337,16 +337,16 @@ export default function ApiGuidePage({ onNavigate, effectiveAccessResources = []
           <h2>API Guide</h2>
           <p className="page-subtitle">REST and WebSocket reference for automating APEX Load from CI/CD, integrations, and operator tooling.</p>
         </div>
-        {canViewFullRepositoryGuide && (
-          <>
+        <div className="api-guide-header-actions">
+          <a className="btn btn-secondary btn-sm btn-accent-action" href="#/swagger">
+            Swagger Docs
+          </a>
+          {canViewFullRepositoryGuide && (
             <a className="btn btn-secondary btn-sm btn-accent-action" href="https://github.com/jasonczech/apexload/blob/main/docs/API_USER_GUIDE.md" target="_blank" rel="noreferrer">
               Repository Guide
             </a>
-            <a className="btn btn-secondary btn-sm btn-accent-action" href="https://github.com/jasonczech/apexload/blob/main/docs/swagger.yaml" target="_blank" rel="noreferrer" style={{ marginLeft: '8px' }}>
-              OpenAPI Spec
-            </a>
-          </>
-        )}
+          )}
+        </div>
       </div>
 
       <section className="api-guide-hero" aria-labelledby="api-guide-base-url">

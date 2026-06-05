@@ -105,6 +105,8 @@ describe('ApiGuidePage', () => {
 
     const repositoryLink = container.querySelector('a[href*="API_USER_GUIDE.md"]')
     expect(repositoryLink?.textContent).toContain('Repository Guide')
+    const swaggerLink = container.querySelector('a[href="#/swagger"]')
+    expect(swaggerLink?.textContent).toContain('Swagger Docs')
     const mcpLink = container.querySelector('a[href*="mcp/README.md"]')
     expect(mcpLink?.textContent).toContain('MCP setup guide')
   })
@@ -149,6 +151,8 @@ describe('ApiGuidePage', () => {
     expect(container.textContent).not.toContain('Access Workspace')
     expect(container.textContent).not.toContain('Open Access')
     expect(container.textContent).not.toContain('Repository Guide')
+    expect(container.textContent).toContain('Swagger Docs')
+    expect(container.querySelector('a[href="#/swagger"]')).not.toBeNull()
     expect(container.textContent).toContain('filtered to your current domain, project, and role access')
   })
 })
