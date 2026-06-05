@@ -8,6 +8,7 @@ import { json } from '@codemirror/lang-json'
 import { EditorSelection, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state'
 import { Decoration, type DecorationSet, EditorView } from '@codemirror/view'
 import { apexCodeMirrorTheme } from './codeMirrorTheme'
+import { apexDslSemanticHighlighting } from './apexDslSemanticHighlighting'
 import {
   BrowserReplayEvent,
   BrowserReplayNetworkEntry,
@@ -513,6 +514,7 @@ function ScriptCodePane({
   const extensions = useMemo(() => [
     json(),
     apexCodeMirrorTheme,
+    apexDslSemanticHighlighting(),
     scriptCodeRangeField,
     scriptCodeParameterMatchField,
     EditorView.lineWrapping,

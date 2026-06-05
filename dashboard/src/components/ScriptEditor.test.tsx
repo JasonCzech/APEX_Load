@@ -57,13 +57,20 @@ vi.mock('../hooks/useWebSocket', () => ({
 
 vi.mock('@uiw/react-codemirror', async () => {
   const { useEffect, useRef } = await import('react')
-  const CodeMirrorMock = ({ value = '', onChange, onCreateEditor }: {
+  const { apexDslSemanticHighlighting } = await import('./apexDslSemanticHighlighting')
+  const flattenExtensions = (extensions: unknown): unknown[] => {
+    if (!Array.isArray(extensions)) return [extensions]
+    return extensions.flatMap(flattenExtensions)
+  }
+  const CodeMirrorMock = ({ value = '', onChange, onCreateEditor, extensions }: {
     value?: string
     onChange?: (value: string) => void
     onCreateEditor?: (view: unknown) => void
+    extensions?: unknown[]
   }) => {
     const ref = useRef<HTMLTextAreaElement | null>(null)
     const created = useRef(false)
+    const hasApexDslSemanticHighlighting = flattenExtensions(extensions).includes(apexDslSemanticHighlighting())
     useEffect(() => {
       if (created.current || !onCreateEditor) return
       created.current = true
@@ -86,6 +93,7 @@ vi.mock('@uiw/react-codemirror', async () => {
     return (
       <textarea
         data-testid="codemirror-mock"
+        data-has-apex-dsl-semantic-highlighting={hasApexDslSemanticHighlighting ? 'true' : 'false'}
         ref={ref}
         value={value}
         onChange={event => onChange?.(event.currentTarget.value)}
@@ -427,6 +435,15 @@ describe('ScriptEditor', () => {
     })
     container.remove()
     vi.clearAllMocks()
+  })
+
+  it('passes APEX DSL semantic highlighting to the Script JSON editor', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    const codeEditors = Array.from(container.querySelectorAll('[data-testid="codemirror-mock"]'))
+    expect(codeEditors.some(editor => editor.getAttribute('data-has-apex-dsl-semantic-highlighting') === 'true')).toBe(true)
   })
 
   it('keeps imported metadata in the outline instead of duplicating it in the page header', async () => {

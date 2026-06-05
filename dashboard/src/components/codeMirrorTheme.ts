@@ -34,6 +34,70 @@ const editorTheme = EditorView.theme({
     color: 'var(--text-muted)',
     padding: '0 6px 0 8px',
   },
+  '.apex-dsl-token': {
+    borderRadius: '3px',
+  },
+  '.apex-dsl-section-key': {
+    color: 'var(--accent-hover)',
+    fontWeight: '800',
+  },
+  '.apex-dsl-action-name': {
+    color: 'var(--info-text)',
+    fontWeight: '800',
+  },
+  '.apex-dsl-action-method': {
+    color: 'var(--warning-text)',
+    fontWeight: '750',
+  },
+  '.apex-dsl-action-target': {
+    color: 'var(--success-text)',
+    fontWeight: '700',
+  },
+  '.apex-dsl-parameter-name, .apex-dsl-parameter-reference': {
+    color: 'var(--success-text)',
+    fontWeight: '800',
+  },
+  '.apex-dsl-parameter-reference': {
+    backgroundColor: 'rgba(var(--success-rgb), 0.14)',
+    boxShadow: 'inset 0 -1px 0 rgba(var(--success-rgb), 0.62)',
+  },
+  '.apex-dsl-data-source-name': {
+    color: 'var(--info-text)',
+    fontWeight: '750',
+  },
+  '.apex-dsl-transaction-metadata': {
+    color: 'var(--accent-hover)',
+    fontWeight: '800',
+  },
+  '.apex-dsl-supporting-key': {
+    color: 'var(--text-secondary)',
+    fontWeight: '650',
+  },
+  '.apex-dsl-config-key': {
+    color: 'var(--text-muted)',
+    fontWeight: '650',
+  },
+  '.cm-line.apex-dsl-section-block': {
+    backgroundColor: 'rgba(var(--accent-rgb), 0.028)',
+  },
+  '.cm-line.apex-dsl-action-block': {
+    backgroundColor: 'rgba(var(--info-rgb), 0.045)',
+    boxShadow: 'inset 2px 0 0 rgba(var(--info-rgb), 0.34)',
+  },
+  '.cm-line.apex-dsl-parameter-block': {
+    backgroundColor: 'rgba(var(--success-rgb), 0.045)',
+    boxShadow: 'inset 2px 0 0 rgba(var(--success-rgb), 0.34)',
+  },
+  '.cm-line.apex-dsl-data-source-block': {
+    backgroundColor: 'rgba(var(--accent-rgb), 0.04)',
+    boxShadow: 'inset 2px 0 0 rgba(var(--accent-rgb), 0.3)',
+  },
+  '.cm-line.apex-dsl-extractor-block': {
+    backgroundColor: 'rgba(var(--warning-rgb), 0.035)',
+  },
+  '.cm-line.apex-dsl-assertion-block': {
+    backgroundColor: 'rgba(var(--danger-rgb), 0.03)',
+  },
   // The highlight for the line range linked from the other pane.
   '.cm-line.apex-linked-line': {
     backgroundColor: 'var(--accent-soft)',

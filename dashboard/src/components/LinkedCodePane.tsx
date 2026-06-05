@@ -10,6 +10,7 @@ import { Decoration, type DecorationSet, EditorView, GutterMarker, gutter } from
 import { type LineRange } from './dslJsonPointers'
 import { type GutterStatus } from './sourceMappingModel'
 import { apexCodeMirrorTheme } from './codeMirrorTheme'
+import { apexDslSemanticHighlighting } from './apexDslSemanticHighlighting'
 
 // Effect + field that hold the "linked" line range highlighted from the other
 // pane. Updated imperatively (see the effect below) so changing the selection
@@ -94,6 +95,7 @@ function languageExtension(language?: string): Extension[] {
 interface Props {
   value: string
   language?: string
+  semanticMode?: 'apex-dsl'
   gutterStatuses?: Map<number, GutterStatus>
   activeRange?: LineRange | null
   onLineClick?: (line: number) => void
@@ -104,6 +106,7 @@ interface Props {
 export default function LinkedCodePane({
   value,
   language,
+  semanticMode,
   gutterStatuses,
   activeRange,
   onLineClick,
@@ -136,11 +139,14 @@ export default function LinkedCodePane({
       }),
       ...languageExtension(language),
     ]
+    if (semanticMode === 'apex-dsl') {
+      exts.push(apexDslSemanticHighlighting())
+    }
     if (gutterStatuses && gutterStatuses.size > 0) {
       exts.push(statusGutter(gutterStatuses))
     }
     return exts
-  }, [language, gutterStatuses])
+  }, [language, semanticMode, gutterStatuses])
 
   // Apply the linked-line highlight and scroll it into view whenever the active
   // range (or the underlying document) changes. Depend on the range's line

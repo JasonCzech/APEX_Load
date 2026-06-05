@@ -13,16 +13,22 @@ vi.mock('./LinkedCodePane', () => ({
     value,
     ariaLabel,
     activeRange,
+    semanticMode,
   }: {
     value: string
     ariaLabel?: string
     activeRange?: { startLine: number; endLine: number } | null
+    semanticMode?: string
   }) => {
     const activeText = activeRange
       ? value.split('\n').slice(activeRange.startLine - 1, activeRange.endLine).join('\n')
       : ''
     return (
-      <pre aria-label={ariaLabel} data-active-range={activeRange ? `${activeRange.startLine}-${activeRange.endLine}` : ''}>
+      <pre
+        aria-label={ariaLabel}
+        data-active-range={activeRange ? `${activeRange.startLine}-${activeRange.endLine}` : ''}
+        data-semantic-mode={semanticMode || ''}
+      >
         {activeText || value}
       </pre>
     )
@@ -148,6 +154,19 @@ describe('SourceMappingReview', () => {
     expect(dslPane.textContent).not.toContain('"name": "Homepage"')
     expect(container.textContent).toContain('actions[1]')
     expect(container.textContent).toContain('native noop')
+  })
+
+  it('applies APEX DSL semantic highlighting only to the generated DSL pane', async () => {
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />)
+    })
+    await flushPromises()
+
+    const sourcePane = container.querySelector('pre[aria-label="Action.c source"]') as HTMLPreElement | null
+    const dslPane = generatedDslPane(container)
+
+    expect(sourcePane?.dataset.semanticMode).toBe('')
+    expect(dslPane.dataset.semanticMode).toBe('apex-dsl')
   })
 
   it('exposes hover bubble copy on conversion coverage pills', async () => {

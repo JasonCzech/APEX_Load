@@ -393,6 +393,7 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
               <LinkedCodePane
                 value={dslDocument.text}
                 language="json"
+                semanticMode="apex-dsl"
                 gutterStatuses={dslStatus.lines}
                 activeRange={dslActiveRange}
                 onLineClick={handleDslLineClick}
