@@ -85,6 +85,7 @@ import {
   dedupeHeaders,
   downloadTextFile,
   ensureUniqueParameterName,
+  findJsonStringOccurrences,
   fillEmptyHeaders,
   formatConsoleEntries,
   formatNetworkEntries,
@@ -107,6 +108,7 @@ import {
   stringifyInlineData,
   summarizeInlineData,
   validateInlineData,
+  type JsonStringOccurrence,
 } from './scriptEditorUtils'
 import './ScriptEditor.css'
 
@@ -153,6 +155,7 @@ type AuthorRightSidebarKind =
   | 'signals'
   | 'parameters'
   | 'inspector'
+  | 'source-map'
   | 'conversion-mapping'
   | 'imported-metadata'
   | 'object-descriptors'
@@ -171,6 +174,11 @@ interface AuthorRightSidebarContext {
 interface CenterTabsState {
   tabs: CenterWorkbenchTabId[]
   activeTabId: CenterWorkbenchTabId
+}
+
+interface ScriptCodeLineJumpRequest {
+  line: number
+  nonce: number
 }
 
 type BrowserEngineName = 'chromium' | 'webkit'
@@ -470,6 +478,7 @@ interface ScriptCodePaneProps {
   activeParameterName?: string | null
   actionCount: number
   className?: string
+  jumpToLineRequest?: ScriptCodeLineJumpRequest | null
   parameterMatchRanges?: ScriptCodeMatchRange[]
   onApply: () => void
   onChange: (value: string) => void
@@ -489,6 +498,7 @@ function ScriptCodePane({
   activeParameterName,
   actionCount,
   className = '',
+  jumpToLineRequest,
   parameterMatchRanges = [],
   onApply,
   onChange,
@@ -544,6 +554,17 @@ function ScriptCodePane({
     }
     view.dispatch({ effects })
   }, [editorReadyVersion, parameterMatchKey, parameterMatchRanges, value])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || !jumpToLineRequest) return
+    const lineNo = Math.max(1, Math.min(view.state.doc.lines, jumpToLineRequest.line))
+    const line = view.state.doc.line(lineNo)
+    view.dispatch({
+      selection: EditorSelection.cursor(line.from),
+      effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+    })
+  }, [editorReadyVersion, jumpToLineRequest, value])
 
   const handleEditorContextMenu = useCallback((event: MouseEvent<HTMLDivElement>) => {
     if (!onRequestParameterize) return
@@ -602,6 +623,129 @@ function ScriptCodePane({
         />
       </div>
     </section>
+  )
+}
+
+interface JsonMinimapLine {
+  lineNo: number
+  textPreview: string
+  isActiveBlock: boolean
+  hasParameterMatch: boolean
+  hasFirstParameterMatch: boolean
+  widthPct: number
+}
+
+interface JsonSourceMinimapProps {
+  activePath: string
+  activeRange: LineRange | null
+  jsonText: string
+  parameterMatchRanges: ScriptCodeMatchRange[]
+  selectedParameterName?: string | null
+  status: 'synced' | 'dirty' | 'invalid'
+  onJumpToLine: (line: number) => void
+}
+
+function lineNumberForOffset(lineStarts: number[], offset: number): number {
+  let low = 0
+  let high = lineStarts.length - 1
+  let result = 0
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2)
+    if (lineStarts[mid] <= offset) {
+      result = mid
+      low = mid + 1
+    } else {
+      high = mid - 1
+    }
+  }
+  return result + 1
+}
+
+function buildJsonMinimapLines(
+  jsonText: string,
+  activeRange: LineRange | null,
+  parameterMatchRanges: ScriptCodeMatchRange[],
+): JsonMinimapLine[] {
+  const lines = jsonText.split('\n')
+  const lineStarts: number[] = []
+  let offset = 0
+  lines.forEach(line => {
+    lineStarts.push(offset)
+    offset += line.length + 1
+  })
+
+  const parameterLines = new Set<number>()
+  let firstParameterLine: number | null = null
+  parameterMatchRanges.forEach((range, index) => {
+    const startLine = lineNumberForOffset(lineStarts, range.from)
+    const endLine = lineNumberForOffset(lineStarts, Math.max(range.from, range.to - 1))
+    for (let lineNo = startLine; lineNo <= endLine; lineNo += 1) {
+      parameterLines.add(lineNo)
+    }
+    if (index === 0) firstParameterLine = startLine
+  })
+
+  return lines.map((line, index) => {
+    const trimmed = line.trim()
+    const widthPct = Math.max(12, Math.min(100, Math.round((trimmed.length / 90) * 100)))
+    const lineNo = index + 1
+    return {
+      lineNo,
+      textPreview: trimmed || ' ',
+      isActiveBlock: Boolean(activeRange && lineNo >= activeRange.startLine && lineNo <= activeRange.endLine),
+      hasParameterMatch: parameterLines.has(lineNo),
+      hasFirstParameterMatch: firstParameterLine === lineNo,
+      widthPct,
+    }
+  })
+}
+
+function JsonSourceMinimap({
+  activePath,
+  activeRange,
+  jsonText,
+  parameterMatchRanges,
+  selectedParameterName,
+  status,
+  onJumpToLine,
+}: JsonSourceMinimapProps) {
+  const lines = useMemo(
+    () => buildJsonMinimapLines(jsonText, activeRange, parameterMatchRanges),
+    [activeRange, jsonText, parameterMatchRanges],
+  )
+  const activeLabel = selectedParameterName
+    ? `${selectedParameterName}: ${parameterMatchRanges.length} occurrence${parameterMatchRanges.length === 1 ? '' : 's'}`
+    : activePath || (activeRange ? `Lines ${activeRange.startLine}-${activeRange.endLine}` : 'No selection')
+  const invalid = status === 'invalid' || !jsonText.trim()
+
+  return (
+    <div className="json-source-map-panel">
+      <div className="json-source-map-summary">
+        <strong>Script JSON</strong>
+        <span>{activeLabel}</span>
+      </div>
+      {invalid ? (
+        <div className="utility-empty-state json-source-map-empty">
+          {jsonText.trim() ? 'Fix the JSON draft to rebuild the source map.' : 'No JSON source to map yet.'}
+        </div>
+      ) : (
+        <div className="json-source-map" aria-label="JSON source map">
+          {lines.map(line => (
+            <button
+              key={`json-map-line-${line.lineNo}`}
+              type="button"
+              className={`json-source-map-line ${line.isActiveBlock ? 'active-block' : ''} ${line.hasParameterMatch ? 'parameter-match' : ''} ${line.hasFirstParameterMatch ? 'first-parameter-match' : ''}`}
+              onClick={() => onJumpToLine(line.lineNo)}
+              title={`Line ${line.lineNo}: ${line.textPreview}`}
+              aria-label={`Jump to JSON line ${line.lineNo}`}
+            >
+              <span className="json-source-map-line-number">{line.lineNo}</span>
+              <span className="json-source-map-line-code" style={{ width: `${line.widthPct}%` }}>{line.textPreview}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -1236,7 +1380,52 @@ interface EditorHistory {
 type DataSourceConfig = ScriptDataSource
 type ParameterConfig = ScriptParameterDefinition
 
-const TIMESTAMP_PARAMETER_FORMATS = new Set(['unix', 'unix_ms', 'iso8601', 'rfc3339', 'rfc3339_nano'])
+interface ParameterFormatPreset {
+  description: string
+  label: string
+  value: string
+  timezone?: string
+}
+
+const CUSTOM_PARAMETER_FORMAT_VALUE = '__custom__'
+
+const TIMESTAMP_PARAMETER_FORMAT_PRESETS: ParameterFormatPreset[] = [
+  { value: 'unix', label: 'Unix seconds', description: 'Epoch timestamp in seconds.' },
+  { value: 'unix_ms', label: 'Unix milliseconds', description: 'Epoch timestamp in milliseconds.' },
+  { value: 'iso8601', label: 'ISO 8601', description: 'Standard API timestamp with timezone.' },
+  { value: 'rfc3339', label: 'RFC 3339', description: 'RFC 3339 timestamp with seconds.' },
+  { value: 'rfc3339_nano', label: 'RFC 3339 nano', description: 'RFC 3339 timestamp with nanosecond precision.' },
+]
+
+const DATE_TIME_PARAMETER_FORMAT_PRESETS: ParameterFormatPreset[] = [
+  { value: '2006-01-02 15:04:05', label: 'SQL date time', description: 'YYYY-MM-DD HH:mm:ss.' },
+  { value: '2006-01-02T15:04:05Z', label: 'LoadRunner UTC ISO', description: 'VuGen %Y-%m-%dT%H:%M:%SZ.', timezone: 'UTC' },
+  { value: '2006-01-02T15:04:05Z07:00', label: 'ISO 8601 offset', description: 'YYYY-MM-DDTHH:mm:ss±hh:mm.' },
+  { value: '2006-01-02T15:04:05.000Z07:00', label: 'ISO milliseconds', description: 'ISO timestamp with millisecond precision.' },
+  { value: '2006-01-02T15:04:05.000000Z07:00', label: 'ISO microseconds', description: 'ISO timestamp with microsecond precision.' },
+  { value: '2006-01-02', label: 'Date only ISO', description: 'YYYY-MM-DD.' },
+  { value: '20060102', label: 'Compact date', description: 'YYYYMMDD.' },
+  { value: '20060102150405', label: 'Compact date time', description: 'YYYYMMDDHHmmss.' },
+  { value: '01/02/2006 15:04:05', label: 'US numeric date time', description: 'MM/DD/YYYY HH:mm:ss.' },
+  { value: '02/01/2006 15:04:05', label: 'EU numeric date time', description: 'DD/MM/YYYY HH:mm:ss.' },
+  { value: '02-Jan-2006 15:04:05', label: 'LoadRunner short month', description: 'DD-Mon-YYYY HH:mm:ss.' },
+  { value: 'Monday, January 02, 2006 15:04:05', label: 'Long named date time', description: 'Weekday, Month DD, YYYY HH:mm:ss.' },
+  { value: 'Mon Jan _2 15:04:05 MST 2006', label: 'Unix ctime style', description: 'Named day/month with timezone.' },
+  { value: 'Mon, 02 Jan 2006 15:04:05 MST', label: 'RFC 1123', description: 'HTTP-date style timestamp.' },
+]
+
+const TIME_PARAMETER_FORMAT_PRESETS: ParameterFormatPreset[] = [
+  { value: '15:04:05', label: '24-hour time', description: 'HH:mm:ss.' },
+  { value: '15:04', label: '24-hour minute', description: 'HH:mm.' },
+  { value: '15:04:05.000', label: '24-hour milliseconds', description: 'HH:mm:ss.SSS.' },
+  { value: '03:04:05 PM', label: '12-hour time', description: 'hh:mm:ss AM/PM.' },
+  { value: '03:04 PM', label: '12-hour minute', description: 'hh:mm AM/PM.' },
+  { value: '15:04:05Z', label: 'UTC suffix time', description: 'HH:mm:ssZ.', timezone: 'UTC' },
+  { value: '15:04:05 MST', label: 'Time with zone name', description: 'HH:mm:ss timezone abbreviation.' },
+  { value: '15:04:05 -0700', label: 'Time with numeric offset', description: 'HH:mm:ss ±hhmm.' },
+]
+
+const TIMESTAMP_PARAMETER_FORMATS = new Set(TIMESTAMP_PARAMETER_FORMAT_PRESETS.map(preset => preset.value))
 
 function parameterFormatForType(nextType: string, currentFormat?: string) {
   const format = currentFormat || ''
@@ -1250,6 +1439,13 @@ function parameterFormatForType(nextType: string, currentFormat?: string) {
     return format && !TIMESTAMP_PARAMETER_FORMATS.has(format) && format !== '2006-01-02 15:04:05' ? format : '15:04:05'
   }
   return currentFormat
+}
+
+function parameterFormatPresetsForType(type: string): ParameterFormatPreset[] {
+  if (type === 'timestamp') return TIMESTAMP_PARAMETER_FORMAT_PRESETS
+  if (type === 'time') return TIME_PARAMETER_FORMAT_PRESETS
+  if (type === 'date_time') return DATE_TIME_PARAMETER_FORMAT_PRESETS
+  return []
 }
 
 // Built-in parameter types (everything except the file/list data-backed types) generate their
@@ -1440,6 +1636,7 @@ interface ActionEditorParameterRequest {
   existingName?: string | null
   parameterType?: string
   typeConfig?: Partial<ParameterConfig>
+  reuseExisting?: boolean
 }
 
 interface ActionEditorSelectionState {
@@ -1466,6 +1663,13 @@ interface ActionEditorParameterDraft {
   // the runtime parameter type (random_number, current_iteration, …) and its inline config.
   parameterType?: string
   typeConfig?: Partial<ParameterConfig>
+  replacementRanges?: Array<{ from: number; to: number }>
+  reuseExisting?: boolean
+}
+
+interface JsonParameterOccurrenceReviewState {
+  draft: ActionEditorParameterDraft
+  occurrences: JsonStringOccurrence[]
 }
 
 interface Props {
@@ -1732,12 +1936,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   // Holds the pending selection while the Parameterize choice dialog (File vs Built-in Function)
   // is open. Cleared once the user picks a branch.
   const [parameterizeChoice, setParameterizeChoice] = useState<ActionEditorParameterDraft | null>(null)
+  const [existingParameterChoice, setExistingParameterChoice] = useState<ActionEditorParameterDraft | null>(null)
+  const [jsonOccurrenceReview, setJsonOccurrenceReview] = useState<JsonParameterOccurrenceReviewState | null>(null)
   const [authorCodeFocus, setAuthorCodeFocus] = useState<{ phase: ScriptActionPhase; actionIndex: number } | null>(null)
   const [outlineActionListCollapsed, setOutlineActionListCollapsed] = useState(false)
   const [outlineParameterListCollapsed, setOutlineParameterListCollapsed] = useState(false)
   const [debugActionListCollapsed, setDebugActionListCollapsed] = useState(false)
   const [debugParameterListCollapsed, setDebugParameterListCollapsed] = useState(false)
   const [selectedOutlineParameterName, setSelectedOutlineParameterName] = useState<string | null>(null)
+  const [jsonLineJumpRequest, setJsonLineJumpRequest] = useState<ScriptCodeLineJumpRequest | null>(null)
   const isBrowserScript = script.protocol === 'browser'
   const isHttpScript = script.protocol === 'http'
   const isJmsScript = script.protocol === 'jms-solace'
@@ -4108,7 +4315,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }))
   }
 
-  const upsertParameterFromActionEditor = ({ selectedText, requestedName, existingName, parameterType, typeConfig }: ActionEditorParameterRequest): string => {
+  const upsertParameterFromActionEditor = ({ selectedText, requestedName, existingName, parameterType, typeConfig, reuseExisting }: ActionEditorParameterRequest): string => {
     const normalizedExistingName = existingName ? sanitizeVarName(existingName) : ''
     const resolvedName = ensureUniqueParameterName(
       requestedName || selectedText,
@@ -4123,6 +4330,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       : -1
     const byResolvedNameIdx = currentParameters.findIndex(parameter => sanitizeVarName(parameter.name || '') === resolvedName)
     const selectedIdx = existingIdx >= 0 ? existingIdx : byResolvedNameIdx >= 0 ? byResolvedNameIdx : currentParameters.length
+
+    if (reuseExisting && selectedIdx < currentParameters.length) {
+      openCenterTab('parameter-data')
+      setSelectedParameterIdx(selectedIdx)
+      setError('')
+      setSuccess(`Inserted existing parameter ${currentParameters[selectedIdx].name || resolvedName}.`)
+      return currentParameters[selectedIdx].name || resolvedName
+    }
 
     setScript(prev => {
       const parameters = [...(prev.parameters || [])]
@@ -4194,7 +4409,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
     const parameters = [...(parsed.script.parameters || [])]
     const normalizedExisting = draft.existingName ? sanitizeVarName(draft.existingName) : ''
-    const resolvedName = ensureUniqueParameterName(
+    let resolvedName = ensureUniqueParameterName(
       draft.requestedName || draft.seedValue,
       parameters,
       normalizedExisting || undefined,
@@ -4209,7 +4424,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     const builtin = isBuiltinParameterType(draft.parameterType)
 
     let paramIdx: number
-    if (targetIdx >= 0) {
+    if (draft.reuseExisting) {
+      if (targetIdx < 0) {
+        setError(`Parameter ${draft.requestedName || draft.existingName || 'selection'} could not be found.`)
+        return
+      }
+      resolvedName = parameters[targetIdx].name || resolvedName
+      paramIdx = targetIdx
+    } else if (targetIdx >= 0) {
       const current = { ...(parameters[targetIdx] || EMPTY_PARAMETER) }
       if (builtin) {
         parameters[targetIdx] = applyParameterTypeDefaults({ ...current, ...draft.typeConfig, name: resolvedName, type: draft.parameterType! }, draft.parameterType!)
@@ -4243,7 +4465,29 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }
 
     const replacement = `{{param.${resolvedName}}}`
-    const nextText = `${jsonText.slice(0, draft.start)}${replacement}${jsonText.slice(draft.end)}`
+    const rawRanges = [{ from: draft.start, to: draft.end }, ...(draft.replacementRanges || [])]
+    const ranges = Array.from(
+      new Map(rawRanges.map(range => [`${range.from}:${range.to}`, range])).values(),
+    ).sort((left, right) => left.from - right.from)
+    const invalidRange = ranges.find(range =>
+      range.from < 0 ||
+      range.to > jsonText.length ||
+      range.from >= range.to ||
+      jsonText.slice(range.from, range.to) !== draft.selectedText,
+    )
+    if (invalidRange) {
+      setError('The script JSON changed since matching occurrences were reviewed. Re-select the value to parameterize.')
+      setPendingParameterDraft(null)
+      setJsonOccurrenceReview(null)
+      return
+    }
+    let nextText = jsonText
+    ranges
+      .slice()
+      .sort((left, right) => right.from - left.from)
+      .forEach(range => {
+        nextText = `${nextText.slice(0, range.from)}${replacement}${nextText.slice(range.to)}`
+      })
     const parsedNext = parseScriptJsonDraft(nextText)
     if (!parsedNext.ok) {
       setError(parsedNext.message)
@@ -4253,8 +4497,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     const nextScript: ScriptData = { ...parsedNext.script, parameters }
 
     pushEditorHistory(script)
-    commitJsonDraft(nextScript, draft.existingName ? `Updated parameter ${resolvedName}.` : `Created parameter ${resolvedName}.`)
+    const occurrenceMessage = ranges.length > 1 ? ` Replaced ${ranges.length} occurrences.` : ''
+    commitJsonDraft(
+      nextScript,
+      draft.reuseExisting
+        ? `Inserted existing parameter ${resolvedName}.${occurrenceMessage}`
+        : `${draft.existingName ? 'Updated' : 'Created'} parameter ${resolvedName}.${occurrenceMessage}`,
+    )
     setPendingParameterDraft(null)
+    setJsonOccurrenceReview(null)
+    setExistingParameterChoice(null)
     setFocusParameterIdx(paramIdx)
     openCenterTab('parameter-data')
   }
@@ -4272,6 +4524,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       existingName: draft.existingName,
       parameterType: draft.parameterType,
       typeConfig: draft.typeConfig,
+      reuseExisting: draft.reuseExisting,
     })
     const action = script.actions[draft.actionIndex]
     if (action) {
@@ -4290,6 +4543,37 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   // Opens the Parameterize choice dialog (File vs Built-in Function) for a fresh selection.
   const openParameterizeChoice = (draft: ActionEditorParameterDraft) => {
     setParameterizeChoice(draft)
+    setExistingParameterChoice(null)
+    setJsonOccurrenceReview(null)
+    setError('')
+  }
+
+  const openExistingParameterChoice = (draft: ActionEditorParameterDraft) => {
+    setExistingParameterChoice(draft)
+    setParameterizeChoice(null)
+    setJsonOccurrenceReview(null)
+    setError('')
+  }
+
+  const openJsonOccurrenceReview = (draft: ActionEditorParameterDraft) => {
+    if (draft.source !== 'json') {
+      openParameterizeChoice(draft)
+      return
+    }
+    if (jsonText.slice(draft.start, draft.end) !== draft.selectedText) {
+      setError('The script JSON changed since this selection was made. Re-select the value to parameterize.')
+      return
+    }
+    const occurrences = findJsonStringOccurrences(jsonText, draft.selectedText, { from: draft.start, to: draft.end })
+      .filter(occurrence =>
+        !occurrence.path.startsWith('$.parameters') &&
+        !occurrence.path.startsWith('$.script.parameters') &&
+        !occurrence.path.startsWith('$.data_sources') &&
+        !occurrence.path.startsWith('$.script.data_sources'),
+      )
+    setJsonOccurrenceReview({ draft, occurrences })
+    setExistingParameterChoice(null)
+    setParameterizeChoice(null)
     setError('')
   }
 
@@ -4315,6 +4599,36 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     applyParameterDraft(draft)
   }
 
+  const applyExistingParameterChoice = (parameterName: string, replacementRanges: Array<{ from: number; to: number }> = []) => {
+    const draft = existingParameterChoice || jsonOccurrenceReview?.draft
+    if (!draft || !parameterName.trim()) return
+    const parameter = (currentDraftScript.parameters || []).find(candidate =>
+      sanitizeVarName(candidate.name || '') === sanitizeVarName(parameterName),
+    )
+    if (!parameter?.name) {
+      setError(`Parameter ${parameterName} could not be found.`)
+      return
+    }
+    applyParameterDraft({
+      ...draft,
+      existingName: parameter.name,
+      requestedName: parameter.name,
+      seedValue: draft.seedValue,
+      replacementRanges,
+      reuseExisting: true,
+    })
+  }
+
+  const createParameterFromOccurrenceReview = (replacementRanges: Array<{ from: number; to: number }>) => {
+    if (!jsonOccurrenceReview) return
+    setParameterizeChoice({
+      ...jsonOccurrenceReview.draft,
+      replacementRanges,
+    })
+    setJsonOccurrenceReview(null)
+    setExistingParameterChoice(null)
+  }
+
   const updatePendingParameterDraftName = (value: string) => {
     setPendingParameterDraft(prev => (prev ? { ...prev, requestedName: sanitizeVarName(value) } : prev))
   }
@@ -4331,9 +4645,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     selectionState: jsonParameterSelection,
     openSelectionMenu: openJsonParameterSelectionMenu,
     openParameterEditor: openJsonParameterEditor,
+    openExistingParameterChooser: openJsonExistingParameterChooser,
+    openOccurrenceReview: openJsonParameterOccurrenceReview,
   } = useJsonParameterMenu({
     parameters: currentDraftScript.parameters || [],
     onBeginParameterEdit: openParameterizeChoice,
+    onChooseExistingParameter: openExistingParameterChoice,
+    onReviewOccurrences: openJsonOccurrenceReview,
   })
 
   const toggleOpenDataEditor = (idx: number) => {
@@ -4826,6 +5144,47 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const renderStructuredCenterDocument = (title: string, content: ReactNode) => {
     return jsonParseMessage ? renderBlockedCenterDocument(title) : content
   }
+  const renderActionInspectorContent = (): ReactNode => (
+    activeInspectorAction && activeAction !== null ? (
+      <>
+        <ActionEditor
+          action={activeInspectorAction}
+          index={activeAction}
+          parameters={script.parameters || []}
+          onUpdate={updateAction}
+          onAddExtractor={addExtractor}
+          onUpdateExtractor={updateExtractor}
+          onRemoveExtractor={removeExtractor}
+          onAddAssertion={addAssertion}
+          onUpdateAssertion={updateAssertion}
+          onRemoveAssertion={removeAssertion}
+          onAddHeader={addHeader}
+          onUpdateHeader={updateHeader}
+          onRemoveHeader={removeHeader}
+          onAddMetadata={addMetadata}
+          onUpdateMetadata={updateMetadata}
+          onRemoveMetadata={removeMetadata}
+          onBeginParameterEdit={openParameterizeChoice}
+          methodColor={methodColor}
+          protocol={script.protocol}
+          isBrowserScript={isBrowserScript}
+          isJmsScript={isJmsScript}
+          isSoapScript={isSoapScript}
+          issues={actionIssueBuckets[activeAction] || []}
+        />
+        <div className="utility-card contextual-history-card">
+          <div className="utility-card-header">
+            <strong>Guided History</strong>
+            <span>{editorHistory.past.length} undo • {editorHistory.future.length} redo</span>
+          </div>
+          <div className="utility-inline-actions">
+            <button type="button" className="btn btn-sm btn-secondary" onClick={undoEditorChange} disabled={editorHistory.past.length === 0}>Undo</button>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={redoEditorChange} disabled={editorHistory.future.length === 0}>Redo</button>
+          </div>
+        </div>
+      </>
+    ) : null
+  )
   const renderCenterTabPanel = (tabId: CenterWorkbenchTabId) => {
     if (tabId === BROWSER_REPLAY_TAB_ID && isBrowserScript) {
       return (
@@ -4852,6 +5211,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           activeRange={scriptCodeActiveRange}
           activeParameterName={selectedOutlineParameterExists ? selectedOutlineParameterName : null}
           actionCount={scriptPhaseActionRows.length}
+          jumpToLineRequest={jsonLineJumpRequest}
           parameterMatchRanges={parameterMatchRanges}
           onApply={handleApplyJsonDraft}
           onChange={handleCodePaneChange}
@@ -4867,7 +5227,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           onUpdateParameterCandidate={updateCandidate}
           parameterCandidates={parameterCandidates}
         />
-        <ActionParameterMenu selectionState={jsonParameterSelection} onOpenParameterEditor={openJsonParameterEditor} />
+        <ActionParameterMenu
+          selectionState={jsonParameterSelection}
+          onOpenParameterEditor={openJsonParameterEditor}
+          onOpenExistingParameter={openJsonExistingParameterChooser}
+          onOpenOccurrenceReview={openJsonParameterOccurrenceReview}
+          variant="json"
+        />
+        {activeInspectorAction && activeAction !== null && (
+          <section className="script-code-inline-inspector" aria-label="Selected action editor">
+            {renderActionInspectorContent()}
+          </section>
+        )}
       </>
     )
   }
@@ -4888,10 +5259,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       case 'parameter-data':
         return { kind: 'parameters', title: 'Parameters', railLabel: 'Parameters' }
       case SCRIPT_JSON_TAB_ID:
-        if (activeInspectorAction && activeAction !== null) {
-          return { kind: 'inspector', title: 'Inspector', railLabel: 'Inspector', wide: true }
-        }
-        return { kind: 'signals', title: 'Authoring Signals', railLabel: 'Signals' }
+        return { kind: 'source-map', title: 'Source Map', railLabel: 'Map' }
       case 'conversion-mapping':
         return { kind: 'conversion-mapping', title: 'Conversion Mapping', railLabel: 'Mapping' }
       case 'imported-metadata':
@@ -4903,7 +5271,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       case BROWSER_REPLAY_TAB_ID:
         return { kind: 'browser-replay', title: 'Browser Replay', railLabel: 'Replay' }
       case 'configuration':
-        return { kind: 'configuration', title: 'Configuration', railLabel: 'Config' }
+        return { kind: 'signals', title: 'Authoring Signals', railLabel: 'Signals' }
       case 'runtime-settings':
         return { kind: 'runtime-settings', title: 'Runtime Settings', railLabel: 'Runtime' }
       default:
@@ -4912,6 +5280,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   })()
   const renderContextualRightSidebarContent = (): ReactNode => {
     switch (authorRightSidebarContext.kind) {
+      case 'source-map':
+        return (
+          <JsonSourceMinimap
+            activePath={scriptCodeStatusPath}
+            activeRange={scriptCodeActiveRange}
+            jsonText={jsonText}
+            onJumpToLine={line => setJsonLineJumpRequest({ line, nonce: Date.now() })}
+            parameterMatchRanges={parameterMatchRanges}
+            selectedParameterName={selectedOutlineParameterExists ? selectedOutlineParameterName : null}
+            status={jsonStatus}
+          />
+        )
       case 'parameters':
         return (
           <ParameterSidebar
@@ -4924,45 +5304,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           />
         )
       case 'inspector':
-        return activeInspectorAction && activeAction !== null ? (
-          <>
-            <ActionEditor
-              action={activeInspectorAction}
-              index={activeAction}
-              parameters={script.parameters || []}
-              onUpdate={updateAction}
-              onAddExtractor={addExtractor}
-              onUpdateExtractor={updateExtractor}
-              onRemoveExtractor={removeExtractor}
-              onAddAssertion={addAssertion}
-              onUpdateAssertion={updateAssertion}
-              onRemoveAssertion={removeAssertion}
-              onAddHeader={addHeader}
-              onUpdateHeader={updateHeader}
-              onRemoveHeader={removeHeader}
-              onAddMetadata={addMetadata}
-              onUpdateMetadata={updateMetadata}
-              onRemoveMetadata={removeMetadata}
-              onBeginParameterEdit={openParameterizeChoice}
-              methodColor={methodColor}
-              protocol={script.protocol}
-              isBrowserScript={isBrowserScript}
-              isJmsScript={isJmsScript}
-              isSoapScript={isSoapScript}
-              issues={actionIssueBuckets[activeAction] || []}
-            />
-            <div className="utility-card contextual-history-card">
-              <div className="utility-card-header">
-                <strong>Guided History</strong>
-                <span>{editorHistory.past.length} undo • {editorHistory.future.length} redo</span>
-              </div>
-              <div className="utility-inline-actions">
-                <button type="button" className="btn btn-sm btn-secondary" onClick={undoEditorChange} disabled={editorHistory.past.length === 0}>Undo</button>
-                <button type="button" className="btn btn-sm btn-secondary" onClick={redoEditorChange} disabled={editorHistory.future.length === 0}>Redo</button>
-              </div>
-            </div>
-          </>
-        ) : null
+        return renderActionInspectorContent()
       case 'conversion-mapping':
         return (
           <>
@@ -5237,6 +5579,23 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           onClose={() => setParameterizeChoice(null)}
           onChooseFile={chooseParameterizeFile}
           onConfirmBuiltin={confirmBuiltinParameterize}
+        />
+      )}
+      {existingParameterChoice && (
+        <ExistingParameterDialog
+          draft={existingParameterChoice}
+          onClose={() => setExistingParameterChoice(null)}
+          onSelect={parameterName => applyExistingParameterChoice(parameterName)}
+          parameters={currentDraftScript.parameters || []}
+        />
+      )}
+      {jsonOccurrenceReview && (
+        <JsonOccurrenceReviewDialog
+          onClose={() => setJsonOccurrenceReview(null)}
+          onCreateNew={createParameterFromOccurrenceReview}
+          onUseExisting={applyExistingParameterChoice}
+          parameters={currentDraftScript.parameters || []}
+          review={jsonOccurrenceReview}
         />
       )}
       <div className="editor-header">
@@ -9511,17 +9870,7 @@ function ParameterInfoPanel({
                   <tr>
                     <th scope="row">Format</th>
                     <td>
-                      {parameterType === 'timestamp' ? (
-                        <select value={parameter.format || 'iso8601'} onChange={event => onUpdateParameter('format', event.target.value)}>
-                          <option value="unix">unix</option>
-                          <option value="unix_ms">unix_ms</option>
-                          <option value="iso8601">iso8601</option>
-                          <option value="rfc3339">rfc3339</option>
-                          <option value="rfc3339_nano">rfc3339_nano</option>
-                        </select>
-                      ) : (
-                        <input value={parameter.format || ''} onChange={event => onUpdateParameter('format', event.target.value)} placeholder="Go time layout" />
-                      )}
+                      <ParameterFormatControl parameter={parameter} onUpdate={onUpdateParameter} />
                     </td>
                   </tr>
                   <tr><th scope="row">Timezone</th><td><input value={parameter.timezone || ''} onChange={event => onUpdateParameter('timezone', event.target.value)} placeholder="UTC, America/New_York" /></td></tr>
@@ -10505,6 +10854,52 @@ interface ParameterTypeFieldsProps {
   onUpdate: (field: keyof ParameterConfig, value: unknown) => void
 }
 
+interface ParameterFormatControlProps {
+  parameter: ParameterConfig
+  onUpdate: (field: keyof ParameterConfig, value: unknown) => void
+}
+
+function ParameterFormatControl({ parameter, onUpdate }: ParameterFormatControlProps) {
+  const type = parameter.type || 'list'
+  const presets = parameterFormatPresetsForType(type)
+  const currentFormat = parameter.format || parameterFormatForType(type, '')
+  const selectedPreset = presets.find(preset => preset.value === currentFormat)
+  const allowsCustom = type === 'date_time' || type === 'time'
+  const selectValue = selectedPreset ? selectedPreset.value : CUSTOM_PARAMETER_FORMAT_VALUE
+
+  const applyPreset = (value: string) => {
+    if (value === CUSTOM_PARAMETER_FORMAT_VALUE) {
+      onUpdate('format', currentFormat || '')
+      return
+    }
+    const preset = presets.find(candidate => candidate.value === value)
+    if (!preset) return
+    onUpdate('format', preset.value)
+    if (preset.timezone !== undefined) {
+      onUpdate('timezone', preset.timezone)
+    }
+  }
+
+  return (
+    <div className="parameter-format-control">
+      <select value={selectValue} onChange={event => applyPreset(event.target.value)}>
+        {presets.map(preset => (
+          <option key={preset.value} value={preset.value}>{preset.label}</option>
+        ))}
+        {allowsCustom && <option value={CUSTOM_PARAMETER_FORMAT_VALUE}>Custom Go layout</option>}
+      </select>
+      {allowsCustom && selectValue === CUSTOM_PARAMETER_FORMAT_VALUE && (
+        <input
+          value={parameter.format || ''}
+          onChange={event => onUpdate('format', event.target.value)}
+          placeholder="Go time layout"
+        />
+      )}
+      <small>{selectedPreset?.description || (allowsCustom ? 'Use any Go time layout compatible with the DSL runtime.' : 'Choose a supported timestamp format.')}</small>
+    </div>
+  )
+}
+
 // ParameterTypeFields renders the key inline configuration inputs for a built-in parameter type
 // (min/max, start/step, length/charset, format/timezone/offset). Mirrors the inputs in the
 // Parameter Settings dialog so both surfaces stay consistent.
@@ -10545,22 +10940,208 @@ function ParameterTypeFields({ parameter, onUpdate }: ParameterTypeFieldsProps) 
         <>
           <label>
             <span>Format</span>
-            {type === 'timestamp' ? (
-              <select value={parameter.format || 'iso8601'} onChange={event => onUpdate('format', event.target.value)}>
-                <option value="unix">unix</option>
-                <option value="unix_ms">unix_ms</option>
-                <option value="iso8601">iso8601</option>
-                <option value="rfc3339">rfc3339</option>
-                <option value="rfc3339_nano">rfc3339_nano</option>
-              </select>
-            ) : (
-              <input value={parameter.format || ''} onChange={event => onUpdate('format', event.target.value)} placeholder="Go time layout" />
-            )}
+            <ParameterFormatControl parameter={parameter} onUpdate={onUpdate} />
           </label>
           <label><span>Timezone</span><input value={parameter.timezone || ''} onChange={event => onUpdate('timezone', event.target.value)} placeholder="UTC, America/New_York" /></label>
           <label><span>Offset Seconds</span><input type="number" value={numberInputValue(parameter.offset_seconds, 0)} onChange={event => onUpdate('offset_seconds', Number(event.target.value))} placeholder="offset seconds" /></label>
         </>
       )}
+    </div>
+  )
+}
+
+interface ExistingParameterDialogProps {
+  draft: ActionEditorParameterDraft
+  onClose: () => void
+  onSelect: (parameterName: string) => void
+  parameters: ParameterConfig[]
+}
+
+function ExistingParameterDialog({
+  draft,
+  onClose,
+  onSelect,
+  parameters,
+}: ExistingParameterDialogProps) {
+  const [query, setQuery] = useState('')
+  const normalizedQuery = query.trim().toLowerCase()
+  const filteredParameters = useMemo(() => parameters.filter(parameter => {
+    const haystack = [parameter.name, parameter.type, parameter.data_source, parameter.column]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return !normalizedQuery || haystack.includes(normalizedQuery)
+  }), [normalizedQuery, parameters])
+
+  return (
+    <div className="editor-dialog-backdrop parameter-choice-backdrop" onClick={onClose}>
+      <div
+        className="editor-dialog parameter-choice-dialog parameter-existing-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Use Existing Parameter"
+        onClick={event => event.stopPropagation()}
+      >
+        <div className="editor-dialog-header">
+          <div>
+            <h3 className="panel-title">Use Existing Parameter</h3>
+            <p className="editor-dialog-subtitle">
+              Replace <span className="cell-mono">{draft.selectedText}</span> with an existing parameter token.
+            </p>
+          </div>
+          <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
+        </div>
+        <div className="editor-dialog-body parameter-choice-dialog-body">
+          <label className="parameterize-name-field">
+            <span>Find Parameter</span>
+            <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by name, type, or source" />
+          </label>
+          {parameters.length === 0 ? (
+            <p className="parameter-settings-empty">No parameters exist yet. Create a new parameter for this selection first.</p>
+          ) : filteredParameters.length === 0 ? (
+            <p className="parameter-settings-empty">No parameters match this search.</p>
+          ) : (
+            <div className="parameter-existing-list">
+              {filteredParameters.map((parameter, index) => {
+                const name = parameter.name || `Parameter ${index + 1}`
+                const summary = summarizeParameterSettings(parameter)
+                return (
+                  <button
+                    type="button"
+                    className="parameter-choice-option"
+                    key={`${name}-${index}`}
+                    onClick={() => onSelect(name)}
+                  >
+                    <span className="parameter-choice-option-heading">
+                      <strong>{name}</strong>
+                      <span className="cell-mono">{parameter.type || 'list'}</span>
+                    </span>
+                    <span>{summary}</span>
+                    <span className="cell-mono">{`{{param.${name}}}`}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface JsonOccurrenceReviewDialogProps {
+  onClose: () => void
+  onCreateNew: (ranges: Array<{ from: number; to: number }>) => void
+  onUseExisting: (parameterName: string, ranges: Array<{ from: number; to: number }>) => void
+  parameters: ParameterConfig[]
+  review: JsonParameterOccurrenceReviewState
+}
+
+function JsonOccurrenceReviewDialog({
+  onClose,
+  onCreateNew,
+  onUseExisting,
+  parameters,
+  review,
+}: JsonOccurrenceReviewDialogProps) {
+  const optionalOccurrences = useMemo(
+    () => review.occurrences.filter(occurrence => !occurrence.isOriginal),
+    [review.occurrences],
+  )
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(optionalOccurrences.map(occurrence => occurrence.id)))
+  const [existingName, setExistingName] = useState(() => parameters[0]?.name || '')
+
+  useEffect(() => {
+    setSelectedIds(new Set(optionalOccurrences.map(occurrence => occurrence.id)))
+  }, [optionalOccurrences])
+
+  useEffect(() => {
+    if (!existingName && parameters[0]?.name) {
+      setExistingName(parameters[0].name)
+    }
+  }, [existingName, parameters])
+
+  const selectedRanges = optionalOccurrences
+    .filter(occurrence => selectedIds.has(occurrence.id))
+    .map(occurrence => ({ from: occurrence.from, to: occurrence.to }))
+  const selectedCount = selectedRanges.length + 1
+
+  const toggleOccurrence = (id: string, checked: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  return (
+    <div className="editor-dialog-backdrop parameter-choice-backdrop" onClick={onClose}>
+      <div
+        className="editor-dialog parameter-choice-dialog parameter-occurrence-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Review Matching Occurrences"
+        onClick={event => event.stopPropagation()}
+      >
+        <div className="editor-dialog-header">
+          <div>
+            <h3 className="panel-title">Review Matching Occurrences</h3>
+            <p className="editor-dialog-subtitle">
+              The original selection is always replaced. Choose which matching JSON string values should also use the parameter.
+            </p>
+          </div>
+          <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
+        </div>
+        <div className="editor-dialog-body parameter-choice-dialog-body">
+          <div className="parameter-occurrence-summary">
+            <strong className="cell-mono">{review.draft.selectedText}</strong>
+            <span>{selectedCount} replacement{selectedCount === 1 ? '' : 's'} selected</span>
+          </div>
+          {optionalOccurrences.length === 0 ? (
+            <p className="parameter-settings-empty">No additional exact string-value matches were found in the Script JSON.</p>
+          ) : (
+            <div className="parameter-occurrence-list">
+              {optionalOccurrences.map(occurrence => (
+                <label className="parameter-occurrence-item" key={occurrence.id}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(occurrence.id)}
+                    onChange={event => toggleOccurrence(occurrence.id, event.target.checked)}
+                  />
+                  <span>
+                    <strong>{occurrence.path}</strong>
+                    <small>Line {occurrence.line}</small>
+                    <code>{occurrence.preview}</code>
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+          <div className="parameter-occurrence-actions">
+            <button type="button" className="btn btn-sm btn-primary" onClick={() => onCreateNew(selectedRanges)}>
+              Create new parameter
+            </button>
+            <label>
+              <span>Existing Parameter</span>
+              <select value={existingName} onChange={event => setExistingName(event.target.value)} disabled={parameters.length === 0}>
+                {parameters.map((parameter, index) => {
+                  const name = parameter.name || `Parameter ${index + 1}`
+                  return <option key={`${name}-${index}`} value={name}>{name}</option>
+                })}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="btn btn-sm btn-secondary"
+              disabled={!existingName || parameters.length === 0}
+              onClick={() => onUseExisting(existingName, selectedRanges)}
+            >
+              Use existing parameter
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -10874,17 +11455,7 @@ function ParameterSettingsBody({
               <>
                 <label>
                   <span>Format</span>
-                  {parameterType === 'timestamp' ? (
-                    <select value={parameter.format || 'iso8601'} onChange={event => onUpdate('format', event.target.value)}>
-                      <option value="unix">unix</option>
-                      <option value="unix_ms">unix_ms</option>
-                      <option value="iso8601">iso8601</option>
-                      <option value="rfc3339">rfc3339</option>
-                      <option value="rfc3339_nano">rfc3339_nano</option>
-                    </select>
-                  ) : (
-                    <input value={parameter.format || ''} onChange={event => onUpdate('format', event.target.value)} placeholder="Go time layout" />
-                  )}
+                  <ParameterFormatControl parameter={parameter} onUpdate={onUpdate} />
                 </label>
                 <label><span>Timezone</span><input value={parameter.timezone || ''} onChange={event => onUpdate('timezone', event.target.value)} placeholder="UTC, America/New_York" /></label>
                 <label><span>Offset Seconds</span><input type="number" value={numberInputValue(parameter.offset_seconds, 0)} onChange={event => onUpdate('offset_seconds', Number(event.target.value))} placeholder="offset seconds" /></label>
@@ -11080,17 +11651,7 @@ function ParameterSettingsDialog({
               <div className="parameter-settings-grid">
                 <label>
                   <span>Format</span>
-                  {parameterType === 'timestamp' ? (
-                    <select value={parameter.format || 'iso8601'} onChange={event => onUpdate('format', event.target.value)}>
-                      <option value="unix">unix</option>
-                      <option value="unix_ms">unix_ms</option>
-                      <option value="iso8601">iso8601</option>
-                      <option value="rfc3339">rfc3339</option>
-                      <option value="rfc3339_nano">rfc3339_nano</option>
-                    </select>
-                  ) : (
-                    <input value={parameter.format || ''} onChange={event => onUpdate('format', event.target.value)} placeholder="Go time layout" />
-                  )}
+                  <ParameterFormatControl parameter={parameter} onUpdate={onUpdate} />
                 </label>
                 <label>
                   <span>Timezone</span>
@@ -12567,10 +13128,20 @@ function ActionThinkTimeToggle({ action, index, onUpdate }: ActionThinkTimeToggl
 interface ActionParameterMenuProps {
   selectionState: ActionEditorSelectionState | null
   onOpenParameterEditor: (nextExistingName?: string | null) => void
+  onOpenExistingParameter?: () => void
+  onOpenOccurrenceReview?: () => void
+  variant?: 'action' | 'json'
 }
 
-function ActionParameterMenu({ selectionState, onOpenParameterEditor }: ActionParameterMenuProps) {
+function ActionParameterMenu({
+  selectionState,
+  onOpenParameterEditor,
+  onOpenExistingParameter,
+  onOpenOccurrenceReview,
+  variant = 'action',
+}: ActionParameterMenuProps) {
   if (!selectionState) return null
+  const isJson = variant === 'json'
 
   return (
     <div
@@ -12579,8 +13150,18 @@ function ActionParameterMenu({ selectionState, onOpenParameterEditor }: ActionPa
       onClick={event => event.stopPropagation()}
     >
       <button type="button" className="btn btn-sm" onClick={() => onOpenParameterEditor(selectionState.existingName)}>
-        Parameterize selection
+        {isJson ? 'Create new parameter' : 'Parameterize selection'}
       </button>
+      {isJson && onOpenExistingParameter && (
+        <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenExistingParameter}>
+          Use existing parameter
+        </button>
+      )}
+      {isJson && onOpenOccurrenceReview && (
+        <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenOccurrenceReview}>
+          Review matching occurrences
+        </button>
+      )}
       {selectionState.existingName && (
         <button type="button" className="btn btn-sm btn-ghost" onClick={() => onOpenParameterEditor(selectionState.existingName)}>
           Edit parameter
@@ -12809,9 +13390,13 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
 function useJsonParameterMenu({
   parameters,
   onBeginParameterEdit,
+  onChooseExistingParameter,
+  onReviewOccurrences,
 }: {
   parameters: ParameterConfig[]
   onBeginParameterEdit: (draft: ActionEditorParameterDraft) => void
+  onChooseExistingParameter: (draft: ActionEditorParameterDraft) => void
+  onReviewOccurrences: (draft: ActionEditorParameterDraft) => void
 }) {
   const [selectionState, setSelectionState] = useState<ActionEditorSelectionState | null>(null)
 
@@ -12845,8 +13430,8 @@ function useJsonParameterMenu({
     })
   }, [detectSelectedParameter])
 
-  const openParameterEditor = useCallback((nextExistingName?: string | null) => {
-    if (!selectionState) return
+  const buildDraft = useCallback((nextExistingName?: string | null): ActionEditorParameterDraft | null => {
+    if (!selectionState) return null
     const existingParameter = nextExistingName
       ? parameters.find(parameter => sanitizeVarName(parameter.name || '') === sanitizeVarName(nextExistingName))
       : detectSelectedParameter(selectionState.selectedText)
@@ -12855,8 +13440,7 @@ function useJsonParameterMenu({
       || sanitizeVarName(selectionState.selectedText.replace(/^{{\s*param\.|\s*}}$/g, ''))
     const seedValue = existingParameter?.values?.[0] || selectionState.selectedText
 
-    setSelectionState(null)
-    onBeginParameterEdit({
+    return {
       source: 'json',
       actionIndex: -1,
       start: selectionState.start,
@@ -12865,10 +13449,37 @@ function useJsonParameterMenu({
       existingName: existingParameter?.name || null,
       requestedName,
       seedValue,
-    })
-  }, [detectSelectedParameter, onBeginParameterEdit, parameters, selectionState])
+    }
+  }, [detectSelectedParameter, parameters, selectionState])
 
-  return { openParameterEditor, openSelectionMenu, selectionState }
+  const openParameterEditor = useCallback((nextExistingName?: string | null) => {
+    const draft = buildDraft(nextExistingName)
+    if (!draft) return
+    setSelectionState(null)
+    onBeginParameterEdit(draft)
+  }, [buildDraft, onBeginParameterEdit])
+
+  const openExistingParameterChooser = useCallback(() => {
+    const draft = buildDraft(null)
+    if (!draft) return
+    setSelectionState(null)
+    onChooseExistingParameter(draft)
+  }, [buildDraft, onChooseExistingParameter])
+
+  const openOccurrenceReview = useCallback(() => {
+    const draft = buildDraft(null)
+    if (!draft) return
+    setSelectionState(null)
+    onReviewOccurrences(draft)
+  }, [buildDraft, onReviewOccurrences])
+
+  return {
+    openExistingParameterChooser,
+    openOccurrenceReview,
+    openParameterEditor,
+    openSelectionMenu,
+    selectionState,
+  }
 }
 
 function useActionParameterMenu({

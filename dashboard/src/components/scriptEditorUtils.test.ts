@@ -4,6 +4,7 @@ import {
   buildReplayStartPayload,
   countUniqueColumnValues,
   detectInlineDataDelimiter,
+  findJsonStringOccurrences,
   inferDelimiter,
   parseInlineData,
   parseReplayVariablesText,
@@ -59,6 +60,53 @@ describe('resolveJsonStringSelection', () => {
   it('rejects an empty selection', () => {
     const from = text.indexOf('Order Flow')
     expect(resolveJsonStringSelection(text, from, from).ok).toBe(false)
+  })
+})
+
+describe('findJsonStringOccurrences', () => {
+  it('finds exact values in nested objects and arrays', () => {
+    const text = JSON.stringify({
+      config: { base_url: 'https://api.example.com' },
+      actions: [
+        { target: '/login', headers: { referer: '/login' } },
+        { target: '/orders' },
+        { target: '/login' },
+      ],
+    }, null, 2)
+    const occurrences = findJsonStringOccurrences(text, '/login')
+
+    expect(occurrences.map(occurrence => occurrence.path)).toEqual([
+      '$.actions[0].target',
+      '$.actions[0].headers.referer',
+      '$.actions[2].target',
+    ])
+    expect(occurrences.every(occurrence => text.slice(occurrence.from, occurrence.to) === '/login')).toBe(true)
+  })
+
+  it('ignores JSON property keys', () => {
+    const text = JSON.stringify({ token: 'value', nested: { token: 'value' } }, null, 2)
+
+    expect(findJsonStringOccurrences(text, 'token')).toEqual([])
+    expect(findJsonStringOccurrences(text, 'value')).toHaveLength(2)
+  })
+
+  it('ignores partial string-value matches', () => {
+    const text = JSON.stringify({ exact: 'demo', partial: 'demo-user', array: ['demo'] }, null, 2)
+
+    expect(findJsonStringOccurrences(text, 'demo').map(occurrence => occurrence.path)).toEqual([
+      '$.exact',
+      '$.array[0]',
+    ])
+  })
+
+  it('handles escaped JSON strings safely', () => {
+    const text = JSON.stringify({ first: 'a"b', second: 'a"b', other: 'a\\b' }, null, 2)
+    const escapedNeedle = 'a\\"b'
+    const occurrences = findJsonStringOccurrences(text, escapedNeedle)
+
+    expect(occurrences).toHaveLength(2)
+    expect(occurrences.map(occurrence => occurrence.value)).toEqual(['a"b', 'a"b'])
+    expect(occurrences.every(occurrence => occurrence.rawText === escapedNeedle)).toBe(true)
   })
 })
 

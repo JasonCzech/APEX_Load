@@ -271,6 +271,104 @@
   background: rgba(245, 158, 11, 0.3);
   box-shadow: inset 0 -1px 0 rgba(245, 158, 11, 0.9), 0 0 0 1px rgba(245, 158, 11, 0.34);
 }
+.json-source-map-panel {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+}
+.json-source-map-summary {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+}
+.json-source-map-summary strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.json-source-map-summary span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.json-source-map-empty {
+  margin: 0;
+}
+.json-source-map {
+  min-height: 0;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--code-bg, #090d16);
+}
+.json-source-map-line {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 5px;
+  width: 100%;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-left: 2px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.json-source-map-line:hover,
+.json-source-map-line:focus-visible {
+  background: rgba(148, 163, 184, 0.08);
+  outline: none;
+}
+.json-source-map-line.active-block {
+  border-left-color: rgba(99, 102, 241, 0.85);
+  background: rgba(99, 102, 241, 0.16);
+}
+.json-source-map-line.parameter-match {
+  background: rgba(20, 184, 166, 0.16);
+}
+.json-source-map-line.first-parameter-match {
+  border-left-color: rgba(245, 158, 11, 0.95);
+  background: rgba(245, 158, 11, 0.22);
+}
+.json-source-map-line-number {
+  color: rgba(148, 163, 184, 0.55);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 6px;
+  line-height: 8px;
+  text-align: right;
+  user-select: none;
+}
+.json-source-map-line-code {
+  display: block;
+  min-width: 10px;
+  height: 5px;
+  margin-top: 1px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(217, 231, 255, 0.34);
+  color: transparent;
+  font-size: 0;
+  white-space: nowrap;
+}
+.json-source-map-line.active-block .json-source-map-line-code {
+  background: rgba(129, 140, 248, 0.78);
+}
+.json-source-map-line.parameter-match .json-source-map-line-code {
+  background: rgba(45, 212, 191, 0.78);
+}
+.json-source-map-line.first-parameter-match .json-source-map-line-code {
+  background: rgba(245, 158, 11, 0.88);
+}
 .center-tabbed-pane {
   min-width: 0;
   min-height: 0;
@@ -385,6 +483,13 @@
   flex: 1;
   border: 0;
   border-radius: 0;
+}
+.script-code-inline-inspector {
+  border-top: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.script-code-inline-inspector .contextual-history-card {
+  margin: 0 20px 20px;
 }
 .center-document {
   flex: 1;
@@ -1343,6 +1448,98 @@
 .parameterize-type-fields {
   padding: 12px 0 0;
   border-top: 1px solid var(--border);
+}
+.parameter-format-control {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.parameter-format-control small {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.parameter-existing-list,
+.parameter-occurrence-list {
+  display: grid;
+  gap: 8px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.parameter-occurrence-dialog {
+  width: min(780px, calc(100vw - 48px));
+}
+.parameter-occurrence-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.parameter-occurrence-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.parameter-occurrence-item input {
+  margin-top: 2px;
+}
+.parameter-occurrence-item span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.parameter-occurrence-item strong,
+.parameter-occurrence-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.parameter-occurrence-item small {
+  color: var(--text-muted);
+}
+.parameter-occurrence-item code {
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.parameter-occurrence-actions {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding-top: 4px;
+}
+.parameter-occurrence-actions label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.parameter-occurrence-actions select {
+  width: 100%;
+  min-width: 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 7px 9px;
 }
 .parameterize-dialog .parameter-draft-actions {
   display: flex;
@@ -3875,6 +4072,11 @@
 }
 .editor-utility-sidebar.context-inspector .contextual-history-card {
   margin: 0 16px 16px;
+}
+.editor-utility-sidebar.context-source-map {
+  padding: 10px;
+  gap: 10px;
+  background: var(--bg-card);
 }
 .editor-utility-sidebar.collapsed {
   padding: 8px;

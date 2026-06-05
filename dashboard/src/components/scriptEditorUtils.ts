@@ -650,6 +650,28 @@ type JsonSyntaxNode = { name: string; from: number; to: number; parent: JsonSynt
 
 const REJECTED_JSON_SELECTION: JsonStringSelection = { ok: false, innerFrom: 0, innerTo: 0, selectedText: '' }
 
+export interface JsonStringOccurrence {
+  id: string
+  from: number
+  to: number
+  rawText: string
+  value: string
+  path: string
+  line: number
+  preview: string
+  isOriginal: boolean
+}
+
+interface JsonStringValueRecord {
+  path: string
+  value: string
+}
+
+interface JsonStringNodeRecord {
+  from: number
+  to: number
+}
+
 /**
  * Resolve a raw text selection (offsets into `text`) to a JSON string value that can be safely
  * parameterized. Returns `ok: true` only when the selection lies inside a single JSON String value
@@ -687,6 +709,121 @@ export function resolveJsonStringSelection(text: string, from: number, to: numbe
   if (!selectedText.trim()) return REJECTED_JSON_SELECTION
 
   return { ok: true, innerFrom, innerTo, selectedText }
+}
+
+function formatJsonPathKey(key: string): string {
+  return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`
+}
+
+function collectJsonStringValues(value: unknown, path = '$', records: JsonStringValueRecord[] = []): JsonStringValueRecord[] {
+  if (typeof value === 'string') {
+    records.push({ path, value })
+    return records
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      collectJsonStringValues(item, `${path}[${index}]`, records)
+    })
+    return records
+  }
+  if (value && typeof value === 'object') {
+    Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+      collectJsonStringValues(item, `${path}${formatJsonPathKey(key)}`, records)
+    })
+  }
+  return records
+}
+
+function collectJsonStringNodes(text: string): JsonStringNodeRecord[] {
+  const tree = jsonLanguage.parser.parse(text)
+  const cursor = tree.cursor()
+  const nodes: JsonStringNodeRecord[] = []
+
+  const visit = () => {
+    if (cursor.name === 'String') {
+      nodes.push({ from: cursor.from, to: cursor.to })
+    }
+    if (cursor.firstChild()) {
+      do {
+        visit()
+      } while (cursor.nextSibling())
+      cursor.parent()
+    }
+  }
+
+  visit()
+  return nodes
+}
+
+function lineInfoForOffset(text: string, offset: number): { line: number; preview: string } {
+  const clamped = Math.max(0, Math.min(offset, text.length))
+  let line = 1
+  for (let index = 0; index < clamped; index += 1) {
+    if (text.charCodeAt(index) === 10) line += 1
+  }
+  const lineStart = text.lastIndexOf('\n', clamped - 1) + 1
+  const lineEndIndex = text.indexOf('\n', clamped)
+  const lineEnd = lineEndIndex === -1 ? text.length : lineEndIndex
+  return {
+    line,
+    preview: text.slice(lineStart, lineEnd).trim(),
+  }
+}
+
+function decodeJsonStringLiteral(rawText: string): string {
+  try {
+    return JSON.parse(`"${rawText}"`) as string
+  } catch {
+    return rawText
+  }
+}
+
+export function findJsonStringOccurrences(
+  text: string,
+  selectedText: string,
+  originalRange?: { from: number; to: number } | null,
+): JsonStringOccurrence[] {
+  const searchText = selectedText.trim()
+  if (!searchText) return []
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return []
+  }
+
+  const valueRecords = collectJsonStringValues(parsed)
+  let nodes: JsonStringNodeRecord[]
+  try {
+    nodes = collectJsonStringNodes(text)
+  } catch {
+    return []
+  }
+
+  const selectedDecoded = decodeJsonStringLiteral(selectedText)
+  return nodes.flatMap((node, index) => {
+    const from = node.from + 1
+    const to = node.to - 1
+    if (to < from) return []
+    const rawText = text.slice(from, to)
+    const value = valueRecords[index]?.value ?? decodeJsonStringLiteral(rawText)
+    const matches = rawText === selectedText || value === selectedDecoded
+    const isOriginal = Boolean(originalRange && originalRange.from >= from && originalRange.to <= to)
+    if (!matches && !isOriginal) return []
+    const { line, preview } = lineInfoForOffset(text, node.from)
+    return [{
+      id: `${from}:${to}`,
+      from,
+      to,
+      rawText,
+      value,
+      path: valueRecords[index]?.path || `$:${line}`,
+      line,
+      preview,
+      isOriginal,
+    }]
+  })
 }
 
 export function formatReplayTime(value?: string): string {
