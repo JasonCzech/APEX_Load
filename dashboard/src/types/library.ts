@@ -13,6 +13,8 @@ export type LibraryCatalogItem = {
   id: string
   name: string
   project_id?: string
+  release_id?: string
+  release_name?: string
   protocol?: string
   version?: string
   status?: string

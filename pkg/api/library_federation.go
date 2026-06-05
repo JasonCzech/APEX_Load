@@ -50,6 +50,8 @@ type LibraryCatalogItem struct {
 	ID               string              `json:"id"`
 	Name             string              `json:"name"`
 	ProjectID        string              `json:"project_id,omitempty"`
+	ReleaseID        string              `json:"release_id,omitempty"`
+	ReleaseName      string              `json:"release_name,omitempty"`
 	Protocol         string              `json:"protocol,omitempty"`
 	Version          string              `json:"version,omitempty"`
 	Status           string              `json:"status,omitempty"`
@@ -781,11 +783,17 @@ func (s *Server) libraryCatalogItems(projectID string, kind string) []LibraryCat
 			if test == nil || test.Status == "QUEUED" || test.Status == "RUNNING" || test.Status == "PENDING" {
 				continue
 			}
+			releaseRef := ReleaseRef{}
+			if test.ReleaseID != "" {
+				releaseRef = s.runner.releaseRefLocked(test.ReleaseID)
+			}
 			items = append(items, LibraryCatalogItem{
 				Kind:             "result",
 				ID:               test.ID,
 				Name:             test.Name,
 				ProjectID:        test.ProjectID,
+				ReleaseID:        test.ReleaseID,
+				ReleaseName:      releaseRef.Name,
 				Status:           test.Status,
 				ContentHash:      hashLibraryResult(test),
 				SourceInstanceID: s.controllerID,

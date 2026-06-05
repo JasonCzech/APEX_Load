@@ -245,6 +245,7 @@ func TestLibraryResultArchiveStreamsAndImportsMultipart(t *testing.T) {
 		Name:      "Archive Result",
 		Duration:  "1m",
 		ProjectID: "team-project",
+		ReleaseID: "release-archive",
 		Groups: []CreateGroupEntry{{
 			Name:     "archive",
 			ScriptID: script.ID,
@@ -281,6 +282,19 @@ func TestLibraryResultArchiveStreamsAndImportsMultipart(t *testing.T) {
 	}
 	if result.ArchiveSizeBytes != archiveDirectorySize(record.ArchivePath) {
 		t.Fatalf("archive size = %d, want %d", result.ArchiveSizeBytes, archiveDirectorySize(record.ArchivePath))
+	}
+
+	catalogResp := httptest.NewRecorder()
+	host.mux.ServeHTTP(catalogResp, httptest.NewRequest(http.MethodGet, "/api/v1/library/catalog?kind=result&project_id=team-project", nil))
+	if catalogResp.Code != http.StatusOK {
+		t.Fatalf("catalog result status = %d body=%s", catalogResp.Code, catalogResp.Body.String())
+	}
+	var catalog LibraryCatalogResponse
+	if err := json.NewDecoder(catalogResp.Body).Decode(&catalog); err != nil {
+		t.Fatalf("decode result catalog: %v", err)
+	}
+	if len(catalog.Items) != 1 || catalog.Items[0].ReleaseID != "release-archive" {
+		t.Fatalf("catalog items = %#v, want result release metadata", catalog.Items)
 	}
 
 	archiveResp := httptest.NewRecorder()

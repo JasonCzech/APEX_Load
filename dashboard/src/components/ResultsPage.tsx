@@ -22,10 +22,12 @@ import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltip
 import StatusBadge from './StatusBadge'
 import LibraryAssetSourcePanel from './LibraryAssetSourcePanel'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
+import type { NavPage } from './Sidebar'
 
 interface Props {
   testStatuses: Record<string, string>
   onSelectTest: (id: string) => void
+  onNavigate?: (page: NavPage) => void
   activeApplication?: Application | null
   activeRelease?: Release | null
 }
@@ -307,7 +309,7 @@ function SortIcon({ active, direction }: { active: boolean; direction: 'asc' | '
   return <span className="sort-icon active">{direction === 'asc' ? '↑' : '↓'}</span>
 }
 
-function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRelease }: Props) {
+function ResultsPage({ testStatuses, onSelectTest, onNavigate, activeApplication, activeRelease }: Props) {
   const api = useApi()
   const [tests, setTests] = useState<TestSummary[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -328,6 +330,10 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('all')
   const refreshRequestRef = useRef(0)
+  const openRemoteSettings = useCallback(() => {
+    try { window.localStorage.setItem('apexload.settings.focusSection', 'integrations') } catch { /* storage unavailable */ }
+    onNavigate?.('settings')
+  }, [onNavigate])
 
   const refresh = useCallback(async (options: RefreshOptions = {}) => {
     const requestId = ++refreshRequestRef.current
@@ -682,6 +688,10 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
 
   const handleDelete = async (id: string, event: React.MouseEvent) => {
     event.stopPropagation()
+    await deleteResult(id)
+  }
+
+  const deleteResult = async (id: string) => {
     if (!confirm('Delete this scenario result?')) return
     await api.deleteTest(id)
     setSelectedIds(prev => {
@@ -1325,7 +1335,10 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
       <LibraryAssetSourcePanel
         kind="result"
         projectId={activeRelease.project_id || activeApplication.project_id}
+        onConfigureRemotes={openRemoteSettings}
+        onDeleteLocalItem={deleteResult}
         onRefreshLocal={() => refresh()}
+        onViewLocalItem={onSelectTest}
       />
     </div>
   )

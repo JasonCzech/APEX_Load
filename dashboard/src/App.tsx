@@ -478,6 +478,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             <ResultsPage
               testStatuses={testStatuses}
               onSelectTest={navigateToTest}
+              onNavigate={handleNavigate}
               activeApplication={activeApplication}
               activeRelease={activeRelease}
             />

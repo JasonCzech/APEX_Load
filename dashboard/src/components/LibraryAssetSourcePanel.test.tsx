@@ -14,6 +14,7 @@ describe('LibraryAssetSourcePanel', () => {
   let root: Root
   let fetchMock: MockInstance<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>
   let remoteOverride: Record<string, unknown>
+  let localCatalogItems: LibraryCatalogItem[]
   let remoteCatalogItems: LibraryCatalogItem[]
 
   beforeEach(() => {
@@ -21,6 +22,15 @@ describe('LibraryAssetSourcePanel', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     remoteOverride = {}
+    localCatalogItems = [{
+      kind: 'script',
+      id: 'local-script',
+      name: 'Local Checkout',
+      project_id: 'project-1',
+      protocol: 'http',
+      content_hash: 'localhash123456',
+      updated_at: '2026-05-01T00:00:00Z',
+    }]
     remoteCatalogItems = [{
       kind: 'script',
       id: 'host-script',
@@ -51,16 +61,8 @@ describe('LibraryAssetSourcePanel', () => {
       }
       if (url.includes('/api/v1/library/catalog')) {
         return jsonResponse({
-          items: [{
-            kind: 'script',
-            id: 'local-script',
-            name: 'Local Checkout',
-            project_id: 'project-1',
-            protocol: 'http',
-            content_hash: 'localhash123456',
-            updated_at: '2026-05-01T00:00:00Z',
-          }],
-          count: 1,
+          items: localCatalogItems,
+          count: localCatalogItems.length,
         })
       }
       if (url.includes('/api/v1/library/remotes/remote-1/catalog')) {
@@ -135,11 +137,102 @@ describe('LibraryAssetSourcePanel', () => {
     expect(onRefreshLocal).toHaveBeenCalled()
   })
 
+  it('selects individual catalog rows and shows row-specific source details', async () => {
+    await renderPanel(root, <LibraryAssetSourcePanel kind="script" projectId="project-1" />)
+
+    expect(container.querySelector('.library-source-detail-row')).toBeNull()
+
+    const localRow = rowContaining('Local Checkout')
+    await click(localRow)
+
+    expect(localRow.classList.contains('selected')).toBe(true)
+    expect(localRow.getAttribute('aria-expanded')).toBe('true')
+    expect(container.textContent).toContain('Local ID')
+    expect(container.textContent).toContain('local-script')
+
+    await click(localRow)
+    expect(container.querySelector('.library-source-detail-row')).toBeNull()
+
+    const remoteRow = rowContaining('Host Checkout')
+    await keyDown(remoteRow, 'Enter')
+
+    expect(remoteRow.classList.contains('selected')).toBe(true)
+    expect(remoteRow.getAttribute('aria-expanded')).toBe('true')
+    expect(container.textContent).toContain('Remote ID')
+    expect(container.textContent).toContain('host-script')
+  })
+
+  it('lets pages route remote library status controls to configuration', async () => {
+    const onConfigureRemotes = vi.fn()
+    await renderPanel(root, <LibraryAssetSourcePanel kind="script" projectId="project-1" onConfigureRemotes={onConfigureRemotes} />)
+
+    await click(findButton('healthy')!)
+
+    expect(onConfigureRemotes).toHaveBeenCalledTimes(1)
+  })
+
+  it('sorts result source rows, filters by release, and exposes view/delete controls', async () => {
+    localCatalogItems = [
+      {
+        kind: 'result',
+        id: 'run-z',
+        name: 'Zebra Run',
+        project_id: 'project-1',
+        release_id: 'rel-30',
+        release_name: 'PI30',
+        status: 'FAILED',
+        content_hash: 'zebrarun123456',
+        updated_at: '2026-05-03T00:00:00Z',
+        has_archive: true,
+      },
+      {
+        kind: 'result',
+        id: 'run-a',
+        name: 'Alpha Run',
+        project_id: 'project-1',
+        release_id: 'rel-29',
+        release_name: 'PI29',
+        status: 'COMPLETE',
+        content_hash: 'alpharun123456',
+        updated_at: '2026-05-02T00:00:00Z',
+        has_archive: true,
+      },
+    ]
+    remoteCatalogItems = []
+    const onViewLocalItem = vi.fn()
+    const onDeleteLocalItem = vi.fn()
+    await renderPanel(root, (
+      <LibraryAssetSourcePanel
+        kind="result"
+        projectId="project-1"
+        onViewLocalItem={onViewLocalItem}
+        onDeleteLocalItem={onDeleteLocalItem}
+      />
+    ))
+
+    expect(container.textContent).toContain('Release')
+    expect(releaseFilter().textContent).toContain('PI29')
+    expect(releaseFilter().textContent).toContain('PI30')
+
+    await click(headerNamed('Name'))
+    expect(visibleLibraryRowNames()).toEqual(['Alpha Run', 'Zebra Run'])
+
+    await changeSelect(releaseFilter(), 'rel-29')
+    expect(visibleLibraryRowNames()).toEqual(['Alpha Run'])
+    expect(container.textContent).not.toContain('Zebra Run')
+
+    await click(findButton('View')!)
+    expect(onViewLocalItem).toHaveBeenCalledWith('run-a')
+
+    await click(findButton('Delete')!)
+    expect(onDeleteLocalItem).toHaveBeenCalledWith('run-a')
+  })
+
   it('disables transfers when the selected remote has no configured credentials', async () => {
     remoteOverride = { credential_configured: false }
     await renderPanel(root, <LibraryAssetSourcePanel kind="script" projectId="project-1" />)
 
-    expect(container.textContent).toContain('credentials missing')
+    expect(container.textContent).toContain('Credentials Missing')
     expect(container.textContent).toContain('Configure remote credentials in Settings first.')
     expect(findButton('Pull')?.disabled).toBe(true)
     expect(findButton('Push')?.disabled).toBe(true)
@@ -197,6 +290,48 @@ function findButtons(label: string) {
 
 function styledLibrarySelects() {
   return Array.from(document.querySelectorAll('select.library-source-select')) as HTMLSelectElement[]
+}
+
+function rowContaining(text: string) {
+  const row = Array.from(document.querySelectorAll('tbody tr.clickable-row')).find(row => row.textContent?.includes(text))
+  expect(row).toBeTruthy()
+  return row as HTMLTableRowElement
+}
+
+function headerNamed(text: string) {
+  const header = Array.from(document.querySelectorAll('th.sortable')).find(header => header.textContent?.includes(text))
+  expect(header).toBeTruthy()
+  return header as HTMLElement
+}
+
+function releaseFilter() {
+  const select = Array.from(document.querySelectorAll('select.library-release-filter'))[0]
+  expect(select).toBeTruthy()
+  return select as HTMLSelectElement
+}
+
+function visibleLibraryRowNames() {
+  return Array.from(document.querySelectorAll('.library-source-table tbody tr.clickable-row .cell-name > strong'))
+    .map(element => element.textContent?.trim() || '')
+}
+
+async function click(element: HTMLElement) {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  })
+}
+
+async function changeSelect(select: HTMLSelectElement, value: string) {
+  await act(async () => {
+    select.value = value
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
+async function keyDown(element: HTMLElement, key: string) {
+  await act(async () => {
+    element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+  })
 }
 
 async function flushPromises() {
