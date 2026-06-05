@@ -17,7 +17,7 @@ import PageViewToggle from './PageViewToggle'
 import { type NavPage } from './Sidebar'
 import LibraryFederationControls from './LibraryFederationControls'
 import { useLibraryFederation } from './useLibraryFederation'
-import { formatLibraryDateTime, libraryStatusTone, shortLibraryHash } from './libraryFederationUtils'
+import { formatLibraryDateTime, shortLibraryHash } from './libraryFederationUtils'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
 
 interface Props {
@@ -2372,9 +2372,6 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate }: Props) 
                   <tr className="clickable-row" onClick={() => toggleScenarioRuns(scenario)}>
                     <td>
                       <span className="script-health-token">Local</span>
-                      <div className="script-table-meta">
-                        <span className={`script-health-token ${libraryStatusTone(syncStatus)}`}>{syncStatus}</span>
-                      </div>
                     </td>
                     <td className="cell-name">
                       <div>{scenario.name}</div>
@@ -2454,9 +2451,6 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate }: Props) 
                   <tr key={`remote:${item.kind}:${item.id}`} className="no-hover">
                     <td>
                       <span className="script-health-token">Remote</span>
-                      <div className="script-table-meta">
-                        <span className={`script-health-token ${libraryStatusTone(syncStatus)}`}>{syncStatus}</span>
-                      </div>
                     </td>
                     <td className="cell-name">
                       <div>{item.name || item.id}</div>
