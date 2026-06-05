@@ -35,6 +35,12 @@ describe('ProtocolAssetImport', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    if (!HTMLElement.prototype.scrollIntoView) {
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        value: vi.fn(),
+      })
+    }
 
     apiMock.importOpenAPI.mockResolvedValue({
       scripts: [],
@@ -111,6 +117,67 @@ describe('ProtocolAssetImport', () => {
       source_review: {
         source_files: [{ path: 'sample.har', language: 'json', content: '{"log":{"entries":[]}}' }],
         mappings: [{ id: 'har-entry', source_file: 'sample.har', start_line: 1, function: 'har_entry', target_path: 'actions[0]', target_name: 'GET api orders', target_kind: 'action', status: 'converted' }],
+      },
+    })
+    apiMock.importWSDL.mockResolvedValue({
+      scripts: [],
+      script: {
+        name: 'Account SOAP',
+        version: '1.0.0',
+        protocol: 'soap',
+        config: {
+          base_url: 'https://soap.example.test/account',
+          soap: {
+            version: '1.2',
+            namespaces: { tns: 'urn:accounts' },
+            fault_handling: { fail_on_fault: true },
+          },
+        },
+        actions: [
+          {
+            name: 'GetAccount',
+            type: 'request',
+            method: 'POST',
+            target: '/',
+            headers: { 'Content-Type': 'application/soap+xml', SOAPAction: 'urn:GetAccount' },
+            body: '<soapenv:Envelope><soapenv:Body><tns:GetAccount /></soapenv:Body></soapenv:Envelope>',
+            soap: { action: 'urn:GetAccount', operation: 'GetAccount', body_mode: 'generated' },
+          },
+        ],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [
+        {
+          key: 'wsdl_operations',
+          title: 'WSDL Operations',
+          severity: 'info',
+          summary: 'Generated SOAP envelopes for review and replay.',
+          items: ['GetAccount'],
+        },
+      ],
+      repair_suggestions: [],
+      correlations: [],
+      stats: {
+        format: 'wsdl',
+        services: 1,
+        port_types: 1,
+        bindings: 1,
+        operations_detected: 1,
+        converted_actions: 1,
+        soap_actions_detected: ['urn:GetAccount'],
+      },
+      summary: {
+        service_name: 'AccountService',
+        target_namespace: 'urn:accounts',
+        base_url: 'https://soap.example.test/account',
+        soap_version: '1.2',
+        operations: ['GetAccount'],
+      },
+      source_review: {
+        source_files: [{ path: 'service.wsdl', language: 'xml', content: '<definitions />' }],
+        mappings: [{ id: 'wsdl-op', source_file: 'service.wsdl', start_line: 1, function: 'GetAccount', target_path: 'actions[0]', target_name: 'GetAccount', target_kind: 'action', status: 'converted' }],
       },
     })
   })
@@ -205,6 +272,55 @@ describe('ProtocolAssetImport', () => {
       include_static_assets: true,
     }))
     expect(container.textContent).toContain('filtered assets')
+  })
+
+  it('converts WSDL files with SOAP-specific options and renders the SOAP review', async () => {
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="wsdl" projectId="project-1" />)
+    })
+
+    expect(container.textContent).toContain('Import WSDL')
+    expect(container.textContent).toContain('SOAP Version')
+
+    const soapVersionSelect = container.querySelector('select') as HTMLSelectElement | null
+    expect(soapVersionSelect).not.toBeNull()
+    if (!soapVersionSelect) return
+
+    await act(async () => {
+      soapVersionSelect.value = '1.2'
+      soapVersionSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+
+    const file = new File(['<definitions />'], 'account.wsdl', { type: 'text/xml' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert WSDL'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importWSDL).toHaveBeenCalledWith(file, expect.objectContaining({
+      project_id: 'project-1',
+      soap_version: '1.2',
+    }))
+    expect(container.textContent).toContain('Review Generated Script')
+    expect(container.textContent).toContain('WSDL Operations')
+    expect(container.textContent).toContain('GetAccount')
+    expect(container.textContent).toContain('Source Comparison')
   })
 })
 

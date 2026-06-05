@@ -207,7 +207,7 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).toContain('Import LoadRunner')
     expect(container.textContent).toContain('Import JMeter')
     expect(container.textContent).toContain('DevWeb Source')
-    expect(container.textContent).toContain('Import SOAP Assets')
+    expect(container.textContent).not.toContain('Import SOAP Assets')
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('OpenAPI / Swagger'))).toHaveLength(1)
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('Postman Collection'))).toHaveLength(1)
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('WSDL / SOAP'))).toHaveLength(1)

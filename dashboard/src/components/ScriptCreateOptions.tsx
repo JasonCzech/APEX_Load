@@ -725,11 +725,6 @@ export default function ScriptCreateOptions({
                   <h3>DevWeb Source</h3>
                   <p>Convert DevWeb JavaScript assets into HTTP, WebSocket, or gRPC script drafts for review.</p>
                 </button>
-                <button className="script-create-option" type="button" disabled title="Use Import LoadRunner today for SOAP-style LoadRunner request assets.">
-                  <span className="script-create-type-badge import">SOAP</span>
-                  <h3>Import SOAP Assets</h3>
-                  <p>Dedicated SOAP import remains staged. For now, use Import LoadRunner for SOAP-style request assets and review the converted draft.</p>
-                </button>
               </div>
             </div>
           </div>

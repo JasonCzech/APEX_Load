@@ -424,7 +424,7 @@ describe('ScriptsPage', () => {
     expect(countImportOption('Import LoadRunner')).toBe(1)
     expect(countImportOption('Import JMeter')).toBe(1)
     expect(countImportOption('DevWeb Source')).toBe(1)
-    expect(countImportOption('Import SOAP Assets')).toBe(1)
+    expect(countImportOption('Import SOAP Assets')).toBe(0)
   })
 
   it('consolidates template and manual choices under Start New Script', async () => {
