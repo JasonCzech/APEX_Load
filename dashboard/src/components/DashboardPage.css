@@ -654,6 +654,47 @@
   border-color: var(--text-muted);
 }
 
+/* Release Trend Analysis panel */
+.release-trend-panel {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.release-trend-note {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.release-trend-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.release-trend-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.release-trend-subtitle {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.release-trend-row-regressed {
+  background: var(--danger-bg, rgba(239, 68, 68, 0.08));
+}
+
+.release-trend-row-regressed:hover {
+  background: var(--danger-bg, rgba(239, 68, 68, 0.12));
+}
+
 /* Activity Feed */
 .dash-activity {
   background: var(--bg-card);
@@ -662,64 +703,18 @@
   padding: 12px;
 }
 
-.dash-feed {
-  display: flex;
-  flex-direction: column;
+/* Recent Activity reuses .trend-table but fits its narrower column. */
+.dash-activity .trend-table-wrap {
   max-height: 430px;
-  overflow-y: auto;
-  padding-right: 4px;
 }
 
-.feed-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 4px;
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.feed-item:last-child {
-  border-bottom: none;
-}
-
-.feed-item:hover {
-  background: var(--bg-hover);
-  border-radius: 6px;
-}
-
-.feed-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.feed-dot.success { background: var(--success); }
-.feed-dot.danger { background: var(--danger); }
-.feed-dot.warning { background: var(--chart-3); }
-
-.feed-content {
-  flex: 1;
+.dash-activity .trend-table {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
 }
 
-.feed-name {
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.feed-meta {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
+.dash-activity .trend-run-name,
+.dash-activity .trend-run-meta {
+  max-width: 200px;
 }
 
 /* Attention */

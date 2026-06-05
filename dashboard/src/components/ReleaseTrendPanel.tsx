@@ -42,21 +42,21 @@ export function ReleaseTrendPanel({ releaseId, getReleaseTrend }: ReleaseTrendPa
   }, [load])
 
   if (loading) {
-    return <div className="release-trend-panel cell-muted" data-testid="release-trend-panel">Loading release trend…</div>
+    return <div className="release-trend-panel release-trend-note" data-testid="release-trend-panel">Loading release trend…</div>
   }
   if (error) {
-    return <div className="release-trend-panel cell-muted" data-testid="release-trend-panel">{error}</div>
+    return <div className="release-trend-panel release-trend-note" data-testid="release-trend-panel">{error}</div>
   }
   if (!trend || trend.run_count === 0) {
-    return <div className="release-trend-panel cell-muted" data-testid="release-trend-panel">No archived runs yet for this release.</div>
+    return <div className="release-trend-panel release-trend-note" data-testid="release-trend-panel">No archived runs yet for this release.</div>
   }
 
   return (
     <div className="release-trend-panel" data-testid="release-trend-panel">
-      <div className="archive-section-header archive-subsection-header">
+      <div className="release-trend-header">
         <div>
-          <h3 className="chart-title">Release Trend Analysis</h3>
-          <p className="archive-section-copy">
+          <h4 className="release-trend-title">Release Trend Analysis</h4>
+          <p className="release-trend-subtitle">
             {trend.run_count} run{trend.run_count === 1 ? '' : 's'} · avg response {formatSignedPct(trend.summary.avg_response_trend_pct)} · error rate {formatSignedPct(trend.summary.error_pct_trend)} across the series.
           </p>
         </div>
@@ -64,30 +64,39 @@ export function ReleaseTrendPanel({ releaseId, getReleaseTrend }: ReleaseTrendPa
           <span className="status-badge status-failed" data-testid="release-trend-latest-regressed">Latest run regressed</span>
         )}
       </div>
-      <table className="tx-table">
-        <thead>
-          <tr>
-            <th>Run</th>
-            <th>Avg (ms)</th>
-            <th>Δ Avg</th>
-            <th>Error %</th>
-            <th>SLA</th>
-            <th>Regressions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {trend.points.map(point => (
-            <tr key={point.run_id} className={point.regressions && point.regressions.length > 0 ? 'error-cell' : ''}>
-              <td className="tx-name">{point.run_name || point.run_id}</td>
-              <td>{point.avg_response_ms.toFixed(1)}</td>
-              <td>{point.deltas ? formatSignedMs(point.deltas.avg_response_ms_delta) : '—'}</td>
-              <td>{point.error_pct.toFixed(2)}%</td>
-              <td>{point.sla_breached ? 'breached' : 'ok'}</td>
-              <td>{point.regressions && point.regressions.length > 0 ? point.regressions.join(', ') : '—'}</td>
+      <div className="trend-table-wrap">
+        <table className="trend-table">
+          <thead>
+            <tr>
+              <th>Run</th>
+              <th className="num">Avg (ms)</th>
+              <th className="num">Δ Avg</th>
+              <th className="num">Error %</th>
+              <th className="num">SLA</th>
+              <th>Regressions</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {trend.points.map(point => {
+              const regressed = Boolean(point.regressions && point.regressions.length > 0)
+              return (
+                <tr key={point.run_id} className={regressed ? 'release-trend-row-regressed' : ''}>
+                  <td><span className="trend-run-name">{point.run_name || point.run_id}</span></td>
+                  <td className="num">{point.avg_response_ms.toFixed(1)}</td>
+                  <td className={`num ${point.deltas && point.deltas.avg_response_ms_delta > 0 ? 'text-danger strong' : ''}`}>
+                    {point.deltas ? formatSignedMs(point.deltas.avg_response_ms_delta) : '—'}
+                  </td>
+                  <td className={`num ${point.error_pct > 0 ? 'text-danger' : ''}`}>{point.error_pct.toFixed(2)}%</td>
+                  <td className={`num ${point.sla_breached ? 'text-danger strong' : 'text-success'}`}>
+                    {point.sla_breached ? 'Breached' : 'OK'}
+                  </td>
+                  <td>{regressed ? point.regressions!.join(', ') : '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

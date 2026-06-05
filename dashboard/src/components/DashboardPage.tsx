@@ -711,7 +711,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
               </svg>
             </span>
             <span>No tests currently running</span>
-            <span className="dash-empty-hint">{pendingTests.length > 0 ? `${pendingTests.length} test${pendingTests.length === 1 ? '' : 's'} waiting on project capacity.` : 'Start a scenario from the Scenarios page'}</span>
+            <span className="dash-empty-hint">{pendingTests.length > 0 ? `${pendingTests.length} test${pendingTests.length === 1 ? '' : 's'} waiting on project capacity.` : 'Start a scenario from the New Test page'}</span>
           </div>
         ) : (
           <div className={`dash-active-grid ${customizingCards ? 'is-customizing' : ''}`}>
@@ -847,25 +847,39 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
               <span>No completed tests yet</span>
             </div>
           ) : (
-            <div className="dash-feed">
-              {recentTests.map(test => (
-                <div key={test.id} className="feed-item" onClick={() => onSelectTest(test.id)}>
-                  <div className={`feed-dot ${test.status === 'COMPLETE' ? 'success' : test.status === 'FAILED' ? 'danger' : 'warning'}`} />
-                  <div className="feed-content">
-                    <span className="feed-name">{test.name}</span>
-                    <span className="feed-meta">
-                      {test.total_vusers} VUsers · {test.duration} · {test.archive ? `${test.archive.transaction_count.toLocaleString()} tx` : 'archive pending'}
-                    </span>
-                    {formatBrowserRuntimeSummary(test.runtime_settings?.browser) && (
-                      <span className="feed-meta">Browser runtime · {formatBrowserRuntimeSummary(test.runtime_settings?.browser)}</span>
-                    )}
-                    <span className="feed-meta">
-                      {formatDateTime(test.ended_at || test.start_time || test.created_at)}
-                    </span>
-                  </div>
-                  <StatusBadge status={test.status} />
-                </div>
-              ))}
+            <div className="trend-table-wrap">
+              <table className="trend-table">
+                <thead>
+                  <tr>
+                    <th>Run</th>
+                    <th>Status</th>
+                    <th className="num">VUsers</th>
+                    <th className="num">Duration</th>
+                    <th className="num">Transactions</th>
+                    <th>Date / Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentTests.map(test => {
+                    const runtimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
+                    return (
+                      <tr key={test.id} onClick={() => onSelectTest(test.id)}>
+                        <td>
+                          <span className="trend-run-name">{test.name}</span>
+                          {(test.script_name || runtimeSummary) && (
+                            <span className="trend-run-meta">{[test.script_name, runtimeSummary].filter(Boolean).join(' · ')}</span>
+                          )}
+                        </td>
+                        <td><StatusBadge status={test.status} /></td>
+                        <td className="num">{test.total_vusers}</td>
+                        <td className="num">{test.duration}</td>
+                        <td className="num">{test.archive ? test.archive.transaction_count.toLocaleString() : 'pending'}</td>
+                        <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </section>

@@ -399,7 +399,7 @@ describe('DashboardPage', () => {
       .find(element => element.textContent?.includes('No tests currently running'))
 
     expect(activeTestsEmptyState).toBeDefined()
-    expect(activeTestsEmptyState?.textContent).toContain('Start a scenario from the Scenarios page')
+    expect(activeTestsEmptyState?.textContent).toContain('Start a scenario from the New Test page')
   })
 
   function clickButtonByText(text: string) {
