@@ -3,6 +3,7 @@ import { Fragment, ReactNode, useEffect, useMemo, useState } from 'react'
 import { canCopyTextToClipboard, copyTextToClipboard } from '../utils/clipboardUtils'
 import { detectCapturedBodyFormat, formatCapturedBody, type CapturedBodyFormat } from '../utils/snapshotFormatUtils'
 import SnapshotFullDialog from './SnapshotFullDialog'
+import JsonViewer from './JsonViewer'
 import './SnapshotBodyPreview.css'
 
 const MAX_PREVIEW_LINES = 14
@@ -196,6 +197,17 @@ export default function SnapshotBodyPreview({
   const [fullDialogOpen, setFullDialogOpen] = useState(false)
   const isExpanded = expanded === true
 
+  const parsedJson = useMemo(() => {
+    if (bodyFormat === 'json' && body) {
+      try {
+        return JSON.parse(body) as unknown
+      } catch {
+        return undefined
+      }
+    }
+    return undefined
+  }, [body, bodyFormat])
+
   useEffect(() => {
     setCopied(false)
     setCopyFailed(false)
@@ -226,7 +238,15 @@ export default function SnapshotBodyPreview({
 
   return (
     <>
-      <pre className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'}>{renderHighlightedCode(visibleBody, bodyFormat)}</pre>
+      {parsedJson !== undefined ? (
+        <div className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'} style={{ margin: 0, padding: 0 }}>
+          <JsonViewer data={parsedJson} />
+        </div>
+      ) : (
+        <pre className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'}>
+          {renderHighlightedCode(visibleBody, bodyFormat)}
+        </pre>
+      )}
       {(canOpenFull || canCopy) && (
         <div className="snapshot-body-actions">
           {canCopy && (
@@ -260,9 +280,15 @@ export default function SnapshotBodyPreview({
         onCopy={() => void handleCopy()}
         onClose={() => setFullDialogOpen(false)}
       >
-        <pre className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'}>
-          {renderHighlightedCode(formattedBody, bodyFormat)}
-        </pre>
+        {parsedJson !== undefined ? (
+          <div className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'} style={{ flex: 1, margin: 0, padding: 0 }}>
+            <JsonViewer data={parsedJson} defaultExpandedDepth={4} />
+          </div>
+        ) : (
+          <pre className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'}>
+            {renderHighlightedCode(formattedBody, bodyFormat)}
+          </pre>
+        )}
       </SnapshotFullDialog>
     </>
   )
