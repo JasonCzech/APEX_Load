@@ -211,7 +211,7 @@ func isEngineActionType(actionType string) bool {
 		"loadrunner_message", "loadrunner_runtime", "loadrunner_transaction", "loadrunner_timer",
 		"loadrunner_metric", "loadrunner_parameter", "loadrunner_json", "loadrunner_xml",
 		"loadrunner_database", "loadrunner_secret", "loadrunner_external", "loadrunner_review",
-		"custom_call":
+		"custom_call", "review_required":
 		return true
 	default:
 		return false

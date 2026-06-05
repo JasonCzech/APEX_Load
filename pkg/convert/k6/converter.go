@@ -71,6 +71,11 @@ type parsedHTTPRequest struct {
 	EndLine   int
 }
 
+type sortedAction struct {
+	Action  dsl.Action
+	Mapping sourceview.Mapping
+}
+
 var (
 	optionsBlockPattern  = regexp.MustCompile(`(?s)export\s+(?:const|let|var)\s+options\s*=\s*\{(.*?)\}\s*;`)
 	httpCallStartPattern = regexp.MustCompile(`\bhttp\.(get|post|put|delete)\s*\(`)
@@ -126,17 +131,17 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		},
 	}
 	var diagnostics diag.Collector
-	diagnoseUnsupported(content, &diagnostics, &result.Stats)
 	optionsSummary := parseOptions(content, result)
 	if result.Script.Metadata != nil && result.Script.Metadata.Import != nil && len(optionsSummary) > 0 {
 		result.Script.Metadata.Import.Preserved["k6_options"] = optionsSummary
 	}
 
+	var unsorted []sortedAction
+
 	requests := parseHTTPRequests(content)
 	if len(requests) == 0 {
 		return nil, fmt.Errorf("no supported k6 http.get/post/put/delete calls found")
 	}
-	sourceMappings := make([]sourceview.Mapping, 0, len(requests))
 	for idx, req := range requests {
 		action := dsl.Action{
 			Name:    fmt.Sprintf("%s_%02d", titleMethod(req.Method), idx+1),
@@ -149,21 +154,39 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				"k6_source": "http." + strings.ToLower(req.Method),
 			},
 		}
-		result.Script.Actions = append(result.Script.Actions, action)
-		sourceMappings = append(sourceMappings, sourceview.Mapping{
-			SourceFile:  firstNonEmpty(reqFileName(result), "script.js"),
-			StartLine:   req.StartLine,
-			EndLine:     req.EndLine,
-			Function:    "http." + strings.ToLower(req.Method),
-			TargetPath:  fmt.Sprintf("actions[%d]", idx),
-			TargetName:  action.Name,
-			TargetKind:  "action",
-			Status:      "converted",
-			SupportMode: "executable",
-			Notes:       "Converted from the constrained k6 HTTP subset.",
+		unsorted = append(unsorted, sortedAction{
+			Action: action,
+			Mapping: sourceview.Mapping{
+				SourceFile:  firstNonEmpty(reqFileName(result), "script.js"),
+				StartLine:   req.StartLine,
+				EndLine:     req.EndLine,
+				Function:    "http." + strings.ToLower(req.Method),
+				TargetName:  action.Name,
+				TargetKind:  "action",
+				Status:      "converted",
+				SupportMode: "executable",
+				Notes:       "Converted from the constrained k6 HTTP subset.",
+			},
 		})
 		result.Stats.HTTPRequests++
 		result.Stats.ConvertedActions++
+	}
+
+	diagnoseUnsupported(content, &diagnostics, &result.Stats, &unsorted, firstNonEmpty(reqFileName(result), "script.js"))
+
+	for i := 0; i < len(unsorted); i++ {
+		for j := i + 1; j < len(unsorted); j++ {
+			if unsorted[i].Mapping.StartLine > unsorted[j].Mapping.StartLine {
+				unsorted[i], unsorted[j] = unsorted[j], unsorted[i]
+			}
+		}
+	}
+
+	sourceMappings := make([]sourceview.Mapping, 0, len(unsorted))
+	for idx, s := range unsorted {
+		s.Mapping.TargetPath = fmt.Sprintf("actions[%d]", idx)
+		result.Script.Actions = append(result.Script.Actions, s.Action)
+		sourceMappings = append(sourceMappings, s.Mapping)
 	}
 	result.Stats.Checks = len(checkPattern.FindAllStringIndex(content, -1))
 	result.Stats.Sleeps = len(sleepPattern.FindAllStringIndex(content, -1))
@@ -442,24 +465,73 @@ func parseOptions(content string, result *ConvertResult) map[string]any {
 	return out
 }
 
-func diagnoseUnsupported(content string, diagnostics *diag.Collector, stats *ConvertStats) {
+func diagnoseUnsupported(content string, diagnostics *diag.Collector, stats *ConvertStats, unsorted *[]sortedAction, sourceFile string) {
+	addUnsupported := func(matches [][]int, construct, element, detail string, diagType string) {
+		for _, match := range matches {
+			stats.UnsupportedCalls = append(stats.UnsupportedCalls, construct)
+			startLine := sourceview.LineForOffset(content, match[0])
+			if diagType == "blocker" {
+				diagnostics.Add(diag.Blocker, element, fmt.Sprintf("%s line %d", sourceFile, startLine), detail)
+			} else {
+				diagnostics.Add(diag.Warning, element, fmt.Sprintf("%s line %d", sourceFile, startLine), detail)
+			}
+			lineContent := extractLine(content, match[0])
+			*unsorted = append(*unsorted, sortedAction{
+				Action: dsl.Action{
+					Name:  "Review_Required",
+					Type:  "review_required",
+					Value: strings.TrimSpace(lineContent),
+					Metadata: map[string]any{
+						"source": construct,
+					},
+				},
+				Mapping: sourceview.Mapping{
+					SourceFile:  sourceFile,
+					StartLine:   startLine,
+					EndLine:     startLine,
+					Function:    construct,
+					TargetName:  "Review_Required",
+					TargetKind:  "action",
+					Status:      "converted",
+					SupportMode: "review_required",
+					Notes:       detail,
+				},
+			})
+		}
+	}
+
 	if browserPattern.MatchString(content) {
-		stats.UnsupportedCalls = append(stats.UnsupportedCalls, "k6/browser")
-		diagnostics.Add(diag.Blocker, "k6 browser", "script.js", "k6 browser scripts are not imported as executable protocol-load scripts; use APEX browser canary authoring instead")
+		addUnsupported(browserPattern.FindAllStringIndex(content, -1), "k6/browser", "k6 browser", "k6 browser scripts are not imported as executable protocol-load scripts; use APEX browser canary authoring instead", "blocker")
 	}
 	if requirePattern.MatchString(content) {
-		stats.UnsupportedCalls = append(stats.UnsupportedCalls, "require")
-		diagnostics.Add(diag.Warning, "k6 module", "script.js", "CommonJS require() is not evaluated by the static importer")
+		addUnsupported(requirePattern.FindAllStringIndex(content, -1), "require", "k6 module", "CommonJS require() is not evaluated by the static importer", "warning")
 	}
 	imports := importPattern.FindAllStringIndex(content, -1)
 	if len(imports) > 2 {
-		stats.UnsupportedCalls = append(stats.UnsupportedCalls, "custom import")
-		diagnostics.Add(diag.Warning, "k6 module", "script.js", "non-core imports require review; APEX Load does not execute JavaScript modules")
+		addUnsupported(imports, "custom import", "k6 module", "non-core imports require review; APEX Load does not execute JavaScript modules", "warning")
 	}
 	if controlFlowPattern.MatchString(content) {
-		stats.UnsupportedCalls = append(stats.UnsupportedCalls, "dynamic control flow")
-		diagnostics.Add(diag.Warning, "k6 JavaScript control flow", "script.js", "loops, branches, and dynamic control flow are not preserved by the constrained HTTP importer")
+		addUnsupported(controlFlowPattern.FindAllStringIndex(content, -1), "dynamic control flow", "k6 JavaScript control flow", "loops, branches, and dynamic control flow are not preserved by the constrained HTTP importer", "warning")
 	}
+}
+
+func extractLine(content string, offset int) string {
+	if offset < 0 || offset >= len(content) {
+		return ""
+	}
+	start := strings.LastIndex(content[:offset], "\n")
+	if start == -1 {
+		start = 0
+	} else {
+		start++
+	}
+	end := strings.Index(content[offset:], "\n")
+	if end == -1 {
+		end = len(content)
+	} else {
+		end += offset
+	}
+	return content[start:end]
 }
 
 func parseHeaders(options string) map[string]string {

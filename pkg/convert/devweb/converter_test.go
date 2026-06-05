@@ -140,8 +140,8 @@ load.action("Mixed", async function() {
 	if err != nil {
 		t.Fatalf("Convert: %v", err)
 	}
-	if result.Stats.ConvertedActions != 1 {
-		t.Fatalf("converted actions = %d, want 1", result.Stats.ConvertedActions)
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("converted actions = %d, want 2", len(result.Script.Actions))
 	}
 	if !containsDevWebDiagnostic(result, "DevWeb load.WebRequest") {
 		t.Fatalf("diagnostics = %#v, want WebRequest warning", result.Unsupported)
@@ -166,8 +166,8 @@ load.action("Dynamic", async function() {
 	if err != nil {
 		t.Fatalf("Convert: %v", err)
 	}
-	if result.Stats.ConvertedActions != 1 {
-		t.Fatalf("converted actions = %d, want 1", result.Stats.ConvertedActions)
+	if len(result.Script.Actions) != 5 {
+		t.Fatalf("converted actions = %d, want 5", len(result.Script.Actions))
 	}
 	for _, element := range []string{
 		"DevWeb dynamic JavaScript",

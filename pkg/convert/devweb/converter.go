@@ -254,8 +254,23 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 	}
 	for _, match := range correlationPattern.FindAllStringIndex(block.Body, -1) {
 		diagnostics.Add(diag.Warning, "DevWeb correlation helper", devwebLocation(block, match[0]), "correlation/extraction helper is not executed by the importer; recreate it with APEX Load extractors before replay")
+		lineContent := extractLine(block.Body, match[0])
+		steps = append(steps, parsedStep{
+			Protocol: "http",
+			Action: dsl.Action{
+				Name:  actionName(block.Name, "correlation_review"),
+				Type:  "review_required",
+				Value: strings.TrimSpace(lineContent),
+				Metadata: map[string]any{
+					"source": "DevWeb correlation helper",
+				},
+			},
+			Function:  "correlation",
+			StartLine: devwebLine(block, match[0]),
+			EndLine:   devwebLine(block, match[0]),
+		})
 	}
-	diagnoseReviewOnlyJavaScript(block, stats, diagnostics)
+	diagnoseReviewOnlyJavaScript(block, stats, diagnostics, &steps)
 
 	socketVars := map[string]string{}
 	for _, match := range webSocketNewPattern.FindAllStringSubmatch(block.Body, -1) {
@@ -350,14 +365,31 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 			steps[len(steps)-1].Action.ThinkTimeAfter = true
 		}
 	}
+	// Sort steps by start line to maintain source execution order across different protocols/patterns
+	sortParsedSteps(steps)
 	return steps
 }
 
-func diagnoseReviewOnlyJavaScript(block namedBlock, stats *ConvertStats, diagnostics *diag.Collector) {
+func diagnoseReviewOnlyJavaScript(block namedBlock, stats *ConvertStats, diagnostics *diag.Collector, steps *[]parsedStep) {
 	for _, pattern := range reviewOnlyPatterns {
 		for _, match := range pattern.Regex.FindAllStringIndex(block.Body, -1) {
 			stats.UnsupportedCalls = appendDevWebUnsupportedCall(stats.UnsupportedCalls, pattern.Construct)
 			diagnostics.Add(diag.Warning, pattern.Element, devwebLocation(block, match[0]), pattern.Detail)
+			lineContent := extractLine(block.Body, match[0])
+			*steps = append(*steps, parsedStep{
+				Protocol: "http",
+				Action: dsl.Action{
+					Name:  actionName(block.Name, "js_review"),
+					Type:  "review_required",
+					Value: strings.TrimSpace(lineContent),
+					Metadata: map[string]any{
+						"source": pattern.Construct,
+					},
+				},
+				Function:  pattern.Construct,
+				StartLine: devwebLine(block, match[0]),
+				EndLine:   devwebLine(block, match[0]),
+			})
 		}
 	}
 }
@@ -401,6 +433,35 @@ func devwebLine(block namedBlock, offset int) int {
 		offset = len(block.Body)
 	}
 	return start + strings.Count(block.Body[:offset], "\n")
+}
+
+func extractLine(content string, offset int) string {
+	if offset < 0 || offset >= len(content) {
+		return ""
+	}
+	start := strings.LastIndex(content[:offset], "\n")
+	if start == -1 {
+		start = 0
+	} else {
+		start++ // skip the newline
+	}
+	end := strings.Index(content[offset:], "\n")
+	if end == -1 {
+		end = len(content)
+	} else {
+		end += offset
+	}
+	return content[start:end]
+}
+
+func sortParsedSteps(steps []parsedStep) {
+	for i := 0; i < len(steps); i++ {
+		for j := i + 1; j < len(steps); j++ {
+			if steps[i].StartLine > steps[j].StartLine {
+				steps[i], steps[j] = steps[j], steps[i]
+			}
+		}
+	}
 }
 
 func devwebSourceMapping(sourceFile string, step parsedStep, targetPath string) sourceview.Mapping {
