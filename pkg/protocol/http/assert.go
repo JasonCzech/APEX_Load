@@ -24,6 +24,15 @@ func evaluate(a protocol.Assertion, result *protocol.Result, body []byte) error 
 			return fmt.Errorf("expected status %d, got %d", expected, result.StatusCode)
 		}
 
+	case "status_code_not":
+		expected, ok := toInt(a.Expected)
+		if !ok {
+			return fmt.Errorf("status_code_not assertion: expected integer, got %v", a.Expected)
+		}
+		if result.StatusCode == expected {
+			return fmt.Errorf("expected status to not be %d", expected)
+		}
+
 	case "response_time_ms":
 		if result.Duration.Milliseconds() > int64(a.Max) {
 			return fmt.Errorf("response time %dms exceeded max %dms", result.Duration.Milliseconds(), a.Max)

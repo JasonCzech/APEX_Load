@@ -218,6 +218,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	var diagnostics diag.Collector
 	sourceFileName := "postman_collection.json"
+	sources := map[string]string{sourceFileName: content}
 	sourceMappings := make([]sourceview.Mapping, 0)
 	vars := collectionVariables(col.Variable)
 	applyPostmanEventVariables(vars, requests, &diagnostics)
@@ -280,6 +281,27 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	includeAssertions := boolOption(req.Options.IncludeAssertions, true)
 	for index, item := range requests {
 		reportPostmanEvents(item, &diagnostics)
+		
+		// Extract JS scripts to virtual review files
+		for i, ev := range item.Events {
+			if len(ev.Script.Exec) == 0 {
+				continue
+			}
+			scriptContent := strings.Join(ev.Script.Exec, "\n")
+			listenType := firstNonEmpty(ev.Listen, "script")
+			filename := fmt.Sprintf("%s_%s_%d.js", sanitizeName(item.Name), listenType, i)
+			sources[filename] = scriptContent
+			sourceMappings = append(sourceMappings, sourceview.Mapping{
+				SourceFile: filename,
+				StartLine:  1,
+				EndLine:    len(ev.Script.Exec),
+				Function:   postmanItemLocation(item) + " / " + listenType,
+				TargetKind: "review",
+				Status:     "review_only",
+				Notes:      fmt.Sprintf("Postman %s script preserved for manual review and translation.", listenType),
+			})
+		}
+
 		action, actionWarnings := buildAction(index, item, baseURL, vars, sanitizeSensitive, includeAssertions, &diagnostics)
 		if action.Name == "" {
 			result.Stats.SkippedItems = append(result.Stats.SkippedItems, item.Name)
@@ -307,7 +329,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		diagnostics.Add(diag.Warning, "Postman completeness guard", "collection", fmt.Sprintf("%d request item(s) were present but not converted or explicitly skipped", gap))
 	}
 	result.Unsupported = diagnostics.Items()
-	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: content}, sourceMappings)
+	result.SourceReview = sourceview.Build(sources, sourceMappings)
 	return result, nil
 }
 

@@ -715,18 +715,38 @@ func sampleForSchema(s schema, res resolver, location string, seen map[string]bo
 		return []any{value}, columns
 	}
 	switch strings.ToLower(s.Type) {
-	case "integer", "number":
-		return 1, nil
+	case "integer":
+		return 42, nil
+	case "number":
+		return 42.5, nil
 	case "boolean":
 		return true, nil
 	case "string":
 		if len(s.Enum) > 0 {
 			return s.Enum[0], nil
 		}
-		if s.Format == "date-time" {
+		switch strings.ToLower(s.Format) {
+		case "date-time":
 			return "{{fn.now()}}", nil
+		case "date":
+			return "{{fn.now(\"2006-01-02\")}}", nil
+		case "uuid":
+			return "{{fn.uuid()}}", nil
+		case "email":
+			return "user@example.com", nil
+		case "uri", "url":
+			return "https://example.com/resource", nil
+		case "hostname":
+			return "example.com", nil
+		case "ipv4":
+			return "192.168.1.1", nil
+		case "ipv6":
+			return "2001:db8::1", nil
+		case "password":
+			return "SecretPass123!", nil
+		default:
+			return "sample_string", nil
 		}
-		return "value", nil
 	default:
 		return map[string]any{}, nil
 	}

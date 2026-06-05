@@ -370,7 +370,37 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			next.transaction = txName
 			walkThreadGroup(child, &next, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
 			continue
-		case "IfController", "WhileController", "ForeachController", "ForEachController", "LoopController", "InterleaveControl", "RandomController", "ThroughputController":
+		case "LoopController":
+			loopCountStr := prop(child.Element, "LoopController.loops")
+			if loopCountStr == "" {
+				loopCountStr = attrOr(child.Element, "loops", "1")
+			}
+			loops := 1
+			if val, err := strconv.Atoi(loopCountStr); err == nil && val > 0 {
+				loops = val
+				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "converted", fmt.Sprintf("JMeter LoopController was statically unrolled %d times into the flat action sequence.", loops)))
+			} else if loopCountStr == "-1" || loopCountStr == "0" {
+				diagnostics.Add(diag.Warning, "JMeter LoopController", jmeterElementLocation(child.Element), "infinite loops (-1) cannot be statically unrolled; flattening as 1 iteration")
+				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", "JMeter LoopController infinite loop (-1) was flattened as 1 iteration."))
+			} else {
+				diagnostics.Add(diag.Warning, "JMeter LoopController", jmeterElementLocation(child.Element), "dynamic loop count '"+loopCountStr+"' cannot be statically unrolled; flattening as 1 iteration")
+				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", "JMeter LoopController dynamic loop count '"+loopCountStr+"' was flattened as 1 iteration."))
+			}
+			if len(child.Children) > 0 {
+				for i := 0; i < loops; i++ {
+					walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
+				}
+			}
+			continue
+		case "IfController":
+			condition := prop(child.Element, "IfController.condition")
+			diagnostics.Add(diag.Warning, "JMeter IfController", jmeterElementLocation(child.Element), fmt.Sprintf("conditional execution is not supported natively; children were flattened (condition was: %s)", condition))
+			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", fmt.Sprintf("JMeter IfController was flattened; original condition: %s", condition)))
+			if len(child.Children) > 0 {
+				walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
+			}
+			continue
+		case "WhileController", "ForeachController", "ForEachController", "InterleaveControl", "RandomController", "ThroughputController":
 			diagnostics.Add(diag.Warning, "JMeter "+child.Element.Name, jmeterElementLocation(child.Element), "controller logic was flattened; child requests are imported in source order without original conditions or transaction semantics")
 			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", "JMeter controller logic was flattened; child requests are imported in source order without original conditions."))
 		case "hashTree":
@@ -1296,12 +1326,6 @@ func parseResponseAssertions(node *xmlNode, diagnostics *diag.Collector) []dsl.A
 	if strings.EqualFold(field, "Assertion.response_code") {
 		out := make([]dsl.Assertion, 0, len(values))
 		for _, value := range values {
-			if negated {
-				if diagnostics != nil {
-					diagnostics.Add(diag.Warning, "JMeter ResponseAssertion", location, "negative response-code assertion "+value+" cannot be represented natively and was skipped")
-				}
-				continue
-			}
 			status, err := strconv.Atoi(strings.TrimSpace(value))
 			if err != nil {
 				if diagnostics != nil {
@@ -1309,7 +1333,11 @@ func parseResponseAssertions(node *xmlNode, diagnostics *diag.Collector) []dsl.A
 				}
 				continue
 			}
-			out = append(out, dsl.Assertion{Type: "status_code", Expected: status})
+			if negated {
+				out = append(out, dsl.Assertion{Type: "status_code_not", Expected: status})
+			} else {
+				out = append(out, dsl.Assertion{Type: "status_code", Expected: status})
+			}
 		}
 		return out
 	}
