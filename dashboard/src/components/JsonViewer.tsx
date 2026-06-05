@@ -26,6 +26,8 @@ interface JsonNodeProps {
   defaultExpandedDepth: number
   visiblePaths: Set<string> | null
   lowerFilter: string
+  forceToggleNonce: number
+  forceToggleDirection: 'expand' | 'collapse' | null
 }
 
 function HighlightText({ text, query }: { text: string; query: string }) {
@@ -41,10 +43,16 @@ function HighlightText({ text, query }: { text: string; query: string }) {
   )
 }
 
-function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visiblePaths, lowerFilter }: JsonNodeProps) {
+function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visiblePaths, lowerFilter, forceToggleNonce, forceToggleDirection }: JsonNodeProps) {
   const [expanded, setExpanded] = useState(depth <= defaultExpandedDepth)
   const [copied, setCopied] = useState(false)
   const type = getType(value)
+
+  useEffect(() => {
+    if (forceToggleNonce > 0 && forceToggleDirection) {
+      setExpanded(forceToggleDirection === 'expand')
+    }
+  }, [forceToggleNonce, forceToggleDirection])
 
   useEffect(() => {
     if (visiblePaths) {
@@ -147,6 +155,8 @@ function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visi
                     defaultExpandedDepth={defaultExpandedDepth}
                     visiblePaths={visiblePaths}
                     lowerFilter={lowerFilter}
+                    forceToggleNonce={forceToggleNonce}
+                    forceToggleDirection={forceToggleDirection}
                   />
                 ))
               : (items as [string, unknown][]).map(([key, val], idx) => (
@@ -160,6 +170,8 @@ function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visi
                     defaultExpandedDepth={defaultExpandedDepth}
                     visiblePaths={visiblePaths}
                     lowerFilter={lowerFilter}
+                    forceToggleNonce={forceToggleNonce}
+                    forceToggleDirection={forceToggleDirection}
                   />
                 ))
             }
@@ -191,7 +203,19 @@ function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visi
 
 export default function JsonViewer({ data, defaultExpandedDepth = 2 }: JsonViewerProps) {
   const [filterText, setFilterText] = useState('')
+  const [forceToggleNonce, setForceToggleNonce] = useState(0)
+  const [forceToggleDirection, setForceToggleDirection] = useState<'expand' | 'collapse' | null>(null)
   const lowerFilter = filterText.toLowerCase()
+
+  const handleFoldAll = () => {
+    setForceToggleDirection('collapse')
+    setForceToggleNonce(prev => prev + 1)
+  }
+
+  const handleUnfoldAll = () => {
+    setForceToggleDirection('expand')
+    setForceToggleNonce(prev => prev + 1)
+  }
 
   const visiblePaths = useMemo(() => {
     if (!lowerFilter) return null
@@ -237,6 +261,14 @@ export default function JsonViewer({ data, defaultExpandedDepth = 2 }: JsonViewe
           value={filterText}
           onChange={(e) => setFilterText(e.target.value)}
         />
+        <div className="json-viewer-toolbar-actions">
+          <button type="button" className="btn btn-sm btn-ghost" onClick={handleUnfoldAll}>
+            Unfold All
+          </button>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={handleFoldAll}>
+            Fold All
+          </button>
+        </div>
       </div>
       <div className="json-viewer-body">
         {visiblePaths && visiblePaths.size === 0 ? (
@@ -250,6 +282,8 @@ export default function JsonViewer({ data, defaultExpandedDepth = 2 }: JsonViewe
             defaultExpandedDepth={defaultExpandedDepth} 
             visiblePaths={visiblePaths}
             lowerFilter={lowerFilter}
+            forceToggleNonce={forceToggleNonce}
+            forceToggleDirection={forceToggleDirection}
           />
         )}
       </div>

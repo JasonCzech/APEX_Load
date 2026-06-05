@@ -13,9 +13,20 @@
   margin-bottom: 8px;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.json-viewer-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .json-viewer-filter {
+  flex: 1;
   max-width: 300px;
   height: 24px;
   padding: 0 8px;
