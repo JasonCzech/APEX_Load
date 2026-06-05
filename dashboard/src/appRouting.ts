@@ -5,6 +5,7 @@ export type AppView =
   | { page: 'new-test'; scenarioId?: string }
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
   | { page: 'swagger' }
+  | { page: 'repository-guide' }
   | { page: 'test'; testId: string }
 
 const NAV_PAGES: NavPage[] = [
@@ -69,6 +70,10 @@ export function parseAppViewFromHash(hash: string): AppView {
     return { page: 'swagger' }
   }
 
+  if (page === 'repository-guide') {
+    return { page: 'repository-guide' }
+  }
+
   return isNavPage(page) ? { page } : { page: 'dashboard' }
 }
 
@@ -94,6 +99,10 @@ export function viewToLocationHash(view: AppView): string {
 
   if (view.page === 'swagger') {
     return '#/swagger'
+  }
+
+  if (view.page === 'repository-guide') {
+    return '#/repository-guide'
   }
 
   return `#/${view.page}`

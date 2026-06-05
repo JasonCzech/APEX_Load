@@ -810,6 +810,53 @@ describe('TestExecutionArchive', () => {
     expect(onFiltersReset).toHaveBeenCalled()
   })
 
+  it('lets standalone action summary use the full archive card width', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionArchive
+          view="action-summary"
+          hasArchive={true}
+          test={test}
+          archiveError=""
+          archiveLoading={false}
+          archiveReport={archiveReport}
+          onDownloadBrowserDiagnostics={vi.fn()}
+          onDownloadArchiveArtifact={vi.fn()}
+          archiveActionEntries={[
+            ['CreateOrder', { transactions: 20, errors: 1, error_pct: 5, avg_response_ms: 140, min_response_ms: 40, max_response_ms: 340 }],
+          ]}
+          archiveSOAPOperationEntries={[]}
+          selectedArchiveAction=""
+          onSelectedArchiveActionChange={vi.fn()}
+          selectedArchiveSOAPOperation=""
+          onSelectedArchiveSOAPOperationChange={vi.fn()}
+          archiveGroups={[]}
+          selectedArchiveGroup=""
+          onSelectedArchiveGroupChange={vi.fn()}
+          archiveErrorsOnly={false}
+          onArchiveErrorsOnlyChange={vi.fn()}
+          archiveTransactionsLoading={false}
+          archiveTransactionsTotal={0}
+          archivePageStart={0}
+          archivePageEnd={0}
+          archiveTransactionsOffset={0}
+          archivePageSize={50}
+          onPageSizeChange={vi.fn()}
+          onPreviousPage={vi.fn()}
+          onNextPage={vi.fn()}
+          archiveTransactions={[]}
+          expandedArchiveEvent={null}
+          onExpandedArchiveEventChange={vi.fn()}
+        />,
+      )
+    })
+
+    const layout = container.querySelector('.archive-report-layout')
+    expect(layout?.classList.contains('single-view')).toBe(true)
+    expect(container.querySelector('.archive-action-section .tx-table')).toBeTruthy()
+    expect(container.textContent).toContain('CreateOrder')
+  })
+
   it('renders mixed engine and platform browser rollups from the archive report', async () => {
     const mixedReport: RunArchiveReport = {
       ...archiveReport,
@@ -1355,4 +1402,67 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('95.0')
     expect(container.textContent).toContain('170.0')
   })
+
+  it('renders archive report sections as standalone views', async () => {
+    await renderArchiveView('report-overview')
+
+    expect(container.textContent).toContain('Peak TPS')
+    expect(container.textContent).toContain('Goal Completion')
+    expect(container.textContent).not.toContain('Error Patterns')
+
+    await renderArchiveView('report-error-patterns')
+
+    expect(container.textContent).toContain('Error Patterns')
+    expect(container.textContent).toContain('soap fault: Request validation failed for order 1001')
+    expect(container.textContent).not.toContain('Peak TPS')
+
+    await renderArchiveView('report-assets')
+
+    expect(container.textContent).toContain('Download Report')
+    expect(container.textContent).toContain('Download Transactions JSONL')
+    expect(container.textContent).not.toContain('Error Patterns')
+  })
+
+  async function renderArchiveView(view: Parameters<typeof TestExecutionArchive>[0]['view']) {
+    await act(async () => {
+      root.render(
+        <TestExecutionArchive
+          view={view}
+          hasArchive={true}
+          test={test}
+          archiveError=""
+          archiveLoading={false}
+          archiveReport={archiveReport}
+          archiveAnalysis={archiveAnalysis}
+          archiveAnalysisLoading={false}
+          archiveAnalysisError=""
+          onDownloadBrowserDiagnostics={vi.fn()}
+          onDownloadArchiveArtifact={vi.fn()}
+          archiveActionEntries={Object.entries(archiveReport.by_action)}
+          archiveSOAPOperationEntries={Object.entries(archiveReport.by_soap_operation || {})}
+          selectedArchiveAction=""
+          onSelectedArchiveActionChange={vi.fn()}
+          selectedArchiveSOAPOperation=""
+          onSelectedArchiveSOAPOperationChange={vi.fn()}
+          archiveGroups={[]}
+          selectedArchiveGroup=""
+          onSelectedArchiveGroupChange={vi.fn()}
+          archiveErrorsOnly={false}
+          onArchiveErrorsOnlyChange={vi.fn()}
+          archiveTransactionsLoading={false}
+          archiveTransactionsTotal={0}
+          archivePageStart={0}
+          archivePageEnd={0}
+          archiveTransactionsOffset={0}
+          archivePageSize={50}
+          onPageSizeChange={vi.fn()}
+          onPreviousPage={vi.fn()}
+          onNextPage={vi.fn()}
+          archiveTransactions={[]}
+          expandedArchiveEvent={null}
+          onExpandedArchiveEventChange={vi.fn()}
+        />,
+      )
+    })
+  }
 })

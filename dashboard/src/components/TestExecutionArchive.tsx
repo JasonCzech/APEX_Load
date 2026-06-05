@@ -36,7 +36,23 @@ import {
   type ArchiveTransactionSortKey,
 } from './useExecutionArchiveModel'
 
-type ArchiveView = 'all' | 'report' | 'load-impact' | 'action-summary' | 'transactions'
+type ArchiveView =
+  | 'all'
+  | 'report'
+  | 'report-overview'
+  | 'report-completeness'
+  | 'report-metadata'
+  | 'report-error-patterns'
+  | 'report-browser-summary'
+  | 'report-browser-resources'
+  | 'report-assets'
+  | 'report-profiles'
+  | 'report-summary-timeline'
+  | 'report-analysis'
+  | 'load-impact'
+  | 'metrics-under-load'
+  | 'action-summary'
+  | 'transactions'
 
 interface Props {
   view?: ArchiveView
@@ -752,8 +768,20 @@ export default function TestExecutionArchive({
   const showArchiveAnalysis = archiveAnalysisLoading || Boolean(archiveAnalysis) || Boolean(archiveAnalysisError)
   const archiveAnalysisHasBaseline = Boolean(archiveAnalysis?.baseline_id)
   const showAllViews = view === 'all'
-  const showReportView = showAllViews || view === 'report'
+  const showFullReportView = showAllViews || view === 'report'
+  const showStandaloneReportSection = !showFullReportView
+  const showReportOverviewView = showFullReportView || view === 'report-overview'
+  const showReportCompletenessView = showFullReportView || view === 'report-completeness'
+  const showReportMetadataView = showFullReportView || view === 'report-metadata'
+  const showReportErrorPatternsView = showFullReportView || view === 'report-error-patterns'
+  const showReportBrowserSummaryView = showFullReportView || view === 'report-browser-summary'
+  const showReportBrowserResourcesView = showFullReportView || view === 'report-browser-resources'
+  const showReportAssetsView = showFullReportView || view === 'report-assets'
+  const showReportProfilesView = showFullReportView || view === 'report-profiles'
+  const showReportSummaryTimelineView = showFullReportView || view === 'report-summary-timeline'
+  const showReportAnalysisView = showFullReportView || view === 'report-analysis'
   const showLoadImpactView = showAllViews || view === 'load-impact'
+  const showMetricsUnderLoadView = showAllViews || view === 'metrics-under-load'
   const showActionSummaryView = showAllViews || view === 'action-summary'
   const showTransactionsView = showAllViews || view === 'transactions'
   const renderArchiveSortButton = (key: ArchiveTransactionSortKey, label: string) => {
@@ -807,7 +835,7 @@ export default function TestExecutionArchive({
       >
         <pre>{manualCopySection?.value ?? ''}</pre>
       </SnapshotFullDialog>
-      {showReportView && (
+      {showFullReportView && (
         <div className="archive-report-header">
           <div>
             <h3 className="archive-report-title">Archive Report</h3>
@@ -828,115 +856,122 @@ export default function TestExecutionArchive({
 
       {archiveReport && (
         <>
-          {showReportView && (
+          {(showReportOverviewView || showReportCompletenessView || showReportMetadataView) && (
             <>
-              <div className="archive-overview-grid">
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Peak TPS</span>
-                  <span className="scenario-script-detail-value">{archiveReport.overview.peak_tps.toFixed(1)}</span>
-                  {archiveReport.overview.peak_target_tps ? (
-                    <span className="capacity-advisory-detail">Target {archiveReport.overview.peak_target_tps.toFixed(1)} TPS</span>
-                  ) : null}
-                </div>
-                {archiveReport.overview.max_throughput_gap_pct !== undefined && (
+              {showReportOverviewView && (
+                <div className="archive-overview-grid">
                   <div className="scenario-script-detail-card">
-                    <span className="scenario-script-detail-label">Throughput Gap</span>
-                    <span className="scenario-script-detail-value">{archiveReport.overview.max_throughput_gap_pct.toFixed(1)}%</span>
-                    <span className="capacity-advisory-detail">{archiveReport.overview.throughput_missed_intervals || 0} missed target interval{archiveReport.overview.throughput_missed_intervals === 1 ? '' : 's'}</span>
+                    <span className="scenario-script-detail-label">Peak TPS</span>
+                    <span className="scenario-script-detail-value">{archiveReport.overview.peak_tps.toFixed(1)}</span>
+                    {archiveReport.overview.peak_target_tps ? (
+                      <span className="capacity-advisory-detail">Target {archiveReport.overview.peak_target_tps.toFixed(1)} TPS</span>
+                    ) : null}
                   </div>
-                )}
-                {archiveReport.overview.goal_completion && (
-                  <div className="scenario-script-detail-card">
-                    <span className="scenario-script-detail-label">Goal Completion</span>
-                    <span className="scenario-script-detail-value">{archiveReport.overview.goal_completion.transaction_completion_pct !== undefined ? `${archiveReport.overview.goal_completion.transaction_completion_pct.toFixed(1)}%` : archiveReport.overview.goal_completion.achieved_transactions.toLocaleString()}</span>
-                    <span className="capacity-advisory-detail">
-                      {archiveReport.overview.goal_completion.configured_max_transactions
-                        ? `${archiveReport.overview.goal_completion.achieved_transactions.toLocaleString()} / ${archiveReport.overview.goal_completion.configured_max_transactions.toLocaleString()} transactions`
-                        : archiveReport.overview.goal_completion.configured_global_iterations
-                          ? `${archiveReport.overview.goal_completion.configured_global_iterations.toLocaleString()} configured global iterations`
-                          : `${archiveReport.overview.goal_completion.throughput_missed_intervals || 0} missed throughput intervals`}
-                    </span>
-                  </div>
-                )}
-                {archiveReport.overview.load_model_goals?.stage_count ? (
-                  <div className="scenario-script-detail-card">
-                    <span className="scenario-script-detail-label">Staged Load</span>
-                    <span className="scenario-script-detail-value">{archiveReport.overview.load_model_goals.stage_count}</span>
-                    <span className="capacity-advisory-detail">{archiveReport.overview.load_model_goals.staged_groups || 0} group{archiveReport.overview.load_model_goals.staged_groups === 1 ? '' : 's'} · {archiveReport.overview.load_model_goals.once_only_groups || 0} once-only</span>
-                  </div>
-                ) : null}
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Peak Active VUsers</span>
-                  <span className="scenario-script-detail-value">{archiveReport.overview.peak_active_vusers}</span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Response Range</span>
-                  <span className="scenario-script-detail-value">{archiveReport.overview.min_response_ms.toFixed(1)} - {archiveReport.overview.max_response_ms.toFixed(1)} ms</span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">CPU Peak</span>
-                  <span className="scenario-script-detail-value">{archiveReport.resource_peaks.cpu_process_pct.toFixed(1)}%</span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Memory Peak</span>
-                  <span className="scenario-script-detail-value">{archiveReport.resource_peaks.mem_process_mb.toFixed(1)} MB</span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Network Peak</span>
-                  <span className="scenario-script-detail-value">{archiveReport.resource_peaks.net_sent_kbps.toFixed(1)} / {archiveReport.resource_peaks.net_recv_kbps.toFixed(1)} KB/s</span>
-                </div>
-              </div>
-
-              {archiveReport.completeness && (
-                <div className="tx-section archive-summary-section">
-                  <div className="archive-section-header archive-section-header-stack">
-                    <div>
-                      <h3 className="chart-title">Completeness Score</h3>
-                      <p className="archive-section-copy">Archive coverage score for intervals, telemetry, writer health, and artifact availability.</p>
-                    </div>
-                    <span className={`archive-chip ${archiveReport.completeness.status === 'incomplete' ? 'danger' : ''}`}>
-                      {archiveReport.completeness.score_pct.toFixed(0)}% · {archiveReport.completeness.status.replace(/_/g, ' ')}
-                    </span>
-                  </div>
-                  {archiveReport.completeness.findings && archiveReport.completeness.findings.length > 0 && (
-                    <div className="archive-overview-grid">
-                      {archiveReport.completeness.findings.map((finding, index) => (
-                        <div key={`${finding.dimension}-${index}`} className="scenario-script-detail-card">
-                          <span className="scenario-script-detail-label">{finding.dimension.replace(/_/g, ' ')}</span>
-                          <span className="scenario-script-detail-value"><span className={`archive-finding-severity ${finding.severity}`}>{finding.severity}</span> · -{finding.penalty.toFixed(0)}</span>
-                          <span className="capacity-advisory-detail">{finding.message}</span>
-                        </div>
-                      ))}
+                  {archiveReport.overview.max_throughput_gap_pct !== undefined && (
+                    <div className="scenario-script-detail-card">
+                      <span className="scenario-script-detail-label">Throughput Gap</span>
+                      <span className="scenario-script-detail-value">{archiveReport.overview.max_throughput_gap_pct.toFixed(1)}%</span>
+                      <span className="capacity-advisory-detail">{archiveReport.overview.throughput_missed_intervals || 0} missed target interval{archiveReport.overview.throughput_missed_intervals === 1 ? '' : 's'}</span>
                     </div>
                   )}
+                  {archiveReport.overview.goal_completion && (
+                    <div className="scenario-script-detail-card">
+                      <span className="scenario-script-detail-label">Goal Completion</span>
+                      <span className="scenario-script-detail-value">{archiveReport.overview.goal_completion.transaction_completion_pct !== undefined ? `${archiveReport.overview.goal_completion.transaction_completion_pct.toFixed(1)}%` : archiveReport.overview.goal_completion.achieved_transactions.toLocaleString()}</span>
+                      <span className="capacity-advisory-detail">
+                        {archiveReport.overview.goal_completion.configured_max_transactions
+                          ? `${archiveReport.overview.goal_completion.achieved_transactions.toLocaleString()} / ${archiveReport.overview.goal_completion.configured_max_transactions.toLocaleString()} transactions`
+                          : archiveReport.overview.goal_completion.configured_global_iterations
+                            ? `${archiveReport.overview.goal_completion.configured_global_iterations.toLocaleString()} configured global iterations`
+                            : `${archiveReport.overview.goal_completion.throughput_missed_intervals || 0} missed throughput intervals`}
+                      </span>
+                    </div>
+                  )}
+                  {archiveReport.overview.load_model_goals?.stage_count ? (
+                    <div className="scenario-script-detail-card">
+                      <span className="scenario-script-detail-label">Staged Load</span>
+                      <span className="scenario-script-detail-value">{archiveReport.overview.load_model_goals.stage_count}</span>
+                      <span className="capacity-advisory-detail">{archiveReport.overview.load_model_goals.staged_groups || 0} group{archiveReport.overview.load_model_goals.staged_groups === 1 ? '' : 's'} · {archiveReport.overview.load_model_goals.once_only_groups || 0} once-only</span>
+                    </div>
+                  ) : null}
+                  <div className="scenario-script-detail-card">
+                    <span className="scenario-script-detail-label">Peak Active VUsers</span>
+                    <span className="scenario-script-detail-value">{archiveReport.overview.peak_active_vusers}</span>
+                  </div>
+                  <div className="scenario-script-detail-card">
+                    <span className="scenario-script-detail-label">Response Range</span>
+                    <span className="scenario-script-detail-value">{archiveReport.overview.min_response_ms.toFixed(1)} - {archiveReport.overview.max_response_ms.toFixed(1)} ms</span>
+                  </div>
+                  <div className="scenario-script-detail-card">
+                    <span className="scenario-script-detail-label">CPU Peak</span>
+                    <span className="scenario-script-detail-value">{archiveReport.resource_peaks.cpu_process_pct.toFixed(1)}%</span>
+                  </div>
+                  <div className="scenario-script-detail-card">
+                    <span className="scenario-script-detail-label">Memory Peak</span>
+                    <span className="scenario-script-detail-value">{archiveReport.resource_peaks.mem_process_mb.toFixed(1)} MB</span>
+                  </div>
+                  <div className="scenario-script-detail-card">
+                    <span className="scenario-script-detail-label">Network Peak</span>
+                    <span className="scenario-script-detail-value">{archiveReport.resource_peaks.net_sent_kbps.toFixed(1)} / {archiveReport.resource_peaks.net_recv_kbps.toFixed(1)} KB/s</span>
+                  </div>
                 </div>
               )}
 
-              <section className="archive-metadata-summary" aria-label="Archive metadata summary">
-                <div className="archive-metadata-grid">
-                  {compactMetadataPanels.map(panel => (
-                    <div key={panel.id} className="archive-metadata-box">
-                      <div className="archive-metadata-box-header">
-                        <h3>{panel.title}</h3>
-                        {panel.status && <span className={`archive-compact-status ${panel.tone}`}>{panel.status}</span>}
+              {showReportCompletenessView && (
+                archiveReport.completeness ? (
+                  <div className="tx-section archive-summary-section">
+                    <div className="archive-section-header archive-section-header-stack">
+                      <div>
+                        <h3 className="chart-title">Completeness Score</h3>
+                        <p className="archive-section-copy">Archive coverage score for intervals, telemetry, writer health, and artifact availability.</p>
                       </div>
-                      <dl className="archive-compact-list">
-                        {panel.items.map(item => (
-                          <div key={`${panel.id}-${item.label}`} className="archive-compact-row">
-                            <dt>{item.label}</dt>
-                            <dd>{item.value}</dd>
+                      <span className={`archive-chip ${archiveReport.completeness.status === 'incomplete' ? 'danger' : ''}`}>
+                        {archiveReport.completeness.score_pct.toFixed(0)}% · {archiveReport.completeness.status.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    {archiveReport.completeness.findings && archiveReport.completeness.findings.length > 0 && (
+                      <div className="archive-overview-grid">
+                        {archiveReport.completeness.findings.map((finding, index) => (
+                          <div key={`${finding.dimension}-${index}`} className="scenario-script-detail-card">
+                            <span className="scenario-script-detail-label">{finding.dimension.replace(/_/g, ' ')}</span>
+                            <span className="scenario-script-detail-value"><span className={`archive-finding-severity ${finding.severity}`}>{finding.severity}</span> · -{finding.penalty.toFixed(0)}</span>
+                            <span className="capacity-advisory-detail">{finding.message}</span>
                           </div>
                         ))}
-                      </dl>
-                    </div>
-                  ))}
-                </div>
-              </section>
+                      </div>
+                    )}
+                  </div>
+                ) : showStandaloneReportSection ? (
+                  <p className="scenario-script-status">Completeness scoring is not available for this archive.</p>
+                ) : null
+              )}
+
+              {showReportMetadataView && (
+                <section className="archive-metadata-summary" aria-label="Archive metadata summary">
+                  <div className="archive-metadata-grid">
+                    {compactMetadataPanels.map(panel => (
+                      <div key={panel.id} className="archive-metadata-box">
+                        <div className="archive-metadata-box-header">
+                          <h3>{panel.title}</h3>
+                          {panel.status && <span className={`archive-compact-status ${panel.tone}`}>{panel.status}</span>}
+                        </div>
+                        <dl className="archive-compact-list">
+                          {panel.items.map(item => (
+                            <div key={`${panel.id}-${item.label}`} className="archive-compact-row">
+                              <dt>{item.label}</dt>
+                              <dd>{item.value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
             </>
           )}
 
           {showLoadImpactView && (
-            <>
               <LoadImpactHeatmap
                 points={loadImpactData}
                 loading={loadImpactLoading}
@@ -945,7 +980,9 @@ export default function TestExecutionArchive({
                 subtitle="Archived performance and resource response grouped by active VUser load."
                 emptyMessage="Load impact appears when archived interval summaries or resource samples include active VUser data."
               />
+          )}
 
+          {showMetricsUnderLoadView && (
               <LoadImpactMetricGraphs
                 points={loadImpactData}
                 loading={loadImpactLoading}
@@ -954,260 +991,280 @@ export default function TestExecutionArchive({
                 subtitle="Add or remove report graphs for selected metrics across active VUser load."
                 emptyMessage="Load metric graphs appear when archived interval summaries or resource samples include active VUser data."
               />
-            </>
           )}
 
-          {showReportView && (
+          {(showReportErrorPatternsView || showReportBrowserSummaryView || showReportBrowserResourcesView || showReportAssetsView || showReportProfilesView || showReportSummaryTimelineView || showReportAnalysisView) && (
             <>
-              {archiveReport.error_patterns && archiveReport.error_patterns.length > 0 && (
-                <div className="tx-section archive-summary-section">
-                  <div className="archive-section-header">
-                    <div>
-                      <h3 className="chart-title">Error Patterns</h3>
-                      <p className="archive-section-copy">Grouped failure signatures with the first retained snapshot preserved for each cluster.</p>
+              {showReportErrorPatternsView && (
+                archiveReport.error_patterns && archiveReport.error_patterns.length > 0 ? (
+                  <div className="tx-section archive-summary-section">
+                    <div className="archive-section-header">
+                      <div>
+                        <h3 className="chart-title">Error Patterns</h3>
+                        <p className="archive-section-copy">Grouped failure signatures with the first retained snapshot preserved for each cluster.</p>
+                      </div>
                     </div>
-                  </div>
-                  <table className="tx-table">
-                    <thead>
-                      <tr>
-                        <th>Pattern</th>
-                        <th>Occurrences</th>
-                        <th>First Seen</th>
-                        <th>Latest Seen</th>
-                        <th>Actions</th>
-                        <th>Snapshot</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {archiveReport.error_patterns.map(pattern => (
-                        <tr key={`${pattern.signature}-${pattern.first_seen}`}>
-                          <td className="tx-name">{pattern.sample}</td>
-                          <td>{pattern.count}</td>
-                          <td>{formatArchiveTimestamp(pattern.first_seen)}</td>
-                          <td>{formatArchiveTimestamp(pattern.latest_seen)}</td>
-                          <td>{pattern.actions && pattern.actions.length > 0 ? pattern.actions.join(', ') : 'n/a'}</td>
-                          <td>{pattern.snapshot ? 'retained' : 'n/a'}</td>
+                    <table className="tx-table">
+                      <thead>
+                        <tr>
+                          <th>Pattern</th>
+                          <th>Occurrences</th>
+                          <th>First Seen</th>
+                          <th>Latest Seen</th>
+                          <th>Actions</th>
+                          <th>Snapshot</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {archiveReport.error_patterns.map(pattern => (
+                          <tr key={`${pattern.signature}-${pattern.first_seen}`}>
+                            <td className="tx-name">{pattern.sample}</td>
+                            <td>{pattern.count}</td>
+                            <td>{formatArchiveTimestamp(pattern.first_seen)}</td>
+                            <td>{formatArchiveTimestamp(pattern.latest_seen)}</td>
+                            <td>{pattern.actions && pattern.actions.length > 0 ? pattern.actions.join(', ') : 'n/a'}</td>
+                            <td>{pattern.snapshot ? 'retained' : 'n/a'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : showStandaloneReportSection ? (
+                  <p className="scenario-script-status">No grouped error patterns were captured for this archive.</p>
+                ) : null
               )}
 
-          {archiveReport.overview.browser && renderBrowserSummary(
-            archiveReport.overview.browser,
-            archiveReport.browser_by_device,
-            archiveReport.browser_by_platform,
-            archiveReport.browser_by_engine,
-            browserBreakdown,
-            setBrowserBreakdown,
+          {showReportBrowserSummaryView && (
+            archiveReport.overview.browser ? renderBrowserSummary(
+              archiveReport.overview.browser,
+              archiveReport.browser_by_device,
+              archiveReport.browser_by_platform,
+              archiveReport.browser_by_engine,
+              browserBreakdown,
+              setBrowserBreakdown,
+            ) : showStandaloneReportSection ? (
+              <p className="scenario-script-status">Browser metrics were not captured for this archive.</p>
+            ) : null
           )}
 
-          {archiveReport.browser_resources && archiveReport.browser_resources.length > 0 && (
-            <div className="tx-section archive-summary-section">
-              <div className="archive-section-header archive-section-header-stack">
-                <div>
-                  <h3 className="chart-title">Browser Resource Waterfall</h3>
-                  <p className="archive-section-copy">Slowest browser sub-resources captured from archived network entries.</p>
+          {showReportBrowserResourcesView && (
+            archiveReport.browser_resources && archiveReport.browser_resources.length > 0 ? (
+              <div className="tx-section archive-summary-section">
+                <div className="archive-section-header archive-section-header-stack">
+                  <div>
+                    <h3 className="chart-title">Browser Resource Waterfall</h3>
+                    <p className="archive-section-copy">Slowest browser sub-resources captured from archived network entries.</p>
+                  </div>
+                  <span className="archive-chip">{archiveReport.browser_resources.length} resources</span>
                 </div>
-                <span className="archive-chip">{archiveReport.browser_resources.length} resources</span>
-              </div>
-              <table className="tx-table">
-                <thead>
-                  <tr>
-                    <th>Resource</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Duration</th>
-                    <th>Transfer</th>
-                    <th>Action</th>
-                    <th>Device</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {archiveReport.browser_resources.slice(0, 12).map((resource, index) => (
-                    <tr key={`${resource.url}-${resource.action_name}-${index}`}>
-                      <td className="tx-name" title={resource.url}>{formatBrowserResourceURL(resource.url)}</td>
-                      <td>{resource.resource_type || 'resource'}</td>
-                      <td>{resource.status_code || 'n/a'}</td>
-                      <td>{formatBrowserMetric(resource.duration_ms, ' ms')}</td>
-                      <td>{formatBrowserResourceBytes(resource.bytes_received)}</td>
-                      <td>{resource.action_name || 'n/a'}</td>
-                      <td>{resource.device_profile || resource.device_platform || resource.browser_engine || 'n/a'}</td>
+                <table className="tx-table">
+                  <thead>
+                    <tr>
+                      <th>Resource</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>Duration</th>
+                      <th>Transfer</th>
+                      <th>Action</th>
+                      <th>Device</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {archiveReport.browser_resources.slice(0, 12).map((resource, index) => (
+                      <tr key={`${resource.url}-${resource.action_name}-${index}`}>
+                        <td className="tx-name" title={resource.url}>{formatBrowserResourceURL(resource.url)}</td>
+                        <td>{resource.resource_type || 'resource'}</td>
+                        <td>{resource.status_code || 'n/a'}</td>
+                        <td>{formatBrowserMetric(resource.duration_ms, ' ms')}</td>
+                        <td>{formatBrowserResourceBytes(resource.bytes_received)}</td>
+                        <td>{resource.action_name || 'n/a'}</td>
+                        <td>{resource.device_profile || resource.device_platform || resource.browser_engine || 'n/a'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : showStandaloneReportSection ? (
+              <p className="scenario-script-status">No browser resource waterfall entries were captured for this archive.</p>
+            ) : null
           )}
 
-          <div className="archive-artifact-row">
-            {archiveReport.overview.browser && (
+          {showReportAssetsView && (
+            <div className="archive-artifact-row">
+              {archiveReport.overview.browser && (
+                <div className="archive-artifact-group">
+                  <span className="archive-artifact-label">Browser</span>
+                  <button className="btn btn-secondary btn-sm" onClick={onDownloadBrowserDiagnostics}>
+                    Download Browser Diagnostics ZIP
+                  </button>
+                </div>
+              )}
               <div className="archive-artifact-group">
-                <span className="archive-artifact-label">Browser</span>
-                <button className="btn btn-secondary btn-sm" onClick={onDownloadBrowserDiagnostics}>
-                  Download Browser Diagnostics ZIP
-                </button>
-              </div>
-            )}
-            <div className="archive-artifact-group">
-              <span className="archive-artifact-label">Report</span>
-              <a
-                className="btn btn-secondary btn-sm"
-                href={buildReportHref(test.id)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Download Report
-              </a>
-              <a
-                className="btn btn-secondary btn-sm"
-                href={buildArchiveReportHref(test.id)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Download Report JSON
-              </a>
-              {archiveReport.report_profiles?.map(profile => (
+                <span className="archive-artifact-label">Report</span>
                 <a
-                  key={profile.id}
                   className="btn btn-secondary btn-sm"
-                  href={buildReportHref(test.id, profile.id)}
+                  href={buildReportHref(test.id)}
+                  target="_blank"
+                  rel="noreferrer">
+                  Download Report
+                </a>
+                <a
+                  className="btn btn-secondary btn-sm"
+                  href={buildArchiveReportHref(test.id)}
                   target="_blank"
                   rel="noreferrer"
-                  title={profile.description}
                 >
-                  {profile.label}
+                  Download Report JSON
                 </a>
-              ))}
-            </div>
-            <div className="archive-artifact-group">
-              <span className="archive-artifact-label">JSONL</span>
-              <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_file || 'transactions.jsonl')}>
-                Download Transactions JSONL
-              </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.resource_samples_file || 'resources.jsonl')}>
-                Download Resources JSONL
-              </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.interval_summaries_file || 'interval_summaries.jsonl')}>
-                Download Summaries JSONL
-              </button>
-            </div>
-            <div className="archive-artifact-group">
-              <span className="archive-artifact-label">Parquet</span>
-              <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_parquet_file || 'transactions.parquet')}>
-                Download Transactions Parquet
-              </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.resource_samples_parquet_file || 'resources.parquet')}>
-                Download Resources Parquet
-              </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.interval_summaries_parquet_file || 'interval_summaries.parquet')}>
-                Download Summaries Parquet
-              </button>
-            </div>
-          </div>
-
-          {!!archiveReport.report_profiles?.length && (
-            <div className="archive-profile-grid">
-              {archiveReport.report_profiles.map(profile => (
-                <div key={profile.id} className="archive-profile-card">
-                  <div className="archive-profile-heading">
-                    <strong>{profile.label}</strong>
-                    <span>{profile.export_formats.join(', ')}</span>
-                  </div>
-                  <p>{profile.description}</p>
-                  <div className="archive-report-badges">
-                    {profile.included_sections.map(section => (
-                      <span key={section} className="archive-chip">{section.replace(/_/g, ' ')}</span>
-                    ))}
-                  </div>
-                  <div className="inline-create-row">
-                    {profile.export_formats.includes('html') && (
-                      <a className="btn btn-secondary btn-sm" href={buildReportHref(test.id, profile.id)} target="_blank" rel="noreferrer">{profile.label} HTML</a>
-                    )}
-                    {profile.export_formats.includes('csv') && (
-                      <a className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'csv', profile.id)} target="_blank" rel="noreferrer">{profile.label} CSV</a>
-                    )}
-                    {profile.export_formats.includes('pdf') && (
-                      <a className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'pdf', profile.id)} target="_blank" rel="noreferrer">{profile.label} PDF</a>
-                    )}
-                    {profile.export_formats.includes('jsonl') && (
-                      <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_file || 'transactions.jsonl')}>{profile.label} JSONL</button>
-                    )}
-                    {profile.export_formats.includes('parquet') && (
-                      <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_parquet_file || 'transactions.parquet')}>{profile.label} Parquet</button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {summaryTimelineEntriesAll.length > 0 && (
-            <div className="tx-section archive-summary-section">
-              <div className="archive-section-header archive-section-header-stack">
-                <div>
-                  <h3 className="chart-title">Summary Timeline</h3>
-                  <p className="archive-section-copy">Archived interval snapshots for throughput, latency, and error progression across the run.</p>
-                </div>
-                <div className="archive-filter-bar">
-                  <span className="archive-chip">{summaryTimelineEntriesAll.length} intervals</span>
-                  {summaryTimelineErrorCount > 0 && (
-                    <label className="archive-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={summaryTimelineErrorsOnly}
-                        onChange={(event) => { setSummaryTimelineErrorsOnly(event.target.checked); setSummaryTimelineExpanded(false) }}
-                      />
-                      Errors only ({summaryTimelineErrorCount})
-                    </label>
-                  )}
-                </div>
+                {archiveReport.report_profiles?.map(profile => (
+                  <a
+                    key={profile.id}
+                    className="btn btn-secondary btn-sm"
+                    href={buildReportHref(test.id, profile.id)}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={profile.description}
+                  >
+                    {profile.label}
+                  </a>
+                ))}
               </div>
-              {summaryTimelineFiltered.length === 0 ? (
-                <p className="scenario-script-status">No intervals with errors.</p>
-              ) : (
-                <>
-                  <table className="tx-table">
-                    <thead>
-                      <tr>
-                        <th>Bucket</th>
-                        <th>Active VUsers</th>
-                        <th>TPS</th>
-                        <th>P95</th>
-                        <th>Error %</th>
-                        <th>Total Tx</th>
-                        <th>Total Errors</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {summaryTimelineEntries.map((point) => (
-                        <tr key={point.timestamp} className={point.total_errors > 0 ? 'archive-error-row' : ''}>
-                          <td className="tx-name">{formatArchiveBucketTimestamp(point.timestamp)}</td>
-                          <td>{point.active_vusers}</td>
-                          <td>{point.tps.toFixed(1)}</td>
-                          <td>{point.p95_ms.toFixed(1)} ms</td>
-                          <td className={point.error_pct > 0 ? 'error-cell' : ''}>{point.error_pct.toFixed(2)}%</td>
-                          <td>{point.total_transactions}</td>
-                          <td className={point.total_errors > 0 ? 'error-cell' : ''}>{point.total_errors}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {summaryTimelineNeedsCollapse && (
-                    <button
-                      className="btn btn-sm btn-ghost archive-timeline-toggle"
-                      onClick={() => setSummaryTimelineExpanded(prev => !prev)}
-                    >
-                      {summaryTimelineExpanded ? 'Show less' : `Show all ${summaryTimelineFiltered.length} intervals`}
-                    </button>
-                  )}
-                </>
-              )}
+              <div className="archive-artifact-group">
+                <span className="archive-artifact-label">JSONL</span>
+                <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_file || 'transactions.jsonl')}>
+                  Download Transactions JSONL
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.resource_samples_file || 'resources.jsonl')}>
+                  Download Resources JSONL
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.interval_summaries_file || 'interval_summaries.jsonl')}>
+                  Download Summaries JSONL
+                </button>
+              </div>
+              <div className="archive-artifact-group">
+                <span className="archive-artifact-label">Parquet</span>
+                <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_parquet_file || 'transactions.parquet')}>
+                  Download Transactions Parquet
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.resource_samples_parquet_file || 'resources.parquet')}>
+                  Download Resources Parquet
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.interval_summaries_parquet_file || 'interval_summaries.parquet')}>
+                  Download Summaries Parquet
+                </button>
+              </div>
             </div>
           )}
 
-              {showArchiveAnalysis && (
+          {showReportProfilesView && (
+            archiveReport.report_profiles?.length ? (
+              <div className="archive-profile-grid">
+                {archiveReport.report_profiles.map(profile => (
+                  <div key={profile.id} className="archive-profile-card">
+                    <div className="archive-profile-heading">
+                      <strong>{profile.label}</strong>
+                      <span>{profile.export_formats.join(', ')}</span>
+                    </div>
+                    <p>{profile.description}</p>
+                    <div className="archive-report-badges">
+                      {profile.included_sections.map(section => (
+                        <span key={section} className="archive-chip">{section.replace(/_/g, ' ')}</span>
+                      ))}
+                    </div>
+                    <div className="inline-create-row">
+                      {profile.export_formats.includes('html') && (
+                        <a className="btn btn-secondary btn-sm" href={buildReportHref(test.id, profile.id)} target="_blank" rel="noreferrer">{profile.label} HTML</a>
+                      )}
+                      {profile.export_formats.includes('csv') && (
+                        <a className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'csv', profile.id)} target="_blank" rel="noreferrer">{profile.label} CSV</a>
+                      )}
+                      {profile.export_formats.includes('pdf') && (
+                        <a className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'pdf', profile.id)} target="_blank" rel="noreferrer">{profile.label} PDF</a>
+                      )}
+                      {profile.export_formats.includes('jsonl') && (
+                        <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_file || 'transactions.jsonl')}>{profile.label} JSONL</button>
+                      )}
+                      {profile.export_formats.includes('parquet') && (
+                        <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_parquet_file || 'transactions.parquet')}>{profile.label} Parquet</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : showStandaloneReportSection ? (
+              <p className="scenario-script-status">No report profiles are configured for this archive.</p>
+            ) : null
+          )}
+
+          {showReportSummaryTimelineView && (
+            summaryTimelineEntriesAll.length > 0 ? (
+              <div className="tx-section archive-summary-section">
+                <div className="archive-section-header archive-section-header-stack">
+                  <div>
+                    <h3 className="chart-title">Summary Timeline</h3>
+                    <p className="archive-section-copy">Archived interval snapshots for throughput, latency, and error progression across the run.</p>
+                  </div>
+                  <div className="archive-filter-bar">
+                    <span className="archive-chip">{summaryTimelineEntriesAll.length} intervals</span>
+                    {summaryTimelineErrorCount > 0 && (
+                      <label className="archive-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={summaryTimelineErrorsOnly}
+                          onChange={(event) => { setSummaryTimelineErrorsOnly(event.target.checked); setSummaryTimelineExpanded(false) }}
+                        />
+                        Errors only ({summaryTimelineErrorCount})
+                      </label>
+                    )}
+                  </div>
+                </div>
+                {summaryTimelineFiltered.length === 0 ? (
+                  <p className="scenario-script-status">No intervals with errors.</p>
+                ) : (
+                  <>
+                    <table className="tx-table">
+                      <thead>
+                        <tr>
+                          <th>Bucket</th>
+                          <th>Active VUsers</th>
+                          <th>TPS</th>
+                          <th>P95</th>
+                          <th>Error %</th>
+                          <th>Total Tx</th>
+                          <th>Total Errors</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {summaryTimelineEntries.map((point) => (
+                          <tr key={point.timestamp} className={point.total_errors > 0 ? 'archive-error-row' : ''}>
+                            <td className="tx-name">{formatArchiveBucketTimestamp(point.timestamp)}</td>
+                            <td>{point.active_vusers}</td>
+                            <td>{point.tps.toFixed(1)}</td>
+                            <td>{point.p95_ms.toFixed(1)} ms</td>
+                            <td className={point.error_pct > 0 ? 'error-cell' : ''}>{point.error_pct.toFixed(2)}%</td>
+                            <td>{point.total_transactions}</td>
+                            <td className={point.total_errors > 0 ? 'error-cell' : ''}>{point.total_errors}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {summaryTimelineNeedsCollapse && (
+                      <button
+                        className="btn btn-sm btn-ghost archive-timeline-toggle"
+                        onClick={() => setSummaryTimelineExpanded(prev => !prev)}
+                      >
+                        {summaryTimelineExpanded ? 'Show less' : `Show all ${summaryTimelineFiltered.length} intervals`}
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : showStandaloneReportSection ? (
+              <p className="scenario-script-status">No summary timeline intervals were archived for this run.</p>
+            ) : null
+          )}
+
+              {showReportAnalysisView && showArchiveAnalysis && (
                 <div className="tx-section archive-summary-section archive-analysis-section" data-testid="archive-analysis-section">
                   <div className="archive-section-header archive-section-header-stack">
                     <div>
@@ -1344,11 +1401,14 @@ export default function TestExecutionArchive({
                   )}
                 </div>
               )}
+              {showReportAnalysisView && !showArchiveAnalysis && showStandaloneReportSection && (
+                <p className="scenario-script-status">Archive analysis is not available for this run.</p>
+              )}
             </>
           )}
 
           {(showActionSummaryView || showTransactionsView) && (
-            <div className="archive-report-layout">
+            <div className={`archive-report-layout ${showActionSummaryView && showTransactionsView ? '' : 'single-view'}`}>
               {showActionSummaryView && (
                 <div className="tx-section archive-action-section">
               <div className="archive-section-header">

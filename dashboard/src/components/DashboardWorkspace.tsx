@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 
+export type DashboardWorkspaceCardWidth = 'natural' | 'half' | 'full'
+
 export interface DashboardWorkspaceCard {
   id: string
   title: string
+  category?: string
+  description?: string
+  defaultWidth?: DashboardWorkspaceCardWidth
   render: () => ReactNode
 }
 
@@ -10,6 +15,7 @@ export interface DashboardWorkspaceTab {
   id: string
   label: string
   cardIds: string[]
+  cardWidths?: Record<string, DashboardWorkspaceCardWidth>
 }
 
 export interface DashboardWorkspaceProfile {
@@ -31,6 +37,7 @@ export interface DashboardWorkspaceContext {
 interface DashboardWorkspaceProps {
   activeStorageKey: string
   ariaLabel: string
+  cardLibraryStorageKey: string
   cards: DashboardWorkspaceCard[]
   context?: DashboardWorkspaceContext
   defaultProfile: DashboardWorkspaceProfile
@@ -51,10 +58,27 @@ interface TabContextMenuState {
 type DragPayload =
   | { type: 'tab'; id: string }
   | { type: 'card'; id: string; sourceTabId: string }
+  | { type: 'library-card'; id: string }
 
 const DEFAULT_ACTIVE_STATE: WorkspaceActiveState = {
   autoApply: true,
   profileId: 'default',
+}
+
+const CARD_WIDTH_SEQUENCE: DashboardWorkspaceCardWidth[] = ['full', 'half', 'natural']
+
+const LEGACY_CARD_ID_REPLACEMENTS: Record<string, string[]> = {
+  'load-impact-metrics': ['load-impact', 'metrics-under-load'],
+}
+
+function replacementCardIds(cardId: string, tabId?: string) {
+  if (cardId === 'load-impact-metrics' && tabId === 'load-impact') return ['load-impact']
+  return LEGACY_CARD_ID_REPLACEMENTS[cardId] || [cardId]
+}
+
+function normalizeLegacyTabLabel(id: string, label: string) {
+  if (id === 'load-impact' && label === 'Load Impact + Metrics Under Load') return 'Load Impact'
+  return label
 }
 
 function safeReadJSON<T>(key: string, fallback: T): T {
@@ -116,8 +140,42 @@ function moveIdToEdge(ids: string[], id: string, edge: 'start' | 'end') {
   return [...next, id]
 }
 
-function removeCardFromTabs(tabs: DashboardWorkspaceTab[], cardId: string) {
-  return tabs.map(tab => ({ ...tab, cardIds: tab.cardIds.filter(id => id !== cardId) }))
+function uniqueKnownCardIds(cardIds: string[], knownCards: Set<string>, tabId?: string) {
+  const seen = new Set<string>()
+  return (cardIds || []).flatMap(cardId => replacementCardIds(cardId, tabId)).filter(cardId => {
+    if (!knownCards.has(cardId) || seen.has(cardId)) return false
+    seen.add(cardId)
+    return true
+  })
+}
+
+function normalizeCardWidths(cardWidths: DashboardWorkspaceTab['cardWidths'], cardIds: string[]) {
+  if (!cardWidths) return undefined
+  const validCardIds = new Set(cardIds)
+  const normalized = Object.entries(cardWidths).reduce<Record<string, DashboardWorkspaceCardWidth>>((acc, [cardId, width]) => {
+    const replacementIds = LEGACY_CARD_ID_REPLACEMENTS[cardId] || [cardId]
+    for (const replacementId of replacementIds) {
+      if (validCardIds.has(replacementId) && CARD_WIDTH_SEQUENCE.includes(width)) {
+        acc[replacementId] = width
+      }
+    }
+    return acc
+  }, {})
+  return Object.keys(normalized).length > 0 ? normalized : undefined
+}
+
+function insertCardId(cardIds: string[], cardId: string, beforeCardId?: string) {
+  if (cardIds.includes(cardId)) return cardIds
+  if (!beforeCardId) return [...cardIds, cardId]
+  const targetIndex = cardIds.indexOf(beforeCardId)
+  if (targetIndex === -1) return [...cardIds, cardId]
+  const next = [...cardIds]
+  next.splice(targetIndex, 0, cardId)
+  return next
+}
+
+function removeCardFromTab(tabs: DashboardWorkspaceTab[], cardId: string, sourceTabId: string) {
+  return tabs.map(tab => (tab.id === sourceTabId ? { ...tab, cardIds: tab.cardIds.filter(id => id !== cardId) } : tab))
 }
 
 function normalizeProfile(
@@ -126,44 +184,31 @@ function normalizeProfile(
   knownCardIds: string[],
 ): DashboardWorkspaceProfile {
   const knownCards = new Set(knownCardIds)
-  const seenCards = new Set<string>()
   const defaultTabIds = new Set(defaultProfile.tabs.map(tab => tab.id))
   const dismissedDefaultTabIds = (profile.dismissedDefaultTabIds || []).filter(tabId => defaultTabIds.has(tabId))
   const sourceTabs = Array.isArray(profile.tabs) && profile.tabs.length > 0 ? profile.tabs : defaultProfile.tabs
   let tabs = sourceTabs.map((tab, index) => {
     const id = tab.id?.trim() || `tab-${index + 1}`
-    const label = tab.label?.trim() || `Tab ${index + 1}`
-    const cardIds = (tab.cardIds || []).filter(cardId => {
-      if (!knownCards.has(cardId) || seenCards.has(cardId)) return false
-      seenCards.add(cardId)
-      return true
-    })
-    return { id, label, cardIds }
+    const label = normalizeLegacyTabLabel(id, tab.label?.trim() || `Tab ${index + 1}`)
+    const cardIds = uniqueKnownCardIds(tab.cardIds || [], knownCards, id)
+    const cardWidths = normalizeCardWidths(tab.cardWidths, cardIds)
+    return { id, label, cardIds, ...(cardWidths ? { cardWidths } : {}) }
   })
 
   if (tabs.length === 0) {
     tabs = [{ id: 'overview', label: 'Overview', cardIds: [] }]
   }
 
-  const unassignedCardIds = (profile.unassignedCardIds || []).filter(cardId => {
-    if (!knownCards.has(cardId) || seenCards.has(cardId)) return false
-    const defaultTab = defaultProfile.tabs.find(tab => tab.cardIds.includes(cardId))
-    const shouldRestoreDefaultTab = defaultTab && !tabs.some(tab => tab.id === defaultTab.id) && !dismissedDefaultTabIds.includes(defaultTab.id)
-    if (shouldRestoreDefaultTab) return false
-    seenCards.add(cardId)
-    return true
-  })
+  const unassignedCardIds = uniqueKnownCardIds(profile.unassignedCardIds || [], knownCards)
 
-  for (const cardId of knownCardIds) {
-    if (seenCards.has(cardId)) continue
-    const defaultTab = defaultProfile.tabs.find(tab => tab.cardIds.includes(cardId))
-    const matchingTab = defaultTab ? tabs.find(tab => tab.id === defaultTab.id) : null
-    if (matchingTab) matchingTab.cardIds.push(cardId)
-    else if (defaultTab && !dismissedDefaultTabIds.includes(defaultTab.id)) {
-      const createdTab = { id: defaultTab.id, label: defaultTab.label, cardIds: [cardId] }
-      tabs.push(createdTab)
-    } else unassignedCardIds.push(cardId)
-    seenCards.add(cardId)
+  for (const defaultTab of defaultProfile.tabs) {
+    if (tabs.some(tab => tab.id === defaultTab.id) || dismissedDefaultTabIds.includes(defaultTab.id)) continue
+    tabs.push({
+      id: defaultTab.id,
+      label: defaultTab.label,
+      cardIds: uniqueKnownCardIds(defaultTab.cardIds || [], knownCards),
+      cardWidths: normalizeCardWidths(defaultTab.cardWidths, defaultTab.cardIds || []),
+    })
   }
 
   const activeTabId = tabs.some(tab => tab.id === profile.activeTabId)
@@ -206,9 +251,35 @@ function createProfileCopy(profile: DashboardWorkspaceProfile, existingIds: stri
     ...profile,
     id: uniqueId(name, existingIds),
     name,
-    tabs: profile.tabs.map(tab => ({ ...tab, cardIds: [...tab.cardIds] })),
+    tabs: profile.tabs.map(tab => ({ ...tab, cardIds: [...tab.cardIds], cardWidths: tab.cardWidths ? { ...tab.cardWidths } : undefined })),
     unassignedCardIds: [...profile.unassignedCardIds],
   }
+}
+
+function defaultCardWidth(card: DashboardWorkspaceCard): DashboardWorkspaceCardWidth {
+  return card.defaultWidth || 'full'
+}
+
+function resolvedCardWidth(tab: DashboardWorkspaceTab, card: DashboardWorkspaceCard): DashboardWorkspaceCardWidth {
+  return tab.cardWidths?.[card.id] || defaultCardWidth(card)
+}
+
+function cardWidthLabel(width: DashboardWorkspaceCardWidth) {
+  if (width === 'natural') return 'Natural'
+  if (width === 'half') return 'Half'
+  return 'Full'
+}
+
+function nextCardWidth(width: DashboardWorkspaceCardWidth): DashboardWorkspaceCardWidth {
+  const index = CARD_WIDTH_SEQUENCE.indexOf(width)
+  return CARD_WIDTH_SEQUENCE[(index + 1) % CARD_WIDTH_SEQUENCE.length]
+}
+
+function withoutCardWidth(cardWidths: DashboardWorkspaceTab['cardWidths'], cardId: string) {
+  if (!cardWidths) return undefined
+  const next = { ...cardWidths }
+  delete next[cardId]
+  return Object.keys(next).length > 0 ? next : undefined
 }
 
 function contextText(context?: DashboardWorkspaceContext) {
@@ -236,7 +307,7 @@ function chooseAutoProfile(profiles: DashboardWorkspaceProfile[], context?: Dash
 function parseDragPayload(value: string): DragPayload | null {
   try {
     const payload = JSON.parse(value) as DragPayload
-    if (payload?.type === 'tab' || payload?.type === 'card') return payload
+    if (payload?.type === 'tab' || payload?.type === 'card' || payload?.type === 'library-card') return payload
   } catch {
     return null
   }
@@ -266,6 +337,7 @@ export function buildWorkspaceContextTokens(...values: unknown[]): string[] {
 export default function DashboardWorkspace({
   activeStorageKey,
   ariaLabel,
+  cardLibraryStorageKey,
   cards,
   context,
   defaultProfile,
@@ -286,8 +358,8 @@ export default function DashboardWorkspace({
   })
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
+  const [cardLibraryCollapsed, setCardLibraryCollapsed] = useState(() => safeReadJSON<boolean>(cardLibraryStorageKey, false))
   const [newTabName, setNewTabName] = useState('')
-  const [selectedCardId, setSelectedCardId] = useState('')
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null)
 
   useEffect(() => {
@@ -301,6 +373,10 @@ export default function DashboardWorkspace({
   useEffect(() => {
     safeWriteJSON(activeStorageKey, activeState)
   }, [activeState, activeStorageKey])
+
+  useEffect(() => {
+    safeWriteJSON(cardLibraryStorageKey, cardLibraryCollapsed)
+  }, [cardLibraryCollapsed, cardLibraryStorageKey])
 
   useEffect(() => {
     if (!tabContextMenu) return undefined
@@ -330,8 +406,17 @@ export default function DashboardWorkspace({
   const contextMenuTab = tabContextMenu
     ? selectedProfile.tabs.find(tab => tab.id === tabContextMenu.tabId)
     : null
-  const availableCards = selectedProfile.unassignedCardIds.map(cardId => cardMap.get(cardId)).filter((card): card is DashboardWorkspaceCard => Boolean(card))
   const activeCards = activeTab.cardIds.map(cardId => cardMap.get(cardId)).filter((card): card is DashboardWorkspaceCard => Boolean(card))
+  const cardLibraryGroups = useMemo(() => {
+    const groupMap = new Map<string, DashboardWorkspaceCard[]>()
+    for (const card of cards) {
+      const category = card.category?.trim() || 'General'
+      const group = groupMap.get(category) || []
+      group.push(card)
+      groupMap.set(category, group)
+    }
+    return Array.from(groupMap.entries()).map(([category, groupedCards]) => ({ category, cards: groupedCards }))
+  }, [cards])
 
   const updateProfile = (profileId: string, updater: (profile: DashboardWorkspaceProfile) => DashboardWorkspaceProfile) => {
     setProfiles(previous => previous.map(profile => (profile.id === profileId ? normalizeProfile(updater(profile), defaultProfile, cardIds) : profile)))
@@ -412,21 +497,47 @@ export default function DashboardWorkspace({
     })
   }
 
-  const addCardToActiveTab = () => {
-    if (!selectedCardId || !activeTab) return
+  const copyCardToTab = (cardId: string, targetTabId: string, targetCardId?: string) => {
+    if (!cardMap.has(cardId)) return
     updateProfile(selectedProfile.id, profile => ({
       ...profile,
-      tabs: profile.tabs.map(tab => tab.id === activeTab.id ? { ...tab, cardIds: [...tab.cardIds, selectedCardId] } : tab),
-      unassignedCardIds: profile.unassignedCardIds.filter(cardId => cardId !== selectedCardId),
+      tabs: profile.tabs.map(tab => (tab.id === targetTabId
+        ? { ...tab, cardIds: insertCardId(tab.cardIds, cardId, targetCardId) }
+        : tab)),
     }))
-    setSelectedCardId('')
   }
 
   const removeCard = (cardId: string, tabId: string) => {
     updateProfile(selectedProfile.id, profile => ({
       ...profile,
-      tabs: profile.tabs.map(tab => tab.id === tabId ? { ...tab, cardIds: tab.cardIds.filter(id => id !== cardId) } : tab),
+      tabs: profile.tabs.map(tab => {
+        if (tab.id !== tabId) return tab
+        return {
+          ...tab,
+          cardIds: tab.cardIds.filter(id => id !== cardId),
+          cardWidths: withoutCardWidth(tab.cardWidths, cardId),
+        }
+      }),
       unassignedCardIds: profile.unassignedCardIds.includes(cardId) ? profile.unassignedCardIds : [...profile.unassignedCardIds, cardId],
+    }))
+  }
+
+  const toggleCardWidth = (cardId: string, tabId: string) => {
+    const card = cardMap.get(cardId)
+    if (!card) return
+    updateProfile(selectedProfile.id, profile => ({
+      ...profile,
+      tabs: profile.tabs.map(tab => {
+        if (tab.id !== tabId) return tab
+        const currentWidth = tab.cardWidths?.[cardId] || defaultCardWidth(card)
+        return {
+          ...tab,
+          cardWidths: {
+            ...(tab.cardWidths || {}),
+            [cardId]: nextCardWidth(currentWidth),
+          },
+        }
+      }),
     }))
   }
 
@@ -437,32 +548,54 @@ export default function DashboardWorkspace({
     })
   }
 
-  const moveCard = (cardId: string, targetTabId: string, targetCardId?: string) => {
+  const moveCard = (cardId: string, sourceTabId: string, targetTabId: string, targetCardId?: string) => {
     updateProfile(selectedProfile.id, profile => {
-      const strippedTabs = removeCardFromTabs(profile.tabs, cardId)
+      const card = cardMap.get(cardId)
+      const sourceTab = profile.tabs.find(tab => tab.id === sourceTabId)
+      const sourceWidth = sourceTab?.cardWidths?.[cardId] || (card ? defaultCardWidth(card) : undefined)
+      const strippedTabs = removeCardFromTab(profile.tabs, cardId, sourceTabId).map(tab => {
+        if (tab.id !== sourceTabId) return tab
+        return { ...tab, cardWidths: withoutCardWidth(tab.cardWidths, cardId) }
+      })
       const tabs = strippedTabs.map(tab => {
         if (tab.id !== targetTabId) return tab
-        const cardIds = targetCardId ? moveId([...tab.cardIds, cardId], cardId, targetCardId) : [...tab.cardIds, cardId]
-        return { ...tab, cardIds }
+        if (tab.cardIds.includes(cardId)) return tab
+        return {
+          ...tab,
+          cardIds: insertCardId(tab.cardIds, cardId, targetCardId),
+          cardWidths: sourceWidth ? { ...(tab.cardWidths || {}), [cardId]: sourceWidth } : tab.cardWidths,
+        }
       })
       return {
         ...profile,
         tabs,
-        unassignedCardIds: profile.unassignedCardIds.filter(id => id !== cardId),
       }
     })
   }
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, tabId: string) => {
     const order = selectedProfile.tabs.map(tab => tab.id)
-    let nextOrder = order
-    if (event.key === 'ArrowLeft') nextOrder = moveIdByOffset(order, tabId, -1)
-    else if (event.key === 'ArrowRight') nextOrder = moveIdByOffset(order, tabId, 1)
-    else if (event.key === 'Home') nextOrder = moveIdToEdge(order, tabId, 'start')
-    else if (event.key === 'End') nextOrder = moveIdToEdge(order, tabId, 'end')
+    const index = order.indexOf(tabId)
+    if (index < 0) return
+    if (event.shiftKey) {
+      let nextOrder = order
+      if (event.key === 'ArrowLeft') nextOrder = moveIdByOffset(order, tabId, -1)
+      else if (event.key === 'ArrowRight') nextOrder = moveIdByOffset(order, tabId, 1)
+      else if (event.key === 'Home') nextOrder = moveIdToEdge(order, tabId, 'start')
+      else if (event.key === 'End') nextOrder = moveIdToEdge(order, tabId, 'end')
+      else return
+      event.preventDefault()
+      updateProfile(selectedProfile.id, profile => ({ ...profile, tabs: nextOrder.map(id => profile.tabs.find(tab => tab.id === id)!).filter(Boolean) }))
+      return
+    }
+    let targetTab: DashboardWorkspaceTab | undefined
+    if (event.key === 'ArrowLeft') targetTab = selectedProfile.tabs[Math.max(0, index - 1)]
+    else if (event.key === 'ArrowRight') targetTab = selectedProfile.tabs[Math.min(selectedProfile.tabs.length - 1, index + 1)]
+    else if (event.key === 'Home') targetTab = selectedProfile.tabs[0]
+    else if (event.key === 'End') targetTab = selectedProfile.tabs[selectedProfile.tabs.length - 1]
     else return
     event.preventDefault()
-    updateProfile(selectedProfile.id, profile => ({ ...profile, tabs: nextOrder.map(id => profile.tabs.find(tab => tab.id === id)!).filter(Boolean) }))
+    if (targetTab) selectTab(targetTab.id)
   }
 
   const handleCardKeyDown = (event: KeyboardEvent<HTMLButtonElement>, cardId: string, tabId: string) => {
@@ -478,7 +611,7 @@ export default function DashboardWorkspace({
       const targetTab = selectedProfile.tabs[tabIndex + (event.key === 'ArrowLeft' ? -1 : 1)]
       if (!targetTab) return
       event.preventDefault()
-      moveCard(cardId, targetTab.id)
+      moveCard(cardId, tabId, targetTab.id)
       return
     } else return
     event.preventDefault()
@@ -490,9 +623,9 @@ export default function DashboardWorkspace({
 
   const handleDragStart = (event: DragEvent<HTMLElement>, payload: DragPayload) => {
     event.dataTransfer.setData('application/json', JSON.stringify(payload))
-    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.effectAllowed = payload.type === 'library-card' ? 'copy' : 'move'
     if (payload.type === 'tab') setDraggedTabId(payload.id)
-    if (payload.type === 'card') setDraggedCardId(payload.id)
+    if (payload.type === 'card' || payload.type === 'library-card') setDraggedCardId(payload.id)
   }
 
   const handleDropOnTab = (event: DragEvent<HTMLElement>, targetTabId: string) => {
@@ -500,13 +633,15 @@ export default function DashboardWorkspace({
     const payload = parseDragPayload(event.dataTransfer.getData('application/json'))
     if (!payload) return
     if (payload.type === 'tab') moveTab(payload.id, targetTabId)
-    if (payload.type === 'card') moveCard(payload.id, targetTabId)
+    if (payload.type === 'card') moveCard(payload.id, payload.sourceTabId, targetTabId)
+    if (payload.type === 'library-card') copyCardToTab(payload.id, targetTabId)
   }
 
   const handleDropOnCard = (event: DragEvent<HTMLElement>, targetTabId: string, targetCardId: string) => {
     event.preventDefault()
     const payload = parseDragPayload(event.dataTransfer.getData('application/json'))
-    if (payload?.type === 'card') moveCard(payload.id, targetTabId, targetCardId)
+    if (payload?.type === 'card') moveCard(payload.id, payload.sourceTabId, targetTabId, targetCardId)
+    if (payload?.type === 'library-card') copyCardToTab(payload.id, targetTabId, targetCardId)
   }
 
   const handleTabContextMenu = (event: MouseEvent<HTMLElement>, tabId: string) => {
@@ -600,7 +735,7 @@ export default function DashboardWorkspace({
                 aria-selected={activeTab.id === tab.id}
                 onClick={() => selectTab(tab.id)}
                 onKeyDown={event => handleTabKeyDown(event, tab.id)}
-                title="Drag to reorder. Right-click for tab actions."
+                title="Drag to reorder. Use Shift+Arrow to reorder with the keyboard. Right-click for tab actions."
               >
                 <span>{tab.label}</span>
                 <small>{tab.cardIds.length}</small>
@@ -638,72 +773,131 @@ export default function DashboardWorkspace({
         </div>
       )}
 
-      <div className="dashboard-workspace-card-tools">
-        {availableCards.length > 0 ? (
-          <>
-            <select
-              aria-label={`Add card to ${activeTab.label}`}
-              value={selectedCardId}
-              onChange={event => setSelectedCardId(event.target.value)}
+      <div className={`dashboard-workspace-body ${cardLibraryCollapsed ? 'library-collapsed' : ''}`}>
+        <div
+          className="dashboard-workspace-panel"
+          role="tabpanel"
+          aria-label={`${activeTab.label} tab`}
+          onDragOver={event => event.preventDefault()}
+          onDrop={event => handleDropOnTab(event, activeTab.id)}
+        >
+          {activeCards.length === 0 ? (
+            <div className="dashboard-workspace-empty">
+              No cards are assigned to {activeTab.label}.
+            </div>
+          ) : activeCards.map(card => {
+            const cardWidth = resolvedCardWidth(activeTab, card)
+            const nextWidth = nextCardWidth(cardWidth)
+            const nextWidthLabel = cardWidthLabel(nextWidth).toLowerCase()
+            return (
+            <section
+              key={card.id}
+              className={`dashboard-workspace-card width-${cardWidth} ${draggedCardId === card.id ? 'dragging' : ''}`}
+              data-card-id={card.id}
+              data-card-width={cardWidth}
+              draggable
+              onDragStart={event => handleDragStart(event, { type: 'card', id: card.id, sourceTabId: activeTab.id })}
+              onDragOver={event => event.preventDefault()}
+              onDrop={event => handleDropOnCard(event, activeTab.id, card.id)}
+              onDragEnd={() => setDraggedCardId(null)}
             >
-              <option value="">Add card to {activeTab.label}</option>
-              {availableCards.map(card => (
-                <option key={card.id} value={card.id}>{card.title}</option>
-              ))}
-            </select>
-            <button type="button" className="btn btn-sm btn-secondary" disabled={!selectedCardId} onClick={addCardToActiveTab}>Add Card</button>
-          </>
-        ) : (
-          <span>All cards are placed in this profile.</span>
-        )}
-      </div>
+              <div className="dashboard-workspace-card-header">
+                <button
+                  type="button"
+                  className="dashboard-workspace-grabber"
+                  aria-label={`Reorder card ${card.title}`}
+                  onKeyDown={event => handleCardKeyDown(event, card.id, activeTab.id)}
+                >
+                  ⋮⋮
+                </button>
+                <strong>{card.title}</strong>
+                <button
+                  type="button"
+                  className="dashboard-workspace-width-toggle"
+                  aria-label={`Set card ${card.title} to ${nextWidthLabel} width`}
+                  title={`Set ${nextWidthLabel} width`}
+                  onClick={() => toggleCardWidth(card.id, activeTab.id)}
+                >
+                  {cardWidthLabel(cardWidth)}
+                </button>
+                <button
+                  type="button"
+                  className="dashboard-workspace-remove"
+                  aria-label={`Remove card ${card.title}`}
+                  onClick={() => removeCard(card.id, activeTab.id)}
+                >
+                  ×
+                </button>
+              </div>
+              <div className="dashboard-workspace-card-body">
+                {card.render()}
+              </div>
+            </section>
+            )
+          })}
+        </div>
 
-      <div
-        className="dashboard-workspace-panel"
-        role="tabpanel"
-        aria-label={`${activeTab.label} tab`}
-        onDragOver={event => event.preventDefault()}
-        onDrop={event => handleDropOnTab(event, activeTab.id)}
-      >
-        {activeCards.length === 0 ? (
-          <div className="dashboard-workspace-empty">
-            No cards are assigned to {activeTab.label}. Add a card from the pool or restore defaults.
-          </div>
-        ) : activeCards.map(card => (
-          <section
-            key={card.id}
-            className={`dashboard-workspace-card ${draggedCardId === card.id ? 'dragging' : ''}`}
-            data-card-id={card.id}
-            draggable
-            onDragStart={event => handleDragStart(event, { type: 'card', id: card.id, sourceTabId: activeTab.id })}
-            onDragOver={event => event.preventDefault()}
-            onDrop={event => handleDropOnCard(event, activeTab.id, card.id)}
-            onDragEnd={() => setDraggedCardId(null)}
-          >
-            <div className="dashboard-workspace-card-header">
-              <button
-                type="button"
-                className="dashboard-workspace-grabber"
-                aria-label={`Reorder card ${card.title}`}
-                onKeyDown={event => handleCardKeyDown(event, card.id, activeTab.id)}
-              >
-                ⋮⋮
-              </button>
-              <strong>{card.title}</strong>
-              <button
-                type="button"
-                className="dashboard-workspace-remove"
-                aria-label={`Remove card ${card.title}`}
-                onClick={() => removeCard(card.id, activeTab.id)}
-              >
-                ×
-              </button>
-            </div>
-            <div className="dashboard-workspace-card-body">
-              {card.render()}
-            </div>
-          </section>
-        ))}
+        <aside className={`dashboard-workspace-card-library ${cardLibraryCollapsed ? 'collapsed' : ''}`} aria-label={`${ariaLabel} card library`}>
+          {cardLibraryCollapsed ? (
+            <button
+              type="button"
+              className="dashboard-workspace-library-restore"
+              aria-label="Show card library"
+              onClick={() => setCardLibraryCollapsed(false)}
+            >
+              Cards
+            </button>
+          ) : (
+            <>
+              <div className="dashboard-workspace-library-header">
+                <h3>Card Library</h3>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  aria-label="Collapse card library"
+                  onClick={() => setCardLibraryCollapsed(true)}
+                >
+                  Collapse
+                </button>
+              </div>
+              <div className="dashboard-workspace-library-groups">
+                {cardLibraryGroups.map(group => (
+                  <section key={group.category} className="dashboard-workspace-library-group">
+                    <h4>{group.category}</h4>
+                    <div className="dashboard-workspace-library-list">
+                      {group.cards.map(card => {
+                        const alreadyOnActiveTab = activeTab.cardIds.includes(card.id)
+                        return (
+                          <div
+                            key={card.id}
+                            className={`dashboard-workspace-library-item ${alreadyOnActiveTab ? 'placed' : ''}`}
+                            data-library-card-id={card.id}
+                            draggable
+                            onDragStart={event => handleDragStart(event, { type: 'library-card', id: card.id })}
+                            onDragEnd={() => setDraggedCardId(null)}
+                          >
+                            <div>
+                              <strong>{card.title}</strong>
+                              {card.description && <p>{card.description}</p>}
+                            </div>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-secondary"
+                              disabled={alreadyOnActiveTab}
+                              onClick={() => copyCardToTab(card.id, activeTab.id)}
+                            >
+                              {alreadyOnActiveTab ? 'Added' : 'Add'}
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </>
+          )}
+        </aside>
       </div>
     </section>
   )

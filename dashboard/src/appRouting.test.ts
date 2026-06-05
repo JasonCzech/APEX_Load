@@ -13,6 +13,7 @@ describe('appRouting', () => {
     expect(parseAppViewFromHash('#/new-test')).toEqual({ page: 'new-test' })
     expect(parseAppViewFromHash('#/repository')).toEqual({ page: 'repository' })
     expect(parseAppViewFromHash('#/swagger')).toEqual({ page: 'swagger' })
+    expect(parseAppViewFromHash('#/repository-guide')).toEqual({ page: 'repository-guide' })
   })
 
   it('round-trips deep links for runs, scenario launches, and scripts', () => {
@@ -30,5 +31,6 @@ describe('appRouting', () => {
       scriptId: 'script-1',
     })
     expect(viewToLocationHash({ page: 'swagger' })).toBe('#/swagger')
+    expect(parseAppViewFromHash(viewToLocationHash({ page: 'repository-guide' }))).toEqual({ page: 'repository-guide' })
   })
 })

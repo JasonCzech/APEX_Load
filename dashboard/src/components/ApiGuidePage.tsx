@@ -342,7 +342,7 @@ export default function ApiGuidePage({ onNavigate, effectiveAccessResources = []
             Swagger Docs
           </a>
           {canViewFullRepositoryGuide && (
-            <a className="btn btn-secondary btn-sm btn-accent-action" href="https://github.com/jasonczech/apexload/blob/main/docs/API_USER_GUIDE.md" target="_blank" rel="noreferrer">
+            <a className="btn btn-secondary btn-sm btn-accent-action" href="#/repository-guide">
               Repository Guide
             </a>
           )}

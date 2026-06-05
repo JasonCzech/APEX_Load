@@ -49,7 +49,8 @@ const EXECUTION_WORKSPACE_DEFAULT_PROFILE: DashboardWorkspaceProfile = {
     { id: 'diagnostics', label: 'Diagnostics', cardIds: ['status-panels', 'live-summary'] },
     { id: 'archive', label: 'Archive', cardIds: ['archive-report'] },
     { id: 'action-summary', label: 'Action Summary', cardIds: ['action-summary'] },
-    { id: 'load-impact', label: 'Load Impact + Metrics Under Load', cardIds: ['load-impact-metrics'] },
+    { id: 'load-impact', label: 'Load Impact', cardIds: ['load-impact'] },
+    { id: 'metrics-under-load', label: 'Metrics Under Load', cardIds: ['metrics-under-load'] },
     { id: 'transaction-drilldown', label: 'Transaction Drill-Down', cardIds: ['transaction-drilldown'] },
   ],
   unassignedCardIds: [],
@@ -255,7 +256,24 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     ),
   }
 
-  const renderArchiveWorkspaceView = (view: 'report' | 'load-impact' | 'action-summary' | 'transactions') => showArchiveSection ? (
+  const renderArchiveWorkspaceView = (
+    view:
+      | 'report'
+      | 'report-overview'
+      | 'report-completeness'
+      | 'report-metadata'
+      | 'report-error-patterns'
+      | 'report-browser-summary'
+      | 'report-browser-resources'
+      | 'report-assets'
+      | 'report-profiles'
+      | 'report-summary-timeline'
+      | 'report-analysis'
+      | 'load-impact'
+      | 'metrics-under-load'
+      | 'action-summary'
+      | 'transactions',
+  ) => showArchiveSection ? (
     <TestExecutionArchive
       view={view}
       hasArchive={hasArchive}
@@ -312,6 +330,9 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     {
       id: 'scenario-overview',
       title: 'Scenario Overview',
+      category: 'Overview',
+      description: 'Scenario identity, groups, and run readiness.',
+      defaultWidth: 'natural',
       render: () => (
         <TestExecutionScenarioOverview
           test={test}
@@ -324,6 +345,9 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     {
       id: 'hero-metrics',
       title: 'Hero Metrics',
+      category: 'Overview',
+      description: 'Top-line execution and archive metrics.',
+      defaultWidth: 'half',
       render: () => (
         <TestExecutionHeroMetrics
           archiveReport={archiveReport}
@@ -335,6 +359,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     {
       id: 'live-controls',
       title: 'Live Controls',
+      category: 'Control',
+      description: 'Start, pause, stop, scale, and duration controls.',
       render: () => showLiveControls ? (
         <TestExecutionLiveControls
           showControls={showControls}
@@ -374,6 +400,9 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     {
       id: 'scenario-preview',
       title: 'Scenario Preview',
+      category: 'Control',
+      description: 'Queued scenario, script preview, and start blockers.',
+      defaultWidth: 'full',
       render: () => (
         <TestExecutionScenarioPreview
           test={test}
@@ -398,6 +427,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     {
       id: 'runtime-graphs',
       title: 'Runtime Graphs',
+      category: 'Graphs',
+      description: 'Live and archived execution charts.',
       render: () => (
         <TestExecutionCharts
           filteredData={filteredData}
@@ -424,6 +455,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     {
       id: 'status-panels',
       title: 'Status Panels',
+      category: 'Diagnostics',
+      description: 'Goal, telemetry, and group status panels.',
       render: () => (
         <TestExecutionStatusPanels
           isGoalOriented={isGoalOriented}
@@ -440,6 +473,9 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     {
       id: 'live-summary',
       title: 'Live Summary',
+      category: 'Overview',
+      description: 'Current transaction and baseline summary.',
+      defaultWidth: 'full',
       render: () => (
         <TestExecutionSummary
           transactions={summaryTransactions}
@@ -453,21 +489,120 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     {
       id: 'archive-report',
       title: 'Archive Report',
+      category: 'Archive Report',
+      description: 'Full consolidated post-run report.',
+      defaultWidth: 'full',
       render: () => renderArchiveWorkspaceView('report'),
+    },
+    {
+      id: 'archive-overview',
+      title: 'Archive Overview',
+      category: 'Archive Report',
+      description: 'Top-line archived run, goal, response, and resource metrics.',
+      defaultWidth: 'full',
+      render: () => renderArchiveWorkspaceView('report-overview'),
+    },
+    {
+      id: 'archive-completeness',
+      title: 'Completeness Score',
+      category: 'Archive Report',
+      description: 'Archive coverage, quality findings, and retained evidence score.',
+      defaultWidth: 'full',
+      render: () => renderArchiveWorkspaceView('report-completeness'),
+    },
+    {
+      id: 'archive-metadata',
+      title: 'Run Metadata',
+      category: 'Archive Report',
+      description: 'Telemetry health, schema compatibility, provenance, and attribution.',
+      defaultWidth: 'full',
+      render: () => renderArchiveWorkspaceView('report-metadata'),
+    },
+    {
+      id: 'archive-error-patterns',
+      title: 'Error Patterns',
+      category: 'Archive Report',
+      description: 'Grouped failure signatures and first retained snapshots.',
+      defaultWidth: 'full',
+      render: () => renderArchiveWorkspaceView('report-error-patterns'),
+    },
+    {
+      id: 'archive-browser-summary',
+      title: 'Browser Metrics',
+      category: 'Archive Report',
+      description: 'Browser UX, engine, platform, and device breakdowns.',
+      defaultWidth: 'full',
+      render: () => renderArchiveWorkspaceView('report-browser-summary'),
+    },
+    {
+      id: 'archive-browser-resources',
+      title: 'Browser Resource Waterfall',
+      category: 'Archive Report',
+      description: 'Slowest archived browser sub-resources and transfer timings.',
+      defaultWidth: 'full',
+      render: () => renderArchiveWorkspaceView('report-browser-resources'),
+    },
+    {
+      id: 'archive-assets',
+      title: 'Report Assets',
+      category: 'Archive Report',
+      description: 'Downloadable reports, diagnostics, JSONL, and Parquet artifacts.',
+      defaultWidth: 'full',
+      render: () => renderArchiveWorkspaceView('report-assets'),
+    },
+    {
+      id: 'archive-profiles',
+      title: 'Report Profiles',
+      category: 'Archive Report',
+      description: 'Profile-specific report packages and export options.',
+      defaultWidth: 'full',
+      render: () => renderArchiveWorkspaceView('report-profiles'),
+    },
+    {
+      id: 'archive-summary-timeline',
+      title: 'Summary Timeline',
+      category: 'Archive Report',
+      description: 'Archived interval snapshots for throughput, latency, and errors.',
+      defaultWidth: 'full',
+      render: () => renderArchiveWorkspaceView('report-summary-timeline'),
+    },
+    {
+      id: 'archive-analysis',
+      title: 'Archive Analysis',
+      category: 'Archive Report',
+      description: 'Graph nodes, links, and transaction path evidence.',
+      defaultWidth: 'full',
+      render: () => renderArchiveWorkspaceView('report-analysis'),
     },
     {
       id: 'action-summary',
       title: 'Action Summary',
+      category: 'Action Summary',
+      description: 'Archived totals by action and protocol grouping.',
+      defaultWidth: 'full',
       render: () => renderArchiveWorkspaceView('action-summary'),
     },
     {
-      id: 'load-impact-metrics',
-      title: 'Load Impact + Metrics Under Load',
+      id: 'load-impact',
+      title: 'Load Impact',
+      category: 'Load Impact',
+      description: 'Archive load impact heatmap grouped by active VUser load.',
+      defaultWidth: 'full',
       render: () => renderArchiveWorkspaceView('load-impact'),
+    },
+    {
+      id: 'metrics-under-load',
+      title: 'Metrics Under Load',
+      category: 'Metrics Under Load',
+      description: 'Archive metric graphs across active VUser load.',
+      render: () => renderArchiveWorkspaceView('metrics-under-load'),
     },
     {
       id: 'transaction-drilldown',
       title: 'Transaction Drill-Down',
+      category: 'Transaction Drill-Down',
+      description: 'Archived event table, filters, and transaction evidence.',
+      defaultWidth: 'full',
       render: () => renderArchiveWorkspaceView('transactions'),
     },
   ]
@@ -489,6 +624,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         ariaLabel="Test execution workspace"
         storageKey="apexload.execution.workspaceProfiles.v1"
         activeStorageKey="apexload.execution.activeWorkspaceProfile.v1"
+        cardLibraryStorageKey="apexload.execution.cardLibraryCollapsed.v1"
         defaultProfile={EXECUTION_WORKSPACE_DEFAULT_PROFILE}
         cards={executionWorkspaceCards}
         context={executionWorkspaceContext}

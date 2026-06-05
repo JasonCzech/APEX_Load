@@ -32,8 +32,19 @@ vi.mock('./TestExecutionArchive', () => ({
   default: ({ hasArchive, view = 'report' }: { hasArchive: boolean; view?: string }) => {
     const viewContent: Record<string, string> = {
       report: 'Archive Report Content',
+      'report-overview': 'Archive Overview Content',
+      'report-completeness': 'Completeness Score Content',
+      'report-metadata': 'Run Metadata Content',
+      'report-error-patterns': 'Error Patterns Content',
+      'report-browser-summary': 'Browser Metrics Content',
+      'report-browser-resources': 'Browser Resource Waterfall Content',
+      'report-assets': 'Report Assets Content',
+      'report-profiles': 'Report Profiles Content',
+      'report-summary-timeline': 'Summary Timeline Content',
+      'report-analysis': 'Archive Analysis Content',
       'action-summary': 'Action Summary Content',
-      'load-impact': 'Load Impact + Metrics Content',
+      'load-impact': 'Load Impact Content',
+      'metrics-under-load': 'Metrics Under Load Content',
       transactions: 'Transaction Drill-Down Content',
     }
     return <div>{hasArchive ? viewContent[view] : `Archive Empty Content ${view}`}</div>
@@ -84,12 +95,33 @@ describe('TestExecution workspace layout', () => {
       'Diagnostics',
       'Archive',
       'Action Summary',
-      'Load Impact + Metrics Under Load',
+      'Load Impact',
+      'Metrics Under Load',
       'Transaction Drill-Down',
     ])
     expect(selectedTabLabel()).toBe('Overview')
     expect(container.textContent).toContain('Scenario Overview Content')
     expect(container.textContent).toContain('Hero Metrics Content')
+    expect(container.textContent).toContain('Card Library')
+    expect(container.textContent).toContain('Overview')
+    expect(container.textContent).toContain('Control')
+    expect(container.textContent).toContain('Graphs')
+    expect(container.textContent).toContain('Diagnostics')
+    expect(container.textContent).toContain('Archive Report')
+    expect(libraryItem('archive-overview').textContent).toContain('Archive Overview')
+    expect(libraryItem('archive-completeness').textContent).toContain('Completeness Score')
+    expect(libraryItem('archive-metadata').textContent).toContain('Run Metadata')
+    expect(libraryItem('archive-error-patterns').textContent).toContain('Error Patterns')
+    expect(libraryItem('archive-browser-summary').textContent).toContain('Browser Metrics')
+    expect(libraryItem('archive-browser-resources').textContent).toContain('Browser Resource Waterfall')
+    expect(libraryItem('archive-assets').textContent).toContain('Report Assets')
+    expect(libraryItem('archive-profiles').textContent).toContain('Report Profiles')
+    expect(libraryItem('archive-summary-timeline').textContent).toContain('Summary Timeline')
+    expect(libraryItem('archive-analysis').textContent).toContain('Archive Analysis')
+    expect(libraryItem('load-impact').textContent).toContain('Load Impact')
+    expect(libraryItem('metrics-under-load').textContent).toContain('Metrics Under Load')
+    expect(libraryItem('transaction-drilldown').textContent).toContain('Transaction Drill-Down')
+    expect(container.querySelector('select[aria-label^="Add card to"]')).toBeNull()
 
     await clickWorkspaceTab('Control')
     expect(container.textContent).toContain('Live controls are unavailable for this run state.')
@@ -108,8 +140,11 @@ describe('TestExecution workspace layout', () => {
     await clickWorkspaceTab('Action Summary')
     expect(container.textContent).toContain('Archive Empty Content action-summary')
 
-    await clickWorkspaceTab('Load Impact + Metrics Under Load')
+    await clickWorkspaceTab('Load Impact')
     expect(container.textContent).toContain('Archive Empty Content load-impact')
+
+    await clickWorkspaceTab('Metrics Under Load')
+    expect(container.textContent).toContain('Archive Empty Content metrics-under-load')
 
     await clickWorkspaceTab('Transaction Drill-Down')
     expect(container.textContent).toContain('Archive Empty Content transactions')
@@ -132,16 +167,85 @@ describe('TestExecution workspace layout', () => {
     await renderExecution()
 
     await clickWorkspaceTab('Archive')
+    expect(container.textContent).toContain('Card Library')
+    expect(libraryItem('action-summary').textContent).toContain('Action Summary')
+    expect(libraryItem('archive-overview').textContent).toContain('Archive Overview')
     expect(container.textContent).toContain('Archive Report Content')
+
+    await clickLibraryAdd('archive-overview')
+    expect(container.textContent).toContain('Archive Overview Content')
 
     await clickWorkspaceTab('Action Summary')
     expect(container.textContent).toContain('Action Summary Content')
 
-    await clickWorkspaceTab('Load Impact + Metrics Under Load')
-    expect(container.textContent).toContain('Load Impact + Metrics Content')
+    await clickWorkspaceTab('Load Impact')
+    expect(container.textContent).toContain('Load Impact Content')
+
+    await clickWorkspaceTab('Metrics Under Load')
+    expect(container.textContent).toContain('Metrics Under Load Content')
 
     await clickWorkspaceTab('Transaction Drill-Down')
     expect(container.textContent).toContain('Transaction Drill-Down Content')
+  })
+
+  it('defaults cards to full width except compact and natural overview cards', async () => {
+    configureHooks(makeTest('COMPLETE', {
+      archive: {
+        test_id: 'test-1',
+        schema_version: '1',
+        archive_path: '/archives/test-1',
+        manifest_path: '/archives/test-1/manifest.json',
+        transaction_count: 100,
+        resource_sample_count: 20,
+        interval_summary_count: 10,
+        created_at: '2026-06-05T12:00:00Z',
+        completed_at: '2026-06-05T12:05:00Z',
+      },
+    }))
+    await renderExecution()
+
+    expect(cardElement('scenario-overview').dataset.cardWidth).toBe('natural')
+    expect(cardElement('hero-metrics').dataset.cardWidth).toBe('half')
+
+    await clickWorkspaceTab('Graphs')
+    expect(cardElement('runtime-graphs').dataset.cardWidth).toBe('full')
+
+    await clickWorkspaceTab('Action Summary')
+    expect(cardElement('action-summary').dataset.cardWidth).toBe('full')
+
+    await clickWorkspaceTab('Metrics Under Load')
+    expect(cardElement('metrics-under-load').dataset.cardWidth).toBe('full')
+  })
+
+  it('migrates legacy combined load impact layouts into separate load and metric tabs', async () => {
+    window.localStorage.setItem('apexload.execution.workspaceProfiles.v1', JSON.stringify([
+      {
+        id: 'default',
+        name: 'Default Execution Layout',
+        activeTabId: 'load-impact',
+        tabs: [
+          { id: 'overview', label: 'Overview', cardIds: ['scenario-overview', 'hero-metrics'] },
+          { id: 'control', label: 'Control', cardIds: ['live-controls', 'scenario-preview'] },
+          { id: 'graphs', label: 'Graphs', cardIds: ['runtime-graphs'] },
+          { id: 'diagnostics', label: 'Diagnostics', cardIds: ['status-panels', 'live-summary'] },
+          { id: 'archive', label: 'Archive', cardIds: ['archive-report'] },
+          { id: 'action-summary', label: 'Action Summary', cardIds: ['action-summary'] },
+          { id: 'load-impact', label: 'Load Impact + Metrics Under Load', cardIds: ['load-impact-metrics'] },
+          { id: 'transaction-drilldown', label: 'Transaction Drill-Down', cardIds: ['transaction-drilldown'] },
+        ],
+        unassignedCardIds: [],
+      },
+    ]))
+
+    await renderExecution()
+
+    expect(tabLabels()).toContain('Load Impact')
+    expect(tabLabels()).toContain('Metrics Under Load')
+    expect(tabLabels()).not.toContain('Load Impact + Metrics Under Load')
+    expect(cardElement('load-impact').dataset.cardWidth).toBe('full')
+
+    await clickWorkspaceTab('Metrics Under Load')
+    expect(container.textContent).toContain('Archive Empty Content metrics-under-load')
   })
 
   it('places active run controls inside the Control tab for a running run', async () => {
@@ -152,6 +256,8 @@ describe('TestExecution workspace layout', () => {
 
     expect(container.textContent).toContain('Live Controls Content')
     expect(container.textContent).toContain('Scenario Preview Content')
+    expect(container.textContent).toContain('Card Library')
+    expect(libraryItem('archive-report').textContent).toContain('Archive Report')
   })
 
   it('auto-applies a matching execution profile from run context', async () => {
@@ -167,7 +273,8 @@ describe('TestExecution workspace layout', () => {
           { id: 'diagnostics', label: 'Diagnostics', cardIds: ['status-panels', 'live-summary'] },
           { id: 'archive', label: 'Archive', cardIds: ['archive-report'] },
           { id: 'action-summary', label: 'Action Summary', cardIds: ['action-summary'] },
-          { id: 'load-impact', label: 'Load Impact + Metrics Under Load', cardIds: ['load-impact-metrics'] },
+          { id: 'load-impact', label: 'Load Impact', cardIds: ['load-impact'] },
+          { id: 'metrics-under-load', label: 'Metrics Under Load', cardIds: ['metrics-under-load'] },
           { id: 'transaction-drilldown', label: 'Transaction Drill-Down', cardIds: ['transaction-drilldown'] },
         ],
         unassignedCardIds: [],
@@ -186,7 +293,8 @@ describe('TestExecution workspace layout', () => {
           { id: 'diagnostics', label: 'Diagnostics', cardIds: ['status-panels', 'live-summary'] },
           { id: 'archive', label: 'Archive', cardIds: ['archive-report'] },
           { id: 'action-summary', label: 'Action Summary', cardIds: ['action-summary'] },
-          { id: 'load-impact', label: 'Load Impact + Metrics Under Load', cardIds: ['load-impact-metrics'] },
+          { id: 'load-impact', label: 'Load Impact', cardIds: ['load-impact'] },
+          { id: 'metrics-under-load', label: 'Metrics Under Load', cardIds: ['metrics-under-load'] },
           { id: 'transaction-drilldown', label: 'Transaction Drill-Down', cardIds: ['transaction-drilldown'] },
         ],
         unassignedCardIds: [],
@@ -356,6 +464,26 @@ describe('TestExecution workspace layout', () => {
   function selectedTabLabel() {
     const tab = container.querySelector('.dashboard-workspace-tab[aria-selected="true"] > span')
     return tab?.textContent || ''
+  }
+
+  function libraryItem(cardId: string) {
+    const item = container.querySelector(`[data-library-card-id="${cardId}"]`)
+    expect(item).toBeTruthy()
+    return item as HTMLElement
+  }
+
+  async function clickLibraryAdd(cardId: string) {
+    const button = libraryItem(cardId).querySelector('button') as HTMLButtonElement | null
+    expect(button).toBeTruthy()
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
+  function cardElement(cardId: string) {
+    const element = container.querySelector(`[data-card-id="${cardId}"]`)
+    expect(element).toBeTruthy()
+    return element as HTMLElement
   }
 
   async function clickWorkspaceTab(label: string) {

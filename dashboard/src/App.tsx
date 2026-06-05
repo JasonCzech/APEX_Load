@@ -31,6 +31,7 @@ const NewTestPage = lazy(() => import('./components/NewTestPage'))
 const MonitoringPage = lazy(() => import('./components/MonitoringPage'))
 const ApiGuidePage = lazy(() => import('./components/ApiGuidePage'))
 const SwaggerDocsPage = lazy(() => import('./components/SwaggerDocsPage'))
+const RepositoryGuidePage = lazy(() => import('./components/RepositoryGuidePage'))
 const ApplicationRepositoryPage = lazy(() => import('./components/ApplicationRepositoryPage'))
 const AccessPage = lazy(() => import('./components/AccessPage'))
 const SettingsPage = lazy(() => import('./components/SettingsPage'))
@@ -155,7 +156,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const canManageRepository = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_application_repository', false)
 
   const navigateToTest = (id: string) => setView({ page: 'test', testId: id })
-  const activePage: NavPage = view.page === 'test' ? 'tests' : view.page === 'swagger' ? 'docs' : view.page
+  const activePage: NavPage = view.page === 'test' ? 'tests' : view.page === 'swagger' || view.page === 'repository-guide' ? 'docs' : view.page
 
   const navigateToScriptEdit = (scriptId: string) => setView({ page: 'scripts', mode: 'edit', scriptId })
   const navigateToScenarioBuilder = () => setView({ page: 'tests' })
@@ -484,6 +485,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
           {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} />}
           {view.page === 'docs' && <ApiGuidePage onNavigate={handleNavigate} effectiveAccessResources={effectiveAccessResources} />}
           {view.page === 'swagger' && <SwaggerDocsPage />}
+          {view.page === 'repository-guide' && <RepositoryGuidePage />}
           {view.page === 'repository' && (
             <ApplicationRepositoryPage
               domains={domains}

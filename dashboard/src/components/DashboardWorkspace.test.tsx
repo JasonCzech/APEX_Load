@@ -13,11 +13,12 @@ import DashboardWorkspace, {
 
 const STORAGE_KEY = 'test.workspaceProfiles.v1'
 const ACTIVE_STORAGE_KEY = 'test.activeWorkspaceProfile.v1'
+const CARD_LIBRARY_STORAGE_KEY = 'test.cardLibraryCollapsed.v1'
 
 const cards: DashboardWorkspaceCard[] = [
-  { id: 'alpha', title: 'Alpha Card', render: () => <p>Alpha body</p> },
-  { id: 'beta', title: 'Beta Card', render: () => <p>Beta body</p> },
-  { id: 'gamma', title: 'Gamma Card', render: () => <p>Gamma body</p> },
+  { id: 'alpha', title: 'Alpha Card', category: 'Core', description: 'Alpha description', render: () => <p>Alpha body</p> },
+  { id: 'beta', title: 'Beta Card', category: 'Core', defaultWidth: 'full', render: () => <table><tbody><tr><td>Beta body</td></tr></tbody></table> },
+  { id: 'gamma', title: 'Gamma Card', category: 'Extra', defaultWidth: 'natural', render: () => <p>Gamma body</p> },
 ]
 
 const defaultProfile: DashboardWorkspaceProfile = {
@@ -57,6 +58,11 @@ describe('DashboardWorkspace', () => {
     expect(selectedTabLabel()).toBe('Overview')
     expect(container.textContent).toContain('Alpha body')
     expect(container.textContent).not.toContain('Beta body')
+    expect(container.textContent).toContain('Card Library')
+    expect(container.textContent).toContain('Core')
+    expect(container.textContent).toContain('Extra')
+    expect(libraryItem('alpha').textContent).toContain('Alpha description')
+    expect(cardElement('alpha').dataset.cardWidth).toBe('full')
 
     await click(tabButton('Details'))
 
@@ -65,21 +71,20 @@ describe('DashboardWorkspace', () => {
     expect(container.textContent).not.toContain('Alpha body')
   })
 
-  it('returns removed tab cards to the available pool and adds them to the active tab', async () => {
+  it('keeps all cards in the sidebar and copies cards to the active tab', async () => {
     await renderWorkspace()
 
     await contextMenu(tabButton('Details'))
     await click(menuItem('Delete Tab'))
 
     expect(tabLabels()).toEqual(['Overview'])
-    expect(addCardSelect().textContent).toContain('Beta Card')
+    expect(libraryItem('beta').textContent).toContain('Beta Card')
 
-    await changeSelect(addCardSelect(), 'beta')
-    await click(buttonNamed('Add Card'))
+    await click(libraryAddButton('beta'))
 
     expect(container.textContent).toContain('Alpha body')
     expect(container.textContent).toContain('Beta body')
-    expect(addCardSelect().textContent).not.toContain('Beta Card')
+    expect(libraryItem('beta').textContent).toContain('Added')
   })
 
   it('supports named profile creation, duplication, deletion, and reset', async () => {
@@ -107,13 +112,19 @@ describe('DashboardWorkspace', () => {
     expect(stored.some(profile => profile.name === 'HTTP Debug')).toBe(true)
   })
 
-  it('reorders tabs with keyboard controls', async () => {
+  it('navigates tabs with arrows and reorders tabs with shift arrows', async () => {
     await renderWorkspace()
 
     expect(container.querySelector('button[aria-label^="Reorder tab"]')).toBeNull()
     expect(container.querySelector('button[aria-label^="Remove tab"]')).toBeNull()
 
+    await click(tabButton('Details'))
     await keyDown(tabButton('Details'), 'ArrowLeft')
+
+    expect(tabLabels()).toEqual(['Overview', 'Details'])
+    expect(selectedTabLabel()).toBe('Overview')
+
+    await keyDown(tabButton('Overview'), 'ArrowRight', { shiftKey: true })
 
     expect(tabLabels()).toEqual(['Details', 'Overview'])
   })
@@ -136,6 +147,77 @@ describe('DashboardWorkspace', () => {
 
     expect(container.textContent).toContain('Alpha body')
     expect(container.textContent).toContain('Beta body')
+  })
+
+  it('copies sidebar cards by drag and prevents duplicate cards on one tab', async () => {
+    await renderWorkspace()
+
+    await click(tabButton('Details'))
+    await click(libraryAddButton('alpha'))
+    await click(libraryAddButton('alpha'))
+
+    expect(cardCount('alpha')).toBe(1)
+
+    const stored = readStoredDefaultProfile()
+    expect(stored.tabs.find(tab => tab.id === 'overview')?.cardIds).toContain('alpha')
+    expect(stored.tabs.find(tab => tab.id === 'details')?.cardIds.filter(id => id === 'alpha')).toHaveLength(1)
+
+    const dataTransfer = createDragDataTransfer()
+    const gammaLibraryItem = libraryItem('gamma')
+    const panel = container.querySelector('.dashboard-workspace-panel') as HTMLElement
+
+    await act(async () => {
+      dispatchDragEvent(gammaLibraryItem, 'dragstart', dataTransfer)
+      dispatchDragEvent(panel, 'drop', dataTransfer)
+      dispatchDragEvent(gammaLibraryItem, 'dragend', dataTransfer)
+    })
+
+    expect(container.textContent).toContain('Gamma body')
+    expect(cardCount('gamma')).toBe(1)
+  })
+
+  it('renders full-width defaults, natural-width defaults, and lets users resize them', async () => {
+    await renderWorkspace()
+
+    await click(libraryAddButton('gamma'))
+    expect(cardElement('gamma').dataset.cardWidth).toBe('natural')
+
+    await click(tabButton('Details'))
+
+    expect(cardElement('beta').dataset.cardWidth).toBe('full')
+
+    await click(buttonNamed('Full'))
+
+    expect(cardElement('beta').dataset.cardWidth).toBe('half')
+
+    await click(buttonNamed('Half'))
+
+    expect(cardElement('beta').dataset.cardWidth).toBe('natural')
+
+    const stored = readStoredDefaultProfile()
+    expect(stored.tabs.find(tab => tab.id === 'details')?.cardWidths?.beta).toBe('natural')
+  })
+
+  it('persists card library collapse state', async () => {
+    await renderWorkspace()
+
+    await click(buttonNamed('Collapse'))
+
+    expect(buttonNamed('Cards')).toBeTruthy()
+    expect(JSON.parse(window.localStorage.getItem(CARD_LIBRARY_STORAGE_KEY) || 'false')).toBe(true)
+
+    await act(async () => {
+      root.unmount()
+    })
+    root = createRoot(container)
+    await renderWorkspace()
+
+    expect(buttonNamed('Cards')).toBeTruthy()
+
+    await click(buttonNamed('Cards'))
+
+    expect(container.textContent).toContain('Card Library')
+    expect(JSON.parse(window.localStorage.getItem(CARD_LIBRARY_STORAGE_KEY) || 'true')).toBe(false)
   })
 
   it('adds newly shipped default tabs to saved profiles', async () => {
@@ -165,7 +247,7 @@ describe('DashboardWorkspace', () => {
     await click(tabButton('Insights'))
 
     expect(container.textContent).toContain('Delta body')
-    expect(addCardSelect().textContent).not.toContain('Delta Card')
+    expect(libraryItem('delta').textContent).toContain('Delta Card')
   })
 
   it('auto-applies the highest-priority matching profile from context tokens', async () => {
@@ -205,6 +287,7 @@ describe('DashboardWorkspace', () => {
           ariaLabel="Test workspace"
           storageKey={STORAGE_KEY}
           activeStorageKey={ACTIVE_STORAGE_KEY}
+          cardLibraryStorageKey={CARD_LIBRARY_STORAGE_KEY}
           defaultProfile={defaultProfile}
           cards={cards}
           {...options}
@@ -247,6 +330,35 @@ describe('DashboardWorkspace', () => {
     return button as HTMLButtonElement
   }
 
+  function libraryItem(cardId: string) {
+    const item = container.querySelector(`[data-library-card-id="${cardId}"]`)
+    expect(item).toBeTruthy()
+    return item as HTMLElement
+  }
+
+  function libraryAddButton(cardId: string) {
+    const button = libraryItem(cardId).querySelector('button')
+    expect(button).toBeTruthy()
+    return button as HTMLButtonElement
+  }
+
+  function cardCount(cardId: string) {
+    return container.querySelectorAll(`[data-card-id="${cardId}"]`).length
+  }
+
+  function cardElement(cardId: string) {
+    const element = container.querySelector(`[data-card-id="${cardId}"]`)
+    expect(element).toBeTruthy()
+    return element as HTMLElement
+  }
+
+  function readStoredDefaultProfile() {
+    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '[]') as DashboardWorkspaceProfile[]
+    const profile = stored.find(profile => profile.id === 'default')
+    expect(profile).toBeTruthy()
+    return profile as DashboardWorkspaceProfile
+  }
+
   function profileSelect() {
     const select = container.querySelector('select[aria-label="Test workspace layout profile"]')
     expect(select).toBeTruthy()
@@ -259,21 +371,15 @@ describe('DashboardWorkspace', () => {
     return input as HTMLInputElement
   }
 
-  function addCardSelect() {
-    const select = container.querySelector('select[aria-label^="Add card to"]')
-    expect(select).toBeTruthy()
-    return select as HTMLSelectElement
-  }
-
   async function click(element: HTMLElement) {
     await act(async () => {
       element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     })
   }
 
-  async function keyDown(element: HTMLElement, key: string) {
+  async function keyDown(element: HTMLElement, key: string, options: KeyboardEventInit = {}) {
     await act(async () => {
-      element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+      element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...options }))
     })
   }
 

@@ -2420,6 +2420,11 @@
   display: grid;
   grid-template-columns: 1.15fr 1fr;
   gap: 16px;
+  min-width: 0;
+}
+
+.archive-report-layout.single-view {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .archive-analysis-section {
@@ -2469,6 +2474,18 @@
 .archive-action-section,
 .archive-drilldown-section {
   min-width: 0;
+  overflow-x: auto;
+}
+
+.archive-action-section .tx-table,
+.archive-drilldown-section .tx-table {
+  min-width: 100%;
+  table-layout: fixed;
+}
+
+.archive-action-section .tx-name,
+.archive-drilldown-section .tx-name {
+  overflow-wrap: anywhere;
 }
 
 .archive-section-header {

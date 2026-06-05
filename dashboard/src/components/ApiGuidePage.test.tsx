@@ -103,7 +103,7 @@ describe('ApiGuidePage', () => {
     expect(container.textContent).toContain('project editor User behavior')
     expect(container.textContent).toContain('/api/v1/scripts/import/postman')
 
-    const repositoryLink = container.querySelector('a[href*="API_USER_GUIDE.md"]')
+    const repositoryLink = container.querySelector('a[href="#/repository-guide"]')
     expect(repositoryLink?.textContent).toContain('Repository Guide')
     const swaggerLink = container.querySelector('a[href="#/swagger"]')
     expect(swaggerLink?.textContent).toContain('Swagger Docs')
