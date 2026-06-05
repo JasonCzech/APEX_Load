@@ -8985,7 +8985,9 @@ function ParameterDataDetail({
           onUpdateParameter={onUpdateParameter}
           onUpdateParameterType={onUpdateParameterType}
           parameter={selectedParameter}
+          parameters={script.parameters || []}
           parsed={selectedParsed}
+          selectedParameterIdx={selectedParameterIdx}
           selectedSource={selectedSource}
           selectedSourceIndex={selectedSourceIndex}
           summary={selectedSourceSummary}
@@ -9007,7 +9009,9 @@ interface ParameterInfoPanelProps {
   onUpdateParameter: (field: keyof ParameterConfig, value: unknown) => void
   onUpdateParameterType: (value: string) => void
   parameter: ParameterConfig
+  parameters: ParameterConfig[]
   parsed: { columns: string[]; rows: string[][] } | null
+  selectedParameterIdx: number | null
   selectedSource: DataSourceConfig | null
   selectedSourceIndex: number | null
   summary: { rows: number; columns: number } | null
@@ -9020,7 +9024,9 @@ function ParameterInfoPanel({
   onUpdateParameter,
   onUpdateParameterType,
   parameter,
+  parameters,
   parsed,
+  selectedParameterIdx,
   selectedSource,
   selectedSourceIndex,
   summary,
@@ -9051,8 +9057,17 @@ function ParameterInfoPanel({
     ? [currentColumn, ...columnNames]
     : columnNames
   const sourceFileLabel = selectedSource?.path || selectedSource?.name || currentDataSource || '—'
+  const sameLineOptions = getSameLineParameterOptions(parameters, selectedParameterIdx)
+  const sameLineSelectOptions = getSameLineParameterSelectOptions(parameter, sameLineOptions)
+  const selectionControlValue = getParameterSelectionControlValue(parameter)
 
   const handleStrategyChange = (value: string) => {
+    if (value === SAME_ROW_SELECTION_VALUE) {
+      const nextSameLine = sameLineSelectOptions[0]?.value || ''
+      onUpdateParameter('same_line_as', nextSameLine || undefined)
+      return
+    }
+    if (parameter.same_line_as) onUpdateParameter('same_line_as', undefined)
     onUpdateParameter('selection', value)
     if (selectedSourceIndex !== null) onUpdateDataSource(selectedSourceIndex, 'strategy', value, true)
   }
@@ -9104,13 +9119,43 @@ function ParameterInfoPanel({
                 <tr>
                   <th scope="row">Iteration Strategy</th>
                   <td>
-                    <select aria-label={`Iteration Strategy for ${parameterName}`} value={getParameterChoiceValue(parameter, 'selection')} onChange={event => handleStrategyChange(event.target.value)}>
-                      {PARAMETER_CHOICE_DEFINITIONS.selection.options.map(option => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
+                    <select aria-label={`Iteration Strategy for ${parameterName}`} value={selectionControlValue} onChange={event => handleStrategyChange(event.target.value)}>
+                      {getParameterSelectionOptions(true).map(option => (
+                        <option
+                          disabled={option.value === SAME_ROW_SELECTION_VALUE && sameLineSelectOptions.length === 0}
+                          key={option.value}
+                          value={option.value}
+                        >
+                          {option.label}
+                        </option>
                       ))}
                     </select>
                   </td>
                 </tr>
+                {selectionControlValue === SAME_ROW_SELECTION_VALUE && (
+                  <tr>
+                    <th scope="row">Same Row As</th>
+                    <td>
+                      <select
+                        aria-label={`Same Row As for ${parameterName}`}
+                        disabled={sameLineSelectOptions.length === 0}
+                        value={parameter.same_line_as || ''}
+                        onChange={event => onUpdateParameter('same_line_as', event.target.value || undefined)}
+                      >
+                        {sameLineSelectOptions.length === 0 ? (
+                          <option value="">No compatible parameters</option>
+                        ) : (
+                          sameLineSelectOptions.map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))
+                        )}
+                      </select>
+                      {sameLineSelectOptions.length === 0 && (
+                        <p className="parameter-info-help">Add another file or list parameter mapped to this data source to link row selection.</p>
+                      )}
+                    </td>
+                  </tr>
+                )}
                 <tr>
                   <th scope="row">On Exhaustion</th>
                   <td>
@@ -9167,10 +9212,6 @@ function ParameterInfoPanel({
                   <tr>
                     <th scope="row">Source File</th>
                     <td><span className="parameter-info-readonly cell-mono">{sourceFileLabel}</span></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Same Line As</th>
-                    <td><input value={parameter.same_line_as || ''} onChange={event => onUpdateParameter('same_line_as', event.target.value.trim() || undefined)} placeholder="optional parameter name" /></td>
                   </tr>
                 </>
               )}
@@ -9678,7 +9719,7 @@ function summarizeParameterValues(values: string[], fallback = '—'): string {
 function summarizeParameterGroupSelection(group: ParameterDefinitionGroup): string {
   return summarizeParameterValues(group.parameters.map(({ parameter }) => {
     if (parameter.type !== 'file' && parameter.type !== 'list') return ''
-    const sync = parameter.same_line_as ? `same line as ${parameter.same_line_as}` : ''
+    const sync = parameter.same_line_as ? `same row as ${parameter.same_line_as}` : ''
     return [sync, `${parameter.selection || 'sequential'} / ${parameter.on_exhaustion || 'wrap'}`]
       .filter(Boolean)
       .join(' · ')
@@ -9693,6 +9734,13 @@ function summarizeParameterGroupColumns(group: ParameterDefinitionGroup): string
 interface ParameterSameLineOption {
   label: string
   value: string
+}
+
+const SAME_ROW_SELECTION_VALUE = 'same_line_as'
+const SAME_ROW_SELECTION_OPTION: ParameterChoiceOption = {
+  value: SAME_ROW_SELECTION_VALUE,
+  label: 'Same Row As Parameter',
+  description: 'Use the row selected by another parameter in this source file, keeping related random or unique values together.',
 }
 
 function getSameLineParameterOptions(parameters: ParameterConfig[], idx: number | null): ParameterSameLineOption[] {
@@ -9712,6 +9760,29 @@ function getSameLineParameterOptions(parameters: ParameterConfig[], idx: number 
       label: `${parameter.name}${parameter.column ? ` (${parameter.column})` : ''}`,
       value: parameter.name || '',
     }))
+}
+
+function getSameLineParameterSelectOptions(parameter: ParameterConfig, sameLineOptions: ParameterSameLineOption[]): ParameterSameLineOption[] {
+  const currentValue = parameter.same_line_as?.trim()
+  if (!currentValue || sameLineOptions.some(option => option.value === currentValue)) return sameLineOptions
+  return [{ label: `${currentValue} (unmatched)`, value: currentValue }, ...sameLineOptions]
+}
+
+function getParameterSelectionOptions(includeSameRow = false): ParameterChoiceOption[] {
+  if (!includeSameRow) return PARAMETER_CHOICE_DEFINITIONS.selection.options
+  return [...PARAMETER_CHOICE_DEFINITIONS.selection.options, SAME_ROW_SELECTION_OPTION]
+}
+
+function getParameterSelectionDefinition(includeSameRow = false): ParameterChoiceDefinition {
+  if (!includeSameRow) return PARAMETER_CHOICE_DEFINITIONS.selection
+  return {
+    ...PARAMETER_CHOICE_DEFINITIONS.selection,
+    options: getParameterSelectionOptions(true),
+  }
+}
+
+function getParameterSelectionControlValue(parameter: ParameterConfig): string {
+  return parameter.same_line_as?.trim() ? SAME_ROW_SELECTION_VALUE : getParameterChoiceValue(parameter, 'selection')
 }
 
 type ParameterChoiceField = 'type' | 'update' | 'selection' | 'on_exhaustion'
@@ -9769,6 +9840,7 @@ const PARAMETER_CHOICE_DEFINITIONS: Record<ParameterChoiceField, ParameterChoice
     description: 'Choose what happens when the source runs out of available parameter values.',
     options: [
       { value: 'wrap', label: 'Wrap', description: 'Start over at the beginning of the source when all rows have been used.' },
+      { value: 'last', label: 'Continue With Last Row', description: 'Keep resolving to the last available row or value after the source is exhausted.' },
       { value: 'empty', label: 'Empty', description: 'Resolve the parameter as an empty string after the source is exhausted.' },
       { value: 'error', label: 'Error', description: 'Fail the VUser action when no value is available.' },
     ],
@@ -9784,6 +9856,7 @@ function getParameterChoiceValue(parameter: ParameterConfig, field: ParameterCho
 
 function formatParameterChoiceLabel(field: ParameterChoiceField, value: string): string {
   const option = PARAMETER_CHOICE_DEFINITIONS[field].options.find(candidate => candidate.value === value)
+    || (field === 'selection' && value === SAME_ROW_SELECTION_VALUE ? SAME_ROW_SELECTION_OPTION : null)
   return option?.label || value
 }
 
@@ -10156,10 +10229,10 @@ function ParameterSelectionSettingsButton({
     >
       <strong>Settings</strong>
       <small>
-        {formatParameterChoiceLabel('selection', getParameterChoiceValue(parameter, 'selection'))}
+        {parameter.same_line_as ? 'Same Row As Parameter' : formatParameterChoiceLabel('selection', getParameterChoiceValue(parameter, 'selection'))}
         {' / '}
         {formatParameterChoiceLabel('on_exhaustion', getParameterChoiceValue(parameter, 'on_exhaustion'))}
-        {parameter.same_line_as ? ` · Same line as ${parameter.same_line_as}` : ''}
+        {parameter.same_line_as ? ` · Same row as ${parameter.same_line_as}` : ''}
       </small>
     </button>
   )
@@ -10530,7 +10603,7 @@ function ParameterSettingsBody({
                   </select>
                 </label>
                 <label className="parameter-settings-wide">
-                  <span>Same Line As</span>
+                  <span>Same Row As</span>
                   <input value={parameter.same_line_as || ''} onChange={event => onUpdate('same_line_as', event.target.value.trim() || undefined)} placeholder="optional parameter name" />
                 </label>
               </>
@@ -10863,8 +10936,19 @@ function ParameterSelectionSettingsDialog({
   sameLineOptions,
 }: ParameterSelectionSettingsDialogProps) {
   const parameterName = parameter.name || 'Parameter'
-  const selectionValue = getParameterChoiceValue(parameter, 'selection')
+  const selectionValue = getParameterSelectionControlValue(parameter)
   const exhaustionValue = getParameterChoiceValue(parameter, 'on_exhaustion')
+  const sameLineSelectOptions = getSameLineParameterSelectOptions(parameter, sameLineOptions)
+  const sameLineDisabledValues = sameLineSelectOptions.length === 0 ? [SAME_ROW_SELECTION_VALUE] : []
+  const handleSelectionUpdate = (value: string) => {
+    if (value === SAME_ROW_SELECTION_VALUE) {
+      const nextSameLine = sameLineSelectOptions[0]?.value || ''
+      onUpdate('same_line_as', nextSameLine || undefined)
+      return
+    }
+    if (parameter.same_line_as) onUpdate('same_line_as', undefined)
+    onUpdate('selection', value)
+  }
 
   return (
     <div className="editor-dialog-backdrop parameter-choice-backdrop" onClick={onClose}>
@@ -10884,8 +10968,9 @@ function ParameterSelectionSettingsDialog({
         </div>
         <div className="editor-dialog-body parameter-choice-dialog-body">
           <ParameterSelectionChoiceGroup
-            definition={PARAMETER_CHOICE_DEFINITIONS.selection}
-            onSelect={value => onUpdate('selection', value)}
+            definition={getParameterSelectionDefinition(true)}
+            disabledValues={sameLineDisabledValues}
+            onSelect={handleSelectionUpdate}
             selectedValue={selectionValue}
           />
           <ParameterSelectionChoiceGroup
@@ -10895,24 +10980,24 @@ function ParameterSelectionSettingsDialog({
           />
           <section className="parameter-selection-choice-group">
             <div>
-              <h4>Same Line Sync</h4>
+              <h4>Same Row Sync</h4>
               <p>Use the row selected by another parameter from the same source file, so random or unique row selection keeps related columns together.</p>
             </div>
             <label className="parameter-settings-wide">
               <span>Sync Row With</span>
               <select
-                aria-label={`Same Line Sync for ${parameterName}`}
-                disabled={sameLineOptions.length === 0}
+                aria-label={`Same Row Sync for ${parameterName}`}
+                disabled={sameLineSelectOptions.length === 0}
                 value={parameter.same_line_as || ''}
                 onChange={event => onUpdate('same_line_as', event.target.value || undefined)}
               >
                 <option value="">Independent row selection</option>
-                {sameLineOptions.map(option => (
+                {sameLineSelectOptions.map(option => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
             </label>
-            {sameLineOptions.length === 0 && (
+            {sameLineSelectOptions.length === 0 && (
               <p className="parameter-settings-empty">No other parameters are mapped to this source file.</p>
             )}
           </section>
@@ -10924,15 +11009,18 @@ function ParameterSelectionSettingsDialog({
 
 interface ParameterSelectionChoiceGroupProps {
   definition: ParameterChoiceDefinition
+  disabledValues?: string[]
   onSelect: (value: string) => void
   selectedValue: string
 }
 
 function ParameterSelectionChoiceGroup({
   definition,
+  disabledValues = [],
   onSelect,
   selectedValue,
 }: ParameterSelectionChoiceGroupProps) {
+  const disabledValueSet = new Set(disabledValues)
   return (
     <section className="parameter-selection-choice-group">
       <div>
@@ -10942,10 +11030,12 @@ function ParameterSelectionChoiceGroup({
       <div className="parameter-choice-dialog-body">
         {definition.options.map(option => {
           const selected = option.value === selectedValue
+          const disabled = disabledValueSet.has(option.value)
           return (
             <button
               type="button"
               className={`parameter-choice-option ${selected ? 'selected' : ''}`}
+              disabled={disabled}
               aria-pressed={selected}
               key={option.value}
               onClick={() => onSelect(option.value)}

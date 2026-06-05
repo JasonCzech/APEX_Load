@@ -988,6 +988,12 @@
   font-weight: 500;
   word-break: break-all;
 }
+.parameter-info-help {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
 .parameter-info-stats-table td.parameter-info-stat-value {
   font-weight: 700;
 }
@@ -1272,6 +1278,14 @@
 .parameter-choice-option.selected {
   border-color: var(--accent);
   background: var(--bg-hover);
+}
+.parameter-choice-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.parameter-choice-option:disabled:hover {
+  border-color: var(--border);
+  background: var(--bg-secondary);
 }
 .parameter-choice-option:focus-visible {
   outline: 2px solid var(--focus-ring, var(--accent));

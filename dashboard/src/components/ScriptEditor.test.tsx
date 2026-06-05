@@ -2158,6 +2158,15 @@ describe('ScriptEditor', () => {
           data_source: 'cities',
           column: 'city',
         },
+        {
+          name: 'market',
+          type: 'file',
+          update: 'each_iteration',
+          selection: 'random',
+          on_exhaustion: 'wrap',
+          data_source: 'cities',
+          column: 'market',
+        },
       ],
       data_sources: [
         {
@@ -2166,7 +2175,7 @@ describe('ScriptEditor', () => {
           path: 'cities.csv',
           strategy: 'sequential',
           first_row_header: true,
-          inline_data: 'city\nParis\nLyon\nParis',
+          inline_data: 'city,market\nParis,FR\nLyon,FR\nParis,FR',
         },
       ],
     }
@@ -2209,6 +2218,39 @@ describe('ScriptEditor', () => {
       strategy?.dispatchEvent(new Event('change', { bubbles: true }))
     })
     expect((container.querySelector('select[aria-label="Iteration Strategy for city"]') as HTMLSelectElement | null)?.value).toBe('unique')
+
+    const linkedStrategy = container.querySelector('select[aria-label="Iteration Strategy for city"]') as HTMLSelectElement | null
+    expect(Array.from(linkedStrategy?.options || []).map(option => option.textContent)).toContain('Same Row As Parameter')
+    await act(async () => {
+      selectValueSetter?.call(linkedStrategy, 'same_line_as')
+      linkedStrategy?.dispatchEvent(new Event('input', { bubbles: true }))
+      linkedStrategy?.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect((container.querySelector('select[aria-label="Iteration Strategy for city"]') as HTMLSelectElement | null)?.value).toBe('same_line_as')
+    const sameRowSelect = container.querySelector('select[aria-label="Same Row As for city"]') as HTMLSelectElement | null
+    expect(sameRowSelect?.value).toBe('market')
+
+    const exhaustion = container.querySelector('select[aria-label="On Exhaustion for city"]') as HTMLSelectElement | null
+    expect(Array.from(exhaustion?.options || []).map(option => option.textContent)).toContain('Continue With Last Row')
+    await act(async () => {
+      selectValueSetter?.call(exhaustion, 'last')
+      exhaustion?.dispatchEvent(new Event('input', { bubbles: true }))
+      exhaustion?.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect((container.querySelector('select[aria-label="On Exhaustion for city"]') as HTMLSelectElement | null)?.value).toBe('last')
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Script'))
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    const createCalls = apiMock.createScript.mock.calls
+    const savedScript = createCalls[createCalls.length - 1]?.[0] as ScriptDefinition
+    const savedCityParameter = savedScript.parameters?.find(parameter => parameter.name === 'city')
+    expect(savedCityParameter).toMatchObject({
+      same_line_as: 'market',
+      on_exhaustion: 'last',
+    })
 
     // The data table lives under the Data tab: it keeps its display options
     // but drops the old source-metadata header row.
