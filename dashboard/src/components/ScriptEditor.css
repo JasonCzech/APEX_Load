@@ -991,6 +991,45 @@
 .parameter-choice-option-heading strong {
   color: var(--text-primary);
 }
+.parameterize-builtin {
+  display: grid;
+  gap: 12px;
+}
+.parameterize-name-field {
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.parameterize-name-field input {
+  width: 100%;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 8px 10px;
+  outline: none;
+}
+.parameterize-name-field input:focus {
+  border-color: var(--accent);
+}
+.parameterize-type-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.parameterize-type-fields {
+  padding: 12px 0 0;
+  border-top: 1px solid var(--border);
+}
+.parameterize-dialog .parameter-draft-actions {
+  display: flex;
+  gap: 8px;
+}
 .parameter-actions {
   display: flex;
   justify-content: flex-end;

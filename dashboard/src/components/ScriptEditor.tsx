@@ -1153,6 +1153,28 @@ function parameterFormatForType(nextType: string, currentFormat?: string) {
   return currentFormat
 }
 
+// Built-in parameter types (everything except the file/list data-backed types) generate their
+// value at runtime — random number, iteration counter, time, uuid, etc.
+function isBuiltinParameterType(type?: string | null): boolean {
+  return Boolean(type) && type !== 'list' && type !== 'file'
+}
+
+// applyParameterTypeDefaults normalizes a parameter when its type changes, seeding the
+// type-specific defaults (start/step/length/format) and the structural runtime fields.
+function applyParameterTypeDefaults(current: ParameterConfig, nextType: string): ParameterConfig {
+  return {
+    ...current,
+    type: nextType,
+    update: current.update || 'each_iteration',
+    selection: current.selection || 'sequential',
+    on_exhaustion: current.on_exhaustion || 'wrap',
+    start: nextType === 'current_iteration' ? (current.start ?? 1) : current.start,
+    step: (nextType === 'counter' || nextType === 'current_iteration') ? (current.step || 1) : current.step,
+    length: nextType === 'random_string' ? (current.length || 12) : current.length,
+    format: parameterFormatForType(nextType, current.format),
+  }
+}
+
 interface DataSourceHistory {
   past: DataSourceConfig[]
   future: DataSourceConfig[]
@@ -1317,6 +1339,8 @@ interface ActionEditorParameterRequest {
   selectedText: string
   requestedName: string
   existingName?: string | null
+  parameterType?: string
+  typeConfig?: Partial<ParameterConfig>
 }
 
 interface ActionEditorSelectionState {
@@ -1339,6 +1363,10 @@ interface ActionEditorParameterDraft {
   existingName: string | null
   requestedName: string
   seedValue: string
+  // Set when the user chose the "Built-in Function" branch of the Parameterize dialog; carries
+  // the runtime parameter type (random_number, current_iteration, …) and its inline config.
+  parameterType?: string
+  typeConfig?: Partial<ParameterConfig>
 }
 
 interface Props {
@@ -1601,6 +1629,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     closeReplayScreenshot,
   } = useScriptEditorState(initialScript)
   const [focusParameterIdx, setFocusParameterIdx] = useState<number | null>(null)
+  // Holds the pending selection while the Parameterize choice dialog (File vs Built-in Function)
+  // is open. Cleared once the user picks a branch.
+  const [parameterizeChoice, setParameterizeChoice] = useState<ActionEditorParameterDraft | null>(null)
   const [authorCodeFocus, setAuthorCodeFocus] = useState<{ phase: ScriptActionPhase; actionIndex: number } | null>(null)
   const isBrowserScript = script.protocol === 'browser'
   const isHttpScript = script.protocol === 'http'
@@ -3887,17 +3918,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setScript(prev => {
       const parameters = [...(prev.parameters || [])]
       const current = parameters[idx] || { ...EMPTY_PARAMETER }
-      parameters[idx] = {
-        ...current,
-        type: nextType,
-        update: current.update || 'each_iteration',
-        selection: current.selection || 'sequential',
-        on_exhaustion: current.on_exhaustion || 'wrap',
-        start: nextType === 'current_iteration' ? (current.start ?? 1) : current.start,
-        step: (nextType === 'counter' || nextType === 'current_iteration') ? (current.step || 1) : current.step,
-        length: nextType === 'random_string' ? (current.length || 12) : current.length,
-        format: parameterFormatForType(nextType, current.format),
-      }
+      parameters[idx] = applyParameterTypeDefaults(current, nextType)
       return { ...prev, parameters }
     })
   }
@@ -3909,7 +3930,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }))
   }
 
-  const upsertParameterFromActionEditor = ({ selectedText, requestedName, existingName }: ActionEditorParameterRequest): string => {
+  const upsertParameterFromActionEditor = ({ selectedText, requestedName, existingName, parameterType, typeConfig }: ActionEditorParameterRequest): string => {
     const normalizedExistingName = existingName ? sanitizeVarName(existingName) : ''
     const resolvedName = ensureUniqueParameterName(
       requestedName || selectedText,
@@ -3917,6 +3938,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       normalizedExistingName || undefined,
     )
     const seedValue = (selectedText || '').trim()
+    const builtin = isBuiltinParameterType(parameterType)
 
     setScript(prev => {
       const parameters = [...(prev.parameters || [])]
@@ -3928,18 +3950,24 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
       if (targetIdx >= 0) {
         const current = { ...(parameters[targetIdx] || EMPTY_PARAMETER) }
-        const nextParameter: ParameterConfig = {
-          ...current,
-          name: resolvedName,
-          type: current.type || 'list',
-          update: current.update || 'each_iteration',
+        if (builtin) {
+          parameters[targetIdx] = applyParameterTypeDefaults({ ...current, ...typeConfig, name: resolvedName, type: parameterType! }, parameterType!)
+        } else {
+          const nextParameter: ParameterConfig = {
+            ...current,
+            name: resolvedName,
+            type: current.type || 'list',
+            update: current.update || 'each_iteration',
+          }
+          if (nextParameter.type === 'list') {
+            const values = [...(nextParameter.values || [])]
+            if (seedValue && !values.includes(seedValue)) values.unshift(seedValue)
+            nextParameter.values = values
+          }
+          parameters[targetIdx] = nextParameter
         }
-        if (nextParameter.type === 'list') {
-          const values = [...(nextParameter.values || [])]
-          if (seedValue && !values.includes(seedValue)) values.unshift(seedValue)
-          nextParameter.values = values
-        }
-        parameters[targetIdx] = nextParameter
+      } else if (builtin) {
+        parameters.push(applyParameterTypeDefaults({ ...EMPTY_PARAMETER, ...typeConfig, name: resolvedName, type: parameterType! }, parameterType!))
       } else {
         parameters.push({
           ...EMPTY_PARAMETER,
@@ -3993,22 +4021,31 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     const byResolvedNameIdx = parameters.findIndex(parameter => sanitizeVarName(parameter.name || '') === resolvedName)
     const targetIdx = existingIdx >= 0 ? existingIdx : byResolvedNameIdx
 
+    const builtin = isBuiltinParameterType(draft.parameterType)
+
     let paramIdx: number
     if (targetIdx >= 0) {
       const current = { ...(parameters[targetIdx] || EMPTY_PARAMETER) }
-      const nextParameter: ParameterConfig = {
-        ...current,
-        name: resolvedName,
-        type: current.type || 'list',
-        update: current.update || 'each_iteration',
+      if (builtin) {
+        parameters[targetIdx] = applyParameterTypeDefaults({ ...current, ...draft.typeConfig, name: resolvedName, type: draft.parameterType! }, draft.parameterType!)
+      } else {
+        const nextParameter: ParameterConfig = {
+          ...current,
+          name: resolvedName,
+          type: current.type || 'list',
+          update: current.update || 'each_iteration',
+        }
+        if (nextParameter.type === 'list') {
+          const values = [...(nextParameter.values || [])]
+          if (seedValue && !values.includes(seedValue)) values.unshift(seedValue)
+          nextParameter.values = values
+        }
+        parameters[targetIdx] = nextParameter
       }
-      if (nextParameter.type === 'list') {
-        const values = [...(nextParameter.values || [])]
-        if (seedValue && !values.includes(seedValue)) values.unshift(seedValue)
-        nextParameter.values = values
-      }
-      parameters[targetIdx] = nextParameter
       paramIdx = targetIdx
+    } else if (builtin) {
+      parameters.push(applyParameterTypeDefaults({ ...EMPTY_PARAMETER, ...draft.typeConfig, name: resolvedName, type: draft.parameterType! }, draft.parameterType!))
+      paramIdx = parameters.length - 1
     } else {
       parameters.push({
         ...EMPTY_PARAMETER,
@@ -4037,28 +4074,60 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     openCenterTab('parameter-data')
   }
 
-  const applyPendingParameterDraft = () => {
-    if (!pendingParameterDraft) return
-
-    if (pendingParameterDraft.source === 'json') {
-      applyJsonParameterDraft(pendingParameterDraft)
+  const applyParameterDraft = (draft: ActionEditorParameterDraft) => {
+    if (draft.source === 'json') {
+      applyJsonParameterDraft(draft)
       return
     }
 
     pushEditorHistory(script)
     const name = upsertParameterFromActionEditor({
-      selectedText: pendingParameterDraft.seedValue,
-      requestedName: pendingParameterDraft.requestedName,
-      existingName: pendingParameterDraft.existingName,
+      selectedText: draft.seedValue,
+      requestedName: draft.requestedName,
+      existingName: draft.existingName,
+      parameterType: draft.parameterType,
+      typeConfig: draft.typeConfig,
     })
-    const action = script.actions[pendingParameterDraft.actionIndex]
+    const action = script.actions[draft.actionIndex]
     if (action) {
       const body = action.body || ''
       const replacement = `{{param.${name}}}`
-      const nextBody = `${body.slice(0, pendingParameterDraft.start)}${replacement}${body.slice(pendingParameterDraft.end)}`
-      updateAction(pendingParameterDraft.actionIndex, 'body', nextBody)
+      const nextBody = `${body.slice(0, draft.start)}${replacement}${body.slice(draft.end)}`
+      updateAction(draft.actionIndex, 'body', nextBody)
     }
     setPendingParameterDraft(null)
+  }
+
+  const applyPendingParameterDraft = () => {
+    if (pendingParameterDraft) applyParameterDraft(pendingParameterDraft)
+  }
+
+  // Opens the Parameterize choice dialog (File vs Built-in Function) for a fresh selection.
+  const openParameterizeChoice = (draft: ActionEditorParameterDraft) => {
+    setParameterizeChoice(draft)
+    setError('')
+  }
+
+  // "File / Data" branch: fall back to the existing inline-value flow in the Parameter Data tab.
+  const chooseParameterizeFile = () => {
+    if (!parameterizeChoice) return
+    const draft = parameterizeChoice
+    setParameterizeChoice(null)
+    beginParameterEditFromActionEditor(draft)
+  }
+
+  // "Built-in Function" branch: create a runtime-generated parameter of the chosen type and
+  // insert its {{param.NAME}} token immediately.
+  const confirmBuiltinParameterize = (name: string, type: string, typeConfig: Partial<ParameterConfig>) => {
+    if (!parameterizeChoice) return
+    const draft: ActionEditorParameterDraft = {
+      ...parameterizeChoice,
+      requestedName: name,
+      parameterType: type,
+      typeConfig,
+    }
+    setParameterizeChoice(null)
+    applyParameterDraft(draft)
   }
 
   const updatePendingParameterDraftName = (value: string) => {
@@ -4079,7 +4148,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     openParameterEditor: openJsonParameterEditor,
   } = useJsonParameterMenu({
     parameters: currentDraftScript.parameters || [],
-    onBeginParameterEdit: beginParameterEditFromActionEditor,
+    onBeginParameterEdit: openParameterizeChoice,
   })
 
   const toggleOpenDataEditor = (idx: number) => {
@@ -4624,6 +4693,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   return (
     <div className="script-editor">
+      {parameterizeChoice && (
+        <ParameterizeDialog
+          draft={parameterizeChoice}
+          onClose={() => setParameterizeChoice(null)}
+          onChooseFile={chooseParameterizeFile}
+          onConfirmBuiltin={confirmBuiltinParameterize}
+        />
+      )}
       <div className="editor-header">
         <div className="editor-title-row">
           <h2>{scriptId ? 'Edit Script' : 'Create Script'}</h2>
@@ -7671,7 +7748,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   onAddMetadata={addMetadata}
                   onUpdateMetadata={updateMetadata}
                   onRemoveMetadata={removeMetadata}
-                  onBeginParameterEdit={beginParameterEditFromActionEditor}
+                  onBeginParameterEdit={openParameterizeChoice}
                   methodColor={methodColor}
                   protocol={script.protocol}
                   isBrowserScript={isBrowserScript}
@@ -9126,6 +9203,170 @@ function ParameterSettingsButton({
       <strong>Configure</strong>
       <small>{summarizeParameterSettings(parameter)}</small>
     </button>
+  )
+}
+
+// Built-in (runtime-generated) parameter types — every type except the data-backed file/list.
+const BUILTIN_PARAMETER_TYPE_OPTIONS = PARAMETER_CHOICE_DEFINITIONS.type.options.filter(
+  option => option.value !== 'list' && option.value !== 'file',
+)
+
+interface ParameterTypeFieldsProps {
+  parameter: ParameterConfig
+  onUpdate: (field: keyof ParameterConfig, value: unknown) => void
+}
+
+// ParameterTypeFields renders the key inline configuration inputs for a built-in parameter type
+// (min/max, start/step, length/charset, format/timezone/offset). Mirrors the inputs in the
+// Parameter Settings dialog so both surfaces stay consistent.
+function ParameterTypeFields({ parameter, onUpdate }: ParameterTypeFieldsProps) {
+  const type = parameter.type || 'list'
+  const isTime = type === 'date_time' || type === 'timestamp' || type === 'time'
+  if (type === 'uuid' || type === 'host') {
+    return (
+      <p className="parameter-settings-empty">
+        {type === 'uuid'
+          ? 'UUID values are generated automatically — no extra configuration needed.'
+          : 'Host uses the runtime host value. Configure optional host overrides later in Parameter Data.'}
+      </p>
+    )
+  }
+  return (
+    <div className="parameter-settings-grid parameterize-type-fields">
+      {type === 'random_number' && (
+        <>
+          <label><span>Minimum</span><input type="number" value={numberInputValue(parameter.min, 0)} onChange={event => onUpdate('min', Number(event.target.value))} placeholder="min" /></label>
+          <label><span>Maximum</span><input type="number" value={numberInputValue(parameter.max, 100)} onChange={event => onUpdate('max', Number(event.target.value))} placeholder="max" /></label>
+        </>
+      )}
+      {(type === 'counter' || type === 'current_iteration') && (
+        <>
+          <label><span>Start</span><input type="number" value={numberInputValue(parameter.start, type === 'current_iteration' ? 1 : 0)} onChange={event => onUpdate('start', Number(event.target.value))} placeholder="start" /></label>
+          <label><span>Step</span><input type="number" value={numberInputValue(parameter.step, 1)} onChange={event => onUpdate('step', Number(event.target.value))} placeholder="step" /></label>
+          <label><span>End</span><input type="number" value={numberInputValue(parameter.end, 0)} onChange={event => onUpdate('end', Number(event.target.value))} placeholder="end (optional)" /></label>
+        </>
+      )}
+      {type === 'random_string' && (
+        <>
+          <label><span>Length</span><input type="number" value={numberInputValue(parameter.length, 12)} onChange={event => onUpdate('length', Number(event.target.value))} placeholder="length" /></label>
+          <label><span>Charset</span><input value={parameter.charset || ''} onChange={event => onUpdate('charset', event.target.value)} placeholder="charset override" /></label>
+        </>
+      )}
+      {isTime && (
+        <>
+          <label>
+            <span>Format</span>
+            {type === 'timestamp' ? (
+              <select value={parameter.format || 'iso8601'} onChange={event => onUpdate('format', event.target.value)}>
+                <option value="unix">unix</option>
+                <option value="unix_ms">unix_ms</option>
+                <option value="iso8601">iso8601</option>
+                <option value="rfc3339">rfc3339</option>
+                <option value="rfc3339_nano">rfc3339_nano</option>
+              </select>
+            ) : (
+              <input value={parameter.format || ''} onChange={event => onUpdate('format', event.target.value)} placeholder="Go time layout" />
+            )}
+          </label>
+          <label><span>Timezone</span><input value={parameter.timezone || ''} onChange={event => onUpdate('timezone', event.target.value)} placeholder="UTC, America/New_York" /></label>
+          <label><span>Offset Seconds</span><input type="number" value={numberInputValue(parameter.offset_seconds, 0)} onChange={event => onUpdate('offset_seconds', Number(event.target.value))} placeholder="offset seconds" /></label>
+        </>
+      )}
+    </div>
+  )
+}
+
+interface ParameterizeDialogProps {
+  draft: ActionEditorParameterDraft
+  onClose: () => void
+  onChooseFile: () => void
+  onConfirmBuiltin: (name: string, type: string, typeConfig: Partial<ParameterConfig>) => void
+}
+
+// ParameterizeDialog forks the right-click → Parameterize flow: pick a File/Data parameter (which
+// continues to the existing Parameter Data editor) or a Built-in Function, which expands in place
+// to a type picker plus that type's key configuration fields.
+function ParameterizeDialog({ draft, onClose, onChooseFile, onConfirmBuiltin }: ParameterizeDialogProps) {
+  const [mode, setMode] = useState<'choose' | 'builtin'>('choose')
+  const [name, setName] = useState(() => sanitizeVarName(draft.requestedName || draft.seedValue))
+  const [typeParam, setTypeParam] = useState<ParameterConfig | null>(null)
+
+  const selectType = (type: string) => {
+    setTypeParam(prev => applyParameterTypeDefaults({ ...(prev || EMPTY_PARAMETER), name, type }, type))
+  }
+  const updateField = (field: keyof ParameterConfig, value: unknown) => {
+    setTypeParam(prev => (prev ? { ...prev, [field]: value } : prev))
+  }
+  const canCreate = Boolean(name.trim() && typeParam?.type)
+  const create = () => {
+    if (!typeParam?.type || !name.trim()) return
+    onConfirmBuiltin(sanitizeVarName(name), typeParam.type, typeParam)
+  }
+
+  return (
+    <div className="editor-dialog-backdrop parameter-choice-backdrop" onClick={onClose}>
+      <div
+        className="editor-dialog parameter-choice-dialog parameterize-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Parameterize Selection"
+        onClick={event => event.stopPropagation()}
+      >
+        <div className="editor-dialog-header">
+          <div>
+            <h3 className="panel-title">Parameterize Selection</h3>
+            <p className="editor-dialog-subtitle">
+              Replace <span className="cell-mono">{draft.selectedText}</span> with a parameter.
+            </p>
+          </div>
+          <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
+        </div>
+        <div className="editor-dialog-body parameter-choice-dialog-body">
+          {mode === 'choose' ? (
+            <>
+              <button type="button" className="parameter-choice-option" onClick={onChooseFile}>
+                <span className="parameter-choice-option-heading"><strong>File / Data</strong><span className="cell-mono">file</span></span>
+                <span>Use inline values or a data source file/column, advancing per the selection rule.</span>
+              </button>
+              <button type="button" className="parameter-choice-option" onClick={() => setMode('builtin')}>
+                <span className="parameter-choice-option-heading"><strong>Built-in Function</strong><span className="cell-mono">fn</span></span>
+                <span>Generate the value at runtime — random number, iteration number, time, UUID, and more.</span>
+              </button>
+            </>
+          ) : (
+            <div className="parameterize-builtin">
+              <label className="parameterize-name-field">
+                <span>Parameter Name</span>
+                <input value={name} onChange={event => setName(sanitizeVarName(event.target.value))} placeholder="param_name" />
+              </label>
+              <div className="parameterize-type-grid">
+                {BUILTIN_PARAMETER_TYPE_OPTIONS.map(option => {
+                  const selected = typeParam?.type === option.value
+                  return (
+                    <button
+                      type="button"
+                      key={option.value}
+                      className={`parameter-choice-option ${selected ? 'selected' : ''}`}
+                      aria-pressed={selected}
+                      onClick={() => selectType(option.value)}
+                    >
+                      <span className="parameter-choice-option-heading"><strong>{option.label}</strong><span className="cell-mono">{option.value}</span></span>
+                      <span>{option.description}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {typeParam && <ParameterTypeFields parameter={typeParam} onUpdate={updateField} />}
+              <div className="parameter-draft-actions">
+                <button type="button" className="btn btn-sm btn-primary" onClick={create} disabled={!canCreate}>Create Parameter</button>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMode('choose')}>Back</button>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 

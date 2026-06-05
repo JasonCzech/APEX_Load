@@ -167,6 +167,12 @@ function changeTextareaValue(textarea: HTMLTextAreaElement, value: string) {
   textarea.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+function changeInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+  setter?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
 function findOpenDebuggerButton(root: ParentNode) {
   return findWorkspaceTab(root, 'Debug')
 }
@@ -4582,6 +4588,15 @@ describe('ScriptEditor', () => {
       parameterizeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    // Choose the File / Data branch of the Parameterize dialog to reach the inline-value editor.
+    const fileChoice = Array.from(container.querySelectorAll('.parameterize-dialog .parameter-choice-option')).find(button =>
+      button.textContent?.includes('File / Data'),
+    )
+    expect(fileChoice).toBeDefined()
+    await act(async () => {
+      fileChoice?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
 
     const editorInputs = Array.from(container.querySelectorAll('.parameter-draft-panel input')) as HTMLInputElement[]
@@ -4694,6 +4709,15 @@ describe('ScriptEditor', () => {
       parameterizeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    // Choose the File / Data branch of the Parameterize dialog to reach the inline-value editor.
+    const fileChoice = Array.from(container.querySelectorAll('.parameterize-dialog .parameter-choice-option')).find(button =>
+      button.textContent?.includes('File / Data'),
+    )
+    expect(fileChoice).toBeDefined()
+    await act(async () => {
+      fileChoice?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
     const draftPanel = container.querySelector('.parameter-draft-panel')
     expect(draftPanel).not.toBeNull()
     expect(draftPanel?.textContent).toContain('Script JSON')
@@ -4721,6 +4745,165 @@ describe('ScriptEditor', () => {
     })
     const refreshedTextarea = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
     expect(refreshedTextarea?.value).toContain('{{param.login}}')
+  })
+
+  it('creates a built-in random_number parameter from the Script JSON context menu', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    const editorWrapper = container.querySelector('.script-code-editor') as HTMLElement | null
+    const textarea = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
+    expect(editorWrapper).not.toBeNull()
+    expect(textarea).not.toBeNull()
+    if (!editorWrapper || !textarea) {
+      return
+    }
+
+    const start = textarea.value.indexOf('/login')
+    const end = start + '/login'.length
+    textarea.focus()
+    textarea.setSelectionRange(start, end)
+
+    await act(async () => {
+      editorWrapper.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 90, clientY: 60 }))
+    })
+
+    const parameterizeButton = Array.from(container.querySelectorAll('.action-parameter-menu button')).find(button =>
+      button.textContent?.includes('Parameterize selection'),
+    )
+    expect(parameterizeButton).toBeDefined()
+    await act(async () => {
+      parameterizeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    // Take the Built-in Function branch and pick the Random Number type.
+    const builtinChoice = Array.from(container.querySelectorAll('.parameterize-dialog .parameter-choice-option')).find(button =>
+      button.textContent?.includes('Built-in Function'),
+    )
+    expect(builtinChoice).toBeDefined()
+    await act(async () => {
+      builtinChoice?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const randomTypeOption = Array.from(container.querySelectorAll('.parameterize-type-grid .parameter-choice-option')).find(button =>
+      button.textContent?.includes('random_number'),
+    )
+    expect(randomTypeOption).toBeDefined()
+    await act(async () => {
+      randomTypeOption?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    // Configure the min/max key fields inline.
+    const minInput = container.querySelector('.parameterize-type-fields input') as HTMLInputElement | null
+    expect(minInput).not.toBeNull()
+    const numberInputs = Array.from(container.querySelectorAll('.parameterize-type-fields input')) as HTMLInputElement[]
+    await act(async () => {
+      changeInputValue(numberInputs[0], '5')
+      changeInputValue(numberInputs[1], '50')
+    })
+
+    const createButton = Array.from(container.querySelectorAll('.parameterize-dialog button')).find(button =>
+      button.textContent?.includes('Create Parameter'),
+    )
+    expect(createButton).toBeDefined()
+    await act(async () => {
+      createButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    // The dialog closes and the new parameter is shown in the Parameter Data tab.
+    expect(container.querySelector('.parameterize-dialog')).toBeNull()
+    expect(container.textContent).toContain('Random Number')
+
+    // Switching back to Script JSON confirms the token and the typed parameter definition.
+    const jsonTab = findCenterTab(container, 'Script JSON')
+    expect(jsonTab).toBeDefined()
+    await act(async () => {
+      jsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const refreshedTextarea = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
+    expect(refreshedTextarea?.value).toContain('{{param.login}}')
+    expect(refreshedTextarea?.value).toContain('random_number')
+    expect(refreshedTextarea?.value).toMatch(/"min":\s*5/)
+    expect(refreshedTextarea?.value).toMatch(/"max":\s*50/)
+  })
+
+  it('creates a built-in current_iteration parameter from the action body context menu', async () => {
+    const scriptWithEditableBody: ScriptDefinition = {
+      ...initialScript,
+      actions: [
+        {
+          ...initialScript.actions[0],
+          type: 'POST',
+          body: '{"n":"seed"}',
+        },
+      ],
+      parameters: [],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={scriptWithEditableBody} />)
+    })
+
+    const actionItem = container.querySelector('.action-item') as HTMLDivElement | null
+    expect(actionItem).not.toBeNull()
+    if (!actionItem) {
+      return
+    }
+    await act(async () => {
+      actionItem.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const textarea = container.querySelector('textarea.body-textarea') as HTMLTextAreaElement | null
+    expect(textarea).not.toBeNull()
+    if (!textarea) {
+      return
+    }
+
+    const start = textarea.value.indexOf('seed')
+    const end = start + 'seed'.length
+    textarea.focus()
+    textarea.setSelectionRange(start, end)
+
+    await act(async () => {
+      textarea.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 120, clientY: 80 }))
+    })
+
+    const parameterizeButton = Array.from(container.querySelectorAll('.action-parameter-menu button')).find(button =>
+      button.textContent?.includes('Parameterize selection'),
+    )
+    expect(parameterizeButton).toBeDefined()
+    await act(async () => {
+      parameterizeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const builtinChoice = Array.from(container.querySelectorAll('.parameterize-dialog .parameter-choice-option')).find(button =>
+      button.textContent?.includes('Built-in Function'),
+    )
+    expect(builtinChoice).toBeDefined()
+    await act(async () => {
+      builtinChoice?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const iterationTypeOption = Array.from(container.querySelectorAll('.parameterize-type-grid .parameter-choice-option')).find(button =>
+      button.textContent?.includes('current_iteration'),
+    )
+    expect(iterationTypeOption).toBeDefined()
+    await act(async () => {
+      iterationTypeOption?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const createButton = Array.from(container.querySelectorAll('.parameterize-dialog button')).find(button =>
+      button.textContent?.includes('Create Parameter'),
+    )
+    expect(createButton).toBeDefined()
+    await act(async () => {
+      createButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.parameterize-dialog')).toBeNull()
+    expect(textarea.value).toContain('{{param.seed}}')
+    expect(container.textContent).toContain('Current Iteration')
   })
 
   it('offers Edit parameter when selecting an existing token in the Script JSON', async () => {
