@@ -601,6 +601,111 @@ describe('ScriptEditor', () => {
     expect(activeCenterTab?.getAttribute('aria-selected')).toBe('true')
   })
 
+  it('collapses outline lists and focuses parameter references in script JSON', async () => {
+    const parameterizedScript: ScriptDefinition = {
+      ...initialScript,
+      actions: [{
+        ...initialScript.actions[0],
+        body: '{"username":"{{param.session_id}}","session":"{{param.session_id}}"}',
+      }],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={parameterizedScript} />)
+    })
+
+    const actionSection = Array.from(container.querySelectorAll('.outline-section'))
+      .find(section => section.textContent?.includes('Action List'))
+    const parameterSection = Array.from(container.querySelectorAll('.outline-section'))
+      .find(section => section.textContent?.includes('Parameter List'))
+    expect(actionSection).toBeDefined()
+    expect(parameterSection).toBeDefined()
+    expect(container.querySelector('.action-list')?.textContent).toContain('Login')
+    expect(container.querySelector('.parameter-outline-list')?.textContent).toContain('session_id')
+
+    const actionToggle = actionSection?.querySelector('.outline-section-toggle')
+    await act(async () => {
+      actionToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(actionToggle?.getAttribute('aria-expanded')).toBe('false')
+    expect(container.querySelector('.action-list')).toBeNull()
+
+    const parameterToggle = parameterSection?.querySelector('.outline-section-toggle')
+    await act(async () => {
+      parameterToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(parameterToggle?.getAttribute('aria-expanded')).toBe('false')
+    expect(container.querySelector('.parameter-outline-list')).toBeNull()
+
+    await act(async () => {
+      parameterToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const parameterButton = Array.from(container.querySelectorAll('.parameter-outline-item'))
+      .find(button => button.textContent?.includes('session_id'))
+    await act(async () => {
+      parameterButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(parameterButton?.classList.contains('selected')).toBe(true)
+    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.script-code-title')?.textContent).toContain('Parameter: session_id (2 occurrences)')
+  })
+
+  it('adds collapsible action and parameter lists to the debug rail', async () => {
+    const parameterizedScript: ScriptDefinition = {
+      ...initialScript,
+      actions: [{
+        ...initialScript.actions[0],
+        body: '{"username":"{{param.session_id}}","session":"{{param.session_id}}"}',
+      }],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={parameterizedScript} />)
+    })
+
+    const debugTab = findOpenDebuggerButton(container)
+    await act(async () => {
+      debugTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const debugRail = container.querySelector('.debugger-rail')
+    expect(debugRail?.textContent).toContain('Action List')
+    expect(debugRail?.textContent).toContain('Parameter List')
+    expect(debugRail?.querySelector('.debugger-rail-list')?.textContent).toContain('Login')
+    expect(debugRail?.querySelector('.debugger-parameter-list')?.textContent).toContain('session_id')
+
+    const debugToggles = debugRail?.querySelectorAll('.debugger-rail-section-toggle')
+    expect(debugToggles).toHaveLength(2)
+
+    await act(async () => {
+      debugToggles?.[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(debugToggles?.[0]?.getAttribute('aria-expanded')).toBe('false')
+    expect(debugRail?.querySelector('.debugger-rail-list')).toBeNull()
+    expect(debugRail?.querySelector('.debugger-parameter-list')).not.toBeNull()
+
+    await act(async () => {
+      debugToggles?.[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(debugToggles?.[1]?.getAttribute('aria-expanded')).toBe('false')
+    expect(debugRail?.querySelector('.debugger-parameter-list')).toBeNull()
+
+    await act(async () => {
+      debugToggles?.[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const parameterButton = Array.from(container.querySelectorAll('.debugger-parameter-item'))
+      .find(button => button.textContent?.includes('session_id'))
+    await act(async () => {
+      parameterButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(parameterButton?.classList.contains('selected')).toBe(true)
+    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.script-code-title')?.textContent).toContain('Parameter: session_id (2 occurrences)')
+  })
+
   it('keeps the script JSON pane visible in Author and Debug workbench modes', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)

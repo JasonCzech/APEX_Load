@@ -58,6 +58,7 @@ type LibraryCatalogItem struct {
 	ContentHash      string              `json:"content_hash"`
 	SourceInstanceID string              `json:"source_instance_id"`
 	SourceItemID     string              `json:"source_item_id"`
+	ExecutionRunDate time.Time           `json:"execution_run_date,omitempty"`
 	UpdatedAt        time.Time           `json:"updated_at"`
 	HasArchive       bool                `json:"has_archive,omitempty"`
 	Dependencies     []LibraryDependency `json:"dependencies,omitempty"`
@@ -798,6 +799,7 @@ func (s *Server) libraryCatalogItems(projectID string, kind string) []LibraryCat
 				ContentHash:      hashLibraryResult(test),
 				SourceInstanceID: s.controllerID,
 				SourceItemID:     test.ID,
+				ExecutionRunDate: managedTestExecutionRunDate(test),
 				UpdatedAt:        managedTestCompletedAt(test),
 				HasArchive:       test.Archive != nil,
 			})
@@ -810,6 +812,16 @@ func (s *Server) libraryCatalogItems(projectID string, kind string) []LibraryCat
 		return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
 	})
 	return items
+}
+
+func managedTestExecutionRunDate(test *ManagedTest) time.Time {
+	if test == nil {
+		return time.Time{}
+	}
+	if test.StartedAt != nil {
+		return *test.StartedAt
+	}
+	return test.CreatedAt
 }
 
 func (s *Server) buildLibraryBundle(kind string, id string, projectID string, includeDependencies bool) (*LibraryBundle, error) {

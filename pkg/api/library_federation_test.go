@@ -296,6 +296,10 @@ func TestLibraryResultArchiveStreamsAndImportsMultipart(t *testing.T) {
 	if len(catalog.Items) != 1 || catalog.Items[0].ReleaseID != "release-archive" {
 		t.Fatalf("catalog items = %#v, want result release metadata", catalog.Items)
 	}
+	wantRunDate := time.Date(2026, 6, 1, 11, 55, 0, 0, time.UTC)
+	if catalog.Items[0].Status != "COMPLETE" || !catalog.Items[0].ExecutionRunDate.Equal(wantRunDate) {
+		t.Fatalf("catalog result status/run date = %q/%s, want COMPLETE/%s", catalog.Items[0].Status, catalog.Items[0].ExecutionRunDate, wantRunDate)
+	}
 
 	archiveResp := httptest.NewRecorder()
 	host.mux.ServeHTTP(archiveResp, httptest.NewRequest(http.MethodGet, "/api/v1/library/results/"+testRun.ID+"/archive", nil))
@@ -503,6 +507,7 @@ func marshalLibraryTestJSON(t *testing.T, value any) []byte {
 func attachLibraryArchiveFixture(t *testing.T, server *Server, testRun *ManagedTest) *storage.RunArchiveRecord {
 	t.Helper()
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	started := now.Add(-5 * time.Minute)
 	archiveDir := filepath.Join(t.TempDir(), "archive")
 	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
 		t.Fatalf("create archive dir: %v", err)
@@ -544,6 +549,7 @@ func attachLibraryArchiveFixture(t *testing.T, server *Server, testRun *ManagedT
 	}
 	stored.Status = "COMPLETE"
 	stored.Archive = record
+	stored.StartedAt = &started
 	stored.EndedAt = &now
 	server.runner.archives[testRun.ID] = record
 	server.runner.mu.Unlock()

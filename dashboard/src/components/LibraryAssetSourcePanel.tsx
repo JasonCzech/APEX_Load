@@ -41,6 +41,30 @@ function itemMetadata(item: LibraryCatalogItem) {
   ].filter(Boolean)
 }
 
+function executionRunDate(item: LibraryCatalogItem) {
+  return item.execution_run_date || item.updated_at
+}
+
+function displayStatus(row: LibraryAssetRow) {
+  if (row.item.kind === 'result') return row.item.status || 'Unknown'
+  return row.syncStatus
+}
+
+function statusTone(status?: string) {
+  switch ((status || '').toLowerCase()) {
+    case 'complete':
+    case 'completed':
+    case 'success':
+    case 'succeeded':
+      return 'healthy'
+    case 'failed':
+    case 'aborted':
+      return 'danger'
+    default:
+      return libraryStatusTone(status)
+  }
+}
+
 function releaseLabel(item: LibraryCatalogItem) {
   return item.release_name || item.release_id || 'Unassigned'
 }
@@ -88,11 +112,11 @@ function sortValue(row: LibraryAssetRow, field: LibraryAssetSortField): string |
     case 'source':
       return row.source
     case 'status':
-      return row.syncStatus.toLowerCase()
+      return displayStatus(row).toLowerCase()
     case 'release':
       return releaseLabel(row.item).toLowerCase()
     case 'metadata':
-      return Date.parse(row.item.updated_at || '') || 0
+      return Date.parse(row.item.kind === 'result' ? executionRunDate(row.item) || '' : row.item.updated_at || '') || 0
     case 'name':
     default:
       return (row.item.name || row.item.id || '').toLowerCase()
@@ -170,7 +194,7 @@ export default function LibraryAssetSourcePanel({
     })
   }, [releaseFilter, rows, showReleaseControls, sortDirection, sortField])
 
-  const columnCount = showReleaseControls ? 6 : 5
+  const columnCount = showReleaseControls ? 7 : 5
 
   useEffect(() => {
     if (selectedRowKey && !visibleRows.some(row => rowKey(row) === selectedRowKey)) {
@@ -225,6 +249,9 @@ export default function LibraryAssetSourcePanel({
               {showReleaseControls && (
                 <th onClick={() => handleSort('release')} className="sortable">Release <SortIndicator active={sortField === 'release'} direction={sortDirection} /></th>
               )}
+              {showReleaseControls && (
+                <th onClick={() => handleSort('metadata')} className="sortable">Execution Run Date <SortIndicator active={sortField === 'metadata'} direction={sortDirection} /></th>
+              )}
               <th onClick={() => handleSort('metadata')} className="sortable">Metadata <SortIndicator active={sortField === 'metadata'} direction={sortDirection} /></th>
               <th>Actions</th>
             </tr>
@@ -234,6 +261,8 @@ export default function LibraryAssetSourcePanel({
               const { source, item, syncStatus } = row
               const key = rowKey(row)
               const selected = key === selectedRowKey
+              const rowStatus = displayStatus(row)
+              const canExpandRow = !showReleaseControls
               const hostItem = source === 'Local' ? hostItemForLocal(item.id) : item
               const href = source === 'Remote' ? remoteItemHref(item) : ''
               const localItemID = item.local_item_id
@@ -242,12 +271,13 @@ export default function LibraryAssetSourcePanel({
               return (
                 <Fragment key={key}>
                   <tr
-                    className={`clickable-row ${selected ? 'selected' : ''}`}
-                    tabIndex={0}
-                    aria-selected={selected}
-                    aria-expanded={selected}
-                    onClick={() => toggleRow(key)}
+                    className={`${canExpandRow ? 'clickable-row' : 'no-hover'} ${selected ? 'selected' : ''}`}
+                    tabIndex={canExpandRow ? 0 : undefined}
+                    aria-selected={canExpandRow ? selected : undefined}
+                    aria-expanded={canExpandRow ? selected : undefined}
+                    onClick={canExpandRow ? () => toggleRow(key) : undefined}
                     onKeyDown={(event) => {
+                      if (!canExpandRow) return
                       if (event.key !== 'Enter' && event.key !== ' ') return
                       event.preventDefault()
                       toggleRow(key)
@@ -259,12 +289,12 @@ export default function LibraryAssetSourcePanel({
                     <td className="cell-name">
                       <strong>{item.name || item.id}</strong>
                       <div className="script-table-meta">
-                        <span className="script-health-token">{item.kind}</span>
-                        {item.protocol && <span className="script-health-token">{item.protocol}</span>}
-                        {item.has_archive && <span className="script-health-token healthy">archive</span>}
+                        {!showReleaseControls && <span className="script-health-token">{item.kind}</span>}
+                        {!showReleaseControls && item.protocol && <span className="script-health-token">{item.protocol}</span>}
+                        {!showReleaseControls && item.has_archive && <span className="script-health-token healthy">archive</span>}
                       </div>
                     </td>
-                    <td><span className={`script-health-token ${libraryStatusTone(syncStatus)}`}>{syncStatus}</span></td>
+                    <td><span className={`script-health-token ${statusTone(rowStatus)}`}>{rowStatus}</span></td>
                     {showReleaseControls && (
                       <td>
                         <div className="script-table-usage">
@@ -273,6 +303,7 @@ export default function LibraryAssetSourcePanel({
                         </div>
                       </td>
                     )}
+                    {showReleaseControls && <td className="cell-muted">{formatLibraryDateTime(executionRunDate(item))}</td>}
                     <td>
                       <div className="script-table-usage">
                         {itemMetadata(item).map(piece => <span key={piece}>{piece}</span>)}
@@ -317,7 +348,7 @@ export default function LibraryAssetSourcePanel({
                       </div>
                     </td>
                   </tr>
-                  {selected && (
+                  {canExpandRow && selected && (
                     <tr className="no-hover library-source-detail-row">
                       <td colSpan={columnCount}>
                         <div className="library-source-detail-card">

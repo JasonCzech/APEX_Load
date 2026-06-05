@@ -19,6 +19,7 @@ export type LibraryCatalogItem = {
   version?: string
   status?: string
   content_hash?: string
+  execution_run_date?: string
   updated_at?: string
   has_archive?: boolean
   dependencies?: LibraryDependency[]

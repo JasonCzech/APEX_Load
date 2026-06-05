@@ -182,6 +182,7 @@ describe('LibraryAssetSourcePanel', () => {
         release_name: 'PI30',
         status: 'FAILED',
         content_hash: 'zebrarun123456',
+        execution_run_date: '2026-05-01T13:00:00Z',
         updated_at: '2026-05-03T00:00:00Z',
         has_archive: true,
       },
@@ -194,6 +195,7 @@ describe('LibraryAssetSourcePanel', () => {
         release_name: 'PI29',
         status: 'COMPLETE',
         content_hash: 'alpharun123456',
+        execution_run_date: '2026-05-01T12:00:00Z',
         updated_at: '2026-05-02T00:00:00Z',
         has_archive: true,
       },
@@ -211,8 +213,12 @@ describe('LibraryAssetSourcePanel', () => {
     ))
 
     expect(container.textContent).toContain('Release')
+    expect(container.textContent).toContain('Execution Run Date')
     expect(releaseFilter().textContent).toContain('PI29')
     expect(releaseFilter().textContent).toContain('PI30')
+    expect(rowNamed('Alpha Run').textContent).toContain('COMPLETE')
+    expect(rowNamed('Alpha Run').textContent).toContain('5/1/2026')
+    expect(rowNamed('Alpha Run').querySelectorAll('.script-table-meta .script-health-token')).toHaveLength(0)
 
     await click(headerNamed('Name'))
     expect(visibleLibraryRowNames()).toEqual(['Alpha Run', 'Zebra Run'])
@@ -226,6 +232,9 @@ describe('LibraryAssetSourcePanel', () => {
 
     await click(findButton('Delete')!)
     expect(onDeleteLocalItem).toHaveBeenCalledWith('run-a')
+
+    await click(rowNamed('Alpha Run'))
+    expect(container.querySelector('.library-source-detail-row')).toBeNull()
   })
 
   it('disables transfers when the selected remote has no configured credentials', async () => {
@@ -298,6 +307,12 @@ function rowContaining(text: string) {
   return row as HTMLTableRowElement
 }
 
+function rowNamed(text: string) {
+  const row = Array.from(document.querySelectorAll('.library-source-table tbody tr')).find(row => row.querySelector('.cell-name > strong')?.textContent?.trim() === text)
+  expect(row).toBeTruthy()
+  return row as HTMLTableRowElement
+}
+
 function headerNamed(text: string) {
   const header = Array.from(document.querySelectorAll('th.sortable')).find(header => header.textContent?.includes(text))
   expect(header).toBeTruthy()
@@ -311,7 +326,7 @@ function releaseFilter() {
 }
 
 function visibleLibraryRowNames() {
-  return Array.from(document.querySelectorAll('.library-source-table tbody tr.clickable-row .cell-name > strong'))
+  return Array.from(document.querySelectorAll('.library-source-table tbody tr .cell-name > strong'))
     .map(element => element.textContent?.trim() || '')
 }
 

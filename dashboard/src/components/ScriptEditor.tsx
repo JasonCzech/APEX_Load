@@ -5,7 +5,7 @@ import type { BrowserToHTTPPreviewResponse } from '../hooks/api/useScriptApi'
 import { useWebSocket } from '../hooks/useWebSocket'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
-import { RangeSetBuilder, StateEffect, StateField } from '@codemirror/state'
+import { EditorSelection, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state'
 import { Decoration, type DecorationSet, EditorView } from '@codemirror/view'
 import { apexCodeMirrorTheme } from './codeMirrorTheme'
 import {
@@ -260,6 +260,12 @@ const DEBUGGER_LAYOUT_LIMITS: Record<DebuggerResizeKind, { max: number; min: num
 }
 
 const setScriptCodeRange = StateEffect.define<LineRange | null>()
+const setScriptCodeParameterMatches = StateEffect.define<ScriptCodeMatchRange[]>()
+
+interface ScriptCodeMatchRange {
+  from: number
+  to: number
+}
 
 function buildScriptCodeDecorations(state: EditorView['state'], range: LineRange | null): DecorationSet {
   if (!range) return Decoration.none
@@ -287,6 +293,51 @@ const scriptCodeRangeField = StateField.define<DecorationSet>({
   },
   provide: field => EditorView.decorations.from(field),
 })
+
+function buildScriptCodeParameterDecorations(state: EditorView['state'], ranges: ScriptCodeMatchRange[]): DecorationSet {
+  if (ranges.length === 0) return Decoration.none
+  const builder = new RangeSetBuilder<Decoration>()
+  const matchDeco = Decoration.mark({ class: 'script-code-parameter-match' })
+  const firstMatchDeco = Decoration.mark({ class: 'script-code-parameter-match first' })
+  ranges
+    .filter(range => range.from >= 0 && range.to > range.from && range.to <= state.doc.length)
+    .sort((left, right) => left.from - right.from || left.to - right.to)
+    .forEach((range, index) => {
+      builder.add(range.from, range.to, index === 0 ? firstMatchDeco : matchDeco)
+    })
+  return builder.finish()
+}
+
+const scriptCodeParameterMatchField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(decorations, tr) {
+    let next = decorations.map(tr.changes)
+    for (const effect of tr.effects) {
+      if (effect.is(setScriptCodeParameterMatches)) {
+        next = buildScriptCodeParameterDecorations(tr.state, effect.value)
+      }
+    }
+    return next
+  },
+  provide: field => EditorView.decorations.from(field),
+})
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function findParameterReferencesInJson(text: string, parameterName: string): ScriptCodeMatchRange[] {
+  const name = parameterName.trim()
+  if (!name) return []
+  const ranges: ScriptCodeMatchRange[] = []
+  const pattern = new RegExp(`\\{\\{\\s*param\\.${escapeRegExp(name)}\\s*\\}\\}`, 'g')
+  let match = pattern.exec(text)
+  while (match) {
+    ranges.push({ from: match.index, to: match.index + match[0].length })
+    match = pattern.exec(text)
+  }
+  return ranges
+}
 
 function clampDebuggerPaneSize(kind: DebuggerResizeKind, value: number) {
   const limits = DEBUGGER_LAYOUT_LIMITS[kind]
@@ -416,8 +467,10 @@ interface ScriptCodePaneProps {
   statusMessage: string
   activePath: string
   activeRange: LineRange | null
+  activeParameterName?: string | null
   actionCount: number
   className?: string
+  parameterMatchRanges?: ScriptCodeMatchRange[]
   onApply: () => void
   onChange: (value: string) => void
   onCopy: () => void
@@ -433,8 +486,10 @@ function ScriptCodePane({
   statusMessage,
   activePath,
   activeRange,
+  activeParameterName,
   actionCount,
   className = '',
+  parameterMatchRanges = [],
   onApply,
   onChange,
   onCopy,
@@ -449,10 +504,18 @@ function ScriptCodePane({
     json(),
     apexCodeMirrorTheme,
     scriptCodeRangeField,
+    scriptCodeParameterMatchField,
     EditorView.lineWrapping,
   ], [])
   const activeStartLine = activeRange?.startLine ?? null
   const activeEndLine = activeRange?.endLine ?? null
+  const parameterMatchKey = useMemo(
+    () => parameterMatchRanges.map(range => `${range.from}:${range.to}`).join('|'),
+    [parameterMatchRanges],
+  )
+  const parameterStatus = activeParameterName
+    ? `Parameter: ${activeParameterName} (${parameterMatchRanges.length} occurrence${parameterMatchRanges.length === 1 ? '' : 's'})`
+    : ''
 
   useEffect(() => {
     const view = viewRef.current
@@ -465,6 +528,22 @@ function ScriptCodePane({
     }
     view.dispatch({ effects })
   }, [activeStartLine, activeEndLine, editorReadyVersion, value])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    const firstMatch = parameterMatchRanges[0]
+    const effects: StateEffect<unknown>[] = [setScriptCodeParameterMatches.of(parameterMatchRanges)]
+    if (firstMatch && firstMatch.to <= view.state.doc.length) {
+      effects.push(EditorView.scrollIntoView(firstMatch.from, { y: 'center' }))
+      view.dispatch({
+        selection: EditorSelection.range(firstMatch.from, firstMatch.to),
+        effects,
+      })
+      return
+    }
+    view.dispatch({ effects })
+  }, [editorReadyVersion, parameterMatchKey, parameterMatchRanges, value])
 
   const handleEditorContextMenu = useCallback((event: MouseEvent<HTMLDivElement>) => {
     if (!onRequestParameterize) return
@@ -489,7 +568,7 @@ function ScriptCodePane({
       <div className="script-code-toolbar">
         <div className="script-code-title">
           <strong>{'{ }'} Script JSON</strong>
-          <span>{activePath || `${actionCount} executable${actionCount === 1 ? '' : 's'}`}</span>
+          <span>{parameterStatus || activePath || `${actionCount} executable${actionCount === 1 ? '' : 's'}`}</span>
         </div>
         <div className="script-code-status-row">
           <span className={`script-code-status ${status}`}>{statusMessage}</span>
@@ -1654,6 +1733,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   // is open. Cleared once the user picks a branch.
   const [parameterizeChoice, setParameterizeChoice] = useState<ActionEditorParameterDraft | null>(null)
   const [authorCodeFocus, setAuthorCodeFocus] = useState<{ phase: ScriptActionPhase; actionIndex: number } | null>(null)
+  const [outlineActionListCollapsed, setOutlineActionListCollapsed] = useState(false)
+  const [outlineParameterListCollapsed, setOutlineParameterListCollapsed] = useState(false)
+  const [debugActionListCollapsed, setDebugActionListCollapsed] = useState(false)
+  const [debugParameterListCollapsed, setDebugParameterListCollapsed] = useState(false)
+  const [selectedOutlineParameterName, setSelectedOutlineParameterName] = useState<string | null>(null)
   const isBrowserScript = script.protocol === 'browser'
   const isHttpScript = script.protocol === 'http'
   const isJmsScript = script.protocol === 'jms-solace'
@@ -1683,6 +1767,23 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const logLevelLabel = script.config.log?.level || 'standard'
   const outlineSummary = buildScriptOutlineSummary(script)
   const scriptPhaseActionRows = useMemo(() => buildScriptPhaseActionRows(script), [script])
+  const parameterReferenceCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    outlineSummary.actions.forEach(action => {
+      action.parameterRefs.forEach(ref => counts.set(ref, (counts.get(ref) || 0) + 1))
+    })
+    return counts
+  }, [outlineSummary.actions])
+  const selectedOutlineParameterExists = Boolean(
+    selectedOutlineParameterName
+    && (script.parameters || []).some(parameter => parameter.name === selectedOutlineParameterName),
+  )
+  const parameterMatchRanges = useMemo(
+    () => selectedOutlineParameterExists && selectedOutlineParameterName
+      ? findParameterReferencesInJson(jsonText, selectedOutlineParameterName)
+      : [],
+    [jsonText, selectedOutlineParameterExists, selectedOutlineParameterName],
+  )
   const importMetadata = scriptHasImportMetadata(script) ? script.metadata?.import : undefined
   const importSummary = getImportSummary(importMetadata)
   const sourceReview = readSourceReview(importMetadata)
@@ -1749,6 +1850,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       return { tabs, activeTabId: tabId }
     })
   }, [availableCenterTabIds])
+  const selectOutlineParameter = useCallback((parameterName: string) => {
+    setSelectedOutlineParameterName(parameterName)
+    openCenterTab(SCRIPT_JSON_TAB_ID)
+  }, [openCenterTab])
   const closeCenterTab = useCallback((tabId: CenterWorkbenchTabId) => {
     if (tabId === SCRIPT_JSON_TAB_ID || tabId === BROWSER_REPLAY_TAB_ID) return
     setCenterTabPanelElements(prev => prev[tabId] ? { ...prev, [tabId]: null } : prev)
@@ -1831,6 +1936,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       openCenterTab(BROWSER_REPLAY_TAB_ID)
     }
   }, [isBrowserScript, openCenterTab, workspaceTab])
+  useEffect(() => {
+    if (!selectedOutlineParameterName) return
+    if (script.parameters?.some(parameter => parameter.name === selectedOutlineParameterName)) return
+    setSelectedOutlineParameterName(null)
+  }, [script.parameters, selectedOutlineParameterName])
   useEffect(() => {
     if (centerTabsHydratedKey !== centerTabsStorageKey) return
     try {
@@ -4740,7 +4850,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           statusMessage={jsonStatusMessage}
           activePath={scriptCodeStatusPath}
           activeRange={scriptCodeActiveRange}
+          activeParameterName={selectedOutlineParameterExists ? selectedOutlineParameterName : null}
           actionCount={scriptPhaseActionRows.length}
+          parameterMatchRanges={parameterMatchRanges}
           onApply={handleApplyJsonDraft}
           onChange={handleCodePaneChange}
           onCopy={() => void navigator.clipboard?.writeText(jsonText)}
@@ -5544,93 +5656,145 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 } as React.CSSProperties}
               >
                 <aside className="debugger-rail" aria-label="Actions">
-                  <div className="debugger-rail-header">
-                    <div className="debugger-rail-header-top">
-                      <span>Actions</span>
-                      <div className="debugger-rail-header-meta">
-                        <small>{breakpointSummary}</small>
-                        {debugBreakpoints.length > 0 && (
-                          <button type="button" className="btn btn-sm btn-ghost" onClick={() => void clearDebugBreakpoints()}>Clear</button>
+                  <section className="debugger-rail-section">
+                    <div className="debugger-rail-header">
+                      <div className="debugger-rail-header-top">
+                        <button
+                          type="button"
+                          className="debugger-rail-section-toggle"
+                          aria-expanded={!debugActionListCollapsed}
+                          onClick={() => setDebugActionListCollapsed(collapsed => !collapsed)}
+                        >
+                          <span aria-hidden="true" className="outline-section-chevron">{debugActionListCollapsed ? '▸' : '▾'}</span>
+                          <span>Action List</span>
+                        </button>
+                        <div className="debugger-rail-header-meta">
+                          <small>{breakpointSummary}</small>
+                          {debugBreakpoints.length > 0 && (
+                            <button type="button" className="btn btn-sm btn-ghost" onClick={() => void clearDebugBreakpoints()}>Clear</button>
+                          )}
+                        </div>
+                      </div>
+                      {!debugActionListCollapsed && (
+                        <div className="debugger-rail-filter">
+                          <input value={debugRailFilter} onChange={e => setDebugRailFilter(e.target.value)} placeholder="Filter actions" aria-label="Filter actions" />
+                          <label className="checkbox-label replay-checkbox">
+                            <input type="checkbox" checked={debugRailFailuresOnly} onChange={e => setDebugRailFailuresOnly(e.target.checked)} />
+                            <span>Failures</span>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                    {!debugActionListCollapsed && (
+                      debugActionRows.length === 0 ? (
+                        <div className="debugger-rail-empty">Add actions to the script to debug.</div>
+                      ) : (
+                        <div
+                          className="debugger-rail-list"
+                          tabIndex={0}
+                          onKeyDown={e => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault()
+                              const dir = e.key === 'ArrowDown' ? 1 : -1
+                              const current = selectedReplayEventIndex ?? 0
+                              const next = Math.max(0, Math.min(debugActionRows.length - 1, current + dir))
+                              setExpandedReplayEvent(next)
+                            }
+                          }}
+                        >
+                          {(() => {
+                            const rows = debugActionRows.map(({ phase, actionIndex, action }, position) => {
+                              const rowKey = debugBreakpointKey(phase, actionIndex)
+                              const breakpointActive = debugBreakpointKeys.has(rowKey)
+                              const rowEvent = replayReport?.events[position]
+                              const isCurrentRow = currentDebugActionKey === rowKey
+                              const isSelectedRow = selectedReplayEventIndex === position
+                              const rowStatus = rowEvent ? (rowEvent.success ? 'pass' : 'fail') : isCurrentRow ? 'current' : 'pending'
+                              const haystack = `${action.name || ''} ${action.target || ''} ${action.selector || ''} ${rowEvent?.action_name || ''} ${rowEvent?.target || ''}`.toLowerCase()
+                              if (debugRailFilterText && !haystack.includes(debugRailFilterText)) return null
+                              if (debugRailFailuresOnly && !(rowEvent && !rowEvent.success)) return null
+                              return (
+                                <div
+                                  key={rowKey}
+                                  className={`debugger-action-row ${rowStatus} ${isSelectedRow ? 'selected' : ''} ${isCurrentRow ? 'current' : ''}`}
+                                  ref={node => { replayEventRefs.current[position] = node }}
+                                >
+                                  <button
+                                    type="button"
+                                    className={`debugger-gutter ${breakpointActive ? 'active' : ''}`}
+                                    title={breakpointActive ? 'Remove breakpoint' : 'Add breakpoint'}
+                                    aria-label={breakpointActive ? 'Remove breakpoint' : 'Add breakpoint'}
+                                    onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
+                                  >
+                                    <span className="debugger-breakpoint-dot" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="debugger-action-row-main"
+                                    onDoubleClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
+                                    onClick={() => {
+                                      if (phase === 'action') setActiveAction(actionIndex)
+                                      if (rowEvent) {
+                                        setExpandedReplayEvent(position)
+                                        setDebugDetailCollapsed(false)
+                                        if (debuggerTab === 'browser' && !isBrowserScript) setDebuggerTab('request')
+                                      }
+                                    }}
+                                  >
+                                    <span className="debugger-action-row-head">
+                                      <span className="replay-event-phase">{formatDebugPhaseLabel(phase)} {actionIndex + 1}</span>
+                                      <span className={`debugger-action-status ${rowStatus}`} aria-hidden="true" />
+                                    </span>
+                                    <strong>{action.name || rowEvent?.action_name || 'Unnamed action'}</strong>
+                                    <small>{(rowEvent?.method || action.method || rowEvent?.action_type || action.type || 'action')} {rowEvent?.target || action.target || action.selector || ''}</small>
+                                  </button>
+                                </div>
+                              )
+                            }).filter(Boolean)
+                            return rows.length > 0 ? rows : <div className="debugger-rail-empty">No actions match the filter.</div>
+                          })()}
+                        </div>
+                      )
+                    )}
+                  </section>
+                  <section className="debugger-rail-section debugger-parameter-section">
+                    <div className="debugger-rail-header debugger-parameter-header">
+                      <button
+                        type="button"
+                        className="debugger-rail-section-toggle"
+                        aria-expanded={!debugParameterListCollapsed}
+                        onClick={() => setDebugParameterListCollapsed(collapsed => !collapsed)}
+                      >
+                        <span aria-hidden="true" className="outline-section-chevron">{debugParameterListCollapsed ? '▸' : '▾'}</span>
+                        <span>Parameter List</span>
+                      </button>
+                      <small>{script.parameters?.length || 0} defined</small>
+                    </div>
+                    {!debugParameterListCollapsed && (
+                      <div className="debugger-parameter-list">
+                        {(script.parameters || []).map((parameter, index) => {
+                          const parameterName = parameter.name || `Parameter ${index + 1}`
+                          const referenceCount = parameter.name ? parameterReferenceCounts.get(parameter.name) || 0 : 0
+                          const selected = selectedOutlineParameterName === parameter.name
+                          return (
+                            <button
+                              key={`debug-${parameter.name || 'parameter'}-${index}`}
+                              type="button"
+                              className={`parameter-outline-item debugger-parameter-item ${selected ? 'selected' : ''}`}
+                              onClick={() => parameter.name && selectOutlineParameter(parameter.name)}
+                              disabled={!parameter.name}
+                            >
+                              <strong>{parameterName}</strong>
+                              <span>{parameter.type || 'list'} · {referenceCount} ref{referenceCount === 1 ? '' : 's'}</span>
+                            </button>
+                          )
+                        })}
+                        {(script.parameters || []).length === 0 && (
+                          <div className="debugger-rail-empty">No parameters defined yet.</div>
                         )}
                       </div>
-                    </div>
-                    <div className="debugger-rail-filter">
-                      <input value={debugRailFilter} onChange={e => setDebugRailFilter(e.target.value)} placeholder="Filter actions" aria-label="Filter actions" />
-                      <label className="checkbox-label replay-checkbox">
-                        <input type="checkbox" checked={debugRailFailuresOnly} onChange={e => setDebugRailFailuresOnly(e.target.checked)} />
-                        <span>Failures</span>
-                      </label>
-                    </div>
-                  </div>
-                  {debugActionRows.length === 0 ? (
-                    <div className="debugger-rail-empty">Add actions to the script to debug.</div>
-                  ) : (
-                    <div
-                      className="debugger-rail-list"
-                      tabIndex={0}
-                      onKeyDown={e => {
-                        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                          e.preventDefault()
-                          const dir = e.key === 'ArrowDown' ? 1 : -1
-                          const current = selectedReplayEventIndex ?? 0
-                          const next = Math.max(0, Math.min(debugActionRows.length - 1, current + dir))
-                          setExpandedReplayEvent(next)
-                        }
-                      }}
-                    >
-                      {(() => {
-                        const rows = debugActionRows.map(({ phase, actionIndex, action }, position) => {
-                          const rowKey = debugBreakpointKey(phase, actionIndex)
-                          const breakpointActive = debugBreakpointKeys.has(rowKey)
-                          const rowEvent = replayReport?.events[position]
-                          const isCurrentRow = currentDebugActionKey === rowKey
-                          const isSelectedRow = selectedReplayEventIndex === position
-                          const rowStatus = rowEvent ? (rowEvent.success ? 'pass' : 'fail') : isCurrentRow ? 'current' : 'pending'
-                          const haystack = `${action.name || ''} ${action.target || ''} ${action.selector || ''} ${rowEvent?.action_name || ''} ${rowEvent?.target || ''}`.toLowerCase()
-                          if (debugRailFilterText && !haystack.includes(debugRailFilterText)) return null
-                          if (debugRailFailuresOnly && !(rowEvent && !rowEvent.success)) return null
-                          return (
-                            <div
-                              key={rowKey}
-                              className={`debugger-action-row ${rowStatus} ${isSelectedRow ? 'selected' : ''} ${isCurrentRow ? 'current' : ''}`}
-                              ref={node => { replayEventRefs.current[position] = node }}
-                            >
-                              <button
-                                type="button"
-                                className={`debugger-gutter ${breakpointActive ? 'active' : ''}`}
-                                title={breakpointActive ? 'Remove breakpoint' : 'Add breakpoint'}
-                                aria-label={breakpointActive ? 'Remove breakpoint' : 'Add breakpoint'}
-                                onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
-                              >
-                                <span className="debugger-breakpoint-dot" />
-                              </button>
-                              <button
-                                type="button"
-                                className="debugger-action-row-main"
-                                onDoubleClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
-                                onClick={() => {
-                                  if (phase === 'action') setActiveAction(actionIndex)
-                                  if (rowEvent) {
-                                    setExpandedReplayEvent(position)
-                                    setDebugDetailCollapsed(false)
-                                    if (debuggerTab === 'browser' && !isBrowserScript) setDebuggerTab('request')
-                                  }
-                                }}
-                              >
-                                <span className="debugger-action-row-head">
-                                  <span className="replay-event-phase">{formatDebugPhaseLabel(phase)} {actionIndex + 1}</span>
-                                  <span className={`debugger-action-status ${rowStatus}`} aria-hidden="true" />
-                                </span>
-                                <strong>{action.name || rowEvent?.action_name || 'Unnamed action'}</strong>
-                                <small>{(rowEvent?.method || action.method || rowEvent?.action_type || action.type || 'action')} {rowEvent?.target || action.target || action.selector || ''}</small>
-                              </button>
-                            </div>
-                          )
-                        }).filter(Boolean)
-                        return rows.length > 0 ? rows : <div className="debugger-rail-empty">No actions match the filter.</div>
-                      })()}
-                    </div>
-                  )}
+                    )}
+                  </section>
                   <div
                     className={`debugger-resizer debugger-resizer-col ${activeDebuggerResize === 'rail' ? 'active' : ''}`}
                     onKeyDown={e => handleDebuggerResizeKeyDown('rail', e)}
@@ -7819,64 +7983,119 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     {isBrowserScript && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('http-conversion')}>HTTP Conversion Review</button>}
                   </div>
                 </div>
-                <div className="actions-sidebar-header">
-                  <h3 className="panel-title" style={{ fontSize: 11 }}>Action List</h3>
-                  <div className="actions-sidebar-controls">
-                    <button className="btn btn-sm btn-accent" onClick={addAction}>+ Add</button>
+                <section className="outline-section">
+                  <div className="actions-sidebar-header outline-section-header">
+                    <button
+                      type="button"
+                      className="outline-section-toggle"
+                      aria-expanded={!outlineActionListCollapsed}
+                      onClick={() => setOutlineActionListCollapsed(collapsed => !collapsed)}
+                    >
+                      <span aria-hidden="true" className="outline-section-chevron">{outlineActionListCollapsed ? '▸' : '▾'}</span>
+                      <span>
+                        <strong>Action List</strong>
+                        <small>{scriptPhaseActionRows.length} executable{scriptPhaseActionRows.length === 1 ? '' : 's'}</small>
+                      </span>
+                    </button>
+                    <div className="actions-sidebar-controls">
+                      <button className="btn btn-sm btn-accent" onClick={addAction}>+ Add</button>
+                    </div>
                   </div>
-                </div>
-                <div className="action-list">
-                  {scriptPhaseActionRows.map((row) => {
-                    const { action: a, actionIndex: i, phase, phaseLabel } = row
-                    const actionBreakpointActive = debugBreakpointKeys.has(debugBreakpointKey(phase, i))
-                    const breakpointPhaseLabel = phase === 'action' ? 'action' : phaseLabel
-                    const actionBreakpointLabel = `${actionBreakpointActive ? 'Remove' : 'Set'} breakpoint on ${breakpointPhaseLabel} ${i + 1}`
-                    const requestCount = actionRequestCount(a)
-                    const extractorCount = actionExtractorCount(a)
-                    const rowIssues = phase === 'action' ? actionIssueBuckets[i] || [] : []
-                    const rowActive = authorCodeFocus
-                      ? authorCodeFocus.phase === phase && authorCodeFocus.actionIndex === i
-                      : phase === 'action' && activeAction === i
-                    return (
-                      <div key={`${phase}-${i}`} className={`action-item ${rowActive ? 'active' : ''} ${actionBreakpointActive ? 'has-breakpoint' : ''} ${phase !== 'action' ? 'lifecycle-action' : ''}`} onClick={() => selectAuthorPhaseAction(row)}>
-                        <button
-                          type="button"
-                          className={`action-breakpoint-button ${actionBreakpointActive ? 'active' : ''}`}
-                          aria-label={actionBreakpointLabel}
-                          title={actionBreakpointLabel}
-                          onClick={event => {
-                            event.stopPropagation()
-                            void toggleDebugBreakpoint(phase, i)
-                          }}
-                        >
-                          <span aria-hidden="true" />
-                        </button>
-                        <span className="action-phase-label">{phaseLabel}</span>
-                        <span className="action-method" style={{ color: methodColor(a.type) }}>{a.type === 'http_sequence' ? 'SEQ' : a.type}</span>
-                        <span className="action-name-text">{a.name || 'Unnamed'}</span>
-                        <div className="action-item-signals">
-                          {requestCount > 0 && <span className="action-signal-pill">R{requestCount}</span>}
-                          {extractorCount > 0 && <span className="action-signal-pill">E{extractorCount}</span>}
-                          {rowIssues.length > 0 && (
-                            <span className={`action-signal-pill ${rowIssues.some((issue) => issue.severity === 'error') ? 'error' : 'warning'}`}>
-                              {rowIssues.length}
-                            </span>
-                          )}
-                        </div>
-                        {phase === 'action' && (
-                          <div className="action-item-actions">
-                            <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, -1) }} disabled={i === 0}>↑</button>
-                            <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, 1) }} disabled={i === script.actions.length - 1}>↓</button>
-                            <button className="btn-icon danger" onClick={e => { e.stopPropagation(); removeAction(i) }}>✕</button>
+                  {!outlineActionListCollapsed && (
+                    <div className="action-list">
+                      {scriptPhaseActionRows.map((row) => {
+                        const { action: a, actionIndex: i, phase, phaseLabel } = row
+                        const actionBreakpointActive = debugBreakpointKeys.has(debugBreakpointKey(phase, i))
+                        const breakpointPhaseLabel = phase === 'action' ? 'action' : phaseLabel
+                        const actionBreakpointLabel = `${actionBreakpointActive ? 'Remove' : 'Set'} breakpoint on ${breakpointPhaseLabel} ${i + 1}`
+                        const requestCount = actionRequestCount(a)
+                        const extractorCount = actionExtractorCount(a)
+                        const rowIssues = phase === 'action' ? actionIssueBuckets[i] || [] : []
+                        const rowActive = authorCodeFocus
+                          ? authorCodeFocus.phase === phase && authorCodeFocus.actionIndex === i
+                          : phase === 'action' && activeAction === i
+                        return (
+                          <div key={`${phase}-${i}`} className={`action-item ${rowActive ? 'active' : ''} ${actionBreakpointActive ? 'has-breakpoint' : ''} ${phase !== 'action' ? 'lifecycle-action' : ''}`} onClick={() => selectAuthorPhaseAction(row)}>
+                            <button
+                              type="button"
+                              className={`action-breakpoint-button ${actionBreakpointActive ? 'active' : ''}`}
+                              aria-label={actionBreakpointLabel}
+                              title={actionBreakpointLabel}
+                              onClick={event => {
+                                event.stopPropagation()
+                                void toggleDebugBreakpoint(phase, i)
+                              }}
+                            >
+                              <span aria-hidden="true" />
+                            </button>
+                            <span className="action-phase-label">{phaseLabel}</span>
+                            <span className="action-method" style={{ color: methodColor(a.type) }}>{a.type === 'http_sequence' ? 'SEQ' : a.type}</span>
+                            <span className="action-name-text">{a.name || 'Unnamed'}</span>
+                            <div className="action-item-signals">
+                              {requestCount > 0 && <span className="action-signal-pill">R{requestCount}</span>}
+                              {extractorCount > 0 && <span className="action-signal-pill">E{extractorCount}</span>}
+                              {rowIssues.length > 0 && (
+                                <span className={`action-signal-pill ${rowIssues.some((issue) => issue.severity === 'error') ? 'error' : 'warning'}`}>
+                                  {rowIssues.length}
+                                </span>
+                              )}
+                            </div>
+                            {phase === 'action' && (
+                              <div className="action-item-actions">
+                                <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, -1) }} disabled={i === 0}>↑</button>
+                                <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, 1) }} disabled={i === script.actions.length - 1}>↓</button>
+                                <button className="btn-icon danger" onClick={e => { e.stopPropagation(); removeAction(i) }}>✕</button>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                  {scriptPhaseActionRows.length === 0 && (
-                    <div className="action-empty">No actions yet. Click "+ Add" to create one.</div>
+                        )
+                      })}
+                      {scriptPhaseActionRows.length === 0 && (
+                        <div className="action-empty">No actions yet. Click "+ Add" to create one.</div>
+                      )}
+                    </div>
                   )}
-                </div>
+                </section>
+                <section className="outline-section parameter-outline-section">
+                  <div className="actions-sidebar-header outline-section-header">
+                    <button
+                      type="button"
+                      className="outline-section-toggle"
+                      aria-expanded={!outlineParameterListCollapsed}
+                      onClick={() => setOutlineParameterListCollapsed(collapsed => !collapsed)}
+                    >
+                      <span aria-hidden="true" className="outline-section-chevron">{outlineParameterListCollapsed ? '▸' : '▾'}</span>
+                      <span>
+                        <strong>Parameter List</strong>
+                        <small>{script.parameters?.length || 0} defined</small>
+                      </span>
+                    </button>
+                  </div>
+                  {!outlineParameterListCollapsed && (
+                    <div className="parameter-outline-list">
+                      {(script.parameters || []).map((parameter, index) => {
+                        const parameterName = parameter.name || `Parameter ${index + 1}`
+                        const referenceCount = parameter.name ? parameterReferenceCounts.get(parameter.name) || 0 : 0
+                        const selected = selectedOutlineParameterName === parameter.name
+                        return (
+                          <button
+                            key={`${parameter.name || 'parameter'}-${index}`}
+                            type="button"
+                            className={`parameter-outline-item ${selected ? 'selected' : ''}`}
+                            onClick={() => parameter.name && selectOutlineParameter(parameter.name)}
+                            disabled={!parameter.name}
+                          >
+                            <strong>{parameterName}</strong>
+                            <span>{parameter.type || 'list'} · {referenceCount} ref{referenceCount === 1 ? '' : 's'}</span>
+                          </button>
+                        )
+                      })}
+                      {(script.parameters || []).length === 0 && (
+                        <div className="action-empty parameter-outline-empty">No parameters defined yet.</div>
+                      )}
+                    </div>
+                  )}
+                </section>
                 <div className="starter-blocks-panel">
                   <div className="starter-blocks-header">
                     <strong>Starter Blocks</strong>
