@@ -1740,6 +1740,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [debuggerMaximized, setDebuggerMaximized] = useState(false)
   const [debuggerSettingsOpen, setDebuggerSettingsOpen] = useState(false)
   const [authorInspectorCollapsed, setAuthorInspectorCollapsed] = useState(true)
+  const [authorOutlineCollapsed, setAuthorOutlineCollapsed] = useState(false)
   const [authorSignalsCollapsed, setAuthorSignalsCollapsed] = useState(false)
   const [debugDetailCollapsed, setDebugDetailCollapsed] = useState(true)
   const [debugVariablesCollapsed, setDebugVariablesCollapsed] = useState(true)
@@ -4842,16 +4843,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   <span className="debugger-icon" aria-hidden="true">▣</span>
                   <span>Inspector</span>
                 </button>
-                <button
-                  type="button"
-                  className={`debugger-icon-btn ${!authorSignalsCollapsed ? 'active' : ''}`}
-                  title={authorSignalsCollapsed ? 'Show right sidebar' : 'Hide right sidebar'}
-                  aria-pressed={!authorSignalsCollapsed}
-                  onClick={() => setAuthorSignalsCollapsed(value => !value)}
-                >
-                  <span className="debugger-icon" aria-hidden="true">◫</span>
-                  <span>Signals</span>
-                </button>
               </>
             )}
             {workspaceTab === 'debug' && (
@@ -7433,12 +7424,36 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           {/* Actions List + Detail */}
           {workspaceTab === 'author' && (
           <div className="actions-layout" role="tabpanel" aria-label="Authoring workspace">
-            <div className={`actions-content-grid ${authorInspectorCollapsed ? 'author-inspector-collapsed' : ''} ${authorSignalsCollapsed ? 'author-signals-collapsed' : ''}`}>
-              <div className="actions-sidebar">
+            <div className={`actions-content-grid ${authorOutlineCollapsed ? 'author-outline-collapsed' : ''} ${authorInspectorCollapsed ? 'author-inspector-collapsed' : ''} ${authorSignalsCollapsed ? 'author-signals-collapsed' : ''}`}>
+              <div className={`actions-sidebar ${authorOutlineCollapsed ? 'collapsed' : ''}`}>
+                {authorOutlineCollapsed ? (
+                  <button
+                    type="button"
+                    className="actions-sidebar-restore"
+                    title="Expand outline side panel"
+                    aria-label="Expand outline side panel"
+                    onClick={() => setAuthorOutlineCollapsed(false)}
+                  >
+                    <span aria-hidden="true">›</span>
+                    <strong>Outline</strong>
+                  </button>
+                ) : (
+                <>
                 <div className="editor-outline-nav">
                   <div className="editor-outline-header">
-                    <strong>Outline</strong>
-                    <span>{outlineSummary.actionCount} executable</span>
+                    <div className="editor-outline-title">
+                      <strong>Outline</strong>
+                      <span>{outlineSummary.actionCount} executable</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="debugger-pane-close"
+                      title="Collapse outline side panel"
+                      aria-label="Collapse outline side panel"
+                      onClick={() => setAuthorOutlineCollapsed(true)}
+                    >
+                      ‹
+                    </button>
                   </div>
                   <div className="editor-outline-list">
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('config')}>Script Configuration</button>
@@ -7522,6 +7537,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     ))}
                   </div>
                 </div>
+                </>
+                )}
               </div>
 
               {renderCenterWorkbench('author-code-center', 'Author center workbench')}
@@ -7801,10 +7818,22 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               </div>
               )}
 
-              {!authorSignalsCollapsed && (
-              <div className="editor-utility-sidebar">
+              <div className={`editor-utility-sidebar ${authorSignalsCollapsed ? 'collapsed' : ''}`}>
+                {authorSignalsCollapsed ? (
+                  <button
+                    type="button"
+                    className="utility-sidebar-restore"
+                    title="Expand right sidebar"
+                    aria-label="Expand right sidebar"
+                    onClick={() => setAuthorSignalsCollapsed(false)}
+                  >
+                    <span aria-hidden="true">‹</span>
+                    <strong>{isParameterDataTabActive ? 'Parameters' : 'Signals'}</strong>
+                  </button>
+                ) : (
+                <>
                 <div className="side-pane-header">
-                  <span>{isParameterDataTabActive ? 'Parameters' : 'Right Sidebar'}</span>
+                  <span>{isParameterDataTabActive ? 'Parameters' : 'Authoring Signals'}</span>
                   <button
                     type="button"
                     className="debugger-pane-close"
@@ -7812,7 +7841,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     aria-label="Collapse right sidebar"
                     onClick={() => setAuthorSignalsCollapsed(true)}
                   >
-                    ×
+                    ›
                   </button>
                 </div>
                 {isParameterDataTabActive ? (
@@ -8116,8 +8145,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 </div>
                 </>
                 )}
+                </>
+                )}
               </div>
-              )}
             </div>
           </div>
           )}
@@ -8238,7 +8268,7 @@ function getSelectedParameterHeaderDetails(
   }
 
   return {
-    title: `Parameter ${parameterName}`,
+    title: `Parameter: ${parameterName}`,
     token: selectedParameter.name ? `{{param.${selectedParameter.name}}}` : '',
     details,
   }
@@ -8610,6 +8640,7 @@ function ParameterDataDetail({
           onUpdateDataSource={onUpdateDataSource}
           parsed={selectedParsed}
           selectedParameterName={parameterName}
+          showHeaderTitle={false}
           source={selectedSource}
           summary={selectedSourceSummary}
           warnings={selectedSourceWarnings}
@@ -8630,7 +8661,7 @@ function ParameterDataDetail({
           className={activeTab === 'info' ? 'active' : ''}
           onClick={() => setDetailTab('info')}
         >
-          Parameter Information
+          Settings
         </button>
         {isDataBacked && (
           <button
@@ -8640,7 +8671,7 @@ function ParameterDataDetail({
             className={activeTab === 'data' ? 'active' : ''}
             onClick={() => setDetailTab('data')}
           >
-            Parameter Data
+            Data
           </button>
         )}
       </div>
@@ -8660,40 +8691,6 @@ function ParameterDataDetail({
       </section>
       {isDataBacked && (
         <section className="parameter-detail-data" role="tabpanel" hidden={activeTab !== 'data'}>
-          <div className="panel-title-row parameter-section-header">
-            <div>
-              <strong style={{ display: 'block', marginBottom: 4 }}>{selectedParameter.data_source || `${parameterName} Data`}</strong>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Full mapped parameter file data for the selected parameter.</span>
-            </div>
-          </div>
-          {selectedSource && selectedSourceIndex !== null && (
-            <div className="parameter-data-file-controls">
-              <label>
-                <span>File Type</span>
-                <select aria-label={`File Type for ${parameterName}`} value={selectedSource.type || 'csv'} onChange={event => onUpdateDataSource(selectedSourceIndex, 'type', event.target.value)}>
-                  <option value="csv">csv</option>
-                  <option value="dat">dat</option>
-                </select>
-              </label>
-              <label>
-                <span>Delimiter</span>
-                <select aria-label={`Delimiter for ${parameterName}`} value={getDataSourceDelimiterChoice(selectedSource)} onChange={event => onUpdateDataSource(selectedSourceIndex, 'delimiter', getDataSourceDelimiterValue(event.target.value as DataSourceDelimiterChoice), true)}>
-                  <option value="auto">Auto ({inferDelimiter(selectedSource) === '\t' ? 'Tab' : 'Comma'})</option>
-                  <option value="comma">Comma</option>
-                  <option value="tab">Tab</option>
-                </select>
-              </label>
-              <label className="checkbox-label compact parameter-data-header-toggle">
-                <input
-                  type="checkbox"
-                  aria-label={`First row is header for ${parameterName}`}
-                  checked={selectedSource.first_row_header !== false}
-                  onChange={event => onUpdateDataSource(selectedSourceIndex, 'first_row_header', event.target.checked)}
-                />
-                <span>{selectedSource.first_row_header !== false ? 'First row is header' : 'No header row'}</span>
-              </label>
-            </div>
-          )}
           {renderDataSourceDetail()}
         </section>
       )}
@@ -8889,6 +8886,34 @@ function ParameterInfoPanel({
               )}
             </tbody>
           </table>
+          {isDataBacked && selectedSource && selectedSourceIndex !== null && (
+            <div className="parameter-data-file-controls parameter-info-file-controls">
+              <label>
+                <span>File Type</span>
+                <select aria-label={`File Type for ${parameterName}`} value={selectedSource.type || 'csv'} onChange={event => onUpdateDataSource(selectedSourceIndex, 'type', event.target.value)}>
+                  <option value="csv">csv</option>
+                  <option value="dat">dat</option>
+                </select>
+              </label>
+              <label>
+                <span>Delimiter</span>
+                <select aria-label={`Delimiter for ${parameterName}`} value={getDataSourceDelimiterChoice(selectedSource)} onChange={event => onUpdateDataSource(selectedSourceIndex, 'delimiter', getDataSourceDelimiterValue(event.target.value as DataSourceDelimiterChoice), true)}>
+                  <option value="auto">Auto ({inferDelimiter(selectedSource) === '\t' ? 'Tab' : 'Comma'})</option>
+                  <option value="comma">Comma</option>
+                  <option value="tab">Tab</option>
+                </select>
+              </label>
+              <label className="checkbox-label compact parameter-data-header-toggle">
+                <input
+                  type="checkbox"
+                  aria-label={`First row is header for ${parameterName}`}
+                  checked={selectedSource.first_row_header !== false}
+                  onChange={event => onUpdateDataSource(selectedSourceIndex, 'first_row_header', event.target.checked)}
+                />
+                <span>{selectedSource.first_row_header !== false ? 'First row is header' : 'No header row'}</span>
+              </label>
+            </div>
+          )}
         </section>
       )}
 
@@ -11283,6 +11308,7 @@ interface ParameterDataEditorProps {
   parsed: { columns: string[]; rows: string[][] }
   selectedParameterName?: string
   selectedParameterNames?: string[]
+  showHeaderTitle?: boolean
   source: DataSourceConfig
   summary: { rows: number; columns: number }
   warnings: string[]
@@ -11313,6 +11339,7 @@ function ParameterDataEditor({
   parsed,
   selectedParameterName,
   selectedParameterNames,
+  showHeaderTitle = true,
   source,
   summary,
   warnings,
@@ -11357,7 +11384,7 @@ function ParameterDataEditor({
   return (
     <div className="parameter-editor">
       <div className="parameter-editor-header">
-        <strong>{isFocusedParameterView ? focusedDataTitle : sourceLabel}</strong>
+        {showHeaderTitle && <strong>{isFocusedParameterView ? focusedDataTitle : sourceLabel}</strong>}
         <div className="parameter-editor-meta">
           <span className="cell-mono">
             {summary.rows} rows · {visibleColumnIndexes.length || summary.columns} {isFocusedParameterView ? 'selected ' : ''}column{(visibleColumnIndexes.length || summary.columns) === 1 ? '' : 's'} · {formatDataSourceDelimiterLabel(source)}

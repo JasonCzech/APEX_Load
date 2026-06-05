@@ -161,7 +161,7 @@ function findCenterTab(root: ParentNode, label: string) {
   return Array.from(root.querySelectorAll('.center-tab-button')).find(button => button.textContent?.trim() === label)
 }
 
-async function activateParameterDetailTab(root: ParentNode, label: 'Parameter Information' | 'Parameter Data') {
+async function activateParameterDetailTab(root: ParentNode, label: 'Settings' | 'Data') {
   const tab = Array.from(root.querySelectorAll('.parameter-detail-tabs [role="tab"]'))
     .find(button => button.textContent?.trim() === label)
   if (tab) {
@@ -172,11 +172,11 @@ async function activateParameterDetailTab(root: ParentNode, label: 'Parameter In
 }
 
 async function activateParameterDataTab(root: ParentNode) {
-  await activateParameterDetailTab(root, 'Parameter Data')
+  await activateParameterDetailTab(root, 'Data')
 }
 
 async function activateParameterInfoTab(root: ParentNode) {
-  await activateParameterDetailTab(root, 'Parameter Information')
+  await activateParameterDetailTab(root, 'Settings')
 }
 
 function changeTextareaValue(textarea: HTMLTextAreaElement, value: string) {
@@ -788,7 +788,7 @@ describe('ScriptEditor', () => {
       parameterLauncher?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(findCenterTab(container, 'Parameter Data')?.getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('[aria-label="Parameter Data"]')?.textContent).toContain('Parameter session_id')
+    expect(container.querySelector('[aria-label="Parameter Data"]')?.textContent).toContain('Parameter: session_id')
     expect(container.querySelector('[aria-label="Parameter Data"]')?.textContent).toContain('{{param.session_id}}')
   })
 
@@ -847,19 +847,24 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.editor-utility-sidebar')).not.toBeNull()
+    expect(Array.from(container.querySelectorAll('.debugger-icon-btn')).some(button => button.textContent?.trim() === 'Signals')).toBe(false)
     const collapseAuthorSidebar = container.querySelector('.editor-utility-sidebar button[aria-label="Collapse right sidebar"]') as HTMLButtonElement | null
     expect(collapseAuthorSidebar).not.toBeNull()
     await act(async () => {
       collapseAuthorSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('.editor-utility-sidebar')).toBeNull()
-    const showAuthorSidebar = findButtonByTitle(container, 'Show right sidebar')
-    expect(showAuthorSidebar).toBeDefined()
+    const collapsedAuthorSidebar = container.querySelector('.editor-utility-sidebar')
+    expect(collapsedAuthorSidebar).not.toBeNull()
+    expect(collapsedAuthorSidebar?.classList.contains('collapsed')).toBe(true)
+    expect(findButtonByTitle(container, 'Show right sidebar')).toBeUndefined()
+    const expandAuthorSidebar = findButtonByTitle(container, 'Expand right sidebar')
+    expect(expandAuthorSidebar).toBeDefined()
     await act(async () => {
-      showAuthorSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      expandAuthorSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(container.querySelector('.editor-utility-sidebar')).not.toBeNull()
+    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('collapsed')).toBe(false)
 
     const debugTab = findOpenDebuggerButton(container)
     await act(async () => {
@@ -1920,7 +1925,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
-    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Parameter username')
+    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Parameter: username')
     expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('{{param.username}}')
     expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')
     expect(container.textContent).toContain('users')
@@ -1940,7 +1945,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
-    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Parameter username')
+    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Parameter: username')
     expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('{{param.username}}')
     expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')
     expect(container.textContent).toContain('users')
@@ -2071,7 +2076,7 @@ describe('ScriptEditor', () => {
     await activateParameterDataTab(container)
     expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toContain('https://bbc.example/a')
     const selectedDataView = container.querySelector('.parameter-data-selected-view') as HTMLDivElement | null
-    expect(selectedDataView?.textContent).toContain('bbclinks')
+    expect(selectedDataView?.textContent).not.toContain('bbclinks')
     expect(selectedDataView?.textContent).toContain('Label')
     expect(Array.from(selectedDataView?.querySelectorAll('.parameter-grid tbody input') || []).map(input => (input as HTMLInputElement).value)).toEqual([
       'https://bbc.example/a',
@@ -2135,6 +2140,9 @@ describe('ScriptEditor', () => {
     expect(infoPanel?.textContent).toContain('Identity')
     expect(infoPanel?.textContent).toContain('Behavior')
     expect(infoPanel?.textContent).toContain('Data Mapping')
+    expect(infoPanel?.textContent).toContain('File Type')
+    expect(infoPanel?.textContent).toContain('Delimiter')
+    expect(infoPanel?.textContent).toContain('First row is header')
     expect(infoPanel?.textContent).toContain('Data Statistics')
 
     const statRows = Array.from(container.querySelectorAll('.parameter-info-stats-table tbody tr'))
@@ -2162,16 +2170,20 @@ describe('ScriptEditor', () => {
     })
     expect((container.querySelector('select[aria-label="Iteration Strategy for city"]') as HTMLSelectElement | null)?.value).toBe('unique')
 
-    // The data table lives under the Parameter Data tab: it keeps its display options
+    // The data table lives under the Data tab: it keeps its display options
     // but drops the old source-metadata header row.
     await activateParameterDataTab(container)
+    const activeDataPanel = container.querySelector('.parameter-detail-data:not([hidden])') as HTMLDivElement | null
+    expect(activeDataPanel?.textContent).not.toContain('File Type')
+    expect(activeDataPanel?.textContent).not.toContain('Delimiter')
+    expect(activeDataPanel?.textContent).not.toContain('First row is header')
     const dataView = container.querySelector('.parameter-data-selected-view') as HTMLDivElement | null
     expect(dataView?.querySelector('table.parameter-grid')).not.toBeNull()
     expect(Array.from(dataView?.querySelectorAll('button') || []).some(button => button.textContent?.trim() === 'Raw Mode')).toBe(true)
     expect(dataView?.querySelector('input[placeholder="/absolute/path/to/data.csv (optional when inline data is used)"]')).toBeNull()
   })
 
-  it('splits the parameter detail into Parameter Information and Parameter Data tabs', async () => {
+  it('splits the parameter detail into Settings and Data tabs', async () => {
     const tabScript: ScriptDefinition = {
       ...initialScript,
       parameters: [
@@ -2192,33 +2204,33 @@ describe('ScriptEditor', () => {
     const infoSection = () => container.querySelector('.parameter-detail-info')
     const dataSection = () => container.querySelector('.parameter-detail-data')
 
-    // Data-backed parameter exposes both tabs; Information is selected by default.
-    expect(tabLabels()).toEqual(['Parameter Information', 'Parameter Data'])
-    expect(tab('Parameter Information')?.getAttribute('aria-selected')).toBe('true')
+    // Data-backed parameter exposes both tabs; Settings is selected by default.
+    expect(tabLabels()).toEqual(['Settings', 'Data'])
+    expect(tab('Settings')?.getAttribute('aria-selected')).toBe('true')
     expect(infoSection()?.hasAttribute('hidden')).toBe(false)
     expect(dataSection()?.hasAttribute('hidden')).toBe(true)
     expect(container.querySelector('.parameter-info-panel')).not.toBeNull()
 
-    // Switching to Parameter Data reveals the data table and hides the information panel.
+    // Switching to Data reveals the data table and hides the information panel.
     await activateParameterDataTab(container)
-    expect(tab('Parameter Data')?.getAttribute('aria-selected')).toBe('true')
+    expect(tab('Data')?.getAttribute('aria-selected')).toBe('true')
     expect(infoSection()?.hasAttribute('hidden')).toBe(true)
     expect(dataSection()?.hasAttribute('hidden')).toBe(false)
     expect(container.querySelector('.parameter-detail-data .parameter-data-selected-view table.parameter-grid')).not.toBeNull()
 
-    // Switching back to Parameter Information restores the info panel.
+    // Switching back to Settings restores the info panel.
     await activateParameterInfoTab(container)
-    expect(tab('Parameter Information')?.getAttribute('aria-selected')).toBe('true')
+    expect(tab('Settings')?.getAttribute('aria-selected')).toBe('true')
     expect(infoSection()?.hasAttribute('hidden')).toBe(false)
     expect(dataSection()?.hasAttribute('hidden')).toBe(true)
 
-    // A non-data-backed parameter (counter) only offers the Information tab — no data table.
+    // A non-data-backed parameter (counter) only offers the Settings tab — no data table.
     const counterItem = Array.from(container.querySelectorAll('.parameter-sidebar-item')).find(item => item.textContent?.includes('visit_no'))
     expect(counterItem).toBeDefined()
     await act(async () => {
       counterItem?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(tabLabels()).toEqual(['Parameter Information'])
+    expect(tabLabels()).toEqual(['Settings'])
     expect(container.querySelector('.parameter-detail-data')).toBeNull()
   })
 
@@ -2297,7 +2309,7 @@ describe('ScriptEditor', () => {
     expect(parameterDialog?.textContent).toContain('Current Iteration')
     await activateParameterDataTab(container)
     const selectedDataView = container.querySelector('.parameter-data-selected-view') as HTMLDivElement | null
-    expect(selectedDataView?.textContent).toContain('merged_parameters')
+    expect(selectedDataView?.textContent).not.toContain('merged_parameters')
     expect(selectedDataView?.textContent).toContain('username')
     expect(selectedDataView?.textContent).toContain('password')
     expect(Array.from(selectedDataView?.querySelectorAll('.parameter-grid tbody input') || []).map(input => (input as HTMLInputElement).value)).toEqual([
@@ -2318,7 +2330,7 @@ describe('ScriptEditor', () => {
       button.textContent?.trim() === 'Remove',
     )
     expect(removeButton).toBeUndefined()
-    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Parameter session_id')
+    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Parameter: session_id')
     expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('{{param.session_id}}')
   })
 
@@ -2353,7 +2365,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
-    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Parameter username')
+    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Parameter: username')
     expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('{{param.username}}')
     expect(container.querySelector('.parameter-data-selected-view')).not.toBeNull()
     expect(container.textContent).toContain('Users.dat')
@@ -4514,6 +4526,42 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.action-detail')?.parentElement).toBe(contentGrid)
+  })
+
+  it('collapses and restores the outline side panel from the author workspace', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    const contentGrid = container.querySelector('.actions-content-grid')
+    const sidebar = container.querySelector('.actions-sidebar')
+    expect(contentGrid).not.toBeNull()
+    expect(sidebar).not.toBeNull()
+    expect(sidebar?.classList.contains('collapsed')).toBe(false)
+    expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
+
+    const collapseOutlineSidebar = container.querySelector('.actions-sidebar button[aria-label="Collapse outline side panel"]') as HTMLButtonElement | null
+    expect(collapseOutlineSidebar).not.toBeNull()
+    await act(async () => {
+      collapseOutlineSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const collapsedSidebar = container.querySelector('.actions-sidebar')
+    expect(contentGrid?.classList.contains('author-outline-collapsed')).toBe(true)
+    expect(collapsedSidebar?.classList.contains('collapsed')).toBe(true)
+    expect(collapsedSidebar?.querySelector('.editor-outline-nav')).toBeNull()
+
+    const expandOutlineSidebar = container.querySelector('.actions-sidebar button[aria-label="Expand outline side panel"]') as HTMLButtonElement | null
+    expect(expandOutlineSidebar).not.toBeNull()
+    expect(expandOutlineSidebar?.textContent).toContain('Outline')
+    await act(async () => {
+      expandOutlineSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(contentGrid?.classList.contains('author-outline-collapsed')).toBe(false)
+    expect(container.querySelector('.actions-sidebar')?.classList.contains('collapsed')).toBe(false)
+    expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).toContain('Outline')
+    expect(container.querySelector('.actions-sidebar .action-list')).not.toBeNull()
   })
 
   it('parameterizes selected body text from the action editor context menu', async () => {

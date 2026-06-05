@@ -14,6 +14,16 @@ export default function ProjectModal({ title = 'New Project', initialName = '', 
 
   useEffect(() => setName(initialName), [initialName])
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!name.trim()) return

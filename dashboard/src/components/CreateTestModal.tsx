@@ -102,6 +102,16 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     dispatchScenarioDraft({ type: 'setField', field, value })
   }
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
   const updateGroup = (idx: number, patch: Partial<ScenarioDraftGroup>) => {
     dispatchScenarioDraft({ type: 'updateGroup', index: idx, patch })
   }
