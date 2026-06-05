@@ -476,7 +476,8 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
-    expect(container.querySelector('.action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Imported Metadata')
+    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
   })
 
   it('renders grouped HTTP sequence actions with child request details', async () => {
@@ -888,6 +889,32 @@ describe('ScriptEditor', () => {
     })
     expect(container.querySelector('.debugger-variables-panel')).toBeNull()
     expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-variables-collapsed')).toBe(true)
+  })
+
+  it('auto-expands the contextual inspector when selecting an action from Script JSON', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    const collapseAuthorSidebar = container.querySelector('.editor-utility-sidebar button[aria-label="Collapse right sidebar"]') as HTMLButtonElement | null
+    expect(collapseAuthorSidebar).not.toBeNull()
+    await act(async () => {
+      collapseAuthorSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('collapsed')).toBe(true)
+    expect(container.querySelector('.utility-sidebar-restore')?.textContent).toContain('Signals')
+
+    const firstAction = container.querySelector('.action-item')
+    await act(async () => {
+      firstAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('collapsed')).toBe(false)
+    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-inspector')).toBe(true)
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Inspector')
+    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).not.toBeNull()
   })
 
   it('persists center tab order and drops unavailable document tabs', async () => {
@@ -1348,6 +1375,15 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Parameters')
     expect(container.querySelector('.parameter-sidebar-card')?.textContent).toContain('Counter')
     expect(parameterDialog?.textContent).toContain('session_id')
+
+    const firstAction = container.querySelector('.action-item')
+    await act(async () => {
+      firstAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(findCenterTab(container, 'Parameter Data')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Parameters')
+    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
   })
 
   it('exposes native LoadRunner parity parameter types in the parameter dialog', async () => {
@@ -1842,12 +1878,16 @@ describe('ScriptEditor', () => {
     })
 
     expect(findCenterTab(container, 'Conversion Mapping')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Conversion Mapping')
+    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
 
     await act(async () => {
       sidebarActions[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(findCenterTab(container, 'Conversion Mapping')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Conversion Mapping')
+    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
     const activeMappingRow = container.querySelector('.source-map-table tbody tr.active') as HTMLTableRowElement | null
     expect(activeMappingRow?.dataset.mappingId).toBe('checkout-action')
     expect(activeMappingRow?.dataset.targetPath).toBe('actions[1]')
@@ -2300,6 +2340,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.textContent).toContain('Merged 2 parameter source files into merged_parameters.')
+    expect(container.textContent).toContain('Save Script to make this file change persist.')
     const parameterDialog = container.querySelector('.parameter-data-dialog') as HTMLDivElement | null
     expect(parameterDialog?.textContent).toContain('merged_parameters')
     expect(parameterDialog?.textContent).not.toContain('Users.csv')
@@ -3481,6 +3522,12 @@ describe('ScriptEditor', () => {
     expect(Array.from(engineSelect?.options || []).find(option => option.value === 'webkit')?.textContent).toBe('WebKit')
     expect(container.textContent).toContain('WebKit execution requires Playwright WebKit assets installed on the controller host. Run go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install webkit before running browser tests or replay sessions.')
 
+    const scriptJsonTab = findCenterTab(container, 'Script JSON')
+    expect(scriptJsonTab).toBeDefined()
+    await act(async () => {
+      scriptJsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
     const actionItem = container.querySelector('.action-item') as HTMLDivElement | null
     expect(actionItem).not.toBeNull()
     if (!actionItem) {
@@ -4507,25 +4554,30 @@ describe('ScriptEditor', () => {
     }), undefined, undefined)
   })
 
-  it('renders the action workspace with adjacent list and detail regions', async () => {
+  it('renders the action workspace with the inspector in the contextual right sidebar', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
 
     const contentGrid = container.querySelector('.actions-content-grid')
     const sidebar = container.querySelector('.actions-sidebar')
-    const detail = container.querySelector('.action-detail')
+    const utilitySidebar = container.querySelector('.editor-utility-sidebar')
 
     expect(contentGrid).not.toBeNull()
     expect(sidebar?.parentElement).toBe(contentGrid)
-    expect(detail).toBeNull()
+    expect(utilitySidebar?.parentElement).toBe(contentGrid)
+    expect(container.querySelector('.action-detail')).toBeNull()
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Authoring Signals')
 
     const firstAction = container.querySelector('.action-item')
     await act(async () => {
       firstAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('.action-detail')?.parentElement).toBe(contentGrid)
+    expect(container.querySelector('.action-detail')).toBeNull()
+    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-inspector')).toBe(true)
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Inspector')
+    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).not.toBeNull()
   })
 
   it('collapses and restores the outline side panel from the author workspace', async () => {
@@ -4644,7 +4696,14 @@ describe('ScriptEditor', () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(textarea.value).toContain('{{param.demo}}')
+    const scriptJsonTab = findCenterTab(container, 'Script JSON')
+    expect(scriptJsonTab).toBeDefined()
+    await act(async () => {
+      scriptJsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const updatedTextarea = container.querySelector('.editor-utility-sidebar textarea.body-textarea') as HTMLTextAreaElement | null
+    expect(updatedTextarea?.value).toContain('{{param.demo}}')
     expect(container.textContent).toContain('demo')
   })
 
@@ -4932,7 +4991,14 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.parameterize-dialog')).toBeNull()
-    expect(textarea.value).toContain('{{param.seed}}')
+    const scriptJsonTab = findCenterTab(container, 'Script JSON')
+    expect(scriptJsonTab).toBeDefined()
+    await act(async () => {
+      scriptJsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const updatedTextarea = container.querySelector('.editor-utility-sidebar textarea.body-textarea') as HTMLTextAreaElement | null
+    expect(updatedTextarea?.value).toContain('{{param.seed}}')
     expect(container.textContent).toContain('Current Iteration')
   })
 

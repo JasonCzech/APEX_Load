@@ -3365,7 +3365,7 @@
   font-weight: 700;
 }
 
-/* Actions layout — sidebar + detail */
+/* Actions layout — outline + tabbed center + contextual sidebar */
 .actions-layout {
   display: flex;
   min-height: min(780px, calc(100vh - 230px));
@@ -3373,39 +3373,29 @@
 }
 .actions-content-grid {
   display: grid;
-  grid-template-columns: minmax(210px, 280px) minmax(380px, 1.15fr) minmax(320px, 0.9fr) minmax(260px, 320px);
-  grid-template-areas: "author-rail author-code author-detail author-utility";
+  --author-rail-width: minmax(210px, 280px);
+  --author-center-width: minmax(480px, 1fr);
+  --author-utility-width: minmax(260px, 320px);
+  grid-template-columns: var(--author-rail-width) var(--author-center-width) var(--author-utility-width);
+  grid-template-areas: "author-rail author-code author-utility";
   gap: 0;
   width: 100%;
   min-width: 0;
 }
-.actions-content-grid.author-inspector-collapsed {
-  grid-template-columns: minmax(210px, 280px) minmax(480px, 1fr) minmax(260px, 320px);
-  grid-template-areas: "author-rail author-code author-utility";
-}
-.actions-content-grid.author-signals-collapsed {
-  grid-template-columns: minmax(210px, 280px) minmax(480px, 1fr) minmax(320px, 0.9fr) 48px;
-  grid-template-areas: "author-rail author-code author-detail author-utility";
-}
-.actions-content-grid.author-inspector-collapsed.author-signals-collapsed {
-  grid-template-columns: minmax(210px, 280px) minmax(520px, 1fr) 48px;
-  grid-template-areas: "author-rail author-code author-utility";
-}
 .actions-content-grid.author-outline-collapsed {
-  grid-template-columns: 48px minmax(480px, 1fr) minmax(320px, 0.9fr) minmax(260px, 320px);
-  grid-template-areas: "author-rail author-code author-detail author-utility";
+  --author-rail-width: 48px;
+  --author-center-width: minmax(520px, 1fr);
 }
-.actions-content-grid.author-outline-collapsed.author-inspector-collapsed {
-  grid-template-columns: 48px minmax(520px, 1fr) minmax(260px, 320px);
-  grid-template-areas: "author-rail author-code author-utility";
+.actions-content-grid.author-right-sidebar-wide {
+  --author-center-width: minmax(420px, 1fr);
+  --author-utility-width: minmax(420px, 560px);
 }
-.actions-content-grid.author-outline-collapsed.author-signals-collapsed {
-  grid-template-columns: 48px minmax(480px, 1fr) minmax(320px, 0.9fr) 48px;
-  grid-template-areas: "author-rail author-code author-detail author-utility";
+.actions-content-grid.author-right-sidebar-collapsed {
+  --author-center-width: minmax(520px, 1fr);
+  --author-utility-width: 48px;
 }
-.actions-content-grid.author-outline-collapsed.author-inspector-collapsed.author-signals-collapsed {
-  grid-template-columns: 48px minmax(520px, 1fr) 48px;
-  grid-template-areas: "author-rail author-code author-utility";
+.actions-content-grid.author-outline-collapsed.author-right-sidebar-collapsed {
+  --author-center-width: minmax(560px, 1fr);
 }
 .actions-sidebar { grid-area: author-rail; width: 280px; border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
 .actions-sidebar.collapsed {
@@ -3696,8 +3686,6 @@
   background: rgba(99, 102, 241, 0.05);
 }
 
-/* Action detail panel */
-.action-detail { grid-area: author-detail; flex: 1; overflow-y: auto; max-height: calc(100vh - 255px); min-width: 0; }
 .side-pane-header {
   display: flex;
   align-items: center;
@@ -3754,6 +3742,20 @@
   gap: 14px;
   overflow-y: auto;
   max-height: calc(100vh - 255px);
+}
+.editor-utility-sidebar.context-inspector {
+  padding: 0;
+  gap: 0;
+  background: var(--bg-card);
+}
+.editor-utility-sidebar.context-inspector .action-editor-panel {
+  padding: 16px;
+}
+.editor-utility-sidebar.context-inspector .action-editor-top {
+  flex-wrap: wrap;
+}
+.editor-utility-sidebar.context-inspector .contextual-history-card {
+  margin: 0 16px 16px;
 }
 .editor-utility-sidebar.collapsed {
   padding: 8px;
@@ -4358,67 +4360,19 @@
 
 @media (max-width: 1320px) {
   .actions-content-grid {
-    grid-template-columns: minmax(220px, 280px) minmax(360px, 1fr) minmax(320px, 0.85fr);
-    grid-template-areas:
-      "author-rail author-code author-detail"
-      "author-utility author-utility author-utility";
-  }
-  .actions-content-grid.author-inspector-collapsed {
-    grid-template-columns: minmax(220px, 280px) minmax(420px, 1fr);
-    grid-template-areas:
-      "author-rail author-code"
-      "author-utility author-utility";
-  }
-  .actions-content-grid.author-signals-collapsed {
-    grid-template-columns: minmax(220px, 280px) minmax(360px, 1fr) minmax(320px, 0.85fr) 48px;
-    grid-template-areas:
-      "author-rail author-code author-detail author-utility";
-  }
-  .actions-content-grid.author-inspector-collapsed.author-signals-collapsed {
-    grid-template-columns: minmax(220px, 280px) minmax(420px, 1fr) 48px;
-    grid-template-areas: "author-rail author-code author-utility";
+    --author-rail-width: minmax(220px, 280px);
+    --author-center-width: minmax(360px, 1fr);
+    --author-utility-width: minmax(260px, 320px);
   }
   .actions-content-grid.author-outline-collapsed {
-    grid-template-columns: 48px minmax(360px, 1fr) minmax(320px, 0.85fr);
-    grid-template-areas:
-      "author-rail author-code author-detail"
-      "author-utility author-utility author-utility";
+    --author-rail-width: 48px;
   }
-  .actions-content-grid.author-outline-collapsed.author-inspector-collapsed {
-    grid-template-columns: 48px minmax(420px, 1fr);
-    grid-template-areas:
-      "author-rail author-code"
-      "author-utility author-utility";
+  .actions-content-grid.author-right-sidebar-wide {
+    --author-center-width: minmax(360px, 1fr);
+    --author-utility-width: minmax(420px, 520px);
   }
-  .actions-content-grid.author-outline-collapsed.author-signals-collapsed {
-    grid-template-columns: 48px minmax(360px, 1fr) minmax(320px, 0.85fr) 48px;
-    grid-template-areas:
-      "author-rail author-code author-detail author-utility";
-  }
-  .actions-content-grid.author-outline-collapsed.author-inspector-collapsed.author-signals-collapsed {
-    grid-template-columns: 48px minmax(420px, 1fr) 48px;
-    grid-template-areas: "author-rail author-code author-utility";
-  }
-
-  .actions-content-grid .editor-utility-sidebar {
-    grid-column: 1 / -1;
-  }
-  .actions-content-grid.author-signals-collapsed .editor-utility-sidebar {
-    grid-column: auto;
-  }
-
-  .editor-utility-sidebar {
-    border-left: none;
-    border-top: 1px solid var(--border);
-    max-height: none;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    align-items: start;
-  }
-  .editor-utility-sidebar.collapsed {
-    display: flex;
-    border-left: 1px solid var(--border);
-    border-top: none;
+  .actions-content-grid.author-right-sidebar-collapsed {
+    --author-utility-width: 48px;
   }
 }
 
@@ -4429,36 +4383,14 @@
     grid-template-areas:
       "author-code"
       "author-rail"
-      "author-detail"
       "author-utility";
   }
   .actions-content-grid.author-outline-collapsed,
-  .actions-content-grid.author-inspector-collapsed,
-  .actions-content-grid.author-signals-collapsed,
-  .actions-content-grid.author-outline-collapsed.author-inspector-collapsed,
-  .actions-content-grid.author-outline-collapsed.author-signals-collapsed,
-  .actions-content-grid.author-inspector-collapsed.author-signals-collapsed,
-  .actions-content-grid.author-outline-collapsed.author-inspector-collapsed.author-signals-collapsed {
+  .actions-content-grid.author-right-sidebar-collapsed,
+  .actions-content-grid.author-right-sidebar-wide,
+  .actions-content-grid.author-outline-collapsed.author-right-sidebar-collapsed,
+  .actions-content-grid.author-outline-collapsed.author-right-sidebar-wide {
     grid-template-columns: 1fr;
-  }
-  .actions-content-grid.author-inspector-collapsed {
-    grid-template-areas:
-      "author-code"
-      "author-rail"
-      "author-utility";
-  }
-  .actions-content-grid.author-signals-collapsed {
-    grid-template-areas:
-      "author-code"
-      "author-rail"
-      "author-detail"
-      "author-utility";
-  }
-  .actions-content-grid.author-inspector-collapsed.author-signals-collapsed {
-    grid-template-areas:
-      "author-code"
-      "author-rail"
-      "author-utility";
   }
   .author-code-center {
     min-height: 420px;

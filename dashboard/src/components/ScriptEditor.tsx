@@ -149,6 +149,25 @@ interface CenterWorkbenchTabDescriptor {
   closeable: boolean
 }
 
+type AuthorRightSidebarKind =
+  | 'signals'
+  | 'parameters'
+  | 'inspector'
+  | 'conversion-mapping'
+  | 'imported-metadata'
+  | 'object-descriptors'
+  | 'http-conversion'
+  | 'browser-replay'
+  | 'configuration'
+  | 'runtime-settings'
+
+interface AuthorRightSidebarContext {
+  kind: AuthorRightSidebarKind
+  title: string
+  railLabel: string
+  wide?: boolean
+}
+
 interface CenterTabsState {
   tabs: CenterWorkbenchTabId[]
   activeTabId: CenterWorkbenchTabId
@@ -1651,6 +1670,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     : httpProxyMode === 'custom' && script.config.http?.proxy?.url
       ? 'Proxy configured'
       : 'Default'
+  const thinkTimeLabel = script.config.think_time?.ignore
+    ? 'Disabled'
+    : `${script.config.think_time?.type || 'fixed'} / ${script.config.think_time?.mean_ms || 0}ms`
+  const runLogicLabel = script.config.run_logic?.global_iterations
+    ? `${script.config.run_logic.global_iterations} shared iterations`
+    : script.config.run_logic?.max_transactions
+      ? `${script.config.run_logic.max_transactions} max transactions`
+      : script.config.run_logic?.iterations
+        ? `${script.config.run_logic.iterations} iterations`
+        : 'Run until duration'
+  const logLevelLabel = script.config.log?.level || 'standard'
   const outlineSummary = buildScriptOutlineSummary(script)
   const scriptPhaseActionRows = useMemo(() => buildScriptPhaseActionRows(script), [script])
   const importMetadata = scriptHasImportMetadata(script) ? script.metadata?.import : undefined
@@ -1739,9 +1769,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [debuggerTab, setDebuggerTab] = useState<DebuggerTab>('request')
   const [debuggerMaximized, setDebuggerMaximized] = useState(false)
   const [debuggerSettingsOpen, setDebuggerSettingsOpen] = useState(false)
-  const [authorInspectorCollapsed, setAuthorInspectorCollapsed] = useState(true)
   const [authorOutlineCollapsed, setAuthorOutlineCollapsed] = useState(false)
-  const [authorSignalsCollapsed, setAuthorSignalsCollapsed] = useState(false)
+  const [authorRightSidebarCollapsed, setAuthorRightSidebarCollapsed] = useState(false)
   const [debugDetailCollapsed, setDebugDetailCollapsed] = useState(true)
   const [debugVariablesCollapsed, setDebugVariablesCollapsed] = useState(true)
   const [debuggerBottomTab, setDebuggerBottomTab] = useState<DebuggerBottomTab>('console')
@@ -2164,14 +2193,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     if (hydrated?.script === initialScript && hydrated.scriptId === scriptId) return
     hydratedInitialScriptRef.current = { script: initialScript, scriptId }
     hydrateEditorState(initialScript)
-    setAuthorInspectorCollapsed(true)
     setAuthorCodeFocus(null)
 
 		const focusedActionIndex = findActionIndexByName(initialScript.actions, initialFocusedActionName)
 		if (focusedActionIndex !== null) {
 			setActiveAction(focusedActionIndex)
       setAuthorCodeFocus({ phase: 'action', actionIndex: focusedActionIndex })
-      setAuthorInspectorCollapsed(false)
+      setAuthorRightSidebarCollapsed(false)
       setOpenSections(prev => ({ ...prev, import: false }))
 		}
 
@@ -2206,7 +2234,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const selectAuthorAction = (index: number | null) => {
     setActiveAction(index)
     setAuthorCodeFocus(index === null ? null : { phase: 'action', actionIndex: index })
-    setAuthorInspectorCollapsed(index === null)
+    if (index !== null && centerTabsState.activeTabId === SCRIPT_JSON_TAB_ID) {
+      setAuthorRightSidebarCollapsed(false)
+    }
   }
 
   const selectParameterData = useCallback((index: number | null) => {
@@ -2236,7 +2266,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     if (sourceReview && (centerTabsState.activeTabId === 'conversion-mapping' || centerTabsState.activeTabId === 'imported-metadata')) {
       setActiveAction(index)
       setAuthorCodeFocus({ phase: 'action', actionIndex: index })
-      setAuthorInspectorCollapsed(false)
       focusSourceMappingForAction(index)
       return
     }
@@ -2249,7 +2278,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       return
     }
     setActiveAction(null)
-    setAuthorInspectorCollapsed(true)
     setAuthorCodeFocus({ phase: row.phase, actionIndex: row.actionIndex })
   }
 
@@ -2265,7 +2293,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           setError('Failed to load script')
           return
         }
-        setAuthorInspectorCollapsed(true)
         setAuthorCodeFocus(null)
         hydrateEditorState(res.script)
       })
@@ -4322,7 +4349,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setDataSourceHistory({})
     setDataEditorMode({ [merge.mergedSourceIndex]: 'grid' })
     setError('')
-    setSuccess(`Merged ${merge.sourceCount} parameter source files into ${merge.mergedSourceName}.`)
+    setSuccess(`Merged ${merge.sourceCount} parameter source files into ${merge.mergedSourceName}. Save Script to make this file change persist.`)
   }
 
   const updateDataCell = (sourceIdx: number, rowIdx: number, colIdx: number, value: string) => {
@@ -4744,6 +4771,351 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       tabs={visibleCenterTabs.length > 0 ? visibleCenterTabs : centerTabDescriptors.slice(0, 1)}
     />
   )
+  const authorRightSidebarContext: AuthorRightSidebarContext = (() => {
+    switch (centerTabsState.activeTabId) {
+      case 'parameter-data':
+        return { kind: 'parameters', title: 'Parameters', railLabel: 'Parameters' }
+      case SCRIPT_JSON_TAB_ID:
+        if (activeInspectorAction && activeAction !== null) {
+          return { kind: 'inspector', title: 'Inspector', railLabel: 'Inspector', wide: true }
+        }
+        return { kind: 'signals', title: 'Authoring Signals', railLabel: 'Signals' }
+      case 'conversion-mapping':
+        return { kind: 'conversion-mapping', title: 'Conversion Mapping', railLabel: 'Mapping' }
+      case 'imported-metadata':
+        return { kind: 'imported-metadata', title: 'Imported Metadata', railLabel: 'Import' }
+      case 'object-descriptors':
+        return { kind: 'object-descriptors', title: 'Object Descriptors', railLabel: 'Objects' }
+      case 'http-conversion':
+        return { kind: 'http-conversion', title: 'HTTP Conversion', railLabel: 'HTTP' }
+      case BROWSER_REPLAY_TAB_ID:
+        return { kind: 'browser-replay', title: 'Browser Replay', railLabel: 'Replay' }
+      case 'configuration':
+        return { kind: 'configuration', title: 'Configuration', railLabel: 'Config' }
+      case 'runtime-settings':
+        return { kind: 'runtime-settings', title: 'Runtime Settings', railLabel: 'Runtime' }
+      default:
+        return { kind: 'signals', title: 'Authoring Signals', railLabel: 'Signals' }
+    }
+  })()
+  const renderContextualRightSidebarContent = (): ReactNode => {
+    switch (authorRightSidebarContext.kind) {
+      case 'parameters':
+        return (
+          <ParameterSidebar
+            mergeSummary={parameterMergeSummary}
+            onAddParameter={addParameter}
+            onMergeParameterSources={mergeParameterSourceFiles}
+            onSelectParameter={selectParameterData}
+            parameters={script.parameters || []}
+            selectedParameterIdx={selectedParameterIdx}
+          />
+        )
+      case 'inspector':
+        return activeInspectorAction && activeAction !== null ? (
+          <>
+            <ActionEditor
+              action={activeInspectorAction}
+              index={activeAction}
+              parameters={script.parameters || []}
+              onUpdate={updateAction}
+              onAddExtractor={addExtractor}
+              onUpdateExtractor={updateExtractor}
+              onRemoveExtractor={removeExtractor}
+              onAddAssertion={addAssertion}
+              onUpdateAssertion={updateAssertion}
+              onRemoveAssertion={removeAssertion}
+              onAddHeader={addHeader}
+              onUpdateHeader={updateHeader}
+              onRemoveHeader={removeHeader}
+              onAddMetadata={addMetadata}
+              onUpdateMetadata={updateMetadata}
+              onRemoveMetadata={removeMetadata}
+              onBeginParameterEdit={openParameterizeChoice}
+              methodColor={methodColor}
+              protocol={script.protocol}
+              isBrowserScript={isBrowserScript}
+              isJmsScript={isJmsScript}
+              isSoapScript={isSoapScript}
+              issues={actionIssueBuckets[activeAction] || []}
+            />
+            <div className="utility-card contextual-history-card">
+              <div className="utility-card-header">
+                <strong>Guided History</strong>
+                <span>{editorHistory.past.length} undo • {editorHistory.future.length} redo</span>
+              </div>
+              <div className="utility-inline-actions">
+                <button type="button" className="btn btn-sm btn-secondary" onClick={undoEditorChange} disabled={editorHistory.past.length === 0}>Undo</button>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={redoEditorChange} disabled={editorHistory.future.length === 0}>Redo</button>
+              </div>
+            </div>
+          </>
+        ) : null
+      case 'conversion-mapping':
+        return (
+          <>
+            <div className="utility-card">
+              <div className="utility-card-header">
+                <strong>Source Mapping</strong>
+                <span>{sourceReview?.mappings?.length || 0} mappings</span>
+              </div>
+              <div className="utility-metric-row">
+                <span className="action-signal-pill">{sourceReview?.source_files?.length || 0} files</span>
+                <span className="action-signal-pill">{importSummary.correlationSuggestions.length} correlations</span>
+              </div>
+              {activeAction !== null && (
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => focusSourceMappingForAction(activeAction)}>
+                  Focus Selected Action
+                </button>
+              )}
+            </div>
+            {importedCorrelationFocusTargets.length > 0 && (
+              <div className="utility-card">
+                <div className="utility-card-header">
+                  <strong>Correlation Shortcuts</strong>
+                  <span>{importedCorrelationFocusTargets.length}</span>
+                </div>
+                <div className="utility-stack">
+                  {importedCorrelationFocusTargets.map(({ correlation, foundAtActionIndex, foundAtLabel, usedAtTargets }) => (
+                    <div key={`${correlation.name}:${correlation.found_at}:mapping`} className="utility-suggestion-card">
+                      <strong>{correlation.name}</strong>
+                      <p>{foundAtLabel}{usedAtTargets.length > 0 ? ` -> ${usedAtTargets.map(target => target.label).join(', ')}` : ''}</p>
+                      <div className="utility-inline-actions">
+                        {foundAtActionIndex !== null && (
+                          <button type="button" className="btn btn-sm btn-ghost" onClick={() => selectAuthorAction(foundAtActionIndex)}>
+                            Open source
+                          </button>
+                        )}
+                        {usedAtTargets.slice(0, 2).map(target => (
+                          <button key={`${correlation.name}:${target.location}:mapping`} type="button" className="btn btn-sm btn-ghost" onClick={() => selectAuthorAction(target.actionIndex)}>
+                            Open use
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )
+      case 'imported-metadata':
+        return (
+          <>
+            <div className="utility-card">
+              <div className="utility-card-header">
+                <strong>Import Summary</strong>
+                <span>{importMetadata?.source || 'import'}</span>
+              </div>
+              <ul className="utility-list">
+                <li className="utility-list-item">Source: {importMetadata?.source_script_name || script.name}</li>
+                <li className="utility-list-item">{importSummary.runtimeFiles.length} runtime file{importSummary.runtimeFiles.length === 1 ? '' : 's'}</li>
+                <li className="utility-list-item">{importSummary.parameterFiles.length} parameter file{importSummary.parameterFiles.length === 1 ? '' : 's'}</li>
+                <li className="utility-list-item">{importedDataSourceSummaries.length} generated data source{importedDataSourceSummaries.length === 1 ? '' : 's'}</li>
+              </ul>
+            </div>
+            {migrationSuggestions.length > 0 && (
+              <div className="utility-card">
+                <div className="utility-card-header">
+                  <strong>Migration Assistant</strong>
+                  <span>{migrationSuggestions.length} suggestion{migrationSuggestions.length === 1 ? '' : 's'}</span>
+                </div>
+                <div className="utility-stack">
+                  {migrationSuggestions.map(suggestion => (
+                    <div key={`${suggestion.key}:metadata`} className="utility-suggestion-card">
+                      <strong>{suggestion.title}</strong>
+                      <p>{suggestion.description}</p>
+                      <button type="button" className="btn btn-sm btn-secondary" onClick={() => applyMigrationSuggestion(suggestion)}>
+                        {suggestion.applyLabel}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {importedParameterFileMappings.length > 0 && (
+              <div className="utility-card">
+                <div className="utility-card-header">
+                  <strong>Parameter Files</strong>
+                  <span>{importedParameterFileMappings.length}</span>
+                </div>
+                <ul className="utility-list">
+                  {importedParameterFileMappings.map(({ section, sourceName }) => (
+                    <li key={`${section.file}:${section.name}:metadata`} className="utility-list-item">
+                      <button type="button" className="utility-link-button" onClick={() => openImportedDataSourceReview(sourceName)}>
+                        {section.file}: {section.name}{sourceName ? ` -> ${sourceName}` : ''}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        )
+      case 'object-descriptors':
+        return (
+          <>
+            <div className="utility-card">
+              <div className="utility-card-header">
+                <strong>Descriptor Review</strong>
+                <span>{objectDescriptorReview.rows.length} objects</span>
+              </div>
+              <div className="utility-metric-row">
+                <span className="action-signal-pill">{objectDescriptorReview.repositoryCount} repos</span>
+                <span className="action-signal-pill">{objectDescriptorReview.candidateCount} candidates</span>
+                <span className="action-signal-pill">{objectDescriptorReview.unsupportedCount} review</span>
+              </div>
+            </div>
+            <div className="utility-card">
+              <div className="utility-card-header">
+                <strong>Selector Shortcuts</strong>
+                <span>{objectDescriptorReview.rows.length}</span>
+              </div>
+              {objectDescriptorReview.rows.length > 0 ? (
+                <div className="utility-stack">
+                  {objectDescriptorReview.rows.map(row => (
+                    <div key={`${row.key}:sidebar`} className="utility-suggestion-card">
+                      <strong>{row.label}</strong>
+                      <p>{row.descriptorId} · {row.status}</p>
+                      {row.currentSelector && <code>{row.currentSelector}</code>}
+                      <div className="utility-inline-actions">
+                        {row.actionIndex !== null && (
+                          <button type="button" className="btn btn-sm btn-ghost" onClick={() => selectAuthorAction(row.actionIndex)}>
+                            Select Action
+                          </button>
+                        )}
+                        {row.candidates[0] && (
+                          <button type="button" className="btn btn-sm btn-secondary" onClick={() => applyObjectDescriptorCandidate(row, row.candidates[0])} disabled={row.actionIndex === null}>
+                            Use Best Selector
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="utility-empty-state">No object descriptors are available.</div>
+              )}
+            </div>
+          </>
+        )
+      case 'http-conversion':
+        return (
+          <>
+            <div className="utility-card">
+              <div className="utility-card-header">
+                <strong>Conversion Gate</strong>
+                <span>{httpConversionReview.status.replace(/_/g, ' ')}</span>
+              </div>
+              <div className="utility-metric-row">
+                <span className="action-signal-pill">{httpConversionReview.browserActionCount} browser</span>
+                <span className="action-signal-pill">{httpConversionReview.candidateRequestCount} requests</span>
+                <span className="action-signal-pill">{httpConversionReview.replayEvidence ? 'replay' : 'no replay'}</span>
+              </div>
+              <div className="utility-stack">
+                {httpConversionReview.findings.map((finding, index) => (
+                  <div key={`http-sidebar-${index}`} className="utility-list-item">{finding}</div>
+                ))}
+              </div>
+            </div>
+            <div className="utility-card">
+              <div className="utility-card-header">
+                <strong>Review Actions</strong>
+                <span>{httpConversionPreview ? 'Preview ready' : 'No preview'}</span>
+              </div>
+              <div className="utility-stack">
+                <button type="button" className="btn btn-sm btn-primary" onClick={handleGenerateBrowserHTTPPreview} disabled={httpConversionGenerating || !httpConversionReview.networkEvidence}>
+                  {httpConversionGenerating ? 'Generating...' : 'Generate HTTP Draft Preview'}
+                </button>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => activateWorkspaceTab('debug')}>Debug</button>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEditorSection('parameter-data')}>Review Parameter Data</button>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEditorSection('runtime')}>Review Runtime Settings</button>
+              </div>
+            </div>
+          </>
+        )
+      case 'browser-replay':
+        return (
+          <>
+            <div className="utility-card debug-readiness-card">
+              <div className="utility-card-header">
+                <strong>Replay Readiness</strong>
+                <span>{replayPreflightStatusLabel(replayPreflight)}</span>
+              </div>
+              <ReplayPreflightCard preflight={replayPreflight} />
+            </div>
+            <div className="utility-card">
+              <div className="utility-card-header">
+                <strong>Replay Evidence</strong>
+                <span>{debugEvidenceStatus}</span>
+              </div>
+              <ul className="utility-list">
+                <li className="utility-list-item">{replayReport ? `${replayReport.events.length} captured event${replayReport.events.length === 1 ? '' : 's'}` : 'No completed replay report attached.'}</li>
+                <li className="utility-list-item">{browserReplaySession?.events?.length || 0} live session event{(browserReplaySession?.events?.length || 0) === 1 ? '' : 's'}</li>
+              </ul>
+              <button type="button" className="btn btn-sm btn-secondary" onClick={() => activateWorkspaceTab('debug')}>Open Debugger</button>
+            </div>
+          </>
+        )
+      case 'configuration':
+        return (
+          <>
+            <div className="utility-card">
+              <div className="utility-card-header">
+                <strong>Script Configuration</strong>
+                <span>{script.protocol}</span>
+              </div>
+              <ul className="utility-list">
+                <li className="utility-list-item">Base URL: {script.config.base_url || 'Not set'}</li>
+                <li className="utility-list-item">Think time: {thinkTimeLabel}</li>
+                <li className="utility-list-item">Run logic: {runLogicLabel}</li>
+                <li className="utility-list-item">HTTP proxy: {httpProxySummary}</li>
+              </ul>
+            </div>
+            <div className="utility-card debug-readiness-card">
+              <div className="utility-card-header">
+                <strong>Debug Readiness</strong>
+                <span>{replayPreflightStatusLabel(replayPreflight)}</span>
+              </div>
+              <ReplayPreflightCard preflight={replayPreflight} />
+            </div>
+          </>
+        )
+      case 'runtime-settings':
+        return (
+          <>
+            <div className="utility-card">
+              <div className="utility-card-header">
+                <strong>Runtime Summary</strong>
+                <span>{runLogicLabel}</span>
+              </div>
+              <ul className="utility-list">
+                <li className="utility-list-item">Think time: {thinkTimeLabel}</li>
+                <li className="utility-list-item">Log level: {logLevelLabel}</li>
+                <li className="utility-list-item">Proxy: {httpProxySummary}</li>
+              </ul>
+            </div>
+            {importSummary.runtimeSettingsParity.length > 0 && (
+              <div className="utility-card">
+                <div className="utility-card-header">
+                  <strong>Runtime Parity</strong>
+                  <span>{runtimeSettingParitySummary || 'No parity issues'}</span>
+                </div>
+                <ul className="utility-list">
+                  {importSummary.runtimeSettingsParity.slice(0, 6).map(entry => (
+                    <li key={`${entry.id}:runtime-sidebar`} className="utility-list-item">
+                      {formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        )
+      default:
+        return null
+    }
+  }
 
   return (
     <div className="script-editor">
@@ -4827,24 +5199,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               <span className="debugger-icon" aria-hidden="true">&#9881;</span>
               <span>Settings</span>
             </button>
-            {workspaceTab === 'author' && (
-              <>
-                <button
-                  type="button"
-                  className={`debugger-icon-btn ${activeInspectorAction && !authorInspectorCollapsed ? 'active' : ''}`}
-                  title={!activeInspectorAction ? 'Select an action to inspect' : authorInspectorCollapsed ? 'Show action inspector' : 'Hide action inspector'}
-                  aria-pressed={Boolean(activeInspectorAction && !authorInspectorCollapsed)}
-                  disabled={!activeInspectorAction}
-                  onClick={() => {
-                    if (!activeInspectorAction) return
-                    setAuthorInspectorCollapsed(value => !value)
-                  }}
-                >
-                  <span className="debugger-icon" aria-hidden="true">▣</span>
-                  <span>Inspector</span>
-                </button>
-              </>
-            )}
             {workspaceTab === 'debug' && (
               <>
                 <button
@@ -7424,7 +7778,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           {/* Actions List + Detail */}
           {workspaceTab === 'author' && (
           <div className="actions-layout" role="tabpanel" aria-label="Authoring workspace">
-            <div className={`actions-content-grid ${authorOutlineCollapsed ? 'author-outline-collapsed' : ''} ${authorInspectorCollapsed ? 'author-inspector-collapsed' : ''} ${authorSignalsCollapsed ? 'author-signals-collapsed' : ''}`}>
+            <div className={`actions-content-grid ${authorOutlineCollapsed ? 'author-outline-collapsed' : ''} ${authorRightSidebarCollapsed ? 'author-right-sidebar-collapsed' : ''} ${authorRightSidebarContext.wide ? 'author-right-sidebar-wide' : ''}`}>
               <div className={`actions-sidebar ${authorOutlineCollapsed ? 'collapsed' : ''}`}>
                 {authorOutlineCollapsed ? (
                   <button
@@ -7775,85 +8129,33 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </section>
                 )), centerTabPanelElements['conversion-mapping'])}
 
-              {/* Action Detail */}
-              {!authorInspectorCollapsed && activeInspectorAction && activeAction !== null && (
-              <div className="action-detail">
-                <div className="side-pane-header">
-                  <span>Inspector</span>
-                  <button
-                    type="button"
-                    className="debugger-pane-close"
-                    title="Collapse action inspector"
-                    aria-label="Collapse action inspector"
-                    onClick={() => setAuthorInspectorCollapsed(true)}
-                  >
-                    ×
-                  </button>
-                </div>
-                <ActionEditor
-                  action={activeInspectorAction}
-                  index={activeAction}
-                  parameters={script.parameters || []}
-                  onUpdate={updateAction}
-                  onAddExtractor={addExtractor}
-                  onUpdateExtractor={updateExtractor}
-                  onRemoveExtractor={removeExtractor}
-                  onAddAssertion={addAssertion}
-                  onUpdateAssertion={updateAssertion}
-                  onRemoveAssertion={removeAssertion}
-                  onAddHeader={addHeader}
-                  onUpdateHeader={updateHeader}
-                  onRemoveHeader={removeHeader}
-                  onAddMetadata={addMetadata}
-                  onUpdateMetadata={updateMetadata}
-                  onRemoveMetadata={removeMetadata}
-                  onBeginParameterEdit={openParameterizeChoice}
-                  methodColor={methodColor}
-                  protocol={script.protocol}
-                  isBrowserScript={isBrowserScript}
-                  isJmsScript={isJmsScript}
-                  isSoapScript={isSoapScript}
-                  issues={actionIssueBuckets[activeAction] || []}
-                />
-              </div>
-              )}
-
-              <div className={`editor-utility-sidebar ${authorSignalsCollapsed ? 'collapsed' : ''}`}>
-                {authorSignalsCollapsed ? (
+              <div className={`editor-utility-sidebar context-${authorRightSidebarContext.kind} ${authorRightSidebarContext.wide ? 'wide' : ''} ${authorRightSidebarCollapsed ? 'collapsed' : ''}`}>
+                {authorRightSidebarCollapsed ? (
                   <button
                     type="button"
                     className="utility-sidebar-restore"
                     title="Expand right sidebar"
                     aria-label="Expand right sidebar"
-                    onClick={() => setAuthorSignalsCollapsed(false)}
+                    onClick={() => setAuthorRightSidebarCollapsed(false)}
                   >
                     <span aria-hidden="true">‹</span>
-                    <strong>{isParameterDataTabActive ? 'Parameters' : 'Signals'}</strong>
+                    <strong>{authorRightSidebarContext.railLabel}</strong>
                   </button>
                 ) : (
                 <>
                 <div className="side-pane-header">
-                  <span>{isParameterDataTabActive ? 'Parameters' : 'Authoring Signals'}</span>
+                  <span>{authorRightSidebarContext.title}</span>
                   <button
                     type="button"
                     className="debugger-pane-close"
                     title="Collapse right sidebar"
                     aria-label="Collapse right sidebar"
-                    onClick={() => setAuthorSignalsCollapsed(true)}
+                    onClick={() => setAuthorRightSidebarCollapsed(true)}
                   >
                     ›
                   </button>
                 </div>
-                {isParameterDataTabActive ? (
-                  <ParameterSidebar
-                    mergeSummary={parameterMergeSummary}
-                    onAddParameter={addParameter}
-                    onMergeParameterSources={mergeParameterSourceFiles}
-                    onSelectParameter={selectParameterData}
-                    parameters={script.parameters || []}
-                    selectedParameterIdx={selectedParameterIdx}
-                  />
-                ) : (
+                {authorRightSidebarContext.kind !== 'signals' ? renderContextualRightSidebarContent() : (
                 <>
                 <div className="utility-card">
                   <div className="utility-card-header">
