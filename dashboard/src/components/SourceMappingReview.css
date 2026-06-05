@@ -179,6 +179,11 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-primary);
+  outline: none;
+}
+
+.source-map-table-wrap:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
 }
 
 .source-map-table {
@@ -222,8 +227,7 @@
 }
 
 .source-map-panels {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  display: flex;
   gap: 12px;
 }
 
@@ -232,7 +236,20 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+}
+
+.source-map-panel:first-child {
+  flex: 1 1 50%;
+  resize: horizontal;
   overflow: hidden;
+  min-width: 250px;
+  max-width: calc(100% - 250px);
+}
+
+.source-map-panel:last-child {
+  flex: 1 1 auto;
 }
 
 .source-map-panel-header {
@@ -260,6 +277,7 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   line-height: 1.5;
+  flex: 1;
 }
 
 .source-map-code {
@@ -367,6 +385,10 @@
 
 @media (max-width: 960px) {
   .source-map-panels {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+  .source-map-panel:first-child {
+    max-width: none;
+    resize: vertical;
   }
 }

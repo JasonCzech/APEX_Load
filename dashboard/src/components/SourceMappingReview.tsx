@@ -127,6 +127,7 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
   const [sortField, setSortField] = useState<SortField>('source')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [copied, setCopied] = useState<'source' | 'dsl' | ''>('')
+  const [isTableCollapsed, setIsTableCollapsed] = useState(false)
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
 
   const selectedMapping = useMemo(
@@ -189,9 +190,10 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
   }, [filter, mappings, sortDirection, sortField, categoryFilter])
 
   useEffect(() => {
-    if (!focusedMappingId) return
+    const idToScroll = focusedMappingId || selectedMappingId
+    if (!idToScroll) return
     window.requestAnimationFrame(() => {
-      rowRefs.current[focusedMappingId]?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      rowRefs.current[idToScroll]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     })
   }, [filteredMappings, focusedMappingId, focusRequestId, selectedMappingId])
 
@@ -215,6 +217,26 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
     setSelectedFilePath(filePath)
     setSelectedMappingId(nextMapping?.id || '')
     setCopied('')
+  }
+
+  const handleTableKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (filteredMappings.length === 0) return
+
+      const currentIndex = filteredMappings.findIndex(m => m.id === selectedMappingId)
+      let nextIndex = 0
+
+      if (currentIndex !== -1) {
+        if (e.key === 'ArrowUp') {
+          nextIndex = currentIndex > 0 ? currentIndex - 1 : 0
+        } else {
+          nextIndex = currentIndex < filteredMappings.length - 1 ? currentIndex + 1 : filteredMappings.length - 1
+        }
+      }
+
+      selectMapping(filteredMappings[nextIndex])
+    }
   }
 
   const sourceActiveRange = selectedMapping && selectedFile && mappingMatchesFile(selectedMapping, selectedFile.path)
@@ -315,9 +337,19 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
           <span>Filter Mappings</span>
           <input value={filter} onChange={event => setFilter(event.target.value)} placeholder="Function, target, status..." />
         </label>
+        <div style={{ alignSelf: 'flex-end', marginLeft: 'auto' }}>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            style={{ border: '1px solid var(--border)' }}
+            onClick={() => setIsTableCollapsed(prev => !prev)}
+          >
+            {isTableCollapsed ? 'Show Table' : 'Collapse Table'}
+          </button>
+        </div>
       </div>
 
-      <div className="source-map-table-wrap">
+      <div className="source-map-table-wrap" tabIndex={0} onKeyDown={handleTableKeyDown} style={{ display: isTableCollapsed ? 'none' : 'block' }}>
         <table className="source-map-table">
           <thead>
             <tr>

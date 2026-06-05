@@ -5,12 +5,19 @@ import './JsonViewer.css'
 interface JsonViewerProps {
   data: unknown
   defaultExpandedDepth?: number
+  autoExpandPaths?: string[]
 }
 
 function getType(value: unknown): string {
   if (value === null) return 'null'
   if (Array.isArray(value)) return 'array'
   return typeof value
+}
+
+function getTypeIndicator(type: string, value: unknown): string {
+  if (type === 'array' && Array.isArray(value)) return `array[${value.length}]`
+  if (type === 'object' && value && typeof value === 'object') return `object{${Object.keys(value).length}}`
+  return type
 }
 
 function formatPathKey(key: string): string {
@@ -28,6 +35,7 @@ interface JsonNodeProps {
   lowerFilter: string
   forceToggleNonce: number
   forceToggleDirection: 'expand' | 'collapse' | null
+  autoExpandPaths?: string[]
 }
 
 function HighlightText({ text, query }: { text: string; query: string }) {
@@ -43,16 +51,34 @@ function HighlightText({ text, query }: { text: string; query: string }) {
   )
 }
 
-function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visiblePaths, lowerFilter, forceToggleNonce, forceToggleDirection }: JsonNodeProps) {
+function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visiblePaths, lowerFilter, forceToggleNonce, forceToggleDirection, autoExpandPaths }: JsonNodeProps) {
   const [expanded, setExpanded] = useState(depth <= defaultExpandedDepth)
   const [copied, setCopied] = useState(false)
-  const type = getType(value)
+  const [copiedValue, setCopiedValue] = useState(false)
+  const [parsedStringVal, setParsedStringVal] = useState<unknown | undefined>(undefined)
+
+  const actualValue = parsedStringVal !== undefined ? parsedStringVal : value
+  const type = getType(actualValue)
+  const isOriginalString = getType(value) === 'string'
+  const canParseJson = isOriginalString && typeof value === 'string' && value.length > 5 && 
+    ((value.trim().startsWith('{') && value.trim().endsWith('}')) || (value.trim().startsWith('[') && value.trim().endsWith(']')))
 
   useEffect(() => {
     if (forceToggleNonce > 0 && forceToggleDirection) {
       setExpanded(forceToggleDirection === 'expand')
     }
   }, [forceToggleNonce, forceToggleDirection])
+
+  useEffect(() => {
+    if (autoExpandPaths && autoExpandPaths.length > 0) {
+      for (const targetPath of autoExpandPaths) {
+        if (targetPath === path || targetPath.startsWith(path + '.') || targetPath.startsWith(path + '[')) {
+          setExpanded(true)
+          break
+        }
+      }
+    }
+  }, [autoExpandPaths, path])
 
   useEffect(() => {
     if (visiblePaths) {
@@ -80,33 +106,79 @@ function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visi
     }
   }
 
+  const handleCopyValue = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const textToCopy = typeof actualValue === 'object' ? JSON.stringify(actualValue, null, 2) : String(actualValue)
+    const success = await copyTextToClipboard(textToCopy)
+    if (success) {
+      setCopiedValue(true)
+      setTimeout(() => setCopiedValue(false), 2000)
+    }
+  }
+
+  const toggleParseJson = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (parsedStringVal !== undefined) {
+      setParsedStringVal(undefined)
+    } else {
+      try {
+        const parsed = JSON.parse(value as string)
+        setParsedStringVal(parsed)
+        setExpanded(true)
+      } catch {
+        // Do nothing if parsing fails
+      }
+    }
+  }
+
   const renderKey = () => {
     if (name === undefined) return null
     return (
       <span className="json-viewer-key">
         "<HighlightText text={name} query={lowerFilter} />"<span className="json-viewer-punctuation">: </span>
+        <span className="json-viewer-type-indicator">{getTypeIndicator(type, actualValue)}</span>
       </span>
     )
   }
 
-  const renderCopyButton = () => {
+  const renderActions = () => {
     if (!path || path === '$') return null
     return (
-      <button 
-        type="button" 
-        className="json-viewer-copy-path" 
-        onClick={(e) => void handleCopyPath(e)}
-        title="Copy JSONPath"
-      >
-        {copied ? 'Copied!' : 'Copy Path'}
-      </button>
+      <span className="json-viewer-actions">
+        {canParseJson && (
+          <button 
+            type="button" 
+            className="json-viewer-action-btn" 
+            onClick={toggleParseJson}
+            title={parsedStringVal !== undefined ? 'Show original string' : 'Parse string as JSON'}
+          >
+            {parsedStringVal !== undefined ? 'Raw String' : 'Parse JSON'}
+          </button>
+        )}
+        <button 
+          type="button" 
+          className="json-viewer-action-btn" 
+          onClick={(e) => void handleCopyPath(e)}
+          title="Copy JSONPath"
+        >
+          {copied ? 'Copied Path!' : 'Copy Path'}
+        </button>
+        <button 
+          type="button" 
+          className="json-viewer-action-btn" 
+          onClick={(e) => void handleCopyValue(e)}
+          title="Copy Value"
+        >
+          {copiedValue ? 'Copied Val!' : 'Copy Value'}
+        </button>
+      </span>
     )
   }
 
   if (type === 'object' || type === 'array') {
     const isArray = type === 'array'
-    const items = isArray ? (value as unknown[]) : Object.entries(value as Record<string, unknown>)
-    const isEmpty = isArray ? items.length === 0 : Object.keys(value as object).length === 0
+    const items = isArray ? (actualValue as unknown[]) : Object.entries(actualValue as Record<string, unknown>)
+    const isEmpty = isArray ? items.length === 0 : Object.keys(actualValue as object).length === 0
 
     if (isEmpty) {
       return (
@@ -114,7 +186,7 @@ function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visi
           {renderKey()}
           <span className="json-viewer-punctuation">{isArray ? '[]' : '{}'}</span>
           {!isLast && <span className="json-viewer-punctuation">,</span>}
-          {renderCopyButton()}
+          {renderActions()}
         </div>
       )
     }
@@ -134,12 +206,12 @@ function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visi
           <span className="json-viewer-punctuation">{isArray ? '[' : '{'}</span>
           {!expanded && (
             <span className="json-viewer-summary" onClick={() => setExpanded(true)}>
-              {isArray ? `${items.length} items` : `${Object.keys(value as object).length} keys`}
+              {isArray ? `${items.length} items` : `${Object.keys(actualValue as object).length} keys`}
             </span>
           )}
           {!expanded && <span className="json-viewer-punctuation">{isArray ? ']' : '}'}</span>}
           {!expanded && !isLast && <span className="json-viewer-punctuation">,</span>}
-          {renderCopyButton()}
+          {renderActions()}
         </div>
         
         {expanded && (
@@ -157,6 +229,7 @@ function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visi
                     lowerFilter={lowerFilter}
                     forceToggleNonce={forceToggleNonce}
                     forceToggleDirection={forceToggleDirection}
+                    autoExpandPaths={autoExpandPaths}
                   />
                 ))
               : (items as [string, unknown][]).map(([key, val], idx) => (
@@ -172,6 +245,7 @@ function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visi
                     lowerFilter={lowerFilter}
                     forceToggleNonce={forceToggleNonce}
                     forceToggleDirection={forceToggleDirection}
+                    autoExpandPaths={autoExpandPaths}
                   />
                 ))
             }
@@ -190,18 +264,19 @@ function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visi
   return (
     <div className="json-viewer-line json-viewer-primitive">
       {renderKey()}
+      {name === undefined && <span className="json-viewer-type-indicator json-viewer-type-indicator-root">{getTypeIndicator(type, actualValue)}</span>}
       <span className={`json-viewer-${type}`}>
         {type === 'string' ? '"' : ''}
-        <HighlightText text={String(value)} query={lowerFilter} />
+        <HighlightText text={String(actualValue)} query={lowerFilter} />
         {type === 'string' ? '"' : ''}
       </span>
       {!isLast && <span className="json-viewer-punctuation">,</span>}
-      {renderCopyButton()}
+      {renderActions()}
     </div>
   )
 }
 
-export default function JsonViewer({ data, defaultExpandedDepth = 2 }: JsonViewerProps) {
+export default function JsonViewer({ data, defaultExpandedDepth = 2, autoExpandPaths }: JsonViewerProps) {
   const [filterText, setFilterText] = useState('')
   const [forceToggleNonce, setForceToggleNonce] = useState(0)
   const [forceToggleDirection, setForceToggleDirection] = useState<'expand' | 'collapse' | null>(null)
@@ -284,6 +359,7 @@ export default function JsonViewer({ data, defaultExpandedDepth = 2 }: JsonViewe
             lowerFilter={lowerFilter}
             forceToggleNonce={forceToggleNonce}
             forceToggleDirection={forceToggleDirection}
+            autoExpandPaths={autoExpandPaths}
           />
         )}
       </div>

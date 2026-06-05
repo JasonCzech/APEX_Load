@@ -854,6 +854,12 @@ export function formatNetworkEntries(entries?: NetworkEntry[]): string {
     .join('\n')
 }
 
+export function extractJsonPaths(text?: string | null): string[] {
+  if (!text) return []
+  const matches = text.match(/\$\.[a-zA-Z0-9_.\[\]]+/g)
+  return matches ? Array.from(new Set(matches)) : []
+}
+
 export function hasBrowserReplayArtifacts(event: ReplayActionEvent): boolean {
   return !!(
     event.dom_summary ||

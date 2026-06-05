@@ -15,6 +15,7 @@ interface Props {
   emptyMessage?: string
   preClassName?: string
   expanded?: boolean
+  autoExpandPaths?: string[]
   onExpandedChange?: (expanded: boolean) => void
 }
 
@@ -183,6 +184,7 @@ export default function SnapshotBodyPreview({
   emptyMessage = 'No body captured',
   preClassName,
   expanded,
+  autoExpandPaths,
 }: Props) {
   const formattedBody = useMemo(() => {
     if (!body) return emptyMessage
@@ -240,7 +242,7 @@ export default function SnapshotBodyPreview({
     <>
       {parsedJson !== undefined ? (
         <div className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'} style={{ margin: 0, padding: 0 }}>
-          <JsonViewer data={parsedJson} />
+          <JsonViewer data={parsedJson} autoExpandPaths={autoExpandPaths} />
         </div>
       ) : (
         <pre className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'}>
@@ -282,7 +284,7 @@ export default function SnapshotBodyPreview({
       >
         {parsedJson !== undefined ? (
           <div className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'} style={{ flex: 1, margin: 0, padding: 0 }}>
-            <JsonViewer data={parsedJson} defaultExpandedDepth={4} />
+            <JsonViewer data={parsedJson} defaultExpandedDepth={4} autoExpandPaths={autoExpandPaths} />
           </div>
         ) : (
           <pre className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'}>
