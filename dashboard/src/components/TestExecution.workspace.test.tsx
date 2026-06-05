@@ -1,0 +1,369 @@
+// @vitest-environment jsdom
+
+import { act } from 'react'
+import { createRoot, Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { TestSummary } from '../types'
+import TestExecution from './TestExecution'
+
+const hookMocks = vi.hoisted(() => ({
+  useExecutionTestPolling: vi.fn(),
+  useExecutionViewState: vi.fn(),
+  useExecutionScenarioPreviewModel: vi.fn(),
+  useExecutionMetricsStream: vi.fn(),
+  useExecutionArchiveResourceHistory: vi.fn(),
+  useExecutionArchiveSummaryHistory: vi.fn(),
+  useExecutionChartModel: vi.fn(),
+  useExecutionActionBridge: vi.fn(),
+  useExecutionLiveControls: vi.fn(),
+  useExecutionArchiveModel: vi.fn(),
+}))
+
+vi.mock('./TestExecutionHeader', () => ({ default: () => <div>Execution Header</div> }))
+vi.mock('./TestExecutionScenarioOverview', () => ({ default: () => <div>Scenario Overview Content</div> }))
+vi.mock('./TestExecutionHeroMetrics', () => ({ default: () => <div>Hero Metrics Content</div> }))
+vi.mock('./TestExecutionLiveControls', () => ({ default: () => <div>Live Controls Content</div> }))
+vi.mock('./TestExecutionScenarioPreview', () => ({ default: () => <div>Scenario Preview Content</div> }))
+vi.mock('./TestExecutionCharts', () => ({ default: () => <div>Runtime Graphs Content</div> }))
+vi.mock('./TestExecutionStatusPanels', () => ({ default: () => <div>Status Panels Content</div> }))
+vi.mock('./TestExecutionSummary', () => ({ default: () => <div>Live Summary Content</div> }))
+vi.mock('./TestExecutionArchive', () => ({
+  default: ({ hasArchive, view = 'report' }: { hasArchive: boolean; view?: string }) => {
+    const viewContent: Record<string, string> = {
+      report: 'Archive Report Content',
+      'action-summary': 'Action Summary Content',
+      'load-impact': 'Load Impact + Metrics Content',
+      transactions: 'Transaction Drill-Down Content',
+    }
+    return <div>{hasArchive ? viewContent[view] : `Archive Empty Content ${view}`}</div>
+  },
+}))
+
+vi.mock('./useExecutionTestPolling', () => ({ useExecutionTestPolling: hookMocks.useExecutionTestPolling }))
+vi.mock('./useExecutionViewState', () => ({ useExecutionViewState: hookMocks.useExecutionViewState }))
+vi.mock('./useExecutionScenarioPreviewModel', () => ({ useExecutionScenarioPreviewModel: hookMocks.useExecutionScenarioPreviewModel }))
+vi.mock('./useExecutionMetricsStream', () => ({ useExecutionMetricsStream: hookMocks.useExecutionMetricsStream }))
+vi.mock('./useExecutionArchiveResourceHistory', () => ({ useExecutionArchiveResourceHistory: hookMocks.useExecutionArchiveResourceHistory }))
+vi.mock('./useExecutionArchiveSummaryHistory', () => ({ useExecutionArchiveSummaryHistory: hookMocks.useExecutionArchiveSummaryHistory }))
+vi.mock('./useExecutionChartModel', () => ({ useExecutionChartModel: hookMocks.useExecutionChartModel }))
+vi.mock('./useExecutionActionBridge', () => ({ useExecutionActionBridge: hookMocks.useExecutionActionBridge }))
+vi.mock('./useExecutionLiveControls', () => ({ useExecutionLiveControls: hookMocks.useExecutionLiveControls }))
+vi.mock('./useExecutionArchiveModel', () => ({ useExecutionArchiveModel: hookMocks.useExecutionArchiveModel }))
+
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+describe('TestExecution workspace layout', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    window.localStorage.clear()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    configureHooks(makeTest('QUEUED'))
+  })
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount()
+    })
+    container.remove()
+    window.localStorage.clear()
+    vi.clearAllMocks()
+  })
+
+  it('renders default execution tabs with grouped cards for a queued run', async () => {
+    await renderExecution()
+
+    expect(tabLabels()).toEqual([
+      'Overview',
+      'Control',
+      'Graphs',
+      'Diagnostics',
+      'Archive',
+      'Action Summary',
+      'Load Impact + Metrics Under Load',
+      'Transaction Drill-Down',
+    ])
+    expect(selectedTabLabel()).toBe('Overview')
+    expect(container.textContent).toContain('Scenario Overview Content')
+    expect(container.textContent).toContain('Hero Metrics Content')
+
+    await clickWorkspaceTab('Control')
+    expect(container.textContent).toContain('Live controls are unavailable for this run state.')
+    expect(container.textContent).toContain('Scenario Preview Content')
+
+    await clickWorkspaceTab('Graphs')
+    expect(container.textContent).toContain('Runtime Graphs Content')
+
+    await clickWorkspaceTab('Diagnostics')
+    expect(container.textContent).toContain('Status Panels Content')
+    expect(container.textContent).toContain('Live Summary Content')
+
+    await clickWorkspaceTab('Archive')
+    expect(container.textContent).toContain('Archive Empty Content report')
+
+    await clickWorkspaceTab('Action Summary')
+    expect(container.textContent).toContain('Archive Empty Content action-summary')
+
+    await clickWorkspaceTab('Load Impact + Metrics Under Load')
+    expect(container.textContent).toContain('Archive Empty Content load-impact')
+
+    await clickWorkspaceTab('Transaction Drill-Down')
+    expect(container.textContent).toContain('Archive Empty Content transactions')
+  })
+
+  it('routes completed archive tabs to their dedicated archive views', async () => {
+    configureHooks(makeTest('COMPLETE', {
+      archive: {
+        test_id: 'test-1',
+        schema_version: '1',
+        archive_path: '/archives/test-1',
+        manifest_path: '/archives/test-1/manifest.json',
+        transaction_count: 100,
+        resource_sample_count: 20,
+        interval_summary_count: 10,
+        created_at: '2026-06-05T12:00:00Z',
+        completed_at: '2026-06-05T12:05:00Z',
+      },
+    }))
+    await renderExecution()
+
+    await clickWorkspaceTab('Archive')
+    expect(container.textContent).toContain('Archive Report Content')
+
+    await clickWorkspaceTab('Action Summary')
+    expect(container.textContent).toContain('Action Summary Content')
+
+    await clickWorkspaceTab('Load Impact + Metrics Under Load')
+    expect(container.textContent).toContain('Load Impact + Metrics Content')
+
+    await clickWorkspaceTab('Transaction Drill-Down')
+    expect(container.textContent).toContain('Transaction Drill-Down Content')
+  })
+
+  it('places active run controls inside the Control tab for a running run', async () => {
+    configureHooks(makeTest('RUNNING'))
+    await renderExecution()
+
+    await clickWorkspaceTab('Control')
+
+    expect(container.textContent).toContain('Live Controls Content')
+    expect(container.textContent).toContain('Scenario Preview Content')
+  })
+
+  it('auto-applies a matching execution profile from run context', async () => {
+    window.localStorage.setItem('apexload.execution.workspaceProfiles.v1', JSON.stringify([
+      {
+        id: 'default',
+        name: 'Default Execution Layout',
+        activeTabId: 'overview',
+        tabs: [
+          { id: 'overview', label: 'Overview', cardIds: ['scenario-overview', 'hero-metrics'] },
+          { id: 'control', label: 'Control', cardIds: ['live-controls', 'scenario-preview'] },
+          { id: 'graphs', label: 'Graphs', cardIds: ['runtime-graphs'] },
+          { id: 'diagnostics', label: 'Diagnostics', cardIds: ['status-panels', 'live-summary'] },
+          { id: 'archive', label: 'Archive', cardIds: ['archive-report'] },
+          { id: 'action-summary', label: 'Action Summary', cardIds: ['action-summary'] },
+          { id: 'load-impact', label: 'Load Impact + Metrics Under Load', cardIds: ['load-impact-metrics'] },
+          { id: 'transaction-drilldown', label: 'Transaction Drill-Down', cardIds: ['transaction-drilldown'] },
+        ],
+        unassignedCardIds: [],
+      },
+      {
+        id: 'browser-diagnostics',
+        name: 'Browser Diagnostics',
+        activeTabId: 'diagnostics',
+        matchEnabled: true,
+        matchText: 'checkout browser',
+        priority: 20,
+        tabs: [
+          { id: 'overview', label: 'Overview', cardIds: ['scenario-overview', 'hero-metrics'] },
+          { id: 'control', label: 'Control', cardIds: ['live-controls', 'scenario-preview'] },
+          { id: 'graphs', label: 'Graphs', cardIds: ['runtime-graphs'] },
+          { id: 'diagnostics', label: 'Diagnostics', cardIds: ['status-panels', 'live-summary'] },
+          { id: 'archive', label: 'Archive', cardIds: ['archive-report'] },
+          { id: 'action-summary', label: 'Action Summary', cardIds: ['action-summary'] },
+          { id: 'load-impact', label: 'Load Impact + Metrics Under Load', cardIds: ['load-impact-metrics'] },
+          { id: 'transaction-drilldown', label: 'Transaction Drill-Down', cardIds: ['transaction-drilldown'] },
+        ],
+        unassignedCardIds: [],
+      },
+    ]))
+    window.localStorage.setItem('apexload.execution.activeWorkspaceProfile.v1', JSON.stringify({ autoApply: true, profileId: 'default' }))
+    configureHooks(makeTest('RUNNING', { name: 'Checkout Browser Smoke' }))
+
+    await renderExecution()
+
+    expect(selectedTabLabel()).toBe('Diagnostics')
+    expect(container.textContent).toContain('Status Panels Content')
+    expect(container.textContent).toContain('Live Summary Content')
+  })
+
+  async function renderExecution() {
+    await act(async () => {
+      root.render(
+        <TestExecution
+          testId="test-1"
+          history={[]}
+          onBack={vi.fn()}
+          onEditScript={vi.fn()}
+          onSelectTest={vi.fn()}
+        />,
+      )
+    })
+  }
+
+  function configureHooks(test: TestSummary) {
+    hookMocks.useExecutionTestPolling.mockReturnValue({ test, setTest: vi.fn(), error: '' })
+    hookMocks.useExecutionViewState.mockReturnValue({
+      expandedChart: null,
+      onExpandedChartChange: vi.fn(),
+      expandedScenarioScript: null,
+      onExpandedScenarioScriptChange: vi.fn(),
+    })
+    hookMocks.useExecutionScenarioPreviewModel.mockReturnValue({
+      queuedScenarioPreview: {},
+      queuedScenarioRows: [],
+      scriptDetailsLoading: false,
+      scriptDetailsError: '',
+    })
+    hookMocks.useExecutionMetricsStream.mockReturnValue({ localMetricsHistory: [], latestMetrics: null })
+    hookMocks.useExecutionArchiveResourceHistory.mockReturnValue({
+      archiveResourceHistory: [],
+      archiveResourceError: '',
+      archiveResourcesLoading: false,
+    })
+    hookMocks.useExecutionArchiveSummaryHistory.mockReturnValue({
+      archiveSummaryHistory: [],
+      archiveSummaryError: '',
+      archiveSummariesLoading: false,
+    })
+    hookMocks.useExecutionChartModel.mockReturnValue({
+      filteredData: [],
+      summary: {},
+      timeRange: '3m',
+      refAreaLeft: '',
+      refAreaEnd: '',
+      showRefArea: false,
+      onTimeRangeChange: vi.fn(),
+      onChartMouseDown: vi.fn(),
+      onChartMouseMove: vi.fn(),
+      onZoom: vi.fn(),
+      onResetZoom: vi.fn(),
+    })
+    hookMocks.useExecutionActionBridge.mockReturnValue({
+      controlFeedback: '',
+      showControlFeedback: false,
+      startCapacityConflict: null,
+      startShakeoutConflict: null,
+      startFeedback: '',
+      onDismissStartConflict: vi.fn(),
+      onStart: vi.fn(),
+      onConfirmStartAnyway: vi.fn(),
+      onContinueAfterShakeoutFailure: vi.fn(),
+      onStop: vi.fn(),
+      onAbort: vi.fn(),
+      onPause: vi.fn(),
+      onResume: vi.fn(),
+    })
+    hookMocks.useExecutionLiveControls.mockReturnValue({
+      showControls: true,
+      onToggleControls: vi.fn(),
+      vuserTargets: {},
+      onVuserTargetChange: vi.fn(),
+      vuserGroupActions: {},
+      onVuserGroupActionChange: vi.fn(),
+      vuserRampEnabled: false,
+      onVuserRampEnabledChange: vi.fn(),
+      vuserRampDuration: '1m',
+      onVuserRampDurationChange: vi.fn(),
+      durationInput: '5m',
+      onDurationInputChange: vi.fn(),
+      onScaleVUsers: vi.fn(),
+      onStopAllVUsers: vi.fn(),
+      onAdjustDuration: vi.fn(),
+      liveControlPreview: {},
+    })
+    hookMocks.useExecutionArchiveModel.mockReturnValue({
+      hasArchive: Boolean(test.archive),
+      archiveError: '',
+      archiveLoading: false,
+      archiveReport: null,
+      archiveAnalysis: null,
+      archiveAnalysisLoading: false,
+      archiveAnalysisError: '',
+      archiveActionEntries: [],
+      selectedArchiveAction: '',
+      onSelectedArchiveActionChange: vi.fn(),
+      archiveSOAPOperationEntries: [],
+      selectedArchiveSOAPOperation: '',
+      onSelectedArchiveSOAPOperationChange: vi.fn(),
+      archiveGroups: [],
+      selectedArchiveGroup: '',
+      onSelectedArchiveGroupChange: vi.fn(),
+      archiveErrorsOnly: false,
+      onArchiveErrorsOnlyChange: vi.fn(),
+      archiveTransactionSort: { key: 'started_at', direction: 'asc' },
+      onArchiveTransactionSortChange: vi.fn(),
+      archiveTransactionFilters: {},
+      archiveTransactionFiltersActive: false,
+      onArchiveTransactionFilterChange: vi.fn(),
+      onArchiveTransactionFiltersReset: vi.fn(),
+      archiveTransactionsLoading: false,
+      archiveTransactionsTotal: 0,
+      archivePageStart: 0,
+      archivePageEnd: 0,
+      archiveTransactionsOffset: 0,
+      archivePageSize: 25,
+      onPageSizeChange: vi.fn(),
+      onPreviousPage: vi.fn(),
+      onNextPage: vi.fn(),
+      archiveTransactions: [],
+      expandedArchiveEvent: null,
+      onExpandedArchiveEventChange: vi.fn(),
+      onDownloadArchive: vi.fn(),
+      onDownloadBrowserDiagnostics: vi.fn(),
+      onDownloadArchiveArtifact: vi.fn(),
+    })
+  }
+
+  function makeTest(status: TestSummary['status'], overrides: Partial<TestSummary> = {}): TestSummary {
+    return {
+      id: 'test-1',
+      name: 'Checkout Browser',
+      status,
+      application_id: 'app-1',
+      release_id: 'rel-1',
+      scenario_id: 'scenario-1',
+      groups: [
+        { name: 'buyers', script_id: 'script-1', script_name: 'Checkout Flow', protocol: 'browser', vusers: 10 },
+      ],
+      total_vusers: 10,
+      duration: '5m',
+      created_at: '2026-06-05T12:00:00Z',
+      ...overrides,
+    }
+  }
+
+  function tabLabels() {
+    return Array.from(container.querySelectorAll('.dashboard-workspace-tab > span'))
+      .map(node => node.textContent || '')
+  }
+
+  function selectedTabLabel() {
+    const tab = container.querySelector('.dashboard-workspace-tab[aria-selected="true"] > span')
+    return tab?.textContent || ''
+  }
+
+  async function clickWorkspaceTab(label: string) {
+    const tab = Array.from(container.querySelectorAll('[role="tab"]'))
+      .find(button => button.textContent?.includes(label)) as HTMLButtonElement | undefined
+    expect(tab).toBeTruthy()
+    await act(async () => {
+      tab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+})

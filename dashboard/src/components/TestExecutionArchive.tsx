@@ -36,7 +36,10 @@ import {
   type ArchiveTransactionSortKey,
 } from './useExecutionArchiveModel'
 
+type ArchiveView = 'all' | 'report' | 'load-impact' | 'action-summary' | 'transactions'
+
 interface Props {
+  view?: ArchiveView
   hasArchive: boolean
   test: TestSummary
   archiveError: string
@@ -676,6 +679,7 @@ function renderBrowserSummary(
 }
 
 export default function TestExecutionArchive({
+  view = 'all',
   hasArchive,
   test,
   archiveError,
@@ -747,6 +751,11 @@ export default function TestExecutionArchive({
   const archiveAnalysisNodeByID = new Map((archiveAnalysis?.graph.nodes || []).map(node => [node.id, node]))
   const showArchiveAnalysis = archiveAnalysisLoading || Boolean(archiveAnalysis) || Boolean(archiveAnalysisError)
   const archiveAnalysisHasBaseline = Boolean(archiveAnalysis?.baseline_id)
+  const showAllViews = view === 'all'
+  const showReportView = showAllViews || view === 'report'
+  const showLoadImpactView = showAllViews || view === 'load-impact'
+  const showActionSummaryView = showAllViews || view === 'action-summary'
+  const showTransactionsView = showAllViews || view === 'transactions'
   const renderArchiveSortButton = (key: ArchiveTransactionSortKey, label: string) => {
     const active = archiveTransactionSort?.key === key
     return (
@@ -798,180 +807,192 @@ export default function TestExecutionArchive({
       >
         <pre>{manualCopySection?.value ?? ''}</pre>
       </SnapshotFullDialog>
-      <div className="archive-report-header">
-        <div>
-          <h3 className="archive-report-title">Archive Report</h3>
-          <p className="archive-report-subtitle">
-            Post-run summary derived from the saved JSONL bundle. Completed {formatArchiveTimestamp(test.archive?.completed_at)}.
-          </p>
+      {showReportView && (
+        <div className="archive-report-header">
+          <div>
+            <h3 className="archive-report-title">Archive Report</h3>
+            <p className="archive-report-subtitle">
+              Post-run summary derived from the saved JSONL bundle. Completed {formatArchiveTimestamp(test.archive?.completed_at)}.
+            </p>
+          </div>
+          <div className="archive-report-badges">
+            <span className="archive-chip">{test.archive?.transaction_count || 0} transactions</span>
+            <span className="archive-chip">{test.archive?.resource_sample_count || 0} resource samples</span>
+            <span className="archive-chip">{test.archive?.interval_summary_count || 0} summaries</span>
+          </div>
         </div>
-        <div className="archive-report-badges">
-          <span className="archive-chip">{test.archive?.transaction_count || 0} transactions</span>
-          <span className="archive-chip">{test.archive?.resource_sample_count || 0} resource samples</span>
-          <span className="archive-chip">{test.archive?.interval_summary_count || 0} summaries</span>
-        </div>
-      </div>
+      )}
 
       {archiveError && <p className="scenario-script-status error">{archiveError}</p>}
       {archiveLoading && <p className="scenario-script-status">Loading archive report…</p>}
 
       {archiveReport && (
         <>
-          <div className="archive-overview-grid">
-            <div className="scenario-script-detail-card">
-              <span className="scenario-script-detail-label">Peak TPS</span>
-              <span className="scenario-script-detail-value">{archiveReport.overview.peak_tps.toFixed(1)}</span>
-              {archiveReport.overview.peak_target_tps ? (
-                <span className="capacity-advisory-detail">Target {archiveReport.overview.peak_target_tps.toFixed(1)} TPS</span>
-              ) : null}
-            </div>
-            {archiveReport.overview.max_throughput_gap_pct !== undefined && (
-              <div className="scenario-script-detail-card">
-                <span className="scenario-script-detail-label">Throughput Gap</span>
-                <span className="scenario-script-detail-value">{archiveReport.overview.max_throughput_gap_pct.toFixed(1)}%</span>
-                <span className="capacity-advisory-detail">{archiveReport.overview.throughput_missed_intervals || 0} missed target interval{archiveReport.overview.throughput_missed_intervals === 1 ? '' : 's'}</span>
-              </div>
-            )}
-            {archiveReport.overview.goal_completion && (
-              <div className="scenario-script-detail-card">
-                <span className="scenario-script-detail-label">Goal Completion</span>
-                <span className="scenario-script-detail-value">{archiveReport.overview.goal_completion.transaction_completion_pct !== undefined ? `${archiveReport.overview.goal_completion.transaction_completion_pct.toFixed(1)}%` : archiveReport.overview.goal_completion.achieved_transactions.toLocaleString()}</span>
-                <span className="capacity-advisory-detail">
-                  {archiveReport.overview.goal_completion.configured_max_transactions
-                    ? `${archiveReport.overview.goal_completion.achieved_transactions.toLocaleString()} / ${archiveReport.overview.goal_completion.configured_max_transactions.toLocaleString()} transactions`
-                    : archiveReport.overview.goal_completion.configured_global_iterations
-                      ? `${archiveReport.overview.goal_completion.configured_global_iterations.toLocaleString()} configured global iterations`
-                      : `${archiveReport.overview.goal_completion.throughput_missed_intervals || 0} missed throughput intervals`}
-                </span>
-              </div>
-            )}
-            {archiveReport.overview.load_model_goals?.stage_count ? (
-              <div className="scenario-script-detail-card">
-                <span className="scenario-script-detail-label">Staged Load</span>
-                <span className="scenario-script-detail-value">{archiveReport.overview.load_model_goals.stage_count}</span>
-                <span className="capacity-advisory-detail">{archiveReport.overview.load_model_goals.staged_groups || 0} group{archiveReport.overview.load_model_goals.staged_groups === 1 ? '' : 's'} · {archiveReport.overview.load_model_goals.once_only_groups || 0} once-only</span>
-              </div>
-            ) : null}
-            <div className="scenario-script-detail-card">
-              <span className="scenario-script-detail-label">Peak Active VUsers</span>
-              <span className="scenario-script-detail-value">{archiveReport.overview.peak_active_vusers}</span>
-            </div>
-            <div className="scenario-script-detail-card">
-              <span className="scenario-script-detail-label">Response Range</span>
-              <span className="scenario-script-detail-value">{archiveReport.overview.min_response_ms.toFixed(1)} - {archiveReport.overview.max_response_ms.toFixed(1)} ms</span>
-            </div>
-            <div className="scenario-script-detail-card">
-              <span className="scenario-script-detail-label">CPU Peak</span>
-              <span className="scenario-script-detail-value">{archiveReport.resource_peaks.cpu_process_pct.toFixed(1)}%</span>
-            </div>
-            <div className="scenario-script-detail-card">
-              <span className="scenario-script-detail-label">Memory Peak</span>
-              <span className="scenario-script-detail-value">{archiveReport.resource_peaks.mem_process_mb.toFixed(1)} MB</span>
-            </div>
-            <div className="scenario-script-detail-card">
-              <span className="scenario-script-detail-label">Network Peak</span>
-              <span className="scenario-script-detail-value">{archiveReport.resource_peaks.net_sent_kbps.toFixed(1)} / {archiveReport.resource_peaks.net_recv_kbps.toFixed(1)} KB/s</span>
-            </div>
-          </div>
-
-          {archiveReport.completeness && (
-            <div className="tx-section archive-summary-section">
-              <div className="archive-section-header archive-section-header-stack">
-                <div>
-                  <h3 className="chart-title">Completeness Score</h3>
-                  <p className="archive-section-copy">Archive coverage score for intervals, telemetry, writer health, and artifact availability.</p>
+          {showReportView && (
+            <>
+              <div className="archive-overview-grid">
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Peak TPS</span>
+                  <span className="scenario-script-detail-value">{archiveReport.overview.peak_tps.toFixed(1)}</span>
+                  {archiveReport.overview.peak_target_tps ? (
+                    <span className="capacity-advisory-detail">Target {archiveReport.overview.peak_target_tps.toFixed(1)} TPS</span>
+                  ) : null}
                 </div>
-                <span className={`archive-chip ${archiveReport.completeness.status === 'incomplete' ? 'danger' : ''}`}>
-                  {archiveReport.completeness.score_pct.toFixed(0)}% · {archiveReport.completeness.status.replace(/_/g, ' ')}
-                </span>
+                {archiveReport.overview.max_throughput_gap_pct !== undefined && (
+                  <div className="scenario-script-detail-card">
+                    <span className="scenario-script-detail-label">Throughput Gap</span>
+                    <span className="scenario-script-detail-value">{archiveReport.overview.max_throughput_gap_pct.toFixed(1)}%</span>
+                    <span className="capacity-advisory-detail">{archiveReport.overview.throughput_missed_intervals || 0} missed target interval{archiveReport.overview.throughput_missed_intervals === 1 ? '' : 's'}</span>
+                  </div>
+                )}
+                {archiveReport.overview.goal_completion && (
+                  <div className="scenario-script-detail-card">
+                    <span className="scenario-script-detail-label">Goal Completion</span>
+                    <span className="scenario-script-detail-value">{archiveReport.overview.goal_completion.transaction_completion_pct !== undefined ? `${archiveReport.overview.goal_completion.transaction_completion_pct.toFixed(1)}%` : archiveReport.overview.goal_completion.achieved_transactions.toLocaleString()}</span>
+                    <span className="capacity-advisory-detail">
+                      {archiveReport.overview.goal_completion.configured_max_transactions
+                        ? `${archiveReport.overview.goal_completion.achieved_transactions.toLocaleString()} / ${archiveReport.overview.goal_completion.configured_max_transactions.toLocaleString()} transactions`
+                        : archiveReport.overview.goal_completion.configured_global_iterations
+                          ? `${archiveReport.overview.goal_completion.configured_global_iterations.toLocaleString()} configured global iterations`
+                          : `${archiveReport.overview.goal_completion.throughput_missed_intervals || 0} missed throughput intervals`}
+                    </span>
+                  </div>
+                )}
+                {archiveReport.overview.load_model_goals?.stage_count ? (
+                  <div className="scenario-script-detail-card">
+                    <span className="scenario-script-detail-label">Staged Load</span>
+                    <span className="scenario-script-detail-value">{archiveReport.overview.load_model_goals.stage_count}</span>
+                    <span className="capacity-advisory-detail">{archiveReport.overview.load_model_goals.staged_groups || 0} group{archiveReport.overview.load_model_goals.staged_groups === 1 ? '' : 's'} · {archiveReport.overview.load_model_goals.once_only_groups || 0} once-only</span>
+                  </div>
+                ) : null}
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Peak Active VUsers</span>
+                  <span className="scenario-script-detail-value">{archiveReport.overview.peak_active_vusers}</span>
+                </div>
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Response Range</span>
+                  <span className="scenario-script-detail-value">{archiveReport.overview.min_response_ms.toFixed(1)} - {archiveReport.overview.max_response_ms.toFixed(1)} ms</span>
+                </div>
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">CPU Peak</span>
+                  <span className="scenario-script-detail-value">{archiveReport.resource_peaks.cpu_process_pct.toFixed(1)}%</span>
+                </div>
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Memory Peak</span>
+                  <span className="scenario-script-detail-value">{archiveReport.resource_peaks.mem_process_mb.toFixed(1)} MB</span>
+                </div>
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Network Peak</span>
+                  <span className="scenario-script-detail-value">{archiveReport.resource_peaks.net_sent_kbps.toFixed(1)} / {archiveReport.resource_peaks.net_recv_kbps.toFixed(1)} KB/s</span>
+                </div>
               </div>
-              {archiveReport.completeness.findings && archiveReport.completeness.findings.length > 0 && (
-                <div className="archive-overview-grid">
-                  {archiveReport.completeness.findings.map((finding, index) => (
-                    <div key={`${finding.dimension}-${index}`} className="scenario-script-detail-card">
-                      <span className="scenario-script-detail-label">{finding.dimension.replace(/_/g, ' ')}</span>
-                      <span className="scenario-script-detail-value"><span className={`archive-finding-severity ${finding.severity}`}>{finding.severity}</span> · -{finding.penalty.toFixed(0)}</span>
-                      <span className="capacity-advisory-detail">{finding.message}</span>
+
+              {archiveReport.completeness && (
+                <div className="tx-section archive-summary-section">
+                  <div className="archive-section-header archive-section-header-stack">
+                    <div>
+                      <h3 className="chart-title">Completeness Score</h3>
+                      <p className="archive-section-copy">Archive coverage score for intervals, telemetry, writer health, and artifact availability.</p>
+                    </div>
+                    <span className={`archive-chip ${archiveReport.completeness.status === 'incomplete' ? 'danger' : ''}`}>
+                      {archiveReport.completeness.score_pct.toFixed(0)}% · {archiveReport.completeness.status.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                  {archiveReport.completeness.findings && archiveReport.completeness.findings.length > 0 && (
+                    <div className="archive-overview-grid">
+                      {archiveReport.completeness.findings.map((finding, index) => (
+                        <div key={`${finding.dimension}-${index}`} className="scenario-script-detail-card">
+                          <span className="scenario-script-detail-label">{finding.dimension.replace(/_/g, ' ')}</span>
+                          <span className="scenario-script-detail-value"><span className={`archive-finding-severity ${finding.severity}`}>{finding.severity}</span> · -{finding.penalty.toFixed(0)}</span>
+                          <span className="capacity-advisory-detail">{finding.message}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <section className="archive-metadata-summary" aria-label="Archive metadata summary">
+                <div className="archive-metadata-grid">
+                  {compactMetadataPanels.map(panel => (
+                    <div key={panel.id} className="archive-metadata-box">
+                      <div className="archive-metadata-box-header">
+                        <h3>{panel.title}</h3>
+                        {panel.status && <span className={`archive-compact-status ${panel.tone}`}>{panel.status}</span>}
+                      </div>
+                      <dl className="archive-compact-list">
+                        {panel.items.map(item => (
+                          <div key={`${panel.id}-${item.label}`} className="archive-compact-row">
+                            <dt>{item.label}</dt>
+                            <dd>{item.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
+              </section>
+            </>
           )}
 
-          <section className="archive-metadata-summary" aria-label="Archive metadata summary">
-            <div className="archive-metadata-grid">
-              {compactMetadataPanels.map(panel => (
-                <div key={panel.id} className="archive-metadata-box">
-                  <div className="archive-metadata-box-header">
-                    <h3>{panel.title}</h3>
-                    {panel.status && <span className={`archive-compact-status ${panel.tone}`}>{panel.status}</span>}
+          {showLoadImpactView && (
+            <>
+              <LoadImpactHeatmap
+                points={loadImpactData}
+                loading={loadImpactLoading}
+                error={loadImpactError}
+                title="Load Impact"
+                subtitle="Archived performance and resource response grouped by active VUser load."
+                emptyMessage="Load impact appears when archived interval summaries or resource samples include active VUser data."
+              />
+
+              <LoadImpactMetricGraphs
+                points={loadImpactData}
+                loading={loadImpactLoading}
+                error={loadImpactError}
+                title="Metrics Under Load"
+                subtitle="Add or remove report graphs for selected metrics across active VUser load."
+                emptyMessage="Load metric graphs appear when archived interval summaries or resource samples include active VUser data."
+              />
+            </>
+          )}
+
+          {showReportView && (
+            <>
+              {archiveReport.error_patterns && archiveReport.error_patterns.length > 0 && (
+                <div className="tx-section archive-summary-section">
+                  <div className="archive-section-header">
+                    <div>
+                      <h3 className="chart-title">Error Patterns</h3>
+                      <p className="archive-section-copy">Grouped failure signatures with the first retained snapshot preserved for each cluster.</p>
+                    </div>
                   </div>
-                  <dl className="archive-compact-list">
-                    {panel.items.map(item => (
-                      <div key={`${panel.id}-${item.label}`} className="archive-compact-row">
-                        <dt>{item.label}</dt>
-                        <dd>{item.value}</dd>
-                      </div>
-                    ))}
-                  </dl>
+                  <table className="tx-table">
+                    <thead>
+                      <tr>
+                        <th>Pattern</th>
+                        <th>Occurrences</th>
+                        <th>First Seen</th>
+                        <th>Latest Seen</th>
+                        <th>Actions</th>
+                        <th>Snapshot</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {archiveReport.error_patterns.map(pattern => (
+                        <tr key={`${pattern.signature}-${pattern.first_seen}`}>
+                          <td className="tx-name">{pattern.sample}</td>
+                          <td>{pattern.count}</td>
+                          <td>{formatArchiveTimestamp(pattern.first_seen)}</td>
+                          <td>{formatArchiveTimestamp(pattern.latest_seen)}</td>
+                          <td>{pattern.actions && pattern.actions.length > 0 ? pattern.actions.join(', ') : 'n/a'}</td>
+                          <td>{pattern.snapshot ? 'retained' : 'n/a'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              ))}
-            </div>
-          </section>
-
-          <LoadImpactHeatmap
-            points={loadImpactData}
-            loading={loadImpactLoading}
-            error={loadImpactError}
-            title="Load Impact"
-            subtitle="Archived performance and resource response grouped by active VUser load."
-            emptyMessage="Load impact appears when archived interval summaries or resource samples include active VUser data."
-          />
-
-          <LoadImpactMetricGraphs
-            points={loadImpactData}
-            loading={loadImpactLoading}
-            error={loadImpactError}
-            title="Metrics Under Load"
-            subtitle="Add or remove report graphs for selected metrics across active VUser load."
-            emptyMessage="Load metric graphs appear when archived interval summaries or resource samples include active VUser data."
-          />
-
-          {archiveReport.error_patterns && archiveReport.error_patterns.length > 0 && (
-            <div className="tx-section archive-summary-section">
-              <div className="archive-section-header">
-                <div>
-                  <h3 className="chart-title">Error Patterns</h3>
-                  <p className="archive-section-copy">Grouped failure signatures with the first retained snapshot preserved for each cluster.</p>
-                </div>
-              </div>
-              <table className="tx-table">
-                <thead>
-                  <tr>
-                    <th>Pattern</th>
-                    <th>Occurrences</th>
-                    <th>First Seen</th>
-                    <th>Latest Seen</th>
-                    <th>Actions</th>
-                    <th>Snapshot</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {archiveReport.error_patterns.map(pattern => (
-                    <tr key={`${pattern.signature}-${pattern.first_seen}`}>
-                      <td className="tx-name">{pattern.sample}</td>
-                      <td>{pattern.count}</td>
-                      <td>{formatArchiveTimestamp(pattern.first_seen)}</td>
-                      <td>{formatArchiveTimestamp(pattern.latest_seen)}</td>
-                      <td>{pattern.actions && pattern.actions.length > 0 ? pattern.actions.join(', ') : 'n/a'}</td>
-                      <td>{pattern.snapshot ? 'retained' : 'n/a'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+              )}
 
           {archiveReport.overview.browser && renderBrowserSummary(
             archiveReport.overview.browser,
@@ -1186,146 +1207,150 @@ export default function TestExecutionArchive({
             </div>
           )}
 
-          {showArchiveAnalysis && (
-            <div className="tx-section archive-summary-section archive-analysis-section" data-testid="archive-analysis-section">
-              <div className="archive-section-header archive-section-header-stack">
-                <div>
-                  <h3 className="chart-title">Archive Analysis</h3>
-                  <p className="archive-section-copy">Merged graph and filtered transaction path evidence from the archived run.</p>
-                </div>
-                <div className="archive-filter-bar">
-                  {archiveAnalysis && (
-                    <>
-                      <span className="archive-chip">{archiveAnalysis.graph.nodes.length} nodes</span>
-                      <span className="archive-chip">{archiveAnalysis.graph.edges.length} link{archiveAnalysis.graph.edges.length === 1 ? '' : 's'}</span>
-                      {archiveAnalysis.baseline_id && <span className="archive-chip">Baseline {archiveAnalysis.baseline_id}</span>}
-                    </>
+              {showArchiveAnalysis && (
+                <div className="tx-section archive-summary-section archive-analysis-section" data-testid="archive-analysis-section">
+                  <div className="archive-section-header archive-section-header-stack">
+                    <div>
+                      <h3 className="chart-title">Archive Analysis</h3>
+                      <p className="archive-section-copy">Merged graph and filtered transaction path evidence from the archived run.</p>
+                    </div>
+                    <div className="archive-filter-bar">
+                      {archiveAnalysis && (
+                        <>
+                          <span className="archive-chip">{archiveAnalysis.graph.nodes.length} nodes</span>
+                          <span className="archive-chip">{archiveAnalysis.graph.edges.length} link{archiveAnalysis.graph.edges.length === 1 ? '' : 's'}</span>
+                          {archiveAnalysis.baseline_id && <span className="archive-chip">Baseline {archiveAnalysis.baseline_id}</span>}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {archiveAnalysisError && <p className="scenario-script-status error">{archiveAnalysisError}</p>}
+                  {archiveAnalysisLoading && <p className="scenario-script-status">Loading archive analysis…</p>}
+
+                  {!archiveAnalysisLoading && archiveAnalysis && archiveAnalysisNodes.length === 0 && archiveAnalysisEdges.length === 0 ? (
+                    <p className="scenario-script-status">No archive analysis graph loaded for current filters.</p>
+                  ) : null}
+
+                  {archiveAnalysis && (archiveAnalysisNodes.length > 0 || archiveAnalysisEdges.length > 0) && (
+                    <div className="archive-analysis-grid">
+                      <div className="archive-analysis-panel">
+                        <div className="archive-section-header archive-subsection-header">
+                          <div>
+                            <h3 className="chart-title">Graph Nodes</h3>
+                          </div>
+                        </div>
+                        <table className="tx-table archive-analysis-table" data-testid="archive-analysis-nodes">
+                          <thead>
+                            <tr>
+                              <th>Type</th>
+                              <th>Node</th>
+                              <th>Current</th>
+                              {archiveAnalysisHasBaseline && <th>Baseline</th>}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {archiveAnalysisNodes.slice(0, 10).map(node => {
+                              const currentStats = archiveAnalysisCurrentStats(node.runs, test.id)
+                              const baselineStats = archiveAnalysisBaselineStats(node.runs, test.id)
+                              return (
+                                <tr key={node.id}>
+                                  <td><span className="archive-analysis-kind">{formatArchiveAnalysisKind(node.kind)}</span></td>
+                                  <td className="tx-name">{node.label}</td>
+                                  <td>{formatArchiveAnalysisStats(currentStats)}</td>
+                                  {archiveAnalysisHasBaseline && <td>{formatArchiveAnalysisStats(baselineStats)}</td>}
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="archive-analysis-panel">
+                        <div className="archive-section-header archive-subsection-header">
+                          <div>
+                            <h3 className="chart-title">Graph Links</h3>
+                          </div>
+                        </div>
+                        <table className="tx-table archive-analysis-table" data-testid="archive-analysis-edges">
+                          <thead>
+                            <tr>
+                              <th>Link</th>
+                              <th>From</th>
+                              <th>To</th>
+                              <th>Current</th>
+                              {archiveAnalysisHasBaseline && <th>Baseline</th>}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {archiveAnalysisEdges.slice(0, 10).map(edge => {
+                              const currentStats = archiveAnalysisCurrentStats(edge.runs, test.id)
+                              const baselineStats = archiveAnalysisBaselineStats(edge.runs, test.id)
+                              const fromNode = archiveAnalysisNodeByID.get(edge.from)
+                              const toNode = archiveAnalysisNodeByID.get(edge.to)
+                              return (
+                                <tr key={edge.id}>
+                                  <td><span className="archive-analysis-kind">{formatArchiveAnalysisKind(edge.kind)}</span></td>
+                                  <td className="tx-name">{fromNode?.label || edge.from}</td>
+                                  <td className="tx-name">{toNode?.label || edge.to}</td>
+                                  <td>{formatArchiveAnalysisStats(currentStats)}</td>
+                                  {archiveAnalysisHasBaseline && <td>{formatArchiveAnalysisStats(baselineStats)}</td>}
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {archiveAnalysis && archiveAnalysis.transactions.length > 0 && (
+                    <div className="archive-analysis-drilldown">
+                      <div className="archive-section-header archive-subsection-header">
+                        <div>
+                          <h3 className="chart-title">Analysis Drill-Down</h3>
+                        </div>
+                        <span className="archive-chip">
+                          {archiveAnalysis.total > 0 ? `${archiveAnalysis.offset + 1}-${archiveAnalysis.offset + archiveAnalysis.transactions.length} of ${archiveAnalysis.total}` : '0 events'}
+                        </span>
+                      </div>
+                      <div className="archive-events-table-wrap">
+                        <table className="tx-table archive-analysis-table" data-testid="archive-analysis-drilldown">
+                          <thead>
+                            <tr>
+                              <th>Time</th>
+                              <th>Action</th>
+                              <th>Dependency</th>
+                              <th>Path</th>
+                              <th>Status</th>
+                              <th>Duration</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {archiveAnalysis.transactions.map(row => (
+                              <tr key={`${row.run_id}-${row.index}-${row.timestamp}`} className={!row.success ? 'archive-error-row' : ''}>
+                                <td className="archive-time-cell">{formatArchiveTime(row.timestamp)}</td>
+                                <td className="tx-name">{row.action_name || row.source_action || 'n/a'}</td>
+                                <td>{formatArchiveAnalysisDependency(row)}</td>
+                                <td className="archive-analysis-path">{formatArchiveAnalysisPath(row)}</td>
+                                <td className={row.success ? '' : 'error-cell'}>{row.status_code || (row.success ? 'OK' : 'ERR')}</td>
+                                <td>{row.duration_ms.toFixed(1)} ms</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   )}
                 </div>
-              </div>
-
-              {archiveAnalysisError && <p className="scenario-script-status error">{archiveAnalysisError}</p>}
-              {archiveAnalysisLoading && <p className="scenario-script-status">Loading archive analysis…</p>}
-
-              {!archiveAnalysisLoading && archiveAnalysis && archiveAnalysisNodes.length === 0 && archiveAnalysisEdges.length === 0 ? (
-                <p className="scenario-script-status">No archive analysis graph loaded for current filters.</p>
-              ) : null}
-
-              {archiveAnalysis && (archiveAnalysisNodes.length > 0 || archiveAnalysisEdges.length > 0) && (
-                <div className="archive-analysis-grid">
-                  <div className="archive-analysis-panel">
-                    <div className="archive-section-header archive-subsection-header">
-                      <div>
-                        <h3 className="chart-title">Graph Nodes</h3>
-                      </div>
-                    </div>
-                    <table className="tx-table archive-analysis-table" data-testid="archive-analysis-nodes">
-                      <thead>
-                        <tr>
-                          <th>Type</th>
-                          <th>Node</th>
-                          <th>Current</th>
-                          {archiveAnalysisHasBaseline && <th>Baseline</th>}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {archiveAnalysisNodes.slice(0, 10).map(node => {
-                          const currentStats = archiveAnalysisCurrentStats(node.runs, test.id)
-                          const baselineStats = archiveAnalysisBaselineStats(node.runs, test.id)
-                          return (
-                            <tr key={node.id}>
-                              <td><span className="archive-analysis-kind">{formatArchiveAnalysisKind(node.kind)}</span></td>
-                              <td className="tx-name">{node.label}</td>
-                              <td>{formatArchiveAnalysisStats(currentStats)}</td>
-                              {archiveAnalysisHasBaseline && <td>{formatArchiveAnalysisStats(baselineStats)}</td>}
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="archive-analysis-panel">
-                    <div className="archive-section-header archive-subsection-header">
-                      <div>
-                        <h3 className="chart-title">Graph Links</h3>
-                      </div>
-                    </div>
-                    <table className="tx-table archive-analysis-table" data-testid="archive-analysis-edges">
-                      <thead>
-                        <tr>
-                          <th>Link</th>
-                          <th>From</th>
-                          <th>To</th>
-                          <th>Current</th>
-                          {archiveAnalysisHasBaseline && <th>Baseline</th>}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {archiveAnalysisEdges.slice(0, 10).map(edge => {
-                          const currentStats = archiveAnalysisCurrentStats(edge.runs, test.id)
-                          const baselineStats = archiveAnalysisBaselineStats(edge.runs, test.id)
-                          const fromNode = archiveAnalysisNodeByID.get(edge.from)
-                          const toNode = archiveAnalysisNodeByID.get(edge.to)
-                          return (
-                            <tr key={edge.id}>
-                              <td><span className="archive-analysis-kind">{formatArchiveAnalysisKind(edge.kind)}</span></td>
-                              <td className="tx-name">{fromNode?.label || edge.from}</td>
-                              <td className="tx-name">{toNode?.label || edge.to}</td>
-                              <td>{formatArchiveAnalysisStats(currentStats)}</td>
-                              {archiveAnalysisHasBaseline && <td>{formatArchiveAnalysisStats(baselineStats)}</td>}
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
               )}
-
-              {archiveAnalysis && archiveAnalysis.transactions.length > 0 && (
-                <div className="archive-analysis-drilldown">
-                  <div className="archive-section-header archive-subsection-header">
-                    <div>
-                      <h3 className="chart-title">Analysis Drill-Down</h3>
-                    </div>
-                    <span className="archive-chip">
-                      {archiveAnalysis.total > 0 ? `${archiveAnalysis.offset + 1}-${archiveAnalysis.offset + archiveAnalysis.transactions.length} of ${archiveAnalysis.total}` : '0 events'}
-                    </span>
-                  </div>
-                  <div className="archive-events-table-wrap">
-                    <table className="tx-table archive-analysis-table" data-testid="archive-analysis-drilldown">
-                      <thead>
-                        <tr>
-                          <th>Time</th>
-                          <th>Action</th>
-                          <th>Dependency</th>
-                          <th>Path</th>
-                          <th>Status</th>
-                          <th>Duration</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {archiveAnalysis.transactions.map(row => (
-                          <tr key={`${row.run_id}-${row.index}-${row.timestamp}`} className={!row.success ? 'archive-error-row' : ''}>
-                            <td className="archive-time-cell">{formatArchiveTime(row.timestamp)}</td>
-                            <td className="tx-name">{row.action_name || row.source_action || 'n/a'}</td>
-                            <td>{formatArchiveAnalysisDependency(row)}</td>
-                            <td className="archive-analysis-path">{formatArchiveAnalysisPath(row)}</td>
-                            <td className={row.success ? '' : 'error-cell'}>{row.status_code || (row.success ? 'OK' : 'ERR')}</td>
-                            <td>{row.duration_ms.toFixed(1)} ms</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
+            </>
           )}
 
-          <div className="archive-report-layout">
-            <div className="tx-section archive-action-section">
+          {(showActionSummaryView || showTransactionsView) && (
+            <div className="archive-report-layout">
+              {showActionSummaryView && (
+                <div className="tx-section archive-action-section">
               <div className="archive-section-header">
                 <div>
                   <h3 className="chart-title">Action Summary</h3>
@@ -1582,9 +1607,11 @@ export default function TestExecutionArchive({
                   </table>
                 </>
               )}
-            </div>
+                </div>
+              )}
 
-            <div className="tx-section archive-drilldown-section">
+              {showTransactionsView && (
+                <div className="tx-section archive-drilldown-section">
               <div className="archive-section-header archive-section-header-stack">
                 <div>
                   <h3 className="chart-title">Transaction Drill-Down</h3>
@@ -1970,8 +1997,10 @@ export default function TestExecutionArchive({
                   </table>
                 </div>
               )}
+                </div>
+              )}
             </div>
-          </div>
+          )}
         </>
       )}
     </div>

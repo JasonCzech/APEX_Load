@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 
 import {
   MetricsHistoryPoint,
+  TestSummary,
 } from '../types'
 import TestExecutionArchive from './TestExecutionArchive'
 import { useExecutionActionBridge } from './useExecutionActionBridge'
@@ -23,6 +24,11 @@ import TestExecutionSummary from './TestExecutionSummary'
 import { mergeArchiveResourceHistory } from './testExecutionMetricsModel'
 import { buildExecutionPhaseModel } from './testExecutionPhaseModel'
 import { buildExecutionStatusModel, describeGoalController } from './testExecutionStatusModel'
+import DashboardWorkspace, {
+  buildWorkspaceContextTokens,
+  type DashboardWorkspaceCard,
+  type DashboardWorkspaceProfile,
+} from './DashboardWorkspace'
 import { useExecutionChartModel } from './useExecutionChartModel'
 import { useExecutionScenarioPreviewModel } from './useExecutionScenarioPreviewModel'
 import './TestExecution.css'
@@ -31,6 +37,23 @@ const GROUP_COLORS = [
   'var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)',
   'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)',
 ]
+
+const EXECUTION_WORKSPACE_DEFAULT_PROFILE: DashboardWorkspaceProfile = {
+  id: 'default',
+  name: 'Default Execution Layout',
+  activeTabId: 'overview',
+  tabs: [
+    { id: 'overview', label: 'Overview', cardIds: ['scenario-overview', 'hero-metrics'] },
+    { id: 'control', label: 'Control', cardIds: ['live-controls', 'scenario-preview'] },
+    { id: 'graphs', label: 'Graphs', cardIds: ['runtime-graphs'] },
+    { id: 'diagnostics', label: 'Diagnostics', cardIds: ['status-panels', 'live-summary'] },
+    { id: 'archive', label: 'Archive', cardIds: ['archive-report'] },
+    { id: 'action-summary', label: 'Action Summary', cardIds: ['action-summary'] },
+    { id: 'load-impact', label: 'Load Impact + Metrics Under Load', cardIds: ['load-impact-metrics'] },
+    { id: 'transaction-drilldown', label: 'Transaction Drill-Down', cardIds: ['transaction-drilldown'] },
+  ],
+  unassignedCardIds: [],
+}
 
 interface Props {
   testId: string
@@ -210,21 +233,109 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
 
   const summaryTransactions = statusMetrics?.transactions ? Object.values(statusMetrics.transactions) : transactions
 
-  return (
-    <div className="execution">
-      <TestExecutionHeader
-        test={test}
-        isMultiGroup={isMultiGroup}
-        onBack={onBack}
-        onStart={onStart}
-        onSelectTest={onSelectTest}
-        isStopping={isStopping}
-        showArchiveDownload={showArchiveDownload}
-        onDownloadArchive={onDownloadArchive}
-      />
+  const executionWorkspaceContext = {
+    tokens: buildWorkspaceContextTokens(
+      test.id,
+      test.name,
+      test.status,
+      test.application_id,
+      test.release_id,
+      test.scenario_id,
+      test.project_id,
+      test.folder_id,
+      test.scenario_mode,
+      (test as TestSummary & { tags?: unknown }).tags,
+      (test as TestSummary & { metadata?: unknown }).metadata,
+      test.groups?.map(group => ({
+        name: group.name,
+        protocol: group.protocol,
+        script_id: group.script_id,
+        script_name: group.script_name,
+      })),
+    ),
+  }
 
-      {/* Live Controls Panel */}
-      {showLiveControls && (
+  const renderArchiveWorkspaceView = (view: 'report' | 'load-impact' | 'action-summary' | 'transactions') => showArchiveSection ? (
+    <TestExecutionArchive
+      view={view}
+      hasArchive={hasArchive}
+      test={test}
+      archiveError={archiveError}
+      archiveLoading={archiveLoading}
+      archiveReport={archiveReport}
+      archiveAnalysis={archiveAnalysis}
+      archiveAnalysisLoading={archiveAnalysisLoading}
+      archiveAnalysisError={archiveAnalysisError}
+      loadImpactData={archiveLoadImpactData}
+      loadImpactLoading={archiveSummariesLoading || archiveResourcesLoading}
+      loadImpactError={archiveLoadImpactError}
+      onDownloadBrowserDiagnostics={onDownloadBrowserDiagnostics}
+      onDownloadArchiveArtifact={onDownloadArchiveArtifact}
+      archiveActionEntries={archiveActionEntries}
+      selectedArchiveAction={selectedArchiveAction}
+      onSelectedArchiveActionChange={onSelectedArchiveActionChange}
+      archiveSOAPOperationEntries={archiveSOAPOperationEntries}
+      selectedArchiveSOAPOperation={selectedArchiveSOAPOperation}
+      onSelectedArchiveSOAPOperationChange={onSelectedArchiveSOAPOperationChange}
+      archiveGroups={archiveGroups}
+      selectedArchiveGroup={selectedArchiveGroup}
+      onSelectedArchiveGroupChange={onSelectedArchiveGroupChange}
+      archiveErrorsOnly={archiveErrorsOnly}
+      onArchiveErrorsOnlyChange={onArchiveErrorsOnlyChange}
+      archiveTransactionSort={archiveTransactionSort}
+      onArchiveTransactionSortChange={onArchiveTransactionSortChange}
+      archiveTransactionFilters={archiveTransactionFilters}
+      archiveTransactionFiltersActive={archiveTransactionFiltersActive}
+      onArchiveTransactionFilterChange={onArchiveTransactionFilterChange}
+      onArchiveTransactionFiltersReset={onArchiveTransactionFiltersReset}
+      archiveTransactionsLoading={archiveTransactionsLoading}
+      archiveTransactionsTotal={archiveTransactionsTotal}
+      archivePageStart={archivePageStart}
+      archivePageEnd={archivePageEnd}
+      archiveTransactionsOffset={archiveTransactionsOffset}
+      archivePageSize={archivePageSize}
+      onPageSizeChange={onPageSizeChange}
+      onPreviousPage={onPreviousPage}
+      onNextPage={onNextPage}
+      archiveTransactions={archiveTransactions}
+      expandedArchiveEvent={expandedArchiveEvent}
+      onExpandedArchiveEventChange={onExpandedArchiveEventChange}
+    />
+  ) : (
+    <div className="empty-card">
+      <p>Archive details are unavailable while this run is active.</p>
+      <p className="empty-hint">Completed runs with archives show reports, analysis, load impact, action summaries, and transaction drilldown here.</p>
+    </div>
+  )
+
+  const executionWorkspaceCards: DashboardWorkspaceCard[] = [
+    {
+      id: 'scenario-overview',
+      title: 'Scenario Overview',
+      render: () => (
+        <TestExecutionScenarioOverview
+          test={test}
+          isMultiGroup={isMultiGroup}
+          shakeoutFailed={shakeoutFailed}
+          groupColors={GROUP_COLORS}
+        />
+      ),
+    },
+    {
+      id: 'hero-metrics',
+      title: 'Hero Metrics',
+      render: () => (
+        <TestExecutionHeroMetrics
+          archiveReport={archiveReport}
+          summary={summary}
+          metrics={metrics}
+        />
+      ),
+    },
+    {
+      id: 'live-controls',
+      title: 'Live Controls',
+      render: () => showLiveControls ? (
         <TestExecutionLiveControls
           showControls={showControls}
           onToggleControls={onToggleControls}
@@ -253,127 +364,134 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
           controlFeedback={controlFeedback}
           groupColors={GROUP_COLORS}
         />
-      )}
-
-      <TestExecutionScenarioOverview
-        test={test}
-        isMultiGroup={isMultiGroup}
-        shakeoutFailed={shakeoutFailed}
-        groupColors={GROUP_COLORS}
-      />
-
-      <TestExecutionScenarioPreview
-        test={test}
-        startCapacityConflict={startCapacityConflict}
-        startShakeoutConflict={startShakeoutConflict}
-        startFeedback={startFeedback}
-        onDismissStartConflict={onDismissStartConflict}
-        onConfirmStartAnyway={onConfirmStartAnyway}
-        onContinueAfterShakeoutFailure={onContinueAfterShakeoutFailure}
-        onCancelShakeoutRun={onAbort}
-        queuedScenarioPreview={queuedScenarioPreview}
-        queuedScenarioRows={queuedScenarioRows}
-        scriptDetailsLoading={scriptDetailsLoading}
-        scriptDetailsError={scriptDetailsError}
-        expandedScenarioScript={expandedScenarioScript}
-        onExpandedScenarioScriptChange={onExpandedScenarioScriptChange}
-        onEditScript={onEditScript}
-        groupColors={GROUP_COLORS}
-      />
-
-      {/* Hero metrics */}
-      <TestExecutionHeroMetrics
-        archiveReport={archiveReport}
-        summary={summary}
-        metrics={metrics}
-      />
-
-      {showArchiveSection && (
-        <TestExecutionArchive
-          hasArchive={hasArchive}
+      ) : (
+        <div className="empty-card">
+          <p>Live controls are unavailable for this run state.</p>
+          <p className="empty-hint">Start or resume a run to scale VUsers, adjust duration, pause, stop, or abort from this tab.</p>
+        </div>
+      ),
+    },
+    {
+      id: 'scenario-preview',
+      title: 'Scenario Preview',
+      render: () => (
+        <TestExecutionScenarioPreview
           test={test}
-          archiveError={archiveError}
-          archiveLoading={archiveLoading}
-          archiveReport={archiveReport}
-          archiveAnalysis={archiveAnalysis}
-          archiveAnalysisLoading={archiveAnalysisLoading}
-          archiveAnalysisError={archiveAnalysisError}
-          loadImpactData={archiveLoadImpactData}
-          loadImpactLoading={archiveSummariesLoading || archiveResourcesLoading}
-          loadImpactError={archiveLoadImpactError}
-          onDownloadBrowserDiagnostics={onDownloadBrowserDiagnostics}
-          onDownloadArchiveArtifact={onDownloadArchiveArtifact}
-          archiveActionEntries={archiveActionEntries}
-          selectedArchiveAction={selectedArchiveAction}
-          onSelectedArchiveActionChange={onSelectedArchiveActionChange}
-          archiveSOAPOperationEntries={archiveSOAPOperationEntries}
-          selectedArchiveSOAPOperation={selectedArchiveSOAPOperation}
-          onSelectedArchiveSOAPOperationChange={onSelectedArchiveSOAPOperationChange}
-          archiveGroups={archiveGroups}
-          selectedArchiveGroup={selectedArchiveGroup}
-          onSelectedArchiveGroupChange={onSelectedArchiveGroupChange}
-          archiveErrorsOnly={archiveErrorsOnly}
-          onArchiveErrorsOnlyChange={onArchiveErrorsOnlyChange}
-          archiveTransactionSort={archiveTransactionSort}
-          onArchiveTransactionSortChange={onArchiveTransactionSortChange}
-          archiveTransactionFilters={archiveTransactionFilters}
-          archiveTransactionFiltersActive={archiveTransactionFiltersActive}
-          onArchiveTransactionFilterChange={onArchiveTransactionFilterChange}
-          onArchiveTransactionFiltersReset={onArchiveTransactionFiltersReset}
-          archiveTransactionsLoading={archiveTransactionsLoading}
-          archiveTransactionsTotal={archiveTransactionsTotal}
-          archivePageStart={archivePageStart}
-          archivePageEnd={archivePageEnd}
-          archiveTransactionsOffset={archiveTransactionsOffset}
-          archivePageSize={archivePageSize}
-          onPageSizeChange={onPageSizeChange}
-          onPreviousPage={onPreviousPage}
-          onNextPage={onNextPage}
-          archiveTransactions={archiveTransactions}
-          expandedArchiveEvent={expandedArchiveEvent}
-          onExpandedArchiveEventChange={onExpandedArchiveEventChange}
+          startCapacityConflict={startCapacityConflict}
+          startShakeoutConflict={startShakeoutConflict}
+          startFeedback={startFeedback}
+          onDismissStartConflict={onDismissStartConflict}
+          onConfirmStartAnyway={onConfirmStartAnyway}
+          onContinueAfterShakeoutFailure={onContinueAfterShakeoutFailure}
+          onCancelShakeoutRun={onAbort}
+          queuedScenarioPreview={queuedScenarioPreview}
+          queuedScenarioRows={queuedScenarioRows}
+          scriptDetailsLoading={scriptDetailsLoading}
+          scriptDetailsError={scriptDetailsError}
+          expandedScenarioScript={expandedScenarioScript}
+          onExpandedScenarioScriptChange={onExpandedScenarioScriptChange}
+          onEditScript={onEditScript}
+          groupColors={GROUP_COLORS}
         />
-      )}
+      ),
+    },
+    {
+      id: 'runtime-graphs',
+      title: 'Runtime Graphs',
+      render: () => (
+        <TestExecutionCharts
+          filteredData={filteredData}
+          expandedChart={expandedChart}
+          onExpandedChartChange={onExpandedChartChange}
+          onChartMouseDown={onChartMouseDown}
+          onChartMouseMove={onChartMouseMove}
+          onZoom={onZoom}
+          onResetZoom={onResetZoom}
+          showRefArea={showRefArea}
+          refAreaLeft={refAreaLeft}
+          refAreaEnd={refAreaEnd}
+          timeRange={timeRange}
+          onTimeRangeChange={onTimeRangeChange}
+          isMultiGroup={isMultiGroup}
+          groupNames={groupNames}
+          groupColors={GROUP_COLORS}
+          showLoadImpact={!(showArchiveSection && archiveReport)}
+          latestLatency={latestMetrics?.latency ?? test?.live_metrics?.latency}
+          latestMetrics={latestMetrics ?? test?.live_metrics}
+        />
+      ),
+    },
+    {
+      id: 'status-panels',
+      title: 'Status Panels',
+      render: () => (
+        <TestExecutionStatusPanels
+          isGoalOriented={isGoalOriented}
+          goalDescription={describeGoalController(goalStatus)}
+          goalStatus={goalStatus}
+          test={test}
+          metrics={statusMetrics}
+          isMultiGroup={isMultiGroup}
+          groupMetrics={groupMetrics}
+          groupColors={GROUP_COLORS}
+        />
+      ),
+    },
+    {
+      id: 'live-summary',
+      title: 'Live Summary',
+      render: () => (
+        <TestExecutionSummary
+          transactions={summaryTransactions}
+          metrics={statusMetrics}
+          baseline={test.comparison_baseline}
+          history={filteredData}
+          goalConfig={test.goal_config}
+        />
+      ),
+    },
+    {
+      id: 'archive-report',
+      title: 'Archive Report',
+      render: () => renderArchiveWorkspaceView('report'),
+    },
+    {
+      id: 'action-summary',
+      title: 'Action Summary',
+      render: () => renderArchiveWorkspaceView('action-summary'),
+    },
+    {
+      id: 'load-impact-metrics',
+      title: 'Load Impact + Metrics Under Load',
+      render: () => renderArchiveWorkspaceView('load-impact'),
+    },
+    {
+      id: 'transaction-drilldown',
+      title: 'Transaction Drill-Down',
+      render: () => renderArchiveWorkspaceView('transactions'),
+    },
+  ]
 
-      <TestExecutionStatusPanels
-        isGoalOriented={isGoalOriented}
-        goalDescription={describeGoalController(goalStatus)}
-        goalStatus={goalStatus}
+  return (
+    <div className="execution">
+      <TestExecutionHeader
         test={test}
-        metrics={statusMetrics}
         isMultiGroup={isMultiGroup}
-        groupMetrics={groupMetrics}
-        groupColors={GROUP_COLORS}
+        onBack={onBack}
+        onStart={onStart}
+        onSelectTest={onSelectTest}
+        isStopping={isStopping}
+        showArchiveDownload={showArchiveDownload}
+        onDownloadArchive={onDownloadArchive}
       />
 
-      {/* Charts */}
-      <TestExecutionCharts
-        filteredData={filteredData}
-        expandedChart={expandedChart}
-        onExpandedChartChange={onExpandedChartChange}
-        onChartMouseDown={onChartMouseDown}
-        onChartMouseMove={onChartMouseMove}
-        onZoom={onZoom}
-        onResetZoom={onResetZoom}
-        showRefArea={showRefArea}
-        refAreaLeft={refAreaLeft}
-        refAreaEnd={refAreaEnd}
-        timeRange={timeRange}
-        onTimeRangeChange={onTimeRangeChange}
-        isMultiGroup={isMultiGroup}
-        groupNames={groupNames}
-        groupColors={GROUP_COLORS}
-        showLoadImpact={!(showArchiveSection && archiveReport)}
-        latestLatency={latestMetrics?.latency ?? test?.live_metrics?.latency}
-        latestMetrics={latestMetrics ?? test?.live_metrics}
-      />
-
-      <TestExecutionSummary
-        transactions={summaryTransactions}
-        metrics={statusMetrics}
-        baseline={test.comparison_baseline}
-        history={filteredData}
-        goalConfig={test.goal_config}
+      <DashboardWorkspace
+        ariaLabel="Test execution workspace"
+        storageKey="apexload.execution.workspaceProfiles.v1"
+        activeStorageKey="apexload.execution.activeWorkspaceProfile.v1"
+        defaultProfile={EXECUTION_WORKSPACE_DEFAULT_PROFILE}
+        cards={executionWorkspaceCards}
+        context={executionWorkspaceContext}
       />
     </div>
   )
