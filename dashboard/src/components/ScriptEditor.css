@@ -700,6 +700,108 @@
 .parameter-data-selected-view {
   margin-bottom: 20px;
 }
+.parameter-sidebar-card {
+  gap: 12px;
+}
+.parameter-sidebar-list {
+  display: grid;
+  gap: 12px;
+}
+.parameter-sidebar-group {
+  display: grid;
+  gap: 6px;
+}
+.parameter-sidebar-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+.parameter-sidebar-group-title span {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+.parameter-sidebar-item {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+.parameter-sidebar-item.selected {
+  border-color: rgba(37, 99, 235, 0.65);
+  background: rgba(37, 99, 235, 0.08);
+  box-shadow: inset 3px 0 0 rgba(37, 99, 235, 0.75);
+}
+.parameter-sidebar-item:hover {
+  border-color: rgba(37, 99, 235, 0.45);
+}
+.parameter-sidebar-item span {
+  min-width: 0;
+}
+.parameter-sidebar-item strong,
+.parameter-sidebar-item small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.parameter-sidebar-item small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.parameter-detail-panel {
+  display: grid;
+  gap: 16px;
+}
+.parameter-detail-panel.empty {
+  align-content: start;
+}
+.parameter-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+}
+.parameter-detail-header h4 {
+  margin: 4px 0;
+  font-size: 16px;
+}
+.parameter-detail-kicker {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+.parameter-detail-name-grid {
+  max-width: 520px;
+}
+.parameter-detail-settings {
+  padding: 0;
+  overflow: visible;
+}
+.parameter-detail-data {
+  display: grid;
+  gap: 12px;
+}
+.btn.danger,
+.btn.btn-ghost.danger {
+  color: var(--danger);
+}
 .parameter-dialog-actions {
   display: inline-flex;
   align-items: center;
@@ -3131,24 +3233,6 @@
 .editor-outline-link:hover {
   border-left-color: rgba(99, 102, 241, 0.55);
   background: rgba(99, 102, 241, 0.06);
-}
-.editor-outline-metrics {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  margin-top: 12px;
-}
-.editor-outline-metrics span {
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
-  color: var(--text-muted);
-  background: var(--bg-primary);
-  font-size: 11px;
-}
-.editor-outline-metrics strong {
-  color: var(--text-primary);
 }
 .object-descriptor-list {
   display: grid;

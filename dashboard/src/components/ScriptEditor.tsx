@@ -95,6 +95,7 @@ import {
   getErrorWarnings,
   getImportSummary,
   hasBrowserReplayArtifacts,
+  countUniqueColumnValues,
   inferDelimiter,
   isLikelyParameterValue,
   mergeReplayVariables,
@@ -1629,6 +1630,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     closeReplayScreenshot,
   } = useScriptEditorState(initialScript)
   const [focusParameterIdx, setFocusParameterIdx] = useState<number | null>(null)
+  const [selectedParameterIdx, setSelectedParameterIdx] = useState<number | null>(null)
   // Holds the pending selection while the Parameterize choice dialog (File vs Built-in Function)
   // is open. Cleared once the user picks a branch.
   const [parameterizeChoice, setParameterizeChoice] = useState<ActionEditorParameterDraft | null>(null)
@@ -1805,6 +1807,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       window.localStorage.setItem(centerTabsStorageKey, JSON.stringify(centerTabsState))
     } catch { /* storage may be unavailable */ }
   }, [centerTabsHydratedKey, centerTabsState, centerTabsStorageKey])
+  const isParameterDataTabActive = centerTabsState.activeTabId === 'parameter-data'
+  useEffect(() => {
+    if (!isParameterDataTabActive) return
+    const parameterCount = script.parameters?.length || 0
+    setSelectedParameterIdx(previous => {
+      if (previous !== null && previous >= 0 && previous < parameterCount) return previous
+      return parameterCount > 0 ? 0 : null
+    })
+  }, [isParameterDataTabActive, script.parameters])
+  useEffect(() => {
+    if (focusParameterIdx === null || focusParameterIdx === undefined) return
+    if (!script.parameters?.[focusParameterIdx]) return
+    setSelectedParameterIdx(focusParameterIdx)
+  }, [focusParameterIdx, script.parameters])
   const formattedScriptJson = useMemo(() => formatScriptJson(script), [script])
   useEffect(() => {
     if (jsonDirty || jsonText === formattedScriptJson) return
@@ -1865,7 +1881,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     if (sourceIndex !== null) {
       setOpenDataEditor(sourceIndex)
     }
-  }, [openCenterTab, script.data_sources, setOpenDataEditor])
+    const parameterIndex = findFirstParameterIndexByDataSource(script.parameters, sourceName)
+    if (parameterIndex !== null) {
+      setFocusParameterIdx(parameterIndex)
+      setSelectedParameterIdx(parameterIndex)
+    }
+  }, [openCenterTab, script.data_sources, script.parameters, setOpenDataEditor])
   const openImportedRuntimeSettings = useCallback((area?: string | null) => {
     const sectionId = getImportedRuntimeSectionId(area)
     openCenterTab('runtime-settings')
@@ -2186,6 +2207,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setAuthorInspectorCollapsed(index === null)
   }
 
+  const selectParameterData = useCallback((index: number | null) => {
+    setSelectedParameterIdx(index)
+    const parameter = index !== null ? script.parameters?.[index] || null : null
+    if (!parameter) {
+      setOpenDataEditor(null)
+      return
+    }
+    const sourceIndex = findDataSourceIndexByName(script.data_sources, parameter.data_source)
+    setOpenDataEditor(sourceIndex)
+  }, [script.data_sources, script.parameters, setOpenDataEditor])
+
   const focusSourceMappingForAction = (index: number) => {
     const mapping = findSourceMappingForAction(sourceReview, script.actions[index], index)
     setSourceMappingFocus(prev => ({
@@ -2199,11 +2231,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }
 
   const selectSidebarAction = (index: number) => {
-    if (sourceReview && (centerTabsState.tabs.includes('conversion-mapping') || centerTabsState.tabs.includes('imported-metadata'))) {
+    if (sourceReview && (centerTabsState.activeTabId === 'conversion-mapping' || centerTabsState.activeTabId === 'imported-metadata')) {
       setActiveAction(index)
       setAuthorCodeFocus({ phase: 'action', actionIndex: index })
       setAuthorInspectorCollapsed(false)
-      openCenterTab(centerTabsState.tabs.includes('conversion-mapping') ? 'conversion-mapping' : 'imported-metadata')
       focusSourceMappingForAction(index)
       return
     }
@@ -2218,7 +2249,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setActiveAction(null)
     setAuthorInspectorCollapsed(true)
     setAuthorCodeFocus({ phase: row.phase, actionIndex: row.actionIndex })
-    openCenterTab('script-json')
   }
 
   useEffect(() => {
@@ -3903,6 +3933,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       ...prev,
       parameters: [...(prev.parameters || []), { ...EMPTY_PARAMETER, name: `param_${nextIndex}` }],
     }))
+    setSelectedParameterIdx(nextIndex - 1)
   }
 
   const updateParameter = (idx: number, field: keyof ParameterConfig, value: unknown) => {
@@ -3924,6 +3955,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }
 
   const removeParameter = (idx: number) => {
+    const nextLength = Math.max(0, (script.parameters?.length || 0) - 1)
+    setSelectedParameterIdx(previous => {
+      if (nextLength === 0) return null
+      if (previous === null) return 0
+      if (previous === idx) return Math.min(idx, nextLength - 1)
+      if (previous > idx) return previous - 1
+      return previous
+    })
     setScript(prev => ({
       ...prev,
       parameters: (prev.parameters || []).filter((_, i) => i !== idx),
@@ -3939,6 +3978,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     )
     const seedValue = (selectedText || '').trim()
     const builtin = isBuiltinParameterType(parameterType)
+    const currentParameters = script.parameters || []
+    const existingIdx = normalizedExistingName
+      ? currentParameters.findIndex(parameter => sanitizeVarName(parameter.name || '') === normalizedExistingName)
+      : -1
+    const byResolvedNameIdx = currentParameters.findIndex(parameter => sanitizeVarName(parameter.name || '') === resolvedName)
+    const selectedIdx = existingIdx >= 0 ? existingIdx : byResolvedNameIdx >= 0 ? byResolvedNameIdx : currentParameters.length
 
     setScript(prev => {
       const parameters = [...(prev.parameters || [])]
@@ -3982,6 +4027,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     })
 
     openCenterTab('parameter-data')
+    setSelectedParameterIdx(selectedIdx)
     setError('')
     setSuccess(existingName ? `Updated parameter ${resolvedName}.` : `Created parameter ${resolvedName}.`)
     return resolvedName
@@ -4673,6 +4719,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           onFormat={handleFormatJsonDraft}
           onReset={handleResetJsonDraft}
           onRequestParameterize={openJsonParameterSelectionMenu}
+        />
+        <AutoParameterizationSection
+          onApplyAutoParameterization={applyAutoParameterization}
+          onScanForAutoParameters={scanForAutoParameters}
+          onUpdateParameterCandidate={updateCandidate}
+          parameterCandidates={parameterCandidates}
         />
         <ActionParameterMenu selectionState={jsonParameterSelection} onOpenParameterEditor={openJsonParameterEditor} />
       </>
@@ -7396,21 +7448,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('parameter-data')}>Parameter Data</button>
                     {isBrowserScript && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('http-conversion')}>HTTP Conversion Review</button>}
                   </div>
-                  <div className="editor-outline-metrics" aria-label="Script outline summary">
-                    <span><strong>{outlineSummary.initCount}</strong> init</span>
-                    <span><strong>{outlineSummary.mainActionCount}</strong> actions</span>
-                    <span><strong>{outlineSummary.teardownCount}</strong> end</span>
-                    {isBrowserScript && <span><strong>{outlineSummary.browserActionCount}</strong> browser</span>}
-                    <span><strong>{outlineSummary.transactionCount}</strong> txn</span>
-                    <span><strong>{outlineSummary.parameterRefCount}</strong> params</span>
-                    <span><strong>{outlineSummary.waitCount}</strong> waits</span>
-                    <span><strong>{outlineSummary.assertionCount}</strong> checks</span>
-                  </div>
                 </div>
                 <div className="actions-sidebar-header">
                   <h3 className="panel-title" style={{ fontSize: 11 }}>Action List</h3>
                   <div className="actions-sidebar-controls">
-                    <button className="btn btn-sm btn-ghost" onClick={() => openCenterTab('parameter-data')}>Parameter Data</button>
                     <button className="btn btn-sm btn-accent" onClick={addAction}>+ Add</button>
                   </div>
                 </div>
@@ -7762,7 +7803,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               {!authorSignalsCollapsed && (
               <div className="editor-utility-sidebar">
                 <div className="side-pane-header">
-                  <span>Right Sidebar</span>
+                  <span>{isParameterDataTabActive ? 'Parameters' : 'Right Sidebar'}</span>
                   <button
                     type="button"
                     className="debugger-pane-close"
@@ -7773,6 +7814,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     ×
                   </button>
                 </div>
+                {isParameterDataTabActive ? (
+                  <ParameterSidebar
+                    onAddParameter={addParameter}
+                    onSelectParameter={selectParameterData}
+                    parameters={script.parameters || []}
+                    selectedParameterIdx={selectedParameterIdx}
+                  />
+                ) : (
+                <>
                 <div className="utility-card">
                   <div className="utility-card-header">
                     <strong>Authoring Signals</strong>
@@ -8061,6 +8111,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     </div>
                   )}
                 </div>
+                </>
+                )}
               </div>
               )}
             </div>
@@ -8079,7 +8131,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               onApplyDedupeHeaders={applyDedupeHeaders}
               onApplyFillHeaders={applyFillHeaders}
               onApplyNormalizeRows={applyNormalizeRows}
-              onApplyAutoParameterization={applyAutoParameterization}
               onApplyPendingParameterDraft={applyPendingParameterDraft}
               onAutoFixDataSource={autoFixDataSource}
               onClearPendingParameterDraft={clearPendingParameterDraft}
@@ -8100,15 +8151,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               onUpdateDataColumnName={updateDataColumnName}
               onUpdateDataSource={updateDataSource}
               onUpdateParameter={updateParameter}
-              onUpdateParameterCandidate={updateCandidate}
               onUpdateParameterDraftName={updatePendingParameterDraftName}
               onUpdateParameterDraftValue={updatePendingParameterDraftValue}
               onUpdateParameterType={updateParameterType}
-              onScanForAutoParameters={scanForAutoParameters}
               openDataEditor={openDataEditor}
-              focusParameterIdx={focusParameterIdx}
-              parameterCandidates={parameterCandidates}
               pendingParameterDraft={pendingParameterDraft}
+              selectedParameterIdx={selectedParameterIdx}
+              onSelectParameter={selectParameterData}
               script={script}
               variant="document"
             />
@@ -8194,7 +8243,6 @@ interface ParameterDataDialogProps {
   onApplyDedupeHeaders: (idx: number) => void
   onApplyFillHeaders: (idx: number) => void
   onApplyNormalizeRows: (idx: number) => void
-  onApplyAutoParameterization: () => void
   onApplyPendingParameterDraft: () => void
   onAutoFixDataSource: (idx: number) => void
   onClearPendingParameterDraft: () => void
@@ -8216,15 +8264,13 @@ interface ParameterDataDialogProps {
   onUpdateDataColumnName: (idx: number, colIdx: number, value: string) => void
   onUpdateDataSource: (idx: number, field: keyof DataSourceConfig, value: unknown, trackHistory?: boolean) => void
   onUpdateParameter: (idx: number, field: keyof ParameterConfig, value: unknown) => void
-  onUpdateParameterCandidate: (id: string, patch: Partial<ParameterCandidate>) => void
   onUpdateParameterDraftName: (value: string) => void
   onUpdateParameterDraftValue: (value: string) => void
   onUpdateParameterType: (idx: number, nextType: string) => void
-  onScanForAutoParameters: () => void
+  onSelectParameter: (idx: number | null) => void
   openDataEditor: number | null
-  focusParameterIdx?: number | null
-  parameterCandidates: ParameterCandidate[]
   pendingParameterDraft: ActionEditorParameterDraft | null
+  selectedParameterIdx: number | null
   script: ScriptData
   variant?: 'modal' | 'document'
 }
@@ -8238,7 +8284,6 @@ function ParameterDataDialog({
   onApplyDedupeHeaders,
   onApplyFillHeaders,
   onApplyNormalizeRows,
-  onApplyAutoParameterization,
   onApplyPendingParameterDraft,
   onAutoFixDataSource,
   onClearPendingParameterDraft,
@@ -8260,62 +8305,43 @@ function ParameterDataDialog({
   onUpdateDataColumnName,
   onUpdateDataSource,
   onUpdateParameter,
-  onUpdateParameterCandidate,
   onUpdateParameterDraftName,
   onUpdateParameterDraftValue,
   onUpdateParameterType,
-  onScanForAutoParameters,
+  onSelectParameter,
   openDataEditor,
-  focusParameterIdx,
-  parameterCandidates,
   pendingParameterDraft,
+  selectedParameterIdx,
   script,
   variant = 'modal',
 }: ParameterDataDialogProps) {
-  const [isNamedParametersOpen, setIsNamedParametersOpen] = useState(true)
-  const [isDataSourcesOpen, setIsDataSourcesOpen] = useState(true)
   const mergeSummary = useMemo(() => summarizeParameterSourceMerge(script), [script])
-  const [selectedParameterIdx, setSelectedParameterIdx] = useState<number | null>(() => {
-    if (openDataEditor === null) return null
-    return findFirstParameterIndexByDataSource(script.parameters, script.data_sources?.[openDataEditor]?.name)
-  })
-  const focusedParameterSourceName = openDataEditor !== null
-    ? script.data_sources?.[openDataEditor]?.name || null
-    : null
   const selectedParameter = selectedParameterIdx !== null ? script.parameters?.[selectedParameterIdx] || null : null
-  useEffect(() => {
-    if (selectedParameterIdx === null) return
-    if (script.parameters?.[selectedParameterIdx]) return
-    setSelectedParameterIdx(null)
-  }, [script.parameters, selectedParameterIdx])
   useEffect(() => {
     if (openDataEditor === null) return
     const sourceName = script.data_sources?.[openDataEditor]?.name
     const parameterIndex = findFirstParameterIndexByDataSource(script.parameters, sourceName)
     if (parameterIndex === null) return
-
-    setSelectedParameterIdx(previous => {
-      const currentParameter = previous !== null ? script.parameters?.[previous] : null
-      if (currentParameter && normalizeParameterDataLookup(currentParameter.data_source) === normalizeParameterDataLookup(sourceName)) {
-        return previous
-      }
-      return parameterIndex
-    })
-  }, [openDataEditor, script.data_sources, script.parameters])
-  useEffect(() => {
-    if (focusParameterIdx === null || focusParameterIdx === undefined) return
-    if (!script.parameters?.[focusParameterIdx]) return
-    setSelectedParameterIdx(focusParameterIdx)
-    setIsNamedParametersOpen(true)
-  }, [focusParameterIdx, script.parameters])
-
-  const selectParameterData = (idx: number, parameter: ParameterConfig) => {
-    setSelectedParameterIdx(idx)
-    const sourceIndex = findDataSourceIndexByName(script.data_sources, parameter.data_source)
-    setIsDataSourcesOpen(true)
-    if (sourceIndex !== null) {
-      onOpenDataEditor(sourceIndex)
+    const currentParameter = selectedParameterIdx !== null ? script.parameters?.[selectedParameterIdx] : null
+    if (currentParameter && normalizeParameterDataLookup(currentParameter.data_source) === normalizeParameterDataLookup(sourceName)) {
+      return
     }
+    onSelectParameter(parameterIndex)
+  }, [onSelectParameter, openDataEditor, script.data_sources, script.parameters, selectedParameterIdx])
+  useEffect(() => {
+    if (selectedParameterIdx === null) return
+    if (script.parameters?.[selectedParameterIdx]) return
+    onSelectParameter(null)
+  }, [onSelectParameter, script.parameters, selectedParameterIdx])
+  useEffect(() => {
+    if (selectedParameterIdx !== null) return
+    if ((script.parameters?.length || 0) === 0) return
+    onSelectParameter(0)
+  }, [onSelectParameter, script.parameters, selectedParameterIdx])
+
+  const removeSelectedParameter = () => {
+    if (selectedParameterIdx === null) return
+    onRemoveParameter(selectedParameterIdx)
   }
 
   const dialog = (
@@ -8355,29 +8381,10 @@ function ParameterDataDialog({
               onUpdateParameterDraftValue={onUpdateParameterDraftValue}
             />
           )}
-          <AutoParameterizationSection
-            onApplyAutoParameterization={onApplyAutoParameterization}
-            onScanForAutoParameters={onScanForAutoParameters}
-            onUpdateParameterCandidate={onUpdateParameterCandidate}
-            parameterCandidates={parameterCandidates}
-          />
-          <ParameterDefinitionsSection
-            isOpen={isNamedParametersOpen}
-            onAddParameter={onAddParameter}
-            onRemoveParameter={onRemoveParameter}
-            onSelectParameter={selectParameterData}
-            onToggleOpen={() => setIsNamedParametersOpen(open => !open)}
-            onUpdateParameter={onUpdateParameter}
-            onUpdateParameterType={onUpdateParameterType}
-            focusedSourceName={focusedParameterSourceName}
-            selectedParameterIdx={selectedParameterIdx}
-            script={script}
-          />
-
-          <ParameterDataSourcesSection
+          <ParameterDataDetail
             dataEditorMode={dataEditorMode}
             dataSourceHistory={dataSourceHistory}
-            isOpen={isDataSourcesOpen}
+            onAddParameter={onAddParameter}
             onAddDataColumn={onAddDataColumn}
             onAddDataRow={onAddDataRow}
             onApplyDedupeHeaders={onApplyDedupeHeaders}
@@ -8390,14 +8397,21 @@ function ParameterDataDialog({
             onRemoveDataColumn={onRemoveDataColumn}
             onRemoveDataRow={onRemoveDataRow}
             onRemoveDataSource={onRemoveDataSource}
+            onRemoveParameter={removeSelectedParameter}
             onSortDataRows={onSortDataRows}
             onToggleDataEditorMode={onToggleDataEditorMode}
             onToggleOpenDataEditor={onToggleOpenDataEditor}
-            onToggleOpen={() => setIsDataSourcesOpen(open => !open)}
             onUndoDataSource={onUndoDataSource}
             onUpdateDataCell={onUpdateDataCell}
             onUpdateDataColumnName={onUpdateDataColumnName}
             onUpdateDataSource={onUpdateDataSource}
+            onUpdateParameter={(field, value) => {
+              if (selectedParameterIdx !== null) onUpdateParameter(selectedParameterIdx, field, value)
+            }}
+            onUpdateParameterType={(value) => {
+              if (selectedParameterIdx !== null) onUpdateParameterType(selectedParameterIdx, value)
+            }}
+            selectedParameterIdx={selectedParameterIdx}
             selectedParameter={selectedParameter}
             script={script}
           />
@@ -8412,6 +8426,292 @@ function ParameterDataDialog({
       <div onClick={event => event.stopPropagation()}>
         {dialog}
       </div>
+    </div>
+  )
+}
+
+interface ParameterDataDetailProps {
+  dataEditorMode: Record<number, 'grid' | 'raw'>
+  dataSourceHistory: Record<number, DataSourceHistory>
+  onAddDataColumn: (idx: number) => void
+  onAddDataRow: (idx: number) => void
+  onAddParameter: () => void
+  onApplyDedupeHeaders: (idx: number) => void
+  onApplyFillHeaders: (idx: number) => void
+  onApplyNormalizeRows: (idx: number) => void
+  onAutoFixDataSource: (idx: number) => void
+  onExportDataSourceFile: (source: DataSourceConfig, idx: number) => void
+  onImportDataSourceFile: (idx: number, file: File | null) => void
+  onRedoDataSource: (idx: number) => void
+  onRemoveDataColumn: (idx: number, colIdx: number) => void
+  onRemoveDataRow: (idx: number, rowIdx: number) => void
+  onRemoveDataSource: (idx: number) => void
+  onRemoveParameter: () => void
+  onSortDataRows: (idx: number, colIdx: number, direction: DataSourceSortDirection) => void
+  onToggleDataEditorMode: (idx: number) => void
+  onToggleOpenDataEditor: (idx: number) => void
+  onUndoDataSource: (idx: number) => void
+  onUpdateDataCell: (idx: number, rowIdx: number, colIdx: number, value: string) => void
+  onUpdateDataColumnName: (idx: number, colIdx: number, value: string) => void
+  onUpdateDataSource: (idx: number, field: keyof DataSourceConfig, value: unknown, trackHistory?: boolean) => void
+  onUpdateParameter: (field: keyof ParameterConfig, value: unknown) => void
+  onUpdateParameterType: (value: string) => void
+  script: ScriptData
+  selectedParameter: ParameterConfig | null
+  selectedParameterIdx: number | null
+}
+
+function ParameterDataDetail({
+  dataEditorMode,
+  dataSourceHistory,
+  onAddDataColumn,
+  onAddDataRow,
+  onAddParameter,
+  onApplyDedupeHeaders,
+  onApplyFillHeaders,
+  onApplyNormalizeRows,
+  onAutoFixDataSource,
+  onExportDataSourceFile,
+  onImportDataSourceFile,
+  onRedoDataSource,
+  onRemoveDataColumn,
+  onRemoveDataRow,
+  onRemoveDataSource,
+  onRemoveParameter,
+  onSortDataRows,
+  onToggleDataEditorMode,
+  onToggleOpenDataEditor,
+  onUndoDataSource,
+  onUpdateDataCell,
+  onUpdateDataColumnName,
+  onUpdateDataSource,
+  onUpdateParameter,
+  onUpdateParameterType,
+  script,
+  selectedParameter,
+  selectedParameterIdx,
+}: ParameterDataDetailProps) {
+  if (!selectedParameter || selectedParameterIdx === null) {
+    return (
+      <div className="parameter-detail-panel empty">
+        <div className="parameter-empty-state">
+          Select a parameter from the Parameters sidebar, or add one to start configuring runtime data.
+        </div>
+        <button type="button" className="btn btn-sm btn-accent" onClick={onAddParameter}>+ Add Parameter</button>
+      </div>
+    )
+  }
+
+  const parameterType = selectedParameter.type || 'list'
+  const parameterName = selectedParameter.name || `Parameter ${selectedParameterIdx + 1}`
+  const isDataBacked = parameterType === 'file' || parameterType === 'list'
+  const selectedSourceIndex = isDataBacked
+    ? findDataSourceIndexByName(script.data_sources, selectedParameter.data_source)
+    : null
+  const selectedSource = selectedSourceIndex !== null ? script.data_sources?.[selectedSourceIndex] || null : null
+  const selectedParsed = selectedSource ? parseInlineData(selectedSource) : null
+  const selectedSourceSummary = selectedSource ? summarizeInlineData(selectedSource) : null
+  const selectedSourceWarnings = selectedSource ? validateInlineData(selectedSource) : []
+  const selectedColumnIndexes = selectedParsed ? getParameterDataColumnIndexes(selectedParameter, selectedParsed.columns) : []
+  const hasInlineListValues = parameterType === 'list' && (selectedParameter.values?.length || 0) > 0 && !selectedParameter.data_source?.trim()
+
+  const renderDataSourceDetail = () => {
+    if (!isDataBacked) return null
+    if (hasInlineListValues) {
+      return (
+        <div className="parameter-empty-state">
+          {parameterName} uses inline list values. Edit those values in the Data Mapping section above.
+        </div>
+      )
+    }
+    if (!selectedParameter.data_source?.trim()) {
+      return (
+        <div className="parameter-empty-state">
+          {parameterName} is not mapped to a data source yet. Set Data Source and Column above to display file data.
+        </div>
+      )
+    }
+    if (!selectedSource || selectedSourceIndex === null || !selectedParsed || !selectedSourceSummary) {
+      return (
+        <div className="parameter-empty-state">
+          The mapped data source for {parameterName} could not be found. Update the Data Source field above.
+        </div>
+      )
+    }
+    if (selectedColumnIndexes.length === 0) {
+      return (
+        <div className="parameter-empty-state">
+          {parameterName} is mapped to {selectedParameter.data_source}, but its Column does not match this file. Update the Column field above.
+        </div>
+      )
+    }
+
+    return (
+      <div className="parameter-table-wrap parameter-data-selected-view">
+        <table className="parameter-table">
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>Type</th>
+              <th>Strategy</th>
+              <th>Header Row</th>
+              <th>Rows</th>
+              <th>Columns</th>
+              <th>Delimiter</th>
+              <th>Data File Path</th>
+              <th style={{ textAlign: 'right' }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <ParameterDataSourceRows
+              dataEditorMode={dataEditorMode[selectedSourceIndex] || 'grid'}
+              history={dataSourceHistory[selectedSourceIndex]}
+              index={selectedSourceIndex}
+              isEditorOpen
+              key={`${selectedSource.name || 'source'}-${selectedSourceIndex}-${parameterName}`}
+              onAddDataColumn={onAddDataColumn}
+              onAddDataRow={onAddDataRow}
+              onApplyDedupeHeaders={onApplyDedupeHeaders}
+              onApplyFillHeaders={onApplyFillHeaders}
+              onApplyNormalizeRows={onApplyNormalizeRows}
+              onAutoFixDataSource={onAutoFixDataSource}
+              onExportDataSourceFile={onExportDataSourceFile}
+              onImportDataSourceFile={onImportDataSourceFile}
+              onRedoDataSource={onRedoDataSource}
+              onRemoveDataColumn={onRemoveDataColumn}
+              onRemoveDataRow={onRemoveDataRow}
+              onRemoveDataSource={onRemoveDataSource}
+              onSortDataRows={onSortDataRows}
+              onToggleDataEditorMode={onToggleDataEditorMode}
+              onToggleOpenDataEditor={onToggleOpenDataEditor}
+              onUndoDataSource={onUndoDataSource}
+              onUpdateDataCell={onUpdateDataCell}
+              onUpdateDataColumnName={onUpdateDataColumnName}
+              onUpdateDataSource={onUpdateDataSource}
+              parsed={selectedParsed}
+              selectedParameterName={parameterName}
+              source={selectedSource}
+              summary={selectedSourceSummary}
+              warnings={selectedSourceWarnings}
+            />
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  return (
+    <div className="parameter-detail-panel">
+      <div className="parameter-detail-header">
+        <div>
+          <span className="parameter-detail-kicker">{formatParameterChoiceLabel('type', parameterType)}</span>
+          <h4>{parameterName}</h4>
+          <span className="cell-mono">{selectedParameter.name ? `{{param.${selectedParameter.name}}}` : 'Name this parameter to generate a template token'}</span>
+        </div>
+        <button type="button" className="btn btn-sm btn-ghost danger" onClick={onRemoveParameter}>Remove</button>
+      </div>
+      <div className="parameter-settings-grid parameter-detail-name-grid">
+        <label>
+          <span>Name</span>
+          <input value={selectedParameter.name || ''} onChange={event => onUpdateParameter('name', event.target.value)} placeholder="session_id" />
+        </label>
+      </div>
+      <ParameterSettingsBody
+        className="parameter-detail-settings"
+        onUpdate={onUpdateParameter}
+        onUpdateType={onUpdateParameterType}
+        parameter={selectedParameter}
+      />
+      {isDataBacked && (
+        <section className="parameter-detail-data">
+          <div className="panel-title-row parameter-section-header">
+            <div>
+              <strong style={{ display: 'block', marginBottom: 4 }}>{selectedParameter.data_source || `${parameterName} Data`}</strong>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Full mapped parameter file data for the selected parameter.</span>
+            </div>
+          </div>
+          {renderDataSourceDetail()}
+        </section>
+      )}
+    </div>
+  )
+}
+
+interface ParameterSidebarProps {
+  onAddParameter: () => void
+  onSelectParameter: (idx: number) => void
+  parameters: ParameterConfig[]
+  selectedParameterIdx: number | null
+}
+
+function ParameterSidebar({
+  onAddParameter,
+  onSelectParameter,
+  parameters,
+  selectedParameterIdx,
+}: ParameterSidebarProps) {
+  const groups = useMemo(() => {
+    const orderedTypes = PARAMETER_CHOICE_DEFINITIONS.type.options.map(option => option.value)
+    const typeLabels = new Map(PARAMETER_CHOICE_DEFINITIONS.type.options.map(option => [option.value, option.label]))
+    const grouped = new Map<string, Array<{ index: number; parameter: ParameterConfig }>>()
+    parameters.forEach((parameter, index) => {
+      const type = parameter.type || 'list'
+      const bucket = grouped.get(type) || []
+      bucket.push({ index, parameter })
+      grouped.set(type, bucket)
+    })
+    const knownGroups = orderedTypes
+      .map(type => ({ type, label: typeLabels.get(type) || type, parameters: grouped.get(type) || [] }))
+      .filter(group => group.parameters.length > 0)
+    const unknownGroups = Array.from(grouped.entries())
+      .filter(([type]) => !orderedTypes.includes(type))
+      .map(([type, items]) => ({ type, label: type, parameters: items }))
+    return [...knownGroups, ...unknownGroups]
+  }, [parameters])
+
+  return (
+    <div className="utility-card parameter-sidebar-card">
+      <div className="utility-card-header">
+        <strong>Parameters</strong>
+        <button type="button" className="btn btn-sm btn-accent" onClick={onAddParameter}>+ Add Parameter</button>
+      </div>
+      {parameters.length === 0 ? (
+        <div className="utility-empty-state">No parameters defined yet.</div>
+      ) : (
+        <div className="parameter-sidebar-list" role="listbox" aria-label="Parameters">
+          {groups.map(group => (
+            <section className="parameter-sidebar-group" key={group.type}>
+              <div className="parameter-sidebar-group-title">
+                <strong>{group.label}</strong>
+                <span>{group.parameters.length}</span>
+              </div>
+              {group.parameters.map(({ index, parameter }) => {
+                const selected = selectedParameterIdx === index
+                const parameterName = parameter.name || `Parameter ${index + 1}`
+                const sourceSummary = parameter.type === 'file' || parameter.type === 'list'
+                  ? [parameter.data_source, parameter.column].filter(Boolean).join(' / ') || 'No source mapped'
+                  : summarizeParameterSettings(parameter)
+                return (
+                  <button
+                    type="button"
+                    className={`parameter-sidebar-item ${selected ? 'selected' : ''}`}
+                    aria-selected={selected}
+                    key={`${parameterName}-${index}`}
+                    onClick={() => onSelectParameter(index)}
+                    role="option"
+                  >
+                    <span>
+                      <strong>{parameterName}</strong>
+                      <small>{sourceSummary}</small>
+                    </span>
+                    <span className="cell-mono">{parameter.name ? `{{param.${parameter.name}}}` : 'unnamed'}</span>
+                  </button>
+                )
+              })}
+            </section>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -9441,6 +9741,197 @@ function numberInputValue(value: number | undefined, fallback: number | ''): num
 
 function updateOptionalNumber(onUpdate: (field: keyof ParameterConfig, value: unknown) => void, field: keyof ParameterConfig, value: string) {
   onUpdate(field, value.trim() === '' ? undefined : Number(value))
+}
+
+interface ParameterSettingsBodyProps {
+  className?: string
+  onUpdate: (field: keyof ParameterConfig, value: unknown) => void
+  onUpdateType: (value: string) => void
+  parameter: ParameterConfig
+}
+
+function ParameterSettingsBody({
+  className = '',
+  onUpdate,
+  onUpdateType,
+  parameter,
+}: ParameterSettingsBodyProps) {
+  const parameterName = parameter.name || 'Parameter'
+  const parameterType = parameter.type || 'list'
+  const isDataBacked = parameterType === 'file' || parameterType === 'list'
+  const isGenerated = ['random_number', 'counter', 'current_iteration', 'random_string', 'uuid'].includes(parameterType)
+  const isTime = parameterType === 'date_time' || parameterType === 'timestamp' || parameterType === 'time'
+  const showsDataMapping = isDataBacked || parameterType === 'host'
+  const showsOutput = parameterType === 'counter' || parameterType === 'current_iteration' || parameterType === 'random_number' || parameter.seed !== undefined
+
+  return (
+    <div className={`parameter-settings-dialog-body ${className}`}>
+      <details className="parameter-settings-accordion" open>
+        <summary>
+          <strong>General</strong>
+          <span>Parameter type and runtime behavior</span>
+        </summary>
+        <div className="parameter-settings-grid">
+          <label>
+            <span>Parameter Type</span>
+            <select
+              aria-label={`Parameter Type for ${parameterName}`}
+              value={parameterType}
+              onChange={event => onUpdateType(event.target.value)}
+            >
+              {PARAMETER_CHOICE_DEFINITIONS.type.options.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Update Cadence</span>
+            <select
+              aria-label={`Update Cadence for ${parameterName}`}
+              value={getParameterChoiceValue(parameter, 'update')}
+              onChange={event => onUpdate('update', event.target.value)}
+            >
+              {PARAMETER_CHOICE_DEFINITIONS.update.options.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </details>
+
+      <details className="parameter-settings-accordion" open={showsDataMapping}>
+        <summary>
+          <strong>Data Mapping</strong>
+          <span>Source, column, row selection, and inline values</span>
+        </summary>
+        {showsDataMapping ? (
+          <div className="parameter-settings-grid">
+            {isDataBacked && (
+              <>
+                <label>
+                  <span>Data Source</span>
+                  <input value={parameter.data_source || ''} onChange={event => onUpdate('data_source', event.target.value)} placeholder="users" />
+                </label>
+                <label>
+                  <span>Column</span>
+                  <input value={parameter.column || ''} onChange={event => onUpdate('column', event.target.value)} placeholder="column name" />
+                </label>
+                <label>
+                  <span>Selection</span>
+                  <select value={getParameterChoiceValue(parameter, 'selection')} onChange={event => onUpdate('selection', event.target.value)}>
+                    {PARAMETER_CHOICE_DEFINITIONS.selection.options.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>On Exhaustion</span>
+                  <select value={getParameterChoiceValue(parameter, 'on_exhaustion')} onChange={event => onUpdate('on_exhaustion', event.target.value)}>
+                    {PARAMETER_CHOICE_DEFINITIONS.on_exhaustion.options.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="parameter-settings-wide">
+                  <span>Same Line As</span>
+                  <input value={parameter.same_line_as || ''} onChange={event => onUpdate('same_line_as', event.target.value.trim() || undefined)} placeholder="optional parameter name" />
+                </label>
+              </>
+            )}
+            {(parameterType === 'list' || parameterType === 'host') && (
+              <label className="parameter-settings-wide">
+                <span>{parameterType === 'host' ? 'Host Overrides' : 'Inline Values'}</span>
+                <input
+                  value={(parameter.values || []).join(', ')}
+                  onChange={event => onUpdate('values', parseParameterListInput(event.target.value))}
+                  placeholder={parameterType === 'host' ? 'host-a, host-b' : 'value1, value2'}
+                />
+              </label>
+            )}
+          </div>
+        ) : (
+          <p className="parameter-settings-empty">This parameter type does not use source mapping fields.</p>
+        )}
+      </details>
+
+      <details className="parameter-settings-accordion" open={isGenerated || isTime}>
+        <summary>
+          <strong>Type Options</strong>
+          <span>Generated values, time formats, and runtime options</span>
+        </summary>
+        {isGenerated || isTime ? (
+          <div className="parameter-settings-grid">
+            {parameterType === 'random_number' && (
+              <>
+                <label><span>Minimum</span><input type="number" value={numberInputValue(parameter.min, 0)} onChange={event => onUpdate('min', Number(event.target.value))} placeholder="min" /></label>
+                <label><span>Maximum</span><input type="number" value={numberInputValue(parameter.max, 100)} onChange={event => onUpdate('max', Number(event.target.value))} placeholder="max" /></label>
+              </>
+            )}
+            {(parameterType === 'counter' || parameterType === 'current_iteration') && (
+              <>
+                <label><span>Start</span><input type="number" value={numberInputValue(parameter.start, parameterType === 'current_iteration' ? 1 : 0)} onChange={event => onUpdate('start', Number(event.target.value))} placeholder="start" /></label>
+                <label><span>End</span><input type="number" value={numberInputValue(parameter.end, 0)} onChange={event => onUpdate('end', Number(event.target.value))} placeholder="end (optional)" /></label>
+                <label><span>Step</span><input type="number" value={numberInputValue(parameter.step, 1)} onChange={event => onUpdate('step', Number(event.target.value))} placeholder="step" /></label>
+              </>
+            )}
+            {parameterType === 'random_string' && (
+              <>
+                <label><span>Length</span><input type="number" value={numberInputValue(parameter.length, 12)} onChange={event => onUpdate('length', Number(event.target.value))} placeholder="length" /></label>
+                <label><span>Charset</span><input value={parameter.charset || ''} onChange={event => onUpdate('charset', event.target.value)} placeholder="charset override" /></label>
+              </>
+            )}
+            {parameterType === 'uuid' && <p className="parameter-settings-empty">UUID values are generated automatically using the selected update cadence.</p>}
+            {isTime && (
+              <>
+                <label>
+                  <span>Format</span>
+                  {parameterType === 'timestamp' ? (
+                    <select value={parameter.format || 'iso8601'} onChange={event => onUpdate('format', event.target.value)}>
+                      <option value="unix">unix</option>
+                      <option value="unix_ms">unix_ms</option>
+                      <option value="iso8601">iso8601</option>
+                      <option value="rfc3339">rfc3339</option>
+                      <option value="rfc3339_nano">rfc3339_nano</option>
+                    </select>
+                  ) : (
+                    <input value={parameter.format || ''} onChange={event => onUpdate('format', event.target.value)} placeholder="Go time layout" />
+                  )}
+                </label>
+                <label><span>Timezone</span><input value={parameter.timezone || ''} onChange={event => onUpdate('timezone', event.target.value)} placeholder="UTC, America/New_York" /></label>
+                <label><span>Offset Seconds</span><input type="number" value={numberInputValue(parameter.offset_seconds, 0)} onChange={event => onUpdate('offset_seconds', Number(event.target.value))} placeholder="offset seconds" /></label>
+              </>
+            )}
+          </div>
+        ) : (
+          <p className="parameter-settings-empty">No additional type-specific options are required.</p>
+        )}
+      </details>
+
+      <details className="parameter-settings-accordion" open={showsOutput}>
+        <summary>
+          <strong>Output And Reproducibility</strong>
+          <span>Padding and optional seed</span>
+        </summary>
+        <div className="parameter-settings-grid">
+          {(parameterType === 'counter' || parameterType === 'current_iteration' || parameterType === 'random_number') && (
+            <>
+              <label><span>Pad Width</span><input type="number" value={numberInputValue(parameter.pad_width, 0)} onChange={event => onUpdate('pad_width', Number(event.target.value))} placeholder="pad width" /></label>
+              <label><span>Pad Character</span><input value={parameter.pad_char || ''} onChange={event => onUpdate('pad_char', event.target.value)} placeholder="pad char" /></label>
+            </>
+          )}
+          <label>
+            <span>Seed</span>
+            <input
+              type="number"
+              value={numberInputValue(parameter.seed, '')}
+              onChange={event => updateOptionalNumber(onUpdate, 'seed', event.target.value)}
+              placeholder="seed (optional)"
+            />
+          </label>
+        </div>
+      </details>
+    </div>
+  )
 }
 
 function ParameterSettingsDialog({

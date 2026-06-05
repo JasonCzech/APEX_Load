@@ -449,6 +449,21 @@ export function summarizeInlineData(source: DataSourceConfig): { rows: number; c
   return { rows: dataRows, columns: width }
 }
 
+export function countUniqueColumnValues(
+  parsed: { columns: string[]; rows: string[][] } | null | undefined,
+  columnIndexes: number[],
+): number {
+  if (!parsed || parsed.rows.length === 0) return 0
+  const indexes = columnIndexes.length > 0 ? columnIndexes : parsed.columns.map((_, idx) => idx)
+  const seen = new Set<string>()
+  for (const row of parsed.rows) {
+    const values = indexes.map(idx => (row[idx] || '').trim())
+    if (values.every(value => value.length === 0)) continue
+    seen.add(values.join(''))
+  }
+  return seen.size
+}
+
 export function parseInlineData(source: DataSourceConfig): { columns: string[]; rows: string[][] } {
   const raw = source.inline_data || ''
   const delimiter = inferDelimiter(source)

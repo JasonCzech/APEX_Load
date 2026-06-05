@@ -657,7 +657,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('No screenshot yet')
   })
 
-  it('shows imported lifecycle phases in the author outline and debug rail', async () => {
+  it('shows imported lifecycle phases in the action list and debug rail', async () => {
     const lifecycleScript: ScriptDefinition = {
       ...initialScript,
       init: [{
@@ -695,10 +695,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={lifecycleScript} />)
     })
 
-    const outlineText = container.querySelector('.editor-outline-metrics')?.textContent?.replace(/\s+/g, ' ') || ''
-    expect(outlineText).toContain('1 init')
-    expect(outlineText).toContain('1 actions')
-    expect(outlineText).toContain('1 end')
+    expect(container.querySelector('.editor-outline-metrics')).toBeNull()
     expect(Array.from(container.querySelectorAll('.action-phase-label')).map(label => label.textContent)).toEqual([
       'Init',
       'Action',
@@ -1012,7 +1009,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('[aria-label="Problems"]')?.textContent).toContain('Script JSON is invalid')
   })
 
-  it('renders a graphical browser outline with transactions, waits, parameters, and assertions', async () => {
+  it('renders browser actions without outline metric pills', async () => {
     const browserScript: ScriptDefinition = {
       ...initialScript,
       protocol: 'browser',
@@ -1041,13 +1038,7 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={browserScript} />)
     })
 
-    const outlineSummary = container.querySelector('[aria-label="Script outline summary"]')
-    expect(outlineSummary?.textContent).toContain('2 browser')
-    expect(outlineSummary?.textContent).toContain('2 txn')
-    expect(outlineSummary?.textContent).toContain('1 params')
-    expect(outlineSummary?.textContent).toContain('1 waits')
-    expect(outlineSummary?.textContent).toContain('1 checks')
-
+    expect(container.querySelector('[aria-label="Script outline summary"]')).toBeNull()
     expect(container.querySelector('[aria-label="Graphical step outline"]')).toBeNull()
     expect(container.querySelectorAll('.editor-step-outline-row')).toHaveLength(0)
 
@@ -1306,14 +1297,14 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('[aria-label="Script Configuration"]')?.textContent).not.toContain('Protocol')
   })
 
-  it('opens parameter data in a dialog from the action list header', async () => {
+  it('opens parameter data from the outline link', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
 
     expect(container.querySelector('.editor-dialog')).toBeNull()
 
-    const parameterButton = Array.from(container.querySelectorAll('button')).find(button =>
+    const parameterButton = Array.from(container.querySelectorAll('.editor-outline-link')).find(button =>
       button.textContent?.includes('Parameter Data'),
     )
     expect(parameterButton).toBeDefined()
@@ -1327,18 +1318,11 @@ describe('ScriptEditor', () => {
 
     const parameterDialog = container.querySelector('.parameter-data-dialog') as HTMLDivElement | null
     expect(parameterDialog).not.toBeNull()
-    expect(parameterDialog?.textContent).toContain('Auto Parameterization')
-    expect(parameterDialog?.textContent).toContain('Parameters')
+    expect(parameterDialog?.textContent).not.toContain('Auto Parameterization')
     expect(parameterDialog?.textContent).not.toContain('Named Parameters')
     expect(parameterDialog?.textContent).toContain('Counter')
-    expect(parameterDialog?.textContent).not.toContain('session_id')
-
-    const expandSource = container.querySelector('button[aria-label="Expand source Counter"]') as HTMLButtonElement | null
-    expect(expandSource).not.toBeNull()
-    await act(async () => {
-      expandSource?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Parameters')
+    expect(container.querySelector('.parameter-sidebar-card')?.textContent).toContain('Counter')
     expect(parameterDialog?.textContent).toContain('session_id')
   })
 
@@ -1376,20 +1360,12 @@ describe('ScriptEditor', () => {
       addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('button[aria-label="Collapse source List"]')).not.toBeNull()
+    expect(container.querySelector('.parameter-sidebar-card')?.textContent).toContain('List')
     expect((container.querySelector('input[value="param_1"]') as HTMLInputElement | null)?.value).toBe('param_1')
 
     const dialog = container.querySelector('[aria-label="Parameter Data"]')
-    const openSettings = () => dialog?.querySelector('button[aria-label="Open settings for param_1"]') as HTMLButtonElement | null
-    const closeSettings = async () => {
-      const closeButton = container.querySelector('[aria-label="Settings for param_1"] button.btn-ghost') as HTMLButtonElement | null
-      expect(closeButton).not.toBeNull()
-      await act(async () => {
-        closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      })
-    }
     const chooseParameterType = async (value: string) => {
-      const typeSelect = container.querySelector('[aria-label="Settings for param_1"] select[aria-label="Parameter Type for param_1"]') as HTMLSelectElement | null
+      const typeSelect = dialog?.querySelector('select[aria-label="Parameter Type for param_1"]') as HTMLSelectElement | null
       expect(typeSelect).not.toBeNull()
       if (!typeSelect) return
       const selectValueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
@@ -1399,39 +1375,27 @@ describe('ScriptEditor', () => {
         typeSelect.dispatchEvent(new Event('change', { bubbles: true }))
       })
     }
-    const settingsButton = openSettings()
-    expect(settingsButton).not.toBeNull()
-    if (!settingsButton) {
-      return
-    }
 
-    await act(async () => {
-      settingsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(container.textContent).toContain('Parameter Settings')
     expect(container.textContent).toContain('General')
-    const optionValues = Array.from(container.querySelectorAll('[aria-label="Parameter Type for param_1"] option')).map(option => (option as HTMLOptionElement).value)
+    const optionValues = Array.from(dialog?.querySelectorAll('[aria-label="Parameter Type for param_1"] option') || []).map(option => (option as HTMLOptionElement).value)
     expect(optionValues).toEqual(expect.arrayContaining(['current_iteration', 'host', 'time']))
 
     await chooseParameterType('current_iteration')
 
-    expect(container.textContent).toContain('Parameter Settings')
-    expect(container.textContent).toContain('Generated Values')
-    expect((container.querySelector('[aria-label="Settings for param_1"] input[placeholder="start"]') as HTMLInputElement | null)?.value).toBe('1')
-    expect((container.querySelector('[aria-label="Settings for param_1"] input[placeholder="step"]') as HTMLInputElement | null)?.value).toBe('1')
+    expect(container.textContent).toContain('Type Options')
+    expect((dialog?.querySelector('input[placeholder="start"]') as HTMLInputElement | null)?.value).toBe('1')
+    expect((dialog?.querySelector('input[placeholder="step"]') as HTMLInputElement | null)?.value).toBe('1')
 
     await chooseParameterType('host')
 
-    expect(container.querySelector('[aria-label="Settings for param_1"] input[placeholder="host-a, host-b"]')).not.toBeNull()
+    expect(dialog?.querySelector('input[placeholder="host-a, host-b"]')).not.toBeNull()
 
     await chooseParameterType('time')
 
-    expect((container.querySelector('[aria-label="Settings for param_1"] input[placeholder="Go time layout"]') as HTMLInputElement | null)?.value).toBe('15:04:05')
-    await closeSettings()
+    expect((dialog?.querySelector('input[placeholder="Go time layout"]') as HTMLInputElement | null)?.value).toBe('15:04:05')
   })
 
-  it('reveals a newly added parameter when the parameters section is collapsed', async () => {
+  it('selects a newly added parameter from the Parameters sidebar', async () => {
     const scriptWithoutParameters: ScriptDefinition = {
       ...initialScript,
       parameters: [],
@@ -1440,16 +1404,6 @@ describe('ScriptEditor', () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={scriptWithoutParameters} initialFocusedSection="parameter-data" />)
     })
-
-    const collapseNamed = container.querySelector('button[aria-label="Collapse Parameters"]') as HTMLButtonElement | null
-    expect(collapseNamed).not.toBeNull()
-
-    await act(async () => {
-      collapseNamed?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(container.querySelector('button[aria-label="Expand Parameters"]')).not.toBeNull()
-    expect(container.querySelector('.parameter-definitions-table')).toBeNull()
 
     const addButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.trim() === '+ Add Parameter',
@@ -1463,30 +1417,19 @@ describe('ScriptEditor', () => {
       addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('button[aria-label="Collapse Parameters"]')).not.toBeNull()
-    expect(container.querySelector('button[aria-label="Collapse source List"]')).not.toBeNull()
-    expect(container.querySelector('button[aria-label="Open settings for param_1"]')).not.toBeNull()
+    expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('param_1')
     expect((container.querySelector('input[value="param_1"]') as HTMLInputElement | null)?.value).toBe('param_1')
   })
 
-  it('runs auto parameterization from the parameter data dialog', async () => {
+  it('runs auto parameterization from the script JSON source tab', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
 
-    const parameterButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.includes('Parameter Data'),
-    )
-    expect(parameterButton).toBeDefined()
-    if (!parameterButton) {
-      return
-    }
+    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
 
-    await act(async () => {
-      parameterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    const autoButton = Array.from(container.querySelectorAll('button')).find(button =>
+    const activePanel = container.querySelector('.center-tab-panel.active') as HTMLDivElement | null
+    const autoButton = Array.from(activePanel?.querySelectorAll('button') || []).find(button =>
       button.textContent?.trim() === 'Auto Parameterization',
     )
     expect(autoButton).toBeDefined()
@@ -1502,7 +1445,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('username')
     expect(container.textContent).toContain('demo')
 
-    const applyButton = Array.from(container.querySelectorAll('button')).find(button =>
+    const applyButton = Array.from(activePanel?.querySelectorAll('button') || []).find(button =>
       button.textContent?.trim() === 'Apply Selected',
     )
     expect(applyButton).toBeDefined()
@@ -1857,10 +1800,30 @@ describe('ScriptEditor', () => {
       sidebarActions[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('[aria-label="Script JSON"]')?.textContent).toContain('actions[1]')
     expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
     expect(container.querySelector('.action-editor-panel')).not.toBeNull()
     const activeSidebarAction = container.querySelector('.action-item.active') as HTMLDivElement | null
     expect(activeSidebarAction?.textContent).toContain('Complete Checkout')
+
+    const conversionTab = findCenterTab(container, 'Conversion Mapping')
+    expect(conversionTab).toBeDefined()
+    if (!conversionTab) {
+      return
+    }
+
+    await act(async () => {
+      conversionTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(findCenterTab(container, 'Conversion Mapping')?.getAttribute('aria-selected')).toBe('true')
+
+    await act(async () => {
+      sidebarActions[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(findCenterTab(container, 'Conversion Mapping')?.getAttribute('aria-selected')).toBe('true')
     const activeMappingRow = container.querySelector('.source-map-table tbody tr.active') as HTMLTableRowElement | null
     expect(activeMappingRow?.dataset.mappingId).toBe('checkout-action')
     expect(activeMappingRow?.dataset.targetPath).toBe('actions[1]')
@@ -1939,8 +1902,9 @@ describe('ScriptEditor', () => {
 
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
     expect(container.textContent).toContain('Parameter Data (1)')
-    expect(container.textContent).toContain('username Data')
-    expect(container.textContent).not.toContain('Hide Data')
+    expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')
+    expect(container.textContent).toContain('users')
+    expect(container.textContent).toContain('Hide Data')
 
     const openImportedDataSourceButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.trim() === 'Open In Parameter Data',
@@ -1956,8 +1920,9 @@ describe('ScriptEditor', () => {
 
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
     expect(container.textContent).toContain('Parameter Data (1)')
-    expect(container.textContent).toContain('username Data')
-    expect(container.textContent).not.toContain('Hide Data')
+    expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')
+    expect(container.textContent).toContain('users')
+    expect(container.textContent).toContain('Hide Data')
   })
 
   it('preselects the requested action when a draft opens with a focus hint', async () => {
@@ -2013,15 +1978,12 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
     expect(container.textContent).toContain('Parameters')
     expect(container.textContent).not.toContain('Named Parameters')
-    expect(container.textContent).toContain('Built-In / Generated Parameters')
-    const namedParameterHeaders = Array.from(container.querySelectorAll('.parameter-definitions-table thead th')).map(header => header.textContent?.trim())
-    expect(namedParameterHeaders).toEqual(['Source File / Type', 'Parameter Name', 'Rows', 'Update', 'Selection', 'Settings', 'Template', 'Actions'])
-    expect(namedParameterHeaders).not.toContain('Name')
-    expect(namedParameterHeaders).not.toContain('Source')
-    expect(namedParameterHeaders).not.toContain('Type')
+    expect(container.querySelector('.parameter-sidebar-card')?.textContent).toContain('Counter')
+    expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('session_id')
+    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('{{param.session_id}}')
   })
 
-  it('groups named parameters by source file before expanding parameter rows', async () => {
+  it('groups parameters by type and shows the selected file parameter data source', async () => {
     const sourceGroupedScript: ScriptDefinition = {
       ...initialScript,
       parameters: [
@@ -2077,49 +2039,14 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={sourceGroupedScript} initialFocusedSection="parameter-data" />)
     })
 
-    expect(container.querySelectorAll('.parameter-source-row')).toHaveLength(2)
-    expect(Array.from(container.querySelectorAll('.parameter-category-row')).map(row => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
-      'User-Defined Files (.dat / .csv)2 sources',
-    ])
-    expect(container.querySelectorAll('.parameter-child-row')).toHaveLength(0)
-    const parameterTable = container.querySelector('.parameter-definitions-table') as HTMLTableElement | null
-    expect(container.textContent).toContain('BBCRandomLinks.dat')
-    expect(container.textContent).toContain('2 parameters')
-    expect(parameterTable?.textContent).not.toContain('bbclink01')
-    const firstSourceCells = Array.from((container.querySelector('.parameter-source-row') as HTMLTableRowElement | null)?.cells || [])
-    expect(firstSourceCells[2]?.textContent?.trim()).toBe('1')
-
-    const expandBbcLinks = container.querySelector('button[aria-label="Expand source BBCRandomLinks.dat"]') as HTMLButtonElement | null
-    expect(expandBbcLinks).not.toBeNull()
-    await act(async () => {
-      expandBbcLinks?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(container.querySelectorAll('.parameter-child-row')).toHaveLength(2)
-    const firstExpandedRow = container.querySelector('.parameter-child-row') as HTMLTableRowElement | null
-    const firstExpandedCells = Array.from(firstExpandedRow?.cells || [])
-    expect(firstExpandedCells[0]?.textContent?.trim()).toBe('')
-    expect(firstExpandedCells[0]?.querySelector('input, select, button')).toBeNull()
-    expect(firstExpandedCells[2]?.textContent?.trim()).toBe('1')
-    expect(firstExpandedRow?.querySelector('select')).toBeNull()
-    expect(firstExpandedCells[4]?.querySelectorAll('button')).toHaveLength(1)
-    expect(Array.from(container.querySelectorAll('.parameter-child-row input[placeholder="session_id"]')).map(input => (input as HTMLInputElement).value)).toEqual(['bbclink01', 'bbclink02'])
-    const expandedHeaders = Array.from(container.querySelectorAll('.parameter-definitions-table thead th')).map(header => header.textContent?.trim())
-    expect(expandedHeaders[0]).toBe('Source File / Type')
-    expect(expandedHeaders[1]).toBe('Parameter Name')
-    expect(expandedHeaders[2]).toBe('Rows')
-    expect(container.textContent).not.toContain('Hide Data')
-
-    await act(async () => {
-      firstExpandedRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(container.querySelector('.parameter-child-row.selected')).not.toBeNull()
-    expect(container.textContent).not.toContain('Hide Data')
+    const sidebar = container.querySelector('.parameter-sidebar-card') as HTMLDivElement | null
+    expect(sidebar?.textContent).toContain('File')
+    expect(sidebar?.textContent).toContain('bbclink01')
+    expect(sidebar?.textContent).toContain('bbclink02')
+    expect(sidebar?.textContent).toContain('username')
+    expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('bbclink01')
     expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toContain('https://bbc.example/a')
     const selectedDataView = container.querySelector('.parameter-data-selected-view') as HTMLDivElement | null
-    expect(selectedDataView?.textContent).toContain('bbclinks Parameter Data')
-    expect(selectedDataView?.textContent).toContain('bbclink01, bbclink02')
     expect(selectedDataView?.textContent).toContain('bbclinks')
     expect(selectedDataView?.textContent).toContain('Label')
     expect(Array.from(selectedDataView?.querySelectorAll('.parameter-grid tbody input') || []).map(input => (input as HTMLInputElement).value)).toEqual([
@@ -2129,22 +2056,7 @@ describe('ScriptEditor', () => {
     expect(selectedDataView?.textContent).not.toContain('users.csv')
     expect(selectedDataView?.textContent).not.toContain('alice')
 
-    const parameterSettingsButton = container.querySelector('button[aria-label="Open settings for bbclink01"]') as HTMLButtonElement | null
-    expect(parameterSettingsButton).not.toBeNull()
-    expect(parameterSettingsButton?.textContent).toContain('Configure')
-    expect(parameterSettingsButton?.textContent).toContain('Column: URL')
-    await act(async () => {
-      parameterSettingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    const settingsDialog = container.querySelector('[aria-label="Settings for bbclink01"]') as HTMLDivElement | null
-    expect(settingsDialog).not.toBeNull()
-    expect(settingsDialog?.textContent).toContain('Parameter Settings')
-    expect(settingsDialog?.textContent).toContain('Data Mapping')
-    expect(settingsDialog?.textContent).toContain('Generated Values')
-    expect(settingsDialog?.textContent).toContain('Time And Format')
-    expect(settingsDialog?.textContent).toContain('Output And Reproducibility')
-    const columnInput = settingsDialog?.querySelector('input[placeholder="column name"]') as HTMLInputElement | null
+    const columnInput = container.querySelector('.parameter-data-dialog input[placeholder="column name"]') as HTMLInputElement | null
     expect(columnInput?.value).toBe('URL')
     const inputValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
     await act(async () => {
@@ -2153,65 +2065,14 @@ describe('ScriptEditor', () => {
       columnInput?.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    expect((settingsDialog?.querySelector('input[placeholder="column name"]') as HTMLInputElement | null)?.value).toBe('URL_PATH')
-    const closeParameterSettings = settingsDialog?.querySelector('button.btn-ghost') as HTMLButtonElement | null
+    expect((container.querySelector('.parameter-data-dialog input[placeholder="column name"]') as HTMLInputElement | null)?.value).toBe('URL_PATH')
+    const usernameItem = Array.from(container.querySelectorAll('.parameter-sidebar-item')).find(item => item.textContent?.includes('username'))
+    expect(usernameItem).toBeDefined()
     await act(async () => {
-      closeParameterSettings?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      usernameItem?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.querySelector('[aria-label="Settings for bbclink01"]')).toBeNull()
-
-    const selectionSettingsButton = container.querySelector('button[aria-label="Open Selection settings for bbclink01"]') as HTMLButtonElement | null
-    expect(selectionSettingsButton).not.toBeNull()
-    expect(selectionSettingsButton?.textContent).toContain('Settings')
-    expect(selectionSettingsButton?.textContent).toContain('Random / Wrap')
-    await act(async () => {
-      selectionSettingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(container.querySelector('.parameter-choice-dialog')).not.toBeNull()
-    expect(container.textContent).toContain('Selection Settings')
-    expect(container.textContent).toContain('Read rows in order')
-    expect(container.textContent).toContain('Reserve unique rows')
-    expect(container.textContent).toContain('Exhaustion Behavior')
-    expect(container.textContent).toContain('Fail the VUser action')
-    expect(container.textContent).toContain('Same Line Sync')
-    const sameLineSelect = container.querySelector('select[aria-label="Same Line Sync for bbclink01"]') as HTMLSelectElement | null
-    expect(sameLineSelect).not.toBeNull()
-    expect(Array.from(sameLineSelect?.options || []).map(option => option.value)).toEqual(expect.arrayContaining(['', 'bbclink02']))
-    const selectValueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
-    await act(async () => {
-      selectValueSetter?.call(sameLineSelect, 'bbclink02')
-      sameLineSelect?.dispatchEvent(new Event('input', { bubbles: true }))
-      sameLineSelect?.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
-    const uniqueOption = Array.from(container.querySelectorAll('.parameter-choice-option')).find(button =>
-      button.querySelector('strong')?.textContent?.trim() === 'Unique',
-    ) as HTMLButtonElement | undefined
-    expect(uniqueOption).toBeDefined()
-    await act(async () => {
-      uniqueOption?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(container.querySelector('.parameter-choice-dialog')).not.toBeNull()
-    const errorOption = Array.from(container.querySelectorAll('.parameter-choice-option')).find(button =>
-      button.querySelector('strong')?.textContent?.trim() === 'Error',
-    ) as HTMLButtonElement | undefined
-    expect(errorOption).toBeDefined()
-    await act(async () => {
-      errorOption?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    const closeDialog = container.querySelector('.parameter-choice-dialog button.btn-ghost') as HTMLButtonElement | null
-    expect(closeDialog).not.toBeNull()
-    await act(async () => {
-      closeDialog?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(container.querySelector('.parameter-choice-dialog')).toBeNull()
-    const updatedSelectionSettingsButton = container.querySelector('button[aria-label="Open Selection settings for bbclink01"]') as HTMLButtonElement | null
-    expect(updatedSelectionSettingsButton?.textContent).toContain('Unique / Error')
-    expect(updatedSelectionSettingsButton?.textContent).toContain('Same line as bbclink02')
+    expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')
+    expect((container.querySelector('.parameter-data-selected-view input[placeholder="/absolute/path/to/data.csv (optional when inline data is used)"]') as HTMLInputElement | null)?.value).toBe('users.csv')
   })
 
   it('merges csv and dat parameter source files into a common source file', async () => {
@@ -2279,28 +2140,14 @@ describe('ScriptEditor', () => {
 
     expect(container.textContent).toContain('Merged 2 parameter source files into merged_parameters.')
     const parameterDialog = container.querySelector('.parameter-data-dialog') as HTMLDivElement | null
-    expect(parameterDialog?.textContent).toContain('merged_parameters.csv')
+    expect(parameterDialog?.textContent).toContain('merged_parameters')
     expect(parameterDialog?.textContent).not.toContain('Users.csv')
     expect(parameterDialog?.textContent).not.toContain('Passwords.dat')
-    expect(parameterDialog?.querySelectorAll('.parameter-source-row')).toHaveLength(2)
-    expect(Array.from(parameterDialog?.querySelectorAll('.parameter-category-row') || []).map(row => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
-      'User-Defined Files (.dat / .csv)1 source',
-      'Built-In / Generated Parameters1 type',
-    ])
-    expect(parameterDialog?.textContent).toContain('2 parameters')
+    expect(container.querySelector('.parameter-sidebar-card')?.textContent).toContain('File')
+    expect(container.querySelector('.parameter-sidebar-card')?.textContent).toContain('Current Iteration')
     expect(parameterDialog?.textContent).toContain('Current Iteration')
-
-    const expandMerged = container.querySelector('button[aria-label="Expand source merged_parameters.csv"]') as HTMLButtonElement | null
-    if (expandMerged) {
-      await act(async () => {
-        expandMerged.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      })
-    }
-
-    expect(Array.from(container.querySelectorAll('.parameter-child-row input[placeholder="session_id"]')).map(input => (input as HTMLInputElement).value)).toEqual(['username', 'password'])
     const selectedDataView = container.querySelector('.parameter-data-selected-view') as HTMLDivElement | null
-    expect(selectedDataView?.textContent).toContain('merged_parameters Parameter Data')
-    expect(selectedDataView?.textContent).toContain('username, password')
+    expect(selectedDataView?.textContent).toContain('merged_parameters')
     expect(selectedDataView?.textContent).toContain('username')
     expect(selectedDataView?.textContent).toContain('password')
     expect(Array.from(selectedDataView?.querySelectorAll('.parameter-grid tbody input') || []).map(input => (input as HTMLInputElement).value)).toEqual([
@@ -2311,41 +2158,24 @@ describe('ScriptEditor', () => {
     ])
   })
 
-  it('collapses named parameters and parameter data sources independently', async () => {
+  it('removes the selected parameter and updates the Parameters sidebar', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} initialFocusedSection="parameter-data" />)
     })
 
-    const collapseNamed = container.querySelector('button[aria-label="Collapse Parameters"]') as HTMLButtonElement | null
-    expect(collapseNamed).not.toBeNull()
-    expect(collapseNamed?.getAttribute('aria-expanded')).toBe('true')
-    expect(container.querySelector('.parameter-definitions-table')).not.toBeNull()
+    expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('session_id')
+    const removeButton = Array.from(container.querySelectorAll('.parameter-data-dialog button')).find(button =>
+      button.textContent?.trim() === 'Remove',
+    )
+    expect(removeButton).toBeDefined()
+    if (!removeButton) return
 
     await act(async () => {
-      collapseNamed?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      removeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const expandNamed = container.querySelector('button[aria-label="Expand Parameters"]') as HTMLButtonElement | null
-    expect(expandNamed).not.toBeNull()
-    expect(expandNamed?.getAttribute('aria-expanded')).toBe('false')
-    expect(container.querySelector('.parameter-definitions-table')).toBeNull()
-
-    const collapseDataSources = container.querySelector('button[aria-label="Collapse Parameter Data"]') as HTMLButtonElement | null
-    expect(collapseDataSources).not.toBeNull()
-    expect(collapseDataSources?.getAttribute('aria-expanded')).toBe('true')
-    const dialog = container.querySelector('.parameter-data-dialog') as HTMLDivElement | null
-    const hasDataSourceEmptyState = () => Array.from(dialog?.querySelectorAll('.parameter-empty-state') || [])
-      .some(element => element.textContent?.includes('Select a parameter in the Parameters table above'))
-    expect(hasDataSourceEmptyState()).toBe(true)
-
-    await act(async () => {
-      collapseDataSources?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    const expandDataSources = container.querySelector('button[aria-label="Expand Parameter Data"]') as HTMLButtonElement | null
-    expect(expandDataSources).not.toBeNull()
-    expect(expandDataSources?.getAttribute('aria-expanded')).toBe('false')
-    expect(hasDataSourceEmptyState()).toBe(false)
+    expect(container.querySelector('.parameter-sidebar-item')).toBeNull()
+    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Select a parameter from the Parameters sidebar')
   })
 
   it('opens the requested data source when a draft opens with a data source focus hint', async () => {
@@ -2380,12 +2210,11 @@ describe('ScriptEditor', () => {
 
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
     expect(container.textContent).toContain('Parameter Data (1)')
-    expect(container.textContent).not.toContain('Hide Data')
+    expect(container.textContent).toContain('Hide Data')
     expect(container.textContent).toContain('Users.dat')
-    expect(container.querySelectorAll('.parameter-child-row')).toHaveLength(1)
-    expect(Array.from(container.querySelectorAll('.parameter-child-row input[placeholder="session_id"]')).map(input => (input as HTMLInputElement).value)).toEqual(['username'])
-    expect(container.textContent).toContain('2 rows · 1 selected column · Auto: Comma')
-    expect(container.querySelector('.parameter-grid-head')?.textContent).toContain('username')
+    expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')
+    expect(container.textContent).toContain('2 rows · 1 column · Auto: Comma')
+    expect((container.querySelector('.parameter-grid-head input[placeholder="col_1"]') as HTMLInputElement | null)?.value).toBe('username')
     const firstRowCells = Array.from(container.querySelectorAll('.parameter-grid tbody tr:first-child td'))
     expect(firstRowCells[0]?.classList.contains('parameter-grid-row-action')).toBe(true)
     expect(firstRowCells[0]?.querySelector('button')?.getAttribute('aria-label')).toBe('Remove row 1')
@@ -2425,9 +2254,9 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
-    expect(container.textContent).toContain('2 rows · 1 selected column · Auto: Tab')
-    expect(container.querySelector('.parameter-grid-head')?.textContent).toContain('username')
-    expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toEqual(['alice', 'bob'])
+    expect(container.textContent).toContain('2 rows · 2 columns · Auto: Tab')
+    expect((container.querySelector('.parameter-grid-head input[placeholder="col_1"]') as HTMLInputElement | null)?.value).toBe('username')
+    expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toEqual(['alice', 'secret', 'bob', 'hunter2'])
     expect((container.querySelector('select[aria-label="Delimiter for users"]') as HTMLSelectElement | null)?.value).toBe('auto')
     expect(container.querySelector('.parameter-delimiter-toggle')).toBeNull()
 
@@ -2438,11 +2267,10 @@ describe('ScriptEditor', () => {
     })
 
     const rawData = container.querySelector('textarea[aria-label="Raw data for users"]') as HTMLTextAreaElement | null
-    expect(rawData?.value).toBe('username\nalice\nbob')
-    expect(rawData?.value).not.toContain('secret')
+    expect(rawData?.value).toBe('username\tpassword\nalice\tsecret\nbob\thunter2')
     const textAreaValueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
     await act(async () => {
-      textAreaValueSetter?.call(rawData, 'username\nanna\nben')
+      textAreaValueSetter?.call(rawData, 'username\tpassword\nanna\tapass\nben\tbpass')
       rawData?.dispatchEvent(new Event('input', { bubbles: true }))
       rawData?.dispatchEvent(new Event('change', { bubbles: true }))
     })
@@ -2453,7 +2281,7 @@ describe('ScriptEditor', () => {
       gridModeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toEqual(['anna', 'ben'])
+    expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toEqual(['anna', 'apass', 'ben', 'bpass'])
 
     const delimiterSelect = container.querySelector('select[aria-label="Delimiter for users"]') as HTMLSelectElement | null
     expect(delimiterSelect).not.toBeNull()
@@ -2468,8 +2296,8 @@ describe('ScriptEditor', () => {
       delimiterSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('2 rows · 1 selected column · Comma')
-    expect(container.querySelector('.parameter-grid-head')?.textContent).toContain('username\tpassword')
+    expect(container.textContent).toContain('2 rows · 1 column · Comma')
+    expect((container.querySelector('.parameter-grid-head input[placeholder="col_1"]') as HTMLInputElement | null)?.value).toBe('username\tpassword')
     expect((container.querySelector('select[aria-label="Delimiter for users"]') as HTMLSelectElement | null)?.value).toBe('comma')
 
     await act(async () => {
@@ -2478,8 +2306,8 @@ describe('ScriptEditor', () => {
       delimiterSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('2 rows · 1 selected column · Auto: Tab')
-    expect(container.querySelector('.parameter-grid-head')?.textContent).toContain('username')
+    expect(container.textContent).toContain('2 rows · 2 columns · Auto: Tab')
+    expect((container.querySelector('.parameter-grid-head input[placeholder="col_1"]') as HTMLInputElement | null)?.value).toBe('username')
     expect((container.querySelector('select[aria-label="Delimiter for users"]') as HTMLSelectElement | null)?.value).toBe('auto')
   })
 
@@ -2524,8 +2352,11 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.parameter-grid thead th[aria-sort="ascending"]')).not.toBeNull()
     expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toEqual([
       'alice',
+      'apass',
       'bob',
+      'bpass',
       'carol',
+      'cpass',
     ])
 
     const descendingSort = container.querySelector('button[aria-label="Sort username descending"]')
@@ -2538,8 +2369,11 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.parameter-grid thead th[aria-sort="descending"]')).not.toBeNull()
     expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toEqual([
       'carol',
+      'cpass',
       'bob',
+      'bpass',
       'alice',
+      'apass',
     ])
   })
 
@@ -2593,9 +2427,10 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('1/3 rows')
     expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toEqual([
       'bob',
+      'bpass',
     ])
     expect(container.querySelector('.parameter-grid-index')?.textContent?.trim()).toBe('1')
-    expect(Array.from(columnSelect.options).map(option => option.textContent)).toEqual(['All columns', 'username'])
+    expect(Array.from(columnSelect.options).map(option => option.textContent)).toEqual(['All columns', 'username', 'password'])
 
     await act(async () => {
       selectValueSetter?.call(columnSelect, '0')
@@ -2605,6 +2440,7 @@ describe('ScriptEditor', () => {
 
     expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toEqual([
       'bob',
+      'bpass',
     ])
 
     await act(async () => {
@@ -2615,6 +2451,7 @@ describe('ScriptEditor', () => {
 
     expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toEqual([
       'alice',
+      'apass',
     ])
     expect(container.querySelector('.parameter-grid-index')?.textContent?.trim()).toBe('2')
   })
