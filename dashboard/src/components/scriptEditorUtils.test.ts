@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildReplayStartPayload,
+  countUniqueColumnValues,
   detectInlineDataDelimiter,
   inferDelimiter,
   parseInlineData,
@@ -193,5 +194,37 @@ describe('scriptEditorUtils replay handoff helpers', () => {
       first_row_header: true,
       inline_data: tabData,
     }).columns).toEqual(['username\tpassword'])
+  })
+})
+
+describe('countUniqueColumnValues', () => {
+  const parsed = {
+    columns: ['city', 'country'],
+    rows: [
+      ['Paris', 'France'],
+      ['Lyon', 'France'],
+      ['Paris', 'France'],
+      ['', ''],
+    ],
+  }
+
+  it('returns 0 for empty data', () => {
+    expect(countUniqueColumnValues({ columns: ['a'], rows: [] }, [0])).toBe(0)
+  })
+
+  it('counts distinct values in the mapped column', () => {
+    // city column: Paris, Lyon, Paris, '' -> 2 distinct non-empty
+    expect(countUniqueColumnValues(parsed, [0])).toBe(2)
+    // country column: France x3, '' -> 1 distinct
+    expect(countUniqueColumnValues(parsed, [1])).toBe(1)
+  })
+
+  it('counts distinct across multiple mapped columns', () => {
+    // (Paris,France),(Lyon,France),(Paris,France),(,) -> 2 distinct non-empty combos
+    expect(countUniqueColumnValues(parsed, [0, 1])).toBe(2)
+  })
+
+  it('falls back to all columns when no indexes are supplied', () => {
+    expect(countUniqueColumnValues(parsed, [])).toBe(2)
   })
 })

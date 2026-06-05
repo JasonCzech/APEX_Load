@@ -161,6 +161,24 @@ function findCenterTab(root: ParentNode, label: string) {
   return Array.from(root.querySelectorAll('.center-tab-button')).find(button => button.textContent?.trim() === label)
 }
 
+async function activateParameterDetailTab(root: ParentNode, label: 'Parameter Information' | 'Parameter Data') {
+  const tab = Array.from(root.querySelectorAll('.parameter-detail-tabs [role="tab"]'))
+    .find(button => button.textContent?.trim() === label)
+  if (tab) {
+    await act(async () => {
+      tab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+}
+
+async function activateParameterDataTab(root: ParentNode) {
+  await activateParameterDetailTab(root, 'Parameter Data')
+}
+
+async function activateParameterInfoTab(root: ParentNode) {
+  await activateParameterDetailTab(root, 'Parameter Information')
+}
+
 function changeTextareaValue(textarea: HTMLTextAreaElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
   setter?.call(textarea, value)
@@ -1376,7 +1394,7 @@ describe('ScriptEditor', () => {
       })
     }
 
-    expect(container.textContent).toContain('General')
+    expect(container.textContent).toContain('Identity')
     const optionValues = Array.from(dialog?.querySelectorAll('[aria-label="Parameter Type for param_1"] option') || []).map(option => (option as HTMLOptionElement).value)
     expect(optionValues).toEqual(expect.arrayContaining(['current_iteration', 'host', 'time']))
 
@@ -1904,7 +1922,8 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Parameter Data (1)')
     expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')
     expect(container.textContent).toContain('users')
-    expect(container.textContent).toContain('Hide Data')
+    await activateParameterDataTab(container)
+    expect(container.querySelector('.parameter-data-selected-view')).not.toBeNull()
 
     const openImportedDataSourceButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.trim() === 'Open In Parameter Data',
@@ -1922,7 +1941,8 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Parameter Data (1)')
     expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')
     expect(container.textContent).toContain('users')
-    expect(container.textContent).toContain('Hide Data')
+    await activateParameterDataTab(container)
+    expect(container.querySelector('.parameter-data-selected-view')).not.toBeNull()
   })
 
   it('preselects the requested action when a draft opens with a focus hint', async () => {
@@ -2045,6 +2065,7 @@ describe('ScriptEditor', () => {
     expect(sidebar?.textContent).toContain('bbclink02')
     expect(sidebar?.textContent).toContain('username')
     expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('bbclink01')
+    await activateParameterDataTab(container)
     expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toContain('https://bbc.example/a')
     const selectedDataView = container.querySelector('.parameter-data-selected-view') as HTMLDivElement | null
     expect(selectedDataView?.textContent).toContain('bbclinks')
@@ -2056,23 +2077,146 @@ describe('ScriptEditor', () => {
     expect(selectedDataView?.textContent).not.toContain('users.csv')
     expect(selectedDataView?.textContent).not.toContain('alice')
 
-    const columnInput = container.querySelector('.parameter-data-dialog input[placeholder="column name"]') as HTMLInputElement | null
-    expect(columnInput?.value).toBe('URL')
-    const inputValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    await activateParameterInfoTab(container)
+    const columnSelect = container.querySelector('.parameter-info-panel select[aria-label="Column for bbclink01"]') as HTMLSelectElement | null
+    expect(columnSelect?.value).toBe('URL')
+    const selectValueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
     await act(async () => {
-      inputValueSetter?.call(columnInput, 'URL_PATH')
-      columnInput?.dispatchEvent(new Event('input', { bubbles: true }))
-      columnInput?.dispatchEvent(new Event('change', { bubbles: true }))
+      selectValueSetter?.call(columnSelect, 'Label')
+      columnSelect?.dispatchEvent(new Event('input', { bubbles: true }))
+      columnSelect?.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    expect((container.querySelector('.parameter-data-dialog input[placeholder="column name"]') as HTMLInputElement | null)?.value).toBe('URL_PATH')
+    expect((container.querySelector('.parameter-info-panel select[aria-label="Column for bbclink01"]') as HTMLSelectElement | null)?.value).toBe('Label')
     const usernameItem = Array.from(container.querySelectorAll('.parameter-sidebar-item')).find(item => item.textContent?.includes('username'))
     expect(usernameItem).toBeDefined()
     await act(async () => {
       usernameItem?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')
-    expect((container.querySelector('.parameter-data-selected-view input[placeholder="/absolute/path/to/data.csv (optional when inline data is used)"]') as HTMLInputElement | null)?.value).toBe('users.csv')
+    expect((container.querySelector('.parameter-info-panel') as HTMLDivElement | null)?.textContent).toContain('users.csv')
+  })
+
+  it('summarizes record counts and edits behavior in the parameter information panel', async () => {
+    const statsScript: ScriptDefinition = {
+      ...initialScript,
+      parameters: [
+        {
+          name: 'city',
+          type: 'file',
+          update: 'each_iteration',
+          selection: 'sequential',
+          on_exhaustion: 'wrap',
+          data_source: 'cities',
+          column: 'city',
+        },
+      ],
+      data_sources: [
+        {
+          name: 'cities',
+          type: 'csv',
+          path: 'cities.csv',
+          strategy: 'sequential',
+          first_row_header: true,
+          inline_data: 'city\nParis\nLyon\nParis',
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={statsScript} initialFocusedSection="parameter-data" />)
+    })
+
+    const infoPanel = container.querySelector('.parameter-info-panel') as HTMLDivElement | null
+    expect(infoPanel).not.toBeNull()
+    expect(infoPanel?.textContent).toContain('Identity')
+    expect(infoPanel?.textContent).toContain('Behavior')
+    expect(infoPanel?.textContent).toContain('Data Mapping')
+    expect(infoPanel?.textContent).toContain('Data Statistics')
+
+    const statRows = Array.from(container.querySelectorAll('.parameter-info-stats-table tbody tr'))
+    const statValue = (label: string) => statRows.find(row => row.querySelector('th')?.textContent === label)?.querySelector('td')?.textContent
+    // three records (Paris, Lyon, Paris); two distinct values in the mapped column
+    expect(statValue('Record Count')).toBe('3')
+    expect(statValue('Unique Records')).toBe('2')
+
+    const selectValueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+    const cadence = container.querySelector('select[aria-label="Update Cadence for city"]') as HTMLSelectElement | null
+    expect(cadence?.value).toBe('each_iteration')
+    await act(async () => {
+      selectValueSetter?.call(cadence, 'once')
+      cadence?.dispatchEvent(new Event('input', { bubbles: true }))
+      cadence?.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect((container.querySelector('select[aria-label="Update Cadence for city"]') as HTMLSelectElement | null)?.value).toBe('once')
+
+    const strategy = container.querySelector('select[aria-label="Iteration Strategy for city"]') as HTMLSelectElement | null
+    expect(strategy?.value).toBe('sequential')
+    await act(async () => {
+      selectValueSetter?.call(strategy, 'unique')
+      strategy?.dispatchEvent(new Event('input', { bubbles: true }))
+      strategy?.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect((container.querySelector('select[aria-label="Iteration Strategy for city"]') as HTMLSelectElement | null)?.value).toBe('unique')
+
+    // The data table lives under the Parameter Data tab: it keeps its display options
+    // but drops the old source-metadata header row.
+    await activateParameterDataTab(container)
+    const dataView = container.querySelector('.parameter-data-selected-view') as HTMLDivElement | null
+    expect(dataView?.querySelector('table.parameter-grid')).not.toBeNull()
+    expect(Array.from(dataView?.querySelectorAll('button') || []).some(button => button.textContent?.trim() === 'Raw Mode')).toBe(true)
+    expect(dataView?.querySelector('input[placeholder="/absolute/path/to/data.csv (optional when inline data is used)"]')).toBeNull()
+  })
+
+  it('splits the parameter detail into Parameter Information and Parameter Data tabs', async () => {
+    const tabScript: ScriptDefinition = {
+      ...initialScript,
+      parameters: [
+        { name: 'city', type: 'file', update: 'each_iteration', selection: 'sequential', on_exhaustion: 'wrap', data_source: 'cities', column: 'city' },
+        { name: 'visit_no', type: 'counter', update: 'each_iteration', start: 1, step: 1 },
+      ],
+      data_sources: [
+        { name: 'cities', type: 'csv', path: 'cities.csv', strategy: 'sequential', first_row_header: true, inline_data: 'city\nParis\nLyon' },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={tabScript} initialFocusedSection="parameter-data" />)
+    })
+
+    const tabLabels = () => Array.from(container.querySelectorAll('.parameter-detail-tabs [role="tab"]')).map(tab => tab.textContent?.trim())
+    const tab = (label: string) => Array.from(container.querySelectorAll('.parameter-detail-tabs [role="tab"]')).find(t => t.textContent?.trim() === label) as HTMLButtonElement | undefined
+    const infoSection = () => container.querySelector('.parameter-detail-info')
+    const dataSection = () => container.querySelector('.parameter-detail-data')
+
+    // Data-backed parameter exposes both tabs; Information is selected by default.
+    expect(tabLabels()).toEqual(['Parameter Information', 'Parameter Data'])
+    expect(tab('Parameter Information')?.getAttribute('aria-selected')).toBe('true')
+    expect(infoSection()?.hasAttribute('hidden')).toBe(false)
+    expect(dataSection()?.hasAttribute('hidden')).toBe(true)
+    expect(container.querySelector('.parameter-info-panel')).not.toBeNull()
+
+    // Switching to Parameter Data reveals the data table and hides the information panel.
+    await activateParameterDataTab(container)
+    expect(tab('Parameter Data')?.getAttribute('aria-selected')).toBe('true')
+    expect(infoSection()?.hasAttribute('hidden')).toBe(true)
+    expect(dataSection()?.hasAttribute('hidden')).toBe(false)
+    expect(container.querySelector('.parameter-detail-data .parameter-data-selected-view table.parameter-grid')).not.toBeNull()
+
+    // Switching back to Parameter Information restores the info panel.
+    await activateParameterInfoTab(container)
+    expect(tab('Parameter Information')?.getAttribute('aria-selected')).toBe('true')
+    expect(infoSection()?.hasAttribute('hidden')).toBe(false)
+    expect(dataSection()?.hasAttribute('hidden')).toBe(true)
+
+    // A non-data-backed parameter (counter) only offers the Information tab — no data table.
+    const counterItem = Array.from(container.querySelectorAll('.parameter-sidebar-item')).find(item => item.textContent?.includes('visit_no'))
+    expect(counterItem).toBeDefined()
+    await act(async () => {
+      counterItem?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(tabLabels()).toEqual(['Parameter Information'])
+    expect(container.querySelector('.parameter-detail-data')).toBeNull()
   })
 
   it('merges csv and dat parameter source files into a common source file', async () => {
@@ -2146,6 +2290,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.parameter-sidebar-card')?.textContent).toContain('File')
     expect(container.querySelector('.parameter-sidebar-card')?.textContent).toContain('Current Iteration')
     expect(parameterDialog?.textContent).toContain('Current Iteration')
+    await activateParameterDataTab(container)
     const selectedDataView = container.querySelector('.parameter-data-selected-view') as HTMLDivElement | null
     expect(selectedDataView?.textContent).toContain('merged_parameters')
     expect(selectedDataView?.textContent).toContain('username')
@@ -2210,7 +2355,7 @@ describe('ScriptEditor', () => {
 
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
     expect(container.textContent).toContain('Parameter Data (1)')
-    expect(container.textContent).toContain('Hide Data')
+    expect(container.querySelector('.parameter-data-selected-view')).not.toBeNull()
     expect(container.textContent).toContain('Users.dat')
     expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')
     expect(container.textContent).toContain('2 rows · 1 column · Auto: Comma')
@@ -2219,7 +2364,7 @@ describe('ScriptEditor', () => {
     expect(firstRowCells[0]?.classList.contains('parameter-grid-row-action')).toBe(true)
     expect(firstRowCells[0]?.querySelector('button')?.getAttribute('aria-label')).toBe('Remove row 1')
     expect(firstRowCells[1]?.classList.contains('parameter-grid-index')).toBe(true)
-    expect((container.querySelector('select[aria-label="Delimiter for users"]') as HTMLSelectElement | null)?.value).toBe('auto')
+    expect((container.querySelector('select[aria-label="Delimiter for username"]') as HTMLSelectElement | null)?.value).toBe('auto')
   })
 
   it('auto-detects tab data and lets the focused data source override delimiters for the grid preview', async () => {
@@ -2257,7 +2402,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('2 rows · 2 columns · Auto: Tab')
     expect((container.querySelector('.parameter-grid-head input[placeholder="col_1"]') as HTMLInputElement | null)?.value).toBe('username')
     expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toEqual(['alice', 'secret', 'bob', 'hunter2'])
-    expect((container.querySelector('select[aria-label="Delimiter for users"]') as HTMLSelectElement | null)?.value).toBe('auto')
+    expect((container.querySelector('select[aria-label="Delimiter for username"]') as HTMLSelectElement | null)?.value).toBe('auto')
     expect(container.querySelector('.parameter-delimiter-toggle')).toBeNull()
 
     const rawModeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Raw Mode') as HTMLButtonElement | undefined
@@ -2283,7 +2428,7 @@ describe('ScriptEditor', () => {
 
     expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toEqual(['anna', 'apass', 'ben', 'bpass'])
 
-    const delimiterSelect = container.querySelector('select[aria-label="Delimiter for users"]') as HTMLSelectElement | null
+    const delimiterSelect = container.querySelector('select[aria-label="Delimiter for username"]') as HTMLSelectElement | null
     expect(delimiterSelect).not.toBeNull()
     if (!delimiterSelect) {
       return
@@ -2298,7 +2443,7 @@ describe('ScriptEditor', () => {
 
     expect(container.textContent).toContain('2 rows · 1 column · Comma')
     expect((container.querySelector('.parameter-grid-head input[placeholder="col_1"]') as HTMLInputElement | null)?.value).toBe('username\tpassword')
-    expect((container.querySelector('select[aria-label="Delimiter for users"]') as HTMLSelectElement | null)?.value).toBe('comma')
+    expect((container.querySelector('select[aria-label="Delimiter for username"]') as HTMLSelectElement | null)?.value).toBe('comma')
 
     await act(async () => {
       selectValueSetter?.call(delimiterSelect, 'auto')
@@ -2308,7 +2453,7 @@ describe('ScriptEditor', () => {
 
     expect(container.textContent).toContain('2 rows · 2 columns · Auto: Tab')
     expect((container.querySelector('.parameter-grid-head input[placeholder="col_1"]') as HTMLInputElement | null)?.value).toBe('username')
-    expect((container.querySelector('select[aria-label="Delimiter for users"]') as HTMLSelectElement | null)?.value).toBe('auto')
+    expect((container.querySelector('select[aria-label="Delimiter for username"]') as HTMLSelectElement | null)?.value).toBe('auto')
   })
 
   it('sorts focused data source rows by a selected grid column', async () => {

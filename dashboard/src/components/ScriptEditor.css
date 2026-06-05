@@ -776,8 +776,14 @@
   border-radius: 8px;
   background: var(--bg-primary);
 }
+.parameter-detail-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .parameter-detail-header h4 {
-  margin: 4px 0;
+  margin: 0;
   font-size: 16px;
 }
 .parameter-detail-kicker {
@@ -797,6 +803,166 @@
 .parameter-detail-data {
   display: grid;
   gap: 12px;
+}
+.parameter-detail-info[hidden],
+.parameter-detail-data[hidden] {
+  display: none;
+}
+.parameter-data-file-controls {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.parameter-data-file-controls > label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.parameter-data-file-controls select {
+  min-width: 140px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 8px 10px;
+  outline: none;
+}
+.parameter-data-file-controls select:focus {
+  border-color: var(--accent);
+}
+.parameter-data-file-controls .parameter-data-header-toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+}
+.parameter-detail-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  width: fit-content;
+}
+.parameter-detail-tabs button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.parameter-detail-tabs button:hover,
+.parameter-detail-tabs button.active {
+  border-color: rgba(99, 102, 241, 0.35);
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--text-primary);
+}
+.parameter-detail-info {
+  display: grid;
+  gap: 12px;
+}
+.parameter-info-panel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  padding: 14px;
+}
+.parameter-info-group {
+  display: grid;
+  gap: 10px;
+}
+.parameter-info-group:not(:first-child) {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.parameter-info-group-title {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.parameter-info-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.parameter-info-table tr {
+  border-bottom: 1px solid var(--border);
+}
+.parameter-info-table tbody tr:last-child {
+  border-bottom: none;
+}
+.parameter-info-table th[scope="row"] {
+  width: 34%;
+  text-align: left;
+  vertical-align: middle;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.parameter-info-table td {
+  vertical-align: middle;
+  padding: 6px 12px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.parameter-info-table input,
+.parameter-info-table select {
+  width: 100%;
+  min-width: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 8px 10px;
+  outline: none;
+}
+.parameter-info-table input:focus,
+.parameter-info-table select:focus {
+  border-color: var(--accent);
+}
+.parameter-info-table .checkbox-label {
+  margin: 0;
+}
+.parameter-info-table .checkbox-label input {
+  width: auto;
+}
+.parameter-info-readonly {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  color: var(--text-primary);
+  font-weight: 500;
+  word-break: break-all;
+}
+.parameter-info-stats-table td.parameter-info-stat-value {
+  font-weight: 700;
 }
 .btn.danger,
 .btn.btn-ghost.danger {

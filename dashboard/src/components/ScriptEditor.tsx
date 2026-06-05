@@ -8491,6 +8491,7 @@ function ParameterDataDetail({
   selectedParameter,
   selectedParameterIdx,
 }: ParameterDataDetailProps) {
+  const [detailTab, setDetailTab] = useState<'info' | 'data'>('info')
   if (!selectedParameter || selectedParameterIdx === null) {
     return (
       <div className="parameter-detail-panel empty">
@@ -8547,90 +8548,413 @@ function ParameterDataDetail({
     }
 
     return (
-      <div className="parameter-table-wrap parameter-data-selected-view">
-        <table className="parameter-table">
-          <thead>
-            <tr>
-              <th>Source</th>
-              <th>Type</th>
-              <th>Strategy</th>
-              <th>Header Row</th>
-              <th>Rows</th>
-              <th>Columns</th>
-              <th>Delimiter</th>
-              <th>Data File Path</th>
-              <th style={{ textAlign: 'right' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <ParameterDataSourceRows
-              dataEditorMode={dataEditorMode[selectedSourceIndex] || 'grid'}
-              history={dataSourceHistory[selectedSourceIndex]}
-              index={selectedSourceIndex}
-              isEditorOpen
-              key={`${selectedSource.name || 'source'}-${selectedSourceIndex}-${parameterName}`}
-              onAddDataColumn={onAddDataColumn}
-              onAddDataRow={onAddDataRow}
-              onApplyDedupeHeaders={onApplyDedupeHeaders}
-              onApplyFillHeaders={onApplyFillHeaders}
-              onApplyNormalizeRows={onApplyNormalizeRows}
-              onAutoFixDataSource={onAutoFixDataSource}
-              onExportDataSourceFile={onExportDataSourceFile}
-              onImportDataSourceFile={onImportDataSourceFile}
-              onRedoDataSource={onRedoDataSource}
-              onRemoveDataColumn={onRemoveDataColumn}
-              onRemoveDataRow={onRemoveDataRow}
-              onRemoveDataSource={onRemoveDataSource}
-              onSortDataRows={onSortDataRows}
-              onToggleDataEditorMode={onToggleDataEditorMode}
-              onToggleOpenDataEditor={onToggleOpenDataEditor}
-              onUndoDataSource={onUndoDataSource}
-              onUpdateDataCell={onUpdateDataCell}
-              onUpdateDataColumnName={onUpdateDataColumnName}
-              onUpdateDataSource={onUpdateDataSource}
-              parsed={selectedParsed}
-              selectedParameterName={parameterName}
-              source={selectedSource}
-              summary={selectedSourceSummary}
-              warnings={selectedSourceWarnings}
-            />
-          </tbody>
-        </table>
+      <div className="parameter-data-selected-view">
+        <ParameterDataEditor
+          dataEditorMode={dataEditorMode[selectedSourceIndex] || 'grid'}
+          history={dataSourceHistory[selectedSourceIndex]}
+          index={selectedSourceIndex}
+          key={`${selectedSource.name || 'source'}-${selectedSourceIndex}-${parameterName}`}
+          onAddDataColumn={onAddDataColumn}
+          onAddDataRow={onAddDataRow}
+          onApplyDedupeHeaders={onApplyDedupeHeaders}
+          onApplyFillHeaders={onApplyFillHeaders}
+          onApplyNormalizeRows={onApplyNormalizeRows}
+          onAutoFixDataSource={onAutoFixDataSource}
+          onExportDataSourceFile={onExportDataSourceFile}
+          onImportDataSourceFile={onImportDataSourceFile}
+          onRedoDataSource={onRedoDataSource}
+          onRemoveDataColumn={onRemoveDataColumn}
+          onRemoveDataRow={onRemoveDataRow}
+          onSortDataRows={onSortDataRows}
+          onToggleDataEditorMode={onToggleDataEditorMode}
+          onUndoDataSource={onUndoDataSource}
+          onUpdateDataCell={onUpdateDataCell}
+          onUpdateDataColumnName={onUpdateDataColumnName}
+          onUpdateDataSource={onUpdateDataSource}
+          parsed={selectedParsed}
+          selectedParameterName={parameterName}
+          source={selectedSource}
+          summary={selectedSourceSummary}
+          warnings={selectedSourceWarnings}
+        />
       </div>
     )
   }
 
+  const activeTab = detailTab === 'data' && isDataBacked ? 'data' : 'info'
+
   return (
     <div className="parameter-detail-panel">
       <div className="parameter-detail-header">
-        <div>
-          <span className="parameter-detail-kicker">{formatParameterChoiceLabel('type', parameterType)}</span>
+        <div className="parameter-detail-heading">
+          <span className="parameter-detail-kicker">Parameter</span>
           <h4>{parameterName}</h4>
           <span className="cell-mono">{selectedParameter.name ? `{{param.${selectedParameter.name}}}` : 'Name this parameter to generate a template token'}</span>
         </div>
         <button type="button" className="btn btn-sm btn-ghost danger" onClick={onRemoveParameter}>Remove</button>
       </div>
-      <div className="parameter-settings-grid parameter-detail-name-grid">
-        <label>
-          <span>Name</span>
-          <input value={selectedParameter.name || ''} onChange={event => onUpdateParameter('name', event.target.value)} placeholder="session_id" />
-        </label>
+      <div className="parameter-detail-tabs" role="tablist" aria-label="Parameter detail tabs">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'info'}
+          className={activeTab === 'info' ? 'active' : ''}
+          onClick={() => setDetailTab('info')}
+        >
+          Parameter Information
+        </button>
+        {isDataBacked && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'data'}
+            className={activeTab === 'data' ? 'active' : ''}
+            onClick={() => setDetailTab('data')}
+          >
+            Parameter Data
+          </button>
+        )}
       </div>
-      <ParameterSettingsBody
-        className="parameter-detail-settings"
-        onUpdate={onUpdateParameter}
-        onUpdateType={onUpdateParameterType}
-        parameter={selectedParameter}
-      />
+      <section className="parameter-detail-info" role="tabpanel" hidden={activeTab !== 'info'}>
+        <ParameterInfoPanel
+          columnIndexes={selectedColumnIndexes}
+          dataSources={script.data_sources || []}
+          onUpdateDataSource={onUpdateDataSource}
+          onUpdateParameter={onUpdateParameter}
+          onUpdateParameterType={onUpdateParameterType}
+          parameter={selectedParameter}
+          parsed={selectedParsed}
+          selectedSource={selectedSource}
+          selectedSourceIndex={selectedSourceIndex}
+          summary={selectedSourceSummary}
+        />
+      </section>
       {isDataBacked && (
-        <section className="parameter-detail-data">
+        <section className="parameter-detail-data" role="tabpanel" hidden={activeTab !== 'data'}>
           <div className="panel-title-row parameter-section-header">
             <div>
               <strong style={{ display: 'block', marginBottom: 4 }}>{selectedParameter.data_source || `${parameterName} Data`}</strong>
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Full mapped parameter file data for the selected parameter.</span>
             </div>
           </div>
+          {selectedSource && selectedSourceIndex !== null && (
+            <div className="parameter-data-file-controls">
+              <label>
+                <span>File Type</span>
+                <select aria-label={`File Type for ${parameterName}`} value={selectedSource.type || 'csv'} onChange={event => onUpdateDataSource(selectedSourceIndex, 'type', event.target.value)}>
+                  <option value="csv">csv</option>
+                  <option value="dat">dat</option>
+                </select>
+              </label>
+              <label>
+                <span>Delimiter</span>
+                <select aria-label={`Delimiter for ${parameterName}`} value={getDataSourceDelimiterChoice(selectedSource)} onChange={event => onUpdateDataSource(selectedSourceIndex, 'delimiter', getDataSourceDelimiterValue(event.target.value as DataSourceDelimiterChoice), true)}>
+                  <option value="auto">Auto ({inferDelimiter(selectedSource) === '\t' ? 'Tab' : 'Comma'})</option>
+                  <option value="comma">Comma</option>
+                  <option value="tab">Tab</option>
+                </select>
+              </label>
+              <label className="checkbox-label compact parameter-data-header-toggle">
+                <input
+                  type="checkbox"
+                  aria-label={`First row is header for ${parameterName}`}
+                  checked={selectedSource.first_row_header !== false}
+                  onChange={event => onUpdateDataSource(selectedSourceIndex, 'first_row_header', event.target.checked)}
+                />
+                <span>{selectedSource.first_row_header !== false ? 'First row is header' : 'No header row'}</span>
+              </label>
+            </div>
+          )}
           {renderDataSourceDetail()}
+        </section>
+      )}
+    </div>
+  )
+}
+
+interface ParameterInfoPanelProps {
+  columnIndexes: number[]
+  dataSources: DataSourceConfig[]
+  onUpdateDataSource: (idx: number, field: keyof DataSourceConfig, value: unknown, trackHistory?: boolean) => void
+  onUpdateParameter: (field: keyof ParameterConfig, value: unknown) => void
+  onUpdateParameterType: (value: string) => void
+  parameter: ParameterConfig
+  parsed: { columns: string[]; rows: string[][] } | null
+  selectedSource: DataSourceConfig | null
+  selectedSourceIndex: number | null
+  summary: { rows: number; columns: number } | null
+}
+
+function ParameterInfoPanel({
+  columnIndexes,
+  dataSources,
+  onUpdateDataSource,
+  onUpdateParameter,
+  onUpdateParameterType,
+  parameter,
+  parsed,
+  selectedSource,
+  selectedSourceIndex,
+  summary,
+}: ParameterInfoPanelProps) {
+  const parameterName = parameter.name || 'Parameter'
+  const parameterType = parameter.type || 'list'
+  const isDataBacked = parameterType === 'file' || parameterType === 'list'
+  const isGenerated = ['random_number', 'counter', 'current_iteration', 'random_string', 'uuid'].includes(parameterType)
+  const isTime = parameterType === 'date_time' || parameterType === 'timestamp' || parameterType === 'time'
+  const showsDataMapping = isDataBacked || parameterType === 'host'
+  const showsTypeOptions = isGenerated || isTime
+  const showsOutput = parameterType === 'counter' || parameterType === 'current_iteration' || parameterType === 'random_number' || parameter.seed !== undefined
+  const hasSource = Boolean(selectedSource && selectedSourceIndex !== null)
+  const showsStats = isDataBacked && hasSource && Boolean(parsed && summary)
+  const uniqueCount = parsed ? countUniqueColumnValues(parsed, columnIndexes) : 0
+  const mappedColumnLabel = parsed && columnIndexes.length
+    ? columnIndexes.map(idx => formatDataSourceColumnLabel(parsed.columns[idx], idx)).join(', ')
+    : '—'
+
+  const dataSourceNames = (dataSources || []).map(ds => ds.name).filter(Boolean)
+  const currentDataSource = parameter.data_source || ''
+  const dataSourceOptions = currentDataSource && !dataSourceNames.includes(currentDataSource)
+    ? [currentDataSource, ...dataSourceNames]
+    : dataSourceNames
+  const columnNames = parsed?.columns || []
+  const currentColumn = parameter.column || ''
+  const columnOptions = currentColumn && !columnNames.includes(currentColumn)
+    ? [currentColumn, ...columnNames]
+    : columnNames
+  const sourceFileLabel = selectedSource?.path || selectedSource?.name || currentDataSource || '—'
+
+  const handleStrategyChange = (value: string) => {
+    onUpdateParameter('selection', value)
+    if (selectedSourceIndex !== null) onUpdateDataSource(selectedSourceIndex, 'strategy', value, true)
+  }
+
+  return (
+    <div className="parameter-info-panel">
+      <section className="parameter-info-group">
+        <h5 className="parameter-info-group-title">Identity</h5>
+        <table className="parameter-info-table">
+          <tbody>
+            <tr>
+              <th scope="row">Parameter Name</th>
+              <td><input value={parameter.name || ''} onChange={event => onUpdateParameter('name', event.target.value)} placeholder="session_id" /></td>
+            </tr>
+            <tr>
+              <th scope="row">Parameter Type</th>
+              <td>
+                <select aria-label={`Parameter Type for ${parameterName}`} value={parameterType} onChange={event => onUpdateParameterType(event.target.value)}>
+                  {PARAMETER_CHOICE_DEFINITIONS.type.options.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">Template Token</th>
+              <td><span className="parameter-info-readonly cell-mono">{parameter.name ? `{{param.${parameter.name}}}` : 'Name this parameter to generate a template token'}</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section className="parameter-info-group">
+        <h5 className="parameter-info-group-title">Behavior</h5>
+        <table className="parameter-info-table">
+          <tbody>
+            <tr>
+              <th scope="row">Update Cadence</th>
+              <td>
+                <select aria-label={`Update Cadence for ${parameterName}`} value={getParameterChoiceValue(parameter, 'update')} onChange={event => onUpdateParameter('update', event.target.value)}>
+                  {PARAMETER_CHOICE_DEFINITIONS.update.options.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </td>
+            </tr>
+            {isDataBacked && (
+              <>
+                <tr>
+                  <th scope="row">Iteration Strategy</th>
+                  <td>
+                    <select aria-label={`Iteration Strategy for ${parameterName}`} value={getParameterChoiceValue(parameter, 'selection')} onChange={event => handleStrategyChange(event.target.value)}>
+                      {PARAMETER_CHOICE_DEFINITIONS.selection.options.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">On Exhaustion</th>
+                  <td>
+                    <select aria-label={`On Exhaustion for ${parameterName}`} value={getParameterChoiceValue(parameter, 'on_exhaustion')} onChange={event => onUpdateParameter('on_exhaustion', event.target.value)}>
+                      {PARAMETER_CHOICE_DEFINITIONS.on_exhaustion.options.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              </>
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      {showsDataMapping && (
+        <section className="parameter-info-group">
+          <h5 className="parameter-info-group-title">Data Mapping</h5>
+          <table className="parameter-info-table">
+            <tbody>
+              {isDataBacked && (
+                <>
+                  <tr>
+                    <th scope="row">Data Source</th>
+                    <td>
+                      {dataSourceOptions.length > 0 ? (
+                        <select aria-label={`Data Source for ${parameterName}`} value={currentDataSource} onChange={event => onUpdateParameter('data_source', event.target.value)}>
+                          <option value="">— Select source —</option>
+                          {dataSourceOptions.map(name => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input value={currentDataSource} onChange={event => onUpdateParameter('data_source', event.target.value)} placeholder="users" />
+                      )}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Column</th>
+                    <td>
+                      {columnOptions.length > 0 ? (
+                        <select aria-label={`Column for ${parameterName}`} value={currentColumn} onChange={event => onUpdateParameter('column', event.target.value)}>
+                          <option value="">— Select column —</option>
+                          {columnOptions.map(name => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input value={currentColumn} onChange={event => onUpdateParameter('column', event.target.value)} placeholder="column name" />
+                      )}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Source File</th>
+                    <td><span className="parameter-info-readonly cell-mono">{sourceFileLabel}</span></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Same Line As</th>
+                    <td><input value={parameter.same_line_as || ''} onChange={event => onUpdateParameter('same_line_as', event.target.value.trim() || undefined)} placeholder="optional parameter name" /></td>
+                  </tr>
+                </>
+              )}
+              {(parameterType === 'list' || parameterType === 'host') && (
+                <tr>
+                  <th scope="row">{parameterType === 'host' ? 'Host Overrides' : 'Inline Values'}</th>
+                  <td>
+                    <input
+                      value={(parameter.values || []).join(', ')}
+                      onChange={event => onUpdateParameter('values', parseParameterListInput(event.target.value))}
+                      placeholder={parameterType === 'host' ? 'host-a, host-b' : 'value1, value2'}
+                    />
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {showsTypeOptions && (
+        <section className="parameter-info-group">
+          <h5 className="parameter-info-group-title">Type Options</h5>
+          <table className="parameter-info-table">
+            <tbody>
+              {parameterType === 'random_number' && (
+                <>
+                  <tr><th scope="row">Minimum</th><td><input type="number" value={numberInputValue(parameter.min, 0)} onChange={event => onUpdateParameter('min', Number(event.target.value))} placeholder="min" /></td></tr>
+                  <tr><th scope="row">Maximum</th><td><input type="number" value={numberInputValue(parameter.max, 100)} onChange={event => onUpdateParameter('max', Number(event.target.value))} placeholder="max" /></td></tr>
+                </>
+              )}
+              {(parameterType === 'counter' || parameterType === 'current_iteration') && (
+                <>
+                  <tr><th scope="row">Start</th><td><input type="number" value={numberInputValue(parameter.start, parameterType === 'current_iteration' ? 1 : 0)} onChange={event => onUpdateParameter('start', Number(event.target.value))} placeholder="start" /></td></tr>
+                  <tr><th scope="row">End</th><td><input type="number" value={numberInputValue(parameter.end, 0)} onChange={event => onUpdateParameter('end', Number(event.target.value))} placeholder="end (optional)" /></td></tr>
+                  <tr><th scope="row">Step</th><td><input type="number" value={numberInputValue(parameter.step, 1)} onChange={event => onUpdateParameter('step', Number(event.target.value))} placeholder="step" /></td></tr>
+                </>
+              )}
+              {parameterType === 'random_string' && (
+                <>
+                  <tr><th scope="row">Length</th><td><input type="number" value={numberInputValue(parameter.length, 12)} onChange={event => onUpdateParameter('length', Number(event.target.value))} placeholder="length" /></td></tr>
+                  <tr><th scope="row">Charset</th><td><input value={parameter.charset || ''} onChange={event => onUpdateParameter('charset', event.target.value)} placeholder="charset override" /></td></tr>
+                </>
+              )}
+              {parameterType === 'uuid' && (
+                <tr><td colSpan={2}><p className="parameter-settings-empty">UUID values are generated automatically using the selected update cadence.</p></td></tr>
+              )}
+              {isTime && (
+                <>
+                  <tr>
+                    <th scope="row">Format</th>
+                    <td>
+                      {parameterType === 'timestamp' ? (
+                        <select value={parameter.format || 'iso8601'} onChange={event => onUpdateParameter('format', event.target.value)}>
+                          <option value="unix">unix</option>
+                          <option value="unix_ms">unix_ms</option>
+                          <option value="iso8601">iso8601</option>
+                          <option value="rfc3339">rfc3339</option>
+                          <option value="rfc3339_nano">rfc3339_nano</option>
+                        </select>
+                      ) : (
+                        <input value={parameter.format || ''} onChange={event => onUpdateParameter('format', event.target.value)} placeholder="Go time layout" />
+                      )}
+                    </td>
+                  </tr>
+                  <tr><th scope="row">Timezone</th><td><input value={parameter.timezone || ''} onChange={event => onUpdateParameter('timezone', event.target.value)} placeholder="UTC, America/New_York" /></td></tr>
+                  <tr><th scope="row">Offset Seconds</th><td><input type="number" value={numberInputValue(parameter.offset_seconds, 0)} onChange={event => onUpdateParameter('offset_seconds', Number(event.target.value))} placeholder="offset seconds" /></td></tr>
+                </>
+              )}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {showsOutput && (
+        <section className="parameter-info-group">
+          <h5 className="parameter-info-group-title">Output &amp; Reproducibility</h5>
+          <table className="parameter-info-table">
+            <tbody>
+              {(parameterType === 'counter' || parameterType === 'current_iteration' || parameterType === 'random_number') && (
+                <>
+                  <tr><th scope="row">Pad Width</th><td><input type="number" value={numberInputValue(parameter.pad_width, 0)} onChange={event => onUpdateParameter('pad_width', Number(event.target.value))} placeholder="pad width" /></td></tr>
+                  <tr><th scope="row">Pad Character</th><td><input value={parameter.pad_char || ''} onChange={event => onUpdateParameter('pad_char', event.target.value)} placeholder="pad char" /></td></tr>
+                </>
+              )}
+              <tr>
+                <th scope="row">Seed</th>
+                <td>
+                  <input
+                    type="number"
+                    value={numberInputValue(parameter.seed, '')}
+                    onChange={event => updateOptionalNumber(onUpdateParameter, 'seed', event.target.value)}
+                    placeholder="seed (optional)"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {showsStats && (
+        <section className="parameter-info-group">
+          <h5 className="parameter-info-group-title">Data Statistics</h5>
+          <table className="parameter-info-table parameter-info-stats-table">
+            <tbody>
+              <tr><th scope="row">Record Count</th><td className="cell-mono parameter-info-stat-value">{summary?.rows ?? 0}</td></tr>
+              <tr><th scope="row">Unique Records</th><td className="cell-mono parameter-info-stat-value">{uniqueCount}</td></tr>
+              <tr><th scope="row">Columns</th><td className="cell-mono parameter-info-stat-value">{summary?.columns ?? 0}</td></tr>
+              <tr><th scope="row">Mapped Column</th><td className="cell-mono">{mappedColumnLabel}</td></tr>
+            </tbody>
+          </table>
         </section>
       )}
     </div>
@@ -10747,45 +11071,17 @@ function ParameterDataSourceRows({
   summary,
   warnings,
 }: ParameterDataSourceRowsProps) {
-  const [sortState, setSortState] = useState<{ column: number; direction: DataSourceSortDirection } | null>(null)
-  const [filterText, setFilterText] = useState('')
-  const [filterColumn, setFilterColumn] = useState<number | 'all'>('all')
   const delimiterChoice = getDataSourceDelimiterChoice(source)
   const sourceLabel = source.name || `Source ${index + 1}`
   const isFocusedParameterView = Boolean(focusedColumnIndexes?.length)
   const focusedParameterLabel = selectedParameterNames?.length
     ? selectedParameterNames.join(', ')
     : selectedParameterName || 'Selected parameter'
-  const focusedDataTitle = selectedParameterNames && selectedParameterNames.length > 1
-    ? `${sourceLabel} Parameter Data`
-    : `${focusedParameterLabel} Data`
   const visibleColumnIndexes = isFocusedParameterView
     ? (focusedColumnIndexes || []).filter(colIdx => colIdx >= 0 && colIdx < parsed.columns.length)
     : parsed.columns.map((_, colIdx) => colIdx)
-  const effectiveFilterColumn = filterColumn === 'all' || visibleColumnIndexes.includes(filterColumn) ? filterColumn : 'all'
-  const filteredRows = parsed.rows
-    .map((row, rowIdx) => ({ row, rowIdx }))
-    .filter(({ row }) => dataSourceRowMatchesFilter(row, filterText, effectiveFilterColumn))
-  const focusedRawData = isFocusedParameterView
-    ? stringifyFocusedParameterData(source, parsed, visibleColumnIndexes)
-    : source.inline_data || ''
   const updateDelimiterChoice = (choice: DataSourceDelimiterChoice) => {
     onUpdateDataSource(index, 'delimiter', getDataSourceDelimiterValue(choice), true)
-  }
-  const updateRawData = (value: string) => {
-    onUpdateDataSource(
-      index,
-      'inline_data',
-      isFocusedParameterView ? mergeFocusedParameterData(source, parsed, visibleColumnIndexes, value) : value,
-      true,
-    )
-  }
-  const sortColumn = (colIdx: number) => {
-    const nextDirection: DataSourceSortDirection = sortState?.column === colIdx && sortState.direction === 'asc'
-      ? 'desc'
-      : 'asc'
-    setSortState({ column: colIdx, direction: nextDirection })
-    onSortDataRows(index, colIdx, nextDirection)
   }
 
   return (
@@ -10879,202 +11175,331 @@ function ParameterDataSourceRows({
       </tr>
       {isEditorOpen && (
         <tr className="parameter-editor-row">
-          <td colSpan={isFocusedParameterView ? 9 : 9}>
-            <div className="parameter-editor">
-              <div className="parameter-editor-header">
-                <strong>{isFocusedParameterView ? focusedDataTitle : sourceLabel}</strong>
-                <div className="parameter-editor-meta">
-                  <span className="cell-mono">
-                    {summary.rows} rows · {visibleColumnIndexes.length || summary.columns} {isFocusedParameterView ? 'selected ' : ''}column{(visibleColumnIndexes.length || summary.columns) === 1 ? '' : 's'} · {formatDataSourceDelimiterLabel(source)}
-                  </span>
-                  <div className="parameter-editor-controls">
-                    <button className="btn btn-sm btn-ghost" disabled={!history?.past?.length} onClick={() => onUndoDataSource(index)}>Undo</button>
-                    <button className="btn btn-sm btn-ghost" disabled={!history?.future?.length} onClick={() => onRedoDataSource(index)}>Redo</button>
-                    <button className="btn btn-sm btn-ghost" onClick={() => onToggleDataEditorMode(index)}>
-                      {dataEditorMode === 'grid' ? 'Raw Mode' : 'Grid Mode'}
-                    </button>
-                    <label className="btn btn-sm btn-ghost file-btn">
-                      Import
-                      <input
-                        type="file"
-                        accept=".csv,.dat,.txt"
-                        onChange={e => {
-                          const file = e.target.files?.[0] || null
-                          onImportDataSourceFile(index, file)
-                          e.currentTarget.value = ''
-                        }}
-                      />
-                    </label>
-                    {!isFocusedParameterView && (
-                      <button className="btn btn-sm btn-ghost" onClick={() => onExportDataSourceFile(source, index)}>Export</button>
-                    )}
-                  </div>
-                </div>
-              </div>
-              {warnings.length > 0 && (
-                <div className="parameter-validation">
-                  <div className="parameter-validation-header">
-                    <strong>Data Warnings</strong>
-                    <div className="parameter-validation-actions">
-                      <button className="btn btn-sm btn-ghost" onClick={() => onApplyFillHeaders(index)}>Fill Headers</button>
-                      <button className="btn btn-sm btn-ghost" onClick={() => onApplyDedupeHeaders(index)}>Deduplicate</button>
-                      <button className="btn btn-sm btn-ghost" onClick={() => onApplyNormalizeRows(index)}>Normalize Rows</button>
-                      <button className="btn btn-sm btn-ghost" onClick={() => onAutoFixDataSource(index)}>Auto-Fix All</button>
-                    </div>
-                  </div>
-                  {warnings.map((warning, warningIdx) => (
-                    <div key={`${index}-warn-${warningIdx}`} className="parameter-validation-item">{warning}</div>
-                  ))}
-                </div>
-              )}
-              {dataEditorMode === 'grid' ? (
-                <div className="parameter-grid-wrap">
-                  <div className="parameter-grid-actions">
-                    <div className="parameter-grid-action-buttons">
-                      <button className="btn btn-sm btn-ghost" onClick={() => onAddDataRow(index)}>+ Row</button>
-                      {!isFocusedParameterView && (
-                        <button className="btn btn-sm btn-ghost" onClick={() => onAddDataColumn(index)}>+ Column</button>
-                      )}
-                    </div>
-                    <div className="parameter-grid-filters">
-                      <label>
-                        <span>Search</span>
-                        <input
-                          aria-label={`Search rows for ${sourceLabel}`}
-                          value={filterText}
-                          onChange={event => setFilterText(event.target.value)}
-                          placeholder="Find row values"
-                        />
-                      </label>
-                      <label>
-                        <span>Column</span>
-                        <select
-                          aria-label={`Filter column for ${sourceLabel}`}
-                          value={effectiveFilterColumn === 'all' ? 'all' : String(effectiveFilterColumn)}
-                          onChange={event => setFilterColumn(event.target.value === 'all' ? 'all' : Number(event.target.value))}
-                        >
-                          <option value="all">All columns</option>
-                          {visibleColumnIndexes.map((colIdx) => {
-                            const column = parsed.columns[colIdx]
-                            return (
-                            <option key={`${index}-filter-${colIdx}`} value={colIdx}>
-                              {formatDataSourceColumnLabel(column, colIdx)}
-                            </option>
-                            )
-                          })}
-                        </select>
-                      </label>
-                      <span className="parameter-grid-filter-count">
-                        {filteredRows.length}/{parsed.rows.length} rows
-                      </span>
-                      {filterText && (
-                        <button className="btn btn-sm btn-ghost" onClick={() => setFilterText('')}>Clear</button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="parameter-grid-scroll">
-                    <table className="parameter-grid">
-                      <thead>
-                        <tr>
-                          <th className="parameter-grid-row-action" aria-label="Row actions" />
-                          <th>#</th>
-                          {visibleColumnIndexes.map((colIdx) => {
-                            const column = parsed.columns[colIdx]
-                            const isSortedColumn = sortState?.column === colIdx
-                            const columnLabel = formatDataSourceColumnLabel(column, colIdx)
-                            const nextSortDirection: DataSourceSortDirection = isSortedColumn && sortState?.direction === 'asc' ? 'desc' : 'asc'
-                            return (
-                              <th
-                                key={`${index}-h-${colIdx}`}
-                                aria-sort={isSortedColumn ? (sortState.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
-                              >
-                                <div className="parameter-grid-head">
-                                  {isFocusedParameterView ? (
-                                    <span>{columnLabel}</span>
-                                  ) : (
-                                    <input
-                                      value={column}
-                                      onChange={e => onUpdateDataColumnName(index, colIdx, e.target.value)}
-                                      placeholder={`col_${colIdx + 1}`}
-                                    />
-                                  )}
-                                  <div className="parameter-grid-head-actions">
-                                    <button
-                                      className={`btn-icon parameter-grid-sort ${isSortedColumn ? 'active' : ''}`}
-                                      onClick={() => sortColumn(colIdx)}
-                                      title={`Sort ${columnLabel} ${nextSortDirection === 'asc' ? 'ascending' : 'descending'}`}
-                                      aria-label={`Sort ${columnLabel} ${nextSortDirection === 'asc' ? 'ascending' : 'descending'}`}
-                                    >
-                                      {isSortedColumn ? (sortState.direction === 'asc' ? '↑' : '↓') : '↕'}
-                                    </button>
-                                    {!isFocusedParameterView && (
-                                      <button className="btn-icon danger" onClick={() => onRemoveDataColumn(index, colIdx)} title="Remove column">✕</button>
-                                    )}
-                                  </div>
-                                </div>
-                              </th>
-                            )
-                          })}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredRows.map(({ row, rowIdx }) => (
-                          <tr key={`${index}-r-${rowIdx}`}>
-                            <td className="parameter-grid-row-action">
-                              <button
-                                className="btn-icon danger"
-                                onClick={() => onRemoveDataRow(index, rowIdx)}
-                                title="Remove row"
-                                aria-label={`Remove row ${rowIdx + 1}`}
-                              >
-                                ✕
-                              </button>
-                            </td>
-                            <td className="parameter-grid-index">
-                              {rowIdx + 1}
-                            </td>
-                            {visibleColumnIndexes.map((colIdx) => (
-                              <td key={`${index}-c-${rowIdx}-${colIdx}`}>
-                                <input
-                                  value={row[colIdx] || ''}
-                                  onChange={e => onUpdateDataCell(index, rowIdx, colIdx, e.target.value)}
-                                />
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                        {parsed.rows.length === 0 && (
-                          <tr>
-                            <td colSpan={visibleColumnIndexes.length + 2} className="parameter-grid-empty">
-                              No rows yet. Use + Row to add parameter records.
-                            </td>
-                          </tr>
-                        )}
-                        {parsed.rows.length > 0 && filteredRows.length === 0 && (
-                          <tr>
-                            <td colSpan={visibleColumnIndexes.length + 2} className="parameter-grid-empty">
-                              No rows match the current filter.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : (
-                <textarea
-                  aria-label={`Raw data for ${sourceLabel}`}
-                  value={focusedRawData}
-                  onChange={e => updateRawData(e.target.value)}
-                  placeholder={source.first_row_header !== false ? 'username,password\nalice,pass1\nbob,pass2' : 'alice,pass1\nbob,pass2'}
-                  spellCheck={false}
-                />
-              )}
-            </div>
+          <td colSpan={9}>
+            <ParameterDataEditor
+              dataEditorMode={dataEditorMode}
+              focusedColumnIndexes={focusedColumnIndexes}
+              history={history}
+              index={index}
+              onAddDataColumn={onAddDataColumn}
+              onAddDataRow={onAddDataRow}
+              onApplyDedupeHeaders={onApplyDedupeHeaders}
+              onApplyFillHeaders={onApplyFillHeaders}
+              onApplyNormalizeRows={onApplyNormalizeRows}
+              onAutoFixDataSource={onAutoFixDataSource}
+              onExportDataSourceFile={onExportDataSourceFile}
+              onImportDataSourceFile={onImportDataSourceFile}
+              onRedoDataSource={onRedoDataSource}
+              onRemoveDataColumn={onRemoveDataColumn}
+              onRemoveDataRow={onRemoveDataRow}
+              onSortDataRows={onSortDataRows}
+              onToggleDataEditorMode={onToggleDataEditorMode}
+              onUndoDataSource={onUndoDataSource}
+              onUpdateDataCell={onUpdateDataCell}
+              onUpdateDataColumnName={onUpdateDataColumnName}
+              onUpdateDataSource={onUpdateDataSource}
+              parsed={parsed}
+              selectedParameterName={selectedParameterName}
+              selectedParameterNames={selectedParameterNames}
+              source={source}
+              summary={summary}
+              warnings={warnings}
+            />
           </td>
         </tr>
       )}
     </>
+  )
+}
+
+interface ParameterDataEditorProps {
+  dataEditorMode: 'grid' | 'raw'
+  focusedColumnIndexes?: number[]
+  history?: DataSourceHistory
+  index: number
+  onAddDataColumn: (idx: number) => void
+  onAddDataRow: (idx: number) => void
+  onApplyDedupeHeaders: (idx: number) => void
+  onApplyFillHeaders: (idx: number) => void
+  onApplyNormalizeRows: (idx: number) => void
+  onAutoFixDataSource: (idx: number) => void
+  onExportDataSourceFile: (source: DataSourceConfig, idx: number) => void
+  onImportDataSourceFile: (idx: number, file: File | null) => void
+  onRedoDataSource: (idx: number) => void
+  onRemoveDataColumn: (idx: number, colIdx: number) => void
+  onRemoveDataRow: (idx: number, rowIdx: number) => void
+  onSortDataRows: (idx: number, colIdx: number, direction: DataSourceSortDirection) => void
+  onToggleDataEditorMode: (idx: number) => void
+  onUndoDataSource: (idx: number) => void
+  onUpdateDataCell: (idx: number, rowIdx: number, colIdx: number, value: string) => void
+  onUpdateDataColumnName: (idx: number, colIdx: number, value: string) => void
+  onUpdateDataSource: (idx: number, field: keyof DataSourceConfig, value: unknown, trackHistory?: boolean) => void
+  parsed: { columns: string[]; rows: string[][] }
+  selectedParameterName?: string
+  selectedParameterNames?: string[]
+  source: DataSourceConfig
+  summary: { rows: number; columns: number }
+  warnings: string[]
+}
+
+function ParameterDataEditor({
+  dataEditorMode,
+  focusedColumnIndexes,
+  history,
+  index,
+  onAddDataColumn,
+  onAddDataRow,
+  onApplyDedupeHeaders,
+  onApplyFillHeaders,
+  onApplyNormalizeRows,
+  onAutoFixDataSource,
+  onExportDataSourceFile,
+  onImportDataSourceFile,
+  onRedoDataSource,
+  onRemoveDataColumn,
+  onRemoveDataRow,
+  onSortDataRows,
+  onToggleDataEditorMode,
+  onUndoDataSource,
+  onUpdateDataCell,
+  onUpdateDataColumnName,
+  onUpdateDataSource,
+  parsed,
+  selectedParameterName,
+  selectedParameterNames,
+  source,
+  summary,
+  warnings,
+}: ParameterDataEditorProps) {
+  const [sortState, setSortState] = useState<{ column: number; direction: DataSourceSortDirection } | null>(null)
+  const [filterText, setFilterText] = useState('')
+  const [filterColumn, setFilterColumn] = useState<number | 'all'>('all')
+  const sourceLabel = source.name || `Source ${index + 1}`
+  const isFocusedParameterView = Boolean(focusedColumnIndexes?.length)
+  const focusedParameterLabel = selectedParameterNames?.length
+    ? selectedParameterNames.join(', ')
+    : selectedParameterName || 'Selected parameter'
+  const focusedDataTitle = selectedParameterNames && selectedParameterNames.length > 1
+    ? `${sourceLabel} Parameter Data`
+    : `${focusedParameterLabel} Data`
+  const visibleColumnIndexes = isFocusedParameterView
+    ? (focusedColumnIndexes || []).filter(colIdx => colIdx >= 0 && colIdx < parsed.columns.length)
+    : parsed.columns.map((_, colIdx) => colIdx)
+  const effectiveFilterColumn = filterColumn === 'all' || visibleColumnIndexes.includes(filterColumn) ? filterColumn : 'all'
+  const filteredRows = parsed.rows
+    .map((row, rowIdx) => ({ row, rowIdx }))
+    .filter(({ row }) => dataSourceRowMatchesFilter(row, filterText, effectiveFilterColumn))
+  const focusedRawData = isFocusedParameterView
+    ? stringifyFocusedParameterData(source, parsed, visibleColumnIndexes)
+    : source.inline_data || ''
+  const updateRawData = (value: string) => {
+    onUpdateDataSource(
+      index,
+      'inline_data',
+      isFocusedParameterView ? mergeFocusedParameterData(source, parsed, visibleColumnIndexes, value) : value,
+      true,
+    )
+  }
+  const sortColumn = (colIdx: number) => {
+    const nextDirection: DataSourceSortDirection = sortState?.column === colIdx && sortState.direction === 'asc'
+      ? 'desc'
+      : 'asc'
+    setSortState({ column: colIdx, direction: nextDirection })
+    onSortDataRows(index, colIdx, nextDirection)
+  }
+
+  return (
+    <div className="parameter-editor">
+      <div className="parameter-editor-header">
+        <strong>{isFocusedParameterView ? focusedDataTitle : sourceLabel}</strong>
+        <div className="parameter-editor-meta">
+          <span className="cell-mono">
+            {summary.rows} rows · {visibleColumnIndexes.length || summary.columns} {isFocusedParameterView ? 'selected ' : ''}column{(visibleColumnIndexes.length || summary.columns) === 1 ? '' : 's'} · {formatDataSourceDelimiterLabel(source)}
+          </span>
+          <div className="parameter-editor-controls">
+            <button className="btn btn-sm btn-ghost" disabled={!history?.past?.length} onClick={() => onUndoDataSource(index)}>Undo</button>
+            <button className="btn btn-sm btn-ghost" disabled={!history?.future?.length} onClick={() => onRedoDataSource(index)}>Redo</button>
+            <button className="btn btn-sm btn-ghost" onClick={() => onToggleDataEditorMode(index)}>
+              {dataEditorMode === 'grid' ? 'Raw Mode' : 'Grid Mode'}
+            </button>
+            <label className="btn btn-sm btn-ghost file-btn">
+              Import
+              <input
+                type="file"
+                accept=".csv,.dat,.txt"
+                onChange={e => {
+                  const file = e.target.files?.[0] || null
+                  onImportDataSourceFile(index, file)
+                  e.currentTarget.value = ''
+                }}
+              />
+            </label>
+            {!isFocusedParameterView && (
+              <button className="btn btn-sm btn-ghost" onClick={() => onExportDataSourceFile(source, index)}>Export</button>
+            )}
+          </div>
+        </div>
+      </div>
+      {warnings.length > 0 && (
+        <div className="parameter-validation">
+          <div className="parameter-validation-header">
+            <strong>Data Warnings</strong>
+            <div className="parameter-validation-actions">
+              <button className="btn btn-sm btn-ghost" onClick={() => onApplyFillHeaders(index)}>Fill Headers</button>
+              <button className="btn btn-sm btn-ghost" onClick={() => onApplyDedupeHeaders(index)}>Deduplicate</button>
+              <button className="btn btn-sm btn-ghost" onClick={() => onApplyNormalizeRows(index)}>Normalize Rows</button>
+              <button className="btn btn-sm btn-ghost" onClick={() => onAutoFixDataSource(index)}>Auto-Fix All</button>
+            </div>
+          </div>
+          {warnings.map((warning, warningIdx) => (
+            <div key={`${index}-warn-${warningIdx}`} className="parameter-validation-item">{warning}</div>
+          ))}
+        </div>
+      )}
+      {dataEditorMode === 'grid' ? (
+        <div className="parameter-grid-wrap">
+          <div className="parameter-grid-actions">
+            <div className="parameter-grid-action-buttons">
+              <button className="btn btn-sm btn-ghost" onClick={() => onAddDataRow(index)}>+ Row</button>
+              {!isFocusedParameterView && (
+                <button className="btn btn-sm btn-ghost" onClick={() => onAddDataColumn(index)}>+ Column</button>
+              )}
+            </div>
+            <div className="parameter-grid-filters">
+              <label>
+                <span>Search</span>
+                <input
+                  aria-label={`Search rows for ${sourceLabel}`}
+                  value={filterText}
+                  onChange={event => setFilterText(event.target.value)}
+                  placeholder="Find row values"
+                />
+              </label>
+              <label>
+                <span>Column</span>
+                <select
+                  aria-label={`Filter column for ${sourceLabel}`}
+                  value={effectiveFilterColumn === 'all' ? 'all' : String(effectiveFilterColumn)}
+                  onChange={event => setFilterColumn(event.target.value === 'all' ? 'all' : Number(event.target.value))}
+                >
+                  <option value="all">All columns</option>
+                  {visibleColumnIndexes.map((colIdx) => {
+                    const column = parsed.columns[colIdx]
+                    return (
+                    <option key={`${index}-filter-${colIdx}`} value={colIdx}>
+                      {formatDataSourceColumnLabel(column, colIdx)}
+                    </option>
+                    )
+                  })}
+                </select>
+              </label>
+              <span className="parameter-grid-filter-count">
+                {filteredRows.length}/{parsed.rows.length} rows
+              </span>
+              {filterText && (
+                <button className="btn btn-sm btn-ghost" onClick={() => setFilterText('')}>Clear</button>
+              )}
+            </div>
+          </div>
+          <div className="parameter-grid-scroll">
+            <table className="parameter-grid">
+              <thead>
+                <tr>
+                  <th className="parameter-grid-row-action" aria-label="Row actions" />
+                  <th>#</th>
+                  {visibleColumnIndexes.map((colIdx) => {
+                    const column = parsed.columns[colIdx]
+                    const isSortedColumn = sortState?.column === colIdx
+                    const columnLabel = formatDataSourceColumnLabel(column, colIdx)
+                    const nextSortDirection: DataSourceSortDirection = isSortedColumn && sortState?.direction === 'asc' ? 'desc' : 'asc'
+                    return (
+                      <th
+                        key={`${index}-h-${colIdx}`}
+                        aria-sort={isSortedColumn ? (sortState.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+                      >
+                        <div className="parameter-grid-head">
+                          {isFocusedParameterView ? (
+                            <span>{columnLabel}</span>
+                          ) : (
+                            <input
+                              value={column}
+                              onChange={e => onUpdateDataColumnName(index, colIdx, e.target.value)}
+                              placeholder={`col_${colIdx + 1}`}
+                            />
+                          )}
+                          <div className="parameter-grid-head-actions">
+                            <button
+                              className={`btn-icon parameter-grid-sort ${isSortedColumn ? 'active' : ''}`}
+                              onClick={() => sortColumn(colIdx)}
+                              title={`Sort ${columnLabel} ${nextSortDirection === 'asc' ? 'ascending' : 'descending'}`}
+                              aria-label={`Sort ${columnLabel} ${nextSortDirection === 'asc' ? 'ascending' : 'descending'}`}
+                            >
+                              {isSortedColumn ? (sortState.direction === 'asc' ? '↑' : '↓') : '↕'}
+                            </button>
+                            {!isFocusedParameterView && (
+                              <button className="btn-icon danger" onClick={() => onRemoveDataColumn(index, colIdx)} title="Remove column">✕</button>
+                            )}
+                          </div>
+                        </div>
+                      </th>
+                    )
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.map(({ row, rowIdx }) => (
+                  <tr key={`${index}-r-${rowIdx}`}>
+                    <td className="parameter-grid-row-action">
+                      <button
+                        className="btn-icon danger"
+                        onClick={() => onRemoveDataRow(index, rowIdx)}
+                        title="Remove row"
+                        aria-label={`Remove row ${rowIdx + 1}`}
+                      >
+                        ✕
+                      </button>
+                    </td>
+                    <td className="parameter-grid-index">
+                      {rowIdx + 1}
+                    </td>
+                    {visibleColumnIndexes.map((colIdx) => (
+                      <td key={`${index}-c-${rowIdx}-${colIdx}`}>
+                        <input
+                          value={row[colIdx] || ''}
+                          onChange={e => onUpdateDataCell(index, rowIdx, colIdx, e.target.value)}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                {parsed.rows.length === 0 && (
+                  <tr>
+                    <td colSpan={visibleColumnIndexes.length + 2} className="parameter-grid-empty">
+                      No rows yet. Use + Row to add parameter records.
+                    </td>
+                  </tr>
+                )}
+                {parsed.rows.length > 0 && filteredRows.length === 0 && (
+                  <tr>
+                    <td colSpan={visibleColumnIndexes.length + 2} className="parameter-grid-empty">
+                      No rows match the current filter.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <textarea
+          aria-label={`Raw data for ${sourceLabel}`}
+          value={focusedRawData}
+          onChange={e => updateRawData(e.target.value)}
+          placeholder={source.first_row_header !== false ? 'username,password\nalice,pass1\nbob,pass2' : 'alice,pass1\nbob,pass2'}
+          spellCheck={false}
+        />
+      )}
+    </div>
   )
 }
 

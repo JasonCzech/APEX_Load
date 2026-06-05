@@ -167,6 +167,38 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     setView({ page })
   }
 
+  const appHistoryDepth = useRef(0)
+  useEffect(() => {
+    appHistoryDepth.current += 1
+  }, [view])
+
+  const navigateBack = useCallback((fallbackPage: NavPage = 'dashboard') => {
+    if (appHistoryDepth.current > 1) {
+      window.history.back()
+    } else {
+      setView({ page: fallbackPage })
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        (event.target as HTMLElement).isContentEditable ||
+        event.defaultPrevented
+      ) {
+        return
+      }
+      if (event.key === 'Backspace') {
+        event.preventDefault()
+        navigateBack('dashboard')
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKeyDown)
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [navigateBack])
+
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
 
@@ -426,7 +458,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             <TestExecution
               testId={view.testId}
               history={metricsHistory[view.testId] || []}
-              onBack={() => setView({ page: 'tests' })}
+              onBack={() => navigateBack('tests')}
               onEditScript={navigateToScriptEdit}
               onSelectTest={navigateToTest}
             />
