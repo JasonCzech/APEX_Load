@@ -1808,6 +1808,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     } catch { /* storage may be unavailable */ }
   }, [centerTabsHydratedKey, centerTabsState, centerTabsStorageKey])
   const isParameterDataTabActive = centerTabsState.activeTabId === 'parameter-data'
+  const parameterMergeSummary = useMemo(() => summarizeParameterSourceMerge(script), [script])
   useEffect(() => {
     if (!isParameterDataTabActive) return
     const parameterCount = script.parameters?.length || 0
@@ -7816,7 +7817,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 </div>
                 {isParameterDataTabActive ? (
                   <ParameterSidebar
+                    mergeSummary={parameterMergeSummary}
                     onAddParameter={addParameter}
+                    onMergeParameterSources={mergeParameterSourceFiles}
                     onSelectParameter={selectParameterData}
                     parameters={script.parameters || []}
                     selectedParameterIdx={selectedParameterIdx}
@@ -8136,12 +8139,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               onClearPendingParameterDraft={clearPendingParameterDraft}
               onExportDataSourceFile={exportDataSourceFile}
               onImportDataSourceFile={importDataSourceFile}
-              onMergeParameterSources={mergeParameterSourceFiles}
               onRedoDataSource={redoDataSource}
               onRemoveDataColumn={removeDataColumn}
               onRemoveDataRow={removeDataRow}
               onRemoveDataSource={removeDataSource}
-              onRemoveParameter={removeParameter}
               onSortDataRows={sortDataRows}
               onOpenDataEditor={openDataEditorAt}
               onToggleDataEditorMode={toggleDataEditorModeAt}
@@ -8189,6 +8190,57 @@ function formatRuntimeSettingStatusLabel(status: string) {
       return 'Non-applicable'
     default:
       return status.replace(/_/g, ' ')
+  }
+}
+
+function getDataSourceFileName(source?: DataSourceConfig | null): string | null {
+  if (!source) return null
+  const path = (source.path || '').trim()
+  if (path) {
+    const parts = path.split(/[\\/]+/).filter(Boolean)
+    return parts[parts.length - 1] || path
+  }
+  const sourceName = (source.name || '').trim()
+  if (!sourceName) return null
+  if (/\.[A-Za-z0-9]+$/.test(sourceName)) return sourceName
+  const extension = (source.type || '').trim().toLowerCase()
+  return extension === 'csv' || extension === 'dat' ? `${sourceName}.${extension}` : sourceName
+}
+
+function getSelectedParameterHeaderDetails(
+  script: ScriptData,
+  selectedParameter: ParameterConfig | null,
+  selectedParameterIdx: number | null,
+) {
+  if (!selectedParameter || selectedParameterIdx === null) {
+    return {
+      title: 'Parameter Data',
+      token: '',
+      details: ['Select a parameter from the Parameters sidebar.'],
+    }
+  }
+
+  const parameterType = selectedParameter.type || 'list'
+  const parameterName = selectedParameter.name || `Parameter ${selectedParameterIdx + 1}`
+  const selectedSourceIndex = parameterType === 'file' || parameterType === 'list'
+    ? findDataSourceIndexByName(script.data_sources, selectedParameter.data_source)
+    : null
+  const selectedSource = selectedSourceIndex !== null ? script.data_sources?.[selectedSourceIndex] || null : null
+  const fileName = getDataSourceFileName(selectedSource)
+  const details = [
+    fileName,
+    selectedSource?.name && selectedSource.name !== fileName ? `Source ${selectedSource.name}` : '',
+    selectedParameter.column ? `Column ${selectedParameter.column}` : '',
+  ].filter(Boolean)
+
+  if (details.length === 0) {
+    details.push(formatParameterChoiceLabel('type', parameterType))
+  }
+
+  return {
+    title: `Parameter ${parameterName}`,
+    token: selectedParameter.name ? `{{param.${selectedParameter.name}}}` : '',
+    details,
   }
 }
 
@@ -8249,13 +8301,11 @@ interface ParameterDataDialogProps {
   onClose?: () => void
   onExportDataSourceFile: (source: DataSourceConfig, idx: number) => void
   onImportDataSourceFile: (idx: number, file: File | null) => void
-  onMergeParameterSources: () => void
   onOpenDataEditor: (idx: number) => void
   onRedoDataSource: (idx: number) => void
   onRemoveDataColumn: (idx: number, colIdx: number) => void
   onRemoveDataRow: (idx: number, rowIdx: number) => void
   onRemoveDataSource: (idx: number) => void
-  onRemoveParameter: (idx: number) => void
   onSortDataRows: (idx: number, colIdx: number, direction: DataSourceSortDirection) => void
   onToggleDataEditorMode: (idx: number) => void
   onToggleOpenDataEditor: (idx: number) => void
@@ -8290,13 +8340,11 @@ function ParameterDataDialog({
   onClose,
   onExportDataSourceFile,
   onImportDataSourceFile,
-  onMergeParameterSources,
   onOpenDataEditor,
   onRedoDataSource,
   onRemoveDataColumn,
   onRemoveDataRow,
   onRemoveDataSource,
-  onRemoveParameter,
   onSortDataRows,
   onToggleDataEditorMode,
   onToggleOpenDataEditor,
@@ -8315,8 +8363,11 @@ function ParameterDataDialog({
   script,
   variant = 'modal',
 }: ParameterDataDialogProps) {
-  const mergeSummary = useMemo(() => summarizeParameterSourceMerge(script), [script])
   const selectedParameter = selectedParameterIdx !== null ? script.parameters?.[selectedParameterIdx] || null : null
+  const headerDetails = useMemo(
+    () => getSelectedParameterHeaderDetails(script, selectedParameter, selectedParameterIdx),
+    [script, selectedParameter, selectedParameterIdx],
+  )
   useEffect(() => {
     if (openDataEditor === null) return
     const sourceName = script.data_sources?.[openDataEditor]?.name
@@ -8339,11 +8390,6 @@ function ParameterDataDialog({
     onSelectParameter(0)
   }, [onSelectParameter, script.parameters, selectedParameterIdx])
 
-  const removeSelectedParameter = () => {
-    if (selectedParameterIdx === null) return
-    onRemoveParameter(selectedParameterIdx)
-  }
-
   const dialog = (
       <div
         className={`editor-dialog parameter-data-dialog ${variant === 'document' ? 'parameter-data-document' : ''}`}
@@ -8352,24 +8398,18 @@ function ParameterDataDialog({
         aria-label="Parameter Data"
       >
         <div className="editor-dialog-header">
-          <div>
-            <h3 className="panel-title">Parameter Data ({script.data_sources?.length || 0})</h3>
-            <p className="editor-dialog-subtitle">Manage parameters and reusable parameter data without leaving the action workspace.</p>
+          <div className="parameter-data-selected-heading">
+            <h3 className="panel-title">
+              <span>{headerDetails.title}</span>
+              {headerDetails.token && <span className="cell-mono">{headerDetails.token}</span>}
+            </h3>
+            <p className="editor-dialog-subtitle">{headerDetails.details.join(' · ')}</p>
           </div>
-          <div className="parameter-dialog-actions">
-            <button
-              className="btn btn-sm btn-ghost"
-              disabled={!mergeSummary.canMerge}
-              onClick={onMergeParameterSources}
-              title={mergeSummary.canMerge
-                ? `Merge ${mergeSummary.sourceCount} source files for ${mergeSummary.parameterCount} parameters`
-                : 'Requires at least two .dat or .csv parameter source files'}
-              type="button"
-            >
-              Merge Source Files
-            </button>
-            {onClose && <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>}
-          </div>
+          {onClose && (
+            <div className="parameter-dialog-actions">
+              <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
+            </div>
+          )}
         </div>
         <div className="editor-dialog-body">
           {pendingParameterDraft && (
@@ -8397,7 +8437,6 @@ function ParameterDataDialog({
             onRemoveDataColumn={onRemoveDataColumn}
             onRemoveDataRow={onRemoveDataRow}
             onRemoveDataSource={onRemoveDataSource}
-            onRemoveParameter={removeSelectedParameter}
             onSortDataRows={onSortDataRows}
             onToggleDataEditorMode={onToggleDataEditorMode}
             onToggleOpenDataEditor={onToggleOpenDataEditor}
@@ -8446,7 +8485,6 @@ interface ParameterDataDetailProps {
   onRemoveDataColumn: (idx: number, colIdx: number) => void
   onRemoveDataRow: (idx: number, rowIdx: number) => void
   onRemoveDataSource: (idx: number) => void
-  onRemoveParameter: () => void
   onSortDataRows: (idx: number, colIdx: number, direction: DataSourceSortDirection) => void
   onToggleDataEditorMode: (idx: number) => void
   onToggleOpenDataEditor: (idx: number) => void
@@ -8477,7 +8515,6 @@ function ParameterDataDetail({
   onRemoveDataColumn,
   onRemoveDataRow,
   onRemoveDataSource,
-  onRemoveParameter,
   onSortDataRows,
   onToggleDataEditorMode,
   onToggleOpenDataEditor,
@@ -8585,14 +8622,6 @@ function ParameterDataDetail({
 
   return (
     <div className="parameter-detail-panel">
-      <div className="parameter-detail-header">
-        <div className="parameter-detail-heading">
-          <span className="parameter-detail-kicker">Parameter</span>
-          <h4>{parameterName}</h4>
-          <span className="cell-mono">{selectedParameter.name ? `{{param.${selectedParameter.name}}}` : 'Name this parameter to generate a template token'}</span>
-        </div>
-        <button type="button" className="btn btn-sm btn-ghost danger" onClick={onRemoveParameter}>Remove</button>
-      </div>
       <div className="parameter-detail-tabs" role="tablist" aria-label="Parameter detail tabs">
         <button
           type="button"
@@ -8962,14 +8991,18 @@ function ParameterInfoPanel({
 }
 
 interface ParameterSidebarProps {
+  mergeSummary: ParameterSourceMergeSummary
   onAddParameter: () => void
+  onMergeParameterSources: () => void
   onSelectParameter: (idx: number) => void
   parameters: ParameterConfig[]
   selectedParameterIdx: number | null
 }
 
 function ParameterSidebar({
+  mergeSummary,
   onAddParameter,
+  onMergeParameterSources,
   onSelectParameter,
   parameters,
   selectedParameterIdx,
@@ -8997,7 +9030,20 @@ function ParameterSidebar({
     <div className="utility-card parameter-sidebar-card">
       <div className="utility-card-header">
         <strong>Parameters</strong>
+      </div>
+      <div className="parameter-sidebar-actions">
         <button type="button" className="btn btn-sm btn-accent" onClick={onAddParameter}>+ Add Parameter</button>
+        <button
+          className="btn btn-sm btn-ghost"
+          disabled={!mergeSummary.canMerge}
+          onClick={onMergeParameterSources}
+          title={mergeSummary.canMerge
+            ? `Merge ${mergeSummary.sourceCount} source files for ${mergeSummary.parameterCount} parameters`
+            : 'Requires at least two .dat or .csv parameter source files'}
+          type="button"
+        >
+          Merge Source Files
+        </button>
       </div>
       {parameters.length === 0 ? (
         <div className="utility-empty-state">No parameters defined yet.</div>

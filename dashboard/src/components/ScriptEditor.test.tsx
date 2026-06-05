@@ -788,7 +788,8 @@ describe('ScriptEditor', () => {
       parameterLauncher?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(findCenterTab(container, 'Parameter Data')?.getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('[aria-label="Parameter Data"]')?.textContent).toContain('Manage parameters and reusable parameter data')
+    expect(container.querySelector('[aria-label="Parameter Data"]')?.textContent).toContain('Parameter session_id')
+    expect(container.querySelector('[aria-label="Parameter Data"]')?.textContent).toContain('{{param.session_id}}')
   })
 
   it('only exposes the Imported Metadata center tab for scripts with actual import metadata', async () => {
@@ -1919,7 +1920,8 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
-    expect(container.textContent).toContain('Parameter Data (1)')
+    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Parameter username')
+    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('{{param.username}}')
     expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')
     expect(container.textContent).toContain('users')
     await activateParameterDataTab(container)
@@ -1938,7 +1940,8 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
-    expect(container.textContent).toContain('Parameter Data (1)')
+    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Parameter username')
+    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('{{param.username}}')
     expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')
     expect(container.textContent).toContain('users')
     await activateParameterDataTab(container)
@@ -2272,11 +2275,13 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={sourceMergeScript} initialFocusedSection="parameter-data" />)
     })
 
-    const mergeButton = Array.from(container.querySelectorAll('button')).find(button =>
+    const sidebar = container.querySelector('.parameter-sidebar-card') as HTMLDivElement | null
+    const mergeButton = Array.from(sidebar?.querySelectorAll('button') || []).find(button =>
       button.textContent?.trim() === 'Merge Source Files',
     ) as HTMLButtonElement | undefined
     expect(mergeButton).toBeDefined()
     expect(mergeButton?.disabled).toBe(false)
+    expect(container.querySelector('.parameter-data-dialog')?.textContent).not.toContain('Merge Source Files')
 
     await act(async () => {
       mergeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2303,7 +2308,7 @@ describe('ScriptEditor', () => {
     ])
   })
 
-  it('removes the selected parameter and updates the Parameters sidebar', async () => {
+  it('omits the center remove row from the selected parameter detail', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} initialFocusedSection="parameter-data" />)
     })
@@ -2312,15 +2317,9 @@ describe('ScriptEditor', () => {
     const removeButton = Array.from(container.querySelectorAll('.parameter-data-dialog button')).find(button =>
       button.textContent?.trim() === 'Remove',
     )
-    expect(removeButton).toBeDefined()
-    if (!removeButton) return
-
-    await act(async () => {
-      removeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(container.querySelector('.parameter-sidebar-item')).toBeNull()
-    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Select a parameter from the Parameters sidebar')
+    expect(removeButton).toBeUndefined()
+    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Parameter session_id')
+    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('{{param.session_id}}')
   })
 
   it('opens the requested data source when a draft opens with a data source focus hint', async () => {
@@ -2354,7 +2353,8 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
-    expect(container.textContent).toContain('Parameter Data (1)')
+    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Parameter username')
+    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('{{param.username}}')
     expect(container.querySelector('.parameter-data-selected-view')).not.toBeNull()
     expect(container.textContent).toContain('Users.dat')
     expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')

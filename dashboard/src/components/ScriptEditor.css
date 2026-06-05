@@ -700,8 +700,32 @@
 .parameter-data-selected-view {
   margin-bottom: 20px;
 }
+.parameter-data-selected-heading {
+  min-width: 0;
+}
+.parameter-data-selected-heading .panel-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.parameter-data-selected-heading .cell-mono {
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .parameter-sidebar-card {
   gap: 12px;
+}
+.parameter-sidebar-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.parameter-sidebar-actions .btn {
+  justify-content: center;
+  min-width: 0;
+  white-space: normal;
 }
 .parameter-sidebar-list {
   display: grid;
