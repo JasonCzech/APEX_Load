@@ -511,6 +511,73 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 		cfg["jms_mock"] = true
 	}
 
+	kafkaCfg := script.Config.Kafka
+	if len(kafkaCfg.Brokers) > 0 {
+		cfg["kafka_brokers"] = kafkaCfg.Brokers
+	}
+	if kafkaCfg.SecurityProtocol != "" {
+		cfg["kafka_security_protocol"] = kafkaCfg.SecurityProtocol
+	}
+	if kafkaCfg.SASLMechanism != "" {
+		cfg["kafka_sasl_mechanism"] = kafkaCfg.SASLMechanism
+	}
+	if kafkaCfg.SASLUsername != "" {
+		cfg["kafka_sasl_username"] = kafkaCfg.SASLUsername
+	}
+	if kafkaCfg.SASLPassword != "" {
+		cfg["kafka_sasl_password"] = kafkaCfg.SASLPassword
+	}
+	if kafkaCfg.SASLPasswordSecret != "" {
+		cfg["kafka_sasl_password_secret"] = kafkaCfg.SASLPasswordSecret
+	}
+	if kafkaCfg.TLS != nil {
+		if kafkaCfg.TLS.InsecureSkipVerify {
+			cfg["kafka_tls_insecure_skip_verify"] = true
+		}
+		if kafkaCfg.TLS.ClientCertFile != "" {
+			cfg["kafka_tls_client_cert_file"] = kafkaCfg.TLS.ClientCertFile
+		}
+		if kafkaCfg.TLS.ClientKeyFile != "" {
+			cfg["kafka_tls_client_key_file"] = kafkaCfg.TLS.ClientKeyFile
+		}
+		if kafkaCfg.TLS.CACertFile != "" {
+			cfg["kafka_tls_ca_cert_file"] = kafkaCfg.TLS.CACertFile
+		}
+	}
+	if kafkaCfg.ClientID != "" {
+		cfg["kafka_client_id"] = kafkaCfg.ClientID
+	}
+	if kafkaCfg.ConsumerGroup != "" {
+		cfg["kafka_consumer_group"] = kafkaCfg.ConsumerGroup
+	}
+	if kafkaCfg.Topic != "" {
+		cfg["kafka_topic"] = kafkaCfg.Topic
+	}
+	if kafkaCfg.Acks != "" {
+		cfg["kafka_acks"] = kafkaCfg.Acks
+	}
+	if kafkaCfg.Compression != "" {
+		cfg["kafka_compression"] = kafkaCfg.Compression
+	}
+	if kafkaCfg.PartitionStrategy != "" {
+		cfg["kafka_partition_strategy"] = kafkaCfg.PartitionStrategy
+	}
+	if kafkaCfg.AutoOffsetReset != "" {
+		cfg["kafka_auto_offset_reset"] = kafkaCfg.AutoOffsetReset
+	}
+	if kafkaCfg.Partitions > 0 {
+		cfg["kafka_partitions"] = float64(kafkaCfg.Partitions)
+	}
+	if kafkaCfg.TimeoutMs > 0 {
+		cfg["kafka_timeout_ms"] = float64(kafkaCfg.TimeoutMs)
+	}
+	if len(kafkaCfg.Properties) > 0 {
+		cfg["kafka_properties"] = kafkaCfg.Properties
+	}
+	if kafkaCfg.Mock {
+		cfg["kafka_mock"] = true
+	}
+
 	// TLS
 	tls := httpCfg.TLS
 	if tls.MinVersion != "" {

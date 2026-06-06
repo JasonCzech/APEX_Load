@@ -62,6 +62,7 @@ type ScriptConfig struct {
 	Network       NetworkConfig       `json:"network,omitempty"`
 	Browser       BrowserConfig       `json:"browser,omitempty"`
 	JMS           JMSConfig           `json:"jms,omitempty"`
+	Kafka         KafkaConfig         `json:"kafka,omitempty"`
 	ErrorHandling ErrorHandlingConfig `json:"error_handling,omitempty"`
 	RunLogic      RunLogicConfig      `json:"run_logic,omitempty"`
 	Observability ObservabilityConfig `json:"observability,omitempty"`
@@ -184,6 +185,36 @@ type JMSConfig struct {
 	TimeoutMs       int               `json:"timeout_ms,omitempty"`       // default consume/request timeout
 	Properties      map[string]string `json:"properties,omitempty"`       // provider-specific connection properties
 	Mock            bool              `json:"mock,omitempty"`             // use in-memory broker for local shakeout
+}
+
+// KafkaConfig holds broker, security, and producer/consumer settings for Kafka scripts.
+type KafkaConfig struct {
+	Brokers            []string          `json:"brokers,omitempty"`              // bootstrap brokers, e.g. ["broker:9092"]
+	SecurityProtocol   string            `json:"security_protocol,omitempty"`    // plaintext|ssl|sasl_ssl|sasl_plaintext
+	SASLMechanism      string            `json:"sasl_mechanism,omitempty"`       // plain|scram-sha-256|scram-sha-512|oauthbearer
+	SASLUsername       string            `json:"sasl_username,omitempty"`        // SASL username
+	SASLPassword       string            `json:"sasl_password,omitempty"`        // SASL password (inline)
+	SASLPasswordSecret string            `json:"sasl_password_secret,omitempty"` // secret reference resolved at runtime
+	TLS                *KafkaTLSConfig   `json:"tls,omitempty"`                  // TLS material for ssl/sasl_ssl
+	ClientID           string            `json:"client_id,omitempty"`            // Kafka client.id
+	ConsumerGroup      string            `json:"consumer_group,omitempty"`       // consumer group id for kafka_consume
+	Topic              string            `json:"topic,omitempty"`                // default topic
+	Acks               string            `json:"acks,omitempty"`                 // none|leader|all
+	Compression        string            `json:"compression,omitempty"`          // none|gzip|snappy|lz4|zstd
+	PartitionStrategy  string            `json:"partition_strategy,omitempty"`   // key-hash|round-robin|explicit
+	AutoOffsetReset    string            `json:"auto_offset_reset,omitempty"`    // earliest|latest
+	Partitions         int               `json:"partitions,omitempty"`           // partition count hint for the mock broker
+	TimeoutMs          int               `json:"timeout_ms,omitempty"`           // default consume/request timeout
+	Properties         map[string]string `json:"properties,omitempty"`           // additional client properties
+	Mock               bool              `json:"mock,omitempty"`                 // use in-memory broker for local shakeout
+}
+
+// KafkaTLSConfig holds TLS material for ssl/sasl_ssl security protocols.
+type KafkaTLSConfig struct {
+	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty"`
+	ClientCertFile     string `json:"client_cert_file,omitempty"`
+	ClientKeyFile      string `json:"client_key_file,omitempty"`
+	CACertFile         string `json:"ca_cert_file,omitempty"`
 }
 
 type BrowserConfig struct {

@@ -1,7 +1,35 @@
 # Implementation Plan: Direct Kafka Messaging Testing + AsyncAPI Import
 
-> Status: **Plan only — not yet implemented.** This document is the design of record
-> for adding Kafka as a first-class protocol and AsyncAPI as a source-artifact importer.
+> Status: **Phases 1–4 implemented** (Kafka protocol plugin, DSL integration, binary
+> wiring). Phase 5 (AsyncAPI converter) and the dashboard authoring surface remain
+> planned. This document is the design of record.
+
+## Current Implementation Status
+The Kafka runtime is no longer just planned. The following are implemented in the Go
+runtime and pass `go test ./...` (Kafka package is also `-race` clean):
+
+- `pkg/protocol/kafka/` — registered `kafka` protocol with `kafka_produce`,
+  `kafka_consume`, `kafka_request_reply`, `kafka_commit`, `kafka_seek` actions; a
+  `kafkaClient` interface behind an in-memory mock broker (default) and an
+  `unavailableClient` stub for the real network adapter (mirrors the JMS Solace/IBM MQ
+  pattern). Extractors (`body`/`header`/`key`/`partition`/`offset`/`correlation_id`),
+  assertions (`message_received`, `body_contains`, `header_equals`, `key_equals`,
+  `partition_equals`, `offset_advanced`, `correlation_match`, `consumer_lag_below`,
+  `response_time_ms`), partition strategies (key-hash/round-robin/explicit), and
+  messaging telemetry (`MessagesSent/Received`, per-sec rates, `ConsumerLagMs`,
+  `MessageLatencyMs`) are wired.
+- `pkg/dsl/types.go` — `KafkaConfig` + `KafkaTLSConfig` on `ScriptConfig`.
+- `pkg/dsl/validate.go` — `validateKafkaScriptIssues` dispatch + enum validation;
+  `kafka` added to `protocolAllowsEmptyBaseURL`.
+- `pkg/engine/config.go` — `kafka_*` flatten block; `kafka_sasl_password_secret`
+  participates in the existing secret-resolution chain.
+- `pkg/protocol/evidence.go` — `kafka` evidence inference case.
+- `cmd/{generator,controller,apexctl}/main.go` — blank-imported `kafka` (and the
+  previously-missing `jms` import was added to the generator).
+
+**Not yet done:** the franz-go real network adapter (currently the `unavailableClient`
+stub), the dashboard authoring surface (Phase 4 UI), and the entire AsyncAPI converter
+(Phase 5). The sections below remain the spec for that outstanding work.
 
 ## Objective
 Add direct load testing of Apache Kafka messaging services to APEX Load, plus an

@@ -19,6 +19,10 @@ func ValidateScriptIssues(script *Script) []string {
 		return validateJMSScriptIssues(script)
 	}
 
+	if strings.TrimSpace(script.Protocol) == "kafka" {
+		return validateKafkaScriptIssues(script)
+	}
+
 	var issues []string
 	if strings.TrimSpace(script.Name) == "" {
 		issues = append(issues, "script name is required")
@@ -167,7 +171,7 @@ func firstNonEmptyString(values ...string) string {
 
 func protocolAllowsEmptyBaseURL(protocolName string) bool {
 	switch strings.TrimSpace(protocolName) {
-	case "browser", "database", "network":
+	case "browser", "database", "network", "kafka":
 		return true
 	default:
 		return false
@@ -538,6 +542,77 @@ func validateJMSScriptIssues(script *Script) []string {
 			replyTo, _ := action.Params["reply_to"].(string)
 			if strings.TrimSpace(replyTo) == "" {
 				issues = append(issues, fmt.Sprintf("actions[%d] %q: missing reply_to destination", i, action.Name))
+			}
+		}
+	}
+
+	return issues
+}
+
+func validateKafkaScriptIssues(script *Script) []string {
+	var issues []string
+	if strings.TrimSpace(script.Name) == "" {
+		issues = append(issues, "script name is required")
+	}
+	if strings.TrimSpace(script.Protocol) == "" {
+		issues = append(issues, "script protocol is required")
+	}
+	if len(script.Actions) == 0 {
+		issues = append(issues, "script must have at least one action")
+	}
+
+	kafka := script.Config.Kafka
+	if !kafka.Mock {
+		if len(kafka.Brokers) == 0 {
+			issues = append(issues, "config.kafka.brokers is required when mock mode is disabled")
+		}
+		issues = append(issues, "real Kafka network adapter is not available in this build; enable config.kafka.mock for replay")
+	}
+	if kafka.SecurityProtocol != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(kafka.SecurityProtocol)), "plaintext", "ssl", "sasl_ssl", "sasl_plaintext") {
+		issues = append(issues, fmt.Sprintf("config.kafka.security_protocol %q is not supported", kafka.SecurityProtocol))
+	}
+	if kafka.SASLMechanism != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(kafka.SASLMechanism)), "plain", "scram-sha-256", "scram-sha-512", "oauthbearer") {
+		issues = append(issues, fmt.Sprintf("config.kafka.sasl_mechanism %q is not supported", kafka.SASLMechanism))
+	}
+	if kafka.Acks != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(kafka.Acks)), "none", "leader", "all") {
+		issues = append(issues, fmt.Sprintf("config.kafka.acks %q is not supported", kafka.Acks))
+	}
+	if kafka.Compression != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(kafka.Compression)), "none", "gzip", "snappy", "lz4", "zstd") {
+		issues = append(issues, fmt.Sprintf("config.kafka.compression %q is not supported", kafka.Compression))
+	}
+	if kafka.PartitionStrategy != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(kafka.PartitionStrategy)), "key-hash", "round-robin", "explicit") {
+		issues = append(issues, fmt.Sprintf("config.kafka.partition_strategy %q is not supported", kafka.PartitionStrategy))
+	}
+	if kafka.AutoOffsetReset != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(kafka.AutoOffsetReset)), "earliest", "latest") {
+		issues = append(issues, fmt.Sprintf("config.kafka.auto_offset_reset %q is not supported", kafka.AutoOffsetReset))
+	}
+	if kafka.TimeoutMs < 0 {
+		issues = append(issues, "config.kafka.timeout_ms must be zero or greater")
+	}
+	if kafka.Partitions < 0 {
+		issues = append(issues, "config.kafka.partitions must be zero or greater")
+	}
+
+	for i, action := range script.Actions {
+		if strings.TrimSpace(action.Name) == "" {
+			issues = append(issues, fmt.Sprintf("actions[%d]: missing name", i))
+		}
+		switch action.Type {
+		case "kafka_produce", "kafka_consume", "kafka_request_reply", "kafka_commit", "kafka_seek":
+		case "":
+			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing type", i, action.Name))
+		default:
+			issues = append(issues, fmt.Sprintf("actions[%d] %q: unsupported Kafka action type %q", i, action.Name, action.Type))
+		}
+		if (action.Type == "kafka_produce" || action.Type == "kafka_consume" || action.Type == "kafka_request_reply") && action.Target == "" && kafka.Topic == "" {
+			if topic, _ := action.Params["topic"].(string); strings.TrimSpace(topic) == "" {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: missing topic", i, action.Name))
+			}
+		}
+		if action.Type == "kafka_request_reply" {
+			replyTo, _ := action.Params["reply_to"].(string)
+			if strings.TrimSpace(replyTo) == "" {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: missing reply_to topic", i, action.Name))
 			}
 		}
 	}

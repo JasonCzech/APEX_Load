@@ -8,6 +8,78 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
+func TestBuildProtoConfig_Kafka(t *testing.T) {
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			Kafka: dsl.KafkaConfig{
+				Brokers:           []string{"broker-1:9092", "broker-2:9092"},
+				SecurityProtocol:  "sasl_ssl",
+				SASLMechanism:     "scram-sha-512",
+				SASLUsername:      "svc",
+				ConsumerGroup:     "cg-1",
+				Topic:             "orders.events",
+				Acks:              "all",
+				Compression:       "zstd",
+				PartitionStrategy: "key-hash",
+				Partitions:        6,
+				TimeoutMs:         2500,
+				Properties:        map[string]string{"client.dns.lookup": "use_all_dns_ips"},
+				Mock:              true,
+			},
+		},
+	}
+
+	cfg := buildProtoConfig(script)
+
+	brokers, ok := cfg["kafka_brokers"].([]string)
+	if !ok || len(brokers) != 2 || brokers[0] != "broker-1:9092" {
+		t.Fatalf("kafka_brokers = %v, want two brokers", cfg["kafka_brokers"])
+	}
+	if cfg["kafka_security_protocol"] != "sasl_ssl" {
+		t.Fatalf("kafka_security_protocol = %v", cfg["kafka_security_protocol"])
+	}
+	if cfg["kafka_consumer_group"] != "cg-1" {
+		t.Fatalf("kafka_consumer_group = %v", cfg["kafka_consumer_group"])
+	}
+	if cfg["kafka_topic"] != "orders.events" {
+		t.Fatalf("kafka_topic = %v", cfg["kafka_topic"])
+	}
+	if cfg["kafka_partitions"] != float64(6) {
+		t.Fatalf("kafka_partitions = %v, want 6", cfg["kafka_partitions"])
+	}
+	if cfg["kafka_timeout_ms"] != float64(2500) {
+		t.Fatalf("kafka_timeout_ms = %v, want 2500", cfg["kafka_timeout_ms"])
+	}
+	if cfg["kafka_mock"] != true {
+		t.Fatalf("kafka_mock = %v, want true", cfg["kafka_mock"])
+	}
+}
+
+func TestBuildProtoConfig_KafkaSASLPasswordSecret(t *testing.T) {
+	resolver := SecretResolverFunc(func(name string) (string, bool) {
+		if name == "kafka_pw" {
+			return "runtime-kafka-pass", true
+		}
+		return "", false
+	})
+
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			Kafka: dsl.KafkaConfig{
+				Brokers:            []string{"broker:9092"},
+				SASLPasswordSecret: "{{secret.kafka_pw}}",
+				Topic:              "t",
+				Mock:               true,
+			},
+		},
+	}
+
+	cfg := buildProtoConfigWithSecretResolver(script, resolver)
+	if cfg["kafka_sasl_password_secret"] != "runtime-kafka-pass" {
+		t.Fatalf("kafka_sasl_password_secret = %v, want runtime-kafka-pass", cfg["kafka_sasl_password_secret"])
+	}
+}
+
 func TestBuildProtoConfig_BaseURL(t *testing.T) {
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{
