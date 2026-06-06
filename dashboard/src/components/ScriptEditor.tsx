@@ -408,6 +408,7 @@ function defaultExtractorForProtocol(protocol: string) {
       return { name: '', source: 'body', type: 'jsonpath', expression: '$.response' }
     case 'grpc':
       return { name: '', source: 'body', type: 'jsonpath', expression: '$.id' }
+    case 'jms-ibmmq':
     case 'jms-solace':
       return { name: '', source: 'body', type: 'jsonpath', expression: '$.id' }
     case 'websocket':
@@ -425,6 +426,7 @@ function defaultAssertionForProtocol(protocol: string) {
       return { type: 'body_contains', value: '' }
     case 'grpc':
       return { type: 'grpc_status', expected: 0 }
+    case 'jms-ibmmq':
     case 'jms-solace':
       return { type: 'message_received' }
     case 'websocket':
@@ -1949,7 +1951,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [jsonLineJumpRequest, setJsonLineJumpRequest] = useState<ScriptCodeLineJumpRequest | null>(null)
   const isBrowserScript = script.protocol === 'browser'
   const isHttpScript = script.protocol === 'http'
-  const isJmsScript = script.protocol === 'jms-solace'
+  const isJmsScript = script.protocol.startsWith('jms')
   const isJavaHttpScript = script.protocol === 'java_http'
   const isSoapScript = script.protocol === 'soap'
   const isWebSocketScript = script.protocol === 'websocket'
@@ -3038,9 +3040,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           shouldSelectFirstAction = true
         }
       }
-      if (protocol === 'jms-solace') {
+      if (protocol === 'jms-solace' || protocol === 'jms-ibmmq') {
         next.config.jms = {
-          provider: 'solace',
+          provider: protocol === 'jms-solace' ? 'solace' : 'ibmmq',
           destination_type: 'queue',
           acknowledgement: 'auto',
           delivery_mode: 'persistent',
@@ -5743,6 +5745,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         <option value="network">Network</option>
                         <option value="browser">Web/HTML Browser</option>
                         <option value="jms-solace">JMS Solace</option>
+                        <option value="jms-ibmmq">JMS IBM MQ</option>
                       </select>
                     </label>
                   )}
@@ -14351,6 +14354,7 @@ interface ProtocolExtractorsSectionProps {
 function extractorSourceOptions(protocol: string): Array<[string, string]> {
   switch (protocol) {
     case 'jms-solace':
+    case 'jms-ibmmq':
       return [['body', 'Body'], ['header', 'Header'], ['property', 'Property'], ['message_id', 'Message ID'], ['correlation_id', 'Correlation ID']]
     case 'database':
       return [['body', 'Result Body'], ['rows', 'Rows'], ['scalar', 'Scalar'], ['row_count', 'Row Count'], ['rows_affected', 'Rows Affected'], ['last_insert_id', 'Last Insert ID']]
@@ -14369,7 +14373,7 @@ function extractorTypeOptions(protocol: string): Array<[string, string]> {
   if (protocol === 'database' || protocol === 'network' || protocol === 'grpc') {
     return [['jsonpath', 'JSONPath'], ['jmespath', 'JMESPath'], ['regex', 'Regex'], ['boundary', 'Boundary']]
   }
-  if (protocol === 'jms-solace' || protocol === 'websocket') {
+  if (protocol.startsWith('jms') || protocol === 'websocket') {
     return [['jsonpath', 'JSONPath'], ['regex', 'Regex'], ['boundary', 'Boundary']]
   }
   return [['jsonpath', 'JSONPath'], ['regex', 'Regex'], ['boundary', 'Boundary'], ['xpath', 'XPath']]
@@ -14380,7 +14384,7 @@ function extractorExpressionPlaceholder(protocol: string, source: string) {
   if (protocol === 'network') return source === 'record_count' ? '$.record_count' : '$.response'
   if (protocol === 'grpc') return '$.id'
   if (protocol === 'websocket') return '$.type'
-  if (protocol === 'jms-solace') return '$.orderId'
+  if (protocol.startsWith('jms')) return '$.orderId'
   return '$.data.id'
 }
 
@@ -14419,6 +14423,7 @@ interface ProtocolAssertionsSectionProps {
 function assertionOptions(protocol: string): Array<[string, string]> {
   switch (protocol) {
     case 'jms-solace':
+    case 'jms-ibmmq':
       return [['message_received', 'Message Received'], ['body_contains', 'Body Contains'], ['property_equals', 'Property Equals'], ['header_equals', 'Header Equals'], ['correlation_match', 'Correlation Match'], ['response_time_ms', 'Response Time (ms)']]
     case 'websocket':
       return [['message_received', 'Message Received'], ['body_contains', 'Message Contains'], ['close_code', 'Close Code'], ['response_time_ms', 'Response Time (ms)']]

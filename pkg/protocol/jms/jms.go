@@ -18,6 +18,9 @@ func init() {
 	protocol.Register("jms-solace", func() protocol.Protocol {
 		return &JMS{name: "jms-solace", provider: "solace"}
 	})
+	protocol.Register("jms-ibmmq", func() protocol.Protocol {
+		return &JMS{name: "jms-ibmmq", provider: "ibmmq"}
+	})
 }
 
 type JMS struct {
@@ -135,7 +138,11 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 	if j.cfg.Mock {
 		j.adapter = memoryAdapter{broker: broker}
 	} else {
-		j.adapter = unavailableSolaceAdapter{cfg: j.cfg}
+		if j.provider == "ibmmq" {
+			j.adapter = unavailableIbmMqAdapter{cfg: j.cfg}
+		} else {
+			j.adapter = unavailableSolaceAdapter{cfg: j.cfg}
+		}
 	}
 	j.initialized = true
 	return nil
@@ -375,6 +382,37 @@ func (a unavailableSolaceAdapter) Teardown(context.Context) error {
 
 func (a unavailableSolaceAdapter) err() error {
 	return fmt.Errorf("real Solace JMS adapter is not available in this build; enable mock mode for local replay")
+}
+
+type unavailableIbmMqAdapter struct {
+	cfg config
+}
+
+func (a unavailableIbmMqAdapter) Publish(context.Context, string, message) (message, error) {
+	return message{}, a.err()
+}
+
+func (a unavailableIbmMqAdapter) Consume(context.Context, string, time.Duration) (message, error) {
+	return message{}, a.err()
+}
+
+func (a unavailableIbmMqAdapter) RequestReply(context.Context, string, string, message, time.Duration) (message, message, error) {
+	return message{}, message{}, a.err()
+}
+
+func (a unavailableIbmMqAdapter) HealthCheck(context.Context) error {
+	if a.cfg.BrokerURL == "" {
+		return fmt.Errorf("jms broker_url is not configured")
+	}
+	return a.err()
+}
+
+func (a unavailableIbmMqAdapter) Teardown(context.Context) error {
+	return nil
+}
+
+func (a unavailableIbmMqAdapter) err() error {
+	return fmt.Errorf("real IBM MQ adapter is not available in this build; enable mock mode for local replay")
 }
 
 func (j *JMS) buildMessage(action *protocol.Action, destination string) message {

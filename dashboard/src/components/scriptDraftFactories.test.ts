@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { type AuthoringComponent } from '../types'
-import { composeComponentDraft, createApiDraft, createDatabaseDraft, createGrpcDraft, createJavaHttpDraft, createJmsDraft, createNetworkDraft, createSoapDraft, createWebDraft, createWebSocketDraft } from './scriptDraftFactories'
+import { composeComponentDraft, createApiDraft, createDatabaseDraft, createGrpcDraft, createIbmMqDraft, createJavaHttpDraft, createJmsDraft, createNetworkDraft, createSoapDraft, createWebDraft, createWebSocketDraft } from './scriptDraftFactories'
 
 describe('scriptDraftFactories', () => {
   it('creates the default API script draft', () => {
@@ -48,6 +48,13 @@ describe('scriptDraftFactories', () => {
         }),
       }),
     }))
+  })
+
+  it('creates the IBM MQ script draft', () => {
+    const draft = createIbmMqDraft()
+    expect(draft.protocol).toBe('jms-ibmmq')
+    expect(draft.config?.jms?.provider).toBe('ibmmq')
+    expect(draft.actions.length).toBe(0)
   })
 
   it('creates first-class native protocol drafts', () => {
@@ -210,6 +217,18 @@ describe('scriptDraftFactories', () => {
       }
 
       expect(composeComponentDraft(component).protocol).toBe('soap')
+    })
+
+    it('selects the IBM MQ base draft when jms-ibmmq is the leading protocol', () => {
+      const jmsComp: AuthoringComponent = {
+        id: 'ibmmq-only',
+        kind: 'request_group',
+        name: 'IBM MQ Group',
+        protocols: ['jms-ibmmq'],
+        summary: 'MQ flow.',
+        actions: [{ name: 'Put', type: 'jms_put', target: 'queue' }],
+      }
+      expect(composeComponentDraft(jmsComp).protocol).toBe('jms-ibmmq')
     })
 
     it('selects native protocol base drafts for native components', () => {

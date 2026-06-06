@@ -16,8 +16,12 @@ func TestJMSProtocolsAreRegistered(t *testing.T) {
 	if p.Name() != "jms-solace" {
 		t.Fatalf("Name() = %q, want jms-solace", p.Name())
 	}
-	if _, err := protocol.Get("jms-ibmmq"); err == nil {
-		t.Fatal("protocol.Get(jms-ibmmq) returned nil error, want unregistered protocol")
+	p2, err := protocol.Get("jms-ibmmq")
+	if err != nil {
+		t.Fatalf("protocol.Get(jms-ibmmq) returned error: %v", err)
+	}
+	if p2.Name() != "jms-ibmmq" {
+		t.Fatalf("Name() = %q, want jms-ibmmq", p2.Name())
 	}
 }
 
@@ -135,6 +139,32 @@ func TestJMSRealSolaceModeRequiresLinkedAdapter(t *testing.T) {
 	if err := p.Init(ctx, map[string]any{
 		"broker_url":      "tcps://broker.example.com:55443",
 		"jms_message_vpn": "perf",
+		"jms_destination": "orders.in",
+		"jms_mock":        false,
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	if err := p.HealthCheck(ctx); err == nil {
+		t.Fatal("HealthCheck returned nil error, want unavailable adapter error")
+	}
+	result, err := p.Execute(ctx, &protocol.Action{Name: "publish", Type: "jms_publish", Body: []byte("hello")})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Success {
+		t.Fatal("Execute success = true, want false")
+	}
+	if result.ErrorMessage == "" {
+		t.Fatal("ErrorMessage is empty, want unavailable adapter message")
+	}
+}
+
+func TestJMSRealIbmMqModeRequiresLinkedAdapter(t *testing.T) {
+	ctx := context.Background()
+	p := &JMS{name: "jms-ibmmq", provider: "ibmmq"}
+	if err := p.Init(ctx, map[string]any{
+		"broker_url":      "tcp://broker.example.com:1414",
 		"jms_destination": "orders.in",
 		"jms_mock":        false,
 	}); err != nil {

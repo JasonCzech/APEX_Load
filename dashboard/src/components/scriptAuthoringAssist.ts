@@ -483,6 +483,7 @@ export function buildProtocolStarterTemplates(protocol: string, nextIndex: numbe
         },
       ]
     case 'jms-solace':
+    case 'jms-ibmmq':
       return [
         {
           key: 'jms-publish',
