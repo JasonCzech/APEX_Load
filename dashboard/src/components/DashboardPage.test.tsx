@@ -373,6 +373,26 @@ describe('DashboardPage', () => {
     expect(topRowsCss).not.toContain('rgba(125, 211, 252')
   })
 
+  it('keeps the first two dashboard rows proportionate to their summary content', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const stylesheet = readFileSync(`${cwd}/src/components/DashboardPage.css`, 'utf8') as string
+    const topRowsCss = [
+      stylesheet.match(/\.dash-health-card \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.dash-release-snapshot \.dash-section-heading-row \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.release-metric \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.release-status-strip \{[\s\S]*?\n\}/)?.[0] ?? '',
+    ].join('\n')
+
+    expect(topRowsCss).toContain('min-height: 84px')
+    expect(topRowsCss).toContain('padding: 12px 14px 12px 16px')
+    expect(topRowsCss).toContain('padding: 12px 16px')
+    expect(topRowsCss).toContain('min-height: 68px')
+    expect(topRowsCss).toContain('padding: 10px 12px')
+    expect(topRowsCss).toContain('padding: 10px 16px 14px')
+  })
+
   it('switches lower dashboard tabs and sorts selectable table rows', async () => {
     await act(async () => {
       root.render(
