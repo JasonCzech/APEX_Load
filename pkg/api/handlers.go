@@ -897,9 +897,6 @@ func validationWarnings(script *dsl.Script) []string {
 			}
 		}
 
-		if engine == "webkit" {
-			warnings = append(warnings, browserprotocol.WebKitInstallWarning())
-		}
 	}
 
 	if needsRecordedResourceMetadataWarning(script) {

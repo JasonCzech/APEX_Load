@@ -37,6 +37,8 @@ func main() {
 		statusCmd()
 	case "wait":
 		waitCmd()
+	case "record":
+		recordCmd()
 	case "version":
 		fmt.Println("apexctl v0.1.0")
 	case "help", "--help", "-h":
@@ -330,6 +332,7 @@ Commands:
   script    Validate or explain a JSON DSL script
   status    Print a test's current status + SLA verdict (exits 1 on breach/failure)
   wait      Block until a started test finishes, then report SLA verdict
+  record    Record a new browser script using Playwright
   version   Print version information
   help      Show this help
 
