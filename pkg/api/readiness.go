@@ -69,28 +69,41 @@ func (s *Server) cacheBackendReadiness(ctx context.Context) SystemReadinessCheck
 	info := s.cache.Info()
 	probeCtx, cancel := context.WithTimeout(ctx, defaultCacheProbeTimeout)
 	defer cancel()
-	if err := s.cache.Ping(probeCtx); err != nil {
+	start := time.Now()
+	err := s.cache.Ping(probeCtx)
+	latency := time.Since(start)
+	details := cacheReadinessDetails(info)
+	details["probe_latency_ms"] = roundMilliseconds(latency)
+	if err != nil {
 		status := readinessStatusDegraded
-		if info.Backend == cacheBackendRedis {
+		if cacheBackendIsRemote(info.Backend) {
 			status = readinessStatusNotReady
 		}
 		return SystemReadinessCheck{
 			Name:    "cache_backend",
 			Status:  status,
 			Message: fmt.Sprintf("cache backend probe failed: %v", err),
-			Details: cacheReadinessDetails(info),
+			Details: details,
 		}
 	}
 	message := "in-memory cache backend is ready"
-	if info.Backend == cacheBackendRedis {
-		message = "redis cache backend is reachable"
+	if cacheBackendIsRemote(info.Backend) {
+		message = fmt.Sprintf("%s cache backend is reachable", info.Backend)
 	}
 	return SystemReadinessCheck{
 		Name:    "cache_backend",
 		Status:  readinessStatusReady,
 		Message: message,
-		Details: cacheReadinessDetails(info),
+		Details: details,
 	}
+}
+
+// roundMilliseconds converts a duration to milliseconds with microsecond precision.
+func roundMilliseconds(d time.Duration) float64 {
+	if d <= 0 {
+		return 0
+	}
+	return float64(d.Microseconds()) / 1000.0
 }
 
 func aggregateReadinessStatus(checks []SystemReadinessCheck) string {

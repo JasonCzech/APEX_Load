@@ -74,8 +74,10 @@ Status: implemented for Prometheus ServiceMonitor and remote-write deployment ex
 Status: implemented for backend selection, memory and Redis/Valkey cache implementations, active run snapshots, generator inventory snapshots, idempotency-key reservations, service-account API-key rate limiting, websocket fanout publishing/subscription, readiness degradation, and inventory metadata.
 
 - Add cache backend selection:
-  - `APEXLOAD_CACHE_BACKEND=memory|redis`, default `memory`.
-  - `APEXLOAD_REDIS_URL` is required for Redis mode.
+  - `APEXLOAD_CACHE_BACKEND=memory|redis|valkey`, default `memory`. `valkey` is a
+    Redis-wire-compatible alias that uses the same client/fanout path and reports
+    `cache_backend: valkey` in readiness/inventory.
+  - `APEXLOAD_REDIS_URL` is required for Redis/Valkey mode.
   - `APEXLOAD_REDIS_KEY_PREFIX`, `APEXLOAD_REDIS_TLS`, and timeout settings support shared enterprise clusters.
 - Add small interfaces instead of leaking Redis across handlers:
   - `LiveStateStore` for active run snapshots, generator inventory snapshots, and short TTL dashboard summaries.
@@ -122,7 +124,7 @@ APEXLOAD_ARCHIVE_PREFIX=apexload/archives
 APEXLOAD_ARCHIVE_REGION=
 APEXLOAD_ARCHIVE_ENDPOINT=
 
-APEXLOAD_CACHE_BACKEND=memory|redis
+APEXLOAD_CACHE_BACKEND=memory|redis|valkey
 APEXLOAD_REDIS_URL=redis://...
 APEXLOAD_REDIS_KEY_PREFIX=apexload
 APEXLOAD_REDIS_TLS=false
@@ -135,7 +137,7 @@ APEXLOAD_IDEMPOTENCY_KEY_TTL=15m
 API behavior:
 
 - Existing API payloads stay compatible.
-- `/api/v1/system/readiness` includes metadata store, archive store, cache backend, metrics export, migration version, and lease capability details.
+- `/api/v1/system/readiness` includes metadata store, archive store, cache backend, metrics export, migration version, and lease capability details. The `cache_backend` check reports a measured `probe_latency_ms` and, for Redis/Valkey, a credential-free `endpoint` (scheme://host:port).
 - `/api/v1/system/inventory` includes configured data platform backends without exposing secrets.
 - Archive endpoints keep existing URLs and response shapes regardless of backing store.
 

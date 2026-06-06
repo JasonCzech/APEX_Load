@@ -20,6 +20,7 @@ import (
 const (
 	cacheBackendMemory = "memory"
 	cacheBackendRedis  = "redis"
+	cacheBackendValkey = "valkey"
 
 	defaultRedisKeyPrefix       = "apexload"
 	defaultCacheProbeTimeout    = 2 * time.Second
@@ -37,6 +38,21 @@ type CacheBackendInfo struct {
 	Timeout       time.Duration `json:"timeout,omitempty"`
 	ConfigError   string        `json:"config_error,omitempty"`
 	FanoutChannel string        `json:"fanout_channel,omitempty"`
+	// Endpoint is the credential-free scheme://host:port of a remote (Redis/Valkey)
+	// backend, suitable for logging and operator-facing readiness details.
+	Endpoint string `json:"endpoint,omitempty"`
+}
+
+// cacheBackendIsRemote reports whether a backend is a remote, Redis-wire-compatible
+// store (Redis or Valkey) — the backends that support cross-controller fanout and
+// must fail readiness hard when unreachable.
+func cacheBackendIsRemote(backend string) bool {
+	switch strings.ToLower(strings.TrimSpace(backend)) {
+	case cacheBackendRedis, cacheBackendValkey:
+		return true
+	default:
+		return false
+	}
 }
 
 type RunLiveStateSnapshot struct {
@@ -129,9 +145,9 @@ func newCacheBackend(cfg cacheRuntimeConfig) (CacheBackend, error) {
 			cfg.KeyPrefix = defaultRedisKeyPrefix
 		}
 		return newMemoryCacheBackend(cfg), nil
-	case cacheBackendRedis:
+	case cacheBackendRedis, cacheBackendValkey:
 		if strings.TrimSpace(cfg.RedisURL) == "" {
-			return nil, fmt.Errorf("cache backend redis requires APEXLOAD_REDIS_URL")
+			return nil, fmt.Errorf("cache backend %s requires APEXLOAD_REDIS_URL", cfg.Backend)
 		}
 		return newRedisCacheBackend(cfg)
 	default:
@@ -215,9 +231,12 @@ func cacheReadinessDetails(info CacheBackendInfo) map[string]any {
 	if info.FanoutChannel != "" {
 		details["fanout_channel"] = info.FanoutChannel
 	}
-	if info.Backend == cacheBackendRedis {
+	if cacheBackendIsRemote(info.Backend) {
 		details["redis_url_configured"] = info.RedisURLSet
 		details["tls_enabled"] = info.TLSEnabled
+		if info.Endpoint != "" {
+			details["endpoint"] = info.Endpoint
+		}
 		if info.Timeout > 0 {
 			details["timeout"] = info.Timeout.String()
 		}
@@ -480,17 +499,38 @@ func newRedisCacheBackend(cfg cacheRuntimeConfig) (*redisCacheBackend, error) {
 	if cfg.WriteTimeout > 0 {
 		options.WriteTimeout = cfg.WriteTimeout
 	}
+	tlsEnabled := cfg.TLSEnabled || options.TLSConfig != nil
+	label := cacheBackendRedis
+	if strings.EqualFold(strings.TrimSpace(cfg.Backend), cacheBackendValkey) {
+		label = cacheBackendValkey
+	}
 	return &redisCacheBackend{
 		client: redis.NewClient(options),
 		info: CacheBackendInfo{
-			Backend:       cacheBackendRedis,
+			Backend:       label,
 			KeyPrefix:     cfg.KeyPrefix,
 			RedisURLSet:   true,
-			TLSEnabled:    cfg.TLSEnabled || options.TLSConfig != nil,
+			TLSEnabled:    tlsEnabled,
 			Timeout:       cfg.Timeout,
 			FanoutChannel: cfg.FanoutChannel,
+			Endpoint:      redactRedisEndpoint(options.Addr, tlsEnabled),
 		},
 	}, nil
+}
+
+// redactRedisEndpoint returns a credential-free scheme://host:port locator for a
+// Redis/Valkey server. go-redis' parsed Addr is already just host:port (no
+// username/password), so this never leaks secrets.
+func redactRedisEndpoint(addr string, tlsEnabled bool) string {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return ""
+	}
+	scheme := "redis"
+	if tlsEnabled {
+		scheme = "rediss"
+	}
+	return scheme + "://" + addr
 }
 
 func (r *redisCacheBackend) Ping(ctx context.Context) error {

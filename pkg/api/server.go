@@ -89,7 +89,7 @@ func NewServer(cfg ServerConfig) *Server {
 		cache = configuredCacheBackend()
 	}
 	controllerID := controllerInstanceID()
-	if cache.Info().Backend == cacheBackendRedis {
+	if cacheBackendIsRemote(cache.Info().Backend) {
 		hub.SetFanout(cache, controllerID, cache.Info().FanoutChannel)
 	}
 	runner := NewTestRunner(cfg.MaxConcurrent, hub, cfg.Store)
@@ -673,7 +673,7 @@ func (s *Server) startCacheFanout() {
 		return
 	}
 	info := s.cache.Info()
-	if info.Backend != cacheBackendRedis {
+	if !cacheBackendIsRemote(info.Backend) {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
