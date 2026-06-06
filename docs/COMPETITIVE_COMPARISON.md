@@ -90,6 +90,7 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 | SOAP / WSDL | Supported | Via HTTP scripting | Supported | `pkg/protocol/soap`, `pkg/convert/wsdl` | Complex XSD generation is scaffolded. |
 | Java-over-HTTP | Supported | Not primary | Enterprise coverage | `pkg/protocol/java_http` | Enterprise fixtures on demand. |
 | JMS / broker | Partial | Extensions | Enterprise | `pkg/protocol/jms` | Real broker execution requires adapter. |
+| Kafka / event streaming | Supported (mock default; real adapter opt-in) | Extensions | Enterprise | `pkg/protocol/kafka`, `pkg/convert/asyncapi` | Mock broker + AsyncAPI import; live execution via `-tags kafka_real`. |
 | WebSocket | Supported | Supported | Supported | `pkg/protocol/websocket` | More subscription-protocol fixtures. |
 | gRPC | Supported | Supported | Varies | `pkg/protocol/grpc` | Service-specific proto fixtures. |
 | Browser UX canaries | Partial | k6 browser (Playwright-based) | RealBrowser (packaged) | `/api/v1/system/browser-benchmarks`, `docs/MOBILE_BROWSER_EMULATION_PLAN.md` | Attach benchmark artifacts before raising density claims. |
@@ -226,7 +227,7 @@ These overstatements existed in earlier docs and are now corrected:
 **Positioning:** APEX Load competes as a Kubernetes-native self-hosted platform with open telemetry, auditable archives, and strong import paths. It does not claim JavaScript compatibility or drop-in k6 portability.
 
 **Where APEX leads k6:**
-- Protocol breadth (SOAP, Java-over-HTTP, JMS, WebSocket, gRPC native)
+- Protocol breadth (SOAP, Java-over-HTTP, JMS, Kafka, WebSocket, gRPC native)
 - Single-pane authoring + execution + analysis + admin
 - LoadRunner/JMeter/HAR migration paths
 - Governed scheduling, RBAC, and audit out of the box for self-hosted
@@ -302,7 +303,7 @@ These areas correspond to the `competitive_parity` dimensions in `GET /api/v1/sy
 
 ### Specialized Enterprise Protocols
 
-**Status: Gap.** APEX Load covers HTTP/API, SOAP, Java-over-HTTP, JMS, WebSocket, gRPC, HAR, JMeter, DevWeb, and LoadRunner migration paths. SAP GUI, Citrix, Oracle Forms, and desktop UI protocols are demand-gated non-goals.
+**Status: Gap.** APEX Load covers HTTP/API, SOAP, Java-over-HTTP, JMS, Kafka, WebSocket, gRPC, HAR, JMeter, DevWeb, AsyncAPI, and LoadRunner migration paths. SAP GUI, Citrix, Oracle Forms, and desktop UI protocols are demand-gated non-goals.
 
 **Evidence:** `docs/PROTOCOL_EXTENSION_PLAN.md`, `docs/BROWSER_CLIENT_METRICS_PLAN.md#non-goals`, `/api/v1/protocol-bundles/support-matrix`
 
@@ -552,6 +553,7 @@ Bundles correspond to OpenText LoadRunner Enterprise protocol-bundle groups.
 | **Web / API** | SOAP/WSDL | Supported | Go generator (Linux) |
 | **Web / API** | Java-over-HTTP | Supported (bounded codec) | Go generator (Linux) |
 | **Web / API** | JMS (Solace, IBM MQ) | Partial | Go generator (Linux) |
+| **Web / API** | Kafka (event streaming) | Supported (mock default; real adapter opt-in via `-tags kafka_real`) | Go generator (Linux) |
 | **Database (DB1)** | SQL / ODBC-style (database/sql) | Supported | Go generator (Linux) |
 | **Database (DB1)** | Oracle-2 Tier | External-runner required | Governed Oracle client runner |
 | **Network (NET1)** | DNS, FTP (control), SMTP, POP3, IMAP, LDAP, Winsock (TCP/UDP) | Supported | Go generator (Linux) |
