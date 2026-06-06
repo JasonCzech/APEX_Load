@@ -806,7 +806,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
   const [requestError, setRequestError] = useState('')
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('general')
   const [confirmingResetAll, setConfirmingResetAll] = useState(false)
-  const [customizingSections, setCustomizingSections] = useState(false)
+  const [customizingSections] = useState(false)
   const [draggedSectionId, setDraggedSectionId] = useState<SettingsSectionId | null>(null)
   const [sectionOrder, setSectionOrder] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('apexload.settings.sectionOrder'))
   const [hiddenSectionIds, setHiddenSectionIds] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('apexload.settings.hiddenSections'))
@@ -1637,15 +1637,10 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
     }
   }
 
-  const visibleSections = SETTINGS_SECTIONS.filter(section => !hiddenSectionIds.includes(section.id))
-  const hiddenSections = SETTINGS_SECTIONS.filter(section => hiddenSectionIds.includes(section.id))
   const orderedSectionIds = mergeSettingsOrder(sectionOrder)
   const getSectionOrder = (id: SettingsSectionId) => orderedSectionIds.indexOf(id)
   const sectionClass = (id: SettingsSectionId) =>
     `settings-card ${customizingSections ? 'editable' : ''} ${collapsedSectionIds.includes(id) ? 'collapsed' : ''} ${draggedSectionId === id ? 'dragging' : ''}`
-  const scrollToSection = (id: SettingsSectionId) => {
-    document.getElementById(`settings-section-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
 
   const toggleHiddenSection = (id: SettingsSectionId) => {
     setHiddenSectionIds(prev => prev.includes(id) ? prev.filter(sectionId => sectionId !== id) : [...prev, id])
@@ -1653,12 +1648,6 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
 
   const toggleCollapsedSection = (id: SettingsSectionId) => {
     setCollapsedSectionIds(prev => prev.includes(id) ? prev.filter(sectionId => sectionId !== id) : [...prev, id])
-  }
-
-  const resetSectionLayout = () => {
-    setSectionOrder(SETTINGS_SECTIONS.map(section => section.id))
-    setHiddenSectionIds([])
-    setCollapsedSectionIds([])
   }
 
   const createApplication = async () => {

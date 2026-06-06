@@ -369,7 +369,6 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     () => importItems.find(item => item.id === selectedItemId) || importItems[0] || null,
     [importItems, selectedItemId],
   )
-  const file = selectedItem?.file ?? null
   const selectedHARFile = selectedItem?.harFile ?? null
   const result = selectedItem?.result ?? null
   const reviewMode = selectedItem?.reviewMode ?? null

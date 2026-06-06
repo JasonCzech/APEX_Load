@@ -4304,21 +4304,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     })
   }
 
-  const removeParameter = (idx: number) => {
-    const nextLength = Math.max(0, (script.parameters?.length || 0) - 1)
-    setSelectedParameterIdx(previous => {
-      if (nextLength === 0) return null
-      if (previous === null) return 0
-      if (previous === idx) return Math.min(idx, nextLength - 1)
-      if (previous > idx) return previous - 1
-      return previous
-    })
-    setScript(prev => ({
-      ...prev,
-      parameters: (prev.parameters || []).filter((_, i) => i !== idx),
-    }))
-  }
-
   const upsertParameterFromActionEditor = ({ selectedText, requestedName, existingName, parameterType, typeConfig, reuseExisting }: ActionEditorParameterRequest): string => {
     const normalizedExistingName = existingName ? sanitizeVarName(existingName) : ''
     const resolvedName = ensureUniqueParameterName(
@@ -4658,25 +4643,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     onReviewOccurrences: openJsonOccurrenceReview,
   })
 
-  const toggleOpenDataEditor = (idx: number) => {
-    setOpenDataEditor(prev => (prev === idx ? null : idx))
-  }
-
-  const openDataEditorAt = (idx: number) => {
-    setOpenDataEditor(idx)
-  }
-
   const toggleDataEditorModeAt = (idx: number) => {
     setDataEditorMode(prev => ({ ...prev, [idx]: (prev[idx] || 'grid') === 'grid' ? 'raw' : 'grid' }))
-  }
-
-  const removeDataSource = (idx: number) => {
-    setScript(prev => ({
-      ...prev,
-      data_sources: (prev.data_sources || []).filter((_, i) => i !== idx),
-    }))
-    setDataSourceHistory({})
-    setDataEditorMode({})
   }
 
   const mutateDataSource = (
@@ -9057,11 +9025,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               onRedoDataSource={redoDataSource}
               onRemoveDataColumn={removeDataColumn}
               onRemoveDataRow={removeDataRow}
-              onRemoveDataSource={removeDataSource}
               onSortDataRows={sortDataRows}
-              onOpenDataEditor={openDataEditorAt}
               onToggleDataEditorMode={toggleDataEditorModeAt}
-              onToggleOpenDataEditor={toggleOpenDataEditor}
               onUndoDataSource={undoDataSource}
               onUpdateDataCell={updateDataCell}
               onUpdateDataColumnName={updateDataColumnName}
@@ -9216,14 +9181,11 @@ interface ParameterDataDialogProps {
   onClose?: () => void
   onExportDataSourceFile: (source: DataSourceConfig, idx: number) => void
   onImportDataSourceFile: (idx: number, file: File | null) => void
-  onOpenDataEditor: (idx: number) => void
   onRedoDataSource: (idx: number) => void
   onRemoveDataColumn: (idx: number, colIdx: number) => void
   onRemoveDataRow: (idx: number, rowIdx: number) => void
-  onRemoveDataSource: (idx: number) => void
   onSortDataRows: (idx: number, colIdx: number, direction: DataSourceSortDirection) => void
   onToggleDataEditorMode: (idx: number) => void
-  onToggleOpenDataEditor: (idx: number) => void
   onUndoDataSource: (idx: number) => void
   onUpdateDataCell: (idx: number, rowIdx: number, colIdx: number, value: string) => void
   onUpdateDataColumnName: (idx: number, colIdx: number, value: string) => void
@@ -9255,14 +9217,11 @@ function ParameterDataDialog({
   onClose,
   onExportDataSourceFile,
   onImportDataSourceFile,
-  onOpenDataEditor,
   onRedoDataSource,
   onRemoveDataColumn,
   onRemoveDataRow,
-  onRemoveDataSource,
   onSortDataRows,
   onToggleDataEditorMode,
-  onToggleOpenDataEditor,
   onUndoDataSource,
   onUpdateDataCell,
   onUpdateDataColumnName,
@@ -9351,10 +9310,8 @@ function ParameterDataDialog({
             onRedoDataSource={onRedoDataSource}
             onRemoveDataColumn={onRemoveDataColumn}
             onRemoveDataRow={onRemoveDataRow}
-            onRemoveDataSource={onRemoveDataSource}
             onSortDataRows={onSortDataRows}
             onToggleDataEditorMode={onToggleDataEditorMode}
-            onToggleOpenDataEditor={onToggleOpenDataEditor}
             onUndoDataSource={onUndoDataSource}
             onUpdateDataCell={onUpdateDataCell}
             onUpdateDataColumnName={onUpdateDataColumnName}
@@ -9399,10 +9356,8 @@ interface ParameterDataDetailProps {
   onRedoDataSource: (idx: number) => void
   onRemoveDataColumn: (idx: number, colIdx: number) => void
   onRemoveDataRow: (idx: number, rowIdx: number) => void
-  onRemoveDataSource: (idx: number) => void
   onSortDataRows: (idx: number, colIdx: number, direction: DataSourceSortDirection) => void
   onToggleDataEditorMode: (idx: number) => void
-  onToggleOpenDataEditor: (idx: number) => void
   onUndoDataSource: (idx: number) => void
   onUpdateDataCell: (idx: number, rowIdx: number, colIdx: number, value: string) => void
   onUpdateDataColumnName: (idx: number, colIdx: number, value: string) => void
@@ -9429,10 +9384,8 @@ function ParameterDataDetail({
   onRedoDataSource,
   onRemoveDataColumn,
   onRemoveDataRow,
-  onRemoveDataSource,
   onSortDataRows,
   onToggleDataEditorMode,
-  onToggleOpenDataEditor,
   onUndoDataSource,
   onUpdateDataCell,
   onUpdateDataColumnName,
@@ -10433,7 +10386,7 @@ function formatParameterChoiceLabel(field: ParameterChoiceField, value: string):
   return option?.label || value
 }
 
-function ParameterDefinitionsSection({
+export function ParameterDefinitionsSection({
   focusedSourceName,
   isOpen,
   onAddParameter,
@@ -11325,7 +11278,7 @@ interface ParameterSettingsBodyProps {
   parameter: ParameterConfig
 }
 
-function ParameterSettingsBody({
+export function ParameterSettingsBody({
   className = '',
   onUpdate,
   onUpdateType,
@@ -12075,7 +12028,7 @@ interface ParameterDataSourcesSectionProps {
   script: ScriptData
 }
 
-function ParameterDataSourcesSection({
+export function ParameterDataSourcesSection({
   dataEditorMode,
   dataSourceHistory,
   isOpen,

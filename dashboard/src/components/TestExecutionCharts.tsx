@@ -1077,8 +1077,6 @@ export default function TestExecutionCharts({
     return overlayKeys.filter(key => visibleMetricKeys.includes(key))
   }
 
-  const isVuserOverlayVisible = (chart: ChartConfig, visibleMetricKeys: string[]) => visibleOverlayMetricKeys(chart, visibleMetricKeys).includes('vusers')
-
   const metricYAxisId = (chart: ChartConfig, visibleMetricKeys: string[]) => visibleOverlayMetricKeys(chart, visibleMetricKeys).length > 0 ? 'metric' : undefined
 
   const showAllMetricRows = (chart: ChartConfig, rows: ChartMetricRow[]) => {

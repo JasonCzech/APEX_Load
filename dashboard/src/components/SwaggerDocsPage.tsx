@@ -90,10 +90,10 @@ function readField(lines: string[], fieldName: string, fieldIndent: number) {
 
 function parseTags(lines: string[]) {
   const tags: string[] = []
-  const tagIndex = lines.findIndex(line => /^      tags:\s*$/.test(line))
+  const tagIndex = lines.findIndex(line => /^ {6}tags:\s*$/.test(line))
   if (tagIndex < 0) return tags
   for (let index = tagIndex + 1; index < lines.length; index += 1) {
-    const match = lines[index].match(/^      -\s+(.+)$/)
+    const match = lines[index].match(/^ {6}-\s+(.+)$/)
     if (!match) break
     tags.push(cleanYamlValue(match[1]))
   }
@@ -102,24 +102,24 @@ function parseTags(lines: string[]) {
 
 function parseParameters(lines: string[]) {
   const parameters: SwaggerParameter[] = []
-  const start = lines.findIndex(line => /^      parameters:\s*$/.test(line))
+  const start = lines.findIndex(line => /^ {6}parameters:\s*$/.test(line))
   if (start < 0) return parameters
   let current: SwaggerParameter | null = null
   for (let index = start + 1; index < lines.length; index += 1) {
     const line = lines[index]
-    if (/^      [A-Za-z0-9_-]+:/.test(line)) break
-    const nameMatch = line.match(/^      - name:\s*(.+)$/)
+    if (/^ {6}[A-Za-z0-9_-]+:/.test(line)) break
+    const nameMatch = line.match(/^ {6}- name:\s*(.+)$/)
     if (nameMatch) {
       current = { name: cleanYamlValue(nameMatch[1]), location: '', required: false, type: '' }
       parameters.push(current)
       continue
     }
     if (!current) continue
-    const locationMatch = line.match(/^        in:\s*(.+)$/)
+    const locationMatch = line.match(/^ {8}in:\s*(.+)$/)
     if (locationMatch) current.location = cleanYamlValue(locationMatch[1])
-    const requiredMatch = line.match(/^        required:\s*(.+)$/)
+    const requiredMatch = line.match(/^ {8}required:\s*(.+)$/)
     if (requiredMatch) current.required = cleanYamlValue(requiredMatch[1]).toLowerCase() === 'true'
-    const typeMatch = line.match(/^          type:\s*(.+)$/)
+    const typeMatch = line.match(/^ {10}type:\s*(.+)$/)
     if (typeMatch) current.type = cleanYamlValue(typeMatch[1])
   }
   return parameters
@@ -127,20 +127,20 @@ function parseParameters(lines: string[]) {
 
 function parseResponses(lines: string[]) {
   const responses: SwaggerResponse[] = []
-  const start = lines.findIndex(line => /^      responses:\s*$/.test(line))
+  const start = lines.findIndex(line => /^ {6}responses:\s*$/.test(line))
   if (start < 0) return responses
   let current: SwaggerResponse | null = null
   for (let index = start + 1; index < lines.length; index += 1) {
     const line = lines[index]
-    if (/^      [A-Za-z0-9_-]+:/.test(line)) break
-    const statusMatch = line.match(/^        ['"]?([^:'"]+)['"]?:\s*$/)
+    if (/^ {6}[A-Za-z0-9_-]+:/.test(line)) break
+    const statusMatch = line.match(/^ {8}['"]?([^:'"]+)['"]?:\s*$/)
     if (statusMatch) {
       current = { status: statusMatch[1], description: '' }
       responses.push(current)
       continue
     }
     if (!current) continue
-    const descriptionMatch = line.match(/^          description:\s*(.+)$/)
+    const descriptionMatch = line.match(/^ {10}description:\s*(.+)$/)
     if (descriptionMatch) current.description = cleanYamlValue(descriptionMatch[1])
   }
   return responses
@@ -163,22 +163,22 @@ function parseOperation(path: string, method: string, lines: string[]): SwaggerO
 
 export function parseSwaggerDocument(source: string): SwaggerDocument {
   const lines = source.split('\n')
-  const title = cleanYamlValue(lines.find(line => /^  title:\s+/.test(line))?.replace(/^  title:\s+/, '') || 'APEX Load API')
-  const version = cleanYamlValue(lines.find(line => /^  version:\s+/.test(line))?.replace(/^  version:\s+/, '') || '')
+  const title = cleanYamlValue(lines.find(line => /^ {2}title:\s+/.test(line))?.replace(/^ {2}title:\s+/, '') || 'APEX Load API')
+  const version = cleanYamlValue(lines.find(line => /^ {2}version:\s+/.test(line))?.replace(/^ {2}version:\s+/, '') || '')
   const serverUrl = cleanYamlValue(lines.find(line => /^- url:\s+/.test(line))?.replace(/^- url:\s+/, '') || '')
-  const descriptionIndex = lines.findIndex(line => /^  description:\s+/.test(line))
+  const descriptionIndex = lines.findIndex(line => /^ {2}description:\s+/.test(line))
   const description = descriptionIndex >= 0 ? readBlockScalar(lines, descriptionIndex, 2) : ''
   const operations: SwaggerOperation[] = []
 
   for (let index = 0; index < lines.length; index += 1) {
-    const pathMatch = lines[index].match(/^  (\/.+):\s*$/)
+    const pathMatch = lines[index].match(/^ {2}(\/.+):\s*$/)
     if (!pathMatch) continue
     const path = pathMatch[1]
     let cursor = index + 1
     while (cursor < lines.length) {
-      const methodMatch = lines[cursor].match(/^    ([a-z]+):\s*$/)
+      const methodMatch = lines[cursor].match(/^ {4}([a-z]+):\s*$/)
       if (!methodMatch) {
-        if (/^  \/.+:\s*$/.test(lines[cursor])) break
+        if (/^ {2}\/.+:\s*$/.test(lines[cursor])) break
         cursor += 1
         continue
       }
@@ -189,12 +189,12 @@ export function parseSwaggerDocument(source: string): SwaggerDocument {
       }
       const operationStart = cursor + 1
       let operationEnd = operationStart
-      while (operationEnd < lines.length && !/^    [a-z]+:\s*$/.test(lines[operationEnd]) && !/^  \/.+:\s*$/.test(lines[operationEnd])) {
+      while (operationEnd < lines.length && !/^ {4}[a-z]+:\s*$/.test(lines[operationEnd]) && !/^ {2}\/.+:\s*$/.test(lines[operationEnd])) {
         operationEnd += 1
       }
       operations.push(parseOperation(path, method, lines.slice(operationStart, operationEnd)))
       cursor = operationEnd
-      if (cursor < lines.length && /^  \/.+:\s*$/.test(lines[cursor])) break
+      if (cursor < lines.length && /^ {2}\/.+:\s*$/.test(lines[cursor])) break
     }
   }
 

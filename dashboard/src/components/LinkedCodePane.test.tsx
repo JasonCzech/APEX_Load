@@ -16,7 +16,7 @@ import { type LineRange } from './dslJsonPointers'
 // LinkedCodePane touches: a 4-line doc and a recording dispatch.
 const dispatchSpy = vi.fn()
 vi.mock('@uiw/react-codemirror', () => ({
-  default: ({ onCreateEditor }: { onCreateEditor?: (view: unknown) => void }) => {
+  default: function MockCodeMirror({ onCreateEditor }: { onCreateEditor?: (view: unknown) => void }) {
     useEffect(() => {
       const fakeView = {
         state: {

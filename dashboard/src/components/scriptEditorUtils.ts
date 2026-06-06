@@ -856,7 +856,7 @@ export function formatNetworkEntries(entries?: NetworkEntry[]): string {
 
 export function extractJsonPaths(text?: string | null): string[] {
   if (!text) return []
-  const matches = text.match(/\$\.[a-zA-Z0-9_.\[\]]+/g)
+  const matches = text.match(/\$\.[a-zA-Z0-9_.[\]]+/g)
   return matches ? Array.from(new Set(matches)) : []
 }
 

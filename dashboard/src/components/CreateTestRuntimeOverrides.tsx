@@ -44,7 +44,8 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
     const nextBrowser: BrowserRuntimeSettings = { ...(runtimeSettings.browser || {}) }
 
     if (value === undefined) {
-      const { [field]: _omitted, ...rest } = nextBrowser
+      const rest = { ...nextBrowser }
+      delete rest[field]
       onRuntimeSettingChange('browser', Object.keys(rest).length > 0 ? rest as BrowserRuntimeSettings : undefined)
       return
     }

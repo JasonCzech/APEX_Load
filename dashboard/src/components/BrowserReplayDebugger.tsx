@@ -8,7 +8,6 @@ import {
   type ReplayRuntimeProfile,
   type ScriptDebugAction,
 } from '../types'
-import { formatConsoleEntries, formatNetworkEntries } from './scriptEditorUtils'
 import JsonViewer from './JsonViewer'
 
 function eventStatus(event?: BrowserReplayEvent | null): string {
@@ -207,8 +206,6 @@ export default function BrowserReplayDebugger({
   )
   const selectedHTML = selectedEvent?.html || selectedEvent?.snapshot?.html
   const selectedClientMetrics = eventClientMetrics(selectedEvent)
-  const selectedConsoleText = useMemo(() => formatConsoleEntries(selectedConsoleEntries), [selectedConsoleEntries])
-  const selectedNetworkText = useMemo(() => formatNetworkEntries(selectedNetworkEntries), [selectedNetworkEntries])
   const suggestedLocator = suggestedLocatorForEvent(selectedEvent)
   const failingEvent = events.find(event => !event.success) || null
   const runtimeProfile = session?.runtime_profile || report?.runtime_profile || report?.artifact_manifest?.runtime_profile

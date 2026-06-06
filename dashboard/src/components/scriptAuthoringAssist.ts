@@ -590,7 +590,7 @@ export function buildProtocolStarterTemplates(protocol: string, nextIndex: numbe
           key: 'http-post-json',
           label: 'POST JSON',
           description: 'Seed a JSON write request with content headers.',
-          action: { name: `POST_${sequence}`, type: 'POST', method: 'POST', target: '/orders', headers: { 'Content-Type': 'application/json' }, body: '{\n  \"id\": \"{{param.order_id}}\"\n}', extractors: [], assertions: [{ type: 'status_code', expected: 200 }], think_time_after: true },
+          action: { name: `POST_${sequence}`, type: 'POST', method: 'POST', target: '/orders', headers: { 'Content-Type': 'application/json' }, body: '{\n  "id": "{{param.order_id}}"\n}', extractors: [], assertions: [{ type: 'status_code', expected: 200 }], think_time_after: true },
         },
         {
           key: 'http-poll',

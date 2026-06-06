@@ -63,19 +63,6 @@ interface RecordingSession {
   }
 }
 
-interface Correlation {
-  name: string
-  source: string
-  expression: string
-  extract_type: string
-  found_in_seq: number
-  used_in_seqs: number[]
-  sample_value: string
-  rule_id?: string
-  confidence?: number
-  reasons?: string[]
-}
-
 // confidenceTone buckets a 0..1 correlation confidence for badge styling.
 // >=0.8 is auto-applicable in the engine; the UI mirrors that threshold.
 function confidenceTone(confidence?: number): 'high' | 'medium' | 'low' | null {

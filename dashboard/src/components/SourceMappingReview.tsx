@@ -203,10 +203,6 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
     })
   }, [focusedMappingId, focusRequestId, selectedMappingId])
 
-  if (files.length === 0 && mappings.length === 0) {
-    return null
-  }
-
   const selectMapping = (mapping: SourceReviewMapping | null) => {
     if (!mapping) return
     setSelectedMappingId(mapping.id)
@@ -291,6 +287,10 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
     window.addEventListener('keydown', handleGlobalKeyDown)
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
   }, [filteredMappings, selectedMappingId, approvedMappingIds])
+
+  if (files.length === 0 && mappings.length === 0) {
+    return null
+  }
 
   const handleTableKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -517,7 +517,7 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
             <strong>{selectedMapping?.target_path || 'Generated DSL'}</strong>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyValue('dsl', dslExcerpt)} disabled={!copySupported || !dslExcerpt}>
-                {copied === 'dsl' ? 'Copied' : 'Copy'}
+                {copied === 'dsl' ? 'Copied' : 'Copy DSL'}
               </button>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMaximizedPane(maximizedPane === 'dsl' ? null : 'dsl')}>
                 {maximizedPane === 'dsl' ? 'Restore' : 'Maximize'}
