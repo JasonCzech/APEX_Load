@@ -154,6 +154,82 @@
   --info-text: #1d4ed8;
 }
 
+:root[data-theme='sepia'] {
+  /* Premium Sepia Theme (Warm Sand / Coffee) */
+  --bg-primary: #f8f4ec;
+  --bg-secondary: #f0e9dd;
+  --bg-card: rgba(255, 252, 246, 0.85);
+  --bg-surface: rgba(255, 253, 248, 0.95);
+  --bg-elevated: #ffffff;
+  --bg-hover: rgba(139, 107, 74, 0.06);
+  --border: rgba(139, 107, 74, 0.15);
+  --border-subtle: rgba(139, 107, 74, 0.08);
+  
+  --text-primary: #4a3b2c;
+  --text-secondary: #786452;
+  --text-muted: #a38f7c;
+  
+  /* Rich Amber Accent */
+  --accent: #d97706;
+  --accent-rgb: 217, 119, 6;
+  --accent-soft: rgba(217, 119, 6, 0.1);
+  --accent-border: rgba(217, 119, 6, 0.3);
+  --accent-contrast: #ffffff;
+  --accent-hover: #b45309;
+
+  /* State Colors */
+  --success: #059669;
+  --success-rgb: 5, 150, 105;
+  --warning: #d97706;
+  --warning-rgb: 217, 119, 6;
+  --danger: #dc2626;
+  --danger-rgb: 220, 38, 38;
+  --info: #0284c7;
+  --info-rgb: 2, 132, 199;
+
+  /* Chart Colors */
+  --chart-1: #d97706;
+  --chart-2: #059669;
+  --chart-3: #ea580c;
+  --chart-4: #dc2626;
+  --chart-5: #0284c7;
+  --chart-6: #9333ea;
+
+  /* Premium Effects */
+  --app-sheen: rgba(217, 119, 6, 0.04);
+  --topbar-bg: rgba(248, 244, 236, 0.75);
+  --control-bg: rgba(139, 107, 74, 0.06);
+  --control-hover: rgba(139, 107, 74, 0.12);
+  --theme-toggle-active-bg: #4a3b2c;
+  --theme-toggle-active-text: #f8f4ec;
+  
+  --glow-sm: 0 0 16px rgba(217, 119, 6, 0.1);
+  --glow-md: 0 8px 32px rgba(217, 119, 6, 0.15);
+  --shadow-sm: 0 4px 16px rgba(74, 59, 44, 0.08);
+  --shadow-md: 0 12px 36px rgba(74, 59, 44, 0.14);
+  --modal-backdrop: rgba(74, 59, 44, 0.4);
+  --focus-ring: rgba(217, 119, 6, 0.6);
+  
+  --code-bg: #f0e9dd;
+  --code-text: #291f15;
+
+  --success-bg: rgba(16, 185, 129, 0.12);
+  --success-border: rgba(16, 185, 129, 0.25);
+  --success-text: #065f46;
+  
+  --warning-bg: rgba(245, 158, 11, 0.12);
+  --warning-border: rgba(245, 158, 11, 0.25);
+  --warning-text: #92400e;
+  
+  --danger-bg: rgba(239, 68, 68, 0.12);
+  --danger-border: rgba(239, 68, 68, 0.25);
+  --danger-text: #991b1b;
+  
+  --info-bg: rgba(2, 132, 199, 0.12);
+  --info-border: rgba(2, 132, 199, 0.25);
+  --info-text: #075985;
+}
+
 * {
   margin: 0;
   padding: 0;
