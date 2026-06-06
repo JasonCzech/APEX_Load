@@ -319,10 +319,10 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 		})
 	}
 	browserContext.OnRequestFinished(func(request playwright.Request) {
-		recordRequest(request, true)
+		go recordRequest(request, true)
 	})
 	browserContext.OnRequestFailed(func(request playwright.Request) {
-		recordRequest(request, false)
+		go recordRequest(request, false)
 	})
 
 	page, err := browserContext.NewPage()
