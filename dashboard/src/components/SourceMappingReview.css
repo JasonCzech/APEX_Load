@@ -259,6 +259,15 @@
   background: var(--bg-card);
 }
 
+.source-map-panel.maximized {
+  flex: 1 1 100%;
+  max-width: 100%;
+}
+
+.source-map-panel.hidden {
+  display: none;
+}
+
 .source-map-panel-header strong {
   min-width: 0;
   overflow: hidden;
@@ -381,6 +390,11 @@
 
 .linked-code-pane .cm-scroller {
   overflow: auto;
+}
+
+.apex-search-match {
+  background-color: var(--warning-soft, rgba(255, 170, 0, 0.4));
+  border-radius: 2px;
 }
 
 @media (max-width: 960px) {

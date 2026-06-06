@@ -16,6 +16,7 @@ import { apexDslSemanticHighlighting } from './apexDslSemanticHighlighting'
 // pane. Updated imperatively (see the effect below) so changing the selection
 // never reconfigures the whole editor.
 const setLinkedRange = StateEffect.define<LineRange | null>()
+const setFilterDecorations = StateEffect.define<DecorationSet>()
 
 function buildLineDecorations(state: EditorView['state'], range: LineRange | null): DecorationSet {
   if (!range) return Decoration.none
@@ -38,6 +39,20 @@ const linkedRangeField = StateField.define<DecorationSet>({
     for (const effect of tr.effects) {
       if (effect.is(setLinkedRange)) {
         next = buildLineDecorations(tr.state, effect.value)
+      }
+    }
+    return next
+  },
+  provide: field => EditorView.decorations.from(field),
+})
+
+const filterDecorationsField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(decorations, tr) {
+    let next = decorations.map(tr.changes)
+    for (const effect of tr.effects) {
+      if (effect.is(setFilterDecorations)) {
+        next = effect.value
       }
     }
     return next
@@ -98,6 +113,7 @@ interface Props {
   semanticMode?: 'apex-dsl'
   gutterStatuses?: Map<number, GutterStatus>
   activeRange?: LineRange | null
+  searchQuery?: string
   onLineClick?: (line: number) => void
   ariaLabel?: string
   maxHeight?: string
@@ -109,6 +125,7 @@ export default function LinkedCodePane({
   semanticMode,
   gutterStatuses,
   activeRange,
+  searchQuery,
   onLineClick,
   ariaLabel,
   maxHeight = '420px',
@@ -126,6 +143,7 @@ export default function LinkedCodePane({
     const exts: Extension[] = [
       apexCodeMirrorTheme,
       linkedRangeField,
+      filterDecorationsField,
       EditorView.lineWrapping,
       EditorView.editable.of(false),
       EditorView.domEventHandlers({
@@ -169,6 +187,35 @@ export default function LinkedCodePane({
     }
     view.dispatch({ effects })
   }, [activeStartLine, activeEndLine, value])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+
+    if (!searchQuery || searchQuery.trim().length === 0) {
+      view.dispatch({ effects: [setFilterDecorations.of(Decoration.none)] })
+      return
+    }
+
+    const text = view.state.doc.toString()
+    const lowerText = text.toLowerCase()
+    const lowerQuery = searchQuery.toLowerCase()
+    const builder = new RangeSetBuilder<Decoration>()
+    const deco = Decoration.mark({ class: 'apex-search-match' })
+    
+    let i = 0
+    let lastI = -1
+    while ((i = lowerText.indexOf(lowerQuery, i)) !== -1) {
+      // RangeSetBuilder requires strict ordering and no overlap
+      if (i > lastI) {
+        builder.add(i, i + lowerQuery.length, deco)
+        lastI = i
+      }
+      i += lowerQuery.length
+    }
+    
+    view.dispatch({ effects: [setFilterDecorations.of(builder.finish())] })
+  }, [searchQuery, value])
 
   return (
     <div className="linked-code-pane" role="region" aria-label={ariaLabel}>

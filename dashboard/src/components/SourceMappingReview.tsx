@@ -128,6 +128,8 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [copied, setCopied] = useState<'source' | 'dsl' | ''>('')
   const [isTableCollapsed, setIsTableCollapsed] = useState(false)
+  const [maximizedPane, setMaximizedPane] = useState<'source' | 'dsl' | null>(null)
+  const [approvedMappingIds, setApprovedMappingIds] = useState<Set<string>>(new Set())
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
 
   const selectedMapping = useMemo(
@@ -184,10 +186,11 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
         mapping.status,
         mapping.support_mode,
         mapping.notes,
+        approvedMappingIds.has(mapping.id) ? 'approved' : ''
       ].some(value => String(value || '').toLowerCase().includes(needle)))
     }
     return [...next].sort((a, b) => compareText(mappingSortValue(a, sortField), mappingSortValue(b, sortField), sortDirection))
-  }, [filter, mappings, sortDirection, sortField, categoryFilter])
+  }, [filter, mappings, sortDirection, sortField, categoryFilter, approvedMappingIds])
 
   useEffect(() => {
     const idToScroll = focusedMappingId || selectedMappingId
@@ -221,6 +224,73 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
     setSelectedMappingId(nextMapping?.id || '')
     setCopied('')
   }
+
+  const isNeedsReview = (mapping: SourceReviewMapping) => {
+    return statusCategory(mapping.status) === 'review' || mapping.status === 'review_only'
+  }
+
+  const toggleApprove = (mappingId: string) => {
+    setApprovedMappingIds(prev => {
+      const next = new Set(prev)
+      if (next.has(mappingId)) {
+        next.delete(mappingId)
+      } else {
+        next.add(mappingId)
+      }
+      return next
+    })
+  }
+
+  const exportCsv = () => {
+    const header = ['Source File', 'Start Line', 'Function', 'Target Path', 'Status', 'Approved', 'Support Mode', 'Notes'].join(',')
+    const rows = filteredMappings.map(m => {
+      const isApproved = approvedMappingIds.has(m.id)
+      return [
+        `"${m.source_file || ''}"`,
+        m.start_line || '',
+        `"${m.function || ''}"`,
+        `"${m.target_path || m.target_name || ''}"`,
+        `"${m.status || ''}"`,
+        isApproved ? 'Yes' : 'No',
+        `"${m.support_mode || ''}"`,
+        `"${(m.notes || '').replace(/"/g, '""')}"`
+      ].join(',')
+    })
+    const csvContent = [header, ...rows].join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.setAttribute('href', url)
+    link.setAttribute('download', `source_mapping_review_${script?.id || 'export'}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return
+      }
+
+      if (e.key === '[' || e.key === ']') {
+        const reviewItems = filteredMappings.filter(m => isNeedsReview(m) && !approvedMappingIds.has(m.id))
+        if (reviewItems.length === 0) return
+
+        const currentIndex = reviewItems.findIndex(m => m.id === selectedMappingId)
+        let nextIndex = 0
+
+        if (e.key === ']') {
+          nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % reviewItems.length
+        } else {
+          nextIndex = currentIndex === -1 ? reviewItems.length - 1 : (currentIndex - 1 + reviewItems.length) % reviewItems.length
+        }
+        selectMapping(reviewItems[nextIndex])
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKeyDown)
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [filteredMappings, selectedMappingId, approvedMappingIds])
 
   const handleTableKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -340,7 +410,15 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
           <span>Filter Mappings</span>
           <input value={filter} onChange={event => setFilter(event.target.value)} placeholder="Function, target, status..." />
         </label>
-        <div style={{ alignSelf: 'flex-end', marginLeft: 'auto' }}>
+        <div style={{ alignSelf: 'flex-end', marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            style={{ border: '1px solid var(--border)' }}
+            onClick={exportCsv}
+          >
+            Export CSV
+          </button>
           <button
             type="button"
             className="btn btn-sm btn-ghost"
@@ -377,8 +455,20 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
                 <td className="cell-mono">{mapping.target_path || mapping.target_name || 'review-only'}</td>
                 <td>
                   <div className="source-map-status-stack">
-                    <span className={`source-map-status ${CATEGORY_CLASS[statusCategory(mapping.status)]}`}>{formatStatusLabel(mapping.status)}</span>
+                    <span className={`source-map-status ${approvedMappingIds.has(mapping.id) ? 'converted' : CATEGORY_CLASS[statusCategory(mapping.status)]}`}>
+                      {approvedMappingIds.has(mapping.id) ? 'Approved' : formatStatusLabel(mapping.status)}
+                    </span>
                     {mapping.support_mode && <span className="source-map-support-mode">{formatSupportModeLabel(mapping.support_mode)}</span>}
+                    {isNeedsReview(mapping) && (
+                      <button 
+                        type="button" 
+                        className="btn btn-sm btn-ghost"
+                        style={{ padding: '0 4px', height: 'auto', minHeight: '0', fontSize: '11px', border: '1px solid var(--border)' }}
+                        onClick={(e) => { e.stopPropagation(); toggleApprove(mapping.id); }}
+                      >
+                        {approvedMappingIds.has(mapping.id) ? 'Undo' : 'Approve'}
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -393,18 +483,24 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
       </div>
 
       <div className="source-map-panels">
-        <div className="source-map-panel">
+        <div className={`source-map-panel ${maximizedPane === 'dsl' ? 'hidden' : maximizedPane === 'source' ? 'maximized' : ''}`}>
           <div className="source-map-panel-header">
             <strong>{selectedFile?.path || 'Source'}</strong>
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyValue('source', sourceExcerpt)} disabled={!copySupported || !sourceExcerpt}>
-              {copied === 'source' ? 'Copied' : 'Copy Source'}
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyValue('source', sourceExcerpt)} disabled={!copySupported || !sourceExcerpt}>
+                {copied === 'source' ? 'Copied' : 'Copy'}
+              </button>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMaximizedPane(maximizedPane === 'source' ? null : 'source')}>
+                {maximizedPane === 'source' ? 'Restore' : 'Maximize'}
+              </button>
+            </div>
           </div>
           {selectedFile ? (
             <Suspense fallback={<PaneFallback />}>
               <LinkedCodePane
                 value={selectedFile.content}
                 language={selectedFile.language}
+                searchQuery={filter}
                 gutterStatuses={sourceGutter}
                 activeRange={sourceActiveRange}
                 onLineClick={handleSourceLineClick}
@@ -416,12 +512,17 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
           )}
         </div>
 
-        <div className="source-map-panel">
+        <div className={`source-map-panel ${maximizedPane === 'source' ? 'hidden' : maximizedPane === 'dsl' ? 'maximized' : ''}`}>
           <div className="source-map-panel-header">
             <strong>{selectedMapping?.target_path || 'Generated DSL'}</strong>
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyValue('dsl', dslExcerpt)} disabled={!copySupported || !dslExcerpt}>
-              {copied === 'dsl' ? 'Copied' : 'Copy DSL'}
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyValue('dsl', dslExcerpt)} disabled={!copySupported || !dslExcerpt}>
+                {copied === 'dsl' ? 'Copied' : 'Copy'}
+              </button>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMaximizedPane(maximizedPane === 'dsl' ? null : 'dsl')}>
+                {maximizedPane === 'dsl' ? 'Restore' : 'Maximize'}
+              </button>
+            </div>
           </div>
           {dslDocument ? (
             <Suspense fallback={<PaneFallback />}>
@@ -429,6 +530,7 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
                 value={dslDocument.text}
                 language="json"
                 semanticMode="apex-dsl"
+                searchQuery={filter}
                 gutterStatuses={dslStatus.lines}
                 activeRange={dslActiveRange}
                 onLineClick={handleDslLineClick}
