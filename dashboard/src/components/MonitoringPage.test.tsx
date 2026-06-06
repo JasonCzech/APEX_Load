@@ -223,6 +223,13 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Production Readiness')
     expect(container.textContent).toContain('Ready Checks')
     expect(container.textContent).toContain('4/6')
+    const advisoryBanner = container.querySelector('.monitor-health-banner')
+    expect(advisoryBanner).toBeTruthy()
+    expect(advisoryBanner?.getAttribute('aria-label')).toBe('Advisory Panel')
+    expect(advisoryBanner?.className).toContain('danger')
+    expect(advisoryBanner?.textContent).toContain('Advisory Panel')
+    expect(advisoryBanner?.querySelector('.monitor-health-banner-main')).toBeNull()
+    expect(container.querySelectorAll('.monitor-health-check')).toHaveLength(8)
     expect(container.textContent).toContain('Generator RPC: some generator RPC targets are not reachable')
     expect(container.textContent).toContain('Auth Mode: development auth bypass is enabled')
     expect(container.textContent).toContain('Generator Inventory')
@@ -581,7 +588,15 @@ describe('MonitoringPage', () => {
 
     await clickMonitorTab('Schedules')
 
-    expect(container.textContent).toContain('Schedule Health')
+    const scheduleHealthPanel = container.querySelector('.monitor-schedule-health-card')
+    expect(scheduleHealthPanel).toBeTruthy()
+    expect(scheduleHealthPanel?.getAttribute('aria-label')).toBe('Advisory Panel')
+    expect(scheduleHealthPanel?.className).toContain('danger')
+    expect(scheduleHealthPanel?.querySelector('.monitor-schedule-health-hero')).toBeNull()
+    expect(container.querySelector('[data-card-id="schedule-health"]')).toBeNull()
+    expect(visibleMonitorCardIds()).toEqual(['run-calendar'])
+    expect(container.textContent).toContain('Schedules1/1')
+    expect(container.textContent).toContain('Advisory Panel')
     expect(container.textContent).toContain('1 blocked')
     expect(container.textContent).toContain('Due')
     expect(container.textContent).toContain('Blocked')
@@ -711,6 +726,29 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Dana Runner')
     expect(container.textContent).toContain('RUN-42')
     expect(container.textContent).toContain('generator-a')
+    const detailPanel = container.querySelector('.run-calendar-detail-panel')
+    expect(detailPanel).toBeTruthy()
+    expect(detailPanel?.className).not.toContain('collapsed')
+
+    const collapseButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.getAttribute('aria-label') === 'Collapse run details')
+    expect(collapseButton).not.toBeUndefined()
+
+    await act(async () => {
+      collapseButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.run-calendar-detail-panel')?.className).toContain('collapsed')
+
+    const expandButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.getAttribute('aria-label') === 'Expand run details')
+    expect(expandButton).not.toBeUndefined()
+
+    await act(async () => {
+      expandButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.run-calendar-detail-panel')?.className).not.toContain('collapsed')
 
     const openButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent === 'Open Test')

@@ -15,6 +15,7 @@ const apiMock = {
   createScenarioSchedule: vi.fn(),
   updateScenarioSchedule: vi.fn(),
   deleteScenarioSchedule: vi.fn(),
+  getScheduleHealth: vi.fn(),
   approveScenarioScheduleApproval: vi.fn(),
   rejectScenarioScheduleApproval: vi.fn(),
   createTest: vi.fn(),
@@ -94,6 +95,19 @@ describe('NewTestPage', () => {
     apiMock.startTest.mockResolvedValue({})
     apiMock.listScenarioSchedules.mockResolvedValue({ schedules: [], count: 0 })
     apiMock.listScenarioScheduleOccurrences.mockResolvedValue({ occurrences: [], count: 0 })
+    apiMock.getScheduleHealth.mockResolvedValue({
+      total: 0,
+      enabled: 0,
+      due: 0,
+      blocked: 0,
+      failed: 0,
+      pending_approval: 0,
+      queued: 0,
+      materialized: 0,
+      skipped: 0,
+      completed: 0,
+      status_counts: {},
+    })
     apiMock.createScenarioSchedule.mockResolvedValue({ id: 'schedule-1' })
     apiMock.approveScenarioScheduleApproval.mockResolvedValue({ schedule: { id: 'schedule-1' } })
     apiMock.rejectScenarioScheduleApproval.mockResolvedValue({ schedule: { id: 'schedule-1' } })
@@ -903,6 +917,19 @@ describe('NewTestPage', () => {
       ],
       count: 1,
     })
+    apiMock.getScheduleHealth.mockResolvedValue({
+      total: 4,
+      enabled: 3,
+      due: 1,
+      blocked: 1,
+      failed: 0,
+      pending_approval: 1,
+      queued: 2,
+      materialized: 7,
+      skipped: 1,
+      completed: 5,
+      status_counts: {},
+    })
     apiMock.listScenarioScheduleOccurrences.mockResolvedValue({
       occurrences: [
         {
@@ -954,7 +981,16 @@ describe('NewTestPage', () => {
     await act(async () => {
       schedulesButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    await flushPromises()
 
+    const healthCard = container.querySelector('.new-test-schedule-health-card')
+    expect(healthCard?.textContent).toContain('Schedule Health')
+    expect(healthCard?.textContent).toContain('1 blocked')
+    expect(healthCard?.textContent).toContain('Enabled Schedules')
+    expect(healthCard?.textContent).toContain('3/4')
+    expect(healthCard?.textContent).toContain('Materialized')
+    expect(healthCard?.textContent).toContain('7')
+    expect(apiMock.getScheduleHealth).toHaveBeenCalled()
     expect(container.textContent).toContain('Production Nightly')
     expect(container.textContent).toContain('rev 2')
     expect(container.textContent).toContain('owner Project Admin')

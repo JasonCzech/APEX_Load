@@ -240,6 +240,11 @@ describe('DashboardPage', () => {
 
     expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', project_id: 'project-1' })
 
+    const healthCards = Array.from(container.querySelectorAll('.dash-health-card'))
+    expect(healthCards).toHaveLength(4)
+    expect(healthCards.every(card => card.className.includes('dash-card-button'))).toBe(true)
+    expect(container.querySelector('.dash-release-snapshot')).toBeTruthy()
+    expect(container.querySelectorAll('.release-metric')).toHaveLength(6)
     expect(getButtonByText('Generators Available').textContent).toContain('1')
     expect(container.textContent).toContain('SLA Breaches')
     expect(container.textContent).toContain('Avg Completeness')
@@ -291,6 +296,24 @@ describe('DashboardPage', () => {
     expect(apiMock.downloadReleaseTrend).toHaveBeenCalledWith('rel-1')
     expect(downloadBlob).toHaveBeenCalledTimes(1)
     expect(vi.mocked(downloadBlob).mock.calls[0][1]).toBe('sprint-24-rel-1-trend.csv')
+  })
+
+  it('uses theme-aware accent fills for the first two dashboard rows', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const stylesheet = readFileSync(`${cwd}/src/components/DashboardPage.css`, 'utf8') as string
+    const topRowsCss = [
+      stylesheet.match(/\.dash-health-card \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.dash-health-card\.status-idle \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.dash-release-snapshot \.dash-section-heading-row \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.dash-release-snapshot \.dash-context-chip \{[\s\S]*?\n\}/)?.[0] ?? '',
+    ].join('\n')
+
+    expect(topRowsCss).toContain('color-mix(in srgb, var(--accent)')
+    expect(topRowsCss).toContain('var(--accent-border)')
+    expect(topRowsCss).not.toContain('rgba(14, 165, 233')
+    expect(topRowsCss).not.toContain('rgba(125, 211, 252')
   })
 
   it('waits for the active application before loading dashboard data', async () => {

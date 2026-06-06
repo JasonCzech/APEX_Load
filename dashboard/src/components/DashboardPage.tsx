@@ -405,6 +405,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const liveAvailableGenerators = inventory
     ? inventory.generators.filter(generator => generator.status === 'connected').length
     : null
+  const availableGeneratorCount = liveAvailableGenerators ?? health?.capacity_availability?.effective_available_generators
 
   const updateCardSettings = (testId: string, patch: Partial<GraphCardSettings>) => {
     setActiveCardSettings(prev => ({
@@ -510,7 +511,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           </div>
         </button>
 
-        <button type="button" className="dash-health-card dash-card-button" onClick={navigateToTests}>
+        <button type="button" className={`dash-health-card dash-card-button ${stats.active > 0 ? 'status-active' : 'status-idle'}`} onClick={navigateToTests}>
           <div className="dhc-icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--chart-2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -525,7 +526,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           </div>
         </button>
 
-        <button type="button" className="dash-health-card dash-card-button" onClick={navigateToTests}>
+        <button type="button" className={`dash-health-card dash-card-button ${stats.activeVUsers > 0 ? 'status-active' : 'status-idle'}`} onClick={navigateToTests}>
           <div className="dhc-icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--chart-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
@@ -537,7 +538,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           </div>
         </button>
 
-        <button type="button" className="dash-health-card dash-card-button" onClick={navigateToMonitoring}>
+        <button type="button" className={`dash-health-card dash-card-button ${availableGeneratorCount && availableGeneratorCount > 0 ? 'status-active' : 'status-idle'}`} onClick={navigateToMonitoring}>
           <div className="dhc-icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--chart-5)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" />
@@ -545,7 +546,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
             </svg>
           </div>
           <div className="dhc-content">
-            <span className="dhc-value">{liveAvailableGenerators ?? health?.capacity_availability?.effective_available_generators ?? '—'}</span>
+            <span className="dhc-value">{availableGeneratorCount ?? '—'}</span>
             <span className="dhc-label">Generators Available</span>
           </div>
         </button>

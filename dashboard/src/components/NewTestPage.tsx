@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Application, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, StoredScenario, SystemInventoryGenerator } from '../types'
+import { Application, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleHealth, ScenarioScheduleOccurrence, StoredScenario, SystemInventoryGenerator } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
@@ -98,6 +98,10 @@ function formatDate(value?: string) {
 
 function formatCount(value: number, singular: string, plural = `${singular}s`) {
   return `${value} ${value === 1 ? singular : plural}`
+}
+
+function formatScheduleHealthCount(value?: number) {
+  return typeof value === 'number' ? value.toLocaleString() : '-'
 }
 
 function formatScheduleTimestamp(value?: string) {
@@ -389,6 +393,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [scenarioId, setScenarioId] = useState(initialScenarioId || '')
   const [releaseId, setReleaseId] = useState(activeRelease?.id || '')
   const [schedules, setSchedules] = useState<ScenarioSchedule[]>([])
+  const [scheduleHealth, setScheduleHealth] = useState<ScenarioScheduleHealth | null>(null)
   const [scheduleLoading, setScheduleLoading] = useState(false)
   const [scheduleSubmitting, setScheduleSubmitting] = useState(false)
   const [scheduleClock, setScheduleClock] = useState(() => new Date())
@@ -589,6 +594,14 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       return scenarioSortDirection === 'asc' ? result : -result
     })
   }, [filteredScenarios, scenarioSortDirection, scenarioSortField])
+  const refreshScheduleHealth = useCallback(async () => {
+    try {
+      const res = await api.getScheduleHealth()
+      setScheduleHealth(res)
+    } catch {
+      setScheduleHealth(null)
+    }
+  }, [api])
   const refreshSchedules = useCallback(async (currentScenarioId: string) => {
     if (!currentScenarioId) {
       setSchedules([])
@@ -660,6 +673,56 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const nextScheduledRun = useMemo(() => schedules.filter(item => item.enabled && item.next_run_at).sort((left, right) => (left.next_run_at || '').localeCompare(right.next_run_at || ''))[0], [schedules])
   const schedulesNeedingAction = useMemo(() => schedules.filter(item => item.next_required_action || item.pending_approval_id || item.conflict_summary || item.last_error).length, [schedules])
   const scheduleConflictCount = useMemo(() => schedules.filter(item => item.conflict_summary).length, [schedules])
+  const scheduleStatusCounts = scheduleHealth?.status_counts ?? {}
+  const scheduleQueuedCount = scheduleHealth?.queued ?? scheduleStatusCounts.queued ?? 0
+  const scheduleMaterializedCount = scheduleHealth?.materialized ?? scheduleStatusCounts.materialized ?? 0
+  const scheduleSkippedCount = scheduleHealth?.skipped ?? scheduleStatusCounts.skipped ?? 0
+  const scheduleCompletedCount = scheduleHealth?.completed ?? scheduleStatusCounts.completed ?? 0
+  const scheduleHealthSeverity = !scheduleHealth
+    ? 'unknown'
+    : scheduleHealth.failed > 0 || scheduleHealth.blocked > 0
+      ? 'danger'
+      : scheduleHealth.pending_approval > 0 || scheduleHealth.due > 0
+        ? 'warning'
+        : scheduleHealth.total > 0
+          ? 'healthy'
+          : 'unknown'
+  const scheduleHealthLabel = !scheduleHealth
+    ? 'checking'
+    : scheduleHealth.failed > 0
+      ? `${scheduleHealth.failed} failed`
+      : scheduleHealth.blocked > 0
+        ? `${scheduleHealth.blocked} blocked`
+        : scheduleHealth.pending_approval > 0
+          ? `${scheduleHealth.pending_approval} approval`
+          : scheduleHealth.due > 0
+            ? `${scheduleHealth.due} due`
+            : scheduleHealth.total > 0
+              ? `${scheduleHealth.enabled}/${scheduleHealth.total} enabled`
+              : 'no schedules'
+  const scheduleHealthSummary = !scheduleHealth
+    ? 'Checking governed schedule state across the project.'
+    : scheduleHealth.total === 0
+      ? 'No recurring schedules are configured yet.'
+      : `${formatCount(scheduleHealth.total, 'schedule')} tracked across the project; ${formatCount(schedules.length, 'schedule')} ${schedules.length === 1 ? 'matches' : 'match'} the selected scenario.`
+  const scheduleHealthMetrics = [
+    { label: 'Due', value: scheduleHealth?.due, tone: scheduleHealth?.due ? 'warning' : undefined },
+    { label: 'Blocked', value: scheduleHealth?.blocked, tone: scheduleHealth?.blocked ? 'danger' : undefined },
+    { label: 'Failed', value: scheduleHealth?.failed, tone: scheduleHealth?.failed ? 'danger' : undefined },
+    { label: 'Approval', value: scheduleHealth?.pending_approval, tone: scheduleHealth?.pending_approval ? 'warning' : undefined },
+    { label: 'Queued', value: scheduleHealth ? scheduleQueuedCount : undefined },
+    { label: 'Materialized', value: scheduleHealth ? scheduleMaterializedCount : undefined },
+    { label: 'Skipped', value: scheduleHealth ? scheduleSkippedCount : undefined },
+    { label: 'Completed', value: scheduleHealth ? scheduleCompletedCount : undefined },
+  ]
+  const scheduleHealthContext = [
+    { label: 'Scenario', value: scenario?.name || 'None selected' },
+    { label: 'Scenario Schedules', value: String(schedules.length) },
+    { label: 'Scenario Enabled', value: String(schedules.filter(item => item.enabled).length) },
+    { label: 'Needs Action', value: String(schedulesNeedingAction), tone: schedulesNeedingAction ? 'warning' : undefined },
+    { label: 'Conflicts', value: String(scheduleConflictCount), tone: scheduleConflictCount ? 'danger' : undefined },
+    { label: 'Next Scenario Run', value: nextScheduledRun ? formatScheduleTimestamp(nextScheduledRun.next_run_at) : 'Not scheduled' },
+  ]
 
   useEffect(() => {
     if (scenario && !runName) setRunName(scenario.name)
@@ -672,6 +735,11 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   useEffect(() => {
     void refreshSchedules(scenarioId)
   }, [refreshSchedules, scenarioId])
+  useEffect(() => {
+    if (pageMode === 'schedules') {
+      void refreshScheduleHealth()
+    }
+  }, [pageMode, refreshScheduleHealth])
   useEffect(() => {
     if (!editingScheduleId) {
       setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId))
@@ -1132,6 +1200,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	  setEditingScheduleId(null)
 	  setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId))
 	  await refreshSchedules(scenario.id)
+	  await refreshScheduleHealth()
 	} catch (err: unknown) {
 	  setError(getErrorMessage(err, 'Unable to save schedule'))
 	} finally {
@@ -1178,6 +1247,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	    availability_windows: schedule.availability_windows,
 	  })
 	  await refreshSchedules(scenario.id)
+	  await refreshScheduleHealth()
 	} catch (err: unknown) {
 	  setError(getErrorMessage(err, 'Unable to update schedule'))
 	}
@@ -1198,6 +1268,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	    setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId))
 	  }
 	  await refreshSchedules(scenario.id)
+	  await refreshScheduleHealth()
 	} catch (err: unknown) {
 	  setError(getErrorMessage(err, 'Unable to delete schedule'))
 	}
@@ -1217,6 +1288,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
         await api.rejectScenarioScheduleApproval(scenario.id, schedule.id, schedule.pending_approval_id, 'Rejected from schedule dashboard.')
       }
       await refreshSchedules(scenario.id)
+      await refreshScheduleHealth()
     } catch (err: unknown) {
       setError(getErrorMessage(err, approved ? 'Unable to approve schedule' : 'Unable to reject schedule'))
     }
@@ -1261,7 +1333,49 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       {!canManageTests && <div className="settings-error-inline">Current session can view scenarios but cannot create runs or schedules for this project.</div>}
 
       {pageMode === 'schedules' ? (
-        <div className="new-test-layout">
+        <div className="new-test-layout new-test-schedules-layout">
+          <section className={`new-test-schedule-health-card ${scheduleHealthSeverity}`} aria-label="Schedule Health">
+            <div className="new-test-schedule-health-header">
+              <div>
+                <h3>Schedule Health</h3>
+                <p>{scheduleHealthSummary}</p>
+              </div>
+              <span className={`monitor-header-badge ${scheduleHealthSeverity}`}>{scheduleHealthLabel}</span>
+            </div>
+            <div className="new-test-schedule-health-body">
+              <div className="new-test-schedule-health-hero">
+                <span>Enabled Schedules</span>
+                <strong>{scheduleHealth ? `${formatScheduleHealthCount(scheduleHealth.enabled)}/${formatScheduleHealthCount(scheduleHealth.total)}` : '-'}</strong>
+                <p>{scenario ? `${scenario.name} is selected for editing.` : 'Select a scenario to manage its recurring triggers.'}</p>
+              </div>
+              <div className="new-test-schedule-health-metrics">
+                {scheduleHealthMetrics.map(metric => (
+                  <div key={metric.label} className={metric.tone ? `is-${metric.tone}` : undefined}>
+                    <strong>{formatScheduleHealthCount(metric.value)}</strong>
+                    <span>{metric.label}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="new-test-schedule-health-context">
+                {scheduleHealthContext.map(item => (
+                  <div key={item.label} className={item.tone ? `is-${item.tone}` : undefined}>
+                    <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                  </div>
+                ))}
+              </div>
+              <div className="new-test-schedule-health-readiness">
+                <div className={`readiness-item ${scenario ? 'ready' : 'blocked'}`}>
+                  <span>{scenario ? 'Ready' : 'Needed'}</span>
+                  <p>{scenario ? `${scenario.name} selected` : 'Select a scenario to manage schedules'}</p>
+                </div>
+                <div className={`readiness-item ${scheduleDraft.name.trim() && scheduleDraft.cron_expr.trim() ? 'ready' : 'blocked'}`}>
+                  <span>{scheduleDraft.name.trim() && scheduleDraft.cron_expr.trim() ? 'Ready' : 'Needed'}</span>
+                  <p>{scheduleDraft.name.trim() && scheduleDraft.cron_expr.trim() ? 'Schedule form is complete' : 'Enter a name and cron expression'}</p>
+                </div>
+              </div>
+            </div>
+          </section>
           <div className="new-test-main">
             <section className="new-test-step">
               <div className="new-test-step-header">
@@ -1562,27 +1676,6 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
             </section>
           </div>
 
-          <aside className="new-test-summary">
-            <h3>Schedule Summary</h3>
-            <div className="new-test-summary-grid">
-              <div><span>Scenario</span><strong>{scenario?.name || 'None'}</strong></div>
-              <div><span>Schedules</span><strong>{schedules.length}</strong></div>
-              <div><span>Enabled</span><strong>{schedules.filter(item => item.enabled).length}</strong></div>
-              <div><span>Needs Action</span><strong>{schedulesNeedingAction}</strong></div>
-              <div><span>Conflicts</span><strong>{scheduleConflictCount}</strong></div>
-              <div><span>Next Run</span><strong>{nextScheduledRun ? formatScheduleTimestamp(nextScheduledRun.next_run_at) : 'Not scheduled'}</strong></div>
-            </div>
-            <div className="readiness-list">
-              <div className={`readiness-item ${scenario ? 'ready' : 'blocked'}`}>
-                <span>{scenario ? 'Ready' : 'Needed'}</span>
-                <p>{scenario ? `${scenario.name} selected` : 'Select a scenario to manage schedules'}</p>
-              </div>
-              <div className={`readiness-item ${scheduleDraft.name.trim() && scheduleDraft.cron_expr.trim() ? 'ready' : 'blocked'}`}>
-                <span>{scheduleDraft.name.trim() && scheduleDraft.cron_expr.trim() ? 'Ready' : 'Needed'}</span>
-                <p>{scheduleDraft.name.trim() && scheduleDraft.cron_expr.trim() ? 'Schedule form is complete' : 'Enter a name and cron expression'}</p>
-              </div>
-            </div>
-          </aside>
         </div>
       ) : (
       <div className="new-test-layout">

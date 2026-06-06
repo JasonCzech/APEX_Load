@@ -18,7 +18,7 @@ const MONITOR_CATEGORIES = [
   { id: 'overview', label: 'Overview', cardIds: ['system-health', 'production-readiness', 'controller'] },
   { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts'] },
   { id: 'telemetry', label: 'Telemetry', cardIds: ['telemetry-diagnostics', 'apm-integrations', 'monitor-packs'] },
-  { id: 'schedules', label: 'Schedules', cardIds: ['schedule-health', 'run-calendar'] },
+  { id: 'schedules', label: 'Schedules', cardIds: ['run-calendar'] },
 ] as const
 
 type MonitorCategoryId = typeof MONITOR_CATEGORIES[number]['id']
@@ -61,6 +61,10 @@ function safeApiCall<T>(request: () => Promise<T>, fallback: T): Promise<T> {
   } catch {
     return Promise.resolve(fallback)
   }
+}
+
+function formatMonitorScheduleHealthCount(value?: number): string {
+  return typeof value === 'number' ? value.toLocaleString() : '-'
 }
 
 export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest }: Props) {
@@ -150,6 +154,22 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             : scheduleHealth.total > 0
               ? `${scheduleHealth.enabled}/${scheduleHealth.total} enabled`
               : 'no schedules'
+  const scheduleHealthMetrics = [
+    { label: 'Due', value: scheduleHealth?.due, tone: scheduleHealth?.due ? 'warning' : undefined },
+    { label: 'Blocked', value: scheduleHealth?.blocked, tone: scheduleHealth?.blocked ? 'danger' : undefined },
+    { label: 'Failed', value: scheduleHealth?.failed, tone: scheduleHealth?.failed ? 'danger' : undefined },
+    { label: 'Approval', value: scheduleHealth?.pending_approval, tone: scheduleHealth?.pending_approval ? 'warning' : undefined },
+    { label: 'Queued', value: scheduleHealth ? scheduleQueuedCount : undefined },
+    { label: 'Materialized', value: scheduleHealth ? scheduleMaterializedCount : undefined },
+    { label: 'Skipped', value: scheduleHealth ? scheduleSkippedCount : undefined },
+    { label: 'Completed', value: scheduleHealth ? scheduleCompletedCount : undefined },
+  ]
+  const scheduleHealthContext = [
+    { label: 'Enabled Schedules', value: scheduleHealth ? `${formatMonitorScheduleHealthCount(scheduleHealth.enabled)}/${formatMonitorScheduleHealthCount(scheduleHealth.total)}` : '-' },
+    { label: 'Source', value: activeProject?.name || 'Current project' },
+    { label: 'Current Runs', value: runCalendar ? String((runCalendar.events ?? []).filter(event => isRunCalendarActiveStatus(event.status)).length) : '-' },
+    { label: 'Future Runs', value: runCalendar ? String((runCalendar.events ?? []).filter(event => event.projected || event.status.toLowerCase() === 'scheduled').length) : '-' },
+  ]
   const readinessReadyCount = systemReadiness?.checks.filter(check => check.status === 'ready').length ?? 0
   const readinessDegradedCount = systemReadiness?.checks.filter(check => check.status === 'degraded').length ?? 0
   const readinessBlockedCount = systemReadiness?.checks.filter(check => check.status === 'not_ready').length ?? 0
@@ -645,62 +665,6 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
     },
     {
-      id: 'schedule-health',
-      title: 'Schedule Health',
-      headerBadge: (
-        <span className={`monitor-header-badge ${scheduleHeaderSeverity}`}>
-          {scheduleHeaderLabel}
-        </span>
-      ),
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="4" width="18" height="18" rx="2" />
-          <line x1="16" y1="2" x2="16" y2="6" />
-          <line x1="8" y1="2" x2="8" y2="6" />
-          <line x1="3" y1="10" x2="21" y2="10" />
-          <path d="m9 16 2 2 4-5" />
-        </svg>
-      ),
-      content: (
-        <div className="monitor-body">
-          <div className="telemetry-summary-metrics">
-            <div className="telemetry-summary-metric">
-              <span className={`telemetry-summary-value ${scheduleHealth?.due ? 'telemetry-text-warning' : ''}`}>{scheduleHealth?.due ?? '-'}</span>
-              <span className="telemetry-summary-label">Due</span>
-            </div>
-            <div className="telemetry-summary-metric">
-              <span className={`telemetry-summary-value ${scheduleHealth?.blocked ? 'text-danger' : ''}`}>{scheduleHealth?.blocked ?? '-'}</span>
-              <span className="telemetry-summary-label">Blocked</span>
-            </div>
-            <div className="telemetry-summary-metric">
-              <span className={`telemetry-summary-value ${scheduleHealth?.pending_approval ? 'telemetry-text-warning' : ''}`}>{scheduleHealth?.pending_approval ?? '-'}</span>
-              <span className="telemetry-summary-label">Approval</span>
-            </div>
-          </div>
-          <div className="monitor-row">
-            <span className="monitor-label">Enabled Schedules</span>
-            <span className="monitor-value">{scheduleHealth ? `${scheduleHealth.enabled}/${scheduleHealth.total}` : '-'}</span>
-          </div>
-          <div className="monitor-row">
-            <span className="monitor-label">Queued</span>
-            <span className="monitor-value">{scheduleHealth ? scheduleQueuedCount.toLocaleString() : '-'}</span>
-          </div>
-          <div className="monitor-row">
-            <span className="monitor-label">Materialized</span>
-            <span className="monitor-value">{scheduleHealth ? scheduleMaterializedCount.toLocaleString() : '-'}</span>
-          </div>
-          <div className="monitor-row">
-            <span className="monitor-label">Skipped</span>
-            <span className="monitor-value">{scheduleHealth ? scheduleSkippedCount.toLocaleString() : '-'}</span>
-          </div>
-          <div className="monitor-row">
-            <span className="monitor-label">Completed</span>
-            <span className="monitor-value">{scheduleHealth ? scheduleCompletedCount.toLocaleString() : '-'}</span>
-          </div>
-        </div>
-      ),
-    },
-    {
       id: 'generators',
       title: 'Generators',
       headerBadge: (
@@ -840,7 +804,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         />
       ),
     },
-  ], [apmHeaderLabel, apmHeaderSeverity, apmProfiles, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onSelectTest, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, runCalendar, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleQueuedCount, scheduleSkippedCount, selectCalendarEvent, selectedCalendarEvent, shiftCalendar, systemReadiness, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, websocketLabel, websocketValueClass])
+  ], [apmHeaderLabel, apmHeaderSeverity, apmProfiles, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onSelectTest, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, runCalendar, selectCalendarEvent, selectedCalendarEvent, shiftCalendar, systemReadiness, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))
@@ -991,37 +955,70 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       </div>
 
-      <div className={`monitor-health-banner ${overallSeverity}`}>
-        <div className="monitor-health-banner-main">
-          <span className={`monitor-indicator ${overallSeverity}`} />
-          <span className="monitor-health-banner-label">{overallLabel}</span>
+      {activeCategoryId === 'schedules' ? (
+        <section className={`monitor-schedule-health-card ${scheduleHeaderSeverity}`} aria-label="Advisory Panel">
+          <div className="monitor-schedule-health-header">
+            <div>
+              <h3>Advisory Panel</h3>
+            </div>
+            <span className={`monitor-header-badge ${scheduleHeaderSeverity}`}>{scheduleHeaderLabel}</span>
+          </div>
+          <div className="monitor-schedule-health-body">
+            <div className="monitor-schedule-health-metrics">
+              {scheduleHealthMetrics.map(metric => (
+                <div key={metric.label} className={metric.tone ? `is-${metric.tone}` : undefined}>
+                  <strong>{formatMonitorScheduleHealthCount(metric.value)}</strong>
+                  <span>{metric.label}</span>
+                </div>
+              ))}
+            </div>
+            <div className="monitor-schedule-health-context">
+              {scheduleHealthContext.map(item => (
+                <div key={item.label}>
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : (
+        <div className={`monitor-health-banner ${overallSeverity}`} aria-label="Advisory Panel">
+          <div className="monitor-health-banner-header">
+            <div>
+              <h3>Advisory Panel</h3>
+            </div>
+            <span className={`monitor-header-badge ${overallSeverity}`}>{overallLabel}</span>
+          </div>
+          <div className="monitor-health-banner-body">
+            <ul className="monitor-health-checklist">
+              {severityEntries.map(entry => {
+                const isGreen = entry.severity === 'healthy'
+                return (
+                  <li key={entry.label} className={`monitor-health-check ${entry.severity} ${isGreen ? 'is-ok' : 'is-issue'}`}>
+                    <span className={`monitor-health-check-box ${entry.severity}`} aria-hidden="true">
+                      {isGreen ? (
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                          <rect x="0.5" y="0.5" width="15" height="15" rx="4" fill="currentColor" />
+                          <path d="M4.3 8.2 6.7 10.6 11.7 5.4" stroke="var(--accent-contrast)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                          <rect x="1" y="1" width="14" height="14" rx="4" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className="monitor-health-check-label">{entry.label}</span>
+                    {!isGreen && entry.summary && (
+                      <span className="monitor-health-check-summary">{entry.summary}</span>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
         </div>
-        <ul className="monitor-health-checklist">
-          {severityEntries.map(entry => {
-            const isGreen = entry.severity === 'healthy'
-            return (
-              <li key={entry.label} className={`monitor-health-check ${entry.severity} ${isGreen ? 'is-ok' : 'is-issue'}`}>
-                <span className={`monitor-health-check-box ${entry.severity}`} aria-hidden="true">
-                  {isGreen ? (
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                      <rect x="0.5" y="0.5" width="15" height="15" rx="4" fill="currentColor" />
-                      <path d="M4.3 8.2 6.7 10.6 11.7 5.4" stroke="var(--accent-contrast)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  ) : (
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                      <rect x="1" y="1" width="14" height="14" rx="4" fill="none" stroke="currentColor" strokeWidth="1.6" />
-                    </svg>
-                  )}
-                </span>
-                <span className="monitor-health-check-label">{entry.label}</span>
-                {!isGreen && entry.summary && (
-                  <span className="monitor-health-check-summary">{entry.summary}</span>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      </div>
+      )}
 
       <div className="monitor-tab-row" role="tablist" aria-label="Monitor categories">
         {MONITOR_CATEGORIES.map(category => {
@@ -1299,11 +1296,17 @@ function RunCalendarPanel({
   onCloseDetails: () => void
   onOpenSelectedTest: () => void
 }) {
+  const [detailCollapsed, setDetailCollapsed] = useState(false)
   const cronCount = events.filter(event => event.source === 'cron').length
   const adHocCount = events.filter(event => event.source === 'ad_hoc').length
   const currentCount = events.filter(event => isRunCalendarActiveStatus(event.status)).length
   const projectedCount = events.filter(event => event.projected).length
   const rangeNotice = formatRunCalendarNotice(calendar)
+  const selectedRunId = selectedEvent?.id
+
+  useEffect(() => {
+    if (selectedRunId) setDetailCollapsed(false)
+  }, [selectedRunId])
 
   return (
     <div className="monitor-body run-calendar-panel">
@@ -1357,104 +1360,136 @@ function RunCalendarPanel({
 
       {rangeNotice && <div className="run-calendar-notice">{rangeNotice}</div>}
 
-      {view === 'day' ? (
-        <div className="run-calendar-agenda" aria-label={`Runs for ${formatCalendarDate(anchor)}`}>
-          {events.length === 0 ? (
-            <p className="monitor-hint">No runs in this day.</p>
-          ) : events.map(event => (
-            <RunCalendarEventButton key={event.id} event={event} selected={selectedEvent?.id === event.id} mode="agenda" onSelect={onSelectEvent} />
-          ))}
+      <div className={`run-calendar-workspace ${selectedEvent ? 'has-detail' : ''} ${detailCollapsed ? 'detail-collapsed' : ''}`}>
+        <div className="run-calendar-main">
+          {view === 'day' ? (
+            <div className="run-calendar-agenda" aria-label={`Runs for ${formatCalendarDate(anchor)}`}>
+              {events.length === 0 ? (
+                <p className="monitor-hint">No runs in this day.</p>
+              ) : events.map(event => (
+                <RunCalendarEventButton key={event.id} event={event} selected={selectedEvent?.id === event.id} mode="agenda" onSelect={onSelectEvent} />
+              ))}
+            </div>
+          ) : (
+            <div className={`run-calendar-grid ${view}`} aria-label={`${view} run calendar`}>
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                <div key={day} className="run-calendar-weekday">{day}</div>
+              ))}
+              {model.days.map(day => {
+                const visibleEvents = day.events.slice(0, view === 'month' ? 4 : 7)
+                const hiddenCount = day.events.length - visibleEvents.length
+                return (
+                  <div key={day.key} className={`run-calendar-day ${day.isOutsidePeriod ? 'outside' : ''} ${day.isToday ? 'today' : ''}`}>
+                    <div className="run-calendar-day-header">
+                      <span>{formatCalendarDayNumber(day.date, view)}</span>
+                      {day.events.length > 0 && <span>{day.events.length}</span>}
+                    </div>
+                    <div className="run-calendar-day-events">
+                      {visibleEvents.map(event => (
+                        <RunCalendarEventButton key={event.id} event={event} selected={selectedEvent?.id === event.id} mode="compact" onSelect={onSelectEvent} />
+                      ))}
+                      {hiddenCount > 0 && <span className="run-calendar-more">+{hiddenCount} more</span>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
-      ) : (
-        <div className={`run-calendar-grid ${view}`} aria-label={`${view} run calendar`}>
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-            <div key={day} className="run-calendar-weekday">{day}</div>
-          ))}
-          {model.days.map(day => {
-            const visibleEvents = day.events.slice(0, view === 'month' ? 4 : 7)
-            const hiddenCount = day.events.length - visibleEvents.length
-            return (
-              <div key={day.key} className={`run-calendar-day ${day.isOutsidePeriod ? 'outside' : ''} ${day.isToday ? 'today' : ''}`}>
-                <div className="run-calendar-day-header">
-                  <span>{formatCalendarDayNumber(day.date, view)}</span>
-                  {day.events.length > 0 && <span>{day.events.length}</span>}
-                </div>
-                <div className="run-calendar-day-events">
-                  {visibleEvents.map(event => (
-                    <RunCalendarEventButton key={event.id} event={event} selected={selectedEvent?.id === event.id} mode="compact" onSelect={onSelectEvent} />
-                  ))}
-                  {hiddenCount > 0 && <span className="run-calendar-more">+{hiddenCount} more</span>}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
 
-      {selectedEvent && (
-        <div className="run-calendar-detail" role="dialog" aria-label="Run details">
-          <div className="run-calendar-detail-header">
-            <div>
-              <span className={`run-calendar-source ${selectedEvent.source}`}>{runCalendarSourceLabel(selectedEvent)}</span>
-              <h3>{selectedEvent.title}</h3>
-            </div>
-            <button type="button" className="btn-icon" aria-label="Close run details" onClick={onCloseDetails}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M4 4l8 8" />
-                <path d="M12 4l-8 8" />
-              </svg>
-            </button>
-          </div>
-          <div className="run-calendar-detail-grid">
-            <RunCalendarDetailRow label="Status" value={formatRunCalendarStatus(selectedEvent.status)} />
-            <RunCalendarDetailRow label="When" value={`${formatCalendarDateTime(selectedEvent.start_at)} - ${selectedEvent.end_at ? formatCalendarTime(selectedEvent.end_at) : 'open'}`} />
-            <RunCalendarDetailRow label="User" value={runCalendarUserLabel(selectedEvent)} />
-            <RunCalendarDetailRow label="Workload" value={`${(selectedEvent.workload.total_vusers ?? 0).toLocaleString()} VUsers / ${selectedEvent.workload.duration || 'duration pending'}`} />
-            <RunCalendarDetailRow label="Scenario" value={selectedEvent.scenario_name || selectedEvent.scenario_id || '-'} />
-            <RunCalendarDetailRow label="Schedule" value={selectedEvent.schedule_name || selectedEvent.cron_expr || (selectedEvent.source === 'ad_hoc' ? 'Ad-hoc' : '-')} />
-            {selectedEvent.cron_expr && <RunCalendarDetailRow label="Cron" value={`${selectedEvent.cron_expr}${selectedEvent.timezone ? ` / ${selectedEvent.timezone}` : ''}`} />}
-            {selectedEvent.test_ref_key || selectedEvent.test_id ? <RunCalendarDetailRow label="Test" value={selectedEvent.test_ref_key || selectedEvent.test_id || '-'} /> : null}
-          </div>
-          <div className="run-calendar-topology">
-            <div className="run-calendar-section-heading">
-              <span>Controller & Hosts</span>
-              <span>{selectedEvent.topology.source || 'unknown'}</span>
-            </div>
-            {selectedEvent.topology.controller ? (
-              <div className="run-calendar-detail-grid compact">
-                <RunCalendarDetailRow label="Controller" value={selectedEvent.topology.controller.id || selectedEvent.topology.controller.status} />
-                <RunCalendarDetailRow label="Address" value={selectedEvent.topology.controller.address || '-'} />
-              </div>
+        {selectedEvent && (
+          <aside className={`run-calendar-detail-panel ${detailCollapsed ? 'collapsed' : ''}`} aria-label="Run details">
+            {detailCollapsed ? (
+              <button
+                type="button"
+                className="run-calendar-detail-rail"
+                aria-label="Expand run details"
+                aria-expanded="false"
+                onClick={() => setDetailCollapsed(false)}
+              >
+                <span className={`run-calendar-source ${selectedEvent.source}`}>{runCalendarSourceLabel(selectedEvent)}</span>
+                <span>{selectedEvent.title}</span>
+              </button>
             ) : (
-              <p className="monitor-hint">{selectedEvent.topology.summary || 'Controller topology is not captured for this run.'}</p>
-            )}
-            {selectedEvent.topology.generator_shards?.length ? (
-              <div className="run-calendar-chip-list">
-                {selectedEvent.topology.generator_shards.map((shard, index) => (
-                  <span key={`${shard.group}-${shard.target}-${index}`} className="run-calendar-chip">
-                    {shard.group || 'group'} / {shard.target || 'auto'} / {shard.vusers.toLocaleString()} VUsers
-                  </span>
-                ))}
+              <div className="run-calendar-detail" role="region" aria-label="Run details">
+                <div className="run-calendar-detail-header">
+                  <div>
+                    <span className={`run-calendar-source ${selectedEvent.source}`}>{runCalendarSourceLabel(selectedEvent)}</span>
+                    <h3>{selectedEvent.title}</h3>
+                  </div>
+                  <div className="run-calendar-detail-icon-actions">
+                    <button
+                      type="button"
+                      className="btn-icon"
+                      aria-label="Collapse run details"
+                      aria-expanded="true"
+                      onClick={() => setDetailCollapsed(true)}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m10 4-4 4 4 4" />
+                      </svg>
+                    </button>
+                    <button type="button" className="btn-icon" aria-label="Close run details" onClick={onCloseDetails}>
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <path d="M4 4l8 8" />
+                        <path d="M12 4l-8 8" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <div className="run-calendar-detail-grid">
+                  <RunCalendarDetailRow label="Status" value={formatRunCalendarStatus(selectedEvent.status)} />
+                  <RunCalendarDetailRow label="When" value={`${formatCalendarDateTime(selectedEvent.start_at)} - ${selectedEvent.end_at ? formatCalendarTime(selectedEvent.end_at) : 'open'}`} />
+                  <RunCalendarDetailRow label="User" value={runCalendarUserLabel(selectedEvent)} />
+                  <RunCalendarDetailRow label="Workload" value={`${(selectedEvent.workload.total_vusers ?? 0).toLocaleString()} VUsers / ${selectedEvent.workload.duration || 'duration pending'}`} />
+                  <RunCalendarDetailRow label="Scenario" value={selectedEvent.scenario_name || selectedEvent.scenario_id || '-'} />
+                  <RunCalendarDetailRow label="Schedule" value={selectedEvent.schedule_name || selectedEvent.cron_expr || (selectedEvent.source === 'ad_hoc' ? 'Ad-hoc' : '-')} />
+                  {selectedEvent.cron_expr && <RunCalendarDetailRow label="Cron" value={`${selectedEvent.cron_expr}${selectedEvent.timezone ? ` / ${selectedEvent.timezone}` : ''}`} />}
+                  {selectedEvent.test_ref_key || selectedEvent.test_id ? <RunCalendarDetailRow label="Test" value={selectedEvent.test_ref_key || selectedEvent.test_id || '-'} /> : null}
+                </div>
+                <div className="run-calendar-topology">
+                  <div className="run-calendar-section-heading">
+                    <span>Controller & Hosts</span>
+                    <span>{selectedEvent.topology.source || 'unknown'}</span>
+                  </div>
+                  {selectedEvent.topology.controller ? (
+                    <div className="run-calendar-detail-grid compact">
+                      <RunCalendarDetailRow label="Controller" value={selectedEvent.topology.controller.id || selectedEvent.topology.controller.status} />
+                      <RunCalendarDetailRow label="Address" value={selectedEvent.topology.controller.address || '-'} />
+                    </div>
+                  ) : (
+                    <p className="monitor-hint">{selectedEvent.topology.summary || 'Controller topology is not captured for this run.'}</p>
+                  )}
+                  {selectedEvent.topology.generator_shards?.length ? (
+                    <div className="run-calendar-chip-list">
+                      {selectedEvent.topology.generator_shards.map((shard, index) => (
+                        <span key={`${shard.group}-${shard.target}-${index}`} className="run-calendar-chip">
+                          {shard.group || 'group'} / {shard.target || 'auto'} / {shard.vusers.toLocaleString()} VUsers
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {selectedEvent.topology.generator_inventory?.length ? (
+                    <div className="run-calendar-host-list">
+                      {selectedEvent.topology.generator_inventory.slice(0, 4).map(host => (
+                        <span key={host.target} className="run-calendar-host">
+                          {host.generator_id || host.target} / {host.status} / {(host.active_vusers ?? 0).toLocaleString()} active
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="run-calendar-detail-actions">
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={onCloseDetails}>Close</button>
+                  {canOpenSelectedTest && (
+                    <button type="button" className="btn btn-accent-action btn-sm" onClick={onOpenSelectedTest}>Open Test</button>
+                  )}
+                </div>
               </div>
-            ) : null}
-            {selectedEvent.topology.generator_inventory?.length ? (
-              <div className="run-calendar-host-list">
-                {selectedEvent.topology.generator_inventory.slice(0, 4).map(host => (
-                  <span key={host.target} className="run-calendar-host">
-                    {host.generator_id || host.target} / {host.status} / {(host.active_vusers ?? 0).toLocaleString()} active
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <div className="run-calendar-detail-actions">
-            <button type="button" className="btn btn-secondary btn-sm" onClick={onCloseDetails}>Close</button>
-            {canOpenSelectedTest && (
-              <button type="button" className="btn btn-accent-action btn-sm" onClick={onOpenSelectedTest}>Open Test</button>
             )}
-          </div>
-        </div>
-      )}
+          </aside>
+        )}
+      </div>
     </div>
   )
 }
