@@ -1,0 +1,158 @@
+package browser
+
+import (
+	"testing"
+	"time"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
+)
+
+func TestActionParamInt(t *testing.T) {
+	params := map[string]any{
+		"int":        12,
+		"int64":      int64(34),
+		"float64":    float64(56.9),
+		"float32":    float32(78.9),
+		"string":     " 90 ",
+		"bad_string": "nope",
+	}
+
+	tests := map[string]int{
+		"int":        12,
+		"int64":      34,
+		"float64":    56,
+		"float32":    78,
+		"string":     90,
+		"bad_string": -1,
+		"missing":    -1,
+	}
+	for key, want := range tests {
+		if got := actionParamInt(params, key, -1); got != want {
+			t.Fatalf("actionParamInt(%q) = %d, want %d", key, got, want)
+		}
+	}
+	if got := actionParamInt(nil, "anything", 7); got != 7 {
+		t.Fatalf("actionParamInt(nil) = %d, want 7", got)
+	}
+}
+
+func TestActionParamString(t *testing.T) {
+	params := map[string]any{
+		"name":  " value ",
+		"empty": "   ",
+		"other": 12,
+	}
+
+	tests := map[string]string{
+		"name":    "value",
+		"empty":   "fallback",
+		"other":   "fallback",
+		"missing": "fallback",
+	}
+	for key, want := range tests {
+		if got := actionParamString(params, key, "fallback"); got != want {
+			t.Fatalf("actionParamString(%q) = %q, want %q", key, got, want)
+		}
+	}
+	if got := actionParamString(nil, "anything", "fallback"); got != "fallback" {
+		t.Fatalf("actionParamString(nil) = %q, want fallback", got)
+	}
+}
+
+func TestParseWaitDelay(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		want    time.Duration
+		wantErr bool
+	}{
+		{name: "milliseconds shorthand", raw: "250", want: 250 * time.Millisecond},
+		{name: "duration literal", raw: "2s", want: 2 * time.Second},
+		{name: "empty", raw: "", wantErr: true},
+		{name: "invalid", raw: "soon", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseWaitDelay(tt.raw)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err == nil && got != tt.want {
+				t.Fatalf("duration = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBrowserWaitTimeout(t *testing.T) {
+	b := &Browser{}
+	if got := b.waitTimeout(0); got != 10*time.Second {
+		t.Fatalf("waitTimeout(0) = %v, want 10s", got)
+	}
+	if got := b.waitTimeout(1500); got != 1500*time.Millisecond {
+		t.Fatalf("waitTimeout(1500) = %v, want 1500ms", got)
+	}
+}
+
+func TestCloneDOMSummary(t *testing.T) {
+	original := &protocol.DOMSummary{
+		Title:       "page",
+		ReadyState:  "complete",
+		VisibleText: []string{"first", "second"},
+	}
+
+	cloned := cloneDOMSummary(original)
+	if cloned == nil {
+		t.Fatal("cloneDOMSummary returned nil")
+	}
+	if cloned.Title != original.Title || cloned.ReadyState != original.ReadyState {
+		t.Fatalf("clone = %+v, want title/state copied from %+v", cloned, original)
+	}
+	cloned.VisibleText[0] = "changed"
+	if original.VisibleText[0] != "first" {
+		t.Fatal("cloneDOMSummary did not deep-copy VisibleText")
+	}
+	if cloneDOMSummary(nil) != nil {
+		t.Fatal("cloneDOMSummary(nil) returned non-nil")
+	}
+}
+
+func TestBrowserEntrySnapshotsAreCloned(t *testing.T) {
+	b := &Browser{
+		consoleEntries: []protocol.ConsoleEntry{{Text: "first"}, {Text: "second"}},
+		networkEntries: []protocol.NetworkEntry{
+			{URL: "/first"},
+			{URL: "/second"},
+		},
+	}
+
+	consoleOffset, networkOffset := b.eventOffsets()
+	if consoleOffset != 2 || networkOffset != 2 {
+		t.Fatalf("eventOffsets = %d/%d, want 2/2", consoleOffset, networkOffset)
+	}
+
+	consoleEntries := b.consoleEntriesSince(1)
+	if len(consoleEntries) != 1 || consoleEntries[0].Text != "second" {
+		t.Fatalf("consoleEntriesSince(1) = %+v, want second entry", consoleEntries)
+	}
+	consoleEntries[0].Text = "changed"
+	if b.consoleEntries[1].Text != "second" {
+		t.Fatal("consoleEntriesSince returned aliased slice")
+	}
+	if got := b.consoleEntriesSince(2); got != nil {
+		t.Fatalf("consoleEntriesSince(end) = %+v, want nil", got)
+	}
+
+	networkEntries := b.networkEntriesSince(0)
+	if len(networkEntries) != 2 || networkEntries[0].URL != "/first" {
+		t.Fatalf("networkEntriesSince(0) = %+v, want all entries", networkEntries)
+	}
+	networkEntries[0].URL = "/changed"
+	if b.networkEntries[0].URL != "/first" {
+		t.Fatal("networkEntriesSince returned aliased slice")
+	}
+	if got := b.networkEntriesSince(2); got != nil {
+		t.Fatalf("networkEntriesSince(end) = %+v, want nil", got)
+	}
+}

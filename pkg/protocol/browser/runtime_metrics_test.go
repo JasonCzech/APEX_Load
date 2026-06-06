@@ -57,6 +57,34 @@ func TestApplyCDPHeapMetrics(t *testing.T) {
 	}
 }
 
+func TestApplyBrowserPageMetrics(t *testing.T) {
+	var metrics protocol.ClientMetrics
+
+	applyBrowserPageMetrics(browserPageMetrics{
+		FCPMs:                 12.5,
+		LCPMs:                 34.5,
+		CLSScore:              0.04,
+		INPMs:                 56.5,
+		DOMContentLoadedMs:    78.5,
+		DOMCompleteMs:         90.5,
+		LoadEventMs:           101.5,
+		BlockingResourceCount: 2,
+		TotalResourceCount:    9,
+		ResourceTransferKB:    128.25,
+		LongTaskCount:         3,
+	}, &metrics)
+
+	if metrics.FCPMs != 12.5 || metrics.LCPMs != 34.5 || metrics.CLSScore != 0.04 || metrics.INPMs != 56.5 {
+		t.Fatalf("paint/interactivity metrics = %v/%v/%v/%v", metrics.FCPMs, metrics.LCPMs, metrics.CLSScore, metrics.INPMs)
+	}
+	if metrics.DOMContentLoadedMs != 78.5 || metrics.DOMCompleteMs != 90.5 || metrics.LoadEventMs != 101.5 {
+		t.Fatalf("navigation metrics = %v/%v/%v", metrics.DOMContentLoadedMs, metrics.DOMCompleteMs, metrics.LoadEventMs)
+	}
+	if metrics.BlockingResourceCount != 2 || metrics.TotalResourceCount != 9 || metrics.ResourceTransferKB != 128.25 || metrics.LongTaskCount != 3 {
+		t.Fatalf("resource/task metrics = %d/%d/%v/%d", metrics.BlockingResourceCount, metrics.TotalResourceCount, metrics.ResourceTransferKB, metrics.LongTaskCount)
+	}
+}
+
 func TestNumberFromAny(t *testing.T) {
 	tests := []struct {
 		name   string
