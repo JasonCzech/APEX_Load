@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 
-export type DashboardTheme = 'dark' | 'light' | 'sepia'
+export type DashboardTheme = 'dark' | 'light'
 
 const THEME_STORAGE_KEY = 'apexload.theme'
-const DASHBOARD_THEMES = new Set<DashboardTheme>(['dark', 'light', 'sepia'])
+const DASHBOARD_THEMES = new Set<DashboardTheme>(['dark', 'light'])
 
 function isDashboardTheme(value: string | null): value is DashboardTheme {
   return value !== null && DASHBOARD_THEMES.has(value as DashboardTheme)

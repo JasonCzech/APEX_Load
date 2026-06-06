@@ -2262,9 +2262,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                 value={theme}
                 onChange={(e) => onThemeChange(e.target.value as DashboardTheme)}
               >
-                <option value="dark">Dark</option>
+                <option value="dark">OLED Dark</option>
                 <option value="light">Light</option>
-                <option value="sepia">Sepia</option>
               </select>
             </div>
             <div className="settings-subsection">
