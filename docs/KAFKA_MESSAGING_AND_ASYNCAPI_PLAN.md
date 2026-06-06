@@ -1,8 +1,9 @@
 # Implementation Plan: Direct Kafka Messaging Testing + AsyncAPI Import
 
-> Status: **Phases 1–4 implemented** (Kafka protocol plugin, DSL integration, binary
-> wiring). Phase 5 (AsyncAPI converter) and the dashboard authoring surface remain
-> planned. This document is the design of record.
+> Status: **Phases 1–7 implemented** (Kafka protocol plugin, DSL integration, binary
+> wiring, AsyncAPI converter, API routes, and the dashboard AsyncAPI import wizard).
+> The franz-go real network adapter and direct Kafka authoring templates remain the
+> only outstanding follow-ons. This document is the design of record.
 
 ## Current Implementation Status
 The Kafka runtime is no longer just planned. The following are implemented in the Go
@@ -27,9 +28,25 @@ runtime and pass `go test ./...` (Kafka package is also `-race` clean):
 - `cmd/{generator,controller,apexctl}/main.go` — blank-imported `kafka` (and the
   previously-missing `jms` import was added to the generator).
 
+Also implemented:
+
+- `pkg/convert/asyncapi/` — AsyncAPI 2.x + 3.x → Kafka DSL converter (servers→brokers,
+  channels→topics, send/publish→`kafka_produce`, receive/subscribe→`kafka_consume`,
+  operation reply→`kafka_request_reply`), JSON-Schema payload sampling with data-source
+  placeholders, `SupportMatrix()`, and source/review diagnostics. Generated scripts pass
+  DSL validation.
+- `pkg/api/` — `POST /api/v1/scripts/import/asyncapi` + `GET …/asyncapi/support-matrix`
+  routes and handlers, modeled on the OpenAPI importer. Handler tests included.
+- `dashboard/` — `'asyncapi'` import kind in `ProtocolAssetImport.tsx`, `importAsyncAPI`
+  API client method, `AsyncAPIImportResult`/`AsyncAPIImportStats` types, the
+  `asyncapi-import` authoring subview, and an "AsyncAPI / Kafka" card in the
+  Import-From-Source surface. Verified end-to-end in a browser (upload → convert →
+  review render).
+
 **Not yet done:** the franz-go real network adapter (currently the `unavailableClient`
-stub), the dashboard authoring surface (Phase 4 UI), and the entire AsyncAPI converter
-(Phase 5). The sections below remain the spec for that outstanding work.
+stub) and direct Kafka authoring templates/starter actions in the Script Builder
+(the import path is the only Kafka-script entry point so far). The sections below remain
+the spec for that outstanding work, plus the original full design for the items above.
 
 ## Objective
 Add direct load testing of Apache Kafka messaging services to APEX Load, plus an

@@ -84,6 +84,8 @@ POST   /api/v1/scripts/{id}/validate — Dry-run validation
 POST   /api/v1/scripts/{id}/export   — Export script JSON to disk
 GET    /api/v1/scripts/{id}/download — Download script as JSON file
 POST   /api/v1/scripts/import/loadrunner — Upload LR .zip, get converted DSL
+POST   /api/v1/scripts/import/asyncapi — Upload AsyncAPI 2.x/3.x spec, get converted Kafka DSL
+GET    /api/v1/scripts/import/asyncapi/support-matrix — AsyncAPI import coverage matrix
 GET    /api/v1/releases/{id}/trend   — Multi-run trend analysis (deltas + regression flags)
 GET    /api/v1/fleet/provisioner     — Active generator provisioner (static fleet vs on-demand)
 GET    /api/v1/correlations/rules    — Correlation detection rule catalog

@@ -110,6 +110,7 @@ function createActions(overrides: Partial<ScriptsCreateOptionActions> = {}): Scr
     openOpenAPIImport: vi.fn(),
     openPostmanImport: vi.fn(),
     openWSDLImport: vi.fn(),
+    openAsyncAPIImport: vi.fn(),
     ...overrides,
   }
 }

@@ -32,8 +32,8 @@ type ImportRequest struct {
 // ConvertOptions tunes the generated script.
 type ConvertOptions struct {
 	ScriptName         string   `json:"script_name,omitempty"`
-	Brokers            []string `json:"brokers,omitempty"`        // override servers
-	Channels           []string `json:"channels,omitempty"`       // filter by channel/topic name
+	Brokers            []string `json:"brokers,omitempty"`  // override servers
+	Channels           []string `json:"channels,omitempty"` // filter by channel/topic name
 	IncludeAssertions  *bool    `json:"include_assertions,omitempty"`
 	DefaultThinkTimeMs int      `json:"default_think_time_ms,omitempty"`
 	Mock               *bool    `json:"mock,omitempty"` // default true (real adapter is stubbed)
@@ -41,19 +41,19 @@ type ConvertOptions struct {
 
 // ConvertStats summarizes what the converter saw and produced.
 type ConvertStats struct {
-	Format                string   `json:"format"`
-	AsyncAPIVersion       string   `json:"asyncapi_version,omitempty"`
-	TotalChannels         int      `json:"total_channels"`
-	TotalOperations       int      `json:"total_operations"`
-	ConvertedActions      int      `json:"converted_actions"`
-	ProduceActions        int      `json:"produce_actions"`
-	ConsumeActions        int      `json:"consume_actions"`
-	RequestReplyActions   int      `json:"request_reply_actions"`
-	MessagesWithCorrelation int    `json:"messages_with_correlation"`
-	ServerProtocols       []string `json:"server_protocols,omitempty"`
-	Brokers               []string `json:"brokers,omitempty"`
-	SchemaFormatsDetected []string `json:"schema_formats_detected,omitempty"`
-	SkippedOperations     []string `json:"skipped_operations,omitempty"`
+	Format                  string   `json:"format"`
+	AsyncAPIVersion         string   `json:"asyncapi_version,omitempty"`
+	TotalChannels           int      `json:"total_channels"`
+	TotalOperations         int      `json:"total_operations"`
+	ConvertedActions        int      `json:"converted_actions"`
+	ProduceActions          int      `json:"produce_actions"`
+	ConsumeActions          int      `json:"consume_actions"`
+	RequestReplyActions     int      `json:"request_reply_actions"`
+	MessagesWithCorrelation int      `json:"messages_with_correlation"`
+	ServerProtocols         []string `json:"server_protocols,omitempty"`
+	Brokers                 []string `json:"brokers,omitempty"`
+	SchemaFormatsDetected   []string `json:"schema_formats_detected,omitempty"`
+	SkippedOperations       []string `json:"skipped_operations,omitempty"`
 }
 
 // ReviewSummary feeds the import-review UI.
@@ -80,12 +80,12 @@ type ConvertResult struct {
 // --- AsyncAPI document model (2.x + 3.x) ---
 
 type document struct {
-	AsyncAPI   string                `json:"asyncapi,omitempty" yaml:"asyncapi,omitempty"`
-	Info       info                  `json:"info,omitempty" yaml:"info,omitempty"`
-	Servers    map[string]server     `json:"servers,omitempty" yaml:"servers,omitempty"`
-	Channels   map[string]channel    `json:"channels,omitempty" yaml:"channels,omitempty"`
-	Operations map[string]operation  `json:"operations,omitempty" yaml:"operations,omitempty"` // 3.x only
-	Components components            `json:"components,omitempty" yaml:"components,omitempty"`
+	AsyncAPI   string               `json:"asyncapi,omitempty" yaml:"asyncapi,omitempty"`
+	Info       info                 `json:"info,omitempty" yaml:"info,omitempty"`
+	Servers    map[string]server    `json:"servers,omitempty" yaml:"servers,omitempty"`
+	Channels   map[string]channel   `json:"channels,omitempty" yaml:"channels,omitempty"`
+	Operations map[string]operation `json:"operations,omitempty" yaml:"operations,omitempty"` // 3.x only
+	Components components           `json:"components,omitempty" yaml:"components,omitempty"`
 }
 
 type info struct {
@@ -102,10 +102,10 @@ type server struct {
 
 type channel struct {
 	Ref       string                `json:"$ref,omitempty" yaml:"$ref,omitempty"`
-	Address   string                `json:"address,omitempty" yaml:"address,omitempty"` // 3.x
-	Publish   *channelOperation     `json:"publish,omitempty" yaml:"publish,omitempty"`   // 2.x
+	Address   string                `json:"address,omitempty" yaml:"address,omitempty"`     // 3.x
+	Publish   *channelOperation     `json:"publish,omitempty" yaml:"publish,omitempty"`     // 2.x
 	Subscribe *channelOperation     `json:"subscribe,omitempty" yaml:"subscribe,omitempty"` // 2.x
-	Messages  map[string]messageDef `json:"messages,omitempty" yaml:"messages,omitempty"` // 3.x
+	Messages  map[string]messageDef `json:"messages,omitempty" yaml:"messages,omitempty"`   // 3.x
 	Bindings  bindings              `json:"bindings,omitempty" yaml:"bindings,omitempty"`
 }
 
