@@ -1,7 +1,8 @@
 import type { NavPage } from './components/Sidebar'
 
 export type AppView =
-  | { page: Exclude<NavPage, 'new-test' | 'scripts'> }
+  | { page: Exclude<NavPage, 'new-test' | 'scripts' | 'tests'> }
+  | { page: 'tests'; scenarioView?: 'library' | 'builder' }
   | { page: 'new-test'; scenarioId?: string }
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
   | { page: 'swagger' }
@@ -22,6 +23,7 @@ const NAV_PAGES: NavPage[] = [
 ]
 
 const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
+const SCENARIO_VIEWS = ['library', 'builder'] as const
 
 function cleanSegment(value: string | undefined) {
   if (!value) return ''
@@ -40,6 +42,10 @@ function isScriptMode(value: string | null): value is NonNullable<Extract<AppVie
   return SCRIPT_MODES.includes(value as NonNullable<Extract<AppView, { page: 'scripts' }>['mode']>)
 }
 
+function isScenarioView(value: string | null): value is NonNullable<Extract<AppView, { page: 'tests' }>['scenarioView']> {
+  return SCENARIO_VIEWS.includes(value as NonNullable<Extract<AppView, { page: 'tests' }>['scenarioView']>)
+}
+
 export function parseAppViewFromHash(hash: string): AppView {
   const route = hash.replace(/^#/, '').replace(/^\/+/, '')
   const [pathPart, queryString = ''] = route.split('?')
@@ -54,6 +60,14 @@ export function parseAppViewFromHash(hash: string): AppView {
   if (page === 'new-test') {
     const scenarioId = params.get('scenarioId') || params.get('scenario') || undefined
     return scenarioId ? { page: 'new-test', scenarioId } : { page: 'new-test' }
+  }
+
+  if (page === 'tests') {
+    const scenarioView = params.get('view')
+    return {
+      page: 'tests',
+      ...(isScenarioView(scenarioView) ? { scenarioView } : {}),
+    }
   }
 
   if (page === 'scripts') {
@@ -87,6 +101,13 @@ export function viewToLocationHash(view: AppView): string {
     if (view.scenarioId) params.set('scenarioId', view.scenarioId)
     const query = params.toString()
     return query ? `#/new-test?${query}` : '#/new-test'
+  }
+
+  if (view.page === 'tests') {
+    const params = new URLSearchParams()
+    if (view.scenarioView) params.set('view', view.scenarioView)
+    const query = params.toString()
+    return query ? `#/tests?${query}` : '#/tests'
   }
 
   if (view.page === 'scripts') {

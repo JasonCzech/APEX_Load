@@ -101,11 +101,23 @@ describe('TestExecution workspace layout', () => {
     expect(container.textContent).toContain('Scenario Overview Content')
     expect(container.textContent).toContain('Hero Metrics Content')
     expect(container.textContent).toContain('Card Library')
-    expect(container.textContent).toContain('Overview')
-    expect(container.textContent).toContain('Control')
-    expect(container.textContent).toContain('Graphs')
-    expect(container.textContent).toContain('Diagnostics')
-    expect(container.textContent).toContain('Archive Report')
+    expect(container.textContent).toContain('Run Overview')
+    expect(container.textContent).toContain('Run Control')
+    expect(container.textContent).toContain('Runtime Monitoring')
+    expect(container.textContent).toContain('Archive Summary')
+    expect(container.textContent).toContain('Archive Evidence')
+    expect(container.textContent).toContain('Archive Exports')
+    expect(container.textContent).toContain('Analysis & Drilldown')
+    const archiveEvidenceHeader = libraryGroupHeader('Archive Evidence')
+    const archiveEvidenceList = libraryGroupList(archiveEvidenceHeader)
+    expect(archiveEvidenceHeader.textContent).toContain('0/4')
+    expect(archiveEvidenceList.hidden).toBe(false)
+    await click(archiveEvidenceHeader)
+    expect(archiveEvidenceHeader.getAttribute('aria-expanded')).toBe('false')
+    expect(archiveEvidenceList.hidden).toBe(true)
+    await click(archiveEvidenceHeader)
+    expect(archiveEvidenceHeader.getAttribute('aria-expanded')).toBe('true')
+    expect(archiveEvidenceList.hidden).toBe(false)
     expect(libraryItem('archive-overview').textContent).toContain('Archive Overview')
     expect(libraryItem('archive-completeness').textContent).toContain('Completeness Score')
     expect(libraryItem('archive-metadata').textContent).toContain('Run Metadata')
@@ -485,6 +497,21 @@ describe('TestExecution workspace layout', () => {
     return item as HTMLElement
   }
 
+  function libraryGroupHeader(category: string) {
+    const button = Array.from(container.querySelectorAll('.dashboard-workspace-library-group-header'))
+      .find(button => button.textContent?.includes(category))
+    expect(button).toBeTruthy()
+    return button as HTMLButtonElement
+  }
+
+  function libraryGroupList(header: HTMLButtonElement) {
+    const listId = header.getAttribute('aria-controls')
+    expect(listId).toBeTruthy()
+    const list = listId ? document.getElementById(listId) : null
+    expect(list).toBeTruthy()
+    return list as HTMLDivElement
+  }
+
   async function clickLibraryAdd(cardId: string) {
     const button = libraryItem(cardId).querySelector('button') as HTMLButtonElement | null
     expect(button).toBeTruthy()
@@ -505,6 +532,12 @@ describe('TestExecution workspace layout', () => {
     expect(tab).toBeTruthy()
     await act(async () => {
       tab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
+  async function click(element: HTMLElement) {
+    await act(async () => {
+      element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
   }
 })

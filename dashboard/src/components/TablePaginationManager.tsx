@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 type TablePageLimit = 10 | 25 | 'all'
+type TablePageState = {
+  limit: TablePageLimit
+  pageIndex: number
+}
 
 type ManagedTable = {
   id: number
@@ -13,6 +17,7 @@ type ManagedTable = {
 type PortalEntry = Pick<ManagedTable, 'id' | 'container' | 'totalRows'>
 
 const DEFAULT_TABLE_PAGE_LIMIT = 10
+const DEFAULT_TABLE_PAGE_STATE: TablePageState = { limit: DEFAULT_TABLE_PAGE_LIMIT, pageIndex: 0 }
 
 function getTableRows(table: HTMLTableElement): HTMLTableRowElement[] {
   if (table.tBodies.length === 0) return []
@@ -36,10 +41,29 @@ function formatLimit(limit: TablePageLimit) {
   return limit === 'all' ? 'All' : String(limit)
 }
 
-function applyTableLimit(table: HTMLTableElement, limit: TablePageLimit) {
+function maxPageIndex(totalRows: number, limit: TablePageLimit) {
+  if (limit === 'all') return 0
+  return Math.max(0, Math.ceil(totalRows / limit) - 1)
+}
+
+function normalizePageState(state: TablePageState | undefined, totalRows: number): TablePageState {
+  const current = state || DEFAULT_TABLE_PAGE_STATE
+  const pageIndex = Math.min(Math.max(0, current.pageIndex), maxPageIndex(totalRows, current.limit))
+  return { ...current, pageIndex }
+}
+
+function pageBounds(totalRows: number, state: TablePageState) {
+  if (totalRows === 0) return { startIndex: 0, endIndex: 0 }
+  if (state.limit === 'all') return { startIndex: 0, endIndex: totalRows }
+  const startIndex = Math.min(state.pageIndex * state.limit, totalRows)
+  return { startIndex, endIndex: Math.min(startIndex + state.limit, totalRows) }
+}
+
+function applyTablePageState(table: HTMLTableElement, state: TablePageState) {
   const rows = getTableRows(table)
+  const { startIndex, endIndex } = pageBounds(rows.length, normalizePageState(state, rows.length))
   rows.forEach((row, index) => {
-    const hiddenByManager = limit !== 'all' && index >= limit
+    const hiddenByManager = index < startIndex || index >= endIndex
     row.hidden = hiddenByManager
     if (hiddenByManager) {
       row.dataset.tablePaginationHidden = 'true'
@@ -53,8 +77,8 @@ export default function TablePaginationManager() {
   const nextIdRef = useRef(1)
   const managedTablesRef = useRef(new Map<number, ManagedTable>())
   const tableIdsRef = useRef(new WeakMap<HTMLTableElement, number>())
-  const limitsRef = useRef<Record<number, TablePageLimit>>({})
-  const [limits, setLimits] = useState<Record<number, TablePageLimit>>({})
+  const pageStatesRef = useRef<Record<number, TablePageState>>({})
+  const [pageStates, setPageStates] = useState<Record<number, TablePageState>>({})
   const [portals, setPortals] = useState<PortalEntry[]>([])
 
   const cleanupManagedTable = useCallback((id: number) => {
@@ -68,7 +92,7 @@ export default function TablePaginationManager() {
     })
     managed.container.remove()
     managedTablesRef.current.delete(id)
-    delete limitsRef.current[id]
+    delete pageStatesRef.current[id]
   }, [])
 
   const scanTables = useCallback(() => {
@@ -99,12 +123,13 @@ export default function TablePaginationManager() {
         insertionTarget.parentElement?.insertBefore(container, insertionTarget)
         managed = { id, table, container, totalRows: getTableRows(table).length }
         managedTablesRef.current.set(id, managed)
-        limitsRef.current[id] = limitsRef.current[id] || DEFAULT_TABLE_PAGE_LIMIT
+        pageStatesRef.current[id] = normalizePageState(pageStatesRef.current[id], managed.totalRows)
       } else {
         managed.totalRows = getTableRows(table).length
+        pageStatesRef.current[id] = normalizePageState(pageStatesRef.current[id], managed.totalRows)
       }
 
-      applyTableLimit(table, limitsRef.current[id] || DEFAULT_TABLE_PAGE_LIMIT)
+      applyTablePageState(table, pageStatesRef.current[id] || DEFAULT_TABLE_PAGE_STATE)
     })
 
     Array.from(managedTablesRef.current.keys()).forEach(id => {
@@ -131,11 +156,11 @@ export default function TablePaginationManager() {
   }, [cleanupManagedTable])
 
   useEffect(() => {
-    limitsRef.current = limits
+    pageStatesRef.current = pageStates
     managedTablesRef.current.forEach(managed => {
-      applyTableLimit(managed.table, limits[managed.id] || DEFAULT_TABLE_PAGE_LIMIT)
+      applyTablePageState(managed.table, normalizePageState(pageStates[managed.id], managed.totalRows))
     })
-  }, [limits])
+  }, [pageStates])
 
   useEffect(() => {
     scanTables()
@@ -168,22 +193,24 @@ export default function TablePaginationManager() {
   return (
     <>
       {portals.map(({ id, container, totalRows }) => {
-        const value = limits[id] || DEFAULT_TABLE_PAGE_LIMIT
-        const visibleRows = value === 'all' ? totalRows : Math.min(value, totalRows)
+        const state = normalizePageState(pageStates[id], totalRows)
+        const { startIndex, endIndex } = pageBounds(totalRows, state)
+        const canGoPrevious = state.limit !== 'all' && state.pageIndex > 0
+        const canGoNext = state.limit !== 'all' && state.pageIndex < maxPageIndex(totalRows, state.limit)
         return createPortal(
           <div className="table-pagination-controls" aria-label="Table row display options">
             <span className="table-pagination-summary">
-              Showing {visibleRows} of {totalRows}
+              {totalRows > 0 ? `Showing ${startIndex + 1}-${endIndex} of ${totalRows}` : 'No rows'}
             </span>
             <label className="table-pagination-select-label">
               Rows
               <select
                 aria-label="Rows per table"
                 className="table-pagination-select"
-                value={formatLimit(value)}
+                value={formatLimit(state.limit)}
                 onChange={(event) => {
                   const nextValue = event.target.value === 'All' ? 'all' : Number(event.target.value) as 10 | 25
-                  setLimits(current => ({ ...current, [id]: nextValue }))
+                  setPageStates(current => ({ ...current, [id]: { limit: nextValue, pageIndex: 0 } }))
                 }}
               >
                 <option value="10">10</option>
@@ -191,6 +218,34 @@ export default function TablePaginationManager() {
                 <option value="All">All</option>
               </select>
             </label>
+            <div className="table-pagination-actions" aria-label="Table page navigation">
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary table-pagination-button"
+                disabled={!canGoPrevious}
+                onClick={() => {
+                  setPageStates(current => {
+                    const currentState = normalizePageState(current[id], totalRows)
+                    return { ...current, [id]: { ...currentState, pageIndex: Math.max(0, currentState.pageIndex - 1) } }
+                  })
+                }}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary table-pagination-button"
+                disabled={!canGoNext}
+                onClick={() => {
+                  setPageStates(current => {
+                    const currentState = normalizePageState(current[id], totalRows)
+                    return { ...current, [id]: { ...currentState, pageIndex: Math.min(maxPageIndex(totalRows, currentState.limit), currentState.pageIndex + 1) } }
+                  })
+                }}
+              >
+                Next
+              </button>
+            </div>
           </div>,
           container,
         )

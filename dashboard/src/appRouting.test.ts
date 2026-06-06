@@ -11,6 +11,8 @@ describe('appRouting', () => {
   it('parses refreshable top-level app pages', () => {
     expect(parseAppViewFromHash('#/results')).toEqual({ page: 'results' })
     expect(parseAppViewFromHash('#/new-test')).toEqual({ page: 'new-test' })
+    expect(parseAppViewFromHash('#/tests')).toEqual({ page: 'tests' })
+    expect(parseAppViewFromHash('#/tests?view=builder')).toEqual({ page: 'tests', scenarioView: 'builder' })
     expect(parseAppViewFromHash('#/repository')).toEqual({ page: 'repository' })
     expect(parseAppViewFromHash('#/swagger')).toEqual({ page: 'swagger' })
     expect(parseAppViewFromHash('#/repository-guide')).toEqual({ page: 'repository-guide' })
@@ -24,6 +26,10 @@ describe('appRouting', () => {
     expect(parseAppViewFromHash(viewToLocationHash({ page: 'new-test', scenarioId: 'scenario-1' }))).toEqual({
       page: 'new-test',
       scenarioId: 'scenario-1',
+    })
+    expect(parseAppViewFromHash(viewToLocationHash({ page: 'tests', scenarioView: 'builder' }))).toEqual({
+      page: 'tests',
+      scenarioView: 'builder',
     })
     expect(parseAppViewFromHash(viewToLocationHash({ page: 'scripts', mode: 'edit', scriptId: 'script-1' }))).toEqual({
       page: 'scripts',

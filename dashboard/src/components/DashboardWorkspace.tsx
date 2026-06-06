@@ -366,6 +366,7 @@ export default function DashboardWorkspace({
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
   const [cardLibraryCollapsed, setCardLibraryCollapsed] = useState(() => safeReadJSON<boolean>(cardLibraryStorageKey, false))
+  const [collapsedLibraryCategories, setCollapsedLibraryCategories] = useState<Record<string, boolean>>({})
   const [newTabName, setNewTabName] = useState('')
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null)
 
@@ -424,6 +425,9 @@ export default function DashboardWorkspace({
     }
     return Array.from(groupMap.entries()).map(([category, groupedCards]) => ({ category, cards: groupedCards }))
   }, [cards])
+  const toggleLibraryCategory = (category: string) => {
+    setCollapsedLibraryCategories(current => ({ ...current, [category]: !current[category] }))
+  }
 
   const updateProfile = (profileId: string, updater: (profile: DashboardWorkspaceProfile) => DashboardWorkspaceProfile) => {
     setProfiles(previous => previous.map(profile => (profile.id === profileId ? normalizeProfile(updater(profile), defaultProfile, cardIds) : profile)))
@@ -870,8 +874,24 @@ export default function DashboardWorkspace({
               <div className="dashboard-workspace-library-groups">
                 {cardLibraryGroups.map(group => (
                   <section key={group.category} className="dashboard-workspace-library-group">
-                    <h4>{group.category}</h4>
-                    <div className="dashboard-workspace-library-list">
+                    <button
+                      type="button"
+                      className="dashboard-workspace-library-group-header"
+                      aria-expanded={!collapsedLibraryCategories[group.category]}
+                      aria-controls={`dashboard-workspace-library-group-${slugify(group.category)}`}
+                      onClick={() => toggleLibraryCategory(group.category)}
+                    >
+                      <span className="dashboard-workspace-library-group-title">{group.category}</span>
+                      <span className="dashboard-workspace-library-group-meta">
+                        {group.cards.filter(card => activeTab.cardIds.includes(card.id)).length}/{group.cards.length}
+                      </span>
+                      <span className="dashboard-workspace-library-group-chevron" aria-hidden="true">⌄</span>
+                    </button>
+                    <div
+                      id={`dashboard-workspace-library-group-${slugify(group.category)}`}
+                      className="dashboard-workspace-library-list"
+                      hidden={Boolean(collapsedLibraryCategories[group.category])}
+                    >
                       {group.cards.map(card => {
                         const alreadyOnActiveTab = activeTab.cardIds.includes(card.id)
                         return (

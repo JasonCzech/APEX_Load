@@ -56,7 +56,7 @@ describe('TablePaginationManager', () => {
     document.body.innerHTML = ''
   })
 
-  it('shows 10 rows by default and supports 25 and all', async () => {
+  it('shows 10 rows by default, pages forward and backward, and supports 25 and all', async () => {
     const { table } = buildTable(30)
 
     act(() => {
@@ -65,7 +65,21 @@ describe('TablePaginationManager', () => {
     await flushTableScan()
 
     expect(visibleRowTexts(table)).toHaveLength(10)
-    expect(document.querySelector('.table-pagination-summary')?.textContent).toBe('Showing 10 of 30')
+    expect(visibleRowTexts(table)[0]).toBe('Row 1')
+    expect(document.querySelector('.table-pagination-summary')?.textContent).toBe('Showing 1-10 of 30')
+
+    const nextButton = Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Next') as HTMLButtonElement
+    const previousButton = Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Previous') as HTMLButtonElement
+    expect(previousButton.disabled).toBe(true)
+    expect(nextButton.disabled).toBe(false)
+
+    act(() => {
+      nextButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(visibleRowTexts(table)).toEqual(Array.from({ length: 10 }, (_, index) => `Row ${index + 11}`))
+    expect(document.querySelector('.table-pagination-summary')?.textContent).toBe('Showing 11-20 of 30')
+    expect(previousButton.disabled).toBe(false)
 
     const select = document.querySelector('.table-pagination-select') as HTMLSelectElement
     act(() => {
@@ -74,7 +88,23 @@ describe('TablePaginationManager', () => {
     })
 
     expect(visibleRowTexts(table)).toHaveLength(25)
-    expect(document.querySelector('.table-pagination-summary')?.textContent).toBe('Showing 25 of 30')
+    expect(visibleRowTexts(table)[0]).toBe('Row 1')
+    expect(document.querySelector('.table-pagination-summary')?.textContent).toBe('Showing 1-25 of 30')
+
+    act(() => {
+      nextButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(visibleRowTexts(table)).toEqual(['Row 26', 'Row 27', 'Row 28', 'Row 29', 'Row 30'])
+    expect(document.querySelector('.table-pagination-summary')?.textContent).toBe('Showing 26-30 of 30')
+    expect(nextButton.disabled).toBe(true)
+
+    act(() => {
+      previousButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(visibleRowTexts(table)[0]).toBe('Row 1')
+    expect(document.querySelector('.table-pagination-summary')?.textContent).toBe('Showing 1-25 of 30')
 
     act(() => {
       select.value = 'All'
@@ -82,7 +112,9 @@ describe('TablePaginationManager', () => {
     })
 
     expect(visibleRowTexts(table)).toHaveLength(30)
-    expect(document.querySelector('.table-pagination-summary')?.textContent).toBe('Showing 30 of 30')
+    expect(document.querySelector('.table-pagination-summary')?.textContent).toBe('Showing 1-30 of 30')
+    expect(previousButton.disabled).toBe(true)
+    expect(nextButton.disabled).toBe(true)
   })
 
   it('does not add controls for short tables', async () => {

@@ -160,7 +160,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const activePage: NavPage = view.page === 'test' ? 'tests' : view.page === 'swagger' || view.page === 'repository-guide' ? 'docs' : view.page
 
   const navigateToScriptEdit = (scriptId: string) => setView({ page: 'scripts', mode: 'edit', scriptId })
-  const navigateToScenarioBuilder = () => setView({ page: 'tests' })
+  const navigateToScenarioBuilder = () => setView({ page: 'tests', scenarioView: 'builder' })
   const navigateToNewTestForScenario = (scenarioId: string) => setView({ page: 'new-test', scenarioId })
 
   const handleNavigate = (page: NavPage) => {
@@ -440,6 +440,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
           )}
           {view.page === 'tests' && (
             <TestHub
+              initialView={view.scenarioView}
               testStatuses={testStatuses}
               onSelectTest={navigateToTest}
               onCreateTestFromScenario={navigateToNewTestForScenario}

@@ -334,6 +334,20 @@ describe('TestHub', () => {
     })
   })
 
+  it('opens directly to the scenario builder when requested', async () => {
+    await act(async () => {
+      root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    expect(container.querySelector('.scenario-builder')).toBeTruthy()
+    expect(container.querySelector('.library-table-wrapper')).toBeFalsy()
+    const builderToggle = Array.from(container.querySelectorAll('.scenario-page-toggle button'))
+      .find(button => button.textContent === 'Scenario Builder')
+    expect(builderToggle?.getAttribute('aria-pressed')).toBe('true')
+  })
+
   it('shows saved assignment defaults in the scenario library', async () => {
     const onSelectTest = vi.fn()
     apiMock.listScenarios.mockResolvedValue({

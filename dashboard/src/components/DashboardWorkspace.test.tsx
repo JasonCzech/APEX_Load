@@ -71,6 +71,31 @@ describe('DashboardWorkspace', () => {
     expect(container.textContent).not.toContain('Alpha body')
   })
 
+  it('collapses and expands card library categories from the header', async () => {
+    await renderWorkspace()
+
+    const coreHeader = libraryGroupHeader('Core')
+    const coreList = libraryGroupList(coreHeader)
+    expect(coreHeader.getAttribute('aria-expanded')).toBe('true')
+    expect(coreList.hidden).toBe(false)
+    expect(container.querySelector('[data-library-card-id="alpha"]')).toBeTruthy()
+    expect(container.querySelector('[data-library-card-id="beta"]')).toBeTruthy()
+    expect(container.querySelector('[data-library-card-id="gamma"]')).toBeTruthy()
+
+    await click(coreHeader)
+
+    expect(coreHeader.getAttribute('aria-expanded')).toBe('false')
+    expect(coreList.hidden).toBe(true)
+    expect(container.querySelector('[data-library-card-id="gamma"]')).toBeTruthy()
+
+    await click(coreHeader)
+
+    expect(coreHeader.getAttribute('aria-expanded')).toBe('true')
+    expect(coreList.hidden).toBe(false)
+    expect(container.querySelector('[data-library-card-id="alpha"]')).toBeTruthy()
+    expect(container.querySelector('[data-library-card-id="beta"]')).toBeTruthy()
+  })
+
   it('keeps all cards in the sidebar and copies cards to the active tab', async () => {
     await renderWorkspace()
 
@@ -334,6 +359,21 @@ describe('DashboardWorkspace', () => {
     const item = container.querySelector(`[data-library-card-id="${cardId}"]`)
     expect(item).toBeTruthy()
     return item as HTMLElement
+  }
+
+  function libraryGroupHeader(category: string) {
+    const button = Array.from(container.querySelectorAll('.dashboard-workspace-library-group-header'))
+      .find(button => button.textContent?.includes(category))
+    expect(button).toBeTruthy()
+    return button as HTMLButtonElement
+  }
+
+  function libraryGroupList(header: HTMLButtonElement) {
+    const listId = header.getAttribute('aria-controls')
+    expect(listId).toBeTruthy()
+    const list = listId ? document.getElementById(listId) : null
+    expect(list).toBeTruthy()
+    return list as HTMLDivElement
   }
 
   function libraryAddButton(cardId: string) {

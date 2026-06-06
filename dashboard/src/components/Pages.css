@@ -615,18 +615,65 @@
   gap: 10px;
 }
 
+.dashboard-workspace-library-list[hidden] {
+  display: none;
+}
+
 .dashboard-workspace-library-group {
   display: grid;
   gap: 7px;
 }
 
-.dashboard-workspace-library-group h4 {
-  margin: 0;
+.dashboard-workspace-library-group-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--bg-primary) 78%, transparent);
+  cursor: pointer;
+  padding: 5px 7px;
+  text-align: left;
+}
+
+.dashboard-workspace-library-group-header:hover,
+.dashboard-workspace-library-group-header:focus-visible {
+  border-color: var(--border);
+  background: var(--bg-hover);
+  outline: none;
+}
+
+.dashboard-workspace-library-group-title {
+  min-width: 0;
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+}
+
+.dashboard-workspace-library-group-meta {
+  min-width: 34px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  text-align: center;
+}
+
+.dashboard-workspace-library-group-chevron {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1;
+  transition: transform var(--transition-fast);
+}
+
+.dashboard-workspace-library-group-header[aria-expanded='false'] .dashboard-workspace-library-group-chevron {
+  transform: rotate(-90deg);
 }
 
 .dashboard-workspace-library-item {
@@ -3784,6 +3831,8 @@
 .table-pagination-controls {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
   color: var(--text-muted);
   font-size: 12px;
@@ -3815,6 +3864,17 @@
 .table-pagination-select:focus {
   outline: 2px solid rgba(0, 163, 255, 0.24);
   outline-offset: 2px;
+}
+
+.table-pagination-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.table-pagination-button {
+  height: 30px;
+  padding: 0 10px;
 }
 
 .data-table {

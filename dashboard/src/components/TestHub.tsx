@@ -25,6 +25,7 @@ interface Props {
   onSelectTest: (id: string) => void
   onCreateTestFromScenario?: (scenarioId: string) => void
   onNavigate?: (page: NavPage) => void
+  initialView?: 'library' | 'builder'
 }
 
 interface ScenarioFormState {
@@ -618,7 +619,7 @@ function ScenarioModelPreviewPanel({
   )
 }
 
-function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate }: Props) {
+function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialView = 'library' }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [scenarios, setScenarios] = useState<StoredScenario[]>([])
@@ -630,7 +631,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate }: Props) 
   const [loadModelValidation, setLoadModelValidation] = useState<LoadModelValidationReport | null>(null)
   const [loadModelValidationLoading, setLoadModelValidationLoading] = useState(false)
   const [loadModelValidationError, setLoadModelValidationError] = useState('')
-  const [showForm, setShowForm] = useState(false)
+  const [showForm, setShowForm] = useState(initialView === 'builder')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [wizardStep, setWizardStep] = useState<ScenarioWizardStep>('start')
   const [scenarioSourceMode, setScenarioSourceMode] = useState<ScenarioSourceMode>('shape')
