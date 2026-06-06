@@ -488,7 +488,7 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
             <strong>{selectedFile?.path || 'Source'}</strong>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyValue('source', sourceExcerpt)} disabled={!copySupported || !sourceExcerpt}>
-                {copied === 'source' ? 'Copied' : 'Copy'}
+                {copied === 'source' ? 'Copied' : 'Copy Source'}
               </button>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMaximizedPane(maximizedPane === 'source' ? null : 'source')}>
                 {maximizedPane === 'source' ? 'Restore' : 'Maximize'}

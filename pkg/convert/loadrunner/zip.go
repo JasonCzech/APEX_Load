@@ -163,6 +163,14 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			})
 		}
 		if trueClientScope.Status == trueclient.ScopeReviewOnly {
+			removed := removeReviewOnlyTrueClientFallbackActions(result.Script)
+			if removed > 0 {
+				result.Stats.ConvertedActions -= removed
+				if result.Stats.ConvertedActions < 0 {
+					result.Stats.ConvertedActions = 0
+				}
+				result.Stats.Skipped += removed
+			}
 			result.Warnings = append(result.Warnings, fmt.Sprintf("%s import is review-only; validate selectors, waits, runtime settings, and replay evidence before promotion.", trueClientScope.DisplayName))
 		}
 		parameterSections := make(map[string]map[string]map[string]string)
@@ -334,6 +342,26 @@ func loadRunnerActionPhase(fileName string) string {
 
 func ptrDetectedProtocol(detected DetectedProtocol) *DetectedProtocol {
 	return &detected
+}
+
+func removeReviewOnlyTrueClientFallbackActions(script *dsl.Script) int {
+	if script == nil || len(script.Actions) == 0 {
+		return 0
+	}
+	kept := script.Actions[:0]
+	removed := 0
+	for _, action := range script.Actions {
+		if action.Type == "browser_evaluate_js" {
+			removed++
+			continue
+		}
+		kept = append(kept, action)
+	}
+	for i := len(kept); i < len(script.Actions); i++ {
+		script.Actions[i] = dsl.Action{}
+	}
+	script.Actions = kept
+	return removed
 }
 
 func newLoadRunnerReviewResult(detected DetectedProtocol, files map[string]string, actions []*ParsedAction, metadata map[string]any) *ConvertResult {

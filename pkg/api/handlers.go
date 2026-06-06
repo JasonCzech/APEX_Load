@@ -896,7 +896,9 @@ func validationWarnings(script *dsl.Script) []string {
 				engine = profile.BrowserFamily
 			}
 		}
-
+		if warning := browserprotocol.RuntimeInstallWarning(engine); warning != "" {
+			warnings = append(warnings, warning)
+		}
 	}
 
 	if needsRecordedResourceMetadataWarning(script) {

@@ -8,7 +8,7 @@ import {
   type ReplayRuntimeProfile,
   type ScriptDebugAction,
 } from '../types'
-import JsonViewer from './JsonViewer'
+import { formatConsoleEntries, formatNetworkEntries } from './scriptEditorUtils'
 
 function eventStatus(event?: BrowserReplayEvent | null): string {
   if (!event) return 'idle'
@@ -502,7 +502,7 @@ export default function BrowserReplayDebugger({
                           <button
                             type="button"
                             className="btn btn-sm btn-ghost"
-                            onClick={() => void handleCopy('console', JSON.stringify(selectedConsoleEntries, null, 2))}
+                            onClick={() => void handleCopy('console', formatConsoleEntries(selectedConsoleEntries))}
                             disabled={!copySupported}
                           >
                             {copiedKey === 'console' ? 'Console copied' : 'Copy console'}
@@ -513,9 +513,7 @@ export default function BrowserReplayDebugger({
                   </div>
                   <strong>{selectedConsoleEntries.length}</strong>
                   {selectedConsoleEntries.length > 0 && expandedPreviewKeys[selectedArtifactKey('console')] && (
-                    <div className="browser-debugger-detail-preview" style={{ padding: 0, maxHeight: 300 }}>
-                      <JsonViewer data={selectedConsoleEntries} defaultExpandedDepth={2} />
-                    </div>
+                    <pre className="browser-debugger-detail-preview">{formatConsoleEntries(selectedConsoleEntries)}</pre>
                   )}
                 </div>
                 <div className="browser-debugger-detail-item">
@@ -534,7 +532,7 @@ export default function BrowserReplayDebugger({
                           <button
                             type="button"
                             className="btn btn-sm btn-ghost"
-                            onClick={() => void handleCopy('network', JSON.stringify(selectedNetworkEntries, null, 2))}
+                            onClick={() => void handleCopy('network', formatNetworkEntries(selectedNetworkEntries))}
                             disabled={!copySupported}
                           >
                             {copiedKey === 'network' ? 'Network copied' : 'Copy network'}
@@ -545,9 +543,7 @@ export default function BrowserReplayDebugger({
                   </div>
                   <strong>{selectedNetworkEntries.length}</strong>
                   {selectedNetworkEntries.length > 0 && expandedPreviewKeys[selectedArtifactKey('network')] && (
-                    <div className="browser-debugger-detail-preview" style={{ padding: 0, maxHeight: 300 }}>
-                      <JsonViewer data={selectedNetworkEntries} defaultExpandedDepth={1} />
-                    </div>
+                    <pre className="browser-debugger-detail-preview">{formatNetworkEntries(selectedNetworkEntries)}</pre>
                   )}
                 </div>
                 {selectedHTML && (

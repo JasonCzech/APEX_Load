@@ -812,6 +812,10 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 	path := r.URL.Path
 	method := r.Method
 
+	if requirement, ok := accessRequirementFromRouteCatalog(method, path); ok {
+		return requirement, true
+	}
+
 	if path == "/api/v1/system/settings" {
 		if method == http.MethodGet {
 			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true

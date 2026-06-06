@@ -2,6 +2,7 @@ package browser
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 
@@ -98,4 +99,45 @@ func getBrowserInstance(engine string, headless bool) (playwright.Browser, error
 		globalChromium = b
 	}
 	return globalChromium, nil
+}
+
+func RuntimeInstallWarning(engine string) string {
+	engine = strings.ToLower(strings.TrimSpace(engine))
+	if engine == "" || engine == "chromium" || engine == "chrome" {
+		return ""
+	}
+	if err := browserExecutableAvailable(engine); err != nil {
+		return fmt.Sprintf("Playwright %s runtime is unavailable: %v. Run `npx playwright install %s` before replaying this browser script.", engine, err, engine)
+	}
+	return ""
+}
+
+func browserExecutableAvailable(engine string) error {
+	globalMutex.Lock()
+	defer globalMutex.Unlock()
+
+	if globalPlaywright == nil {
+		pw, err := playwright.Run()
+		if err != nil {
+			return fmt.Errorf("failed to start playwright: %w", err)
+		}
+		globalPlaywright = pw
+	}
+
+	var executablePath string
+	switch strings.ToLower(strings.TrimSpace(engine)) {
+	case "webkit":
+		executablePath = globalPlaywright.WebKit.ExecutablePath()
+	case "firefox":
+		executablePath = globalPlaywright.Firefox.ExecutablePath()
+	default:
+		return nil
+	}
+	if strings.TrimSpace(executablePath) == "" {
+		return fmt.Errorf("browser executable path is empty")
+	}
+	if _, err := os.Stat(executablePath); err != nil {
+		return err
+	}
+	return nil
 }

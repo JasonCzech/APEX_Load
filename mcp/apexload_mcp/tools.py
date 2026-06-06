@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .client import JsonMap, APEX LoadClient, apply_path_params, guarded_response, json_text
+from .client import JsonMap, APEXLoadClient, apply_path_params, guarded_response, json_text
 
 
 @dataclass(frozen=True)
@@ -233,7 +233,7 @@ VALIDATE_IMPORTERS = {
 }
 
 
-def with_default_project(client: APEX LoadClient, query: JsonMap | None, enabled: bool) -> JsonMap | None:
+def with_default_project(client: APEXLoadClient, query: JsonMap | None, enabled: bool) -> JsonMap | None:
     merged = dict(query or {})
     if enabled and client.config.default_project_id and not merged.get("project_id"):
         merged["project_id"] = client.config.default_project_id
@@ -248,7 +248,7 @@ async def run_endpoint_tool(
     payload: Any | None = None,
     confirm: bool = False,
     reason: str = "",
-    client: APEX LoadClient | None = None,
+    client: APEXLoadClient | None = None,
 ) -> str:
     if spec.name == "script_authoring_correlation_preview" and isinstance(payload, dict) and payload.get("apply") and not confirm:
         return json_text(guarded_response("Applying an authoring correlation repair changes the review session and requires confirm=true."))
@@ -259,7 +259,7 @@ async def run_endpoint_tool(
     resolved_path, error = apply_path_params(spec.path, path_params)
     if error is not None or resolved_path is None:
         return json_text(error or guarded_response("Unable to resolve path parameters."))
-    active_client = client or APEX LoadClient()
+    active_client = client or APEXLoadClient()
     response = await active_client.request(
         spec.method,
         resolved_path,
@@ -276,7 +276,7 @@ async def run_file_import_tool(
     options: JsonMap | None = None,
     validate_only: bool = False,
     confirm: bool = False,
-    client: APEX LoadClient | None = None,
+    client: APEXLoadClient | None = None,
 ) -> str:
     normalized = importer.strip().lower()
     endpoints = VALIDATE_IMPORTERS if validate_only else FILE_IMPORTERS
@@ -285,7 +285,7 @@ async def run_file_import_tool(
         return json_text(guarded_response(f"Unsupported importer {importer!r}.", code="unsupported_importer", remediation=f"Use one of: {', '.join(sorted(endpoints))}."))
     if not validate_only and not confirm:
         return json_text(guarded_response("Importing a file can create scripts or review artifacts and requires confirm=true."))
-    active_client = client or APEX LoadClient()
+    active_client = client or APEXLoadClient()
     fields = dict(options or {})
     if active_client.config.default_project_id and not fields.get("project_id"):
         fields["project_id"] = active_client.config.default_project_id
@@ -354,16 +354,16 @@ def register_resources(mcp: Any) -> None:
 
     @mcp.resource("apexload://auth/access-matrix", name="APEX Load Auth Access Matrix", mime_type="application/json")
     async def auth_access_matrix() -> str:
-        return json_text(await APEX LoadClient().request("GET", "/auth/access-matrix"))
+        return json_text(await APEXLoadClient().request("GET", "/auth/access-matrix"))
 
     @mcp.resource("apexload://system/parity-status", name="APEX Load Parity Status", mime_type="application/json")
     async def parity_status() -> str:
-        return json_text(await APEX LoadClient().request("GET", "/system/parity-status"))
+        return json_text(await APEXLoadClient().request("GET", "/system/parity-status"))
 
     @mcp.resource("apexload://runtime-settings/support-matrix", name="APEX Load Runtime Settings Support", mime_type="application/json")
     async def runtime_settings_support() -> str:
-        return json_text(await APEX LoadClient().request("GET", "/runtime-settings/support-matrix"))
+        return json_text(await APEXLoadClient().request("GET", "/runtime-settings/support-matrix"))
 
     @mcp.resource("apexload://protocol-bundles/support-matrix", name="APEX Load Protocol Bundle Support", mime_type="application/json")
     async def protocol_bundle_support() -> str:
-        return json_text(await APEX LoadClient().request("GET", "/protocol-bundles/support-matrix"))
+        return json_text(await APEXLoadClient().request("GET", "/protocol-bundles/support-matrix"))

@@ -240,7 +240,7 @@ export default function SnapshotBodyPreview({
 
   return (
     <>
-      {parsedJson !== undefined ? (
+      {isExpanded && parsedJson !== undefined ? (
         <div className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'} style={{ margin: 0, padding: 0 }}>
           <JsonViewer data={parsedJson} autoExpandPaths={autoExpandPaths} />
         </div>

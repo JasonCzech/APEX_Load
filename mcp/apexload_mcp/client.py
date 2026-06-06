@@ -16,7 +16,7 @@ JsonMap = dict[str, Any]
 
 
 @dataclass(frozen=True)
-class APEX LoadClientConfig:
+class APEXLoadClientConfig:
     base_url: str = DEFAULT_API_URL
     api_key: str = ""
     bearer_token: str = ""
@@ -24,7 +24,7 @@ class APEX LoadClientConfig:
     timeout_seconds: float = 30.0
 
     @classmethod
-    def from_env(cls) -> "APEX LoadClientConfig":
+    def from_env(cls) -> "APEXLoadClientConfig":
         timeout_raw = os.environ.get("APEXLOAD_TIMEOUT_SECONDS", "30").strip()
         try:
             timeout_seconds = float(timeout_raw)
@@ -74,20 +74,20 @@ def normalize_query(query: JsonMap | None) -> list[tuple[str, str]]:
     return pairs
 
 
-class APEX LoadClient:
+class APEXLoadClient:
     def __init__(
         self,
-        config: APEX LoadClientConfig | None = None,
+        config: APEXLoadClientConfig | None = None,
         *,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        self.config = config or APEX LoadClientConfig.from_env()
+        self.config = config or APEXLoadClientConfig.from_env()
         self._transport = transport
 
     @property
     def auth_headers(self) -> dict[str, str]:
         if self.config.api_key:
-            return {"X-APEX Load-API-Key": self.config.api_key}
+            return {"X-APEXLoad-API-Key": self.config.api_key}
         if self.config.bearer_token:
             return {"Authorization": f"Bearer {self.config.bearer_token}"}
         return {}

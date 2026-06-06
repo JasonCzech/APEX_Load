@@ -497,7 +497,7 @@ func (s *Server) routes(allowedOrigins []string) {
 				http.NotFound(w, r)
 				return
 			}
-			serveDashboardBuildMissing(w)
+			serveDashboardBuildMissingOrNotFound(w, r)
 		}))
 	} else if ok, reason := dashboardStaticReady(staticSub); !ok {
 		slog.Warn("embedded static files incomplete, dashboard will show build instructions", "reason", reason)
@@ -506,7 +506,7 @@ func (s *Server) routes(allowedOrigins []string) {
 				http.NotFound(w, r)
 				return
 			}
-			serveDashboardBuildMissing(w)
+			serveDashboardBuildMissingOrNotFound(w, r)
 		}))
 	} else {
 		fileServer := http.FileServer(http.FS(staticSub))
@@ -548,6 +548,15 @@ func dashboardStaticReady(staticFS fs.FS) (bool, string) {
 		}
 	}
 	return true, ""
+}
+
+func serveDashboardBuildMissingOrNotFound(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/")
+	if strings.HasPrefix(path, "assets/") {
+		http.NotFound(w, r)
+		return
+	}
+	serveDashboardBuildMissing(w)
 }
 
 func serveDashboardBuildMissing(w http.ResponseWriter) {

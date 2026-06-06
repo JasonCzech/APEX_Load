@@ -53,15 +53,15 @@ type Browser struct {
 	viewportW                  int
 	viewportH                  int
 
-	pwContext   playwright.BrowserContext
-	pwPage      playwright.Page
-	pwCDP       playwright.CDPSession
+	pwContext playwright.BrowserContext
+	pwPage    playwright.Page
+	pwCDP     playwright.CDPSession
 
-	mu             sync.Mutex
-	consoleEntries []protocol.ConsoleEntry
-	networkEntries []protocol.NetworkEntry
-	pendingNetwork map[string]networkRequest
-
+	mu                 sync.Mutex
+	consoleEntries     []protocol.ConsoleEntry
+	networkEntries     []protocol.NetworkEntry
+	pendingNetwork     map[string]networkRequest
+	resourceValidators map[string]string
 }
 
 type networkRequest struct {
@@ -80,7 +80,7 @@ type domState struct {
 type browserProcessSnapshot struct {
 	CPUTimeSeconds float64
 	MemoryMB       float64
-	CapturedAt      time.Time
+	CapturedAt     time.Time
 }
 
 func (b *Browser) Name() string { return "browser" }
@@ -116,6 +116,7 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	b.viewportW = 1440
 	b.viewportH = 900
 	b.pendingNetwork = make(map[string]networkRequest)
+	b.resourceValidators = make(map[string]string)
 	b.currentURL = ""
 	b.clientMetricsEnabled = false
 	b.mobile = false
@@ -125,7 +126,7 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	b.userAgent = ""
 	b.touchMode = false
 	b.captureScreenshots = ""
-	
+
 	if cacheEnabled, ok := config["browser_cache_enabled"].(bool); ok {
 		b.cacheEnabled = cacheEnabled
 	}
@@ -142,16 +143,16 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 		b.recordedResources = normalizeRecordedResources(recordedResources)
 	}
 	if downloadFilterMode, ok := config["web_download_filters_mode"].(string); ok {
-		b.downloadFilterMode = strings.TrimSpace(downloadFilterMode)
+		b.downloadFilterMode = strings.ToLower(strings.TrimSpace(downloadFilterMode))
 	}
 	if downloadFilterHosts, ok := config["web_download_filters_hosts"].([]string); ok {
 		b.downloadFilterHosts = normalizeDownloadFilterHosts(downloadFilterHosts)
 	}
 	if networkMode, ok := config["web_network_simulation_mode"].(string); ok {
-		b.networkMode = strings.TrimSpace(networkMode)
+		b.networkMode = strings.ToLower(strings.TrimSpace(networkMode))
 	}
 	if networkPreset, ok := config["web_network_simulation_preset"].(string); ok {
-		b.networkPreset = strings.TrimSpace(networkPreset)
+		b.networkPreset = strings.ToLower(strings.TrimSpace(networkPreset))
 	}
 	if networkBandwidthKB := configInt(config, "web_network_simulation_bandwidth_kbps"); networkBandwidthKB > 0 {
 		b.networkBandwidthKB = networkBandwidthKB
@@ -160,7 +161,7 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 		b.networkLatencyMS = networkLatencyMS
 	}
 	if downloadResources, ok := config["browser_download_resources"].(string); ok && strings.TrimSpace(downloadResources) != "" {
-		b.downloadResources = strings.TrimSpace(downloadResources)
+		b.downloadResources = strings.ToLower(strings.TrimSpace(downloadResources))
 	}
 	if slowMoMs := configInt(config, "browser_slow_mo_ms"); slowMoMs > 0 {
 		b.slowMo = time.Duration(slowMoMs) * time.Millisecond
@@ -238,7 +239,7 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 			b.mobile = true
 		}
 	}
-	
+
 	if b.downloadResources == "recorded" && !b.recordedResourcesAvailable {
 		return fmt.Errorf("recorded resource metadata not available")
 	}
@@ -259,6 +260,10 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 
 	browserContext, err := pwBrowser.NewContext(contextOptions)
 	if err != nil {
+		return err
+	}
+	if err := b.installRequestPolicy(browserContext); err != nil {
+		_ = browserContext.Close()
 		return err
 	}
 	if b.clientMetricsEnabled {
@@ -285,11 +290,12 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	browserContext.OnDialog(func(dialog playwright.Dialog) {
 		_ = dialog.Dismiss()
 	})
-	
+
 	recordRequest := func(request playwright.Request, finished bool) {
 		statusCode := 0
 		if response, err := request.Response(); err == nil && response != nil {
 			statusCode = response.Status()
+			b.rememberResourceValidator(request.URL(), response.Headers())
 		}
 		var bytesReceived int64
 		if sizes, err := request.Sizes(); err == nil && sizes != nil {
@@ -318,6 +324,9 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 			BytesReceived: bytesReceived,
 		})
 	}
+	browserContext.OnResponse(func(response playwright.Response) {
+		b.rememberResourceValidator(response.URL(), response.Headers())
+	})
 	browserContext.OnRequestFinished(func(request playwright.Request) {
 		go recordRequest(request, true)
 	})
@@ -334,11 +343,13 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	b.pwContext = browserContext
 	b.pwPage = page
 
-	if b.engine == "chromium" && b.cpuThrottleRate > 1.0 {
+	if b.engine == "chromium" && (b.cpuThrottleRate > 1.0 || b.clientMetricsEnabled) {
 		cdp, err := browserContext.NewCDPSession(page)
 		if err == nil {
 			b.pwCDP = cdp
-			_, _ = cdp.Send("Emulation.setCPUThrottlingRate", map[string]any{"rate": b.cpuThrottleRate})
+			if b.cpuThrottleRate > 1.0 {
+				_, _ = cdp.Send("Emulation.setCPUThrottlingRate", map[string]any{"rate": b.cpuThrottleRate})
+			}
 		}
 	}
 
@@ -371,12 +382,6 @@ func normalizeOrientation(value string) string {
 		return ""
 	}
 }
-
-
-
-
-
-
 
 func normalizeRecordedResources(urls []string) map[string]struct{} {
 	normalized := make(map[string]struct{})
@@ -472,9 +477,128 @@ func (b *Browser) shouldBlockUnrecordedRequest(rawURL string) bool {
 	return true
 }
 
+func (b *Browser) installRequestPolicy(browserContext playwright.BrowserContext) error {
+	if !b.requestPolicyEnabled() {
+		return nil
+	}
+	return browserContext.Route("**/*", func(route playwright.Route) {
+		request := route.Request()
+		if b.shouldBlockRequest(request) {
+			_ = route.Abort()
+			return
+		}
+		if b.networkLatencyMS > 0 {
+			time.Sleep(time.Duration(b.networkLatencyMS) * time.Millisecond)
+		}
 
+		headers := b.requestPolicyHeaders(request)
+		if len(headers) > 0 {
+			_ = route.Continue(playwright.RouteContinueOptions{Headers: headers})
+			return
+		}
+		_ = route.Continue()
+	})
+}
 
+func (b *Browser) requestPolicyEnabled() bool {
+	return !b.cacheEnabled ||
+		b.checkNewerVersions ||
+		b.downloadResources != "all" ||
+		b.hasDownloadFilters() ||
+		b.networkLatencyMS > 0
+}
 
+func (b *Browser) shouldBlockRequest(request playwright.Request) bool {
+	if request == nil {
+		return false
+	}
+	resourceType := request.ResourceType()
+	if request.IsNavigationRequest() || resourceType == "document" {
+		return false
+	}
+	if b.downloadResources == "none" && isBrowserStaticResourceType(resourceType) {
+		return true
+	}
+	if b.shouldBlockUnrecordedRequest(request.URL()) {
+		return true
+	}
+	if b.hasDownloadFilters() && isBrowserStaticResourceType(resourceType) && b.shouldBlockFilteredRequest(request.URL()) {
+		return true
+	}
+	return false
+}
+
+func (b *Browser) requestPolicyHeaders(request playwright.Request) map[string]string {
+	if request == nil || (b.cacheEnabled && !b.checkNewerVersions) {
+		return nil
+	}
+	headers := cloneRequestHeaders(request.Headers())
+	if !b.cacheEnabled || b.checkNewerVersions {
+		headers["Cache-Control"] = "no-cache"
+		headers["Pragma"] = "no-cache"
+	}
+	if b.checkNewerVersions && shouldRevalidateBrowserRequest(request) {
+		if etag := b.resourceValidator(request.URL()); etag != "" {
+			headers["If-None-Match"] = etag
+		}
+	}
+	return headers
+}
+
+func shouldRevalidateBrowserRequest(request playwright.Request) bool {
+	if request == nil || request.IsNavigationRequest() {
+		return false
+	}
+	return isBrowserStaticResourceType(request.ResourceType())
+}
+
+func isBrowserStaticResourceType(resourceType string) bool {
+	switch resourceType {
+	case "stylesheet", "script", "image", "media", "font", "manifest", "texttrack":
+		return true
+	default:
+		return false
+	}
+}
+
+func cloneRequestHeaders(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return map[string]string{}
+	}
+	cloned := make(map[string]string, len(headers)+3)
+	for key, value := range headers {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func (b *Browser) rememberResourceValidator(rawURL string, headers map[string]string) {
+	etag := headerValue(headers, "etag")
+	if etag == "" {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.resourceValidators == nil {
+		b.resourceValidators = make(map[string]string)
+	}
+	b.resourceValidators[rawURL] = etag
+}
+
+func (b *Browser) resourceValidator(rawURL string) string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.resourceValidators[rawURL]
+}
+
+func headerValue(headers map[string]string, name string) string {
+	for key, value := range headers {
+		if strings.EqualFold(key, name) {
+			return value
+		}
+	}
+	return ""
+}
 
 func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	if action == nil {
@@ -1167,6 +1291,7 @@ func (b *Browser) capturePageMetrics(ctx context.Context, metrics *protocol.Clie
 		const longTasks = performance.getEntriesByType('longtask');
 		const observerMetrics = window.__apexloadMetrics || {};
 		const blocking = resources.filter((entry) => entry.renderBlockingStatus === 'blocking');
+		const navigationCount = nav.name ? 1 : 0;
 		return {
 			fcp_ms: fcp ? fcp.startTime : 0,
 			lcp_ms: observerMetrics.lcp || lcp,
@@ -1176,8 +1301,8 @@ func (b *Browser) capturePageMetrics(ctx context.Context, metrics *protocol.Clie
 			dom_complete_ms: nav.domComplete || 0,
 			load_event_ms: nav.loadEventEnd || 0,
 			blocking_resource_count: blocking.length,
-			total_resource_count: resources.length,
-			resource_transfer_kb: resources.reduce((sum, entry) => sum + ((entry.transferSize || 0) / 1024), 0),
+			total_resource_count: resources.length + navigationCount,
+			resource_transfer_kb: resources.reduce((sum, entry) => sum + ((entry.transferSize || 0) / 1024), (nav.transferSize || 0) / 1024),
 			long_task_count: observerMetrics.longTaskCount || longTasks.length,
 		};
 	})()`
@@ -1241,11 +1366,117 @@ const browserMetricsBootstrapScript = `(() => {
 	} catch (e) {}
 })();`
 
-func (b *Browser) captureRuntimeMetrics(ctx context.Context, metrics *protocol.ClientMetrics) error { return nil }
+func (b *Browser) captureRuntimeMetrics(ctx context.Context, metrics *protocol.ClientMetrics) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if b.pwCDP != nil {
+		_, _ = b.pwCDP.Send("Performance.enable", map[string]any{})
+		if raw, err := b.pwCDP.Send("Performance.getMetrics", map[string]any{}); err == nil {
+			b.applyCDPPerformanceMetrics(raw, metrics)
+		}
+		if raw, err := b.pwCDP.Send("Runtime.getHeapUsage", map[string]any{}); err == nil {
+			b.applyCDPHeapMetrics(raw, metrics)
+		}
+	}
+	if metrics.JSHeapTotalMB <= 0 {
+		var snapshot struct {
+			Used  float64 `json:"used"`
+			Total float64 `json:"total"`
+		}
+		if err := b.evaluatePageExpression(ctx, `(() => {
+			const memory = performance.memory || {};
+			return {
+				used: memory.usedJSHeapSize || 0,
+				total: memory.totalJSHeapSize || memory.jsHeapSizeLimit || 0,
+			};
+		})()`, &snapshot); err == nil {
+			metrics.JSHeapUsedMB = bytesToMegabytes(snapshot.Used)
+			metrics.JSHeapTotalMB = bytesToMegabytes(snapshot.Total)
+		}
+	}
+	if metrics.JSHeapTotalMB <= 0 && metrics.JSHeapUsedMB > 0 {
+		metrics.JSHeapTotalMB = metrics.JSHeapUsedMB
+	}
+	return nil
+}
 
-func (b *Browser) captureBrowserProcessMetrics(ctx context.Context, metrics *protocol.ClientMetrics, before browserProcessSnapshot) error { return nil }
+func (b *Browser) applyCDPPerformanceMetrics(raw any, metrics *protocol.ClientMetrics) {
+	payload, ok := raw.(map[string]any)
+	if !ok {
+		return
+	}
+	items, ok := payload["metrics"].([]any)
+	if !ok {
+		return
+	}
+	values := make(map[string]float64, len(items))
+	for _, item := range items {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := entry["name"].(string)
+		value, ok := numberFromAny(entry["value"])
+		if name == "" || !ok {
+			continue
+		}
+		values[name] = value
+	}
+	metrics.JSHeapUsedMB = bytesToMegabytes(values["JSHeapUsedSize"])
+	metrics.JSHeapTotalMB = bytesToMegabytes(values["JSHeapTotalSize"])
+	metrics.LayoutCount = int(values["LayoutCount"])
+	metrics.RecalcStyleCount = int(values["RecalcStyleCount"])
+	metrics.ScriptDurationMs = values["ScriptDuration"] * 1000
+	metrics.LayoutDurationMs = values["LayoutDuration"] * 1000
+	metrics.TaskDurationMs = values["TaskDuration"] * 1000
+}
 
-func (b *Browser) captureBrowserProcessSnapshot(ctx context.Context) (browserProcessSnapshot, error) { return browserProcessSnapshot{}, nil }
+func (b *Browser) applyCDPHeapMetrics(raw any, metrics *protocol.ClientMetrics) {
+	payload, ok := raw.(map[string]any)
+	if !ok {
+		return
+	}
+	if used, ok := numberFromAny(payload["usedSize"]); ok {
+		metrics.JSHeapUsedMB = bytesToMegabytes(used)
+	}
+	if total, ok := numberFromAny(payload["totalSize"]); ok {
+		metrics.JSHeapTotalMB = bytesToMegabytes(total)
+	}
+}
+
+func numberFromAny(value any) (float64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case float32:
+		return float64(typed), true
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	case json.Number:
+		parsed, err := typed.Float64()
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func bytesToMegabytes(value float64) float64 {
+	if value <= 0 {
+		return 0
+	}
+	return value / (1024 * 1024)
+}
+
+func (b *Browser) captureBrowserProcessMetrics(ctx context.Context, metrics *protocol.ClientMetrics, before browserProcessSnapshot) error {
+	return nil
+}
+
+func (b *Browser) captureBrowserProcessSnapshot(ctx context.Context) (browserProcessSnapshot, error) {
+	return browserProcessSnapshot{}, nil
+}
 
 func browserProcessResourceMetrics(before, after browserProcessSnapshot) (float64, float64) {
 	memoryMB := after.MemoryMB
@@ -1263,7 +1494,6 @@ func browserProcessResourceMetrics(before, after browserProcessSnapshot) (float6
 	return cpuDelta / elapsedSeconds * 100, memoryMB
 }
 
-
 func configInt(config map[string]any, key string) int {
 	switch value := config[key].(type) {
 	case int:
@@ -1278,8 +1508,6 @@ func configInt(config map[string]any, key string) int {
 		return 0
 	}
 }
-
-
 
 func (b *Browser) screenshotSelector(action *protocol.Action) string {
 	if action == nil {
@@ -1333,7 +1561,6 @@ func (b *Browser) sleep(ctx context.Context, delay time.Duration) error {
 	}
 }
 
-
 func (b *Browser) eventOffsets() (int, int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -1364,9 +1591,6 @@ func (b *Browser) networkEntriesSince(offset int) []protocol.NetworkEntry {
 	return cloneNetworkEntries(b.networkEntries[offset:])
 }
 
-
-
-
 func (b *Browser) waitTimeout(timeoutMs int) time.Duration {
 	if timeoutMs <= 0 {
 		return 10 * time.Second
@@ -1383,7 +1607,6 @@ func parseWaitDelay(raw string) (time.Duration, error) {
 	}
 	return time.ParseDuration(raw)
 }
-
 
 func cloneConsoleEntries(entries []protocol.ConsoleEntry) []protocol.ConsoleEntry {
 	if len(entries) == 0 {
@@ -1413,7 +1636,6 @@ func cloneDOMSummary(summary *protocol.DOMSummary) *protocol.DOMSummary {
 	}
 	return &cloned
 }
-
 
 func (b *Browser) navigate(ctx context.Context, target string) error {
 	if err := ctx.Err(); err != nil {
@@ -1465,7 +1687,7 @@ func (b *Browser) evaluatePageExpression(ctx context.Context, expression string,
 	if result == nil {
 		return nil
 	}
-    data, _ := json.Marshal(res)
+	data, _ := json.Marshal(res)
 	return json.Unmarshal(data, result)
 }
 
@@ -1510,7 +1732,7 @@ func (b *Browser) readDOMSummary(ctx context.Context) (string, string, *protocol
 	title, _ := data["title"].(string)
 	url, _ := data["url"].(string)
 	readyState, _ := data["readyState"].(string)
-	
+
 	visibleList, _ := data["visible"].([]any)
 	visibleText := []string{}
 	for _, v := range visibleList {
@@ -1518,7 +1740,7 @@ func (b *Browser) readDOMSummary(ctx context.Context) (string, string, *protocol
 			visibleText = append(visibleText, s)
 		}
 	}
-	
+
 	return url, title, &protocol.DOMSummary{
 		Title:       title,
 		ReadyState:  readyState,
@@ -1548,13 +1770,12 @@ func (b *Browser) close() {
 	b.networkEntries = nil
 }
 
-
 func (b *Browser) selectOption(ctx context.Context, selector, value string) error {
 	if err := b.waitVisible(ctx, selector); err != nil {
 		return err
 	}
 	_, err := b.pwPage.SelectOption(selector, playwright.SelectOptionValues{
-		Values: playwright.StringSlice(value),
+		ValuesOrLabels: playwright.StringSlice(value),
 	})
 	return err
 }
