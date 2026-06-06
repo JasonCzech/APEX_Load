@@ -13,6 +13,7 @@ const apiMock = {
   getFleetAlerts: vi.fn(),
   getFleetCapacity: vi.fn(),
   getFleetProvisioner: vi.fn(),
+  getRunCalendar: vi.fn(),
   getScheduleHealth: vi.fn(),
   getSystemInventory: vi.fn(),
   getSystemReadiness: vi.fn(),
@@ -130,6 +131,20 @@ describe('MonitoringPage', () => {
       pending_approval: 0,
       status_counts: {},
     })
+    apiMock.getRunCalendar.mockResolvedValue({
+      generated_at: new Date().toISOString(),
+      range: {
+        from: new Date().toISOString(),
+        to: new Date().toISOString(),
+        requested_from: new Date().toISOString(),
+        requested_to: new Date().toISOString(),
+        future_ceiling: new Date(Date.now() + 366 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      events: [],
+      count: 0,
+      status_counts: {},
+      source_counts: {},
+    })
     apiMock.getFleetAlerts.mockResolvedValue({ alerts: [], count: 0 })
     apiMock.getFleetCapacity.mockResolvedValue({
       project_id: 'project-1',
@@ -235,7 +250,7 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('4/10 errors')
     expect(container.textContent).toContain('payments.example.test')
     expect(container.textContent).toContain('Close')
-    expect(apiMock.listTests).toHaveBeenCalledWith({ project_id: 'project-1' })
+    expect(apiMock.getRunCalendar).toHaveBeenCalledWith(expect.objectContaining({ project_id: 'project-1' }))
     expect(apiMock.getFleetAlerts).toHaveBeenCalled()
     expect(apiMock.getFleetCapacity).toHaveBeenCalledWith({ project_id: 'project-1' })
     expect(apiMock.getSystemReadiness).toHaveBeenCalled()
@@ -584,31 +599,127 @@ describe('MonitoringPage', () => {
     expect(apiMock.getScheduleHealth).toHaveBeenCalled()
   })
 
-  it('shows pending queue details in the run timeline', async () => {
-    apiMock.listTests.mockResolvedValue({
-      tests: [{
-        id: 'test-pending',
-        name: 'Checkout Capacity Queue',
-        status: 'PENDING',
-        groups: [{ name: 'Checkout', script_id: 'script-1', script_name: 'Checkout', protocol: 'http', vusers: 2500 }],
-        total_vusers: 2500,
-        duration: '15m',
-        created_at: '2026-05-12T20:00:00Z',
-        pending_since: '2026-05-12T20:03:00Z',
-        queue_position: 1,
-        pending_reason: 'waiting for project VUser capacity (2000 max vusers)',
-      }],
+  it('renders run calendar events and opens test details', async () => {
+    const onSelectTest = vi.fn()
+    const eventStart = new Date()
+    eventStart.setHours(9, 0, 0, 0)
+    const eventEnd = new Date(eventStart)
+    eventEnd.setMinutes(eventEnd.getMinutes() + 30)
+    const projectedStart = new Date(eventStart)
+    projectedStart.setDate(projectedStart.getDate() + 1)
+    apiMock.getRunCalendar.mockResolvedValue({
+      generated_at: new Date().toISOString(),
+      range: {
+        from: new Date(eventStart.getFullYear(), eventStart.getMonth(), 1).toISOString(),
+        to: new Date(eventStart.getFullYear(), eventStart.getMonth() + 1, 1).toISOString(),
+        requested_from: new Date(eventStart.getFullYear(), eventStart.getMonth(), 1).toISOString(),
+        requested_to: new Date(eventStart.getFullYear(), eventStart.getMonth() + 1, 1).toISOString(),
+        future_ceiling: new Date(Date.now() + 366 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      events: [
+        {
+          id: 'test:test-adhoc',
+          source: 'ad_hoc',
+          run_type: 'ad_hoc',
+          title: 'Checkout Spike Investigation',
+          status: 'RUNNING',
+          start_at: eventStart.toISOString(),
+          end_at: eventEnd.toISOString(),
+          test_id: 'test-adhoc',
+          test_ref_key: 'RUN-42',
+          scenario_name: 'Checkout Scenario',
+          workload: {
+            total_vusers: 750,
+            duration: '30m',
+            groups: [{ name: 'buyers', script_id: 'script-1', script_name: 'Checkout', protocol: 'http', vusers: 750 }],
+          },
+          user: {
+            display_name: 'Dana Runner',
+            subject: 'dana@example.com',
+            attribution: 'started_by',
+          },
+          topology: {
+            source: 'live',
+            controller: {
+              id: 'controller-1',
+              status: 'healthy',
+              address: ':8080',
+              version: 'dev',
+              execution_mode: 'distributed',
+            },
+            generator_shards: [{ group: 'buyers', target: 'generator-a', vusers: 750, shard_strategy: 'capacity_weighted' }],
+            generator_inventory: [{
+              target: 'generator-a:9090',
+              generator_id: 'generator-a',
+              status: 'connected',
+              available_capacity: 9250,
+              active_vusers: 750,
+              cpu_percent: 20,
+              memory_bytes: 1024,
+              goroutine_count: 120,
+              cpu_limit_cores: 2,
+              memory_limit_bytes: 2048,
+              max_vusers: 10000,
+            }],
+          },
+        },
+        {
+          id: 'projected:schedule-1',
+          source: 'cron',
+          run_type: 'scheduled',
+          title: 'Nightly Checkout',
+          status: 'scheduled',
+          start_at: projectedStart.toISOString(),
+          end_at: new Date(projectedStart.getTime() + 30 * 60 * 1000).toISOString(),
+          projected: true,
+          schedule_id: 'schedule-1',
+          schedule_name: 'Nightly Checkout',
+          cron_expr: '0 2 * * *',
+          scenario_name: 'Checkout Scenario',
+          workload: { total_vusers: 2500, duration: '30m' },
+          user: { display_name: 'Scheduler Owner', attribution: 'schedule_owner' },
+          topology: { source: 'planned', summary: 'Generator assignment will be resolved when the run materializes.' },
+        },
+      ],
+      count: 2,
+      status_counts: { RUNNING: 1, scheduled: 1 },
+      source_counts: { ad_hoc: 1, cron: 1 },
     })
 
     await act(async () => {
-      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} onSelectTest={onSelectTest} />)
     })
 
     await clickMonitorTab('Schedules')
 
-    expect(container.textContent).toContain('Run Timeline')
-    expect(container.textContent).toContain('Checkout Capacity Queue')
-    expect(container.textContent).toContain('Queue #1')
-    expect(container.textContent).toContain('waiting for project VUser capacity')
+    expect(container.textContent).toContain('Run Calendar')
+    expect(container.textContent).toContain('Checkout Spike Investigation')
+    expect(container.textContent).toContain('Nightly Checkout')
+    expect(container.textContent).toContain('Cron')
+    expect(container.textContent).toContain('Ad-hoc')
+    expect(container.textContent).toContain('Current')
+
+    const runButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.run-calendar-event'))
+      .find(button => button.textContent?.includes('Checkout Spike Investigation'))
+    expect(runButton).not.toBeUndefined()
+
+    await act(async () => {
+      runButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Controller & Hosts')
+    expect(container.textContent).toContain('Dana Runner')
+    expect(container.textContent).toContain('RUN-42')
+    expect(container.textContent).toContain('generator-a')
+
+    const openButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Open Test')
+    expect(openButton).not.toBeUndefined()
+
+    await act(async () => {
+      openButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onSelectTest).toHaveBeenCalledWith('test-adhoc')
   })
 })

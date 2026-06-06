@@ -387,6 +387,11 @@ export interface TestSummary {
   baseline_pinned_at?: string
   started_at?: string
   ended_at?: string
+  created_by_subject?: string
+  created_by_display_name?: string
+  started_by_subject?: string
+  started_by_display_name?: string
+  generator_shards?: GeneratorShardSummary[]
   vuser_ramps?: Record<string, VUserRampStatus>
   live_metrics?: LiveMetrics
   telemetry_health?: TelemetryRunHealth
@@ -1155,6 +1160,83 @@ export interface ScenarioScheduleHealth {
   skipped?: number
   completed?: number
   status_counts?: Record<string, number>
+}
+
+export interface RunCalendarRange {
+  from: string
+  to: string
+  requested_from: string
+  requested_to: string
+  history_floor?: string
+  future_ceiling: string
+  history_clamped?: boolean
+  future_clamped?: boolean
+  retention_enforced?: boolean
+}
+
+export interface RunCalendarUser {
+  display_name?: string
+  subject?: string
+  attribution?: 'started_by' | 'created_by' | 'schedule_owner' | string
+  owner_subject?: string
+  owner_display_name?: string
+  created_by_subject?: string
+  created_by_display_name?: string
+  started_by_subject?: string
+  started_by_display_name?: string
+}
+
+export interface RunCalendarWorkload {
+  total_vusers?: number
+  duration?: string
+  groups?: TestGroup[]
+}
+
+export interface RunCalendarTopology {
+  source?: 'live' | 'archive' | 'planned' | 'legacy' | string
+  controller?: SystemInventoryController
+  controller_env?: Record<string, string>
+  generator_shards?: GeneratorShardSummary[]
+  generator_inventory?: SystemInventoryGenerator[]
+  summary?: string
+}
+
+export interface RunCalendarEvent {
+  id: string
+  source: 'cron' | 'ad_hoc' | string
+  run_type: 'scheduled' | 'ad_hoc' | string
+  title: string
+  status: string
+  start_at: string
+  end_at?: string
+  projected?: boolean
+  occurrence_status?: string
+  reason_code?: string
+  conflict_summary?: string
+  test_id?: string
+  test_ref_key?: string
+  schedule_id?: string
+  schedule_name?: string
+  cron_expr?: string
+  timezone?: string
+  scenario_id?: string
+  scenario_name?: string
+  application_id?: string
+  release_id?: string
+  project_id?: string
+  workload: RunCalendarWorkload
+  user: RunCalendarUser
+  topology: RunCalendarTopology
+}
+
+export interface RunCalendarResponse {
+  generated_at: string
+  range: RunCalendarRange
+  events: RunCalendarEvent[]
+  count: number
+  status_counts?: Record<string, number>
+  source_counts?: Record<string, number>
+  truncated?: boolean
 }
 
 export type TestStatus =

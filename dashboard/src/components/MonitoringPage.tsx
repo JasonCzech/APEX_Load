@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback, useMemo, type DragEvent, type ReactNo
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
-import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, ScenarioScheduleHealth, SystemInventoryResponse, SystemReadinessResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
+import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, RunCalendarEvent, RunCalendarResponse, ScenarioScheduleHealth, SystemInventoryResponse, SystemReadinessResponse, TelemetryDiagnosticEntry } from '../types'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
 import './CreateTestModal.css'
 
 interface Props {
   connectionState: WebSocketConnectionState
   telemetryDiagnostics?: TelemetryDiagnosticEntry[]
+  onSelectTest?: (id: string) => void
 }
 
 const EMPTY_GENERATORS: SystemInventoryResponse['generators'] = []
@@ -17,10 +18,12 @@ const MONITOR_CATEGORIES = [
   { id: 'overview', label: 'Overview', cardIds: ['system-health', 'production-readiness', 'controller'] },
   { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts'] },
   { id: 'telemetry', label: 'Telemetry', cardIds: ['telemetry-diagnostics', 'apm-integrations', 'monitor-packs'] },
-  { id: 'schedules', label: 'Schedules', cardIds: ['schedule-health', 'run-timeline'] },
+  { id: 'schedules', label: 'Schedules', cardIds: ['schedule-health', 'run-calendar'] },
 ] as const
 
 type MonitorCategoryId = typeof MONITOR_CATEGORIES[number]['id']
+type RunCalendarView = 'month' | 'week' | 'day'
+type RunCalendarFilter = 'all' | 'cron' | 'ad_hoc' | 'current'
 
 function formatReadinessStatus(status?: string): string {
   switch (status) {
@@ -60,11 +63,16 @@ function safeApiCall<T>(request: () => Promise<T>, fallback: T): Promise<T> {
   }
 }
 
-export default function MonitoringPage({ connectionState, telemetryDiagnostics = [] }: Props) {
+export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [scheduleHealth, setScheduleHealth] = useState<ScenarioScheduleHealth | null>(null)
+  const [runCalendar, setRunCalendar] = useState<RunCalendarResponse | null>(null)
+  const [calendarView, setCalendarView] = useState<RunCalendarView>('month')
+  const [calendarAnchor, setCalendarAnchor] = useState<Date>(() => new Date())
+  const [calendarFilter, setCalendarFilter] = useState<RunCalendarFilter>('all')
+  const [selectedCalendarEventId, setSelectedCalendarEventId] = useState<string | null>(null)
   const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
   const [systemReadiness, setSystemReadiness] = useState<SystemReadinessResponse | null>(null)
   const [apmProfiles, setApmProfiles] = useState<APMIntegrationProfilesResponse | null>(null)
@@ -72,7 +80,6 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [fleetAlerts, setFleetAlerts] = useState<FleetAlert[]>([])
   const [fleetCapacity, setFleetCapacity] = useState<FleetCapacityResponse | null>(null)
   const [provisioner, setProvisioner] = useState<ProvisionerInfo | null>(null)
-  const [tests, setTests] = useState<TestSummary[]>([])
   const [isTelemetryModalOpen, setIsTelemetryModalOpen] = useState(false)
   const [isGeneratorsModalOpen, setIsGeneratorsModalOpen] = useState(false)
   const [customizing, setCustomizing] = useState(false)
@@ -163,18 +170,35 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const monitorPackContractCount = monitorPacks?.packs.filter(pack => pack.status === 'integration_contract').length ?? 0
   const monitorPackHeaderSeverity = !monitorPacks ? 'unknown' : monitorPackSupportedCount === monitorPackCount ? 'healthy' : 'warning'
   const monitorPackHeaderLabel = !monitorPacks ? 'checking' : `${monitorPackSupportedCount}/${monitorPackCount} native`
+  const calendarRange = useMemo(() => getRunCalendarVisibleRange(calendarView, calendarAnchor), [calendarView, calendarAnchor])
+  const calendarEvents = useMemo(() => filterRunCalendarEvents(runCalendar?.events ?? [], calendarFilter), [runCalendar, calendarFilter])
+  const calendarModel = useMemo(() => buildRunCalendarModel(calendarView, calendarAnchor, calendarEvents), [calendarView, calendarAnchor, calendarEvents])
+  const selectedCalendarEvent = useMemo(
+    () => (selectedCalendarEventId ? (runCalendar?.events ?? []).find(event => event.id === selectedCalendarEventId) ?? null : null),
+    [runCalendar, selectedCalendarEventId],
+  )
+  const calendarHeaderSeverity = !runCalendar ? 'unknown' : runCalendar.truncated ? 'warning' : calendarEvents.some(event => isRunCalendarProblemStatus(event.status)) ? 'danger' : 'healthy'
+  const calendarHeaderLabel = !runCalendar
+    ? 'checking'
+    : runCalendar.truncated
+      ? `${calendarEvents.length.toLocaleString()} shown`
+      : `${calendarEvents.length.toLocaleString()} run${calendarEvents.length === 1 ? '' : 's'}`
 
   const refresh = useCallback(async () => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
       return
     }
     try {
-      const [healthRes, testsRes, inventoryRes, readinessRes, scheduleHealthRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetCapacityRes, provisionerRes] = await Promise.all([
+      const [healthRes, inventoryRes, readinessRes, scheduleHealthRes, runCalendarRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetCapacityRes, provisionerRes] = await Promise.all([
         api.getHealth(),
-        api.listTests(activeProject?.id ? { project_id: activeProject.id } : undefined).catch(() => ({ tests: [] })),
         api.getSystemInventory().catch(() => null),
         api.getSystemReadiness().catch(() => null),
         api.getScheduleHealth().catch(() => null),
+        api.getRunCalendar({
+          from: calendarRange.from.toISOString(),
+          to: calendarRange.to.toISOString(),
+          project_id: activeProject?.id,
+        }).catch(() => null),
         safeApiCall(() => api.getAPMIntegrationProfiles(), null),
         safeApiCall(() => api.getInfrastructureMonitorPacks(), null),
         api.getFleetAlerts().catch(() => ({ alerts: [] })),
@@ -182,10 +206,10 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         api.getFleetProvisioner().catch(() => null),
       ])
       setHealth(healthRes)
-      setTests(testsRes.tests || [])
       setInventory(inventoryRes)
       setSystemReadiness(readinessRes)
       setScheduleHealth(scheduleHealthRes)
+      setRunCalendar(runCalendarRes)
       setApmProfiles(apmProfilesRes)
       setMonitorPacks(monitorPacksRes)
       setFleetAlerts(fleetAlertsRes.alerts || [])
@@ -195,7 +219,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     } catch {
       // API not available
     }
-  }, [activeProject?.id, api])
+  }, [activeProject?.id, api, calendarRange.from, calendarRange.to])
 
   useEffect(() => {
     refresh()
@@ -219,7 +243,26 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     }
   }, [refresh])
 
-  const timeline = useMemo(() => buildRunTimeline(tests, health), [tests, health])
+  useEffect(() => {
+    if (!selectedCalendarEventId) return
+    if (!runCalendar?.events.some(event => event.id === selectedCalendarEventId)) {
+      setSelectedCalendarEventId(null)
+    }
+  }, [runCalendar, selectedCalendarEventId])
+
+  const shiftCalendar = useCallback((amount: number) => {
+    setCalendarAnchor(current => shiftRunCalendarAnchor(current, calendarView, amount))
+  }, [calendarView])
+
+  const selectCalendarEvent = useCallback((event: RunCalendarEvent) => {
+    setSelectedCalendarEventId(event.id)
+  }, [])
+
+  const openSelectedTest = useCallback(() => {
+    if (selectedCalendarEvent?.test_id) {
+      onSelectTest?.(selectedCalendarEvent.test_id)
+    }
+  }, [onSelectTest, selectedCalendarEvent?.test_id])
 
   const cards = useMemo<MonitorCard[]>(() => [
     {
@@ -756,73 +799,48 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
     },
     {
-      id: 'run-timeline',
-      title: 'Run Timeline',
+      id: 'run-calendar',
+      title: 'Run Calendar',
+      headerBadge: (
+        <span className={`monitor-header-badge ${calendarHeaderSeverity}`}>
+          {calendarHeaderLabel}
+        </span>
+      ),
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="4" y1="19" x2="20" y2="19" />
-          <rect x="4" y="5" width="5" height="10" rx="1" />
-          <rect x="11" y="8" width="4" height="7" rx="1" />
-          <rect x="17" y="3" width="3" height="12" rx="1" />
+          <rect x="3" y="4" width="18" height="18" rx="2" />
+          <line x1="16" y1="2" x2="16" y2="6" />
+          <line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="3" y1="10" x2="21" y2="10" />
+          <path d="M8 14h.01" />
+          <path d="M12 14h.01" />
+          <path d="M16 14h.01" />
+          <path d="M8 18h.01" />
+          <path d="M12 18h.01" />
         </svg>
       ),
       content: (
-        <div className={`monitor-body timeline-body ${timeline.runs.length === 0 ? 'timeline-empty' : ''}`}>
-          <div className="timeline-summary-grid">
-            <div className="timeline-summary-item">
-              <span className="timeline-summary-value">{timeline.runs.length}</span>
-              <span className="timeline-summary-label">Planned/Active</span>
-            </div>
-            <div className="timeline-summary-item">
-              <span className="timeline-summary-value">{timeline.peakGenerators}</span>
-              <span className="timeline-summary-label">Peak Generators</span>
-            </div>
-            <div className="timeline-summary-item">
-              <span className={`timeline-summary-value ${timeline.capacityPct > 100 ? 'text-danger' : ''}`}>{timeline.capacityPct}%</span>
-              <span className="timeline-summary-label">Capacity Used</span>
-            </div>
-          </div>
-          {timeline.runs.length === 0 ? (
-            <p className="monitor-hint">No queued or active runs. Queued tests will appear here with estimated resource overlap.</p>
-          ) : (
-            <>
-              <div className="run-timeline-axis">
-                <span>{timeline.windowStartLabel}</span>
-                <span>{timeline.windowEndLabel}</span>
-              </div>
-              <div className="run-timeline-list">
-                {timeline.runs.map(run => (
-                  <div key={run.id} className="run-timeline-row">
-                    <div className="run-timeline-meta">
-                      <span className="run-timeline-name">{run.name}</span>
-                      <span className="run-timeline-detail">{run.status} / {run.vusers.toLocaleString()} VUsers / {run.durationLabel}{run.status === 'PENDING' ? ` / ${run.queuePosition ? `Queue #${run.queuePosition}` : 'Queued'}` : ''}</span>
-                      {run.status === 'PENDING' && (run.pendingReason || run.pendingSinceLabel) && (
-                        <span className="run-timeline-detail">{run.pendingReason || 'waiting for capacity'}{run.pendingSinceLabel ? ` · since ${run.pendingSinceLabel}` : ''}</span>
-                      )}
-                    </div>
-                    <div className="run-timeline-track" title={`${run.name}: ${run.startLabel} to ${run.endLabel}`}>
-                      <span className={`run-timeline-bar ${run.status.toLowerCase()}`} style={{ left: `${run.leftPct}%`, width: `${run.widthPct}%` }} />
-                    </div>
-                    <div className="run-timeline-resource">
-                      <span>{run.generators} gen</span>
-                      <span>{run.startLabel}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="timeline-resource-strip">
-                <span>Peak overlap</span>
-                <div className="timeline-resource-meter">
-                  <span style={{ width: `${Math.min(100, timeline.capacityPct)}%` }} className={timeline.capacityPct > 100 ? 'over' : ''} />
-                </div>
-                <span>{timeline.peakGenerators}/{timeline.availableGenerators || '-'} generators</span>
-              </div>
-            </>
-          )}
-        </div>
+        <RunCalendarPanel
+          calendar={runCalendar}
+          events={calendarEvents}
+          model={calendarModel}
+          view={calendarView}
+          anchor={calendarAnchor}
+          filter={calendarFilter}
+          selectedEvent={selectedCalendarEvent}
+          canOpenSelectedTest={Boolean(selectedCalendarEvent?.test_id && onSelectTest)}
+          onPrevious={() => shiftCalendar(-1)}
+          onNext={() => shiftCalendar(1)}
+          onToday={() => setCalendarAnchor(new Date())}
+          onViewChange={setCalendarView}
+          onFilterChange={setCalendarFilter}
+          onSelectEvent={selectCalendarEvent}
+          onCloseDetails={() => setSelectedCalendarEventId(null)}
+          onOpenSelectedTest={openSelectedTest}
+        />
       ),
     },
-  ], [apmHeaderLabel, apmHeaderSeverity, apmProfiles, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleQueuedCount, scheduleSkippedCount, systemReadiness, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
+  ], [apmHeaderLabel, apmHeaderSeverity, apmProfiles, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onSelectTest, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, runCalendar, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleQueuedCount, scheduleSkippedCount, selectCalendarEvent, selectedCalendarEvent, shiftCalendar, systemReadiness, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))
@@ -1232,110 +1250,412 @@ interface MonitorCard {
   content: ReactNode
 }
 
-interface TimelineRun {
-  id: string
-  name: string
-  status: string
-  vusers: number
-  generators: number
-  durationLabel: string
-  queuePosition?: number
-  pendingReason?: string
-  pendingSinceLabel?: string
-  startMs: number
-  endMs: number
-  startLabel: string
-  endLabel: string
-  leftPct: number
-  widthPct: number
+interface RunCalendarDay {
+  key: string
+  date: Date
+  isOutsidePeriod: boolean
+  isToday: boolean
+  events: RunCalendarEvent[]
 }
 
-interface TimelineModel {
-  runs: TimelineRun[]
-  peakGenerators: number
-  availableGenerators: number
-  capacityPct: number
-  windowStartLabel: string
-  windowEndLabel: string
+interface RunCalendarModel {
+  label: string
+  rangeLabel: string
+  days: RunCalendarDay[]
 }
 
-function buildRunTimeline(tests: TestSummary[], health: HealthResponse | null): TimelineModel {
-  const now = Date.now()
-  const candidates = tests
-    .filter(test => ['QUEUED', 'PENDING', 'INITIALIZING', 'RUNNING', 'STOPPING'].includes(test.status))
-    .sort((a, b) => {
-      const aActive = a.status === 'RUNNING' || a.status === 'INITIALIZING' || a.status === 'STOPPING'
-      const bActive = b.status === 'RUNNING' || b.status === 'INITIALIZING' || b.status === 'STOPPING'
-      if (aActive !== bActive) return aActive ? -1 : 1
-      return getTestAnchorMs(a) - getTestAnchorMs(b)
-    })
-    .slice(0, 8)
+function RunCalendarPanel({
+  calendar,
+  events,
+  model,
+  view,
+  anchor,
+  filter,
+  selectedEvent,
+  canOpenSelectedTest,
+  onPrevious,
+  onNext,
+  onToday,
+  onViewChange,
+  onFilterChange,
+  onSelectEvent,
+  onCloseDetails,
+  onOpenSelectedTest,
+}: {
+  calendar: RunCalendarResponse | null
+  events: RunCalendarEvent[]
+  model: RunCalendarModel
+  view: RunCalendarView
+  anchor: Date
+  filter: RunCalendarFilter
+  selectedEvent: RunCalendarEvent | null
+  canOpenSelectedTest: boolean
+  onPrevious: () => void
+  onNext: () => void
+  onToday: () => void
+  onViewChange: (view: RunCalendarView) => void
+  onFilterChange: (filter: RunCalendarFilter) => void
+  onSelectEvent: (event: RunCalendarEvent) => void
+  onCloseDetails: () => void
+  onOpenSelectedTest: () => void
+}) {
+  const cronCount = events.filter(event => event.source === 'cron').length
+  const adHocCount = events.filter(event => event.source === 'ad_hoc').length
+  const currentCount = events.filter(event => isRunCalendarActiveStatus(event.status)).length
+  const projectedCount = events.filter(event => event.projected).length
+  const rangeNotice = formatRunCalendarNotice(calendar)
 
-  let cursor = now
-  const preliminary = candidates.map(test => {
-    const isActive = test.status === 'RUNNING' || test.status === 'INITIALIZING' || test.status === 'STOPPING'
-    const durationMs = Math.max(parseDurationMs(test.duration), 60_000)
-    const startedMs = getTestAnchorMs(test)
-    const startMs = isActive ? Math.min(startedMs, now) : cursor
-    const endMs = isActive ? Math.max(startMs + durationMs, now + 60_000) : startMs + durationMs
-    if (!isActive) cursor = endMs
-    return { test, startMs, endMs, durationMs }
-  })
+  return (
+    <div className="monitor-body run-calendar-panel">
+      <div className="run-calendar-toolbar">
+        <div className="run-calendar-title-block">
+          <span className="run-calendar-title">{model.label}</span>
+          <span className="run-calendar-range">{model.rangeLabel}</span>
+        </div>
+        <div className="run-calendar-controls">
+          <div className="run-calendar-nav" role="group" aria-label="Calendar range">
+            <button type="button" className="btn-icon run-calendar-nav-btn" aria-label="Previous range" onClick={onPrevious}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m10 12-4-4 4-4" />
+              </svg>
+            </button>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onToday}>Today</button>
+            <button type="button" className="btn-icon run-calendar-nav-btn" aria-label="Next range" onClick={onNext}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m6 4 4 4-4 4" />
+              </svg>
+            </button>
+          </div>
+          <div className="run-calendar-segments" role="group" aria-label="Calendar view">
+            {(['month', 'week', 'day'] as const).map(option => (
+              <button key={option} type="button" className={view === option ? 'active' : ''} onClick={() => onViewChange(option)}>
+                {option.charAt(0).toUpperCase() + option.slice(1)}
+              </button>
+            ))}
+          </div>
+          <div className="run-calendar-segments" role="group" aria-label="Run filter">
+            {([
+              ['all', 'All'],
+              ['cron', 'Cron'],
+              ['ad_hoc', 'Ad-hoc'],
+              ['current', 'Current'],
+            ] as const).map(([value, label]) => (
+              <button key={value} type="button" className={filter === value ? 'active' : ''} onClick={() => onFilterChange(value)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
-  if (preliminary.length === 0) {
-    return {
-      runs: [],
-      peakGenerators: 0,
-      availableGenerators: health?.capacity_availability?.effective_available_generators || 0,
-      capacityPct: 0,
-      windowStartLabel: formatTimelineTime(now),
-      windowEndLabel: formatTimelineTime(now + 60 * 60 * 1000),
-    }
+      <div className="run-calendar-summary" aria-label="Run calendar summary">
+        <RunCalendarMetric label="Cron" value={cronCount} />
+        <RunCalendarMetric label="Ad-hoc" value={adHocCount} />
+        <RunCalendarMetric label="Current" value={currentCount} />
+        <RunCalendarMetric label="Projected" value={projectedCount} />
+      </div>
+
+      {rangeNotice && <div className="run-calendar-notice">{rangeNotice}</div>}
+
+      {view === 'day' ? (
+        <div className="run-calendar-agenda" aria-label={`Runs for ${formatCalendarDate(anchor)}`}>
+          {events.length === 0 ? (
+            <p className="monitor-hint">No runs in this day.</p>
+          ) : events.map(event => (
+            <RunCalendarEventButton key={event.id} event={event} selected={selectedEvent?.id === event.id} mode="agenda" onSelect={onSelectEvent} />
+          ))}
+        </div>
+      ) : (
+        <div className={`run-calendar-grid ${view}`} aria-label={`${view} run calendar`}>
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+            <div key={day} className="run-calendar-weekday">{day}</div>
+          ))}
+          {model.days.map(day => {
+            const visibleEvents = day.events.slice(0, view === 'month' ? 4 : 7)
+            const hiddenCount = day.events.length - visibleEvents.length
+            return (
+              <div key={day.key} className={`run-calendar-day ${day.isOutsidePeriod ? 'outside' : ''} ${day.isToday ? 'today' : ''}`}>
+                <div className="run-calendar-day-header">
+                  <span>{formatCalendarDayNumber(day.date, view)}</span>
+                  {day.events.length > 0 && <span>{day.events.length}</span>}
+                </div>
+                <div className="run-calendar-day-events">
+                  {visibleEvents.map(event => (
+                    <RunCalendarEventButton key={event.id} event={event} selected={selectedEvent?.id === event.id} mode="compact" onSelect={onSelectEvent} />
+                  ))}
+                  {hiddenCount > 0 && <span className="run-calendar-more">+{hiddenCount} more</span>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {selectedEvent && (
+        <div className="run-calendar-detail" role="dialog" aria-label="Run details">
+          <div className="run-calendar-detail-header">
+            <div>
+              <span className={`run-calendar-source ${selectedEvent.source}`}>{runCalendarSourceLabel(selectedEvent)}</span>
+              <h3>{selectedEvent.title}</h3>
+            </div>
+            <button type="button" className="btn-icon" aria-label="Close run details" onClick={onCloseDetails}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M4 4l8 8" />
+                <path d="M12 4l-8 8" />
+              </svg>
+            </button>
+          </div>
+          <div className="run-calendar-detail-grid">
+            <RunCalendarDetailRow label="Status" value={formatRunCalendarStatus(selectedEvent.status)} />
+            <RunCalendarDetailRow label="When" value={`${formatCalendarDateTime(selectedEvent.start_at)} - ${selectedEvent.end_at ? formatCalendarTime(selectedEvent.end_at) : 'open'}`} />
+            <RunCalendarDetailRow label="User" value={runCalendarUserLabel(selectedEvent)} />
+            <RunCalendarDetailRow label="Workload" value={`${(selectedEvent.workload.total_vusers ?? 0).toLocaleString()} VUsers / ${selectedEvent.workload.duration || 'duration pending'}`} />
+            <RunCalendarDetailRow label="Scenario" value={selectedEvent.scenario_name || selectedEvent.scenario_id || '-'} />
+            <RunCalendarDetailRow label="Schedule" value={selectedEvent.schedule_name || selectedEvent.cron_expr || (selectedEvent.source === 'ad_hoc' ? 'Ad-hoc' : '-')} />
+            {selectedEvent.cron_expr && <RunCalendarDetailRow label="Cron" value={`${selectedEvent.cron_expr}${selectedEvent.timezone ? ` / ${selectedEvent.timezone}` : ''}`} />}
+            {selectedEvent.test_ref_key || selectedEvent.test_id ? <RunCalendarDetailRow label="Test" value={selectedEvent.test_ref_key || selectedEvent.test_id || '-'} /> : null}
+          </div>
+          <div className="run-calendar-topology">
+            <div className="run-calendar-section-heading">
+              <span>Controller & Hosts</span>
+              <span>{selectedEvent.topology.source || 'unknown'}</span>
+            </div>
+            {selectedEvent.topology.controller ? (
+              <div className="run-calendar-detail-grid compact">
+                <RunCalendarDetailRow label="Controller" value={selectedEvent.topology.controller.id || selectedEvent.topology.controller.status} />
+                <RunCalendarDetailRow label="Address" value={selectedEvent.topology.controller.address || '-'} />
+              </div>
+            ) : (
+              <p className="monitor-hint">{selectedEvent.topology.summary || 'Controller topology is not captured for this run.'}</p>
+            )}
+            {selectedEvent.topology.generator_shards?.length ? (
+              <div className="run-calendar-chip-list">
+                {selectedEvent.topology.generator_shards.map((shard, index) => (
+                  <span key={`${shard.group}-${shard.target}-${index}`} className="run-calendar-chip">
+                    {shard.group || 'group'} / {shard.target || 'auto'} / {shard.vusers.toLocaleString()} VUsers
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {selectedEvent.topology.generator_inventory?.length ? (
+              <div className="run-calendar-host-list">
+                {selectedEvent.topology.generator_inventory.slice(0, 4).map(host => (
+                  <span key={host.target} className="run-calendar-host">
+                    {host.generator_id || host.target} / {host.status} / {(host.active_vusers ?? 0).toLocaleString()} active
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div className="run-calendar-detail-actions">
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onCloseDetails}>Close</button>
+            {canOpenSelectedTest && (
+              <button type="button" className="btn btn-accent-action btn-sm" onClick={onOpenSelectedTest}>Open Test</button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RunCalendarMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="run-calendar-metric">
+      <span>{value.toLocaleString()}</span>
+      <span>{label}</span>
+    </div>
+  )
+}
+
+function RunCalendarEventButton({ event, selected, mode, onSelect }: { event: RunCalendarEvent; selected: boolean; mode: 'compact' | 'agenda'; onSelect: (event: RunCalendarEvent) => void }) {
+  return (
+    <button type="button" className={`run-calendar-event ${mode} ${runCalendarEventClass(event)} ${selected ? 'selected' : ''}`} onClick={() => onSelect(event)} title={`${event.title} / ${formatRunCalendarStatus(event.status)}`}>
+      <span className="run-calendar-event-time">{formatCalendarTime(event.start_at)}</span>
+      <span className="run-calendar-event-title">{event.title}</span>
+      <span className="run-calendar-event-meta">{runCalendarSourceLabel(event)} / {formatRunCalendarStatus(event.status)}</span>
+    </button>
+  )
+}
+
+function RunCalendarDetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="run-calendar-detail-row">
+      <span>{label}</span>
+      <span>{value}</span>
+    </div>
+  )
+}
+
+function getRunCalendarVisibleRange(view: RunCalendarView, anchor: Date) {
+  if (view === 'month') {
+    const monthStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1)
+    const from = startOfWeek(monthStart)
+    return { from, to: addDays(from, 42) }
   }
+  if (view === 'week') {
+    const from = startOfWeek(anchor)
+    return { from, to: addDays(from, 7) }
+  }
+  const from = startOfLocalDay(anchor)
+  return { from, to: addDays(from, 1) }
+}
 
-  const windowStart = Math.min(...preliminary.map(item => item.startMs), now)
-  const windowEnd = Math.max(...preliminary.map(item => item.endMs), now + 60 * 60 * 1000)
-  const windowMs = Math.max(1, windowEnd - windowStart)
-  const availableGenerators = health?.capacity_availability?.effective_available_generators || 0
-  const runs = preliminary.map(({ test, startMs, endMs, durationMs }) => {
-    const generators = Math.max(1, test.capacity_advisory?.recommended_generators || Math.ceil((test.total_vusers || 0) / 10000))
-    const leftPct = ((startMs - windowStart) / windowMs) * 100
-    const widthPct = Math.max(3, ((endMs - startMs) / windowMs) * 100)
+function buildRunCalendarModel(view: RunCalendarView, anchor: Date, events: RunCalendarEvent[]): RunCalendarModel {
+  const range = getRunCalendarVisibleRange(view, anchor)
+  const dayCount = view === 'month' ? 42 : view === 'week' ? 7 : 1
+  const sortedEvents = [...events].sort(compareRunCalendarEvents)
+  const todayKey = localDateKey(new Date())
+  const days = Array.from({ length: dayCount }, (_, index) => {
+    const date = addDays(range.from, index)
+    const dayStart = startOfLocalDay(date)
+    const dayEnd = addDays(dayStart, 1)
     return {
-      id: test.id,
-      name: test.name,
-      status: test.status,
-      vusers: test.total_vusers || 0,
-      generators,
-      durationLabel: test.duration || formatDurationShort(durationMs),
-      queuePosition: test.queue_position,
-      pendingReason: test.pending_reason,
-      pendingSinceLabel: test.pending_since ? formatTimelineTime(new Date(test.pending_since).getTime()) : undefined,
-      startMs,
-      endMs,
-      startLabel: formatTimelineTime(startMs),
-      endLabel: formatTimelineTime(endMs),
-      leftPct: Math.max(0, Math.min(97, leftPct)),
-      widthPct: Math.max(3, Math.min(100 - Math.max(0, leftPct), widthPct)),
+      key: localDateKey(dayStart),
+      date: dayStart,
+      isOutsidePeriod: view === 'month' && dayStart.getMonth() !== anchor.getMonth(),
+      isToday: localDateKey(dayStart) === todayKey,
+      events: sortedEvents.filter(event => runCalendarEventOverlapsDay(event, dayStart, dayEnd)),
     }
   })
-
-  const peakGenerators = calculatePeakGenerators(runs)
-  const capacityPct = availableGenerators > 0 ? Math.round((peakGenerators / availableGenerators) * 100) : 0
   return {
-    runs,
-    peakGenerators,
-    availableGenerators,
-    capacityPct,
-    windowStartLabel: formatTimelineTime(windowStart),
-    windowEndLabel: formatTimelineTime(windowEnd),
+    label: formatCalendarModelLabel(view, anchor),
+    rangeLabel: `${formatCalendarDate(range.from)} - ${formatCalendarDate(addDays(range.to, -1))}`,
+    days,
   }
 }
 
-function getTestAnchorMs(test: TestSummary) {
-  const value = test.start_time || test.started_at || test.created_at
-  const parsed = value ? new Date(value).getTime() : Date.now()
-  return Number.isFinite(parsed) ? parsed : Date.now()
+function filterRunCalendarEvents(events: RunCalendarEvent[], filter: RunCalendarFilter) {
+  if (filter === 'all') return events
+  if (filter === 'current') return events.filter(event => isRunCalendarActiveStatus(event.status))
+  return events.filter(event => event.source === filter)
+}
+
+function shiftRunCalendarAnchor(anchor: Date, view: RunCalendarView, amount: number) {
+  if (view === 'month') {
+    return new Date(anchor.getFullYear(), anchor.getMonth() + amount, 1)
+  }
+  return addDays(anchor, amount * (view === 'week' ? 7 : 1))
+}
+
+function compareRunCalendarEvents(a: RunCalendarEvent, b: RunCalendarEvent) {
+  const aTime = new Date(a.start_at).getTime()
+  const bTime = new Date(b.start_at).getTime()
+  if (aTime === bTime) return a.title.localeCompare(b.title)
+  return aTime - bTime
+}
+
+function runCalendarEventOverlapsDay(event: RunCalendarEvent, dayStart: Date, dayEnd: Date) {
+  const startMs = new Date(event.start_at).getTime()
+  if (!Number.isFinite(startMs)) return false
+  const endMs = getRunCalendarEventEndMs(event, startMs)
+  return startMs < dayEnd.getTime() && endMs > dayStart.getTime()
+}
+
+function getRunCalendarEventEndMs(event: RunCalendarEvent, startMs: number) {
+  const explicitEnd = event.end_at ? new Date(event.end_at).getTime() : NaN
+  if (Number.isFinite(explicitEnd) && explicitEnd > startMs) return explicitEnd
+  return startMs + Math.max(parseDurationMs(event.workload.duration), 60_000)
+}
+
+function startOfLocalDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function startOfWeek(date: Date) {
+  const start = startOfLocalDay(date)
+  start.setDate(start.getDate() - start.getDay())
+  return start
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+function localDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function formatCalendarModelLabel(view: RunCalendarView, anchor: Date) {
+  if (view === 'month') {
+    return anchor.toLocaleDateString([], { month: 'long', year: 'numeric' })
+  }
+  if (view === 'week') {
+    const range = getRunCalendarVisibleRange(view, anchor)
+    return `Week of ${formatCalendarDate(range.from)}`
+  }
+  return anchor.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+}
+
+function formatCalendarDate(value: Date | string) {
+  const date = typeof value === 'string' ? new Date(value) : value
+  if (!Number.isFinite(date.getTime())) return '-'
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function formatCalendarDateTime(value: string) {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return '-'
+  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
+function formatCalendarTime(value: string) {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return '-'
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+}
+
+function formatCalendarDayNumber(date: Date, view: RunCalendarView) {
+  if (view === 'month') return String(date.getDate())
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
+function formatRunCalendarStatus(status: string) {
+  return status
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, letter => letter.toUpperCase())
+}
+
+function runCalendarSourceLabel(event: RunCalendarEvent) {
+  if (event.source === 'cron') return event.projected ? 'Projected Cron' : 'Cron'
+  if (event.source === 'ad_hoc') return 'Ad-hoc'
+  return event.source || 'Run'
+}
+
+function runCalendarUserLabel(event: RunCalendarEvent) {
+  return event.user.display_name || event.user.subject || event.user.owner_display_name || event.user.owner_subject || 'Unknown'
+}
+
+function runCalendarEventClass(event: RunCalendarEvent) {
+  const source = event.source === 'cron' ? 'cron' : event.source === 'ad_hoc' ? 'ad-hoc' : 'other'
+  const status = event.status.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  return `${source} ${status} ${event.projected ? 'projected' : ''}`
+}
+
+function isRunCalendarActiveStatus(status: string) {
+  return ['QUEUED', 'PENDING', 'INITIALIZING', 'RUNNING', 'STOPPING', 'PAUSED'].includes(status.toUpperCase())
+}
+
+function isRunCalendarProblemStatus(status: string) {
+  return ['FAILED', 'ABORTED', 'BLOCKED'].includes(status.toUpperCase())
+}
+
+function formatRunCalendarNotice(calendar: RunCalendarResponse | null) {
+  if (!calendar) return ''
+  const notices: string[] = []
+  if (calendar.range.history_clamped && calendar.range.history_floor) {
+    notices.push(`History starts ${formatCalendarDate(calendar.range.history_floor)}`)
+  }
+  if (calendar.range.future_clamped) {
+    notices.push(`Future view ends ${formatCalendarDate(calendar.range.future_ceiling)}`)
+  }
+  if (calendar.truncated) {
+    notices.push('Result limit reached')
+  }
+  return notices.join(' / ')
 }
 
 function parseDurationMs(value?: string) {
@@ -1352,32 +1672,6 @@ function parseDurationMs(value?: string) {
     if (unit === 'h') total += amount * 3_600_000
   }
   return total > 0 ? total : 60_000
-}
-
-function calculatePeakGenerators(runs: TimelineRun[]) {
-  const events = runs.flatMap(run => [
-    { at: run.startMs, delta: run.generators },
-    { at: run.endMs, delta: -run.generators },
-  ]).sort((a, b) => a.at === b.at ? a.delta - b.delta : a.at - b.at)
-  let current = 0
-  let peak = 0
-  events.forEach(event => {
-    current += event.delta
-    peak = Math.max(peak, current)
-  })
-  return peak
-}
-
-function formatTimelineTime(value: number) {
-  return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-}
-
-function formatDurationShort(ms: number) {
-  const minutes = Math.round(ms / 60_000)
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  const remaining = minutes % 60
-  return remaining ? `${hours}h ${remaining}m` : `${hours}h`
 }
 
 function formatCPUCores(value: number) {

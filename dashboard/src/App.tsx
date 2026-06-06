@@ -484,7 +484,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               activeRelease={activeRelease}
             />
           )}
-          {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} />}
+          {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} />}
           {view.page === 'docs' && <ApiGuidePage onNavigate={handleNavigate} effectiveAccessResources={effectiveAccessResources} />}
           {view.page === 'swagger' && <SwaggerDocsPage />}
           {view.page === 'repository-guide' && <RepositoryGuidePage />}

@@ -16,6 +16,7 @@ import {
   RunArchiveAnalysisResponse,
   RunArchiveManifest,
   RunArchiveReport,
+  RunCalendarResponse,
   RuntimeSettingsOverride,
   ScenarioSchedule,
   ScenarioScheduleOccurrence,
@@ -134,6 +135,12 @@ type ScenarioScheduleOccurrencesResponse = {
 type ScenarioScheduleApprovalResponse = {
   approval: unknown
   schedule: ScenarioSchedule
+}
+
+type RunCalendarParams = {
+  from: string
+  to: string
+  project_id?: string
 }
 
 type DeleteTestResponse = {
@@ -308,6 +315,11 @@ export function useTestApi() {
 
   const getScheduleHealth = useCallback(() => request<ScenarioScheduleHealth>('/schedules/health'), [])
 
+  const getRunCalendar = useCallback(
+    (params: RunCalendarParams) => request<RunCalendarResponse>(`/run-calendar${buildQuery(params)}`),
+    [],
+  )
+
   const approveScenarioScheduleApproval = useCallback(
     (scenarioId: string, scheduleId: string, approvalId: string, reason?: string) =>
       request<ScenarioScheduleApprovalResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/approvals/${approvalId}/approve`, {
@@ -479,6 +491,7 @@ export function useTestApi() {
       deleteScenarioSchedule,
       listScenarioScheduleOccurrences,
       getScheduleHealth,
+      getRunCalendar,
       approveScenarioScheduleApproval,
       rejectScenarioScheduleApproval,
     }),
@@ -505,6 +518,7 @@ export function useTestApi() {
       deleteScenarioSchedule,
       listScenarioScheduleOccurrences,
       getScheduleHealth,
+      getRunCalendar,
       approveScenarioScheduleApproval,
       rejectScenarioScheduleApproval,
       moveTest,
