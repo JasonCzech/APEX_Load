@@ -59,7 +59,10 @@ mcp/
 
 ## Protocol Interface
 All protocols implement `pkg/protocol.Protocol`. Register new protocols in `pkg/protocol/registry.go`.
-Bundled: HTTP (http/1.1, http/2), JMS Solace, JMS IBM MQ (Phase 5).
+Bundled and compiled into every binary (see the `_` imports in `cmd/*/main.go`): HTTP (http/1.1,
+http/2), SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), WebSocket, gRPC, JMS Solace,
+JMS IBM MQ, database (SQL query/exec/transactions), network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP),
+and browser (replay + canary diagnostics).
 
 ## Script DSL
 JSON-based. Template variables: `{{env.KEY}}`, `{{data.source.col}}`, `{{var.name}}`, `{{fn.uuid()}}`.

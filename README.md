@@ -27,7 +27,7 @@ The current controller can run in either local or distributed mode without chang
 
 - **Goroutine-based VUsers**: 1 VUser = 1 goroutine (~2–4 KB stack) for extreme concurrency
 - **Zero-lock metrics**: Buffered channels (cap 10,000) in hot path; metrics aggregated downstream
-- **Protocol plugins**: HTTP/1.1, HTTP/2, SOAP, Java-over-HTTP (bounded codec MVP), JMS (Solace, IBM MQ) — compiled-in, not runtime-loadable
+- **Protocol plugins**: HTTP/1.1, HTTP/2, SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), WebSocket, gRPC, JMS (Solace, IBM MQ), database (SQL), network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), browser (replay + canary diagnostics) — compiled-in, not runtime-loadable
 - **JSON DSL**: Human-readable test scripts with template variables and data sources
 - **Vendor-neutral telemetry**: OpenTelemetry native; exportable to Prometheus, Dynatrace, ELK
 - **Streaming percentiles**: T-digest for accurate p95/p99 computation without storing all samples
@@ -40,7 +40,7 @@ The current controller can run in either local or distributed mode without chang
 | `cmd/apexctl` | CLI for direct script execution (no controller needed) |
 | `cmd/generator` | Distributed load generator (Kubernetes StatefulSet pod) |
 | `pkg/engine` | VUser goroutine engine, pacing, metrics, lifecycle |
-| `pkg/protocol` | Protocol interface; HTTP, SOAP, Java-over-HTTP, JMS implementations |
+| `pkg/protocol` | Protocol interface; HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, database, network, browser implementations |
 | `pkg/dsl` | Script parser and runtime structures |
 | `pkg/api` | REST handlers, WebSocket hub, test runner |
 | `dashboard` | React 18 + TypeScript + Recharts SPA (compiles to `pkg/api/static/`) |
@@ -432,7 +432,7 @@ cmd/
 
 pkg/
   engine/            # Core VUser engine, pacing, metrics
-  protocol/          # Protocol interface + HTTP/SOAP/Java-over-HTTP/JMS implementations
+  protocol/          # Protocol interface + HTTP/SOAP/Java-over-HTTP/WebSocket/gRPC/JMS/database/network/browser implementations
   dsl/              # Script parser and types
   api/              # REST handlers, WebSocket, test runner
   controller/       # Test orchestration logic
