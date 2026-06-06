@@ -80,6 +80,13 @@ func (b *Browser) screenshotSelector(action *protocol.Action) string {
 	}
 }
 
+func (b *Browser) actionSelector(action *protocol.Action) string {
+	if action.Selector != "" {
+		return action.Selector
+	}
+	return action.Target
+}
+
 func (b *Browser) waitForJS(ctx context.Context, expression string) error {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()

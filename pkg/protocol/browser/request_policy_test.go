@@ -2,6 +2,43 @@ package browser
 
 import "testing"
 
+func TestNormalizeDownloadFilterHosts(t *testing.T) {
+	hosts := normalizeDownloadFilterHosts([]string{
+		" https://cdn.example.com/ ",
+		"http://cdn.example.com",
+		"assets.example.com:8443/",
+		"",
+		"assets.example.com:8443",
+	})
+
+	want := []string{"cdn.example.com", "assets.example.com:8443"}
+	if len(hosts) != len(want) {
+		t.Fatalf("normalizeDownloadFilterHosts length = %d, want %d (%v)", len(hosts), len(want), hosts)
+	}
+	for idx, expected := range want {
+		if hosts[idx] != expected {
+			t.Fatalf("normalizeDownloadFilterHosts[%d] = %q, want %q", idx, hosts[idx], expected)
+		}
+	}
+}
+
+func TestNormalizeRecordedResources(t *testing.T) {
+	resources := normalizeRecordedResources([]string{
+		"https://example.com/static/logo.png",
+		"/static/logo.png",
+		"https://cdn.example.com/app/site.css?v=2",
+	})
+	if _, ok := resources["example.com/static/logo.png"]; !ok {
+		t.Fatal("expected host-qualified recorded resource key")
+	}
+	if _, ok := resources["/static/logo.png"]; !ok {
+		t.Fatal("expected path-only recorded resource key")
+	}
+	if _, ok := resources["cdn.example.com/app/site.css?v=2"]; !ok {
+		t.Fatal("expected query-preserving recorded resource key")
+	}
+}
+
 func TestRequestPolicyEnabled(t *testing.T) {
 	tests := []struct {
 		name string

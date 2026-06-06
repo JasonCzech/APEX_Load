@@ -36,6 +36,30 @@ func TestActionParamInt(t *testing.T) {
 	}
 }
 
+func TestConfigIntAcceptsEngineNumericTypes(t *testing.T) {
+	config := map[string]any{
+		"int":     12,
+		"int64":   int64(34),
+		"float64": float64(56),
+		"float32": float32(78),
+		"string":  "90",
+	}
+
+	tests := map[string]int{
+		"int":     12,
+		"int64":   34,
+		"float64": 56,
+		"float32": 78,
+		"string":  0,
+		"missing": 0,
+	}
+	for key, want := range tests {
+		if got := configInt(config, key); got != want {
+			t.Fatalf("configInt(%q) = %d, want %d", key, got, want)
+		}
+	}
+}
+
 func TestActionParamString(t *testing.T) {
 	params := map[string]any{
 		"name":  " value ",
@@ -92,6 +116,32 @@ func TestBrowserWaitTimeout(t *testing.T) {
 	}
 	if got := b.waitTimeout(1500); got != 1500*time.Millisecond {
 		t.Fatalf("waitTimeout(1500) = %v, want 1500ms", got)
+	}
+}
+
+func TestBrowserActionSelector(t *testing.T) {
+	b := &Browser{}
+	if got := b.actionSelector(&protocol.Action{Selector: "#primary", Target: "#fallback"}); got != "#primary" {
+		t.Fatalf("actionSelector preferred %q, want #primary", got)
+	}
+	if got := b.actionSelector(&protocol.Action{Target: "#fallback"}); got != "#fallback" {
+		t.Fatalf("actionSelector fallback = %q, want #fallback", got)
+	}
+}
+
+func TestBrowserScreenshotSelector(t *testing.T) {
+	b := &Browser{}
+	if got := b.screenshotSelector(nil); got != "" {
+		t.Fatalf("screenshotSelector(nil) = %q, want empty", got)
+	}
+	if got := b.screenshotSelector(&protocol.Action{Selector: "#panel", Type: "browser_screenshot", Target: "#target"}); got != "#panel" {
+		t.Fatalf("screenshotSelector preferred %q, want #panel", got)
+	}
+	if got := b.screenshotSelector(&protocol.Action{Type: "browser_wait", Target: "#target"}); got != "#target" {
+		t.Fatalf("screenshotSelector wait fallback = %q, want #target", got)
+	}
+	if got := b.screenshotSelector(&protocol.Action{Type: "browser_evaluate_js", Target: "#target"}); got != "" {
+		t.Fatalf("screenshotSelector evaluate = %q, want empty", got)
 	}
 }
 

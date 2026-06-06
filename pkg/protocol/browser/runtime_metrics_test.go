@@ -3,6 +3,7 @@ package browser
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -120,5 +121,19 @@ func TestBytesToMegabytes(t *testing.T) {
 	}
 	if got := bytesToMegabytes(-1); got != 0 {
 		t.Fatalf("bytesToMegabytes(-1) = %v, want 0", got)
+	}
+}
+
+func TestBrowserProcessResourceMetrics(t *testing.T) {
+	started := time.Date(2026, time.May, 16, 10, 0, 0, 0, time.UTC)
+	cpuPct, memoryMB := browserProcessResourceMetrics(
+		browserProcessSnapshot{CPUTimeSeconds: 1.25, MemoryMB: 128, CapturedAt: started},
+		browserProcessSnapshot{CPUTimeSeconds: 1.75, MemoryMB: 256, CapturedAt: started.Add(2 * time.Second)},
+	)
+	if cpuPct != 25 {
+		t.Fatalf("cpuPct = %v, want 25", cpuPct)
+	}
+	if memoryMB != 256 {
+		t.Fatalf("memoryMB = %v, want 256", memoryMB)
 	}
 }
