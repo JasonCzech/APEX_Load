@@ -44,7 +44,6 @@ vi.mock('./TestExecutionArchive', () => ({
       'report-analysis': 'Archive Analysis Content',
       'action-summary': 'Action Summary Content',
       'load-impact': 'Load Impact Content',
-      'metrics-under-load': 'Metrics Under Load Content',
       transactions: 'Transaction Drill-Down Content',
     }
     return <div>{hasArchive ? viewContent[view] : `Archive Empty Content ${view}`}</div>
@@ -96,7 +95,6 @@ describe('TestExecution workspace layout', () => {
       'Archive',
       'Action Summary',
       'Load Impact',
-      'Metrics Under Load',
       'Transaction Drill-Down',
     ])
     expect(selectedTabLabel()).toBe('Overview')
@@ -119,7 +117,6 @@ describe('TestExecution workspace layout', () => {
     expect(libraryItem('archive-summary-timeline').textContent).toContain('Summary Timeline')
     expect(libraryItem('archive-analysis').textContent).toContain('Archive Analysis')
     expect(libraryItem('load-impact').textContent).toContain('Load Impact')
-    expect(libraryItem('metrics-under-load').textContent).toContain('Metrics Under Load')
     expect(libraryItem('transaction-drilldown').textContent).toContain('Transaction Drill-Down')
     expect(container.querySelector('select[aria-label^="Add card to"]')).toBeNull()
 
@@ -142,9 +139,6 @@ describe('TestExecution workspace layout', () => {
 
     await clickWorkspaceTab('Load Impact')
     expect(container.textContent).toContain('Archive Empty Content load-impact')
-
-    await clickWorkspaceTab('Metrics Under Load')
-    expect(container.textContent).toContain('Archive Empty Content metrics-under-load')
 
     await clickWorkspaceTab('Transaction Drill-Down')
     expect(container.textContent).toContain('Archive Empty Content transactions')
@@ -181,9 +175,6 @@ describe('TestExecution workspace layout', () => {
     await clickWorkspaceTab('Load Impact')
     expect(container.textContent).toContain('Load Impact Content')
 
-    await clickWorkspaceTab('Metrics Under Load')
-    expect(container.textContent).toContain('Metrics Under Load Content')
-
     await clickWorkspaceTab('Transaction Drill-Down')
     expect(container.textContent).toContain('Transaction Drill-Down Content')
   })
@@ -213,11 +204,11 @@ describe('TestExecution workspace layout', () => {
     await clickWorkspaceTab('Action Summary')
     expect(cardElement('action-summary').dataset.cardWidth).toBe('full')
 
-    await clickWorkspaceTab('Metrics Under Load')
-    expect(cardElement('metrics-under-load').dataset.cardWidth).toBe('full')
+    await clickWorkspaceTab('Load Impact')
+    expect(cardElement('load-impact').dataset.cardWidth).toBe('full')
   })
 
-  it('migrates legacy combined load impact layouts into separate load and metric tabs', async () => {
+  it('migrates legacy combined load impact layouts into load impact and runtime graphs', async () => {
     window.localStorage.setItem('apexload.execution.workspaceProfiles.v1', JSON.stringify([
       {
         id: 'default',
@@ -240,12 +231,36 @@ describe('TestExecution workspace layout', () => {
     await renderExecution()
 
     expect(tabLabels()).toContain('Load Impact')
-    expect(tabLabels()).toContain('Metrics Under Load')
+    expect(tabLabels()).toContain('Graphs')
     expect(tabLabels()).not.toContain('Load Impact + Metrics Under Load')
     expect(cardElement('load-impact').dataset.cardWidth).toBe('full')
 
-    await clickWorkspaceTab('Metrics Under Load')
-    expect(container.textContent).toContain('Archive Empty Content metrics-under-load')
+    await clickWorkspaceTab('Graphs')
+    expect(container.textContent).toContain('Runtime Graphs Content')
+  })
+
+  it('removes legacy metrics-under-load tabs and routes the active view to graphs', async () => {
+    window.localStorage.setItem('apexload.execution.workspaceProfiles.v1', JSON.stringify([
+      {
+        id: 'default',
+        name: 'Default Execution Layout',
+        activeTabId: 'metrics-under-load',
+        tabs: [
+          { id: 'overview', label: 'Overview', cardIds: ['scenario-overview', 'hero-metrics'] },
+          { id: 'graphs', label: 'Graphs', cardIds: ['runtime-graphs'] },
+          { id: 'metrics-under-load', label: 'Metrics Under Load', cardIds: ['metrics-under-load'] },
+          { id: 'load-impact', label: 'Load Impact', cardIds: ['load-impact'] },
+        ],
+        unassignedCardIds: [],
+      },
+    ]))
+
+    await renderExecution()
+
+    expect(tabLabels()).toContain('Graphs')
+    expect(tabLabels()).not.toContain('Metrics Under Load')
+    expect(selectedTabLabel()).toBe('Graphs')
+    expect(container.textContent).toContain('Runtime Graphs Content')
   })
 
   it('places active run controls inside the Control tab for a running run', async () => {
@@ -274,7 +289,6 @@ describe('TestExecution workspace layout', () => {
           { id: 'archive', label: 'Archive', cardIds: ['archive-report'] },
           { id: 'action-summary', label: 'Action Summary', cardIds: ['action-summary'] },
           { id: 'load-impact', label: 'Load Impact', cardIds: ['load-impact'] },
-          { id: 'metrics-under-load', label: 'Metrics Under Load', cardIds: ['metrics-under-load'] },
           { id: 'transaction-drilldown', label: 'Transaction Drill-Down', cardIds: ['transaction-drilldown'] },
         ],
         unassignedCardIds: [],
@@ -294,7 +308,6 @@ describe('TestExecution workspace layout', () => {
           { id: 'archive', label: 'Archive', cardIds: ['archive-report'] },
           { id: 'action-summary', label: 'Action Summary', cardIds: ['action-summary'] },
           { id: 'load-impact', label: 'Load Impact', cardIds: ['load-impact'] },
-          { id: 'metrics-under-load', label: 'Metrics Under Load', cardIds: ['metrics-under-load'] },
           { id: 'transaction-drilldown', label: 'Transaction Drill-Down', cardIds: ['transaction-drilldown'] },
         ],
         unassignedCardIds: [],

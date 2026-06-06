@@ -1,0 +1,874 @@
+// Package asyncapi converts AsyncAPI 2.x and 3.x documents into APEX Load Kafka
+// DSL scripts. It is the event-streaming analog of the OpenAPI converter: servers
+// become brokers, channels become topics, and operations become kafka_produce /
+// kafka_consume / kafka_request_reply actions.
+//
+// Only the Kafka protocol binding is converted. Channels served exclusively over
+// other protocols (MQTT, AMQP, WebSocket, ...) are reported as review-only.
+package asyncapi
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"gopkg.in/yaml.v3"
+)
+
+// ImportRequest is the converter entry payload.
+type ImportRequest struct {
+	Name      string         `json:"name,omitempty"`
+	ProjectID string         `json:"project_id,omitempty"`
+	Content   string         `json:"content"`
+	Options   ConvertOptions `json:"options,omitempty"`
+}
+
+// ConvertOptions tunes the generated script.
+type ConvertOptions struct {
+	ScriptName         string   `json:"script_name,omitempty"`
+	Brokers            []string `json:"brokers,omitempty"`        // override servers
+	Channels           []string `json:"channels,omitempty"`       // filter by channel/topic name
+	IncludeAssertions  *bool    `json:"include_assertions,omitempty"`
+	DefaultThinkTimeMs int      `json:"default_think_time_ms,omitempty"`
+	Mock               *bool    `json:"mock,omitempty"` // default true (real adapter is stubbed)
+}
+
+// ConvertStats summarizes what the converter saw and produced.
+type ConvertStats struct {
+	Format                string   `json:"format"`
+	AsyncAPIVersion       string   `json:"asyncapi_version,omitempty"`
+	TotalChannels         int      `json:"total_channels"`
+	TotalOperations       int      `json:"total_operations"`
+	ConvertedActions      int      `json:"converted_actions"`
+	ProduceActions        int      `json:"produce_actions"`
+	ConsumeActions        int      `json:"consume_actions"`
+	RequestReplyActions   int      `json:"request_reply_actions"`
+	MessagesWithCorrelation int    `json:"messages_with_correlation"`
+	ServerProtocols       []string `json:"server_protocols,omitempty"`
+	Brokers               []string `json:"brokers,omitempty"`
+	SchemaFormatsDetected []string `json:"schema_formats_detected,omitempty"`
+	SkippedOperations     []string `json:"skipped_operations,omitempty"`
+}
+
+// ReviewSummary feeds the import-review UI.
+type ReviewSummary struct {
+	Title            string   `json:"title,omitempty"`
+	Version          string   `json:"version,omitempty"`
+	Brokers          []string `json:"brokers,omitempty"`
+	SecurityProtocol string   `json:"security_protocol,omitempty"`
+	Topics           []string `json:"topics,omitempty"`
+	OperationNames   []string `json:"operation_names,omitempty"`
+	DataColumns      []string `json:"data_columns,omitempty"`
+}
+
+// ConvertResult is the converter output.
+type ConvertResult struct {
+	Script       *dsl.Script        `json:"script"`
+	Warnings     []string           `json:"warnings,omitempty"`
+	Unsupported  diag.Diagnostics   `json:"unsupported,omitempty"`
+	Stats        ConvertStats       `json:"stats"`
+	Summary      ReviewSummary      `json:"summary"`
+	SourceReview *sourceview.Review `json:"source_review,omitempty"`
+}
+
+// --- AsyncAPI document model (2.x + 3.x) ---
+
+type document struct {
+	AsyncAPI   string                `json:"asyncapi,omitempty" yaml:"asyncapi,omitempty"`
+	Info       info                  `json:"info,omitempty" yaml:"info,omitempty"`
+	Servers    map[string]server     `json:"servers,omitempty" yaml:"servers,omitempty"`
+	Channels   map[string]channel    `json:"channels,omitempty" yaml:"channels,omitempty"`
+	Operations map[string]operation  `json:"operations,omitempty" yaml:"operations,omitempty"` // 3.x only
+	Components components            `json:"components,omitempty" yaml:"components,omitempty"`
+}
+
+type info struct {
+	Title   string `json:"title,omitempty" yaml:"title,omitempty"`
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+}
+
+type server struct {
+	URL      string `json:"url,omitempty" yaml:"url,omitempty"`           // 2.x
+	Host     string `json:"host,omitempty" yaml:"host,omitempty"`         // 3.x
+	Pathname string `json:"pathname,omitempty" yaml:"pathname,omitempty"` // 3.x
+	Protocol string `json:"protocol,omitempty" yaml:"protocol,omitempty"`
+}
+
+type channel struct {
+	Ref       string                `json:"$ref,omitempty" yaml:"$ref,omitempty"`
+	Address   string                `json:"address,omitempty" yaml:"address,omitempty"` // 3.x
+	Publish   *channelOperation     `json:"publish,omitempty" yaml:"publish,omitempty"`   // 2.x
+	Subscribe *channelOperation     `json:"subscribe,omitempty" yaml:"subscribe,omitempty"` // 2.x
+	Messages  map[string]messageDef `json:"messages,omitempty" yaml:"messages,omitempty"` // 3.x
+	Bindings  bindings              `json:"bindings,omitempty" yaml:"bindings,omitempty"`
+}
+
+type channelOperation struct {
+	OperationID string      `json:"operationId,omitempty" yaml:"operationId,omitempty"`
+	Summary     string      `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Message     *messageDef `json:"message,omitempty" yaml:"message,omitempty"`
+	Bindings    bindings    `json:"bindings,omitempty" yaml:"bindings,omitempty"`
+}
+
+type operation struct {
+	Action   string          `json:"action,omitempty" yaml:"action,omitempty"` // send|receive
+	Channel  ref             `json:"channel,omitempty" yaml:"channel,omitempty"`
+	Messages []ref           `json:"messages,omitempty" yaml:"messages,omitempty"`
+	Reply    *operationReply `json:"reply,omitempty" yaml:"reply,omitempty"`
+	Title    string          `json:"title,omitempty" yaml:"title,omitempty"`
+	Summary  string          `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Bindings bindings        `json:"bindings,omitempty" yaml:"bindings,omitempty"`
+}
+
+type operationReply struct {
+	Channel ref `json:"channel,omitempty" yaml:"channel,omitempty"`
+}
+
+type ref struct {
+	Ref string `json:"$ref,omitempty" yaml:"$ref,omitempty"`
+}
+
+type bindings struct {
+	Kafka *kafkaBinding `json:"kafka,omitempty" yaml:"kafka,omitempty"`
+}
+
+type kafkaBinding struct {
+	Topic string `json:"topic,omitempty" yaml:"topic,omitempty"`
+}
+
+type messageDef struct {
+	Ref           string         `json:"$ref,omitempty" yaml:"$ref,omitempty"`
+	Name          string         `json:"name,omitempty" yaml:"name,omitempty"`
+	Title         string         `json:"title,omitempty" yaml:"title,omitempty"`
+	Payload       schema         `json:"payload,omitempty" yaml:"payload,omitempty"`
+	CorrelationID *correlationID `json:"correlationId,omitempty" yaml:"correlationId,omitempty"`
+	SchemaFormat  string         `json:"schemaFormat,omitempty" yaml:"schemaFormat,omitempty"`
+	ContentType   string         `json:"contentType,omitempty" yaml:"contentType,omitempty"`
+	OneOf         []messageDef   `json:"oneOf,omitempty" yaml:"oneOf,omitempty"`
+}
+
+type correlationID struct {
+	Location    string `json:"location,omitempty" yaml:"location,omitempty"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+}
+
+type components struct {
+	Messages map[string]messageDef `json:"messages,omitempty" yaml:"messages,omitempty"`
+	Schemas  map[string]schema     `json:"schemas,omitempty" yaml:"schemas,omitempty"`
+}
+
+type schema struct {
+	Ref        string            `json:"$ref,omitempty" yaml:"$ref,omitempty"`
+	Type       string            `json:"type,omitempty" yaml:"type,omitempty"`
+	Format     string            `json:"format,omitempty" yaml:"format,omitempty"`
+	Properties map[string]schema `json:"properties,omitempty" yaml:"properties,omitempty"`
+	Items      *schema           `json:"items,omitempty" yaml:"items,omitempty"`
+	Example    any               `json:"example,omitempty" yaml:"example,omitempty"`
+	Examples   []any             `json:"examples,omitempty" yaml:"examples,omitempty"`
+	Enum       []any             `json:"enum,omitempty" yaml:"enum,omitempty"`
+}
+
+// kafkaOp is the unified, version-neutral operation the generator consumes.
+type kafkaOp struct {
+	name           string
+	kind           string // produce | consume | request_reply
+	topic          string
+	replyTopic     string
+	payload        schema
+	hasCorrelation bool
+	schemaFormat   string
+	channelName    string
+}
+
+func Convert(req ImportRequest) (*ConvertResult, error) {
+	content := strings.TrimSpace(req.Content)
+	if content == "" {
+		return nil, errors.New("content is required")
+	}
+	doc, err := decodeDocument([]byte(content))
+	if err != nil {
+		return nil, err
+	}
+	if len(doc.Channels) == 0 {
+		return nil, errors.New("AsyncAPI document contains no channels")
+	}
+
+	var diagnostics diag.Collector
+	sourceFile := sourceFileName(content)
+	mappings := make([]sourceview.Mapping, 0)
+
+	brokers, protocols, securityProtocol, brokerWarnings := deriveBrokers(doc, req.Options.Brokers)
+
+	ops, schemaFormats, opWarnings := collectOperations(doc, req.Options, &diagnostics, &mappings, sourceFile)
+	if len(ops) == 0 {
+		return nil, errors.New("no supported Kafka operations found in AsyncAPI document")
+	}
+
+	mock := true
+	if req.Options.Mock != nil {
+		mock = *req.Options.Mock
+	}
+
+	scriptName := firstNonEmpty(req.Options.ScriptName, req.Name, doc.Info.Title, "Imported_AsyncAPI_Script")
+	result := &ConvertResult{
+		Script: &dsl.Script{
+			Name:          sanitizeName(scriptName),
+			Version:       "1.0.0",
+			Protocol:      "kafka",
+			GeneratedBy:   "apexload-asyncapi-converter",
+			GeneratedFrom: "asyncapi",
+			CreatedAt:     time.Now(),
+			Config: dsl.ScriptConfig{
+				ThinkTime: dsl.ThinkTimeConfig{
+					Type:   "fixed",
+					MeanMs: float64(firstPositive(req.Options.DefaultThinkTimeMs, 1000)),
+				},
+				Pacing:        dsl.PacingConfig{Type: "none"},
+				RunLogic:      dsl.RunLogicConfig{Iterations: 0, AutoTransactions: "none"},
+				ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false},
+				Log:           dsl.LogConfig{Level: "standard"},
+				Kafka: dsl.KafkaConfig{
+					Brokers:          brokers,
+					SecurityProtocol: securityProtocol,
+					Acks:             "all",
+					Mock:             mock,
+				},
+			},
+		},
+		Stats: ConvertStats{
+			Format:          "asyncapi",
+			AsyncAPIVersion: doc.AsyncAPI,
+			TotalChannels:   len(doc.Channels),
+			ServerProtocols: protocols,
+			Brokers:         brokers,
+		},
+		Summary: ReviewSummary{
+			Title:            doc.Info.Title,
+			Version:          doc.Info.Version,
+			Brokers:          brokers,
+			SecurityProtocol: securityProtocol,
+		},
+	}
+	result.Warnings = append(result.Warnings, brokerWarnings...)
+	result.Warnings = append(result.Warnings, opWarnings...)
+	if mock {
+		result.Warnings = append(result.Warnings, "config.kafka.mock is enabled so the generated script runs against the in-memory broker; disable it once a real Kafka adapter is configured")
+	}
+
+	includeAssertions := boolOption(req.Options.IncludeAssertions, true)
+	columns := map[string]struct{}{}
+	topics := map[string]struct{}{}
+	operationNames := []string{}
+
+	for i, op := range ops {
+		action, bodyColumns := buildAction(op, includeAssertions)
+		idx := len(result.Script.Actions)
+		result.Script.Actions = append(result.Script.Actions, action)
+		mappings = append(mappings, sourceview.CoarseMapping(sourceFile, op.channelName+" ("+op.kind+")", fmt.Sprintf("actions[%d]", idx), action.Name, "action", "converted", "AsyncAPI operation was converted into a generated APEX Load Kafka action."))
+		result.Stats.ConvertedActions++
+		switch op.kind {
+		case "produce":
+			result.Stats.ProduceActions++
+		case "consume":
+			result.Stats.ConsumeActions++
+		case "request_reply":
+			result.Stats.RequestReplyActions++
+		}
+		if op.hasCorrelation {
+			result.Stats.MessagesWithCorrelation++
+		}
+		topics[op.topic] = struct{}{}
+		operationNames = append(operationNames, action.Name)
+		for _, c := range bodyColumns {
+			columns[c] = struct{}{}
+		}
+		_ = i
+	}
+
+	result.Stats.TotalOperations = len(ops)
+	result.Stats.SchemaFormatsDetected = schemaFormats
+	result.Summary.OperationNames = operationNames
+	result.Summary.Topics = sortedKeys(topics)
+	dataColumns := sortedKeys(columns)
+	result.Summary.DataColumns = dataColumns
+	if len(dataColumns) > 0 {
+		result.Script.DataSources = []dsl.DataSource{dataSource(dataColumns)}
+	}
+	if len(brokers) == 0 {
+		result.Warnings = append(result.Warnings, "no Kafka brokers were derived from servers; set config.kafka.brokers before running against a real cluster")
+	}
+
+	result.Unsupported = diagnostics.Items()
+	result.SourceReview = sourceview.Build(map[string]string{sourceFile: content}, mappings)
+	return result, nil
+}
+
+func decodeDocument(data []byte) (*document, error) {
+	var doc document
+	if err := json.Unmarshal(data, &doc); err == nil && doc.AsyncAPI != "" {
+		return &doc, nil
+	}
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("invalid AsyncAPI document: %w", err)
+	}
+	if doc.AsyncAPI == "" {
+		return nil, errors.New("invalid AsyncAPI document: missing asyncapi version")
+	}
+	return &doc, nil
+}
+
+func deriveBrokers(doc *document, override []string) (brokers []string, protocols []string, securityProtocol string, warnings []string) {
+	if len(override) > 0 {
+		brokers = trimNonEmpty(override)
+	}
+	protoSet := map[string]struct{}{}
+	secure := false
+	for _, name := range sortedServerKeys(doc.Servers) {
+		srv := doc.Servers[name]
+		proto := strings.ToLower(strings.TrimSpace(srv.Protocol))
+		if proto != "" {
+			protoSet[proto] = struct{}{}
+		}
+		if !strings.HasPrefix(proto, "kafka") {
+			if proto != "" {
+				warnings = append(warnings, fmt.Sprintf("server %q uses non-Kafka protocol %q and was ignored", name, srv.Protocol))
+			}
+			continue
+		}
+		if proto == "kafka-secure" {
+			secure = true
+		}
+		host := firstNonEmpty(srv.Host, srv.URL)
+		if srv.Host != "" && srv.Pathname != "" {
+			host = srv.Host + srv.Pathname
+		}
+		if host != "" && len(override) == 0 {
+			brokers = append(brokers, host)
+		}
+	}
+	protocols = sortedKeysFromSet(protoSet)
+	if secure {
+		securityProtocol = "sasl_ssl"
+		warnings = append(warnings, "a kafka-secure server was detected; security_protocol defaulted to sasl_ssl — confirm the mechanism and credentials")
+	} else {
+		securityProtocol = "plaintext"
+	}
+	return brokers, protocols, securityProtocol, warnings
+}
+
+func collectOperations(doc *document, opts ConvertOptions, diagnostics *diag.Collector, mappings *[]sourceview.Mapping, sourceFile string) ([]kafkaOp, []string, []string) {
+	var ops []kafkaOp
+	var warnings []string
+	schemaFormats := map[string]struct{}{}
+	allowed := filterSet(opts.Channels)
+
+	recordFormat := func(m messageDef) {
+		if f := strings.TrimSpace(m.SchemaFormat); f != "" {
+			schemaFormats[f] = struct{}{}
+			if !isJSONSchemaFormat(f) {
+				warnings = append(warnings, fmt.Sprintf("message schemaFormat %q is not JSON Schema; the generated payload is a best-effort placeholder", f))
+			}
+		}
+	}
+
+	if len(doc.Operations) > 0 {
+		// AsyncAPI 3.x: top-level operations with explicit send/receive actions.
+		for _, opName := range sortedOperationKeys(doc.Operations) {
+			op := doc.Operations[opName]
+			chName, ch, ok := resolveChannel(doc, op.Channel.Ref)
+			if !ok {
+				continue
+			}
+			if !channelAllowed(allowed, chName, channelTopic(chName, ch)) {
+				continue
+			}
+			topic := channelTopic(chName, ch)
+			msg := firstChannelMessage(doc, ch)
+			recordFormat(msg)
+			kind := "produce"
+			if strings.EqualFold(op.Action, "receive") {
+				kind = "consume"
+			}
+			replyTopic := ""
+			if op.Reply != nil {
+				if rName, rCh, ok := resolveChannel(doc, op.Reply.Channel.Ref); ok {
+					replyTopic = channelTopic(rName, rCh)
+					kind = "request_reply"
+				}
+			}
+			ops = append(ops, kafkaOp{
+				name:           firstNonEmpty(opName, op.Title, op.Summary),
+				kind:           kind,
+				topic:          topic,
+				replyTopic:     replyTopic,
+				payload:        resolvePayload(doc, msg),
+				hasCorrelation: msg.CorrelationID != nil,
+				schemaFormat:   msg.SchemaFormat,
+				channelName:    chName,
+			})
+		}
+		return ops, sortedKeysFromSet(schemaFormats), warnings
+	}
+
+	// AsyncAPI 2.x: channel-scoped publish/subscribe operations.
+	for _, chName := range sortedChannelKeys(doc.Channels) {
+		ch := doc.Channels[chName]
+		topic := channelTopic(chName, ch)
+		if !channelAllowed(allowed, chName, topic) {
+			continue
+		}
+		// 2.x perspective: an external client publishes to `publish` channels
+		// (produce) and consumes from `subscribe` channels (consume).
+		if ch.Publish != nil {
+			msg := derefMessage(doc, messageOf(ch.Publish))
+			recordFormat(msg)
+			ops = append(ops, kafkaOp{
+				name:           firstNonEmpty(ch.Publish.OperationID, ch.Publish.Summary, chName+"_produce"),
+				kind:           "produce",
+				topic:          topicWithBinding(topic, ch.Publish.Bindings),
+				payload:        resolvePayload(doc, msg),
+				hasCorrelation: msg.CorrelationID != nil,
+				schemaFormat:   msg.SchemaFormat,
+				channelName:    chName,
+			})
+		}
+		if ch.Subscribe != nil {
+			msg := derefMessage(doc, messageOf(ch.Subscribe))
+			recordFormat(msg)
+			ops = append(ops, kafkaOp{
+				name:           firstNonEmpty(ch.Subscribe.OperationID, ch.Subscribe.Summary, chName+"_consume"),
+				kind:           "consume",
+				topic:          topicWithBinding(topic, ch.Subscribe.Bindings),
+				payload:        resolvePayload(doc, msg),
+				hasCorrelation: msg.CorrelationID != nil,
+				schemaFormat:   msg.SchemaFormat,
+				channelName:    chName,
+			})
+		}
+		if ch.Publish == nil && ch.Subscribe == nil {
+			diagnostics.Add(diag.Warning, "AsyncAPI channel skipped", chName, "channel declares neither publish nor subscribe operations")
+			*mappings = append(*mappings, sourceview.CoarseMapping(sourceFile, chName, "", chName, "channel", "review_only", "Channel had no publish/subscribe operation to convert."))
+		}
+	}
+	return ops, sortedKeysFromSet(schemaFormats), warnings
+}
+
+func buildAction(op kafkaOp, includeAssertion bool) (dsl.Action, []string) {
+	action := dsl.Action{
+		Name:   sanitizeName(op.name),
+		Target: op.topic,
+		Metadata: map[string]any{
+			"asyncapi_channel": op.channelName,
+		},
+	}
+	var columns []string
+	switch op.kind {
+	case "produce":
+		action.Type = "kafka_produce"
+		action.Body, columns = sampleBody(op.payload)
+	case "request_reply":
+		action.Type = "kafka_request_reply"
+		action.Body, columns = sampleBody(op.payload)
+		action.Params = map[string]any{"reply_to": op.replyTopic}
+	default:
+		action.Type = "kafka_consume"
+	}
+	if includeAssertion {
+		switch op.kind {
+		case "produce":
+			action.Assertions = []dsl.Assertion{{Type: "offset_advanced"}}
+		default:
+			action.Assertions = []dsl.Assertion{{Type: "message_received"}}
+		}
+	}
+	return action, columns
+}
+
+// --- schema sampling ---
+
+func sampleBody(s schema) (string, []string) {
+	value, columns := sampleForSchema(s, map[string]bool{})
+	if value == nil {
+		return "", columns
+	}
+	encoded, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return "", columns
+	}
+	return string(encoded), columns
+}
+
+func sampleForSchema(s schema, seen map[string]bool) (any, []string) {
+	if s.Ref != "" {
+		if seen[s.Ref] {
+			return map[string]any{}, nil
+		}
+		seen[s.Ref] = true
+	}
+	if s.Example != nil {
+		return s.Example, nil
+	}
+	if len(s.Examples) > 0 {
+		return s.Examples[0], nil
+	}
+	if len(s.Enum) > 0 {
+		return s.Enum[0], nil
+	}
+	if len(s.Properties) > 0 || strings.EqualFold(s.Type, "object") {
+		result := map[string]any{}
+		var columns []string
+		for _, name := range sortedSchemaKeys(s.Properties) {
+			prop := s.Properties[name]
+			if scalarSchema(prop) {
+				column := sanitizeColumnName(name)
+				result[name] = "{{data.asyncapi." + column + "}}"
+				columns = append(columns, column)
+				continue
+			}
+			value, nested := sampleForSchema(prop, copySeen(seen))
+			result[name] = value
+			columns = append(columns, nested...)
+		}
+		return result, uniqueSorted(columns)
+	}
+	if s.Items != nil || strings.EqualFold(s.Type, "array") {
+		value, columns := sampleForSchema(valueOrEmpty(s.Items), copySeen(seen))
+		return []any{value}, columns
+	}
+	switch strings.ToLower(s.Type) {
+	case "integer":
+		return 0, nil
+	case "number":
+		return 0.0, nil
+	case "boolean":
+		return false, nil
+	case "string":
+		return "string", nil
+	default:
+		return map[string]any{}, nil
+	}
+}
+
+func scalarSchema(s schema) bool {
+	if s.Ref != "" || len(s.Properties) > 0 || s.Items != nil {
+		return false
+	}
+	switch strings.ToLower(s.Type) {
+	case "string", "integer", "number", "boolean":
+		return true
+	default:
+		return false
+	}
+}
+
+// --- message / channel resolution ---
+
+func messageOf(op *channelOperation) messageDef {
+	if op == nil || op.Message == nil {
+		return messageDef{}
+	}
+	return *op.Message
+}
+
+func derefMessage(doc *document, m messageDef) messageDef {
+	if len(m.OneOf) > 0 {
+		m = m.OneOf[0]
+	}
+	return resolveMessageRef(doc, m)
+}
+
+func resolveMessageRef(doc *document, m messageDef) messageDef {
+	if m.Ref == "" {
+		return m
+	}
+	name := refName(m.Ref, "/components/messages/")
+	if name == "" {
+		return m
+	}
+	if resolved, ok := doc.Components.Messages[name]; ok {
+		return resolved
+	}
+	return m
+}
+
+func resolvePayload(doc *document, m messageDef) schema {
+	m = resolveMessageRef(doc, m)
+	return resolveSchemaRef(doc, m.Payload)
+}
+
+func resolveSchemaRef(doc *document, s schema) schema {
+	if s.Ref == "" {
+		return s
+	}
+	name := refName(s.Ref, "/components/schemas/")
+	if name == "" {
+		return s
+	}
+	if resolved, ok := doc.Components.Schemas[name]; ok {
+		return resolved
+	}
+	return s
+}
+
+func resolveChannel(doc *document, channelRef string) (string, channel, bool) {
+	name := refName(channelRef, "/channels/")
+	if name == "" {
+		return "", channel{}, false
+	}
+	ch, ok := doc.Channels[name]
+	return name, ch, ok
+}
+
+func firstChannelMessage(doc *document, ch channel) messageDef {
+	for _, name := range sortedMessageKeys(ch.Messages) {
+		return resolveMessageRef(doc, ch.Messages[name])
+	}
+	return messageDef{}
+}
+
+func channelTopic(name string, ch channel) string {
+	if ch.Bindings.Kafka != nil && strings.TrimSpace(ch.Bindings.Kafka.Topic) != "" {
+		return ch.Bindings.Kafka.Topic
+	}
+	if strings.TrimSpace(ch.Address) != "" {
+		return ch.Address
+	}
+	return name
+}
+
+func topicWithBinding(topic string, b bindings) string {
+	if b.Kafka != nil && strings.TrimSpace(b.Kafka.Topic) != "" {
+		return b.Kafka.Topic
+	}
+	return topic
+}
+
+func channelAllowed(allowed map[string]struct{}, name, topic string) bool {
+	if allowed == nil {
+		return true
+	}
+	if _, ok := allowed[name]; ok {
+		return true
+	}
+	_, ok := allowed[topic]
+	return ok
+}
+
+func refName(refStr, prefix string) string {
+	refStr = strings.TrimSpace(refStr)
+	idx := strings.Index(refStr, prefix)
+	if idx < 0 {
+		return ""
+	}
+	return refStr[idx+len(prefix):]
+}
+
+func dataSource(columns []string) dsl.DataSource {
+	header := strings.Join(columns, ",")
+	row := make([]string, len(columns))
+	for i, c := range columns {
+		row[i] = "sample_" + c
+	}
+	return dsl.DataSource{
+		Name:           "asyncapi",
+		Type:           "csv",
+		Strategy:       "sequential",
+		Delimiter:      ",",
+		FirstRowHeader: true,
+		Columns:        columns,
+		InlineData:     header + "\n" + strings.Join(row, ","),
+	}
+}
+
+func isJSONSchemaFormat(format string) bool {
+	f := strings.ToLower(format)
+	return strings.Contains(f, "jsonschema") || strings.Contains(f, "json-schema") || strings.Contains(f, "openapi")
+}
+
+// --- small helpers ---
+
+func sourceFileName(content string) string {
+	if strings.HasPrefix(strings.TrimSpace(content), "{") {
+		return "asyncapi.json"
+	}
+	return "asyncapi.yaml"
+}
+
+func valueOrEmpty(s *schema) schema {
+	if s == nil {
+		return schema{}
+	}
+	return *s
+}
+
+func copySeen(seen map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(seen))
+	for k, v := range seen {
+		out[k] = v
+	}
+	return out
+}
+
+func filterSet(values []string) map[string]struct{} {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(values))
+	for _, v := range values {
+		if trimmed := strings.TrimSpace(v); trimmed != "" {
+			out[trimmed] = struct{}{}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func boolOption(value *bool, fallback bool) bool {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func firstPositive(values ...int) int {
+	for _, v := range values {
+		if v > 0 {
+			return v
+		}
+	}
+	return 0
+}
+
+func trimNonEmpty(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		if trimmed := strings.TrimSpace(v); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func uniqueSorted(values []string) []string {
+	set := map[string]struct{}{}
+	for _, v := range values {
+		if v != "" {
+			set[v] = struct{}{}
+		}
+	}
+	return sortedKeys(set)
+}
+
+func sortedKeys(set map[string]struct{}) []string {
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedKeysFromSet(set map[string]struct{}) []string {
+	if len(set) == 0 {
+		return nil
+	}
+	return sortedKeys(set)
+}
+
+func sortedServerKeys(m map[string]server) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedChannelKeys(m map[string]channel) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedOperationKeys(m map[string]operation) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedMessageKeys(m map[string]messageDef) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedSchemaKeys(m map[string]schema) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sanitizeName(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "AsyncAPI_Script"
+	}
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_' || r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	return strings.Trim(b.String(), "_")
+}
+
+func sanitizeColumnName(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	return strings.Trim(b.String(), "_")
+}

@@ -50,7 +50,6 @@ const EXECUTION_WORKSPACE_DEFAULT_PROFILE: DashboardWorkspaceProfile = {
     { id: 'archive', label: 'Archive', cardIds: ['archive-report'] },
     { id: 'action-summary', label: 'Action Summary', cardIds: ['action-summary'] },
     { id: 'load-impact', label: 'Load Impact', cardIds: ['load-impact'] },
-    { id: 'metrics-under-load', label: 'Metrics Under Load', cardIds: ['metrics-under-load'] },
     { id: 'transaction-drilldown', label: 'Transaction Drill-Down', cardIds: ['transaction-drilldown'] },
   ],
   unassignedCardIds: [],
@@ -270,7 +269,6 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       | 'report-summary-timeline'
       | 'report-analysis'
       | 'load-impact'
-      | 'metrics-under-load'
       | 'action-summary'
       | 'transactions',
   ) => showArchiveSection ? (
@@ -447,6 +445,9 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
           groupNames={groupNames}
           groupColors={GROUP_COLORS}
           showLoadImpact={!(showArchiveSection && archiveReport)}
+          loadImpactData={archiveLoadImpactData.length > 0 ? archiveLoadImpactData : filteredData}
+          loadImpactLoading={archiveSummariesLoading || archiveResourcesLoading}
+          loadImpactError={archiveLoadImpactError}
           latestLatency={latestMetrics?.latency ?? test?.live_metrics?.latency}
           latestMetrics={latestMetrics ?? test?.live_metrics}
         />
@@ -589,13 +590,6 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       description: 'Archive load impact heatmap grouped by active VUser load.',
       defaultWidth: 'full',
       render: () => renderArchiveWorkspaceView('load-impact'),
-    },
-    {
-      id: 'metrics-under-load',
-      title: 'Metrics Under Load',
-      category: 'Metrics Under Load',
-      description: 'Archive metric graphs across active VUser load.',
-      render: () => renderArchiveWorkspaceView('metrics-under-load'),
     },
     {
       id: 'transaction-drilldown',

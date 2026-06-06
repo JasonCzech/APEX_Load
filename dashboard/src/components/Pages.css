@@ -1764,6 +1764,23 @@
   gap: 12px;
 }
 
+.access-user-management {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  gap: 12px;
+}
+
+.access-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.access-readonly-section {
+  background: color-mix(in srgb, var(--bg-primary) 54%, transparent);
+}
+
 .access-control-section h4 {
   font-size: 13px;
 }
@@ -1985,6 +2002,79 @@
   gap: 9px;
 }
 
+.access-binding-editor,
+.access-binding-draft-list {
+  display: grid;
+  gap: 10px;
+}
+
+.access-binding-draft-row {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+}
+
+.access-binding-draft-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.access-binding-draft-heading strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.access-binding-draft-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.access-binding-draft-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.access-binding-draft-grid label span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.access-binding-draft-grid select {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  min-width: 0;
+  outline: none;
+  padding: 10px 11px;
+}
+
+.access-binding-draft-grid select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.access-binding-add-actions {
+  justify-content: flex-start;
+}
+
+.access-empty-state.compact {
+  padding: 14px;
+}
+
 .access-binding-row,
 .access-activity-row,
 .access-usage-row {
@@ -2081,6 +2171,400 @@
   overflow-x: auto;
   padding: 13px;
   white-space: pre-wrap;
+}
+
+.access-tab-row {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--accent) 6%, var(--bg-card)),
+      var(--bg-card)
+    );
+  box-shadow: var(--shadow-sm);
+  scrollbar-width: thin;
+}
+
+.access-tab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  white-space: nowrap;
+  background: transparent;
+  border-color: transparent;
+  cursor: pointer;
+}
+
+.access-tab:hover,
+.access-tab:focus-visible {
+  border-color: var(--accent-border);
+  color: var(--text-primary);
+}
+
+.access-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.access-tab.active {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-card));
+  box-shadow: var(--glow-sm);
+}
+
+.access-tab strong {
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--bg-primary);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.access-tab.active strong {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-primary));
+}
+
+.access-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 0.36fr);
+  align-items: start;
+  gap: 14px;
+  max-width: 100%;
+}
+
+.access-table-panel {
+  min-width: 0;
+}
+
+.access-inspector {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+}
+
+.access-subtab-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-primary));
+  scrollbar-width: thin;
+}
+
+.access-subtab {
+  appearance: none;
+  flex: 0 0 auto;
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  padding: 7px 11px;
+  white-space: nowrap;
+}
+
+.access-subtab:hover,
+.access-subtab:focus-visible {
+  border-color: var(--accent-border);
+  color: var(--text-primary);
+}
+
+.access-subtab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.access-subtab.active {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-card));
+  color: var(--accent);
+  box-shadow: var(--glow-sm);
+}
+
+.access-table-toolbar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  align-items: end;
+  gap: 10px;
+}
+
+.access-table-toolbar.compact {
+  grid-template-columns: minmax(220px, 420px);
+}
+
+.access-activity-filter-toolbar {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.access-table-toolbar label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.access-table-toolbar label span,
+.access-detail-grid dt {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.access-table-toolbar input,
+.access-table-toolbar select {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+  padding: 9px 10px;
+}
+
+.access-table-toolbar input:focus,
+.access-table-toolbar select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.access-table-wrap {
+  max-height: 560px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+}
+
+.access-data-table {
+  width: 100%;
+  min-width: 1180px;
+  border-collapse: collapse;
+}
+
+.access-usage-table {
+  min-width: 720px;
+}
+
+.access-data-table th,
+.access-data-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.access-data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.access-data-table th.sortable {
+  padding: 0;
+}
+
+.access-data-table th.sortable button {
+  appearance: none;
+  width: 100%;
+  min-height: 34px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  font: inherit;
+  letter-spacing: inherit;
+  padding: 8px 10px;
+  text-align: left;
+  text-transform: inherit;
+}
+
+.access-data-table th.sortable.num button {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.access-data-table th.sortable button:hover,
+.access-data-table th.sortable button:focus-visible {
+  color: var(--text-primary);
+}
+
+.access-data-table th.sortable button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.access-data-table tbody tr {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.access-data-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.access-data-table tbody tr.selected {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-primary));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.access-data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.access-data-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.access-row-primary {
+  appearance: none;
+  display: block;
+  max-width: 240px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-row-primary:hover,
+.access-row-primary:focus-visible {
+  color: var(--accent);
+}
+
+.access-row-primary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.access-row-meta {
+  display: block;
+  max-width: 260px;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-table-stack {
+  display: block;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-table-chip {
+  display: inline-flex;
+  align-items: center;
+  margin: 2px 4px 2px 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-card));
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 7px;
+  white-space: nowrap;
+}
+
+.access-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.access-inspector-title {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+}
+
+.access-inspector-title strong {
+  color: var(--text-primary);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.access-detail-grid {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.access-detail-grid div {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.35fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+}
+
+.access-detail-grid div:last-child {
+  border-bottom: none;
+}
+
+.access-detail-grid dd {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.access-inspector-form-grid {
+  grid-template-columns: 1fr;
+}
+
+.access-panel-header .access-account-actions {
+  justify-content: flex-end;
 }
 
 .results-compare-card {
@@ -7585,8 +8069,15 @@
   .swagger-docs-controls,
   .swagger-detail-grid,
   .access-layout,
+  .access-workspace,
+  .access-user-management,
   .access-preset-grid {
     grid-template-columns: 1fr;
+  }
+
+  .access-inspector {
+    position: static;
+    max-height: none;
   }
 
   .access-summary-grid,
@@ -7694,8 +8185,12 @@
 
   .access-summary-grid,
   .access-form-grid,
+  .access-binding-draft-grid,
+  .access-table-toolbar,
+  .access-table-toolbar.compact,
   .access-project-role-row,
   .access-account-header,
+  .access-detail-grid div,
   .access-issued-key-box {
     grid-template-columns: 1fr;
   }

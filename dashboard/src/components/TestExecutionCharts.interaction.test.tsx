@@ -229,9 +229,9 @@ describe('TestExecutionCharts context menu', () => {
     await renderCharts()
 
     const mockCharts = Array.from(container.querySelectorAll('[data-testid="mock-chart"]'))
-    expect(mockCharts).toHaveLength(9)
-    expect(mockCharts.map(chart => chart.getAttribute('data-sync-id'))).toEqual(Array(9).fill('metrics'))
-    expect(Array.from(container.querySelectorAll('[data-testid="mock-tooltip"]')).map(tooltip => tooltip.getAttribute('data-label-display'))).toEqual(Array(9).fill('none'))
+    expect(mockCharts).toHaveLength(12)
+    expect(mockCharts.map(chart => chart.getAttribute('data-sync-id'))).toEqual([...Array(9).fill('metrics'), '', '', ''])
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-tooltip"]')).map(tooltip => tooltip.getAttribute('data-label-display'))).toEqual(Array(12).fill('none'))
 
     const tpsChart = mockCharts[1]
     await act(async () => {
@@ -242,6 +242,9 @@ describe('TestExecutionCharts context menu', () => {
     expect(tooltips.map(tooltip => tooltip.getAttribute('data-label-display'))).toEqual([
       'none',
       '',
+      'none',
+      'none',
+      'none',
       'none',
       'none',
       'none',
@@ -260,8 +263,16 @@ describe('TestExecutionCharts context menu', () => {
       '',
       '',
       '',
+      '',
+      '',
+      '',
     ])
-    expect(tooltips.every(tooltip => tooltip.getAttribute('data-formatted-value') === '123.46')).toBe(true)
+    expect(tooltips.map(tooltip => tooltip.getAttribute('data-formatted-value'))).toEqual([
+      ...Array(9).fill('123.46'),
+      '123',
+      '123',
+      '123',
+    ])
   })
 
   it('filters graph series from the metric table rows', async () => {
@@ -343,6 +354,118 @@ describe('TestExecutionCharts context menu', () => {
     expect(window.localStorage.getItem('apexload.execution.chartMetricFilters')).toContain('"tps":["tps","Search_tps"]')
   })
 
+  it('renders load-under graphs as selectable runtime graph cards', async () => {
+    await renderCharts(null, false)
+
+    const artUnderLoad = () => Array.from(container.querySelectorAll('.chart-card'))
+      .find(chart => chart.textContent?.includes('ART Under Load'))
+
+    expect(chartTitles()).toContain('ART Under Load')
+    expect(chartTitles()).toContain('TPS Under Load')
+    expect(chartTitles()).toContain('Error % Under Load')
+    expect(chartTitles()).not.toContain('P99 Under Load')
+    expect(artUnderLoad()?.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('VUser load')
+    expect(artUnderLoad()?.querySelector('path[data-testid="mock-line"][data-key="average"][data-name="Average"]')).not.toBeNull()
+    expect(artUnderLoad()?.querySelector('path[data-testid="mock-line"][data-key="max"][data-name="Max"]')).toBeNull()
+
+    const maxToggle = Array.from(artUnderLoad()?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ?? [])
+      .find(input => input.getAttribute('aria-label') === 'Show Max')
+    expect(maxToggle).not.toBeUndefined()
+
+    await act(async () => {
+      maxToggle?.click()
+    })
+
+    expect(artUnderLoad()?.querySelector('path[data-testid="mock-line"][data-key="max"][data-name="Max"]')).not.toBeNull()
+    expect(window.localStorage.getItem('apexload.execution.chartMetricFilters')).toContain('"load_impact_avgMs":["average","max"]')
+
+    await act(async () => {
+      buttonByText('Configure Graphs')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const p99Toggle = container.querySelector<HTMLInputElement>('input[aria-label="Show P99 Under Load"]')
+    expect(p99Toggle?.checked).toBe(false)
+
+    await act(async () => {
+      p99Toggle?.click()
+    })
+
+    expect(chartTitles()).toContain('P99 Under Load')
+    expect(window.localStorage.getItem('apexload.execution.visibleLoadImpactCharts')).toContain('load_impact_p99')
+  })
+
+  it('applies default load-under visibility when old graph preferences are stored', async () => {
+    window.localStorage.setItem('apexload.execution.hiddenCharts', '[]')
+
+    await renderCharts(null, false)
+
+    expect(chartTitles()).toContain('ART Under Load')
+    expect(chartTitles()).toContain('TPS Under Load')
+    expect(chartTitles()).not.toContain('P99 Under Load')
+    expect(window.localStorage.getItem('apexload.execution.hiddenCharts')).toContain('load_impact_p99')
+    expect(window.localStorage.getItem('apexload.execution.visibleLoadImpactCharts')).toBe('[]')
+  })
+
+  it('applies default load-under visibility when archive samples arrive after mount', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[]}
+          loadImpactData={[]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={['#00a3ff']}
+          showLoadImpact={false}
+        />,
+      )
+    })
+
+    expect(container.querySelector('.chart-card')).toBeNull()
+
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[]}
+          loadImpactData={[
+            { time: '10:00:00', vusers: 5, tps: 2.5, avgMs: 115, errorPct: 0, p50: 105, p90: 132, p95: 145, p99: 180 },
+            { time: '10:01:00', vusers: 15, tps: 6.7, avgMs: 150, errorPct: 0.5, p50: 138, p90: 196, p95: 218, p99: 268 },
+            { time: '10:02:00', vusers: 30, tps: 11.6, avgMs: 224, errorPct: 1.1, p50: 202, p90: 308, p95: 340, p99: 410 },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={['#00a3ff']}
+          showLoadImpact={false}
+        />,
+      )
+    })
+
+    expect(chartTitles()).toContain('ART Under Load')
+    expect(chartTitles()).toContain('P95 Under Load')
+    expect(chartTitles()).not.toContain('P99 Under Load')
+  })
+
   it('moves the expanded graph to the top of the graph grid', async () => {
     await renderCharts('latency')
 
@@ -415,7 +538,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(container.querySelector('.monitor-preset-buttons')).toBeNull()
     expect(container.querySelector('.charts-customize-panel')).toBeNull()
     expect(container.querySelector('.charts-toolbar')?.textContent).toContain('Runtime Graphs')
-    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('9 graphs')
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('12 graphs')
     expect(container.querySelector('.charts-config-drawer')).toBeNull()
 
     await act(async () => {
@@ -459,8 +582,8 @@ describe('TestExecutionCharts context menu', () => {
       errorRateGraphToggle?.click()
     })
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(8)
-    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('8 graphs')
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(11)
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('11 graphs')
     expect(window.localStorage.getItem('apexload.execution.hiddenCharts')).toContain('errors')
 
     await act(async () => {
@@ -479,7 +602,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(buttonByText('Standard')?.getAttribute('aria-pressed')).toBe('false')
     expect(buttonByText('6 Graphs')?.getAttribute('aria-pressed')).toBe('true')
     expect(window.localStorage.getItem('apexload.execution.chartDensity')).toBe('six_up')
-    expect(Array.from(container.querySelectorAll('[data-testid="mock-responsive-container"]')).map(container => container.getAttribute('data-height'))).toEqual(Array(8).fill('132'))
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-responsive-container"]')).map(container => container.getAttribute('data-height'))).toEqual(Array(11).fill('132'))
     expect(container.querySelector('.chart-metrics-table')).toBeNull()
 
     await act(async () => {
@@ -521,7 +644,7 @@ describe('TestExecutionCharts context menu', () => {
       }
     })
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(9)
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(12)
     expect(roleSelect?.value).toBe('')
 
     await act(async () => {
@@ -540,7 +663,7 @@ describe('TestExecutionCharts context menu', () => {
       resetButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(9)
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(12)
     expect(roleSelect?.value).toBe('')
   })
 

@@ -16,6 +16,12 @@ import {
 import { LatencyTarget, LiveMetrics, MetricsHistoryPoint, NetworkLatency } from '../types'
 import { buildGeneratorImpactView, type GeneratorImpactVerdict } from './generatorImpact'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
+import {
+  buildLoadImpactModel,
+  formatLoadImpactValue,
+  type LoadImpactMetric,
+  type LoadImpactRow,
+} from './loadImpactModel'
 import { chartTooltipContentStyle } from './chartTooltipTheme'
 import {
   isRouteLatencyTotalSeriesKey,
@@ -31,12 +37,14 @@ type ChartDomain = ComponentProps<typeof YAxis>['domain']
 export interface ChartConfig {
   id: string
   title: string
-  type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'line-io' | 'line-network' | 'line-impact'
+  type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'line-io' | 'line-network' | 'line-impact' | 'line-load-impact'
   dataKey?: string
   color?: string
   totalKey?: string
   keys?: Array<{ k: string; n: string; c: string }>
   domain?: ChartDomain
+  defaultMetricKeys?: string[]
+  loadImpactMetric?: LoadImpactMetric
 }
 
 interface Props {
@@ -56,6 +64,9 @@ interface Props {
   groupNames: string[]
   groupColors: string[]
   showLoadImpact?: boolean
+  loadImpactData?: MetricsHistoryPoint[]
+  loadImpactLoading?: boolean
+  loadImpactError?: string
   latestLatency?: NetworkLatency
   latestMetrics?: LiveMetrics
 }
@@ -82,6 +93,11 @@ type ChartDropPosition = 'before' | 'after'
 type OverlayMetricKey = 'vusers' | 'avgMs' | 'tps'
 type ChartMargin = ComponentProps<typeof LineChart>['margin']
 export type RouteLatencyMode = 'total' | 'phases' | 'stability'
+
+const LOAD_IMPACT_CHART_ID_PREFIX = 'load_impact_'
+const LOAD_IMPACT_VISIBLE_CHARTS_STORAGE_KEY = 'apexload.execution.visibleLoadImpactCharts'
+const DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS = ['avgMs', 'p95', 'tps', 'errorPct', 'cpuProcess', 'memProcess']
+const LOAD_IMPACT_GRAPH_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)']
 
 const chartConfigs: ChartConfig[] = [
   { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
@@ -111,6 +127,25 @@ const chartConfigs: ChartConfig[] = [
   { id: 'generator_impact', title: 'Generator Impact', type: 'line-impact' },
   { id: 'network_latency', title: 'Route Latency (ms)', type: 'line-network' },
 ]
+
+function loadImpactChartId(metricId: string) {
+  return `${LOAD_IMPACT_CHART_ID_PREFIX}${metricId}`
+}
+
+function isLoadImpactChart(chart: ChartConfig) {
+  return chart.type === 'line-load-impact' && Boolean(chart.loadImpactMetric)
+}
+
+function buildLoadImpactCharts(rows: LoadImpactRow[]): ChartConfig[] {
+  return rows.map((row, index) => ({
+    id: loadImpactChartId(row.metric.id),
+    title: `${row.metric.label} Under Load`,
+    type: 'line-load-impact',
+    color: LOAD_IMPACT_GRAPH_COLORS[index % LOAD_IMPACT_GRAPH_COLORS.length],
+    defaultMetricKeys: ['average'],
+    loadImpactMetric: row.metric,
+  }))
+}
 
 const routeLatencyModes: Array<{ id: RouteLatencyMode; label: string }> = [
   { id: 'total', label: 'Total' },
@@ -161,6 +196,9 @@ const AXIS_LABEL_STYLE = {
 }
 
 function isOverlayMetricAvailable(chart: ChartConfig, key: OverlayMetricKey) {
+  if (isLoadImpactChart(chart)) {
+    return key !== 'vusers' && chart.loadImpactMetric?.key !== key
+  }
   if (key === 'vusers') return chart.id !== 'vusers'
   if (key === 'avgMs') return chart.id !== 'latency'
   if (key === 'tps') return chart.id !== 'tps'
@@ -196,6 +234,10 @@ function chartPrimaryYAxisLabel(chart: ChartConfig) {
     case 'network_latency':
       return 'Route latency (ms)'
     default:
+      if (isLoadImpactChart(chart)) {
+        const metric = chart.loadImpactMetric!
+        return metric.unit ? `${metric.label} (${metric.unit})` : metric.label
+      }
       return chart.title
   }
 }
@@ -252,11 +294,21 @@ function chartTitleWithOverlays(chart: ChartConfig, overlayKeys: OverlayMetricKe
   return labels.length > 0 ? `${chart.title} + ${labels.join(' + ')}` : chart.title
 }
 
-function normalizedChartOrder(order: string[]) {
-  const knownIds = chartConfigs.map(chart => chart.id)
+function normalizedChartOrder(order: string[], knownIds = chartConfigs.map(chart => chart.id)) {
   const retained = order.filter(id => knownIds.includes(id))
   const added = knownIds.filter(id => !retained.includes(id))
   return [...retained, ...added]
+}
+
+function defaultHiddenChartIds(charts: ChartConfig[], visibleLoadImpactChartIds: string[] = []) {
+  const explicitlyVisible = new Set(visibleLoadImpactChartIds)
+  return charts
+    .filter(chart => (
+      isLoadImpactChart(chart)
+      && !DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS.includes(chart.loadImpactMetric!.id)
+      && !explicitlyVisible.has(chart.id)
+    ))
+    .map(chart => chart.id)
 }
 
 export const monitorPresets = [
@@ -480,6 +532,12 @@ export function chartMetricKeys(
   selectedRouteLatencyKey?: string,
 ) {
   let keys: string[]
+  if (isLoadImpactChart(chart)) {
+    keys = ['average', 'min', 'max']
+    const overlays = normalizeOverlayMetricKeys(chart, includeVuserOverlay, overlayMetricKeys)
+      .filter(key => !keys.includes(key))
+    return overlays.length > 0 ? [...keys, ...overlays] : keys
+  }
   switch (chart.id) {
     case 'tps':
       keys = [
@@ -530,6 +588,18 @@ export function chartMetricRows(
   selectedRouteLatencyKey?: string,
 ): ChartMetricRow[] {
   let rows: ChartMetricRow[]
+  if (isLoadImpactChart(chart)) {
+    const unit = chart.loadImpactMetric?.unit
+    rows = [
+      { key: 'average', label: 'Average', color: chart.color ?? 'var(--chart-1)', unit },
+      { key: 'min', label: 'Min', color: 'var(--chart-3)', unit },
+      { key: 'max', label: 'Max', color: 'var(--chart-4)', unit },
+    ]
+    const overlayRows = normalizeOverlayMetricKeys(chart, includeVuserOverlay, overlayMetricKeys)
+      .filter(key => !rows.some(row => row.key === key))
+      .map(key => overlayMetricRows[key])
+    return overlayRows.length > 0 ? [...rows, ...overlayRows] : rows
+  }
   switch (chart.id) {
     case 'vusers':
       rows = [{ key: 'vusers', label: 'Active VUsers', color: chart.color ?? 'var(--chart-1)' }]
@@ -599,6 +669,36 @@ export function chartMetricSummary(data: MetricsHistoryPoint[], key: string): Ch
   }
 }
 
+function loadImpactMetricValueForBucket(row: LoadImpactRow | undefined, bucketId: string) {
+  return row?.cells.find(cell => cell.bucket.id === bucketId)?.average
+}
+
+function loadImpactChartDataForRow(row: LoadImpactRow | undefined, rows: LoadImpactRow[]): MetricsHistoryPoint[] {
+  if (!row) return []
+  const avgRow = rows.find(candidate => candidate.metric.id === 'avgMs')
+  const tpsRow = rows.find(candidate => candidate.metric.id === 'tps')
+  return row.cells.map((cell): MetricsHistoryPoint => {
+    const midpointVusers = cell.bucket.minVusers + ((cell.bucket.maxVusers - cell.bucket.minVusers) / 2)
+    return {
+      time: cell.bucket.label,
+      vusers: midpointVusers,
+      tps: loadImpactMetricValueForBucket(tpsRow, cell.bucket.id) ?? 0,
+      avgMs: loadImpactMetricValueForBucket(avgRow, cell.bucket.id) ?? 0,
+      errorPct: 0,
+      p50: 0,
+      p90: 0,
+      p99: 0,
+      average: cell.average,
+      min: cell.min,
+      max: cell.max,
+      samples: cell.sampleCount,
+      bucketMinVusers: cell.bucket.minVusers,
+      bucketMaxVusers: cell.bucket.maxVusers,
+      sourceSamples: cell.sampleCount,
+    }
+  })
+}
+
 export function graphCsvForChart(
   chart: ChartConfig,
   data: MetricsHistoryPoint[],
@@ -609,10 +709,11 @@ export function graphCsvForChart(
   routeLatencyMode: RouteLatencyMode = 'total',
   selectedRouteLatencyKey?: string,
 ) {
-  const keys = ['time', ...chartMetricKeys(chart, groupNames, latencyKeys, includeVuserOverlay, overlayMetricKeys, routeLatencyMode, selectedRouteLatencyKey)]
+  const firstColumn = isLoadImpactChart(chart) ? 'load' : 'time'
+  const keys = [firstColumn, ...chartMetricKeys(chart, groupNames, latencyKeys, includeVuserOverlay, overlayMetricKeys, routeLatencyMode, selectedRouteLatencyKey)]
   const rows = [
     keys.map(escapeCsvCell).join(','),
-    ...data.map(point => keys.map(key => escapeCsvCell(point[key])).join(',')),
+    ...data.map(point => keys.map(key => escapeCsvCell(key === firstColumn ? point.time : point[key])).join(',')),
   ]
   return rows.join('\n')
 }
@@ -710,10 +811,12 @@ function latestGraphValuesText(
   selectedRouteLatencyKey?: string,
 ) {
   const keys = chartMetricKeys(chart, groupNames, latencyKeys, false, overlayMetricKeys, routeLatencyMode, selectedRouteLatencyKey)
+  const labels = new Map(chartMetricRows(chart, groupNames, latencyKeys, [], false, overlayMetricKeys, routeLatencyMode, selectedRouteLatencyKey).map(row => [row.key, row.label]))
   const lines = [`${chart.title}`]
   keys.forEach(key => {
     const value = chart.id === 'network_latency' ? latencyLatestValues[key] : latest[key]
-    lines.push(`${chart.id === 'network_latency' ? routeLatencySeriesLabel(key) : key}: ${value ?? 'n/a'}`)
+    const label = chart.id === 'network_latency' ? routeLatencySeriesLabel(key) : labels.get(key) ?? key
+    lines.push(`${label}: ${value ?? 'n/a'}`)
   })
   return lines.join('\n')
 }
@@ -789,11 +892,15 @@ export default function TestExecutionCharts({
   groupNames,
   groupColors,
   showLoadImpact = true,
+  loadImpactData = [],
+  loadImpactLoading = false,
+  loadImpactError = '',
   latestLatency,
   latestMetrics,
 }: Props) {
   const [chartOrder, setChartOrder] = useState<string[]>(() => readStoredArray('apexload.execution.chartOrder'))
   const [hiddenChartIds, setHiddenChartIds] = useState<string[]>(() => readStoredArray('apexload.execution.hiddenCharts'))
+  const [visibleLoadImpactChartIds, setVisibleLoadImpactChartIds] = useState<string[]>(() => readStoredArray(LOAD_IMPACT_VISIBLE_CHARTS_STORAGE_KEY))
   const [vuserOverlayChartIds, setVuserOverlayChartIds] = useState<string[]>(() => readStoredArray('apexload.execution.vuserOverlayCharts'))
   const [artOverlayChartIds, setArtOverlayChartIds] = useState<string[]>(() => readStoredArray('apexload.execution.artOverlayCharts'))
   const [tpsOverlayChartIds, setTpsOverlayChartIds] = useState<string[]>(() => readStoredArray('apexload.execution.tpsOverlayCharts'))
@@ -810,10 +917,28 @@ export default function TestExecutionCharts({
   const [dragOverChartId, setDragOverChartId] = useState<string | null>(null)
   const chartCardRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const chartMenuRef = useRef<HTMLDivElement | null>(null)
+  const loadImpactSourceData = loadImpactData.length > 0 ? loadImpactData : filteredData
+  const loadImpactModel = useMemo(() => buildLoadImpactModel(loadImpactSourceData), [loadImpactSourceData])
+  const loadImpactRows = loadImpactModel.rows
+  const loadImpactRowsByChartId = useMemo(() => new Map(loadImpactRows.map(row => [loadImpactChartId(row.metric.id), row])), [loadImpactRows])
+  const loadImpactCharts = useMemo(() => buildLoadImpactCharts(loadImpactRows), [loadImpactRows])
+  const allChartConfigs = useMemo(() => [...chartConfigs, ...loadImpactCharts], [loadImpactCharts])
+  const allChartIds = useMemo(() => allChartConfigs.map(chart => chart.id), [allChartConfigs])
+  const allChartIdSignature = allChartIds.join('|')
+  const visibleLoadImpactChartIdSignature = visibleLoadImpactChartIds.join('|')
 
   useEffect(() => {
-    setChartOrder(prev => normalizedChartOrder(prev))
-  }, [])
+    setChartOrder(prev => normalizedChartOrder(prev, allChartIds))
+  }, [allChartIdSignature])
+
+  useEffect(() => {
+    const knownChartIds = new Set(allChartIds)
+    setHiddenChartIds(prev => {
+      const retained = prev.filter(id => knownChartIds.has(id))
+      const next = Array.from(new Set([...retained, ...defaultHiddenChartIds(allChartConfigs, visibleLoadImpactChartIds)]))
+      return sameStringSet(next, prev) ? prev : next
+    })
+  }, [allChartConfigs, allChartIdSignature, visibleLoadImpactChartIdSignature])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -824,6 +949,11 @@ export default function TestExecutionCharts({
     if (typeof window === 'undefined') return
     window.localStorage.setItem('apexload.execution.hiddenCharts', JSON.stringify(hiddenChartIds))
   }, [hiddenChartIds])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(LOAD_IMPACT_VISIBLE_CHARTS_STORAGE_KEY, JSON.stringify(visibleLoadImpactChartIds))
+  }, [visibleLoadImpactChartIds])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -903,20 +1033,20 @@ export default function TestExecutionCharts({
   }, [chartDrawerOpen])
 
   const orderedCharts = useMemo(() => {
-    const byId = new Map(chartConfigs.map(chart => [chart.id, chart]))
+    const byId = new Map(allChartConfigs.map(chart => [chart.id, chart]))
     const ordered = chartOrder
       .map(id => byId.get(id))
       .filter((chart): chart is ChartConfig => Boolean(chart))
-    return ordered.length ? ordered : chartConfigs
-  }, [chartOrder])
+    return ordered.length ? ordered : allChartConfigs
+  }, [allChartConfigs, chartOrder])
   const activeMonitorPresetId = useMemo(() => {
     const currentOrder = orderedCharts.map(chart => chart.id)
     return monitorPresets.find(preset => {
-      const presetState = chartStateForMonitorPreset(preset.id)
+      const presetState = chartStateForMonitorPreset(preset.id, allChartIds)
       return sameStringArray(presetState.chartOrder, currentOrder)
-        && sameStringSet(presetState.hiddenChartIds, hiddenChartIds.filter(id => chartConfigs.some(chart => chart.id === id)))
+        && sameStringSet(presetState.hiddenChartIds, hiddenChartIds.filter(id => allChartIds.includes(id)))
     })?.id ?? ''
-  }, [hiddenChartIds, orderedCharts])
+  }, [allChartIds, hiddenChartIds, orderedCharts])
   const latencyKeys = useMemo(() => routeLatencySeriesKeys(filteredData), [filteredData])
   const activeRouteLatencyKey = latencyKeys.includes(selectedRouteLatencyKey)
     ? selectedRouteLatencyKey
@@ -956,11 +1086,11 @@ export default function TestExecutionCharts({
     }
   }, [latencyKeys, selectedRouteLatencyKey])
 
-  if (filteredData.length <= 1) {
+  if (filteredData.length <= 1 && loadImpactCharts.length === 0 && !loadImpactLoading && !loadImpactError) {
     return null
   }
 
-  const latest = filteredData[filteredData.length - 1] || {}
+  const latest = filteredData[filteredData.length - 1] || loadImpactSourceData[loadImpactSourceData.length - 1] || {}
   const visibleCharts = orderedCharts.filter(chart => !hiddenChartIds.includes(chart.id))
   const displayedCharts = expandedChart
     ? [
@@ -969,7 +1099,12 @@ export default function TestExecutionCharts({
       ]
     : visibleCharts
   const contextChart = chartMenu ? visibleCharts.find(chart => chart.id === chartMenu.chartId) : undefined
-  const chartDataFor = (chart: ChartConfig) => chart.id === 'latency' ? responseTimeChartData : filteredData
+  const chartDataFor = (chart: ChartConfig) => {
+    if (isLoadImpactChart(chart)) {
+      return loadImpactChartDataForRow(loadImpactRowsByChartId.get(chart.id), loadImpactRows)
+    }
+    return chart.id === 'latency' ? responseTimeChartData : filteredData
+  }
 
   const formatXAxisLabel = (value: string | number) => {
     if (timeAxisMode === 'clock') return String(value)
@@ -989,6 +1124,19 @@ export default function TestExecutionCharts({
     />
   )
 
+  const renderLoadImpactAxis = () => (
+    <XAxis
+      dataKey="time"
+      stroke="var(--text-muted)"
+      fontSize={11}
+      height={46}
+      tickMargin={8}
+      interval={0}
+      minTickGap={8}
+      label={bottomAxisLabel('VUser load')}
+    />
+  )
+
   const renderTooltip = (chartId: string) => {
     const showTimeLabel = hoveredChartId === chartId
     return (
@@ -997,6 +1145,26 @@ export default function TestExecutionCharts({
         labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: showTimeLabel ? 4 : 0, display: showTimeLabel ? undefined : 'none' }}
         labelFormatter={(value) => showTimeLabel ? formatXAxisLabel(value) : ''}
         formatter={(value, name) => [formatGraphOverlayMetricValue(value), name]}
+        isAnimationActive={false}
+      />
+    )
+  }
+
+  const renderLoadImpactTooltip = (chart: ChartConfig) => {
+    const showLabel = hoveredChartId === chart.id
+    const rows = metricRowsForChart(chart)
+    const rowUnits = new Map(rows.map(row => [row.key, row.unit]))
+    return (
+      <Tooltip
+        contentStyle={{ ...chartTooltipContentStyle, borderRadius: 8 }}
+        labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: showLabel ? 4 : 0, display: showLabel ? undefined : 'none' }}
+        labelFormatter={(value) => showLabel ? `Load: ${value}` : ''}
+        formatter={(value, name, item) => {
+          const dataKey = typeof (item as { dataKey?: unknown } | undefined)?.dataKey === 'string'
+            ? String((item as { dataKey?: unknown }).dataKey)
+            : ''
+          return [formatLoadImpactValue(typeof value === 'number' ? value : undefined, rowUnits.get(dataKey)), name]
+        }}
         isAnimationActive={false}
       />
     )
@@ -1012,6 +1180,21 @@ export default function TestExecutionCharts({
   }
 
   const toggleChartVisibility = (chartId: string) => {
+    const chart = allChartConfigs.find(candidate => candidate.id === chartId)
+    const togglingHiddenLoadImpactChart = (
+      chart
+      && isLoadImpactChart(chart)
+      && !DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS.includes(chart.loadImpactMetric!.id)
+    )
+    if (togglingHiddenLoadImpactChart) {
+      const revealingChart = hiddenChartIds.includes(chartId)
+      setVisibleLoadImpactChartIds(prev => {
+        if (revealingChart) {
+          return prev.includes(chartId) ? prev : [...prev, chartId]
+        }
+        return prev.filter(id => id !== chartId)
+      })
+    }
     setHiddenChartIds(prev =>
       prev.includes(chartId)
         ? prev.filter(id => id !== chartId)
@@ -1069,7 +1252,8 @@ export default function TestExecutionCharts({
   const visibleMetricKeysForChart = (chart: ChartConfig, rows = metricRowsForChart(chart)) => {
     const availableKeys = rows.map(row => row.key)
     const storedKeys = chartMetricFilters[chart.id]?.filter(key => availableKeys.includes(key)) ?? []
-    return storedKeys.length > 0 ? storedKeys : availableKeys
+    const defaultKeys = chart.defaultMetricKeys?.filter(key => availableKeys.includes(key)) ?? []
+    return storedKeys.length > 0 ? storedKeys : defaultKeys.length > 0 ? defaultKeys : availableKeys
   }
 
   const visibleOverlayMetricKeys = (chart: ChartConfig, visibleMetricKeys: string[]) => {
@@ -1085,8 +1269,9 @@ export default function TestExecutionCharts({
 
   const toggleMetricRow = (chart: ChartConfig, rows: ChartMetricRow[], key: string) => {
     const availableKeys = rows.map(row => row.key)
+    const defaultKeys = chart.defaultMetricKeys?.filter(candidate => availableKeys.includes(candidate)) ?? []
     setChartMetricFilters(prev => {
-      const currentKeys = prev[chart.id]?.filter(candidate => availableKeys.includes(candidate)) ?? availableKeys
+      const currentKeys = prev[chart.id]?.filter(candidate => availableKeys.includes(candidate)) ?? (defaultKeys.length > 0 ? defaultKeys : availableKeys)
       const nextKeys = currentKeys.includes(key)
         ? currentKeys.filter(candidate => candidate !== key)
         : [...currentKeys, key]
@@ -1250,8 +1435,9 @@ export default function TestExecutionCharts({
   }
 
   const resetCharts = () => {
-    setChartOrder(chartConfigs.map(chart => chart.id))
-    setHiddenChartIds([])
+    setVisibleLoadImpactChartIds([])
+    setChartOrder(allChartIds)
+    setHiddenChartIds(defaultHiddenChartIds(allChartConfigs, []))
   }
 
   const applyMonitorPreset = (presetId: string) => {
@@ -1259,7 +1445,8 @@ export default function TestExecutionCharts({
       resetCharts()
       return
     }
-    const next = chartStateForMonitorPreset(presetId)
+    setVisibleLoadImpactChartIds([])
+    const next = chartStateForMonitorPreset(presetId, allChartIds)
     setChartOrder(next.chartOrder)
     setHiddenChartIds(next.hiddenChartIds)
   }
@@ -1663,7 +1850,7 @@ export default function TestExecutionCharts({
       <div className="charts-toolbar" aria-label="Final graph controls">
         <div>
           <h3 className="chart-title">Runtime Graphs</h3>
-          <p className="archive-section-copy">Live and archived time-series charts for the selected run.</p>
+          <p className="archive-section-copy">Live, archived, and load-under graphs for the selected run.</p>
         </div>
         <div className="charts-toolbar-actions">
           <button
@@ -1678,9 +1865,13 @@ export default function TestExecutionCharts({
             <span className="archive-chip">{visibleCharts.length} graph{visibleCharts.length === 1 ? '' : 's'}</span>
             <span className="archive-chip">{chartDensity === 'six_up' ? '6 Graphs' : 'Standard'}</span>
             <span className="archive-chip">{timeAxisMode === 'relative' ? 'Relative time' : 'Clock time'}</span>
+            {loadImpactLoading && <span className="archive-chip">Loading load metrics</span>}
+            {!loadImpactLoading && loadImpactCharts.length > 0 && <span className="archive-chip">{loadImpactCharts.length} load metrics</span>}
           </div>
         </div>
       </div>
+
+      {loadImpactError && <p className="scenario-script-status error">{loadImpactError}</p>}
 
       {visibleCharts.length === 0 ? (
         <div className="charts-empty">
@@ -1806,6 +1997,37 @@ export default function TestExecutionCharts({
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </ComposedChart>
+            ) : chart.type === 'line-load-impact' ? (
+              <LineChart
+                data={chartData}
+                margin={chartMargin}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                {renderLoadImpactAxis()}
+                {renderMetricAxis(chart, visibleMetricKeys)}
+                {renderOverlayAxes(chart, visibleMetricKeys)}
+                {renderLoadImpactTooltip(chart)}
+                {metricRows
+                  .filter(row => !overlayMetricKeysForChart(chart).includes(row.key as OverlayMetricKey))
+                  .map((row) => showMetric(row.key) && (
+                    <Line
+                      key={row.key}
+                      yAxisId={metricAxisIdForChart}
+                      type="monotone"
+                      dataKey={row.key}
+                      name={row.label}
+                      stroke={row.color}
+                      dot={{ r: row.key === 'average' ? 3 : 2 }}
+                      activeDot={{ r: 5 }}
+                      strokeWidth={row.key === 'average' ? 2.5 : 1.5}
+                      strokeDasharray={row.key === 'average' ? undefined : '4 2'}
+                      connectNulls
+                      isAnimationActive={false}
+                    />
+                  ))}
+                {renderOverlayLines(chart, visibleMetricKeys)}
+              </LineChart>
             ) : chart.type === 'line-multi' ? (
               <LineChart
                 data={chartData}

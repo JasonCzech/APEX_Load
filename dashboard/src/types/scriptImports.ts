@@ -316,6 +316,22 @@ export interface WSDLImportStats {
   soap_actions_detected?: string[]
 }
 
+export interface AsyncAPIImportStats {
+  format: string
+  asyncapi_version?: string
+  total_channels: number
+  total_operations: number
+  converted_actions: number
+  produce_actions: number
+  consume_actions: number
+  request_reply_actions: number
+  messages_with_correlation: number
+  server_protocols?: string[]
+  brokers?: string[]
+  schema_formats_detected?: string[]
+  skipped_operations?: string[]
+}
+
 export interface SampleCorrelation {
   name: string
   source: string
@@ -346,6 +362,7 @@ export type HARImportResult = ScriptImportResult<HARImportStats, SampleCorrelati
 export type OpenAPIImportResult = ScriptImportResult<OpenAPIImportStats, unknown>
 export type PostmanImportResult = ScriptImportResult<PostmanImportStats, unknown>
 export type WSDLImportResult = ScriptImportResult<WSDLImportStats, unknown>
+export type AsyncAPIImportResult = ScriptImportResult<AsyncAPIImportStats, unknown>
 export type RecorderImportResult = ScriptImportResult<Record<string, unknown>, RecorderCorrelation>
 
 export interface JMeterSupportMatrixResponse {

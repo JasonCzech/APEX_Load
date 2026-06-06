@@ -30,6 +30,13 @@ describe('chartStateForMonitorPreset', () => {
     expect(state.hiddenChartIds).toEqual([])
   })
 
+  it('hides load-under charts for role presets that do not request them', () => {
+    const state = chartStateForMonitorPreset('release_approver', ['vusers', 'tps', 'latency', 'errors', 'load_impact_avgMs'])
+
+    expect(state.chartOrder).toEqual(['latency', 'errors', 'tps', 'vusers', 'load_impact_avgMs'])
+    expect(state.hiddenChartIds).toEqual(['vusers', 'load_impact_avgMs'])
+  })
+
   it('keeps route latency series visible when the latest point has no latency sample', () => {
     const endpointKey = 'latency_https%3A%2F%2Fexample.test'
     const dnsKey = routeLatencyDetailSeriesKey(endpointKey, 'dns')
@@ -156,6 +163,40 @@ describe('chartStateForMonitorPreset', () => {
       'TCP Retransmits',
       'Disk Busy',
     ])
+  })
+
+  it('builds load-under graph measurement rows and CSV with load buckets', () => {
+    const chart: ChartConfig = {
+      id: 'load_impact_avgMs',
+      title: 'ART Under Load',
+      type: 'line-load-impact',
+      color: 'var(--chart-1)',
+      defaultMetricKeys: ['average'],
+      loadImpactMetric: { id: 'avgMs', key: 'avgMs', label: 'ART', unit: 'ms', category: 'performance' },
+    }
+    const data = [
+      {
+        time: '5 VUsers',
+        vusers: 5,
+        tps: 3,
+        avgMs: 120,
+        errorPct: 0,
+        p50: 0,
+        p90: 0,
+        p99: 0,
+        average: 120,
+        min: 100,
+        max: 140,
+      },
+    ]
+
+    expect(chartMetricKeys(chart, [], [])).toEqual(['average', 'min', 'max'])
+    expect(chartMetricRows(chart, [], [], ['#00a3ff'])).toEqual([
+      { key: 'average', label: 'Average', color: 'var(--chart-1)', unit: 'ms' },
+      { key: 'min', label: 'Min', color: 'var(--chart-3)', unit: 'ms' },
+      { key: 'max', label: 'Max', color: 'var(--chart-4)', unit: 'ms' },
+    ])
+    expect(graphCsvForChart(chart, data, [], [])).toBe('load,average,min,max\n5 VUsers,120,100,140')
   })
 
   it('can subtract measured route latency from response time chart data', () => {

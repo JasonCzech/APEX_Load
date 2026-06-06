@@ -27,7 +27,7 @@ import {
 } from '../../types'
 import { type AuthoringTemplate } from '../../types'
 import { type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
-import { type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type LoadRunnerSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type AsyncAPIImportResult, type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type LoadRunnerSupportMatrixResponse, type OpenAPIImportResult, type PostmanImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { apiFetch, request } from '../apiClient'
 
 type ScriptListResponse = {
@@ -625,6 +625,23 @@ export function useScriptApi() {
     [],
   )
 
+  const importAsyncAPI = useCallback(
+    async (file: File, options?: { name?: string; project_id?: string }): Promise<AsyncAPIImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('script_name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+
+      const res = await apiFetch('/scripts/import/asyncapi', { method: 'POST', body: formData })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error || res.statusText)
+      }
+      return res.json() as Promise<AsyncAPIImportResult>
+    },
+    [],
+  )
+
   const listScenarios = useCallback((projectId?: string) => request<ScenarioListResponse>(`/scenarios${buildScenarioQuery(projectId)}`), [])
 
   const createScenario = useCallback(
@@ -745,6 +762,7 @@ export function useScriptApi() {
       importOpenAPI,
       importPostman,
       importWSDL,
+      importAsyncAPI,
       listScenarios,
       createScenario,
       getScenario,
@@ -810,6 +828,7 @@ export function useScriptApi() {
       importOpenAPI,
       importPostman,
       importWSDL,
+      importAsyncAPI,
       listScenarios,
       createScenario,
       getScenario,

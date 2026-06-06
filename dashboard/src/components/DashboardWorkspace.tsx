@@ -68,17 +68,23 @@ const DEFAULT_ACTIVE_STATE: WorkspaceActiveState = {
 const CARD_WIDTH_SEQUENCE: DashboardWorkspaceCardWidth[] = ['full', 'half', 'natural']
 
 const LEGACY_CARD_ID_REPLACEMENTS: Record<string, string[]> = {
-  'load-impact-metrics': ['load-impact', 'metrics-under-load'],
+  'load-impact-metrics': ['load-impact', 'runtime-graphs'],
+  'metrics-under-load': ['runtime-graphs'],
 }
 
 function replacementCardIds(cardId: string, tabId?: string) {
   if (cardId === 'load-impact-metrics' && tabId === 'load-impact') return ['load-impact']
+  if (cardId === 'metrics-under-load' && tabId === 'metrics-under-load') return []
   return LEGACY_CARD_ID_REPLACEMENTS[cardId] || [cardId]
 }
 
 function normalizeLegacyTabLabel(id: string, label: string) {
   if (id === 'load-impact' && label === 'Load Impact + Metrics Under Load') return 'Load Impact'
   return label
+}
+
+function isRemovedLegacyTab(tab: DashboardWorkspaceTab) {
+  return tab.id === 'metrics-under-load' && tab.cardIds.length === 0
 }
 
 function safeReadJSON<T>(key: string, fallback: T): T {
@@ -193,7 +199,7 @@ function normalizeProfile(
     const cardIds = uniqueKnownCardIds(tab.cardIds || [], knownCards, id)
     const cardWidths = normalizeCardWidths(tab.cardWidths, cardIds)
     return { id, label, cardIds, ...(cardWidths ? { cardWidths } : {}) }
-  })
+  }).filter(tab => !isRemovedLegacyTab(tab))
 
   if (tabs.length === 0) {
     tabs = [{ id: 'overview', label: 'Overview', cardIds: [] }]
@@ -211,8 +217,9 @@ function normalizeProfile(
     })
   }
 
-  const activeTabId = tabs.some(tab => tab.id === profile.activeTabId)
-    ? profile.activeTabId
+  const requestedActiveTabId = profile.activeTabId === 'metrics-under-load' ? 'graphs' : profile.activeTabId
+  const activeTabId = tabs.some(tab => tab.id === requestedActiveTabId)
+    ? requestedActiveTabId
     : tabs[0]?.id
 
   return {

@@ -449,3 +449,101 @@ func devWebMatrixContains(entries []struct {
 	}
 	return false
 }
+
+func TestHandleImportAsyncAPI(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name":       "Orders Events",
+		"project_id": "proj-async",
+		"content": `asyncapi: 3.0.0
+info:
+  title: Orders
+  version: 1.0.0
+servers:
+  prod:
+    host: kafka:9092
+    protocol: kafka
+channels:
+  orderCreated:
+    address: orders.created
+    messages:
+      m:
+        payload:
+          type: object
+          properties:
+            orderId:
+              type: string
+operations:
+  send:
+    action: send
+    channel:
+      $ref: '#/channels/orderCreated'
+`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/asyncapi", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Script struct {
+			ProjectID string `json:"project_id"`
+			Protocol  string `json:"protocol"`
+			Actions   []struct {
+				Type   string `json:"type"`
+				Target string `json:"target"`
+			} `json:"actions"`
+		} `json:"script"`
+		ReviewSections []struct {
+			Key      string   `json:"key"`
+			Severity string   `json:"severity"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+		SourceReview map[string]any `json:"source_review"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.ProjectID != "proj-async" || result.Script.Protocol != "kafka" {
+		t.Fatalf("script = %+v", result.Script)
+	}
+	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Type != "kafka_produce" || result.Script.Actions[0].Target != "orders.created" {
+		t.Fatalf("unexpected actions: %+v", result.Script.Actions)
+	}
+	if len(result.SourceReview) == 0 {
+		t.Fatal("expected root source_review in response")
+	}
+	assertReviewSection(t, result.ReviewSections, "asyncapi_operations", "info", "send")
+}
+
+func TestHandleAsyncAPISupportMatrix(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/asyncapi/support-matrix", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		SupportMatrix []struct {
+			ID string `json:"id"`
+		} `json:"support_matrix"`
+		Notes []string `json:"notes"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.SupportMatrix) == 0 || len(result.Notes) == 0 {
+		t.Fatalf("expected non-empty support matrix and notes, got %+v", result)
+	}
+}

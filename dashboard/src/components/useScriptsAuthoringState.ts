@@ -5,7 +5,7 @@ import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { composeComponentDraft, createApiDraft, createDatabaseDraft, createGrpcDraft, createJavaHttpDraft, createJmsDraft, createNetworkDraft, createSoapDraft, createWebDraft, createWebSocketDraft } from './scriptDraftFactories'
 
-export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample' | 'java-http-import' | 'devweb-import' | 'har-import' | 'openapi-import' | 'postman-import' | 'wsdl-import'
+export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample' | 'java-http-import' | 'devweb-import' | 'har-import' | 'openapi-import' | 'postman-import' | 'wsdl-import' | 'asyncapi-import'
 
 export interface DraftEditorFocus {
 	targetAction?: string | null
@@ -63,6 +63,7 @@ export interface ScriptsCreateOptionActions {
   openOpenAPIImport: () => void
   openPostmanImport: () => void
   openWSDLImport: () => void
+  openAsyncAPIImport: () => void
 }
 
 interface ScriptsAuthoringStateModel {
@@ -181,6 +182,10 @@ export function useScriptsAuthoringState({
 
   const openWSDLImport = useCallback(() => {
     setSubview('wsdl-import')
+  }, [setSubview])
+
+  const openAsyncAPIImport = useCallback(() => {
+    setSubview('asyncapi-import')
   }, [setSubview])
 
   const openDraftEditor = useCallback((script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null) => {
@@ -330,6 +335,7 @@ export function useScriptsAuthoringState({
       openOpenAPIImport,
       openPostmanImport,
       openWSDLImport,
+      openAsyncAPIImport,
     },
   }
 }

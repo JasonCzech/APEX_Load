@@ -3,7 +3,6 @@ import { Fragment, useState } from 'react'
 import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, MetricsHistoryPoint, RunArchiveAnalysisEdge, RunArchiveAnalysisNode, RunArchiveAnalysisResponse, RunArchiveAnalysisStats, RunArchiveActionStats, RunArchiveReport, RunArchiveSOAPFaultTimelineBucket, RunArchiveSOAPPayloadTimelineBucket, RunArchiveTransactionDrilldown, TestSummary, TransactionEvent } from '../types'
 import BrowserBreakdownChart from './BrowserBreakdownChart'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
-import LoadImpactMetricGraphs from './LoadImpactMetricGraphs'
 import {
   BrowserBreakdown,
   buildBrowserBreakdownData,
@@ -50,7 +49,6 @@ type ArchiveView =
   | 'report-summary-timeline'
   | 'report-analysis'
   | 'load-impact'
-  | 'metrics-under-load'
   | 'action-summary'
   | 'transactions'
 
@@ -781,7 +779,6 @@ export default function TestExecutionArchive({
   const showReportSummaryTimelineView = showFullReportView || view === 'report-summary-timeline'
   const showReportAnalysisView = showFullReportView || view === 'report-analysis'
   const showLoadImpactView = showAllViews || view === 'load-impact'
-  const showMetricsUnderLoadView = showAllViews || view === 'metrics-under-load'
   const showActionSummaryView = showAllViews || view === 'action-summary'
   const showTransactionsView = showAllViews || view === 'transactions'
   const renderArchiveSortButton = (key: ArchiveTransactionSortKey, label: string) => {
@@ -979,17 +976,6 @@ export default function TestExecutionArchive({
                 title="Load Impact"
                 subtitle="Archived performance and resource response grouped by active VUser load."
                 emptyMessage="Load impact appears when archived interval summaries or resource samples include active VUser data."
-              />
-          )}
-
-          {showMetricsUnderLoadView && (
-              <LoadImpactMetricGraphs
-                points={loadImpactData}
-                loading={loadImpactLoading}
-                error={loadImpactError}
-                title="Metrics Under Load"
-                subtitle="Add or remove report graphs for selected metrics across active VUser load."
-                emptyMessage="Load metric graphs appear when archived interval summaries or resource samples include active VUser data."
               />
           )}
 

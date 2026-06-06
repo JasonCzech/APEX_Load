@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type StoredScript } from '../types'
-import { type DevWebImportResult, type HARImportResult, type OpenAPIImportResult, type PostmanImportResult, type WSDLImportResult } from '../types/scriptImports'
+import { type AsyncAPIImportResult, type DevWebImportResult, type HARImportResult, type OpenAPIImportResult, type PostmanImportResult, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
@@ -12,7 +12,7 @@ import { withFallbackPersistedScript } from './importSaveUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
 
-type ImportKind = 'devweb' | 'har' | 'openapi' | 'postman' | 'wsdl'
+type ImportKind = 'devweb' | 'har' | 'openapi' | 'postman' | 'wsdl' | 'asyncapi'
 
 interface Props {
   kind: ImportKind
@@ -58,9 +58,16 @@ const copy = {
     drop: 'Drop a .wsdl or .xml file here',
     button: 'Convert WSDL',
   },
+  asyncapi: {
+    title: 'Import AsyncAPI',
+    subtitle: 'Upload an AsyncAPI 2.x or 3.x document and generate Kafka produce/consume/request-reply actions with brokers, topics, and sample payloads.',
+    accept: '.json,.yaml,.yml,application/json,application/yaml,text/yaml,text/plain',
+    drop: 'Drop an AsyncAPI JSON or YAML file here',
+    button: 'Convert AsyncAPI',
+  },
 } satisfies Record<ImportKind, Record<string, string>>
 
-type ProtocolImportResult = DevWebImportResult | HARImportResult | OpenAPIImportResult | PostmanImportResult | WSDLImportResult
+type ProtocolImportResult = DevWebImportResult | HARImportResult | OpenAPIImportResult | PostmanImportResult | WSDLImportResult | AsyncAPIImportResult
 
 function sourceReviewForImport(result?: ProtocolImportResult | null, script?: ScriptDefinition | null): SourceReview | null {
   const metadataReview = script?.metadata?.import?.preserved?.source_review as SourceReview | undefined
@@ -84,7 +91,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
 
   const handleConvert = async () => {
     if (!file) {
-      setMessageError(`Please upload ${kind === 'devweb' ? 'a DevWeb script' : kind === 'har' ? 'a HAR file' : kind === 'openapi' ? 'an OpenAPI document' : kind === 'postman' ? 'a Postman collection' : 'a WSDL document'}.`)
+      setMessageError(`Please upload ${kind === 'devweb' ? 'a DevWeb script' : kind === 'har' ? 'a HAR file' : kind === 'openapi' ? 'an OpenAPI document' : kind === 'postman' ? 'a Postman collection' : kind === 'asyncapi' ? 'an AsyncAPI document' : 'a WSDL document'}.`)
       return
     }
     setMessageError('')
@@ -99,6 +106,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
         if (kind === 'har') return api.importHAR(file, { ...options, include_static_assets: includeStaticAssets })
         if (kind === 'openapi') return api.importOpenAPI(file, options)
         if (kind === 'postman') return api.importPostman(file, options)
+        if (kind === 'asyncapi') return api.importAsyncAPI(file, { name: options.name, project_id: options.project_id })
         return api.importWSDL(file, { ...options, soap_version: soapVersion })
       }, { clearValue: true })
     } catch (error: unknown) {
@@ -178,7 +186,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
         <div className="sample-import-result">
           <ScriptImportReview
             title="Review Generated Script"
-            subtitle={`${actionCount} action(s) generated from ${kind === 'devweb' ? 'DevWeb source' : kind === 'har' ? 'HAR entries' : kind === 'openapi' ? 'OpenAPI operations' : kind === 'postman' ? 'Postman requests' : 'WSDL operations'}.`}
+            subtitle={`${actionCount} action(s) generated from ${kind === 'devweb' ? 'DevWeb source' : kind === 'har' ? 'HAR entries' : kind === 'openapi' ? 'OpenAPI operations' : kind === 'postman' ? 'Postman requests' : kind === 'asyncapi' ? 'AsyncAPI operations' : 'WSDL operations'}.`}
             script={reviewedScript}
             warnings={result.warnings}
             unsupportedElements={result.unsupported_elements}

@@ -67,6 +67,7 @@ export default function ScriptsAuthoringShell({
         onOpenOpenAPIImport={createOptionActions.openOpenAPIImport}
         onOpenPostmanImport={createOptionActions.openPostmanImport}
         onOpenWSDLImport={createOptionActions.openWSDLImport}
+        onOpenAsyncAPIImport={createOptionActions.openAsyncAPIImport}
         scripts={scripts}
         onStartExistingScript={onStartExistingScript}
       />

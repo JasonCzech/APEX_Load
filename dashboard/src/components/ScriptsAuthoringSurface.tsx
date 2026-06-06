@@ -144,6 +144,11 @@ export default function ScriptsAuthoringSurface({
         <ProtocolAssetImport kind="wsdl" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
         onOpenCreateOptions,
       )
+    case 'asyncapi-import':
+      return renderCreateOptionsSurface(
+        <ProtocolAssetImport kind="asyncapi" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
+      )
     default:
       return null
   }

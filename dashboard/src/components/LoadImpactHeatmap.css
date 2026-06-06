@@ -344,48 +344,17 @@
   border-bottom: 0;
 }
 
-.load-impact-graphs-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 14px;
-  margin-top: 16px;
-}
-
-.load-impact-graph-card {
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-surface);
-  padding: 14px;
-}
-
-.load-impact-graph-card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.load-impact-graph-card h4,
 .load-impact-graph-drawer h3 {
   margin: 0;
   color: var(--text-primary);
   font-size: 0.96rem;
 }
 
-.load-impact-graph-card p,
 .load-impact-graph-drawer p {
   margin: 4px 0 0;
   color: var(--text-muted);
   font-size: 0.82rem;
   line-height: 1.4;
-}
-
-.load-impact-graph-canvas {
-  width: 100%;
-  min-width: 0;
-  height: 230px;
 }
 
 .load-impact-graph-drawer-layer {
@@ -523,10 +492,6 @@
   .load-impact-3d-readout {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .load-impact-graphs-grid {
-    grid-template-columns: 1fr;
   }
 
   .load-impact-graph-drawer {

@@ -53,6 +53,37 @@ function findButton(container: HTMLElement, label: string): HTMLButtonElement | 
   return Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === label) as HTMLButtonElement | undefined
 }
 
+function findButtonContaining(container: HTMLElement, label: string): HTMLButtonElement | undefined {
+  return Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes(label)) as HTMLButtonElement | undefined
+}
+
+async function clickButton(container: HTMLElement, label: string, contains = false) {
+  const button = contains ? findButtonContaining(container, label) : findButton(container, label)
+  expect(button).toBeDefined()
+  if (!button) return
+  await act(async () => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+}
+
+async function clickScopedButton(scope: HTMLElement, label: string) {
+  const button = findButton(scope, label)
+  expect(button).toBeDefined()
+  if (!button) return
+  await act(async () => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+}
+
+async function clickSortHeader(container: HTMLElement, label: string) {
+  const header = Array.from(container.querySelectorAll<HTMLButtonElement>('th.sortable button')).find(button => button.textContent?.includes(label))
+  expect(header).toBeDefined()
+  if (!header) return
+  await act(async () => {
+    header.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+}
+
 function changeInput(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
   setter?.call(input, value)
@@ -63,6 +94,19 @@ function changeSelect(select: HTMLSelectElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
   setter?.call(select, value)
   select.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+function tablePrimaryTexts(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll('.access-data-table tbody tr .access-row-primary'))
+    .map(button => button.textContent?.trim() || '')
+}
+
+function selectByLabelText(container: HTMLElement, label: string): HTMLSelectElement | undefined {
+  return Array.from(container.querySelectorAll('label')).find(item => item.textContent?.includes(label))?.querySelector('select') as HTMLSelectElement | undefined
+}
+
+function inputByPlaceholder(container: HTMLElement, placeholder: string): HTMLInputElement | undefined {
+  return container.querySelector(`input[placeholder="${placeholder}"]`) as HTMLInputElement | undefined
 }
 
 describe('AccessPage', () => {
@@ -83,15 +127,28 @@ describe('AccessPage', () => {
           global_roles: ['viewer'],
           project_roles: { 'project-1': ['editor'] },
           scopes: ['tests:run', 'results:read'],
+          last_used_at: '2026-05-17T02:00:00Z',
+          key_rotated_at: '2026-05-16T00:00:00Z',
+          rotation_due_at: '2026-08-16T00:00:00Z',
           created_at: '2026-05-16T00:00:00Z',
-          updated_at: '2026-05-16T00:00:00Z',
+          updated_at: '2026-05-18T00:00:00Z',
+        },
+        {
+          id: 'svc-2',
+          name: 'API Reporter',
+          description: 'Read-only exports',
+          active: false,
+          global_roles: ['viewer'],
+          scopes: ['results:read', 'system:read'],
+          created_at: '2026-05-14T00:00:00Z',
+          updated_at: '2026-05-14T00:00:00Z',
         },
       ],
-      count: 1,
+      count: 2,
     })
     apiMock.createAuthServiceAccount.mockResolvedValue({
       service_account: {
-        id: 'svc-2',
+        id: 'svc-3',
         name: 'CI Runner',
         description: 'Run tests, read results, and update scripts in the selected project.',
         active: true,
@@ -126,18 +183,34 @@ describe('AccessPage', () => {
           email: 'alice@example.com',
           display_name: 'Alice Admin',
           active: true,
-          bindings: [],
+          bindings: [
+            { id: 'binding-1', user_id: 'user-1', scope_type: 'project', scope_id: 'project-1', role: 'editor', created_at: '2026-05-16T00:00:00Z', updated_at: '2026-05-16T00:00:00Z' },
+          ],
+          last_seen_at: '2026-05-17T00:00:00Z',
           created_at: '2026-05-16T00:00:00Z',
-          updated_at: '2026-05-16T00:00:00Z',
+          updated_at: '2026-05-18T00:00:00Z',
+        },
+        {
+          id: 'user-2',
+          subject: 'bob',
+          email: 'bob@example.com',
+          display_name: 'Bob Viewer',
+          active: false,
+          bindings: [
+            { id: 'binding-2', user_id: 'user-2', scope_type: 'domain', scope_id: 'domain-1', role: 'viewer', created_at: '2026-05-15T00:00:00Z', updated_at: '2026-05-15T00:00:00Z' },
+          ],
+          created_at: '2026-05-15T00:00:00Z',
+          updated_at: '2026-05-15T00:00:00Z',
+          disabled_at: '2026-05-16T00:00:00Z',
         },
       ],
-      count: 1,
+      count: 2,
     })
     apiMock.createAuthUser.mockResolvedValue({
-      id: 'user-2',
-      subject: 'bob',
-      email: 'bob@example.com',
-      display_name: 'Bob Editor',
+      id: 'user-3',
+      subject: 'cara',
+      email: 'cara@example.com',
+      display_name: 'Cara QA',
       active: true,
       bindings: [],
       created_at: '2026-05-16T04:00:00Z',
@@ -145,9 +218,9 @@ describe('AccessPage', () => {
     })
     apiMock.updateAuthUser.mockResolvedValue({
       id: 'user-1',
-      subject: 'alice',
-      email: 'alice@example.com',
-      display_name: 'Alice Admin',
+      subject: 'alice-updated',
+      email: 'alice.updated@example.com',
+      display_name: 'Alice Updated',
       active: true,
       bindings: [],
       created_at: '2026-05-16T00:00:00Z',
@@ -164,20 +237,38 @@ describe('AccessPage', () => {
           action: 'auth.user.create',
           actor_type: 'user',
           actor_subject: 'alice',
+          actor_display_name: 'Alice Admin',
           domain_id: 'domain-1',
           project_id: 'project-1',
           resource_type: 'user',
-          resource_id: 'user-2',
+          resource_id: 'user-3',
           status: 'success',
+          details: { subject: 'cara' },
           created_at: '2026-05-16T05:00:00Z',
+        },
+        {
+          id: 'event-2',
+          action: 'auth.service_account.rotate',
+          actor_type: 'service_account',
+          actor_subject: 'Nightly CI',
+          domain_id: 'domain-1',
+          project_id: 'project-2',
+          resource_type: 'service_account',
+          resource_id: 'svc-1',
+          status: 'failure',
+          details: { reason: 'expired key' },
+          created_at: '2026-05-15T05:00:00Z',
         },
       ],
       usage: {
         generated_at: '2026-05-16T05:00:00Z',
-        totals: { run_count: 1, total_vusers: 10, duration_seconds: 60, vuser_seconds: 600 },
-        by_user: [{ key: 'alice', run_count: 1, total_vusers: 10, duration_seconds: 60, vuser_seconds: 600 }],
+        totals: { run_count: 3, total_vusers: 35, duration_seconds: 300, vuser_seconds: 3600 },
+        by_user: [
+          { key: 'alice', run_count: 2, total_vusers: 30, duration_seconds: 240, vuser_seconds: 3000 },
+          { key: 'bob', run_count: 1, total_vusers: 5, duration_seconds: 60, vuser_seconds: 600 },
+        ],
       },
-      count: 1,
+      count: 2,
       limit: 50,
       offset: 0,
     })
@@ -193,16 +284,19 @@ describe('AccessPage', () => {
     vi.clearAllMocks()
   })
 
-  it('creates a service-account key from preset roles, scopes, and project picker selections', async () => {
+  it('creates a service-account key from the Generate Key subtab', async () => {
     await act(async () => {
       root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUsers={false} canViewUserActivity={false} canManageServiceAccounts />)
     })
     await flushPromises()
 
-    expect(container.textContent).toContain('Access')
     expect(container.textContent).toContain('Service Accounts')
-    expect(container.textContent).toContain('Generate API Key')
+    expect(container.textContent).toContain('Existing Accounts')
     expect(container.textContent).toContain('Nightly CI')
+
+    await clickButton(container, 'Generate Key')
+    expect(container.textContent).toContain('CI runner')
+    expect(container.textContent).toContain('Create Service Account')
 
     const searchCheckbox = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => {
       const row = input.closest('.access-project-role-row')
@@ -214,14 +308,7 @@ describe('AccessPage', () => {
     await act(async () => {
       searchCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-
-    const createButton = findButton(container, 'Create Service Account')
-    expect(createButton).toBeDefined()
-    if (!createButton) return
-
-    await act(async () => {
-      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    await clickButton(container, 'Create Service Account')
     await flushPromises()
 
     expect(apiMock.createAuthServiceAccount).toHaveBeenCalledWith(expect.objectContaining({
@@ -236,134 +323,212 @@ describe('AccessPage', () => {
     }))
     expect(container.textContent).toContain('API Key Created')
     expect(container.textContent).toContain('srk_created_key')
-    expect(container.textContent).toContain('python3 mcp/server.py')
-    expect(container.textContent).toContain('Authorization: Bearer srk_created_key')
   })
 
-  it('confirms rotate, disable, and delete lifecycle actions', async () => {
+  it('sorts, filters, selects, and performs service-account lifecycle actions', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     await act(async () => {
       root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUsers={false} canViewUserActivity={false} canManageServiceAccounts />)
     })
     await flushPromises()
 
-    const rotateButton = findButton(container, 'Rotate Key')
-    expect(rotateButton).toBeDefined()
-    if (!rotateButton) return
+    await clickSortHeader(container, 'Account')
+    expect(tablePrimaryTexts(container)).toEqual(['API Reporter', 'Nightly CI'])
+    await clickSortHeader(container, 'Account')
+    expect(tablePrimaryTexts(container)).toEqual(['Nightly CI', 'API Reporter'])
+
+    const statusSelect = selectByLabelText(container, 'Status')
+    expect(statusSelect).toBeDefined()
+    if (!statusSelect) return
     await act(async () => {
-      rotateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      changeSelect(statusSelect, 'disabled')
     })
+    expect(tablePrimaryTexts(container)).toEqual(['API Reporter'])
+
+    await act(async () => {
+      changeSelect(statusSelect, '')
+    })
+    const accountButton = findButton(container, 'Nightly CI')
+    expect(accountButton).toBeDefined()
+    if (!accountButton) return
+    await act(async () => {
+      accountButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const inspector = container.querySelector('aside[aria-label="Selected service account details"]') as HTMLElement | null
+    expect(inspector?.textContent).toContain('Account Details')
+    if (!inspector) return
+
+    await clickScopedButton(inspector, 'Rotate Key')
     await flushPromises()
     expect(apiMock.rotateAuthServiceAccount).toHaveBeenCalledWith('svc-1')
     expect(container.textContent).toContain('srk_rotated_key')
 
-    const disableButton = findButton(container, 'Disable')
-    expect(disableButton).toBeDefined()
-    if (!disableButton) return
-    await act(async () => {
-      disableButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    await clickScopedButton(inspector, 'Disable')
     await flushPromises()
     expect(apiMock.updateAuthServiceAccount).toHaveBeenCalledWith('svc-1', { active: false })
 
-    const deleteButton = findButton(container, 'Delete')
-    expect(deleteButton).toBeDefined()
-    if (!deleteButton) return
-    await act(async () => {
-      deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    await clickScopedButton(inspector, 'Delete')
     await flushPromises()
     expect(apiMock.deleteAuthServiceAccount).toHaveBeenCalledWith('svc-1')
   })
 
-  it('onboards users and creates scoped role bindings', async () => {
+  it('onboards users with initial access and edits existing user access from the main panel', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
     await act(async () => {
-      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUsers canViewUserActivity={false} canManageServiceAccounts={false} />)
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUsers canViewUserActivity canManageServiceAccounts={false} />)
     })
     await flushPromises()
 
-    expect(container.textContent).toContain('Users')
+    expect(container.textContent).toContain('Existing Users')
     expect(container.textContent).toContain('Alice Admin')
+    expect(container.textContent).toContain('3,000 VUser seconds')
 
-    const subjectInput = container.querySelector('input[placeholder="oidc-subject-or-upstream-user"]') as HTMLInputElement | null
-    const emailInput = container.querySelector('input[placeholder="person@example.com"]') as HTMLInputElement | null
-    const nameInput = container.querySelector('input[placeholder="Jordan Lee"]') as HTMLInputElement | null
-    expect(subjectInput).toBeTruthy()
-    expect(emailInput).toBeTruthy()
-    expect(nameInput).toBeTruthy()
+    const searchInput = inputByPlaceholder(container, 'name, email, role, scope')
+    expect(searchInput).toBeDefined()
+    if (!searchInput) return
+    await act(async () => {
+      changeInput(searchInput, 'bob')
+    })
+    expect(tablePrimaryTexts(container)).toEqual(['Bob Viewer'])
+
+    await act(async () => {
+      changeInput(searchInput, '')
+    })
+    const roleSelect = selectByLabelText(container, 'Role')
+    expect(roleSelect).toBeDefined()
+    if (!roleSelect) return
+    await act(async () => {
+      changeSelect(roleSelect, 'editor')
+    })
+    expect(tablePrimaryTexts(container)).toEqual(['Alice Admin'])
+
+    await clickButton(container, 'Onboard Users')
+    const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
+    const emailInput = inputByPlaceholder(container, 'person@example.com')
+    const nameInput = inputByPlaceholder(container, 'Jordan Lee')
+    expect(subjectInput).toBeDefined()
+    expect(emailInput).toBeDefined()
+    expect(nameInput).toBeDefined()
     if (!subjectInput || !emailInput || !nameInput) return
+    expect(container.textContent).toContain('Initial Permissions')
 
     await act(async () => {
-      changeInput(subjectInput, 'bob')
-      changeInput(emailInput, 'bob@example.com')
-      changeInput(nameInput, 'Bob Editor')
+      changeInput(subjectInput, 'cara')
+      changeInput(emailInput, 'cara@example.com')
+      changeInput(nameInput, 'Cara QA')
     })
-
-    const createUserButton = findButton(container, 'Create User')
-    expect(createUserButton).toBeDefined()
-    if (!createUserButton) return
+    await clickButton(container, 'Add Domain')
+    await clickButton(container, 'Add Project')
+    const onboardProjectRows = Array.from(container.querySelectorAll<HTMLElement>('.access-binding-draft-row')).filter(row => {
+      const scopeSelect = row.querySelector('select') as HTMLSelectElement | null
+      return scopeSelect?.value === 'project'
+    })
+    expect(onboardProjectRows.length).toBeGreaterThanOrEqual(2)
+    const onboardSecondProjectSelect = onboardProjectRows[1]?.querySelectorAll<HTMLSelectElement>('select')[1]
+    expect(onboardSecondProjectSelect).toBeDefined()
+    if (!onboardSecondProjectSelect) return
     await act(async () => {
-      createUserButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      changeSelect(onboardSecondProjectSelect, 'project-2')
     })
+    await clickButton(container, 'Create User')
     await flushPromises()
-
     expect(apiMock.createAuthUser).toHaveBeenCalledWith({
-      subject: 'bob',
-      email: 'bob@example.com',
-      display_name: 'Bob Editor',
+      subject: 'cara',
+      email: 'cara@example.com',
+      display_name: 'Cara QA',
     })
+    const onboardBindingCalls = apiMock.createAuthUserBinding.mock.calls.filter(call => call[0] === 'user-3')
+    expect(onboardBindingCalls).toEqual([
+      ['user-3', { scope_type: 'project', scope_id: 'project-1', role: 'viewer' }],
+      ['user-3', { scope_type: 'domain', scope_id: 'domain-1', role: 'viewer' }],
+      ['user-3', { scope_type: 'project', scope_id: 'project-2', role: 'viewer' }],
+    ])
 
-    const scopeSelect = container.querySelector('.access-control-section select') as HTMLSelectElement | null
-    expect(scopeSelect).toBeTruthy()
-    if (!scopeSelect) return
+    await clickButton(container, 'Existing Users')
+    const aliceButton = findButton(container, 'Alice Admin')
+    expect(aliceButton).toBeDefined()
+    if (!aliceButton) return
     await act(async () => {
-      changeSelect(scopeSelect, 'domain')
+      aliceButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    const inspector = container.querySelector('aside[aria-label="Selected user details"]') as HTMLElement | null
+    expect(inspector?.textContent).toContain('User Details')
+    if (!inspector) return
+    expect(inspector.querySelectorAll('input, select').length).toBe(0)
+    expect(inspector.textContent).not.toContain('Save Changes')
+    expect(inspector.textContent).not.toContain('Add Project')
 
-    const addRoleButton = findButton(container, 'Add Role')
-    expect(addRoleButton).toBeDefined()
-    if (!addRoleButton) return
+    const userManagement = container.querySelector('.access-user-management') as HTMLElement | null
+    expect(userManagement?.textContent).toContain('User Access')
+    expect(userManagement?.textContent).toContain('Edit')
+    if (!userManagement) return
+    expect(userManagement.querySelectorAll('input, select').length).toBe(0)
+
+    await clickScopedButton(userManagement, 'Edit')
+    const editManagement = container.querySelector('.access-user-management') as HTMLElement | null
+    expect(editManagement?.textContent).toContain('Edit User')
+    expect(editManagement?.textContent).toContain('Roles, Domains, and Projects')
+    if (!editManagement) return
+
+    const managementInputs = editManagement.querySelectorAll<HTMLInputElement>('input')
     await act(async () => {
-      addRoleButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      changeInput(managementInputs[0], 'alice-updated')
+      changeInput(managementInputs[1], 'alice.updated@example.com')
+      changeInput(managementInputs[2], 'Alice Updated')
     })
+    await clickScopedButton(editManagement, 'Remove Access')
     await flushPromises()
+    expect(apiMock.disableAuthUser).toHaveBeenCalledWith('user-1')
 
-    expect(apiMock.createAuthUserBinding).toHaveBeenCalledWith('user-1', {
-      scope_type: 'domain',
-      scope_id: 'domain-1',
-      role: 'viewer',
+    await clickScopedButton(editManagement, 'Add Domain')
+    await clickScopedButton(editManagement, 'Add Project')
+    const editProjectRows = Array.from(editManagement.querySelectorAll<HTMLElement>('.access-binding-draft-row')).filter(row => {
+      const scopeSelect = row.querySelector('select') as HTMLSelectElement | null
+      return scopeSelect?.value === 'project'
     })
+    expect(editProjectRows.length).toBeGreaterThanOrEqual(2)
+    const editSecondProjectSelect = editProjectRows[1]?.querySelectorAll<HTMLSelectElement>('select')[1]
+    expect(editSecondProjectSelect).toBeDefined()
+    if (!editSecondProjectSelect) return
+    await act(async () => {
+      changeSelect(editSecondProjectSelect, 'project-2')
+    })
+    await clickScopedButton(editManagement, 'Save Changes')
+    await flushPromises()
+    expect(apiMock.updateAuthUser).toHaveBeenCalledWith('user-1', {
+      subject: 'alice-updated',
+      email: 'alice.updated@example.com',
+      display_name: 'Alice Updated',
+    })
+    const editBindingCalls = apiMock.createAuthUserBinding.mock.calls.filter(call => call[0] === 'user-1')
+    expect(editBindingCalls).toEqual([
+      ['user-1', { scope_type: 'domain', scope_id: 'domain-1', role: 'viewer' }],
+      ['user-1', { scope_type: 'project', scope_id: 'project-2', role: 'viewer' }],
+    ])
+    expect(apiMock.deleteAuthUserBinding).not.toHaveBeenCalled()
   })
 
-  it('constructs activity filters and exports CSV', async () => {
+  it('filters, exports, sorts, and selects activity events and usage rows', async () => {
     await act(async () => {
       root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUsers={false} canViewUserActivity canManageServiceAccounts={false} />)
     })
     await flushPromises()
 
-    expect(container.textContent).toContain('Activity')
+    expect(container.textContent).toContain('Events')
     expect(container.textContent).toContain('auth.user.create')
-    expect(container.textContent).toContain('alice')
 
-    const userInput = container.querySelector('input[placeholder="actor subject"]') as HTMLInputElement | null
-    const actionInput = container.querySelector('input[placeholder="auth.user.create"]') as HTMLInputElement | null
-    expect(userInput).toBeTruthy()
-    expect(actionInput).toBeTruthy()
+    const userInput = inputByPlaceholder(container, 'actor subject')
+    const actionInput = inputByPlaceholder(container, 'auth.user.create')
+    expect(userInput).toBeDefined()
+    expect(actionInput).toBeDefined()
     if (!userInput || !actionInput) return
 
     await act(async () => {
       changeInput(userInput, 'alice')
       changeInput(actionInput, 'auth.user.create')
     })
-
-    const applyButton = findButton(container, 'Apply Filters')
-    expect(applyButton).toBeDefined()
-    if (!applyButton) return
-    await act(async () => {
-      applyButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    await clickButton(container, 'Apply Filters')
     await flushPromises()
-
     expect(apiMock.getAuthUserActivity).toHaveBeenLastCalledWith(expect.objectContaining({
       actor_subject: 'alice',
       action: 'auth.user.create',
@@ -371,18 +536,38 @@ describe('AccessPage', () => {
       project_id: 'project-1',
     }))
 
-    const exportButton = findButton(container, 'Export CSV')
-    expect(exportButton).toBeDefined()
-    if (!exportButton) return
-    await act(async () => {
-      exportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    await clickButton(container, 'Export CSV')
     await flushPromises()
-
     expect(apiMock.downloadAuthUserActivity).toHaveBeenCalledWith(expect.objectContaining({
       actor_subject: 'alice',
       action: 'auth.user.create',
     }))
     expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), expect.stringMatching(/^apexload-user-activity-\d{4}-\d{2}-\d{2}\.csv$/))
+
+    const tableSearch = inputByPlaceholder(container, 'actor, action, resource, details')
+    expect(tableSearch).toBeDefined()
+    if (!tableSearch) return
+    await act(async () => {
+      changeInput(tableSearch, 'expired key')
+    })
+    expect(container.querySelector('.access-data-table tbody')?.textContent).toContain('auth.service_account.rotate')
+    expect(container.querySelector('.access-data-table tbody')?.textContent).not.toContain('auth.user.create')
+
+    const rotateEventActor = findButton(container, 'Nightly CI')
+    expect(rotateEventActor).toBeDefined()
+    if (!rotateEventActor) return
+    await act(async () => {
+      rotateEventActor.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('aside[aria-label="Selected activity event details"]')?.textContent).toContain('expired key')
+
+    await clickButton(container, 'Usage By User')
+    expect(container.textContent).toContain('alice')
+    await clickSortHeader(container, 'User')
+    const usageRows = Array.from(container.querySelectorAll('.access-usage-table tbody tr')).map(row => row.textContent || '')
+    expect(usageRows[0]).toContain('alice')
+    await clickSortHeader(container, 'VUser Seconds')
+    const sortedUsageRows = Array.from(container.querySelectorAll('.access-usage-table tbody tr')).map(row => row.textContent || '')
+    expect(sortedUsageRows[0]).toContain('alice')
   })
 })

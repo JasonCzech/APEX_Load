@@ -28,6 +28,7 @@ interface Props {
   onOpenOpenAPIImport: () => void
   onOpenPostmanImport: () => void
   onOpenWSDLImport: () => void
+  onOpenAsyncAPIImport: () => void
   scripts?: StoredScript[]
   onStartExistingScript?: (script: StoredScript) => void
 }
@@ -154,6 +155,7 @@ export default function ScriptCreateOptions({
   onOpenOpenAPIImport,
   onOpenPostmanImport,
   onOpenWSDLImport,
+  onOpenAsyncAPIImport,
   scripts = [],
   onStartExistingScript,
 }: Props) {
@@ -678,6 +680,11 @@ export default function ScriptCreateOptions({
                   <span className="script-create-type-badge">WSDL</span>
                   <h3>WSDL / SOAP</h3>
                   <p>Generate SOAP operation actions with SOAPAction, namespaces, sample envelopes, and fault-review guidance.</p>
+                </button>
+                <button className="script-create-option primary" onClick={onOpenAsyncAPIImport}>
+                  <span className="script-create-type-badge">ASYNC</span>
+                  <h3>AsyncAPI / Kafka</h3>
+                  <p>Convert AsyncAPI 2.x/3.x channels into Kafka produce, consume, and request-reply actions with brokers, topics, and sample payloads.</p>
                 </button>
               </div>
             </div>
