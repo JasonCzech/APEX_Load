@@ -55,6 +55,17 @@ type config struct {
 	Timeout           time.Duration
 	Properties        map[string]string
 	Mock              bool
+
+	// TLS material (consumed by the franz-go adapter under the kafka_real build tag).
+	TLSInsecureSkipVerify bool
+	TLSClientCertFile     string
+	TLSClientKeyFile      string
+	TLSCACertFile         string
+}
+
+// tlsConfigured reports whether any TLS material was supplied.
+func (c config) tlsConfigured() bool {
+	return c.TLSInsecureSkipVerify || c.TLSClientCertFile != "" || c.TLSClientKeyFile != "" || c.TLSCACertFile != ""
 }
 
 func (k *Kafka) Name() string { return k.name }
@@ -77,6 +88,11 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 		Timeout:           durationValue(cfg, "kafka_timeout_ms", 5*time.Second),
 		Properties:        stringMapValue(cfg, "kafka_properties"),
 		Mock:              boolValue(cfg, "kafka_mock"),
+
+		TLSInsecureSkipVerify: boolValue(cfg, "kafka_tls_insecure_skip_verify"),
+		TLSClientCertFile:     stringValue(cfg, "kafka_tls_client_cert_file"),
+		TLSClientKeyFile:      stringValue(cfg, "kafka_tls_client_key_file"),
+		TLSCACertFile:         stringValue(cfg, "kafka_tls_ca_cert_file"),
 	}
 	// Secret references in either field are already interpolated by the engine
 	// (`{{secret.NAME}}`); honor the dedicated secret field as a fallback.
@@ -107,7 +123,10 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 	if k.cfg.Mock {
 		k.client = mockClient{broker: sharedBroker}
 	} else {
-		k.client = unavailableClient{brokers: k.cfg.Brokers}
+		// The real network adapter is provided by the build-tagged seam
+		// (newRealClient). Default builds return an unavailable stub; build with
+		// -tags kafka_real to compile in the franz-go-backed client.
+		k.client = newRealClient(k.cfg)
 	}
 	k.initialized = true
 	return nil

@@ -1,9 +1,33 @@
 # Implementation Plan: Direct Kafka Messaging Testing + AsyncAPI Import
 
-> Status: **Phases 1–7 implemented plus direct Kafka authoring** (Kafka protocol
-> plugin, DSL integration, binary wiring, AsyncAPI converter, API routes, the dashboard
-> AsyncAPI import wizard, and a Kafka starter in the Script Builder). The franz-go real
-> network adapter is the only outstanding follow-on. This document is the design of record.
+> Status: **Fully implemented.** Kafka protocol plugin, DSL integration, binary wiring,
+> AsyncAPI converter + import wizard, direct Kafka authoring, and the franz-go real
+> network adapter (opt-in via the `kafka_real` build tag) are all in place. This document
+> is the design of record.
+
+## Opt-in real adapter (franz-go)
+The default build ships the in-memory mock broker plus an "unavailable" stub for the
+non-mock path, so the standard binary stays self-contained and fully tested without a
+broker dependency. The real network adapter is compiled in via a build tag:
+
+```
+go build -tags kafka_real ./cmd/generator ./cmd/controller ./cmd/apexctl
+```
+
+With the tag, `config.kafka.mock: false` uses a `github.com/twmb/franz-go`-backed client
+(`pkg/protocol/kafka/realclient_franz.go`) supporting SASL PLAIN/SCRAM-256/SCRAM-512, TLS
+(insecure / client cert / CA), acks, compression, consumer groups, and produce / consume /
+request-reply / commit. A live-broker integration test lives behind the `kafka_integration`
+tag:
+
+```
+KAFKA_BROKERS=localhost:9092 go test -tags "kafka_real kafka_integration" ./pkg/protocol/kafka/...
+```
+
+The build-tagged seam is `newRealClient(config)` — `realclient_default.go` (default) returns
+the unavailable stub; `realclient_franz.go` (`//go:build kafka_real`) returns the franz
+client. The default `go test ./...` exercises only the mock path; the franz path is
+compile-verified under the tag but, by design, is not run in default CI.
 
 ## Current Implementation Status
 The Kafka runtime is no longer just planned. The following are implemented in the Go
@@ -53,9 +77,8 @@ Direct Kafka authoring is also implemented:
 - `pkg/api/native_protocol_support.go` — a `kafka` entry in the native protocol parity
   matrix (guarded by `native_protocol_support_test.go`).
 
-**Not yet done:** the franz-go real network adapter (currently the `unavailableClient`
-stub). The sections below remain the spec for that outstanding work, plus the original
-full design for the items above.
+The franz-go real network adapter is now implemented as an opt-in build (see "Opt-in real
+adapter" above). The sections below remain the original full design of record.
 
 ## Objective
 Add direct load testing of Apache Kafka messaging services to APEX Load, plus an

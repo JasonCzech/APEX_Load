@@ -144,8 +144,8 @@ func nativeProtocolSupportMatrix() []NativeProtocolSupportEntry {
 			ReplayEvidence:      []string{"protocol evidence", "partition/offset evidence", "consumer lag", "correlation evidence", "timeout diagnosis"},
 			ReportExport:        []string{"replay JSON", "debug session export", "archive transaction evidence"},
 			ImportSources:       []string{"JSON DSL", "AsyncAPI 2.x/3.x"},
-			RemainingGaps:       []string{"real franz-go network adapter is not yet compiled in (mock replay only); Avro/Protobuf schema-registry payloads remain review-only"},
-			RecommendedWorkflow: "Author or import from AsyncAPI, shake out against the in-memory broker, then attach real brokers/SASL once the native adapter is registered.",
+			RemainingGaps:       []string{"real franz-go network adapter is opt-in via the kafka_real build tag (default build is mock replay only); Avro/Protobuf schema-registry payloads remain review-only"},
+			RecommendedWorkflow: "Author or import from AsyncAPI, shake out against the in-memory broker, then build with -tags kafka_real and attach real brokers/SASL for live execution.",
 			Evidence:            []string{"pkg/protocol/kafka/kafka_test.go", "/api/v1/scripts/import/asyncapi/support-matrix"},
 		},
 	}
