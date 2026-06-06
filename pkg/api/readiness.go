@@ -136,6 +136,7 @@ func (s *Server) metadataStoreReadiness() SystemReadinessCheck {
 			details["migration_version"] = info.MigrationVersion
 		}
 		details["lease_capability"] = info.LeaseCapability
+		details["timescaledb_enabled"] = info.TimescaleDBEnabled
 	}
 	return SystemReadinessCheck{
 		Name:    "metadata_store",

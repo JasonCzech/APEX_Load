@@ -18,6 +18,9 @@ type StoreConfig struct {
 	SQLitePath  string
 	DatabaseURL string
 	Connections StoreConnectionOptions
+	// TimescaleDB enables TimescaleDB hypertables for time-series tables when the
+	// backend is PostgreSQL. Disabled by default; has no effect on SQLite.
+	TimescaleDB bool
 }
 
 type BackendInfoProvider interface {
@@ -42,6 +45,7 @@ func StoreConfigFromEnv() StoreConfig {
 			MaxIdleConns:    envInt("APEXLOAD_DATABASE_MAX_IDLE_CONNS"),
 			ConnMaxLifetime: envDuration("APEXLOAD_DATABASE_CONN_MAX_LIFETIME"),
 		},
+		TimescaleDB: envBool("APEXLOAD_TIMESCALEDB"),
 	}
 }
 
@@ -54,7 +58,7 @@ func NewConfiguredStore(config StoreConfig) (Store, error) {
 		}
 		return NewSQLiteStore(path)
 	case StoreBackendPostgres, "postgresql":
-		return NewPostgresStore(config.DatabaseURL, config.Connections)
+		return NewPostgresStore(config.DatabaseURL, config.Connections, config.TimescaleDB)
 	default:
 		return nil, fmt.Errorf("unsupported apexload store backend %q", config.Backend)
 	}
@@ -74,6 +78,15 @@ func envInt(name string) int {
 		return 0
 	}
 	return value
+}
+
+func envBool(name string) bool {
+	switch strings.TrimSpace(strings.ToLower(os.Getenv(name))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func envDuration(name string) time.Duration {

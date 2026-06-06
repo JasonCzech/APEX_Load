@@ -18,8 +18,9 @@ import (
 )
 
 type SQLiteStore struct {
-	db      *storeDB
-	backend StoreBackendInfo
+	db          *storeDB
+	backend     StoreBackendInfo
+	timescaleDB bool
 }
 
 type PostgresStore struct {
@@ -27,11 +28,12 @@ type PostgresStore struct {
 }
 
 type StoreBackendInfo struct {
-	Type             string `json:"type"`
-	Driver           string `json:"driver"`
-	MigrationVersion string `json:"migration_version"`
-	LeaseCapability  bool   `json:"lease_capability"`
-	DSN              string `json:"-"`
+	Type               string `json:"type"`
+	Driver             string `json:"driver"`
+	MigrationVersion   string `json:"migration_version"`
+	LeaseCapability    bool   `json:"lease_capability"`
+	TimescaleDBEnabled bool   `json:"timescaledb_enabled"`
+	DSN                string `json:"-"`
 }
 
 type storeDialect string
@@ -169,7 +171,7 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 	return s, nil
 }
 
-func NewPostgresStore(databaseURL string, options StoreConnectionOptions) (*PostgresStore, error) {
+func NewPostgresStore(databaseURL string, options StoreConnectionOptions, timescaleDB bool) (*PostgresStore, error) {
 	databaseURL = strings.TrimSpace(databaseURL)
 	if databaseURL == "" {
 		return nil, errors.New("postgres database url is required")
@@ -184,11 +186,12 @@ func NewPostgresStore(databaseURL string, options StoreConnectionOptions) (*Post
 		return nil, fmt.Errorf("failed to ping postgres db: %w", err)
 	}
 	s := newSQLStore(db, storeDialectPostgres, StoreBackendInfo{
-		Type:             "postgres",
-		Driver:           "github.com/jackc/pgx/v5/stdlib",
-		MigrationVersion: archiveRecordSchemaVersion,
-		LeaseCapability:  true,
-		DSN:              databaseURL,
+		Type:               "postgres",
+		Driver:             "github.com/jackc/pgx/v5/stdlib",
+		MigrationVersion:   archiveRecordSchemaVersion,
+		LeaseCapability:    true,
+		TimescaleDBEnabled: timescaleDB,
+		DSN:                databaseURL,
 	})
 	if err := s.init(); err != nil {
 		_ = db.Close()
@@ -224,7 +227,8 @@ func newSQLStore(db *sql.DB, dialect storeDialect, info StoreBackendInfo) *SQLit
 			db:      db,
 			dialect: dialect,
 		},
-		backend: info,
+		backend:     info,
+		timescaleDB: info.TimescaleDBEnabled,
 	}
 }
 
@@ -897,7 +901,58 @@ func (s *SQLiteStore) init() error {
 	if err := s.ensureDefaultProject(); err != nil {
 		return err
 	}
-	return s.ensureLegacyApplication()
+	if err := s.ensureLegacyApplication(); err != nil {
+		return err
+	}
+	return s.applyTimescaleDB()
+}
+
+// timescaleHypertable describes a table to convert into a TimescaleDB hypertable
+// and the time column it is partitioned by.
+type timescaleHypertable struct {
+	table      string
+	timeColumn string
+}
+
+// timescaleHypertables is the set of tables converted when TimescaleDB is enabled.
+//
+// Only test_interval_summaries is wired today: it has no unique/primary-key
+// constraints, so it can be converted cleanly. usage_accounting_snapshots
+// (PRIMARY KEY id) and archive-resident resource samples require a composite key
+// that includes the partition column before they can be converted; they are left
+// as documented, gated extensions (see docs/ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md).
+var timescaleHypertables = []timescaleHypertable{
+	{table: "test_interval_summaries", timeColumn: "timestamp"},
+}
+
+// timescaleSetupStatements returns the (Postgres-only) statements that enable the
+// TimescaleDB extension and convert the configured tables into hypertables. It is
+// pure and side-effect free so the SQL contract can be unit-tested without a live
+// TimescaleDB instance.
+func timescaleSetupStatements(tables []timescaleHypertable) []string {
+	statements := []string{`CREATE EXTENSION IF NOT EXISTS timescaledb`}
+	for _, ht := range tables {
+		statements = append(statements, fmt.Sprintf(
+			`SELECT create_hypertable('%s', '%s', if_not_exists => TRUE, migrate_data => TRUE)`,
+			ht.table, ht.timeColumn,
+		))
+	}
+	return statements
+}
+
+// applyTimescaleDB enables TimescaleDB hypertables when the operator has opted in
+// (APEXLOAD_TIMESCALEDB=true) and the backend is PostgreSQL. It is a no-op for
+// SQLite and whenever TimescaleDB is disabled, which is the default.
+func (s *SQLiteStore) applyTimescaleDB() error {
+	if !s.timescaleDB || s.db == nil || s.db.dialect != storeDialectPostgres {
+		return nil
+	}
+	for _, stmt := range timescaleSetupStatements(timescaleHypertables) {
+		if _, err := s.db.Exec(stmt); err != nil {
+			return fmt.Errorf("failed to apply TimescaleDB setup (%q): %w", stmt, err)
+		}
+	}
+	return nil
 }
 
 func (s *SQLiteStore) applyOptionalSchemaMigrations(migrations []optionalSchemaMigration) error {

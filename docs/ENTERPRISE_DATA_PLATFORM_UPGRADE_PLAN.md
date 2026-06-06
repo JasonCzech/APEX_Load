@@ -64,7 +64,10 @@ Status: implemented for Prometheus ServiceMonitor and remote-write deployment ex
   - Recommended labels: environment, domain, project, release, scenario, run, protocol, generator region, generator id.
 - Do not ingest raw transaction events into PostgreSQL or Redis.
 - Add dashboard/operator documentation explaining which questions are answered by live metrics, PostgreSQL summaries, Prometheus long-term metrics, and archives.
-- Optional follow-up: add TimescaleDB hypertables for `test_interval_summaries`, resource samples, and usage snapshots when SQL-native trend analytics becomes a committed product requirement.
+- TimescaleDB follow-up: the hypertable wiring is now implemented but **disabled by default**. Set `APEXLOAD_TIMESCALEDB=true` (PostgreSQL backend only) to have controller startup run `CREATE EXTENSION IF NOT EXISTS timescaledb` and convert `test_interval_summaries` into a hypertable (see `pkg/storage` `applyTimescaleDB` / `timescaleSetupStatements`). The flag is surfaced via `/api/v1/system/readiness` (`timescaledb_enabled`) and `StoreBackendInfo`.
+  - Wired today: `test_interval_summaries` (no unique constraints — converts cleanly).
+  - Gated/deferred: `usage_accounting_snapshots` (PRIMARY KEY `id`) and archive-resident resource samples require a composite key including the partition column before conversion; extend `timescaleHypertables` once those schema changes land.
+  - Live conversion is verified against a TimescaleDB-enabled PostgreSQL instance only when the flag is enabled in a real deployment; default builds/tests cover config parsing, statement generation, and the SQLite/non-Postgres no-op path.
 
 ### Phase 4: Redis/Valkey Live State And Coordination
 
@@ -110,6 +113,7 @@ APEXLOAD_DATABASE_URL=postgres://...
 APEXLOAD_DATABASE_MAX_OPEN_CONNS=25
 APEXLOAD_DATABASE_MAX_IDLE_CONNS=10
 APEXLOAD_DATABASE_CONN_MAX_LIFETIME=30m
+APEXLOAD_TIMESCALEDB=false   # opt-in; PostgreSQL only; converts time-series tables to hypertables
 
 APEXLOAD_ARCHIVE_BACKEND=filesystem|s3|azure_blob|gcs
 APEXLOAD_ARCHIVE_BUCKET=

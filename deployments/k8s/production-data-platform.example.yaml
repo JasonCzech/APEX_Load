@@ -18,6 +18,9 @@ data:
   APEXLOAD_DATABASE_MAX_OPEN_CONNS: "25"
   APEXLOAD_DATABASE_MAX_IDLE_CONNS: "10"
   APEXLOAD_DATABASE_CONN_MAX_LIFETIME: 30m
+  # Opt-in TimescaleDB hypertables for time-series tables (requires the
+  # timescaledb extension available on the PostgreSQL server). Disabled by default.
+  APEXLOAD_TIMESCALEDB: "false"
   APEXLOAD_ARCHIVE_BACKEND: s3
   APEXLOAD_ARCHIVE_BUCKET: apexload-archives
   APEXLOAD_ARCHIVE_PREFIX: production/run-evidence
