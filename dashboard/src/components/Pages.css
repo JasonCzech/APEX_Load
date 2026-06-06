@@ -314,7 +314,6 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  animation: slideUpFade 0.5s var(--transition-spring) forwards;
 }
 
 .dashboard-workspace {

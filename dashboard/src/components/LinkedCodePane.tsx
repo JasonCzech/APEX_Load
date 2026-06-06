@@ -174,48 +174,54 @@ export default function LinkedCodePane({
   // highlighted line.
   const activeStartLine = activeRange?.startLine ?? null
   const activeEndLine = activeRange?.endLine ?? null
+  const prevRangeRef = useRef({ start: activeStartLine, end: activeEndLine })
+  const isSelectionChange = prevRangeRef.current.start !== activeStartLine || prevRangeRef.current.end !== activeEndLine
+
+  useEffect(() => {
+    prevRangeRef.current = { start: activeStartLine, end: activeEndLine }
+  }, [activeStartLine, activeEndLine])
+
   useEffect(() => {
     const view = viewRef.current
     if (!view) return
+
+    const effects: StateEffect<unknown>[] = []
+
+    // 1. Linked Line Range
     const isInitialRange = !hasAppliedRangeRef.current
     hasAppliedRangeRef.current = true
     const range = activeStartLine != null ? { startLine: activeStartLine, endLine: activeEndLine ?? activeStartLine } : null
-    const effects: StateEffect<unknown>[] = [setLinkedRange.of(range)]
-    if (!isInitialRange && range && range.startLine >= 1 && range.startLine <= view.state.doc.lines) {
+    effects.push(setLinkedRange.of(range))
+    
+    if (!isInitialRange && range && range.startLine >= 1 && range.startLine <= view.state.doc.lines && isSelectionChange) {
       const line = view.state.doc.line(range.startLine)
       effects.push(EditorView.scrollIntoView(line.from, { y: 'center' }))
     }
-    view.dispatch({ effects })
-  }, [activeStartLine, activeEndLine, value])
 
-  useEffect(() => {
-    const view = viewRef.current
-    if (!view) return
-
+    // 2. Search Query Highlighting
     if (!searchQuery || searchQuery.trim().length === 0) {
-      view.dispatch({ effects: [setFilterDecorations.of(Decoration.none)] })
-      return
+      effects.push(setFilterDecorations.of(Decoration.none))
+    } else {
+      const text = view.state.doc.toString()
+      const lowerText = text.toLowerCase()
+      const lowerQuery = searchQuery.toLowerCase()
+      const builder = new RangeSetBuilder<Decoration>()
+      const deco = Decoration.mark({ class: 'apex-search-match' })
+      
+      let i = 0
+      let lastI = -1
+      while ((i = lowerText.indexOf(lowerQuery, i)) !== -1) {
+        if (i > lastI) {
+          builder.add(i, i + lowerQuery.length, deco)
+          lastI = i
+        }
+        i += lowerQuery.length
+      }
+      effects.push(setFilterDecorations.of(builder.finish()))
     }
 
-    const text = view.state.doc.toString()
-    const lowerText = text.toLowerCase()
-    const lowerQuery = searchQuery.toLowerCase()
-    const builder = new RangeSetBuilder<Decoration>()
-    const deco = Decoration.mark({ class: 'apex-search-match' })
-    
-    let i = 0
-    let lastI = -1
-    while ((i = lowerText.indexOf(lowerQuery, i)) !== -1) {
-      // RangeSetBuilder requires strict ordering and no overlap
-      if (i > lastI) {
-        builder.add(i, i + lowerQuery.length, deco)
-        lastI = i
-      }
-      i += lowerQuery.length
-    }
-    
-    view.dispatch({ effects: [setFilterDecorations.of(builder.finish())] })
-  }, [searchQuery, value])
+    view.dispatch({ effects })
+  }, [activeStartLine, activeEndLine, searchQuery, value, isSelectionChange])
 
   return (
     <div className="linked-code-pane" role="region" aria-label={ariaLabel}>

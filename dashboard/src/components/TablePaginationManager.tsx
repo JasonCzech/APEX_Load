@@ -140,9 +140,26 @@ export default function TablePaginationManager() {
   useEffect(() => {
     scanTables()
     const managedTables = managedTablesRef.current
-    const observer = new MutationObserver(scanTables)
-    observer.observe(document.body, { childList: true, subtree: true })
+    let rafId = 0
+    const debouncedScan = (mutations: MutationRecord[]) => {
+      // Skip mutations caused by our own toolbar insertions or row visibility toggling.
+      const isOwnMutation = mutations.every(m => {
+        const target = m.target as HTMLElement
+        if (target.dataset?.tablePaginationToolbar === 'true') return true
+        if (target.closest?.('[data-table-pagination-toolbar="true"]')) return true
+        // Row hiding via applyTableLimit sets row.hidden which fires a childList mutation
+        // on the tbody. Detect it by checking if all added/removed nodes are hidden pagination rows.
+        if (m.type === 'attributes' && m.attributeName === 'hidden') return true
+        return false
+      })
+      if (isOwnMutation) return
+      cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(scanTables)
+    }
+    const observer = new MutationObserver(debouncedScan)
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] })
     return () => {
+      cancelAnimationFrame(rafId)
       observer.disconnect()
       Array.from(managedTables.keys()).forEach(cleanupManagedTable)
     }

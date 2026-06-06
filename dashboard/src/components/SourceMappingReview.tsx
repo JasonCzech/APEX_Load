@@ -201,7 +201,7 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
         row.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
       }
     })
-  }, [filteredMappings, focusedMappingId, focusRequestId, selectedMappingId])
+  }, [focusedMappingId, focusRequestId, selectedMappingId])
 
   if (files.length === 0 && mappings.length === 0) {
     return null
