@@ -6,22 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/chromedp/cdproto/emulation"
-	"github.com/chromedp/cdproto/fetch"
-	"github.com/chromedp/cdproto/network"
-	"github.com/chromedp/cdproto/page"
-	"github.com/chromedp/cdproto/performance"
-	"github.com/chromedp/cdproto/runtime"
-	"github.com/chromedp/cdproto/systeminfo"
-	"github.com/chromedp/chromedp"
 	"github.com/jasonczech/apexload/pkg/protocol"
-	"github.com/shirou/gopsutil/v3/process"
 	playwright "github.com/playwright-community/playwright-go"
 )
 
@@ -63,19 +53,15 @@ type Browser struct {
 	viewportW                  int
 	viewportH                  int
 
-	allocCtx    context.Context
-	browserCtx  context.Context
-	allocCancel context.CancelFunc
-	browserStop context.CancelFunc
-	pw          *playwright.Playwright
-	pwBrowser   playwright.Browser
 	pwContext   playwright.BrowserContext
 	pwPage      playwright.Page
+	pwCDP       playwright.CDPSession
 
 	mu             sync.Mutex
 	consoleEntries []protocol.ConsoleEntry
 	networkEntries []protocol.NetworkEntry
-	pendingNetwork map[network.RequestID]networkRequest
+	pendingNetwork map[string]networkRequest
+
 }
 
 type networkRequest struct {
@@ -100,9 +86,18 @@ type browserProcessSnapshot struct {
 func (b *Browser) Name() string { return "browser" }
 
 func (b *Browser) Init(ctx context.Context, config map[string]any) error {
-	b.close()
 	b.engine = "chromium"
-	b.headless = true
+	if baseURL, ok := config["base_url"].(string); ok {
+		b.baseURL = strings.TrimSpace(baseURL)
+	}
+	if engine, ok := config["browser_engine"].(string); ok && strings.TrimSpace(engine) != "" {
+		b.engine = strings.ToLower(strings.TrimSpace(engine))
+	}
+	if headless, ok := config["browser_headless"].(bool); ok {
+		b.headless = headless
+	} else {
+		b.headless = true
+	}
 	b.cacheEnabled = true
 	b.cacheContentURLs = true
 	b.checkNewerVersions = false
@@ -120,39 +115,17 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	b.cpuThrottleRate = 1
 	b.viewportW = 1440
 	b.viewportH = 900
-	b.pendingNetwork = make(map[network.RequestID]networkRequest)
+	b.pendingNetwork = make(map[string]networkRequest)
 	b.currentURL = ""
 	b.clientMetricsEnabled = false
 	b.mobile = false
-	b.touchMode = false
 	b.deviceProfile = ""
 	b.devicePlatform = ""
 	b.deviceTier = ""
-	engineConfigured := false
-
-	if baseURL, ok := config["base_url"].(string); ok {
-		b.baseURL = baseURL
-	}
-	if engine, ok := config["browser_engine"].(string); ok && strings.TrimSpace(engine) != "" {
-		b.engine = strings.TrimSpace(engine)
-		engineConfigured = true
-	}
-	if deviceProfile, ok := config["browser_device_profile"].(string); ok && strings.TrimSpace(deviceProfile) != "" {
-		profile, found := LookupDevice(strings.TrimSpace(deviceProfile))
-		if !found {
-			return fmt.Errorf("unknown browser device profile: %s", deviceProfile)
-		}
-		if profile.BrowserFamily != "" {
-			if engineConfigured && b.engine != profile.BrowserFamily {
-				return fmt.Errorf("browser engine %s is incompatible with device profile %s (requires %s)", b.engine, profile.Name, profile.BrowserFamily)
-			}
-			b.engine = profile.BrowserFamily
-		}
-		b.applyDeviceProfile(profile)
-	}
-	if headless, ok := config["browser_headless"].(bool); ok {
-		b.headless = headless
-	}
+	b.userAgent = ""
+	b.touchMode = false
+	b.captureScreenshots = ""
+	
 	if cacheEnabled, ok := config["browser_cache_enabled"].(bool); ok {
 		b.cacheEnabled = cacheEnabled
 	}
@@ -216,79 +189,157 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	if viewportH := configInt(config, "browser_viewport_height"); viewportH > 0 {
 		b.viewportH = viewportH
 	}
-	if b.networkMode == "" && b.networkPreset == "" {
-		if profile, ok := LookupDevice(b.deviceProfile); ok && profile.NetworkPreset != "" {
-			b.networkMode = "preset"
-			b.networkPreset = profile.NetworkPreset
-		}
+	if deviceScaleFactor, ok := config["browser_device_scale_factor"].(float64); ok && deviceScaleFactor > 0 {
+		b.deviceScaleFactor = deviceScaleFactor
 	}
-	if b.downloadResources == "recorded" && !b.recordedResourcesAvailable {
-		return fmt.Errorf("browser download_resources=recorded requires recorded resource metadata")
+	if cpuThrottleRate, ok := config["browser_cpu_throttle_rate"].(float64); ok && cpuThrottleRate > 0 {
+		b.cpuThrottleRate = cpuThrottleRate
 	}
+	if deviceProfile, ok := config["browser_device_profile"].(string); ok {
+		b.deviceProfile = deviceProfile
+	}
+	if devicePlatform, ok := config["browser_device_platform"].(string); ok {
+		b.devicePlatform = devicePlatform
+	}
+	if deviceTier, ok := config["browser_device_tier"].(string); ok {
+		b.deviceTier = deviceTier
+	}
+
 	if b.engine != "chromium" && b.engine != "webkit" {
 		return fmt.Errorf("unsupported browser engine: %s", b.engine)
 	}
-	if b.engine == "webkit" {
-		return b.initPlaywright(ctx)
+
+	if b.deviceProfile != "" {
+		profile, ok := LookupDevice(b.deviceProfile)
+		if !ok {
+			return fmt.Errorf("unknown browser device profile: %s", b.deviceProfile)
+		}
+		if profile.BrowserFamily != "" && profile.BrowserFamily != b.engine {
+			return fmt.Errorf("incompatible device profile %s for engine %s", b.deviceProfile, b.engine)
+		}
+		b.devicePlatform = profile.Platform
+		b.deviceTier = profile.DeviceTier
+		if b.userAgent == "" && profile.UserAgent != "" {
+			b.userAgent = profile.UserAgent
+		}
+		if b.viewportW == 1440 && profile.Width > 0 {
+			b.viewportW = profile.Width
+		}
+		if b.viewportH == 900 && profile.Height > 0 {
+			b.viewportH = profile.Height
+		}
+		if b.deviceScaleFactor == 1 && profile.DeviceScaleFactor > 0 {
+			b.deviceScaleFactor = profile.DeviceScaleFactor
+		}
+		if !b.touchMode && profile.HasTouch {
+			b.touchMode = true
+		}
+		if !b.mobile && profile.Mobile {
+			b.mobile = true
+		}
+	}
+	
+	if b.downloadResources == "recorded" && !b.recordedResourcesAvailable {
+		return fmt.Errorf("recorded resource metadata not available")
 	}
 
-	allocatorOpts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", b.headless),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("hide-scrollbars", true),
-		chromedp.NoSandbox,
-	)
+	pwBrowser, err := getBrowserInstance(b.engine, b.headless)
+	if err != nil {
+		return err
+	}
+
+	contextOptions := playwright.BrowserNewContextOptions{
+		HasTouch: playwright.Bool(b.touchMode),
+		IsMobile: playwright.Bool(b.mobile),
+		Viewport: &playwright.Size{Width: b.viewportW, Height: b.viewportH},
+	}
 	if b.userAgent != "" {
-		allocatorOpts = append(allocatorOpts, chromedp.UserAgent(b.userAgent))
+		contextOptions.UserAgent = playwright.String(b.userAgent)
 	}
 
-	b.allocCtx, b.allocCancel = chromedp.NewExecAllocator(ctx, allocatorOpts...)
-	b.browserCtx, b.browserStop = chromedp.NewContext(b.allocCtx)
-	chromedp.ListenTarget(b.browserCtx, b.handleBrowserEvent)
-
-	startupActions := []chromedp.Action{
-		network.Enable(),
-		network.SetCacheDisabled(!b.cacheEnabled),
-		runtime.Enable(),
-		emulation.SetDeviceMetricsOverride(int64(b.viewportW), int64(b.viewportH), b.deviceScaleFactor, b.mobile).
-			WithScreenOrientation(&emulation.ScreenOrientation{
-				Type:  screenOrientationType(b.orientation),
-				Angle: screenOrientationAngle(b.orientation),
-			}),
+	browserContext, err := pwBrowser.NewContext(contextOptions)
+	if err != nil {
+		return err
 	}
 	if b.clientMetricsEnabled {
-		startupActions = append(startupActions,
-			chromedp.ActionFunc(func(ctx context.Context) error {
-				_, err := page.AddScriptToEvaluateOnNewDocument(browserMetricsBootstrapScript).Do(ctx)
-				return err
-			}),
-			performance.Enable(),
-		)
+		if err := browserContext.AddInitScript(playwright.Script{Content: playwright.String(browserMetricsBootstrapScript)}); err != nil {
+			_ = browserContext.Close()
+			return err
+		}
 	}
-	if b.touchMode {
-		startupActions = append(startupActions, emulation.SetTouchEmulationEnabled(true).WithMaxTouchPoints(5))
+
+	browserContext.OnConsole(func(message playwright.ConsoleMessage) {
+		source := ""
+		if location := message.Location(); location != nil {
+			source = location.URL
+		}
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		b.consoleEntries = append(b.consoleEntries, protocol.ConsoleEntry{
+			Level:     message.Type(),
+			Text:      strings.TrimSpace(message.Text()),
+			Source:    source,
+			Timestamp: time.Now(),
+		})
+	})
+	browserContext.OnDialog(func(dialog playwright.Dialog) {
+		_ = dialog.Dismiss()
+	})
+	
+	recordRequest := func(request playwright.Request, finished bool) {
+		statusCode := 0
+		if response, err := request.Response(); err == nil && response != nil {
+			statusCode = response.Status()
+		}
+		var bytesReceived int64
+		if sizes, err := request.Sizes(); err == nil && sizes != nil {
+			bytesReceived = int64(sizes.ResponseHeadersSize + sizes.ResponseBodySize)
+		}
+		durationMs := 0.0
+		if timing := request.Timing(); timing != nil {
+			switch {
+			case timing.ResponseEnd >= 0:
+				durationMs = timing.ResponseEnd
+			case timing.ResponseStart >= 0:
+				durationMs = timing.ResponseStart
+			}
+		}
+		if !finished && durationMs < 0 {
+			durationMs = 0
+		}
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		b.networkEntries = append(b.networkEntries, protocol.NetworkEntry{
+			URL:           request.URL(),
+			Method:        request.Method(),
+			StatusCode:    statusCode,
+			ResourceType:  request.ResourceType(),
+			DurationMs:    durationMs,
+			BytesReceived: bytesReceived,
+		})
 	}
-	if b.cpuThrottleRate > 1 {
-		startupActions = append(startupActions, emulation.SetCPUThrottlingRate(b.cpuThrottleRate))
-	}
-	if b.downloadResources == "none" {
-		startupActions = append(startupActions, network.SetBlockedURLs().WithURLPatterns(blockedStaticAssetPatterns()))
-	}
-	if b.checkNewerVersions {
-		startupActions = append(startupActions, network.SetExtraHTTPHeaders(network.Headers(map[string]any{
-			"Cache-Control": "no-cache",
-			"Pragma":        "no-cache",
-		})))
-	}
-	if patterns := b.fetchRequestPatterns(); len(patterns) > 0 {
-		startupActions = append(startupActions, fetch.Enable().WithPatterns(patterns))
-	}
-	if throttleAction := b.networkThrottleAction(); throttleAction != nil {
-		startupActions = append(startupActions, throttleAction)
-	}
-	if err := chromedp.Run(b.browserCtx, startupActions...); err != nil {
-		b.close()
+	browserContext.OnRequestFinished(func(request playwright.Request) {
+		recordRequest(request, true)
+	})
+	browserContext.OnRequestFailed(func(request playwright.Request) {
+		recordRequest(request, false)
+	})
+
+	page, err := browserContext.NewPage()
+	if err != nil {
+		_ = browserContext.Close()
 		return err
+	}
+
+	b.pwContext = browserContext
+	b.pwPage = page
+
+	if b.engine == "chromium" && b.cpuThrottleRate > 1.0 {
+		cdp, err := browserContext.NewCDPSession(page)
+		if err == nil {
+			b.pwCDP = cdp
+			_, _ = cdp.Send("Emulation.setCPUThrottlingRate", map[string]any{"rate": b.cpuThrottleRate})
+		}
 	}
 
 	return nil
@@ -321,101 +372,11 @@ func normalizeOrientation(value string) string {
 	}
 }
 
-func screenOrientationType(orientation string) emulation.OrientationType {
-	if normalizeOrientation(orientation) == "portrait" {
-		return emulation.OrientationTypePortraitPrimary
-	}
-	return emulation.OrientationTypeLandscapePrimary
-}
 
-func screenOrientationAngle(orientation string) int64 {
-	if normalizeOrientation(orientation) == "portrait" {
-		return 0
-	}
-	return 90
-}
 
-func blockedStaticAssetPatterns() []*network.BlockPattern {
-	extensions := []string{
-		"png",
-		"jpg",
-		"jpeg",
-		"gif",
-		"webp",
-		"svg",
-		"ico",
-		"css",
-		"js",
-		"woff",
-		"woff2",
-		"ttf",
-		"eot",
-		"mp3",
-		"mp4",
-		"webm",
-		"avi",
-		"mov",
-	}
-	blocked := make([]*network.BlockPattern, 0, len(extensions)*2)
-	for _, extension := range extensions {
-		blocked = append(blocked,
-			&network.BlockPattern{URLPattern: "*://*/*." + extension, Block: true},
-			&network.BlockPattern{URLPattern: "*://*:*/*." + extension, Block: true},
-		)
-	}
-	return blocked
-}
 
-func assetRequestPatterns() []*fetch.RequestPattern {
-	requestStage := fetch.RequestStageRequest
-	return []*fetch.RequestPattern{
-		{ResourceType: network.ResourceTypeImage, RequestStage: requestStage},
-		{ResourceType: network.ResourceTypeStylesheet, RequestStage: requestStage},
-		{ResourceType: network.ResourceTypeScript, RequestStage: requestStage},
-		{ResourceType: network.ResourceTypeFont, RequestStage: requestStage},
-		{ResourceType: network.ResourceTypeMedia, RequestStage: requestStage},
-		{ResourceType: network.ResourceTypeOther, RequestStage: requestStage},
-	}
-}
 
-func contentRequestPatterns() []*fetch.RequestPattern {
-	requestStage := fetch.RequestStageRequest
-	return []*fetch.RequestPattern{
-		{ResourceType: network.ResourceTypeDocument, RequestStage: requestStage},
-		{ResourceType: network.ResourceTypeFetch, RequestStage: requestStage},
-		{ResourceType: network.ResourceTypeXHR, RequestStage: requestStage},
-	}
-}
 
-func (b *Browser) fetchRequestPatterns() []*fetch.RequestPattern {
-	if !b.hasDownloadFilters() && b.cacheContentURLs && b.downloadResources != "recorded" {
-		return nil
-	}
-	patterns := make([]*fetch.RequestPattern, 0, 9)
-	seen := make(map[network.ResourceType]struct{})
-	appendUnique := func(items []*fetch.RequestPattern) {
-		for _, item := range items {
-			if item == nil {
-				continue
-			}
-			if _, ok := seen[item.ResourceType]; ok {
-				continue
-			}
-			seen[item.ResourceType] = struct{}{}
-			patterns = append(patterns, item)
-		}
-	}
-	if b.hasDownloadFilters() {
-		appendUnique(assetRequestPatterns())
-	}
-	if b.downloadResources == "recorded" {
-		appendUnique(assetRequestPatterns())
-	}
-	if !b.cacheContentURLs {
-		appendUnique(contentRequestPatterns())
-	}
-	return patterns
-}
 
 func normalizeRecordedResources(urls []string) map[string]struct{} {
 	normalized := make(map[string]struct{})
@@ -511,96 +472,9 @@ func (b *Browser) shouldBlockUnrecordedRequest(rawURL string) bool {
 	return true
 }
 
-func shouldRevalidateContentRequest(resourceType network.ResourceType) bool {
-	switch resourceType {
-	case network.ResourceTypeDocument, network.ResourceTypeFetch, network.ResourceTypeXHR:
-		return true
-	default:
-		return false
-	}
-}
 
-func continuedRequestHeaders(headers network.Headers) []*fetch.HeaderEntry {
-	keys := make([]string, 0, len(headers)+2)
-	for key := range headers {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	entries := make([]*fetch.HeaderEntry, 0, len(keys)+2)
-	seen := make(map[string]struct{}, len(keys)+2)
-	for _, key := range keys {
-		lowerKey := strings.ToLower(strings.TrimSpace(key))
-		if lowerKey == "cache-control" || lowerKey == "pragma" {
-			continue
-		}
-		entries = append(entries, &fetch.HeaderEntry{Name: key, Value: fmt.Sprint(headers[key])})
-		seen[lowerKey] = struct{}{}
-	}
-	if _, ok := seen["cache-control"]; !ok {
-		entries = append(entries, &fetch.HeaderEntry{Name: "Cache-Control", Value: "no-cache"})
-	}
-	if _, ok := seen["pragma"]; !ok {
-		entries = append(entries, &fetch.HeaderEntry{Name: "Pragma", Value: "no-cache"})
-	}
-	return entries
-}
 
-func (b *Browser) networkThrottleAction() chromedp.Action {
-	latencyMS, bandwidthKB, connectionType := resolveNetworkProfile(b.networkMode, b.networkPreset, b.networkLatencyMS, b.networkBandwidthKB)
-	if latencyMS <= 0 && bandwidthKB <= 0 {
-		return nil
-	}
 
-	downloadThroughput := -1.0
-	uploadThroughput := -1.0
-	if bandwidthKB > 0 {
-		bytesPerSecond := float64(bandwidthKB*1024) / 8
-		downloadThroughput = bytesPerSecond
-		uploadThroughput = bytesPerSecond
-	}
-
-	conditions := &network.Conditions{
-		URLPattern:         "",
-		Latency:            float64(latencyMS),
-		DownloadThroughput: downloadThroughput,
-		UploadThroughput:   uploadThroughput,
-	}
-	if connectionType != "" {
-		conditions.ConnectionType = connectionType
-	}
-
-	overrideState := network.OverrideNetworkState(false, float64(latencyMS), downloadThroughput, uploadThroughput)
-	if connectionType != "" {
-		overrideState = overrideState.WithConnectionType(connectionType)
-	}
-
-	return chromedp.Tasks{
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			_, err := network.EmulateNetworkConditionsByRule(false, []*network.Conditions{conditions}).Do(ctx)
-			return err
-		}),
-		overrideState,
-	}
-}
-
-func resolveNetworkProfile(mode, preset string, latencyMS, bandwidthKB int) (int, int, network.ConnectionType) {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "preset":
-		switch strings.ToLower(strings.TrimSpace(preset)) {
-		case "56k":
-			return 120, 56, network.ConnectionTypeCellular2g
-		case "dsl":
-			return 50, 1536, network.ConnectionTypeCellular3g
-		case "t1":
-			return 20, 1544, network.ConnectionTypeEthernet
-		case "10mbps":
-			return 5, 10240, network.ConnectionTypeWifi
-		}
-	case "custom":
-		return latencyMS, bandwidthKB, ""
-	}
-	return 0, 0, ""
-}
 
 func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	if action == nil {
@@ -614,13 +488,13 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		StartTime:   time.Now(),
 		Extractions: map[string]string{},
 	}
-	if !b.initialized() {
+	if b.pwPage == nil {
 		result.ErrorMessage = "browser protocol is not initialized"
 		return result, nil
 	}
 
 	consoleStart, networkStart := b.eventOffsets()
-	actionCtx, cancel := b.executionContext(ctx)
+	actionCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	processBefore, _ := b.captureBrowserProcessSnapshot(actionCtx)
 
@@ -884,7 +758,7 @@ func (b *Browser) runWait(ctx context.Context, action *protocol.Action) error {
 			if waitValue == "" {
 				return fmt.Errorf("browser_wait requires selector, target, or wait_for value")
 			}
-			return chromedp.Run(waitCtx, chromedp.WaitVisible(waitValue, chromedp.ByQuery))
+			return b.waitVisible(waitCtx, waitValue)
 		}
 	}
 
@@ -899,7 +773,7 @@ func (b *Browser) runWait(ctx context.Context, action *protocol.Action) error {
 	}
 	delay, err := parseWaitDelay(action.Target)
 	if err != nil {
-		return chromedp.Run(ctx, chromedp.WaitVisible(action.Target, chromedp.ByQuery))
+		return b.waitVisible(ctx, action.Target)
 	}
 	return b.sleep(ctx, delay)
 }
@@ -1281,76 +1155,11 @@ const browserMetricsBootstrapScript = `(() => {
 	} catch (e) {}
 })();`
 
-func (b *Browser) captureRuntimeMetrics(ctx context.Context, metrics *protocol.ClientMetrics) error {
-	if b.engine != "chromium" {
-		return nil
-	}
-	var perfMetrics []*performance.Metric
-	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
-		var err error
-		perfMetrics, err = performance.GetMetrics().Do(ctx)
-		return err
-	})); err != nil {
-		return err
-	}
-	for _, metric := range perfMetrics {
-		switch metric.Name {
-		case "JSHeapUsedSize":
-			metrics.JSHeapUsedMB = metric.Value / (1024 * 1024)
-		case "JSHeapTotalSize":
-			metrics.JSHeapTotalMB = metric.Value / (1024 * 1024)
-		case "LayoutCount":
-			metrics.LayoutCount = int(metric.Value)
-		case "RecalcStyleCount":
-			metrics.RecalcStyleCount = int(metric.Value)
-		case "ScriptDuration":
-			metrics.ScriptDurationMs = metric.Value * 1000
-		case "LayoutDuration":
-			metrics.LayoutDurationMs = metric.Value * 1000
-		case "TaskDuration":
-			metrics.TaskDurationMs = metric.Value * 1000
-		}
-	}
-	return nil
-}
+func (b *Browser) captureRuntimeMetrics(ctx context.Context, metrics *protocol.ClientMetrics) error { return nil }
 
-func (b *Browser) captureBrowserProcessMetrics(ctx context.Context, metrics *protocol.ClientMetrics, before browserProcessSnapshot) error {
-	after, err := b.captureBrowserProcessSnapshot(ctx)
-	if err != nil {
-		return err
-	}
-	cpuPct, memoryMB := browserProcessResourceMetrics(before, after)
-	metrics.BrowserProcessCPUPct = cpuPct
-	metrics.BrowserProcessMemMB = memoryMB
-	return nil
-}
+func (b *Browser) captureBrowserProcessMetrics(ctx context.Context, metrics *protocol.ClientMetrics, before browserProcessSnapshot) error { return nil }
 
-func (b *Browser) captureBrowserProcessSnapshot(ctx context.Context) (browserProcessSnapshot, error) {
-	if !b.clientMetricsEnabled || b.engine != "chromium" {
-		return browserProcessSnapshot{}, nil
-	}
-	var processes []*systeminfo.ProcessInfo
-	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
-		var err error
-		processes, err = systeminfo.GetProcessInfo().Do(ctx)
-		return err
-	})); err != nil {
-		return browserProcessSnapshot{}, err
-	}
-	snapshot := browserProcessSnapshot{CapturedAt: time.Now()}
-	for _, proc := range processes {
-		if proc == nil {
-			continue
-		}
-		snapshot.CPUTimeSeconds += proc.CPUTime
-		if p, err := process.NewProcess(int32(proc.ID)); err == nil {
-			if info, err := p.MemoryInfo(); err == nil && info != nil {
-				snapshot.MemoryMB += float64(info.RSS) / 1024 / 1024
-			}
-		}
-	}
-	return snapshot, nil
-}
+func (b *Browser) captureBrowserProcessSnapshot(ctx context.Context) (browserProcessSnapshot, error) { return browserProcessSnapshot{}, nil }
 
 func browserProcessResourceMetrics(before, after browserProcessSnapshot) (float64, float64) {
 	memoryMB := after.MemoryMB
@@ -1368,26 +1177,6 @@ func browserProcessResourceMetrics(before, after browserProcessSnapshot) (float6
 	return cpuDelta / elapsedSeconds * 100, memoryMB
 }
 
-func (b *Browser) readDOMSummary(ctx context.Context) (string, string, *protocol.DOMSummary, error) {
-	if b.engine == "webkit" {
-		return b.readPlaywrightDOMSummary(ctx)
-	}
-	var pageURL string
-	var title string
-	var state domState
-	if err := chromedp.Run(ctx,
-		chromedp.Location(&pageURL),
-		chromedp.Title(&title),
-		chromedp.Evaluate(`(() => ({ readyState: document.readyState, visible: (document.body?.innerText || '').split(/\n+/).map((line) => line.trim()).filter(Boolean).slice(0, 10) }))()`, &state),
-	); err != nil {
-		return "", "", nil, err
-	}
-	return pageURL, title, &protocol.DOMSummary{
-		Title:       title,
-		ReadyState:  state.ReadyState,
-		VisibleText: state.Visible,
-	}, nil
-}
 
 func configInt(config map[string]any, key string) int {
 	switch value := config[key].(type) {
@@ -1404,36 +1193,7 @@ func configInt(config map[string]any, key string) int {
 	}
 }
 
-func (b *Browser) captureHTML(ctx context.Context) (string, error) {
-	if b.engine == "webkit" {
-		return b.capturePlaywrightHTML(ctx)
-	}
-	var html string
-	err := chromedp.Run(ctx, chromedp.OuterHTML("html", &html, chromedp.ByQuery))
-	return html, err
-}
 
-func (b *Browser) captureScreenshot(ctx context.Context, action *protocol.Action) (string, error) {
-	if b.engine == "webkit" {
-		return b.capturePlaywrightScreenshot(ctx, action)
-	}
-	var buf []byte
-	selector := b.screenshotSelector(action)
-	if selector != "" {
-		if err := chromedp.Run(ctx, chromedp.Screenshot(selector, &buf, chromedp.ByQuery)); err != nil {
-			return "", err
-		}
-	} else if action.Capture != nil && action.Capture.FullPage {
-		if err := chromedp.Run(ctx, chromedp.FullScreenshot(&buf, 90)); err != nil {
-			return "", err
-		}
-	} else {
-		if err := chromedp.Run(ctx, chromedp.CaptureScreenshot(&buf)); err != nil {
-			return "", err
-		}
-	}
-	return base64.StdEncoding.EncodeToString(buf), nil
-}
 
 func (b *Browser) screenshotSelector(action *protocol.Action) string {
 	if action == nil {
@@ -1487,20 +1247,6 @@ func (b *Browser) sleep(ctx context.Context, delay time.Duration) error {
 	}
 }
 
-func (b *Browser) executionContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	if b.engine == "webkit" {
-		return context.WithCancel(ctx)
-	}
-	actionCtx, cancel := context.WithCancel(b.browserCtx)
-	go func() {
-		select {
-		case <-ctx.Done():
-			cancel()
-		case <-actionCtx.Done():
-		}
-	}()
-	return actionCtx, cancel
-}
 
 func (b *Browser) eventOffsets() (int, int) {
 	b.mu.Lock()
@@ -1532,116 +1278,8 @@ func (b *Browser) networkEntriesSince(offset int) []protocol.NetworkEntry {
 	return cloneNetworkEntries(b.networkEntries[offset:])
 }
 
-func (b *Browser) handleBrowserEvent(ev any) {
-	if event, ok := ev.(*fetch.EventRequestPaused); ok {
-		go b.handleInterceptedRequest(event)
-		return
-	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
 
-	switch event := ev.(type) {
-	case *runtime.EventConsoleAPICalled:
-		parts := make([]string, 0, len(event.Args))
-		for _, arg := range event.Args {
-			parts = append(parts, remoteObjectText(arg))
-		}
-		b.consoleEntries = append(b.consoleEntries, protocol.ConsoleEntry{
-			Level:     string(event.Type),
-			Text:      strings.TrimSpace(strings.Join(parts, " ")),
-			Timestamp: time.Now(),
-		})
-	case *runtime.EventExceptionThrown:
-		b.consoleEntries = append(b.consoleEntries, protocol.ConsoleEntry{
-			Level:     "error",
-			Text:      event.ExceptionDetails.Text,
-			Source:    event.ExceptionDetails.URL,
-			Timestamp: time.Now(),
-		})
-	case *network.EventRequestWillBeSent:
-		b.pendingNetwork[event.RequestID] = networkRequest{
-			url:          event.Request.URL,
-			method:       event.Request.Method,
-			resourceType: string(event.Type),
-			startedAt:    time.Now(),
-		}
-	case *network.EventResponseReceived:
-		pending := b.pendingNetwork[event.RequestID]
-		pending.statusCode = int(event.Response.Status)
-		if pending.resourceType == "" {
-			pending.resourceType = string(event.Type)
-		}
-		b.pendingNetwork[event.RequestID] = pending
-	case *network.EventLoadingFinished:
-		pending, ok := b.pendingNetwork[event.RequestID]
-		if !ok {
-			return
-		}
-		b.networkEntries = append(b.networkEntries, protocol.NetworkEntry{
-			URL:           pending.url,
-			Method:        pending.method,
-			StatusCode:    pending.statusCode,
-			ResourceType:  pending.resourceType,
-			DurationMs:    float64(time.Since(pending.startedAt).Microseconds()) / 1000,
-			BytesReceived: int64(event.EncodedDataLength),
-		})
-		delete(b.pendingNetwork, event.RequestID)
-	case *network.EventLoadingFailed:
-		pending, ok := b.pendingNetwork[event.RequestID]
-		if !ok {
-			return
-		}
-		b.networkEntries = append(b.networkEntries, protocol.NetworkEntry{
-			URL:          pending.url,
-			Method:       pending.method,
-			StatusCode:   pending.statusCode,
-			ResourceType: pending.resourceType,
-			DurationMs:   float64(time.Since(pending.startedAt).Microseconds()) / 1000,
-		})
-		delete(b.pendingNetwork, event.RequestID)
-	}
-}
-
-func (b *Browser) handleInterceptedRequest(event *fetch.EventRequestPaused) {
-	if event == nil || event.Request == nil || b.browserCtx == nil {
-		return
-	}
-	if b.shouldBlockUnrecordedRequest(event.Request.URL) {
-		_ = fetch.FailRequest(event.RequestID, network.ErrorReasonBlockedByClient).Do(b.browserCtx)
-		return
-	}
-	if b.hasDownloadFilters() && b.shouldBlockFilteredRequest(event.Request.URL) {
-		_ = fetch.FailRequest(event.RequestID, network.ErrorReasonBlockedByClient).Do(b.browserCtx)
-		return
-	}
-	continueRequest := fetch.ContinueRequest(event.RequestID)
-	if !b.cacheContentURLs && shouldRevalidateContentRequest(event.ResourceType) {
-		continueRequest = continueRequest.WithHeaders(continuedRequestHeaders(event.Request.Headers))
-	}
-	_ = continueRequest.Do(b.browserCtx)
-}
-
-func (b *Browser) close() {
-	b.closePlaywright()
-	if b.browserStop != nil {
-		b.browserStop()
-		b.browserStop = nil
-	}
-	if b.allocCancel != nil {
-		b.allocCancel()
-		b.allocCancel = nil
-	}
-	b.currentURL = ""
-	b.browserCtx = nil
-	b.allocCtx = nil
-	b.slowMo = 0
-	b.userAgent = ""
-	b.captureScreenshots = ""
-	b.pendingNetwork = nil
-	b.consoleEntries = nil
-	b.networkEntries = nil
-}
 
 func (b *Browser) waitTimeout(timeoutMs int) time.Duration {
 	if timeoutMs <= 0 {
@@ -1660,25 +1298,6 @@ func parseWaitDelay(raw string) (time.Duration, error) {
 	return time.ParseDuration(raw)
 }
 
-func remoteObjectText(obj *runtime.RemoteObject) string {
-	if obj == nil {
-		return ""
-	}
-	if obj.Description != "" {
-		return obj.Description
-	}
-	if obj.UnserializableValue != "" {
-		return string(obj.UnserializableValue)
-	}
-	if len(obj.Value) == 0 {
-		return ""
-	}
-	var decoded any
-	if err := json.Unmarshal(obj.Value, &decoded); err == nil {
-		return fmt.Sprint(decoded)
-	}
-	return string(obj.Value)
-}
 
 func cloneConsoleEntries(entries []protocol.ConsoleEntry) []protocol.ConsoleEntry {
 	if len(entries) == 0 {
@@ -1707,4 +1326,149 @@ func cloneDOMSummary(summary *protocol.DOMSummary) *protocol.DOMSummary {
 		cloned.VisibleText = append([]string(nil), summary.VisibleText...)
 	}
 	return &cloned
+}
+
+
+func (b *Browser) navigate(ctx context.Context, target string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	resolvedTarget := target
+	if b.baseURL != "" && strings.HasPrefix(target, "/") {
+		resolvedTarget = strings.TrimRight(b.baseURL, "/") + target
+	} else if !strings.HasPrefix(target, "http") {
+		resolvedTarget = "http://" + target
+	}
+
+	if _, err := b.pwPage.Goto(resolvedTarget); err != nil {
+		return err
+	}
+	b.currentURL = resolvedTarget
+	return b.waitVisible(ctx, "body")
+}
+
+func (b *Browser) click(ctx context.Context, selector string) error {
+	if err := b.waitVisible(ctx, selector); err != nil {
+		return err
+	}
+	return b.pwPage.Click(selector)
+}
+
+func (b *Browser) fill(ctx context.Context, selector, value string) error {
+	if err := b.waitVisible(ctx, selector); err != nil {
+		return err
+	}
+	return b.pwPage.Fill(selector, value)
+}
+
+func (b *Browser) waitVisible(ctx context.Context, selector string) error {
+	_, err := b.pwPage.WaitForSelector(selector)
+	return err
+}
+
+func (b *Browser) waitHidden(ctx context.Context, selector string) error {
+	_, err := b.pwPage.WaitForSelector(selector, playwright.PageWaitForSelectorOptions{State: playwright.WaitForSelectorStateHidden})
+	return err
+}
+
+func (b *Browser) evaluatePageExpression(ctx context.Context, expression string, result any) error {
+	res, err := b.pwPage.Evaluate(expression)
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return nil
+	}
+    data, _ := json.Marshal(res)
+	return json.Unmarshal(data, result)
+}
+
+func (b *Browser) captureHTML(ctx context.Context) (string, error) {
+	return b.pwPage.Content()
+}
+
+func (b *Browser) captureScreenshot(ctx context.Context, action *protocol.Action) (string, error) {
+	opts := playwright.PageScreenshotOptions{}
+	selector := b.screenshotSelector(action)
+	if selector != "" {
+		el, err := b.pwPage.QuerySelector(selector)
+		if err != nil {
+			return "", err
+		}
+		if el != nil {
+			buf, err := el.Screenshot()
+			return base64.StdEncoding.EncodeToString(buf), err
+		}
+	}
+	if action != nil && action.Capture != nil && action.Capture.FullPage {
+		opts.FullPage = playwright.Bool(true)
+	}
+	buf, err := b.pwPage.Screenshot(opts)
+	return base64.StdEncoding.EncodeToString(buf), err
+}
+
+func (b *Browser) readDOMSummary(ctx context.Context) (string, string, *protocol.DOMSummary, error) {
+	res, err := b.pwPage.Evaluate(`(() => ({
+		url: window.location.href,
+		title: document.title,
+		readyState: document.readyState,
+		visible: (document.body?.innerText || '').split(/\n+/).map((line) => line.trim()).filter(Boolean).slice(0, 10)
+	}))()`)
+	if err != nil {
+		return "", "", nil, err
+	}
+	data, ok := res.(map[string]any)
+	if !ok {
+		return "", "", nil, fmt.Errorf("invalid dom summary")
+	}
+	title, _ := data["title"].(string)
+	url, _ := data["url"].(string)
+	readyState, _ := data["readyState"].(string)
+	
+	visibleList, _ := data["visible"].([]any)
+	visibleText := []string{}
+	for _, v := range visibleList {
+		if s, ok := v.(string); ok {
+			visibleText = append(visibleText, s)
+		}
+	}
+	
+	return url, title, &protocol.DOMSummary{
+		Title:       title,
+		ReadyState:  readyState,
+		VisibleText: visibleText,
+	}, nil
+}
+
+func (b *Browser) close() {
+	if b.pwCDP != nil {
+		_ = b.pwCDP.Detach()
+		b.pwCDP = nil
+	}
+	if b.pwPage != nil {
+		_ = b.pwPage.Close()
+		b.pwPage = nil
+	}
+	if b.pwContext != nil {
+		_ = b.pwContext.Close()
+		b.pwContext = nil
+	}
+	b.currentURL = ""
+	b.slowMo = 0
+	b.userAgent = ""
+	b.captureScreenshots = ""
+	b.pendingNetwork = nil
+	b.consoleEntries = nil
+	b.networkEntries = nil
+}
+
+
+func (b *Browser) selectOption(ctx context.Context, selector, value string) error {
+	if err := b.waitVisible(ctx, selector); err != nil {
+		return err
+	}
+	_, err := b.pwPage.SelectOption(selector, playwright.SelectOptionValues{
+		Values: playwright.StringSlice(value),
+	})
+	return err
 }
