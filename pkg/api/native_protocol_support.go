@@ -132,6 +132,22 @@ func nativeProtocolSupportMatrix() []NativeProtocolSupportEntry {
 			RecommendedWorkflow: "Use mock replay for script shakeout, then attach broker credentials and export correlation/dead-letter evidence.",
 			Evidence:            []string{"pkg/protocol/jms/jms_test.go", "/api/v1/protocol-bundles/support-matrix"},
 		},
+		{
+			Protocol:            "kafka",
+			DisplayName:         "Apache Kafka",
+			Status:              "supported",
+			ExecutionPosture:    "native_linux",
+			AuthoringSurface:    "blank editor, starter template, AsyncAPI import",
+			RuntimeConfig:       []string{"brokers", "security protocol", "SASL mechanism/credentials", "TLS", "consumer group", "topic", "acks", "compression", "partition strategy", "timeout", "mock mode"},
+			ActionEditor:        []string{"produce", "consume", "request/reply", "commit", "seek", "key/partition", "headers", "offset/partition extractors", "message/offset/lag assertions"},
+			Validation:          []string{"broker/topic readiness", "security/acks/compression enum validation", "mock broker local replay"},
+			ReplayEvidence:      []string{"protocol evidence", "partition/offset evidence", "consumer lag", "correlation evidence", "timeout diagnosis"},
+			ReportExport:        []string{"replay JSON", "debug session export", "archive transaction evidence"},
+			ImportSources:       []string{"JSON DSL", "AsyncAPI 2.x/3.x"},
+			RemainingGaps:       []string{"real franz-go network adapter is not yet compiled in (mock replay only); Avro/Protobuf schema-registry payloads remain review-only"},
+			RecommendedWorkflow: "Author or import from AsyncAPI, shake out against the in-memory broker, then attach real brokers/SASL once the native adapter is registered.",
+			Evidence:            []string{"pkg/protocol/kafka/kafka_test.go", "/api/v1/scripts/import/asyncapi/support-matrix"},
+		},
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
 		return entries[i].Protocol < entries[j].Protocol

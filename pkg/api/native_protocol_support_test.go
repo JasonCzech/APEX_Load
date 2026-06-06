@@ -24,7 +24,7 @@ func TestNativeProtocolSupportMatrixEndpointCoversRemainingExecutableProtocols(t
 	if payload.SchemaVersion != nativeProtocolSupportSchemaVersion {
 		t.Fatalf("schema version = %q", payload.SchemaVersion)
 	}
-	for _, protocol := range []string{"websocket", "grpc", "database", "network", "jms-solace"} {
+	for _, protocol := range []string{"websocket", "grpc", "database", "network", "jms-solace", "kafka"} {
 		entry := nativeProtocolMatrixEntry(payload.SupportMatrix, protocol)
 		if entry == nil {
 			t.Fatalf("support matrix missing %s", protocol)

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { type AuthoringComponent, type StoredScenario, type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
-import { composeComponentDraft, createApiDraft, createDatabaseDraft, createGrpcDraft, createJavaHttpDraft, createJmsDraft, createNetworkDraft, createSoapDraft, createWebDraft, createWebSocketDraft } from './scriptDraftFactories'
+import { composeComponentDraft, createApiDraft, createDatabaseDraft, createGrpcDraft, createJavaHttpDraft, createJmsDraft, createKafkaDraft, createNetworkDraft, createSoapDraft, createWebDraft, createWebSocketDraft } from './scriptDraftFactories'
 
 export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample' | 'java-http-import' | 'devweb-import' | 'har-import' | 'openapi-import' | 'postman-import' | 'wsdl-import' | 'asyncapi-import'
 
@@ -51,6 +51,7 @@ export interface ScriptsCreateOptionActions {
   startNetworkScript: () => void
   startWebScript: () => void
   startJmsScript: () => void
+  startKafkaScript: () => void
   startTemplateScript: (script: ScriptDefinition) => void
   composeComponentScript: (component: AuthoringComponent) => void
   openLoadRunnerImport: () => void
@@ -240,6 +241,10 @@ export function useScriptsAuthoringState({
     startDraft(createJmsDraft)
   }, [startDraft])
 
+  const startKafkaScript = useCallback(() => {
+    startDraft(createKafkaDraft)
+  }, [startDraft])
+
   const startTemplateScript = useCallback((script: ScriptDefinition) => {
     openDraftEditor(script)
   }, [openDraftEditor])
@@ -323,6 +328,7 @@ export function useScriptsAuthoringState({
       startNetworkScript,
       startWebScript,
       startJmsScript,
+      startKafkaScript,
       startTemplateScript,
       composeComponentScript,
       openLoadRunnerImport,

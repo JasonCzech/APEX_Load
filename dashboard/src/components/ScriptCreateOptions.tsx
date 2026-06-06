@@ -19,6 +19,7 @@ interface Props {
   onStartWebScript: () => void
   onOpenRecorder: () => void
   onStartJmsScript: () => void
+  onStartKafkaScript: () => void
   onStartTemplateScript: (script: ScriptDefinition) => void
   onComposeComponent: (component: AuthoringComponent) => void
   onOpenLoadRunnerImport: () => void
@@ -146,6 +147,7 @@ export default function ScriptCreateOptions({
   onStartWebScript,
   onOpenRecorder,
   onStartJmsScript,
+  onStartKafkaScript,
   onStartTemplateScript,
   onComposeComponent,
   onOpenLoadRunnerImport,
@@ -295,6 +297,15 @@ export default function ScriptCreateOptions({
       description: 'Create a reusable JMS script draft for Solace publish/consume flows.',
       primary: true,
       onSelect: onStartJmsScript,
+    },
+    {
+      id: 'kafka',
+      type: 'KFK',
+      typeClass: 'jms',
+      name: 'Kafka Script',
+      description: 'Author Kafka produce, consume, and request-reply flows with brokers, topics, partition keys, and offset/lag assertions.',
+      primary: true,
+      onSelect: onStartKafkaScript,
     },
   ]
   const startNewCategoryTabs: Array<{ id: StartNewCategory, label: string, count: number }> = [

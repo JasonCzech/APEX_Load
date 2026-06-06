@@ -58,6 +58,7 @@ export default function ScriptsAuthoringShell({
         onStartWebScript={createOptionActions.startWebScript}
         onOpenRecorder={createOptionActions.openRecorder}
         onStartJmsScript={createOptionActions.startJmsScript}
+        onStartKafkaScript={createOptionActions.startKafkaScript}
         onStartTemplateScript={createOptionActions.startTemplateScript}
         onComposeComponent={createOptionActions.composeComponentScript}
         onOpenLoadRunnerImport={createOptionActions.openLoadRunnerImport}

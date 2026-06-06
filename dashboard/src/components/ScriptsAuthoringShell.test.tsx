@@ -98,6 +98,7 @@ function createActions(overrides: Partial<ScriptsCreateOptionActions> = {}): Scr
     startNetworkScript: vi.fn(),
     startWebScript: vi.fn(),
     startJmsScript: vi.fn(),
+    startKafkaScript: vi.fn(),
     startTemplateScript: vi.fn(),
     composeComponentScript: vi.fn(),
     openLoadRunnerImport: vi.fn(),

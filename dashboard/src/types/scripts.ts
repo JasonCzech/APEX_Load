@@ -245,6 +245,34 @@ export interface JMSConfig {
   mock?: boolean
 }
 
+export interface KafkaTLSConfig {
+  insecure_skip_verify?: boolean
+  client_cert_file?: string
+  client_key_file?: string
+  ca_cert_file?: string
+}
+
+export interface KafkaConfig {
+  brokers?: string[]
+  security_protocol?: string
+  sasl_mechanism?: string
+  sasl_username?: string
+  sasl_password?: string
+  sasl_password_secret?: string
+  tls?: KafkaTLSConfig
+  client_id?: string
+  consumer_group?: string
+  topic?: string
+  acks?: string
+  compression?: string
+  partition_strategy?: string
+  auto_offset_reset?: string
+  partitions?: number
+  timeout_ms?: number
+  properties?: Record<string, string>
+  mock?: boolean
+}
+
 export interface DatabaseConfig {
   driver?: string
   dsn?: string
@@ -351,6 +379,7 @@ export interface ScriptConfig {
   network?: NetworkConfig
   browser?: BrowserConfig
   jms?: JMSConfig
+  kafka?: KafkaConfig
   observability?: ObservabilityConfig
 }
 

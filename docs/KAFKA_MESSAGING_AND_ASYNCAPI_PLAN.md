@@ -1,9 +1,9 @@
 # Implementation Plan: Direct Kafka Messaging Testing + AsyncAPI Import
 
-> Status: **Phases 1–7 implemented** (Kafka protocol plugin, DSL integration, binary
-> wiring, AsyncAPI converter, API routes, and the dashboard AsyncAPI import wizard).
-> The franz-go real network adapter and direct Kafka authoring templates remain the
-> only outstanding follow-ons. This document is the design of record.
+> Status: **Phases 1–7 implemented plus direct Kafka authoring** (Kafka protocol
+> plugin, DSL integration, binary wiring, AsyncAPI converter, API routes, the dashboard
+> AsyncAPI import wizard, and a Kafka starter in the Script Builder). The franz-go real
+> network adapter is the only outstanding follow-on. This document is the design of record.
 
 ## Current Implementation Status
 The Kafka runtime is no longer just planned. The following are implemented in the Go
@@ -43,10 +43,19 @@ Also implemented:
   Import-From-Source surface. Verified end-to-end in a browser (upload → convert →
   review render).
 
+Direct Kafka authoring is also implemented:
+
+- `dashboard/` — `createKafkaDraft` starter (protocol `kafka`, mock mode, produce +
+  consume actions), `startKafkaScript` threaded through `useScriptsAuthoringState` and
+  the authoring shell, and a "Kafka Script" card in the Script Builder's Blank & Assisted
+  Editors. Verified end-to-end in a browser (card → draft editor with produce/consume,
+  no validation/console errors).
+- `pkg/api/native_protocol_support.go` — a `kafka` entry in the native protocol parity
+  matrix (guarded by `native_protocol_support_test.go`).
+
 **Not yet done:** the franz-go real network adapter (currently the `unavailableClient`
-stub) and direct Kafka authoring templates/starter actions in the Script Builder
-(the import path is the only Kafka-script entry point so far). The sections below remain
-the spec for that outstanding work, plus the original full design for the items above.
+stub). The sections below remain the spec for that outstanding work, plus the original
+full design for the items above.
 
 ## Objective
 Add direct load testing of Apache Kafka messaging services to APEX Load, plus an

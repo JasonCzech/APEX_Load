@@ -176,6 +176,58 @@ export function createIbmMqDraft(): ScriptDefinition {
   }
 }
 
+export function createKafkaDraft(): ScriptDefinition {
+  return {
+    name: '',
+    version: '1.0.0',
+    protocol: 'kafka',
+    config: {
+      base_url: '',
+      think_time: { type: 'fixed', mean_ms: 1000 },
+      pacing: { type: 'none' },
+      run_logic: { iterations: 0, auto_transactions: 'none' },
+      error_handling: { continue_on_error: false },
+      log: { level: 'standard' },
+      kafka: {
+        brokers: [],
+        security_protocol: 'plaintext',
+        topic: '',
+        consumer_group: '',
+        acks: 'all',
+        compression: 'none',
+        partition_strategy: 'key-hash',
+        auto_offset_reset: 'latest',
+        timeout_ms: 5000,
+        mock: true,
+      },
+    },
+    actions: [
+      {
+        name: 'Produce_Event',
+        type: 'kafka_produce',
+        target: 'events',
+        headers: {},
+        body: '{"id":"{{fn.uuid()}}"}',
+        params: { key: '{{fn.uuid()}}' },
+        extractors: [],
+        assertions: [{ type: 'offset_advanced' }],
+        think_time_after: true,
+      },
+      {
+        name: 'Consume_Event',
+        type: 'kafka_consume',
+        target: 'events',
+        headers: {},
+        body: '',
+        params: { timeout_ms: 5000 },
+        extractors: [],
+        assertions: [{ type: 'message_received' }],
+        think_time_after: true,
+      },
+    ],
+  }
+}
+
 export function createWebSocketDraft(): ScriptDefinition {
   return {
     ...createBaseDraft(),
@@ -310,6 +362,7 @@ function baseDraftForComponent(component: AuthoringComponent): ScriptDefinition 
     if (normalized === 'grpc') return createGrpcDraft()
     if (normalized === 'database') return createDatabaseDraft()
     if (normalized === 'network') return createNetworkDraft()
+    if (normalized === 'kafka') return createKafkaDraft()
     if (normalized === 'browser' || normalized === 'trueclient_mobile_web' || normalized === 'trueclient2_web') {
       return createWebDraft()
     }
