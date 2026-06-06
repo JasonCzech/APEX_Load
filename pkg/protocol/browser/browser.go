@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -60,16 +59,7 @@ type Browser struct {
 	mu                 sync.Mutex
 	consoleEntries     []protocol.ConsoleEntry
 	networkEntries     []protocol.NetworkEntry
-	pendingNetwork     map[string]networkRequest
 	resourceValidators map[string]string
-}
-
-type networkRequest struct {
-	url          string
-	method       string
-	resourceType string
-	statusCode   int
-	startedAt    time.Time
 }
 
 type domState struct {
@@ -115,7 +105,6 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	b.cpuThrottleRate = 1
 	b.viewportW = 1440
 	b.viewportH = 900
-	b.pendingNetwork = make(map[string]networkRequest)
 	b.resourceValidators = make(map[string]string)
 	b.currentURL = ""
 	b.clientMetricsEnabled = false
@@ -381,223 +370,6 @@ func normalizeOrientation(value string) string {
 	default:
 		return ""
 	}
-}
-
-func normalizeRecordedResources(urls []string) map[string]struct{} {
-	normalized := make(map[string]struct{})
-	for _, rawURL := range urls {
-		for _, key := range recordedResourceKeys(rawURL) {
-			normalized[key] = struct{}{}
-		}
-	}
-	if len(normalized) == 0 {
-		return nil
-	}
-	return normalized
-}
-
-func recordedResourceKeys(rawURL string) []string {
-	parsed, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil {
-		return nil
-	}
-	path := parsed.EscapedPath()
-	if path == "" {
-		path = "/"
-	}
-	if parsed.RawQuery != "" {
-		path += "?" + parsed.RawQuery
-	}
-	if parsed.Host == "" {
-		return []string{path}
-	}
-	return []string{strings.ToLower(parsed.Host) + path, path}
-}
-
-func normalizeDownloadFilterHosts(hosts []string) []string {
-	normalized := make([]string, 0, len(hosts))
-	seen := make(map[string]struct{}, len(hosts))
-	for _, host := range hosts {
-		candidate := strings.ToLower(strings.TrimSpace(host))
-		candidate = strings.TrimPrefix(candidate, "http://")
-		candidate = strings.TrimPrefix(candidate, "https://")
-		candidate = strings.TrimRight(candidate, "/")
-		if candidate == "" {
-			continue
-		}
-		if _, ok := seen[candidate]; ok {
-			continue
-		}
-		seen[candidate] = struct{}{}
-		normalized = append(normalized, candidate)
-	}
-	return normalized
-}
-
-func (b *Browser) hasDownloadFilters() bool {
-	return (b.downloadFilterMode == "allow_list" || b.downloadFilterMode == "block_list") && len(b.downloadFilterHosts) > 0
-}
-
-func (b *Browser) shouldBlockFilteredRequest(rawURL string) bool {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return false
-	}
-	fullHost := strings.ToLower(parsed.Host)
-	hostName := strings.ToLower(parsed.Hostname())
-	matched := false
-	for _, allowedHost := range b.downloadFilterHosts {
-		if allowedHost == fullHost || allowedHost == hostName {
-			matched = true
-			break
-		}
-	}
-	switch b.downloadFilterMode {
-	case "allow_list":
-		return !matched
-	case "block_list":
-		return matched
-	default:
-		return false
-	}
-}
-
-func (b *Browser) shouldBlockUnrecordedRequest(rawURL string) bool {
-	if b.downloadResources != "recorded" || !b.recordedResourcesAvailable {
-		return false
-	}
-	if len(b.recordedResources) == 0 {
-		return true
-	}
-	for _, key := range recordedResourceKeys(rawURL) {
-		if _, ok := b.recordedResources[key]; ok {
-			return false
-		}
-	}
-	return true
-}
-
-func (b *Browser) installRequestPolicy(browserContext playwright.BrowserContext) error {
-	if !b.requestPolicyEnabled() {
-		return nil
-	}
-	return browserContext.Route("**/*", func(route playwright.Route) {
-		request := route.Request()
-		if b.shouldBlockRequest(request) {
-			_ = route.Abort()
-			return
-		}
-		if b.networkLatencyMS > 0 {
-			time.Sleep(time.Duration(b.networkLatencyMS) * time.Millisecond)
-		}
-
-		headers := b.requestPolicyHeaders(request)
-		if len(headers) > 0 {
-			_ = route.Continue(playwright.RouteContinueOptions{Headers: headers})
-			return
-		}
-		_ = route.Continue()
-	})
-}
-
-func (b *Browser) requestPolicyEnabled() bool {
-	return !b.cacheEnabled ||
-		b.checkNewerVersions ||
-		b.downloadResources != "all" ||
-		b.hasDownloadFilters() ||
-		b.networkLatencyMS > 0
-}
-
-func (b *Browser) shouldBlockRequest(request playwright.Request) bool {
-	if request == nil {
-		return false
-	}
-	resourceType := request.ResourceType()
-	if request.IsNavigationRequest() || resourceType == "document" {
-		return false
-	}
-	if b.downloadResources == "none" && isBrowserStaticResourceType(resourceType) {
-		return true
-	}
-	if b.shouldBlockUnrecordedRequest(request.URL()) {
-		return true
-	}
-	if b.hasDownloadFilters() && isBrowserStaticResourceType(resourceType) && b.shouldBlockFilteredRequest(request.URL()) {
-		return true
-	}
-	return false
-}
-
-func (b *Browser) requestPolicyHeaders(request playwright.Request) map[string]string {
-	if request == nil || (b.cacheEnabled && !b.checkNewerVersions) {
-		return nil
-	}
-	headers := cloneRequestHeaders(request.Headers())
-	if !b.cacheEnabled || b.checkNewerVersions {
-		headers["Cache-Control"] = "no-cache"
-		headers["Pragma"] = "no-cache"
-	}
-	if b.checkNewerVersions && shouldRevalidateBrowserRequest(request) {
-		if etag := b.resourceValidator(request.URL()); etag != "" {
-			headers["If-None-Match"] = etag
-		}
-	}
-	return headers
-}
-
-func shouldRevalidateBrowserRequest(request playwright.Request) bool {
-	if request == nil || request.IsNavigationRequest() {
-		return false
-	}
-	return isBrowserStaticResourceType(request.ResourceType())
-}
-
-func isBrowserStaticResourceType(resourceType string) bool {
-	switch resourceType {
-	case "stylesheet", "script", "image", "media", "font", "manifest", "texttrack":
-		return true
-	default:
-		return false
-	}
-}
-
-func cloneRequestHeaders(headers map[string]string) map[string]string {
-	if len(headers) == 0 {
-		return map[string]string{}
-	}
-	cloned := make(map[string]string, len(headers)+3)
-	for key, value := range headers {
-		cloned[key] = value
-	}
-	return cloned
-}
-
-func (b *Browser) rememberResourceValidator(rawURL string, headers map[string]string) {
-	etag := headerValue(headers, "etag")
-	if etag == "" {
-		return
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.resourceValidators == nil {
-		b.resourceValidators = make(map[string]string)
-	}
-	b.resourceValidators[rawURL] = etag
-}
-
-func (b *Browser) resourceValidator(rawURL string) string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.resourceValidators[rawURL]
-}
-
-func headerValue(headers map[string]string, name string) string {
-	for key, value := range headers {
-		if strings.EqualFold(key, name) {
-			return value
-		}
-	}
-	return ""
 }
 
 func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
@@ -1366,134 +1138,6 @@ const browserMetricsBootstrapScript = `(() => {
 	} catch (e) {}
 })();`
 
-func (b *Browser) captureRuntimeMetrics(ctx context.Context, metrics *protocol.ClientMetrics) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if b.pwCDP != nil {
-		_, _ = b.pwCDP.Send("Performance.enable", map[string]any{})
-		if raw, err := b.pwCDP.Send("Performance.getMetrics", map[string]any{}); err == nil {
-			b.applyCDPPerformanceMetrics(raw, metrics)
-		}
-		if raw, err := b.pwCDP.Send("Runtime.getHeapUsage", map[string]any{}); err == nil {
-			b.applyCDPHeapMetrics(raw, metrics)
-		}
-	}
-	if metrics.JSHeapTotalMB <= 0 {
-		var snapshot struct {
-			Used  float64 `json:"used"`
-			Total float64 `json:"total"`
-		}
-		if err := b.evaluatePageExpression(ctx, `(() => {
-			const memory = performance.memory || {};
-			return {
-				used: memory.usedJSHeapSize || 0,
-				total: memory.totalJSHeapSize || memory.jsHeapSizeLimit || 0,
-			};
-		})()`, &snapshot); err == nil {
-			metrics.JSHeapUsedMB = bytesToMegabytes(snapshot.Used)
-			metrics.JSHeapTotalMB = bytesToMegabytes(snapshot.Total)
-		}
-	}
-	if metrics.JSHeapTotalMB <= 0 && metrics.JSHeapUsedMB > 0 {
-		metrics.JSHeapTotalMB = metrics.JSHeapUsedMB
-	}
-	return nil
-}
-
-func (b *Browser) applyCDPPerformanceMetrics(raw any, metrics *protocol.ClientMetrics) {
-	payload, ok := raw.(map[string]any)
-	if !ok {
-		return
-	}
-	items, ok := payload["metrics"].([]any)
-	if !ok {
-		return
-	}
-	values := make(map[string]float64, len(items))
-	for _, item := range items {
-		entry, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		name, _ := entry["name"].(string)
-		value, ok := numberFromAny(entry["value"])
-		if name == "" || !ok {
-			continue
-		}
-		values[name] = value
-	}
-	metrics.JSHeapUsedMB = bytesToMegabytes(values["JSHeapUsedSize"])
-	metrics.JSHeapTotalMB = bytesToMegabytes(values["JSHeapTotalSize"])
-	metrics.LayoutCount = int(values["LayoutCount"])
-	metrics.RecalcStyleCount = int(values["RecalcStyleCount"])
-	metrics.ScriptDurationMs = values["ScriptDuration"] * 1000
-	metrics.LayoutDurationMs = values["LayoutDuration"] * 1000
-	metrics.TaskDurationMs = values["TaskDuration"] * 1000
-}
-
-func (b *Browser) applyCDPHeapMetrics(raw any, metrics *protocol.ClientMetrics) {
-	payload, ok := raw.(map[string]any)
-	if !ok {
-		return
-	}
-	if used, ok := numberFromAny(payload["usedSize"]); ok {
-		metrics.JSHeapUsedMB = bytesToMegabytes(used)
-	}
-	if total, ok := numberFromAny(payload["totalSize"]); ok {
-		metrics.JSHeapTotalMB = bytesToMegabytes(total)
-	}
-}
-
-func numberFromAny(value any) (float64, bool) {
-	switch typed := value.(type) {
-	case float64:
-		return typed, true
-	case float32:
-		return float64(typed), true
-	case int:
-		return float64(typed), true
-	case int64:
-		return float64(typed), true
-	case json.Number:
-		parsed, err := typed.Float64()
-		return parsed, err == nil
-	default:
-		return 0, false
-	}
-}
-
-func bytesToMegabytes(value float64) float64 {
-	if value <= 0 {
-		return 0
-	}
-	return value / (1024 * 1024)
-}
-
-func (b *Browser) captureBrowserProcessMetrics(ctx context.Context, metrics *protocol.ClientMetrics, before browserProcessSnapshot) error {
-	return nil
-}
-
-func (b *Browser) captureBrowserProcessSnapshot(ctx context.Context) (browserProcessSnapshot, error) {
-	return browserProcessSnapshot{}, nil
-}
-
-func browserProcessResourceMetrics(before, after browserProcessSnapshot) (float64, float64) {
-	memoryMB := after.MemoryMB
-	if before.CapturedAt.IsZero() || after.CapturedAt.IsZero() || !after.CapturedAt.After(before.CapturedAt) {
-		return 0, memoryMB
-	}
-	cpuDelta := after.CPUTimeSeconds - before.CPUTimeSeconds
-	if cpuDelta <= 0 {
-		return 0, memoryMB
-	}
-	elapsedSeconds := after.CapturedAt.Sub(before.CapturedAt).Seconds()
-	if elapsedSeconds <= 0 {
-		return 0, memoryMB
-	}
-	return cpuDelta / elapsedSeconds * 100, memoryMB
-}
-
 func configInt(config map[string]any, key string) int {
 	switch value := config[key].(type) {
 	case int:
@@ -1765,7 +1409,6 @@ func (b *Browser) close() {
 	b.slowMo = 0
 	b.userAgent = ""
 	b.captureScreenshots = ""
-	b.pendingNetwork = nil
 	b.consoleEntries = nil
 	b.networkEntries = nil
 }

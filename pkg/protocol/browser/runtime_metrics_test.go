@@ -1,0 +1,96 @@
+package browser
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
+)
+
+func TestApplyCDPPerformanceMetrics(t *testing.T) {
+	var metrics protocol.ClientMetrics
+	b := &Browser{}
+
+	b.applyCDPPerformanceMetrics(map[string]any{
+		"metrics": []any{
+			map[string]any{"name": "JSHeapUsedSize", "value": float64(2 * 1024 * 1024)},
+			map[string]any{"name": "JSHeapTotalSize", "value": float64(4 * 1024 * 1024)},
+			map[string]any{"name": "LayoutCount", "value": float64(7)},
+			map[string]any{"name": "RecalcStyleCount", "value": float64(3)},
+			map[string]any{"name": "ScriptDuration", "value": 0.12},
+			map[string]any{"name": "LayoutDuration", "value": 0.03},
+			map[string]any{"name": "TaskDuration", "value": 0.5},
+		},
+	}, &metrics)
+
+	if metrics.JSHeapUsedMB != 2 {
+		t.Fatalf("JSHeapUsedMB = %v, want 2", metrics.JSHeapUsedMB)
+	}
+	if metrics.JSHeapTotalMB != 4 {
+		t.Fatalf("JSHeapTotalMB = %v, want 4", metrics.JSHeapTotalMB)
+	}
+	if metrics.LayoutCount != 7 || metrics.RecalcStyleCount != 3 {
+		t.Fatalf("layout counts = %d/%d, want 7/3", metrics.LayoutCount, metrics.RecalcStyleCount)
+	}
+	if metrics.ScriptDurationMs != 120 || metrics.LayoutDurationMs != 30 || metrics.TaskDurationMs != 500 {
+		t.Fatalf("durations = %v/%v/%v, want 120/30/500", metrics.ScriptDurationMs, metrics.LayoutDurationMs, metrics.TaskDurationMs)
+	}
+}
+
+func TestApplyCDPHeapMetrics(t *testing.T) {
+	metrics := protocol.ClientMetrics{
+		JSHeapUsedMB:  1,
+		JSHeapTotalMB: 2,
+	}
+	b := &Browser{}
+
+	b.applyCDPHeapMetrics(map[string]any{
+		"usedSize":  float64(3 * 1024 * 1024),
+		"totalSize": float64(6 * 1024 * 1024),
+	}, &metrics)
+
+	if metrics.JSHeapUsedMB != 3 {
+		t.Fatalf("JSHeapUsedMB = %v, want 3", metrics.JSHeapUsedMB)
+	}
+	if metrics.JSHeapTotalMB != 6 {
+		t.Fatalf("JSHeapTotalMB = %v, want 6", metrics.JSHeapTotalMB)
+	}
+}
+
+func TestNumberFromAny(t *testing.T) {
+	tests := []struct {
+		name   string
+		value  any
+		want   float64
+		wantOK bool
+	}{
+		{name: "float64", value: float64(1.5), want: 1.5, wantOK: true},
+		{name: "float32", value: float32(2.5), want: 2.5, wantOK: true},
+		{name: "int", value: 3, want: 3, wantOK: true},
+		{name: "int64", value: int64(4), want: 4, wantOK: true},
+		{name: "json number", value: json.Number("5.75"), want: 5.75, wantOK: true},
+		{name: "bad json number", value: json.Number("not-a-number"), wantOK: false},
+		{name: "string", value: "6", wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := numberFromAny(tt.value)
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if ok && got != tt.want {
+				t.Fatalf("value = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBytesToMegabytes(t *testing.T) {
+	if got := bytesToMegabytes(2 * 1024 * 1024); got != 2 {
+		t.Fatalf("bytesToMegabytes = %v, want 2", got)
+	}
+	if got := bytesToMegabytes(-1); got != 0 {
+		t.Fatalf("bytesToMegabytes(-1) = %v, want 0", got)
+	}
+}
