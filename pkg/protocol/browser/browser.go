@@ -205,7 +205,7 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 		b.deviceTier = deviceTier
 	}
 
-	if b.engine != "chromium" && b.engine != "webkit" {
+	if b.engine != "chromium" && b.engine != "webkit" && b.engine != "firefox" && b.engine != "chrome" {
 		return fmt.Errorf("unsupported browser engine: %s", b.engine)
 	}
 
@@ -580,6 +580,47 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 			return result, nil
 		}
 		actionErr = b.selectOption(actionCtx, selector, action.Value)
+	case "browser_dblclick":
+		selector := b.actionSelector(action)
+		if selector == "" {
+			result.ErrorMessage = "browser_dblclick requires selector or target"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		actionErr = b.pwPage.Dblclick(selector)
+	case "browser_hover":
+		selector := b.actionSelector(action)
+		if selector == "" {
+			result.ErrorMessage = "browser_hover requires selector or target"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		actionErr = b.pwPage.Hover(selector)
+	case "browser_drag_and_drop":
+		source := b.actionSelector(action)
+		target := actionParamString(action.Params, "target", "")
+		if source == "" || target == "" {
+			result.ErrorMessage = "browser_drag_and_drop requires selector/target and target param"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		actionErr = b.pwPage.DragAndDrop(source, target)
+	case "browser_evaluate_js":
+		script := action.Target
+		if script == "" {
+			result.ErrorMessage = "browser_evaluate_js requires script in target"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		var jsResult any
+		actionErr = b.evaluatePageExpression(actionCtx, script, &jsResult)
+		if actionErr == nil && jsResult != nil {
+			if strResult, ok := jsResult.(string); ok {
+				result.Extractions["result"] = strResult
+			} else if byteResult, err := json.Marshal(jsResult); err == nil {
+				result.Extractions["result"] = string(byteResult)
+			}
+		}
 	case "browser_screenshot":
 		// Capture is handled with the rest of the page state below.
 	default:
@@ -631,7 +672,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		}
 		result.HTML = html
 	}
-	if assertionErr := evaluateBrowserAssertions(action.Assertions, result); assertionErr != nil {
+	if assertionErr := b.evaluateBrowserAssertions(action.Assertions, result); assertionErr != nil {
 		result.ErrorMessage = assertionErr.Error()
 		result.Snapshot = &protocol.ErrorSnapshot{
 			PageURL:          result.PageURL,
@@ -659,7 +700,7 @@ func requiresBrowserAssertionHTML(assertions []protocol.Assertion) bool {
 	return false
 }
 
-func evaluateBrowserAssertions(assertions []protocol.Assertion, result *protocol.Result) error {
+func (b *Browser) evaluateBrowserAssertions(assertions []protocol.Assertion, result *protocol.Result) error {
 	for _, assertion := range assertions {
 		switch assertion.Type {
 		case "response_time_ms":
@@ -691,6 +732,45 @@ func evaluateBrowserAssertions(assertions []protocol.Assertion, result *protocol
 			}
 			if !strings.Contains(result.PageURL, assertion.Value) {
 				return fmt.Errorf("browser page URL %q does not contain %q", result.PageURL, assertion.Value)
+			}
+		case "element_visible":
+			selector := assertion.Value
+			if selector == "" {
+				return fmt.Errorf("element_visible assertion requires selector in value")
+			}
+			visible, err := b.pwPage.IsVisible(selector)
+			if err != nil {
+				return fmt.Errorf("failed to check visibility for %q: %v", selector, err)
+			}
+			if !visible {
+				return fmt.Errorf("element %q is not visible", selector)
+			}
+		case "element_text_equals":
+			selector := assertion.Value
+			if selector == "" {
+				return fmt.Errorf("element_text_equals assertion requires selector in value")
+			}
+			text, err := b.pwPage.TextContent(selector)
+			if err != nil {
+				return fmt.Errorf("failed to get text for %q: %v", selector, err)
+			}
+			text = strings.TrimSpace(text)
+			expected := strings.TrimSpace(fmt.Sprint(assertion.Expected))
+			if text != expected {
+				return fmt.Errorf("element %q text = %q, want %q", selector, text, expected)
+			}
+		case "element_text_contains":
+			selector := assertion.Value
+			if selector == "" {
+				return fmt.Errorf("element_text_contains assertion requires selector in value")
+			}
+			text, err := b.pwPage.TextContent(selector)
+			if err != nil {
+				return fmt.Errorf("failed to get text for %q: %v", selector, err)
+			}
+			expected := strings.TrimSpace(fmt.Sprint(assertion.Expected))
+			if !strings.Contains(text, expected) {
+				return fmt.Errorf("element %q text %q does not contain %q", selector, text, expected)
 			}
 		default:
 			return fmt.Errorf("unsupported browser assertion type: %s", assertion.Type)
@@ -748,6 +828,12 @@ func (b *Browser) runWait(ctx context.Context, action *protocol.Action) error {
 				return fmt.Errorf("browser_wait url_contains requires wait_for value")
 			}
 			return b.waitForJS(waitCtx, fmt.Sprintf(`window.location.href.includes(%q)`, waitValue))
+		case "load":
+			return b.pwPage.WaitForLoadState(playwright.PageWaitForLoadStateOptions{State: playwright.LoadStateLoad})
+		case "networkidle":
+			return b.pwPage.WaitForLoadState(playwright.PageWaitForLoadStateOptions{State: playwright.LoadStateNetworkidle})
+		case "domcontentloaded":
+			return b.pwPage.WaitForLoadState(playwright.PageWaitForLoadStateOptions{State: playwright.LoadStateDomcontentloaded})
 		case "duration", "sleep":
 			delay, err := parseWaitDelay(waitValue)
 			if err != nil {

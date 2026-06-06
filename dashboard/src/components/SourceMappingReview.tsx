@@ -193,7 +193,10 @@ export default function SourceMappingReview({ focusRequestId = 0, focusedMapping
     const idToScroll = focusedMappingId || selectedMappingId
     if (!idToScroll) return
     window.requestAnimationFrame(() => {
-      rowRefs.current[idToScroll]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      const row = rowRefs.current[idToScroll]
+      if (typeof row?.scrollIntoView === 'function') {
+        row.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      }
     })
   }, [filteredMappings, focusedMappingId, focusRequestId, selectedMappingId])
 

@@ -12,6 +12,8 @@ var (
 	globalPlaywright *playwright.Playwright
 	globalChromium   playwright.Browser
 	globalWebKit     playwright.Browser
+	globalFirefox    playwright.Browser
+	globalChrome     playwright.Browser
 	globalMutex      sync.Mutex
 )
 
@@ -44,6 +46,40 @@ func getBrowserInstance(engine string, headless bool) (playwright.Browser, error
 			globalWebKit = b
 		}
 		return globalWebKit, nil
+	}
+
+	if engine == "firefox" {
+		if globalFirefox == nil {
+			b, err := globalPlaywright.Firefox.Launch(playwright.BrowserTypeLaunchOptions{
+				Headless: playwright.Bool(headless),
+				Timeout:  playwright.Float(30000),
+			})
+			if err != nil {
+				return nil, err
+			}
+			globalFirefox = b
+		}
+		return globalFirefox, nil
+	}
+
+	if engine == "chrome" {
+		if globalChrome == nil {
+			b, err := globalPlaywright.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
+				Headless: playwright.Bool(headless),
+				Timeout:  playwright.Float(30000),
+				Channel:  playwright.String("chrome"),
+				Args: []string{
+					"--disable-gpu",
+					"--hide-scrollbars",
+					"--no-sandbox",
+				},
+			})
+			if err != nil {
+				return nil, err
+			}
+			globalChrome = b
+		}
+		return globalChrome, nil
 	}
 
 	if globalChromium == nil {

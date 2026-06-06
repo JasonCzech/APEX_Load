@@ -3292,6 +3292,48 @@
 }
 
 /* Data tables */
+.table-pagination-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 8px;
+}
+
+.table-pagination-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.table-pagination-summary {
+  white-space: nowrap;
+}
+
+.table-pagination-select-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.table-pagination-select {
+  min-width: 68px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 0 8px;
+}
+
+.table-pagination-select:focus {
+  outline: 2px solid rgba(0, 163, 255, 0.24);
+  outline-offset: 2px;
+}
+
 .data-table {
   background: var(--bg-card);
   border: 1px solid var(--border);

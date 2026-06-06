@@ -7,6 +7,7 @@ import { useApplication } from './hooks/useApplication'
 import { MetricsHistoryPoint, TelemetryDiagnostic, TelemetryDiagnosticEntry, WSMessage } from './types'
 import Sidebar, { type NavPage } from './components/Sidebar'
 import DashboardPage from './components/DashboardPage'
+import TablePaginationManager from './components/TablePaginationManager'
 import { type AppView, parseAppViewFromHash, viewToLocationHash } from './appRouting'
 import { appendTelemetryDiagnostic } from './components/monitoringTelemetryDiagnostics'
 import AuthGate from './components/AuthGate'
@@ -552,6 +553,7 @@ function AppContent() {
     <AuthGate state={authState}>
       <ProjectProvider>
         <ApplicationProvider>
+          <TablePaginationManager />
           <AppShell authStatus={authState.status === 'ready' ? authState.auth : undefined} />
         </ApplicationProvider>
       </ProjectProvider>

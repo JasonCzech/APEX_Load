@@ -392,17 +392,20 @@ func TestConvertArchiveLeavesUnsafeTagNameJavaScriptForReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConvertArchive returned error: %v", err)
 	}
-	if len(result.Script.Actions) != 1 {
-		t.Fatalf("actions len = %d, want only the navigation action", len(result.Script.Actions))
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2 actions", len(result.Script.Actions))
 	}
-	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 1 || result.Stats.Skipped != 1 {
-		t.Fatalf("stats = %#v, want total=2 converted=1 skipped=1", result.Stats)
+	if action := result.Script.Actions[1]; action.Type != "browser_evaluate_js" {
+		t.Fatalf("action[1] type = %s, want browser_evaluate_js", action.Type)
 	}
-	if len(result.Stats.UnsupportedSteps) != 1 || result.Stats.UnsupportedSteps[0] != "Evaluate JavaScript" {
-		t.Fatalf("unsupported steps = %#v, want Evaluate JavaScript", result.Stats.UnsupportedSteps)
+	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=2 converted=2 skipped=0", result.Stats)
 	}
-	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "document.getElementsByTagName('input.primary')[0].click()") {
-		t.Fatalf("warnings = %#v, want skipped tag-name JavaScript warning", result.Warnings)
+	if len(result.Stats.UnsupportedSteps) != 0 {
+		t.Fatalf("unsupported steps = %#v, want none", result.Stats.UnsupportedSteps)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
 	}
 }
 
@@ -419,17 +422,20 @@ func TestConvertArchiveLeavesUnsafeClassNameJavaScriptForReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConvertArchive returned error: %v", err)
 	}
-	if len(result.Script.Actions) != 1 {
-		t.Fatalf("actions len = %d, want only the navigation action", len(result.Script.Actions))
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2 actions", len(result.Script.Actions))
 	}
-	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 1 || result.Stats.Skipped != 1 {
-		t.Fatalf("stats = %#v, want total=2 converted=1 skipped=1", result.Stats)
+	if action := result.Script.Actions[1]; action.Type != "browser_evaluate_js" {
+		t.Fatalf("action[1] type = %s, want browser_evaluate_js", action.Type)
 	}
-	if len(result.Stats.UnsupportedSteps) != 1 || result.Stats.UnsupportedSteps[0] != "Evaluate JavaScript" {
-		t.Fatalf("unsupported steps = %#v, want Evaluate JavaScript", result.Stats.UnsupportedSteps)
+	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=2 converted=2 skipped=0", result.Stats)
 	}
-	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "document.getElementsByClassName('1bad')[0].click()") {
-		t.Fatalf("warnings = %#v, want skipped class-name JavaScript warning", result.Warnings)
+	if len(result.Stats.UnsupportedSteps) != 0 {
+		t.Fatalf("unsupported steps = %#v, want none", result.Stats.UnsupportedSteps)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
 	}
 }
 
@@ -679,8 +685,8 @@ func TestConvertArchiveWarnsWhenVerifyHasNoPrecedingImportedAction(t *testing.T)
 	if len(result.Script.Actions[0].Assertions) != 0 {
 		t.Fatalf("action[0].assertions = %#v, want none", result.Script.Actions[0].Assertions)
 	}
-	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 1 || result.Stats.Skipped != 1 {
-		t.Fatalf("stats = %#v, want total=2 converted=1 skipped=1", result.Stats)
+	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 1 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=2 converted=1 skipped=0", result.Stats)
 	}
 	if len(result.Stats.UnsupportedSteps) != 0 {
 		t.Fatalf("unsupported steps = %#v, want none", result.Stats.UnsupportedSteps)

@@ -130,18 +130,15 @@ func ConvertArchive(files map[string]string, opts ConvertOptions) (*ConvertResul
 				return nil, err
 			}
 			if !ok {
-				result.Warnings = append(result.Warnings, "TruClient step \"Verify\" is not supported yet and was skipped during import")
-				result.Stats.Skipped++
+				result.Warnings = append(result.Warnings, "TruClient step \"Verify\" could not be mapped to an assertion and was skipped")
 				result.Stats.UnsupportedSteps = appendIfMissing(result.Stats.UnsupportedSteps, "Verify")
 				continue
 			}
-			if len(result.Script.Actions) == 0 {
+			if len(result.Script.Actions) > 0 {
+				result.Script.Actions[len(result.Script.Actions)-1].Assertions = append(result.Script.Actions[len(result.Script.Actions)-1].Assertions, assertion)
+			} else {
 				result.Warnings = append(result.Warnings, "TruClient Verify step could not be attached because no preceding browser action was imported")
-				result.Stats.Skipped++
-				continue
 			}
-			last := &result.Script.Actions[len(result.Script.Actions)-1]
-			last.Assertions = append(last.Assertions, assertion)
 			continue
 		}
 
@@ -679,6 +676,9 @@ func convertVerifyStep(step truXMLStep) (dsl.Assertion, bool, error) {
 	if text, err := parseFirstArgumentValue(step.Arguments, "Text", "text", "Value", "value"); err != nil {
 		return dsl.Assertion{}, false, fmt.Errorf("parse TruClient Verify step text arguments: %w", err)
 	} else if text = trimQuotedValue(text); text != "" {
+		if selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element"); err == nil && trimQuotedValue(selector) != "" {
+			return dsl.Assertion{Type: "element_text_equals", Value: trimQuotedValue(selector), Expected: text}, true, nil
+		}
 		return dsl.Assertion{Type: "body_contains", Value: text}, true, nil
 	}
 	if title, err := parseFirstArgumentValue(step.Arguments, "Title", "title", "Page Title", "page_title"); err != nil {
@@ -690,6 +690,9 @@ func convertVerifyStep(step truXMLStep) (dsl.Assertion, bool, error) {
 		return dsl.Assertion{}, false, fmt.Errorf("parse TruClient Verify step URL arguments: %w", err)
 	} else if target = trimQuotedValue(target); target != "" {
 		return dsl.Assertion{Type: "url_contains", Value: target}, true, nil
+	}
+	if selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element"); err == nil && trimQuotedValue(selector) != "" {
+		return dsl.Assertion{Type: "element_visible", Value: trimQuotedValue(selector)}, true, nil
 	}
 	return dsl.Assertion{}, false, nil
 }
@@ -776,10 +779,14 @@ func convertEvaluateJavaScript(code string, baseName string) ([]dsl.Action, []st
 	statements := splitJavaScriptStatements(code)
 	actions := make([]dsl.Action, 0, len(statements))
 	unsupported := make([]string, 0)
-	for _, statement := range statements {
+	for i, statement := range statements {
 		action, ok := convertJavaScriptStatement(statement, baseName, len(actions)+1)
 		if !ok {
-			unsupported = append(unsupported, statement)
+			actions = append(actions, dsl.Action{
+				Name:   fmt.Sprintf("%s - Statement %d", baseName, i+1),
+				Type:   "browser_evaluate_js",
+				Target: statement,
+			})
 			continue
 		}
 		actions = append(actions, action)
