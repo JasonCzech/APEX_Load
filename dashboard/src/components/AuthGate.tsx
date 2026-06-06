@@ -1,6 +1,7 @@
 import { ReactNode } from 'react'
 
 import { AuthStatusState } from '../hooks/useAuthStatus'
+import Logo from './Logo'
 import './AuthGate.css'
 
 export default function AuthGate({ children, state }: { children: ReactNode; state: AuthStatusState }) {
@@ -22,7 +23,10 @@ export default function AuthGate({ children, state }: { children: ReactNode; sta
     return (
       <div className="auth-gate-shell">
         <section className="auth-gate-card auth-gate-card--loading">
-          <p className="auth-gate-kicker">APEX Load Access</p>
+          <div className="auth-gate-brand">
+            <Logo size={32} title="APEX Load" />
+            <p className="auth-gate-kicker">APEX Load Access</p>
+          </div>
           <h1>Checking access</h1>
           <p>Confirming your upstream authentication context before loading the dashboard.</p>
         </section>
@@ -34,7 +38,10 @@ export default function AuthGate({ children, state }: { children: ReactNode; sta
     return (
       <div className="auth-gate-shell">
         <section className="auth-gate-card auth-gate-card--error">
-          <p className="auth-gate-kicker">APEX Load Access</p>
+          <div className="auth-gate-brand">
+            <Logo size={32} title="APEX Load" />
+            <p className="auth-gate-kicker">APEX Load Access</p>
+          </div>
           <h1>Authentication check failed</h1>
           <p>{state.message}</p>
           <p>Verify the controller is reachable and that the dashboard is pointing at the correct API origin.</p>
@@ -47,7 +54,10 @@ export default function AuthGate({ children, state }: { children: ReactNode; sta
     return (
       <div className="auth-gate-shell">
         <section className="auth-gate-card auth-gate-card--blocked">
-          <p className="auth-gate-kicker">APEX Load Access</p>
+          <div className="auth-gate-brand">
+            <Logo size={32} title="APEX Load" />
+            <p className="auth-gate-kicker">APEX Load Access</p>
+          </div>
           <h1>Sign-in required</h1>
           <p>{blockedMessage}</p>
           {state.auth.login_url && (

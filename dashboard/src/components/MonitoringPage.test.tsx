@@ -10,7 +10,6 @@ const apiMock = {
   getAPMIntegrationProfiles: vi.fn(),
   getHealth: vi.fn(),
   getInfrastructureMonitorPacks: vi.fn(),
-  getParityStatus: vi.fn(),
   getFleetAlerts: vi.fn(),
   getFleetCapacity: vi.fn(),
   getFleetProvisioner: vi.fn(),
@@ -131,211 +130,6 @@ describe('MonitoringPage', () => {
       pending_approval: 0,
       status_counts: {},
     })
-    apiMock.getParityStatus.mockResolvedValue({
-      generated_at: '2026-05-18T12:00:00Z',
-      overall: 'partial',
-      areas: [
-        {
-          id: 'architecture',
-          name: 'Platform Architecture',
-          status: 'partial',
-          summary: 'Project ownership and readiness checks are in place.',
-          evidence: ['/api/v1/system/readiness'],
-          remaining: ['Complete external dependency evidence and production benchmark gates.'],
-          release_gate: true,
-        },
-        {
-          id: 'fleet',
-          name: 'Fleet And Scale-Out',
-          status: 'partial',
-          summary: 'Fleet inventory and capacity APIs are available.',
-          evidence: ['/api/v1/fleet/alerts', '/api/v1/fleet/capacity'],
-          remaining: ['Complete production deployment autoscaling evidence.'],
-          release_gate: true,
-        },
-        {
-          id: 'authoring',
-          name: 'Authoring UX',
-          status: 'partial',
-          summary: 'Imports, validation, replay evidence, and authoring health are implemented.',
-          evidence: ['/api/v1/scripts/import/loadrunner'],
-          remaining: ['Complete final authoring benchmark evidence.'],
-          release_gate: true,
-        },
-        {
-          id: 'ai_assistance',
-          name: 'AI-Assisted Workflows',
-          status: 'complete',
-          summary: 'Governed deterministic AI assistance is implemented.',
-          evidence: ['/api/v1/ai/authoring/contract', '/api/v1/ai/drafts'],
-          release_gate: true,
-        },
-        {
-          id: 'browser_testing',
-          name: 'Browser Testing',
-          status: 'partial',
-          summary: 'Browser benchmark evidence is code-owned and gated.',
-          evidence: ['/api/v1/system/browser-benchmarks'],
-          remaining: ['Attach controlled raw benchmark output.'],
-          release_gate: true,
-        },
-        {
-          id: 'vugen_web2_migration',
-          name: 'VuGen Web 2.0 Migration',
-          status: 'partial',
-          summary: 'TruClient 2.0 Web review-profile migration evidence is exposed.',
-          evidence: ['/api/v1/scripts/import/loadrunner'],
-          remaining: ['Keep production readiness gated on replay evidence.'],
-          release_gate: true,
-        },
-        {
-          id: 'load_modeling',
-          name: 'Load Modeling',
-          status: 'partial',
-          summary: 'Load-model validation and report evidence have backend coverage.',
-          evidence: ['/api/v1/scenarios/validate-load-model'],
-          remaining: ['Complete final load-model benchmark evidence.'],
-          release_gate: true,
-        },
-        {
-          id: 'monitoring',
-          name: 'Real-Time Monitoring',
-          status: 'partial',
-          summary: 'Operator checklist is available.',
-          evidence: ['/api/v1/system/parity-status'],
-          remaining: ['Complete final monitoring benchmark evidence.'],
-          release_gate: true,
-        },
-        {
-          id: 'reporting',
-          name: 'Historical Reporting',
-          status: 'partial',
-          summary: 'Archives, CSV exports, usage snapshots, and retention apply are implemented.',
-          evidence: ['/api/v1/system/usage/export'],
-          remaining: ['Complete final historical reporting benchmark evidence.'],
-          release_gate: true,
-        },
-        {
-          id: 'scheduling',
-          name: 'Scheduling',
-          status: 'partial',
-          summary: 'Schedules, occurrences, approvals, and health are implemented.',
-          evidence: ['/api/v1/schedules/health'],
-          remaining: ['Expand governance conflict evidence for all external environment calendars.'],
-          release_gate: true,
-        },
-      ],
-      competitive_parity: [
-        {
-          id: 'developer_experience',
-          name: 'Developer Script-As-Code Experience',
-          status: 'partial',
-          competitors: ['k6'],
-          summary: 'CLI and DSL workflows exist, and k6 result import is supported, but k6 conversion/export is incomplete.',
-          evidence: ['README.md#build--run', '/api/v1/results/import'],
-          remaining: ['Add apexctl script validation/explain commands and constrained k6 HTTP conversion/export.'],
-          decision: 'differentiate',
-          evidence_level: 'docs+code',
-        },
-        {
-          id: 'managed_scale_load_zones',
-          name: 'Managed Scale And Load Zones',
-          status: 'partial',
-          competitors: ['k6', 'NeoLoad'],
-          summary: 'Regional inventory and capacity APIs exist; load-zone packaging remains.',
-          evidence: ['/api/v1/fleet/capacity'],
-          remaining: ['Promote regions to named load zones with cost/capacity metadata.'],
-          decision: 'match_with_packaging',
-          evidence_level: 'api+docs+tests',
-        },
-        {
-          id: 'authoring_recording',
-          name: 'Authoring, Recording, And Guided Repair',
-          status: 'supported',
-          competitors: ['k6', 'NeoLoad'],
-          summary: 'Guided authoring, review approval, correlation repair, provenance review, and reusable components are supported for the current C5 scope.',
-          evidence: ['/api/v1/scripts/import/loadrunner', '/api/v1/scripts/authoring/sessions', '/api/v1/scripts/authoring/components'],
-          remaining: ['Expand public demo packs, competitive fixtures, and richer recorder examples.'],
-          decision: 'supported_for_current_scope',
-          evidence_level: 'api+docs+dashboard+tests',
-        },
-        {
-          id: 'browser_testing',
-          name: 'Browser Testing And Client UX Evidence',
-          status: 'partial',
-          competitors: ['k6', 'NeoLoad'],
-          summary: 'Browser canaries are supported with density claims gated on benchmarks.',
-          evidence: ['docs/MOBILE_BROWSER_EMULATION_PLAN.md'],
-          remaining: ['Publish browser benchmark artifacts.'],
-          decision: 'bounded_canary_support',
-          evidence_level: 'api+docs+external_evidence_required',
-        },
-        {
-          id: 'analysis_integrations',
-          name: 'Analysis, APM, And Root-Cause Integrations',
-          status: 'supported',
-          competitors: ['k6', 'NeoLoad'],
-          summary: 'APM profiles, monitor packs, root-cause summaries, SLA governance, report profiles, and external result ingestion are supported for C4 scope.',
-          evidence: ['/api/v1/integrations/apm/profiles', '/api/v1/monitoring/packs', '/api/v1/tests/{id}/archive/root-cause', '/api/v1/results/import'],
-          remaining: ['Deepen provider-specific APM fixtures, causal scoring, and packaged setup guides.'],
-          decision: 'supported_for_current_scope',
-          evidence_level: 'api+docs+dashboard+tests',
-        },
-        {
-          id: 'specialized_enterprise_protocols',
-          name: 'Specialized Enterprise Protocol Breadth',
-          status: 'gap',
-          competitors: ['NeoLoad'],
-          summary: 'Native SAP GUI and Citrix protocols remain demand-gated.',
-          evidence: ['docs/COMPETITIVE_COMPARISON.md#specialized-enterprise-protocols'],
-          remaining: ['Publish explicit non-goal or coexistence guidance.'],
-          decision: 'demand_gated_non_goal',
-          evidence_level: 'docs',
-        },
-        {
-          id: 'packaging_samples_trust',
-          name: 'Packaging, Samples, And Trust',
-          status: 'partial',
-          competitors: ['k6', 'NeoLoad'],
-          summary: 'Docs, support matrix, CI templates, dashboard workflows, and samples exist; release packaging remains.',
-          evidence: ['docs/API_USER_GUIDE.md'],
-          remaining: ['Publish canonical sample projects, one-command demo seeding, and release notes with benchmark deltas.'],
-          decision: 'evidence_gate',
-          evidence_level: 'docs',
-        },
-      ],
-      browser_benchmarks: [
-        {
-          id: 'desktop_chromium_1080p',
-          name: 'Desktop Chromium 1080p',
-          browser_engine: 'chromium',
-          device_profile: 'desktop_1080p',
-          device_class: 'desktop',
-          platform: 'desktop',
-          status: 'baseline_artifact_published',
-          evidence_level: 'code+docs+release_artifact_required',
-          artifact_path: 'docs/BROWSER_BENCHMARK_ARTIFACTS.md#desktop-chromium-1080p',
-          acceptance: {
-            launch_p50_target_ms: 3000,
-            action_overhead_target_ms: 10,
-            rss_per_vuser_target_mb: 250,
-            rss_attribution: 'chromium_cdp_process_snapshot',
-            required_raw_run_count: 5,
-            required_benchmark_command: 'benchmark command',
-          },
-          density_envelope: {
-            recommended_canary_vusers_per_generator: 2,
-            maximum_claimed_vusers_per_generator: 5,
-            pairing_model: 'Run beside protocol load.',
-            claim_rule: 'Do not claim high-density browser load.',
-          },
-          benchmark_commands: ['go test ./pkg/protocol/browser'],
-          evidence: ['/api/v1/system/browser-benchmarks'],
-          release_gate: true,
-          high_density_claim_allowed: false,
-        },
-      ],
-    })
     apiMock.getFleetAlerts.mockResolvedValue({ alerts: [], count: 0 })
     apiMock.getFleetCapacity.mockResolvedValue({
       project_id: 'project-1',
@@ -410,7 +204,6 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Fleet')
     expect(container.textContent).toContain('Telemetry')
     expect(container.textContent).toContain('Schedules')
-    expect(container.textContent).toContain('Parity')
     expect(container.textContent).toContain('Controller')
     expect(container.textContent).toContain('Production Readiness')
     expect(container.textContent).toContain('Ready Checks')
@@ -425,7 +218,6 @@ describe('MonitoringPage', () => {
 
     expect(visibleMonitorCardIds()).toEqual(['telemetry-diagnostics', 'apm-integrations', 'monitor-packs'])
     expect(container.textContent).toContain('Telemetry Diagnostics')
-    expect(container.textContent).toContain('Parity')
     expect(container.textContent).toContain('danger')
     expect(container.textContent).toContain('1 danger')
     expect(container.textContent).toContain('Checkout: collector dropped 4 metric samples')
@@ -453,60 +245,12 @@ describe('MonitoringPage', () => {
       closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    await clickMonitorTab('Parity')
-
-    expect(visibleMonitorCardIds()).toEqual(['competitive-parity', 'parity-checklist'])
-    expect(container.textContent).toContain('Parity Checklist')
-    expect(container.textContent).toContain('Tracked Areas')
-    expect(container.textContent).toContain('10/10')
-    expect(container.textContent).toMatch(/Fleet And Scale-Out\s*Partial/i)
-    expect(container.textContent).toMatch(/Browser Testing\s*Partial/i)
-    expect(container.textContent).toMatch(/AI-Assisted Workflows\s*Complete/i)
-    expect(container.textContent).toMatch(/VuGen Web 2\.0 Migration\s*Partial/i)
-    expect(container.textContent).toContain('Browser Benchmark Evidence')
-    expect(container.textContent).toContain('Desktop Chromium 1080p')
-    expect(container.textContent).toContain('2-5 VUsers/generator')
-    expect(container.textContent).toContain('High-density browser load claims are gated separately')
-    expect(container.textContent).toMatch(/Real-Time Monitoring\s*Partial/i)
-    expect(container.textContent).toContain('Release Gates')
-    expect(container.textContent).toContain('Competitive Parity')
-    expect(container.textContent).toContain('7/7 known limitations tracked across k6, NeoLoad')
-
     await clickMonitorTab('Fleet')
 
     expect(visibleMonitorCardIds()).toEqual(['capacity', 'generators', 'fleet-alerts'])
     expect(container.textContent).toContain('Generators')
     expect(container.textContent).toContain('Fleet Alerts')
     expect(container.textContent).toContain('No generator inventory was returned by the controller.')
-  })
-
-  it('keeps the parity checklist as the last monitoring card', async () => {
-    window.localStorage.setItem('apexload.monitoring.cardOrder', JSON.stringify([
-      'system-health',
-      'production-readiness',
-      'controller',
-      'telemetry-diagnostics',
-      'apm-integrations',
-      'monitor-packs',
-      'capacity',
-      'parity-checklist',
-      'competitive-parity',
-      'schedule-health',
-      'generators',
-      'fleet-alerts',
-      'run-timeline',
-    ]))
-
-    await act(async () => {
-      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
-    })
-
-    await clickMonitorTab('Parity')
-
-    const cardIds = visibleMonitorCardIds()
-    expect(cardIds).toContain('parity-checklist')
-    expect(cardIds).toContain('competitive-parity')
-    expect(cardIds[cardIds.length - 1]).toBe('parity-checklist')
   })
 
   it('renders C4 APM profiles and infrastructure monitor packs', async () => {
@@ -524,71 +268,6 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('1/2 native')
     expect(container.textContent).toContain('Kubernetes: pod saturation, active slots')
     expect(container.textContent).toContain('JVM: heap used, gc pause')
-  })
-
-  it('warns when the parity status endpoint is missing current release gates', async () => {
-    apiMock.getParityStatus.mockResolvedValue({
-      generated_at: '2026-05-18T12:00:00Z',
-      overall: 'partial',
-      areas: [
-        { id: 'architecture', name: 'Platform Architecture', status: 'partial', summary: 'Architecture evidence.', evidence: ['/api/v1/system/readiness'], remaining: ['Benchmark evidence.'], release_gate: true },
-        { id: 'fleet', name: 'Fleet And Scale-Out', status: 'partial', summary: 'Fleet evidence.', evidence: ['/api/v1/fleet/alerts'], remaining: ['Autoscaling evidence.'], release_gate: true },
-        { id: 'authoring', name: 'Authoring UX', status: 'partial', summary: 'Authoring evidence.', evidence: ['/api/v1/scripts'], remaining: ['Authoring benchmark evidence.'], release_gate: true },
-        { id: 'load_modeling', name: 'Load Modeling', status: 'partial', summary: 'Load model evidence.', evidence: ['/api/v1/scenarios/validate-load-model'], remaining: ['Load-model benchmark evidence.'], release_gate: true },
-        { id: 'monitoring', name: 'Real-Time Monitoring', status: 'partial', summary: 'Monitoring evidence.', evidence: ['/api/v1/system/parity-status'], remaining: ['Monitoring benchmark evidence.'], release_gate: true },
-        { id: 'reporting', name: 'Historical Reporting', status: 'partial', summary: 'Reporting evidence.', evidence: ['/api/v1/system/usage/export'], remaining: ['Reporting benchmark evidence.'], release_gate: true },
-        { id: 'scheduling', name: 'Scheduling', status: 'partial', summary: 'Scheduling evidence.', evidence: ['/api/v1/schedules/health'], remaining: ['Calendar evidence.'], release_gate: true },
-      ],
-      competitive_parity: [],
-      browser_benchmarks: [],
-    })
-
-    await act(async () => {
-      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
-    })
-
-    await clickMonitorTab('Parity')
-
-    expect(container.textContent).toContain('7/10 tracked')
-    expect(container.textContent).toContain('Tracked Areas')
-    expect(container.textContent).toContain('7/10')
-    expect(container.textContent).toContain('Parity status is missing current release gates')
-    expect(container.textContent).toContain('AI-Assisted Workflows')
-    expect(container.textContent).toContain('Browser Testing')
-    expect(container.textContent).toContain('VuGen Web 2.0 Migration')
-    expect(container.textContent).toContain('0/7 tracked')
-    expect(container.textContent).toContain('Competitive parity status is missing current gates')
-  })
-
-  it('opens competitive parity details with evidence levels and known limitations', async () => {
-    await act(async () => {
-      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
-    })
-
-    await clickMonitorTab('Parity')
-
-    const competitiveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('known limitations tracked'))
-    expect(competitiveButton).not.toBeUndefined()
-
-    await act(async () => {
-      competitiveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(container.textContent).toContain('k6 and NeoLoad support status')
-    expect(container.textContent).toContain('Developer Script-As-Code Experience')
-    expect(container.textContent).toContain('Evidence Level')
-    expect(container.textContent).toContain('docs + code')
-    expect(container.textContent).toContain('Add apexctl script validation/explain commands and constrained k6 HTTP conversion/export.')
-    expect(container.textContent).toMatch(/Authoring, Recording, And Guided Repair\s*Supported/i)
-    expect(container.textContent).toContain('api + docs + dashboard + tests')
-    expect(container.textContent).toContain('supported for current scope')
-    expect(container.textContent).toContain('Browser Testing And Client UX Evidence')
-    expect(container.textContent).toContain('api + docs + external evidence required')
-    expect(container.textContent).toMatch(/Analysis, APM, And Root-Cause Integrations\s*Supported/i)
-    expect(container.textContent).toContain('Deepen provider-specific APM fixtures, causal scoring, and packaged setup guides.')
-    expect(container.textContent).toContain('Specialized Enterprise Protocol Breadth')
-    expect(container.textContent).toContain('demand gated non goal')
-    expect(container.textContent).toContain('Publish explicit non-goal or coexistence guidance.')
   })
 
   it('renders JMS broker diagnostics with lag and throughput details', async () => {

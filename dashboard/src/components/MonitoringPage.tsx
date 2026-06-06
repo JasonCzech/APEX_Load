@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, type DragEvent, type ReactNo
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
-import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ParityStatusResponse, ProvisionerInfo, ScenarioScheduleHealth, SystemInventoryResponse, SystemReadinessResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
+import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, ScenarioScheduleHealth, SystemInventoryResponse, SystemReadinessResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
 import './CreateTestModal.css'
 
@@ -12,44 +12,15 @@ interface Props {
 }
 
 const EMPTY_GENERATORS: SystemInventoryResponse['generators'] = []
-const EMPTY_PARITY_AREAS: ParityStatusResponse['areas'] = []
-const EMPTY_BROWSER_BENCHMARKS: NonNullable<ParityStatusResponse['browser_benchmarks']> = []
-type CompetitiveParityAreas = NonNullable<ParityStatusResponse['competitive_parity']>
-const EMPTY_COMPETITIVE_PARITY_AREAS: CompetitiveParityAreas = []
-const PINNED_LAST_MONITOR_CARD_ID = 'parity-checklist'
 
 const MONITOR_CATEGORIES = [
   { id: 'overview', label: 'Overview', cardIds: ['system-health', 'production-readiness', 'controller'] },
   { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts'] },
   { id: 'telemetry', label: 'Telemetry', cardIds: ['telemetry-diagnostics', 'apm-integrations', 'monitor-packs'] },
   { id: 'schedules', label: 'Schedules', cardIds: ['schedule-health', 'run-timeline'] },
-  { id: 'parity', label: 'Parity', cardIds: ['competitive-parity', 'parity-checklist'] },
 ] as const
 
 type MonitorCategoryId = typeof MONITOR_CATEGORIES[number]['id']
-
-const EXPECTED_PARITY_AREAS: { id: string; name: string }[] = [
-  { id: 'architecture', name: 'Platform Architecture' },
-  { id: 'fleet', name: 'Fleet And Scale-Out' },
-  { id: 'authoring', name: 'Authoring UX' },
-  { id: 'ai_assistance', name: 'AI-Assisted Workflows' },
-  { id: 'load_modeling', name: 'Load Modeling' },
-  { id: 'browser_testing', name: 'Browser Testing' },
-  { id: 'vugen_web2_migration', name: 'VuGen Web 2.0 Migration' },
-  { id: 'monitoring', name: 'Real-Time Monitoring' },
-  { id: 'reporting', name: 'Historical Reporting' },
-  { id: 'scheduling', name: 'Scheduling' },
-]
-
-const EXPECTED_COMPETITIVE_PARITY_AREAS: { id: string; name: string }[] = [
-  { id: 'developer_experience', name: 'Developer Script-As-Code Experience' },
-  { id: 'managed_scale_load_zones', name: 'Managed Scale And Load Zones' },
-  { id: 'authoring_recording', name: 'Authoring, Recording, And Guided Repair' },
-  { id: 'browser_testing', name: 'Browser Testing And Client UX Evidence' },
-  { id: 'analysis_integrations', name: 'Analysis, APM, And Root-Cause Integrations' },
-  { id: 'specialized_enterprise_protocols', name: 'Specialized Enterprise Protocol Breadth' },
-  { id: 'packaging_samples_trust', name: 'Packaging, Samples, And Trust' },
-]
 
 function formatReadinessStatus(status?: string): string {
   switch (status) {
@@ -81,35 +52,6 @@ function formatReadinessCheckName(name: string): string {
     .join(' ')
 }
 
-function formatCompetitiveStatus(status?: string): string {
-  const labels: Record<string, string> = {
-    supported: 'Supported',
-    complete: 'Complete',
-    partial: 'Partial',
-    gap: 'Gap',
-    blocked: 'Blocked',
-  }
-  return labels[status || ''] || status || 'Unknown'
-}
-
-function formatEvidenceLevel(level?: string): string {
-  if (!level) return 'Not linked'
-  return level
-    .split('+').join(' + ')
-    .split('_').join(' ')
-}
-
-function formatDateTime(value?: string): string {
-  if (!value) return '-'
-  const time = new Date(value)
-  return Number.isNaN(time.getTime()) ? value : time.toLocaleString()
-}
-
-function missingExpectedAreaLabels(expectedAreas: { id: string; name: string }[], actualAreas: { id: string }[]): string[] {
-  const actualIds = new Set(actualAreas.map(area => area.id))
-  return expectedAreas.filter(area => !actualIds.has(area.id)).map(area => area.name)
-}
-
 function safeApiCall<T>(request: () => Promise<T>, fallback: T): Promise<T> {
   try {
     return request().catch(() => fallback)
@@ -125,7 +67,6 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [scheduleHealth, setScheduleHealth] = useState<ScenarioScheduleHealth | null>(null)
   const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
   const [systemReadiness, setSystemReadiness] = useState<SystemReadinessResponse | null>(null)
-  const [parityStatus, setParityStatus] = useState<ParityStatusResponse | null>(null)
   const [apmProfiles, setApmProfiles] = useState<APMIntegrationProfilesResponse | null>(null)
   const [monitorPacks, setMonitorPacks] = useState<InfrastructureMonitorPacksResponse | null>(null)
   const [fleetAlerts, setFleetAlerts] = useState<FleetAlert[]>([])
@@ -134,7 +75,6 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [tests, setTests] = useState<TestSummary[]>([])
   const [isTelemetryModalOpen, setIsTelemetryModalOpen] = useState(false)
   const [isGeneratorsModalOpen, setIsGeneratorsModalOpen] = useState(false)
-  const [isCompetitiveParityModalOpen, setIsCompetitiveParityModalOpen] = useState(false)
   const [customizing, setCustomizing] = useState(false)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
   const [activeCategoryId, setActiveCategoryId] = useState<MonitorCategoryId>('overview')
@@ -203,55 +143,6 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             : scheduleHealth.total > 0
               ? `${scheduleHealth.enabled}/${scheduleHealth.total} enabled`
               : 'no schedules'
-  const parityAreas = parityStatus?.areas ?? EMPTY_PARITY_AREAS
-  const missingParityAreaLabels = useMemo(() => missingExpectedAreaLabels(EXPECTED_PARITY_AREAS, parityAreas), [parityAreas])
-  const browserBenchmarkProfiles = parityStatus?.browser_benchmarks ?? EMPTY_BROWSER_BENCHMARKS
-  const browserBenchmarkEvidenceRequiredCount = browserBenchmarkProfiles.filter(profile => profile.evidence_level.includes('release_artifact_required')).length
-  const browserBenchmarkClaimBlockedCount = browserBenchmarkProfiles.filter(profile => !profile.high_density_claim_allowed).length
-  const competitiveParityAreas = parityStatus?.competitive_parity ?? EMPTY_COMPETITIVE_PARITY_AREAS
-  const missingCompetitiveParityAreaLabels = useMemo(() => missingExpectedAreaLabels(EXPECTED_COMPETITIVE_PARITY_AREAS, competitiveParityAreas), [competitiveParityAreas])
-  const parityBlockingCount = parityAreas.filter(area => area.blocking_gate || area.status === 'blocked').length
-  const parityPartialCount = parityAreas.filter(area => area.status === 'partial').length
-  const parityCompleteCount = parityAreas.filter(area => area.status === 'complete').length
-  const parityHeaderSeverity = !parityStatus
-    ? 'unknown'
-    : parityBlockingCount > 0
-      ? 'danger'
-      : parityPartialCount > 0 || missingParityAreaLabels.length > 0
-        ? 'warning'
-        : 'healthy'
-  const parityHeaderLabel = parityStatus
-    ? missingParityAreaLabels.length > 0
-      ? `${parityAreas.length}/${EXPECTED_PARITY_AREAS.length} tracked`
-      : parityStatus.overall
-    : 'checking'
-  const competitiveBlockedCount = competitiveParityAreas.filter(area => area.status === 'blocked').length
-  const competitiveGapCount = competitiveParityAreas.filter(area => area.status === 'gap').length
-  const competitivePartialCount = competitiveParityAreas.filter(area => area.status === 'partial').length
-  const competitiveEvidenceRequiredCount = competitiveParityAreas.filter(area => area.evidence_level?.includes('external_evidence_required')).length
-  const competitiveKnownLimitationCount = competitiveParityAreas.filter(area => (area.remaining?.length || 0) > 0).length
-  const competitiveHeaderSeverity = !parityStatus
-    ? 'unknown'
-    : missingCompetitiveParityAreaLabels.length > 0
-      ? 'warning'
-      : competitiveParityAreas.length === 0
-        ? 'unknown'
-        : competitiveBlockedCount > 0
-          ? 'danger'
-          : competitiveGapCount > 0 || competitivePartialCount > 0 || competitiveEvidenceRequiredCount > 0
-            ? 'warning'
-            : 'healthy'
-  const competitiveHeaderLabel = !parityStatus
-    ? 'checking'
-    : missingCompetitiveParityAreaLabels.length > 0
-      ? `${competitiveParityAreas.length}/${EXPECTED_COMPETITIVE_PARITY_AREAS.length} tracked`
-      : competitiveParityAreas.length === 0
-        ? 'not reported'
-        : competitiveGapCount > 0
-          ? `${competitiveGapCount} gap${competitiveGapCount === 1 ? '' : 's'}`
-          : competitivePartialCount > 0
-            ? `${competitivePartialCount} partial`
-            : 'supported'
   const readinessReadyCount = systemReadiness?.checks.filter(check => check.status === 'ready').length ?? 0
   const readinessDegradedCount = systemReadiness?.checks.filter(check => check.status === 'degraded').length ?? 0
   const readinessBlockedCount = systemReadiness?.checks.filter(check => check.status === 'not_ready').length ?? 0
@@ -278,13 +169,12 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       return
     }
     try {
-      const [healthRes, testsRes, inventoryRes, readinessRes, scheduleHealthRes, parityStatusRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetCapacityRes, provisionerRes] = await Promise.all([
+      const [healthRes, testsRes, inventoryRes, readinessRes, scheduleHealthRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetCapacityRes, provisionerRes] = await Promise.all([
         api.getHealth(),
         api.listTests(activeProject?.id ? { project_id: activeProject.id } : undefined).catch(() => ({ tests: [] })),
         api.getSystemInventory().catch(() => null),
         api.getSystemReadiness().catch(() => null),
         api.getScheduleHealth().catch(() => null),
-        api.getParityStatus().catch(() => null),
         safeApiCall(() => api.getAPMIntegrationProfiles(), null),
         safeApiCall(() => api.getInfrastructureMonitorPacks(), null),
         api.getFleetAlerts().catch(() => ({ alerts: [] })),
@@ -296,7 +186,6 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       setInventory(inventoryRes)
       setSystemReadiness(readinessRes)
       setScheduleHealth(scheduleHealthRes)
-      setParityStatus(parityStatusRes)
       setApmProfiles(apmProfilesRes)
       setMonitorPacks(monitorPacksRes)
       setFleetAlerts(fleetAlertsRes.alerts || [])
@@ -713,180 +602,6 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
     },
     {
-      id: 'parity-checklist',
-      title: 'Parity Checklist',
-      headerBadge: (
-        <span className={`monitor-header-badge ${parityHeaderSeverity}`}>
-          {parityHeaderLabel}
-        </span>
-      ),
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M9 11l3 3L22 4" />
-          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-        </svg>
-      ),
-      content: (
-        <div className="monitor-body">
-          {!parityStatus ? (
-            <p className="monitor-hint">Parity status is unavailable. Check controller readiness and RBAC access for /api/v1/system/parity-status.</p>
-          ) : (
-            <>
-              <div className="telemetry-summary-metrics">
-                <div className="telemetry-summary-metric">
-                  <span className={`telemetry-summary-value ${parityBlockingCount > 0 ? 'text-danger' : ''}`}>{parityBlockingCount}</span>
-                  <span className="telemetry-summary-label">Blocked</span>
-                </div>
-                <div className="telemetry-summary-metric">
-                  <span className={`telemetry-summary-value ${parityPartialCount > 0 ? 'telemetry-text-warning' : ''}`}>{parityPartialCount}</span>
-                  <span className="telemetry-summary-label">Partial</span>
-                </div>
-                <div className="telemetry-summary-metric">
-                  <span className="telemetry-summary-value">{parityCompleteCount}</span>
-                  <span className="telemetry-summary-label">Complete</span>
-                </div>
-              </div>
-              <div className="monitor-row">
-                <span className="monitor-label">Tracked Areas</span>
-                <span className={`monitor-value ${missingParityAreaLabels.length > 0 ? 'telemetry-text-warning' : 'text-success'}`}>
-                  {parityAreas.length}/{EXPECTED_PARITY_AREAS.length}
-                </span>
-              </div>
-              <div className="monitor-row">
-                <span className="monitor-label">Generated</span>
-                <span className="monitor-value">{formatDateTime(parityStatus.generated_at)}</span>
-              </div>
-              {missingParityAreaLabels.length > 0 && (
-                <div className="monitor-warning-list">
-                  <p className="telemetry-text-warning">
-                    Parity status is missing current release gates: {missingParityAreaLabels.join(', ')}. Restart or update the controller if this appears in dev.
-                  </p>
-                </div>
-              )}
-              <div className="monitor-scroll-area">
-                <div className="monitor-inventory-list">
-                  {parityAreas.map(area => (
-                    <div key={area.id} className={`monitor-inventory-item ${area.blocking_gate || area.status === 'blocked' ? 'is-warning' : ''}`}>
-                      <div className="monitor-row">
-                        <span className="monitor-value">{area.name}</span>
-                        <span className={`monitor-value ${area.blocking_gate || area.status === 'blocked' ? 'text-danger' : area.status === 'partial' ? 'telemetry-text-warning' : 'text-success'}`}>
-                          {formatCompetitiveStatus(area.status)}
-                        </span>
-                      </div>
-                      {area.remaining?.length ? (
-                        <div className="monitor-row">
-                          <span className="monitor-label">Remaining</span>
-                          <span className="monitor-value">{area.remaining[0]}</span>
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              {browserBenchmarkProfiles.length > 0 && (
-                <div className="monitor-browser-benchmark-summary">
-                  <div className="monitor-row">
-                    <span className="monitor-label">Browser Benchmark Evidence</span>
-                    <span className={`monitor-value ${browserBenchmarkEvidenceRequiredCount > 0 ? 'telemetry-text-warning' : 'text-success'}`}>
-                      {browserBenchmarkProfiles.length} profiles
-                    </span>
-                  </div>
-                  <div className="monitor-browser-benchmark-grid">
-                    {browserBenchmarkProfiles.slice(0, 3).map(profile => (
-                      <div key={profile.id} className="monitor-browser-benchmark-profile">
-                        <div className="monitor-row">
-                          <span className="monitor-value">{profile.name}</span>
-                          <span className="monitor-label">{formatEvidenceLevel(profile.status)}</span>
-                        </div>
-                        <div className="monitor-row">
-                          <span className="monitor-label">Canary Envelope</span>
-                          <span className="monitor-value">{profile.density_envelope.recommended_canary_vusers_per_generator}-{profile.density_envelope.maximum_claimed_vusers_per_generator} VUsers/generator</span>
-                        </div>
-                        <div className="monitor-row">
-                          <span className="monitor-label">Evidence</span>
-                          <span className="monitor-value">{formatEvidenceLevel(profile.evidence_level)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <p className={`monitor-hint ${browserBenchmarkClaimBlockedCount > 0 ? 'telemetry-text-warning' : ''}`}>
-                    High-density browser load claims are gated separately from browser canary capability.
-                  </p>
-                </div>
-              )}
-              <div className="monitor-row">
-                <span className="monitor-label">Release Gates</span>
-                <span className="monitor-value">{parityAreas.filter(area => area.release_gate).length}/{parityAreas.length}</span>
-              </div>
-            </>
-          )}
-        </div>
-      ),
-    },
-    {
-      id: 'competitive-parity',
-      title: 'Competitive Parity',
-      headerBadge: (
-        <span className={`monitor-header-badge ${competitiveHeaderSeverity}`}>
-          {competitiveHeaderLabel}
-        </span>
-      ),
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 6v12" />
-          <path d="M8 10h8" />
-          <path d="M8 14h8" />
-        </svg>
-      ),
-      content: (
-        <div className="monitor-body">
-          {!parityStatus ? (
-            <p className="monitor-hint">Competitive parity status is unavailable until /api/v1/system/parity-status returns release data.</p>
-          ) : competitiveParityAreas.length === 0 ? (
-            <div className="monitor-warning-list">
-              <p className={missingCompetitiveParityAreaLabels.length > 0 ? 'telemetry-text-warning' : ''}>
-                {missingCompetitiveParityAreaLabels.length > 0
-                  ? `Competitive parity status is missing current gates: ${missingCompetitiveParityAreaLabels.join(', ')}.`
-                  : 'No competitive parity section was returned by this controller.'}
-              </p>
-            </div>
-          ) : (
-            <button type="button" className="telemetry-summary-card" onClick={() => setIsCompetitiveParityModalOpen(true)}>
-              <div className="telemetry-summary-metrics">
-                <div className="telemetry-summary-metric">
-                  <span className={`telemetry-summary-value ${competitiveGapCount > 0 ? 'telemetry-text-warning' : ''}`}>{competitiveGapCount}</span>
-                  <span className="telemetry-summary-label">Gaps</span>
-                </div>
-                <div className="telemetry-summary-metric">
-                  <span className={`telemetry-summary-value ${competitivePartialCount > 0 ? 'telemetry-text-warning' : ''}`}>{competitivePartialCount}</span>
-                  <span className="telemetry-summary-label">Partial</span>
-                </div>
-                <div className="telemetry-summary-metric">
-                  <span className={`telemetry-summary-value ${competitiveEvidenceRequiredCount > 0 ? 'telemetry-text-warning' : ''}`}>{competitiveEvidenceRequiredCount}</span>
-                  <span className="telemetry-summary-label">Evidence Req.</span>
-                </div>
-              </div>
-              <div className="telemetry-summary-details">
-                <div className="telemetry-summary-headline">
-                  <span className={`telemetry-diagnostic-badge ${competitiveHeaderSeverity === 'danger' ? 'danger' : competitiveHeaderSeverity === 'warning' ? 'warning' : 'healthy'}`}>
-                    {competitiveHeaderLabel}
-                  </span>
-                  <span className="telemetry-diagnostic-time">{competitiveParityAreas.length} dimensions</span>
-                </div>
-                <div className="telemetry-diagnostic-summary">
-                  {missingCompetitiveParityAreaLabels.length > 0
-                    ? `Missing current competitive gates: ${missingCompetitiveParityAreaLabels.join(', ')}.`
-                    : `${competitiveKnownLimitationCount}/${competitiveParityAreas.length} known limitations tracked across ${Array.from(new Set(competitiveParityAreas.flatMap(area => area.competitors || []))).join(', ') || 'competitors'}.`}
-                </div>
-                <div className="telemetry-summary-cta">View details</div>
-              </div>
-            </button>
-          )}
-        </div>
-      ),
-    },
-    {
       id: 'schedule-health',
       title: 'Schedule Health',
       headerBadge: (
@@ -1107,7 +822,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       ),
     },
-  ], [apmHeaderLabel, apmHeaderSeverity, apmProfiles, browserBenchmarkClaimBlockedCount, browserBenchmarkEvidenceRequiredCount, browserBenchmarkProfiles, competitiveEvidenceRequiredCount, competitiveGapCount, competitiveHeaderLabel, competitiveHeaderSeverity, competitiveKnownLimitationCount, competitiveParityAreas, competitivePartialCount, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, missingCompetitiveParityAreaLabels, missingParityAreaLabels, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, parityAreas, parityBlockingCount, parityCompleteCount, parityHeaderLabel, parityHeaderSeverity, parityPartialCount, parityStatus, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleQueuedCount, scheduleSkippedCount, systemReadiness, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
+  ], [apmHeaderLabel, apmHeaderSeverity, apmProfiles, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleQueuedCount, scheduleSkippedCount, systemReadiness, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))
@@ -1173,21 +888,52 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     setDraggedCardId(null)
   }
 
-  const severityEntries = useMemo(() => {
-    const entries: { label: string; severity: string }[] = [
-      { label: 'API', severity: health ? 'healthy' : 'unknown' },
-      { label: 'WebSocket', severity: connectionState === 'connected' ? 'healthy' : connectionState === 'disconnected' ? 'danger' : 'warning' },
-      { label: 'Readiness', severity: readinessHeaderSeverity },
-      { label: 'Controller', severity: controllerHeaderSeverity },
-      { label: 'Generators', severity: generatorHeaderSeverity },
-      { label: 'Telemetry', severity: telemetryHeaderSeverity },
-      { label: 'Parity', severity: parityHeaderSeverity },
-      { label: 'Fleet', severity: fleetAlertHeaderSeverity },
-      { label: 'Competitive', severity: competitiveHeaderSeverity },
-      { label: 'Schedules', severity: scheduleHeaderSeverity },
+  const severityEntries = useMemo<{ label: string; severity: string; summary: string }[]>(() => {
+    const joinCounts = (parts: string[]) => parts.filter(Boolean).join(', ')
+    const readinessSummary = !systemReadiness
+      ? 'Readiness status is unavailable.'
+      : joinCounts([
+          readinessBlockedCount > 0 ? `${readinessBlockedCount} blocked` : '',
+          readinessDegradedCount > 0 ? `${readinessDegradedCount} degraded` : '',
+        ]) || readinessHeaderLabel
+    const telemetryCount = telemetryDangerCount + telemetryWarningCount
+    const telemetrySummary = telemetryCount > 0
+      ? `${joinCounts([
+          telemetryDangerCount > 0 ? `${telemetryDangerCount} danger` : '',
+          telemetryWarningCount > 0 ? `${telemetryWarningCount} warning` : '',
+        ])} telemetry diagnostic${telemetryCount === 1 ? '' : 's'}.`
+      : ''
+    return [
+      { label: 'API', severity: health ? 'healthy' : 'unknown', summary: 'Controller API has not responded yet.' },
+      {
+        label: 'WebSocket',
+        severity: connectionState === 'connected' ? 'healthy' : connectionState === 'disconnected' ? 'danger' : 'warning',
+        summary: connectionState === 'disconnected' ? 'Live event stream is disconnected.' : 'Connecting to the live event stream…',
+      },
+      { label: 'Readiness', severity: readinessHeaderSeverity, summary: readinessSummary },
+      {
+        label: 'Controller',
+        severity: controllerHeaderSeverity,
+        summary: controllerHeaderSeverity === 'unknown' ? 'Controller status is unavailable.' : `Controller is reporting "${controllerStatusLabel}".`,
+      },
+      {
+        label: 'Generators',
+        severity: generatorHeaderSeverity,
+        summary: generators.length === 0 ? 'No generator inventory reported.' : `${generatorIssueCount} of ${generators.length} generator${generators.length === 1 ? '' : 's'} offline.`,
+      },
+      { label: 'Telemetry', severity: telemetryHeaderSeverity, summary: telemetrySummary },
+      {
+        label: 'Fleet',
+        severity: fleetAlertHeaderSeverity,
+        summary: generators.length === 0 ? 'No generator inventory reported.' : `${fleetAlerts.length} active fleet alert${fleetAlerts.length === 1 ? '' : 's'}.`,
+      },
+      {
+        label: 'Schedules',
+        severity: scheduleHeaderSeverity,
+        summary: !scheduleHealth ? 'Schedule health is unavailable.' : scheduleHealth.total === 0 ? 'No schedules configured.' : `Schedules: ${scheduleHeaderLabel}.`,
+      },
     ]
-    return entries
-  }, [health, connectionState, readinessHeaderSeverity, controllerHeaderSeverity, generatorHeaderSeverity, telemetryHeaderSeverity, parityHeaderSeverity, fleetAlertHeaderSeverity, competitiveHeaderSeverity, scheduleHeaderSeverity])
+  }, [health, connectionState, readinessHeaderSeverity, systemReadiness, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, controllerHeaderSeverity, controllerStatusLabel, generatorHeaderSeverity, generators, generatorIssueCount, telemetryHeaderSeverity, telemetryDangerCount, telemetryWarningCount, fleetAlertHeaderSeverity, fleetAlerts, scheduleHeaderSeverity, scheduleHealth, scheduleHeaderLabel])
 
   const overallSeverity = useMemo(() => {
     if (severityEntries.some(e => e.severity === 'danger')) return 'danger'
@@ -1198,7 +944,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
 
   const issueCount = severityEntries.filter(e => e.severity === 'danger' || e.severity === 'warning').length
   const overallLabel = overallSeverity === 'danger'
-    ? `${issueCount} issue${issueCount === 1 ? '' : 's'} need attention`
+    ? `${issueCount} issue${issueCount === 1 ? ' needs' : 's need'} attention`
     : overallSeverity === 'warning'
       ? `${issueCount} advisory warning${issueCount === 1 ? '' : 's'}`
       : overallSeverity === 'unknown'
@@ -1232,11 +978,31 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           <span className={`monitor-indicator ${overallSeverity}`} />
           <span className="monitor-health-banner-label">{overallLabel}</span>
         </div>
-        <div className="monitor-health-banner-chips">
-          {severityEntries.map(entry => (
-            <span key={entry.label} className={`monitor-health-chip ${entry.severity}`}>{entry.label}</span>
-          ))}
-        </div>
+        <ul className="monitor-health-checklist">
+          {severityEntries.map(entry => {
+            const isGreen = entry.severity === 'healthy'
+            return (
+              <li key={entry.label} className={`monitor-health-check ${entry.severity} ${isGreen ? 'is-ok' : 'is-issue'}`}>
+                <span className={`monitor-health-check-box ${entry.severity}`} aria-hidden="true">
+                  {isGreen ? (
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <rect x="0.5" y="0.5" width="15" height="15" rx="4" fill="currentColor" />
+                      <path d="M4.3 8.2 6.7 10.6 11.7 5.4" stroke="var(--accent-contrast)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <rect x="1" y="1" width="14" height="14" rx="4" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                    </svg>
+                  )}
+                </span>
+                <span className="monitor-health-check-label">{entry.label}</span>
+                {!isGreen && entry.summary && (
+                  <span className="monitor-health-check-summary">{entry.summary}</span>
+                )}
+              </li>
+            )
+          })}
+        </ul>
       </div>
 
       <div className="monitor-tab-row" role="tablist" aria-label="Monitor categories">
@@ -1365,75 +1131,6 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           </div>
         </div>
       )}
-
-      {isCompetitiveParityModalOpen && competitiveParityAreas.length > 0 && (
-        <div className="modal-overlay" onClick={() => setIsCompetitiveParityModalOpen(false)}>
-          <div className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="competitive-parity-title" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-header telemetry-modal-header">
-              <div>
-                <h3 id="competitive-parity-title">Competitive Parity</h3>
-                <p className="page-subtitle">k6 and NeoLoad support status, evidence level, product decision, and known limitations.</p>
-              </div>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setIsCompetitiveParityModalOpen(false)}>Close</button>
-            </div>
-            <div className="telemetry-modal-summary">
-              <div className="telemetry-summary-metric">
-                <span className={`telemetry-summary-value ${competitiveGapCount > 0 ? 'telemetry-text-warning' : ''}`}>{competitiveGapCount}</span>
-                <span className="telemetry-summary-label">Gaps</span>
-              </div>
-              <div className="telemetry-summary-metric">
-                <span className={`telemetry-summary-value ${competitivePartialCount > 0 ? 'telemetry-text-warning' : ''}`}>{competitivePartialCount}</span>
-                <span className="telemetry-summary-label">Partial</span>
-              </div>
-              <div className="telemetry-summary-metric">
-                <span className={`telemetry-summary-value ${competitiveEvidenceRequiredCount > 0 ? 'telemetry-text-warning' : ''}`}>{competitiveEvidenceRequiredCount}</span>
-                <span className="telemetry-summary-label">Evidence Required</span>
-              </div>
-            </div>
-            <div className="monitor-body telemetry-modal-body">
-              <CompetitiveParityList areas={competitiveParityAreas} />
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function CompetitiveParityList({ areas }: { areas: CompetitiveParityAreas }) {
-  return (
-    <div className="monitor-inventory-list">
-      {areas.map(area => (
-        <div key={area.id} className={`monitor-inventory-item ${area.status === 'partial' || area.status === 'gap' || area.status === 'blocked' ? 'is-warning' : ''}`}>
-          <div className="monitor-row">
-            <span className="monitor-value">{area.name}</span>
-            <span className={`monitor-value ${area.status === 'blocked' ? 'text-danger' : area.status === 'partial' || area.status === 'gap' ? 'telemetry-text-warning' : 'text-success'}`}>{formatCompetitiveStatus(area.status)}</span>
-          </div>
-          <div className="monitor-row">
-            <span className="monitor-label">Competitors</span>
-            <span className="monitor-value">{area.competitors?.join(', ') || '-'}</span>
-          </div>
-          <div className="monitor-row">
-            <span className="monitor-label">Evidence Level</span>
-            <span className="monitor-value">{formatEvidenceLevel(area.evidence_level)}</span>
-          </div>
-          <div className="monitor-row">
-            <span className="monitor-label">Decision</span>
-            <span className="monitor-value">{formatEvidenceLevel(area.decision)}</span>
-          </div>
-          {area.remaining?.length ? (
-            <div className="monitor-warning-list">
-              {area.remaining.map(item => <p key={item}>{item}</p>)}
-            </div>
-          ) : null}
-          {area.evidence?.length ? (
-            <div className="monitor-row">
-              <span className="monitor-label">Evidence</span>
-              <span className="monitor-value">{area.evidence.slice(0, 3).join(', ')}{area.evidence.length > 3 ? ` +${area.evidence.length - 3}` : ''}</span>
-            </div>
-          ) : null}
-        </div>
-      ))}
     </div>
   )
 }
@@ -1714,12 +1411,7 @@ function readStringArray(key: string): string[] {
 function mergeOrder(order: string[], ids: string[]) {
   const retained = order.filter(id => ids.includes(id))
   const added = ids.filter(id => !retained.includes(id))
-  return pinMonitorCardLast([...retained, ...added])
-}
-
-function pinMonitorCardLast(ids: string[]) {
-  if (!ids.includes(PINNED_LAST_MONITOR_CARD_ID)) return ids
-  return [...ids.filter(id => id !== PINNED_LAST_MONITOR_CARD_ID), PINNED_LAST_MONITOR_CARD_ID]
+  return [...retained, ...added]
 }
 
 function moveId(ids: string[], draggedId: string, targetId: string) {

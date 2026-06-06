@@ -37,8 +37,15 @@
   margin-top: 12px;
 }
 
-.auth-gate-kicker {
+.auth-gate-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-bottom: 16px;
+}
+
+.auth-gate-kicker {
+  margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.18em;
   font-size: 0.72rem;

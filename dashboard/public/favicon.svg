@@ -1,6 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
-  <polygon points="200,40 350,280 50,280" fill="#9AB8D6" opacity="0.5"/>
-  <polygon points="240,80 360,280 120,280" fill="#C5DFF0" opacity="0.4"/>
-  <polygon points="200,100 310,280 90,280" fill="#7BA7CC"/>
-  <line x1="60" y1="290" x2="340" y2="290" stroke="#8CC4E8" stroke-width="2"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="apex" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <path d="M21 9 L30 27 H12 Z" fill="url(#apex)" opacity="0.4"/>
+  <path d="M12 4 L23 27 H1 Z" fill="url(#apex)"/>
+  <path d="M12 4 L16.4 13.2 L12 11.4 L7.6 13.2 Z" fill="#ffffff" opacity="0.9"/>
+  <rect x="1" y="29" width="30" height="1.6" rx="0.8" fill="#8b5cf6"/>
 </svg>

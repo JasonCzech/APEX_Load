@@ -4,6 +4,7 @@ import { useAuthApi } from '../hooks/api/useAuthApi'
 import { useDevView } from '../hooks/DevViewProvider'
 import { Application, DashboardAuthStatus, Domain, Project, Release } from '../types'
 import BuildBadge from './BuildBadge'
+import Logo from './Logo'
 import ProjectModal from './ProjectModal'
 import './Sidebar.css'
 
@@ -228,9 +229,7 @@ export default function Sidebar({
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
       <div className="sidebar-brand" onClick={() => onNavigate('dashboard')}>
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" className="brand-icon">
-          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="var(--accent)" />
-        </svg>
+        <Logo size={28} className="brand-icon" title="APEX Load" />
         {!collapsed && <span className="brand-name">APEX Load</span>}
       </div>
 

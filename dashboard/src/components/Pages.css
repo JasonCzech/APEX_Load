@@ -3775,10 +3775,10 @@
 /* Monitoring page */
 .monitor-health-banner {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 18px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 14px 18px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--bg-card);
@@ -3812,35 +3812,70 @@
   color: var(--text-primary);
 }
 
-.monitor-health-banner-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.monitor-health-checklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 4px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 12px;
 }
 
-.monitor-health-chip {
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  background: rgba(125, 211, 252, 0.1);
+.monitor-health-check {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.monitor-health-check-box {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(2px);
   color: var(--text-muted);
 }
 
-.monitor-health-chip.healthy {
-  background: rgba(34, 197, 94, 0.12);
+.monitor-health-check-box.healthy {
   color: var(--success);
 }
 
-.monitor-health-chip.warning {
-  background: rgba(245, 158, 11, 0.15);
+.monitor-health-check-box.warning {
   color: var(--warning);
 }
 
-.monitor-health-chip.danger {
-  background: rgba(239, 68, 68, 0.15);
+.monitor-health-check-box.danger {
   color: var(--danger);
+}
+
+.monitor-health-check-label {
+  font-weight: 600;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.monitor-health-check.is-ok .monitor-health-check-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.monitor-health-check-summary {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.monitor-health-check.danger .monitor-health-check-summary {
+  color: var(--danger);
+}
+
+.monitor-health-check.warning .monitor-health-check-summary {
+  color: var(--warning);
 }
 
 .monitor-tab-row {

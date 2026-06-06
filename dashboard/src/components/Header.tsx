@@ -1,3 +1,4 @@
+import Logo from './Logo'
 import './Header.css'
 
 interface Props {
@@ -9,7 +10,7 @@ export default function Header({ connected, onNavigate }: Props) {
   return (
     <header className="header">
       <div className="header-left" onClick={onNavigate}>
-        <img src="/apex-load-logo.png" alt="APEX Load" width="28" height="28" className="header-logo" />
+        <Logo size={28} className="header-logo" title="APEX Load" />
         <h1 className="header-title">APEX Load</h1>
       </div>
       <div className="header-right">
