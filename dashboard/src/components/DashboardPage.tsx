@@ -4,7 +4,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { useApi } from '../hooks/useApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
-import { TestSummary, MetricsHistoryPoint, RunArchiveReport, SystemInventoryResponse } from '../types'
+import { TestSummary, MetricsHistoryPoint, Release, RunArchiveReport } from '../types'
 import { downloadBlob } from '../utils/fileUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { ReleaseTrendPanel } from './ReleaseTrendPanel'
@@ -35,6 +35,10 @@ interface HealthData {
 }
 
 type CardMetricKey = 'tps' | 'avg_response_ms' | 'error_pct' | 'active_vusers'
+type DashboardTabKey = 'performance' | 'active' | 'activity'
+type SortDirection = 'asc' | 'desc'
+type PerformanceSortField = 'run' | 'completed' | 'peak_tps' | 'avg_ms' | 'errors' | 'sla' | 'complete'
+type ActivitySortField = 'run' | 'status' | 'vusers' | 'duration' | 'transactions' | 'date'
 
 interface GraphCardSettings {
   metric: CardMetricKey
@@ -59,6 +63,31 @@ const graphMetricOptions: { key: CardMetricKey; label: string; color: string; di
   { key: 'active_vusers', label: 'Active VUsers', color: 'var(--chart-3)', digits: 0 },
 ]
 
+const dashboardTabs: { id: DashboardTabKey; label: string }[] = [
+  { id: 'performance', label: 'Performance Trend' },
+  { id: 'active', label: 'Active Tests' },
+  { id: 'activity', label: 'Recent Activity' },
+]
+
+const performanceSortDefaults: Record<PerformanceSortField, SortDirection> = {
+  run: 'asc',
+  completed: 'desc',
+  peak_tps: 'desc',
+  avg_ms: 'desc',
+  errors: 'desc',
+  sla: 'desc',
+  complete: 'desc',
+}
+
+const activitySortDefaults: Record<ActivitySortField, SortDirection> = {
+  run: 'asc',
+  status: 'asc',
+  vusers: 'desc',
+  duration: 'desc',
+  transactions: 'desc',
+  date: 'desc',
+}
+
 function formatNumber(value: number, digits = 0) {
   return Number.isFinite(value) ? value.toFixed(digits) : digits > 0 ? '0.0' : '0'
 }
@@ -73,6 +102,38 @@ function formatDateTime(value?: string) {
 
 function completionTime(test: TestSummary) {
   return new Date(test.ended_at || test.start_time || test.created_at || 0).getTime()
+}
+
+function releaseTime(release: Release) {
+  return new Date(release.updated_at || release.created_at || 0).getTime()
+}
+
+function parseDurationValue(value?: string) {
+  if (!value) return 0
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)(ms|s|m|h)?$/i)
+  if (!match) return 0
+  const amount = Number(match[1])
+  const unit = (match[2] || 's').toLowerCase()
+  if (!Number.isFinite(amount)) return 0
+  if (unit === 'h') return amount * 3600
+  if (unit === 'm') return amount * 60
+  if (unit === 'ms') return amount / 1000
+  return amount
+}
+
+function compareValues(left: string | number, right: string | number, direction: SortDirection) {
+  const multiplier = direction === 'asc' ? 1 : -1
+  if (typeof left === 'string' || typeof right === 'string') {
+    return String(left).localeCompare(String(right)) * multiplier
+  }
+  if (left < right) return -1 * multiplier
+  if (left > right) return 1 * multiplier
+  return 0
+}
+
+function SortIcon({ active, direction }: { active: boolean; direction: SortDirection }) {
+  if (!active) return <span className="sort-icon">↕</span>
+  return <span className="sort-icon active">{direction === 'asc' ? '↑' : '↓'}</span>
 }
 
 function buildReleaseTrendStats(entries: PerformanceTrendEntry[]) {
@@ -145,15 +206,17 @@ function loadJson<T>(key: string, fallback: T): T {
 
 export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest, onNavigate }: Props) {
   const api = useApi()
-  const { activeApplication, activeRelease } = useApplication()
+  const { activeApplication, activeRelease, releases, setActiveRelease } = useApplication()
   const { activeProject } = useProject()
   const dashboardScopeReady = Boolean(activeProject?.id && activeApplication?.id)
   const [tests, setTests] = useState<TestSummary[]>([])
   const [health, setHealth] = useState<HealthData | null>(null)
-  const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
   const [archiveReports, setArchiveReports] = useState<Record<string, RunArchiveReport | null>>({})
   const [customizingCards, setCustomizingCards] = useState(false)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
+  const [activeDashboardTab, setActiveDashboardTab] = useState<DashboardTabKey>('performance')
+  const [performanceSort, setPerformanceSort] = useState<{ field: PerformanceSortField; direction: SortDirection }>({ field: 'completed', direction: 'desc' })
+  const [activitySort, setActivitySort] = useState<{ field: ActivitySortField; direction: SortDirection }>({ field: 'date', direction: 'desc' })
   const [activeCardOrder, setActiveCardOrder] = useState<string[]>(() => loadJson<string[]>('apexload.dashboard.activeCardOrder', []))
   const [activeCardSettings, setActiveCardSettings] = useState<Record<string, GraphCardSettings>>(() =>
     loadJson<Record<string, GraphCardSettings>>('apexload.dashboard.activeCardSettings', {}),
@@ -169,14 +232,12 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         return
       }
       try {
-        const [testRes, healthRes, inventoryRes] = await Promise.all([
+        const [testRes, healthRes] = await Promise.all([
           api.listTests({ application_id: activeApplication!.id, project_id: activeProject!.id }),
           api.getHealth().catch(() => null),
-          api.getSystemInventory().catch(() => null),
         ])
         setTests(testRes.tests || [])
         if (healthRes) setHealth(healthRes)
-        setInventory(inventoryRes)
       } catch { /* ignore */ }
     }
 
@@ -260,6 +321,25 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     [resolvedTests],
   )
 
+  const dashboardReleaseOptions = useMemo(() => {
+    const byId = new Map<string, Release>()
+    if (activeRelease && !activeRelease.archived_at) {
+      byId.set(activeRelease.id, activeRelease)
+    }
+    releases.forEach(release => {
+      if (!release.archived_at) {
+        byId.set(release.id, release)
+      }
+    })
+
+    const sorted = Array.from(byId.values()).sort((left, right) => releaseTime(right) - releaseTime(left))
+    const visible = sorted.slice(0, 6)
+    if (activeRelease && !activeRelease.archived_at && byId.has(activeRelease.id) && !visible.some(release => release.id === activeRelease.id)) {
+      return [...visible.slice(0, 5), byId.get(activeRelease.id)!]
+    }
+    return visible
+  }, [activeRelease, releases])
+
   const releaseTests = useMemo(() => {
     if (!activeRelease?.id) return resolvedTests
     return resolvedTests.filter(t => t.release_id === activeRelease.id)
@@ -328,7 +408,83 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     [archivedReleaseRuns, archiveReports],
   )
 
+  const sortedPerformanceTrend = useMemo(() => {
+    return [...performanceTrend].sort((left, right) => {
+      let leftValue: string | number
+      let rightValue: string | number
+      switch (performanceSort.field) {
+        case 'run':
+          leftValue = left.test.name.toLowerCase()
+          rightValue = right.test.name.toLowerCase()
+          break
+        case 'peak_tps':
+          leftValue = left.report.overview.peak_tps || 0
+          rightValue = right.report.overview.peak_tps || 0
+          break
+        case 'avg_ms':
+          leftValue = left.report.overview.avg_response_ms || 0
+          rightValue = right.report.overview.avg_response_ms || 0
+          break
+        case 'errors':
+          leftValue = left.report.overview.error_pct || 0
+          rightValue = right.report.overview.error_pct || 0
+          break
+        case 'sla':
+          leftValue = left.report.manifest?.sla_breached ? 1 : 0
+          rightValue = right.report.manifest?.sla_breached ? 1 : 0
+          break
+        case 'complete':
+          leftValue = left.report.completeness?.score_pct ?? -1
+          rightValue = right.report.completeness?.score_pct ?? -1
+          break
+        case 'completed':
+        default:
+          leftValue = completionTime(left.test)
+          rightValue = completionTime(right.test)
+          break
+      }
+      const compared = compareValues(leftValue, rightValue, performanceSort.direction)
+      return compared || compareValues(completionTime(left.test), completionTime(right.test), 'desc')
+    })
+  }, [performanceSort, performanceTrend])
+
   const releaseTrendStats = useMemo(() => buildReleaseTrendStats(performanceTrend), [performanceTrend])
+
+  const sortedRecentTests = useMemo(() => {
+    return [...recentTests].sort((left, right) => {
+      let leftValue: string | number
+      let rightValue: string | number
+      switch (activitySort.field) {
+        case 'run':
+          leftValue = left.name.toLowerCase()
+          rightValue = right.name.toLowerCase()
+          break
+        case 'status':
+          leftValue = left.status.toLowerCase()
+          rightValue = right.status.toLowerCase()
+          break
+        case 'vusers':
+          leftValue = left.total_vusers || 0
+          rightValue = right.total_vusers || 0
+          break
+        case 'duration':
+          leftValue = parseDurationValue(left.duration)
+          rightValue = parseDurationValue(right.duration)
+          break
+        case 'transactions':
+          leftValue = left.archive?.transaction_count ?? -1
+          rightValue = right.archive?.transaction_count ?? -1
+          break
+        case 'date':
+        default:
+          leftValue = completionTime(left)
+          rightValue = completionTime(right)
+          break
+      }
+      const compared = compareValues(leftValue, rightValue, activitySort.direction)
+      return compared || compareValues(completionTime(left), completionTime(right), 'desc')
+    })
+  }, [activitySort, recentTests])
 
   const stats = useMemo(() => {
     const completed = resolvedTests.filter(t => t.status === 'COMPLETE').length
@@ -402,10 +558,20 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       : statusColor === 'checking'
         ? 'Connecting'
         : 'Offline'
-  const liveAvailableGenerators = inventory
-    ? inventory.generators.filter(generator => generator.status === 'connected').length
-    : null
-  const availableGeneratorCount = liveAvailableGenerators ?? health?.capacity_availability?.effective_available_generators
+  const attentionStatusClass = attentionItems.some(item => item.tone === 'danger')
+    ? 'status-offline'
+    : attentionItems.some(item => item.tone === 'warning')
+      ? 'status-degraded'
+      : attentionItems.length > 0
+        ? 'status-idle'
+        : 'status-healthy'
+  const attentionIconColor = attentionItems.some(item => item.tone === 'danger')
+    ? 'var(--danger)'
+    : attentionItems.some(item => item.tone === 'warning')
+      ? 'var(--chart-3)'
+      : attentionItems.length > 0
+        ? 'var(--accent)'
+        : 'var(--success)'
 
   const updateCardSettings = (testId: string, patch: Partial<GraphCardSettings>) => {
     setActiveCardSettings(prev => ({
@@ -469,7 +635,53 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     }
     onNavigate('tests')
   }
-  const trendPreviewRows = performanceTrend.slice(0, 5)
+  const navigateToAttention = () => {
+    const firstAttentionItem = attentionItems[0]
+    if (firstAttentionItem?.testId) {
+      onSelectTest(firstAttentionItem.testId)
+      return
+    }
+    onNavigate('monitoring')
+  }
+  const requestPerformanceSort = (field: PerformanceSortField) => {
+    setPerformanceSort(current => ({
+      field,
+      direction: current.field === field
+        ? current.direction === 'asc' ? 'desc' : 'asc'
+        : performanceSortDefaults[field],
+    }))
+  }
+  const requestActivitySort = (field: ActivitySortField) => {
+    setActivitySort(current => ({
+      field,
+      direction: current.field === field
+        ? current.direction === 'asc' ? 'desc' : 'asc'
+        : activitySortDefaults[field],
+    }))
+  }
+  const dashboardTabCounts: Record<DashboardTabKey, number> = {
+    performance: performanceTrend.length,
+    active: stats.active,
+    activity: recentTests.length,
+  }
+  const activeDashboardTabLabel = dashboardTabs.find(tab => tab.id === activeDashboardTab)?.label || 'Dashboard'
+  const renderPerformanceSortHeader = (field: PerformanceSortField, label: string, className = '') => (
+    <th className={`sortable ${className}`.trim()}>
+      <button type="button" onClick={() => requestPerformanceSort(field)}>
+        <span>{label}</span>
+        <SortIcon active={performanceSort.field === field} direction={performanceSort.direction} />
+      </button>
+    </th>
+  )
+  const renderActivitySortHeader = (field: ActivitySortField, label: string, className = '') => (
+    <th className={`sortable ${className}`.trim()}>
+      <button type="button" onClick={() => requestActivitySort(field)}>
+        <span>{label}</span>
+        <SortIcon active={activitySort.field === field} direction={activitySort.direction} />
+      </button>
+    </th>
+  )
+  const trendPreviewRows = sortedPerformanceTrend.slice(0, 5)
   const aggregateHistory = Object.values(metricsHistory).flat().slice(-60)
 
   return (
@@ -538,16 +750,17 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           </div>
         </button>
 
-        <button type="button" className={`dash-health-card dash-card-button ${availableGeneratorCount && availableGeneratorCount > 0 ? 'status-active' : 'status-idle'}`} onClick={navigateToMonitoring}>
+        <button type="button" className={`dash-health-card dash-card-button ${attentionStatusClass}`} onClick={navigateToAttention}>
           <div className="dhc-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--chart-5)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={attentionIconColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 9v4" />
+              <path d="M12 17h.01" />
+              <path d="M10.3 3.9 2.5 18a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
             </svg>
           </div>
           <div className="dhc-content">
-            <span className="dhc-value">{availableGeneratorCount ?? '—'}</span>
-            <span className="dhc-label">Generators Available</span>
+            <span className="dhc-value">{attentionItems.length}</span>
+            <span className="dhc-label">Attention Needed</span>
           </div>
         </button>
       </div>
@@ -555,7 +768,21 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       <section className="dash-section dash-release-snapshot">
         <div className="dash-section-heading-row">
           <h3 className="dash-section-title">Release Snapshot</h3>
-          <span className="dash-context-chip">{activeRelease?.name || 'All releases'}</span>
+          <div className="dash-release-selector" role="list" aria-label="Dashboard release selector">
+            {dashboardReleaseOptions.length === 0 ? (
+              <span className="dash-release-selector-empty">No releases</span>
+            ) : dashboardReleaseOptions.map(release => (
+              <button
+                key={release.id}
+                type="button"
+                className={`dash-release-option ${activeRelease?.id === release.id ? 'active' : ''}`}
+                aria-current={activeRelease?.id === release.id ? 'true' : undefined}
+                onClick={() => setActiveRelease(release)}
+              >
+                {release.name}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="release-metric-grid">
           <button type="button" className="release-metric dash-card-button" onClick={navigateToLatestResult}>
@@ -601,310 +828,326 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         </div>
       </section>
 
-      <section className="dash-section dash-performance-trend">
-        <div className="dash-section-heading-row">
-          <h3 className="dash-section-title">Performance Trend</h3>
-          <div className="dash-section-heading-actions">
-            {activeRelease?.id && performanceTrend.length > 0 && (
-              <button type="button" className="btn btn-secondary btn-sm" onClick={downloadTrendCsv}>
-                Export CSV
-              </button>
-            )}
-            {performanceTrend.length > 0 && (
-              <button type="button" className="btn btn-secondary btn-sm" onClick={navigateToResults}>
-                View Results
-              </button>
-            )}
-            <span className="dash-context-chip">Last {archivedReleaseRuns.length || 0} archived runs</span>
-          </div>
-        </div>
-        {performanceTrend.length === 0 ? (
-          <div className="dash-empty small">
-            <span>No archived performance reports yet</span>
-          </div>
-        ) : (
-          <>
-            <div className="trend-signal-grid">
-              <div className="trend-signal-card">
-                <span className="trend-signal-value">{releaseTrendStats.slaBreaches}</span>
-                <span className="trend-signal-label">SLA Breaches</span>
-              </div>
-              <div className="trend-signal-card">
-                <span className="trend-signal-value">{formatNumber(releaseTrendStats.avgCompleteness, 0)}%</span>
-                <span className="trend-signal-label">Avg Completeness</span>
-              </div>
-              <div className="trend-signal-card">
-                <span className="trend-signal-value">{releaseTrendStats.peakVUsers.toLocaleString()}</span>
-                <span className="trend-signal-label">Peak VUsers</span>
-              </div>
-              <div className="trend-signal-card">
-                <span className="trend-signal-value">{formatNumber(releaseTrendStats.maxCPU, 1)}%</span>
-                <span className="trend-signal-label">Max CPU</span>
-              </div>
-              <div className="trend-signal-card">
-                <span className="trend-signal-value">{formatNumber(releaseTrendStats.maxMemoryMB, 0)} MB</span>
-                <span className="trend-signal-label">Max Memory</span>
-              </div>
-              <div className="trend-signal-card">
-                <span className="trend-signal-value">{releaseTrendStats.telemetryBreached}</span>
-                <span className="trend-signal-label">Telemetry Breaches</span>
-              </div>
-            </div>
-            <div className="trend-table-wrap">
-              <table className="trend-table">
-                <thead>
-                  <tr>
-                    <th>Run</th>
-                    <th>Completed</th>
-                    <th className="num">Peak TPS</th>
-                    <th className="num">Avg ms</th>
-                    <th className="num">Errors</th>
-                    <th className="num">SLA</th>
-                    <th className="num">Complete</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trendPreviewRows.map(({ test, report, runtimeSummary }) => (
-                    <tr key={test.id} onClick={() => onSelectTest(test.id)}>
-                      <td>
-                        <span className="trend-run-name">{test.name}</span>
-                        <span className="trend-run-meta">{test.script_name || `${test.total_vusers} VUsers`}</span>
-                        {runtimeSummary && <span className="trend-run-meta">{runtimeSummary}</span>}
-                      </td>
-                      <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
-                      <td className="num strong">{formatNumber(report.overview.peak_tps, 1)}</td>
-                      <td className="num">{formatNumber(report.overview.avg_response_ms)}</td>
-                      <td className={`num ${report.overview.error_pct > 0 ? 'text-danger strong' : ''}`}>
-                        {formatNumber(report.overview.error_pct, 2)}%
-                      </td>
-                      <td className={`num ${report.manifest?.sla_breached ? 'text-danger strong' : 'text-success'}`}>
-                        {report.manifest?.sla_breached ? 'Breached' : 'Passed'}
-                      </td>
-                      <td className="num">{formatOptionalNumber(report.completeness?.score_pct, 0)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {performanceTrend.length > trendPreviewRows.length && (
-              <button type="button" className="trend-preview-footer dash-card-button" onClick={navigateToResults}>
-                View {performanceTrend.length - trendPreviewRows.length} more archived run{performanceTrend.length - trendPreviewRows.length === 1 ? '' : 's'} in Results
-              </button>
-            )}
-            {activeRelease?.id && (
-              <ReleaseTrendPanel releaseId={activeRelease.id} getReleaseTrend={api.getReleaseTrend} />
-            )}
-          </>
-        )}
-      </section>
-
-      {/* Active Tests */}
-      <section className="dash-section">
-        <h3 className="dash-section-title">
-          Active Tests
-          {stats.active > 0 && <span className="dash-badge pulse">{stats.active}</span>}
-        </h3>
-        {activeTests.length === 0 ? (
-          <div className="dash-empty compact">
-            <span className="dash-empty-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-              </svg>
-            </span>
-            <span>No tests currently running</span>
-            <span className="dash-empty-hint">{pendingTests.length > 0 ? `${pendingTests.length} test${pendingTests.length === 1 ? '' : 's'} waiting on project capacity.` : 'Start a scenario from the New Test page'}</span>
-          </div>
-        ) : (
-          <div className={`dash-active-grid ${customizingCards ? 'is-customizing' : ''}`}>
-            {orderedActiveTests.map(test => {
-              const history = metricsHistory[test.id] || []
-              const latest = test.live_metrics
-              const runtimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
-              const cardSettings = { ...defaultGraphCardSettings, ...activeCardSettings[test.id] }
-              const metricOption = graphMetricOptions.find(option => option.key === cardSettings.metric) || graphMetricOptions[0]
-              const chartData = history.slice(-60).map(point => ({
-                ...point,
-                selectedMetric: getHistoryMetric(point, cardSettings.metric),
-              }))
-              return (
-                <div
-                  key={test.id}
-                  className={`dash-active-card ${customizingCards ? 'editable' : ''} ${draggedCardId === test.id ? 'dragging' : ''}`}
-                  draggable={customizingCards}
-                  onDragStart={event => handleCardDragStart(event, test.id)}
-                  onDragOver={event => handleCardDragOver(event, test.id)}
-                  onDrop={event => handleCardDrop(event, test.id)}
-                  onDragEnd={() => setDraggedCardId(null)}
-                  onClick={() => !customizingCards && onSelectTest(test.id)}
-                >
-                  <div className="dac-header">
-                    <div className="dac-title-wrap">
-                      {customizingCards && <span className="dac-drag-handle" title="Drag to reorder">::</span>}
-                      <span className="dac-name">{test.name}</span>
-                    </div>
-                    <StatusBadge status={test.status} />
-                  </div>
-                  {customizingCards && (
-                    <div className="dac-editor" onClick={event => event.stopPropagation()}>
-                      <label>
-                        Graph
-                        <select
-                          value={cardSettings.metric}
-                          onChange={event => updateCardSettings(test.id, { metric: event.target.value as CardMetricKey })}
-                        >
-                          {graphMetricOptions.map(option => (
-                            <option key={option.key} value={option.key}>{option.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="dac-checkbox">
-                        <input
-                          type="checkbox"
-                          checked={cardSettings.showGraph}
-                          onChange={event => updateCardSettings(test.id, { showGraph: event.target.checked })}
-                        />
-                        Show graph
-                      </label>
-                    </div>
-                  )}
-                  <div className="dac-metrics">
-                    <div className="dac-metric">
-                      <span className="dac-metric-value">{latest?.active_vusers ?? test.total_vusers}</span>
-                      <span className="dac-metric-label">VUsers</span>
-                    </div>
-                    <div className="dac-metric">
-                      <span className="dac-metric-value">{latest?.tps?.toFixed(1) ?? '—'}</span>
-                      <span className="dac-metric-label">TPS</span>
-                    </div>
-                    <div className="dac-metric">
-                      <span className="dac-metric-value">{latest?.avg_response_ms?.toFixed(0) ?? '—'}</span>
-                      <span className="dac-metric-label">Avg ms</span>
-                    </div>
-                    <div className="dac-metric">
-                      <span className={`dac-metric-value ${(latest?.error_pct ?? 0) > 0 ? 'text-danger' : ''}`}>
-                        {latest?.error_pct?.toFixed(2) ?? '0'}%
-                      </span>
-                      <span className="dac-metric-label">Errors</span>
-                    </div>
-                  </div>
-                  {cardSettings.showGraph && chartData.length > 1 && (
-                    <div className="dac-sparkline">
-                      <ResponsiveContainer width="100%" height={60}>
-                        <AreaChart data={chartData}>
-                          <defs>
-                            <linearGradient id={`spark-${test.id}`} x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor={metricOption.color} stopOpacity={0.3} />
-                              <stop offset="100%" stopColor={metricOption.color} stopOpacity={0} />
-                            </linearGradient>
-                          </defs>
-                          <Area
-                            type="monotone"
-                            dataKey="selectedMetric"
-                            stroke={metricOption.color}
-                            fill={`url(#spark-${test.id})`}
-                            strokeWidth={1.5}
-                            isAnimationActive={false}
-                          />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                      <span className="dac-chart-label">{metricOption.label}</span>
-                    </div>
-                  )}
-                  <div className="dac-footer">
-                    <span className="dac-detail">{test.total_vusers} VUsers · {test.groups?.length || 1} group{(test.groups?.length || 1) > 1 ? 's' : ''}</span>
-                    <span className="dac-detail">{test.duration}{runtimeSummary ? ` · ${runtimeSummary}` : ''}</span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-        {activeTests.length > 0 && aggregateHistory.length > 1 && (
-          <button type="button" className="dash-aggregate-chart dash-card-button" onClick={navigateToTests}>
-            <span className="aggregate-label">Aggregate TPS (active tests)</span>
-            <ResponsiveContainer width="100%" height={70}>
-              <AreaChart data={aggregateHistory}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="time" hide />
-                <YAxis hide />
-                <Tooltip
-                  contentStyle={{ ...chartTooltipContentStyle, borderRadius: 6, fontSize: 12 }}
-                  labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
-                />
-                <Area type="monotone" dataKey="tps" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.15} strokeWidth={1.5} isAnimationActive={false} />
-              </AreaChart>
-            </ResponsiveContainer>
+      <div className="dash-tab-row" role="tablist" aria-label="Dashboard sections">
+        {dashboardTabs.map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={activeDashboardTab === tab.id}
+            className={`dash-tab ${activeDashboardTab === tab.id ? 'active' : ''}`}
+            onClick={() => setActiveDashboardTab(tab.id)}
+          >
+            <span>{tab.label}</span>
+            <strong>{dashboardTabCounts[tab.id]}</strong>
           </button>
-        )}
-      </section>
+        ))}
+      </div>
 
-      {/* Bottom row: Activity Feed + Summary Stats */}
-      <div className="dash-bottom-row">
-        {/* Activity Feed */}
-        <section className="dash-section dash-activity">
-          <h3 className="dash-section-title">Recent Activity</h3>
-          {recentTests.length === 0 ? (
-            <div className="dash-empty small">
-              <span>No completed tests yet</span>
+      <div className="dash-tab-panel" role="tabpanel" aria-label={`${activeDashboardTabLabel} dashboard section`}>
+        {activeDashboardTab === 'performance' && (
+          <section className="dash-section dash-performance-trend">
+            <div className="dash-section-heading-row">
+              <h3 className="dash-section-title">Performance Trend</h3>
+              <div className="dash-section-heading-actions">
+                {activeRelease?.id && performanceTrend.length > 0 && (
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={downloadTrendCsv}>
+                    Export CSV
+                  </button>
+                )}
+                {performanceTrend.length > 0 && (
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={navigateToResults}>
+                    View Results
+                  </button>
+                )}
+                <span className="dash-context-chip">Last {archivedReleaseRuns.length || 0} archived runs</span>
+              </div>
             </div>
-          ) : (
-            <div className="trend-table-wrap">
-              <table className="trend-table">
-                <thead>
-                  <tr>
-                    <th>Run</th>
-                    <th>Status</th>
-                    <th className="num">VUsers</th>
-                    <th className="num">Duration</th>
-                    <th className="num">Transactions</th>
-                    <th>Date / Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentTests.map(test => {
-                    const runtimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
-                    return (
-                      <tr key={test.id} onClick={() => onSelectTest(test.id)}>
-                        <td>
-                          <span className="trend-run-name">{test.name}</span>
-                          {(test.script_name || runtimeSummary) && (
-                            <span className="trend-run-meta">{[test.script_name, runtimeSummary].filter(Boolean).join(' · ')}</span>
-                          )}
-                        </td>
-                        <td><StatusBadge status={test.status} /></td>
-                        <td className="num">{test.total_vusers}</td>
-                        <td className="num">{test.duration}</td>
-                        <td className="num">{test.archive ? test.archive.transaction_count.toLocaleString() : 'pending'}</td>
-                        <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        <section className="dash-section dash-attention">
-          <h3 className="dash-section-title">Attention Needed</h3>
-          {attentionItems.length === 0 ? (
-            <div className="dash-empty small">
-              <span>No current issues detected</span>
-            </div>
-          ) : (
-            <div className="attention-list">
-              {attentionItems.map((item, index) => (
-                <div key={`${item.title}-${index}`} className={`attention-item ${item.tone}`} onClick={() => item.testId && onSelectTest(item.testId)}>
-                  <span className={`attention-marker ${item.tone}`} />
-                  <div className="attention-content">
-                    <span className="attention-title">{item.title}</span>
-                    <span className="attention-detail">{item.detail}</span>
+            {performanceTrend.length === 0 ? (
+              <div className="dash-empty small">
+                <span>No archived performance reports yet</span>
+              </div>
+            ) : (
+              <>
+                <div className="trend-signal-grid">
+                  <div className="trend-signal-card">
+                    <span className="trend-signal-value">{releaseTrendStats.slaBreaches}</span>
+                    <span className="trend-signal-label">SLA Breaches</span>
+                  </div>
+                  <div className="trend-signal-card">
+                    <span className="trend-signal-value">{formatNumber(releaseTrendStats.avgCompleteness, 0)}%</span>
+                    <span className="trend-signal-label">Avg Completeness</span>
+                  </div>
+                  <div className="trend-signal-card">
+                    <span className="trend-signal-value">{releaseTrendStats.peakVUsers.toLocaleString()}</span>
+                    <span className="trend-signal-label">Peak VUsers</span>
+                  </div>
+                  <div className="trend-signal-card">
+                    <span className="trend-signal-value">{formatNumber(releaseTrendStats.maxCPU, 1)}%</span>
+                    <span className="trend-signal-label">Max CPU</span>
+                  </div>
+                  <div className="trend-signal-card">
+                    <span className="trend-signal-value">{formatNumber(releaseTrendStats.maxMemoryMB, 0)} MB</span>
+                    <span className="trend-signal-label">Max Memory</span>
+                  </div>
+                  <div className="trend-signal-card">
+                    <span className="trend-signal-value">{releaseTrendStats.telemetryBreached}</span>
+                    <span className="trend-signal-label">Telemetry Breaches</span>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </section>
+                <div className="trend-table-wrap">
+                  <table className="trend-table">
+                    <thead>
+                      <tr>
+                        {renderPerformanceSortHeader('run', 'Run')}
+                        {renderPerformanceSortHeader('completed', 'Completed')}
+                        {renderPerformanceSortHeader('peak_tps', 'Peak TPS', 'num')}
+                        {renderPerformanceSortHeader('avg_ms', 'Avg ms', 'num')}
+                        {renderPerformanceSortHeader('errors', 'Errors', 'num')}
+                        {renderPerformanceSortHeader('sla', 'SLA', 'num')}
+                        {renderPerformanceSortHeader('complete', 'Complete', 'num')}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trendPreviewRows.map(({ test, report, runtimeSummary }) => (
+                        <tr key={test.id} onClick={() => onSelectTest(test.id)}>
+                          <td>
+                            <button
+                              type="button"
+                              className="dash-source-link"
+                              onClick={event => {
+                                event.stopPropagation()
+                                onSelectTest(test.id)
+                              }}
+                            >
+                              {test.name}
+                            </button>
+                            <span className="trend-run-meta">{test.script_name || `${test.total_vusers} VUsers`}</span>
+                            {runtimeSummary && <span className="trend-run-meta">{runtimeSummary}</span>}
+                          </td>
+                          <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
+                          <td className="num strong">{formatNumber(report.overview.peak_tps, 1)}</td>
+                          <td className="num">{formatNumber(report.overview.avg_response_ms)}</td>
+                          <td className={`num ${report.overview.error_pct > 0 ? 'text-danger strong' : ''}`}>
+                            {formatNumber(report.overview.error_pct, 2)}%
+                          </td>
+                          <td className={`num ${report.manifest?.sla_breached ? 'text-danger strong' : 'text-success'}`}>
+                            {report.manifest?.sla_breached ? 'Breached' : 'Passed'}
+                          </td>
+                          <td className="num">{formatOptionalNumber(report.completeness?.score_pct, 0)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {performanceTrend.length > trendPreviewRows.length && (
+                  <button type="button" className="trend-preview-footer dash-card-button" onClick={navigateToResults}>
+                    View {performanceTrend.length - trendPreviewRows.length} more archived run{performanceTrend.length - trendPreviewRows.length === 1 ? '' : 's'} in Results
+                  </button>
+                )}
+                {activeRelease?.id && (
+                  <ReleaseTrendPanel releaseId={activeRelease.id} getReleaseTrend={api.getReleaseTrend} />
+                )}
+              </>
+            )}
+          </section>
+        )}
+
+        {activeDashboardTab === 'active' && (
+          <section className="dash-section">
+            <h3 className="dash-section-title">
+              Active Tests
+              {stats.active > 0 && <span className="dash-badge pulse">{stats.active}</span>}
+            </h3>
+            {activeTests.length === 0 ? (
+              <div className="dash-empty compact">
+                <span className="dash-empty-icon">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                  </svg>
+                </span>
+                <span>No tests currently running</span>
+                <span className="dash-empty-hint">{pendingTests.length > 0 ? `${pendingTests.length} test${pendingTests.length === 1 ? '' : 's'} waiting on project capacity.` : 'Start a scenario from the New Test page'}</span>
+              </div>
+            ) : (
+              <div className={`dash-active-grid ${customizingCards ? 'is-customizing' : ''}`}>
+                {orderedActiveTests.map(test => {
+                  const history = metricsHistory[test.id] || []
+                  const latest = test.live_metrics
+                  const runtimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
+                  const cardSettings = { ...defaultGraphCardSettings, ...activeCardSettings[test.id] }
+                  const metricOption = graphMetricOptions.find(option => option.key === cardSettings.metric) || graphMetricOptions[0]
+                  const chartData = history.slice(-60).map(point => ({
+                    ...point,
+                    selectedMetric: getHistoryMetric(point, cardSettings.metric),
+                  }))
+                  return (
+                    <div
+                      key={test.id}
+                      className={`dash-active-card ${customizingCards ? 'editable' : ''} ${draggedCardId === test.id ? 'dragging' : ''}`}
+                      draggable={customizingCards}
+                      onDragStart={event => handleCardDragStart(event, test.id)}
+                      onDragOver={event => handleCardDragOver(event, test.id)}
+                      onDrop={event => handleCardDrop(event, test.id)}
+                      onDragEnd={() => setDraggedCardId(null)}
+                      onClick={() => !customizingCards && onSelectTest(test.id)}
+                    >
+                      <div className="dac-header">
+                        <div className="dac-title-wrap">
+                          {customizingCards && <span className="dac-drag-handle" title="Drag to reorder">::</span>}
+                          <span className="dac-name">{test.name}</span>
+                        </div>
+                        <StatusBadge status={test.status} />
+                      </div>
+                      {customizingCards && (
+                        <div className="dac-editor" onClick={event => event.stopPropagation()}>
+                          <label>
+                            Graph
+                            <select
+                              value={cardSettings.metric}
+                              onChange={event => updateCardSettings(test.id, { metric: event.target.value as CardMetricKey })}
+                            >
+                              {graphMetricOptions.map(option => (
+                                <option key={option.key} value={option.key}>{option.label}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="dac-checkbox">
+                            <input
+                              type="checkbox"
+                              checked={cardSettings.showGraph}
+                              onChange={event => updateCardSettings(test.id, { showGraph: event.target.checked })}
+                            />
+                            Show graph
+                          </label>
+                        </div>
+                      )}
+                      <div className="dac-metrics">
+                        <div className="dac-metric">
+                          <span className="dac-metric-value">{latest?.active_vusers ?? test.total_vusers}</span>
+                          <span className="dac-metric-label">VUsers</span>
+                        </div>
+                        <div className="dac-metric">
+                          <span className="dac-metric-value">{latest?.tps?.toFixed(1) ?? '—'}</span>
+                          <span className="dac-metric-label">TPS</span>
+                        </div>
+                        <div className="dac-metric">
+                          <span className="dac-metric-value">{latest?.avg_response_ms?.toFixed(0) ?? '—'}</span>
+                          <span className="dac-metric-label">Avg ms</span>
+                        </div>
+                        <div className="dac-metric">
+                          <span className={`dac-metric-value ${(latest?.error_pct ?? 0) > 0 ? 'text-danger' : ''}`}>
+                            {latest?.error_pct?.toFixed(2) ?? '0'}%
+                          </span>
+                          <span className="dac-metric-label">Errors</span>
+                        </div>
+                      </div>
+                      {cardSettings.showGraph && chartData.length > 1 && (
+                        <div className="dac-sparkline">
+                          <ResponsiveContainer width="100%" height={60}>
+                            <AreaChart data={chartData}>
+                              <defs>
+                                <linearGradient id={`spark-${test.id}`} x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor={metricOption.color} stopOpacity={0.3} />
+                                  <stop offset="100%" stopColor={metricOption.color} stopOpacity={0} />
+                                </linearGradient>
+                              </defs>
+                              <Area
+                                type="monotone"
+                                dataKey="selectedMetric"
+                                stroke={metricOption.color}
+                                fill={`url(#spark-${test.id})`}
+                                strokeWidth={1.5}
+                                isAnimationActive={false}
+                              />
+                            </AreaChart>
+                          </ResponsiveContainer>
+                          <span className="dac-chart-label">{metricOption.label}</span>
+                        </div>
+                      )}
+                      <div className="dac-footer">
+                        <span className="dac-detail">{test.total_vusers} VUsers · {test.groups?.length || 1} group{(test.groups?.length || 1) > 1 ? 's' : ''}</span>
+                        <span className="dac-detail">{test.duration}{runtimeSummary ? ` · ${runtimeSummary}` : ''}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            {activeTests.length > 0 && aggregateHistory.length > 1 && (
+              <button type="button" className="dash-aggregate-chart dash-card-button" onClick={navigateToTests}>
+                <span className="aggregate-label">Aggregate TPS (active tests)</span>
+                <ResponsiveContainer width="100%" height={70}>
+                  <AreaChart data={aggregateHistory}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="time" hide />
+                    <YAxis hide />
+                    <Tooltip
+                      contentStyle={{ ...chartTooltipContentStyle, borderRadius: 6, fontSize: 12 }}
+                      labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
+                    />
+                    <Area type="monotone" dataKey="tps" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.15} strokeWidth={1.5} isAnimationActive={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </button>
+            )}
+          </section>
+        )}
+
+        {activeDashboardTab === 'activity' && (
+          <section className="dash-section dash-activity">
+            <h3 className="dash-section-title">Recent Activity</h3>
+            {recentTests.length === 0 ? (
+              <div className="dash-empty small">
+                <span>No completed tests yet</span>
+              </div>
+            ) : (
+              <div className="trend-table-wrap">
+                <table className="trend-table">
+                  <thead>
+                    <tr>
+                      {renderActivitySortHeader('run', 'Run')}
+                      {renderActivitySortHeader('status', 'Status')}
+                      {renderActivitySortHeader('vusers', 'VUsers', 'num')}
+                      {renderActivitySortHeader('duration', 'Duration', 'num')}
+                      {renderActivitySortHeader('transactions', 'Transactions', 'num')}
+                      {renderActivitySortHeader('date', 'Date / Time')}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedRecentTests.map(test => {
+                      const runtimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
+                      return (
+                        <tr key={test.id} onClick={() => onSelectTest(test.id)}>
+                          <td>
+                            <button
+                              type="button"
+                              className="dash-source-link"
+                              onClick={event => {
+                                event.stopPropagation()
+                                onSelectTest(test.id)
+                              }}
+                            >
+                              {test.name}
+                            </button>
+                            {(test.script_name || runtimeSummary) && (
+                              <span className="trend-run-meta">{[test.script_name, runtimeSummary].filter(Boolean).join(' · ')}</span>
+                            )}
+                          </td>
+                          <td><StatusBadge status={test.status} /></td>
+                          <td className="num">{test.total_vusers}</td>
+                          <td className="num">{test.duration}</td>
+                          <td className="num">{test.archive ? test.archive.transaction_count.toLocaleString() : 'pending'}</td>
+                          <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
       </div>
     </div>
   )

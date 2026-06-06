@@ -14,6 +14,7 @@ const apiMock = {
   getTestArchiveReport: vi.fn(),
   getTestArchiveAnalysis: vi.fn(),
   downloadReleaseTrend: vi.fn(),
+  getReleaseTrend: vi.fn(),
 }
 
 vi.mock('../utils/fileUtils', () => ({
@@ -23,6 +24,8 @@ vi.mock('../utils/fileUtils', () => ({
 const applicationState = {
   activeApplication: { id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' },
   activeRelease: { id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' },
+  releases: [] as Array<{ id: string; application_id: string; name: string; created_at: string; updated_at: string; archived_at?: string }>,
+  setActiveRelease: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -53,6 +56,19 @@ describe('DashboardPage', () => {
   const onNavigate = vi.fn()
 
   beforeEach(() => {
+    applicationState.activeApplication = { id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }
+    applicationState.activeRelease = { id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }
+    applicationState.releases = [
+      { id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-10T00:00:00Z' },
+      { id: 'rel-2', application_id: 'app-1', name: 'Sprint 23', created_at: '2026-04-02T00:00:00Z', updated_at: '2026-05-09T00:00:00Z' },
+      { id: 'rel-3', application_id: 'app-1', name: 'Sprint 22', created_at: '2026-03-02T00:00:00Z', updated_at: '2026-05-08T00:00:00Z' },
+      { id: 'rel-4', application_id: 'app-1', name: 'Sprint 21', created_at: '2026-02-02T00:00:00Z', updated_at: '2026-05-07T00:00:00Z' },
+      { id: 'rel-5', application_id: 'app-1', name: 'Sprint 20', created_at: '2026-01-02T00:00:00Z', updated_at: '2026-05-06T00:00:00Z' },
+      { id: 'rel-6', application_id: 'app-1', name: 'Sprint 19', created_at: '2025-12-02T00:00:00Z', updated_at: '2026-05-05T00:00:00Z' },
+      { id: 'rel-7', application_id: 'app-1', name: 'Sprint 18', created_at: '2025-11-02T00:00:00Z', updated_at: '2026-05-04T00:00:00Z' },
+      { id: 'rel-archived', application_id: 'app-1', name: 'Archived Sprint', created_at: '2025-10-02T00:00:00Z', updated_at: '2026-05-03T00:00:00Z', archived_at: '2026-05-04T00:00:00Z' },
+    ]
+    applicationState.setActiveRelease = vi.fn()
     apiMock.getHealth.mockResolvedValue({
       status: 'healthy',
       version: 'dev',
@@ -109,6 +125,19 @@ describe('DashboardPage', () => {
           archive: { transaction_count: 1200 },
         },
         {
+          id: 'test-complete-2',
+          name: 'Checkout Archive',
+          status: 'COMPLETE',
+          application_id: 'app-1',
+          release_id: 'rel-1',
+          groups: [{ name: 'g1', script_id: 'script-4', script_name: 'Checkout', protocol: 'http', vusers: 5 }],
+          total_vusers: 5,
+          duration: '8m',
+          created_at: '2026-05-12T17:00:00Z',
+          ended_at: '2026-05-12T17:08:00Z',
+          archive: { transaction_count: 2400 },
+        },
+        {
           id: 'test-failed',
           name: 'Payments Failure Drill',
           status: 'FAILED',
@@ -160,9 +189,9 @@ describe('DashboardPage', () => {
         },
       ],
     })
-    apiMock.getTestArchiveReport.mockResolvedValue({
+    apiMock.getTestArchiveReport.mockImplementation((testId: string) => Promise.resolve({
       manifest: {
-        sla_breached: true,
+        sla_breached: testId !== 'test-complete-2',
         provenance: {
           runtime_settings: {
             browser: {
@@ -175,8 +204,8 @@ describe('DashboardPage', () => {
         },
       },
       overview: {
-        peak_tps: 32,
-        avg_response_ms: 95,
+        peak_tps: testId === 'test-complete-2' ? 45 : 32,
+        avg_response_ms: testId === 'test-complete-2' ? 140 : 95,
         browser: {
           avg_lcp_ms: 240,
         },
@@ -185,9 +214,9 @@ describe('DashboardPage', () => {
           samples: 3,
           breached_intervals: 1,
         },
-        error_pct: 0,
+        error_pct: testId === 'test-complete-2' ? 3.4 : 0,
         peak_active_vusers: 12,
-        transactions: 1200,
+        transactions: testId === 'test-complete-2' ? 2400 : 1200,
       },
       completeness: {
         score_pct: 88,
@@ -201,8 +230,14 @@ describe('DashboardPage', () => {
         disk_read_kbps: 0,
         disk_write_kbps: 0,
       },
-    })
+    }))
     apiMock.downloadReleaseTrend.mockResolvedValue(new Blob(['release trend csv'], { type: 'text/csv' }))
+    apiMock.getReleaseTrend.mockResolvedValue({
+      release_id: 'rel-1',
+      run_count: 0,
+      points: [],
+      summary: { latest_regressed: false, avg_response_trend_pct: 0, error_pct_trend: 0 },
+    })
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -234,18 +269,33 @@ describe('DashboardPage', () => {
       )
     })
 
-    await act(async () => {
-      await Promise.resolve()
-    })
+    await flushDashboard()
 
     expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', project_id: 'project-1' })
 
     const healthCards = Array.from(container.querySelectorAll('.dash-health-card'))
     expect(healthCards).toHaveLength(4)
     expect(healthCards.every(card => card.className.includes('dash-card-button'))).toBe(true)
+    expect(healthCards.map(card => card.textContent)).toEqual(expect.arrayContaining([
+      expect.stringContaining('Attention Needed'),
+    ]))
     expect(container.querySelector('.dash-release-snapshot')).toBeTruthy()
+    expect(container.querySelector('.dash-attention')).toBeNull()
     expect(container.querySelectorAll('.release-metric')).toHaveLength(6)
-    expect(getButtonByText('Generators Available').textContent).toContain('1')
+    const releaseOptions = Array.from(container.querySelectorAll<HTMLButtonElement>('.dash-release-option'))
+    expect(releaseOptions.map(button => button.textContent?.trim())).toEqual(['Sprint 24', 'Sprint 23', 'Sprint 22', 'Sprint 21', 'Sprint 20', 'Sprint 19'])
+    expect(releaseOptions.find(button => button.textContent?.trim() === 'Sprint 24')?.className).toContain('active')
+    expect(container.textContent).not.toContain('Archived Sprint')
+    clickButtonByText('Sprint 23')
+    expect(applicationState.setActiveRelease).toHaveBeenCalledWith(expect.objectContaining({ id: 'rel-2', name: 'Sprint 23' }))
+    expect(getButtonByText('Attention Needed').textContent).toContain('1')
+    const dashboardTabs = Array.from(container.querySelectorAll<HTMLButtonElement>('.dash-tab'))
+    expect(dashboardTabs.map(tab => tab.textContent)).toEqual(expect.arrayContaining([
+      expect.stringContaining('Performance Trend'),
+      expect.stringContaining('Active Tests'),
+      expect.stringContaining('Recent Activity'),
+    ]))
+    expect(getTabByText('Performance Trend').getAttribute('aria-selected')).toBe('true')
     expect(container.textContent).toContain('SLA Breaches')
     expect(container.textContent).toContain('Avg Completeness')
     expect(container.textContent).toContain('88%')
@@ -257,9 +307,7 @@ describe('DashboardPage', () => {
     expect(container.textContent).toContain('Breached')
     expect(container.textContent).toContain('Export CSV')
     expect(container.textContent).toContain('View Results')
-    expect(container.textContent).not.toContain('Browser Runtime')
     expect(container.textContent).not.toContain('Test Summary')
-    expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
     expect(container.textContent).toContain('pixel_8 · Landscape · Touch enabled · Headless')
 
     clickButtonByText('API Guide')
@@ -270,6 +318,9 @@ describe('DashboardPage', () => {
 
     clickButtonByText('Active Runs')
     expect(onNavigate).toHaveBeenCalledWith('tests')
+
+    clickButtonByText('Attention Needed')
+    expect(onSelectTest).toHaveBeenCalledWith('test-failed')
 
     clickButtonByText('Latest Result')
     expect(onSelectTest).toHaveBeenCalledWith('test-failed')
@@ -286,9 +337,6 @@ describe('DashboardPage', () => {
     clickButtonByText('Active Now')
     expect(onNavigate).toHaveBeenCalledWith('tests')
 
-    clickButtonByText('Aggregate TPS (active tests)')
-    expect(onNavigate).toHaveBeenCalledWith('tests')
-
     clickButtonByText('Export CSV')
     await act(async () => {
       await Promise.resolve()
@@ -296,6 +344,14 @@ describe('DashboardPage', () => {
     expect(apiMock.downloadReleaseTrend).toHaveBeenCalledWith('rel-1')
     expect(downloadBlob).toHaveBeenCalledTimes(1)
     expect(vi.mocked(downloadBlob).mock.calls[0][1]).toBe('sprint-24-rel-1-trend.csv')
+
+    clickButtonByText('Active Tests')
+    expect(getTabByText('Active Tests').getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.dash-release-snapshot')).toBeTruthy()
+    expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
+
+    clickButtonByText('Aggregate TPS (active tests)')
+    expect(onNavigate).toHaveBeenCalledWith('tests')
   })
 
   it('uses theme-aware accent fills for the first two dashboard rows', async () => {
@@ -307,13 +363,67 @@ describe('DashboardPage', () => {
       stylesheet.match(/\.dash-health-card \{[\s\S]*?\n\}/)?.[0] ?? '',
       stylesheet.match(/\.dash-health-card\.status-idle \{[\s\S]*?\n\}/)?.[0] ?? '',
       stylesheet.match(/\.dash-release-snapshot \.dash-section-heading-row \{[\s\S]*?\n\}/)?.[0] ?? '',
-      stylesheet.match(/\.dash-release-snapshot \.dash-context-chip \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.dash-release-option\.active \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.dash-tab\.active \{[\s\S]*?\n\}/)?.[0] ?? '',
     ].join('\n')
 
     expect(topRowsCss).toContain('color-mix(in srgb, var(--accent)')
     expect(topRowsCss).toContain('var(--accent-border)')
     expect(topRowsCss).not.toContain('rgba(14, 165, 233')
     expect(topRowsCss).not.toContain('rgba(125, 211, 252')
+  })
+
+  it('switches lower dashboard tabs and sorts selectable table rows', async () => {
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{
+            'test-active': [
+              { time: '8:00:00 PM', vusers: 8, tps: 20, avgMs: 120, errorPct: 0.2, p50: 100, p90: 140, p99: 180 },
+              { time: '8:00:03 PM', vusers: 8, tps: 25, avgMs: 118, errorPct: 0.2, p50: 98, p90: 138, p99: 175 },
+            ],
+          }}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+
+    await flushDashboard()
+
+    expect(getTabByText('Performance Trend').textContent).toContain('2')
+    expect(getTabByText('Active Tests').textContent).toContain('1')
+    expect(getTabByText('Recent Activity').textContent).toContain('3')
+    expect(container.querySelector('.dash-release-snapshot')).toBeTruthy()
+    expect(currentTableRunNames()).toEqual(['Release Smoke', 'Checkout Archive'])
+
+    clickSortButton('Run')
+    expect(currentTableRunNames()).toEqual(['Checkout Archive', 'Release Smoke'])
+    clickSortButton('Run')
+    expect(currentTableRunNames()).toEqual(['Release Smoke', 'Checkout Archive'])
+    clickSortButton('Peak TPS')
+    expect(currentTableRunNames()).toEqual(['Checkout Archive', 'Release Smoke'])
+
+    clickButtonByText('Checkout Archive')
+    expect(onSelectTest).toHaveBeenCalledWith('test-complete-2')
+    onSelectTest.mockClear()
+
+    clickButtonByText('Recent Activity')
+    expect(getTabByText('Recent Activity').getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.dash-release-snapshot')).toBeTruthy()
+    expect(currentTableRunNames()).toEqual(['Payments Failure Drill', 'Release Smoke', 'Checkout Archive'])
+
+    clickSortButton('Date / Time')
+    expect(currentTableRunNames()).toEqual(['Checkout Archive', 'Release Smoke', 'Payments Failure Drill'])
+    clickSortButton('Status')
+    expect(currentTableRunNames()).toEqual(['Release Smoke', 'Checkout Archive', 'Payments Failure Drill'])
+    clickSortButton('VUsers')
+    expect(currentTableRunNames()).toEqual(['Payments Failure Drill', 'Checkout Archive', 'Release Smoke'])
+
+    clickButtonByText('Release Smoke')
+    expect(onSelectTest).toHaveBeenCalledWith('test-complete')
   })
 
   it('waits for the active application before loading dashboard data', async () => {
@@ -376,7 +486,7 @@ describe('DashboardPage', () => {
       expect(apiMock.listTests).toHaveBeenCalledTimes(1)
       expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', project_id: 'project-1' })
       expect(apiMock.getHealth).toHaveBeenCalledTimes(1)
-      expect(apiMock.getSystemInventory).toHaveBeenCalledTimes(1)
+      expect(apiMock.getSystemInventory).not.toHaveBeenCalled()
     } finally {
       applicationState.activeApplication = previousApplication
       applicationState.activeRelease = previousRelease
@@ -414,9 +524,8 @@ describe('DashboardPage', () => {
       )
     })
 
-    await act(async () => {
-      await Promise.resolve()
-    })
+    await flushDashboard()
+    clickButtonByText('Active Tests')
 
     const activeTestsEmptyState = Array.from(container.querySelectorAll('.dash-empty.compact'))
       .find(element => element.textContent?.includes('No tests currently running'))
@@ -427,7 +536,42 @@ describe('DashboardPage', () => {
 
   function clickButtonByText(text: string) {
     const button = getButtonByText(text)
-    button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    act(() => {
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
+  function clickSortButton(text: string) {
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>('th.sortable button'))
+      .find(element => element.textContent?.includes(text))
+    if (!button) {
+      throw new Error(`Missing sort button containing text: ${text}`)
+    }
+    act(() => {
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
+  function getTabByText(text: string) {
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]'))
+      .find(element => element.textContent?.includes(text))
+    if (!button) {
+      throw new Error(`Missing tab containing text: ${text}`)
+    }
+    return button
+  }
+
+  function currentTableRunNames() {
+    return Array.from(container.querySelectorAll<HTMLButtonElement>('tbody .dash-source-link'))
+      .map(button => button.textContent?.trim() || '')
+  }
+
+  async function flushDashboard() {
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
   }
 
   function getButtonByText(text: string) {
