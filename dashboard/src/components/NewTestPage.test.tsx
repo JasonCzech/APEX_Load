@@ -1055,7 +1055,7 @@ describe('NewTestPage', () => {
     expect(apiMock.approveScenarioScheduleApproval).toHaveBeenCalledWith('scenario-1', 'schedule-1', 'approval-1', 'Approved from schedule dashboard.')
   })
 
-  it('shows a queued-run action only when immediate preflight returns queue', async () => {
+  it('shows a disabled start action and queued-run action when immediate preflight returns queue', async () => {
     const selectTest = vi.fn()
     apiMock.preflightTest.mockResolvedValue({
       decision: 'queue',
@@ -1087,7 +1087,9 @@ describe('NewTestPage', () => {
     await flushPromises()
     await flushDebouncedPreflight()
 
-    expect(Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Start Now')).toBeUndefined()
+    const startNowButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Start Now') as HTMLButtonElement | undefined
+    expect(startNowButton).toBeTruthy()
+    expect(startNowButton?.disabled).toBe(true)
     const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
     expect(queuedButton).toBeTruthy()
 

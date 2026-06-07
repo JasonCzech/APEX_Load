@@ -1413,9 +1413,10 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     }
   }
 
-  const showStartNow = Boolean(immediatePreflight?.start_now_allowed)
+  const showStartNow = true
+  const startNowAllowed = immediatePreflight ? immediatePreflight.start_now_allowed : true
   const showQueueRun = Boolean(immediatePreflight?.queue_allowed)
-  const immediateLaunchBlocked = Boolean(immediatePreflight && !showStartNow && !showQueueRun)
+  const immediateLaunchBlocked = Boolean(immediatePreflight && !startNowAllowed && !showQueueRun)
   const scheduleAllowed = Boolean(scheduledStartISO && scheduledPreflight?.schedule_allowed)
   const scheduleBlocked = Boolean(scheduledStartISO && scheduledPreflight && !scheduledPreflight.schedule_allowed)
   const scheduleMin = formatDatetimeLocalValue(scheduleClock)
@@ -2103,7 +2104,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                 <button className="btn btn-secondary" disabled>Checking Launch</button>
               )}
               {showStartNow && (
-                <button className="btn btn-primary" onClick={() => createRun('start_now')} disabled={!canLaunch || immediatePreflightLoading}>Start Now</button>
+                <button className="btn btn-primary" onClick={() => createRun('start_now')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed}>Start Now</button>
               )}
               {showQueueRun && (
                 <button className="btn btn-secondary" onClick={() => createRun('queue')} disabled={!canLaunch || immediatePreflightLoading}>Create Queued Run</button>
