@@ -96,3 +96,77 @@ func TestHandleGetSystemInventoryReturnsControllerAndGenerators(t *testing.T) {
 		t.Fatalf("max_vusers = %d, want 10000", payload.Generators[0].MaxVUsers)
 	}
 }
+
+func TestHandleGetSystemServicesReturnsApexSurfaces(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080", ProxyAddr: ":8081"})
+	server.runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{{
+		Target:            "apexload-generator-0.apexload-generator:9090",
+		GeneratorID:       "apexload-generator-0",
+		Region:            "us-east",
+		Status:            "connected",
+		Version:           "0.1.0",
+		AvailableCapacity: 9600,
+		ActiveVUsers:      400,
+		MaxVUsers:         10000,
+	}}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/services", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var payload SystemServicesResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.GeneratedAt.IsZero() {
+		t.Fatal("generated_at is zero")
+	}
+	if len(payload.Services) != 3 {
+		t.Fatalf("service count = %d, want 3: %#v", len(payload.Services), payload.Services)
+	}
+
+	services := map[string]SystemServiceEntry{}
+	for _, service := range payload.Services {
+		services[service.ID] = service
+	}
+
+	controller := services["controller-api"]
+	if controller.Name != "Controller API" || controller.Kind != "backend" || controller.Status != "running" {
+		t.Fatalf("controller service = %#v, want running backend controller", controller)
+	}
+	if controller.Address != ":8080" {
+		t.Fatalf("controller address = %q, want :8080", controller.Address)
+	}
+	if controller.URL != "http://127.0.0.1:8080" {
+		t.Fatalf("controller url = %q, want http://127.0.0.1:8080", controller.URL)
+	}
+	if controller.Metadata["execution_mode"] != "distributed" {
+		t.Fatalf("controller execution_mode metadata = %#v, want distributed", controller.Metadata["execution_mode"])
+	}
+
+	recorder := services["recorder-proxy"]
+	if recorder.Name != "Recorder Proxy" || recorder.Kind != "backend" || recorder.Status != "idle" {
+		t.Fatalf("recorder service = %#v, want idle backend recorder", recorder)
+	}
+	if recorder.Address != ":8081" {
+		t.Fatalf("recorder address = %q, want :8081", recorder.Address)
+	}
+	if recorder.URL != "http://127.0.0.1:8081" {
+		t.Fatalf("recorder url = %q, want http://127.0.0.1:8081", recorder.URL)
+	}
+
+	generator := services["generator:apexload-generator-0"]
+	if generator.Name != "apexload-generator-0" || generator.Kind != "backend" || generator.Status != "connected" {
+		t.Fatalf("generator service = %#v, want connected backend generator", generator)
+	}
+	if generator.Address != "apexload-generator-0.apexload-generator:9090" {
+		t.Fatalf("generator address = %q, want generator target", generator.Address)
+	}
+	if generator.Metadata["role"] != "generator" {
+		t.Fatalf("generator role metadata = %#v, want generator", generator.Metadata["role"])
+	}
+}

@@ -32,6 +32,7 @@ import {
   ReportProfilesResponse,
   SystemInventoryResponse,
   SystemReadinessResponse,
+  SystemServicesResponse,
   UsageAccountingResponse,
   UsageAccountingSnapshot,
   UsageAccountingSnapshotsResponse,
@@ -115,6 +116,7 @@ export function useSystemApi() {
   const getVersion = useCallback(() => request<VersionResponse>('/system/version'), [])
   const getSystemInventory = useCallback(() => request<SystemInventoryResponse>('/system/inventory'), [])
   const getSystemReadiness = useCallback(() => request<SystemReadinessResponse>('/system/readiness'), [])
+  const getSystemServices = useCallback(() => request<SystemServicesResponse>('/system/services'), [])
   const getParityStatus = useCallback(() => request<ParityStatusResponse>('/system/parity-status'), [])
   const getBrowserBenchmarks = useCallback(() => request<BrowserBenchmarkEvidenceResponse>('/system/browser-benchmarks'), [])
   const getAPMIntegrationProfiles = useCallback(() => request<APMIntegrationProfilesResponse>('/integrations/apm/profiles'), [])
@@ -178,6 +180,7 @@ export function useSystemApi() {
       getVersion,
       getSystemInventory,
       getSystemReadiness,
+      getSystemServices,
       getParityStatus,
       getBrowserBenchmarks,
       getAPMIntegrationProfiles,
@@ -199,6 +202,6 @@ export function useSystemApi() {
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getSystemInventory, getSystemReadiness, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getSystemInventory, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
   )
 }

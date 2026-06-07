@@ -5047,6 +5047,67 @@
   line-height: 1.4;
 }
 
+.monitor-service-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.monitor-service-group-title {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.monitor-service-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.monitor-service-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--subtle-fill);
+}
+
+.monitor-service-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.monitor-service-name {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.monitor-service-address {
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.monitor-service-status {
+  flex-shrink: 0;
+}
+
+.monitor-service-status.status-idle {
+  background: rgba(107, 112, 128, 0.15);
+  color: var(--text-muted);
+}
+
 .monitor-browser-benchmark-summary {
   display: flex;
   flex-direction: column;

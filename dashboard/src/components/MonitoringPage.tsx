@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, type DragEvent, type ReactNo
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
-import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, RunCalendarEvent, RunCalendarResponse, ScenarioScheduleHealth, SystemInventoryResponse, SystemReadinessResponse, TelemetryDiagnosticEntry } from '../types'
+import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, RunCalendarEvent, RunCalendarResponse, ScenarioScheduleHealth, SystemInventoryResponse, SystemReadinessResponse, SystemServicesResponse, TelemetryDiagnosticEntry } from '../types'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
 import './CreateTestModal.css'
 
@@ -13,9 +13,10 @@ interface Props {
 }
 
 const EMPTY_GENERATORS: SystemInventoryResponse['generators'] = []
+const EMPTY_SERVICES: SystemServicesResponse['services'] = []
 
 const MONITOR_CATEGORIES = [
-  { id: 'overview', label: 'Overview', cardIds: ['system-health', 'production-readiness', 'controller'] },
+  { id: 'overview', label: 'Overview', cardIds: ['system-health', 'active-services', 'production-readiness', 'controller'] },
   { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts'] },
   { id: 'telemetry', label: 'Telemetry', cardIds: ['telemetry-diagnostics', 'apm-integrations', 'monitor-packs'] },
   { id: 'schedules', label: 'Schedules', cardIds: ['run-calendar'] },
@@ -79,6 +80,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [selectedCalendarEventId, setSelectedCalendarEventId] = useState<string | null>(null)
   const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
   const [systemReadiness, setSystemReadiness] = useState<SystemReadinessResponse | null>(null)
+  const [systemServices, setSystemServices] = useState<SystemServicesResponse | null>(null)
   const [apmProfiles, setApmProfiles] = useState<APMIntegrationProfilesResponse | null>(null)
   const [monitorPacks, setMonitorPacks] = useState<InfrastructureMonitorPacksResponse | null>(null)
   const [fleetAlerts, setFleetAlerts] = useState<FleetAlert[]>([])
@@ -190,6 +192,24 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const monitorPackContractCount = monitorPacks?.packs.filter(pack => pack.status === 'integration_contract').length ?? 0
   const monitorPackHeaderSeverity = !monitorPacks ? 'unknown' : monitorPackSupportedCount === monitorPackCount ? 'healthy' : 'warning'
   const monitorPackHeaderLabel = !monitorPacks ? 'checking' : `${monitorPackSupportedCount}/${monitorPackCount} native`
+  const dashboardOrigin = getCurrentDashboardOrigin()
+  const activeServices = useMemo(() => mergeDashboardService(systemServices?.services ?? EMPTY_SERVICES, dashboardOrigin), [dashboardOrigin, systemServices])
+  const backendServices = useMemo(() => activeServices.filter(service => service.kind !== 'frontend'), [activeServices])
+  const frontendServices = useMemo(() => activeServices.filter(service => service.kind === 'frontend'), [activeServices])
+  const activeServiceCount = activeServices.filter(service => isActiveServiceStatus(service.status)).length
+  const serviceIssueCount = activeServices.filter(service => !isActiveServiceStatus(service.status)).length
+  const servicesHeaderSeverity = !systemServices && backendServices.length === 0
+    ? 'unknown'
+    : serviceIssueCount > 0
+      ? 'warning'
+      : backendServices.length > 0
+        ? 'healthy'
+        : 'warning'
+  const servicesHeaderLabel = !systemServices && backendServices.length === 0
+    ? 'checking'
+    : backendServices.length === 0
+      ? 'frontend only'
+      : `${activeServiceCount}/${activeServices.length} active`
   const calendarRange = useMemo(() => getRunCalendarVisibleRange(calendarView, calendarAnchor), [calendarView, calendarAnchor])
   const calendarEvents = useMemo(() => filterRunCalendarEvents(runCalendar?.events ?? [], calendarFilter), [runCalendar, calendarFilter])
   const calendarModel = useMemo(() => buildRunCalendarModel(calendarView, calendarAnchor, calendarEvents), [calendarView, calendarAnchor, calendarEvents])
@@ -209,10 +229,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       return
     }
     try {
-      const [healthRes, inventoryRes, readinessRes, scheduleHealthRes, runCalendarRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetCapacityRes, provisionerRes] = await Promise.all([
+      const [healthRes, inventoryRes, readinessRes, servicesRes, scheduleHealthRes, runCalendarRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetCapacityRes, provisionerRes] = await Promise.all([
         api.getHealth(),
         api.getSystemInventory().catch(() => null),
         api.getSystemReadiness().catch(() => null),
+        api.getSystemServices().catch(() => null),
         api.getScheduleHealth().catch(() => null),
         api.getRunCalendar({
           from: calendarRange.from.toISOString(),
@@ -228,6 +249,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       setHealth(healthRes)
       setInventory(inventoryRes)
       setSystemReadiness(readinessRes)
+      setSystemServices(servicesRes)
       setScheduleHealth(scheduleHealthRes)
       setRunCalendar(runCalendarRes)
       setApmProfiles(apmProfilesRes)
@@ -314,6 +336,32 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             <span className="monitor-value cell-mono">/api/v1/ws</span>
           </div>
         </div>
+      ),
+    },
+    {
+      id: 'active-services',
+      title: 'Active Services',
+      headerBadge: (
+        <span className={`monitor-header-badge ${servicesHeaderSeverity}`}>
+          {servicesHeaderLabel}
+        </span>
+      ),
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="4" width="18" height="14" rx="2" />
+          <path d="M7 20h10" />
+          <path d="M9 9h.01" />
+          <path d="M13 9h4" />
+          <path d="M9 13h.01" />
+          <path d="M13 13h4" />
+        </svg>
+      ),
+      content: (
+        <ActiveServicesList
+          backendServices={backendServices}
+          frontendServices={frontendServices}
+          endpointAvailable={Boolean(systemServices)}
+        />
       ),
     },
     {
@@ -804,7 +852,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         />
       ),
     },
-  ], [apmHeaderLabel, apmHeaderSeverity, apmProfiles, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onSelectTest, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, runCalendar, selectCalendarEvent, selectedCalendarEvent, shiftCalendar, systemReadiness, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, websocketLabel, websocketValueClass])
+  ], [apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onSelectTest, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))
@@ -1259,6 +1307,46 @@ interface RunCalendarModel {
   label: string
   rangeLabel: string
   days: RunCalendarDay[]
+}
+
+function ActiveServicesList({
+  backendServices,
+  frontendServices,
+  endpointAvailable,
+}: {
+  backendServices: SystemServicesResponse['services']
+  frontendServices: SystemServicesResponse['services']
+  endpointAvailable: boolean
+}) {
+  return (
+    <div className="monitor-body">
+      <ServiceGroup title="Backend" services={backendServices} emptyLabel={endpointAvailable ? 'No backend services reported.' : 'Waiting for /api/v1/system/services.'} />
+      <ServiceGroup title="Frontend" services={frontendServices} emptyLabel="No dashboard frontend origin detected." />
+    </div>
+  )
+}
+
+function ServiceGroup({ title, services, emptyLabel }: { title: string; services: SystemServicesResponse['services']; emptyLabel: string }) {
+  return (
+    <div className="monitor-service-group">
+      <div className="monitor-service-group-title">{title}</div>
+      {services.length ? (
+        <div className="monitor-service-list">
+          {services.map(service => (
+            <div key={service.id} className="monitor-service-row">
+              <div className="monitor-service-main">
+                <span className="monitor-service-name">{service.name}</span>
+                <span className="monitor-service-address cell-mono">{service.url || service.address || '-'}</span>
+              </div>
+              <span className={`status-badge monitor-service-status ${serviceStatusClass(service.status)}`}>{service.status}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="monitor-hint">{emptyLabel}</p>
+      )}
+    </div>
+  )
 }
 
 function RunCalendarPanel({
@@ -1727,6 +1815,52 @@ function formatMemoryBytes(value: number) {
   return `${Number(size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1))} ${units[unitIndex]}`
 }
 
+function getCurrentDashboardOrigin(): string {
+  if (typeof window === 'undefined') return ''
+  const origin = window.location.origin
+  return origin && origin !== 'null' ? trimTrailingSlash(origin) : ''
+}
+
+function mergeDashboardService(services: SystemServicesResponse['services'], dashboardOrigin: string): SystemServicesResponse['services'] {
+  if (!dashboardOrigin) return services
+  const existingDashboard = services.some(service => {
+    if (service.id === 'frontend:dashboard') return true
+    return service.url ? trimTrailingSlash(service.url) === dashboardOrigin : false
+  })
+  if (existingDashboard) return services
+  return [
+    ...services,
+    {
+      id: 'frontend:dashboard',
+      name: 'Dashboard',
+      kind: 'frontend',
+      status: 'running',
+      address: dashboardOrigin.replace(/^https?:\/\//, ''),
+      url: dashboardOrigin,
+      source: 'browser_origin',
+      metadata: { current_origin: true },
+    },
+  ]
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, '')
+}
+
+function isActiveServiceStatus(status: string): boolean {
+  const normalized = status.trim().toLowerCase()
+  return ['active', 'connected', 'healthy', 'idle', 'ok', 'ready', 'running'].includes(normalized)
+}
+
+function serviceStatusClass(status: string): string {
+  const normalized = status.trim().toLowerCase()
+  if (['running', 'healthy', 'ok', 'connected', 'ready', 'active'].includes(normalized)) return 'status-running'
+  if (['idle', 'paused'].includes(normalized)) return 'status-idle'
+  if (['stopping', 'draining', 'degraded', 'cordoned'].includes(normalized)) return 'status-stopping'
+  if (['failed', 'unhealthy', 'unreachable', 'unavailable'].includes(normalized)) return 'status-failed'
+  return 'status-queued'
+}
+
 function readStringArray(key: string): string[] {
   if (typeof window === 'undefined') return []
   try {
@@ -1738,9 +1872,17 @@ function readStringArray(key: string): string[] {
 }
 
 function mergeOrder(order: string[], ids: string[]) {
-  const retained = order.filter(id => ids.includes(id))
-  const added = ids.filter(id => !retained.includes(id))
-  return [...retained, ...added]
+  const validIds = new Set(ids)
+  const next = order.filter(id => validIds.has(id))
+  const retained = new Set(next)
+  ids.forEach((id, desiredIndex) => {
+    if (retained.has(id)) return
+    const followingId = ids.slice(desiredIndex + 1).find(candidate => next.includes(candidate))
+    const insertIndex = followingId ? next.indexOf(followingId) : next.length
+    next.splice(insertIndex, 0, id)
+    retained.add(id)
+  })
+  return next
 }
 
 function moveId(ids: string[], draggedId: string, targetId: string) {

@@ -17,6 +17,7 @@ const apiMock = {
   getScheduleHealth: vi.fn(),
   getSystemInventory: vi.fn(),
   getSystemReadiness: vi.fn(),
+  getSystemServices: vi.fn(),
   listTests: vi.fn(),
 }
 
@@ -120,6 +121,30 @@ describe('MonitoringPage', () => {
         { name: 'telemetry_fanout', status: 'ready', message: 'telemetry fan-out is initialized' },
         { name: 'auth_mode', status: 'degraded', message: 'development auth bypass is enabled' },
         { name: 'scheduler_state', status: 'ready', message: 'scheduler state is initialized' },
+      ],
+    })
+    apiMock.getSystemServices.mockResolvedValue({
+      generated_at: '2026-05-18T12:05:00Z',
+      services: [
+        {
+          id: 'controller-api',
+          name: 'Controller API',
+          kind: 'backend',
+          status: 'running',
+          address: ':8080',
+          url: 'http://127.0.0.1:8080',
+          version: 'dev',
+          source: 'controller',
+        },
+        {
+          id: 'recorder-proxy',
+          name: 'Recorder Proxy',
+          kind: 'backend',
+          status: 'idle',
+          address: ':8081',
+          url: 'http://127.0.0.1:8081',
+          source: 'recorder',
+        },
       ],
     })
     apiMock.getScheduleHealth.mockResolvedValue({
@@ -234,7 +259,7 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Auth Mode: development auth bypass is enabled')
     expect(container.textContent).toContain('Generator Inventory')
     expect(container.textContent).toContain('0/0 connected')
-    expect(visibleMonitorCardIds()).toEqual(['system-health', 'production-readiness', 'controller'])
+    expect(visibleMonitorCardIds()).toEqual(['system-health', 'active-services', 'production-readiness', 'controller'])
 
     await clickMonitorTab('Telemetry')
 
@@ -261,6 +286,7 @@ describe('MonitoringPage', () => {
     expect(apiMock.getFleetAlerts).toHaveBeenCalled()
     expect(apiMock.getFleetCapacity).toHaveBeenCalledWith({ project_id: 'project-1' })
     expect(apiMock.getSystemReadiness).toHaveBeenCalled()
+    expect(apiMock.getSystemServices).toHaveBeenCalled()
 
     const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Close')
     await act(async () => {
@@ -273,6 +299,95 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Generators')
     expect(container.textContent).toContain('Fleet Alerts')
     expect(container.textContent).toContain('No generator inventory was returned by the controller.')
+  })
+
+  it('renders active APEX backend and frontend services', async () => {
+    apiMock.getSystemServices.mockResolvedValue({
+      generated_at: '2026-05-18T12:05:00Z',
+      services: [
+        {
+          id: 'controller-api',
+          name: 'Controller API',
+          kind: 'backend',
+          status: 'running',
+          address: ':8080',
+          url: 'http://127.0.0.1:8080',
+          version: 'dev',
+          source: 'controller',
+        },
+        {
+          id: 'recorder-proxy',
+          name: 'Recorder Proxy',
+          kind: 'backend',
+          status: 'idle',
+          address: ':8081',
+          url: 'http://127.0.0.1:8081',
+          source: 'recorder',
+        },
+        {
+          id: 'generator:apexload-generator-0',
+          name: 'apexload-generator-0',
+          kind: 'backend',
+          status: 'connected',
+          address: 'apexload-generator-0.apexload-generator:9090',
+          version: '0.1.0',
+          source: 'generator_inventory',
+          metadata: { role: 'generator' },
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    expect(visibleMonitorCardIds()).toEqual(['system-health', 'active-services', 'production-readiness', 'controller'])
+    expect(container.textContent).toContain('Active Services')
+    expect(container.textContent).toContain('4/4 active')
+    expect(container.textContent).toContain('Backend')
+    expect(container.textContent).toContain('Controller API')
+    expect(container.textContent).toContain('http://127.0.0.1:8080')
+    expect(container.textContent).toContain('Recorder Proxy')
+    expect(container.textContent).toContain('http://127.0.0.1:8081')
+    expect(container.textContent).toContain('apexload-generator-0')
+    expect(container.textContent).toContain('apexload-generator-0.apexload-generator:9090')
+    expect(container.textContent).toContain('Frontend')
+    expect(container.textContent).toContain('Dashboard')
+    expect(container.textContent).toContain(window.location.origin)
+  })
+
+  it('keeps the dashboard frontend visible when the service inventory endpoint is unavailable', async () => {
+    apiMock.getSystemServices.mockRejectedValue(new Error('service inventory unavailable'))
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    expect(container.textContent).toContain('Active Services')
+    expect(container.textContent).toContain('Waiting for /api/v1/system/services.')
+    expect(container.textContent).toContain('Dashboard')
+    expect(container.textContent).toContain(window.location.origin)
+  })
+
+  it('inserts the active services card into its default position for saved card orders', async () => {
+    window.localStorage.setItem('apexload.monitoring.cardOrder', JSON.stringify([
+      'system-health',
+      'production-readiness',
+      'controller',
+      'capacity',
+      'generators',
+      'fleet-alerts',
+      'telemetry-diagnostics',
+      'apm-integrations',
+      'monitor-packs',
+      'run-calendar',
+    ]))
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    expect(visibleMonitorCardIds()).toEqual(['system-health', 'active-services', 'production-readiness', 'controller'])
   })
 
   it('renders C4 APM profiles and infrastructure monitor packs', async () => {

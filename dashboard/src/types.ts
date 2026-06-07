@@ -2303,6 +2303,23 @@ export interface SystemInventoryResponse {
   generators: SystemInventoryGenerator[]
 }
 
+export interface SystemServiceEntry {
+  id: string
+  name: string
+  kind: 'backend' | 'frontend' | string
+  status: string
+  address?: string
+  url?: string
+  version?: string
+  source: string
+  metadata?: Record<string, unknown>
+}
+
+export interface SystemServicesResponse {
+  generated_at: string
+  services: SystemServiceEntry[]
+}
+
 export interface FleetAlert {
   type: string
   target: string
