@@ -75,11 +75,13 @@ export default function TestExecutionLiveControls({
       <button
         className="btn btn-secondary live-controls-toggle"
         onClick={onToggleControls}
+        aria-expanded={showControls}
+        aria-controls="live-controls-panel"
       >
         {showControls ? 'Hide Controls' : 'Live Controls'}
       </button>
       {showControls && (
-        <div className="live-controls-panel">
+        <div id="live-controls-panel" className="live-controls-panel">
           <div className="live-controls-layout">
             <div className="control-group control-group-form">
               <div className="control-group control-group-nested run-actions-card">

@@ -669,6 +669,33 @@ export function chartMetricSummary(data: MetricsHistoryPoint[], key: string): Ch
   }
 }
 
+function roundDomainValue(value: number) {
+  return Math.round(value * 1_000_000) / 1_000_000
+}
+
+export function visibleMetricDomain(data: MetricsHistoryPoint[], metricKeys: string[], fallbackDomain?: ChartDomain): ChartDomain | undefined {
+  const visibleKeySet = new Set(metricKeys)
+  if (visibleKeySet.size === 0) return fallbackDomain
+
+  const values = data.flatMap(point => (
+    Object.entries(point)
+      .filter(([key, value]) => visibleKeySet.has(key) && typeof value === 'number' && Number.isFinite(value))
+      .map(([, value]) => value as number)
+  ))
+
+  if (values.length === 0) return fallbackDomain
+
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  if (min >= 0) {
+    return [0, max > 0 ? roundDomainValue(max * 1.08) : 1]
+  }
+
+  const range = max - min
+  const padding = range > 0 ? range * 0.08 : Math.max(Math.abs(max) * 0.08, 1)
+  return [roundDomainValue(min - padding), roundDomainValue(max + padding)]
+}
+
 function loadImpactMetricValueForBucket(row: LoadImpactRow | undefined, bucketId: string) {
   return row?.cells.find(cell => cell.bucket.id === bucketId)?.average
 }
@@ -1886,6 +1913,11 @@ export default function TestExecutionCharts({
             const metricRows = metricRowsForChart(chart)
             const visibleMetricKeys = visibleMetricKeysForChart(chart, metricRows)
             const visibleOverlayKeysForTitle = visibleOverlayMetricKeys(chart, visibleMetricKeys)
+            const primaryMetricKeysForDomain = visibleMetricKeys.filter(key => (
+              !visibleOverlayKeysForTitle.includes(key as OverlayMetricKey)
+              && key !== routeLatencySuccessRateKey
+            ))
+            const metricAxisDomain = visibleMetricDomain(chartData, primaryMetricKeysForDomain, chart.domain)
             const chartTitle = chartTitleWithOverlays(chart, visibleOverlayKeysForTitle)
             const baseChartMargin = chartMarginForOverlayKeys(visibleOverlayKeysForTitle) ?? {}
             const chartMargin = chart.id === 'network_latency' && routeLatencyMode === 'stability' && visibleMetricKeys.includes(routeLatencySuccessRateKey)
@@ -1986,7 +2018,7 @@ export default function TestExecutionCharts({
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
-                {renderMetricAxis(chart, visibleMetricKeys, chart.domain)}
+                {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {chart.dataKey && showMetric(chart.dataKey) && (
@@ -2005,7 +2037,7 @@ export default function TestExecutionCharts({
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderLoadImpactAxis()}
-                {renderMetricAxis(chart, visibleMetricKeys)}
+                {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderLoadImpactTooltip(chart)}
                 {metricRows
@@ -2039,7 +2071,7 @@ export default function TestExecutionCharts({
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
-                {renderMetricAxis(chart, visibleMetricKeys)}
+                {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {isMultiGroup && <Legend verticalAlign="bottom" height={36} />}
@@ -2065,7 +2097,7 @@ export default function TestExecutionCharts({
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
-                {renderMetricAxis(chart, visibleMetricKeys)}
+                {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 <Legend verticalAlign="bottom" height={36} />
@@ -2095,7 +2127,7 @@ export default function TestExecutionCharts({
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
-                {renderMetricAxis(chart, visibleMetricKeys, chart.domain)}
+                {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 <Legend verticalAlign="bottom" height={36} />
@@ -2118,7 +2150,7 @@ export default function TestExecutionCharts({
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
-                {renderMetricAxis(chart, visibleMetricKeys)}
+                {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {metricRows.map((row) => showMetric(row.key) && (
@@ -2150,7 +2182,7 @@ export default function TestExecutionCharts({
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
-                {renderMetricAxis(chart, visibleMetricKeys)}
+                {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderRouteLatencySuccessAxis(visibleMetricKeys)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
@@ -2184,7 +2216,7 @@ export default function TestExecutionCharts({
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
-                {renderMetricAxis(chart, visibleMetricKeys)}
+                {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 <Legend />

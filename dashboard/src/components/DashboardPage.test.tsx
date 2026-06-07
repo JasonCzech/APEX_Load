@@ -279,9 +279,12 @@ describe('DashboardPage', () => {
     expect(healthCards.map(card => card.textContent)).toEqual(expect.arrayContaining([
       expect.stringContaining('Attention Needed'),
     ]))
-    expect(container.querySelector('.dash-release-snapshot')).toBeTruthy()
+    expect(container.querySelector('.dash-release-panel.is-open')).toBeTruthy()
+    expect(getButtonByText('Collapse').getAttribute('aria-expanded')).toBe('true')
+    expect(container.textContent).toContain('Operations Activity')
+    expect(container.textContent).toContain('Generators Ready')
     expect(container.querySelector('.dash-attention')).toBeNull()
-    expect(container.querySelectorAll('.release-metric')).toHaveLength(6)
+    expect(container.querySelectorAll('.release-panel-stat-grid.shared .release-panel-stat')).toHaveLength(6)
     const releaseOptions = Array.from(container.querySelectorAll<HTMLButtonElement>('.dash-release-option'))
     expect(releaseOptions.map(button => button.textContent?.trim())).toEqual(['Sprint 24', 'Sprint 23', 'Sprint 22', 'Sprint 21', 'Sprint 20', 'Sprint 19'])
     expect(releaseOptions.find(button => button.textContent?.trim() === 'Sprint 24')?.className).toContain('active')
@@ -290,11 +293,16 @@ describe('DashboardPage', () => {
     expect(applicationState.setActiveRelease).toHaveBeenCalledWith(expect.objectContaining({ id: 'rel-2', name: 'Sprint 23' }))
     expect(getButtonByText('Attention Needed').textContent).toContain('1')
     const dashboardTabs = Array.from(container.querySelectorAll<HTMLButtonElement>('.dash-tab'))
-    expect(dashboardTabs.map(tab => tab.textContent)).toEqual(expect.arrayContaining([
-      expect.stringContaining('Performance Trend'),
-      expect.stringContaining('Active Tests'),
-      expect.stringContaining('Recent Activity'),
-    ]))
+    expect(dashboardTabs.map(tab => tab.textContent?.trim())).toEqual([
+      'Recent Activity3',
+      'Active Tests1',
+      'Performance Trend2',
+      'Release Trend Analysis2',
+    ])
+    expect(getTabByText('Recent Activity').getAttribute('aria-selected')).toBe('true')
+    expect(container.textContent).toContain('Payments Failure Drill')
+
+    clickButtonByText('Performance Trend')
     expect(getTabByText('Performance Trend').getAttribute('aria-selected')).toBe('true')
     expect(container.textContent).toContain('SLA Breaches')
     expect(container.textContent).toContain('Avg Completeness')
@@ -309,6 +317,14 @@ describe('DashboardPage', () => {
     expect(container.textContent).toContain('View Results')
     expect(container.textContent).not.toContain('Test Summary')
     expect(container.textContent).toContain('pixel_8 · Landscape · Touch enabled · Headless')
+    expect(container.querySelector('[data-testid="release-trend-panel"]')).toBeNull()
+
+    clickButtonByText('Release Trend Analysis')
+    await flushDashboard()
+    expect(getTabByText('Release Trend Analysis').getAttribute('aria-selected')).toBe('true')
+    expect(apiMock.getReleaseTrend).toHaveBeenCalledWith('rel-1')
+    expect(container.querySelector('[data-testid="release-trend-panel"]')).toBeTruthy()
+    expect(container.textContent).toContain('No archived runs yet for this release.')
 
     clickButtonByText('API Guide')
     expect(onNavigate).toHaveBeenCalledWith('docs')
@@ -337,6 +353,7 @@ describe('DashboardPage', () => {
     clickButtonByText('Active Now')
     expect(onNavigate).toHaveBeenCalledWith('tests')
 
+    clickButtonByText('Performance Trend')
     clickButtonByText('Export CSV')
     await act(async () => {
       await Promise.resolve()
@@ -347,11 +364,98 @@ describe('DashboardPage', () => {
 
     clickButtonByText('Active Tests')
     expect(getTabByText('Active Tests').getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('.dash-release-snapshot')).toBeTruthy()
+    expect(container.querySelector('.dash-release-panel.is-open')).toBeTruthy()
     expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
 
     clickButtonByText('Aggregate TPS (active tests)')
     expect(onNavigate).toHaveBeenCalledWith('tests')
+  })
+
+  it('collapses and restores the release snapshot panel', async () => {
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+
+    await flushDashboard()
+
+    const panel = container.querySelector<HTMLElement>('#dashboard-release-snapshot-panel')
+    expect(panel).toBeTruthy()
+    expect(panel?.hidden).toBe(false)
+
+    clickButtonByText('Collapse')
+    expect(panel?.hidden).toBe(true)
+    const railButton = getButtonByText('Snapshot')
+    expect(railButton.getAttribute('aria-expanded')).toBe('false')
+    expect(container.querySelector('.dash-release-panel.is-collapsed')).toBeTruthy()
+
+    clickButtonByText('Open')
+    expect(panel?.hidden).toBe(false)
+    expect(getButtonByText('Collapse').getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('shows operations-focused snapshot details for admin audiences', async () => {
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+          snapshotAudience="admin"
+        />,
+      )
+    })
+
+    await flushDashboard()
+
+    const panelText = releasePanelText()
+    expect(panelText).toContain('Operations Snapshot')
+    expect(panelText).toContain('Operations Activity')
+    expect(panelText).toContain('Generators Ready')
+    expect(panelText).toContain('2/2')
+    expect(panelText).toContain('WebSocket Clients')
+    expect(panelText).toContain('Pending Runs')
+    expect(panelText).not.toContain('Release Quality')
+
+    clickButtonByText('New Test')
+    expect(onNavigate).toHaveBeenCalledWith('new-test')
+  })
+
+  it('shows release-quality snapshot details for non-admin audiences', async () => {
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+          snapshotAudience="user"
+        />,
+      )
+    })
+
+    await flushDashboard()
+
+    const panelText = releasePanelText()
+    expect(panelText).toContain('Release Quality')
+    expect(panelText).toContain('SLA Breaches')
+    expect(panelText).toContain('Avg Completeness')
+    expect(panelText).toContain('Peak VUsers')
+    expect(panelText).toContain('Telemetry Breaches')
+    expect(panelText).toContain('Max Memory')
+    expect(panelText).toContain('Latest Outcome')
+    expect(panelText).not.toContain('Operations Activity')
+    expect(panelText).not.toContain('Generators Ready')
   })
 
   it('uses theme-aware accent fills for the first two dashboard rows', async () => {
@@ -362,7 +466,7 @@ describe('DashboardPage', () => {
     const topRowsCss = [
       stylesheet.match(/\.dash-health-card \{[\s\S]*?\n\}/)?.[0] ?? '',
       stylesheet.match(/\.dash-health-card\.status-idle \{[\s\S]*?\n\}/)?.[0] ?? '',
-      stylesheet.match(/\.dash-release-snapshot \.dash-section-heading-row \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.release-panel-header \{[\s\S]*?\n\}/)?.[0] ?? '',
       stylesheet.match(/\.dash-release-option\.active \{[\s\S]*?\n\}/)?.[0] ?? '',
       stylesheet.match(/\.dash-tab\.active \{[\s\S]*?\n\}/)?.[0] ?? '',
     ].join('\n')
@@ -373,24 +477,34 @@ describe('DashboardPage', () => {
     expect(topRowsCss).not.toContain('rgba(125, 211, 252')
   })
 
-  it('keeps the first two dashboard rows proportionate to their summary content', async () => {
+  it('keeps the dashboard snapshot in a right-side panel layout', async () => {
     // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
     const { readFileSync } = await import('node:fs')
     const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
     const stylesheet = readFileSync(`${cwd}/src/components/DashboardPage.css`, 'utf8') as string
-    const topRowsCss = [
-      stylesheet.match(/\.dash-health-card \{[\s\S]*?\n\}/)?.[0] ?? '',
-      stylesheet.match(/\.dash-release-snapshot \.dash-section-heading-row \{[\s\S]*?\n\}/)?.[0] ?? '',
-      stylesheet.match(/\.release-metric \{[\s\S]*?\n\}/)?.[0] ?? '',
-      stylesheet.match(/\.release-status-strip \{[\s\S]*?\n\}/)?.[0] ?? '',
+    const layoutCss = [
+      stylesheet.match(/\.dash-dashboard-layout \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.dash-dashboard-layout\.snapshot-collapsed \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.dash-main-column \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/@media \(max-width: 980px\) \{[\s\S]*?\.dash-main-column \{[\s\S]*?\n  \}/)?.[0] ?? '',
+      stylesheet.match(/\.dash-release-panel \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.release-panel-card \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.release-panel-rail \{[\s\S]*?writing-mode: vertical-rl[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.trend-table-wrap \{[\s\S]*?\n\}/)?.[0] ?? '',
     ].join('\n')
 
-    expect(topRowsCss).toContain('min-height: 84px')
-    expect(topRowsCss).toContain('padding: 12px 14px 12px 16px')
-    expect(topRowsCss).toContain('padding: 12px 16px')
-    expect(topRowsCss).toContain('min-height: 68px')
-    expect(topRowsCss).toContain('padding: 10px 12px')
-    expect(topRowsCss).toContain('padding: 10px 16px 14px')
+    expect(layoutCss).toContain('grid-template-columns: minmax(0, 1fr) minmax(320px, 360px)')
+    expect(layoutCss).toContain('grid-template-areas: "main snapshot"')
+    expect(layoutCss).toContain('grid-template-columns: minmax(0, 1fr) 58px')
+    expect(layoutCss).toContain('grid-area: main')
+    expect(layoutCss).toContain('flex-direction: column')
+    expect(layoutCss).toContain('display: contents')
+    expect(layoutCss).toContain('position: sticky')
+    expect(layoutCss).toContain('max-height: calc(100vh - 112px)')
+    expect(layoutCss).toContain('writing-mode: vertical-rl')
+    expect(layoutCss).toContain('max-height: var(--dashboard-table-max-height, none)')
+    expect(stylesheet).not.toContain('max-height: 260px')
+    expect(stylesheet).not.toContain('max-height: 430px')
   })
 
   it('switches lower dashboard tabs and sorts selectable table rows', async () => {
@@ -416,7 +530,12 @@ describe('DashboardPage', () => {
     expect(getTabByText('Performance Trend').textContent).toContain('2')
     expect(getTabByText('Active Tests').textContent).toContain('1')
     expect(getTabByText('Recent Activity').textContent).toContain('3')
-    expect(container.querySelector('.dash-release-snapshot')).toBeTruthy()
+    expect(getTabByText('Release Trend Analysis').textContent).toContain('2')
+    expect(getTabByText('Recent Activity').getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.dash-release-panel')).toBeTruthy()
+
+    clickButtonByText('Performance Trend')
+    expect(getTabByText('Performance Trend').getAttribute('aria-selected')).toBe('true')
     expect(currentTableRunNames()).toEqual(['Release Smoke', 'Checkout Archive'])
 
     clickSortButton('Run')
@@ -432,7 +551,7 @@ describe('DashboardPage', () => {
 
     clickButtonByText('Recent Activity')
     expect(getTabByText('Recent Activity').getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('.dash-release-snapshot')).toBeTruthy()
+    expect(container.querySelector('.dash-release-panel')).toBeTruthy()
     expect(currentTableRunNames()).toEqual(['Payments Failure Drill', 'Release Smoke', 'Checkout Archive'])
 
     clickSortButton('Date / Time')
@@ -444,6 +563,55 @@ describe('DashboardPage', () => {
 
     clickButtonByText('Release Smoke')
     expect(onSelectTest).toHaveBeenCalledWith('test-complete')
+  })
+
+  it('renders every dashboard table row instead of preview caps', async () => {
+    const completedTests = Array.from({ length: 12 }, (_, index) => {
+      const runNumber = index + 1
+      const padded = String(runNumber).padStart(2, '0')
+      return {
+        id: `archived-run-${padded}`,
+        name: `Archived Run ${padded}`,
+        status: 'COMPLETE',
+        application_id: 'app-1',
+        release_id: 'rel-1',
+        groups: [{ name: 'g1', script_id: `script-${padded}`, script_name: 'Smoke', protocol: 'http', vusers: runNumber }],
+        total_vusers: runNumber,
+        duration: '5m',
+        created_at: `2026-05-12T18:${padded}:00Z`,
+        ended_at: `2026-05-12T18:${padded}:30Z`,
+        archive: { transaction_count: runNumber * 100 },
+      }
+    })
+    apiMock.listTests.mockResolvedValueOnce({ tests: completedTests })
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+
+    await flushDashboard()
+    await flushDashboard()
+
+    expect(getTabByText('Recent Activity').getAttribute('aria-selected')).toBe('true')
+    expect(getTabByText('Recent Activity').textContent).toContain('12')
+    expect(currentTableRunNames()).toHaveLength(12)
+
+    clickButtonByText('Performance Trend')
+    await flushDashboard()
+
+    expect(getTabByText('Performance Trend').textContent).toContain('12')
+    expect(apiMock.getTestArchiveReport).toHaveBeenCalledTimes(12)
+    expect(currentTableRunNames()).toHaveLength(12)
+    expect(container.textContent).not.toContain('View 7 more archived')
+    expect(container.textContent).not.toContain('View more archived')
   })
 
   it('waits for the active application before loading dashboard data', async () => {
@@ -600,5 +768,13 @@ describe('DashboardPage', () => {
       throw new Error(`Missing button containing text: ${text}`)
     }
     return button
+  }
+
+  function releasePanelText() {
+    const panel = container.querySelector('#dashboard-release-snapshot-panel')
+    if (!panel) {
+      throw new Error('Missing release snapshot panel')
+    }
+    return panel.textContent || ''
   }
 })

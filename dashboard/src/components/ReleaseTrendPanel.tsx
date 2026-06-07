@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DependencyList } from 'react'
 
 import type { ReleaseTrend } from '../types'
 
@@ -6,6 +6,9 @@ interface ReleaseTrendPanelProps {
   releaseId: string
   getReleaseTrend: (id: string) => Promise<ReleaseTrend>
 }
+
+const tableBottomGutterPx = 24
+const tableMinimumViewportHeightPx = 80
 
 function formatSignedMs(value: number): string {
   const sign = value > 0 ? '+' : ''
@@ -17,6 +20,36 @@ function formatSignedPct(value: number): string {
   return `${sign}${value.toFixed(1)}%`
 }
 
+function useBottomBoundedTable(dependencies: DependencyList) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const [maxHeight, setMaxHeight] = useState<number | null>(null)
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const updateMaxHeight = () => {
+      const node = ref.current
+      if (!node) return
+      const rect = node.getBoundingClientRect()
+      const availableHeight = Math.floor(window.innerHeight - rect.top - tableBottomGutterPx)
+      const nextMaxHeight = Math.max(tableMinimumViewportHeightPx, availableHeight)
+      setMaxHeight(current => current === nextMaxHeight ? current : nextMaxHeight)
+    }
+
+    updateMaxHeight()
+    window.addEventListener('resize', updateMaxHeight)
+    window.addEventListener('scroll', updateMaxHeight, { passive: true })
+
+    return () => {
+      window.removeEventListener('resize', updateMaxHeight)
+      window.removeEventListener('scroll', updateMaxHeight)
+    }
+  }, dependencies)
+
+  const style = maxHeight === null ? undefined : ({ '--dashboard-table-max-height': `${maxHeight}px` } as CSSProperties)
+  return { ref, style }
+}
+
 // ReleaseTrendPanel surfaces the multi-run trend analysis (run-over-run deltas
 // and regression flags) from GET /api/v1/releases/{id}/trend — the value the raw
 // CSV export lacks.
@@ -24,6 +57,7 @@ export function ReleaseTrendPanel({ releaseId, getReleaseTrend }: ReleaseTrendPa
   const [trend, setTrend] = useState<ReleaseTrend | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const tableBounds = useBottomBoundedTable([loading, error, trend?.points.length ?? 0])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -64,7 +98,7 @@ export function ReleaseTrendPanel({ releaseId, getReleaseTrend }: ReleaseTrendPa
           <span className="status-badge status-failed" data-testid="release-trend-latest-regressed">Latest run regressed</span>
         )}
       </div>
-      <div className="trend-table-wrap">
+      <div className="trend-table-wrap" ref={tableBounds.ref} style={tableBounds.style}>
         <table className="trend-table">
           <thead>
             <tr>

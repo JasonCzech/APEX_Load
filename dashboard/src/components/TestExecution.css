@@ -37,6 +37,28 @@
   gap: 8px;
 }
 
+.execution-live-controls-anchor {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin-top: -4px;
+  padding-bottom: 4px;
+  background: var(--bg-primary);
+}
+
+.execution-live-controls-anchor .live-controls-section {
+  padding: 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.execution-live-controls-anchor .live-controls-panel {
+  background: var(--bg-primary);
+  border-radius: calc(var(--radius) - 2px);
+}
+
 .hero-metrics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

@@ -44,7 +44,7 @@ const EXECUTION_WORKSPACE_DEFAULT_PROFILE: DashboardWorkspaceProfile = {
   activeTabId: 'overview',
   tabs: [
     { id: 'overview', label: 'Overview', cardIds: ['scenario-overview', 'hero-metrics'] },
-    { id: 'control', label: 'Control', cardIds: ['live-controls', 'scenario-preview'] },
+    { id: 'control', label: 'Control', cardIds: ['scenario-preview'] },
     { id: 'graphs', label: 'Graphs', cardIds: ['runtime-graphs'] },
     { id: 'diagnostics', label: 'Diagnostics', cardIds: ['status-panels', 'live-summary'] },
     { id: 'archive', label: 'Archive', cardIds: ['archive-report'] },
@@ -324,6 +324,37 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     </div>
   )
 
+  const pinnedLiveControls = showLiveControls ? (
+    <TestExecutionLiveControls
+      showControls={showControls}
+      onToggleControls={onToggleControls}
+      test={test}
+      vuserTargets={vuserTargets}
+      onVuserTargetChange={onVuserTargetChange}
+      vuserGroupActions={vuserGroupActions}
+      onVuserGroupActionChange={onVuserGroupActionChange}
+      vuserRampEnabled={vuserRampEnabled}
+      onVuserRampEnabledChange={onVuserRampEnabledChange}
+      vuserRampDuration={vuserRampDuration}
+      onVuserRampDurationChange={onVuserRampDurationChange}
+      onScaleVUsers={onScaleVUsers}
+      onStopAllVUsers={onStopAllVUsers}
+      durationInput={durationInput}
+      onDurationInputChange={onDurationInputChange}
+      onAdjustDuration={onAdjustDuration}
+      isRunning={isRunning}
+      isPaused={isPaused}
+      isStopping={isStopping}
+      onPause={onPause}
+      onResume={onResume}
+      onStop={onStop}
+      onAbort={onAbort}
+      liveControlPreview={liveControlPreview}
+      controlFeedback={controlFeedback}
+      groupColors={GROUP_COLORS}
+    />
+  ) : null
+
   const executionWorkspaceCards: DashboardWorkspaceCard[] = [
     {
       id: 'scenario-overview',
@@ -360,34 +391,10 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       category: 'Run Control',
       description: 'Start, pause, stop, scale, and duration controls.',
       render: () => showLiveControls ? (
-        <TestExecutionLiveControls
-          showControls={showControls}
-          onToggleControls={onToggleControls}
-          test={test}
-          vuserTargets={vuserTargets}
-          onVuserTargetChange={onVuserTargetChange}
-          vuserGroupActions={vuserGroupActions}
-          onVuserGroupActionChange={onVuserGroupActionChange}
-          vuserRampEnabled={vuserRampEnabled}
-          onVuserRampEnabledChange={onVuserRampEnabledChange}
-          vuserRampDuration={vuserRampDuration}
-          onVuserRampDurationChange={onVuserRampDurationChange}
-          onScaleVUsers={onScaleVUsers}
-          onStopAllVUsers={onStopAllVUsers}
-          durationInput={durationInput}
-          onDurationInputChange={onDurationInputChange}
-          onAdjustDuration={onAdjustDuration}
-          isRunning={isRunning}
-          isPaused={isPaused}
-          isStopping={isStopping}
-          onPause={onPause}
-          onResume={onResume}
-          onStop={onStop}
-          onAbort={onAbort}
-          liveControlPreview={liveControlPreview}
-          controlFeedback={controlFeedback}
-          groupColors={GROUP_COLORS}
-        />
+        <div className="empty-card live-controls-pinned-card">
+          <p>Live controls are pinned at the top of this run dashboard.</p>
+          <p className="empty-hint">Use the top panel to pause, stop, abort, scale VUsers, or adjust duration while the run is active.</p>
+        </div>
       ) : (
         <div className="empty-card">
           <p>Live controls are unavailable for this run state.</p>
@@ -613,6 +620,12 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         showArchiveDownload={showArchiveDownload}
         onDownloadArchive={onDownloadArchive}
       />
+
+      {pinnedLiveControls && (
+        <section className="execution-live-controls-anchor" aria-label="Live controls">
+          {pinnedLiveControls}
+        </section>
+      )}
 
       <DashboardWorkspace
         ariaLabel="Test execution workspace"

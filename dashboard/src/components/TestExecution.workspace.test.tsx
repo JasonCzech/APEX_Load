@@ -133,8 +133,8 @@ describe('TestExecution workspace layout', () => {
     expect(container.querySelector('select[aria-label^="Add card to"]')).toBeNull()
 
     await clickWorkspaceTab('Control')
-    expect(container.textContent).toContain('Live controls are unavailable for this run state.')
     expect(container.textContent).toContain('Scenario Preview Content')
+    expect(libraryItem('live-controls').textContent).toContain('Live Controls')
 
     await clickWorkspaceTab('Graphs')
     expect(container.textContent).toContain('Runtime Graphs Content')
@@ -275,9 +275,13 @@ describe('TestExecution workspace layout', () => {
     expect(container.textContent).toContain('Runtime Graphs Content')
   })
 
-  it('places active run controls inside the Control tab for a running run', async () => {
+  it('pins active run controls above the workspace for a running run', async () => {
     configureHooks(makeTest('RUNNING'))
     await renderExecution()
+
+    expect(container.textContent).toContain('Live Controls Content')
+    expect(container.textContent).toContain('Scenario Overview Content')
+    expect((container.textContent?.match(/Live Controls Content/g) ?? []).length).toBe(1)
 
     await clickWorkspaceTab('Control')
 
@@ -285,6 +289,31 @@ describe('TestExecution workspace layout', () => {
     expect(container.textContent).toContain('Scenario Preview Content')
     expect(container.textContent).toContain('Card Library')
     expect(libraryItem('archive-report').textContent).toContain('Archive Report')
+    expect((container.textContent?.match(/Live Controls Content/g) ?? []).length).toBe(1)
+  })
+
+  it('uses a pinned-controls note for saved layouts that still include the live controls card', async () => {
+    window.localStorage.setItem('apexload.execution.workspaceProfiles.v1', JSON.stringify([
+      {
+        id: 'default',
+        name: 'Default Execution Layout',
+        activeTabId: 'control',
+        tabs: [
+          { id: 'overview', label: 'Overview', cardIds: ['scenario-overview', 'hero-metrics'] },
+          { id: 'control', label: 'Control', cardIds: ['live-controls', 'scenario-preview'] },
+          { id: 'graphs', label: 'Graphs', cardIds: ['runtime-graphs'] },
+        ],
+        unassignedCardIds: [],
+      },
+    ]))
+    configureHooks(makeTest('RUNNING'))
+
+    await renderExecution()
+
+    expect(container.textContent).toContain('Live Controls Content')
+    expect(container.textContent).toContain('Live controls are pinned at the top of this run dashboard.')
+    expect(container.textContent).toContain('Scenario Preview Content')
+    expect((container.textContent?.match(/Live Controls Content/g) ?? []).length).toBe(1)
   })
 
   it('auto-applies a matching execution profile from run context', async () => {

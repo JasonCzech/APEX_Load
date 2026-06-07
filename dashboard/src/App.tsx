@@ -6,7 +6,7 @@ import { ApplicationProvider } from './hooks/ApplicationProvider'
 import { useApplication } from './hooks/useApplication'
 import { MetricsHistoryPoint, TelemetryDiagnostic, TelemetryDiagnosticEntry, WSMessage } from './types'
 import Sidebar, { type NavPage } from './components/Sidebar'
-import DashboardPage from './components/DashboardPage'
+import DashboardPage, { type DashboardSnapshotAudience } from './components/DashboardPage'
 import TablePaginationManager from './components/TablePaginationManager'
 import { type AppView, parseAppViewFromHash, viewToLocationHash } from './appRouting'
 import { appendTelemetryDiagnostic } from './components/monitoringTelemetryDiagnostics'
@@ -54,6 +54,25 @@ function formatDesktopRemoteHealth(status?: DesktopStatusResponse) {
   const statuses = status?.remote_libraries?.statuses || {}
   const healthy = statuses.healthy || 0
   return `${healthy}/${count} hosts`
+}
+
+function dashboardSnapshotAudience(
+  authStatus: import('./types').DashboardAuthStatus | undefined,
+  devViewMode: string,
+  activeProjectId?: string,
+): DashboardSnapshotAudience {
+  if (authStatus?.mode === 'dev') {
+    return devViewMode === 'user' ? 'user' : 'admin'
+  }
+  if (!authStatus || !authStatus.enabled) {
+    return 'admin'
+  }
+
+  const globalRoles = authStatus.user?.global_roles || []
+  const projectRoles = activeProjectId ? authStatus.user?.project_roles?.[activeProjectId] || [] : []
+  return [...globalRoles, ...projectRoles].some(role => role === 'system_admin' || role === 'project_admin')
+    ? 'admin'
+    : 'user'
 }
 
 function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuthStatus }) {
@@ -155,6 +174,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const canManageRepositoryProjects = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_repository_projects', false)
   const canManageRepositoryReleases = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_repository_releases', false)
   const canManageRepository = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_application_repository', false)
+  const snapshotAudience = dashboardSnapshotAudience(authStatus, devViewMode, activeProject?.id)
 
   const navigateToTest = (id: string) => setView({ page: 'test', testId: id })
   const activePage: NavPage = view.page === 'test' ? 'tests' : view.page === 'swagger' || view.page === 'repository-guide' ? 'docs' : view.page
@@ -436,6 +456,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               connectionState={connectionState}
               onSelectTest={navigateToTest}
               onNavigate={handleNavigate}
+              snapshotAudience={snapshotAudience}
             />
           )}
           {view.page === 'tests' && (

@@ -69,12 +69,12 @@ describe('useExecutionLiveControls', () => {
     vi.useRealTimers()
   })
 
-  it('initializes control inputs from the current test and toggles visibility', async () => {
+  it('initializes control inputs from a live test and toggles visibility', async () => {
     await act(async () => {
       root.render(<LiveControlsHarness test={buildRunningTest()} />)
     })
 
-    expect(readTestId('show-controls')).toBe('closed')
+    expect(readTestId('show-controls')).toBe('open')
     expect(readTestId('duration')).toBe('10m')
     expect(readTestId('target')).toBe('12')
     expect(readTestId('action')).toBe('run')
@@ -84,7 +84,15 @@ describe('useExecutionLiveControls', () => {
 
     await click('toggle')
 
-    expect(readTestId('show-controls')).toBe('open')
+    expect(readTestId('show-controls')).toBe('closed')
+  })
+
+  it('keeps controls collapsed for non-live run states', async () => {
+    await act(async () => {
+      root.render(<LiveControlsHarness test={{ ...buildRunningTest(), status: 'QUEUED' }} />)
+    })
+
+    expect(readTestId('show-controls')).toBe('closed')
   })
 
   it('applies edited VUser and duration actions through the api bridge', async () => {

@@ -11,6 +11,7 @@ import {
   latestRouteLatencyValues,
   responseTimeDataWithoutNetworkLatency,
   routeLatencySeriesKeys,
+  visibleMetricDomain,
   type ChartConfig,
 } from './TestExecutionCharts'
 import { routeLatencyDetailSeriesKey, routeLatencySeriesLabel } from './latencySeries'
@@ -263,6 +264,17 @@ describe('chartStateForMonitorPreset', () => {
       max: 4,
       samples: 2,
     })
+  })
+
+  it('builds chart domains from only the currently visible metric keys', () => {
+    const data = [
+      { time: '10:00:00', vusers: 1, tps: 2, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p99: 2200 },
+      { time: '10:00:01', vusers: 2, tps: 3, avgMs: 110, errorPct: 0, p50: 85, p90: 112, p99: 2400 },
+    ]
+
+    expect(visibleMetricDomain(data, ['avgMs', 'p90', 'p99'])).toEqual([0, 2592])
+    expect(visibleMetricDomain(data, ['avgMs', 'p90'])).toEqual([0, 120.96])
+    expect(visibleMetricDomain(data, ['missing'], [0, 'auto'])).toEqual([0, 'auto'])
   })
 
   it('formats graph overlay metric values with at most two decimals', () => {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, type DragEvent } from 'react'
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, type CSSProperties, type DependencyList, type DragEvent } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useApi } from '../hooks/useApi'
@@ -19,6 +19,7 @@ interface Props {
   connectionState: WebSocketConnectionState
   onSelectTest: (id: string) => void
   onNavigate: (page: NavPage) => void
+  snapshotAudience?: DashboardSnapshotAudience
 }
 
 interface HealthData {
@@ -35,10 +36,18 @@ interface HealthData {
 }
 
 type CardMetricKey = 'tps' | 'avg_response_ms' | 'error_pct' | 'active_vusers'
-type DashboardTabKey = 'performance' | 'active' | 'activity'
+type DashboardTabKey = 'activity' | 'active' | 'performance' | 'releaseTrend'
 type SortDirection = 'asc' | 'desc'
 type PerformanceSortField = 'run' | 'completed' | 'peak_tps' | 'avg_ms' | 'errors' | 'sla' | 'complete'
 type ActivitySortField = 'run' | 'status' | 'vusers' | 'duration' | 'transactions' | 'date'
+export type DashboardSnapshotAudience = 'admin' | 'user'
+
+interface AttentionItem {
+  tone: 'danger' | 'warning' | 'info'
+  title: string
+  detail: string
+  testId?: string
+}
 
 interface GraphCardSettings {
   metric: CardMetricKey
@@ -51,10 +60,66 @@ interface PerformanceTrendEntry {
   runtimeSummary: string | null
 }
 
+interface ReleaseTrendStats {
+  slaBreaches: number
+  avgCompleteness: number
+  peakVUsers: number
+  maxCPU: number
+  maxMemoryMB: number
+  telemetryBreached: number
+}
+
+interface SnapshotStatProps {
+  label: string
+  value: string | number
+  tone?: 'neutral' | 'accent' | 'success' | 'warning' | 'danger'
+  onClick?: () => void
+}
+
+interface ReleaseSnapshotPanelProps {
+  open: boolean
+  audience: DashboardSnapshotAudience
+  activeRelease: Release | null | undefined
+  releaseOptions: Release[]
+  releaseStats: {
+    completed: number
+    failed: number
+    aborted: number
+    archived: number
+    totalTx: number
+  }
+  dashboardStats: {
+    completed: number
+    aborted: number
+    active: number
+    activeTps: number
+    avgError: number
+  }
+  latestReleaseRun: TestSummary | undefined
+  releaseTrendStats: ReleaseTrendStats
+  health: HealthData | null
+  statusLabel: string
+  statusColor: string
+  activeTests: TestSummary[]
+  pendingTests: TestSummary[]
+  attentionItems: AttentionItem[]
+  onToggle: () => void
+  onReleaseChange: (release: Release) => void
+  onLatestResult: () => void
+  onPrimaryActiveRun: () => void
+  onResults: () => void
+  onMonitoring: () => void
+  onNewTest: () => void
+  onSelectTest: (id: string) => void
+}
+
 const defaultGraphCardSettings: GraphCardSettings = {
   metric: 'tps',
   showGraph: true,
 }
+
+const tableBottomGutterPx = 24
+const tableMinimumViewportHeightPx = 80
 
 const graphMetricOptions: { key: CardMetricKey; label: string; color: string; digits: number }[] = [
   { key: 'tps', label: 'TPS', color: 'var(--accent)', digits: 1 },
@@ -64,9 +129,10 @@ const graphMetricOptions: { key: CardMetricKey; label: string; color: string; di
 ]
 
 const dashboardTabs: { id: DashboardTabKey; label: string }[] = [
-  { id: 'performance', label: 'Performance Trend' },
-  { id: 'active', label: 'Active Tests' },
   { id: 'activity', label: 'Recent Activity' },
+  { id: 'active', label: 'Active Tests' },
+  { id: 'performance', label: 'Performance Trend' },
+  { id: 'releaseTrend', label: 'Release Trend Analysis' },
 ]
 
 const performanceSortDefaults: Record<PerformanceSortField, SortDirection> = {
@@ -136,7 +202,7 @@ function SortIcon({ active, direction }: { active: boolean; direction: SortDirec
   return <span className="sort-icon active">{direction === 'asc' ? '↑' : '↓'}</span>
 }
 
-function buildReleaseTrendStats(entries: PerformanceTrendEntry[]) {
+function buildReleaseTrendStats(entries: PerformanceTrendEntry[]): ReleaseTrendStats {
   if (entries.length === 0) {
     return {
       slaBreaches: 0,
@@ -204,7 +270,221 @@ function loadJson<T>(key: string, fallback: T): T {
   }
 }
 
-export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest, onNavigate }: Props) {
+function useBottomBoundedTable(dependencies: DependencyList) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const [maxHeight, setMaxHeight] = useState<number | null>(null)
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const updateMaxHeight = () => {
+      const node = ref.current
+      if (!node) return
+      const rect = node.getBoundingClientRect()
+      const availableHeight = Math.floor(window.innerHeight - rect.top - tableBottomGutterPx)
+      const nextMaxHeight = Math.max(tableMinimumViewportHeightPx, availableHeight)
+      setMaxHeight(current => current === nextMaxHeight ? current : nextMaxHeight)
+    }
+
+    updateMaxHeight()
+    window.addEventListener('resize', updateMaxHeight)
+    window.addEventListener('scroll', updateMaxHeight, { passive: true })
+
+    return () => {
+      window.removeEventListener('resize', updateMaxHeight)
+      window.removeEventListener('scroll', updateMaxHeight)
+    }
+  }, dependencies)
+
+  const style = maxHeight === null ? undefined : ({ '--dashboard-table-max-height': `${maxHeight}px` } as CSSProperties)
+  return { ref, style }
+}
+
+function SnapshotStat({ label, value, tone = 'neutral', onClick }: SnapshotStatProps) {
+  const className = `release-panel-stat tone-${tone}${onClick ? ' is-actionable' : ''}`
+  const content = (
+    <>
+      <span className="release-panel-stat-value">{value}</span>
+      <span className="release-panel-stat-label">{label}</span>
+    </>
+  )
+
+  if (onClick) {
+    return (
+      <button type="button" className={className} onClick={onClick}>
+        {content}
+      </button>
+    )
+  }
+
+  return <div className={className}>{content}</div>
+}
+
+function ReleaseSnapshotPanel({
+  open,
+  audience,
+  activeRelease,
+  releaseOptions,
+  releaseStats,
+  dashboardStats,
+  latestReleaseRun,
+  releaseTrendStats,
+  health,
+  statusLabel,
+  statusColor,
+  activeTests,
+  pendingTests,
+  attentionItems,
+  onToggle,
+  onReleaseChange,
+  onLatestResult,
+  onPrimaryActiveRun,
+  onResults,
+  onMonitoring,
+  onNewTest,
+  onSelectTest,
+}: ReleaseSnapshotPanelProps) {
+  const panelId = 'dashboard-release-snapshot-panel'
+  const completedRunCount = releaseStats.completed + releaseStats.failed + releaseStats.aborted
+  const archivesReady = `${releaseStats.archived}/${completedRunCount}`
+  const generatorCapacity = health?.capacity_availability
+  const effectiveGenerators = generatorCapacity?.effective_available_generators
+  const configuredGenerators = generatorCapacity?.configured_available_generators ?? effectiveGenerators
+  const generatorAvailability = typeof effectiveGenerators === 'number'
+    ? `${effectiveGenerators}/${configuredGenerators ?? effectiveGenerators}`
+    : '—'
+  const releaseName = activeRelease?.name || 'All releases'
+  const panelModeLabel = audience === 'admin' ? 'Operations Snapshot' : 'Release Quality'
+  const latestStatus = latestReleaseRun ? `${latestReleaseRun.name} · ${latestReleaseRun.status}` : 'No completed runs'
+  const qualityTone = releaseStats.failed > 0 || releaseTrendStats.slaBreaches > 0 ? 'warning' : 'success'
+  const visibleAttentionItems = attentionItems.slice(0, 3)
+
+  return (
+    <aside className={`dash-release-panel ${open ? 'is-open' : 'is-collapsed'}`} aria-label="Release snapshot panel">
+      <button
+        type="button"
+        className="release-panel-rail"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={onToggle}
+        hidden={open}
+      >
+        <span className="release-panel-rail-kicker">Snapshot</span>
+        <strong>{releaseName}</strong>
+        <span>Open</span>
+      </button>
+
+      <section id={panelId} className="release-panel-card" hidden={!open}>
+        <div className="release-panel-header">
+          <div>
+            <span className="release-panel-eyebrow">{panelModeLabel}</span>
+            <h3>Release Snapshot</h3>
+            <p>{releaseName}</p>
+          </div>
+          <button
+            type="button"
+            className="release-panel-toggle"
+            aria-expanded={open}
+            aria-controls={panelId}
+            onClick={onToggle}
+          >
+            Collapse
+          </button>
+        </div>
+
+        <div className="dash-release-selector release-panel-selector" role="list" aria-label="Dashboard release selector">
+          {releaseOptions.length === 0 ? (
+            <span className="dash-release-selector-empty">No releases</span>
+          ) : releaseOptions.map(release => (
+            <button
+              key={release.id}
+              type="button"
+              className={`dash-release-option ${activeRelease?.id === release.id ? 'active' : ''}`}
+              aria-current={activeRelease?.id === release.id ? 'true' : undefined}
+              onClick={() => onReleaseChange(release)}
+            >
+              {release.name}
+            </button>
+          ))}
+        </div>
+
+        <div className="release-panel-stat-grid shared">
+          <SnapshotStat label="Latest Result" value={latestReleaseRun ? latestReleaseRun.name : 'No runs'} tone="accent" onClick={onLatestResult} />
+          <SnapshotStat label="Failed Runs" value={releaseStats.failed} tone={releaseStats.failed > 0 ? 'danger' : 'success'} onClick={onResults} />
+          <SnapshotStat label="Archives Ready" value={archivesReady} onClick={onResults} />
+          <SnapshotStat label="Archived Transactions" value={releaseStats.totalTx.toLocaleString()} onClick={onResults} />
+          <SnapshotStat label="Current TPS" value={formatNumber(dashboardStats.activeTps, 1)} onClick={onPrimaryActiveRun} />
+          <SnapshotStat label="Current Error Rate" value={`${formatNumber(dashboardStats.avgError, 2)}%`} tone={dashboardStats.avgError > 0 ? 'danger' : 'neutral'} onClick={onPrimaryActiveRun} />
+        </div>
+
+        <div className="release-panel-status-strip" aria-label="Run status summary">
+          <SnapshotStat label="Completed" value={dashboardStats.completed} tone="success" onClick={onResults} />
+          <SnapshotStat label="Aborted" value={dashboardStats.aborted} tone="warning" onClick={onResults} />
+          <SnapshotStat label="Active Now" value={dashboardStats.active} tone="accent" onClick={onPrimaryActiveRun} />
+        </div>
+
+        {audience === 'admin' ? (
+          <div className="release-panel-section" aria-label="Operations activity">
+            <div className="release-panel-section-header">
+              <h4>Operations Activity</h4>
+              <span>{activeTests.length} live · {pendingTests.length} queued</span>
+            </div>
+            <div className="release-panel-detail-grid">
+              <SnapshotStat label="API Health" value={statusLabel} tone={statusColor === 'healthy' ? 'success' : statusColor === 'offline' ? 'danger' : 'warning'} onClick={onMonitoring} />
+              <SnapshotStat label="Generators Ready" value={generatorAvailability} onClick={onMonitoring} />
+              <SnapshotStat label="WebSocket Clients" value={health?.ws_clients ?? 0} />
+              <SnapshotStat label="Pending Runs" value={pendingTests.length} tone={pendingTests.length > 0 ? 'warning' : 'neutral'} onClick={onPrimaryActiveRun} />
+            </div>
+            <div className="release-panel-feed">
+              {visibleAttentionItems.length === 0 ? (
+                <div className="release-panel-feed-empty">No active attention items for this release.</div>
+              ) : visibleAttentionItems.map(item => (
+                <button
+                  type="button"
+                  key={`${item.title}-${item.detail}`}
+                  className={`release-panel-feed-item tone-${item.tone}`}
+                  onClick={() => item.testId ? onSelectTest(item.testId) : onMonitoring()}
+                >
+                  <strong>{item.title}</strong>
+                  <span>{item.detail}</span>
+                </button>
+              ))}
+            </div>
+            <div className="release-panel-actions" aria-label="Release operations links">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={onMonitoring}>Monitoring</button>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={onNewTest}>New Test</button>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={onResults}>Results</button>
+            </div>
+          </div>
+        ) : (
+          <div className="release-panel-section" aria-label="Release quality">
+            <div className="release-panel-section-header">
+              <h4>Release Quality</h4>
+              <span>{latestReleaseRun ? latestReleaseRun.status : 'No result'}</span>
+            </div>
+            <div className="release-panel-detail-grid">
+              <SnapshotStat label="SLA Breaches" value={releaseTrendStats.slaBreaches} tone={releaseTrendStats.slaBreaches > 0 ? 'danger' : 'success'} onClick={onResults} />
+              <SnapshotStat label="Avg Completeness" value={`${formatNumber(releaseTrendStats.avgCompleteness, 0)}%`} tone={qualityTone} onClick={onResults} />
+              <SnapshotStat label="Peak VUsers" value={releaseTrendStats.peakVUsers.toLocaleString()} />
+              <SnapshotStat label="Telemetry Breaches" value={releaseTrendStats.telemetryBreached} tone={releaseTrendStats.telemetryBreached > 0 ? 'warning' : 'success'} onClick={onResults} />
+              <SnapshotStat label="Max CPU" value={`${formatNumber(releaseTrendStats.maxCPU, 1)}%`} />
+              <SnapshotStat label="Max Memory" value={`${formatNumber(releaseTrendStats.maxMemoryMB, 0)} MB`} />
+            </div>
+            <button type="button" className="release-panel-quality-callout dash-card-button" onClick={onLatestResult}>
+              <span>Latest Outcome</span>
+              <strong>{latestStatus}</strong>
+            </button>
+            <div className="release-panel-actions" aria-label="Release quality links">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={onResults}>View Results</button>
+            </div>
+          </div>
+        )}
+      </section>
+    </aside>
+  )
+}
+
+export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest, onNavigate, snapshotAudience = 'admin' }: Props) {
   const api = useApi()
   const { activeApplication, activeRelease, releases, setActiveRelease } = useApplication()
   const { activeProject } = useProject()
@@ -214,7 +494,8 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const [archiveReports, setArchiveReports] = useState<Record<string, RunArchiveReport | null>>({})
   const [customizingCards, setCustomizingCards] = useState(false)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
-  const [activeDashboardTab, setActiveDashboardTab] = useState<DashboardTabKey>('performance')
+  const [releasePanelOpen, setReleasePanelOpen] = useState(true)
+  const [activeDashboardTab, setActiveDashboardTab] = useState<DashboardTabKey>('activity')
   const [performanceSort, setPerformanceSort] = useState<{ field: PerformanceSortField; direction: SortDirection }>({ field: 'completed', direction: 'desc' })
   const [activitySort, setActivitySort] = useState<{ field: ActivitySortField; direction: SortDirection }>({ field: 'date', direction: 'desc' })
   const [activeCardOrder, setActiveCardOrder] = useState<string[]>(() => loadJson<string[]>('apexload.dashboard.activeCardOrder', []))
@@ -316,8 +597,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const recentTests = useMemo(() =>
     resolvedTests
       .filter(t => t.status === 'COMPLETE' || t.status === 'FAILED' || t.status === 'ABORTED')
-      .sort((a, b) => completionTime(b) - completionTime(a))
-      .slice(0, 10),
+      .sort((a, b) => completionTime(b) - completionTime(a)),
     [resolvedTests],
   )
 
@@ -357,8 +637,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
 
   const archivedReleaseRuns = useMemo(() =>
     releaseCompleted
-      .filter(test => Boolean(test.archive))
-      .slice(0, 6),
+      .filter(test => Boolean(test.archive)),
     [releaseCompleted],
   )
 
@@ -511,7 +790,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   }, [releaseTests, releaseCompleted])
 
   const attentionItems = useMemo(() => {
-    const items: { tone: 'danger' | 'warning' | 'info'; title: string; detail: string; testId?: string }[] = []
+    const items: AttentionItem[] = []
     activeTests.forEach(test => {
       const errorPct = test.live_metrics?.error_pct || 0
       if (errorPct >= 1) {
@@ -613,6 +892,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
 
   const navigateToMonitoring = () => onNavigate('monitoring')
   const navigateToTests = () => onNavigate('tests')
+  const navigateToNewTest = () => onNavigate('new-test')
   const navigateToResults = () => onNavigate('results')
   const navigateToApiGuide = () => onNavigate('docs')
   const downloadTrendCsv = async () => {
@@ -660,9 +940,10 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     }))
   }
   const dashboardTabCounts: Record<DashboardTabKey, number> = {
-    performance: performanceTrend.length,
-    active: stats.active,
     activity: recentTests.length,
+    active: stats.active,
+    performance: performanceTrend.length,
+    releaseTrend: performanceTrend.length,
   }
   const activeDashboardTabLabel = dashboardTabs.find(tab => tab.id === activeDashboardTab)?.label || 'Dashboard'
   const renderPerformanceSortHeader = (field: PerformanceSortField, label: string, className = '') => (
@@ -681,7 +962,8 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       </button>
     </th>
   )
-  const trendPreviewRows = sortedPerformanceTrend.slice(0, 5)
+  const performanceTableBounds = useBottomBoundedTable([activeDashboardTab, releasePanelOpen, sortedPerformanceTrend.length])
+  const activityTableBounds = useBottomBoundedTable([activeDashboardTab, releasePanelOpen, sortedRecentTests.length])
   const aggregateHistory = Object.values(metricsHistory).flat().slice(-60)
 
   return (
@@ -712,139 +994,81 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         </div>
       </div>
 
-      <div className="dash-health-row">
-        <button type="button" className={`dash-health-card dash-card-button status-${statusColor}`} onClick={navigateToMonitoring}>
-          <div className="dhc-icon">
-            <span className={`health-dot ${statusColor}`} />
-          </div>
-          <div className="dhc-content">
-            <span className="dhc-value">{statusLabel}</span>
-            <span className="dhc-label">API Server</span>
-          </div>
-        </button>
-
-        <button type="button" className={`dash-health-card dash-card-button ${stats.active > 0 ? 'status-active' : 'status-idle'}`} onClick={navigateToTests}>
-          <div className="dhc-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--chart-2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-            </svg>
-          </div>
-          <div className="dhc-content">
-            <span className="dhc-value">{stats.active}</span>
-            <span className="dhc-label">Active Runs</span>
-          </div>
-        </button>
-
-        <button type="button" className={`dash-health-card dash-card-button ${stats.activeVUsers > 0 ? 'status-active' : 'status-idle'}`} onClick={navigateToTests}>
-          <div className="dhc-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--chart-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-            </svg>
-          </div>
-          <div className="dhc-content">
-            <span className="dhc-value">{stats.activeVUsers}</span>
-            <span className="dhc-label">Active VUsers</span>
-          </div>
-        </button>
-
-        <button type="button" className={`dash-health-card dash-card-button ${attentionStatusClass}`} onClick={navigateToAttention}>
-          <div className="dhc-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={attentionIconColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 9v4" />
-              <path d="M12 17h.01" />
-              <path d="M10.3 3.9 2.5 18a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
-            </svg>
-          </div>
-          <div className="dhc-content">
-            <span className="dhc-value">{attentionItems.length}</span>
-            <span className="dhc-label">Attention Needed</span>
-          </div>
-        </button>
-      </div>
-
-      <section className="dash-section dash-release-snapshot">
-        <div className="dash-section-heading-row">
-          <h3 className="dash-section-title">Release Snapshot</h3>
-          <div className="dash-release-selector" role="list" aria-label="Dashboard release selector">
-            {dashboardReleaseOptions.length === 0 ? (
-              <span className="dash-release-selector-empty">No releases</span>
-            ) : dashboardReleaseOptions.map(release => (
-              <button
-                key={release.id}
-                type="button"
-                className={`dash-release-option ${activeRelease?.id === release.id ? 'active' : ''}`}
-                aria-current={activeRelease?.id === release.id ? 'true' : undefined}
-                onClick={() => setActiveRelease(release)}
-              >
-                {release.name}
+      <div className={`dash-dashboard-layout ${releasePanelOpen ? 'snapshot-open' : 'snapshot-collapsed'}`}>
+        <div className="dash-main-column">
+          <div className="dash-primary-top">
+            <div className="dash-health-row">
+              <button type="button" className={`dash-health-card dash-card-button status-${statusColor}`} onClick={navigateToMonitoring}>
+                <div className="dhc-icon">
+                  <span className={`health-dot ${statusColor}`} />
+                </div>
+                <div className="dhc-content">
+                  <span className="dhc-value">{statusLabel}</span>
+                  <span className="dhc-label">API Server</span>
+                </div>
               </button>
-            ))}
+
+              <button type="button" className={`dash-health-card dash-card-button ${stats.active > 0 ? 'status-active' : 'status-idle'}`} onClick={navigateToTests}>
+                <div className="dhc-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--chart-2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                  </svg>
+                </div>
+                <div className="dhc-content">
+                  <span className="dhc-value">{stats.active}</span>
+                  <span className="dhc-label">Active Runs</span>
+                </div>
+              </button>
+
+              <button type="button" className={`dash-health-card dash-card-button ${stats.activeVUsers > 0 ? 'status-active' : 'status-idle'}`} onClick={navigateToTests}>
+                <div className="dhc-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--chart-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                  </svg>
+                </div>
+                <div className="dhc-content">
+                  <span className="dhc-value">{stats.activeVUsers}</span>
+                  <span className="dhc-label">Active VUsers</span>
+                </div>
+              </button>
+
+              <button type="button" className={`dash-health-card dash-card-button ${attentionStatusClass}`} onClick={navigateToAttention}>
+                <div className="dhc-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={attentionIconColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 9v4" />
+                    <path d="M12 17h.01" />
+                    <path d="M10.3 3.9 2.5 18a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+                  </svg>
+                </div>
+                <div className="dhc-content">
+                  <span className="dhc-value">{attentionItems.length}</span>
+                  <span className="dhc-label">Attention Needed</span>
+                </div>
+              </button>
+            </div>
           </div>
-        </div>
-        <div className="release-metric-grid">
-          <button type="button" className="release-metric dash-card-button" onClick={navigateToLatestResult}>
-            <span className="release-metric-value">{latestReleaseRun ? latestReleaseRun.name : 'No runs'}</span>
-            <span className="release-metric-label">Latest Result</span>
-          </button>
-          <button type="button" className="release-metric dash-card-button" onClick={navigateToResults}>
-            <span className={`release-metric-value ${releaseStats.failed > 0 ? 'text-danger' : 'text-success'}`}>
-              {releaseStats.failed}
-            </span>
-            <span className="release-metric-label">Failed Runs</span>
-          </button>
-          <button type="button" className="release-metric dash-card-button" onClick={navigateToResults}>
-            <span className="release-metric-value">{releaseStats.archived}/{releaseStats.completed + releaseStats.failed + releaseStats.aborted}</span>
-            <span className="release-metric-label">Archives Ready</span>
-          </button>
-          <button type="button" className="release-metric dash-card-button" onClick={navigateToResults}>
-            <span className="release-metric-value">{releaseStats.totalTx.toLocaleString()}</span>
-            <span className="release-metric-label">Archived Transactions</span>
-          </button>
-          <button type="button" className="release-metric dash-card-button" onClick={navigateToPrimaryActiveRun}>
-            <span className="release-metric-value">{formatNumber(stats.activeTps, 1)}</span>
-            <span className="release-metric-label">Current TPS</span>
-          </button>
-          <button type="button" className="release-metric dash-card-button" onClick={navigateToPrimaryActiveRun}>
-            <span className={`release-metric-value ${stats.avgError > 0 ? 'text-danger' : ''}`}>{formatNumber(stats.avgError, 2)}%</span>
-            <span className="release-metric-label">Current Error Rate</span>
-          </button>
-        </div>
-        <div className="release-status-strip" aria-label="Run status summary">
-          <button type="button" className="release-status-stat dash-card-button" onClick={navigateToResults}>
-            <span className="release-status-value text-success">{stats.completed}</span>
-            <span className="release-status-label">Completed</span>
-          </button>
-          <button type="button" className="release-status-stat dash-card-button" onClick={navigateToResults}>
-            <span className="release-status-value" style={{ color: 'var(--chart-3)' }}>{stats.aborted}</span>
-            <span className="release-status-label">Aborted</span>
-          </button>
-          <button type="button" className="release-status-stat dash-card-button" onClick={navigateToTests}>
-            <span className="release-status-value" style={{ color: 'var(--accent)' }}>{stats.active}</span>
-            <span className="release-status-label">Active Now</span>
-          </button>
-        </div>
-      </section>
 
-      <div className="dash-tab-row" role="tablist" aria-label="Dashboard sections">
-        {dashboardTabs.map(tab => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={activeDashboardTab === tab.id}
-            className={`dash-tab ${activeDashboardTab === tab.id ? 'active' : ''}`}
-            onClick={() => setActiveDashboardTab(tab.id)}
-          >
-            <span>{tab.label}</span>
-            <strong>{dashboardTabCounts[tab.id]}</strong>
-          </button>
-        ))}
-      </div>
+          <div className="dash-primary-content">
+            <div className="dash-tab-row" role="tablist" aria-label="Dashboard sections">
+              {dashboardTabs.map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeDashboardTab === tab.id}
+                  className={`dash-tab ${activeDashboardTab === tab.id ? 'active' : ''}`}
+                  onClick={() => setActiveDashboardTab(tab.id)}
+                >
+                  <span>{tab.label}</span>
+                  <strong>{dashboardTabCounts[tab.id]}</strong>
+                </button>
+              ))}
+            </div>
 
-      <div className="dash-tab-panel" role="tabpanel" aria-label={`${activeDashboardTabLabel} dashboard section`}>
+            <div className="dash-tab-panel" role="tabpanel" aria-label={`${activeDashboardTabLabel} dashboard section`}>
         {activeDashboardTab === 'performance' && (
           <section className="dash-section dash-performance-trend">
             <div className="dash-section-heading-row">
@@ -895,7 +1119,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                     <span className="trend-signal-label">Telemetry Breaches</span>
                   </div>
                 </div>
-                <div className="trend-table-wrap">
+                <div className="trend-table-wrap" ref={performanceTableBounds.ref} style={performanceTableBounds.style}>
                   <table className="trend-table">
                     <thead>
                       <tr>
@@ -909,7 +1133,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                       </tr>
                     </thead>
                     <tbody>
-                      {trendPreviewRows.map(({ test, report, runtimeSummary }) => (
+                      {sortedPerformanceTrend.map(({ test, report, runtimeSummary }) => (
                         <tr key={test.id} onClick={() => onSelectTest(test.id)}>
                           <td>
                             <button
@@ -940,14 +1164,6 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                     </tbody>
                   </table>
                 </div>
-                {performanceTrend.length > trendPreviewRows.length && (
-                  <button type="button" className="trend-preview-footer dash-card-button" onClick={navigateToResults}>
-                    View {performanceTrend.length - trendPreviewRows.length} more archived run{performanceTrend.length - trendPreviewRows.length === 1 ? '' : 's'} in Results
-                  </button>
-                )}
-                {activeRelease?.id && (
-                  <ReleaseTrendPanel releaseId={activeRelease.id} getReleaseTrend={api.getReleaseTrend} />
-                )}
               </>
             )}
           </section>
@@ -1102,7 +1318,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                 <span>No completed tests yet</span>
               </div>
             ) : (
-              <div className="trend-table-wrap">
+              <div className="trend-table-wrap" ref={activityTableBounds.ref} style={activityTableBounds.style}>
                 <table className="trend-table">
                   <thead>
                     <tr>
@@ -1148,6 +1364,45 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
             )}
           </section>
         )}
+
+        {activeDashboardTab === 'releaseTrend' && (
+          <section className="dash-section dash-release-trend-analysis">
+            {activeRelease?.id ? (
+              <ReleaseTrendPanel releaseId={activeRelease.id} getReleaseTrend={api.getReleaseTrend} />
+            ) : (
+              <div className="dash-empty small">
+                <span>Select a release to view release trend analysis.</span>
+              </div>
+            )}
+          </section>
+        )}
+          </div>
+        </div>
+        </div>
+        <ReleaseSnapshotPanel
+          open={releasePanelOpen}
+          audience={snapshotAudience}
+          activeRelease={activeRelease}
+          releaseOptions={dashboardReleaseOptions}
+          releaseStats={releaseStats}
+          dashboardStats={stats}
+          latestReleaseRun={latestReleaseRun}
+          releaseTrendStats={releaseTrendStats}
+          health={health}
+          statusLabel={statusLabel}
+          statusColor={statusColor}
+          activeTests={activeTests}
+          pendingTests={pendingTests}
+          attentionItems={attentionItems}
+          onToggle={() => setReleasePanelOpen(value => !value)}
+          onReleaseChange={setActiveRelease}
+          onLatestResult={navigateToLatestResult}
+          onPrimaryActiveRun={navigateToPrimaryActiveRun}
+          onResults={navigateToResults}
+          onMonitoring={navigateToMonitoring}
+          onNewTest={navigateToNewTest}
+          onSelectTest={onSelectTest}
+        />
       </div>
     </div>
   )

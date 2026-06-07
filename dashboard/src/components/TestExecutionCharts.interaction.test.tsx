@@ -70,8 +70,25 @@ vi.mock('recharts', () => {
     XAxis: ({ dataKey, label }: { dataKey?: string; label?: string | { value?: string; position?: string } }) => (
       <g data-testid="mock-x-axis" data-key={dataKey ?? ''} data-label={labelText(label)} data-label-position={labelPosition(label)} />
     ),
-    YAxis: ({ yAxisId, label, orientation }: { yAxisId?: string | number; label?: string | { value?: string; position?: string }; orientation?: string }) => (
-      <g data-testid="mock-y-axis" data-y-axis-id={String(yAxisId ?? '')} data-orientation={orientation ?? 'left'} data-label={labelText(label)} data-label-position={labelPosition(label)} />
+    YAxis: ({
+      yAxisId,
+      label,
+      orientation,
+      domain,
+    }: {
+      yAxisId?: string | number
+      label?: string | { value?: string; position?: string }
+      orientation?: string
+      domain?: Array<string | number>
+    }) => (
+      <g
+        data-testid="mock-y-axis"
+        data-y-axis-id={String(yAxisId ?? '')}
+        data-orientation={orientation ?? 'left'}
+        data-label={labelText(label)}
+        data-label-position={labelPosition(label)}
+        data-domain={Array.isArray(domain) ? domain.join('|') : ''}
+      />
     ),
   }
 })
@@ -352,6 +369,49 @@ describe('TestExecutionCharts context menu', () => {
     expect(tpsChart?.querySelector('path[data-testid="mock-line"][data-key="Checkout_tps"]')).toBeNull()
     expect(tpsChart?.querySelector('path[data-testid="mock-line"][data-key="Search_tps"]')).not.toBeNull()
     expect(window.localStorage.getItem('apexload.execution.chartMetricFilters')).toContain('"tps":["tps","Search_tps"]')
+  })
+
+  it('rescales the graph axis when a dominant visible metric is hidden', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            { time: '10:00:00', vusers: 2, tps: 3, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p95: 115, p99: 2200 },
+            { time: '10:00:01', vusers: 4, tps: 6, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p95: 118, p99: 2400 },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={['#00a3ff']}
+        />,
+      )
+    })
+
+    const responseChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Response Time (ms)'))
+    expect(primaryAxisDomain(responseChart)).toBe('0|2592')
+    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-key="p99"]')).not.toBeNull()
+
+    const p99Toggle = Array.from(responseChart?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ?? [])
+      .find(input => input.getAttribute('aria-label') === 'Show P99')
+    expect(p99Toggle).not.toBeUndefined()
+
+    await act(async () => {
+      p99Toggle?.click()
+    })
+
+    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-key="p99"]')).toBeNull()
+    expect(primaryAxisDomain(responseChart)).toBe('0|127.44')
+    expect(window.localStorage.getItem('apexload.execution.chartMetricFilters')).toContain('"latency":["avgMs","p50","p90","p95"]')
   })
 
   it('renders load-under graphs as selectable runtime graph cards', async () => {
@@ -739,6 +799,12 @@ describe('TestExecutionCharts context menu', () => {
     return Array.from(chart?.querySelectorAll('[data-testid="mock-y-axis"]') ?? [])
       .map(axis => axis.getAttribute('data-label-position'))
       .filter(Boolean)
+  }
+
+  function primaryAxisDomain(chart: Element | undefined) {
+    return Array.from(chart?.querySelectorAll('[data-testid="mock-y-axis"]') ?? [])
+      .find(axis => axis.getAttribute('data-orientation') !== 'right')
+      ?.getAttribute('data-domain')
   }
 
   function createDragDataTransfer() {

@@ -35,9 +35,29 @@ export function useExecutionLiveControls(
   const [vuserGroupActions, setVuserGroupActions] = useState<Record<string, VUserGroupAction>>({})
   const syncedVuserTargetsRef = useRef<Record<string, number>>({})
   const syncedTestIdRef = useRef<string | null>(null)
+  const autoOpenedLiveTestIdRef = useRef<string | null>(null)
   const [vuserRampEnabled, setVuserRampEnabled] = useState(false)
   const [vuserRampDuration, setVuserRampDuration] = useState('1m')
   const [durationInput, setDurationInput] = useState('')
+  const autoOpenTestId = test?.id
+  const autoOpenStatus = test?.status
+
+  useEffect(() => {
+    if (!autoOpenTestId || !autoOpenStatus) return
+
+    const isLiveRun = autoOpenStatus === 'RUNNING' || autoOpenStatus === 'PAUSED'
+    if (!isLiveRun) {
+      if (autoOpenedLiveTestIdRef.current === autoOpenTestId) {
+        autoOpenedLiveTestIdRef.current = null
+      }
+      return
+    }
+
+    if (autoOpenedLiveTestIdRef.current !== autoOpenTestId) {
+      setShowControls(true)
+      autoOpenedLiveTestIdRef.current = autoOpenTestId
+    }
+  }, [autoOpenStatus, autoOpenTestId])
 
   useEffect(() => {
     if (!test?.groups) return
