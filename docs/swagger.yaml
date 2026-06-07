@@ -4456,6 +4456,347 @@ paths:
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
       - System
+  /api/v1/integrations/github/config:
+    get:
+      summary: Get GitHub Config
+      description: '**Handler:** `handleGitHubConfig`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGitHubConfig
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - GitHub
+  /api/v1/integrations/github/diagnostics:
+    get:
+      summary: Get GitHub Diagnostics
+      description: '**Handler:** `handleGitHubDiagnostics`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGitHubDiagnostics
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - GitHub
+  /api/v1/integrations/github/installations:
+    get:
+      summary: List GitHub App Installations
+      description: '**Handler:** `handleGitHubInstallations`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGitHubInstallations
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - GitHub
+  /api/v1/integrations/github/login:
+    get:
+      summary: Start GitHub OAuth Login
+      description: '**Handler:** `handleGitHubLogin`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGitHubLogin
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - GitHub
+  /api/v1/integrations/github/callback:
+    get:
+      summary: Complete GitHub OAuth Callback
+      description: '**Handler:** `handleGitHubCallback`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGitHubCallback
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - GitHub
+  /api/v1/integrations/github/connection:
+    get:
+      summary: Get GitHub Connection
+      description: '**Handler:** `handleGitHubConnection`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGitHubConnection
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - GitHub
+    delete:
+      summary: Delete GitHub Connection
+      description: '**Handler:** `handleGitHubDisconnect`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGitHubDisconnect
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - GitHub
+  /api/v1/integrations/github/repos:
+    get:
+      summary: List GitHub Repositories
+      description: '**Handler:** `handleGitHubRepos`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGitHubRepos
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - GitHub
+  /api/v1/integrations/github/branches:
+    get:
+      summary: List GitHub Branches
+      description: '**Handler:** `handleGitHubBranches`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGitHubBranches
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - GitHub
+  /api/v1/integrations/github/contents:
+    get:
+      summary: Browse GitHub Contents
+      description: '**Handler:** `handleGitHubContents`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGitHubContents
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - GitHub
+  /api/v1/projects/{id}/github/policy:
+    get:
+      summary: Get Project GitHub Policy
+      description: '**Handler:** `handleGetProjectGitHubPolicy`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetProjectGitHubPolicy
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - GitHub
+    put:
+      summary: Update Project GitHub Policy
+      description: '**Handler:** `handleUpdateProjectGitHubPolicy`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateProjectGitHubPolicy
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - GitHub
+  /api/v1/scripts/import/github:
+    post:
+      summary: Import Script From GitHub
+      description: '**Handler:** `handleImportGitHub`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleImportGitHub
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - GitHub
+  /api/v1/scripts/{id}/github/push:
+    post:
+      summary: Push Script To GitHub
+      description: '**Handler:** `handlePushScriptGitHub`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handlePushScriptGitHub
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - GitHub
+  /api/v1/scripts/{id}/github/status:
+    get:
+      summary: Get Script GitHub Status
+      description: '**Handler:** `handleScriptGitHubStatus`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleScriptGitHubStatus
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - GitHub
+  /api/v1/integrations/github/sync-jobs:
+    post:
+      summary: Create GitHub Sync Job
+      description: '**Handler:** `handleCreateGitHubSyncJob`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleCreateGitHubSyncJob
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - GitHub
+    get:
+      summary: List GitHub Sync Jobs
+      description: '**Handler:** `handleListGitHubSyncJobs`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListGitHubSyncJobs
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - GitHub
+  /api/v1/integrations/github/sync-jobs/{id}:
+    get:
+      summary: Get GitHub Sync Job
+      description: '**Handler:** `handleGetGitHubSyncJob`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetGitHubSyncJob
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - GitHub
+  /api/v1/integrations/github/webhook:
+    post:
+      summary: Receive GitHub Webhook
+      description: '**Handler:** `handleGitHubWebhook`
+
+
+        **Access Control:** Verifies GitHub webhook signature'
+      operationId: handleGitHubWebhook
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Verifies GitHub webhook signature
+      tags:
+      - GitHub
+  /api/v1/integrations/github/webhooks:
+    get:
+      summary: List GitHub Webhook Deliveries
+      description: '**Handler:** `handleListGitHubWebhookDeliveries`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListGitHubWebhookDeliveries
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - GitHub
+  /api/v1/tests/{id}/github/check-run:
+    post:
+      summary: Publish GitHub Check Run
+      description: '**Handler:** `handlePublishGitHubCheckRun`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handlePublishGitHubCheckRun
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - GitHub
+  /api/v1/integrations/github/check-links:
+    get:
+      summary: List GitHub Check Links
+      description: '**Handler:** `handleListGitHubCheckLinks`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleListGitHubCheckLinks
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - GitHub
   /api/v1/ws:
     get:
       summary: Web Socket

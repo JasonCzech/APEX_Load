@@ -2,7 +2,7 @@
 
 This guide is for engineers and operators who want to automate APEX Load from CI/CD, external release systems, or integration scripts. It focuses on the public REST and WebSocket API served by the controller.
 
-Last reviewed against `pkg/api/server.go` on June 2, 2026.
+Last reviewed against `pkg/api/server.go` on June 7, 2026.
 
 ## Base URL
 
@@ -260,7 +260,91 @@ Import endpoints:
 | `POST` | `/api/v1/scripts/import/sample` | Import raw HTTP, cURL, REST sample requests. |
 | `GET` | `/api/v1/scripts/web-api/support-matrix` | Web API execution support matrix. |
 
-### 3. Assemble And Validate A Scenario
+### 3. Sync Scripts With GitHub Enterprise And CI
+
+GitHub Enterprise integration is project-policy enforced. Automation resolves credentials in this order, unless the system automation mode narrows it: project-policy GitHub App installation, per-user OAuth, then configured PAT fallback. API responses may include `auth_mode`, `remote_blob_sha`, `remote_commit_sha`, `policy`, `rate_limit`, and `check_run` fields.
+
+Project policy controls allowed repositories, branches, path templates, direct-commit versus PR behavior, import/push permissions, bulk sync defaults, webhook auto-sync, and check-run publishing. Mutating routes reject requests outside that policy even when the connected GitHub identity can access more.
+
+Useful GitHub endpoints:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/integrations/github/config` | Safe GitHub configuration and capability flags for dashboard and clients. |
+| `GET` | `/api/v1/integrations/github/diagnostics` | GHES reachability, auth-mode, installation, webhook, PAT fallback, and Checks readiness. |
+| `GET` | `/api/v1/integrations/github/installations` | GitHub App installations known to automation. |
+| `GET` | `/api/v1/integrations/github/login` | Begin a per-user OAuth connect flow. |
+| `GET` | `/api/v1/integrations/github/callback` | OAuth callback route. |
+| `GET` / `DELETE` | `/api/v1/integrations/github/connection` | Read or remove the current user's OAuth connection. |
+| `GET` | `/api/v1/integrations/github/repos` | List repositories visible to the resolved GitHub identity. |
+| `GET` | `/api/v1/integrations/github/branches` | List repository branches. |
+| `GET` | `/api/v1/integrations/github/contents` | Browse repository contents for import review. |
+| `GET` / `PUT` | `/api/v1/projects/{id}/github/policy` | Read or update the authoritative project GitHub policy. |
+| `POST` | `/api/v1/scripts/import/github` | Import one GitHub JSON DSL file through the review/save path. |
+| `POST` | `/api/v1/scripts/{id}/github/push` | Push a script by direct commit or pull request. |
+| `GET` | `/api/v1/scripts/{id}/github/status` | Script link, drift, blob SHA, commit SHA, policy, rate-limit, auth-mode, and check status. |
+| `POST` / `GET` | `/api/v1/integrations/github/sync-jobs` | Create or list bulk import/push sync jobs. |
+| `GET` | `/api/v1/integrations/github/sync-jobs/{id}` | Read sync-job progress, conflict decisions, and errors. |
+| `POST` | `/api/v1/integrations/github/webhook` | GitHub webhook receiver; validates `X-Hub-Signature-256` and dedupes `X-GitHub-Delivery`. |
+| `GET` | `/api/v1/integrations/github/webhooks` | Webhook delivery log. |
+| `POST` | `/api/v1/tests/{id}/github/check-run` | Publish or retry an APEX Load run result as a GitHub Check Run. |
+| `GET` | `/api/v1/integrations/github/check-links` | GitHub Check Run links associated with APEX Load runs. |
+
+Example project policy update:
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/projects/project-1/github/policy \
+  -H "Authorization: Bearer $APEXLOAD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true,
+    "allowed_repos": ["my-org/perf-scripts"],
+    "allowed_branches": ["main", "release/*"],
+    "path_template": "apexload/scripts/{project}/{ref_key}.json",
+    "require_pr": true,
+    "allow_import": true,
+    "allow_push": true,
+    "bulk_sync_enabled": true,
+    "webhook_auto_sync": true,
+    "checks_enabled": true,
+    "app_installation_id": 12345678
+  }'
+```
+
+Create a bulk import job:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/integrations/github/sync-jobs \
+  -H "Authorization: Bearer $APEXLOAD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "kind": "bulk_import",
+    "project_id": "project-1",
+    "owner": "my-org",
+    "repo": "perf-scripts",
+    "branch": "main",
+    "path": "apexload/scripts"
+  }'
+```
+
+Publish a check run for an APEX Load result:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/tests/test-123/github/check-run \
+  -H "Authorization: Bearer $APEXLOAD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "owner": "my-org",
+    "repo": "perf-scripts",
+    "script_id": "script-456",
+    "commit_sha": "0123456789abcdef0123456789abcdef01234567",
+    "conclusion": "success",
+    "details_url": "https://apexload.example.com/#/test/test-123",
+    "summary": "APEX Load SLA gates passed."
+  }'
+```
+
+### 4. Assemble And Validate A Scenario
 
 Scenarios combine scripts, load model, runtime settings, data pools, release context, and scheduling metadata.
 
@@ -299,7 +383,7 @@ Useful scenario endpoints:
 | `POST` | `/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/reject` | Reject a pending schedule occurrence. |
 | `GET` | `/api/v1/schedules/health` | Scheduling health, queue, approval, and conflict signals. |
 
-### 4. Run And Control Tests
+### 5. Run And Control Tests
 
 Create a run directly:
 
@@ -335,7 +419,7 @@ When a gradual VUser change is in progress, `GET /api/v1/tests/{id}` includes `v
 
 If a run has `script_shakeout: true`, `POST /api/v1/tests/{id}/start` first executes a one-pass canary/shakeout for each script group. A clean shakeout starts the full run automatically. A failing shakeout returns HTTP `409` with `code: "script_shakeout_failed"`, `status: "shakeout_review"`, a `script_shakeout` evidence report, and `override_available` / `cancel_available` flags. To continue anyway, repeat the start call with `{"override_script_shakeout_failure": true}`; to cancel, call `POST /api/v1/tests/{id}/abort`.
 
-### 5. Stream Live Events
+### 6. Stream Live Events
 
 Use the global WebSocket for dashboard-style updates:
 
@@ -345,7 +429,7 @@ ws://<controller-host>:8080/api/v1/ws
 
 Messages are JSON and include a `type` field such as `metrics_update`, `test_created`, `test_started`, `test_complete`, `test_failed`, `test_paused`, `test_resumed`, `script_shakeout_started`, `script_shakeout_passed`, `script_shakeout_failed`, `vusers_ramp_started`, `vusers_changed`, `duration_changed`, and `latency_update`.
 
-### 6. Download Reports And Archives
+### 7. Download Reports And Archives
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -370,7 +454,7 @@ Some reporting endpoints accept `format` or `profile` query parameters where imp
 
 Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array when run attribution exists. Each bucket follows the same usage bucket shape used by project and protocol summaries; historical runs without attribution are grouped as `unattributed`.
 
-### 7. Federate Library Sources
+### 8. Federate Library Sources
 
 Library APIs move reusable scripts, scenarios, results, and archives between this controller and a hosted team library. The dashboard surfaces these controls in the **Library Sources** boxes on Scripts and Scenarios. Remote definitions are system-admin managed; asset pull/push/import operations are scoped by project and the kind being moved.
 
@@ -392,7 +476,7 @@ Useful library endpoints:
 | `POST` | `/api/v1/library/remotes/{id}/push` | Push a local asset to the remote host. |
 | `POST` | `/api/v1/library/remotes/{id}/diff` | Compare local and remote versions. |
 
-### 8. Record, Replay, And Debug
+### 9. Record, Replay, And Debug
 
 Unified replay sessions use `/api/v1/replay/sessions/...` for draft and stored script replay. The older `/api/v1/script-debug/sessions/...` and `/api/v1/browser-replay/sessions/...` routes remain as compatibility/debug surfaces. The recorder routes manage proxy-captured HTTP traffic and conversion previews.
 
@@ -542,6 +626,30 @@ Useful recorder and replay endpoints:
 | `POST` | `/api/v1/scripts/import/postman` |
 | `POST` | `/api/v1/scripts/import/wsdl` |
 | `GET` | `/api/v1/scripts/web-api/support-matrix` |
+
+### GitHub Enterprise Script Sync And CI
+
+| Method | Path |
+| --- | --- |
+| `GET` | `/api/v1/integrations/github/config` |
+| `GET` | `/api/v1/integrations/github/diagnostics` |
+| `GET` | `/api/v1/integrations/github/installations` |
+| `GET` | `/api/v1/integrations/github/login` |
+| `GET` | `/api/v1/integrations/github/callback` |
+| `GET` / `DELETE` | `/api/v1/integrations/github/connection` |
+| `GET` | `/api/v1/integrations/github/repos` |
+| `GET` | `/api/v1/integrations/github/branches` |
+| `GET` | `/api/v1/integrations/github/contents` |
+| `GET` / `PUT` | `/api/v1/projects/{id}/github/policy` |
+| `POST` | `/api/v1/scripts/import/github` |
+| `POST` | `/api/v1/scripts/{id}/github/push` |
+| `GET` | `/api/v1/scripts/{id}/github/status` |
+| `POST` / `GET` | `/api/v1/integrations/github/sync-jobs` |
+| `GET` | `/api/v1/integrations/github/sync-jobs/{id}` |
+| `POST` | `/api/v1/integrations/github/webhook` |
+| `GET` | `/api/v1/integrations/github/webhooks` |
+| `POST` | `/api/v1/tests/{id}/github/check-run` |
+| `GET` | `/api/v1/integrations/github/check-links` |
 
 ### Replay, Browser Replay, And Recorder
 
@@ -699,5 +807,7 @@ Useful recorder and replay endpoints:
 - Use user activity filters when investigating changes across timeframe, domain, project, action, or status.
 - Validate scripts and load models before creating or running tests.
 - Scope list calls with `project_id`, `application_id`, and `release_id` to keep automation deterministic.
+- For GitHub automation, prefer GitHub App installation tokens; reserve PAT fallback for explicitly headless environments.
+- Configure project GitHub policy before enabling bulk sync, webhook auto-sync, or check-run publishing.
 - Archive run evidence after release gates and export audit events for governance changes.
 - Use `GET /api/v1/system/parity-status` and support matrix endpoints when building external readiness checks.

@@ -4,7 +4,7 @@
 
 ### Authentication
 
-Currently, APEX Load uses project-based scoping without user authentication. APIs are protected by project ID.
+APEX Load supports local dev bypass, trusted-header auth, OIDC-backed human sessions, and service-account API keys. Production APIs are protected by RBAC roles, service-account scopes, and project/domain scoping. Automation should use `Authorization: Bearer <api-key>` or `X-APEXLoad-API-Key`.
 
 ### Tests
 
@@ -721,6 +721,89 @@ GET /api/v1/scripts/import/devweb/support-matrix
 ```
 
 Returns construct-by-construct DevWeb import support for `load.WebRequest`, `load.WebSocket`, gRPC unary calls, think time, action grouping, dynamic JavaScript, and correlation review requirements.
+
+### GitHub Enterprise Script Sync and CI
+
+GitHub endpoints are server-side policy enforced. System settings configure OAuth, GitHub App, webhook, and PAT fallback capabilities; project policy controls allowed repositories, branches, path templates, direct-commit/PR behavior, bulk sync, webhooks, and check-run publishing.
+
+#### GitHub diagnostics and configuration
+
+```
+GET /api/v1/integrations/github/config
+GET /api/v1/integrations/github/diagnostics
+GET /api/v1/integrations/github/installations
+```
+
+Diagnostics report GHES reachability, auth mode, configured GitHub App installation state, webhook secret presence, PAT fallback presence, check-run readiness, and token-encryption readiness.
+
+#### Per-user OAuth connection and browsing
+
+```
+GET    /api/v1/integrations/github/login
+GET    /api/v1/integrations/github/callback
+GET    /api/v1/integrations/github/connection
+DELETE /api/v1/integrations/github/connection
+GET    /api/v1/integrations/github/repos
+GET    /api/v1/integrations/github/branches
+GET    /api/v1/integrations/github/contents
+```
+
+OAuth remains the human path for interactive browse/import/push workflows. Automation prefers GitHub App installation tokens and can use PAT fallback only when configured.
+
+#### Project policy
+
+```
+GET /api/v1/projects/project-1/github/policy
+PUT /api/v1/projects/project-1/github/policy
+Content-Type: application/json
+
+{
+  "enabled": true,
+  "allowed_repos": ["my-org/perf-scripts"],
+  "allowed_branches": ["main", "release/*"],
+  "path_template": "apexload/scripts/{project}/{ref_key}.json",
+  "require_pr": true,
+  "allow_import": true,
+  "allow_push": true,
+  "bulk_sync_enabled": true,
+  "webhook_auto_sync": true,
+  "checks_enabled": true,
+  "app_installation_id": 12345678
+}
+```
+
+Mutating GitHub routes reject repo, branch, path, direct-commit, import, push, bulk-sync, webhook, or check-run requests that violate the project policy.
+
+#### Import, push, and drift status
+
+```
+POST /api/v1/scripts/import/github
+POST /api/v1/scripts/script-456/github/push
+GET  /api/v1/scripts/script-456/github/status
+```
+
+Responses include `auth_mode` where credentials were resolved. Link/status payloads track `remote_blob_sha` separately from `remote_commit_sha`; legacy `last_commit_sha` is preserved as a compatibility blob SHA.
+
+#### Bulk sync jobs
+
+```
+POST /api/v1/integrations/github/sync-jobs
+GET  /api/v1/integrations/github/sync-jobs
+GET  /api/v1/integrations/github/sync-jobs/job-123
+```
+
+Bulk jobs import or push folder contents under the configured policy and expose progress, totals, per-file errors, and conflict decisions.
+
+#### Webhooks and Checks
+
+```
+POST /api/v1/integrations/github/webhook
+GET  /api/v1/integrations/github/webhooks
+POST /api/v1/tests/test-789/github/check-run
+GET  /api/v1/integrations/github/check-links
+```
+
+The webhook receiver validates `X-Hub-Signature-256`, dedupes `X-GitHub-Delivery`, records deliveries, and updates script drift state from push events. Check-run publishing requires GitHub App automation and links APEX Load results to GitHub commit SHAs.
 
 ### Projects and Folders
 

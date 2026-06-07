@@ -321,6 +321,30 @@ POST   /api/v1/scripts/import/openapi  — Convert OpenAPI/Swagger JSON or YAML 
 POST   /api/v1/scripts/import/wsdl     — Convert WSDL to SOAP DSL
 ```
 
+**GitHub Enterprise Script Sync:**
+```
+GET    /api/v1/integrations/github/config       — Safe GitHub capability/config flags
+GET    /api/v1/integrations/github/diagnostics  — GHES reachability and auth/readiness checks
+GET    /api/v1/integrations/github/installations — GitHub App installation inventory
+GET    /api/v1/integrations/github/connection   — Current user's OAuth connection
+DELETE /api/v1/integrations/github/connection   — Disconnect current GitHub user
+GET    /api/v1/integrations/github/repos        — List accessible repositories
+GET    /api/v1/integrations/github/branches     — List repository branches
+GET    /api/v1/integrations/github/contents     — Browse repository contents
+GET    /api/v1/projects/{id}/github/policy      — Read project GitHub policy
+PUT    /api/v1/projects/{id}/github/policy      — Update allowed repos/branches/paths and CI policy
+POST   /api/v1/scripts/import/github            — Import one GitHub JSON DSL file
+POST   /api/v1/scripts/{id}/github/push         — Push a script via commit or PR
+GET    /api/v1/scripts/{id}/github/status       — Link, drift, blob/commit SHA, and check status
+POST   /api/v1/integrations/github/sync-jobs    — Start a bulk import/push sync job
+GET    /api/v1/integrations/github/sync-jobs    — List GitHub sync jobs
+GET    /api/v1/integrations/github/sync-jobs/{id} — Get sync job progress
+POST   /api/v1/integrations/github/webhook      — Receive verified GitHub webhooks
+GET    /api/v1/integrations/github/webhooks     — List webhook delivery records
+POST   /api/v1/tests/{id}/github/check-run      — Publish/retry a GitHub Check Run
+GET    /api/v1/integrations/github/check-links  — List run-to-check links
+```
+
 **Browser Replay:**
 ```
 GET    /api/v1/replay/sessions/{session_id}               — Get unified replay session state

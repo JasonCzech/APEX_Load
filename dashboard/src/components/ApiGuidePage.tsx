@@ -16,6 +16,7 @@ const quickStartCommands: CommandDoc[] = [
   { command: 'curl http://localhost:8080/api/v1/system/health' },
   { command: 'curl -H "Authorization: Bearer $APEXLOAD_API_KEY" http://localhost:8080/api/v1/projects', operations: ['view_projects'] },
   { command: 'curl -X POST -H "Authorization: Bearer $APEXLOAD_API_KEY" -H "Content-Type: application/json" -d @script.json http://localhost:8080/api/v1/scripts', operations: ['manage_scripts'] },
+  { command: 'curl -H "Authorization: Bearer $APEXLOAD_API_KEY" http://localhost:8080/api/v1/integrations/github/diagnostics', operations: ['view_system', 'view_scripts'] },
 ]
 
 const mcpResources = [
@@ -169,6 +170,33 @@ const endpointGroups = [
       { method: 'GET', path: '/api/v1/recorder/{id}/export', operations: ['view_replay'] },
       { method: 'GET', path: '/api/v1/recorder/status', operations: ['view_replay'] },
       { method: 'GET', path: '/api/v1/recorder/ca.pem', operations: ['view_replay'] },
+    ],
+  },
+  {
+    title: 'GitHub Enterprise Script Sync And CI',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/integrations/github/config', purpose: 'GitHub OAuth/App/PAT capability flags and safe configuration.', operations: ['view_scripts', 'view_system'] },
+      { method: 'GET', path: '/api/v1/integrations/github/diagnostics', purpose: 'GHES reachability, auth-mode, installation, webhook, PAT, and check-run readiness.', operations: ['view_scripts', 'view_system'] },
+      { method: 'GET', path: '/api/v1/integrations/github/installations', purpose: 'Known GitHub App installations visible to automation.', operations: ['view_system'] },
+      { method: 'GET', path: '/api/v1/integrations/github/login', purpose: 'Begin per-user OAuth connect flow.', operations: ['manage_scripts'] },
+      { method: 'GET', path: '/api/v1/integrations/github/callback', purpose: 'OAuth callback for the GitHub connect flow.', operations: ['manage_scripts'] },
+      { method: 'GET', path: '/api/v1/integrations/github/connection', purpose: 'Current user GitHub connection status.', operations: ['view_scripts'] },
+      { method: 'DELETE', path: '/api/v1/integrations/github/connection', purpose: 'Disconnect the current user from GitHub.', operations: ['manage_scripts'] },
+      { method: 'GET', path: '/api/v1/integrations/github/repos', purpose: 'List repositories for the resolved GitHub identity.', operations: ['view_scripts'] },
+      { method: 'GET', path: '/api/v1/integrations/github/branches', purpose: 'List branches for one repository.', operations: ['view_scripts'] },
+      { method: 'GET', path: '/api/v1/integrations/github/contents', purpose: 'Browse repository contents for import review.', operations: ['view_scripts'] },
+      { method: 'GET', path: '/api/v1/projects/{id}/github/policy', purpose: 'Read the authoritative project GitHub repository policy.', operations: ['view_projects', 'view_scripts'] },
+      { method: 'PUT', path: '/api/v1/projects/{id}/github/policy', purpose: 'Update allowed repos, branches, paths, PR rules, bulk sync, webhook, and checks policy.', operations: ['manage_projects'] },
+      { method: 'POST', path: '/api/v1/scripts/import/github', purpose: 'Import one GitHub JSON DSL file through the review/save path.', operations: ['manage_scripts'] },
+      { method: 'POST', path: '/api/v1/scripts/{id}/github/push', purpose: 'Push one local script to GitHub by direct commit or pull request.', operations: ['manage_scripts'] },
+      { method: 'GET', path: '/api/v1/scripts/{id}/github/status', purpose: 'Read link, drift, blob SHA, commit SHA, policy, auth mode, rate-limit, and check-run status.', operations: ['view_scripts'] },
+      { method: 'POST', path: '/api/v1/integrations/github/sync-jobs', purpose: 'Create a bulk import or push sync job.', operations: ['manage_scripts'] },
+      { method: 'GET', path: '/api/v1/integrations/github/sync-jobs', purpose: 'List bulk GitHub sync jobs.', operations: ['view_scripts'] },
+      { method: 'GET', path: '/api/v1/integrations/github/sync-jobs/{id}', purpose: 'Read one sync job progress model.', operations: ['view_scripts'] },
+      { method: 'POST', path: '/api/v1/integrations/github/webhook', purpose: 'Receive and verify GitHub push/PR webhooks with X-Hub-Signature-256.' },
+      { method: 'GET', path: '/api/v1/integrations/github/webhooks', purpose: 'List webhook delivery records and dedupe outcomes.', operations: ['view_system'] },
+      { method: 'POST', path: '/api/v1/tests/{id}/github/check-run', purpose: 'Publish or retry an APEX Load result as a GitHub Check Run.', operations: ['manage_tests'] },
+      { method: 'GET', path: '/api/v1/integrations/github/check-links', purpose: 'List APEX run-to-GitHub check links.', operations: ['view_tests', 'view_system'] },
     ],
   },
   {
