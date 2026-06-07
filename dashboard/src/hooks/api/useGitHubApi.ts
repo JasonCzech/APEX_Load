@@ -2,12 +2,16 @@ import { useCallback, useMemo } from 'react'
 
 import {
   GitHubBranch,
+  GitHubAppInstallation,
   GitHubConfigResponse,
   GitHubConnectionResponse,
   GitHubContentsResponse,
+  GitHubDiagnosticsResponse,
+  GitHubProjectPolicy,
   GitHubPushResponse,
   GitHubRepo,
   GitHubScriptStatus,
+  GitHubSyncJob,
 } from '../../types'
 import { ScriptImportResult } from '../../types/scriptImports'
 import { BASE, request } from '../apiClient'
@@ -35,6 +39,17 @@ export type GitHubImportRequest = {
   name?: string
 }
 
+export type GitHubSyncJobRequest = {
+  project_id: string
+  kind: 'import' | 'push'
+  owner?: string
+  repo?: string
+  branch?: string
+  path?: string
+  script_ids?: string[]
+  strategy?: 'commit' | 'pr'
+}
+
 export function useGitHubApi() {
   const getConfig = useCallback(
     () => request<GitHubConfigResponse>(`${GITHUB_BASE}/config`),
@@ -43,6 +58,16 @@ export function useGitHubApi() {
 
   const getConnection = useCallback(
     () => request<GitHubConnectionResponse>(`${GITHUB_BASE}/connection`),
+    [],
+  )
+
+  const getDiagnostics = useCallback(
+    () => request<GitHubDiagnosticsResponse>(`${GITHUB_BASE}/diagnostics`),
+    [],
+  )
+
+  const listInstallations = useCallback(
+    (refresh = false) => request<{ installations: GitHubAppInstallation[], count: number }>(`${GITHUB_BASE}/installations${refresh ? '?refresh=true' : ''}`),
     [],
   )
 
@@ -105,10 +130,29 @@ export function useGitHubApi() {
     [],
   )
 
+  const getProjectPolicy = useCallback(
+    (projectId: string) => request<GitHubProjectPolicy>(`/projects/${encodeURIComponent(projectId)}/github/policy`),
+    [],
+  )
+
+  const updateProjectPolicy = useCallback(
+    (projectId: string, policy: GitHubProjectPolicy) =>
+      request<GitHubProjectPolicy>(`/projects/${encodeURIComponent(projectId)}/github/policy`, { method: 'PUT', body: JSON.stringify(policy) }),
+    [],
+  )
+
+  const createSyncJob = useCallback(
+    (body: GitHubSyncJobRequest) =>
+      request<GitHubSyncJob>(`${GITHUB_BASE}/sync-jobs`, { method: 'POST', body: JSON.stringify(body) }),
+    [],
+  )
+
   return useMemo(
     () => ({
       getConfig,
       getConnection,
+      getDiagnostics,
+      listInstallations,
       disconnect,
       loginUrl,
       listRepos,
@@ -117,7 +161,10 @@ export function useGitHubApi() {
       importScript,
       pushScript,
       scriptStatus,
+      getProjectPolicy,
+      updateProjectPolicy,
+      createSyncJob,
     }),
-    [getConfig, getConnection, disconnect, loginUrl, listRepos, listBranches, getContents, importScript, pushScript, scriptStatus],
+    [getConfig, getConnection, getDiagnostics, listInstallations, disconnect, loginUrl, listRepos, listBranches, getContents, importScript, pushScript, scriptStatus, getProjectPolicy, updateProjectPolicy, createSyncJob],
   )
 }

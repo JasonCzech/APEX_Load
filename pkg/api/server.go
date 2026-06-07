@@ -43,6 +43,8 @@ type Server struct {
 	c4Mu           sync.Mutex
 	slaWaivers     map[string][]*storage.ReleaseSLAWaiver
 	resultImports  map[string]*storage.ExternalResultImport
+	githubMu       sync.Mutex
+	githubTokens   map[string]githubCachedToken
 	mux            *http.ServeMux
 	usageCancel    context.CancelFunc
 	fanoutCancel   context.CancelFunc
@@ -117,6 +119,7 @@ func NewServer(cfg ServerConfig) *Server {
 		libraryCreds:   cfg.LibraryCredentials,
 		slaWaivers:     make(map[string][]*storage.ReleaseSLAWaiver),
 		resultImports:  make(map[string]*storage.ExternalResultImport),
+		githubTokens:   make(map[string]githubCachedToken),
 		mux:            http.NewServeMux(),
 		desktopMode:    cfg.DesktopMode,
 		desktopAppData: cfg.DesktopAppDataPath,
@@ -241,6 +244,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/projects/{id}", cors(log(auth(http.HandlerFunc(s.handleGetProject)))))
 	s.mux.Handle("PUT /api/v1/projects/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateProject)))))
 	s.mux.Handle("DELETE /api/v1/projects/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteProject)))))
+	s.mux.Handle("GET /api/v1/projects/{id}/github/policy", cors(log(auth(http.HandlerFunc(s.handleGetProjectGitHubPolicy)))))
+	s.mux.Handle("PUT /api/v1/projects/{id}/github/policy", cors(log(auth(http.HandlerFunc(s.handleUpdateProjectGitHubPolicy)))))
 	s.mux.Handle("POST /api/v1/projects/{id}/releases", cors(log(auth(http.HandlerFunc(s.handleCreateProjectRelease)))))
 	s.mux.Handle("GET /api/v1/projects/{id}/releases", cors(log(auth(http.HandlerFunc(s.handleListProjectReleases)))))
 	s.mux.Handle("POST /api/v1/projects/{pid}/folders", cors(log(auth(http.HandlerFunc(s.handleCreateFolder)))))
@@ -458,6 +463,14 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/protocols/native-support-matrix", cors(log(auth(http.HandlerFunc(s.handleNativeProtocolSupportMatrix)))))
 	s.mux.Handle("GET /api/v1/integrations/apm/profiles", cors(log(auth(http.HandlerFunc(s.handleListAPMIntegrationProfiles)))))
 	s.mux.Handle("GET /api/v1/integrations/github/config", cors(log(auth(http.HandlerFunc(s.handleGitHubConfig)))))
+	s.mux.Handle("GET /api/v1/integrations/github/diagnostics", cors(log(auth(http.HandlerFunc(s.handleGitHubDiagnostics)))))
+	s.mux.Handle("GET /api/v1/integrations/github/installations", cors(log(auth(http.HandlerFunc(s.handleGitHubInstallations)))))
+	s.mux.Handle("POST /api/v1/integrations/github/sync-jobs", cors(log(auth(http.HandlerFunc(s.handleCreateGitHubSyncJob)))))
+	s.mux.Handle("GET /api/v1/integrations/github/sync-jobs", cors(log(auth(http.HandlerFunc(s.handleListGitHubSyncJobs)))))
+	s.mux.Handle("GET /api/v1/integrations/github/sync-jobs/{id}", cors(log(auth(http.HandlerFunc(s.handleGetGitHubSyncJob)))))
+	s.mux.Handle("POST /api/v1/integrations/github/webhook", cors(log(http.HandlerFunc(s.handleGitHubWebhook))))
+	s.mux.Handle("GET /api/v1/integrations/github/webhooks", cors(log(auth(http.HandlerFunc(s.handleListGitHubWebhookDeliveries)))))
+	s.mux.Handle("GET /api/v1/integrations/github/check-links", cors(log(auth(http.HandlerFunc(s.handleListGitHubCheckLinks)))))
 	s.mux.Handle("GET /api/v1/integrations/github/login", cors(log(auth(http.HandlerFunc(s.handleGitHubLogin)))))
 	s.mux.Handle("GET /api/v1/integrations/github/callback", cors(log(auth(http.HandlerFunc(s.handleGitHubCallback)))))
 	s.mux.Handle("GET /api/v1/integrations/github/connection", cors(log(auth(http.HandlerFunc(s.handleGitHubConnection)))))
@@ -468,6 +481,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/import/github", cors(log(auth(http.HandlerFunc(s.handleImportGitHub)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/github/push", cors(log(auth(http.HandlerFunc(s.handlePushScriptGitHub)))))
 	s.mux.Handle("GET /api/v1/scripts/{id}/github/status", cors(log(auth(http.HandlerFunc(s.handleScriptGitHubStatus)))))
+	s.mux.Handle("POST /api/v1/tests/{id}/github/check-run", cors(log(auth(http.HandlerFunc(s.handlePublishGitHubCheckRun)))))
 	s.mux.Handle("GET /api/v1/monitoring/packs", cors(log(auth(http.HandlerFunc(s.handleListInfrastructureMonitorPacks)))))
 	s.mux.Handle("GET /api/v1/reports/profiles", cors(log(auth(http.HandlerFunc(s.handleListReportProfiles)))))
 	s.mux.Handle("GET /api/v1/library/capabilities", cors(log(auth(http.HandlerFunc(s.handleLibraryCapabilities)))))

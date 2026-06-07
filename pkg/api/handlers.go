@@ -716,7 +716,36 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 	body.WriteString("# HELP apexload_metrics_interval_seconds Configured metrics publish interval in seconds.\n")
 	body.WriteString("# TYPE apexload_metrics_interval_seconds gauge\n")
 	fmt.Fprintf(&body, "apexload_metrics_interval_seconds %d\n", settings.General.MetricsIntervalSeconds)
+	githubSettings := s.currentGitHubSettings()
+	body.WriteString("# HELP apexload_github_integration_enabled Whether GitHub Enterprise integration is enabled.\n")
+	body.WriteString("# TYPE apexload_github_integration_enabled gauge\n")
+	fmt.Fprintf(&body, "apexload_github_integration_enabled %d\n", boolMetric(githubSettings.Enabled))
+	body.WriteString("# HELP apexload_github_auth_configured GitHub auth methods configured by type.\n")
+	body.WriteString("# TYPE apexload_github_auth_configured gauge\n")
+	fmt.Fprintf(&body, "apexload_github_auth_configured{mode=%q} %d\n", "oauth", boolMetric(githubSettings.oauthConfigured()))
+	fmt.Fprintf(&body, "apexload_github_auth_configured{mode=%q} %d\n", "app", boolMetric(githubSettings.appConfigured()))
+	fmt.Fprintf(&body, "apexload_github_auth_configured{mode=%q} %d\n", "pat", boolMetric(githubSettings.patConfigured()))
+	if store, ok := s.githubEnterpriseStore(); ok {
+		if jobs, err := store.ListGitHubSyncJobs("", 100); err == nil {
+			counts := map[string]int{}
+			for _, job := range jobs {
+				counts[job.Status]++
+			}
+			body.WriteString("# HELP apexload_github_sync_jobs Recent GitHub sync jobs by status.\n")
+			body.WriteString("# TYPE apexload_github_sync_jobs gauge\n")
+			for status, count := range counts {
+				fmt.Fprintf(&body, "apexload_github_sync_jobs{status=%q} %d\n", status, count)
+			}
+		}
+	}
 	_, _ = w.Write([]byte(body.String()))
+}
+
+func boolMetric(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 type generatorRegionStats struct {

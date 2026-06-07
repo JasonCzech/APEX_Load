@@ -1,6 +1,6 @@
 import { Fragment } from 'react'
 
-import { StoredScript, TestSummary } from '../types'
+import { GitHubScriptStatus, StoredScript, TestSummary } from '../types'
 import { LibraryCatalogItem, LibrarySourceFilter } from '../types/library'
 import { formatLibraryDateTime, shortLibraryHash } from './libraryFederationUtils'
 import { ScriptLibrarySortField, ScriptRunSortField } from './useScriptsLibraryModel'
@@ -22,6 +22,7 @@ export interface ScriptLibraryFederation {
 export interface ScriptLibraryGitHub {
   enabled: boolean
   onPush: (script: StoredScript) => void
+  statusByScript?: Record<string, GitHubScriptStatus>
 }
 
 interface Props {
@@ -92,6 +93,34 @@ function authoringHealthSummary(script: StoredScript) {
   const warnings = inputs.filter(input => input.status === 'warning').length
   const reviews = inputs.filter(input => input.status === 'needs_review').length
   return { blockers, warnings: warnings + reviews, topInputs: inputs.slice(0, 3) }
+}
+
+function githubStatusLabel(status?: GitHubScriptStatus) {
+  if (!status?.linked) return ''
+  switch (status.status) {
+    case 'synced':
+      return 'GitHub synced'
+    case 'synced_local':
+      return 'GitHub linked'
+    case 'local_drift':
+      return 'GitHub local drift'
+    case 'remote_drift':
+      return 'GitHub remote drift'
+    case 'diverged':
+      return 'GitHub diverged'
+    case 'remote_missing':
+      return 'GitHub missing'
+    default:
+      return 'GitHub linked'
+  }
+}
+
+function githubStatusClass(status?: GitHubScriptStatus) {
+  if (!status?.linked) return ''
+  if (status.status === 'synced') return 'healthy'
+  if (status.status === 'local_drift' || status.status === 'remote_drift' || status.status === 'synced_local') return 'warning'
+  if (status.status === 'diverged' || status.status === 'remote_missing') return 'danger'
+  return ''
 }
 
 function remoteItemMetadata(item: LibraryCatalogItem) {
@@ -173,6 +202,14 @@ export default function ScriptsLibraryTable({
                       <span className="protocol-badge">{script.protocol}</span>
                       <span className="script-health-token">v{script.version || '—'}</span>
                       <ReferenceKeyBadge value={script.ref_key} />
+                      {githubStatusLabel(github?.statusByScript?.[script.id]) && (
+                        <span
+                          className={`script-health-token ${githubStatusClass(github?.statusByScript?.[script.id])}`}
+                          title={github?.statusByScript?.[script.id]?.html_url}
+                        >
+                          {githubStatusLabel(github?.statusByScript?.[script.id])}
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td>

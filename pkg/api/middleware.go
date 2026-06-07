@@ -886,7 +886,10 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
 
-	if (path == "/api/v1/integrations/github/repos" || path == "/api/v1/integrations/github/branches" || path == "/api/v1/integrations/github/contents") && method == http.MethodGet {
+	if (path == "/api/v1/integrations/github/repos" || path == "/api/v1/integrations/github/branches" || path == "/api/v1/integrations/github/contents" || path == "/api/v1/integrations/github/diagnostics" || path == "/api/v1/integrations/github/installations" || path == "/api/v1/integrations/github/sync-jobs" || path == "/api/v1/integrations/github/webhooks" || path == "/api/v1/integrations/github/check-links") && method == http.MethodGet {
+		return accessRequirement{AuthenticatedOnly: true}, true
+	}
+	if strings.HasPrefix(path, "/api/v1/integrations/github/sync-jobs/") && method == http.MethodGet {
 		return accessRequirement{AuthenticatedOnly: true}, true
 	}
 
@@ -1390,6 +1393,31 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}, true
 	}
 
+	if path == "/api/v1/integrations/github/sync-jobs" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveImportProjectIDFromJSON,
+		}, true
+	}
+
+	if strings.HasPrefix(path, "/api/v1/projects/") && strings.HasSuffix(path, "/github/policy") {
+		if method == http.MethodGet {
+			return accessRequirement{
+				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveProjectIDFromPath,
+			}, true
+		}
+		if method == http.MethodPut {
+			return accessRequirement{
+				GlobalRoles:   []string{RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleProjectAdmin},
+				ProjectLookup: resolveProjectIDFromPath,
+			}, true
+		}
+	}
+
 	if strings.HasPrefix(path, "/api/v1/scripts/") && strings.HasSuffix(path, "/github/push") && method == http.MethodPost {
 		return accessRequirement{
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -1403,6 +1431,14 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 			ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
 			ProjectLookup: resolveScriptProjectID,
+		}, true
+	}
+
+	if strings.HasPrefix(path, "/api/v1/tests/") && strings.HasSuffix(path, "/github/check-run") && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveTestProjectID,
 		}, true
 	}
 
@@ -1825,6 +1861,17 @@ func resolveScriptProjectID(r *http.Request, store storage.Store) (string, int, 
 		return "", http.StatusNotFound, "script not found"
 	}
 	return normalizeProjectID(script.ProjectID), 0, ""
+}
+
+func resolveProjectIDFromPath(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "project storage is not configured"
+	}
+	id := normalizeProjectID(r.PathValue("id"))
+	if _, err := store.GetProject(id); err != nil {
+		return "", http.StatusNotFound, "project not found"
+	}
+	return id, 0, ""
 }
 
 func resolveScriptListProjectID(r *http.Request, store storage.Store) (string, int, string) {

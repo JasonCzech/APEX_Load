@@ -48,6 +48,7 @@ func (s *Server) systemReadiness(ctx context.Context) SystemReadinessResponse {
 		s.generatorRPCReadiness(ctx),
 		s.telemetryFanoutReadiness(),
 		s.authModeReadiness(),
+		s.githubReadiness(),
 		s.schedulerReadiness(),
 	}
 
@@ -318,6 +319,36 @@ func (s *Server) authModeReadiness() SystemReadinessCheck {
 			"mode": auth.Mode,
 		},
 	}
+}
+
+func (s *Server) githubReadiness() SystemReadinessCheck {
+	settings := s.currentGitHubSettings()
+	details := map[string]any{
+		"enabled":              settings.Enabled,
+		"oauth_configured":     settings.oauthConfigured(),
+		"app_configured":       settings.appConfigured(),
+		"webhook_configured":   settings.webhookConfigured(),
+		"pat_configured":       settings.patConfigured(),
+		"encryption_available": githubTokenEncryptionAvailable(),
+		"automation_mode":      settings.AutomationMode,
+		"checks_enabled":       settings.ChecksEnabled,
+	}
+	if !settings.Enabled {
+		return SystemReadinessCheck{Name: "github_enterprise", Status: readinessStatusReady, Message: "github integration is disabled", Details: details}
+	}
+	if !settings.oauthConfigured() && !settings.appConfigured() && !settings.patConfigured() {
+		return SystemReadinessCheck{Name: "github_enterprise", Status: readinessStatusNotReady, Message: "github integration is enabled but no authentication method is configured", Details: details}
+	}
+	if !githubTokenEncryptionAvailable() {
+		return SystemReadinessCheck{Name: "github_enterprise", Status: readinessStatusNotReady, Message: "github token encryption key is not configured", Details: details}
+	}
+	if settings.ChecksEnabled && !settings.appConfigured() {
+		return SystemReadinessCheck{Name: "github_enterprise", Status: readinessStatusDegraded, Message: "github checks are enabled but GitHub App authentication is not configured", Details: details}
+	}
+	if settings.WebhookSecretEnvVar != "" && !settings.webhookConfigured() {
+		return SystemReadinessCheck{Name: "github_enterprise", Status: readinessStatusDegraded, Message: "github webhook secret env var is set but the secret value is unavailable", Details: details}
+	}
+	return SystemReadinessCheck{Name: "github_enterprise", Status: readinessStatusReady, Message: "github enterprise integration is configured", Details: details}
 }
 
 func (s *Server) schedulerReadiness() SystemReadinessCheck {

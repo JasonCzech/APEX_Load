@@ -10,12 +10,20 @@ import { DashboardGitHubSettings } from '../types'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 function settings(overrides: Partial<DashboardGitHubSettings> = {}): DashboardGitHubSettings {
-  return {
-    enabled: true,
-    client_id: 'client-1',
-    client_secret_env_var: 'APEXLOAD_GITHUB_CLIENT_SECRET',
-    api_base_url: 'https://ghe.example.com/api/v3',
-    web_base_url: 'https://ghe.example.com',
+	return {
+		enabled: true,
+		client_id: 'client-1',
+		client_secret_env_var: 'APEXLOAD_GITHUB_CLIENT_SECRET',
+		app_id: 123,
+		app_slug: 'apex-load',
+		app_private_key_env_var: 'APEXLOAD_GITHUB_APP_PRIVATE_KEY',
+		app_private_key_file: '',
+		webhook_secret_env_var: 'APEXLOAD_GITHUB_WEBHOOK_SECRET',
+		pat_env_var: '',
+		automation_mode: 'app_oauth_pat',
+		checks_enabled: true,
+		api_base_url: 'https://ghe.example.com/api/v3',
+		web_base_url: 'https://ghe.example.com',
     ca_cert_file: '',
     tls_insecure_skip_verify: false,
     scopes: ['repo'],

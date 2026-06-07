@@ -37,6 +37,14 @@ type GitHubSettings struct {
 	Enabled               bool     `json:"enabled"`
 	ClientID              string   `json:"client_id,omitempty"`
 	ClientSecretEnvVar    string   `json:"client_secret_env_var,omitempty"`
+	AppID                 int64    `json:"app_id,omitempty"`
+	AppSlug               string   `json:"app_slug,omitempty"`
+	AppPrivateKeyEnvVar   string   `json:"app_private_key_env_var,omitempty"`
+	AppPrivateKeyFile     string   `json:"app_private_key_file,omitempty"`
+	WebhookSecretEnvVar   string   `json:"webhook_secret_env_var,omitempty"`
+	PATEnvVar             string   `json:"pat_env_var,omitempty"`
+	AutomationMode        string   `json:"automation_mode,omitempty"`
+	ChecksEnabled         bool     `json:"checks_enabled,omitempty"`
 	APIBaseURL            string   `json:"api_base_url,omitempty"` // e.g. https://ghe.example.com/api/v3
 	WebBaseURL            string   `json:"web_base_url,omitempty"` // e.g. https://ghe.example.com
 	CACertFile            string   `json:"ca_cert_file,omitempty"`
@@ -52,17 +60,19 @@ const (
 	defaultGitHubWebBaseURL = "https://github.com"
 	defaultGitHubBranch     = "main"
 	defaultGitHubPathTmpl   = "apexload/scripts/{project}/{ref_key}.json"
+	defaultGitHubAutoMode   = "app_oauth_pat"
 	githubTokenKeyEnvVar    = "APEXLOAD_GITHUB_TOKEN_KEY"
 )
 
 func defaultGitHubSettings() GitHubSettings {
 	return GitHubSettings{
-		Enabled:       false,
-		APIBaseURL:    defaultGitHubAPIBaseURL,
-		WebBaseURL:    defaultGitHubWebBaseURL,
-		Scopes:        []string{"repo"},
-		DefaultBranch: defaultGitHubBranch,
-		PathTemplate:  defaultGitHubPathTmpl,
+		Enabled:        false,
+		APIBaseURL:     defaultGitHubAPIBaseURL,
+		WebBaseURL:     defaultGitHubWebBaseURL,
+		AutomationMode: defaultGitHubAutoMode,
+		Scopes:         []string{"repo"},
+		DefaultBranch:  defaultGitHubBranch,
+		PathTemplate:   defaultGitHubPathTmpl,
 	}
 }
 
@@ -70,12 +80,21 @@ func normalizeGitHubSettings(in GitHubSettings) GitHubSettings {
 	out := in
 	out.ClientID = strings.TrimSpace(out.ClientID)
 	out.ClientSecretEnvVar = strings.TrimSpace(out.ClientSecretEnvVar)
+	out.AppSlug = strings.TrimSpace(out.AppSlug)
+	out.AppPrivateKeyEnvVar = strings.TrimSpace(out.AppPrivateKeyEnvVar)
+	out.AppPrivateKeyFile = strings.TrimSpace(out.AppPrivateKeyFile)
+	out.WebhookSecretEnvVar = strings.TrimSpace(out.WebhookSecretEnvVar)
+	out.PATEnvVar = strings.TrimSpace(out.PATEnvVar)
+	out.AutomationMode = strings.ToLower(strings.TrimSpace(out.AutomationMode))
 	out.APIBaseURL = strings.TrimRight(strings.TrimSpace(out.APIBaseURL), "/")
 	out.WebBaseURL = strings.TrimRight(strings.TrimSpace(out.WebBaseURL), "/")
 	out.CACertFile = strings.TrimSpace(out.CACertFile)
 	out.DefaultRepo = strings.TrimSpace(out.DefaultRepo)
 	out.DefaultBranch = strings.TrimSpace(out.DefaultBranch)
 	out.PathTemplate = strings.TrimSpace(out.PathTemplate)
+	if out.AutomationMode == "" {
+		out.AutomationMode = defaultGitHubAutoMode
+	}
 	if out.APIBaseURL == "" {
 		out.APIBaseURL = defaultGitHubAPIBaseURL
 	}
@@ -125,6 +144,44 @@ func (g GitHubSettings) clientSecret() string {
 // client id + secret are both available (so the connect flow can run).
 func (g GitHubSettings) oauthConfigured() bool {
 	return g.Enabled && strings.TrimSpace(g.ClientID) != "" && g.clientSecret() != ""
+}
+
+func (g GitHubSettings) appPrivateKey() string {
+	if strings.TrimSpace(g.AppPrivateKeyEnvVar) != "" {
+		if value := strings.TrimSpace(envValue(g.AppPrivateKeyEnvVar)); value != "" {
+			return value
+		}
+	}
+	if strings.TrimSpace(g.AppPrivateKeyFile) != "" {
+		return strings.TrimSpace(g.AppPrivateKeyFile)
+	}
+	return ""
+}
+
+func (g GitHubSettings) appConfigured() bool {
+	return g.Enabled && g.AppID > 0 && strings.TrimSpace(g.appPrivateKey()) != ""
+}
+
+func (g GitHubSettings) webhookSecret() string {
+	if strings.TrimSpace(g.WebhookSecretEnvVar) == "" {
+		return ""
+	}
+	return strings.TrimSpace(envValue(g.WebhookSecretEnvVar))
+}
+
+func (g GitHubSettings) webhookConfigured() bool {
+	return g.Enabled && strings.TrimSpace(g.WebhookSecretEnvVar) != "" && g.webhookSecret() != ""
+}
+
+func (g GitHubSettings) patToken() string {
+	if strings.TrimSpace(g.PATEnvVar) == "" {
+		return ""
+	}
+	return strings.TrimSpace(envValue(g.PATEnvVar))
+}
+
+func (g GitHubSettings) patConfigured() bool {
+	return g.Enabled && g.patToken() != ""
 }
 
 // allowlistHosts returns the hostnames (no port) of the configured GitHub
@@ -577,11 +634,19 @@ func validateGitHubSettings(settings GitHubSettings) error {
 	if !settings.Enabled {
 		return nil
 	}
-	if strings.TrimSpace(settings.ClientID) == "" {
-		return fmt.Errorf("github.client_id is required when github integration is enabled")
+	if strings.TrimSpace(settings.ClientID) == "" && settings.AppID <= 0 && strings.TrimSpace(settings.PATEnvVar) == "" {
+		return fmt.Errorf("github requires at least oauth, app, or PAT configuration when enabled")
 	}
-	if strings.TrimSpace(settings.ClientSecretEnvVar) == "" {
-		return fmt.Errorf("github.client_secret_env_var is required when github integration is enabled")
+	if strings.TrimSpace(settings.ClientID) != "" && strings.TrimSpace(settings.ClientSecretEnvVar) == "" {
+		return fmt.Errorf("github.client_secret_env_var is required when github.client_id is set")
+	}
+	if settings.AppID > 0 && strings.TrimSpace(settings.AppPrivateKeyEnvVar) == "" && strings.TrimSpace(settings.AppPrivateKeyFile) == "" {
+		return fmt.Errorf("github.app_private_key_env_var or github.app_private_key_file is required when github.app_id is set")
+	}
+	switch strings.ToLower(strings.TrimSpace(settings.AutomationMode)) {
+	case "", defaultGitHubAutoMode, "app", "oauth", "pat":
+	default:
+		return fmt.Errorf("github.automation_mode must be one of app_oauth_pat, app, oauth, or pat")
 	}
 	for label, raw := range map[string]string{"github.api_base_url": settings.APIBaseURL, "github.web_base_url": settings.WebBaseURL} {
 		parsed, err := url.Parse(strings.TrimSpace(raw))

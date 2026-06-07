@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState, type DragEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type DragEvent, type SetStateAction } from 'react'
 import { type DashboardTheme } from '../hooks/useDashboardTheme'
 import { useApplicationApi } from '../hooks/api/useApplicationApi'
 import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
-import { ArchiveRetentionPlanResponse, CapacityReservation, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
+import { ArchiveRetentionPlanResponse, CapacityReservation, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, GitHubProjectPolicy, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import { mergeSettingsOrder, moveSettingsSection, readSettingsSectionArray, SETTINGS_SECTIONS, type SettingsSectionId } from './settingsSectionLayout'
@@ -77,6 +77,14 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
     enabled: false,
     client_id: '',
     client_secret_env_var: 'APEXLOAD_GITHUB_CLIENT_SECRET',
+    app_id: 0,
+    app_slug: '',
+    app_private_key_env_var: 'APEXLOAD_GITHUB_APP_PRIVATE_KEY',
+    app_private_key_file: '',
+    webhook_secret_env_var: 'APEXLOAD_GITHUB_WEBHOOK_SECRET',
+    pat_env_var: '',
+    automation_mode: 'app_oauth_pat',
+    checks_enabled: false,
     api_base_url: 'https://api.github.com',
     web_base_url: 'https://github.com',
     ca_cert_file: '',
@@ -476,6 +484,7 @@ function buildProjectSettingsDraft(
   maxVUsers: string,
   maxVUsersPerTest: string,
   maxTestDurationMinutes: string,
+  github?: GitHubProjectPolicy,
 ) {
   const settings: {
     redaction_rules?: RedactionRule[]
@@ -483,6 +492,7 @@ function buildProjectSettingsDraft(
     max_vusers?: number
     max_vusers_per_test?: number
     max_test_duration_minutes?: number
+    github?: GitHubProjectPolicy
   } = {
     redaction_rules: normalizeProjectRedactionRules(rules),
   }
@@ -502,7 +512,14 @@ function buildProjectSettingsDraft(
   if (parsedDuration !== undefined) {
     settings.max_test_duration_minutes = parsedDuration
   }
+  if (github) {
+    settings.github = github
+  }
   return settings
+}
+
+function splitListDraft(value: string): string[] {
+  return value.split(',').map(item => item.trim()).filter(Boolean)
 }
 
 function validateProjectQuotaField(label: string, value: string): string {
@@ -511,6 +528,16 @@ function validateProjectQuotaField(label: string, value: string): string {
   const parsed = Number(trimmed)
   if (!Number.isInteger(parsed) || parsed < 0) {
     return `${label} must be an integer greater than or equal to 0.`
+  }
+  return ''
+}
+
+function validateOptionalPositiveInteger(label: string, value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  const parsed = Number(trimmed)
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return `${label} must be a positive integer.`
   }
   return ''
 }
@@ -715,6 +742,8 @@ function normalizeDashboardSystemSettings(settings: DashboardSystemSettings): Da
       ...DEFAULT_SETTINGS.github,
       ...settings.github,
       scopes: settings.github?.scopes ? [...settings.github.scopes] : [...DEFAULT_SETTINGS.github.scopes],
+      app_id: Number(settings.github?.app_id || 0),
+      checks_enabled: Boolean(settings.github?.checks_enabled),
     },
   }
 }
@@ -851,6 +880,21 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
   const [projectDraftMaxVUsers, setProjectDraftMaxVUsers] = useState('')
   const [projectDraftMaxVUsersPerTest, setProjectDraftMaxVUsersPerTest] = useState('')
   const [projectDraftMaxTestDurationMinutes, setProjectDraftMaxTestDurationMinutes] = useState('')
+  const [projectDraftGitHubEnabled, setProjectDraftGitHubEnabled] = useState(false)
+  const [projectDraftGitHubAllowedRepos, setProjectDraftGitHubAllowedRepos] = useState('')
+  const [projectDraftGitHubAllowedBranches, setProjectDraftGitHubAllowedBranches] = useState('')
+  const [projectDraftGitHubPathTemplate, setProjectDraftGitHubPathTemplate] = useState('')
+  const [projectDraftGitHubRequirePR, setProjectDraftGitHubRequirePR] = useState(true)
+  const [projectDraftGitHubAllowDirect, setProjectDraftGitHubAllowDirect] = useState(false)
+  const [projectDraftGitHubAllowImport, setProjectDraftGitHubAllowImport] = useState(true)
+  const [projectDraftGitHubAllowPush, setProjectDraftGitHubAllowPush] = useState(true)
+  const [projectDraftGitHubBulkSync, setProjectDraftGitHubBulkSync] = useState(false)
+  const [projectDraftGitHubAutoSync, setProjectDraftGitHubAutoSync] = useState(false)
+  const [projectDraftGitHubChecks, setProjectDraftGitHubChecks] = useState(false)
+  const [projectDraftGitHubAppInstallation, setProjectDraftGitHubAppInstallation] = useState('')
+  const [projectDraftGitHubDefaultRepo, setProjectDraftGitHubDefaultRepo] = useState('')
+  const [projectDraftGitHubDefaultBranch, setProjectDraftGitHubDefaultBranch] = useState('')
+  const [projectDraftGitHubSyncDirectory, setProjectDraftGitHubSyncDirectory] = useState('')
   const [projectActionError, setProjectActionError] = useState('')
   const [projectActionMessage, setProjectActionMessage] = useState('')
   const [archiveRetentionPlan, setArchiveRetentionPlan] = useState<ArchiveRetentionPlanResponse | null>(null)
@@ -871,6 +915,58 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
   const [dataPoolRowJson, setDataPoolRowJson] = useState('{\n  "customer_id": "C-10001"\n}')
   const [editingDataPoolRowId, setEditingDataPoolRowId] = useState<string | null>(null)
   const [dataPoolActionError, setDataPoolActionError] = useState('')
+
+  const loadProjectGitHubDraft = useCallback((policy?: GitHubProjectPolicy) => {
+    setProjectDraftGitHubEnabled(Boolean(policy?.enabled))
+    setProjectDraftGitHubAllowedRepos((policy?.allowed_repos || []).join(', '))
+    setProjectDraftGitHubAllowedBranches((policy?.allowed_branches || []).join(', '))
+    setProjectDraftGitHubPathTemplate(policy?.path_template || '')
+    setProjectDraftGitHubRequirePR(policy?.require_pull_request ?? true)
+    setProjectDraftGitHubAllowDirect(Boolean(policy?.allow_direct_commit))
+    setProjectDraftGitHubAllowImport(policy?.allow_import ?? true)
+    setProjectDraftGitHubAllowPush(policy?.allow_push ?? true)
+    setProjectDraftGitHubBulkSync(Boolean(policy?.bulk_sync_enabled))
+    setProjectDraftGitHubAutoSync(Boolean(policy?.auto_sync_enabled))
+    setProjectDraftGitHubChecks(Boolean(policy?.checks_enabled))
+    setProjectDraftGitHubAppInstallation(policy?.app_installation_id ? String(policy.app_installation_id) : '')
+    setProjectDraftGitHubDefaultRepo(policy?.default_repo || '')
+    setProjectDraftGitHubDefaultBranch(policy?.default_branch || '')
+    setProjectDraftGitHubSyncDirectory(policy?.default_sync_directory || '')
+  }, [])
+
+  const buildProjectGitHubDraft = useCallback((): GitHubProjectPolicy => ({
+    enabled: projectDraftGitHubEnabled,
+    allowed_repos: splitListDraft(projectDraftGitHubAllowedRepos),
+    allowed_branches: splitListDraft(projectDraftGitHubAllowedBranches),
+    path_template: projectDraftGitHubPathTemplate.trim(),
+    require_pull_request: projectDraftGitHubRequirePR,
+    allow_direct_commit: projectDraftGitHubAllowDirect,
+    allow_import: projectDraftGitHubAllowImport,
+    allow_push: projectDraftGitHubAllowPush,
+    bulk_sync_enabled: projectDraftGitHubBulkSync,
+    auto_sync_enabled: projectDraftGitHubAutoSync,
+    checks_enabled: projectDraftGitHubChecks,
+    app_installation_id: projectDraftGitHubAppInstallation.trim() ? Number(projectDraftGitHubAppInstallation) : undefined,
+    default_repo: projectDraftGitHubDefaultRepo.trim(),
+    default_branch: projectDraftGitHubDefaultBranch.trim(),
+    default_sync_directory: projectDraftGitHubSyncDirectory.trim(),
+  }), [
+    projectDraftGitHubAllowDirect,
+    projectDraftGitHubAllowImport,
+    projectDraftGitHubAllowPush,
+    projectDraftGitHubAllowedBranches,
+    projectDraftGitHubAllowedRepos,
+    projectDraftGitHubAppInstallation,
+    projectDraftGitHubAutoSync,
+    projectDraftGitHubBulkSync,
+    projectDraftGitHubChecks,
+    projectDraftGitHubDefaultBranch,
+    projectDraftGitHubDefaultRepo,
+    projectDraftGitHubEnabled,
+    projectDraftGitHubPathTemplate,
+    projectDraftGitHubRequirePR,
+    projectDraftGitHubSyncDirectory,
+  ])
 
   useEffect(() => {
     let cancelled = false
@@ -1141,10 +1237,11 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
         validateProjectQuotaField('Project max concurrent tests', projectDraftMaxConcurrentTests) ||
         validateProjectQuotaField('Project max VUsers', projectDraftMaxVUsers) ||
         validateProjectQuotaField('Project max VUsers per test', projectDraftMaxVUsersPerTest) ||
-        validateProjectQuotaField('Project max test duration (minutes)', projectDraftMaxTestDurationMinutes)
+        validateProjectQuotaField('Project max test duration (minutes)', projectDraftMaxTestDurationMinutes) ||
+        validateOptionalPositiveInteger('GitHub App installation ID', projectDraftGitHubAppInstallation)
       )
     },
-    [projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, projectDraftName, projectDraftRules, selectedProject],
+    [projectDraftGitHubAppInstallation, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, projectDraftName, projectDraftRules, selectedProject],
   )
   const projectHasUnsavedChanges = useMemo(() => {
     if (!selectedProject) {
@@ -1159,15 +1256,25 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
         selectedProject.settings?.max_vusers !== undefined ? String(selectedProject.settings.max_vusers) : '',
         selectedProject.settings?.max_vusers_per_test !== undefined ? String(selectedProject.settings.max_vusers_per_test) : '',
         selectedProject.settings?.max_test_duration_minutes !== undefined ? String(selectedProject.settings.max_test_duration_minutes) : '',
+        selectedProject.settings?.github,
       ),
     }
     const draft = {
       name: projectDraftName.trim(),
-      settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes),
+      settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, buildProjectGitHubDraft()),
     }
 
     return JSON.stringify(current) !== JSON.stringify(draft)
-  }, [projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, projectDraftName, projectDraftRules, selectedProject])
+  }, [
+    buildProjectGitHubDraft,
+    projectDraftMaxConcurrentTests,
+    projectDraftMaxTestDurationMinutes,
+    projectDraftMaxVUsers,
+    projectDraftMaxVUsersPerTest,
+    projectDraftName,
+    projectDraftRules,
+    selectedProject,
+  ])
   const customRuleCount = useMemo(
     () => normalizeProjectRedactionRules(projectDraftRules).length,
     [projectDraftRules],
@@ -1235,6 +1342,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
         setProjectDraftMaxVUsers(nextSelected?.settings?.max_vusers !== undefined ? String(nextSelected.settings.max_vusers) : '')
         setProjectDraftMaxVUsersPerTest(nextSelected?.settings?.max_vusers_per_test !== undefined ? String(nextSelected.settings.max_vusers_per_test) : '')
         setProjectDraftMaxTestDurationMinutes(nextSelected?.settings?.max_test_duration_minutes !== undefined ? String(nextSelected.settings.max_test_duration_minutes) : '')
+        loadProjectGitHubDraft(nextSelected?.settings?.github)
         setProjectActionError('')
       } catch (error: unknown) {
         if (!cancelled) {
@@ -1247,7 +1355,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
     return () => {
       cancelled = true
     }
-  }, [projectApi])
+  }, [loadProjectGitHubDraft, projectApi])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1689,6 +1797,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
     setProjectDraftMaxVUsers(project?.settings?.max_vusers !== undefined ? String(project.settings.max_vusers) : '')
     setProjectDraftMaxVUsersPerTest(project?.settings?.max_vusers_per_test !== undefined ? String(project.settings.max_vusers_per_test) : '')
     setProjectDraftMaxTestDurationMinutes(project?.settings?.max_test_duration_minutes !== undefined ? String(project.settings.max_test_duration_minutes) : '')
+    loadProjectGitHubDraft(project?.settings?.github)
     setProjectActionError('')
     setProjectActionMessage('')
   }
@@ -1748,7 +1857,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
     try {
       const updated = await projectApi.updateProject(selectedProject.id, {
         name: projectDraftName.trim(),
-        settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes),
+        settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, buildProjectGitHubDraft()),
       })
       const nextProjects = sortProjects(projects.map(project => (project.id === updated.id ? updated : project)))
       setProjects(nextProjects)
@@ -3645,6 +3754,156 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                       }}
                       placeholder="Unlimited"
                     />
+                  </div>
+
+                  <div className="settings-manager-summary" style={{ marginTop: 16 }}>
+                    <div>
+                      <span className="setting-label">GitHub Project Policy</span>
+                      <span className="setting-desc">Repository, branch, path, and automation rules enforced by the controller for GitHub sync actions in this project.</span>
+                    </div>
+                    <span className={`script-health-token ${projectDraftGitHubEnabled ? 'healthy' : ''}`}>
+                      {projectDraftGitHubEnabled ? 'enabled' : 'disabled'}
+                    </span>
+                  </div>
+                  <div className="project-redaction-rule-grid">
+                    <label className="project-redaction-rule-field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={projectDraftGitHubEnabled}
+                        disabled={!canManageProjects}
+                        onChange={event => {
+                          setProjectDraftGitHubEnabled(event.target.checked)
+                          setProjectActionError('')
+                          setProjectActionMessage('')
+                        }}
+                      />
+                      <span>Enable policy</span>
+                    </label>
+                    <label className="project-redaction-rule-field">
+                      <span>Allowed Repositories</span>
+                      <input
+                        className="settings-input"
+                        value={projectDraftGitHubAllowedRepos}
+                        disabled={!canManageProjects}
+                        onChange={event => {
+                          setProjectDraftGitHubAllowedRepos(event.target.value)
+                          setProjectActionError('')
+                          setProjectActionMessage('')
+                        }}
+                        placeholder="org/perf-scripts, org/team-*"
+                      />
+                    </label>
+                    <label className="project-redaction-rule-field">
+                      <span>Allowed Branches</span>
+                      <input
+                        className="settings-input"
+                        value={projectDraftGitHubAllowedBranches}
+                        disabled={!canManageProjects}
+                        onChange={event => {
+                          setProjectDraftGitHubAllowedBranches(event.target.value)
+                          setProjectActionError('')
+                          setProjectActionMessage('')
+                        }}
+                        placeholder="main, release/*"
+                      />
+                    </label>
+                    <label className="project-redaction-rule-field">
+                      <span>Path Template</span>
+                      <input
+                        className="settings-input"
+                        value={projectDraftGitHubPathTemplate}
+                        disabled={!canManageProjects}
+                        onChange={event => {
+                          setProjectDraftGitHubPathTemplate(event.target.value)
+                          setProjectActionError('')
+                          setProjectActionMessage('')
+                        }}
+                        placeholder="apexload/scripts/{project}/{ref_key}.json"
+                      />
+                    </label>
+                    <label className="project-redaction-rule-field">
+                      <span>Default Repository</span>
+                      <input
+                        className="settings-input"
+                        value={projectDraftGitHubDefaultRepo}
+                        disabled={!canManageProjects}
+                        onChange={event => {
+                          setProjectDraftGitHubDefaultRepo(event.target.value)
+                          setProjectActionError('')
+                          setProjectActionMessage('')
+                        }}
+                        placeholder="org/perf-scripts"
+                      />
+                    </label>
+                    <label className="project-redaction-rule-field">
+                      <span>Default Branch</span>
+                      <input
+                        className="settings-input"
+                        value={projectDraftGitHubDefaultBranch}
+                        disabled={!canManageProjects}
+                        onChange={event => {
+                          setProjectDraftGitHubDefaultBranch(event.target.value)
+                          setProjectActionError('')
+                          setProjectActionMessage('')
+                        }}
+                        placeholder="main"
+                      />
+                    </label>
+                    <label className="project-redaction-rule-field">
+                      <span>Default Sync Folder</span>
+                      <input
+                        className="settings-input"
+                        value={projectDraftGitHubSyncDirectory}
+                        disabled={!canManageProjects}
+                        onChange={event => {
+                          setProjectDraftGitHubSyncDirectory(event.target.value)
+                          setProjectActionError('')
+                          setProjectActionMessage('')
+                        }}
+                        placeholder="apexload/scripts"
+                      />
+                    </label>
+                    <label className="project-redaction-rule-field">
+                      <span>App Installation ID</span>
+                      <input
+                        className="settings-input"
+                        inputMode="numeric"
+                        value={projectDraftGitHubAppInstallation}
+                        disabled={!canManageProjects}
+                        onChange={event => {
+                          setProjectDraftGitHubAppInstallation(event.target.value)
+                          setProjectActionError('')
+                          setProjectActionMessage('')
+                        }}
+                        placeholder="12345678"
+                      />
+                    </label>
+                  </div>
+                  <div className="settings-inline-actions" style={{ flexWrap: 'wrap', marginTop: 8 }}>
+                    {[
+                      ['Require PR', projectDraftGitHubRequirePR, setProjectDraftGitHubRequirePR],
+                      ['Allow direct commit', projectDraftGitHubAllowDirect, setProjectDraftGitHubAllowDirect],
+                      ['Allow import', projectDraftGitHubAllowImport, setProjectDraftGitHubAllowImport],
+                      ['Allow push', projectDraftGitHubAllowPush, setProjectDraftGitHubAllowPush],
+                      ['Bulk sync', projectDraftGitHubBulkSync, setProjectDraftGitHubBulkSync],
+                      ['Webhook auto-sync', projectDraftGitHubAutoSync, setProjectDraftGitHubAutoSync],
+                      ['Publish checks', projectDraftGitHubChecks, setProjectDraftGitHubChecks],
+                    ].map(([label, checked, setter]) => (
+                      <label key={label as string} className="project-redaction-rule-field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 150 }}>
+                        <input
+                          type="checkbox"
+                          checked={checked as boolean}
+                          disabled={!canManageProjects}
+                          onChange={event => {
+                            const applyChecked = setter as Dispatch<SetStateAction<boolean>>
+                            applyChecked(event.target.checked)
+                            setProjectActionError('')
+                            setProjectActionMessage('')
+                          }}
+                        />
+                        <span>{label as string}</span>
+                      </label>
+                    ))}
                   </div>
 
                   {projectDraftRules.length > 0 ? (

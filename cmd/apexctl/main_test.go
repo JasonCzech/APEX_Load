@@ -40,6 +40,27 @@ func TestParseScriptArgs(t *testing.T) {
 	}
 }
 
+func TestParseGithubArgs(t *testing.T) {
+	t.Setenv("APEXLOAD_API", "http://controller.local")
+	args := parseGithubArgs([]string{
+		"sync",
+		"--project", "project-a",
+		"--kind", "push",
+		"--owner", "octo",
+		"--repo", "scripts",
+		"--branch", "main",
+		"--path", "apexload/scripts",
+		"--strategy", "pr",
+	})
+
+	if args.command != "sync" || args.api != "http://controller.local" || args.projectID != "project-a" {
+		t.Fatalf("args = %#v", args)
+	}
+	if args.kind != "push" || args.owner != "octo" || args.repo != "scripts" || args.strategy != "pr" {
+		t.Fatalf("github target args = %#v", args)
+	}
+}
+
 func TestValidateScriptFileAcceptsPlainScriptJSON(t *testing.T) {
 	path := writeTempScript(t, `{
 		"name": "plain",

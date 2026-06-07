@@ -69,7 +69,18 @@ func (s *Server) handleGitHubConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"enabled":                  settings.Enabled,
 		"oauth_configured":         settings.oauthConfigured(),
+		"app_configured":           settings.appConfigured(),
+		"webhook_configured":       settings.webhookConfigured(),
+		"pat_configured":           settings.patConfigured(),
 		"encryption_available":     githubTokenEncryptionAvailable(),
+		"app_id":                   settings.AppID,
+		"app_slug":                 settings.AppSlug,
+		"app_private_key_env_var":  settings.AppPrivateKeyEnvVar,
+		"app_private_key_file":     settings.AppPrivateKeyFile,
+		"webhook_secret_env_var":   settings.WebhookSecretEnvVar,
+		"pat_env_var":              settings.PATEnvVar,
+		"automation_mode":          settings.AutomationMode,
+		"checks_enabled":           settings.ChecksEnabled,
 		"api_base_url":             settings.APIBaseURL,
 		"web_base_url":             settings.WebBaseURL,
 		"scopes":                   settings.Scopes,
@@ -85,17 +96,19 @@ func (s *Server) githubFeatureGuard(w http.ResponseWriter, settings GitHubSettin
 		writeError(w, http.StatusNotFound, "github integration is not enabled")
 		return false
 	}
-	if !settings.oauthConfigured() {
-		writeError(w, http.StatusServiceUnavailable, "github oauth app is not configured")
+	if !settings.oauthConfigured() && !settings.appConfigured() && !settings.patConfigured() {
+		writeError(w, http.StatusServiceUnavailable, "github authentication is not configured")
 		return false
 	}
-	if !githubTokenEncryptionAvailable() {
+	if settings.oauthConfigured() && !githubTokenEncryptionAvailable() {
 		writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("github token encryption key (%s) is not configured", githubTokenKeyEnvVar))
 		return false
 	}
-	if _, ok := s.githubConnectionStore(); !ok {
-		writeError(w, http.StatusServiceUnavailable, "github connection storage is unavailable")
-		return false
+	if settings.oauthConfigured() {
+		if _, ok := s.githubConnectionStore(); !ok {
+			writeError(w, http.StatusServiceUnavailable, "github connection storage is unavailable")
+			return false
+		}
 	}
 	return true
 }
@@ -103,6 +116,10 @@ func (s *Server) githubFeatureGuard(w http.ResponseWriter, settings GitHubSettin
 func (s *Server) handleGitHubLogin(w http.ResponseWriter, r *http.Request) {
 	settings := s.currentGitHubSettings()
 	if !s.githubFeatureGuard(w, settings) {
+		return
+	}
+	if !settings.oauthConfigured() {
+		writeError(w, http.StatusServiceUnavailable, "github oauth app is not configured")
 		return
 	}
 	state, err := randomToken(32)
@@ -143,6 +160,10 @@ func (s *Server) handleGitHubLogin(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	settings := s.currentGitHubSettings()
 	if !s.githubFeatureGuard(w, settings) {
+		return
+	}
+	if !settings.oauthConfigured() {
+		writeError(w, http.StatusServiceUnavailable, "github oauth app is not configured")
 		return
 	}
 	stateCookie, err := r.Cookie(githubStateCookieName)

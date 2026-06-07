@@ -25,7 +25,11 @@ func (s *Server) githubClientForRequest(w http.ResponseWriter, r *http.Request) 
 	if !s.githubFeatureGuard(w, settings) {
 		return nil, settings, false
 	}
-	store, _ := s.githubConnectionStore()
+	store, ok := s.githubConnectionStore()
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "github connection storage is unavailable")
+		return nil, settings, false
+	}
 	conn, err := store.GetGitHubConnection(githubUserKey(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read github connection")
@@ -35,8 +39,8 @@ func (s *Server) githubClientForRequest(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusUnauthorized, "github account is not connected")
 		return nil, settings, false
 	}
-	token, err := decryptGitHubToken(conn.AccessTokenEnc)
-	if err != nil || strings.TrimSpace(token) == "" {
+	token, ok := s.githubTokenForConnection(r.Context(), settings, conn, store)
+	if !ok || strings.TrimSpace(token) == "" {
 		writeError(w, http.StatusServiceUnavailable, "stored github token could not be read")
 		return nil, settings, false
 	}
@@ -184,11 +188,20 @@ func (s *Server) handleImportGitHub(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, _, ok := s.githubClientForRequest(w, r)
+	projectID := normalizeProjectID(req.ProjectID)
+	branch := strings.TrimSpace(req.Ref)
+	if branch == "" {
+		branch = firstNonEmpty(s.githubProjectPolicy(projectID).DefaultBranch, s.currentGitHubSettings().DefaultBranch)
+	}
+	resolved, ok := s.githubClientForProjectRequest(w, r, projectID, req.Owner, req.Repo)
 	if !ok {
 		return
 	}
-	contents, err := client.GetContents(r.Context(), req.Owner, req.Repo, req.Path, req.Ref)
+	if err := enforceGitHubProjectPolicy(resolved.Policy, "import", req.Owner, req.Repo, branch, req.Path, ""); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	contents, err := resolved.Client.GetContents(r.Context(), req.Owner, req.Repo, req.Path, branch)
 	if err != nil {
 		writeGitHubUpstreamError(w, err)
 		return
@@ -197,6 +210,7 @@ func (s *Server) handleImportGitHub(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "the selected github path is a directory, not a script file")
 		return
 	}
+	remoteCommitSHA, _ := resolved.Client.GetBranchHeadSHA(r.Context(), req.Owner, req.Repo, branch)
 	data, err := contents.File.DecodedContent()
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "failed to decode github file content")
@@ -208,23 +222,22 @@ func (s *Server) handleImportGitHub(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "github file is not a valid script: "+err.Error())
 		return
 	}
-	script.ProjectID = normalizeProjectID(req.ProjectID)
+	script.ProjectID = projectID
 
 	sourceName := strings.TrimSpace(req.Name)
 	if sourceName == "" {
 		sourceName = strings.TrimSuffix(path.Base(req.Path), path.Ext(req.Path))
 	}
-	branch := strings.TrimSpace(req.Ref)
-	if branch == "" {
-		branch = "(default)"
-	}
 	review := map[string]any{
-		"owner":      req.Owner,
-		"repo":       req.Repo,
-		"branch":     branch,
-		"path":       contents.File.Path,
-		"commit_sha": contents.File.SHA,
-		"html_url":   contents.File.HTMLURL,
+		"owner":             req.Owner,
+		"repo":              req.Repo,
+		"branch":            branch,
+		"path":              contents.File.Path,
+		"commit_sha":        contents.File.SHA,
+		"remote_blob_sha":   contents.File.SHA,
+		"remote_commit_sha": remoteCommitSHA,
+		"html_url":          contents.File.HTMLURL,
+		"auth_mode":         resolved.AuthMode,
 	}
 	attachSourceReviewToScript(script, "github", sourceName, review)
 
@@ -240,11 +253,14 @@ func (s *Server) handleImportGitHub(w http.ResponseWriter, r *http.Request) {
 		Script:   script,
 		Warnings: warnings,
 		Summary: map[string]any{
-			"owner":      req.Owner,
-			"repo":       req.Repo,
-			"branch":     branch,
-			"path":       contents.File.Path,
-			"commit_sha": contents.File.SHA,
+			"owner":             req.Owner,
+			"repo":              req.Repo,
+			"branch":            branch,
+			"path":              contents.File.Path,
+			"commit_sha":        contents.File.SHA,
+			"remote_blob_sha":   contents.File.SHA,
+			"remote_commit_sha": remoteCommitSHA,
+			"auth_mode":         resolved.AuthMode,
 		},
 		ReviewSections: []scriptImportReviewSection{{
 			Key:      "github_source",
@@ -335,22 +351,20 @@ func (s *Server) handlePushScriptGitHub(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	client, settings, ok := s.githubClientForRequest(w, r)
-	if !ok {
-		return
-	}
 	linkStore, ok := s.githubScriptLinkStore()
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "github link storage is unavailable")
 		return
 	}
+	settings := s.currentGitHubSettings()
+	policy := s.githubProjectPolicy(stored.ProjectID)
 
 	// Resolve target coordinates, falling back to global defaults.
 	owner := strings.TrimSpace(req.Owner)
 	repo := strings.TrimSpace(req.Repo)
 	if repo == "" {
 		// Allow owner/repo packed in DefaultRepo ("owner/name").
-		if defOwner, defRepo, ok := splitOwnerRepo(settings.DefaultRepo); ok {
+		if defOwner, defRepo, ok := splitOwnerRepo(firstNonEmpty(policy.DefaultRepo, settings.DefaultRepo)); ok {
 			if owner == "" {
 				owner = defOwner
 			}
@@ -361,8 +375,8 @@ func (s *Server) handlePushScriptGitHub(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "owner and repo are required")
 		return
 	}
-	branch := firstNonEmpty(strings.TrimSpace(req.Branch), settings.DefaultBranch)
-	targetPath := firstNonEmpty(strings.TrimSpace(req.Path), renderGitHubPathTemplate(settings.PathTemplate, stored))
+	branch := firstNonEmpty(strings.TrimSpace(req.Branch), policy.DefaultBranch, settings.DefaultBranch)
+	targetPath := firstNonEmpty(strings.TrimSpace(req.Path), renderGitHubPathTemplate(firstNonEmpty(policy.PathTemplate, settings.PathTemplate), stored))
 	if targetPath == "" {
 		writeError(w, http.StatusBadRequest, "a target path is required")
 		return
@@ -374,6 +388,24 @@ func (s *Server) handlePushScriptGitHub(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "failed to serialize script")
 		return
 	}
+
+	strategy := strings.ToLower(strings.TrimSpace(req.Strategy))
+	if strategy == "" {
+		strategy = "commit"
+	}
+	if policy.Enabled && policy.RequirePullRequest {
+		strategy = "pr"
+	}
+	if err := enforceGitHubProjectPolicy(policy, "push", owner, repo, branch, targetPath, strategy); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+
+	resolved, ok := s.githubClientForProjectRequest(w, r, stored.ProjectID, owner, repo)
+	if !ok {
+		return
+	}
+	client := resolved.Client
 
 	// Determine the current remote blob sha (for updates / conflict detection).
 	existing, err := client.GetContents(r.Context(), owner, repo, targetPath, branch)
@@ -387,20 +419,18 @@ func (s *Server) handlePushScriptGitHub(w http.ResponseWriter, r *http.Request) 
 	if existing != nil && existing.File != nil {
 		remoteSHA = existing.File.SHA
 	}
-
 	// Conflict: the remote file moved since our last recorded sync.
 	link, _ := linkStore.GetGitHubScriptLink(id)
-	if link != nil && link.LastCommitSHA != "" && remoteSHA != "" && remoteSHA != link.LastCommitSHA {
+	linkRemoteBlobSHA := ""
+	if link != nil {
+		linkRemoteBlobSHA = firstNonEmpty(link.RemoteBlobSHA, link.LastCommitSHA)
+	}
+	if link != nil && linkRemoteBlobSHA != "" && remoteSHA != "" && remoteSHA != linkRemoteBlobSHA {
 		writeError(w, http.StatusConflict, "remote file has changed since the last sync; pull and review before pushing")
 		return
 	}
 
-	strategy := strings.ToLower(strings.TrimSpace(req.Strategy))
-	if strategy == "" {
-		strategy = "commit"
-	}
-
-	resp := map[string]any{"strategy": strategy, "owner": owner, "repo": repo, "path": targetPath}
+	resp := map[string]any{"strategy": strategy, "owner": owner, "repo": repo, "path": targetPath, "auth_mode": resolved.AuthMode}
 	var writtenBranch string
 	var putResult *githubPutResult
 
@@ -450,14 +480,16 @@ func (s *Server) handlePushScriptGitHub(w http.ResponseWriter, r *http.Request) 
 	}
 
 	link = &storage.GitHubScriptLink{
-		ScriptID:      id,
-		RefKey:        stored.RefKey,
-		Owner:         owner,
-		Repo:          repo,
-		Branch:        writtenBranch,
-		Path:          targetPath,
-		LastCommitSHA: putResult.Content.SHA,
-		ContentHash:   contentHash,
+		ScriptID:        id,
+		RefKey:          stored.RefKey,
+		Owner:           owner,
+		Repo:            repo,
+		Branch:          writtenBranch,
+		Path:            targetPath,
+		LastCommitSHA:   putResult.Content.SHA,
+		RemoteBlobSHA:   putResult.Content.SHA,
+		RemoteCommitSHA: putResult.Commit.SHA,
+		ContentHash:     contentHash,
 	}
 	if err := linkStore.SaveGitHubScriptLink(link); err != nil {
 		writeError(w, http.StatusInternalServerError, "push succeeded but the link could not be saved")
@@ -468,6 +500,8 @@ func (s *Server) handlePushScriptGitHub(w http.ResponseWriter, r *http.Request) 
 	resp["branch"] = writtenBranch
 	resp["commit_sha"] = putResult.Commit.SHA
 	resp["file_sha"] = putResult.Content.SHA
+	resp["remote_blob_sha"] = putResult.Content.SHA
+	resp["remote_commit_sha"] = putResult.Commit.SHA
 	resp["html_url"] = githubFileWebURL(settings, owner, repo, writtenBranch, targetPath)
 	s.recordAuditEvent(r, "github.script.push", "success", "script", id, stored.ProjectID, map[string]any{
 		"owner": owner, "repo": repo, "path": targetPath, "strategy": strategy,
@@ -510,15 +544,17 @@ func (s *Server) handleScriptGitHubStatus(w http.ResponseWriter, r *http.Request
 	localDrift := link.ContentHash != "" && localHash != link.ContentHash
 
 	out := map[string]any{
-		"linked":          true,
-		"owner":           link.Owner,
-		"repo":            link.Repo,
-		"branch":          link.Branch,
-		"path":            link.Path,
-		"last_commit_sha": link.LastCommitSHA,
-		"synced_at":       link.SyncedAt,
-		"local_drift":     localDrift,
-		"html_url":        githubFileWebURL(settings, link.Owner, link.Repo, link.Branch, link.Path),
+		"linked":            true,
+		"owner":             link.Owner,
+		"repo":              link.Repo,
+		"branch":            link.Branch,
+		"path":              link.Path,
+		"last_commit_sha":   link.LastCommitSHA,
+		"remote_blob_sha":   link.RemoteBlobSHA,
+		"remote_commit_sha": link.RemoteCommitSHA,
+		"synced_at":         link.SyncedAt,
+		"local_drift":       localDrift,
+		"html_url":          githubFileWebURL(settings, link.Owner, link.Repo, link.Branch, link.Path),
 	}
 
 	// Best-effort remote check; requires an active connection + enabled feature.
@@ -533,7 +569,7 @@ func (s *Server) handleScriptGitHubStatus(w http.ResponseWriter, r *http.Request
 						contents, gerr := client.GetContents(r.Context(), link.Owner, link.Repo, link.Path, link.Branch)
 						if gerr == nil && contents != nil && contents.File != nil {
 							remoteChecked = true
-							remoteDrift = contents.File.SHA != link.LastCommitSHA
+							remoteDrift = contents.File.SHA != firstNonEmpty(link.RemoteBlobSHA, link.LastCommitSHA)
 						} else if apiErr, isAPI := gerr.(*githubAPIError); isAPI && apiErr.StatusCode == http.StatusNotFound {
 							remoteChecked = true
 							remoteMissing = true

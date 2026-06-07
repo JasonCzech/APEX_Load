@@ -216,16 +216,18 @@ type GitHubConnectionStore interface {
 // optimistic concurrency), drift detection (ContentHash vs local, LastCommitSHA
 // vs remote), and the "View on GitHub" deep link.
 type GitHubScriptLink struct {
-	ScriptID      string
-	RefKey        string
-	Owner         string
-	Repo          string
-	Branch        string
-	Path          string
-	LastCommitSHA string
-	ContentHash   string
-	SyncedAt      time.Time
-	UpdatedAt     time.Time
+	ScriptID        string
+	RefKey          string
+	Owner           string
+	Repo            string
+	Branch          string
+	Path            string
+	LastCommitSHA   string
+	RemoteBlobSHA   string
+	RemoteCommitSHA string
+	ContentHash     string
+	SyncedAt        time.Time
+	UpdatedAt       time.Time
 }
 
 // GitHubScriptLinkStore is an optional capability (type-asserted from Store) for
@@ -235,6 +237,104 @@ type GitHubScriptLinkStore interface {
 	// GetGitHubScriptLink returns (nil, nil) when the script has no link.
 	GetGitHubScriptLink(scriptID string) (*GitHubScriptLink, error)
 	DeleteGitHubScriptLink(scriptID string) error
+}
+
+type GitHubProjectPolicy struct {
+	Enabled              bool     `json:"enabled,omitempty"`
+	AllowedRepos         []string `json:"allowed_repos,omitempty"`
+	AllowedBranches      []string `json:"allowed_branches,omitempty"`
+	PathTemplate         string   `json:"path_template,omitempty"`
+	RequirePullRequest   bool     `json:"require_pull_request,omitempty"`
+	AllowDirectCommit    bool     `json:"allow_direct_commit,omitempty"`
+	AllowImport          bool     `json:"allow_import,omitempty"`
+	AllowPush            bool     `json:"allow_push,omitempty"`
+	BulkSyncEnabled      bool     `json:"bulk_sync_enabled,omitempty"`
+	AutoSyncEnabled      bool     `json:"auto_sync_enabled,omitempty"`
+	ChecksEnabled        bool     `json:"checks_enabled,omitempty"`
+	AppInstallationID    int64    `json:"app_installation_id,omitempty"`
+	AutomationIdentity   string   `json:"automation_identity,omitempty"`
+	DefaultRepo          string   `json:"default_repo,omitempty"`
+	DefaultBranch        string   `json:"default_branch,omitempty"`
+	DefaultSyncDirectory string   `json:"default_sync_directory,omitempty"`
+}
+
+type GitHubAppInstallation struct {
+	InstallationID      int64      `json:"installation_id"`
+	AccountLogin        string     `json:"account_login"`
+	AccountType         string     `json:"account_type"`
+	RepositorySelection string     `json:"repository_selection"`
+	PermissionsJSON     string     `json:"permissions_json,omitempty"`
+	EventsJSON          string     `json:"events_json,omitempty"`
+	HTMLURL             string     `json:"html_url,omitempty"`
+	SuspendedAt         *time.Time `json:"suspended_at,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
+}
+
+type GitHubSyncJob struct {
+	ID          string     `json:"id"`
+	ProjectID   string     `json:"project_id"`
+	Kind        string     `json:"kind"`
+	Status      string     `json:"status"`
+	Owner       string     `json:"owner,omitempty"`
+	Repo        string     `json:"repo,omitempty"`
+	Branch      string     `json:"branch,omitempty"`
+	Path        string     `json:"path,omitempty"`
+	Total       int        `json:"total"`
+	Processed   int        `json:"processed"`
+	Created     int        `json:"created"`
+	Updated     int        `json:"updated"`
+	Conflicts   int        `json:"conflicts"`
+	Errors      int        `json:"errors"`
+	SummaryJSON string     `json:"summary_json,omitempty"`
+	StartedBy   string     `json:"started_by,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+}
+
+type GitHubWebhookDelivery struct {
+	DeliveryID  string     `json:"delivery_id"`
+	Event       string     `json:"event"`
+	Action      string     `json:"action,omitempty"`
+	Owner       string     `json:"owner,omitempty"`
+	Repo        string     `json:"repo,omitempty"`
+	Ref         string     `json:"ref,omitempty"`
+	CommitSHA   string     `json:"commit_sha,omitempty"`
+	Status      string     `json:"status"`
+	SummaryJSON string     `json:"summary_json,omitempty"`
+	ReceivedAt  time.Time  `json:"received_at"`
+	ProcessedAt *time.Time `json:"processed_at,omitempty"`
+}
+
+type GitHubCheckLink struct {
+	ID          string    `json:"id"`
+	TestID      string    `json:"test_id"`
+	ScriptID    string    `json:"script_id,omitempty"`
+	Owner       string    `json:"owner"`
+	Repo        string    `json:"repo"`
+	CommitSHA   string    `json:"commit_sha"`
+	CheckRunID  int64     `json:"check_run_id"`
+	CheckRunURL string    `json:"check_run_url,omitempty"`
+	Status      string    `json:"status"`
+	Conclusion  string    `json:"conclusion,omitempty"`
+	PublishedAt time.Time `json:"published_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type GitHubEnterpriseStore interface {
+	SaveGitHubAppInstallation(installation *GitHubAppInstallation) error
+	GetGitHubAppInstallation(installationID int64) (*GitHubAppInstallation, error)
+	ListGitHubAppInstallations() ([]*GitHubAppInstallation, error)
+	SaveGitHubSyncJob(job *GitHubSyncJob) error
+	GetGitHubSyncJob(id string) (*GitHubSyncJob, error)
+	ListGitHubSyncJobs(projectID string, limit int) ([]*GitHubSyncJob, error)
+	SaveGitHubWebhookDelivery(delivery *GitHubWebhookDelivery) error
+	GetGitHubWebhookDelivery(deliveryID string) (*GitHubWebhookDelivery, error)
+	ListGitHubWebhookDeliveries(limit int) ([]*GitHubWebhookDelivery, error)
+	SaveGitHubCheckLink(link *GitHubCheckLink) error
+	GetGitHubCheckLink(id string) (*GitHubCheckLink, error)
+	ListGitHubCheckLinks(testID string, scriptID string, limit int) ([]*GitHubCheckLink, error)
 }
 
 type AuditEventFilter struct {
@@ -559,6 +659,7 @@ type ProjectSettings struct {
 	RedactionRules     []engine.RedactionRule `json:"redaction_rules,omitempty"`
 	MaxConcurrentTests int                    `json:"max_concurrent_tests,omitempty"`
 	MaxVUsers          int                    `json:"max_vusers,omitempty"`
+	GitHub             GitHubProjectPolicy    `json:"github,omitempty"`
 	// Per-test hard caps (reject at creation, not queue). MaxVUsersPerTest bounds
 	// a single test's VUser count; MaxTestDurationMinutes bounds a single test's
 	// duration. Zero means no limit.

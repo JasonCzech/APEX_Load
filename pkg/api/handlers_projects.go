@@ -176,6 +176,22 @@ func validateProjectSettings(settings storage.ProjectSettings) error {
 	if settings.MaxTestDurationMinutes < 0 {
 		return errProjectSettings("max_test_duration_minutes must be greater than or equal to 0")
 	}
+	if settings.GitHub.Enabled {
+		for _, repo := range settings.GitHub.AllowedRepos {
+			if strings.TrimSpace(repo) == "" {
+				continue
+			}
+			if _, _, ok := splitOwnerRepo(repo); !ok && !strings.Contains(repo, "*") {
+				return errProjectSettings("github.allowed_repos entries must be owner/repo or a glob")
+			}
+		}
+		if settings.GitHub.AppInstallationID < 0 {
+			return errProjectSettings("github.app_installation_id must be greater than or equal to 0")
+		}
+		if !settings.GitHub.AllowDirectCommit && !settings.GitHub.RequirePullRequest {
+			settings.GitHub.RequirePullRequest = true
+		}
+	}
 	if len(settings.RedactionRules) == 0 {
 		return nil
 	}

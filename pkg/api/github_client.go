@@ -149,6 +149,19 @@ func (c *githubClient) Identity(ctx context.Context) (*githubIdentity, error) {
 	return &id, nil
 }
 
+type githubMeta struct {
+	InstalledVersion                 string `json:"installed_version"`
+	VerifiablePasswordAuthentication bool   `json:"verifiable_password_authentication"`
+}
+
+func (c *githubClient) Meta(ctx context.Context) (*githubMeta, error) {
+	var meta githubMeta
+	if err := c.doJSON(ctx, http.MethodGet, "/meta", nil, nil, &meta); err != nil {
+		return nil, err
+	}
+	return &meta, nil
+}
+
 type githubRepo struct {
 	Name          string `json:"name"`
 	FullName      string `json:"full_name"`
@@ -158,6 +171,59 @@ type githubRepo struct {
 	Owner         struct {
 		Login string `json:"login"`
 	} `json:"owner"`
+}
+
+type githubAppInstallation struct {
+	ID                  int64  `json:"id"`
+	RepositorySelection string `json:"repository_selection"`
+	HTMLURL             string `json:"html_url"`
+	AppID               int64  `json:"app_id"`
+	AppSlug             string `json:"app_slug"`
+	Account             struct {
+		Login string `json:"login"`
+		Type  string `json:"type"`
+	} `json:"account"`
+	Permissions map[string]string `json:"permissions"`
+	Events      []string          `json:"events"`
+	SuspendedAt *time.Time        `json:"suspended_at"`
+}
+
+func (c *githubClient) ListAppInstallations(ctx context.Context) ([]githubAppInstallation, error) {
+	const perPage = 100
+	const maxPages = 10
+	all := make([]githubAppInstallation, 0, perPage)
+	for page := 1; page <= maxPages; page++ {
+		q := url.Values{}
+		q.Set("per_page", fmt.Sprint(perPage))
+		q.Set("page", fmt.Sprint(page))
+		var batch []githubAppInstallation
+		if err := c.doJSON(ctx, http.MethodGet, "/app/installations", q, nil, &batch); err != nil {
+			return nil, err
+		}
+		all = append(all, batch...)
+		if len(batch) < perPage {
+			break
+		}
+	}
+	return all, nil
+}
+
+type githubInstallationToken struct {
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+func (c *githubClient) CreateInstallationToken(ctx context.Context, installationID int64, repositories []string) (*githubInstallationToken, error) {
+	apiPath := fmt.Sprintf("/app/installations/%d/access_tokens", installationID)
+	body := map[string]any{}
+	if len(repositories) > 0 {
+		body["repositories"] = repositories
+	}
+	var token githubInstallationToken
+	if err := c.doJSON(ctx, http.MethodPost, apiPath, nil, body, &token); err != nil {
+		return nil, err
+	}
+	return &token, nil
 }
 
 // ListRepos returns repositories the connected user can access, most-recently
@@ -334,6 +400,37 @@ func (c *githubClient) CreatePull(ctx context.Context, owner, repo, title, head,
 	payload := map[string]any{"title": title, "head": head, "base": base, "body": body}
 	var result githubPullResult
 	if err := c.doJSON(ctx, http.MethodPost, apiPath, nil, payload, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+type githubCheckRun struct {
+	ID         int64  `json:"id"`
+	HTMLURL    string `json:"html_url"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+}
+
+func (c *githubClient) CreateCheckRun(ctx context.Context, owner, repo, name, headSHA, status, conclusion, summary, detailsURL string) (*githubCheckRun, error) {
+	body := map[string]any{
+		"name":     name,
+		"head_sha": headSHA,
+		"status":   status,
+		"output": map[string]any{
+			"title":   name,
+			"summary": summary,
+		},
+	}
+	if conclusion != "" {
+		body["conclusion"] = conclusion
+	}
+	if detailsURL != "" {
+		body["details_url"] = detailsURL
+	}
+	apiPath := fmt.Sprintf("/repos/%s/%s/check-runs", url.PathEscape(owner), url.PathEscape(repo))
+	var result githubCheckRun
+	if err := c.doJSON(ctx, http.MethodPost, apiPath, nil, body, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

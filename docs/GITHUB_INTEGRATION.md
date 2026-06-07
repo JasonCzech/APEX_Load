@@ -1,102 +1,127 @@
-# GitHub Script Sync (GitHub Enterprise Server)
+# GitHub Enterprise Integration
 
-APEX Load can push test scripts (JSON DSL) to a GitHub repository and import them
-back, so teams keep their source of truth in **GitHub Enterprise Server (GHES)**
-(github.com is also supported). Authentication is a per-user OAuth web login;
-each user pushes and pulls under their own GitHub identity.
+APEX Load treats GitHub Enterprise Server (GHES) as a first-class source-control
+and CI surface for JSON DSL scripts. The preferred automation path is a
+GitHub App installation token, per-user OAuth remains available for human browse
+and push actions, and a PAT can be configured only as a headless fallback.
 
-## How it works
+## Authentication Model
 
-- **Global config (SystemAdmin):** the OAuth App registered on your GHES instance
-  (`client_id` + a client secret supplied via an environment variable), the GHES
-  base URLs, optional internal CA/TLS settings, and defaults (scopes, repo,
-  branch, path template). Stored in System Settings.
-- **Per-user connection:** each user clicks **Connect GitHub** (OAuth web flow);
-  the resulting token is encrypted at rest (AES-GCM) and keyed to that user.
-- **Per-script sync:** push a script as one JSON file (direct commit or pull
-  request) and import a file back through the standard import-review flow. A
-  `github_script_links` row maps each local script to its remote file for
-  idempotent re-push and drift detection.
+- **GitHub App automation:** configure `app_id`, optional app slug, and a private
+  key env var or file. Project policies bind to an installation id. The
+  controller mints cached one-hour installation tokens and scopes them to the
+  target repository when the API supports it.
+- **Per-user OAuth:** users connect from Settings for interactive repo browsing,
+  single-file import, and human-attributed pushes. Stored access and refresh
+  tokens are encrypted with `APEXLOAD_GITHUB_TOKEN_KEY`; expiring OAuth tokens
+  are refreshed and rotated when possible.
+- **PAT fallback:** configure only an env var name. The token value is read from
+  the controller environment and is never persisted. Use this for headless labs
+  where a GitHub App cannot be installed yet.
 
-## Prerequisites
+## Global Settings
 
-1. **Register an OAuth App on GHES** (`https://<ghes-host>/settings/applications`
-   or an org-owned app):
-   - **Homepage URL:** your APEX Load dashboard URL.
-   - **Authorization callback URL:**
-     `https://<apexload-host>/api/v1/integrations/github/callback`
-   - Note the **Client ID** and generate a **Client Secret**.
-
-2. **Environment variables on the controller:**
-   - `APEXLOAD_GITHUB_CLIENT_SECRET` (or whatever name you configure) — the OAuth
-     App client secret. Only the *env var name* is stored in settings; the secret
-     value is never persisted or returned by the API.
-   - `APEXLOAD_GITHUB_TOKEN_KEY` — a random string used to derive the AES-GCM key
-     that encrypts per-user tokens at rest. **Required** to enable the feature;
-     in `APEXLOAD_ENV=production` the feature fails closed (stays disabled and is
-     surfaced in readiness) if this is unset.
-
-## Configure (SystemAdmin)
-
-Dashboard → **Settings → Integrations → GitHub Script Sync**:
+Dashboard -> Settings -> Integrations -> GitHub Script Sync:
 
 | Field | Example | Notes |
 | --- | --- | --- |
 | Enable GitHub integration | on | Master switch. |
-| OAuth Client ID | `Iv1.abc…` | From the GHES OAuth App. |
-| Client Secret Env Var | `APEXLOAD_GITHUB_CLIENT_SECRET` | Name only; value from env. |
-| API Base URL | `https://ghe.example.com/api/v3` | GHES REST base (github.com → `https://api.github.com`). |
-| Web Base URL | `https://ghe.example.com` | OAuth authorize/token + blob links (github.com → `https://github.com`). |
-| Scopes | `repo` | Space/comma separated. |
-| Default Repository | `my-org/perf-scripts` | `owner/name`; pre-fills the push/import pickers. |
-| Default Branch | `main` | |
-| Path Template | `apexload/scripts/{project}/{ref_key}.json` | `{project}`, `{ref_key}`, `{id}`, `{name}`. |
-| Internal CA Cert File | `/etc/apexload/ghe-ca.pem` | Optional; for internal PKI. |
-| Skip TLS verification | off | Lab only — never in production. |
+| OAuth Client ID | `Iv1...` | Required only for per-user OAuth. |
+| Client Secret Env Var | `APEXLOAD_GITHUB_CLIENT_SECRET` | Env var name only. |
+| GitHub App ID | `123456` | Required for App automation and Checks. |
+| App Private Key Env/File | `APEXLOAD_GITHUB_APP_PRIVATE_KEY` | Env value may contain escaped `\n`. |
+| Webhook Secret Env Var | `APEXLOAD_GITHUB_WEBHOOK_SECRET` | Used for `X-Hub-Signature-256` validation. |
+| PAT Fallback Env Var | `APEXLOAD_GITHUB_PAT` | Optional fallback only. |
+| Automation Mode | `app_oauth_pat` | Resolution order: App -> OAuth -> PAT. |
+| Publish GitHub Checks | on | Requires GitHub App permissions. |
+| API/Web Base URL | `https://ghe/api/v3`, `https://ghe` | github.com defaults also work. |
+| CA / TLS | `/etc/apexload/ghe-ca.pem` | Internal PKI support; skip verify is lab-only. |
 
-Save with the main **Save** button (the GitHub config round-trips through
-`PUT /api/v1/system/settings`).
+Secrets are not stored in settings; only env var names or file references are.
+The configured GHES host is added to the outbound allow-list without disabling
+the broader SSRF guard.
 
-### GHES networking (egress)
+## Project Policy
 
-GHES is usually an internal host that the control-plane SSRF guard would block.
-The integration adds a **host-scoped allowance**: outbound is permitted **only**
-to the configured GHES host (derived from the base URLs) — the rest of the egress
-guard stays intact, and the broad `APEXLOAD_ALLOW_PRIVATE_WEBHOOKS` toggle is
-**not** used. For internal TLS, set `Internal CA Cert File`.
+Settings -> Projects & Compliance -> GitHub Project Policy defines the server
+authority for each project:
 
-## Connect (each user)
+- Allowed repositories and branches, including glob patterns such as
+  `perf/*` or `release/*`.
+- Path template and default sync folder.
+- PR-required vs direct-commit policy.
+- Import, push, bulk sync, webhook auto-sync, and Checks enablement.
+- GitHub App installation id for project automation.
 
-In the same panel, click **Connect GitHub**, approve on GHES, and you'll return
-connected as your GitHub login. **Disconnect** revokes the stored token.
+All GitHub import, push, bulk sync, webhook, and check-run routes enforce this
+policy even if the underlying GitHub credential can access more repositories.
 
-## Push a script
+## Script Sync
 
-Script Library → a script row → **GitHub**:
+- Single-script push stores both `remote_blob_sha` and `remote_commit_sha`.
+  `last_commit_sha` remains for compatibility and represents the remote blob
+  SHA used for Contents API optimistic concurrency.
+- Single-script import returns source metadata through the standard import-review
+  flow.
+- Bulk import scans a configured repo path for `.json` DSL files, imports valid
+  scripts, records job progress, and links imported scripts to their GitHub file.
+- Bulk push writes selected or project scripts through the same policy checks.
 
-- Pick **Repository** and **Branch**, optionally override the **File Path**
-  (defaults from the path template) and **Commit Message**.
-- Choose **Direct commit** or **Pull request**.
-- The modal shows the current **sync status** and a **View on GitHub** link.
+Dashboard surfaces include installation health, project policy editing, row-level
+drift badges, a bulk import action, per-script push/import modals, webhook logs,
+and check-run status links.
 
-Pushes are idempotent: the link's recorded blob sha is used for GitHub's
-optimistic concurrency. If the remote file changed since the last sync, the push
-is refused (409) — pull and review first.
+## Webhooks
 
-## Import a script
+Configure the GHES webhook target:
 
-Script Library → **Import from GitHub**: browse the repo, pick a `.json` file,
-and import. The file is parsed and validated as DSL and saved to your library
-with GitHub source metadata (owner/repo/branch/path/commit).
+`POST https://<apexload-host>/api/v1/integrations/github/webhook`
 
-## API reference
+The controller validates `X-Hub-Signature-256`, deduplicates
+`X-GitHub-Delivery`, records each delivery, and processes push events to update
+linked script commit state. Auto-sync can be enabled by project policy; webhook
+processing is designed to create reviewable state rather than silently overwrite
+local scripts.
 
-See the route table in `CLAUDE.md` (`/api/v1/integrations/github/*` and the
-`/api/v1/scripts/{id}/github/*` + `/api/v1/scripts/import/github` endpoints).
+## CI Checks
 
-## Out of scope (v1)
+GitHub Checks are published through the GitHub App path. The local composite
+action supports repository script paths and controller evidence:
 
-- PAT fallback for headless/CI (the OAuth web flow needs a browser).
-- Whole-project/folder bulk sync and webhook-driven auto-sync.
-- OAuth refresh-token rotation for instances that issue expiring tokens.
-- In dev/no-auth mode, connections key to a single synthetic `local` user.
+```yaml
+- uses: ./.github/actions/apexload-run
+  with:
+    script: apexload/scripts/order-flow.json
+    api-url: https://apexload.example.com
+    publish-check: "true"
+    github-script-id: script-optional
+```
+
+The action uploads `apexload-result.json`, exposes `test-id`, and calls
+`apexctl github check-run` with the current repository and commit unless
+overridden.
+
+## CLI And MCP
+
+`apexctl github` provides headless access to controller-backed GHES workflows:
+
+```bash
+apexctl github diagnostics --api http://localhost:8080
+apexctl github installations --api http://localhost:8080 --refresh
+apexctl github policy --api http://localhost:8080 --project project-a
+apexctl github sync --api http://localhost:8080 --project project-a --kind import
+apexctl github status --api http://localhost:8080 --script script-a
+apexctl github check-run --api http://localhost:8080 --test test-a --commit-sha "$GITHUB_SHA"
+```
+
+The MCP endpoint catalog exposes the same diagnostics, policy, sync-job,
+import, push, status, webhook-delivery, check-link, and check-run publish routes
+with the existing confirmation guard for mutating tools.
+
+## Operations
+
+Readiness reports GHES reachability, auth mode configuration, token encryption,
+webhook secret presence, check publishing prerequisites, and cached installation
+state. Prometheus includes GitHub integration gauges and sync-job counters.
+Audit events are recorded for project policy changes, imports, pushes, sync
+jobs, webhook processing, and check-run publishing.

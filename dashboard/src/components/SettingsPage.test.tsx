@@ -970,6 +970,23 @@ describe('SettingsPage', () => {
         max_vusers: 400,
         max_vusers_per_test: 150,
         max_test_duration_minutes: 30,
+        github: {
+          enabled: false,
+          allowed_repos: [],
+          allowed_branches: [],
+          path_template: '',
+          require_pull_request: true,
+          allow_direct_commit: false,
+          allow_import: true,
+          allow_push: true,
+          bulk_sync_enabled: false,
+          auto_sync_enabled: false,
+          checks_enabled: false,
+          app_installation_id: undefined,
+          default_repo: '',
+          default_branch: '',
+          default_sync_directory: '',
+        },
       },
     })
     expect(container.textContent).toContain('Saved project governance defaults for Customer Portal.')

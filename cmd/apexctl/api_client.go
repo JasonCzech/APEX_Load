@@ -30,6 +30,7 @@ func NewApiClient(baseURL string) *ApiClient {
 
 // Result mimics engine.TestResult for formatting
 type ApiTestResult struct {
+	TestID            string
 	Duration          time.Duration
 	TotalTransactions int64
 	TotalErrors       int64
@@ -69,7 +70,11 @@ func (c *ApiClient) RunPreparedTest(scriptName string, scriptBody []byte, vusers
 	}
 
 	// 4. Poll Test Status
-	return c.pollTest(testID, format, goalConfig != nil)
+	result, err := c.pollTest(testID, format, goalConfig != nil)
+	if result != nil {
+		result.TestID = testID
+	}
+	return result, err
 }
 
 func (c *ApiClient) uploadScript(scriptName string, scriptBody []byte) (string, error) {

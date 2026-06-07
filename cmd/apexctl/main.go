@@ -40,6 +40,8 @@ func main() {
 		waitCmd()
 	case "record":
 		recordCmd()
+	case "github":
+		githubCmd()
 	case "version":
 		fmt.Println("apexctl v0.1.0")
 	case "help", "--help", "-h":
@@ -147,6 +149,9 @@ func runTest() {
 			out["errors"] = result.TotalErrors
 			out["tps"] = result.FinalSnapshot.TPS
 		} else if apiResult != nil {
+			if apiResult.TestID != "" {
+				out["test_id"] = apiResult.TestID
+			}
 			out["duration_ms"] = apiResult.Duration.Milliseconds()
 			out["transactions"] = apiResult.TotalTransactions
 			out["errors"] = apiResult.TotalErrors
@@ -332,9 +337,10 @@ Commands:
   run       Execute a performance test
   script    Validate or explain a JSON DSL script
   status    Print a test's current status + SLA verdict (exits 1 on breach/failure)
-  wait      Block until a started test finishes, then report SLA verdict
-  record    Record a new browser script using Playwright
-  version   Print version information
+	  wait      Block until a started test finishes, then report SLA verdict
+	  record    Record a new browser script using Playwright
+	  github    Inspect and run GitHub Enterprise sync/check workflows
+	  version   Print version information
   help      Show this help
 
 Run Flags:
@@ -360,8 +366,10 @@ Examples:
 	apexctl run --script order-flow.json -env target_namespace=pr-123 --base-url https://preview.example.com
 	apexctl run --script order-flow.json --p95-latency-ms 800 --max-error-pct 2.5
   apexctl run --api http://localhost:8080 --script order-flow.json --format json
-  apexctl run --script order-flow.json --p95-latency-ms 800 --junit results.xml
-  apexctl wait --api http://localhost:8080 --test <id> --junit results.xml`)
+	  apexctl run --script order-flow.json --p95-latency-ms 800 --junit results.xml
+	  apexctl wait --api http://localhost:8080 --test <id> --junit results.xml
+	  apexctl github diagnostics --api http://localhost:8080
+	  apexctl github sync --api http://localhost:8080 --project <id> --kind import`)
 	fmt.Println()
 	fmt.Println(ctlUsage())
 }

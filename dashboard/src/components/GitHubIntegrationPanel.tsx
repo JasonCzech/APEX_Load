@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { useGitHubApi } from '../hooks/api/useGitHubApi'
-import { DashboardGitHubSettings, GitHubConnectionResponse } from '../types'
+import { DashboardGitHubSettings, GitHubConnectionResponse, GitHubDiagnosticsResponse } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 
 type GitHubIntegrationPanelProps = {
@@ -21,7 +21,9 @@ function updateField<K extends keyof DashboardGitHubSettings>(
 export default function GitHubIntegrationPanel({ value, onChange, canEdit = true }: GitHubIntegrationPanelProps) {
   const githubApi = useGitHubApi()
   const [connection, setConnection] = useState<GitHubConnectionResponse | null>(null)
+  const [diagnostics, setDiagnostics] = useState<GitHubDiagnosticsResponse | null>(null)
   const [connectionError, setConnectionError] = useState('')
+  const [diagnosticsError, setDiagnosticsError] = useState('')
   const [loading, setLoading] = useState(false)
 
   const refreshConnection = useCallback(async () => {
@@ -39,6 +41,23 @@ export default function GitHubIntegrationPanel({ value, onChange, canEdit = true
   useEffect(() => {
     void refreshConnection()
   }, [refreshConnection])
+
+  const refreshDiagnostics = useCallback(async (refreshInstallations = false) => {
+    try {
+      if (refreshInstallations) {
+        await githubApi.listInstallations(true)
+      }
+      const response = await githubApi.getDiagnostics()
+      setDiagnostics(response)
+      setDiagnosticsError('')
+    } catch (error) {
+      setDiagnosticsError(getErrorMessage(error, 'Unable to load GitHub diagnostics'))
+    }
+  }, [githubApi])
+
+  useEffect(() => {
+    void refreshDiagnostics()
+  }, [refreshDiagnostics])
 
   function connect() {
     const returnTo = typeof window !== 'undefined' ? window.location.href : ''
@@ -98,6 +117,28 @@ export default function GitHubIntegrationPanel({ value, onChange, canEdit = true
       {!value.enabled && <p className="setting-desc">Enable and save the integration below before connecting.</p>}
       {connectionError && <p className="settings-error-inline">{connectionError}</p>}
 
+      <div className="settings-subsection">
+        <div className="settings-manager-summary">
+          <div>
+            <span className="setting-label">Enterprise Health</span>
+            <span className="setting-desc">GitHub App, webhook, PAT fallback, check-run, and GHES reachability status.</span>
+          </div>
+          <span className={`script-health-token ${diagnostics?.reachable || diagnostics?.app_configured ? 'healthy' : ''}`}>
+            {diagnostics?.ghes_version || diagnostics?.automation_mode || 'not checked'}
+          </span>
+        </div>
+        <div className="settings-inline-actions">
+          <span className={`script-health-token ${diagnostics?.oauth_configured ? 'healthy' : ''}`}>OAuth {diagnostics?.oauth_configured ? 'ready' : 'not ready'}</span>
+          <span className={`script-health-token ${diagnostics?.app_configured ? 'healthy' : ''}`}>App {diagnostics?.app_configured ? 'ready' : 'not ready'}</span>
+          <span className={`script-health-token ${diagnostics?.webhook_configured ? 'healthy' : ''}`}>Webhook {diagnostics?.webhook_configured ? 'ready' : 'not ready'}</span>
+          <span className={`script-health-token ${diagnostics?.pat_configured ? 'healthy' : ''}`}>PAT {diagnostics?.pat_configured ? 'ready' : 'fallback off'}</span>
+          <button className="btn btn-ghost" type="button" onClick={() => void refreshDiagnostics()} disabled={loading}>Refresh Health</button>
+          <button className="btn btn-secondary" type="button" onClick={() => void refreshDiagnostics(true)} disabled={loading || !value.app_id}>Refresh Installations</button>
+        </div>
+        {diagnostics?.known_installations !== undefined && <p className="setting-desc">Known GitHub App installations: {diagnostics.known_installations}</p>}
+        {diagnosticsError && <p className="settings-error-inline">{diagnosticsError}</p>}
+      </div>
+
       {/* --- Global OAuth app config (SystemAdmin) --- */}
       <div className="project-redaction-rule-grid" style={{ marginTop: 12 }}>
         <label className="project-redaction-rule-field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -128,6 +169,90 @@ export default function GitHubIntegrationPanel({ value, onChange, canEdit = true
             onChange={event => onChange(updateField(value, 'client_secret_env_var', event.target.value))}
             placeholder="APEXLOAD_GITHUB_CLIENT_SECRET"
           />
+        </label>
+        <label className="project-redaction-rule-field">
+          <span>GitHub App ID</span>
+          <input
+            className="settings-input"
+            type="number"
+            value={value.app_id || 0}
+            disabled={!canEdit}
+            onChange={event => onChange(updateField(value, 'app_id', Number(event.target.value || 0)))}
+            placeholder="123456"
+          />
+        </label>
+        <label className="project-redaction-rule-field">
+          <span>GitHub App Slug</span>
+          <input
+            className="settings-input"
+            value={value.app_slug}
+            disabled={!canEdit}
+            onChange={event => onChange(updateField(value, 'app_slug', event.target.value))}
+            placeholder="apex-load"
+          />
+        </label>
+        <label className="project-redaction-rule-field">
+          <span>App Private Key Env Var</span>
+          <input
+            className="settings-input"
+            value={value.app_private_key_env_var}
+            disabled={!canEdit}
+            onChange={event => onChange(updateField(value, 'app_private_key_env_var', event.target.value))}
+            placeholder="APEXLOAD_GITHUB_APP_PRIVATE_KEY"
+          />
+        </label>
+        <label className="project-redaction-rule-field">
+          <span>App Private Key File</span>
+          <input
+            className="settings-input"
+            value={value.app_private_key_file}
+            disabled={!canEdit}
+            onChange={event => onChange(updateField(value, 'app_private_key_file', event.target.value))}
+            placeholder="/etc/apexload/github-app.pem"
+          />
+        </label>
+        <label className="project-redaction-rule-field">
+          <span>Webhook Secret Env Var</span>
+          <input
+            className="settings-input"
+            value={value.webhook_secret_env_var}
+            disabled={!canEdit}
+            onChange={event => onChange(updateField(value, 'webhook_secret_env_var', event.target.value))}
+            placeholder="APEXLOAD_GITHUB_WEBHOOK_SECRET"
+          />
+        </label>
+        <label className="project-redaction-rule-field">
+          <span>PAT Fallback Env Var</span>
+          <input
+            className="settings-input"
+            value={value.pat_env_var}
+            disabled={!canEdit}
+            onChange={event => onChange(updateField(value, 'pat_env_var', event.target.value))}
+            placeholder="APEXLOAD_GITHUB_PAT"
+          />
+        </label>
+        <label className="project-redaction-rule-field">
+          <span>Automation Mode</span>
+          <select
+            className="settings-input"
+            value={value.automation_mode}
+            disabled={!canEdit}
+            onChange={event => onChange(updateField(value, 'automation_mode', event.target.value))}
+          >
+            <option value="app_oauth_pat">App, OAuth, PAT</option>
+            <option value="app">GitHub App only</option>
+            <option value="oauth">OAuth only</option>
+            <option value="pat">PAT only</option>
+          </select>
+        </label>
+        <label className="project-redaction-rule-field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={value.checks_enabled}
+            disabled={!canEdit}
+            onChange={event => onChange(updateField(value, 'checks_enabled', event.target.checked))}
+          />
+          <span>Publish GitHub Checks</span>
         </label>
         <label className="project-redaction-rule-field">
           <span>API Base URL</span>

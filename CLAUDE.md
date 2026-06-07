@@ -90,7 +90,17 @@ GET    /api/v1/scripts/import/asyncapi/support-matrix — AsyncAPI import covera
 POST   /api/v1/scripts/import/github — Pull a script JSON file from GitHub (GHES), get import-review draft
 POST   /api/v1/scripts/{id}/github/push — Push a script to GitHub (direct commit or PR); idempotent via link
 GET    /api/v1/scripts/{id}/github/status — GitHub link + drift status (local hash vs remote sha)
+GET    /api/v1/projects/{id}/github/policy — Project GitHub repository/branch/path policy
+PUT    /api/v1/projects/{id}/github/policy — Update project GitHub policy
 GET    /api/v1/integrations/github/config — Non-secret global GitHub (GHES) integration config
+GET    /api/v1/integrations/github/diagnostics — GHES reachability/auth/install diagnostics
+GET    /api/v1/integrations/github/installations — Cached/refreshed GitHub App installations
+POST   /api/v1/integrations/github/sync-jobs — Start guarded bulk import/push job
+GET    /api/v1/integrations/github/sync-jobs[/{id}] — List/get GitHub sync jobs
+POST   /api/v1/integrations/github/webhook — GHES webhook receiver with HMAC validation
+GET    /api/v1/integrations/github/webhooks — Webhook delivery processing log
+GET    /api/v1/integrations/github/check-links — GitHub check-run links
+POST   /api/v1/tests/{id}/github/check-run — Publish/retry APEX Load result as GitHub Check Run
 GET    /api/v1/integrations/github/login · /callback — Per-user OAuth web connect flow
 GET    /api/v1/integrations/github/connection — Current user's GitHub connection status
 DELETE /api/v1/integrations/github/connection — Disconnect + delete the per-user token

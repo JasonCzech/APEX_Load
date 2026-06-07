@@ -2777,11 +2777,13 @@ func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenar
 	return req
 }
 
-func firstNonEmpty(value string, fallback string) string {
-	if value != "" {
-		return value
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
 	}
-	return fallback
+	return ""
 }
 
 func cloneTimePtr(value *time.Time) *time.Time {

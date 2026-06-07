@@ -3,7 +3,7 @@ description: Build and run apexctl with optional SLA guardrails for CI/CD pipeli
 
 inputs:
   script:
-    description: Path to the APEX Load DSL script.
+    description: Path to the APEX Load DSL script in the checked-out repository.
     required: true
   vusers:
     description: Number of virtual users.
@@ -49,11 +49,42 @@ inputs:
     description: Optional max error count guardrail.
     required: false
     default: ""
+  publish-check:
+    description: Publish the APEX Load result as a GitHub Check Run through the controller GitHub App integration.
+    required: false
+    default: "false"
+  github-script-id:
+    description: Optional APEX Load script id to link the check run to a synced GitHub script.
+    required: false
+    default: ""
+  github-owner:
+    description: Optional repository owner for check-run publishing; defaults to GITHUB_REPOSITORY owner.
+    required: false
+    default: ""
+  github-repo:
+    description: Optional repository name for check-run publishing; defaults to GITHUB_REPOSITORY name.
+    required: false
+    default: ""
+  github-commit-sha:
+    description: Optional commit SHA for check-run publishing; defaults to GITHUB_SHA.
+    required: false
+    default: ""
+  check-details-url:
+    description: Optional check-run details URL; defaults to the controller run report endpoint when api-url is set.
+    required: false
+    default: ""
+  evidence-artifact-name:
+    description: Name for the uploaded APEX Load CI evidence artifact. Leave blank to skip upload.
+    required: false
+    default: apexload-evidence
 
 outputs:
   json:
     description: JSON result returned by apexctl.
     value: ${{ steps.apexload.outputs.json }}
+  test-id:
+    description: Controller test id for API-backed runs.
+    value: ${{ steps.apexload.outputs.test-id }}
 
 runs:
   using: composite
@@ -103,11 +134,66 @@ runs:
           cmd+=(--env "$entry")
         done <<< "${{ inputs.env }}"
 
+        set +e
         result="$(${cmd[@]})"
+        status=$?
+        set -e
         echo "$result"
+        printf '%s\n' "$result" > apexload-result.json
+
+        test_id="$(RESULT_JSON="$result" python3 - <<'PY'
+import json, os
+try:
+    print(json.loads(os.environ.get("RESULT_JSON", "{}")).get("test_id", ""))
+except Exception:
+    print("")
+PY
+)"
 
         {
           echo 'json<<EOF'
           echo "$result"
           echo 'EOF'
+          echo "test-id=$test_id"
         } >> "$GITHUB_OUTPUT"
+        exit "$status"
+
+    - name: Upload APEX Load evidence
+      if: always() && inputs.evidence-artifact-name != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.evidence-artifact-name }}
+        path: apexload-result.json
+        if-no-files-found: ignore
+
+    - name: Publish GitHub check run
+      if: always() && inputs.publish-check == 'true' && inputs.api-url != '' && steps.apexload.outputs.test-id != ''
+      shell: bash
+      run: |
+        set -euo pipefail
+        owner="${{ inputs.github-owner }}"
+        repo="${{ inputs.github-repo }}"
+        commit_sha="${{ inputs.github-commit-sha }}"
+        details_url="${{ inputs.check-details-url }}"
+        if [[ -z "$owner" || -z "$repo" ]]; then
+          owner="${GITHUB_REPOSITORY%/*}"
+          repo="${GITHUB_REPOSITORY#*/}"
+        fi
+        if [[ -z "$commit_sha" ]]; then
+          commit_sha="$GITHUB_SHA"
+        fi
+        if [[ -z "$details_url" ]]; then
+          details_url="${{ inputs.api-url }}/api/v1/tests/${{ steps.apexload.outputs.test-id }}/report"
+        fi
+        cmd=(go run ./cmd/apexctl github check-run \
+          --api "${{ inputs.api-url }}" \
+          --test "${{ steps.apexload.outputs.test-id }}" \
+          --owner "$owner" \
+          --repo "$repo" \
+          --commit-sha "$commit_sha" \
+          --details-url "$details_url" \
+          --format json)
+        if [[ -n "${{ inputs.github-script-id }}" ]]; then
+          cmd+=(--script "${{ inputs.github-script-id }}")
+        fi
+        "${cmd[@]}"

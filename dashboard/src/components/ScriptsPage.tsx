@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, DashboardAuthEffectiveAccessResource, GitHubConfigResponse, GitHubPushResponse, StoredScript } from '../types'
+import { AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, DashboardAuthEffectiveAccessResource, GitHubConfigResponse, GitHubPushResponse, GitHubScriptStatus, StoredScript } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useGitHubApi } from '../hooks/api/useGitHubApi'
 import GitHubSyncModal from './GitHubSyncModal'
@@ -15,6 +15,7 @@ import { type NavPage } from './Sidebar'
 import { type ScriptDefinition } from '../types/scripts'
 import { useScriptsLibraryModel } from './useScriptsLibraryModel'
 import { type ImportedSaveResult, type ScriptsAuthoringSubView, useScriptsAuthoringState } from './useScriptsAuthoringState'
+import { getErrorMessage } from '../utils/errorUtils'
 
 interface Props {
   initialMode?: ScriptsAuthoringSubView
@@ -214,6 +215,8 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   const [githubPushScript, setGithubPushScript] = useState<StoredScript | null>(null)
   const [githubImportOpen, setGithubImportOpen] = useState(false)
   const [githubNotice, setGithubNotice] = useState('')
+  const [githubBulkRunning, setGithubBulkRunning] = useState(false)
+  const [githubStatusByScript, setGithubStatusByScript] = useState<Record<string, GitHubScriptStatus>>({})
 
   useEffect(() => {
     let cancelled = false
@@ -234,6 +237,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   }, [githubApi])
 
   const githubReady = Boolean(githubConfig?.enabled && githubConnected)
+  const githubAutomationReady = Boolean(githubConfig?.enabled && (githubConnected || githubConfig.app_configured || githubConfig.pat_configured))
 
   const handleGithubPushed = useCallback((response: GitHubPushResponse) => {
     setGithubNotice(
@@ -248,6 +252,47 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     void refresh()
     handleSavedScript(saved)
   }, [handleSavedScript, refresh])
+
+  const handleGithubBulkImport = useCallback(async () => {
+    if (!activeProject?.id) {
+      setGithubNotice('Select a project before starting GitHub bulk import.')
+      return
+    }
+    setGithubBulkRunning(true)
+    try {
+      const job = await githubApi.createSyncJob({ project_id: activeProject.id, kind: 'import' })
+      setGithubNotice(`GitHub bulk import ${job.status || 'queued'}: ${job.processed || 0}/${job.total || 0} processed, ${job.created || 0} imported.`)
+      void refresh()
+    } catch (error) {
+      setGithubNotice(getErrorMessage(error, 'Unable to start GitHub bulk import.'))
+    } finally {
+      setGithubBulkRunning(false)
+    }
+  }, [activeProject?.id, githubApi, refresh])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!githubReady || scripts.length === 0) {
+      setGithubStatusByScript({})
+      return () => { cancelled = true }
+    }
+    void (async () => {
+      const statuses = await Promise.all(scripts.slice(0, 100).map(async script => {
+        try {
+          return [script.id, await githubApi.scriptStatus(script.id)] as const
+        } catch {
+          return [script.id, null] as const
+        }
+      }))
+      if (cancelled) return
+      const next: Record<string, GitHubScriptStatus> = {}
+      statuses.forEach(([id, status]) => {
+        if (status?.linked) next[id] = status
+      })
+      setGithubStatusByScript(next)
+    })()
+    return () => { cancelled = true }
+  }, [githubApi, githubReady, scripts])
 
   const knownScriptIds = useMemo(() => new Set(scripts.map(script => script.id)), [scripts])
 
@@ -410,6 +455,11 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
                 Import from GitHub
               </button>
             )}
+            {canManageScripts && githubAutomationReady && (
+              <button className="btn btn-secondary" type="button" onClick={() => { void handleGithubBulkImport() }} disabled={githubBulkRunning}>
+                Bulk Import
+              </button>
+            )}
             {canManageScripts && (
               <PageViewToggle
                 value="library"
@@ -513,7 +563,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
             canManageScripts={canManageScripts}
             emptyMessage={libraryQuery.trim() || healthFilter !== 'all' || releaseFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
             federation={scriptFederation}
-            github={canManageScripts && githubReady ? { enabled: true, onPush: setGithubPushScript } : undefined}
+            github={canManageScripts && githubReady ? { enabled: true, onPush: setGithubPushScript, statusByScript: githubStatusByScript } : undefined}
           />
         </div>
       </div>

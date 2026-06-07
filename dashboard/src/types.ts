@@ -100,6 +100,26 @@ export interface ProjectSettings {
   max_vusers?: number
   max_vusers_per_test?: number
   max_test_duration_minutes?: number
+  github?: GitHubProjectPolicy
+}
+
+export interface GitHubProjectPolicy {
+  enabled?: boolean
+  allowed_repos?: string[]
+  allowed_branches?: string[]
+  path_template?: string
+  require_pull_request?: boolean
+  allow_direct_commit?: boolean
+  allow_import?: boolean
+  allow_push?: boolean
+  bulk_sync_enabled?: boolean
+  auto_sync_enabled?: boolean
+  checks_enabled?: boolean
+  app_installation_id?: number
+  automation_identity?: string
+  default_repo?: string
+  default_branch?: string
+  default_sync_directory?: string
 }
 
 export interface Application {
@@ -3182,6 +3202,14 @@ export interface DashboardGitHubSettings {
   enabled: boolean
   client_id: string
   client_secret_env_var: string
+  app_id: number
+  app_slug: string
+  app_private_key_env_var: string
+  app_private_key_file: string
+  webhook_secret_env_var: string
+  pat_env_var: string
+  automation_mode: string
+  checks_enabled: boolean
   api_base_url: string
   web_base_url: string
   ca_cert_file: string
@@ -3207,7 +3235,18 @@ export interface DashboardSystemSettings {
 export interface GitHubConfigResponse {
   enabled: boolean
   oauth_configured: boolean
+  app_configured?: boolean
+  webhook_configured?: boolean
+  pat_configured?: boolean
   encryption_available: boolean
+  app_id?: number
+  app_slug?: string
+  app_private_key_env_var?: string
+  app_private_key_file?: string
+  webhook_secret_env_var?: string
+  pat_env_var?: string
+  automation_mode?: string
+  checks_enabled?: boolean
   api_base_url: string
   web_base_url: string
   scopes: string[]
@@ -3267,6 +3306,9 @@ export interface GitHubPushResponse {
   path: string
   commit_sha: string
   file_sha: string
+  remote_blob_sha?: string
+  remote_commit_sha?: string
+  auth_mode?: string
   html_url: string
   pull_request_url?: string
   pull_request_number?: number
@@ -3280,10 +3322,56 @@ export interface GitHubScriptStatus {
   branch?: string
   path?: string
   last_commit_sha?: string
+  remote_blob_sha?: string
+  remote_commit_sha?: string
   synced_at?: string
   local_drift?: boolean
   remote_drift?: boolean
   remote_missing?: boolean
   remote_checked?: boolean
   html_url?: string
+}
+
+export interface GitHubDiagnosticsResponse {
+  enabled: boolean
+  oauth_configured: boolean
+  app_configured: boolean
+  webhook_configured: boolean
+  pat_configured: boolean
+  encryption_available: boolean
+  automation_mode: string
+  checks_enabled: boolean
+  reachable?: boolean
+  ghes_version?: string
+  known_installations?: number
+  reachability_error?: string
+}
+
+export interface GitHubAppInstallation {
+  installation_id?: number
+  account_login?: string
+  account_type?: string
+  repository_selection?: string
+  html_url?: string
+}
+
+export interface GitHubSyncJob {
+  id?: string
+  project_id?: string
+  kind?: string
+  status?: string
+  owner?: string
+  repo?: string
+  branch?: string
+  path?: string
+  total?: number
+  processed?: number
+  created?: number
+  updated?: number
+  conflicts?: number
+  errors?: number
+  summary_json?: string
+  created_at?: string
+  updated_at?: string
+  completed_at?: string
 }

@@ -62,6 +62,18 @@ func TestValidateGitHubSettings(t *testing.T) {
 	if err := validateGitHubSettings(ok); err != nil {
 		t.Fatalf("valid enabled github should pass, got: %v", err)
 	}
+	app := GitHubSettings{Enabled: true, AppID: 123, AppPrivateKeyEnvVar: "APP_KEY", APIBaseURL: "https://ghe/api/v3", WebBaseURL: "https://ghe"}
+	if err := validateGitHubSettings(app); err != nil {
+		t.Fatalf("valid app github should pass, got: %v", err)
+	}
+	pat := GitHubSettings{Enabled: true, PATEnvVar: "GH_PAT", APIBaseURL: "https://ghe/api/v3", WebBaseURL: "https://ghe"}
+	if err := validateGitHubSettings(pat); err != nil {
+		t.Fatalf("valid PAT fallback github should pass, got: %v", err)
+	}
+	badMode := GitHubSettings{Enabled: true, PATEnvVar: "GH_PAT", AutomationMode: "magic", APIBaseURL: "https://ghe/api/v3", WebBaseURL: "https://ghe"}
+	if err := validateGitHubSettings(badMode); err == nil {
+		t.Fatal("invalid automation mode should fail")
+	}
 }
 
 func TestGitHubClientSecretAndOAuthConfigured(t *testing.T) {
