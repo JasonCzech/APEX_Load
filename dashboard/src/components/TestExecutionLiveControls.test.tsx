@@ -103,7 +103,12 @@ describe('TestExecutionLiveControls', () => {
     expect(actionSelect?.value).toBe('pause')
     expect(container.querySelector<HTMLInputElement>('input[aria-label="Checkout VUser target"]')?.disabled).toBe(true)
     expect(container.querySelector<HTMLInputElement>('input[aria-label="Checkout VUser target value"]')?.disabled).toBe(true)
-    expect(buttonByText('Pause')).not.toBeUndefined()
+    expect(container.querySelector('#live-controls-panel .run-actions-card')).toBeNull()
+    expect(container.querySelector('.run-actions-drawer')).toBeNull()
+    expect(toolbarButtonByText('Pause')).not.toBeUndefined()
+    expect(toolbarButtonByText('Stop VUsers')).not.toBeUndefined()
+    expect(toolbarButtonByText('Stop Test')).not.toBeUndefined()
+    expect(toolbarButtonByText('Abort')).not.toBeUndefined()
     expect(container.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('Elapsed time')
     expect(container.querySelector('[data-testid="mock-y-axis"]')?.getAttribute('data-label')).toBe('VUsers')
 
@@ -114,8 +119,76 @@ describe('TestExecutionLiveControls', () => {
     expect(onVuserGroupActionChange).toHaveBeenCalledWith('Checkout', 'stop')
   })
 
-  function buttonByText(label: string) {
-    return Array.from(container.querySelectorAll('button')).find(button => button.textContent === label)
+  it('keeps run actions available when live controls are collapsed', async () => {
+    const onAbort = vi.fn()
+    const onPause = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <TestExecutionLiveControls
+          showControls={false}
+          onToggleControls={vi.fn()}
+          test={buildRunningTest()}
+          vuserTargets={{ Checkout: 12 }}
+          onVuserTargetChange={vi.fn()}
+          vuserGroupActions={{ Checkout: 'run' }}
+          onVuserGroupActionChange={vi.fn()}
+          vuserRampEnabled={false}
+          onVuserRampEnabledChange={vi.fn()}
+          vuserRampDuration="1m"
+          onVuserRampDurationChange={vi.fn()}
+          onScaleVUsers={vi.fn()}
+          onStopAllVUsers={vi.fn()}
+          durationInput="10m"
+          onDurationInputChange={vi.fn()}
+          onAdjustDuration={vi.fn()}
+          isRunning
+          isPaused={false}
+          isStopping={false}
+          onPause={onPause}
+          onResume={vi.fn()}
+          onStop={vi.fn()}
+          onAbort={onAbort}
+          liveControlPreview={{
+            points: [],
+            currentTotal: 12,
+            projectedTotal: 12,
+            remainingSeconds: 600,
+            projectedDurationSeconds: 600,
+            vuserTransitionSeconds: 0,
+            isGradualVuserChange: false,
+            hasActiveVuserRamp: false,
+            hasPendingChanges: false,
+          }}
+          controlFeedback=""
+          groupColors={['#00a3ff']}
+        />,
+      )
+    })
+
+    expect(container.querySelector('#live-controls-panel')).toBeNull()
+    expect(container.querySelector('.run-actions-inline')?.textContent).toContain('Active')
+    expect(toolbarButtonByText('Pause')).not.toBeUndefined()
+    expect(toolbarButtonByText('Stop VUsers')).not.toBeUndefined()
+    expect(toolbarButtonByText('Stop Test')).not.toBeUndefined()
+    expect(toolbarButtonByText('Abort')).not.toBeUndefined()
+    expect(document.body.querySelector('.run-actions-drawer')).toBeNull()
+
+    await act(async () => {
+      toolbarButtonByText('Pause')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onPause).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      toolbarButtonByText('Abort')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onAbort).toHaveBeenCalledTimes(1)
+  })
+
+  function toolbarButtonByText(label: string) {
+    return Array.from(container.querySelectorAll('.run-actions-inline button')).find(button => button.textContent === label)
   }
 })
 

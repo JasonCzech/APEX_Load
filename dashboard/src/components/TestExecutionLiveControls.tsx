@@ -69,48 +69,47 @@ export default function TestExecutionLiveControls({
   })
   const rampInputMissing = vuserRampEnabled && !isValidDurationInput(vuserRampDuration)
   const durationInputInvalid = !isValidDurationInput(durationInput)
+  const runActionsStatus = isPaused ? 'Paused' : isStopping ? 'Stopping' : 'Active'
+  const runActionsStatusClass = runActionsStatus.toLowerCase()
 
   return (
     <div className="live-controls-section">
-      <button
-        className="btn btn-secondary live-controls-toggle"
-        onClick={onToggleControls}
-        aria-expanded={showControls}
-        aria-controls="live-controls-panel"
-      >
-        {showControls ? 'Hide Controls' : 'Live Controls'}
-      </button>
+      <div className="live-controls-toolbar">
+        <button
+          type="button"
+          className="btn btn-secondary live-controls-toggle"
+          onClick={onToggleControls}
+          aria-expanded={showControls}
+          aria-controls="live-controls-panel"
+        >
+          {showControls ? 'Hide Controls' : 'Live Controls'}
+        </button>
+        <div className="run-actions-inline" aria-label="Run actions">
+          <span className={`run-actions-status ${runActionsStatusClass}`}>{runActionsStatus}</span>
+          {isPaused ? (
+            <button type="button" className="btn btn-sm btn-success" onClick={onResume}>
+              Resume
+            </button>
+          ) : (
+            <button type="button" className="btn btn-sm btn-secondary" onClick={onPause} disabled={!isRunning || isStopping}>
+              Pause
+            </button>
+          )}
+          <button type="button" className="btn btn-sm btn-secondary" onClick={onStopAllVUsers} disabled={!hasActiveVUsers || rampInputMissing || isStopping}>
+            Stop VUsers
+          </button>
+          <button type="button" className="btn btn-sm btn-secondary" onClick={onStop} disabled={isStopping}>
+            Stop Test
+          </button>
+          <button type="button" className="btn btn-sm btn-danger" onClick={onAbort} disabled={isStopping}>
+            Abort
+          </button>
+        </div>
+      </div>
       {showControls && (
         <div id="live-controls-panel" className="live-controls-panel">
           <div className="live-controls-layout">
             <div className="control-group control-group-form">
-              <div className="control-group control-group-nested run-actions-card">
-                <div className="run-actions-header">
-                  <h4 className="control-title">Run Actions</h4>
-                  <span className="run-actions-status">{isPaused ? 'Paused' : isStopping ? 'Stopping' : 'Active'}</span>
-                </div>
-                <div className="run-actions-row">
-                  {isPaused ? (
-                    <button className="btn btn-sm btn-success" onClick={onResume}>
-                      Resume
-                    </button>
-                  ) : (
-                    <button className="btn btn-sm btn-secondary" onClick={onPause} disabled={!isRunning || isStopping}>
-                      Pause
-                    </button>
-                  )}
-                  <button className="btn btn-sm btn-secondary" onClick={onStopAllVUsers} disabled={!hasActiveVUsers || rampInputMissing || isStopping}>
-                    Stop VUsers
-                  </button>
-                  <button className="btn btn-sm btn-secondary" onClick={onStop} disabled={isStopping}>
-                    Stop Test
-                  </button>
-                  <button className="btn btn-sm btn-danger" onClick={onAbort} disabled={isStopping}>
-                    Abort
-                  </button>
-                </div>
-              </div>
-
               <h4 className="control-title">VUser Scaling</h4>
               {(test.groups || []).map((group: TestGroup) => {
                 const activeRampTarget = test.vuser_ramps?.[group.name]?.target_vusers
