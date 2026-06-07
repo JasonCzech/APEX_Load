@@ -613,8 +613,15 @@ func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, te
 	test.StartedAt = &now
 	test.EndedAt = nil
 	test.Status = "RUNNING"
+	test.PendingSince = nil
+	test.PendingReason = ""
+	test.QueuePosition = 0
+	test.Error = ""
+	tr.saveManagedTestRecord(test)
+	snapshot := buildRunLiveStateSnapshotLocked(test, now)
 	tr.mu.Unlock()
 
+	tr.cacheRunSnapshot(snapshot)
 	tr.broadcastEvent("test_started", test)
 	for _, target := range orderedMetricsTargets(streamsByTarget, b.configuredTargets()) {
 		go b.consumeMetrics(ctx, tr, test, target, streamsByTarget[target])

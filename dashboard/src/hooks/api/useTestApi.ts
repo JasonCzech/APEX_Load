@@ -114,6 +114,7 @@ type TestActionResponse = {
   status: string
   test_id: string
   message?: string
+  test?: TestSummary
 }
 
 type ScenarioScheduleRequest = {

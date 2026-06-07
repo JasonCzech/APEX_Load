@@ -923,10 +923,32 @@ func (tr *TestRunner) loadStoredTests() {
 	}
 	for _, record := range tests {
 		managedTest := managedTestFromRecord(record)
+		tr.reconcileStoredActiveTest(managedTest)
 		tr.loadStoredTestHistory(managedTest)
 		tr.loadStoredTestArchive(managedTest)
 		tr.tests[record.ID] = managedTest
 	}
+}
+
+func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) {
+	if test == nil {
+		return
+	}
+	switch test.Status {
+	case "INITIALIZING", "RUNNING", "PAUSED", "STOPPING", "SHAKEOUT":
+	default:
+		return
+	}
+	now := time.Now().UTC()
+	test.Status = "FAILED"
+	test.PendingSince = nil
+	test.PendingReason = ""
+	test.QueuePosition = 0
+	test.EndedAt = &now
+	if test.Error == "" {
+		test.Error = "controller restarted before the run completed"
+	}
+	tr.updateStoredTestStatus(test.ID, test.Status, &now, test.Error)
 }
 
 func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
@@ -6162,17 +6184,28 @@ func (tr *TestRunner) requestStopIfRunning(test *ManagedTest, warningMessage str
 
 func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts) (context.Context, chan struct{}, chan struct{}) {
 	ctx, cancel := context.WithCancel(context.Background())
-	test.cancel = cancel
-	test.multiEngine = mge
 
 	now := time.Now()
+	tr.mu.Lock()
+	test.cancel = cancel
+	test.multiEngine = mge
 	test.StartedAt = &now
+	test.EndedAt = nil
 	test.Status = "RUNNING"
+	test.PendingSince = nil
+	test.PendingReason = ""
+	test.QueuePosition = 0
+	test.Error = ""
+	test.goalControl = &goalControllerState{}
+	tr.saveManagedTestRecord(test)
+	snapshot := buildRunLiveStateSnapshotLocked(test, now)
+	tr.mu.Unlock()
+
+	tr.cacheRunSnapshot(snapshot)
 	tr.broadcastEvent("test_started", test)
 
 	metricsDone := make(chan struct{})
 	metricsStopped := make(chan struct{})
-	test.goalControl = &goalControllerState{}
 	go func() {
 		tr.broadcastMetrics(test, mge, artifacts, metricsDone)
 		close(metricsStopped)
@@ -6347,7 +6380,6 @@ func (tr *TestRunner) promotePendingTests() {
 			"status": pending.Status,
 			"reason": "fair_share_capacity_available",
 		})
-		tr.broadcastEvent("test_started", pending)
 		go tr.runTest(pending)
 	}
 }

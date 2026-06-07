@@ -44,9 +44,17 @@ type metricsStoreSpy struct {
 	auditEvents           []*storage.AuditEvent
 	usageSnapshots        []*storage.UsageAccountingSnapshot
 	settings              map[string]string
+	statusUpdates         []testStatusUpdate
 }
 
 var runnerTestProtocolCounter atomic.Uint64
+
+type testStatusUpdate struct {
+	id      string
+	status  string
+	endTime *time.Time
+	errStr  string
+}
 
 type provenanceInventoryBackend struct{}
 
@@ -104,6 +112,12 @@ func (s *metricsStoreSpy) ListTests(projectID string, folderID *string) ([]*stor
 	return s.listedTests, nil
 }
 func (s *metricsStoreSpy) UpdateTestStatus(id string, status string, endTime *time.Time, errStr string) error {
+	var copiedEndTime *time.Time
+	if endTime != nil {
+		value := *endTime
+		copiedEndTime = &value
+	}
+	s.statusUpdates = append(s.statusUpdates, testStatusUpdate{id: id, status: status, endTime: copiedEndTime, errStr: errStr})
 	return nil
 }
 func (s *metricsStoreSpy) DeleteTest(id string) error {
@@ -2999,6 +3013,100 @@ func TestScriptAndTestCrudPersistThroughStoreHelpers(t *testing.T) {
 	}
 	if len(store.deletedTestIDs) != 1 || store.deletedTestIDs[0] != testRun.ID {
 		t.Fatalf("expected DeleteTest store call for %s, got %#v", testRun.ID, store.deletedTestIDs)
+	}
+}
+
+func TestStartTestPersistsRunningTransition(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	protocolName := registerRunnerTestProtocol(t, "running-transition", func() protocol.Protocol {
+		return &archiveStubProtocol{}
+	})
+
+	hub := NewHub()
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(1, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-running-transition",
+		Name:     "Running Transition Script",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step-1", Type: "request", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Running Transition",
+		Duration: "250ms",
+		ScriptID: "script-running-transition",
+		VUsers:   1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	started := waitForStatusAny(t, runner, testRun.ID, 5*time.Second, "RUNNING", "COMPLETE", "FAILED")
+	if started.Status == "FAILED" {
+		t.Fatalf("test failed before proving RUNNING transition: %s", started.Error)
+	}
+
+	var sawInitializing, sawRunning bool
+	for _, saved := range store.savedTests {
+		if saved.ID != testRun.ID {
+			continue
+		}
+		switch saved.Status {
+		case "INITIALIZING":
+			sawInitializing = true
+		case "RUNNING":
+			sawRunning = true
+		}
+	}
+	if !sawInitializing {
+		t.Fatalf("saved test statuses = %#v, want INITIALIZING before backend start", store.savedTests)
+	}
+	if !sawRunning {
+		t.Fatalf("saved test statuses = %#v, want RUNNING when backend starts", store.savedTests)
+	}
+}
+
+func TestRunnerFailsStoredActiveTestsOnStartup(t *testing.T) {
+	startedAt := time.Now().UTC().Add(-time.Minute)
+	store := &metricsStoreSpy{
+		listedTests: []*storage.TestRecord{{
+			ID:          "stale-initializing",
+			Name:        "Stale Initializing",
+			Status:      "INITIALIZING",
+			ProjectID:   storage.DefaultProjectID,
+			TotalVUsers: 1,
+			Duration:    int64(time.Minute),
+			StartTime:   startedAt,
+			Groups:      []TestGroup{{Name: "default", ScriptID: "script-1", ScriptName: "Script", Protocol: "http", VUsers: 1}},
+		}},
+	}
+
+	runner := NewTestRunner(1, NewHub(), store)
+
+	testRun, ok := runner.GetTest("stale-initializing")
+	if !ok {
+		t.Fatal("expected stale active run to load")
+	}
+	if testRun.Status != "FAILED" {
+		t.Fatalf("status = %s, want FAILED", testRun.Status)
+	}
+	if testRun.EndedAt == nil {
+		t.Fatal("expected stale active run to receive an end time")
+	}
+	if !strings.Contains(testRun.Error, "controller restarted") {
+		t.Fatalf("error = %q, want restart reconciliation message", testRun.Error)
+	}
+	if len(store.statusUpdates) != 1 {
+		t.Fatalf("status update count = %d, want 1", len(store.statusUpdates))
+	}
+	update := store.statusUpdates[0]
+	if update.id != "stale-initializing" || update.status != "FAILED" || update.endTime == nil || !strings.Contains(update.errStr, "controller restarted") {
+		t.Fatalf("status update = %#v, want failed restart reconciliation", update)
 	}
 }
 

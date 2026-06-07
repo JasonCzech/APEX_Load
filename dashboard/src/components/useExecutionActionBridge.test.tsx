@@ -73,7 +73,7 @@ describe('useExecutionActionBridge', () => {
     const advisory = buildCapacityAdvisory()
     apiMock.startTest
       .mockRejectedValueOnce(new ApiError('Need more generators', 409, { code: 'capacity_shortfall', capacity_advisory: advisory }))
-      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ status: 'started', test_id: 'test-1' })
 
     await act(async () => {
       root.render(<ActionBridgeHarness initialTest={buildQueuedTest()} />)
@@ -107,7 +107,7 @@ describe('useExecutionActionBridge', () => {
           }],
         },
       }))
-      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ status: 'started', test_id: 'test-1' })
 
     await act(async () => {
       root.render(<ActionBridgeHarness initialTest={buildQueuedTest()} />)
@@ -124,6 +124,26 @@ describe('useExecutionActionBridge', () => {
     expect(apiMock.startTest).toHaveBeenNthCalledWith(1, 'test-1', undefined)
     expect(apiMock.startTest).toHaveBeenNthCalledWith(2, 'test-1', { override_script_shakeout_failure: true })
     expect(readTestId('shakeout-conflict')).toBe('none')
+  })
+
+  it('uses the returned started run state when the API includes it', async () => {
+    apiMock.startTest.mockResolvedValue({
+      status: 'started',
+      test_id: 'test-1',
+      test: {
+        ...buildRunningTest(),
+        started_at: '2026-05-12T20:00:01Z',
+      },
+    })
+
+    await act(async () => {
+      root.render(<ActionBridgeHarness initialTest={buildQueuedTest()} />)
+    })
+
+    await click('start')
+
+    expect(apiMock.startTest).toHaveBeenCalledWith('test-1', undefined)
+    expect(readTestId('status')).toBe('RUNNING')
   })
 
   it('optimistically updates pause and resume state while publishing shared control feedback', async () => {

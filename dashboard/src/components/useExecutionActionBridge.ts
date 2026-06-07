@@ -81,7 +81,7 @@ export function useExecutionActionBridge(
         } : null))
         return
       }
-      setTest((prev) => (prev ? { ...prev, status: 'INITIALIZING' } : null))
+      setTest((prev) => response.test || (prev ? { ...prev, status: 'INITIALIZING' } : null))
     } catch (error: unknown) {
       if (error instanceof ApiError && error.code === 'capacity_shortfall') {
         const capacityAdvisory = typeof error.payload === 'object' && error.payload !== null && 'capacity_advisory' in error.payload

@@ -179,7 +179,7 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 	if actorType == "user" || actorType == "service_account" {
 		s.runner.AttributeTestStarted(id, actorSubject, actorDisplayName)
 	}
-	test, ok := s.runner.GetTest(id)
+	test, ok := s.waitForStartResponseState(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "test not found")
 		return
@@ -196,7 +196,23 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordAuditEvent(r, "test.start", "success", "test", id, test.ProjectID, map[string]any{"status": test.Status})
-	writeJSON(w, http.StatusOK, map[string]string{"status": "started", "test_id": id})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "started", "test_id": id, "test": test})
+}
+
+const startResponseStateTimeout = 750 * time.Millisecond
+
+func (s *Server) waitForStartResponseState(id string) (*ManagedTest, bool) {
+	deadline := time.Now().Add(startResponseStateTimeout)
+	for {
+		test, ok := s.runner.GetTest(id)
+		if !ok {
+			return nil, false
+		}
+		if test.Status != "INITIALIZING" || time.Now().After(deadline) {
+			return test, true
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
 }
 
 func capacityShortfallAuditDetails(advisory *CapacityAdvisory, overrideRequested bool) map[string]any {

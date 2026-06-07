@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -115,6 +116,50 @@ func TestHandleStartTestAllowsOverridePayload(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
 	}
+}
+
+func TestWaitForStartResponseStateObservesRunningTransition(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.StoreScript(&dsl.Script{
+		ID:       "script-api-start-response-state",
+		Name:     "API Start Response State Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	testRun, err := server.runner.CreateTest(CreateTestRequest{
+		Name:     "API Start Response State",
+		Duration: "30s",
+		ScriptID: "script-api-start-response-state",
+		VUsers:   1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	server.runner.mu.Lock()
+	server.runner.tests[testRun.ID].Status = "INITIALIZING"
+	server.runner.mu.Unlock()
+
+	transitioned := make(chan struct{})
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		server.runner.mu.Lock()
+		server.runner.tests[testRun.ID].Status = "RUNNING"
+		server.runner.mu.Unlock()
+		close(transitioned)
+	}()
+
+	observed, ok := server.waitForStartResponseState(testRun.ID)
+	if !ok {
+		t.Fatal("waitForStartResponseState returned missing test")
+	}
+	if observed.Status != "RUNNING" {
+		t.Fatalf("status = %q, want RUNNING", observed.Status)
+	}
+	<-transitioned
 }
 
 func TestHandleStartTestReturnsScriptShakeoutReviewPayload(t *testing.T) {
