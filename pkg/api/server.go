@@ -464,6 +464,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/integrations/github/branches", cors(log(auth(http.HandlerFunc(s.handleGitHubBranches)))))
 	s.mux.Handle("GET /api/v1/integrations/github/contents", cors(log(auth(http.HandlerFunc(s.handleGitHubContents)))))
 	s.mux.Handle("POST /api/v1/scripts/import/github", cors(log(auth(http.HandlerFunc(s.handleImportGitHub)))))
+	s.mux.Handle("POST /api/v1/scripts/{id}/github/push", cors(log(auth(http.HandlerFunc(s.handlePushScriptGitHub)))))
+	s.mux.Handle("GET /api/v1/scripts/{id}/github/status", cors(log(auth(http.HandlerFunc(s.handleScriptGitHubStatus)))))
 	s.mux.Handle("GET /api/v1/monitoring/packs", cors(log(auth(http.HandlerFunc(s.handleListInfrastructureMonitorPacks)))))
 	s.mux.Handle("GET /api/v1/reports/profiles", cors(log(auth(http.HandlerFunc(s.handleListReportProfiles)))))
 	s.mux.Handle("GET /api/v1/library/capabilities", cors(log(auth(http.HandlerFunc(s.handleLibraryCapabilities)))))

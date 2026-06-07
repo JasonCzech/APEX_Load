@@ -1,13 +1,17 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const githubClientTimeout = 30 * time.Second
@@ -262,4 +266,312 @@ func shortGitHubSHA(sha string) string {
 		return sha[:12]
 	}
 	return sha
+}
+
+func (s *Server) githubScriptLinkStore() (storage.GitHubScriptLinkStore, bool) {
+	store, ok := s.store.(storage.GitHubScriptLinkStore)
+	return store, ok
+}
+
+// githubScriptEnvelope serializes a stored script in the canonical
+// {"script": …} envelope (matching the download/export handlers) and returns the
+// bytes plus a stable content hash for drift detection.
+func githubScriptEnvelope(script *dsl.Script) ([]byte, string, error) {
+	data, err := json.MarshalIndent(map[string]any{"script": script}, "", "  ")
+	if err != nil {
+		return nil, "", err
+	}
+	sum := sha256.Sum256(data)
+	return data, hex.EncodeToString(sum[:]), nil
+}
+
+// renderGitHubPathTemplate fills the configured path template for a script.
+func renderGitHubPathTemplate(tmpl string, stored *StoredScript) string {
+	replacer := strings.NewReplacer(
+		"{project}", normalizeProjectID(stored.ProjectID),
+		"{ref_key}", firstNonEmpty(stored.RefKey, stored.ID),
+		"{id}", stored.ID,
+		"{name}", sanitizeFilename(stored.Name),
+	)
+	return strings.TrimPrefix(replacer.Replace(tmpl), "/")
+}
+
+// githubFileWebURL builds a "View on GitHub" blob deep link from the global web
+// base URL (works without a per-user connection).
+func githubFileWebURL(settings GitHubSettings, owner, repo, branch, filePath string) string {
+	if owner == "" || repo == "" || branch == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/%s/%s/blob/%s/%s", strings.TrimRight(settings.WebBaseURL, "/"), owner, repo, branch, strings.TrimPrefix(filePath, "/"))
+}
+
+type githubPushRequest struct {
+	Owner    string `json:"owner"`
+	Repo     string `json:"repo"`
+	Branch   string `json:"branch,omitempty"`
+	Path     string `json:"path,omitempty"`
+	Message  string `json:"message,omitempty"`
+	Strategy string `json:"strategy,omitempty"` // "commit" (default) | "pr"
+	PRBranch string `json:"pr_branch,omitempty"`
+	PRTitle  string `json:"pr_title,omitempty"`
+	PRBody   string `json:"pr_body,omitempty"`
+}
+
+// handlePushScriptGitHub pushes a single script to GitHub as one JSON file,
+// either as a direct commit on the target branch or via a pull request. The
+// local↔remote link is upserted so subsequent pushes are idempotent (optimistic
+// concurrency via the stored blob sha) and drift can be detected.
+func (s *Server) handlePushScriptGitHub(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	stored, ok := s.runner.GetScript(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "script not found")
+		return
+	}
+
+	var req githubPushRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	client, settings, ok := s.githubClientForRequest(w, r)
+	if !ok {
+		return
+	}
+	linkStore, ok := s.githubScriptLinkStore()
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "github link storage is unavailable")
+		return
+	}
+
+	// Resolve target coordinates, falling back to global defaults.
+	owner := strings.TrimSpace(req.Owner)
+	repo := strings.TrimSpace(req.Repo)
+	if repo == "" {
+		// Allow owner/repo packed in DefaultRepo ("owner/name").
+		if defOwner, defRepo, ok := splitOwnerRepo(settings.DefaultRepo); ok {
+			if owner == "" {
+				owner = defOwner
+			}
+			repo = defRepo
+		}
+	}
+	if owner == "" || repo == "" {
+		writeError(w, http.StatusBadRequest, "owner and repo are required")
+		return
+	}
+	branch := firstNonEmpty(strings.TrimSpace(req.Branch), settings.DefaultBranch)
+	targetPath := firstNonEmpty(strings.TrimSpace(req.Path), renderGitHubPathTemplate(settings.PathTemplate, stored))
+	if targetPath == "" {
+		writeError(w, http.StatusBadRequest, "a target path is required")
+		return
+	}
+	message := firstNonEmpty(strings.TrimSpace(req.Message), fmt.Sprintf("Update %s via APEX Load", stored.Name))
+
+	content, contentHash, err := githubScriptEnvelope(stored.Script)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to serialize script")
+		return
+	}
+
+	// Determine the current remote blob sha (for updates / conflict detection).
+	existing, err := client.GetContents(r.Context(), owner, repo, targetPath, branch)
+	if err != nil {
+		if apiErr, isAPI := err.(*githubAPIError); !isAPI || apiErr.StatusCode != http.StatusNotFound {
+			writeGitHubUpstreamError(w, err)
+			return
+		}
+	}
+	remoteSHA := ""
+	if existing != nil && existing.File != nil {
+		remoteSHA = existing.File.SHA
+	}
+
+	// Conflict: the remote file moved since our last recorded sync.
+	link, _ := linkStore.GetGitHubScriptLink(id)
+	if link != nil && link.LastCommitSHA != "" && remoteSHA != "" && remoteSHA != link.LastCommitSHA {
+		writeError(w, http.StatusConflict, "remote file has changed since the last sync; pull and review before pushing")
+		return
+	}
+
+	strategy := strings.ToLower(strings.TrimSpace(req.Strategy))
+	if strategy == "" {
+		strategy = "commit"
+	}
+
+	resp := map[string]any{"strategy": strategy, "owner": owner, "repo": repo, "path": targetPath}
+	var writtenBranch string
+	var putResult *githubPutResult
+
+	switch strategy {
+	case "commit":
+		writtenBranch = branch
+		putResult, err = client.PutFile(r.Context(), owner, repo, targetPath, branch, message, content, remoteSHA)
+		if err != nil {
+			writeGitHubUpstreamError(w, err)
+			return
+		}
+	case "pr":
+		baseSHA, refErr := client.GetBranchHeadSHA(r.Context(), owner, repo, branch)
+		if refErr != nil {
+			writeGitHubUpstreamError(w, refErr)
+			return
+		}
+		if baseSHA == "" {
+			writeError(w, http.StatusBadRequest, "base branch does not exist")
+			return
+		}
+		prBranch := firstNonEmpty(strings.TrimSpace(req.PRBranch), fmt.Sprintf("apexload/%s-%d", firstNonEmpty(stored.RefKey, stored.ID), time.Now().Unix()))
+		if err := client.CreateBranch(r.Context(), owner, repo, prBranch, baseSHA); err != nil {
+			// A pre-existing branch is fine; we'll commit onto it.
+			if apiErr, isAPI := err.(*githubAPIError); !isAPI || apiErr.StatusCode != http.StatusUnprocessableEntity {
+				writeGitHubUpstreamError(w, err)
+				return
+			}
+		}
+		writtenBranch = prBranch
+		putResult, err = client.PutFile(r.Context(), owner, repo, targetPath, prBranch, message, content, remoteSHA)
+		if err != nil {
+			writeGitHubUpstreamError(w, err)
+			return
+		}
+		title := firstNonEmpty(strings.TrimSpace(req.PRTitle), message)
+		pull, prErr := client.CreatePull(r.Context(), owner, repo, title, prBranch, branch, req.PRBody)
+		if prErr != nil {
+			writeGitHubUpstreamError(w, prErr)
+			return
+		}
+		resp["pull_request_url"] = pull.HTMLURL
+		resp["pull_request_number"] = pull.Number
+	default:
+		writeError(w, http.StatusBadRequest, "strategy must be 'commit' or 'pr'")
+		return
+	}
+
+	link = &storage.GitHubScriptLink{
+		ScriptID:      id,
+		RefKey:        stored.RefKey,
+		Owner:         owner,
+		Repo:          repo,
+		Branch:        writtenBranch,
+		Path:          targetPath,
+		LastCommitSHA: putResult.Content.SHA,
+		ContentHash:   contentHash,
+	}
+	if err := linkStore.SaveGitHubScriptLink(link); err != nil {
+		writeError(w, http.StatusInternalServerError, "push succeeded but the link could not be saved")
+		return
+	}
+
+	resp["pushed"] = true
+	resp["branch"] = writtenBranch
+	resp["commit_sha"] = putResult.Commit.SHA
+	resp["file_sha"] = putResult.Content.SHA
+	resp["html_url"] = githubFileWebURL(settings, owner, repo, writtenBranch, targetPath)
+	s.recordAuditEvent(r, "github.script.push", "success", "script", id, stored.ProjectID, map[string]any{
+		"owner": owner, "repo": repo, "path": targetPath, "strategy": strategy,
+	})
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleScriptGitHubStatus reports the link for a script plus drift: whether the
+// local content changed since the last sync (local_drift) and/or the remote file
+// changed (remote_drift). Remote checks are skipped gracefully when the caller
+// has no GitHub connection.
+func (s *Server) handleScriptGitHubStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	stored, ok := s.runner.GetScript(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "script not found")
+		return
+	}
+	linkStore, ok := s.githubScriptLinkStore()
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]any{"linked": false})
+		return
+	}
+	link, err := linkStore.GetGitHubScriptLink(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read github link")
+		return
+	}
+	if link == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"linked": false, "status": "not_linked"})
+		return
+	}
+
+	settings := s.currentGitHubSettings()
+	_, localHash, err := githubScriptEnvelope(stored.Script)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to serialize script")
+		return
+	}
+	localDrift := link.ContentHash != "" && localHash != link.ContentHash
+
+	out := map[string]any{
+		"linked":          true,
+		"owner":           link.Owner,
+		"repo":            link.Repo,
+		"branch":          link.Branch,
+		"path":            link.Path,
+		"last_commit_sha": link.LastCommitSHA,
+		"synced_at":       link.SyncedAt,
+		"local_drift":     localDrift,
+		"html_url":        githubFileWebURL(settings, link.Owner, link.Repo, link.Branch, link.Path),
+	}
+
+	// Best-effort remote check; requires an active connection + enabled feature.
+	remoteChecked := false
+	remoteDrift := false
+	remoteMissing := false
+	if settings.Enabled && settings.oauthConfigured() && githubTokenEncryptionAvailable() {
+		if store, ok := s.githubConnectionStore(); ok {
+			if conn, _ := store.GetGitHubConnection(githubUserKey(r)); conn != nil {
+				if token, derr := decryptGitHubToken(conn.AccessTokenEnc); derr == nil && token != "" {
+					if client, cerr := newGitHubClient(settings, token, githubClientTimeout); cerr == nil {
+						contents, gerr := client.GetContents(r.Context(), link.Owner, link.Repo, link.Path, link.Branch)
+						if gerr == nil && contents != nil && contents.File != nil {
+							remoteChecked = true
+							remoteDrift = contents.File.SHA != link.LastCommitSHA
+						} else if apiErr, isAPI := gerr.(*githubAPIError); isAPI && apiErr.StatusCode == http.StatusNotFound {
+							remoteChecked = true
+							remoteMissing = true
+						}
+					}
+				}
+			}
+		}
+	}
+	out["remote_checked"] = remoteChecked
+	out["remote_drift"] = remoteDrift
+	out["remote_missing"] = remoteMissing
+	out["status"] = githubLinkStatus(localDrift, remoteChecked, remoteDrift, remoteMissing)
+	writeJSON(w, http.StatusOK, out)
+}
+
+func githubLinkStatus(localDrift, remoteChecked, remoteDrift, remoteMissing bool) string {
+	switch {
+	case remoteChecked && remoteMissing:
+		return "remote_missing"
+	case localDrift && remoteChecked && remoteDrift:
+		return "diverged"
+	case localDrift:
+		return "local_drift"
+	case remoteChecked && remoteDrift:
+		return "remote_drift"
+	case !remoteChecked:
+		return "synced_local"
+	default:
+		return "synced"
+	}
+}
+
+// splitOwnerRepo parses an "owner/name" string.
+func splitOwnerRepo(full string) (string, string, bool) {
+	parts := strings.SplitN(strings.TrimSpace(full), "/", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return "", "", false
+	}
+	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), true
 }

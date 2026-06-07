@@ -88,6 +88,8 @@ POST   /api/v1/scripts/import/loadrunner — Upload LR .zip, get converted DSL
 POST   /api/v1/scripts/import/asyncapi — Upload AsyncAPI 2.x/3.x spec, get converted Kafka DSL
 GET    /api/v1/scripts/import/asyncapi/support-matrix — AsyncAPI import coverage matrix
 POST   /api/v1/scripts/import/github — Pull a script JSON file from GitHub (GHES), get import-review draft
+POST   /api/v1/scripts/{id}/github/push — Push a script to GitHub (direct commit or PR); idempotent via link
+GET    /api/v1/scripts/{id}/github/status — GitHub link + drift status (local hash vs remote sha)
 GET    /api/v1/integrations/github/config — Non-secret global GitHub (GHES) integration config
 GET    /api/v1/integrations/github/login · /callback — Per-user OAuth web connect flow
 GET    /api/v1/integrations/github/connection — Current user's GitHub connection status

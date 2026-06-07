@@ -264,6 +264,81 @@ func (c *githubClient) GetContents(ctx context.Context, owner, repo, path, ref s
 	return &githubContents{File: &file}, nil
 }
 
+type githubPutResult struct {
+	Content struct {
+		SHA     string `json:"sha"`
+		Path    string `json:"path"`
+		HTMLURL string `json:"html_url"`
+	} `json:"content"`
+	Commit struct {
+		SHA string `json:"sha"`
+	} `json:"commit"`
+}
+
+// PutFile creates or updates a file via the Contents API (a single direct
+// commit on the given branch). sha must be the current blob sha when updating an
+// existing file (GitHub optimistic concurrency); pass "" to create a new file.
+func (c *githubClient) PutFile(ctx context.Context, owner, repo, path, branch, message string, content []byte, sha string) (*githubPutResult, error) {
+	body := map[string]any{
+		"message": message,
+		"content": base64.StdEncoding.EncodeToString(content),
+	}
+	if strings.TrimSpace(branch) != "" {
+		body["branch"] = branch
+	}
+	if strings.TrimSpace(sha) != "" {
+		body["sha"] = sha
+	}
+	apiPath := fmt.Sprintf("/repos/%s/%s/contents/%s", url.PathEscape(owner), url.PathEscape(repo), githubEscapeContentPath(path))
+	var result githubPutResult
+	if err := c.doJSON(ctx, http.MethodPut, apiPath, nil, body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// GetBranchHeadSHA returns the commit sha at the tip of a branch, or ("", nil)
+// when the branch does not exist.
+func (c *githubClient) GetBranchHeadSHA(ctx context.Context, owner, repo, branch string) (string, error) {
+	apiPath := fmt.Sprintf("/repos/%s/%s/git/ref/heads/%s", url.PathEscape(owner), url.PathEscape(repo), githubEscapeContentPath(branch))
+	var ref struct {
+		Object struct {
+			SHA string `json:"sha"`
+		} `json:"object"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, apiPath, nil, nil, &ref); err != nil {
+		if apiErr, ok := err.(*githubAPIError); ok && apiErr.StatusCode == http.StatusNotFound {
+			return "", nil
+		}
+		return "", err
+	}
+	return ref.Object.SHA, nil
+}
+
+// CreateBranch creates a new branch ref pointing at fromSHA.
+func (c *githubClient) CreateBranch(ctx context.Context, owner, repo, branch, fromSHA string) error {
+	apiPath := fmt.Sprintf("/repos/%s/%s/git/refs", url.PathEscape(owner), url.PathEscape(repo))
+	body := map[string]any{"ref": "refs/heads/" + branch, "sha": fromSHA}
+	return c.doJSON(ctx, http.MethodPost, apiPath, nil, body, nil)
+}
+
+type githubPullResult struct {
+	Number  int    `json:"number"`
+	HTMLURL string `json:"html_url"`
+	State   string `json:"state"`
+}
+
+// CreatePull opens a pull request from head into base.
+func (c *githubClient) CreatePull(ctx context.Context, owner, repo, title, head, base, body string) (*githubPullResult, error) {
+	apiPath := fmt.Sprintf("/repos/%s/%s/pulls", url.PathEscape(owner), url.PathEscape(repo))
+	payload := map[string]any{"title": title, "head": head, "base": base, "body": body}
+	var result githubPullResult
+	if err := c.doJSON(ctx, http.MethodPost, apiPath, nil, payload, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // githubEscapeContentPath escapes each path segment for use in a Contents API
 // URL while preserving the "/" separators.
 func githubEscapeContentPath(path string) string {

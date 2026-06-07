@@ -1390,6 +1390,22 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}, true
 	}
 
+	if strings.HasPrefix(path, "/api/v1/scripts/") && strings.HasSuffix(path, "/github/push") && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveScriptProjectID,
+		}, true
+	}
+
+	if strings.HasPrefix(path, "/api/v1/scripts/") && strings.HasSuffix(path, "/github/status") && method == http.MethodGet {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveScriptProjectID,
+		}, true
+	}
+
 	if path == "/api/v1/scripts/import/sample" && method == http.MethodPost {
 		return accessRequirement{
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},

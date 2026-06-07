@@ -716,6 +716,18 @@ func (s *SQLiteStore) init() error {
 			connected_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS github_script_links (
+			script_id TEXT PRIMARY KEY,
+			ref_key TEXT,
+			owner TEXT,
+			repo TEXT,
+			branch TEXT,
+			path TEXT,
+			last_commit_sha TEXT,
+			content_hash TEXT,
+			synced_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS service_accounts (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
@@ -3502,6 +3514,53 @@ func (s *SQLiteStore) GetGitHubConnection(userID string) (*GitHubConnection, err
 
 func (s *SQLiteStore) DeleteGitHubConnection(userID string) error {
 	_, err := s.db.Exec(`DELETE FROM github_connections WHERE user_id = ?`, userID)
+	return err
+}
+
+func (s *SQLiteStore) SaveGitHubScriptLink(link *GitHubScriptLink) error {
+	if link == nil || strings.TrimSpace(link.ScriptID) == "" {
+		return fmt.Errorf("github script link requires a script id")
+	}
+	now := time.Now()
+	if link.SyncedAt.IsZero() {
+		link.SyncedAt = now
+	}
+	link.UpdatedAt = now
+	_, err := s.db.Exec(`INSERT INTO github_script_links
+		(script_id, ref_key, owner, repo, branch, path, last_commit_sha, content_hash, synced_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(script_id) DO UPDATE SET
+			ref_key=excluded.ref_key,
+			owner=excluded.owner,
+			repo=excluded.repo,
+			branch=excluded.branch,
+			path=excluded.path,
+			last_commit_sha=excluded.last_commit_sha,
+			content_hash=excluded.content_hash,
+			synced_at=excluded.synced_at,
+			updated_at=excluded.updated_at`,
+		link.ScriptID, link.RefKey, link.Owner, link.Repo, link.Branch, link.Path,
+		link.LastCommitSHA, link.ContentHash, link.SyncedAt, link.UpdatedAt)
+	return err
+}
+
+func (s *SQLiteStore) GetGitHubScriptLink(scriptID string) (*GitHubScriptLink, error) {
+	link := &GitHubScriptLink{}
+	err := s.db.QueryRow(`SELECT script_id, ref_key, owner, repo, branch, path, last_commit_sha,
+		content_hash, synced_at, updated_at FROM github_script_links WHERE script_id = ?`, scriptID).
+		Scan(&link.ScriptID, &link.RefKey, &link.Owner, &link.Repo, &link.Branch, &link.Path,
+			&link.LastCommitSHA, &link.ContentHash, &link.SyncedAt, &link.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return link, nil
+}
+
+func (s *SQLiteStore) DeleteGitHubScriptLink(scriptID string) error {
+	_, err := s.db.Exec(`DELETE FROM github_script_links WHERE script_id = ?`, scriptID)
 	return err
 }
 

@@ -211,6 +211,32 @@ type GitHubConnectionStore interface {
 	DeleteGitHubConnection(userID string) error
 }
 
+// GitHubScriptLink records the GitHub location a local script is synced to. It is
+// keyed by ScriptID and drives idempotent push (reusing LastCommitSHA for
+// optimistic concurrency), drift detection (ContentHash vs local, LastCommitSHA
+// vs remote), and the "View on GitHub" deep link.
+type GitHubScriptLink struct {
+	ScriptID      string
+	RefKey        string
+	Owner         string
+	Repo          string
+	Branch        string
+	Path          string
+	LastCommitSHA string
+	ContentHash   string
+	SyncedAt      time.Time
+	UpdatedAt     time.Time
+}
+
+// GitHubScriptLinkStore is an optional capability (type-asserted from Store) for
+// persisting the local-script ↔ GitHub-file mapping.
+type GitHubScriptLinkStore interface {
+	SaveGitHubScriptLink(link *GitHubScriptLink) error
+	// GetGitHubScriptLink returns (nil, nil) when the script has no link.
+	GetGitHubScriptLink(scriptID string) (*GitHubScriptLink, error)
+	DeleteGitHubScriptLink(scriptID string) error
+}
+
 type AuditEventFilter struct {
 	Limit         int
 	Offset        int
