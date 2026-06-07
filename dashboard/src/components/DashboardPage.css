@@ -497,6 +497,63 @@
   pointer-events: none;
 }
 
+.dac-group-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-primary);
+}
+
+.dac-group-table {
+  width: 100%;
+  min-width: 540px;
+  border-collapse: collapse;
+}
+
+.dac-group-table th,
+.dac-group-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1.25;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.dac-group-table th {
+  color: var(--text-muted);
+  background: var(--bg-card);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.dac-group-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.dac-group-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.dac-group-table .strong {
+  font-weight: 700;
+}
+
+.dac-group-table tr.is-pending {
+  color: var(--text-muted);
+}
+
+.dac-group-name {
+  display: inline-block;
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
 .dac-footer {
   display: flex;
   justify-content: space-between;

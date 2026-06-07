@@ -8,7 +8,25 @@ import { useApi } from '../hooks/useApi'
 import { ArchiveRetentionPlanResponse, CapacityReservation, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, GitHubProjectPolicy, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
-import { mergeSettingsOrder, moveSettingsSection, readSettingsSectionArray, SETTINGS_SECTIONS, type SettingsSectionId } from './settingsSectionLayout'
+import {
+  CAPACITY_SETTINGS_SUBSECTIONS,
+  GENERAL_SETTINGS_SUBSECTIONS,
+  INTEGRATION_SETTINGS_SUBSECTIONS,
+  isCapacitySettingsSubsectionId,
+  isIntegrationSettingsSubsectionId,
+  isProjectSettingsSubsectionId,
+  mergeSettingsOrder,
+  moveSettingsSection,
+  PROJECT_SETTINGS_SUBSECTIONS,
+  readSettingsSectionArray,
+  readSettingsSubsectionId,
+  SETTINGS_SECTIONS,
+  type CapacitySettingsSubsectionId,
+  type GeneralSettingsSubsectionId,
+  type IntegrationSettingsSubsectionId,
+  type ProjectSettingsSubsectionId,
+  type SettingsSectionId,
+} from './settingsSectionLayout'
 import './CreateTestModal.css'
 import { downloadBlob } from '../utils/fileUtils'
 import LibraryFederationPanel from './LibraryFederationPanel'
@@ -819,6 +837,11 @@ interface SettingsPageProps {
   onNavigate?: (page: 'access') => void
 }
 
+type SettingsSubsectionDefinition<SubsectionId extends string> = {
+  id: SubsectionId
+  title: string
+}
+
 export default function SettingsPage({ theme, onThemeChange, authStatus, onNavigate }: SettingsPageProps) {
   const api = useApi()
   const applicationApi = useApplicationApi()
@@ -853,6 +876,10 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
   const [saveMessage, setSaveMessage] = useState('')
   const [requestError, setRequestError] = useState('')
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('general')
+  const [activeGeneralSubsection, setActiveGeneralSubsection] = useState<GeneralSettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.generalSubsection'))
+  const [activeCapacitySubsection, setActiveCapacitySubsection] = useState<CapacitySettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.capacitySubsection', 'availability', isCapacitySettingsSubsectionId))
+  const [activeProjectSubsection, setActiveProjectSubsection] = useState<ProjectSettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.projectSubsection', 'catalog', isProjectSettingsSubsectionId))
+  const [activeIntegrationSubsection, setActiveIntegrationSubsection] = useState<IntegrationSettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.integrationSubsection', 'library', isIntegrationSettingsSubsectionId))
   const [confirmingResetAll, setConfirmingResetAll] = useState(false)
   const [customizingSections] = useState(false)
   const [draggedSectionId, setDraggedSectionId] = useState<SettingsSectionId | null>(null)
@@ -1286,6 +1313,38 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
       ? 'Live snapshot + configured ceiling'
       : 'Configured ceiling only'
     : 'Configured inventory only'
+  const generalSubsectionSummaries = useMemo<Record<GeneralSettingsSubsectionId, string>>(() => ({
+    platform: `${settings.general.max_concurrent_tests} tests`,
+    usage: usageAccounting ? `${usageAccounting.totals.run_count} runs` : 'No usage yet',
+    readiness: formatReadinessStatus(systemReadiness?.status),
+    authentication: formatAuthMode(settings.auth.mode),
+    governance: `${auditEvents.length} audit event${auditEvents.length === 1 ? '' : 's'}`,
+  }), [auditEvents.length, settings.auth.mode, settings.general.max_concurrent_tests, systemReadiness?.status, usageAccounting])
+  const capacitySubsectionSummaries = useMemo<Record<CapacitySettingsSubsectionId, string>>(() => ({
+    availability: `${availabilitySnapshot?.effective_available_generators ?? settings.capacity_planning.availability.configured_available_generators} available`,
+    generator: `${settings.capacity_planning.generator.cpu_cores} CPU / ${settings.capacity_planning.generator.memory_mb} MB`,
+    reservations: `${settings.capacity_planning.reservations?.length ?? 0} reserved`,
+    retention: settings.archive_retention.enabled ? `${settings.archive_retention.default_retention_days} days` : 'Disabled',
+  }), [
+    availabilitySnapshot?.effective_available_generators,
+    settings.archive_retention.default_retention_days,
+    settings.archive_retention.enabled,
+    settings.capacity_planning.availability.configured_available_generators,
+    settings.capacity_planning.generator.cpu_cores,
+    settings.capacity_planning.generator.memory_mb,
+    settings.capacity_planning.reservations?.length,
+  ])
+  const projectSubsectionSummaries = useMemo<Record<ProjectSettingsSubsectionId, string>>(() => ({
+    catalog: `${projects.length} project${projects.length === 1 ? '' : 's'}`,
+    limits: selectedProject ? selectedProject.name : 'Select project',
+    github: projectDraftGitHubEnabled ? 'Enabled' : 'Disabled',
+    redaction: `${customRuleCount} rule${customRuleCount === 1 ? '' : 's'}`,
+  }), [customRuleCount, projectDraftGitHubEnabled, projects.length, selectedProject])
+  const integrationSubsectionSummaries = useMemo<Record<IntegrationSettingsSubsectionId, string>>(() => ({
+    library: activeProject?.name || 'Project scoped',
+    github: settings.github.enabled ? 'Enabled' : 'Disabled',
+    notifications: `${notificationWebhookCount} webhook${notificationWebhookCount === 1 ? '' : 's'}`,
+  }), [activeProject?.name, notificationWebhookCount, settings.github.enabled])
 
   useEffect(() => {
     setSectionOrder(prev => mergeSettingsOrder(prev))
@@ -1371,6 +1430,26 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
     if (typeof window === 'undefined') return
     window.localStorage.setItem('apexload.settings.collapsedSections', JSON.stringify(collapsedSectionIds))
   }, [collapsedSectionIds])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('apexload.settings.generalSubsection', JSON.stringify(activeGeneralSubsection))
+  }, [activeGeneralSubsection])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('apexload.settings.capacitySubsection', JSON.stringify(activeCapacitySubsection))
+  }, [activeCapacitySubsection])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('apexload.settings.projectSubsection', JSON.stringify(activeProjectSubsection))
+  }, [activeProjectSubsection])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('apexload.settings.integrationSubsection', JSON.stringify(activeIntegrationSubsection))
+  }, [activeIntegrationSubsection])
 
   const loadDataPools = async (preferredId?: string) => {
     try {
@@ -2130,6 +2209,33 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
     </h3>
   )
 
+  const renderSettingsSubnav = <SubsectionId extends string,>(
+    ariaLabel: string,
+    idPrefix: string,
+    subsections: readonly SettingsSubsectionDefinition<SubsectionId>[],
+    activeSubsection: SubsectionId,
+    setActiveSubsection: (id: SubsectionId) => void,
+    summaries: Record<SubsectionId, string>,
+  ) => (
+    <nav className="settings-subnav" role="tablist" aria-label={ariaLabel}>
+      {subsections.map(subsection => (
+        <button
+          key={subsection.id}
+          id={`${idPrefix}-tab-${subsection.id}`}
+          type="button"
+          role="tab"
+          aria-selected={activeSubsection === subsection.id}
+          aria-controls={`${idPrefix}-panel-${subsection.id}`}
+          className={`settings-subnav-item ${activeSubsection === subsection.id ? 'active' : ''}`}
+          onClick={() => setActiveSubsection(subsection.id)}
+        >
+          <span className="settings-subnav-label">{subsection.title}</span>
+          <span className="settings-subnav-meta">{summaries[subsection.id]}</span>
+        </button>
+      ))}
+    </nav>
+  )
+
   const sectionMessages = useMemo(() => {
     const msgs: Record<SettingsSectionId, { notices: string[]; errors: string[] }> = {
       general: { notices: [], errors: [] },
@@ -2235,7 +2341,33 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
           style={{ order: getSectionOrder('general') }}
         >
           {renderSettingsHeader('general', 'General')}
-          <div className="settings-group">
+          <div className="settings-subsection-layout">
+            <nav className="settings-subnav" role="tablist" aria-label="General settings categories">
+              {GENERAL_SETTINGS_SUBSECTIONS.map(subsection => (
+                <button
+                  key={subsection.id}
+                  id={`settings-general-tab-${subsection.id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeGeneralSubsection === subsection.id}
+                  aria-controls={`settings-general-panel-${subsection.id}`}
+                  className={`settings-subnav-item ${activeGeneralSubsection === subsection.id ? 'active' : ''}`}
+                  onClick={() => setActiveGeneralSubsection(subsection.id)}
+                >
+                  <span className="settings-subnav-label">{subsection.title}</span>
+                  <span className="settings-subnav-meta">{generalSubsectionSummaries[subsection.id]}</span>
+                </button>
+              ))}
+            </nav>
+
+            <section
+              id="settings-general-panel-platform"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-general-tab-platform"
+              hidden={activeGeneralSubsection !== 'platform'}
+            >
+              <div className="settings-group">
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">API Endpoint <span className="settings-restart-badge">Restart required</span></span>
@@ -2290,6 +2422,34 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                 onChange={(e) => updateGeneral('usage_snapshot_interval_seconds', e.target.value)}
               />
             </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Dashboard Theme</span>
+                <span className="setting-desc">Stored locally in this browser and applied immediately</span>
+              </div>
+              <select
+                className="settings-input"
+                value={theme}
+                onChange={(e) => onThemeChange(e.target.value as DashboardTheme)}
+              >
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+                <option value="solarized-dark">Solarized Dark</option>
+                <option value="solarized-light">Solarized Light</option>
+                <option value="monokai-dimmed">Monokai Dimmed</option>
+              </select>
+            </div>
+              </div>
+            </section>
+
+            <section
+              id="settings-general-panel-usage"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-general-tab-usage"
+              hidden={activeGeneralSubsection !== 'usage'}
+            >
+              <div className="settings-group">
             <div className="settings-subsection">
               <div className="settings-manager-summary">
                 <div>
@@ -2331,6 +2491,17 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                 {usageSnapshots.length === 0 && <p className="new-test-inline-note">No usage snapshots captured yet.</p>}
               </div>
             </div>
+              </div>
+            </section>
+
+            <section
+              id="settings-general-panel-readiness"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-general-tab-readiness"
+              hidden={activeGeneralSubsection !== 'readiness'}
+            >
+              <div className="settings-group">
             <div className="settings-subsection">
               <div className="settings-manager-summary">
                 <div>
@@ -2369,23 +2540,17 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                 {!systemReadiness && <p className="new-test-inline-note">Production readiness is unavailable.</p>}
               </div>
             </div>
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-label">Dashboard Theme</span>
-                <span className="setting-desc">Stored locally in this browser and applied immediately</span>
               </div>
-              <select
-                className="settings-input"
-                value={theme}
-                onChange={(e) => onThemeChange(e.target.value as DashboardTheme)}
-              >
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
-                <option value="solarized-dark">Solarized Dark</option>
-                <option value="solarized-light">Solarized Light</option>
-                <option value="monokai-dimmed">Monokai Dimmed</option>
-              </select>
-            </div>
+            </section>
+
+            <section
+              id="settings-general-panel-authentication"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-general-tab-authentication"
+              hidden={activeGeneralSubsection !== 'authentication'}
+            >
+              <div className="settings-group">
             <div className="settings-subsection">
               <div className="settings-manager-summary">
                 <div>
@@ -2876,6 +3041,18 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                   )}
                 </div>
               )}
+            </div>
+              </div>
+            </section>
+
+            <section
+              id="settings-general-panel-governance"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-general-tab-governance"
+              hidden={activeGeneralSubsection !== 'governance'}
+            >
+              <div className="settings-group">
               <div className="settings-subsection">
                 <div className="settings-manager-summary">
                   <div>
@@ -3012,7 +3189,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                   )}
                 </>
               )}
-            </div>
+              </div>
+            </section>
           </div>
         </div>
 
@@ -3188,7 +3366,23 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
           style={{ order: getSectionOrder('capacity') }}
         >
           {renderSettingsHeader('capacity', 'Capacity Planning')}
-          <div className="settings-group">
+          <div className="settings-subsection-layout">
+            {renderSettingsSubnav(
+              'Capacity settings categories',
+              'settings-capacity',
+              CAPACITY_SETTINGS_SUBSECTIONS,
+              activeCapacitySubsection,
+              setActiveCapacitySubsection,
+              capacitySubsectionSummaries,
+            )}
+            <section
+              id="settings-capacity-panel-availability"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-capacity-tab-availability"
+              hidden={activeCapacitySubsection !== 'availability'}
+            >
+              <div className="settings-group">
             <div className="settings-status-block">
               <div className="settings-status-header">
                 <span className="settings-status-title">Current Availability Snapshot</span>
@@ -3225,6 +3419,45 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                 </div>
               )}
             </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Availability Source</span>
+                <span className="setting-desc">Choose whether capacity advice should stop at configured inventory or also honor the latest live generator snapshot</span>
+              </div>
+              <select
+                className="settings-input"
+                value={settings.capacity_planning.availability.source}
+                onChange={(e) => updateAvailability('source', e.target.value)}
+              >
+                <option value="configured">Configured generators only</option>
+                <option value="configured_plus_live">Configured plus live availability</option>
+              </select>
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Configured Available Generators</span>
+                <span className="setting-desc">Configured inventory ceiling. When live snapshots are enabled, the effective available count is the lower of this value and the latest runtime snapshot.</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={1}
+                step={1}
+                value={settings.capacity_planning.availability.configured_available_generators}
+                onChange={(e) => updateAvailability('configured_available_generators', e.target.value)}
+              />
+            </div>
+              </div>
+            </section>
+
+            <section
+              id="settings-capacity-panel-generator"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-capacity-tab-generator"
+              hidden={activeCapacitySubsection !== 'generator'}
+            >
+              <div className="settings-group">
             <div className="settings-subsection">
               <div>
                 <span className="setting-label">Generator Presets</span>
@@ -3313,34 +3546,17 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                 onChange={(e) => updateGenerator('max_vusers', e.target.value)}
               />
             </div>
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-label">Availability Source</span>
-                <span className="setting-desc">Choose whether capacity advice should stop at configured inventory or also honor the latest live generator snapshot</span>
               </div>
-              <select
-                className="settings-input"
-                value={settings.capacity_planning.availability.source}
-                onChange={(e) => updateAvailability('source', e.target.value)}
-              >
-                <option value="configured">Configured generators only</option>
-                <option value="configured_plus_live">Configured plus live availability</option>
-              </select>
-            </div>
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-label">Configured Available Generators</span>
-                <span className="setting-desc">Configured inventory ceiling. When live snapshots are enabled, the effective available count is the lower of this value and the latest runtime snapshot.</span>
-              </div>
-              <input
-                className="settings-input settings-input-number"
-                type="number"
-                min={1}
-                step={1}
-                value={settings.capacity_planning.availability.configured_available_generators}
-                onChange={(e) => updateAvailability('configured_available_generators', e.target.value)}
-              />
-            </div>
+            </section>
+
+            <section
+              id="settings-capacity-panel-reservations"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-capacity-tab-reservations"
+              hidden={activeCapacitySubsection !== 'reservations'}
+            >
+              <div className="settings-group">
             <div className="settings-subsection" data-testid="capacity-reservations">
               <div className="settings-manager-summary">
                 <div>
@@ -3385,6 +3601,17 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
               ))}
               <button className="btn btn-secondary" type="button" onClick={addReservation}>Add Reservation</button>
             </div>
+              </div>
+            </section>
+
+            <section
+              id="settings-capacity-panel-retention"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-capacity-tab-retention"
+              hidden={activeCapacitySubsection !== 'retention'}
+            >
+              <div className="settings-group">
             <div className="settings-subsection">
               <div className="settings-manager-summary">
                 <div>
@@ -3451,6 +3678,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                 </div>
               )}
             </div>
+              </div>
+            </section>
           </div>
         </div>
 
@@ -3613,7 +3842,23 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
           style={{ order: getSectionOrder('projects') }}
         >
           {renderSettingsHeader('projects', 'Projects & Compliance')}
-          <div className="settings-group">
+          <div className="settings-subsection-layout">
+            {renderSettingsSubnav(
+              'Project settings categories',
+              'settings-projects',
+              PROJECT_SETTINGS_SUBSECTIONS,
+              activeProjectSubsection,
+              setActiveProjectSubsection,
+              projectSubsectionSummaries,
+            )}
+            <section
+              id="settings-projects-panel-catalog"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-projects-tab-catalog"
+              hidden={activeProjectSubsection !== 'catalog'}
+            >
+              <div className="settings-group">
             <div className="settings-subsection">
               <div className="settings-manager-summary">
                 <div>
@@ -3655,9 +3900,19 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                 </button>
               </div>
             </div>
+              </div>
+            </section>
 
             {selectedProject ? (
               <>
+                <section
+                  id="settings-projects-panel-limits"
+                  className="settings-subpanel"
+                  role="tabpanel"
+                  aria-labelledby="settings-projects-tab-limits"
+                  hidden={activeProjectSubsection !== 'limits'}
+                >
+                  <div className="settings-group">
                 <div className="setting-row">
                   <div className="setting-info">
                     <span className="setting-label">Selected Project</span>
@@ -3678,10 +3933,10 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                 <div className="settings-subsection">
                   <div className="settings-manager-summary">
                     <div>
-                      <span className="setting-label">Custom Redaction Rules</span>
-                      <span className="setting-desc">Each regex runs after the built-in scrubbing pass. Leave replacement empty to fall back to the engine default `[REDACTED]` token.</span>
+                      <span className="setting-label">Project Limits</span>
+                      <span className="setting-desc">Optional project-level caps that reject over-sized runs before execution starts.</span>
                     </div>
-                    <strong>{customRuleCount}</strong>
+                    <strong>{selectedProject.name}</strong>
                   </div>
 
                   <div className="setting-row">
@@ -3755,7 +4010,19 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                       placeholder="Unlimited"
                     />
                   </div>
+                </div>
+                  </div>
+                </section>
 
+                <section
+                  id="settings-projects-panel-github"
+                  className="settings-subpanel"
+                  role="tabpanel"
+                  aria-labelledby="settings-projects-tab-github"
+                  hidden={activeProjectSubsection !== 'github'}
+                >
+                  <div className="settings-group">
+                <div className="settings-subsection">
                   <div className="settings-manager-summary" style={{ marginTop: 16 }}>
                     <div>
                       <span className="setting-label">GitHub Project Policy</span>
@@ -3905,7 +4172,26 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                       </label>
                     ))}
                   </div>
+                </div>
+                  </div>
+                </section>
 
+                <section
+                  id="settings-projects-panel-redaction"
+                  className="settings-subpanel"
+                  role="tabpanel"
+                  aria-labelledby="settings-projects-tab-redaction"
+                  hidden={activeProjectSubsection !== 'redaction'}
+                >
+                  <div className="settings-group">
+                <div className="settings-subsection">
+                  <div className="settings-manager-summary">
+                    <div>
+                      <span className="setting-label">Custom Redaction Rules</span>
+                      <span className="setting-desc">Each regex runs after the built-in scrubbing pass. Leave replacement empty to fall back to the engine default `[REDACTED]` token.</span>
+                    </div>
+                    <strong>{customRuleCount}</strong>
+                  </div>
                   {projectDraftRules.length > 0 ? (
                     <div className="project-redaction-rule-list">
                       {projectDraftRules.map((rule, index) => (
@@ -3953,13 +4239,19 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                     <p className="new-test-inline-note">No custom rules yet. Built-in header, token, SSN, MRN, and high-entropy redaction still applies.</p>
                   )}
 
-                  {projectDraftValidationError && <p className="settings-error-inline">{projectDraftValidationError}</p>}
-                  {!canManageProjects && <p className="settings-error-inline">Current session can view this project but cannot change project governance.</p>}
-
                   <div className="settings-inline-actions">
                     <button className="btn btn-secondary" type="button" onClick={addProjectRule} disabled={!canManageProjects}>
                       Add Rule
                     </button>
+                  </div>
+                </div>
+                  </div>
+                </section>
+
+                <div className="settings-subsection settings-subsection-actions">
+                  {projectDraftValidationError && <p className="settings-error-inline">{projectDraftValidationError}</p>}
+                  {!canManageProjects && <p className="settings-error-inline">Current session can view this project but cannot change project governance.</p>}
+                  <div className="settings-inline-actions">
                     <button
                       className="btn btn-primary"
                       type="button"
@@ -3972,7 +4264,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                 </div>
               </>
             ) : (
-              <div className="settings-subsection">
+              <div className="settings-subsection settings-empty-subpanel">
                 <p className="new-test-inline-note">Select a project to edit its compliance defaults.</p>
               </div>
             )}
@@ -4128,8 +4420,35 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
           style={{ order: getSectionOrder('integrations') }}
         >
           {renderSettingsHeader('integrations', 'Integrations')}
-          <div className="settings-group">
+          <div className="settings-subsection-layout">
+            {renderSettingsSubnav(
+              'Integration settings categories',
+              'settings-integrations',
+              INTEGRATION_SETTINGS_SUBSECTIONS,
+              activeIntegrationSubsection,
+              setActiveIntegrationSubsection,
+              integrationSubsectionSummaries,
+            )}
+            <section
+              id="settings-integrations-panel-library"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-integrations-tab-library"
+              hidden={activeIntegrationSubsection !== 'library'}
+            >
+              <div className="settings-group">
             <LibraryFederationPanel projectId={activeProject?.id} />
+              </div>
+            </section>
+
+            <section
+              id="settings-integrations-panel-github"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-integrations-tab-github"
+              hidden={activeIntegrationSubsection !== 'github'}
+            >
+              <div className="settings-group">
             <GitHubIntegrationPanel
               value={settings.github}
               onChange={(next) => {
@@ -4138,6 +4457,17 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                 setRequestError('')
               }}
             />
+              </div>
+            </section>
+
+            <section
+              id="settings-integrations-panel-notifications"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-integrations-tab-notifications"
+              hidden={activeIntegrationSubsection !== 'notifications'}
+            >
+              <div className="settings-group">
             <div className="settings-subsection">
               <div className="settings-manager-summary">
                 <div>
@@ -4260,6 +4590,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
                 </button>
               </div>
             </div>
+              </div>
+            </section>
           </div>
         </div>
           </div>

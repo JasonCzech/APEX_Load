@@ -112,6 +112,10 @@ describe('SettingsPage', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    window.localStorage.removeItem('apexload.settings.generalSubsection')
+    window.localStorage.removeItem('apexload.settings.capacitySubsection')
+    window.localStorage.removeItem('apexload.settings.projectSubsection')
+    window.localStorage.removeItem('apexload.settings.integrationSubsection')
 
     apiMock.getSystemSettings.mockResolvedValue({
       general: {
@@ -524,6 +528,111 @@ describe('SettingsPage', () => {
     vi.clearAllMocks()
     downloadBlobMock.mockReset()
     window.localStorage.removeItem('apexload.settings.focusSection')
+    window.localStorage.removeItem('apexload.settings.generalSubsection')
+    window.localStorage.removeItem('apexload.settings.capacitySubsection')
+    window.localStorage.removeItem('apexload.settings.projectSubsection')
+    window.localStorage.removeItem('apexload.settings.integrationSubsection')
+  })
+
+  it('defaults General to the Platform panel and switches panels accessibly', async () => {
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+
+    const platformButton = findGeneralSubnavButton(generalSection, 'Platform')
+    const usageButton = findGeneralSubnavButton(generalSection, 'Usage')
+    const platformPanel = generalSection.querySelector('#settings-general-panel-platform')
+    const usagePanel = generalSection.querySelector('#settings-general-panel-usage')
+
+    expect(platformButton?.getAttribute('aria-selected')).toBe('true')
+    expect(platformPanel?.hasAttribute('hidden')).toBe(false)
+    expect(usagePanel?.hasAttribute('hidden')).toBe(true)
+
+    expect(usageButton).toBeTruthy()
+    if (!usageButton) return
+    await act(async () => {
+      usageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(usageButton.getAttribute('aria-selected')).toBe('true')
+    expect(platformPanel?.hasAttribute('hidden')).toBe(true)
+    expect(usagePanel?.hasAttribute('hidden')).toBe(false)
+  })
+
+  it('keeps edited platform settings while switching General panels', async () => {
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+
+    const maxConcurrentInput = findSettingInput(generalSection, 'Max Concurrent Tests')
+    expect(maxConcurrentInput).toBeTruthy()
+    if (!maxConcurrentInput) return
+
+    await setFieldValue(maxConcurrentInput, '12')
+
+    const usageButton = findGeneralSubnavButton(generalSection, 'Usage')
+    const platformButton = findGeneralSubnavButton(generalSection, 'Platform')
+    expect(usageButton).toBeTruthy()
+    expect(platformButton).toBeTruthy()
+    if (!usageButton || !platformButton) return
+
+    await act(async () => {
+      usageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      platformButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(findSettingInput(generalSection, 'Max Concurrent Tests')?.value).toBe('12')
+    expect(findButton('Save Changes')?.disabled).toBe(false)
+  })
+
+  it('subdivides capacity, project, and integration settings into focused panels', async () => {
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Capacity Planning')
+    const capacitySection = container.querySelector('#settings-section-capacity')
+    expect(capacitySection).toBeTruthy()
+    if (!capacitySection) return
+    expect(findSettingsSubnavButton(capacitySection, 'Availability')?.getAttribute('aria-selected')).toBe('true')
+    expect(capacitySection.querySelector('#settings-capacity-panel-availability')?.hasAttribute('hidden')).toBe(false)
+    await selectSettingsSubnav(capacitySection, 'Generator Profile')
+    expect(capacitySection.querySelector('#settings-capacity-panel-availability')?.hasAttribute('hidden')).toBe(true)
+    expect(capacitySection.querySelector('#settings-capacity-panel-generator')?.hasAttribute('hidden')).toBe(false)
+
+    await selectTopLevelSettingsTab('Projects & Compliance')
+    const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).toBeTruthy()
+    if (!projectSection) return
+    expect(findSettingsSubnavButton(projectSection, 'Project Catalog')?.getAttribute('aria-selected')).toBe('true')
+    await selectSettingsSubnav(projectSection, 'Redaction Rules')
+    expect(projectSection.querySelector('#settings-projects-panel-catalog')?.hasAttribute('hidden')).toBe(true)
+    expect(projectSection.querySelector('#settings-projects-panel-redaction')?.hasAttribute('hidden')).toBe(false)
+
+    await selectTopLevelSettingsTab('Integrations')
+    const integrationsSection = container.querySelector('#settings-section-integrations')
+    expect(integrationsSection).toBeTruthy()
+    if (!integrationsSection) return
+    expect(findSettingsSubnavButton(integrationsSection, 'Library Federation')?.getAttribute('aria-selected')).toBe('true')
+    await selectSettingsSubnav(integrationsSection, 'Notifications')
+    expect(integrationsSection.querySelector('#settings-integrations-panel-library')?.hasAttribute('hidden')).toBe(true)
+    expect(integrationsSection.querySelector('#settings-integrations-panel-notifications')?.hasAttribute('hidden')).toBe(false)
   })
 
   it('offers Solarized Dark in the dashboard theme selector', async () => {
@@ -577,9 +686,14 @@ describe('SettingsPage', () => {
     expect(capacitySection).toBeTruthy()
     if (!capacitySection) return
 
+    await selectTopLevelSettingsTab('Capacity Planning')
+    await selectSettingsSubnav(capacitySection, 'Generator Profile')
+
     const maxVUsersInput = findSettingInput(capacitySection, 'Generator Max VUsers')
     const cpuCoresInput = findSettingInput(capacitySection, 'Generator CPU (cores)')
     const memoryInput = findSettingInput(capacitySection, 'Generator Memory (MB)')
+
+    await selectSettingsSubnav(capacitySection, 'Availability')
     const availableGeneratorsInput = findSettingInput(capacitySection, 'Configured Available Generators')
 
     expect(cpuCoresInput?.value).toBe('2')
@@ -601,6 +715,9 @@ describe('SettingsPage', () => {
     const capacitySection = container.querySelector('#settings-section-capacity')
     expect(capacitySection).toBeTruthy()
     if (!capacitySection) return
+
+    await selectTopLevelSettingsTab('Capacity Planning')
+    await selectSettingsSubnav(capacitySection, 'Retention')
 
     expect(capacitySection.textContent).toContain('Archive Retention Executor')
     expect(capacitySection.textContent).toContain('Default Retention Days')
@@ -632,6 +749,8 @@ describe('SettingsPage', () => {
     const generalSection = container.querySelector('#settings-section-general')
     expect(generalSection).toBeTruthy()
     if (!generalSection) return
+
+    await selectGeneralSubnav(generalSection, 'Usage')
 
     expect(generalSection.textContent).toContain('Usage Accounting')
     expect(findSettingInput(generalSection, 'Usage Snapshot Cadence (seconds)')?.value).toBe('3600')
@@ -677,6 +796,8 @@ describe('SettingsPage', () => {
     const generalSection = container.querySelector('#settings-section-general')
     expect(generalSection).toBeTruthy()
     if (!generalSection) return
+
+    await selectGeneralSubnav(generalSection, 'Readiness')
 
     expect(generalSection.textContent).toContain('Production Readiness')
     expect(generalSection.textContent).toContain('Degraded')
@@ -770,6 +891,12 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
+    await selectTopLevelSettingsTab('Capacity Planning')
+    const capacitySection = container.querySelector('#settings-section-capacity')
+    expect(capacitySection).toBeTruthy()
+    if (!capacitySection) return
+    await selectSettingsSubnav(capacitySection, 'Reservations')
+
     const reservationSection = container.querySelector('[data-testid="capacity-reservations"]')
     expect(reservationSection).toBeTruthy()
     if (!reservationSection) return
@@ -855,7 +982,13 @@ describe('SettingsPage', () => {
 
     await flushPromises()
 
-    const livePresetButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Live Pod Capacity'))
+    await selectTopLevelSettingsTab('Capacity Planning')
+    const capacitySection = container.querySelector('#settings-section-capacity')
+    expect(capacitySection).toBeTruthy()
+    if (!capacitySection) return
+    await selectSettingsSubnav(capacitySection, 'Generator Profile')
+
+    const livePresetButton = Array.from(capacitySection.querySelectorAll('button')).find(button => button.textContent?.includes('Live Pod Capacity'))
     expect(livePresetButton).toBeDefined()
     if (!livePresetButton) return
 
@@ -865,13 +998,11 @@ describe('SettingsPage', () => {
 
     await flushPromises()
 
-    const capacitySection = container.querySelector('#settings-section-capacity')
-    expect(capacitySection).toBeTruthy()
-    if (!capacitySection) return
-
     const maxVUsersInput = findSettingInput(capacitySection, 'Generator Max VUsers')
     const cpuCoresInput = findSettingInput(capacitySection, 'Generator CPU (cores)')
     const memoryInput = findSettingInput(capacitySection, 'Generator Memory (MB)')
+
+    await selectSettingsSubnav(capacitySection, 'Availability')
     const availableGeneratorsInput = findSettingInput(capacitySection, 'Configured Available Generators')
 
     expect(cpuCoresInput?.value).toBe('2')
@@ -1091,6 +1222,8 @@ describe('SettingsPage', () => {
     expect(generalSection).toBeTruthy()
     if (!generalSection) return
 
+    await selectGeneralSubnav(generalSection, 'Authentication')
+
     const authModeSelect = findSettingSelect(generalSection, 'Access Control Mode')
     expect(authModeSelect).toBeTruthy()
     if (!authModeSelect) return
@@ -1171,6 +1304,8 @@ describe('SettingsPage', () => {
     expect(resetButton?.disabled).toBe(true)
     expect(container.textContent).toContain('Current session can view settings but cannot save global configuration changes.')
 
+    await selectGeneralSubnav(generalSection, 'Governance')
+
     expect(generalSection.textContent).toContain('Access & API Keys')
     expect(generalSection.textContent).toContain('Current session can view auth settings but cannot manage service-account API keys.')
     expect(findButton('Open Access & API Keys')?.disabled).toBe(true)
@@ -1189,6 +1324,8 @@ describe('SettingsPage', () => {
     const generalSection = container.querySelector('#settings-section-general')
     expect(generalSection).toBeTruthy()
     if (!generalSection) return
+
+    await selectGeneralSubnav(generalSection, 'Authentication')
 
     const authModeSelect = findSettingSelect(generalSection, 'Access Control Mode')
     expect(authModeSelect).toBeTruthy()
@@ -1245,6 +1382,8 @@ describe('SettingsPage', () => {
     const generalSection = container.querySelector('#settings-section-general')
     expect(generalSection).toBeTruthy()
     if (!generalSection) return
+
+    await selectGeneralSubnav(generalSection, 'Authentication')
 
     const authModeSelect = findSettingSelect(generalSection, 'Access Control Mode')
     expect(authModeSelect).toBeTruthy()
@@ -1376,7 +1515,10 @@ describe('SettingsPage', () => {
     expect(generalSection).toBeTruthy()
     if (!generalSection) return
 
+    await selectGeneralSubnav(generalSection, 'Authentication')
     expect(generalSection.textContent).toContain('Development Bypass')
+
+    await selectGeneralSubnav(generalSection, 'Governance')
     expect(generalSection.textContent).toContain('Service Account API Keys')
     expect(generalSection.textContent).toContain('Generate, rotate, disable, and delete scoped API keys from Access & API Keys.')
     expect(generalSection.textContent).toContain('Recent Audit Events')
@@ -1506,6 +1648,8 @@ describe('SettingsPage', () => {
     expect(generalSection).toBeTruthy()
     if (!generalSection) return
 
+    await selectGeneralSubnav(generalSection, 'Authentication')
+
     const authModeSelect = findSettingSelect(generalSection, 'Access Control Mode')
     expect(authModeSelect).toBeTruthy()
     if (!authModeSelect) return
@@ -1520,15 +1664,6 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('System Admin, Viewer')
     expect(generalSection.textContent).toContain('project-1: Editor, Viewer')
     expect(generalSection.textContent).toContain('project-2: Project Admin')
-    expect(generalSection.textContent).toContain('Built-In Role Reference')
-    expect(generalSection.textContent).toContain('Manage global settings')
-    expect(generalSection.textContent).toContain('Global only')
-    expect(generalSection.textContent).toContain('Route Access Matrix')
-    expect(generalSection.textContent).toContain('System Configuration')
-    expect(generalSection.textContent).toContain('Update system settings: Global: System Admin')
-    expect(generalSection.textContent).toContain('Effective Access For Current Session')
-    expect(generalSection.textContent).toContain('Tests and Scenarios')
-    expect(generalSection.textContent).toContain('Allowed via project role')
     expect(generalSection.textContent).toContain('Microsoft Entra ID Gateway Contract')
     expect(generalSection.textContent).toContain('Required Subject Header')
     expect(generalSection.textContent).toContain('X-Auth-Request-User')
@@ -1540,6 +1675,17 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Auth mode is ready with 1 advisory check(s) still worth reviewing.')
     expect(generalSection.textContent).toContain('Current Request Identity')
     expect(generalSection.textContent).toContain('Pass | alice-admin')
+
+    await selectGeneralSubnav(generalSection, 'Governance')
+    expect(generalSection.textContent).toContain('Built-In Role Reference')
+    expect(generalSection.textContent).toContain('Manage global settings')
+    expect(generalSection.textContent).toContain('Global only')
+    expect(generalSection.textContent).toContain('Route Access Matrix')
+    expect(generalSection.textContent).toContain('System Configuration')
+    expect(generalSection.textContent).toContain('Update system settings: Global: System Admin')
+    expect(generalSection.textContent).toContain('Effective Access For Current Session')
+    expect(generalSection.textContent).toContain('Tests and Scenarios')
+    expect(generalSection.textContent).toContain('Allowed via project role')
   })
 
   it('renders OIDC diagnostics from the backend readiness payload', async () => {
@@ -1606,6 +1752,8 @@ describe('SettingsPage', () => {
     const generalSection = container.querySelector('#settings-section-general')
     expect(generalSection).toBeTruthy()
     if (!generalSection) return
+
+    await selectGeneralSubnav(generalSection, 'Authentication')
 
     expect(generalSection.textContent).toContain('Native OIDC Session Flow')
     expect(generalSection.textContent).toContain('Auth Diagnostics')
@@ -1778,6 +1926,8 @@ describe('SettingsPage', () => {
     expect(generalSection).toBeTruthy()
     if (!generalSection) return
 
+    await selectGeneralSubnav(generalSection, 'Authentication')
+
     const authModeSelect = findSettingSelect(generalSection, 'Access Control Mode')
     expect(authModeSelect).toBeTruthy()
     if (!authModeSelect) return
@@ -1802,6 +1952,39 @@ describe('SettingsPage', () => {
 
 function findButton(label: string) {
   return Array.from(document.querySelectorAll('button')).find(button => button.textContent?.trim() === label) as HTMLButtonElement | undefined
+}
+
+function findSettingsSubnavButton(root: Element, label: string) {
+  return Array.from(root.querySelectorAll('.settings-subnav-item')).find(button => (
+    button.querySelector('.settings-subnav-label')?.textContent === label
+  )) as HTMLButtonElement | undefined
+}
+
+function findGeneralSubnavButton(root: Element, label: string) {
+  return findSettingsSubnavButton(root, label)
+}
+
+async function selectTopLevelSettingsTab(label: string) {
+  const button = findButton(label)
+  expect(button).toBeTruthy()
+  if (!button) return
+  await act(async () => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+}
+
+async function selectSettingsSubnav(root: Element, label: string) {
+  const button = findSettingsSubnavButton(root, label)
+  expect(button).toBeTruthy()
+  if (!button) return
+  await act(async () => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+  expect(button.getAttribute('aria-selected')).toBe('true')
+}
+
+async function selectGeneralSubnav(root: Element, label: string) {
+  await selectSettingsSubnav(root, label)
 }
 
 function findSettingInput(root: Element, label: string) {

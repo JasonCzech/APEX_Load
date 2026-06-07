@@ -18,9 +18,18 @@ import { DevViewProvider, useDevView } from './hooks/DevViewProvider'
 import { useSystemApi } from './hooks/api/useSystemApi'
 import { useRepositoryApi } from './hooks/api/useRepositoryApi'
 import { useLibraryApi } from './hooks/api/useLibraryApi'
+import { useTestApi } from './hooks/api/useTestApi'
 import { isEffectiveOperationAllowed } from './utils/authAccessUtils'
 import { DesktopStatusResponse } from './types/library'
 import ThemeToggle from './components/ThemeToggle'
+import {
+  pageTitleForView,
+  selectTopbarActiveRuns,
+  topbarRunStatusLabel,
+  topbarRunTone,
+  updateTopbarActiveRuns,
+  type TopbarRunSummary,
+} from './appTopbar'
 import './App.css'
 import './components/Pages.css'
 
@@ -100,6 +109,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const [applicationRepository, setApplicationRepository] = useState<import('./types').ApplicationRepository | null>(null)
   const [repositoryCategories, setRepositoryCategories] = useState<import('./types').RepositoryCategory[]>([])
   const [desktopStatus, setDesktopStatus] = useState<DesktopStatusResponse | null>(null)
+  const [activeTopbarRuns, setActiveTopbarRuns] = useState<TopbarRunSummary[]>([])
+  const testApi = useTestApi()
 
   const handleWSMessage = useCallback((msg: WSMessage) => {
     if (msg.type === 'metrics_update' && msg.data && msg.test_id && msg.timestamp) {
@@ -157,6 +168,12 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     if (msg.status && msg.test_id) {
       const testId = msg.test_id
       setTestStatuses((prev) => ({ ...prev, [testId]: msg.status! }))
+      setActiveTopbarRuns((prev) => updateTopbarActiveRuns(prev, {
+        id: testId,
+        name: msg.test_name,
+        status: msg.status,
+        timestamp: msg.timestamp,
+      }))
     }
   }, [])
 
@@ -392,6 +409,55 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
 
   const desktopBridge = getWailsDesktopBridge()
   const showDesktopStatus = Boolean(desktopStatus?.desktop_mode)
+  const currentTestRun = view.page === 'test' ? activeTopbarRuns.find(run => run.id === view.testId) : undefined
+  const topbarPageTitle = pageTitleForView(view, {
+    repositoryName: applicationRepository?.name,
+    testName: currentTestRun?.name,
+  })
+  const topbarContextItems = [
+    activeDomain?.name || 'APEX Load',
+    activeProject?.name || 'No project selected',
+    activeApplication?.name,
+    activeRelease?.name,
+  ].filter((item): item is string => Boolean(item))
+  const orderedTopbarRuns = view.page === 'test' && currentTestRun
+    ? [currentTestRun, ...activeTopbarRuns.filter(run => run.id !== currentTestRun.id)]
+    : activeTopbarRuns
+  const visibleTopbarRuns = orderedTopbarRuns.slice(0, 2)
+  const hiddenTopbarRunCount = Math.max(0, orderedTopbarRuns.length - visibleTopbarRuns.length)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadTopbarRuns = async () => {
+      if (!activeProject?.id) {
+        setActiveTopbarRuns([])
+        return
+      }
+
+      try {
+        const response = await testApi.listTests({
+          project_id: activeProject.id,
+          application_id: activeApplication?.id,
+        })
+        if (!cancelled) {
+          setActiveTopbarRuns(selectTopbarActiveRuns(response.tests || [], testStatuses))
+        }
+      } catch {
+        // WebSocket updates will keep the rail useful if the snapshot fetch fails.
+      }
+    }
+
+    void loadTopbarRuns()
+    const interval = window.setInterval(() => {
+      void loadTopbarRuns()
+    }, 10000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [activeApplication?.id, activeProject?.id, testApi, testStatuses])
 
   return (
     <div className="app-layout">
@@ -416,12 +482,54 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
         onCreateApplication={createAndSelectApplication}
         showAccess={canUseAccessWorkspace}
       />
-      <main className="main-content">
+      <main className="main-content topbar-title-mode">
         <div className="main-topbar" aria-label="Dashboard controls">
-          <div className="main-topbar-context">
-            <span className="topbar-domain">{activeDomain?.name || 'APEX Load'}</span>
-            <span className="topbar-project">{activeProject?.name || 'No project selected'}</span>
+          <div className="main-topbar-page">
+            <strong className="topbar-page-title">{topbarPageTitle}</strong>
           </div>
+          <nav className="main-topbar-context" aria-label="Workspace context">
+            {topbarContextItems.map((item, index) => (
+              <span className="topbar-context-fragment" key={`${item}-${index}`}>
+                <span className={`topbar-context-item${index === 0 ? ' primary' : ''}`}>{item}</span>
+                {index < topbarContextItems.length - 1 && <span className="topbar-context-separator" aria-hidden="true">/</span>}
+              </span>
+            ))}
+          </nav>
+          {visibleTopbarRuns.length > 0 && (
+            <nav className="topbar-active-runs" aria-label="Active test runs">
+              {visibleTopbarRuns.map((run) => {
+                const statusLabel = topbarRunStatusLabel(run.status)
+                const tone = topbarRunTone(run.status)
+                return (
+                  <a
+                    key={run.id}
+                    className={`topbar-run-chip ${tone}`}
+                    href={viewToLocationHash({ page: 'test', testId: run.id })}
+                    title={`Open ${run.name} (${statusLabel})`}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      navigateToTest(run.id)
+                    }}
+                  >
+                    <span className="topbar-run-dot" aria-hidden="true" />
+                    <span className="topbar-run-name">{run.name}</span>
+                  </a>
+                )
+              })}
+              {hiddenTopbarRunCount > 0 && (
+                <a
+                  className="topbar-run-chip topbar-run-more"
+                  href={viewToLocationHash({ page: 'tests' })}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    setView({ page: 'tests' })
+                  }}
+                >
+                  +{hiddenTopbarRunCount} run{hiddenTopbarRunCount === 1 ? '' : 's'}
+                </a>
+              )}
+            </nav>
+          )}
           <div className="main-topbar-actions">
             {showDesktopStatus && (
               <div className="desktop-status-strip" aria-label="Desktop controller status">

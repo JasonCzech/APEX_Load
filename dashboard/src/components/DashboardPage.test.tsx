@@ -507,6 +507,26 @@ describe('DashboardPage', () => {
     expect(stylesheet).not.toContain('max-height: 430px')
   })
 
+  it('defines compact active group metrics table styles', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const stylesheet = readFileSync(`${cwd}/src/components/DashboardPage.css`, 'utf8') as string
+    const groupTableCss = [
+      stylesheet.match(/\.dac-group-table-wrap \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.dac-group-table \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.dac-group-table th,\n\.dac-group-table td \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.dac-group-table \.num \{[\s\S]*?\n\}/)?.[0] ?? '',
+      stylesheet.match(/\.dac-group-name \{[\s\S]*?\n\}/)?.[0] ?? '',
+    ].join('\n')
+
+    expect(groupTableCss).toContain('overflow-x: auto')
+    expect(groupTableCss).toContain('min-width: 540px')
+    expect(groupTableCss).toContain('white-space: nowrap')
+    expect(groupTableCss).toContain('font-variant-numeric: tabular-nums')
+    expect(groupTableCss).toContain('text-overflow: ellipsis')
+  })
+
   it('switches lower dashboard tabs and sorts selectable table rows', async () => {
     await act(async () => {
       root.render(
@@ -563,6 +583,117 @@ describe('DashboardPage', () => {
 
     clickButtonByText('Release Smoke')
     expect(onSelectTest).toHaveBeenCalledWith('test-complete')
+  })
+
+  it('renders slim group metrics tables inside active test cards', async () => {
+    apiMock.listTests.mockResolvedValueOnce({
+      tests: [
+        {
+          id: 'test-active-groups',
+          name: 'Checkout Multi',
+          status: 'RUNNING',
+          application_id: 'app-1',
+          release_id: 'rel-1',
+          groups: [
+            { name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Flow', protocol: 'http', vusers: 12 },
+            { name: 'Search', script_id: 'script-2', script_name: 'Search Flow', protocol: 'http', vusers: 8 },
+            { name: 'Reporting', script_id: 'script-3', script_name: 'Reporting Flow', protocol: 'http', vusers: 4 },
+          ],
+          total_vusers: 24,
+          duration: '10m',
+          created_at: '2026-05-12T20:00:00Z',
+          live_metrics: {
+            timestamp: '2026-05-12T20:00:03Z',
+            active_vusers: 22,
+            tps: 44.2,
+            avg_response_ms: 128,
+            error_pct: 1.2,
+            total_transactions: 60,
+            total_errors: 1,
+            p50_ms: 90,
+            p90_ms: 150,
+            p95_ms: 180,
+            p99_ms: 240,
+            groups: {
+              Checkout: {
+                name: 'Checkout',
+                vusers: 12,
+                transactions: 20,
+                errors: 1,
+                tps: 31.7,
+                avg_response_ms: 148,
+                p50_ms: 100,
+                p90_ms: 190,
+                p99_ms: 280,
+              },
+              Search: {
+                name: 'Search',
+                vusers: 8,
+                transactions: 40,
+                errors: 0,
+                tps: 12.5,
+                avg_response_ms: 90,
+                p50_ms: 70,
+                p90_ms: 120,
+                p99_ms: 160,
+              },
+              Adhoc: {
+                name: 'Adhoc',
+                vusers: 2,
+                transactions: 0,
+                errors: 0,
+                tps: 0,
+                avg_response_ms: 0,
+                p50_ms: 0,
+                p90_ms: 0,
+                p99_ms: 0,
+              },
+            },
+          },
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{
+            'test-active-groups': [
+              { time: '8:00:00 PM', vusers: 20, tps: 40, avgMs: 130, errorPct: 1, p50: 90, p90: 150, p99: 240 },
+              { time: '8:00:03 PM', vusers: 22, tps: 44.2, avgMs: 128, errorPct: 1.2, p50: 90, p90: 150, p99: 240 },
+            ],
+          }}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+
+    await flushDashboard()
+    clickButtonByText('Active Tests')
+
+    const card = container.querySelector<HTMLElement>('.dash-active-card')
+    expect(card?.textContent).toContain('Checkout Multi')
+    const table = card?.querySelector<HTMLTableElement>('.dac-group-table')
+    expect(table).toBeTruthy()
+    expect(table?.getAttribute('aria-label')).toBe('Checkout Multi group metrics')
+    expect(Array.from(table!.querySelectorAll('thead th')).map(cell => cell.textContent?.trim())).toEqual([
+      'Group',
+      'VUsers',
+      'TPS',
+      'ART',
+      'Errors %',
+      'Passed',
+      'Failed',
+    ])
+    expect(groupMetricRows(table!)).toEqual([
+      ['Checkout', '12', '31.7', '148', '4.76%', '20', '1'],
+      ['Search', '8', '12.5', '90', '0.00%', '40', '0'],
+      ['Reporting', '4', '—', '—', '—', '—', '—'],
+      ['Adhoc', '2', '0.0', '0', '0.00%', '0', '0'],
+    ])
   })
 
   it('renders every dashboard table row instead of preview caps', async () => {
@@ -752,6 +883,12 @@ describe('DashboardPage', () => {
   function currentTableRunNames() {
     return Array.from(container.querySelectorAll<HTMLButtonElement>('tbody .dash-source-link'))
       .map(button => button.textContent?.trim() || '')
+  }
+
+  function groupMetricRows(table: HTMLTableElement) {
+    return Array.from(table.querySelectorAll('tbody tr')).map(row =>
+      Array.from(row.querySelectorAll('td')).map(cell => cell.textContent?.trim() || ''),
+    )
   }
 
   async function flushDashboard() {

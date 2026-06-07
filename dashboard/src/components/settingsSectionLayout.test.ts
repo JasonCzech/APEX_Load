@@ -3,9 +3,18 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  CAPACITY_SETTINGS_SUBSECTIONS,
+  GENERAL_SETTINGS_SUBSECTIONS,
+  INTEGRATION_SETTINGS_SUBSECTIONS,
+  isGeneralSettingsSubsectionId,
+  isCapacitySettingsSubsectionId,
+  isIntegrationSettingsSubsectionId,
+  isProjectSettingsSubsectionId,
   mergeSettingsOrder,
   moveSettingsSection,
+  PROJECT_SETTINGS_SUBSECTIONS,
   readSettingsSectionArray,
+  readSettingsSubsectionId,
   SETTINGS_SECTIONS,
   type SettingsSectionId,
 } from './settingsSectionLayout'
@@ -34,5 +43,66 @@ describe('settingsSectionLayout', () => {
     window.localStorage.setItem('settings.order', JSON.stringify(['projects', 'bogus', 'general']))
 
     expect(readSettingsSectionArray('settings.order')).toEqual(['projects', 'general'] satisfies SettingsSectionId[])
+  })
+
+  it('validates the general settings subsection ids', () => {
+    expect(GENERAL_SETTINGS_SUBSECTIONS.map(section => section.id)).toEqual([
+      'platform',
+      'usage',
+      'readiness',
+      'authentication',
+      'governance',
+    ])
+    expect(isGeneralSettingsSubsectionId('usage')).toBe(true)
+    expect(isGeneralSettingsSubsectionId('bogus')).toBe(false)
+  })
+
+  it('reads a persisted general subsection with a safe fallback', () => {
+    window.localStorage.setItem('settings.generalSubsection', JSON.stringify('governance'))
+
+    expect(readSettingsSubsectionId('settings.generalSubsection')).toBe('governance')
+
+    window.localStorage.setItem('settings.generalSubsection', JSON.stringify('bogus'))
+    expect(readSettingsSubsectionId('settings.generalSubsection')).toBe('platform')
+    expect(readSettingsSubsectionId('settings.generalSubsection', 'usage')).toBe('usage')
+  })
+
+  it('validates subsection ids for dense settings tabs', () => {
+    expect(CAPACITY_SETTINGS_SUBSECTIONS.map(section => section.id)).toEqual([
+      'availability',
+      'generator',
+      'reservations',
+      'retention',
+    ])
+    expect(PROJECT_SETTINGS_SUBSECTIONS.map(section => section.id)).toEqual([
+      'catalog',
+      'limits',
+      'github',
+      'redaction',
+    ])
+    expect(INTEGRATION_SETTINGS_SUBSECTIONS.map(section => section.id)).toEqual([
+      'library',
+      'github',
+      'notifications',
+    ])
+    expect(isCapacitySettingsSubsectionId('generator')).toBe(true)
+    expect(isProjectSettingsSubsectionId('redaction')).toBe(true)
+    expect(isIntegrationSettingsSubsectionId('notifications')).toBe(true)
+    expect(isCapacitySettingsSubsectionId('bogus')).toBe(false)
+    expect(isProjectSettingsSubsectionId('bogus')).toBe(false)
+    expect(isIntegrationSettingsSubsectionId('bogus')).toBe(false)
+  })
+
+  it('reads persisted subsections using the requested tab validator', () => {
+    window.localStorage.setItem('settings.capacitySubsection', JSON.stringify('retention'))
+    window.localStorage.setItem('settings.projectSubsection', JSON.stringify('github'))
+    window.localStorage.setItem('settings.integrationSubsection', JSON.stringify('notifications'))
+
+    expect(readSettingsSubsectionId('settings.capacitySubsection', 'availability', isCapacitySettingsSubsectionId)).toBe('retention')
+    expect(readSettingsSubsectionId('settings.projectSubsection', 'catalog', isProjectSettingsSubsectionId)).toBe('github')
+    expect(readSettingsSubsectionId('settings.integrationSubsection', 'library', isIntegrationSettingsSubsectionId)).toBe('notifications')
+
+    window.localStorage.setItem('settings.capacitySubsection', JSON.stringify('not-real'))
+    expect(readSettingsSubsectionId('settings.capacitySubsection', 'generator', isCapacitySettingsSubsectionId)).toBe('generator')
   })
 })

@@ -4,7 +4,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { useApi } from '../hooks/useApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
-import { TestSummary, MetricsHistoryPoint, Release, RunArchiveReport } from '../types'
+import { TestSummary, MetricsHistoryPoint, Release, RunArchiveReport, GroupLiveMetrics } from '../types'
 import { downloadBlob } from '../utils/fileUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { ReleaseTrendPanel } from './ReleaseTrendPanel'
@@ -52,6 +52,17 @@ interface AttentionItem {
 interface GraphCardSettings {
   metric: CardMetricKey
   showGraph: boolean
+}
+
+interface ActiveGroupMetricRow {
+  name: string
+  vusers: number
+  tps?: number
+  avgResponseMs?: number
+  errorPct?: number
+  passed?: number
+  failed?: number
+  hasLiveMetrics: boolean
 }
 
 interface PerformanceTrendEntry {
@@ -162,8 +173,58 @@ function formatOptionalNumber(value?: number, digits = 0) {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '—'
 }
 
+function formatOptionalPercent(value?: number, digits = 2) {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(digits)}%` : '—'
+}
+
+function formatOptionalCount(value?: number) {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.round(value).toLocaleString() : '—'
+}
+
 function formatDateTime(value?: string) {
   return value ? new Date(value).toLocaleString() : 'Never'
+}
+
+function finiteMetric(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function groupErrorPct(metric?: GroupLiveMetrics): number | undefined {
+  if (!metric) return undefined
+  const passed = finiteMetric(metric.transactions) ?? 0
+  const failed = finiteMetric(metric.errors) ?? 0
+  const attempts = passed + failed
+  return attempts > 0 ? (failed / attempts) * 100 : 0
+}
+
+function buildActiveGroupMetricRows(test: TestSummary): ActiveGroupMetricRow[] {
+  const liveGroups = test.live_metrics?.groups ?? {}
+  const configuredGroups = test.groups || []
+  const configuredNames = new Set<string>()
+
+  const rowForGroup = (name: string, metric?: GroupLiveMetrics, configuredVusers = 0): ActiveGroupMetricRow => ({
+    name,
+    vusers: finiteMetric(metric?.vusers) ?? configuredVusers,
+    tps: finiteMetric(metric?.tps),
+    avgResponseMs: finiteMetric(metric?.avg_response_ms),
+    errorPct: groupErrorPct(metric),
+    passed: metric ? finiteMetric(metric.transactions) ?? 0 : undefined,
+    failed: metric ? finiteMetric(metric.errors) ?? 0 : undefined,
+    hasLiveMetrics: Boolean(metric),
+  })
+
+  const configuredRows = configuredGroups.map((group, index) => {
+    const name = (group.name || group.script_name || group.script_id || `Group ${index + 1}`).trim()
+    configuredNames.add(name)
+    return rowForGroup(name, liveGroups[name], group.vusers)
+  })
+
+  const liveOnlyRows = Object.keys(liveGroups)
+    .filter(name => name && !configuredNames.has(name))
+    .sort((left, right) => left.localeCompare(right))
+    .map(name => rowForGroup(name, liveGroups[name]))
+
+  return [...configuredRows, ...liveOnlyRows]
 }
 
 function completionTime(test: TestSummary) {
@@ -1197,6 +1258,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                     ...point,
                     selectedMetric: getHistoryMetric(point, cardSettings.metric),
                   }))
+                  const groupRows = buildActiveGroupMetricRows(test)
                   return (
                     <div
                       key={test.id}
@@ -1279,6 +1341,38 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                             </AreaChart>
                           </ResponsiveContainer>
                           <span className="dac-chart-label">{metricOption.label}</span>
+                        </div>
+                      )}
+                      {groupRows.length > 0 && (
+                        <div className="dac-group-table-wrap">
+                          <table className="dac-group-table" aria-label={`${test.name} group metrics`}>
+                            <thead>
+                              <tr>
+                                <th>Group</th>
+                                <th className="num">VUsers</th>
+                                <th className="num">TPS</th>
+                                <th className="num">ART</th>
+                                <th className="num">Errors %</th>
+                                <th className="num">Passed</th>
+                                <th className="num">Failed</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {groupRows.map(row => (
+                                <tr key={row.name} className={row.hasLiveMetrics ? undefined : 'is-pending'}>
+                                  <td>
+                                    <span className="dac-group-name">{row.name}</span>
+                                  </td>
+                                  <td className="num strong">{formatOptionalCount(row.vusers)}</td>
+                                  <td className="num">{formatOptionalNumber(row.tps, 1)}</td>
+                                  <td className="num">{formatOptionalNumber(row.avgResponseMs, 0)}</td>
+                                  <td className={`num ${(row.errorPct ?? 0) > 0 ? 'text-danger strong' : ''}`}>{formatOptionalPercent(row.errorPct)}</td>
+                                  <td className="num">{formatOptionalCount(row.passed)}</td>
+                                  <td className={`num ${(row.failed ?? 0) > 0 ? 'text-danger strong' : ''}`}>{formatOptionalCount(row.failed)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                       )}
                       <div className="dac-footer">
