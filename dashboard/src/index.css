@@ -513,6 +513,22 @@ input, select, textarea {
   box-shadow: none;
 }
 
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.btn-ghost:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+}
+
 .btn-danger {
   background: var(--danger);
   color: white;
