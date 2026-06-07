@@ -886,6 +886,10 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
 
+	if (path == "/api/v1/integrations/github/repos" || path == "/api/v1/integrations/github/branches" || path == "/api/v1/integrations/github/contents") && method == http.MethodGet {
+		return accessRequirement{AuthenticatedOnly: true}, true
+	}
+
 	if path == "/api/v1/library/capabilities" && method == http.MethodGet {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
@@ -1375,6 +1379,14 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
 			ProjectLookup: resolveImportProjectIDFromForm,
+		}, true
+	}
+
+	if path == "/api/v1/scripts/import/github" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveImportProjectIDFromJSON,
 		}, true
 	}
 

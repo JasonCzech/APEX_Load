@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -146,6 +147,131 @@ func (c *githubClient) Identity(ctx context.Context) (*githubIdentity, error) {
 		return nil, err
 	}
 	return &id, nil
+}
+
+type githubRepo struct {
+	Name          string `json:"name"`
+	FullName      string `json:"full_name"`
+	Private       bool   `json:"private"`
+	DefaultBranch string `json:"default_branch"`
+	HTMLURL       string `json:"html_url"`
+	Owner         struct {
+		Login string `json:"login"`
+	} `json:"owner"`
+}
+
+// ListRepos returns repositories the connected user can access, most-recently
+// updated first. It pages through results up to a bounded cap so a user with
+// many repos still gets a usable, finite list for the push/pull pickers.
+func (c *githubClient) ListRepos(ctx context.Context) ([]githubRepo, error) {
+	const perPage = 100
+	const maxPages = 10
+	all := make([]githubRepo, 0, perPage)
+	for page := 1; page <= maxPages; page++ {
+		q := url.Values{}
+		q.Set("per_page", fmt.Sprint(perPage))
+		q.Set("page", fmt.Sprint(page))
+		q.Set("sort", "updated")
+		q.Set("affiliation", "owner,collaborator,organization_member")
+		var batch []githubRepo
+		if err := c.doJSON(ctx, http.MethodGet, "/user/repos", q, nil, &batch); err != nil {
+			return nil, err
+		}
+		all = append(all, batch...)
+		if len(batch) < perPage {
+			break
+		}
+	}
+	return all, nil
+}
+
+type githubBranch struct {
+	Name   string `json:"name"`
+	Commit struct {
+		SHA string `json:"sha"`
+	} `json:"commit"`
+}
+
+// ListBranches returns the branches of a repository (bounded to a single large
+// page, sufficient for the branch picker).
+func (c *githubClient) ListBranches(ctx context.Context, owner, repo string) ([]githubBranch, error) {
+	q := url.Values{}
+	q.Set("per_page", "100")
+	var branches []githubBranch
+	apiPath := fmt.Sprintf("/repos/%s/%s/branches", url.PathEscape(owner), url.PathEscape(repo))
+	if err := c.doJSON(ctx, http.MethodGet, apiPath, q, nil, &branches); err != nil {
+		return nil, err
+	}
+	return branches, nil
+}
+
+// githubContent is a single entry from the Contents API. For a file, Content
+// holds the (base64) body and Encoding describes it; for a directory listing the
+// API returns an array of these with Content empty.
+type githubContent struct {
+	Type     string `json:"type"` // "file" | "dir" | "symlink" | "submodule"
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	SHA      string `json:"sha"`
+	Size     int64  `json:"size"`
+	Content  string `json:"content,omitempty"`
+	Encoding string `json:"encoding,omitempty"`
+	HTMLURL  string `json:"html_url"`
+}
+
+// DecodedContent returns the decoded file body, validating the encoding.
+func (f *githubContent) DecodedContent() ([]byte, error) {
+	if f.Encoding != "" && f.Encoding != "base64" {
+		return nil, fmt.Errorf("unsupported github content encoding %q", f.Encoding)
+	}
+	// GitHub wraps base64 content with newlines; StdEncoding rejects them.
+	cleaned := strings.ReplaceAll(f.Content, "\n", "")
+	return base64.StdEncoding.DecodeString(cleaned)
+}
+
+// githubContents is the result of a Contents API GET, which is either a single
+// file (File set) or a directory listing (Entries set).
+type githubContents struct {
+	IsDir   bool
+	File    *githubContent
+	Entries []githubContent
+}
+
+// GetContents fetches a path in a repository at an optional ref (branch, tag, or
+// sha). It transparently handles both the file and directory response shapes.
+func (c *githubClient) GetContents(ctx context.Context, owner, repo, path, ref string) (*githubContents, error) {
+	apiPath := fmt.Sprintf("/repos/%s/%s/contents/%s", url.PathEscape(owner), url.PathEscape(repo), githubEscapeContentPath(path))
+	q := url.Values{}
+	if strings.TrimSpace(ref) != "" {
+		q.Set("ref", ref)
+	}
+	var raw json.RawMessage
+	if err := c.doJSON(ctx, http.MethodGet, apiPath, q, nil, &raw); err != nil {
+		return nil, err
+	}
+	trimmed := strings.TrimSpace(string(raw))
+	if strings.HasPrefix(trimmed, "[") {
+		var entries []githubContent
+		if err := json.Unmarshal(raw, &entries); err != nil {
+			return nil, err
+		}
+		return &githubContents{IsDir: true, Entries: entries}, nil
+	}
+	var file githubContent
+	if err := json.Unmarshal(raw, &file); err != nil {
+		return nil, err
+	}
+	return &githubContents{File: &file}, nil
+}
+
+// githubEscapeContentPath escapes each path segment for use in a Contents API
+// URL while preserving the "/" separators.
+func githubEscapeContentPath(path string) string {
+	segments := strings.Split(strings.TrimPrefix(strings.TrimSpace(path), "/"), "/")
+	for i, segment := range segments {
+		segments[i] = url.PathEscape(segment)
+	}
+	return strings.Join(segments, "/")
 }
 
 type githubTokenResponse struct {

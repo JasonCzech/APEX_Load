@@ -87,6 +87,14 @@ GET    /api/v1/scripts/{id}/download — Download script as JSON file
 POST   /api/v1/scripts/import/loadrunner — Upload LR .zip, get converted DSL
 POST   /api/v1/scripts/import/asyncapi — Upload AsyncAPI 2.x/3.x spec, get converted Kafka DSL
 GET    /api/v1/scripts/import/asyncapi/support-matrix — AsyncAPI import coverage matrix
+POST   /api/v1/scripts/import/github — Pull a script JSON file from GitHub (GHES), get import-review draft
+GET    /api/v1/integrations/github/config — Non-secret global GitHub (GHES) integration config
+GET    /api/v1/integrations/github/login · /callback — Per-user OAuth web connect flow
+GET    /api/v1/integrations/github/connection — Current user's GitHub connection status
+DELETE /api/v1/integrations/github/connection — Disconnect + delete the per-user token
+GET    /api/v1/integrations/github/repos — List repos the connected user can access
+GET    /api/v1/integrations/github/branches?owner=&repo= — List a repo's branches
+GET    /api/v1/integrations/github/contents?owner=&repo=&path=&ref= — Browse repo files/dirs
 GET    /api/v1/releases/{id}/trend   — Multi-run trend analysis (deltas + regression flags)
 GET    /api/v1/fleet/provisioner     — Active generator provisioner (static fleet vs on-demand)
 GET    /api/v1/correlations/rules    — Correlation detection rule catalog
