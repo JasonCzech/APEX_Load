@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -218,6 +219,12 @@ func newSSRFSafeHTTPClient(timeout time.Duration) *http.Client {
 // host bypasses the private-IP block; all other hosts keep ssrfSafeDialControl.
 // Pass nil/empty allowedHosts for the standard locked-down client.
 func newHostAllowlistedHTTPClient(allowedHosts []string, timeout time.Duration) *http.Client {
+	return newHostAllowlistedHTTPClientWithTLS(allowedHosts, nil, timeout)
+}
+
+// newHostAllowlistedHTTPClientWithTLS is newHostAllowlistedHTTPClient with an
+// optional custom TLS config (e.g. an internal CA bundle for a self-hosted GHES).
+func newHostAllowlistedHTTPClientWithTLS(allowedHosts []string, tlsConfig *tls.Config, timeout time.Duration) *http.Client {
 	allow := make(map[string]struct{}, len(allowedHosts))
 	for _, h := range allowedHosts {
 		if trimmed := strings.ToLower(strings.TrimSpace(h)); trimmed != "" {
@@ -237,6 +244,7 @@ func newHostAllowlistedHTTPClient(allowedHosts []string, timeout time.Duration) 
 			}
 			return safeDialer.DialContext(ctx, network, addr)
 		},
+		TLSClientConfig:       tlsConfig,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          50,
 		IdleConnTimeout:       90 * time.Second,

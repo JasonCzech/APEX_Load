@@ -1,0 +1,263 @@
+package api
+
+import (
+	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/jasonczech/apexload/pkg/storage"
+)
+
+const (
+	githubStateCookieName = "apexload_github_state"
+	githubStateTTL        = 10 * time.Minute
+)
+
+type githubStateToken struct {
+	State     string    `json:"state"`
+	UserID    string    `json:"user_id"`
+	ReturnTo  string    `json:"return_to"`
+	ExpiresAt time.Time `json:"exp"`
+	IssuedAt  time.Time `json:"iat"`
+}
+
+func githubCookieSecret() string {
+	return strings.TrimSpace(os.Getenv(githubTokenKeyEnvVar))
+}
+
+func (s *Server) currentGitHubSettings() GitHubSettings {
+	return normalizeGitHubSettings(s.runner.GetSystemSettings().GitHub)
+}
+
+func (s *Server) githubConnectionStore() (storage.GitHubConnectionStore, bool) {
+	store, ok := s.store.(storage.GitHubConnectionStore)
+	return store, ok
+}
+
+// githubUserKey returns the stable id used to key a user's GitHub connection. In
+// dev/no-auth modes where no user is present, a single synthetic "local" user is
+// used (documented behavior).
+func githubUserKey(r *http.Request) string {
+	if user, ok := AuthenticatedUserFromContext(r.Context()); ok && user != nil {
+		if subject := strings.TrimSpace(user.Subject); subject != "" {
+			return subject
+		}
+		if id := strings.TrimSpace(user.ID); id != "" {
+			return id
+		}
+	}
+	return "local"
+}
+
+func (s *Server) githubCallbackURL(r *http.Request) string {
+	scheme := "https"
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwarded != "" {
+		scheme = forwarded
+	} else if r.TLS == nil && !productionMode() {
+		scheme = "http"
+	}
+	return scheme + "://" + r.Host + "/api/v1/integrations/github/callback"
+}
+
+// handleGitHubConfig returns the non-secret global integration config plus
+// readiness flags for the dashboard.
+func (s *Server) handleGitHubConfig(w http.ResponseWriter, r *http.Request) {
+	settings := s.currentGitHubSettings()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enabled":                  settings.Enabled,
+		"oauth_configured":         settings.oauthConfigured(),
+		"encryption_available":     githubTokenEncryptionAvailable(),
+		"api_base_url":             settings.APIBaseURL,
+		"web_base_url":             settings.WebBaseURL,
+		"scopes":                   settings.Scopes,
+		"default_repo":             settings.DefaultRepo,
+		"default_branch":           settings.DefaultBranch,
+		"path_template":            settings.PathTemplate,
+		"tls_insecure_skip_verify": settings.TLSInsecureSkipVerify,
+	})
+}
+
+func (s *Server) githubFeatureGuard(w http.ResponseWriter, settings GitHubSettings) bool {
+	if !settings.Enabled {
+		writeError(w, http.StatusNotFound, "github integration is not enabled")
+		return false
+	}
+	if !settings.oauthConfigured() {
+		writeError(w, http.StatusServiceUnavailable, "github oauth app is not configured")
+		return false
+	}
+	if !githubTokenEncryptionAvailable() {
+		writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("github token encryption key (%s) is not configured", githubTokenKeyEnvVar))
+		return false
+	}
+	if _, ok := s.githubConnectionStore(); !ok {
+		writeError(w, http.StatusServiceUnavailable, "github connection storage is unavailable")
+		return false
+	}
+	return true
+}
+
+func (s *Server) handleGitHubLogin(w http.ResponseWriter, r *http.Request) {
+	settings := s.currentGitHubSettings()
+	if !s.githubFeatureGuard(w, settings) {
+		return
+	}
+	state, err := randomToken(32)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to initialize github state")
+		return
+	}
+	now := time.Now().UTC()
+	encoded, err := encodeSignedCookieValue(githubStateToken{
+		State:     state,
+		UserID:    githubUserKey(r),
+		ReturnTo:  sanitizeReturnTo(r.URL.Query().Get("return_to")),
+		ExpiresAt: now.Add(githubStateTTL),
+		IssuedAt:  now,
+	}, githubCookieSecret())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to initialize github state")
+		return
+	}
+	setSignedAuthCookie(w, normalizeAuthSettings(s.runner.GetSystemSettings().Auth), &http.Cookie{
+		Name:     githubStateCookieName,
+		Value:    encoded,
+		Path:     "/api/v1/integrations/github",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  now.Add(githubStateTTL),
+		MaxAge:   int(githubStateTTL.Seconds()),
+	})
+
+	authorize := url.Values{}
+	authorize.Set("client_id", settings.ClientID)
+	authorize.Set("redirect_uri", s.githubCallbackURL(r))
+	authorize.Set("scope", strings.Join(settings.Scopes, " "))
+	authorize.Set("state", state)
+	http.Redirect(w, r, settings.WebBaseURL+"/login/oauth/authorize?"+authorize.Encode(), http.StatusFound)
+}
+
+func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
+	settings := s.currentGitHubSettings()
+	if !s.githubFeatureGuard(w, settings) {
+		return
+	}
+	stateCookie, err := r.Cookie(githubStateCookieName)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "github authentication state is missing")
+		return
+	}
+	var state githubStateToken
+	if err := decodeSignedCookieValue(stateCookie.Value, githubCookieSecret(), &state); err != nil ||
+		state.State == "" || time.Now().UTC().After(state.ExpiresAt) {
+		writeError(w, http.StatusUnauthorized, "github authentication state is invalid or expired")
+		return
+	}
+	if subtleQueryValue(r.URL.Query().Get("state")) != state.State {
+		writeError(w, http.StatusUnauthorized, "github authentication state mismatch")
+		return
+	}
+	code := strings.TrimSpace(r.URL.Query().Get("code"))
+	if code == "" {
+		writeError(w, http.StatusBadRequest, "github authorization code is required")
+		return
+	}
+
+	tokenResp, err := exchangeGitHubOAuthCode(r.Context(), settings, code, s.githubCallbackURL(r))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "github token exchange failed")
+		return
+	}
+	client, err := newGitHubClient(settings, tokenResp.AccessToken, 15*time.Second)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	identity, err := client.Identity(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "failed to resolve github identity")
+		return
+	}
+
+	encAccess, err := encryptGitHubToken(tokenResp.AccessToken)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "failed to secure github token")
+		return
+	}
+	encRefresh, err := encryptGitHubToken(tokenResp.RefreshToken)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "failed to secure github token")
+		return
+	}
+	var expiresAt *time.Time
+	if tokenResp.ExpiresIn > 0 {
+		exp := time.Now().UTC().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+		expiresAt = &exp
+	}
+
+	store, _ := s.githubConnectionStore()
+	if err := store.SaveGitHubConnection(&storage.GitHubConnection{
+		UserID:          state.UserID,
+		GitHubLogin:     identity.Login,
+		GitHubUserID:    fmt.Sprint(identity.ID),
+		AccessTokenEnc:  encAccess,
+		RefreshTokenEnc: encRefresh,
+		TokenType:       tokenResp.TokenType,
+		Scopes:          tokenResp.Scope,
+		ExpiresAt:       expiresAt,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to persist github connection")
+		return
+	}
+	s.recordAuditEvent(r, "github.connection.create", "success", "github_connection", state.UserID, "", map[string]any{"login": identity.Login})
+
+	// Clear the state cookie and return to the dashboard.
+	http.SetCookie(w, &http.Cookie{Name: githubStateCookieName, Value: "", Path: "/api/v1/integrations/github", MaxAge: -1})
+	http.Redirect(w, r, sanitizeReturnTo(state.ReturnTo), http.StatusFound)
+}
+
+func (s *Server) handleGitHubConnection(w http.ResponseWriter, r *http.Request) {
+	store, ok := s.githubConnectionStore()
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]any{"connected": false})
+		return
+	}
+	conn, err := store.GetGitHubConnection(githubUserKey(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read github connection")
+		return
+	}
+	if conn == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"connected": false})
+		return
+	}
+	resp := map[string]any{
+		"connected":      true,
+		"login":          conn.GitHubLogin,
+		"github_user_id": conn.GitHubUserID,
+		"scopes":         conn.Scopes,
+		"connected_at":   conn.ConnectedAt,
+	}
+	if conn.ExpiresAt != nil {
+		resp["expires_at"] = conn.ExpiresAt
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleGitHubDisconnect(w http.ResponseWriter, r *http.Request) {
+	store, ok := s.githubConnectionStore()
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]any{"disconnected": true})
+		return
+	}
+	userKey := githubUserKey(r)
+	if err := store.DeleteGitHubConnection(userKey); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to disconnect github")
+		return
+	}
+	s.recordAuditEvent(r, "github.connection.delete", "success", "github_connection", userKey, "", nil)
+	writeJSON(w, http.StatusOK, map[string]any{"disconnected": true})
+}
