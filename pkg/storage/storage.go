@@ -186,6 +186,31 @@ type ServiceAccount struct {
 	RotationDueAt        *time.Time          `json:"rotation_due_at,omitempty"`
 }
 
+// GitHubConnection is a per-user GitHub OAuth connection. Token fields hold
+// already-encrypted ciphertext — the storage layer never sees plaintext tokens;
+// encryption/decryption happens in the API layer.
+type GitHubConnection struct {
+	UserID          string
+	GitHubLogin     string
+	GitHubUserID    string
+	AccessTokenEnc  string
+	RefreshTokenEnc string
+	TokenType       string
+	Scopes          string
+	ExpiresAt       *time.Time
+	ConnectedAt     time.Time
+	UpdatedAt       time.Time
+}
+
+// GitHubConnectionStore is an optional capability (type-asserted from Store,
+// like BackendInfoProvider) for persisting per-user GitHub OAuth connections.
+type GitHubConnectionStore interface {
+	SaveGitHubConnection(conn *GitHubConnection) error
+	// GetGitHubConnection returns (nil, nil) when the user has no connection.
+	GetGitHubConnection(userID string) (*GitHubConnection, error)
+	DeleteGitHubConnection(userID string) error
+}
+
 type AuditEventFilter struct {
 	Limit         int
 	Offset        int

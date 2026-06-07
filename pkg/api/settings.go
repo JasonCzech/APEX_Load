@@ -25,6 +25,119 @@ type SystemSettings struct {
 	ArchiveRetention ArchiveRetentionSettings `json:"archive_retention"`
 	Notifications    NotificationsSettings    `json:"notifications"`
 	Auth             AuthSettings             `json:"auth"`
+	GitHub           GitHubSettings           `json:"github"`
+}
+
+// GitHubSettings is the global (admin-owned) configuration for the GitHub script
+// sync integration. The OAuth client_secret is never stored here — only the name
+// of the environment variable that holds it, mirroring AuthSettings. The base
+// URLs default to github.com but are pointed at a self-hosted GitHub Enterprise
+// Server (e.g. https://ghe.example.com/api/v3) in production.
+type GitHubSettings struct {
+	Enabled               bool     `json:"enabled"`
+	ClientID              string   `json:"client_id,omitempty"`
+	ClientSecretEnvVar    string   `json:"client_secret_env_var,omitempty"`
+	APIBaseURL            string   `json:"api_base_url,omitempty"` // e.g. https://ghe.example.com/api/v3
+	WebBaseURL            string   `json:"web_base_url,omitempty"` // e.g. https://ghe.example.com
+	CACertFile            string   `json:"ca_cert_file,omitempty"`
+	TLSInsecureSkipVerify bool     `json:"tls_insecure_skip_verify,omitempty"`
+	Scopes                []string `json:"scopes,omitempty"`
+	DefaultRepo           string   `json:"default_repo,omitempty"`
+	DefaultBranch         string   `json:"default_branch,omitempty"`
+	PathTemplate          string   `json:"path_template,omitempty"`
+}
+
+const (
+	defaultGitHubAPIBaseURL = "https://api.github.com"
+	defaultGitHubWebBaseURL = "https://github.com"
+	defaultGitHubBranch     = "main"
+	defaultGitHubPathTmpl   = "apexload/scripts/{project}/{ref_key}.json"
+	githubTokenKeyEnvVar    = "APEXLOAD_GITHUB_TOKEN_KEY"
+)
+
+func defaultGitHubSettings() GitHubSettings {
+	return GitHubSettings{
+		Enabled:       false,
+		APIBaseURL:    defaultGitHubAPIBaseURL,
+		WebBaseURL:    defaultGitHubWebBaseURL,
+		Scopes:        []string{"repo"},
+		DefaultBranch: defaultGitHubBranch,
+		PathTemplate:  defaultGitHubPathTmpl,
+	}
+}
+
+func normalizeGitHubSettings(in GitHubSettings) GitHubSettings {
+	out := in
+	out.ClientID = strings.TrimSpace(out.ClientID)
+	out.ClientSecretEnvVar = strings.TrimSpace(out.ClientSecretEnvVar)
+	out.APIBaseURL = strings.TrimRight(strings.TrimSpace(out.APIBaseURL), "/")
+	out.WebBaseURL = strings.TrimRight(strings.TrimSpace(out.WebBaseURL), "/")
+	out.CACertFile = strings.TrimSpace(out.CACertFile)
+	out.DefaultRepo = strings.TrimSpace(out.DefaultRepo)
+	out.DefaultBranch = strings.TrimSpace(out.DefaultBranch)
+	out.PathTemplate = strings.TrimSpace(out.PathTemplate)
+	if out.APIBaseURL == "" {
+		out.APIBaseURL = defaultGitHubAPIBaseURL
+	}
+	if out.WebBaseURL == "" {
+		out.WebBaseURL = defaultGitHubWebBaseURL
+	}
+	if out.DefaultBranch == "" {
+		out.DefaultBranch = defaultGitHubBranch
+	}
+	if out.PathTemplate == "" {
+		out.PathTemplate = defaultGitHubPathTmpl
+	}
+	out.Scopes = normalizeGitHubScopes(out.Scopes)
+	return out
+}
+
+func normalizeGitHubScopes(scopes []string) []string {
+	seen := make(map[string]struct{}, len(scopes))
+	out := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		trimmed := strings.ToLower(strings.TrimSpace(scope))
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	if len(out) == 0 {
+		return []string{"repo"}
+	}
+	return out
+}
+
+// clientSecret resolves the OAuth client secret from the configured environment
+// variable. The secret is never persisted or serialized — only the env var name is.
+func (g GitHubSettings) clientSecret() string {
+	if strings.TrimSpace(g.ClientSecretEnvVar) == "" {
+		return ""
+	}
+	return strings.TrimSpace(envValue(g.ClientSecretEnvVar))
+}
+
+// oauthConfigured reports whether the integration is enabled and the OAuth App
+// client id + secret are both available (so the connect flow can run).
+func (g GitHubSettings) oauthConfigured() bool {
+	return g.Enabled && strings.TrimSpace(g.ClientID) != "" && g.clientSecret() != ""
+}
+
+// allowlistHosts returns the hostnames (no port) of the configured GitHub
+// endpoints, used to seed the host-scoped SSRF egress allowance so a private
+// GHES host can be reached without opening general private egress.
+func (g GitHubSettings) allowlistHosts() []string {
+	hosts := make([]string, 0, 2)
+	for _, raw := range []string{g.APIBaseURL, g.WebBaseURL} {
+		if parsed, err := url.Parse(strings.TrimSpace(raw)); err == nil && parsed.Hostname() != "" {
+			hosts = append(hosts, parsed.Hostname())
+		}
+	}
+	return hosts
 }
 
 type GeneralSettings struct {
@@ -247,6 +360,7 @@ func defaultSystemSettings(maxConcurrent int) SystemSettings {
 		},
 		Notifications: NotificationsSettings{},
 		Auth:          defaultAuthSettings(),
+		GitHub:        defaultGitHubSettings(),
 	}
 }
 
@@ -299,6 +413,10 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 	if in.Auth.Scopes != nil {
 		out.Auth.Scopes = append([]string(nil), in.Auth.Scopes...)
 	}
+	out.GitHub = in.GitHub
+	if in.GitHub.Scopes != nil {
+		out.GitHub.Scopes = append([]string(nil), in.GitHub.Scopes...)
+	}
 	return out
 }
 
@@ -341,6 +459,7 @@ func normalizeLoadedSystemSettings(in SystemSettings, defaultMaxConcurrent int) 
 	out.Thresholds = normalizeThresholdSettings(out.Thresholds)
 	out.Notifications = cloneNotificationsSettings(out.Notifications)
 	out.Auth = normalizeAuthSettings(out.Auth)
+	out.GitHub = normalizeGitHubSettings(out.GitHub)
 
 	return out
 }
@@ -447,6 +566,28 @@ func validateSystemSettings(settings SystemSettings) error {
 	}
 	if err := validateAuthSettings(settings.Auth); err != nil {
 		return err
+	}
+	if err := validateGitHubSettings(settings.GitHub); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateGitHubSettings(settings GitHubSettings) error {
+	if !settings.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(settings.ClientID) == "" {
+		return fmt.Errorf("github.client_id is required when github integration is enabled")
+	}
+	if strings.TrimSpace(settings.ClientSecretEnvVar) == "" {
+		return fmt.Errorf("github.client_secret_env_var is required when github integration is enabled")
+	}
+	for label, raw := range map[string]string{"github.api_base_url": settings.APIBaseURL, "github.web_base_url": settings.WebBaseURL} {
+		parsed, err := url.Parse(strings.TrimSpace(raw))
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
+			return fmt.Errorf("%s must be a valid http(s) URL", label)
+		}
 	}
 	return nil
 }

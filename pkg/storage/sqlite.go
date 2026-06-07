@@ -704,6 +704,18 @@ func (s *SQLiteStore) init() error {
 			value TEXT,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE IF NOT EXISTS github_connections (
+			user_id TEXT PRIMARY KEY,
+			github_login TEXT,
+			github_user_id TEXT,
+			access_token_enc TEXT,
+			refresh_token_enc TEXT,
+			token_type TEXT,
+			scopes TEXT,
+			expires_at DATETIME,
+			connected_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS service_accounts (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
@@ -3445,6 +3457,52 @@ func (s *SQLiteStore) GetSetting(key string) (string, error) {
 		return "", err
 	}
 	return value, nil
+}
+
+func (s *SQLiteStore) SaveGitHubConnection(conn *GitHubConnection) error {
+	if conn == nil || strings.TrimSpace(conn.UserID) == "" {
+		return fmt.Errorf("github connection requires a user id")
+	}
+	now := time.Now()
+	if conn.ConnectedAt.IsZero() {
+		conn.ConnectedAt = now
+	}
+	conn.UpdatedAt = now
+	_, err := s.db.Exec(`INSERT INTO github_connections
+		(user_id, github_login, github_user_id, access_token_enc, refresh_token_enc, token_type, scopes, expires_at, connected_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(user_id) DO UPDATE SET
+			github_login=excluded.github_login,
+			github_user_id=excluded.github_user_id,
+			access_token_enc=excluded.access_token_enc,
+			refresh_token_enc=excluded.refresh_token_enc,
+			token_type=excluded.token_type,
+			scopes=excluded.scopes,
+			expires_at=excluded.expires_at,
+			updated_at=excluded.updated_at`,
+		conn.UserID, conn.GitHubLogin, conn.GitHubUserID, conn.AccessTokenEnc, conn.RefreshTokenEnc,
+		conn.TokenType, conn.Scopes, conn.ExpiresAt, conn.ConnectedAt, conn.UpdatedAt)
+	return err
+}
+
+func (s *SQLiteStore) GetGitHubConnection(userID string) (*GitHubConnection, error) {
+	conn := &GitHubConnection{}
+	err := s.db.QueryRow(`SELECT user_id, github_login, github_user_id, access_token_enc, refresh_token_enc,
+		token_type, scopes, expires_at, connected_at, updated_at FROM github_connections WHERE user_id = ?`, userID).
+		Scan(&conn.UserID, &conn.GitHubLogin, &conn.GitHubUserID, &conn.AccessTokenEnc, &conn.RefreshTokenEnc,
+			&conn.TokenType, &conn.Scopes, &conn.ExpiresAt, &conn.ConnectedAt, &conn.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return conn, nil
+}
+
+func (s *SQLiteStore) DeleteGitHubConnection(userID string) error {
+	_, err := s.db.Exec(`DELETE FROM github_connections WHERE user_id = ?`, userID)
+	return err
 }
 
 func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {

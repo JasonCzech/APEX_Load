@@ -132,6 +132,16 @@ func allowPrivateOutbound() bool {
 // rebindable. The authoritative, DNS-rebind-proof check happens at connect time
 // via ssrfSafeDialControl, which inspects the actually-resolved IP.
 func validateOutboundURL(raw string) error {
+	return validateOutboundURLAllowingHosts(raw, nil)
+}
+
+// validateOutboundURLAllowingHosts is validateOutboundURL with a narrow,
+// caller-supplied allow-list of hostnames that may be private (e.g. a self-hosted
+// GitHub Enterprise Server on an internal address). A host in `allowed` passes
+// even if it resolves to a private range; every other host is still subject to
+// the standard SSRF rejection. This keeps the control-plane locked down while
+// permitting exactly one operator-configured internal endpoint.
+func validateOutboundURLAllowingHosts(raw string, allowed map[string]struct{}) error {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
 		return fmt.Errorf("invalid url: %w", err)
@@ -142,6 +152,9 @@ func validateOutboundURL(raw string) error {
 	host := parsed.Hostname()
 	if host == "" {
 		return fmt.Errorf("url is missing a host")
+	}
+	if _, ok := allowed[strings.ToLower(host)]; ok {
+		return nil
 	}
 	if allowPrivateOutbound() {
 		return nil
@@ -195,14 +208,34 @@ func ssrfSafeDialControl(network, address string, _ syscall.RawConn) error {
 // newSSRFSafeHTTPClient builds an HTTP client whose dialer rejects connections
 // to disallowed IP ranges at connect time.
 func newSSRFSafeHTTPClient(timeout time.Duration) *http.Client {
-	dialer := &net.Dialer{
-		Timeout:   10 * time.Second,
-		KeepAlive: 30 * time.Second,
-		Control:   ssrfSafeDialControl,
+	return newHostAllowlistedHTTPClient(nil, timeout)
+}
+
+// newHostAllowlistedHTTPClient builds an SSRF-safe HTTP client that additionally
+// permits connections to a small set of operator-configured hostnames even if
+// they resolve to private ranges (e.g. an internal GitHub Enterprise Server).
+// The allow check is by the pre-resolution request host, so only the configured
+// host bypasses the private-IP block; all other hosts keep ssrfSafeDialControl.
+// Pass nil/empty allowedHosts for the standard locked-down client.
+func newHostAllowlistedHTTPClient(allowedHosts []string, timeout time.Duration) *http.Client {
+	allow := make(map[string]struct{}, len(allowedHosts))
+	for _, h := range allowedHosts {
+		if trimmed := strings.ToLower(strings.TrimSpace(h)); trimmed != "" {
+			allow[trimmed] = struct{}{}
+		}
 	}
+	safeDialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second, Control: ssrfSafeDialControl}
+	plainDialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return dialer.DialContext(ctx, network, addr)
+			host, _, err := net.SplitHostPort(addr)
+			if err != nil {
+				host = addr
+			}
+			if _, ok := allow[strings.ToLower(host)]; ok {
+				return plainDialer.DialContext(ctx, network, addr)
+			}
+			return safeDialer.DialContext(ctx, network, addr)
 		},
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          50,
