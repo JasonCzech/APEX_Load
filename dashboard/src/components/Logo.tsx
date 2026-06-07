@@ -11,8 +11,8 @@ interface LogoProps {
  *
  * The mark is an inline SVG so it inherits the active dashboard theme: every
  * fill is driven by the `--accent*` CSS custom properties, which are redefined
- * per theme (violet for dark, indigo for light, amber for sepia) in index.css.
- * That makes the logo adapt automatically to light / dark / sepia without
+ * per theme in index.css.
+ * That makes the logo adapt automatically to light / dark / solarized without
  * shipping separate raster assets.
  */
 export default function Logo({ size = 28, className, title }: LogoProps) {

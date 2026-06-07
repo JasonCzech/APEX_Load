@@ -25,27 +25,25 @@ describe('ThemeToggle', () => {
     container.remove()
   })
 
-  it('marks the active theme and requests theme changes', async () => {
+  it('renders a select element and requests theme changes', async () => {
     const onThemeChange = vi.fn()
 
     await act(async () => {
-      root.render(<ThemeToggle theme="sepia" onThemeChange={onThemeChange} />)
+      root.render(<ThemeToggle theme="solarized-dark" onThemeChange={onThemeChange} />)
     })
 
-    const light = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Light'))
-    const sepia = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Sepia'))
-    const dark = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Dark'))
-    expect(light).toBeDefined()
-    expect(sepia).toBeDefined()
-    expect(dark).toBeDefined()
-    expect(light?.getAttribute('aria-pressed')).toBe('false')
-    expect(sepia?.getAttribute('aria-pressed')).toBe('true')
-    expect(dark?.getAttribute('aria-pressed')).toBe('false')
+    const select = container.querySelector('select')
+    expect(select).toBeDefined()
+    if (!select) return
+
+    expect(select.value).toBe('solarized-dark')
+    expect(Array.from(select.options).map(o => o.value)).toEqual(['dark', 'light', 'solarized-dark', 'solarized-light', 'monokai-dimmed'])
 
     await act(async () => {
-      sepia?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      select.value = 'light'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    expect(onThemeChange).toHaveBeenCalledWith('sepia')
+    expect(onThemeChange).toHaveBeenCalledWith('light')
   })
 })

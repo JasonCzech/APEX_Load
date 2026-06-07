@@ -17,6 +17,7 @@ import TestExecutionCharts from './TestExecutionCharts'
 import TestExecutionHeader from './TestExecutionHeader'
 import TestExecutionHeroMetrics from './TestExecutionHeroMetrics'
 import TestExecutionLiveControls from './TestExecutionLiveControls'
+import TestExecutionManifestCard from './TestExecutionManifestCard'
 import TestExecutionScenarioOverview from './TestExecutionScenarioOverview'
 import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
@@ -31,6 +32,7 @@ import DashboardWorkspace, {
 } from './DashboardWorkspace'
 import { useExecutionChartModel } from './useExecutionChartModel'
 import { useExecutionScenarioPreviewModel } from './useExecutionScenarioPreviewModel'
+import { useExecutionTestManifest } from './useExecutionTestManifest'
 import './TestExecution.css'
 
 const GROUP_COLORS = [
@@ -43,7 +45,7 @@ const EXECUTION_WORKSPACE_DEFAULT_PROFILE: DashboardWorkspaceProfile = {
   name: 'Default Execution Layout',
   activeTabId: 'overview',
   tabs: [
-    { id: 'overview', label: 'Overview', cardIds: ['scenario-overview', 'hero-metrics'] },
+    { id: 'overview', label: 'Overview', cardIds: ['scenario-overview', 'hero-metrics', 'test-manifest'] },
     { id: 'control', label: 'Control', cardIds: ['scenario-preview'] },
     { id: 'graphs', label: 'Graphs', cardIds: ['runtime-graphs'] },
     { id: 'diagnostics', label: 'Diagnostics', cardIds: ['status-panels', 'live-summary'] },
@@ -54,6 +56,16 @@ const EXECUTION_WORKSPACE_DEFAULT_PROFILE: DashboardWorkspaceProfile = {
   ],
   unassignedCardIds: [],
 }
+
+const EXECUTION_WORKSPACE_CARD_INSERTIONS = [
+  {
+    key: 'apexload.execution.testManifestCard.v1',
+    profileId: 'default',
+    tabId: 'overview',
+    cardId: 'test-manifest',
+    afterCardId: 'hero-metrics',
+  },
+]
 
 interface Props {
   testId: string
@@ -186,6 +198,12 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     onDownloadBrowserDiagnostics,
     onDownloadArchiveArtifact,
   } = useExecutionArchiveModel(test)
+  const {
+    manifest,
+    manifestError,
+    manifestLoading,
+    reloadManifest,
+  } = useExecutionTestManifest(test)
 
   if (error) {
     return (
@@ -395,6 +413,21 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
           archiveReport={archiveReport}
           summary={summary}
           metrics={metrics}
+        />
+      ),
+    },
+    {
+      id: 'test-manifest',
+      title: 'Test Manifest',
+      category: 'Run Overview',
+      description: 'Canonical live and archived run configuration.',
+      defaultWidth: 'full',
+      render: () => (
+        <TestExecutionManifestCard
+          manifest={manifest}
+          error={manifestError}
+          loading={manifestLoading}
+          onReload={reloadManifest}
         />
       ),
     },
@@ -630,6 +663,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         activeStorageKey="apexload.execution.activeWorkspaceProfile.v1"
         cardLibraryStorageKey="apexload.execution.cardLibraryCollapsed.v1"
         defaultProfile={EXECUTION_WORKSPACE_DEFAULT_PROFILE}
+        defaultCardInsertions={EXECUTION_WORKSPACE_CARD_INSERTIONS}
         cards={executionWorkspaceCards}
         context={executionWorkspaceContext}
       />

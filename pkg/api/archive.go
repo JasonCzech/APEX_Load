@@ -24,6 +24,7 @@ import (
 const archiveSchemaVersion = "apexload.archive.v1"
 const runArchiveReportSchemaVersion = "apexload.archive_report.v1"
 const browserDiagnosticsSchemaVersion = "apexload.browser_diagnostics.v1"
+const testRunManifestFileName = "test_manifest.json"
 
 type RunArchiveManifest struct {
 	SchemaVersion                string               `json:"schema_version"`
@@ -40,6 +41,7 @@ type RunArchiveManifest struct {
 	ResourceSamplesParquetFile   string               `json:"resource_samples_parquet_file,omitempty"`
 	IntervalSummariesFile        string               `json:"interval_summaries_file"`
 	IntervalSummariesParquetFile string               `json:"interval_summaries_parquet_file,omitempty"`
+	TestManifestFile             string               `json:"test_manifest_file,omitempty"`
 	TransactionCount             int64                `json:"transaction_count"`
 	ResourceSampleCount          int64                `json:"resource_sample_count"`
 	IntervalSummaryCount         int64                `json:"interval_summary_count"`
@@ -893,6 +895,7 @@ func archiveManifestArtifactNames(manifest *RunArchiveManifest) map[string]struc
 		manifest.ResourceSamplesParquetFile,
 		manifest.IntervalSummariesFile,
 		manifest.IntervalSummariesParquetFile,
+		manifest.TestManifestFile,
 		"manifest.json",
 	} {
 		if name == "" {

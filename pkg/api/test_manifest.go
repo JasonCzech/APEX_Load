@@ -1,0 +1,645 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/jasonczech/apexload/pkg/storage"
+)
+
+const testRunManifestSchemaVersion = "apexload.test_manifest.v1"
+
+type TestRunManifest struct {
+	SchemaVersion        string                         `json:"schema_version"`
+	TestID               string                         `json:"test_id"`
+	RefKey               string                         `json:"ref_key,omitempty"`
+	TestName             string                         `json:"test_name"`
+	Status               string                         `json:"status"`
+	Source               string                         `json:"source"`
+	GeneratedAt          time.Time                      `json:"generated_at"`
+	Identity             TestRunManifestIdentity        `json:"identity"`
+	InitialConfiguration TestRunManifestConfiguration   `json:"initial_configuration"`
+	CurrentConfiguration TestRunManifestConfiguration   `json:"current_configuration"`
+	Scripts              []TestRunManifestScript        `json:"scripts,omitempty"`
+	LoadGenerators       TestRunManifestLoadGenerators  `json:"load_generators"`
+	RuntimeChanges       []TestRunManifestRuntimeChange `json:"runtime_changes,omitempty"`
+	Archive              *TestRunManifestArchive        `json:"archive,omitempty"`
+	Warnings             []string                       `json:"warnings,omitempty"`
+}
+
+type TestRunManifestIdentity struct {
+	ApplicationID        string     `json:"application_id,omitempty"`
+	ReleaseID            string     `json:"release_id,omitempty"`
+	ScenarioID           string     `json:"scenario_id,omitempty"`
+	ProjectID            string     `json:"project_id,omitempty"`
+	FolderID             *string    `json:"folder_id,omitempty"`
+	CreatedAt            time.Time  `json:"created_at,omitempty"`
+	ScheduledStartAt     *time.Time `json:"scheduled_start_at,omitempty"`
+	StartedAt            *time.Time `json:"started_at,omitempty"`
+	EndedAt              *time.Time `json:"ended_at,omitempty"`
+	CreatedBySubject     string     `json:"created_by_subject,omitempty"`
+	CreatedByDisplayName string     `json:"created_by_display_name,omitempty"`
+	StartedBySubject     string     `json:"started_by_subject,omitempty"`
+	StartedByDisplayName string     `json:"started_by_display_name,omitempty"`
+}
+
+type TestRunManifestConfiguration struct {
+	Status                string                       `json:"status,omitempty"`
+	Duration              string                       `json:"duration,omitempty"`
+	TotalVUsers           int                          `json:"total_vusers,omitempty"`
+	ActiveVUsers          int64                        `json:"active_vusers,omitempty"`
+	StartDelay            string                       `json:"start_delay,omitempty"`
+	ScenarioMode          string                       `json:"scenario_mode,omitempty"`
+	ScriptShakeout        bool                         `json:"script_shakeout,omitempty"`
+	ResourceBaseline      bool                         `json:"resource_baseline,omitempty"`
+	Assignment            *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	GeneratorShards       []GeneratorShardSummary      `json:"generator_shards,omitempty"`
+	GoalConfig            *GoalConfig                  `json:"goal_config,omitempty"`
+	RuntimeSettings       *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	RuntimeSettingsReview *RuntimeSettingsReview       `json:"runtime_settings_review,omitempty"`
+	Groups                []TestGroup                  `json:"groups,omitempty"`
+	VUserRamps            map[string]VUserRampStatus   `json:"vuser_ramps,omitempty"`
+	BaselinePinned        bool                         `json:"baseline_pinned,omitempty"`
+	BaselinePinnedAt      *time.Time                   `json:"baseline_pinned_at,omitempty"`
+	StartedAt             *time.Time                   `json:"started_at,omitempty"`
+	EndedAt               *time.Time                   `json:"ended_at,omitempty"`
+}
+
+type TestRunManifestScript struct {
+	GroupName       string                       `json:"group_name"`
+	ScriptID        string                       `json:"script_id,omitempty"`
+	ScriptName      string                       `json:"script_name,omitempty"`
+	Protocol        string                       `json:"protocol,omitempty"`
+	VUsers          int                          `json:"vusers,omitempty"`
+	RampUp          string                       `json:"ramp_up,omitempty"`
+	RampDown        string                       `json:"ramp_down,omitempty"`
+	Stages          []storage.LoadStage          `json:"stages,omitempty"`
+	Iterations      *int                         `json:"iterations,omitempty"`
+	RuntimeSettings *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	Assignment      *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	RunLogicGoals   *RunLogicGoalSnapshot        `json:"run_logic_goals,omitempty"`
+	Initialization  string                       `json:"initialization,omitempty"`
+}
+
+type TestRunManifestLoadGenerators struct {
+	Assignment         *GeneratorAssignmentSettings        `json:"assignment,omitempty"`
+	GeneratorShards    []GeneratorShardSummary             `json:"generator_shards,omitempty"`
+	GeneratorInventory []GeneratorInventoryEntry           `json:"generator_inventory,omitempty"`
+	ExecutionSettings  RunArchiveExecutionSettingsSnapshot `json:"execution_settings"`
+	ControllerEnv      map[string]string                   `json:"controller_env,omitempty"`
+}
+
+type TestRunManifestRuntimeChange struct {
+	ID               string         `json:"id"`
+	Action           string         `json:"action"`
+	Label            string         `json:"label"`
+	Status           string         `json:"status,omitempty"`
+	ActorType        string         `json:"actor_type,omitempty"`
+	ActorSubject     string         `json:"actor_subject,omitempty"`
+	ActorDisplayName string         `json:"actor_display_name,omitempty"`
+	Details          map[string]any `json:"details,omitempty"`
+	CreatedAt        time.Time      `json:"created_at"`
+}
+
+type TestRunManifestArchive struct {
+	SchemaVersion        string    `json:"schema_version,omitempty"`
+	ArchiveBackend       string    `json:"archive_backend,omitempty"`
+	ArchivePath          string    `json:"archive_path,omitempty"`
+	ManifestPath         string    `json:"manifest_path,omitempty"`
+	ArchiveURI           string    `json:"archive_uri,omitempty"`
+	ManifestURI          string    `json:"manifest_uri,omitempty"`
+	TestManifestFile     string    `json:"test_manifest_file,omitempty"`
+	TransactionCount     int64     `json:"transaction_count,omitempty"`
+	ResourceSampleCount  int64     `json:"resource_sample_count,omitempty"`
+	IntervalSummaryCount int64     `json:"interval_summary_count,omitempty"`
+	CreatedAt            time.Time `json:"created_at,omitempty"`
+	CompletedAt          time.Time `json:"completed_at,omitempty"`
+	SLABreached          bool      `json:"sla_breached,omitempty"`
+	SLADetails           []string  `json:"sla_details,omitempty"`
+	Error                string    `json:"error,omitempty"`
+}
+
+func (tr *TestRunner) GetTestManifest(id string) (*TestRunManifest, error) {
+	return tr.buildTestManifest(id, nil, true)
+}
+
+func (tr *TestRunner) buildTestManifest(id string, archiveOverride *storage.RunArchiveRecord, preferPersisted bool) (*TestRunManifest, error) {
+	test, ok := tr.GetTest(id)
+	if !ok {
+		return nil, fmt.Errorf("test not found: %s", id)
+	}
+
+	warnings := []string{}
+	var archiveRecord *storage.RunArchiveRecord
+	if archiveOverride != nil {
+		archiveRecord = archiveOverride
+	} else if record, found := tr.GetRunArchive(test.ID); found {
+		archiveRecord = record
+	}
+
+	var archiveManifest *RunArchiveManifest
+	if archiveRecord != nil {
+		if err := ensureArchiveMaterialized(archiveRecord); err != nil {
+			warnings = append(warnings, "archive record exists but could not be materialized: "+err.Error())
+		} else {
+			loaded, err := loadRunArchiveManifest(archiveRecord.ManifestPath)
+			if err != nil {
+				warnings = append(warnings, "archive manifest could not be loaded: "+err.Error())
+			} else {
+				archiveManifest = loaded
+				if preferPersisted && strings.TrimSpace(archiveManifest.TestManifestFile) != "" {
+					persisted, err := loadTestRunManifest(filepath.Join(archiveRecord.ArchivePath, archiveManifest.TestManifestFile))
+					if err == nil {
+						return persisted, nil
+					}
+					warnings = append(warnings, "persisted test manifest could not be loaded: "+err.Error())
+				}
+			}
+		}
+	}
+
+	status := test.Status
+	completedAt := time.Time{}
+	source := "live"
+	if archiveManifest != nil {
+		source = "archive_fallback"
+		if strings.TrimSpace(archiveManifest.Status) != "" {
+			status = archiveManifest.Status
+		}
+		completedAt = archiveManifest.CompletedAt
+		warnings = append(warnings, "archive does not contain a persisted test_manifest.json; synthesized from archive provenance and retained run state")
+	}
+	if archiveOverride != nil {
+		source = "archive"
+		warnings = removeWarningPrefix(warnings, "archive does not contain a persisted")
+	}
+
+	initial, initialWarnings := tr.initialManifestConfiguration(test, archiveManifest)
+	warnings = append(warnings, initialWarnings...)
+	current := manifestConfigurationFromManagedTest(test)
+	current.Status = status
+	if current.EndedAt == nil && !completedAt.IsZero() {
+		current.EndedAt = &completedAt
+	}
+
+	provenance := buildRunArchiveProvenance(tr, test)
+	if archiveManifest != nil {
+		provenance = archiveManifest.Provenance
+	}
+
+	runtimeChanges, auditWarnings := tr.testManifestRuntimeChanges(test.ID, test.RefKey, id)
+	warnings = append(warnings, auditWarnings...)
+
+	manifest := &TestRunManifest{
+		SchemaVersion:        testRunManifestSchemaVersion,
+		TestID:               test.ID,
+		RefKey:               test.RefKey,
+		TestName:             test.Name,
+		Status:               status,
+		Source:               source,
+		GeneratedAt:          time.Now().UTC(),
+		Identity:             manifestIdentityFromTest(test, completedAt),
+		InitialConfiguration: initial,
+		CurrentConfiguration: current,
+		Scripts:              manifestScriptsFromGroups(current.Groups),
+		LoadGenerators:       manifestLoadGeneratorsFromProvenance(provenance),
+		RuntimeChanges:       runtimeChanges,
+		Archive:              manifestArchiveFromRecord(archiveRecord, archiveManifest),
+		Warnings:             uniqueStrings(warnings),
+	}
+	return manifest, nil
+}
+
+func (tr *TestRunner) initialManifestConfiguration(test *ManagedTest, archiveManifest *RunArchiveManifest) (TestRunManifestConfiguration, []string) {
+	if archiveManifest != nil {
+		return manifestConfigurationFromProvenance(archiveManifest.Provenance, archiveManifest.Status, archiveManifest.CompletedAt), nil
+	}
+	record, err := tr.storedTestRecord(test.ID)
+	if err == nil && record != nil {
+		return manifestConfigurationFromTestRecord(record), nil
+	}
+	if err != nil {
+		return manifestConfigurationFromManagedTest(test), []string{"stored initial test record could not be loaded: " + err.Error()}
+	}
+	return manifestConfigurationFromManagedTest(test), []string{"stored initial test record is unavailable; initial configuration mirrors current retained run state"}
+}
+
+func (tr *TestRunner) storedTestRecord(id string) (*storage.TestRecord, error) {
+	if tr.testStore == nil {
+		return nil, nil
+	}
+	canonicalID := tr.resolveTestID(id)
+	return tr.testStore.GetTest(canonicalID)
+}
+
+func manifestIdentityFromTest(test *ManagedTest, completedAt time.Time) TestRunManifestIdentity {
+	identity := TestRunManifestIdentity{
+		ApplicationID:        test.ApplicationID,
+		ReleaseID:            test.ReleaseID,
+		ScenarioID:           test.ScenarioID,
+		ProjectID:            normalizeProjectID(test.ProjectID),
+		FolderID:             test.FolderID,
+		CreatedAt:            test.CreatedAt,
+		ScheduledStartAt:     cloneTimePtr(test.ScheduledStartAt),
+		StartedAt:            cloneTimePtr(test.StartedAt),
+		EndedAt:              cloneTimePtr(test.EndedAt),
+		CreatedBySubject:     test.CreatedBySubject,
+		CreatedByDisplayName: test.CreatedByDisplayName,
+		StartedBySubject:     test.StartedBySubject,
+		StartedByDisplayName: test.StartedByDisplayName,
+	}
+	if identity.EndedAt == nil && !completedAt.IsZero() {
+		identity.EndedAt = &completedAt
+	}
+	return identity
+}
+
+func manifestConfigurationFromManagedTest(test *ManagedTest) TestRunManifestConfiguration {
+	if test == nil {
+		return TestRunManifestConfiguration{}
+	}
+	activeVUsers := int64(0)
+	if test.LiveMetrics != nil {
+		activeVUsers = test.LiveMetrics.ActiveVUsers
+	}
+	return TestRunManifestConfiguration{
+		Status:                test.Status,
+		Duration:              durationString(test.Duration, test.DurationStr),
+		TotalVUsers:           test.TotalVUsers,
+		ActiveVUsers:          activeVUsers,
+		StartDelay:            test.StartDelay,
+		ScenarioMode:          test.ScenarioMode,
+		ScriptShakeout:        test.ScriptShakeout,
+		ResourceBaseline:      test.ResourceBaseline,
+		Assignment:            cloneGeneratorAssignmentSettings(test.Assignment),
+		GeneratorShards:       cloneGeneratorShardSummaries(test.GeneratorShards),
+		GoalConfig:            cloneGoalConfig(test.GoalConfig),
+		RuntimeSettings:       cloneRuntimeSettings(test.RuntimeSettings),
+		RuntimeSettingsReview: cloneRuntimeSettingsReview(test.RuntimeSettingsReview),
+		Groups:                cloneArchiveTestGroups(test.Groups),
+		VUserRamps:            cloneVUserRampStatusMap(test.VUserRamps),
+		BaselinePinned:        test.BaselinePinned,
+		BaselinePinnedAt:      cloneTimePtr(test.BaselinePinnedAt),
+		StartedAt:             cloneTimePtr(test.StartedAt),
+		EndedAt:               cloneTimePtr(test.EndedAt),
+	}
+}
+
+func manifestConfigurationFromTestRecord(record *storage.TestRecord) TestRunManifestConfiguration {
+	if record == nil {
+		return TestRunManifestConfiguration{}
+	}
+	return TestRunManifestConfiguration{
+		Status:           record.Status,
+		Duration:         durationString(time.Duration(record.Duration), ""),
+		TotalVUsers:      record.TotalVUsers,
+		StartDelay:       record.StartDelay,
+		ScenarioMode:     normalizeScenarioMode(record.ScenarioMode),
+		ScriptShakeout:   record.ScriptShakeout,
+		ResourceBaseline: record.ResourceBaseline,
+		Assignment:       decodeStoredGeneratorAssignment(record.Assignment),
+		GoalConfig:       decodeStoredGoalConfig(record.GoalConfig),
+		RuntimeSettings:  decodeStoredRuntimeSettings(record.RuntimeSettings),
+		Groups:           cloneArchiveTestGroups(decodeStoredGroups(record.Groups)),
+		BaselinePinned:   record.BaselinePinned,
+		BaselinePinnedAt: cloneTimePtr(record.BaselinePinnedAt),
+		StartedAt:        cloneTimePtr(record.ScheduledStartAt),
+		EndedAt:          cloneTimePtr(record.EndTime),
+	}
+}
+
+func manifestConfigurationFromProvenance(provenance RunArchiveProvenance, status string, completedAt time.Time) TestRunManifestConfiguration {
+	var endedAt *time.Time
+	if !completedAt.IsZero() {
+		endedAt = &completedAt
+	}
+	return TestRunManifestConfiguration{
+		Status:                status,
+		Duration:              provenance.Duration,
+		TotalVUsers:           provenance.TotalVUsers,
+		StartDelay:            provenance.StartDelay,
+		ScenarioMode:          provenance.ScenarioMode,
+		ScriptShakeout:        provenance.ScriptShakeout,
+		ResourceBaseline:      provenance.ResourceBaseline,
+		Assignment:            cloneGeneratorAssignmentSettings(provenance.Assignment),
+		GeneratorShards:       cloneGeneratorShardSummaries(provenance.GeneratorShards),
+		GoalConfig:            cloneGoalConfig(provenance.GoalConfig),
+		RuntimeSettings:       cloneRuntimeSettings(provenance.RuntimeSettings),
+		RuntimeSettingsReview: cloneRuntimeSettingsReview(provenance.RuntimeSettingsReview),
+		Groups:                cloneArchiveTestGroups(provenance.Groups),
+		BaselinePinned:        provenance.BaselinePinned,
+		BaselinePinnedAt:      cloneTimePtr(provenance.BaselinePinnedAt),
+		StartedAt:             cloneTimePtr(provenance.StartedAt),
+		EndedAt:               endedAt,
+	}
+}
+
+func manifestScriptsFromGroups(groups []TestGroup) []TestRunManifestScript {
+	if len(groups) == 0 {
+		return nil
+	}
+	scripts := make([]TestRunManifestScript, 0, len(groups))
+	for _, group := range groups {
+		scripts = append(scripts, TestRunManifestScript{
+			GroupName:       group.Name,
+			ScriptID:        group.ScriptID,
+			ScriptName:      group.ScriptName,
+			Protocol:        group.Protocol,
+			VUsers:          group.VUsers,
+			RampUp:          group.RampUp,
+			RampDown:        group.RampDown,
+			Stages:          append([]storage.LoadStage(nil), group.Stages...),
+			Iterations:      cloneIntPtr(group.Iterations),
+			RuntimeSettings: cloneRuntimeSettings(group.RuntimeSettings),
+			Assignment:      cloneGeneratorAssignmentSettings(group.Assignment),
+			RunLogicGoals:   cloneRunLogicGoalSnapshot(group.RunLogicGoals),
+			Initialization:  group.Initialization,
+		})
+	}
+	return scripts
+}
+
+func manifestLoadGeneratorsFromProvenance(provenance RunArchiveProvenance) TestRunManifestLoadGenerators {
+	return TestRunManifestLoadGenerators{
+		Assignment:         cloneGeneratorAssignmentSettings(provenance.Assignment),
+		GeneratorShards:    cloneGeneratorShardSummaries(provenance.GeneratorShards),
+		GeneratorInventory: cloneGeneratorInventoryEntries(provenance.GeneratorInventory),
+		ExecutionSettings:  provenance.ExecutionSettings,
+		ControllerEnv:      cloneStringMap(provenance.ControllerEnv),
+	}
+}
+
+func manifestArchiveFromRecord(record *storage.RunArchiveRecord, manifest *RunArchiveManifest) *TestRunManifestArchive {
+	if record == nil {
+		return nil
+	}
+	archive := &TestRunManifestArchive{
+		SchemaVersion:        record.SchemaVersion,
+		ArchiveBackend:       record.ArchiveBackend,
+		ArchivePath:          record.ArchivePath,
+		ManifestPath:         record.ManifestPath,
+		ArchiveURI:           record.ArchiveURI,
+		ManifestURI:          record.ManifestURI,
+		TransactionCount:     record.TransactionCount,
+		ResourceSampleCount:  record.ResourceSampleCount,
+		IntervalSummaryCount: record.IntervalSummaryCount,
+		CreatedAt:            record.CreatedAt,
+		CompletedAt:          record.CompletedAt,
+	}
+	if manifest != nil {
+		archive.SchemaVersion = manifest.SchemaVersion
+		archive.TestManifestFile = manifest.TestManifestFile
+		archive.SLABreached = manifest.SLABreached
+		archive.SLADetails = append([]string(nil), manifest.SLADetails...)
+		archive.Error = manifest.Error
+	}
+	return archive
+}
+
+func (tr *TestRunner) testManifestRuntimeChanges(testID string, refKey string, requestedID string) ([]TestRunManifestRuntimeChange, []string) {
+	if tr.auditStore == nil {
+		return nil, []string{"audit storage is unavailable; runtime changes could not be loaded"}
+	}
+	resourceIDs := []string{testID, refKey, requestedID}
+	seenResourceIDs := map[string]struct{}{}
+	seenEvents := map[string]struct{}{}
+	changes := []TestRunManifestRuntimeChange{}
+	warnings := []string{}
+	for _, resourceID := range resourceIDs {
+		resourceID = strings.TrimSpace(resourceID)
+		if resourceID == "" {
+			continue
+		}
+		if _, seen := seenResourceIDs[resourceID]; seen {
+			continue
+		}
+		seenResourceIDs[resourceID] = struct{}{}
+		events, err := tr.auditStore.ListAuditEvents(storage.AuditEventFilter{
+			Limit:        500,
+			ResourceType: "test",
+			ResourceID:   resourceID,
+		})
+		if err != nil {
+			warnings = append(warnings, "audit events could not be loaded for "+resourceID+": "+err.Error())
+			continue
+		}
+		for _, event := range events {
+			if event == nil || !testManifestAuditAction(event.Action) {
+				continue
+			}
+			key := event.ID
+			if key == "" {
+				key = event.Action + event.CreatedAt.Format(time.RFC3339Nano)
+			}
+			if _, seen := seenEvents[key]; seen {
+				continue
+			}
+			seenEvents[key] = struct{}{}
+			changes = append(changes, TestRunManifestRuntimeChange{
+				ID:               event.ID,
+				Action:           event.Action,
+				Label:            testManifestAuditLabel(event.Action),
+				Status:           event.Status,
+				ActorType:        event.ActorType,
+				ActorSubject:     event.ActorSubject,
+				ActorDisplayName: event.ActorDisplayName,
+				Details:          safeManifestAuditDetails(event.Details),
+				CreatedAt:        event.CreatedAt,
+			})
+		}
+	}
+	sort.SliceStable(changes, func(i, j int) bool {
+		return changes[i].CreatedAt.Before(changes[j].CreatedAt)
+	})
+	return changes, warnings
+}
+
+func testManifestAuditAction(action string) bool {
+	switch action {
+	case "test.create", "test.start", "test.pause", "test.resume", "test.stop", "test.abort", "test.vusers.scale", "test.duration.adjust":
+		return true
+	default:
+		return false
+	}
+}
+
+func testManifestAuditLabel(action string) string {
+	switch action {
+	case "test.create":
+		return "Run created"
+	case "test.start":
+		return "Run started"
+	case "test.pause":
+		return "Run paused"
+	case "test.resume":
+		return "Run resumed"
+	case "test.stop":
+		return "Graceful stop requested"
+	case "test.abort":
+		return "Abort requested"
+	case "test.vusers.scale":
+		return "VUsers changed"
+	case "test.duration.adjust":
+		return "Duration changed"
+	default:
+		return action
+	}
+}
+
+func safeManifestAuditDetails(details map[string]any) map[string]any {
+	if len(details) == 0 {
+		return nil
+	}
+	allowed := map[string]struct{}{
+		"action":                 {},
+		"available_generators":   {},
+		"availability_source":    {},
+		"duration":               {},
+		"group":                  {},
+		"name":                   {},
+		"new_duration":           {},
+		"override_requested":     {},
+		"ramp_duration":          {},
+		"reason":                 {},
+		"recommended_generators": {},
+		"requires_override":      {},
+		"shortfall_generators":   {},
+		"status":                 {},
+		"target_vusers":          {},
+		"total_vusers":           {},
+		"warnings":               {},
+	}
+	out := map[string]any{}
+	for key, value := range details {
+		if _, ok := allowed[key]; !ok {
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func (tr *TestRunner) persistTestManifestArtifact(test *ManagedTest, record *storage.RunArchiveRecord) error {
+	if test == nil || record == nil || strings.TrimSpace(record.ArchivePath) == "" || strings.TrimSpace(record.ManifestPath) == "" {
+		return nil
+	}
+	manifest, err := tr.buildTestManifest(test.ID, record, false)
+	if err != nil {
+		return err
+	}
+	manifest.Source = "archive"
+	manifest.GeneratedAt = time.Now().UTC()
+	if manifest.Archive != nil {
+		manifest.Archive.TestManifestFile = testRunManifestFileName
+	}
+
+	if err := writeIndentedJSONFile(filepath.Join(record.ArchivePath, testRunManifestFileName), manifest); err != nil {
+		return err
+	}
+	archiveManifest, err := loadRunArchiveManifest(record.ManifestPath)
+	if err != nil {
+		return err
+	}
+	archiveManifest.TestManifestFile = testRunManifestFileName
+	if err := writeIndentedJSONFile(record.ManifestPath, archiveManifest); err != nil {
+		return err
+	}
+	if err := uploadArchiveDirectory(context.Background(), record.ArchivePath, record.TestID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func loadTestRunManifest(path string) (*TestRunManifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var manifest TestRunManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(manifest.SchemaVersion) == "" {
+		manifest.SchemaVersion = testRunManifestSchemaVersion
+	}
+	if strings.TrimSpace(manifest.Source) == "" {
+		manifest.Source = "archive"
+	}
+	return &manifest, nil
+}
+
+func writeIndentedJSONFile(path string, value any) error {
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+func durationString(duration time.Duration, fallback string) string {
+	if strings.TrimSpace(fallback) != "" {
+		return fallback
+	}
+	if duration > 0 {
+		return duration.String()
+	}
+	return ""
+}
+
+func cloneIntPtr(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
+}
+
+func cloneRunLogicGoalSnapshot(value *RunLogicGoalSnapshot) *RunLogicGoalSnapshot {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
+}
+
+func uniqueStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := []string{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func removeWarningPrefix(warnings []string, prefix string) []string {
+	if len(warnings) == 0 {
+		return nil
+	}
+	out := warnings[:0]
+	for _, warning := range warnings {
+		if !strings.HasPrefix(warning, prefix) {
+			out = append(out, warning)
+		}
+	}
+	return out
+}

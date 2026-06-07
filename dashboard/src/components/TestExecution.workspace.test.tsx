@@ -18,12 +18,14 @@ const hookMocks = vi.hoisted(() => ({
   useExecutionActionBridge: vi.fn(),
   useExecutionLiveControls: vi.fn(),
   useExecutionArchiveModel: vi.fn(),
+  useExecutionTestManifest: vi.fn(),
 }))
 
 vi.mock('./TestExecutionHeader', () => ({ default: () => <div>Execution Header</div> }))
 vi.mock('./TestExecutionScenarioOverview', () => ({ default: () => <div>Scenario Overview Content</div> }))
 vi.mock('./TestExecutionHeroMetrics', () => ({ default: () => <div>Hero Metrics Content</div> }))
 vi.mock('./TestExecutionLiveControls', () => ({ default: () => <div>Live Controls Content</div> }))
+vi.mock('./TestExecutionManifestCard', () => ({ default: () => <div>Test Manifest Content</div> }))
 vi.mock('./TestExecutionScenarioPreview', () => ({ default: () => <div>Scenario Preview Content</div> }))
 vi.mock('./TestExecutionCharts', () => ({ default: () => <div>Runtime Graphs Content</div> }))
 vi.mock('./TestExecutionStatusPanels', () => ({ default: () => <div>Status Panels Content</div> }))
@@ -60,6 +62,7 @@ vi.mock('./useExecutionChartModel', () => ({ useExecutionChartModel: hookMocks.u
 vi.mock('./useExecutionActionBridge', () => ({ useExecutionActionBridge: hookMocks.useExecutionActionBridge }))
 vi.mock('./useExecutionLiveControls', () => ({ useExecutionLiveControls: hookMocks.useExecutionLiveControls }))
 vi.mock('./useExecutionArchiveModel', () => ({ useExecutionArchiveModel: hookMocks.useExecutionArchiveModel }))
+vi.mock('./useExecutionTestManifest', () => ({ useExecutionTestManifest: hookMocks.useExecutionTestManifest }))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -100,6 +103,7 @@ describe('TestExecution workspace layout', () => {
     expect(selectedTabLabel()).toBe('Overview')
     expect(container.textContent).toContain('Scenario Overview Content')
     expect(container.textContent).toContain('Hero Metrics Content')
+    expect(container.textContent).toContain('Test Manifest Content')
     expect(container.textContent).toContain('Card Library')
     expect(container.textContent).toContain('Run Overview')
     expect(container.textContent).toContain('Run Control')
@@ -119,6 +123,7 @@ describe('TestExecution workspace layout', () => {
     expect(archiveEvidenceHeader.getAttribute('aria-expanded')).toBe('true')
     expect(archiveEvidenceList.hidden).toBe(false)
     expect(libraryItem('archive-overview').textContent).toContain('Archive Overview')
+    expect(libraryItem('test-manifest').textContent).toContain('Test Manifest')
     expect(libraryItem('archive-completeness').textContent).toContain('Completeness Score')
     expect(libraryItem('archive-metadata').textContent).toContain('Run Metadata')
     expect(libraryItem('archive-error-patterns').textContent).toContain('Error Patterns')
@@ -209,6 +214,7 @@ describe('TestExecution workspace layout', () => {
 
     expect(cardElement('scenario-overview').dataset.cardWidth).toBe('natural')
     expect(cardElement('hero-metrics').dataset.cardWidth).toBe('half')
+    expect(cardElement('test-manifest').dataset.cardWidth).toBe('full')
 
     await clickWorkspaceTab('Graphs')
     expect(cardElement('runtime-graphs').dataset.cardWidth).toBe('full')
@@ -314,6 +320,43 @@ describe('TestExecution workspace layout', () => {
     expect(container.textContent).toContain('Live controls are pinned at the top of this run dashboard.')
     expect(container.textContent).toContain('Scenario Preview Content')
     expect((container.textContent?.match(/Live Controls Content/g) ?? []).length).toBe(1)
+  })
+
+  it('migrates existing default layouts to include the test manifest once', async () => {
+    window.localStorage.setItem('apexload.execution.workspaceProfiles.v1', JSON.stringify([
+      {
+        id: 'default',
+        name: 'Default Execution Layout',
+        activeTabId: 'overview',
+        tabs: [
+          { id: 'overview', label: 'Overview', cardIds: ['scenario-overview', 'hero-metrics'] },
+          { id: 'control', label: 'Control', cardIds: ['scenario-preview'] },
+        ],
+        unassignedCardIds: [],
+      },
+    ]))
+
+    await renderExecution()
+
+    expect(container.textContent).toContain('Test Manifest Content')
+    let stored = readStoredDefaultProfile()
+    expect(stored.tabs.find(tab => tab.id === 'overview')?.cardIds).toEqual(['scenario-overview', 'hero-metrics', 'test-manifest'])
+    expect(window.localStorage.getItem('apexload.execution.testManifestCard.v1')).toBe('true')
+
+    await clickWorkspaceTab('Overview')
+    await clickRemoveCard('Test Manifest')
+    expect(container.textContent).not.toContain('Test Manifest Content')
+
+    await act(async () => {
+      root.unmount()
+    })
+    root = createRoot(container)
+    configureHooks(makeTest('QUEUED'))
+    await renderExecution()
+
+    stored = readStoredDefaultProfile()
+    expect(stored.tabs.find(tab => tab.id === 'overview')?.cardIds).toEqual(['scenario-overview', 'hero-metrics'])
+    expect(container.textContent).not.toContain('Test Manifest Content')
   })
 
   it('removes live controls from saved layouts after a run has finished', async () => {
@@ -516,6 +559,12 @@ describe('TestExecution workspace layout', () => {
       onDownloadBrowserDiagnostics: vi.fn(),
       onDownloadArchiveArtifact: vi.fn(),
     })
+    hookMocks.useExecutionTestManifest.mockReturnValue({
+      manifest: null,
+      manifestError: '',
+      manifestLoading: false,
+      reloadManifest: vi.fn(),
+    })
   }
 
   function makeTest(status: TestSummary['status'], overrides: Partial<TestSummary> = {}): TestSummary {
@@ -583,6 +632,21 @@ describe('TestExecution workspace layout', () => {
     const element = container.querySelector(`[data-card-id="${cardId}"]`)
     expect(element).toBeTruthy()
     return element as HTMLElement
+  }
+
+  function readStoredDefaultProfile() {
+    const stored = JSON.parse(window.localStorage.getItem('apexload.execution.workspaceProfiles.v1') || '[]') as Array<{ id: string; tabs: Array<{ id: string; cardIds: string[] }> }>
+    const profile = stored.find(profile => profile.id === 'default')
+    expect(profile).toBeTruthy()
+    return profile as { tabs: Array<{ id: string; cardIds: string[] }> }
+  }
+
+  async function clickRemoveCard(title: string) {
+    const button = container.querySelector(`button[aria-label="Remove card ${title}"]`) as HTMLButtonElement | null
+    expect(button).toBeTruthy()
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
   }
 
   async function clickWorkspaceTab(label: string) {

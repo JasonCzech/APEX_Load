@@ -526,7 +526,7 @@ describe('SettingsPage', () => {
     window.localStorage.removeItem('apexload.settings.focusSection')
   })
 
-  it('offers Sepia in the dashboard theme selector', async () => {
+  it('offers Solarized Dark in the dashboard theme selector', async () => {
     const onThemeChange = vi.fn()
 
     await act(async () => {
@@ -540,12 +540,12 @@ describe('SettingsPage', () => {
     if (!generalSection) return
 
     const themeSelect = findSettingSelect(generalSection, 'Dashboard Theme')
-    expect(Array.from(themeSelect?.options || []).map(option => option.value)).toEqual(['dark', 'light', 'sepia'])
+    expect(Array.from(themeSelect?.options || []).map(option => option.value)).toEqual(['dark', 'light', 'solarized-dark', 'solarized-light', 'monokai-dimmed'])
 
     if (!themeSelect) return
-    await setFieldValue(themeSelect, 'sepia')
+    await setFieldValue(themeSelect, 'solarized-dark')
 
-    expect(onThemeChange).toHaveBeenCalledWith('sepia')
+    expect(onThemeChange).toHaveBeenCalledWith('solarized-dark')
   })
 
   it('opens the requested integrations section from navigation handoff', async () => {

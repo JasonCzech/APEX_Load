@@ -151,6 +151,31 @@ export interface RuntimeSettingsOverride {
   }
 }
 
+export interface RuntimeSettingsFinding {
+  id: string
+  scope: string
+  group?: string
+  script_id?: string
+  script_name?: string
+  protocol?: string
+  area?: string
+  concept?: string
+  status: string
+  severity: string
+  summary: string
+  recommended_action?: string
+  evidence?: string[]
+}
+
+export interface RuntimeSettingsReview {
+  status: string
+  summary?: string
+  status_counts?: Record<string, number>
+  findings?: RuntimeSettingsFinding[]
+  blocking_findings?: RuntimeSettingsFinding[]
+  warnings?: string[]
+}
+
 export interface ScenarioRuntimeSettingsDraft {
   iterations?: number
   pacing?: PacingConfig
@@ -462,11 +487,129 @@ export interface RunArchiveManifest {
   resource_samples_parquet_file?: string
   interval_summaries_file: string
   interval_summaries_parquet_file?: string
+  test_manifest_file?: string
   transaction_count: number
   resource_sample_count: number
   interval_summary_count: number
   sla_breached?: boolean
   sla_details?: string[]
+}
+
+export interface TestRunManifestIdentity {
+  application_id?: string
+  release_id?: string
+  scenario_id?: string
+  project_id?: string
+  folder_id?: string | null
+  created_at?: string
+  scheduled_start_at?: string
+  started_at?: string
+  ended_at?: string
+  created_by_subject?: string
+  created_by_display_name?: string
+  started_by_subject?: string
+  started_by_display_name?: string
+}
+
+export interface TestRunManifestConfiguration {
+  status?: string
+  duration?: string
+  total_vusers?: number
+  active_vusers?: number
+  start_delay?: string
+  scenario_mode?: ScenarioMode
+  script_shakeout?: boolean
+  resource_baseline?: boolean
+  assignment?: GeneratorAssignmentSettings
+  generator_shards?: GeneratorShardSummary[]
+  goal_config?: GoalConfig
+  runtime_settings?: RuntimeSettingsOverride
+  runtime_settings_review?: RuntimeSettingsReview
+  groups?: TestGroup[]
+  vuser_ramps?: Record<string, VUserRampStatus>
+  baseline_pinned?: boolean
+  baseline_pinned_at?: string
+  started_at?: string
+  ended_at?: string
+}
+
+export interface TestRunManifestScript {
+  group_name: string
+  script_id?: string
+  script_name?: string
+  protocol?: string
+  vusers?: number
+  ramp_up?: string
+  ramp_down?: string
+  stages?: LoadStageDraft[]
+  iterations?: number
+  runtime_settings?: RuntimeSettingsOverride
+  assignment?: GeneratorAssignmentSettings
+  run_logic_goals?: {
+    global_iterations?: number
+    max_transactions?: number
+  }
+  initialization?: string
+}
+
+export interface TestRunManifestLoadGenerators {
+  assignment?: GeneratorAssignmentSettings
+  generator_shards?: GeneratorShardSummary[]
+  generator_inventory?: SystemInventoryGenerator[]
+  execution_settings?: {
+    general?: Record<string, unknown>
+    thresholds?: Record<string, unknown>
+    capacity_planning?: Record<string, unknown>
+  }
+  controller_env?: Record<string, string>
+}
+
+export interface TestRunManifestRuntimeChange {
+  id: string
+  action: string
+  label: string
+  status?: string
+  actor_type?: string
+  actor_subject?: string
+  actor_display_name?: string
+  details?: Record<string, unknown>
+  created_at: string
+}
+
+export interface TestRunManifestArchive {
+  schema_version?: string
+  archive_backend?: string
+  archive_path?: string
+  manifest_path?: string
+  archive_uri?: string
+  manifest_uri?: string
+  test_manifest_file?: string
+  transaction_count?: number
+  resource_sample_count?: number
+  interval_summary_count?: number
+  created_at?: string
+  completed_at?: string
+  sla_breached?: boolean
+  sla_details?: string[]
+  error?: string
+}
+
+export interface TestRunManifest {
+  schema_version: string
+  test_id: string
+  ref_key?: string
+  test_name: string
+  status: string
+  source: 'live' | 'archive' | 'archive_fallback' | string
+  generated_at: string
+  identity: TestRunManifestIdentity
+  initial_configuration: TestRunManifestConfiguration
+  current_configuration: TestRunManifestConfiguration
+  scripts?: TestRunManifestScript[]
+  load_generators: TestRunManifestLoadGenerators
+  runtime_changes?: TestRunManifestRuntimeChange[]
+  archive?: TestRunManifestArchive
+  warnings?: string[]
 }
 
 export interface TransactionEvent {

@@ -34,12 +34,21 @@ export interface DashboardWorkspaceContext {
   tokens: string[]
 }
 
+export interface DashboardWorkspaceDefaultCardInsertion {
+  key: string
+  profileId: string
+  tabId: string
+  cardId: string
+  afterCardId?: string
+}
+
 interface DashboardWorkspaceProps {
   activeStorageKey: string
   ariaLabel: string
   cardLibraryStorageKey: string
   cards: DashboardWorkspaceCard[]
   context?: DashboardWorkspaceContext
+  defaultCardInsertions?: DashboardWorkspaceDefaultCardInsertion[]
   defaultProfile: DashboardWorkspaceProfile
   storageKey: string
 }
@@ -180,6 +189,16 @@ function insertCardId(cardIds: string[], cardId: string, beforeCardId?: string) 
   return next
 }
 
+function insertCardIdAfter(cardIds: string[], cardId: string, afterCardId?: string) {
+  if (cardIds.includes(cardId)) return cardIds
+  if (!afterCardId) return [...cardIds, cardId]
+  const targetIndex = cardIds.indexOf(afterCardId)
+  if (targetIndex === -1) return [...cardIds, cardId]
+  const next = [...cardIds]
+  next.splice(targetIndex + 1, 0, cardId)
+  return next
+}
+
 function removeCardFromTab(tabs: DashboardWorkspaceTab[], cardId: string, sourceTabId: string) {
   return tabs.map(tab => (tab.id === sourceTabId ? { ...tab, cardIds: tab.cardIds.filter(id => id !== cardId) } : tab))
 }
@@ -251,6 +270,39 @@ export function normalizeWorkspaceProfiles(
     normalized.unshift(normalizeProfile(defaultProfile, defaultProfile, knownCardIds))
   }
   return normalized
+}
+
+function profileContainsCard(profile: DashboardWorkspaceProfile, cardId: string) {
+  if (profile.unassignedCardIds.includes(cardId)) return true
+  return profile.tabs.some(tab => tab.cardIds.includes(cardId))
+}
+
+function applyDefaultCardInsertions(
+  profiles: DashboardWorkspaceProfile[],
+  insertions?: DashboardWorkspaceDefaultCardInsertion[],
+): DashboardWorkspaceProfile[] {
+  if (!insertions || insertions.length === 0 || typeof window === 'undefined') return profiles
+  let nextProfiles = profiles
+  for (const insertion of insertions) {
+    if (!insertion.key || safeReadJSON<boolean>(insertion.key, false)) {
+      continue
+    }
+    nextProfiles = nextProfiles.map(profile => {
+      if (profile.id !== insertion.profileId || profileContainsCard(profile, insertion.cardId)) {
+        return profile
+      }
+      return {
+        ...profile,
+        tabs: profile.tabs.map(tab => (
+          tab.id === insertion.tabId
+            ? { ...tab, cardIds: insertCardIdAfter(tab.cardIds, insertion.cardId, insertion.afterCardId) }
+            : tab
+        )),
+      }
+    })
+    safeWriteJSON(insertion.key, true)
+  }
+  return nextProfiles
 }
 
 function createProfileCopy(profile: DashboardWorkspaceProfile, existingIds: string[], name: string): DashboardWorkspaceProfile {
@@ -347,14 +399,22 @@ export default function DashboardWorkspace({
   cardLibraryStorageKey,
   cards,
   context,
+  defaultCardInsertions,
   defaultProfile,
   storageKey,
 }: DashboardWorkspaceProps) {
   const cardIds = useMemo(() => cards.map(card => card.id), [cards])
   const cardIdSignature = useMemo(() => cardIds.join('|'), [cardIds])
+  const defaultCardInsertionSignature = useMemo(
+    () => (defaultCardInsertions || []).map(insertion => `${insertion.key}:${insertion.profileId}:${insertion.tabId}:${insertion.cardId}:${insertion.afterCardId || ''}`).join('|'),
+    [defaultCardInsertions],
+  )
   const cardMap = useMemo(() => new Map(cards.map(card => [card.id, card])), [cards])
   const [profiles, setProfiles] = useState<DashboardWorkspaceProfile[]>(() =>
-    normalizeWorkspaceProfiles(safeReadJSON<DashboardWorkspaceProfile[]>(storageKey, [defaultProfile]), defaultProfile, cardIds),
+    applyDefaultCardInsertions(
+      normalizeWorkspaceProfiles(safeReadJSON<DashboardWorkspaceProfile[]>(storageKey, [defaultProfile]), defaultProfile, cardIds),
+      defaultCardInsertions,
+    ),
   )
   const [activeState, setActiveState] = useState<WorkspaceActiveState>(() => {
     const stored = safeReadJSON<WorkspaceActiveState>(activeStorageKey, DEFAULT_ACTIVE_STATE)
@@ -371,8 +431,8 @@ export default function DashboardWorkspace({
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null)
 
   useEffect(() => {
-    setProfiles(previous => normalizeWorkspaceProfiles(previous, defaultProfile, cardIds))
-  }, [cardIdSignature, defaultProfile])
+    setProfiles(previous => applyDefaultCardInsertions(normalizeWorkspaceProfiles(previous, defaultProfile, cardIds), defaultCardInsertions))
+  }, [cardIdSignature, defaultCardInsertionSignature, defaultCardInsertions, defaultProfile])
 
   useEffect(() => {
     safeWriteJSON(storageKey, profiles)

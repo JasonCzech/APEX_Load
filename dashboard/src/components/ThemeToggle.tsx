@@ -7,50 +7,20 @@ interface ThemeToggleProps {
 
 export default function ThemeToggle({ theme, onThemeChange }: ThemeToggleProps) {
   return (
-    <div className="theme-toggle" role="group" aria-label="Dashboard color theme">
-      <button
-        type="button"
-        className={theme === 'light' ? 'active' : ''}
-        aria-pressed={theme === 'light'}
-        onClick={() => onThemeChange('light')}
+    <div className="theme-toggle" style={{ display: 'flex', alignItems: 'center' }}>
+      <select
+        className="control-input"
+        style={{ padding: '4px 8px', borderRadius: 'var(--radius)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)', fontSize: '14px', outline: 'none' }}
+        value={theme}
+        onChange={(e) => onThemeChange(e.target.value as DashboardTheme)}
+        aria-label="Dashboard color theme"
       >
-        <span className="theme-toggle-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" focusable="false">
-            <circle cx="12" cy="12" r="4" />
-            <path d="M12 2v2.5M12 19.5V22M4.93 4.93 6.7 6.7M17.3 17.3l1.77 1.77M2 12h2.5M19.5 12H22M4.93 19.07 6.7 17.3M17.3 6.7l1.77-1.77" />
-          </svg>
-        </span>
-        <span>Light</span>
-      </button>
-      <button
-        type="button"
-        className={theme === 'sepia' ? 'active' : ''}
-        aria-pressed={theme === 'sepia'}
-        onClick={() => onThemeChange('sepia')}
-      >
-        <span className="theme-toggle-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" focusable="false">
-            <circle cx="12" cy="12" r="7" />
-            <path d="M12 5v14" />
-            <path d="M12 5a7 7 0 0 1 0 14" fill="currentColor" stroke="none" />
-          </svg>
-        </span>
-        <span>Sepia</span>
-      </button>
-
-      <button
-        type="button"
-        className={theme === 'dark' ? 'active' : ''}
-        aria-pressed={theme === 'dark'}
-        onClick={() => onThemeChange('dark')}
-      >
-        <span className="theme-toggle-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" focusable="false">
-            <path d="M20.4 14.7A8 8 0 0 1 9.3 3.6 8.6 8.6 0 1 0 20.4 14.7Z" />
-          </svg>
-        </span>
-        <span>Dark</span>
-      </button>
+        <option value="dark">Dark Theme</option>
+        <option value="light">Light Theme</option>
+        <option value="solarized-dark">Solarized Dark</option>
+        <option value="solarized-light">Solarized Light</option>
+        <option value="monokai-dimmed">Monokai Dimmed</option>
+      </select>
     </div>
   )
 }

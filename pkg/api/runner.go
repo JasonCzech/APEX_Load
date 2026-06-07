@@ -41,11 +41,16 @@ type scriptPersistence interface {
 
 type testPersistence interface {
 	SaveTest(test *storage.TestRecord) error
+	GetTest(id string) (*storage.TestRecord, error)
 	ListTests(projectID string, folderID *string) ([]*storage.TestRecord, error)
 	ListTestsByContext(applicationID string, releaseID string, scenarioID string) ([]*storage.TestRecord, error)
 	UpdateTestStatus(id string, status string, endTime *time.Time, errStr string) error
 	DeleteTest(id string) error
 	MoveTest(id string, folderID *string) error
+}
+
+type auditPersistence interface {
+	ListAuditEvents(filter storage.AuditEventFilter) ([]*storage.AuditEvent, error)
 }
 
 type scenarioPersistence interface {
@@ -121,6 +126,7 @@ type TestRunner struct {
 	releaseStore  releasePersistence
 	historyStore  historyPersistence
 	archiveStore  archivePersistence
+	auditStore    auditPersistence
 	settingsStore settingsPersistence
 	usageStore    usageSnapshotPersistence
 	liveState     LiveStateStore
@@ -717,6 +723,7 @@ type archiveRecorder interface {
 }
 
 type runArtifacts struct {
+	runner          *TestRunner
 	recorder        archiveRecorder
 	saveRecord      func(record *storage.RunArchiveRecord) error
 	externalMetrics *externalMetricCollector
@@ -738,6 +745,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 		releaseStore:  store,
 		historyStore:  store,
 		archiveStore:  store,
+		auditStore:    store,
 		settingsStore: store,
 		usageStore:    store,
 		execution:     localExecutionBackend{},
@@ -3574,6 +3582,12 @@ func (tr *TestRunner) GetRunArchiveManifest(id string) (*RunArchiveManifest, err
 		return nil, err
 	}
 	return loadRunArchiveManifest(record.ManifestPath)
+}
+
+func (tr *TestRunner) resolveTestID(id string) string {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	return tr.resolveRefKeyLocked(id)
 }
 
 func (tr *TestRunner) DeleteTest(id string) bool {

@@ -275,6 +275,53 @@ describe('DashboardWorkspace', () => {
     expect(libraryItem('delta').textContent).toContain('Delta Card')
   })
 
+  it('applies one-time default card insertions without re-adding removed cards', async () => {
+    const markerKey = 'test.defaultCardInsertion.v1'
+    const nextCards: DashboardWorkspaceCard[] = [
+      ...cards,
+      { id: 'delta', title: 'Delta Card', category: 'Core', defaultWidth: 'full', render: () => <p>Delta body</p> },
+    ]
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([defaultProfile]))
+
+    await renderWorkspace({
+      cards: nextCards,
+      defaultCardInsertions: [{
+        key: markerKey,
+        profileId: 'default',
+        tabId: 'overview',
+        cardId: 'delta',
+        afterCardId: 'alpha',
+      }],
+    })
+
+    expect(container.textContent).toContain('Delta body')
+    let stored = readStoredDefaultProfile()
+    expect(stored.tabs.find(tab => tab.id === 'overview')?.cardIds).toEqual(['alpha', 'delta'])
+    expect(window.localStorage.getItem(markerKey)).toBe('true')
+
+    await click(removeCardButton('Delta Card'))
+    expect(container.textContent).not.toContain('Delta body')
+
+    await act(async () => {
+      root.unmount()
+    })
+    root = createRoot(container)
+    await renderWorkspace({
+      cards: nextCards,
+      defaultCardInsertions: [{
+        key: markerKey,
+        profileId: 'default',
+        tabId: 'overview',
+        cardId: 'delta',
+        afterCardId: 'alpha',
+      }],
+    })
+
+    stored = readStoredDefaultProfile()
+    expect(stored.tabs.find(tab => tab.id === 'overview')?.cardIds).toEqual(['alpha'])
+    expect(container.textContent).not.toContain('Delta body')
+  })
+
   it('auto-applies the highest-priority matching profile from context tokens', async () => {
     const matchingProfile: DashboardWorkspaceProfile = {
       id: 'browser-layout',

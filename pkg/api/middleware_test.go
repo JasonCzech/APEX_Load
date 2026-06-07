@@ -1815,6 +1815,15 @@ func TestTrustedHeaderAuthProjectRoleGuardsStoredTestEndpoints(t *testing.T) {
 		t.Fatalf("test viewer GET status = %d, want %d body=%s", getResp.Code, http.StatusOK, getResp.Body.String())
 	}
 
+	manifestReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRecord.ID+"/manifest", nil)
+	manifestReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	manifestReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
+	manifestResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(manifestResp, manifestReq)
+	if manifestResp.Code != http.StatusOK {
+		t.Fatalf("test viewer manifest status = %d, want %d body=%s", manifestResp.Code, http.StatusOK, manifestResp.Body.String())
+	}
+
 	moveBody := []byte(`{"folder_id":"` + folder.ID + `"}`)
 	viewerMoveReq := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testRecord.ID+"/move", bytes.NewReader(moveBody))
 	viewerMoveReq.Header.Set("Content-Type", "application/json")

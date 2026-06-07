@@ -24,6 +24,7 @@ import {
   ScenarioScheduleHealth,
   ScenarioDataPoolBinding,
   ScenarioMode,
+  TestRunManifest,
   TestSummary,
   TransactionEvent,
 } from '../../types'
@@ -357,6 +358,8 @@ export function useTestApi() {
 
   const getMetrics = useCallback((id: string) => request<TestMetricsResponse>(`/tests/${id}/metrics`), [])
 
+  const getTestManifest = useCallback((id: string) => request<TestRunManifest>(`/tests/${id}/manifest`), [])
+
   const getTestArchiveManifest = useCallback((id: string) => request<RunArchiveManifest>(`/tests/${id}/archive/manifest`), [])
 
   const getTestArchiveTransactions = useCallback(
@@ -483,6 +486,7 @@ export function useTestApi() {
       deleteTest,
       moveTest,
       getMetrics,
+      getTestManifest,
       getTestArchiveManifest,
       getTestArchiveTransactions,
       getTestArchiveResources,
@@ -536,6 +540,7 @@ export function useTestApi() {
       rejectScenarioScheduleApproval,
       moveTest,
       getMetrics,
+      getTestManifest,
       getTestArchiveManifest,
       getTestArchiveTransactions,
       getTestArchiveResources,

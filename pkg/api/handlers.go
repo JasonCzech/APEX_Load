@@ -118,6 +118,20 @@ func (s *Server) handleGetTest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, test)
 }
 
+func (s *Server) handleGetTestManifest(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	manifest, err := s.runner.GetTestManifest(id)
+	if err != nil {
+		if strings.Contains(err.Error(), "test not found") {
+			writeError(w, http.StatusNotFound, "test not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, manifest)
+}
+
 func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req StartTestOptions

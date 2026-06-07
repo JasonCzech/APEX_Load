@@ -1,7 +1,7 @@
 // A single CodeMirror theme + syntax-highlight style wired to the dashboard's CSS
 // variables. Because the theme rules reference `var(--…)` and the active theme is
 // selected by `data-theme` on <html>, this one extension adapts to the dark, light,
-// and sepia themes with no per-theme rebuild.
+// and solarized themes with no per-theme rebuild.
 
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { type Extension } from '@codemirror/state'

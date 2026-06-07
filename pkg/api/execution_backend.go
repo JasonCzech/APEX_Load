@@ -86,7 +86,7 @@ func newRunArtifacts(tr *TestRunner, test *ManagedTest, saveRecord func(record *
 	if err != nil {
 		return nil, err
 	}
-	return &runArtifacts{recorder: recorder, saveRecord: saveRecord, externalMetrics: newExternalMetricCollector(nil)}, nil
+	return &runArtifacts{runner: tr, recorder: recorder, saveRecord: saveRecord, externalMetrics: newExternalMetricCollector(nil)}, nil
 }
 
 func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProvenance {
@@ -199,6 +199,11 @@ func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime t
 	}
 	if archiveErr != nil {
 		return archiveRecord, "FAILED", appendRunError(finalError, "archive finalize failed", archiveErr)
+	}
+	if a.runner != nil && archiveRecord != nil {
+		if err := a.runner.persistTestManifestArtifact(test, archiveRecord); err != nil {
+			return archiveRecord, "FAILED", appendRunError(finalError, "test manifest archive failed", err)
+		}
 	}
 	if a.saveRecord != nil {
 		if err := a.saveRecord(archiveRecord); err != nil {

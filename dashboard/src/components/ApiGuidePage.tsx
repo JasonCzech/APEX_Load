@@ -212,6 +212,7 @@ const endpointGroups = [
       { method: 'POST', path: '/api/v1/tests', operations: ['manage_tests'] },
       { method: 'POST', path: '/api/v1/tests/estimate', operations: ['manage_tests'] },
       { method: 'GET', path: '/api/v1/tests/{id}', operations: ['view_tests'] },
+      { method: 'GET', path: '/api/v1/tests/{id}/manifest', purpose: 'Canonical live or archived run configuration manifest.', operations: ['view_tests'] },
       { method: 'POST', path: '/api/v1/tests/{id}/start', purpose: 'Start queued runs; script shakeout failures return a reviewable 409 payload.', operations: ['manage_tests'] },
       { method: 'POST', path: '/api/v1/tests/{id}/stop', operations: ['manage_tests'] },
       { method: 'POST', path: '/api/v1/tests/{id}/abort', operations: ['manage_tests'] },
