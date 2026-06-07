@@ -355,6 +355,19 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     />
   ) : null
 
+  const liveControlsCard: DashboardWorkspaceCard = {
+    id: 'live-controls',
+    title: 'Live Controls',
+    category: 'Run Control',
+    description: 'Start, pause, stop, scale, and duration controls.',
+    render: () => (
+      <div className="empty-card live-controls-pinned-card">
+        <p>Live controls are pinned at the top of this run dashboard.</p>
+        <p className="empty-hint">Use the top panel to pause, stop, abort, scale VUsers, or adjust duration while the run is active.</p>
+      </div>
+    ),
+  }
+
   const executionWorkspaceCards: DashboardWorkspaceCard[] = [
     {
       id: 'scenario-overview',
@@ -385,23 +398,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         />
       ),
     },
-    {
-      id: 'live-controls',
-      title: 'Live Controls',
-      category: 'Run Control',
-      description: 'Start, pause, stop, scale, and duration controls.',
-      render: () => showLiveControls ? (
-        <div className="empty-card live-controls-pinned-card">
-          <p>Live controls are pinned at the top of this run dashboard.</p>
-          <p className="empty-hint">Use the top panel to pause, stop, abort, scale VUsers, or adjust duration while the run is active.</p>
-        </div>
-      ) : (
-        <div className="empty-card">
-          <p>Live controls are unavailable for this run state.</p>
-          <p className="empty-hint">Start or resume a run to scale VUsers, adjust duration, pause, stop, or abort from this tab.</p>
-        </div>
-      ),
-    },
+    ...(showLiveControls ? [liveControlsCard] : []),
     {
       id: 'scenario-preview',
       title: 'Scenario Preview',
