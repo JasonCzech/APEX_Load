@@ -1424,7 +1424,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     <div className="page">
       <div className="page-header">
         <div>
-          <h2>Run Test</h2>
+          <h2>New Test</h2>
           <p className="page-subtitle">Choose the release context, scenario, and run setup.</p>
         </div>
         <div className="inline-create-row">
@@ -1789,7 +1789,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
               <span className={`new-test-step-index${step1Complete ? ' complete' : ''}`}>{step1Complete ? '✓' : '1'}</span>
               <div className="new-test-step-header-content">
                 <h3>Select Scenario</h3>
-                <p>Choose the reusable workload definition to execute.</p>
+                <p>Choose the reusable workload definition below, or choose Open Scenario Builder to create a new Scenario.</p>
               </div>
               {onOpenScenarioBuilder && (
                 <button

@@ -19,6 +19,8 @@ interface Props {
 
 type DefinitionEntry = [string, string | number | boolean | null | undefined]
 
+const COPY_TIMEOUT_MS = 1500
+
 function formatDate(value?: string | null): string {
   if (!value) return 'Not set'
   const date = new Date(value)
@@ -43,6 +45,15 @@ function safeFilename(value?: string | null): string {
 
 function stringifyJSON(value: unknown): string {
   return JSON.stringify(value, null, 2)
+}
+
+function copyWithTimeout(value: string): Promise<boolean> {
+  return Promise.race([
+    copyTextToClipboard(value),
+    new Promise<boolean>(resolve => {
+      setTimeout(() => resolve(false), COPY_TIMEOUT_MS)
+    }),
+  ])
 }
 
 function hasObjectValue(value: unknown): boolean {
@@ -115,7 +126,8 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
   const fileBaseName = manifest ? safeFilename(manifest.ref_key || manifest.test_id || manifest.test_name) : 'test-run'
 
   const copyManifest = async () => {
-    const copied = await copyTextToClipboard(jsonText)
+    setCopyStatus('Copying...')
+    const copied = await copyWithTimeout(jsonText)
     setCopyStatus(copied ? 'Copied' : 'Copy unavailable')
   }
 
