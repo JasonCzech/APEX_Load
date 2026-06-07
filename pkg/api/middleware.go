@@ -1638,6 +1638,23 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}
 	}
 
+	if r.PathValue("id") != "" && strings.HasPrefix(path, "/api/v1/scripts/authoring/sessions/") {
+		switch method {
+		case http.MethodGet:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveAuthoringSessionProjectID,
+			}, true
+		case http.MethodPut, http.MethodDelete, http.MethodPost:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveAuthoringSessionProjectID,
+			}, true
+		}
+	}
+
 	if r.PathValue("id") != "" && strings.HasPrefix(path, "/api/v1/scripts/") {
 		switch method {
 		case http.MethodGet:
@@ -2128,6 +2145,78 @@ func resolveDraftScriptProjectID(r *http.Request, _ storage.Store) (string, int,
 	return normalizeProjectID(req.Script.ProjectID), 0, ""
 }
 
+func resolveBrowserToHTTPPreviewProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	var req struct {
+		ProjectID           string `json:"project_id,omitempty"`
+		SourceBrowserScript *struct {
+			ProjectID string `json:"project_id,omitempty"`
+		} `json:"source_browser_script,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if strings.TrimSpace(req.ProjectID) != "" {
+		return normalizeProjectID(req.ProjectID), 0, ""
+	}
+	if req.SourceBrowserScript != nil {
+		return normalizeProjectID(req.SourceBrowserScript.ProjectID), 0, ""
+	}
+	return normalizeProjectID(""), 0, ""
+}
+
+func resolveAuthoringSessionRequestProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	var req struct {
+		ProjectID string `json:"project_id,omitempty"`
+		Draft     *struct {
+			ProjectID string `json:"project_id,omitempty"`
+		} `json:"draft,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if strings.TrimSpace(req.ProjectID) != "" {
+		return normalizeProjectID(req.ProjectID), 0, ""
+	}
+	if req.Draft != nil {
+		return normalizeProjectID(req.Draft.ProjectID), 0, ""
+	}
+	return normalizeProjectID(""), 0, ""
+}
+
+func resolveAuthoringSessionProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "authoring session storage is not configured"
+	}
+	sessionStore, ok := store.(interface {
+		GetAuthoringSession(id string) (*storage.AuthoringSession, error)
+	})
+	if !ok {
+		return "", http.StatusServiceUnavailable, "authoring session storage is not configured"
+	}
+	session, err := sessionStore.GetAuthoringSession(r.PathValue("id"))
+	if err != nil {
+		return "", http.StatusNotFound, "authoring session not found"
+	}
+	return normalizeProjectID(session.ProjectID), 0, ""
+}
+
+func resolveGoalSizingBaselineProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "test storage is not configured"
+	}
+	var req struct {
+		BaselineTestID string `json:"baseline_test_id"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	test, err := store.GetTest(strings.TrimSpace(req.BaselineTestID))
+	if err != nil {
+		return "", http.StatusNotFound, "baseline test not found"
+	}
+	return normalizeProjectID(test.ProjectID), 0, ""
+}
+
 func resolveJMeterSaveProjectID(r *http.Request, _ storage.Store) (string, int, string) {
 	var req struct {
 		Scripts []struct {
@@ -2373,6 +2462,9 @@ func resolveScriptCreateProjectID(r *http.Request, store storage.Store) (string,
 	var req struct {
 		ProjectID string  `json:"project_id,omitempty"`
 		FolderID  *string `json:"folder_id,omitempty"`
+		Script    *struct {
+			ProjectID string `json:"project_id,omitempty"`
+		} `json:"script,omitempty"`
 	}
 	if err := decodeRequestBody(r, &req); err != nil {
 		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
@@ -2380,7 +2472,13 @@ func resolveScriptCreateProjectID(r *http.Request, store storage.Store) (string,
 	if req.FolderID != nil {
 		return resolveFolderProjectIDValue(*req.FolderID, store)
 	}
-	return normalizeProjectID(req.ProjectID), 0, ""
+	if strings.TrimSpace(req.ProjectID) != "" {
+		return normalizeProjectID(req.ProjectID), 0, ""
+	}
+	if req.Script != nil {
+		return normalizeProjectID(req.Script.ProjectID), 0, ""
+	}
+	return normalizeProjectID(""), 0, ""
 }
 
 func resolveFolderProjectIDValue(folderID string, store storage.Store) (string, int, string) {

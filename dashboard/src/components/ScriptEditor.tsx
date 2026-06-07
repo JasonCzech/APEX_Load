@@ -39,8 +39,8 @@ import {
   type ReplayPreflight,
 } from '../types/scripts'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
-import ReplayPreflightCard, { replayPreflightStatusLabel } from './ReplayPreflightCard'
-import { buildLocalReplayPreflight } from './replayPreflightUtils'
+import ReplayPreflightCard from './ReplayPreflightCard'
+import { buildLocalReplayPreflight, replayPreflightStatusLabel } from './replayPreflightUtils'
 import SourceMappingReview from './SourceMappingReview'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
@@ -2337,7 +2337,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setActiveAction(actionIndex)
     setError('')
     setSuccess(`Updated selector for ${currentAction.name || `Action ${actionIndex + 1}`}.`)
-  }, [replaceScriptWithHistory, script])
+  }, [replaceScriptWithHistory, script, setActiveAction, setError, setSuccess])
 
   const recordAssistantChange = useCallback((title: string, summary: string) => {
     setAssistantChangeLog((previous) => [
@@ -3435,21 +3435,21 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const jsonStatus: ScriptCodePaneProps['status'] = jsonParseMessage ? 'invalid' : jsonDirty ? 'dirty' : 'synced'
   const jsonStatusMessage = jsonParseMessage ? 'Invalid JSON' : jsonDirty ? 'Unsaved JSON edits' : 'Synced'
 
-  const resolveCurrentScript = (): ScriptData => {
+  const resolveCurrentScript = useCallback((): ScriptData => {
     const parsed = parseScriptJsonDraft(jsonText)
     if (!parsed.ok) {
       throw new Error(parsed.message)
     }
     return parsed.script
-  }
+  }, [jsonText])
 
-  const commitJsonDraft = (nextScript: ScriptData, message?: string) => {
+  const commitJsonDraft = useCallback((nextScript: ScriptData, message?: string) => {
     setScript(nextScript)
     setJsonText(formatScriptJson(nextScript))
     setJsonDirty(false)
     setError('')
     if (message) setSuccess(message)
-  }
+  }, [setError, setJsonDirty, setJsonText, setScript, setSuccess])
 
   const handleApplyJsonDraft = () => {
     setSuccess('')
@@ -3585,7 +3585,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }
   }
 
-  const activateWorkspaceTab = (nextTab: WorkbenchMode) => {
+  const activateWorkspaceTab = useCallback((nextTab: WorkbenchMode) => {
     setWorkspaceTab(nextTab)
     if (nextTab === 'debug') {
       setDebuggerTab('request')
@@ -3593,14 +3593,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         openCenterTab(BROWSER_REPLAY_TAB_ID)
       }
     }
-  }
+  }, [isBrowserScript, openCenterTab])
 
-  const openReplayDebugger = (openSettings = false) => {
+  const openReplayDebugger = useCallback((openSettings = false) => {
     activateWorkspaceTab('debug')
     if (openSettings) setDebuggerSettingsOpen(true)
-  }
+  }, [activateWorkspaceTab])
 
-  const handleReplay = async (options?: { startPaused?: boolean }) => {
+  const handleReplay = useCallback(async (options?: { startPaused?: boolean }) => {
     setError('')
     setSuccess('')
     setWarnings([])
@@ -3718,9 +3718,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         setReplaying(false)
       }
     }
-  }
+  }, [api, commitJsonDraft, debugBreakpoints, openReplayDebugger, projectId, replayOptions.groupName, replayOptions.ignoreThinkTime, replayOptions.logLevel, replayOptions.startPaused, replayOptions.variablesText, resolveCurrentScript, scriptId, setActiveReplaySessionId, setBrowserReplaySession, setError, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplayScreenshotSelection, setReplaySeedVariables, setReplaying, setSuccess, setWarnings])
 
-  const handleStopReplay = async () => {
+  const handleStopReplay = useCallback(async () => {
     if (!activeReplaySessionId) return
     try {
       await api.stopScriptDebugSession(activeReplaySessionId)
@@ -3729,9 +3729,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to stop debugger'))
     }
-  }
+  }, [activeReplaySessionId, api, setError, setSuccess])
 
-  const handlePauseResumeReplay = async () => {
+  const handlePauseResumeReplay = useCallback(async () => {
     if (!activeReplaySessionId || !browserReplaySession) return
     try {
       const isPaused = browserReplaySession.status === 'paused'
@@ -3744,9 +3744,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to update debugger state'))
     }
-  }
+  }, [activeReplaySessionId, api, browserReplaySession, setBrowserReplaySession, setError, setSuccess])
 
-  const handleStepReplay = async () => {
+  const handleStepReplay = useCallback(async () => {
     openReplayDebugger(false)
     if (!activeReplaySessionId || !browserReplaySession) {
       await handleReplay({ startPaused: true })
@@ -3761,7 +3761,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to step debugger'))
     }
-  }
+  }, [activeReplaySessionId, api, browserReplaySession, handleReplay, openReplayDebugger, setBrowserReplaySession, setError, setSuccess])
 
   const clearDebugBreakpoints = async () => {
     setDebugBreakpoints([])
@@ -3777,7 +3777,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }
   }
 
-  const toggleDebugBreakpoint = async (phase: string, actionIndex: number) => {
+  const debugBreakpointKeys = useMemo(() => new Set(debugBreakpoints.map(bp => debugBreakpointKey(bp.phase, bp.action_index))), [debugBreakpoints])
+
+  const toggleDebugBreakpoint = useCallback(async (phase: string, actionIndex: number) => {
     const normalized: ScriptDebugBreakpoint = { phase: normalizeDebugPhase(phase), action_index: actionIndex }
     const key = debugBreakpointKey(normalized.phase, normalized.action_index)
     const nextBreakpoints = debugBreakpointKeys.has(key)
@@ -3794,7 +3796,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to update debugger breakpoints'))
     }
-  }
+  }, [activeReplaySessionId, api, browserReplaySession, debugBreakpointKeys, debugBreakpoints, setBrowserReplaySession, setDebugBreakpoints, setError])
 
   const handleDownloadBrowserReplayExport = () => {
     if (!replayReport) return
@@ -4039,7 +4041,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const stepReplayDisabled = replaying
     ? (!activeReplaySessionId || !isReplayPaused)
     : (saving || !script.name || debugActionRows.length === 0)
-  const debugBreakpointKeys = new Set(debugBreakpoints.map(bp => debugBreakpointKey(bp.phase, bp.action_index)))
   const breakpointSummary = `${debugBreakpoints.length} selected across ${debugActionRows.length} executable action${debugActionRows.length === 1 ? '' : 's'}`
   const debugRawSearchText = debugRawSearch.trim().toLowerCase()
   const debugFilteredLogs = (browserReplaySession?.logs || [])
@@ -4261,7 +4262,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     void reconcile()
     const timer = window.setInterval(reconcile, 1200)
     return () => { cancelled = true; window.clearInterval(timer) }
-  }, [activeReplaySessionId, replaying, api])
+  }, [activeReplaySessionId, replaying, api, setBrowserReplaySession, setReplayReport])
 
   const addDataSource = () => {
     const nextIndex = (script.data_sources?.length || 0) + 1

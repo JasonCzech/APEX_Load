@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DependencyList } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 
 import type { ReleaseTrend } from '../types'
 
@@ -20,7 +20,7 @@ function formatSignedPct(value: number): string {
   return `${sign}${value.toFixed(1)}%`
 }
 
-function useBottomBoundedTable(dependencies: DependencyList) {
+function useBottomBoundedTable(dependencySignature: string) {
   const ref = useRef<HTMLDivElement | null>(null)
   const [maxHeight, setMaxHeight] = useState<number | null>(null)
 
@@ -44,7 +44,7 @@ function useBottomBoundedTable(dependencies: DependencyList) {
       window.removeEventListener('resize', updateMaxHeight)
       window.removeEventListener('scroll', updateMaxHeight)
     }
-  }, dependencies)
+  }, [dependencySignature])
 
   const style = maxHeight === null ? undefined : ({ '--dashboard-table-max-height': `${maxHeight}px` } as CSSProperties)
   return { ref, style }
@@ -57,7 +57,7 @@ export function ReleaseTrendPanel({ releaseId, getReleaseTrend }: ReleaseTrendPa
   const [trend, setTrend] = useState<ReleaseTrend | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const tableBounds = useBottomBoundedTable([loading, error, trend?.points.length ?? 0])
+  const tableBounds = useBottomBoundedTable(`${loading}:${error}:${trend?.points.length ?? 0}`)
 
   const load = useCallback(async () => {
     setLoading(true)

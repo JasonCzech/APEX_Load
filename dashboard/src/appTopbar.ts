@@ -13,11 +13,6 @@ const ACTIVE_RUN_STATUS_PRIORITY: Record<string, number> = {
   INITIALIZING: 1,
   PAUSED: 2,
   STOPPING: 3,
-  PENDING: 4,
-  QUEUED: 5,
-  SCHEDULED: 6,
-  SHAKEOUT: 7,
-  SHAKEOUT_REVIEW: 8,
 }
 
 export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions = {}): string {
@@ -114,7 +109,7 @@ export function updateTopbarActiveRuns(
       status,
       created_at: existing?.created_at || update.timestamp,
       started_at: existing?.started_at || (status === 'RUNNING' || status === 'INITIALIZING' ? update.timestamp : undefined),
-      pending_since: existing?.pending_since || (status === 'PENDING' ? update.timestamp : undefined),
+      pending_since: existing?.pending_since,
       scheduled_start_at: existing?.scheduled_start_at,
     },
   ].sort(compareTopbarRuns)

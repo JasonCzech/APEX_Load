@@ -87,6 +87,29 @@ describe('LibraryFederationPanel', () => {
     await flushPromises()
     expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes('/api/v1/library/remotes/remote-1') && init?.method === 'DELETE')).toBe(true)
   })
+
+  it('uses the shared settings select style for the auth method dropdown', async () => {
+    await act(async () => {
+      root.render(<LibraryFederationPanel projectId="project-1" />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const authMethodSelect = findFieldSelect('Auth Method')
+    expect(authMethodSelect).toBeTruthy()
+    expect(authMethodSelect?.classList.contains('settings-select')).toBe(true)
+    expect(authMethodSelect?.value).toBe('service_account')
+
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const stylesheet = readFileSync(`${cwd}/src/components/Pages.css`, 'utf8') as string
+    const selectRule = stylesheet.match(/\.settings-select \{[\s\S]*?\n\}/)?.[0] ?? ''
+
+    expect(selectRule).toContain('border: 1px solid var(--border);')
+    expect(selectRule).toContain('background: var(--bg-secondary);')
+    expect(selectRule).toContain('color: var(--text-primary);')
+  })
 })
 
 function remotePayload() {
@@ -111,6 +134,12 @@ function jsonResponse(body: unknown) {
 
 function findButton(label: string) {
   return Array.from(document.querySelectorAll('button')).find(button => button.textContent?.trim() === label) as HTMLButtonElement | undefined
+}
+
+function findFieldSelect(label: string) {
+  return Array.from(document.querySelectorAll('label')).find(field => (
+    field.querySelector('span')?.textContent?.trim() === label
+  ))?.querySelector('select') as HTMLSelectElement | null
 }
 
 async function flushPromises() {

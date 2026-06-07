@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/hmac"
@@ -164,6 +165,30 @@ func TestEnforceGitHubProjectPolicy(t *testing.T) {
 	}
 	if err := enforceGitHubProjectPolicy(policy, "import", "octo", "scripts", "main", "outside/order.json", ""); err == nil {
 		t.Fatal("path outside template prefix should be rejected")
+	}
+}
+
+func TestCreateGitHubSyncJobRejectsInvalidKindBeforePersisting(t *testing.T) {
+	stub := newGitHubStub(t)
+	defer stub.Close()
+	server := newGitHubTestServer(t, stub.URL)
+
+	body := []byte(`{"project_id":"team-a","kind":"sideways","owner":"octocat","repo":"scripts"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/integrations/github/sync-jobs", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("sync job status = %d, want 400; body=%s", resp.Code, resp.Body.String())
+	}
+	store := server.store.(storage.GitHubEnterpriseStore)
+	jobs, err := store.ListGitHubSyncJobs("team-a", 10)
+	if err != nil {
+		t.Fatalf("ListGitHubSyncJobs: %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("persisted jobs = %d, want 0", len(jobs))
 	}
 }
 

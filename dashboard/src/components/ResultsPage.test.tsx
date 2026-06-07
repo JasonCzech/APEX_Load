@@ -4,7 +4,8 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import ResultsPage, { buildComparisonSummarySeries, comparisonChartYAxisLabel } from './ResultsPage'
+import ResultsPage from './ResultsPage'
+import { buildComparisonSummarySeries, comparisonChartYAxisLabel } from './resultsComparisonChartModel'
 import { downloadBlob } from '../utils/fileUtils'
 
 const apiMock = {

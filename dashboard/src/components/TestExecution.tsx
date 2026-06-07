@@ -26,10 +26,10 @@ import { mergeArchiveResourceHistory } from './testExecutionMetricsModel'
 import { buildExecutionPhaseModel } from './testExecutionPhaseModel'
 import { buildExecutionStatusModel, describeGoalController } from './testExecutionStatusModel'
 import DashboardWorkspace, {
-  buildWorkspaceContextTokens,
   type DashboardWorkspaceCard,
   type DashboardWorkspaceProfile,
 } from './DashboardWorkspace'
+import { buildWorkspaceContextTokens } from './dashboardWorkspaceModel'
 import { useExecutionChartModel } from './useExecutionChartModel'
 import { useExecutionScenarioPreviewModel } from './useExecutionScenarioPreviewModel'
 import { useExecutionTestManifest } from './useExecutionTestManifest'

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { DashboardAuthStatus } from '../types'
 import { useAuthApi } from './api/useAuthApi'
-import { useDevView } from './DevViewProvider'
+import { useDevView } from './useDevView'
 
 export type AuthStatusState =
   | { status: 'loading' }

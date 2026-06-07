@@ -13,7 +13,7 @@ import {
   routeLatencySeriesKeys,
   visibleMetricDomain,
   type ChartConfig,
-} from './TestExecutionCharts'
+} from './testExecutionChartModel'
 import { routeLatencyDetailSeriesKey, routeLatencySeriesLabel } from './latencySeries'
 
 describe('chartStateForMonitorPreset', () => {

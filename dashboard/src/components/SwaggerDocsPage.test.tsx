@@ -4,7 +4,8 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import SwaggerDocsPage, { parseSwaggerDocument } from './SwaggerDocsPage'
+import SwaggerDocsPage from './SwaggerDocsPage'
+import { parseSwaggerDocument } from './swaggerDocsParser'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 

@@ -3,6 +3,7 @@ import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, RunCalendarEvent, RunCalendarResponse, ScenarioScheduleHealth, SystemInventoryResponse, SystemReadinessResponse, SystemServicesResponse, TelemetryDiagnosticEntry } from '../types'
+import { readStoredStringArray, writeStoredJSON } from '../utils/browserStorage'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
 import './CreateTestModal.css'
 
@@ -91,8 +92,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [customizing, setCustomizing] = useState(false)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
   const [activeCategoryId, setActiveCategoryId] = useState<MonitorCategoryId>('overview')
-  const [cardOrder, setCardOrder] = useState<string[]>(() => readStringArray('apexload.monitoring.cardOrder'))
-  const [hiddenCardIds, setHiddenCardIds] = useState<string[]>(() => readStringArray('apexload.monitoring.hiddenCards'))
+  const [cardOrder, setCardOrder] = useState<string[]>(() => readStoredStringArray('apexload.monitoring.cardOrder'))
+  const [hiddenCardIds, setHiddenCardIds] = useState<string[]>(() => readStoredStringArray('apexload.monitoring.hiddenCards'))
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const websocketValueClass = connectionState === 'connected' ? 'text-success' : connectionState === 'disconnected' ? 'text-danger' : ''
   const websocketLabel = connectionState === 'connected' ? 'Connected' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
@@ -859,13 +860,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   }, [cards])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('apexload.monitoring.cardOrder', JSON.stringify(cardOrder))
+    writeStoredJSON('apexload.monitoring.cardOrder', cardOrder)
   }, [cardOrder])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('apexload.monitoring.hiddenCards', JSON.stringify(hiddenCardIds))
+    writeStoredJSON('apexload.monitoring.hiddenCards', hiddenCardIds)
   }, [hiddenCardIds])
 
   const orderedCards = useMemo(() => {
@@ -1859,16 +1858,6 @@ function serviceStatusClass(status: string): string {
   if (['stopping', 'draining', 'degraded', 'cordoned'].includes(normalized)) return 'status-stopping'
   if (['failed', 'unhealthy', 'unreachable', 'unavailable'].includes(normalized)) return 'status-failed'
   return 'status-queued'
-}
-
-function readStringArray(key: string): string[] {
-  if (typeof window === 'undefined') return []
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(key) || '[]')
-    return Array.isArray(parsed) ? parsed.filter(value => typeof value === 'string') : []
-  } catch {
-    return []
-  }
 }
 
 function mergeOrder(order: string[], ids: string[]) {

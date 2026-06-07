@@ -4,7 +4,8 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import RepositoryGuidePage, { parseMarkdown } from './RepositoryGuidePage'
+import RepositoryGuidePage from './RepositoryGuidePage'
+import { parseMarkdown } from './repositoryGuideMarkdown'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 

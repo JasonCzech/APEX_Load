@@ -486,7 +486,7 @@ describe('DashboardPage', () => {
       stylesheet.match(/\.dash-dashboard-layout \{[\s\S]*?\n\}/)?.[0] ?? '',
       stylesheet.match(/\.dash-dashboard-layout\.snapshot-collapsed \{[\s\S]*?\n\}/)?.[0] ?? '',
       stylesheet.match(/\.dash-main-column \{[\s\S]*?\n\}/)?.[0] ?? '',
-      stylesheet.match(/@media \(max-width: 980px\) \{[\s\S]*?\.dash-main-column \{[\s\S]*?\n  \}/)?.[0] ?? '',
+      stylesheet.match(/@media \(max-width:\s980px\) \{[\s\S]*?\.dash-main-column \{[\s\S]*?\n\s{2}\}/)?.[0] ?? '',
       stylesheet.match(/\.dash-release-panel \{[\s\S]*?\n\}/)?.[0] ?? '',
       stylesheet.match(/\.release-panel-card \{[\s\S]*?\n\}/)?.[0] ?? '',
       stylesheet.match(/\.release-panel-rail \{[\s\S]*?writing-mode: vertical-rl[\s\S]*?\n\}/)?.[0] ?? '',

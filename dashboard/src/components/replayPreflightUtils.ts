@@ -7,6 +7,13 @@ type ScriptWithPhases = ScriptDefinition & {
 
 const REPLAY_TEMPLATE_REF_PATTERN = /\{\{\s*(var|env|data|param)\.([a-zA-Z0-9_.-]+)/g
 
+export function replayPreflightStatusLabel(preflight?: ReplayPreflight | null) {
+  if (!preflight) return 'Not checked'
+  if (!preflight.valid) return 'Needs attention'
+  if ((preflight.checks || []).some(check => check.status === 'warn')) return 'Ready with notes'
+  return 'Ready'
+}
+
 function orderedReplayActions(script: ScriptDefinition): ScriptActionDefinition[] {
   const phasedScript = script as ScriptWithPhases
   return [

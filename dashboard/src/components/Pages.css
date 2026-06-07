@@ -2959,7 +2959,14 @@
 .script-workflow-card:hover,
 .script-workflow-card.active {
   border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.1);
+}
+
+.script-workflow-card:hover {
+  background: var(--bg-hover);
+}
+
+.script-workflow-card.active {
+  background: var(--accent-soft);
 }
 
 .script-workflow-card span {
@@ -2969,7 +2976,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(99, 102, 241, 0.14);
+  background: var(--accent-soft);
   color: var(--accent);
   font-weight: 800;
   font-size: 12px;
@@ -3394,9 +3401,17 @@
   background: linear-gradient(180deg, var(--accent-soft) 0%, transparent 100px), var(--bg-card);
 }
 
+.script-create-lane.import .script-create-option,
+.script-create-lane.import .script-create-option.primary {
+  border-color: var(--accent-border);
+  background:
+    linear-gradient(180deg, var(--accent-soft) 0%, rgba(var(--accent-rgb), 0.04) 56px, transparent 132px),
+    var(--bg-card);
+}
+
 .script-create-option:hover {
   border-color: var(--accent);
-  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.12);
+  box-shadow: 0 8px 24px rgba(var(--accent-rgb), 0.12);
   transform: translateY(-4px);
 }
 
@@ -5656,11 +5671,15 @@
 }
 
 .run-calendar-event.cron {
-  background: color-mix(in srgb, var(--success) 11%, var(--bg-secondary));
+  border-color: var(--run-calendar-cron-border);
+  background: var(--run-calendar-cron-bg);
+  box-shadow: inset 3px 0 0 var(--run-calendar-cron-text);
 }
 
 .run-calendar-event.ad-hoc {
-  background: color-mix(in srgb, var(--chart-3) 14%, var(--bg-secondary));
+  border-color: var(--run-calendar-ad-hoc-border);
+  background: var(--run-calendar-ad-hoc-bg);
+  box-shadow: inset 3px 0 0 var(--run-calendar-ad-hoc-text);
 }
 
 .run-calendar-event.failed,
@@ -5752,11 +5771,11 @@
 }
 
 .run-calendar-source.cron {
-  color: var(--success);
+  color: var(--run-calendar-cron-text);
 }
 
 .run-calendar-source.ad_hoc {
-  color: var(--chart-3);
+  color: var(--run-calendar-ad-hoc-text);
 }
 
 .run-calendar-detail-grid {
@@ -8155,6 +8174,15 @@
   grid-column: 1 / -1;
 }
 
+.settings-subsection-actions {
+  border-top: 1px solid var(--border);
+  margin-top: 0;
+}
+
+.settings-empty-subpanel {
+  margin: 16px;
+}
+
 .setting-row {
   display: flex;
   flex-direction: column;
@@ -8176,14 +8204,31 @@
   font-size: 13px;
 }
 
+.settings-select {
+  width: 100%;
+  min-height: 35px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
 .settings-input::placeholder {
   color: var(--text-muted);
 }
 
-.settings-input:focus {
+.settings-input:focus,
+.settings-select:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.18);
+}
+
+.settings-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .settings-input-number {

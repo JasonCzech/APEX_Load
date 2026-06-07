@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -510,6 +509,10 @@ func (s *Server) handleCreateGitHubSyncJob(w http.ResponseWriter, r *http.Reques
 	if req.Kind == "" {
 		req.Kind = "import"
 	}
+	if req.Kind != "import" && req.Kind != "push" {
+		writeError(w, http.StatusBadRequest, "kind must be import or push")
+		return
+	}
 	owner := strings.TrimSpace(req.Owner)
 	repo := strings.TrimSpace(req.Repo)
 	policy := s.githubProjectPolicy(req.ProjectID)
@@ -537,150 +540,26 @@ func (s *Server) handleCreateGitHubSyncJob(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
-	job := &storage.GitHubSyncJob{
-		ID:        uuid.New().String(),
+	store, _ := s.githubEnterpriseStore()
+	linkStore, _ := s.githubScriptLinkStore()
+	syncService := newGitHubSyncService(s.runner, store, linkStore)
+	job, err := syncService.Run(r.Context(), resolved, githubSyncJobInput{
 		ProjectID: req.ProjectID,
 		Kind:      req.Kind,
-		Status:    "running",
 		Owner:     owner,
 		Repo:      repo,
 		Branch:    branch,
 		Path:      basePath,
+		ScriptIDs: req.ScriptIDs,
+		Strategy:  req.Strategy,
 		StartedBy: githubUserKey(r),
-	}
-	store, _ := s.githubEnterpriseStore()
-	if store != nil {
-		_ = store.SaveGitHubSyncJob(job)
-	}
-	switch req.Kind {
-	case "import":
-		s.runGitHubImportSyncJob(r.Context(), resolved.Client, job)
-	case "push":
-		s.runGitHubPushSyncJob(r.Context(), resolved, job, req.ScriptIDs, req.Strategy)
-	default:
-		writeError(w, http.StatusBadRequest, "kind must be import or push")
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
-	}
-	job.Status = "complete"
-	completed := time.Now()
-	job.CompletedAt = &completed
-	if job.Errors > 0 || job.Conflicts > 0 {
-		job.Status = "partial"
-	}
-	if store != nil {
-		_ = store.SaveGitHubSyncJob(job)
 	}
 	s.recordAuditEvent(r, "github.sync_job.create", job.Status, "github_sync_job", job.ID, req.ProjectID, map[string]any{"kind": job.Kind, "owner": owner, "repo": repo, "branch": branch})
 	writeJSON(w, http.StatusCreated, job)
-}
-
-func (s *Server) runGitHubImportSyncJob(ctx context.Context, client *githubClient, job *storage.GitHubSyncJob) {
-	contents, err := client.GetContents(ctx, job.Owner, job.Repo, job.Path, job.Branch)
-	if err != nil {
-		job.Errors++
-		job.SummaryJSON = fmt.Sprintf(`{"error":%q}`, err.Error())
-		return
-	}
-	remoteCommitSHA, _ := client.GetBranchHeadSHA(ctx, job.Owner, job.Repo, job.Branch)
-	entries := contents.Entries
-	if !contents.IsDir && contents.File != nil {
-		entries = []githubContent{*contents.File}
-	}
-	job.Total = len(entries)
-	for _, entry := range entries {
-		if entry.Type != "file" || !strings.HasSuffix(strings.ToLower(entry.Path), ".json") {
-			continue
-		}
-		fileContents, err := client.GetContents(ctx, job.Owner, job.Repo, entry.Path, job.Branch)
-		if err != nil || fileContents.File == nil {
-			job.Errors++
-			continue
-		}
-		data, err := fileContents.File.DecodedContent()
-		if err != nil {
-			job.Errors++
-			continue
-		}
-		script, err := dsl.Parse(data)
-		if err != nil {
-			job.Errors++
-			continue
-		}
-		script.ProjectID = job.ProjectID
-		stored := s.runner.StoreScript(script)
-		job.Created++
-		job.Processed++
-		if linkStore, ok := s.githubScriptLinkStore(); ok {
-			_, contentHash, _ := githubScriptEnvelope(stored.Script)
-			_ = linkStore.SaveGitHubScriptLink(&storage.GitHubScriptLink{
-				ScriptID:        stored.ID,
-				RefKey:          stored.RefKey,
-				Owner:           job.Owner,
-				Repo:            job.Repo,
-				Branch:          job.Branch,
-				Path:            entry.Path,
-				LastCommitSHA:   fileContents.File.SHA,
-				RemoteBlobSHA:   fileContents.File.SHA,
-				RemoteCommitSHA: remoteCommitSHA,
-				ContentHash:     contentHash,
-			})
-		}
-	}
-}
-
-func (s *Server) runGitHubPushSyncJob(ctx context.Context, resolved *githubResolvedClient, job *storage.GitHubSyncJob, scriptIDs []string, strategy string) {
-	if strategy == "" {
-		strategy = "pr"
-	}
-	selected := map[string]struct{}{}
-	for _, id := range scriptIDs {
-		selected[id] = struct{}{}
-	}
-	scripts := s.runner.ListScriptsFiltered(job.ProjectID, nil)
-	job.Total = len(scripts)
-	for _, stored := range scripts {
-		if len(selected) > 0 {
-			if _, ok := selected[stored.ID]; !ok {
-				continue
-			}
-		}
-		targetPath := renderGitHubPathTemplate(firstNonEmpty(resolved.Policy.PathTemplate, resolved.Settings.PathTemplate), stored)
-		if err := enforceGitHubProjectPolicy(resolved.Policy, "push", job.Owner, job.Repo, job.Branch, targetPath, strategy); err != nil {
-			job.Conflicts++
-			continue
-		}
-		content, contentHash, err := githubScriptEnvelope(stored.Script)
-		if err != nil {
-			job.Errors++
-			continue
-		}
-		existing, _ := resolved.Client.GetContents(ctx, job.Owner, job.Repo, targetPath, job.Branch)
-		remoteSHA := ""
-		if existing != nil && existing.File != nil {
-			remoteSHA = existing.File.SHA
-		}
-		result, err := resolved.Client.PutFile(ctx, job.Owner, job.Repo, targetPath, job.Branch, "Sync "+stored.Name+" via APEX Load", content, remoteSHA)
-		if err != nil {
-			job.Errors++
-			continue
-		}
-		if linkStore, ok := s.githubScriptLinkStore(); ok {
-			_ = linkStore.SaveGitHubScriptLink(&storage.GitHubScriptLink{
-				ScriptID:        stored.ID,
-				RefKey:          stored.RefKey,
-				Owner:           job.Owner,
-				Repo:            job.Repo,
-				Branch:          job.Branch,
-				Path:            targetPath,
-				LastCommitSHA:   result.Content.SHA,
-				RemoteBlobSHA:   result.Content.SHA,
-				RemoteCommitSHA: result.Commit.SHA,
-				ContentHash:     contentHash,
-			})
-		}
-		job.Updated++
-		job.Processed++
-	}
 }
 
 func (s *Server) handleListGitHubSyncJobs(w http.ResponseWriter, r *http.Request) {

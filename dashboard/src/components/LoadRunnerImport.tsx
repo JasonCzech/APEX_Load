@@ -209,6 +209,7 @@ const DEFAULT_IMPORT_OPTIONS: ImportOptions = {
   block_compatibility_only: true,
   block_non_applicable: false,
 }
+const EMPTY_REPLAY_VALIDATION_WARNINGS: string[] = []
 
 function getImportedRuntimeSectionId(area?: string | null): string | null {
   const normalizedArea = area?.trim().toLowerCase()
@@ -374,7 +375,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const reviewMode = selectedItem?.reviewMode ?? null
   const replayValidationLoading = selectedItem?.replayValidationLoading ?? false
   const replayValidationError = selectedItem?.replayValidationError ?? ''
-  const replayValidationWarnings = selectedItem?.replayValidationWarnings ?? []
+  const replayValidationWarnings = selectedItem?.replayValidationWarnings ?? EMPTY_REPLAY_VALIDATION_WARNINGS
   const replayValidationSession = selectedItem?.replayValidationSession ?? null
   const displayError = error || selectedItem?.error || ''
   const displayNotice = notice || selectedItem?.notice || ''

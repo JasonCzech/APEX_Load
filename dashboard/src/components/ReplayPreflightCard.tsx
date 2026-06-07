@@ -1,11 +1,5 @@
 import type { ReplayPreflight } from '../types/scripts'
-
-export function replayPreflightStatusLabel(preflight?: ReplayPreflight | null) {
-  if (!preflight) return 'Not checked'
-  if (!preflight.valid) return 'Needs attention'
-  if ((preflight.checks || []).some(check => check.status === 'warn')) return 'Ready with notes'
-  return 'Ready'
-}
+import { replayPreflightStatusLabel } from './replayPreflightUtils'
 
 export default function ReplayPreflightCard({ preflight }: { preflight: ReplayPreflight }) {
   return (

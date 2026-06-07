@@ -1,46 +1,26 @@
-import { useEffect, useMemo, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
-
-export type DashboardWorkspaceCardWidth = 'natural' | 'half' | 'full'
-
-export interface DashboardWorkspaceCard {
-  id: string
-  title: string
-  category?: string
-  description?: string
-  defaultWidth?: DashboardWorkspaceCardWidth
-  render: () => ReactNode
-}
-
-export interface DashboardWorkspaceTab {
-  id: string
-  label: string
-  cardIds: string[]
-  cardWidths?: Record<string, DashboardWorkspaceCardWidth>
-}
-
-export interface DashboardWorkspaceProfile {
-  id: string
-  name: string
-  tabs: DashboardWorkspaceTab[]
-  unassignedCardIds: string[]
-  activeTabId?: string
-  dismissedDefaultTabIds?: string[]
-  matchEnabled?: boolean
-  matchText?: string
-  priority?: number
-}
-
-export interface DashboardWorkspaceContext {
-  tokens: string[]
-}
-
-export interface DashboardWorkspaceDefaultCardInsertion {
-  key: string
-  profileId: string
-  tabId: string
-  cardId: string
-  afterCardId?: string
-}
+import { useEffect, useMemo, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
+import {
+  CARD_WIDTH_SEQUENCE,
+  normalizeProfile,
+  normalizeWorkspaceProfiles,
+  slugifyWorkspaceId,
+  uniqueId,
+  type DashboardWorkspaceCard,
+  type DashboardWorkspaceCardWidth,
+  type DashboardWorkspaceContext,
+  type DashboardWorkspaceDefaultCardInsertion,
+  type DashboardWorkspaceProfile,
+  type DashboardWorkspaceTab,
+} from './dashboardWorkspaceModel'
+import { readStoredJSON, writeStoredJSON } from '../utils/browserStorage'
+export type {
+  DashboardWorkspaceCard,
+  DashboardWorkspaceCardWidth,
+  DashboardWorkspaceContext,
+  DashboardWorkspaceDefaultCardInsertion,
+  DashboardWorkspaceProfile,
+  DashboardWorkspaceTab,
+} from './dashboardWorkspaceModel'
 
 interface DashboardWorkspaceProps {
   activeStorageKey: string
@@ -74,61 +54,6 @@ const DEFAULT_ACTIVE_STATE: WorkspaceActiveState = {
   profileId: 'default',
 }
 
-const CARD_WIDTH_SEQUENCE: DashboardWorkspaceCardWidth[] = ['full', 'half', 'natural']
-
-const LEGACY_CARD_ID_REPLACEMENTS: Record<string, string[]> = {
-  'load-impact-metrics': ['load-impact', 'runtime-graphs'],
-  'metrics-under-load': ['runtime-graphs'],
-}
-
-function replacementCardIds(cardId: string, tabId?: string) {
-  if (cardId === 'load-impact-metrics' && tabId === 'load-impact') return ['load-impact']
-  if (cardId === 'metrics-under-load' && tabId === 'metrics-under-load') return []
-  return LEGACY_CARD_ID_REPLACEMENTS[cardId] || [cardId]
-}
-
-function normalizeLegacyTabLabel(id: string, label: string) {
-  if (id === 'load-impact' && label === 'Load Impact + Metrics Under Load') return 'Load Impact'
-  return label
-}
-
-function isRemovedLegacyTab(tab: DashboardWorkspaceTab) {
-  return tab.id === 'metrics-under-load' && tab.cardIds.length === 0
-}
-
-function safeReadJSON<T>(key: string, fallback: T): T {
-  if (typeof window === 'undefined') return fallback
-  try {
-    const raw = window.localStorage.getItem(key)
-    if (!raw) return fallback
-    return JSON.parse(raw) as T
-  } catch {
-    return fallback
-  }
-}
-
-function safeWriteJSON(key: string, value: unknown) {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value))
-  } catch {
-    // localStorage can be unavailable in locked-down browser contexts.
-  }
-}
-
-function slugify(value: string) {
-  const slug = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-  return slug || 'custom'
-}
-
-function uniqueId(prefix: string, existingIds: string[]) {
-  const base = slugify(prefix)
-  if (!existingIds.includes(base)) return base
-  let index = 2
-  while (existingIds.includes(`${base}-${index}`)) index += 1
-  return `${base}-${index}`
-}
-
 function moveId(ids: string[], draggedId: string, targetId: string) {
   if (draggedId === targetId) return ids
   const next = ids.filter(id => id !== draggedId)
@@ -155,30 +80,6 @@ function moveIdToEdge(ids: string[], id: string, edge: 'start' | 'end') {
   return [...next, id]
 }
 
-function uniqueKnownCardIds(cardIds: string[], knownCards: Set<string>, tabId?: string) {
-  const seen = new Set<string>()
-  return (cardIds || []).flatMap(cardId => replacementCardIds(cardId, tabId)).filter(cardId => {
-    if (!knownCards.has(cardId) || seen.has(cardId)) return false
-    seen.add(cardId)
-    return true
-  })
-}
-
-function normalizeCardWidths(cardWidths: DashboardWorkspaceTab['cardWidths'], cardIds: string[]) {
-  if (!cardWidths) return undefined
-  const validCardIds = new Set(cardIds)
-  const normalized = Object.entries(cardWidths).reduce<Record<string, DashboardWorkspaceCardWidth>>((acc, [cardId, width]) => {
-    const replacementIds = LEGACY_CARD_ID_REPLACEMENTS[cardId] || [cardId]
-    for (const replacementId of replacementIds) {
-      if (validCardIds.has(replacementId) && CARD_WIDTH_SEQUENCE.includes(width)) {
-        acc[replacementId] = width
-      }
-    }
-    return acc
-  }, {})
-  return Object.keys(normalized).length > 0 ? normalized : undefined
-}
-
 function insertCardId(cardIds: string[], cardId: string, beforeCardId?: string) {
   if (cardIds.includes(cardId)) return cardIds
   if (!beforeCardId) return [...cardIds, cardId]
@@ -203,75 +104,6 @@ function removeCardFromTab(tabs: DashboardWorkspaceTab[], cardId: string, source
   return tabs.map(tab => (tab.id === sourceTabId ? { ...tab, cardIds: tab.cardIds.filter(id => id !== cardId) } : tab))
 }
 
-function normalizeProfile(
-  profile: DashboardWorkspaceProfile,
-  defaultProfile: DashboardWorkspaceProfile,
-  knownCardIds: string[],
-): DashboardWorkspaceProfile {
-  const knownCards = new Set(knownCardIds)
-  const defaultTabIds = new Set(defaultProfile.tabs.map(tab => tab.id))
-  const dismissedDefaultTabIds = (profile.dismissedDefaultTabIds || []).filter(tabId => defaultTabIds.has(tabId))
-  const sourceTabs = Array.isArray(profile.tabs) && profile.tabs.length > 0 ? profile.tabs : defaultProfile.tabs
-  let tabs = sourceTabs.map((tab, index) => {
-    const id = tab.id?.trim() || `tab-${index + 1}`
-    const label = normalizeLegacyTabLabel(id, tab.label?.trim() || `Tab ${index + 1}`)
-    const cardIds = uniqueKnownCardIds(tab.cardIds || [], knownCards, id)
-    const cardWidths = normalizeCardWidths(tab.cardWidths, cardIds)
-    return { id, label, cardIds, ...(cardWidths ? { cardWidths } : {}) }
-  }).filter(tab => !isRemovedLegacyTab(tab))
-
-  if (tabs.length === 0) {
-    tabs = [{ id: 'overview', label: 'Overview', cardIds: [] }]
-  }
-
-  const unassignedCardIds = uniqueKnownCardIds(profile.unassignedCardIds || [], knownCards)
-
-  for (const defaultTab of defaultProfile.tabs) {
-    if (tabs.some(tab => tab.id === defaultTab.id) || dismissedDefaultTabIds.includes(defaultTab.id)) continue
-    tabs.push({
-      id: defaultTab.id,
-      label: defaultTab.label,
-      cardIds: uniqueKnownCardIds(defaultTab.cardIds || [], knownCards),
-      cardWidths: normalizeCardWidths(defaultTab.cardWidths, defaultTab.cardIds || []),
-    })
-  }
-
-  const requestedActiveTabId = profile.activeTabId === 'metrics-under-load' ? 'graphs' : profile.activeTabId
-  const activeTabId = tabs.some(tab => tab.id === requestedActiveTabId)
-    ? requestedActiveTabId
-    : tabs[0]?.id
-
-  return {
-    ...profile,
-    id: profile.id || defaultProfile.id,
-    name: profile.name?.trim() || defaultProfile.name || 'Default',
-    tabs,
-    unassignedCardIds,
-    activeTabId,
-    dismissedDefaultTabIds,
-    priority: Number.isFinite(profile.priority) ? profile.priority : 0,
-  }
-}
-
-export function normalizeWorkspaceProfiles(
-  profiles: DashboardWorkspaceProfile[],
-  defaultProfile: DashboardWorkspaceProfile,
-  knownCardIds: string[],
-): DashboardWorkspaceProfile[] {
-  const rawProfiles = Array.isArray(profiles) && profiles.length > 0 ? profiles : [defaultProfile]
-  const seenProfileIds = new Set<string>()
-  const normalized = rawProfiles.map((profile, index) => {
-    const id = profile.id?.trim() || (index === 0 ? defaultProfile.id : `profile-${index + 1}`)
-    const uniqueProfileId = seenProfileIds.has(id) ? uniqueId(id, Array.from(seenProfileIds)) : id
-    seenProfileIds.add(uniqueProfileId)
-    return normalizeProfile({ ...profile, id: uniqueProfileId }, defaultProfile, knownCardIds)
-  })
-  if (!normalized.some(profile => profile.id === defaultProfile.id)) {
-    normalized.unshift(normalizeProfile(defaultProfile, defaultProfile, knownCardIds))
-  }
-  return normalized
-}
-
 function profileContainsCard(profile: DashboardWorkspaceProfile, cardId: string) {
   if (profile.unassignedCardIds.includes(cardId)) return true
   return profile.tabs.some(tab => tab.cardIds.includes(cardId))
@@ -284,7 +116,7 @@ function applyDefaultCardInsertions(
   if (!insertions || insertions.length === 0 || typeof window === 'undefined') return profiles
   let nextProfiles = profiles
   for (const insertion of insertions) {
-    if (!insertion.key || safeReadJSON<boolean>(insertion.key, false)) {
+    if (!insertion.key || readStoredJSON<boolean>(insertion.key, false)) {
       continue
     }
     nextProfiles = nextProfiles.map(profile => {
@@ -300,7 +132,7 @@ function applyDefaultCardInsertions(
         )),
       }
     })
-    safeWriteJSON(insertion.key, true)
+    writeStoredJSON(insertion.key, true)
   }
   return nextProfiles
 }
@@ -373,26 +205,6 @@ function parseDragPayload(value: string): DragPayload | null {
   return null
 }
 
-export function buildWorkspaceContextTokens(...values: unknown[]): string[] {
-  const tokens: string[] = []
-  const visit = (value: unknown) => {
-    if (value === null || value === undefined) return
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-      tokens.push(String(value))
-      return
-    }
-    if (Array.isArray(value)) {
-      value.forEach(visit)
-      return
-    }
-    if (typeof value === 'object') {
-      Object.values(value as Record<string, unknown>).forEach(visit)
-    }
-  }
-  values.forEach(visit)
-  return tokens
-}
-
 export default function DashboardWorkspace({
   activeStorageKey,
   ariaLabel,
@@ -412,12 +224,12 @@ export default function DashboardWorkspace({
   const cardMap = useMemo(() => new Map(cards.map(card => [card.id, card])), [cards])
   const [profiles, setProfiles] = useState<DashboardWorkspaceProfile[]>(() =>
     applyDefaultCardInsertions(
-      normalizeWorkspaceProfiles(safeReadJSON<DashboardWorkspaceProfile[]>(storageKey, [defaultProfile]), defaultProfile, cardIds),
+      normalizeWorkspaceProfiles(readStoredJSON<DashboardWorkspaceProfile[]>(storageKey, [defaultProfile]), defaultProfile, cardIds),
       defaultCardInsertions,
     ),
   )
   const [activeState, setActiveState] = useState<WorkspaceActiveState>(() => {
-    const stored = safeReadJSON<WorkspaceActiveState>(activeStorageKey, DEFAULT_ACTIVE_STATE)
+    const stored = readStoredJSON<WorkspaceActiveState>(activeStorageKey, DEFAULT_ACTIVE_STATE)
     return {
       autoApply: stored.autoApply ?? true,
       profileId: stored.profileId || defaultProfile.id,
@@ -425,25 +237,25 @@ export default function DashboardWorkspace({
   })
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
-  const [cardLibraryCollapsed, setCardLibraryCollapsed] = useState(() => safeReadJSON<boolean>(cardLibraryStorageKey, false))
+  const [cardLibraryCollapsed, setCardLibraryCollapsed] = useState(() => readStoredJSON<boolean>(cardLibraryStorageKey, false))
   const [collapsedLibraryCategories, setCollapsedLibraryCategories] = useState<Record<string, boolean>>({})
   const [newTabName, setNewTabName] = useState('')
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null)
 
   useEffect(() => {
     setProfiles(previous => applyDefaultCardInsertions(normalizeWorkspaceProfiles(previous, defaultProfile, cardIds), defaultCardInsertions))
-  }, [cardIdSignature, defaultCardInsertionSignature, defaultCardInsertions, defaultProfile])
+  }, [cardIdSignature, cardIds, defaultCardInsertionSignature, defaultCardInsertions, defaultProfile])
 
   useEffect(() => {
-    safeWriteJSON(storageKey, profiles)
+    writeStoredJSON(storageKey, profiles)
   }, [profiles, storageKey])
 
   useEffect(() => {
-    safeWriteJSON(activeStorageKey, activeState)
+    writeStoredJSON(activeStorageKey, activeState)
   }, [activeState, activeStorageKey])
 
   useEffect(() => {
-    safeWriteJSON(cardLibraryStorageKey, cardLibraryCollapsed)
+    writeStoredJSON(cardLibraryStorageKey, cardLibraryCollapsed)
   }, [cardLibraryCollapsed, cardLibraryStorageKey])
 
   useEffect(() => {
@@ -938,7 +750,7 @@ export default function DashboardWorkspace({
                       type="button"
                       className="dashboard-workspace-library-group-header"
                       aria-expanded={!collapsedLibraryCategories[group.category]}
-                      aria-controls={`dashboard-workspace-library-group-${slugify(group.category)}`}
+                      aria-controls={`dashboard-workspace-library-group-${slugifyWorkspaceId(group.category)}`}
                       onClick={() => toggleLibraryCategory(group.category)}
                     >
                       <span className="dashboard-workspace-library-group-title">{group.category}</span>
@@ -948,7 +760,7 @@ export default function DashboardWorkspace({
                       <span className="dashboard-workspace-library-group-chevron" aria-hidden="true">⌄</span>
                     </button>
                     <div
-                      id={`dashboard-workspace-library-group-${slugify(group.category)}`}
+                      id={`dashboard-workspace-library-group-${slugifyWorkspaceId(group.category)}`}
                       className="dashboard-workspace-library-list"
                       hidden={Boolean(collapsedLibraryCategories[group.category])}
                     >

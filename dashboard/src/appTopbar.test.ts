@@ -22,13 +22,14 @@ describe('app topbar helpers', () => {
   it('selects only active run statuses and prioritizes live work', () => {
     const runs = selectTopbarActiveRuns([
       buildRun({ id: 'complete', name: 'Completed', status: 'COMPLETE', started_at: '2026-06-07T10:00:00Z' }),
+      buildRun({ id: 'pending', name: 'Pending API Burst', status: 'PENDING', created_at: '2026-06-07T12:50:00Z' }),
       buildRun({ id: 'paused', name: 'Paused Soak', status: 'PAUSED', started_at: '2026-06-07T12:00:00Z' }),
       buildRun({ id: 'running-old', name: 'Checkout Baseline', status: 'RUNNING', started_at: '2026-06-07T11:00:00Z' }),
       buildRun({ id: 'running-new', name: 'Checkout Peak', status: 'RUNNING', started_at: '2026-06-07T12:30:00Z' }),
       buildRun({ id: 'queued', name: 'Queued API Burst', status: 'QUEUED', created_at: '2026-06-07T12:45:00Z' }),
     ])
 
-    expect(runs.map(run => run.id)).toEqual(['running-new', 'running-old', 'paused', 'queued'])
+    expect(runs.map(run => run.id)).toEqual(['running-new', 'running-old', 'paused'])
   })
 
   it('applies live status overrides before filtering active runs', () => {
@@ -67,6 +68,14 @@ describe('app topbar helpers', () => {
       timestamp: '2026-06-07T12:05:00Z',
     })
     expect(completed).toEqual([])
+
+    const queued = updateTopbarActiveRuns(completed, {
+      id: 'run-2',
+      name: 'Queued API Burst',
+      status: 'QUEUED',
+      timestamp: '2026-06-07T12:06:00Z',
+    })
+    expect(queued).toEqual([])
   })
 
   it('formats run chip labels and tones', () => {

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useAuthApi } from '../hooks/api/useAuthApi'
-import { useDevView } from '../hooks/DevViewProvider'
+import { useDevView } from '../hooks/useDevView'
 import { Application, DashboardAuthStatus, Domain, Project, Release } from '../types'
 import BuildBadge from './BuildBadge'
 import Logo from './Logo'

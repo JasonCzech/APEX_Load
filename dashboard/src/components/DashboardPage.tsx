@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, type CSSProperties, type DependencyList, type DragEvent } from 'react'
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, type CSSProperties, type DragEvent } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useApi } from '../hooks/useApi'
@@ -6,6 +6,7 @@ import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { TestSummary, MetricsHistoryPoint, Release, RunArchiveReport, GroupLiveMetrics } from '../types'
 import { downloadBlob } from '../utils/fileUtils'
+import { readStoredJSON, readStoredStringArray, writeStoredJSON } from '../utils/browserStorage'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { ReleaseTrendPanel } from './ReleaseTrendPanel'
 import { chartTooltipContentStyle } from './chartTooltipTheme'
@@ -313,25 +314,7 @@ function moveId(ids: string[], draggedId: string, targetId: string) {
   return next
 }
 
-function loadJson<T>(key: string, fallback: T): T {
-  if (typeof window === 'undefined') return fallback
-  try {
-    const stored = window.localStorage.getItem(key)
-    if (!stored) return fallback
-    const parsed = JSON.parse(stored)
-    if (Array.isArray(fallback)) {
-      return (Array.isArray(parsed) ? parsed : fallback) as T
-    }
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return { ...(fallback as Record<string, unknown>), ...parsed } as T
-    }
-    return fallback
-  } catch {
-    return fallback
-  }
-}
-
-function useBottomBoundedTable(dependencies: DependencyList) {
+function useBottomBoundedTable(dependencySignature: string) {
   const ref = useRef<HTMLDivElement | null>(null)
   const [maxHeight, setMaxHeight] = useState<number | null>(null)
 
@@ -355,7 +338,7 @@ function useBottomBoundedTable(dependencies: DependencyList) {
       window.removeEventListener('resize', updateMaxHeight)
       window.removeEventListener('scroll', updateMaxHeight)
     }
-  }, dependencies)
+  }, [dependencySignature])
 
   const style = maxHeight === null ? undefined : ({ '--dashboard-table-max-height': `${maxHeight}px` } as CSSProperties)
   return { ref, style }
@@ -549,7 +532,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const api = useApi()
   const { activeApplication, activeRelease, releases, setActiveRelease } = useApplication()
   const { activeProject } = useProject()
-  const dashboardScopeReady = Boolean(activeProject?.id && activeApplication?.id)
+  const activeApplicationId = activeApplication?.id
+  const activeProjectId = activeProject?.id
+  const dashboardScopeReady = Boolean(activeProjectId && activeApplicationId)
   const [tests, setTests] = useState<TestSummary[]>([])
   const [health, setHealth] = useState<HealthData | null>(null)
   const [archiveReports, setArchiveReports] = useState<Record<string, RunArchiveReport | null>>({})
@@ -559,9 +544,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const [activeDashboardTab, setActiveDashboardTab] = useState<DashboardTabKey>('activity')
   const [performanceSort, setPerformanceSort] = useState<{ field: PerformanceSortField; direction: SortDirection }>({ field: 'completed', direction: 'desc' })
   const [activitySort, setActivitySort] = useState<{ field: ActivitySortField; direction: SortDirection }>({ field: 'date', direction: 'desc' })
-  const [activeCardOrder, setActiveCardOrder] = useState<string[]>(() => loadJson<string[]>('apexload.dashboard.activeCardOrder', []))
+  const [activeCardOrder, setActiveCardOrder] = useState<string[]>(() => readStoredStringArray('apexload.dashboard.activeCardOrder'))
   const [activeCardSettings, setActiveCardSettings] = useState<Record<string, GraphCardSettings>>(() =>
-    loadJson<Record<string, GraphCardSettings>>('apexload.dashboard.activeCardSettings', {}),
+    readStoredJSON<Record<string, GraphCardSettings>>('apexload.dashboard.activeCardSettings', {}),
   )
 
   useEffect(() => {
@@ -575,7 +560,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       }
       try {
         const [testRes, healthRes] = await Promise.all([
-          api.listTests({ application_id: activeApplication!.id, project_id: activeProject!.id }),
+          api.listTests({ application_id: activeApplicationId!, project_id: activeProjectId! }),
           api.getHealth().catch(() => null),
         ])
         setTests(testRes.tests || [])
@@ -602,7 +587,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         document.removeEventListener('visibilitychange', handleVisibilityChange)
       }
     }
-  }, [api, activeApplication?.id, activeProject?.id, dashboardScopeReady])
+  }, [api, activeApplicationId, activeProjectId, dashboardScopeReady])
 
   const resolvedTests = useMemo(() =>
     tests.map(t => ({
@@ -639,13 +624,11 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   }, [activeTests])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('apexload.dashboard.activeCardOrder', JSON.stringify(activeCardOrder))
+    writeStoredJSON('apexload.dashboard.activeCardOrder', activeCardOrder)
   }, [activeCardOrder])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('apexload.dashboard.activeCardSettings', JSON.stringify(activeCardSettings))
+    writeStoredJSON('apexload.dashboard.activeCardSettings', activeCardSettings)
   }, [activeCardSettings])
 
   const orderedActiveTests = useMemo(() => {
@@ -1023,8 +1006,8 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       </button>
     </th>
   )
-  const performanceTableBounds = useBottomBoundedTable([activeDashboardTab, releasePanelOpen, sortedPerformanceTrend.length])
-  const activityTableBounds = useBottomBoundedTable([activeDashboardTab, releasePanelOpen, sortedRecentTests.length])
+  const performanceTableBounds = useBottomBoundedTable(`${activeDashboardTab}:${releasePanelOpen}:${sortedPerformanceTrend.length}`)
+  const activityTableBounds = useBottomBoundedTable(`${activeDashboardTab}:${releasePanelOpen}:${sortedRecentTests.length}`)
   const aggregateHistory = Object.values(metricsHistory).flat().slice(-60)
 
   return (

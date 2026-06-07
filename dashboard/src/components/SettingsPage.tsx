@@ -7,6 +7,7 @@ import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
 import { ArchiveRetentionPlanResponse, CapacityReservation, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, GitHubProjectPolicy, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
+import { readStoredString, removeStoredItem, writeStoredJSON } from '../utils/browserStorage'
 import { getErrorMessage } from '../utils/errorUtils'
 import {
   CAPACITY_SETTINGS_SUBSECTIONS,
@@ -1351,10 +1352,9 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
   }, [])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    const targetSection = window.localStorage.getItem('apexload.settings.focusSection') as SettingsSectionId | null
+    const targetSection = readStoredString('apexload.settings.focusSection') as SettingsSectionId | ''
     if (!targetSection) return
-    window.localStorage.removeItem('apexload.settings.focusSection')
+    removeStoredItem('apexload.settings.focusSection')
     if (!SETTINGS_SECTIONS.some(section => section.id === targetSection)) return
     setActiveSection(targetSection)
     window.setTimeout(() => {
@@ -1417,38 +1417,31 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
   }, [loadProjectGitHubDraft, projectApi])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('apexload.settings.sectionOrder', JSON.stringify(sectionOrder))
+    writeStoredJSON('apexload.settings.sectionOrder', sectionOrder)
   }, [sectionOrder])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('apexload.settings.hiddenSections', JSON.stringify(hiddenSectionIds))
+    writeStoredJSON('apexload.settings.hiddenSections', hiddenSectionIds)
   }, [hiddenSectionIds])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('apexload.settings.collapsedSections', JSON.stringify(collapsedSectionIds))
+    writeStoredJSON('apexload.settings.collapsedSections', collapsedSectionIds)
   }, [collapsedSectionIds])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('apexload.settings.generalSubsection', JSON.stringify(activeGeneralSubsection))
+    writeStoredJSON('apexload.settings.generalSubsection', activeGeneralSubsection)
   }, [activeGeneralSubsection])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('apexload.settings.capacitySubsection', JSON.stringify(activeCapacitySubsection))
+    writeStoredJSON('apexload.settings.capacitySubsection', activeCapacitySubsection)
   }, [activeCapacitySubsection])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('apexload.settings.projectSubsection', JSON.stringify(activeProjectSubsection))
+    writeStoredJSON('apexload.settings.projectSubsection', activeProjectSubsection)
   }, [activeProjectSubsection])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('apexload.settings.integrationSubsection', JSON.stringify(activeIntegrationSubsection))
+    writeStoredJSON('apexload.settings.integrationSubsection', activeIntegrationSubsection)
   }, [activeIntegrationSubsection])
 
   const loadDataPools = async (preferredId?: string) => {

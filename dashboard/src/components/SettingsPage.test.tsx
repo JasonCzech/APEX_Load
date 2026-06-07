@@ -1030,20 +1030,14 @@ describe('SettingsPage', () => {
     await flushPromises()
     await flushPromises()
 
-    const projectsTab = findButton('Projects & Compliance')
-    expect(projectsTab).toBeDefined()
-    if (projectsTab) {
-      await act(async () => {
-        projectsTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      })
-    }
+    await selectTopLevelSettingsTab('Projects & Compliance')
 
     const projectSection = container.querySelector('#settings-section-projects')
     expect(projectSection).toBeTruthy()
     expect(projectSection?.textContent).toContain('Customer Portal')
-    expect(projectSection?.textContent).toContain('Custom Redaction Rules')
     if (!projectSection) return
 
+    await selectSettingsSubnav(projectSection, 'Limits')
     const quotaInputs = Array.from(projectSection.querySelectorAll('input')).filter(input => input.placeholder === 'Unlimited') as HTMLInputElement[]
     expect(quotaInputs).toHaveLength(4)
     if (quotaInputs.length !== 4) return
@@ -1053,6 +1047,8 @@ describe('SettingsPage', () => {
     await setFieldValue(quotaInputs[2], '150')
     await setFieldValue(quotaInputs[3], '30')
 
+    await selectSettingsSubnav(projectSection, 'Redaction Rules')
+    expect(projectSection.textContent).toContain('Custom Redaction Rules')
     const addRuleButton = findButton('Add Rule')
     expect(addRuleButton).toBeDefined()
     if (!addRuleButton) return
@@ -1148,6 +1144,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     await flushPromises()
 
+    await selectTopLevelSettingsTab('Projects & Compliance')
     const projectSection = container.querySelector('#settings-section-projects')
     expect(projectSection).toBeTruthy()
     if (!projectSection) return
@@ -1158,9 +1155,11 @@ describe('SettingsPage', () => {
     await setFieldValue(newProjectInput, 'Restricted Project')
 
     expect(findButton('Add Project')?.disabled).toBe(true)
+    await selectSettingsSubnav(projectSection, 'Redaction Rules')
     expect(findButton('Add Rule')?.disabled).toBe(true)
     expect(projectSection.textContent).toContain('Current session can view this project but cannot change project governance.')
 
+    await selectSettingsSubnav(projectSection, 'Limits')
     const quotaInputs = Array.from(projectSection.querySelectorAll('input')).filter(input => input.placeholder === 'Unlimited') as HTMLInputElement[]
     expect(quotaInputs).toHaveLength(4)
     if (quotaInputs.length !== 4) return
@@ -1179,6 +1178,12 @@ describe('SettingsPage', () => {
     await flushPromises()
     await flushPromises()
 
+    await selectTopLevelSettingsTab('Projects & Compliance')
+    const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).toBeTruthy()
+    if (!projectSection) return
+
+    await selectSettingsSubnav(projectSection, 'Redaction Rules')
     const addRuleButton = findButton('Add Rule')
     expect(addRuleButton).toBeDefined()
     if (!addRuleButton) return
@@ -1186,10 +1191,6 @@ describe('SettingsPage', () => {
     await act(async () => {
       addRuleButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-
-    const projectSection = container.querySelector('#settings-section-projects')
-    expect(projectSection).toBeTruthy()
-    if (!projectSection) return
 
     const ruleCards = Array.from(projectSection.querySelectorAll('.project-redaction-rule-card'))
     const secondRuleInputs = ruleCards[1].querySelectorAll('input')
@@ -1773,6 +1774,12 @@ describe('SettingsPage', () => {
 
     await flushPromises()
 
+    await selectTopLevelSettingsTab('Integrations')
+    const integrationsSection = container.querySelector('#settings-section-integrations')
+    expect(integrationsSection).toBeTruthy()
+    if (!integrationsSection) return
+
+    await selectSettingsSubnav(integrationsSection, 'Notifications')
     const addWebhookButton = findButton('Add Webhook')
     expect(addWebhookButton).toBeDefined()
     if (!addWebhookButton) return
@@ -1780,10 +1787,6 @@ describe('SettingsPage', () => {
     await act(async () => {
       addWebhookButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-
-    const integrationsSection = container.querySelector('#settings-section-integrations')
-    expect(integrationsSection).toBeTruthy()
-    if (!integrationsSection) return
 
     const webhookCard = integrationsSection.querySelector('.settings-notification-webhook-card')
     expect(webhookCard).toBeTruthy()
@@ -1833,6 +1836,12 @@ describe('SettingsPage', () => {
 
     await flushPromises()
 
+    await selectTopLevelSettingsTab('Integrations')
+    const integrationsSection = container.querySelector('#settings-section-integrations')
+    expect(integrationsSection).toBeTruthy()
+    if (!integrationsSection) return
+
+    await selectSettingsSubnav(integrationsSection, 'Notifications')
     const addWebhookButton = findButton('Add Webhook')
     expect(addWebhookButton).toBeDefined()
     if (!addWebhookButton) return
@@ -1841,7 +1850,6 @@ describe('SettingsPage', () => {
       addWebhookButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const integrationsSection = container.querySelector('#settings-section-integrations')
     let webhookCard = integrationsSection?.querySelector('.settings-notification-webhook-card')
     expect(webhookCard).toBeTruthy()
     if (!webhookCard) return
