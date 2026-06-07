@@ -8,6 +8,7 @@ import {
   GoalSizingReport,
   GoalSizingRequest,
   IntervalSummaryRecord,
+  LaunchPreflightResponse,
   LoadModelSupportMatrixResponse,
   LoadModelTemplatesResponse,
   LoadModelValidationReport,
@@ -89,6 +90,7 @@ type TestCreateRequest = {
   scenario_id?: string
   project_id?: string
   folder_id?: string | null
+  scheduled_start_at?: string
   scenario_mode?: ScenarioMode
   script_shakeout?: boolean
   resource_baseline?: boolean
@@ -101,6 +103,10 @@ type TestCreateRequest = {
   ramp_up?: string
   ramp_down?: string
   runtime_settings?: RuntimeSettingsOverride
+}
+
+type LaunchPreflightRequest = TestCreateRequest & {
+  intent?: 'immediate' | 'scheduled' | 'queue'
 }
 
 type TestActionResponse = {
@@ -235,6 +241,11 @@ export function useTestApi() {
 
   const estimateTest = useCallback(
     (data: TestCreateRequest) => request<DraftCapacityEstimate>('/tests/estimate', { method: 'POST', body: JSON.stringify(data) }),
+    [],
+  )
+
+  const preflightTest = useCallback(
+    (data: LaunchPreflightRequest) => request<LaunchPreflightResponse>('/tests/preflight', { method: 'POST', body: JSON.stringify(data) }),
     [],
   )
 
@@ -459,6 +470,7 @@ export function useTestApi() {
       getTest,
       createTest,
       estimateTest,
+      preflightTest,
       getLoadModelSupportMatrix,
       listLoadModelTemplates,
       validateScenarioLoadModel,
@@ -500,6 +512,7 @@ export function useTestApi() {
       getTest,
       createTest,
       estimateTest,
+      preflightTest,
       getLoadModelSupportMatrix,
       listLoadModelTemplates,
       validateScenarioLoadModel,

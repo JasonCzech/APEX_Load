@@ -611,6 +611,7 @@ type TestRecord struct {
 	TotalVUsers          int        `json:"total_vusers"`
 	Duration             int64      `json:"duration_ns"`
 	StartTime            time.Time  `json:"start_time"`
+	ScheduledStartAt     *time.Time `json:"scheduled_start_at,omitempty"`
 	PendingSince         *time.Time `json:"pending_since,omitempty"`
 	BaselinePinned       bool       `json:"baseline_pinned,omitempty"`
 	BaselinePinnedAt     *time.Time `json:"baseline_pinned_at,omitempty"`

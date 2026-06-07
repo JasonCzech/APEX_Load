@@ -219,6 +219,10 @@ func estimateCapacityAdvisoryWithAvailability(settings SystemSettings, availabil
 }
 
 func resolveCapacityAvailability(settings SystemSettings) CapacityAvailabilitySnapshot {
+	return resolveCapacityAvailabilityAt(settings, time.Now())
+}
+
+func resolveCapacityAvailabilityAt(settings SystemSettings, now time.Time) CapacityAvailabilitySnapshot {
 	configured := settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators
 	snapshot := CapacityAvailabilitySnapshot{
 		Source:                        settings.CapacityPlanning.Availability.Source,
@@ -227,28 +231,32 @@ func resolveCapacityAvailability(settings SystemSettings) CapacityAvailabilitySn
 	}
 
 	if settings.CapacityPlanning.Availability.Source != capacityAvailabilityConfiguredPlusLive {
-		return applyGlobalCapacityReservationSummary(settings, snapshot)
+		return applyGlobalCapacityReservationSummaryAt(settings, snapshot, now)
 	}
 
 	rawLive := strings.TrimSpace(os.Getenv("APEXLOAD_LIVE_AVAILABLE_GENERATORS"))
 	if rawLive == "" {
 		snapshot.Warnings = append(snapshot.Warnings, "Live generator availability is enabled but no runtime snapshot was provided; using configured generator inventory.")
-		return applyGlobalCapacityReservationSummary(settings, snapshot)
+		return applyGlobalCapacityReservationSummaryAt(settings, snapshot, now)
 	}
 
 	live, err := strconv.Atoi(rawLive)
 	if err != nil || live < 0 {
 		snapshot.Warnings = append(snapshot.Warnings, "Live generator availability snapshot is invalid; using configured generator inventory.")
-		return applyGlobalCapacityReservationSummary(settings, snapshot)
+		return applyGlobalCapacityReservationSummaryAt(settings, snapshot, now)
 	}
 
 	snapshot.LiveAvailableGenerators = &live
 	snapshot.EffectiveAvailableGenerators = minInt(configured, live)
-	return applyGlobalCapacityReservationSummary(settings, snapshot)
+	return applyGlobalCapacityReservationSummaryAt(settings, snapshot, now)
 }
 
 func applyGlobalCapacityReservationSummary(settings SystemSettings, snapshot CapacityAvailabilitySnapshot) CapacityAvailabilitySnapshot {
-	totalReserved, _ := capacityReservationTotals(settings, "")
+	return applyGlobalCapacityReservationSummaryAt(settings, snapshot, time.Now())
+}
+
+func applyGlobalCapacityReservationSummaryAt(settings SystemSettings, snapshot CapacityAvailabilitySnapshot, now time.Time) CapacityAvailabilitySnapshot {
+	totalReserved, _ := capacityReservationTotalsAt(settings, "", now)
 	if totalReserved <= 0 {
 		return snapshot
 	}
@@ -264,9 +272,13 @@ func applyGlobalCapacityReservationSummary(settings SystemSettings, snapshot Cap
 }
 
 func resolveCapacityAvailabilityForProject(settings SystemSettings, projectID string) CapacityAvailabilitySnapshot {
-	snapshot := resolveCapacityAvailability(settings)
+	return resolveCapacityAvailabilityForProjectAt(settings, projectID, time.Now())
+}
+
+func resolveCapacityAvailabilityForProjectAt(settings SystemSettings, projectID string, now time.Time) CapacityAvailabilitySnapshot {
+	snapshot := resolveCapacityAvailabilityAt(settings, now)
 	normalizedProjectID := normalizeProjectID(strings.TrimSpace(projectID))
-	totalReserved, projectReserved := capacityReservationTotals(settings, normalizedProjectID)
+	totalReserved, projectReserved := capacityReservationTotalsAt(settings, normalizedProjectID, now)
 	if totalReserved == 0 {
 		return snapshot
 	}

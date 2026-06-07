@@ -165,6 +165,7 @@ type ManagedTest struct {
 	Duration              time.Duration                `json:"duration_ns"`
 	DurationStr           string                       `json:"duration"`
 	CreatedAt             time.Time                    `json:"created_at"`
+	ScheduledStartAt      *time.Time                   `json:"scheduled_start_at,omitempty"`
 	PendingSince          *time.Time                   `json:"pending_since,omitempty"`
 	PendingReason         string                       `json:"pending_reason,omitempty"`
 	QueuePosition         int                          `json:"queue_position,omitempty"`
@@ -943,6 +944,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		Duration:             time.Duration(record.Duration),
 		DurationStr:          time.Duration(record.Duration).String(),
 		CreatedAt:            record.StartTime,
+		ScheduledStartAt:     cloneTimePtr(record.ScheduledStartAt),
 		PendingSince:         record.PendingSince,
 		BaselinePinned:       record.BaselinePinned,
 		BaselinePinnedAt:     record.BaselinePinnedAt,
@@ -2172,6 +2174,7 @@ type CreateTestRequest struct {
 	ScenarioID       string                            `json:"scenario_id,omitempty"`
 	ProjectID        string                            `json:"project_id,omitempty"`
 	FolderID         *string                           `json:"folder_id,omitempty"`
+	ScheduledStartAt *time.Time                        `json:"scheduled_start_at,omitempty"`
 	ScenarioMode     string                            `json:"scenario_mode,omitempty"`
 	ScriptShakeout   bool                              `json:"script_shakeout,omitempty"`
 	ResourceBaseline bool                              `json:"resource_baseline,omitempty"`
@@ -2272,6 +2275,7 @@ type CreateGroupEntry struct {
 type StartTestOptions struct {
 	OverrideCapacityShortfall   bool `json:"override_capacity_shortfall,omitempty"`
 	OverrideScriptShakeoutError bool `json:"override_script_shakeout_failure,omitempty"`
+	SkipLaunchWindowPreflight   bool `json:"-"`
 }
 
 type CapacityShortfallError struct {
@@ -2598,7 +2602,11 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 
-	test, err := tr.buildManagedTestLocked(req, uuid.New().String(), "QUEUED")
+	status := "QUEUED"
+	if req.ScheduledStartAt != nil && req.ScheduledStartAt.After(time.Now()) {
+		status = "SCHEDULED"
+	}
+	test, err := tr.buildManagedTestLocked(req, uuid.New().String(), status)
 	if err != nil {
 		return nil, err
 	}
@@ -2706,6 +2714,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		Duration:              dur,
 		DurationStr:           req.Duration,
 		CreatedAt:             now,
+		ScheduledStartAt:      cloneTimePtr(req.ScheduledStartAt),
 		groupSpecs:            engineGroups,
 	}
 
@@ -2765,6 +2774,14 @@ func firstNonEmpty(value string, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func cloneTimePtr(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	cloned := value.UTC()
+	return &cloned
 }
 
 func validateScenarioRequest(req CreateTestRequest) (string, error) {
@@ -3635,13 +3652,18 @@ func (tr *TestRunner) preflightStartBlocksLocked(id string, opts StartTestOption
 	if !ok {
 		return false, fmt.Errorf("test not found: %s", id)
 	}
-	if test.Status != "QUEUED" && test.Status != "PENDING" && test.Status != "SHAKEOUT_REVIEW" {
-		return false, fmt.Errorf("test is %s, must be QUEUED, PENDING, or SHAKEOUT_REVIEW to start", test.Status)
+	if test.Status != "QUEUED" && test.Status != "PENDING" && test.Status != "SCHEDULED" && test.Status != "SHAKEOUT_REVIEW" {
+		return false, fmt.Errorf("test is %s, must be QUEUED, PENDING, SCHEDULED, or SHAKEOUT_REVIEW to start", test.Status)
 	}
 
 	tr.refreshCapacityAdvisoryLocked(test)
 	if err := buildCapacityShortfallStartError(id, test.CapacityAdvisory, opts); err != nil {
 		return false, err
+	}
+	if !opts.SkipLaunchWindowPreflight {
+		if err := tr.launchStartWindowErrorLocked(test, time.Now().UTC(), id); err != nil {
+			return false, err
+		}
 	}
 	if blocked, reason := tr.evaluateQuotaBlockLocked(test, ""); blocked {
 		now := time.Now()
@@ -3673,8 +3695,8 @@ func (tr *TestRunner) beginScriptShakeoutIfNeeded(id string, opts StartTestOptio
 	if !test.ScriptShakeout {
 		return nil, nil
 	}
-	if test.Status != "QUEUED" && test.Status != "PENDING" && test.Status != "SHAKEOUT_REVIEW" {
-		return nil, fmt.Errorf("test is %s, must be QUEUED, PENDING, or SHAKEOUT_REVIEW to start", test.Status)
+	if test.Status != "QUEUED" && test.Status != "PENDING" && test.Status != "SCHEDULED" && test.Status != "SHAKEOUT_REVIEW" {
+		return nil, fmt.Errorf("test is %s, must be QUEUED, PENDING, SCHEDULED, or SHAKEOUT_REVIEW to start", test.Status)
 	}
 
 	test.Status = "SHAKEOUT"
@@ -3728,13 +3750,18 @@ func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (
 	if !ok {
 		return nil, fmt.Errorf("test not found: %s", id)
 	}
-	if test.Status != "QUEUED" && test.Status != "PENDING" && test.Status != "SHAKEOUT_REVIEW" {
-		return nil, fmt.Errorf("test is %s, must be QUEUED, PENDING, or SHAKEOUT_REVIEW to start", test.Status)
+	if test.Status != "QUEUED" && test.Status != "PENDING" && test.Status != "SCHEDULED" && test.Status != "SHAKEOUT_REVIEW" {
+		return nil, fmt.Errorf("test is %s, must be QUEUED, PENDING, SCHEDULED, or SHAKEOUT_REVIEW to start", test.Status)
 	}
 
 	tr.refreshCapacityAdvisoryLocked(test)
 	if err := buildCapacityShortfallStartError(id, test.CapacityAdvisory, opts); err != nil {
 		return nil, err
+	}
+	if !opts.SkipLaunchWindowPreflight {
+		if err := tr.launchStartWindowErrorLocked(test, time.Now().UTC(), id); err != nil {
+			return nil, err
+		}
 	}
 	if blocked, reason := tr.evaluateQuotaBlockLocked(test, ""); blocked {
 		now := time.Now()
@@ -4180,6 +4207,7 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		TotalVUsers:          test.TotalVUsers,
 		Duration:             int64(test.Duration),
 		StartTime:            test.CreatedAt,
+		ScheduledStartAt:     cloneTimePtr(test.ScheduledStartAt),
 		PendingSince:         test.PendingSince,
 		BaselinePinned:       test.BaselinePinned,
 		BaselinePinnedAt:     test.BaselinePinnedAt,

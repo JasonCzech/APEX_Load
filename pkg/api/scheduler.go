@@ -122,9 +122,15 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 			}
 		}
 	}
+	dueOneTimeScheduled := s.runner.dueOneTimeScheduledTestIDsLocked(now)
 	s.runner.mu.Unlock()
 	for _, test := range toStart {
 		go s.runner.runTest(test)
+	}
+	for _, testID := range dueOneTimeScheduled {
+		if err := s.runner.StartTestWithOptions(testID, StartTestOptions{}); err != nil {
+			s.runner.markScheduledStartError(testID, err.Error())
+		}
 	}
 	return nil
 }
@@ -456,7 +462,7 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	tr.tests[test.ID] = test
 	tr.saveManagedTestRecord(test)
 	tr.broadcastEvent("test_created", test)
-	prepared, err := tr.prepareTestStartLocked(test.ID, StartTestOptions{})
+	prepared, err := tr.prepareTestStartLocked(test.ID, StartTestOptions{SkipLaunchWindowPreflight: true})
 	if err != nil {
 		occurrence.Status = "failed"
 		occurrence.ReasonCode = "start_failed"

@@ -58,6 +58,22 @@ func (s *Server) handleEstimateTest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, estimate)
 }
 
+func (s *Server) handlePreflightTest(w http.ResponseWriter, r *http.Request) {
+	var req LaunchPreflightRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	preflight, err := s.runner.PreflightLaunch(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, preflight)
+}
+
 func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {
 	applicationID := r.URL.Query().Get("application_id")
 	releaseID := r.URL.Query().Get("release_id")

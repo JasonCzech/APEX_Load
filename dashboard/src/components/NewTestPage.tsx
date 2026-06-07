@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Application, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleHealth, ScenarioScheduleOccurrence, StoredScenario, SystemInventoryGenerator } from '../types'
+import { Application, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, LaunchConflict, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleHealth, ScenarioScheduleOccurrence, StoredScenario, SystemInventoryGenerator } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
@@ -106,6 +106,55 @@ function formatScheduleHealthCount(value?: number) {
 
 function formatScheduleTimestamp(value?: string) {
   return value ? new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Not scheduled'
+}
+
+function formatLaunchTimestamp(value?: string) {
+  return value ? new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Pending'
+}
+
+function formatLaunchWindow(preflight?: LaunchPreflightResponse | null) {
+  const window = preflight?.candidate_window
+  if (!window) return 'Pending preflight'
+  return `${formatLaunchTimestamp(window.start_at)} - ${formatLaunchTimestamp(window.end_at)}`
+}
+
+function formatLaunchDecision(preflight?: LaunchPreflightResponse | null, loading = false) {
+  if (loading) return 'Checking'
+  if (!preflight) return 'Pending preflight'
+  if (preflight.start_now_allowed) return 'Start now'
+  if (preflight.queue_allowed) return 'Queue'
+  if (preflight.schedule_allowed) return 'Schedule'
+  return 'Blocked'
+}
+
+function firstLaunchConflict(preflight?: LaunchPreflightResponse | null): LaunchConflict | undefined {
+  return preflight?.blocking_conflicts?.[0] || preflight?.warnings?.[0]
+}
+
+function formatLaunchConflict(preflight?: LaunchPreflightResponse | null) {
+  const conflict = firstLaunchConflict(preflight)
+  if (!conflict) return 'None'
+  return conflict.message
+}
+
+function formatNextBlockingEvent(preflight?: LaunchPreflightResponse | null) {
+  const conflicts = preflight?.blocking_conflicts || []
+  const dated = conflicts
+    .filter(conflict => conflict.starts_at)
+    .sort((left, right) => String(left.starts_at).localeCompare(String(right.starts_at)))
+  const first = dated[0]
+  return first ? `${formatLaunchTimestamp(first.starts_at)} - ${first.message}` : 'None'
+}
+
+function formatDatetimeLocalValue(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function datetimeLocalToISO(value: string) {
+  if (!value) return ''
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString()
 }
 
 function formatUtcScheduleClock(date: Date) {
@@ -424,6 +473,11 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [showNewRelease, setShowNewRelease] = useState(false)
   const [draftEstimate, setDraftEstimate] = useState<DraftCapacityEstimate | null>(null)
   const [estimateLoading, setEstimateLoading] = useState(false)
+  const [immediatePreflight, setImmediatePreflight] = useState<LaunchPreflightResponse | null>(null)
+  const [immediatePreflightLoading, setImmediatePreflightLoading] = useState(false)
+  const [scheduledPreflight, setScheduledPreflight] = useState<LaunchPreflightResponse | null>(null)
+  const [scheduledPreflightLoading, setScheduledPreflightLoading] = useState(false)
+  const [scheduledStartLocal, setScheduledStartLocal] = useState('')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
   const [generatorInventoryLoading, setGeneratorInventoryLoading] = useState(false)
@@ -622,23 +676,25 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const groupOverridesCount = useMemo(() => groupOverrideCount(groupRunOverrides), [groupRunOverrides])
   const runOverridesCount = useMemo(() => runDefaultCards.filter(card => card.isOverridden).length + groupOverridesCount, [groupOverridesCount, runDefaultCards])
   const launchSummaryItems = useMemo(() => {
-    const capacityAdvisory = draftEstimate?.capacity_advisory
+    const capacityAdvisory = immediatePreflight?.capacity_advisory || draftEstimate?.capacity_advisory
     const dataPools = scenario?.data_pools || []
     const dataPoolValue = !scenario
       ? 'None'
       : dataPools.length
         ? dataPools.map(pool => pool.alias || pool.pool_name || pool.pool_id).join(', ')
         : 'None'
+    const launchConflict = firstLaunchConflict(immediatePreflight)
+    const launchBlocked = Boolean(immediatePreflight?.blocking_conflicts?.length)
     const capacityValue = !scenario
       ? 'Select a scenario'
-      : estimateLoading
+      : immediatePreflightLoading || estimateLoading
         ? 'Refreshing estimate...'
         : capacityAdvisory
           ? `${formatCount(capacityAdvisory.recommended_generators, 'generator')} needed; ${capacityAdvisory.available_generators} available`
           : 'Pending estimate'
     const bottleneckValue = !scenario
       ? 'Not available'
-      : estimateLoading
+      : immediatePreflightLoading || estimateLoading
         ? 'Refreshing...'
         : capacityAdvisory
           ? `${capacityAdvisory.bottleneck}, ${capacityAdvisory.headroom_pct}% headroom`
@@ -657,8 +713,12 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       { label: 'Shared Data Pools', value: dataPoolValue },
       { label: 'Capacity', value: capacityValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
       { label: 'Bottleneck', value: bottleneckValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
+      { label: 'Launch Decision', value: formatLaunchDecision(immediatePreflight, immediatePreflightLoading), tone: launchBlocked ? 'warning' : 'normal' },
+      { label: 'Projected Window', value: formatLaunchWindow(immediatePreflight) },
+      { label: 'Conflicts', value: launchConflict ? launchConflict.message : 'None', tone: launchConflict ? 'warning' : 'normal' },
+      { label: 'Next Blocking Event', value: formatNextBlockingEvent(immediatePreflight), tone: launchBlocked ? 'warning' : 'normal' },
     ]
-  }, [draftEstimate?.capacity_advisory, effectiveRunDuration, effectiveScenarioGroups.length, estimateLoading, groupRunOverrides, protocols, release?.name, runName, runOverridesCount, scenario, totalVUsers])
+  }, [draftEstimate?.capacity_advisory, effectiveRunDuration, effectiveScenarioGroups.length, estimateLoading, groupRunOverrides, immediatePreflight, immediatePreflightLoading, protocols, release?.name, runName, runOverridesCount, scenario, totalVUsers])
   const readiness = useMemo(() => {
     const checks = [
       { label: activeApplication ? `Application: ${activeApplication.name}` : 'Select an application', ready: !!activeApplication },
@@ -723,6 +783,24 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     { label: 'Conflicts', value: String(scheduleConflictCount), tone: scheduleConflictCount ? 'danger' : undefined },
     { label: 'Next Scenario Run', value: nextScheduledRun ? formatScheduleTimestamp(nextScheduledRun.next_run_at) : 'Not scheduled' },
   ]
+  const runCreatePayload = useMemo(() => {
+    if (!scenario || !activeApplication) return null
+    const runtimeSettings = buildRuntimeSettingsForRun(scenario, runDefaultOverrides)
+    const groupPayloads = buildGroupsForRunPayload(scenario, groupRunOverrides)
+    return {
+      name: runName.trim() || scenario.name,
+      duration: effectiveRunDuration,
+      application_id: activeApplication.id,
+      release_id: releaseId || undefined,
+      scenario_id: scenario.id,
+      project_id: activeProject?.id,
+      ...(runtimeSettings !== undefined ? { runtime_settings: runtimeSettings } : {}),
+      ...(groupPayloads ? { groups: groupPayloads } : {}),
+      ...(hasOwnKey(runDefaultOverrides, 'script_shakeout') ? { script_shakeout: Boolean(runDefaultOverrides.script_shakeout) } : {}),
+      ...(hasOwnKey(runDefaultOverrides, 'resource_baseline') ? { resource_baseline: Boolean(runDefaultOverrides.resource_baseline) } : {}),
+    }
+  }, [activeApplication, activeProject?.id, effectiveRunDuration, groupRunOverrides, releaseId, runDefaultOverrides, runName, scenario])
+  const scheduledStartISO = useMemo(() => datetimeLocalToISO(scheduledStartLocal), [scheduledStartLocal])
 
   useEffect(() => {
     if (scenario && !runName) setRunName(scenario.name)
@@ -747,7 +825,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   }, [editingScheduleId, releaseId, scenario])
 
   useEffect(() => {
-    if (!scenario || !activeApplication) {
+    if (!runCreatePayload) {
       setDraftEstimate(null)
       return
     }
@@ -755,23 +833,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     setEstimateLoading(true)
     const timer = window.setTimeout(async () => {
       try {
-        const runtimeSettings = buildRuntimeSettingsForRun(scenario, runDefaultOverrides)
-        const groupPayloads = buildGroupsForRunPayload(scenario, groupRunOverrides)
-        const estimatePayload = {
-          name: scenario.name,
-          duration: effectiveRunDuration,
-          application_id: activeApplication.id,
-          release_id: releaseId || undefined,
-          scenario_id: scenario.id,
-          project_id: activeProject?.id,
-          ...(runtimeSettings !== undefined ? { runtime_settings: runtimeSettings } : {}),
-          ...(groupPayloads ? { groups: groupPayloads } : {}),
-          ...(hasOwnKey(runDefaultOverrides, 'script_shakeout') ? { script_shakeout: Boolean(runDefaultOverrides.script_shakeout) } : {}),
-          ...(hasOwnKey(runDefaultOverrides, 'resource_baseline') ? { resource_baseline: Boolean(runDefaultOverrides.resource_baseline) } : {}),
-        }
-        const estimate = await api.estimateTest({
-          ...estimatePayload,
-        })
+        const estimate = await api.estimateTest(runCreatePayload)
         if (!cancelled) setDraftEstimate(estimate)
       } catch {
         if (!cancelled) setDraftEstimate(null)
@@ -780,7 +842,49 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       }
     }, 400)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [activeApplication, activeProject?.id, api, effectiveRunDuration, groupRunOverrides, releaseId, runDefaultOverrides, scenario])
+  }, [api, runCreatePayload])
+
+  useEffect(() => {
+    if (!runCreatePayload) {
+      setImmediatePreflight(null)
+      setImmediatePreflightLoading(false)
+      return
+    }
+    let cancelled = false
+    setImmediatePreflightLoading(true)
+    const timer = window.setTimeout(async () => {
+      try {
+        const preflight = await api.preflightTest({ ...runCreatePayload, intent: 'immediate' })
+        if (!cancelled) setImmediatePreflight(preflight)
+      } catch {
+        if (!cancelled) setImmediatePreflight(null)
+      } finally {
+        if (!cancelled) setImmediatePreflightLoading(false)
+      }
+    }, 400)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [api, runCreatePayload])
+
+  useEffect(() => {
+    if (!runCreatePayload || !scheduledStartISO) {
+      setScheduledPreflight(null)
+      setScheduledPreflightLoading(false)
+      return
+    }
+    let cancelled = false
+    setScheduledPreflightLoading(true)
+    const timer = window.setTimeout(async () => {
+      try {
+        const preflight = await api.preflightTest({ ...runCreatePayload, intent: 'scheduled', scheduled_start_at: scheduledStartISO })
+        if (!cancelled) setScheduledPreflight(preflight)
+      } catch {
+        if (!cancelled) setScheduledPreflight(null)
+      } finally {
+        if (!cancelled) setScheduledPreflightLoading(false)
+      }
+    }, 400)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [api, runCreatePayload, scheduledStartISO])
 
   const step1Complete = Boolean(scenario && scenario.scripts.length > 0)
   const step2Complete = Boolean(activeApplication && release)
@@ -809,34 +913,27 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     setScenarioSortDirection(field === 'last_run_at' || field === 'vusers' ? 'desc' : 'asc')
   }
 
-  const createRun = async (start: boolean) => {
+  const createRun = async (intent: 'start_now' | 'queue' | 'schedule') => {
     if (!canManageTests) {
       setError('Current session cannot create or start test runs for this project.')
       return
     }
-    if (!scenario || !releaseId || !activeApplication) {
+    if (!scenario || !releaseId || !activeApplication || !runCreatePayload) {
       setError('Choose a release and scenario before creating a test.')
+      return
+    }
+    if (intent === 'schedule' && !scheduledStartISO) {
+      setError('Choose a scheduled start time before scheduling a run.')
       return
     }
     setCreating(true)
     setError('')
     try {
-      const runtimeSettings = buildRuntimeSettingsForRun(scenario, runDefaultOverrides)
-      const groupPayloads = buildGroupsForRunPayload(scenario, groupRunOverrides)
-      const payload = {
-        name: runName.trim() || scenario.name,
-        duration: effectiveRunDuration,
-        application_id: activeApplication.id,
-        release_id: releaseId,
-        scenario_id: scenario.id,
-        project_id: activeProject?.id,
-        ...(runtimeSettings !== undefined ? { runtime_settings: runtimeSettings } : {}),
-        ...(groupPayloads ? { groups: groupPayloads } : {}),
-        ...(hasOwnKey(runDefaultOverrides, 'script_shakeout') ? { script_shakeout: Boolean(runDefaultOverrides.script_shakeout) } : {}),
-        ...(hasOwnKey(runDefaultOverrides, 'resource_baseline') ? { resource_baseline: Boolean(runDefaultOverrides.resource_baseline) } : {}),
-      }
+      const payload = intent === 'schedule'
+        ? { ...runCreatePayload, release_id: releaseId, scheduled_start_at: scheduledStartISO }
+        : { ...runCreatePayload, release_id: releaseId }
       const test = await api.createTest(payload)
-      if (start) {
+      if (intent === 'start_now' || intent === 'queue') {
         await api.startTest(test.id)
       }
       onSelectTest(test.id)
@@ -1315,6 +1412,13 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       setScheduleOccurrenceLoading(null)
     }
   }
+
+  const showStartNow = Boolean(immediatePreflight?.start_now_allowed)
+  const showQueueRun = Boolean(immediatePreflight?.queue_allowed)
+  const immediateLaunchBlocked = Boolean(immediatePreflight && !showStartNow && !showQueueRun)
+  const scheduleAllowed = Boolean(scheduledStartISO && scheduledPreflight?.schedule_allowed)
+  const scheduleBlocked = Boolean(scheduledStartISO && scheduledPreflight && !scheduledPreflight.schedule_allowed)
+  const scheduleMin = formatDatetimeLocalValue(scheduleClock)
 
   return (
     <div className="page">
@@ -1995,8 +2099,40 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
               ))}
             </dl>
             <div className="new-test-launch-actions">
-              <button className="btn btn-secondary" onClick={() => createRun(false)} disabled={!canLaunch}>Create Queued Run</button>
-              <button className="btn btn-primary" onClick={() => createRun(true)} disabled={!canLaunch}>Create & Start</button>
+              {immediatePreflightLoading && !immediatePreflight && (
+                <button className="btn btn-secondary" disabled>Checking Launch</button>
+              )}
+              {showStartNow && (
+                <button className="btn btn-primary" onClick={() => createRun('start_now')} disabled={!canLaunch || immediatePreflightLoading}>Start Now</button>
+              )}
+              {showQueueRun && (
+                <button className="btn btn-secondary" onClick={() => createRun('queue')} disabled={!canLaunch || immediatePreflightLoading}>Create Queued Run</button>
+              )}
+              {immediateLaunchBlocked && (
+                <div className="new-test-launch-feedback warning" role="status">{formatLaunchConflict(immediatePreflight)}</div>
+              )}
+              <div className="new-test-schedule-launch">
+                <label>
+                  <span>Scheduled Start</span>
+                  <input
+                    className="settings-input"
+                    type="datetime-local"
+                    min={scheduleMin}
+                    value={scheduledStartLocal}
+                    onChange={event => setScheduledStartLocal(event.target.value)}
+                  />
+                </label>
+                <button className="btn btn-secondary" onClick={() => createRun('schedule')} disabled={!canLaunch || scheduledPreflightLoading || !scheduleAllowed}>Schedule Run</button>
+                {scheduledStartLocal && scheduledPreflightLoading && (
+                  <div className="new-test-launch-feedback" role="status">Checking scheduled window</div>
+                )}
+                {scheduledStartLocal && scheduledPreflight?.schedule_allowed && !scheduledPreflightLoading && (
+                  <div className="new-test-launch-feedback success" role="status">Scheduled window clear: {formatLaunchWindow(scheduledPreflight)}</div>
+                )}
+                {scheduleBlocked && !scheduledPreflightLoading && (
+                  <div className="new-test-launch-feedback warning" role="status">{formatLaunchConflict(scheduledPreflight)}</div>
+                )}
+              </div>
             </div>
           </section>
           {scenario && (

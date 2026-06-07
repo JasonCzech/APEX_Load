@@ -441,12 +441,20 @@ func runCalendarEventFromOccurrence(occurrence *storage.ScenarioScheduleOccurren
 func runCalendarEventFromTest(test *ManagedTest, scenarios map[string]runCalendarScenarioSummary, inventory SystemInventoryResponse, manifest *RunArchiveManifest, now time.Time) RunCalendarEvent {
 	start := calendarTestStart(test)
 	end := calendarTestEnd(test, start, now)
+	runType := "ad_hoc"
+	if test.ScheduledStartAt != nil {
+		runType = "one_time_scheduled"
+		if test.Status == "SCHEDULED" {
+			window := launchWindowForTest(test, start)
+			end = window.EndAt
+		}
+	}
 	endAt := end.UTC()
 	scenario := scenarios[test.ScenarioID]
 	return RunCalendarEvent{
 		ID:            "test:" + test.ID,
 		Source:        "ad_hoc",
-		RunType:       "ad_hoc",
+		RunType:       runType,
 		Title:         calendarTitle(firstNonEmpty(test.Name, "Ad-hoc Run")),
 		Status:        firstNonEmpty(test.Status, "queued"),
 		StartAt:       start.UTC(),
@@ -519,6 +527,9 @@ func runCalendarOccurrenceKey(scheduleID string, plannedAt time.Time) string {
 func calendarTestStart(test *ManagedTest) time.Time {
 	if test == nil {
 		return time.Now().UTC()
+	}
+	if test.Status == "SCHEDULED" && test.ScheduledStartAt != nil {
+		return test.ScheduledStartAt.UTC()
 	}
 	if test.StartedAt != nil && !test.StartedAt.IsZero() {
 		return test.StartedAt.UTC()

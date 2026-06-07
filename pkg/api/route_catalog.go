@@ -21,6 +21,7 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/auth/audit-events/export", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
 	routeAuth(http.MethodGet, "/api/v1/schedules/health", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/run-calendar", viewerGlobalAccess()),
+	routeAuth(http.MethodPost, "/api/v1/tests/preflight", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestCreateProjectID}),
 	routeAuth(http.MethodGet, "/api/v1/system/inventory", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/system/usage", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/system/usage/export", viewerGlobalAccess()),

@@ -380,6 +380,7 @@ export interface TestSummary {
   duration: string
   start_delay?: string
   created_at: string
+  scheduled_start_at?: string
   pending_since?: string
   pending_reason?: string
   queue_position?: number
@@ -1241,6 +1242,7 @@ export interface RunCalendarResponse {
 
 export type TestStatus =
   | 'QUEUED'
+  | 'SCHEDULED'
   | 'PENDING'
   | 'SHAKEOUT'
   | 'SHAKEOUT_REVIEW'
@@ -2846,6 +2848,37 @@ export interface CapacityAdvisory {
   usable_per_generator: CapacityResourceEstimate
   dimension_recommendations: CapacityDimensionRecommendations
   warnings?: string[]
+}
+
+export interface LaunchWindow {
+  start_at: string
+  end_at: string
+  duration_seconds: number
+}
+
+export interface LaunchConflict {
+  code: string
+  severity: 'blocking' | 'warning' | string
+  source?: string
+  resource_id?: string
+  message: string
+  starts_at?: string
+  ends_at?: string
+  required_generators?: number
+  available_generators?: number
+}
+
+export interface LaunchPreflightResponse {
+  intent?: string
+  decision: 'start_now' | 'schedule' | 'queue' | 'blocked' | string
+  start_now_allowed: boolean
+  schedule_allowed: boolean
+  queue_allowed: boolean
+  queue_reason?: string
+  candidate_window: LaunchWindow
+  capacity_advisory?: CapacityAdvisory
+  blocking_conflicts?: LaunchConflict[]
+  warnings?: LaunchConflict[]
 }
 
 export interface ProtocolDensityEnvelope {

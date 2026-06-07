@@ -1561,6 +1561,14 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}, true
 	}
 
+	if path == "/api/v1/tests/preflight" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveTestCreateProjectID,
+		}, true
+	}
+
 	if r.PathValue("id") != "" && strings.HasPrefix(path, "/api/v1/tests/") {
 		switch method {
 		case http.MethodGet:

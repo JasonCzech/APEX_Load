@@ -20,6 +20,7 @@ const apiMock = {
   rejectScenarioScheduleApproval: vi.fn(),
   createTest: vi.fn(),
   estimateTest: vi.fn(),
+  preflightTest: vi.fn(),
   startTest: vi.fn(),
   getAuthEffectiveAccess: vi.fn(),
   getSystemInventory: vi.fn(),
@@ -92,6 +93,19 @@ describe('NewTestPage', () => {
     })
     apiMock.createTest.mockResolvedValue({ id: 'test-1' })
     apiMock.estimateTest.mockResolvedValue({})
+    apiMock.preflightTest.mockResolvedValue({
+      decision: 'start_now',
+      start_now_allowed: true,
+      schedule_allowed: false,
+      queue_allowed: false,
+      candidate_window: {
+        start_at: '2026-05-12T20:00:00Z',
+        end_at: '2026-05-12T20:10:00Z',
+        duration_seconds: 600,
+      },
+      blocking_conflicts: [],
+      warnings: [],
+    })
     apiMock.startTest.mockResolvedValue({})
     apiMock.listScenarioSchedules.mockResolvedValue({ schedules: [], count: 0 })
     apiMock.listScenarioScheduleOccurrences.mockResolvedValue({ occurrences: [], count: 0 })
@@ -618,7 +632,8 @@ describe('NewTestPage', () => {
     expect(overriddenLogLevelCard?.textContent).toContain('extended')
     expect(overriddenLogLevelCard?.textContent).toContain('Run override')
 
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
+    await flushDebouncedPreflight()
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Start Now')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -746,7 +761,8 @@ describe('NewTestPage', () => {
     expect(scriptGroupsTableText).not.toMatch(/\bdefault\b/i)
     expect(container.textContent).toContain('Run override')
 
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
+    await flushDebouncedPreflight()
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Start Now')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -845,7 +861,8 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('Host Placement')
     expect(container.textContent).toContain('1 sharded group')
 
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
+    await flushDebouncedPreflight()
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Start Now')
     await act(async () => {
       createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -1038,6 +1055,130 @@ describe('NewTestPage', () => {
     expect(apiMock.approveScenarioScheduleApproval).toHaveBeenCalledWith('scenario-1', 'schedule-1', 'approval-1', 'Approved from schedule dashboard.')
   })
 
+  it('shows a queued-run action only when immediate preflight returns queue', async () => {
+    const selectTest = vi.fn()
+    apiMock.preflightTest.mockResolvedValue({
+      decision: 'queue',
+      start_now_allowed: false,
+      schedule_allowed: false,
+      queue_allowed: true,
+      queue_reason: 'Controller concurrency is currently full.',
+      candidate_window: {
+        start_at: '2026-05-12T20:00:00Z',
+        end_at: '2026-05-12T20:10:00Z',
+        duration_seconds: 600,
+      },
+      blocking_conflicts: [],
+      warnings: [{ code: 'current_capacity_unavailable', severity: 'warning', source: 'controller', message: 'Controller concurrency is currently full.' }],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={selectTest}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+    await flushDebouncedPreflight()
+
+    expect(Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Start Now')).toBeUndefined()
+    const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
+    expect(queuedButton).toBeTruthy()
+
+    await act(async () => {
+      queuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+      scenario_id: 'scenario-1',
+      release_id: 'release-1',
+    }))
+    expect(apiMock.startTest).toHaveBeenCalledWith('test-1')
+    expect(selectTest).toHaveBeenCalledWith('test-1')
+  })
+
+  it('sends scheduled_start_at when one-time scheduled preflight is allowed', async () => {
+    const selectTest = vi.fn()
+    const scheduledLocal = '2026-06-02T13:30'
+    const scheduledISO = new Date(scheduledLocal).toISOString()
+    apiMock.preflightTest.mockImplementation((payload: { intent?: string }) => Promise.resolve(payload.intent === 'scheduled'
+      ? {
+          decision: 'schedule',
+          start_now_allowed: false,
+          schedule_allowed: true,
+          queue_allowed: false,
+          candidate_window: {
+            start_at: scheduledISO,
+            end_at: '2026-06-02T14:00:00Z',
+            duration_seconds: 1800,
+          },
+          blocking_conflicts: [],
+          warnings: [],
+        }
+      : {
+          decision: 'start_now',
+          start_now_allowed: true,
+          schedule_allowed: false,
+          queue_allowed: false,
+          candidate_window: {
+            start_at: '2026-05-12T20:00:00Z',
+            end_at: '2026-05-12T20:10:00Z',
+            duration_seconds: 600,
+          },
+          blocking_conflicts: [],
+          warnings: [],
+        }))
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={selectTest}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+    await flushDebouncedPreflight()
+    const scheduledInput = container.querySelector('input[type="datetime-local"]') as HTMLInputElement | null
+    expect(scheduledInput).toBeTruthy()
+
+    await act(async () => {
+      if (scheduledInput) setInputValue(scheduledInput, scheduledLocal)
+    })
+    await flushDebouncedPreflight()
+
+    expect(container.textContent).toContain('Scheduled window clear')
+    const scheduleButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedule Run')
+    expect((scheduleButton as HTMLButtonElement | undefined)?.disabled).toBe(false)
+
+    await act(async () => {
+      scheduleButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.preflightTest).toHaveBeenCalledWith(expect.objectContaining({
+      intent: 'scheduled',
+      scheduled_start_at: scheduledISO,
+    }))
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+      scenario_id: 'scenario-1',
+      scheduled_start_at: scheduledISO,
+    }))
+    expect(apiMock.startTest).not.toHaveBeenCalled()
+    expect(selectTest).toHaveBeenCalledWith('test-1')
+  })
+
   it('disables run and schedule mutations when effective RBAC denies test management', async () => {
     apiMock.getAuthEffectiveAccess.mockResolvedValue({
       enabled: true,
@@ -1070,10 +1211,11 @@ describe('NewTestPage', () => {
 
     await flushPromises()
 
-    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run') as HTMLButtonElement | undefined
-    const createStartButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create & Start') as HTMLButtonElement | undefined
-    expect(createQueuedButton?.disabled).toBe(true)
-    expect(createStartButton?.disabled).toBe(true)
+    await flushDebouncedPreflight()
+    const startNowButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Start Now') as HTMLButtonElement | undefined
+    const scheduleButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedule Run') as HTMLButtonElement | undefined
+    expect(startNowButton?.disabled).toBe(true)
+    expect(scheduleButton?.disabled).toBe(true)
     expect(container.textContent).toContain('Current session can view scenarios but cannot create runs or schedules for this project.')
 
     const schedulesButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedules')
@@ -1094,6 +1236,13 @@ async function flushPromises() {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+async function flushDebouncedPreflight() {
+  await act(async () => {
+    await new Promise(resolve => window.setTimeout(resolve, 450))
+  })
+  await flushPromises()
 }
 
 function setInputValue(input: HTMLInputElement, value: string) {

@@ -1906,6 +1906,26 @@ func TestTrustedHeaderAuthScopesTestListAndCreateToProjectRoles(t *testing.T) {
 	if estimateResp.Code != http.StatusForbidden {
 		t.Fatalf("project viewer estimate status = %d, want %d body=%s", estimateResp.Code, http.StatusForbidden, estimateResp.Body.String())
 	}
+
+	preflightEditorReq := httptest.NewRequest(http.MethodPost, "/api/v1/tests/preflight", bytes.NewReader(createBody))
+	preflightEditorReq.Header.Set("Content-Type", "application/json")
+	preflightEditorReq.Header.Set("X-Auth-Request-User", "editor-user")
+	preflightEditorReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleEditor)
+	preflightEditorResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(preflightEditorResp, preflightEditorReq)
+	if preflightEditorResp.Code != http.StatusOK {
+		t.Fatalf("project editor preflight status = %d, want %d body=%s", preflightEditorResp.Code, http.StatusOK, preflightEditorResp.Body.String())
+	}
+
+	preflightViewerReq := httptest.NewRequest(http.MethodPost, "/api/v1/tests/preflight", bytes.NewReader(createBody))
+	preflightViewerReq.Header.Set("Content-Type", "application/json")
+	preflightViewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	preflightViewerReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
+	preflightViewerResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(preflightViewerResp, preflightViewerReq)
+	if preflightViewerResp.Code != http.StatusForbidden {
+		t.Fatalf("project viewer preflight status = %d, want %d body=%s", preflightViewerResp.Code, http.StatusForbidden, preflightViewerResp.Body.String())
+	}
 }
 
 func TestTrustedHeaderAuthProjectRoleGuardsScenarioEndpoints(t *testing.T) {
