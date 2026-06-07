@@ -3035,6 +3035,20 @@ export interface DraftCapacityEstimate {
   capacity_advisory?: CapacityAdvisory
 }
 
+export interface DashboardGitHubSettings {
+  enabled: boolean
+  client_id: string
+  client_secret_env_var: string
+  api_base_url: string
+  web_base_url: string
+  ca_cert_file: string
+  tls_insecure_skip_verify: boolean
+  scopes: string[]
+  default_repo: string
+  default_branch: string
+  path_template: string
+}
+
 export interface DashboardSystemSettings {
   general: DashboardGeneralSettings
   thresholds: DashboardThresholdSettings
@@ -3042,4 +3056,91 @@ export interface DashboardSystemSettings {
   archive_retention: DashboardArchiveRetentionSettings
   notifications: DashboardNotificationsSettings
   auth: DashboardAuthSettings
+  github: DashboardGitHubSettings
+}
+
+// --- GitHub script sync (per-user connection + browse/import/push) ---
+
+export interface GitHubConfigResponse {
+  enabled: boolean
+  oauth_configured: boolean
+  encryption_available: boolean
+  api_base_url: string
+  web_base_url: string
+  scopes: string[]
+  default_repo: string
+  default_branch: string
+  path_template: string
+  tls_insecure_skip_verify: boolean
+}
+
+export interface GitHubConnectionResponse {
+  connected: boolean
+  login?: string
+  github_user_id?: string
+  scopes?: string
+  connected_at?: string
+  expires_at?: string
+}
+
+export interface GitHubRepo {
+  name: string
+  full_name: string
+  owner: string
+  private: boolean
+  default_branch: string
+  html_url: string
+}
+
+export interface GitHubBranch {
+  name: string
+  commit_sha: string
+}
+
+export interface GitHubContentEntry {
+  type: string
+  name: string
+  path: string
+  sha: string
+  size: number
+}
+
+export interface GitHubContentsResponse {
+  type: 'dir' | 'file'
+  path?: string
+  name?: string
+  sha?: string
+  size?: number
+  html_url?: string
+  entries?: GitHubContentEntry[]
+}
+
+export interface GitHubPushResponse {
+  pushed: boolean
+  strategy: string
+  owner: string
+  repo: string
+  branch: string
+  path: string
+  commit_sha: string
+  file_sha: string
+  html_url: string
+  pull_request_url?: string
+  pull_request_number?: number
+}
+
+export interface GitHubScriptStatus {
+  linked: boolean
+  status: string
+  owner?: string
+  repo?: string
+  branch?: string
+  path?: string
+  last_commit_sha?: string
+  synced_at?: string
+  local_drift?: boolean
+  remote_drift?: boolean
+  remote_missing?: boolean
+  remote_checked?: boolean
+  html_url?: string
 }

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, DashboardAuthEffectiveAccessResource, StoredScript } from '../types'
+import { AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, DashboardAuthEffectiveAccessResource, GitHubConfigResponse, GitHubPushResponse, StoredScript } from '../types'
 import { useApi } from '../hooks/useApi'
+import { useGitHubApi } from '../hooks/api/useGitHubApi'
+import GitHubSyncModal from './GitHubSyncModal'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import AuthoringSessionsPanel from './AuthoringSessionsPanel'
@@ -205,6 +207,48 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
 
   const federation = useLibraryFederation({ kind: 'script', projectId: activeProject?.id, onRefreshLocal: refresh })
 
+  // --- GitHub script sync (config + connection gate + push/import modals) ---
+  const githubApi = useGitHubApi()
+  const [githubConfig, setGithubConfig] = useState<GitHubConfigResponse | null>(null)
+  const [githubConnected, setGithubConnected] = useState(false)
+  const [githubPushScript, setGithubPushScript] = useState<StoredScript | null>(null)
+  const [githubImportOpen, setGithubImportOpen] = useState(false)
+  const [githubNotice, setGithubNotice] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const config = await githubApi.getConfig()
+        if (cancelled) return
+        setGithubConfig(config)
+        if (config.enabled) {
+          const connection = await githubApi.getConnection()
+          if (!cancelled) setGithubConnected(Boolean(connection.connected))
+        }
+      } catch {
+        if (!cancelled) setGithubConfig(null)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [githubApi])
+
+  const githubReady = Boolean(githubConfig?.enabled && githubConnected)
+
+  const handleGithubPushed = useCallback((response: GitHubPushResponse) => {
+    setGithubNotice(
+      response.pull_request_url
+        ? `Opened pull request for ${response.owner}/${response.repo}.`
+        : `Pushed to ${response.owner}/${response.repo}@${response.branch}.`,
+    )
+  }, [])
+
+  const handleGithubImported = useCallback((saved: StoredScript) => {
+    setGithubNotice(`Imported "${saved.name}" from GitHub.`)
+    void refresh()
+    handleSavedScript(saved)
+  }, [handleSavedScript, refresh])
+
   const knownScriptIds = useMemo(() => new Set(scripts.map(script => script.id)), [scripts])
 
   const federationRemoteRows = useMemo(() => {
@@ -360,22 +404,35 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
             <h2>Script Library</h2>
             <p className="page-subtitle">Reusable scripts. Release associations are inferred from actual test usage.</p>
           </div>
-          {canManageScripts && (
-            <PageViewToggle
-              value="library"
-              ariaLabel="Script page view"
-              className="script-page-toggle"
-              onChange={view => {
-                if (view === 'library') openLibrary()
-                else openCreateOptions()
-              }}
-              options={[
-                { value: 'library', label: 'Script Library' },
-                { value: 'create-options', label: 'Script Builder' },
-              ]}
-            />
-          )}
+          <div className="settings-inline-actions" style={{ alignItems: 'center' }}>
+            {canManageScripts && githubReady && (
+              <button className="btn btn-secondary" type="button" onClick={() => setGithubImportOpen(true)}>
+                Import from GitHub
+              </button>
+            )}
+            {canManageScripts && (
+              <PageViewToggle
+                value="library"
+                ariaLabel="Script page view"
+                className="script-page-toggle"
+                onChange={view => {
+                  if (view === 'library') openLibrary()
+                  else openCreateOptions()
+                }}
+                options={[
+                  { value: 'library', label: 'Script Library' },
+                  { value: 'create-options', label: 'Script Builder' },
+                ]}
+              />
+            )}
+          </div>
         </div>
+        {githubNotice && (
+          <p className="settings-notice" role="status">
+            {githubNotice}{' '}
+            <button className="btn btn-ghost btn-sm" type="button" onClick={() => setGithubNotice('')}>Dismiss</button>
+          </p>
+        )}
 
         <div className="page-section">
           {canManageScripts && (
@@ -456,9 +513,29 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
             canManageScripts={canManageScripts}
             emptyMessage={libraryQuery.trim() || healthFilter !== 'all' || releaseFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
             federation={scriptFederation}
+            github={canManageScripts && githubReady ? { enabled: true, onPush: setGithubPushScript } : undefined}
           />
         </div>
       </div>
+      {githubPushScript && githubConfig && (
+        <GitHubSyncModal
+          mode="push"
+          config={githubConfig}
+          script={githubPushScript}
+          projectId={activeProject?.id}
+          onClose={() => setGithubPushScript(null)}
+          onPushed={handleGithubPushed}
+        />
+      )}
+      {githubImportOpen && githubConfig && (
+        <GitHubSyncModal
+          mode="import"
+          config={githubConfig}
+          projectId={activeProject?.id}
+          onClose={() => setGithubImportOpen(false)}
+          onImported={handleGithubImported}
+        />
+      )}
     </ScriptsAuthoringShell>
   )
 }

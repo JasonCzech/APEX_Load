@@ -12,6 +12,7 @@ import { mergeSettingsOrder, moveSettingsSection, readSettingsSectionArray, SETT
 import './CreateTestModal.css'
 import { downloadBlob } from '../utils/fileUtils'
 import LibraryFederationPanel from './LibraryFederationPanel'
+import GitHubIntegrationPanel from './GitHubIntegrationPanel'
 
 const DEFAULT_SETTINGS: DashboardSystemSettings = {
   general: {
@@ -71,6 +72,19 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
     email_header: 'X-Auth-Request-Email',
     roles_header: 'X-APEXLoad-Roles',
     project_roles_header: 'X-APEXLoad-Project-Roles',
+  },
+  github: {
+    enabled: false,
+    client_id: '',
+    client_secret_env_var: 'APEXLOAD_GITHUB_CLIENT_SECRET',
+    api_base_url: 'https://api.github.com',
+    web_base_url: 'https://github.com',
+    ca_cert_file: '',
+    tls_insecure_skip_verify: false,
+    scopes: ['repo'],
+    default_repo: '',
+    default_branch: 'main',
+    path_template: 'apexload/scripts/{project}/{ref_key}.json',
   },
 }
 
@@ -696,6 +710,11 @@ function normalizeDashboardSystemSettings(settings: DashboardSystemSettings): Da
       ...settings.auth,
 	      scopes: settings.auth?.scopes ? [...settings.auth.scopes] : [...(DEFAULT_SETTINGS.auth.scopes || [])],
       mode: normalizeDashboardAuthMode(settings.auth?.mode),
+    },
+    github: {
+      ...DEFAULT_SETTINGS.github,
+      ...settings.github,
+      scopes: settings.github?.scopes ? [...settings.github.scopes] : [...DEFAULT_SETTINGS.github.scopes],
     },
   }
 }
@@ -1554,7 +1573,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
   const saveSettings = async () => {
     if (!canSave) return
     try {
-      const response = await api.updateSystemSettings(settings)
+      const response = normalizeDashboardSystemSettings(await api.updateSystemSettings(settings))
       setSettings(response)
       setSavedSettings(response)
       await refreshAuthDiagnostics()
@@ -1568,7 +1587,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
 
   const resetSettings = async () => {
     try {
-      const response = await api.updateSystemSettings(DEFAULT_SETTINGS)
+      const response = normalizeDashboardSystemSettings(await api.updateSystemSettings(DEFAULT_SETTINGS))
       setSettings(response)
       setSavedSettings(response)
       await refreshAuthDiagnostics()
@@ -3850,6 +3869,14 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
           {renderSettingsHeader('integrations', 'Integrations')}
           <div className="settings-group">
             <LibraryFederationPanel projectId={activeProject?.id} />
+            <GitHubIntegrationPanel
+              value={settings.github}
+              onChange={(next) => {
+                setSettings((prev) => ({ ...prev, github: next }))
+                setSaveMessage('')
+                setRequestError('')
+              }}
+            />
             <div className="settings-subsection">
               <div className="settings-manager-summary">
                 <div>

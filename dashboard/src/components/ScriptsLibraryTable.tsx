@@ -19,6 +19,11 @@ export interface ScriptLibraryFederation {
   remoteItemHref: (item: LibraryCatalogItem) => string
 }
 
+export interface ScriptLibraryGitHub {
+  enabled: boolean
+  onPush: (script: StoredScript) => void
+}
+
 interface Props {
   scripts: StoredScript[]
   sortField: ScriptLibrarySortField
@@ -38,6 +43,7 @@ interface Props {
   canManageScripts?: boolean
   emptyMessage?: string
   federation?: ScriptLibraryFederation
+  github?: ScriptLibraryGitHub
 }
 
 function formatDate(value?: string) {
@@ -123,6 +129,7 @@ export default function ScriptsLibraryTable({
   canManageScripts = true,
   emptyMessage = 'No scripts yet.',
   federation,
+  github,
 }: Props) {
   const showSource = Boolean(federation)
   const columnCount = (showSource ? 1 : 0) + 7
@@ -196,6 +203,13 @@ export default function ScriptsLibraryTable({
                       <>
                         <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onEdit(script.id) }}>Edit</button>
                         <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); onDelete(script.id) }}>Delete</button>
+                        {github?.enabled && (
+                          <button
+                            className="btn btn-sm btn-ghost"
+                            onClick={(event) => { event.stopPropagation(); github.onPush(script) }}
+                            title="Push this script to GitHub"
+                          >GitHub</button>
+                        )}
                         {federation && (
                           <>
                             <button
