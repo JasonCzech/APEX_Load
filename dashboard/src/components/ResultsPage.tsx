@@ -3,7 +3,7 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 
 import { downloadBlob } from '../utils/fileUtils'
 import { isCompletedTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
-import { Application, BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserPlatformLiveMetrics, IntervalSummaryRecord, Release, RunArchiveReport, TestSummary } from '../types'
+import { Application, BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserPlatformLiveMetrics, IntervalSummaryRecord, Release, RunArchiveActionStats, RunArchiveReport, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import BrowserBreakdownChart from './BrowserBreakdownChart'
@@ -23,7 +23,10 @@ import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltip
 import {
   COMPARISON_CHART_METRICS,
   buildComparisonSummarySeries,
+  comparisonChartMetricValue,
   comparisonChartYAxisLabel,
+  comparisonRunColor,
+  comparisonSummaryDataKey,
   formatComparisonChartValue,
   getComparisonChartMetricConfig,
   type ComparisonChartMetric,
@@ -53,6 +56,8 @@ type RefreshOptions = {
   initial?: boolean
 }
 
+const MAX_COMPARISON_RUNS = 10
+
 type ResultSourceRow = {
   rowKey: string
   source: LibraryAssetSourceKind
@@ -77,6 +82,14 @@ function formatDate(value?: string) {
 
 function runStartedAt(test: TestSummary) {
   return new Date(test.start_time || test.created_at || 0).getTime()
+}
+
+function sortTestsByStartAscending(tests: TestSummary[]) {
+  return [...tests].sort((left, right) => {
+    const startedDelta = runStartedAt(left) - runStartedAt(right)
+    if (startedDelta !== 0) return startedDelta
+    return left.id.localeCompare(right.id)
+  })
 }
 
 function rowStartedAt(row: ResultSourceRow) {
@@ -284,6 +297,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
   const [tests, setTests] = useState<TestSummary[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [comparisonTestIds, setComparisonTestIds] = useState<string[]>([])
+  const [comparisonTestSnapshots, setComparisonTestSnapshots] = useState<TestSummary[]>([])
   const [comparisonReports, setComparisonReports] = useState<Record<string, RunArchiveReport>>({})
   const [comparisonSummaries, setComparisonSummaries] = useState<Record<string, IntervalSummaryRecord[]>>({})
   const [comparisonLoading, setComparisonLoading] = useState(false)
@@ -363,6 +377,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
   useEffect(() => {
     setSelectedIds(new Set())
     setComparisonTestIds([])
+    setComparisonTestSnapshots([])
     setReleaseFilter(activeRelease?.id || 'all')
   }, [activeRelease?.id])
 
@@ -521,16 +536,6 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     })
   }, [filteredRows, sortDirection, sortField])
 
-  const selectableRowIds = useMemo(
-    () => sortedRows.flatMap(row => (row.test ? [row.test.id] : [])),
-    [sortedRows],
-  )
-
-  const allSelectableRowsSelected = useMemo(
-    () => selectableRowIds.length > 0 && selectableRowIds.every(id => selectedIds.has(id)),
-    [selectableRowIds, selectedIds],
-  )
-
   const selectedTests = useMemo(
     () => sortedRows.flatMap(row => (row.test && selectedIds.has(row.test.id) ? [row.test] : [])),
     [selectedIds, sortedRows],
@@ -542,35 +547,41 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
   )
 
   const selectionState = useMemo(() => {
-    if (selectedArchivedTests.length > 2) return `${selectedArchivedTests.length} archived runs selected; choose exactly 2 to compare`
-    if (selectedArchivedTests.length === 2) return 'Ready to compare 2 archived runs'
+    if (selectedArchivedTests.length > MAX_COMPARISON_RUNS) return `${selectedArchivedTests.length} archived runs selected; choose ${MAX_COMPARISON_RUNS} or fewer to compare`
+    if (selectedArchivedTests.length >= 2) return `Ready to compare ${selectedArchivedTests.length} archived runs`
     if (selectedArchivedTests.length === 1) return 'Select one more archived run to compare'
     if (selectedTests.length > 0) return 'Archive comparison requires archived runs'
     return ''
   }, [selectedArchivedTests.length, selectedTests.length])
 
-  const canCompareSelected = selectedArchivedTests.length === 2
+  const canCompareSelected = selectedArchivedTests.length >= 2 && selectedArchivedTests.length <= MAX_COMPARISON_RUNS
+
+  const comparisonTestIdKey = useMemo(() => comparisonTestIds.join('|'), [comparisonTestIds])
+  const comparisonSnapshotIdKey = useMemo(() => comparisonTestSnapshots.map(test => test.id).join('|'), [comparisonTestSnapshots])
 
   const comparisonTests = useMemo(
     () => {
+      if (comparisonTestIdKey && comparisonSnapshotIdKey === comparisonTestIdKey) {
+        return comparisonTestSnapshots
+      }
       const testById = new Map(completed.map(test => [test.id, test]))
-      return comparisonTestIds.flatMap(id => {
+      return sortTestsByStartAscending(comparisonTestIds.flatMap(id => {
         const test = testById.get(id)
         return test?.archive ? [test] : []
-      })
+      }))
     },
-    [completed, comparisonTestIds],
+    [completed, comparisonSnapshotIdKey, comparisonTestIdKey, comparisonTestIds, comparisonTestSnapshots],
   )
 
   useEffect(() => {
-    if (comparisonTestIds.length !== 2) {
+    if (comparisonTestIds.length < 2 || comparisonTestIds.length > MAX_COMPARISON_RUNS) {
       setComparisonReports({})
       setComparisonSummaries({})
       setComparisonLoading(false)
       setComparisonError('')
       return
     }
-    if (comparisonTests.length !== 2) {
+    if (comparisonTests.length !== comparisonTestIds.length) {
       setComparisonReports({})
       setComparisonSummaries({})
       setComparisonLoading(false)
@@ -608,10 +619,10 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     return () => {
       cancelled = true
     }
-  }, [api, comparisonTestIds.length, comparisonTests])
+  }, [api, comparisonTestIdKey, comparisonTests])
 
   const comparisonCards = useMemo(() => {
-    if (comparisonTests.length !== 2) return []
+    if (comparisonTests.length < 2 || comparisonTests.length > MAX_COMPARISON_RUNS) return []
     return comparisonTests.map(test => ({ test, report: comparisonReports[test.id] }))
   }, [comparisonReports, comparisonTests])
 
@@ -621,17 +632,20 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
   )
 
   const exportComparison = useCallback(async () => {
-    if (comparisonCards.length !== 2 || !comparisonCards.every(item => item.report)) {
+    if (comparisonCards.length < 2 || comparisonCards.length > MAX_COMPARISON_RUNS || !comparisonCards.every(item => item.report)) {
       return
     }
 
-    const [first, second] = comparisonCards
-    const [current, baseline] = runStartedAt(first.test) >= runStartedAt(second.test)
-      ? [first, second]
-      : [second, first]
+    const [baseline, ...comparisonRuns] = comparisonCards
     try {
-      const blob = await api.downloadTestArchiveComparison(current.test.id, baseline.test.id, comparisonBreakdown)
-      downloadBlob(blob, `archive-comparison-${current.test.id}-${baseline.test.id}-${comparisonBreakdown}.csv`)
+      if (comparisonCards.length === 2) {
+        const [current] = comparisonRuns
+        const blob = await api.downloadTestArchiveComparison(current.test.id, baseline.test.id, comparisonBreakdown)
+        downloadBlob(blob, `archive-comparison-${current.test.id}-${baseline.test.id}-${comparisonBreakdown}.csv`)
+      } else {
+        const blob = await api.downloadTestArchiveMultiComparison(baseline.test.id, comparisonRuns.map(item => item.test.id), comparisonBreakdown)
+        downloadBlob(blob, `archive-comparison-${baseline.test.id}-${comparisonCards.length}-runs-${comparisonBreakdown}.csv`)
+      }
       setComparisonError('')
     } catch (error: unknown) {
       setComparisonError(getErrorMessage(error, 'Unable to export comparison CSV'))
@@ -639,47 +653,49 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
   }, [api, comparisonBreakdown, comparisonCards])
 
   const comparisonActionRows = useMemo(() => {
-    if (comparisonCards.length !== 2 || !comparisonCards[0].report || !comparisonCards[1].report) return []
-    const [left, right] = comparisonCards
-    const actionNames = new Set<string>([
-      ...Object.keys(left.report.by_action || {}),
-      ...Object.keys(right.report.by_action || {}),
-    ])
+    if (comparisonCards.length < 2 || !comparisonCards.every(item => item.report)) return []
+    const [baseline] = comparisonCards
+    const baselineActions = baseline.report?.by_action || {}
+    const actionNames = new Set<string>()
+    comparisonCards.forEach(({ report }) => {
+      Object.keys(report?.by_action || {}).forEach(name => actionNames.add(name))
+    })
     return Array.from(actionNames)
-      .map(name => ({
-        name,
-        left: left.report?.by_action?.[name],
-        right: right.report?.by_action?.[name],
-        deltaMs: (right.report?.by_action?.[name]?.avg_response_ms || 0) - (left.report?.by_action?.[name]?.avg_response_ms || 0),
-      }))
-      .sort((a, b) => Math.abs(b.deltaMs) - Math.abs(a.deltaMs))
+      .map(name => {
+        const baselineMs = baselineActions[name]?.avg_response_ms || 0
+        const runs = comparisonCards.map((card, index) => {
+          const stats = card.report?.by_action?.[name] as RunArchiveActionStats | undefined
+          const deltaMs = (stats?.avg_response_ms || 0) - baselineMs
+          return {
+            test: card.test,
+            stats,
+            deltaMs,
+            isBaseline: index === 0,
+            color: comparisonRunColor(index),
+          }
+        })
+        return {
+          name,
+          runs,
+          maxDeltaMs: Math.max(...runs.map(run => Math.abs(run.deltaMs))),
+        }
+      })
+      .sort((a, b) => b.maxDeltaMs - a.maxDeltaMs)
       .slice(0, 8)
   }, [comparisonCards])
 
   const comparisonChartData = useMemo(() => {
-    if (comparisonCards.length !== 2 || !comparisonCards[0].report || !comparisonCards[1].report) return []
-    const [left, right] = comparisonCards
-    const leftSeries = comparisonSummaries[left.test.id] || []
-    const rightSeries = comparisonSummaries[right.test.id] || []
-    const maxLength = Math.max(leftSeries.length, rightSeries.length)
-    return Array.from({ length: maxLength }, (_, index) => ({
-      sample: index + 1,
-      leftTps: leftSeries[index]?.tps,
-      rightTps: rightSeries[index]?.tps,
-      leftArt: leftSeries[index]?.avg_response_ms,
-      rightArt: rightSeries[index]?.avg_response_ms,
-      leftP50: leftSeries[index]?.p50_ms,
-      rightP50: rightSeries[index]?.p50_ms,
-      leftP90: leftSeries[index]?.p90_ms,
-      rightP90: rightSeries[index]?.p90_ms,
-      leftP95: leftSeries[index]?.p95_ms,
-      rightP95: rightSeries[index]?.p95_ms,
-      leftP99: leftSeries[index]?.p99_ms,
-      rightP99: rightSeries[index]?.p99_ms,
-      leftErrorPct: leftSeries[index]?.error_pct,
-      rightErrorPct: rightSeries[index]?.error_pct,
-    }))
-  }, [comparisonCards, comparisonSummaries])
+    if (comparisonCards.length < 2 || !comparisonCards.every(item => item.report)) return []
+    const maxLength = Math.max(...comparisonCards.map(card => (comparisonSummaries[card.test.id] || []).length))
+    return Array.from({ length: maxLength }, (_, sampleIndex) => {
+      const row: Record<string, number | undefined> & { sample: number } = { sample: sampleIndex + 1 }
+      comparisonCards.forEach((card, runIndex) => {
+        const series = comparisonSummaries[card.test.id] || []
+        row[comparisonSummaryDataKey(card.test.id, comparisonChartMetric, runIndex)] = comparisonChartMetricValue(series[sampleIndex], comparisonChartMetric)
+      })
+      return row
+    })
+  }, [comparisonCards, comparisonChartMetric, comparisonSummaries])
 
   const comparisonChartMetricConfig = useMemo(
     () => getComparisonChartMetricConfig(comparisonChartMetric),
@@ -687,16 +703,15 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
   )
 
   const comparisonSummarySeries = useMemo(() => {
-    if (comparisonCards.length !== 2) return []
+    if (comparisonCards.length < 2) return []
     return buildComparisonSummarySeries(
-      formatComparisonRunLabel(comparisonCards[0].test),
-      formatComparisonRunLabel(comparisonCards[1].test),
+      comparisonCards.map(({ test }) => ({ id: test.id, label: formatComparisonRunLabel(test) })),
       comparisonChartMetric,
     )
   }, [comparisonCards, comparisonChartMetric])
 
   const browserBreakdownChartData = useMemo(() => {
-    if (comparisonCards.length !== 2 || !comparisonCards.every(item => item.report)) {
+    if (comparisonCards.length < 2 || !comparisonCards.every(item => item.report)) {
       return [] as BrowserBreakdownDatum[]
     }
 
@@ -750,19 +765,6 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     setSortDirection(field === 'started' || field === 'archive' ? 'desc' : 'asc')
   }
 
-  const toggleSelectAll = () => {
-    const allVisibleSelected = selectableRowIds.length > 0 && selectableRowIds.every(id => selectedIds.has(id))
-    if (allVisibleSelected) {
-      setSelectedIds(prev => {
-        const next = new Set(prev)
-        selectableRowIds.forEach(id => next.delete(id))
-        return next
-      })
-      return
-    }
-    setSelectedIds(prev => new Set([...prev, ...selectableRowIds]))
-  }
-
   const toggleSelect = (id: string, event: React.MouseEvent | React.ChangeEvent) => {
     event.stopPropagation()
     setSelectedIds(prev => {
@@ -775,7 +777,9 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
 
   const runSelectedComparison = useCallback(() => {
     if (!canCompareSelected) return
-    setComparisonTestIds(selectedArchivedTests.map(test => test.id))
+    const sortedSelection = sortTestsByStartAscending(selectedArchivedTests)
+    setComparisonTestSnapshots(sortedSelection)
+    setComparisonTestIds(sortedSelection.map(test => test.id))
   }, [canCompareSelected, selectedArchivedTests])
 
   const handleDelete = async (id: string, event: React.MouseEvent) => {
@@ -786,6 +790,10 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
   const deleteResult = async (id: string) => {
     if (!confirm('Delete this scenario result?')) return
     await api.deleteTest(id)
+    if (comparisonTestIds.includes(id)) {
+      setComparisonTestIds([])
+      setComparisonTestSnapshots([])
+    }
     setSelectedIds(prev => {
       const next = new Set(prev)
       next.delete(id)
@@ -797,6 +805,10 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
   const deleteSelected = async () => {
     if (!confirm(`Delete ${selectedIds.size} selected results?`)) return
     await Promise.all(Array.from(selectedIds).map(id => api.deleteTest(id)))
+    if (Array.from(selectedIds).some(id => comparisonTestIds.includes(id))) {
+      setComparisonTestIds([])
+      setComparisonTestSnapshots([])
+    }
     setSelectedIds(new Set())
     await refresh()
   }
@@ -854,9 +866,12 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
           </p>
         </div>
         <div className="results-actions">
-          {resultsLoading && <span className="results-load-status">Loading results...</span>}
-          {!resultsLoading && resultsRefreshing && <span className="results-load-status">Refreshing...</span>}
-          {comparisonCards.length === 2 && (
+          {(resultsLoading || resultsRefreshing || comparisonCards.length >= 2) && (
+            <span className={`results-load-status${resultsLoading || resultsRefreshing ? '' : ' idle'}`} aria-live="polite">
+              {resultsLoading ? 'Loading results...' : resultsRefreshing ? 'Refreshing...' : 'Results refreshed'}
+            </span>
+          )}
+          {comparisonCards.length >= 2 && (
             <span className="results-compare-hint">Comparison loaded</span>
           )}
           {selectedIds.size > 0 && (
@@ -869,15 +884,15 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
 
       {error && <div className="settings-error-inline">{error}</div>}
 
-      {(comparisonCards.length === 2 || comparisonLoading || comparisonError) && (
+      {(comparisonCards.length >= 2 || comparisonLoading || comparisonError) && (
         <div className="page-section">
           <div className="results-compare-card">
             <div className="results-compare-header">
               <div>
                 <h3 className="section-title">Run Comparison</h3>
-                <p className="page-subtitle">Side-by-side view of two archived runs from this release.</p>
+                <p className="page-subtitle">Compare 2-{MAX_COMPARISON_RUNS} archived runs. The oldest run is the baseline.</p>
               </div>
-              {comparisonCards.length === 2 && comparisonCards.every(item => item.report) && comparisonHasBrowserBreakdowns && (
+              {comparisonCards.length >= 2 && comparisonCards.every(item => item.report) && comparisonHasBrowserBreakdowns && (
                 <div className="results-compare-controls">
                   <div className="results-breakdown-toggle" role="tablist" aria-label="Comparison breakdown mode">
                     {(['overall', 'platform', 'engine', 'device'] as ComparisonBreakdown[]).map(mode => (
@@ -903,11 +918,11 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
             {comparisonLoading && <p className="results-compare-status">Loading comparison...</p>}
             {comparisonError && <p className="results-compare-status error">{comparisonError}</p>}
 
-            {comparisonCards.length === 2 && comparisonCards.every(item => item.report) && (
+            {comparisonCards.length >= 2 && comparisonCards.every(item => item.report) && (
               <>
                 <div className="results-compare-grid">
-                  {comparisonCards.map(({ test, report }) => (
-                    <div key={test.id} className="results-compare-panel">
+                  {comparisonCards.map(({ test, report }, index) => (
+                    <div key={test.id} className="results-compare-panel" style={{ borderTopColor: comparisonRunColor(index), borderTopWidth: 3 }}>
                       {(() => {
                         const deviceEntries = getBrowserDeviceEntries(report)
                         const platformEntries = getBrowserPlatformEntries(report)
@@ -920,13 +935,20 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
                         <div>
                           <h4>{test.name}</h4>
                           <p>{formatDate(test.start_time || test.created_at)}</p>
+                          <span className="results-compare-run-label results-compare-run-label-inline">
+                            <span className="results-run-dot" style={{ background: comparisonRunColor(index) }} aria-hidden="true" />
+                            {index === 0 ? 'Baseline' : `Run ${index + 1}`}
+                          </span>
                           {test.ref_key ? (
                             <ReferenceKeyBadge value={test.ref_key} />
                           ) : (
                             <span className="results-run-id" title={test.id}>Run ID {formatShortRunId(test.id)}</span>
                           )}
                         </div>
-                        <StatusBadge status={resolveStatus(test, testStatuses)} />
+                        <div className="results-compare-panel-badges">
+                          {index === 0 && <span className="results-compare-baseline-chip">Reference</span>}
+                          <StatusBadge status={resolveStatus(test, testStatuses)} />
+                        </div>
                       </div>
                       <div className="results-compare-metrics">
                         <div className="results-compare-metric">
@@ -1040,7 +1062,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
                 </div>
 
                 <div className="results-compare-table-wrap">
-                  {browserBreakdownChartData.length > 0 && comparisonCards.length === 2 && (
+                  {browserBreakdownChartData.length > 0 && comparisonCards.length >= 2 && (
                     <BrowserBreakdownChart
                       title={browserBreakdownChartTitle}
                       copy={browserBreakdownChartCopy}
@@ -1123,38 +1145,28 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
                         <th>Run</th>
                         <th>Avg ART</th>
                         <th>Errors</th>
-                        <th>Delta vs First</th>
+                        <th>Delta vs Baseline</th>
                       </tr>
                     </thead>
                     <tbody>
                       {comparisonActionRows.map(row => (
                         <Fragment key={row.name}>
-                          <tr className="results-compare-action-start">
-                            <td className="cell-name" rowSpan={2}>{row.name}</td>
-                            <td>
-                              <span className="results-compare-run-label results-compare-run-label-inline">
-                                <span className="results-run-dot results-run-dot-left" aria-hidden="true" />
-                                {formatComparisonRunLabel(comparisonCards[0].test)}
-                              </span>
-                            </td>
-                            <td>{row.left?.avg_response_ms?.toFixed(1) || '0.0'} ms</td>
-                            <td>{row.left?.errors || 0}</td>
-                            <td className="cell-muted">Reference</td>
-                          </tr>
-                          <tr>
-                            <td>
-                              <span className="results-compare-run-label results-compare-run-label-inline">
-                                <span className="results-run-dot results-run-dot-right" aria-hidden="true" />
-                                {formatComparisonRunLabel(comparisonCards[1].test)}
-                              </span>
-                            </td>
-                            <td>{row.right?.avg_response_ms?.toFixed(1) || '0.0'} ms</td>
-                            <td>{row.right?.errors || 0}</td>
-                            <td className={row.deltaMs > 0 ? 'text-danger' : row.deltaMs < 0 ? 'text-success' : 'cell-muted'}>
-                              {row.deltaMs >= 0 ? '+' : ''}
-                              {row.deltaMs.toFixed(1)} ms
-                            </td>
-                          </tr>
+                          {row.runs.map((run, index) => (
+                            <tr key={`${row.name}-${run.test.id}`} className={index === 0 ? 'results-compare-action-start' : undefined}>
+                              {index === 0 && <td className="cell-name" rowSpan={row.runs.length}>{row.name}</td>}
+                              <td>
+                                <span className="results-compare-run-label results-compare-run-label-inline">
+                                  <span className="results-run-dot" style={{ background: run.color }} aria-hidden="true" />
+                                  {formatComparisonRunLabel(run.test)}
+                                </span>
+                              </td>
+                              <td>{run.stats?.avg_response_ms?.toFixed(1) || '0.0'} ms</td>
+                              <td>{run.stats?.errors || 0}</td>
+                              <td className={run.isBaseline ? 'cell-muted' : run.deltaMs > 0 ? 'text-danger' : run.deltaMs < 0 ? 'text-success' : 'cell-muted'}>
+                                {run.isBaseline ? 'Reference' : `${run.deltaMs >= 0 ? '+' : ''}${run.deltaMs.toFixed(1)} ms`}
+                              </td>
+                            </tr>
+                          ))}
                         </Fragment>
                       ))}
                     </tbody>
@@ -1226,7 +1238,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
           <div className="results-table-selection-toolbar">
             <div className="results-table-selection-summary">
               <span>{selectedIds.size} selected</span>
-              <strong>{selectionState || 'Select exactly 2 archived local results to compare'}</strong>
+              <strong>{selectionState || `Select 2-${MAX_COMPARISON_RUNS} archived local results to compare`}</strong>
             </div>
             <div className="results-table-selection-actions">
               <button className="btn btn-secondary" onClick={runSelectedComparison} disabled={!canCompareSelected}>
@@ -1274,13 +1286,6 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
                   <tr>
                     <th className="results-compare-select-header">
                       <span>Compare</span>
-                      <input
-                        type="checkbox"
-                        aria-label="Select all visible local results for comparison"
-                        checked={allSelectableRowsSelected}
-                        disabled={selectableRowIds.length === 0}
-                        onChange={toggleSelectAll}
-                      />
                     </th>
                     <th onClick={() => handleSort('source')} className="sortable">Source <SortIcon active={sortField === 'source'} direction={sortDirection} /></th>
                     <th onClick={() => handleSort('name')} className="sortable">Scenario <SortIcon active={sortField === 'name'} direction={sortDirection} /></th>

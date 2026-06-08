@@ -473,6 +473,12 @@ export function useTestApi() {
     [],
   )
 
+  const downloadTestArchiveMultiComparison = useCallback(
+    (baselineId: string, comparisonIds: string[], breakdown: 'overall' | 'platform' | 'engine' | 'device') =>
+      fetchBlob(`/tests/${baselineId}/archive/comparison${buildQuery({ format: 'csv', comparison_ids: comparisonIds.join(','), breakdown })}`),
+    [],
+  )
+
   const downloadTestArchiveBrowserDiagnostics = useCallback(
     (id: string) => fetchBlob(`/tests/${id}/archive/browser-diagnostics`),
     [],
@@ -539,6 +545,7 @@ export function useTestApi() {
       getTestArchiveAnalysis,
       downloadTestArchive,
       downloadTestArchiveComparison,
+      downloadTestArchiveMultiComparison,
       downloadTestArchiveBrowserDiagnostics,
       downloadTestArchiveArtifact,
       scaleVUsers,
@@ -595,6 +602,7 @@ export function useTestApi() {
       getTestArchiveAnalysis,
       downloadTestArchive,
       downloadTestArchiveComparison,
+      downloadTestArchiveMultiComparison,
       downloadTestArchiveBrowserDiagnostics,
       downloadTestArchiveArtifact,
       scaleVUsers,

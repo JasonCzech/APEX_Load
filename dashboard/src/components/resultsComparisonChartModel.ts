@@ -1,20 +1,8 @@
+import type { IntervalSummaryRecord } from '../types'
+
 export type ComparisonChartMetric = 'tps' | 'art' | 'p50' | 'p90' | 'p95' | 'p99' | 'errors'
 
-export type ComparisonChartDataKey =
-  | 'leftTps'
-  | 'rightTps'
-  | 'leftArt'
-  | 'rightArt'
-  | 'leftP50'
-  | 'rightP50'
-  | 'leftP90'
-  | 'rightP90'
-  | 'leftP95'
-  | 'rightP95'
-  | 'leftP99'
-  | 'rightP99'
-  | 'leftErrorPct'
-  | 'rightErrorPct'
+export type ComparisonChartDataKey = string
 
 export type ComparisonSummaryLineConfig = {
   dataKey: ComparisonChartDataKey
@@ -26,20 +14,31 @@ export type ComparisonSummaryLineConfig = {
 export type ComparisonChartMetricConfig = {
   id: ComparisonChartMetric
   label: string
-  leftKey: ComparisonChartDataKey
-  rightKey: ComparisonChartDataKey
   description: string
   valueFormat: 'count' | 'ms' | 'percent'
 }
 
 export const COMPARISON_CHART_METRICS: ComparisonChartMetricConfig[] = [
-  { id: 'tps', label: 'TPS', leftKey: 'leftTps', rightKey: 'rightTps', description: 'transactions per second', valueFormat: 'count' },
-  { id: 'art', label: 'ART', leftKey: 'leftArt', rightKey: 'rightArt', description: 'average response time', valueFormat: 'ms' },
-  { id: 'p50', label: 'P50', leftKey: 'leftP50', rightKey: 'rightP50', description: 'median response time', valueFormat: 'ms' },
-  { id: 'p90', label: 'P90', leftKey: 'leftP90', rightKey: 'rightP90', description: '90th percentile response time', valueFormat: 'ms' },
-  { id: 'p95', label: 'P95', leftKey: 'leftP95', rightKey: 'rightP95', description: '95th percentile response time', valueFormat: 'ms' },
-  { id: 'p99', label: 'P99', leftKey: 'leftP99', rightKey: 'rightP99', description: '99th percentile response time', valueFormat: 'ms' },
-  { id: 'errors', label: 'Errors', leftKey: 'leftErrorPct', rightKey: 'rightErrorPct', description: 'error percentage', valueFormat: 'percent' },
+  { id: 'tps', label: 'TPS', description: 'transactions per second', valueFormat: 'count' },
+  { id: 'art', label: 'ART', description: 'average response time', valueFormat: 'ms' },
+  { id: 'p50', label: 'P50', description: 'median response time', valueFormat: 'ms' },
+  { id: 'p90', label: 'P90', description: '90th percentile response time', valueFormat: 'ms' },
+  { id: 'p95', label: 'P95', description: '95th percentile response time', valueFormat: 'ms' },
+  { id: 'p99', label: 'P99', description: '99th percentile response time', valueFormat: 'ms' },
+  { id: 'errors', label: 'Errors', description: 'error percentage', valueFormat: 'percent' },
+]
+
+const COMPARISON_RUN_STROKES = [
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+  'var(--chart-6)',
+  '#14b8a6',
+  '#f97316',
+  '#6366f1',
+  '#64748b',
 ]
 
 export function getComparisonChartMetricConfig(metric: ComparisonChartMetric): ComparisonChartMetricConfig {
@@ -61,12 +60,42 @@ export function comparisonChartYAxisLabel(metric: ComparisonChartMetricConfig) {
   return metric.label
 }
 
-export function buildComparisonSummarySeries(leftRunLabel: string, rightRunLabel: string, metric: ComparisonChartMetric = 'tps'): ComparisonSummaryLineConfig[] {
+export function comparisonRunColor(index: number) {
+  return COMPARISON_RUN_STROKES[index % COMPARISON_RUN_STROKES.length]
+}
+
+export function comparisonSummaryDataKey(runId: string, metric: ComparisonChartMetric, index: number) {
+  const safeId = runId.replace(/[^A-Za-z0-9_]/g, '_') || 'run'
+  return `run_${index}_${safeId}_${metric}`
+}
+
+export function comparisonChartMetricValue(summary: IntervalSummaryRecord | undefined, metric: ComparisonChartMetric) {
+  if (!summary) return undefined
+  switch (metric) {
+    case 'art':
+      return summary.avg_response_ms
+    case 'p50':
+      return summary.p50_ms
+    case 'p90':
+      return summary.p90_ms
+    case 'p95':
+      return summary.p95_ms
+    case 'p99':
+      return summary.p99_ms
+    case 'errors':
+      return summary.error_pct
+    case 'tps':
+    default:
+      return summary.tps
+  }
+}
+
+export function buildComparisonSummarySeries(runs: Array<{ id: string; label: string }>, metric: ComparisonChartMetric = 'tps'): ComparisonSummaryLineConfig[] {
   const config = getComparisonChartMetricConfig(metric)
-  const leftStroke = 'var(--chart-1)'
-  const rightStroke = 'var(--chart-2)'
-  return [
-    { dataKey: config.leftKey, name: `${leftRunLabel} ${config.label}`, stroke: leftStroke, yAxisId: 'value' },
-    { dataKey: config.rightKey, name: `${rightRunLabel} ${config.label}`, stroke: rightStroke, yAxisId: 'value' },
-  ]
+  return runs.map((run, index) => ({
+    dataKey: comparisonSummaryDataKey(run.id, metric, index),
+    name: `${run.label} ${config.label}`,
+    stroke: comparisonRunColor(index),
+    yAxisId: 'value',
+  }))
 }

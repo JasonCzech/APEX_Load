@@ -89,6 +89,10 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 	baselineID := "baseline-" + testRun.ID
 	baselineArchive := *completed.Archive
 	baselineArchive.TestID = baselineID
+	laterID := "later-" + testRun.ID
+	laterArchive := *completed.Archive
+	laterArchive.TestID = laterID
+	noArchiveID := "no-archive-" + testRun.ID
 	server.runner.mu.Lock()
 	server.runner.tests[baselineID] = &ManagedTest{
 		ID:        baselineID,
@@ -98,7 +102,23 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		EndedAt:   completed.EndedAt,
 		Archive:   &baselineArchive,
 	}
+	server.runner.tests[laterID] = &ManagedTest{
+		ID:        laterID,
+		Name:      "Archive API Later",
+		Status:    "COMPLETE",
+		CreatedAt: completed.CreatedAt.Add(time.Minute),
+		EndedAt:   completed.EndedAt,
+		Archive:   &laterArchive,
+	}
+	server.runner.tests[noArchiveID] = &ManagedTest{
+		ID:        noArchiveID,
+		Name:      "Archive API Missing Archive",
+		Status:    "COMPLETE",
+		CreatedAt: completed.CreatedAt.Add(2 * time.Minute),
+		EndedAt:   completed.EndedAt,
+	}
 	server.runner.archives[baselineID] = &baselineArchive
+	server.runner.archives[laterID] = &laterArchive
 	server.runner.mu.Unlock()
 
 	t.Run("manifest", func(t *testing.T) {
@@ -510,6 +530,33 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("multi comparison csv orders runs oldest to newest", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+baselineID+"/archive/comparison?format=csv&comparison_ids="+testRun.ID+","+laterID+"&breakdown=overall", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("multi comparison csv status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read multi comparison csv: %v", err)
+		}
+		if len(rows) != 4 {
+			t.Fatalf("multi comparison csv rows = %#v, want header plus three runs", rows)
+		}
+		gotIDs := []string{rows[1][0], rows[2][0], rows[3][0]}
+		wantIDs := []string{baselineID, testRun.ID, laterID}
+		for index := range wantIDs {
+			if gotIDs[index] != wantIDs[index] {
+				t.Fatalf("multi comparison csv run order = %#v, want %#v", gotIDs, wantIDs)
+			}
+		}
+		if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "3-runs") {
+			t.Fatalf("multi comparison content disposition = %q, want run count", got)
+		}
+	})
+
 	t.Run("comparison csv rejects invalid breakdown", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/comparison?format=csv&baseline_id="+baselineID+"&breakdown=unknown", nil)
 		resp := httptest.NewRecorder()
@@ -517,6 +564,46 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 
 		if resp.Code != http.StatusBadRequest {
 			t.Fatalf("invalid comparison breakdown status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+		}
+	})
+
+	t.Run("multi comparison csv rejects unsupported format", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+baselineID+"/archive/comparison?format=json&comparison_ids="+testRun.ID+"&breakdown=overall", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("unsupported multi comparison format status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+		}
+	})
+
+	t.Run("multi comparison csv rejects more than ten runs", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+baselineID+"/archive/comparison?format=csv&comparison_ids=run-1,run-2,run-3,run-4,run-5,run-6,run-7,run-8,run-9,run-10&breakdown=overall", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("too many multi comparison runs status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+		}
+	})
+
+	t.Run("multi comparison csv rejects unknown comparison run", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+baselineID+"/archive/comparison?format=csv&comparison_ids=unknown-run&breakdown=overall", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusNotFound {
+			t.Fatalf("unknown multi comparison run status = %d, want %d body=%s", resp.Code, http.StatusNotFound, resp.Body.String())
+		}
+	})
+
+	t.Run("multi comparison csv rejects missing comparison archive", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+baselineID+"/archive/comparison?format=csv&comparison_ids="+noArchiveID+"&breakdown=overall", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusNotFound {
+			t.Fatalf("missing multi comparison archive status = %d, want %d body=%s", resp.Code, http.StatusNotFound, resp.Body.String())
 		}
 	})
 

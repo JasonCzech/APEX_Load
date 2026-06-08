@@ -18,6 +18,7 @@ const apiMock = {
   deleteTest: vi.fn(),
   downloadTestArchive: vi.fn(),
   downloadTestArchiveComparison: vi.fn(),
+  downloadTestArchiveMultiComparison: vi.fn(),
 }
 
 const libraryApiMock = {
@@ -246,6 +247,7 @@ describe('ResultsPage', () => {
     apiMock.deleteTest.mockResolvedValue(undefined)
     apiMock.downloadTestArchive.mockResolvedValue(new Blob())
     apiMock.downloadTestArchiveComparison.mockResolvedValue(new Blob(['backend comparison csv'], { type: 'text/csv' }))
+    apiMock.downloadTestArchiveMultiComparison.mockResolvedValue(new Blob(['backend multi comparison csv'], { type: 'text/csv' }))
     libraryApiMock.listRemotes.mockResolvedValue({
       remotes: [{
         id: 'remote-1',
@@ -307,20 +309,28 @@ describe('ResultsPage', () => {
       root.unmount()
     })
     container.remove()
+    vi.useRealTimers()
     vi.clearAllMocks()
   })
 
   it('uses one line color per compared run across TPS and P95 series', () => {
-    const tpsSeries = buildComparisonSummarySeries('ACME (90328d19)', 'ACME (44641072)', 'tps')
-    const p95Series = buildComparisonSummarySeries('ACME (90328d19)', 'ACME (44641072)', 'p95')
+    const runs = [
+      { id: '90328d19', label: 'ACME (90328d19)' },
+      { id: '44641072', label: 'ACME (44641072)' },
+      { id: 'f4389ac7', label: 'ACME (f4389ac7)' },
+    ]
+    const tpsSeries = buildComparisonSummarySeries(runs, 'tps')
+    const p95Series = buildComparisonSummarySeries(runs, 'p95')
 
     expect(tpsSeries).toEqual([
-      { dataKey: 'leftTps', name: 'ACME (90328d19) TPS', stroke: 'var(--chart-1)', yAxisId: 'value' },
-      { dataKey: 'rightTps', name: 'ACME (44641072) TPS', stroke: 'var(--chart-2)', yAxisId: 'value' },
+      { dataKey: 'run_0_90328d19_tps', name: 'ACME (90328d19) TPS', stroke: 'var(--chart-1)', yAxisId: 'value' },
+      { dataKey: 'run_1_44641072_tps', name: 'ACME (44641072) TPS', stroke: 'var(--chart-2)', yAxisId: 'value' },
+      { dataKey: 'run_2_f4389ac7_tps', name: 'ACME (f4389ac7) TPS', stroke: 'var(--chart-3)', yAxisId: 'value' },
     ])
     expect(p95Series).toEqual([
-      { dataKey: 'leftP95', name: 'ACME (90328d19) P95', stroke: 'var(--chart-1)', yAxisId: 'value' },
-      { dataKey: 'rightP95', name: 'ACME (44641072) P95', stroke: 'var(--chart-2)', yAxisId: 'value' },
+      { dataKey: 'run_0_90328d19_p95', name: 'ACME (90328d19) P95', stroke: 'var(--chart-1)', yAxisId: 'value' },
+      { dataKey: 'run_1_44641072_p95', name: 'ACME (44641072) P95', stroke: 'var(--chart-2)', yAxisId: 'value' },
+      { dataKey: 'run_2_f4389ac7_p95', name: 'ACME (f4389ac7) P95', stroke: 'var(--chart-3)', yAxisId: 'value' },
     ])
   })
 
@@ -328,16 +338,12 @@ describe('ResultsPage', () => {
     expect(comparisonChartYAxisLabel({
       id: 'p95',
       label: 'P95',
-      leftKey: 'leftP95',
-      rightKey: 'rightP95',
       description: '95th percentile response time',
       valueFormat: 'ms',
     })).toBe('P95 (ms)')
     expect(comparisonChartYAxisLabel({
       id: 'errors',
       label: 'Errors',
-      leftKey: 'leftErrorPct',
-      rightKey: 'rightErrorPct',
       description: 'error percentage',
       valueFormat: 'percent',
     })).toBe('Error rate (%)')
@@ -480,7 +486,7 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('Run')
     expect(container.textContent).toContain('Avg ART')
     expect(container.textContent).toContain('Reference')
-    expect(container.textContent).toContain('-30.0 ms')
+    expect(container.textContent).toContain('+30.0 ms')
 
     const tpsTab = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'TPS') as HTMLButtonElement | undefined
     const p95Tab = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'P95') as HTMLButtonElement | undefined
@@ -548,22 +554,103 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
-    const selectAll = container.querySelector<HTMLInputElement>('thead input[type="checkbox"]')
-    expect(selectAll).toBeTruthy()
     expect(container.querySelector('.results-compare-select-header')?.textContent).toContain('Compare')
+    expect(container.querySelector<HTMLInputElement>('thead input[type="checkbox"]')).toBeNull()
+    const rowCheckboxes = Array.from(container.querySelectorAll('tbody input[type="checkbox"]')) as HTMLInputElement[]
+    expect(rowCheckboxes).toHaveLength(3)
 
     await act(async () => {
-      selectAll?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      selectAll?.dispatchEvent(new Event('change', { bubbles: true }))
+      rowCheckboxes.forEach(checkbox => {
+        checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        checkbox.dispatchEvent(new Event('change', { bubbles: true }))
+      })
       await Promise.resolve()
     })
 
     expect(container.textContent).toContain('3 selected')
-    expect(container.textContent).toContain('3 archived runs selected; choose exactly 2 to compare')
-    expect(buttonByText(container, 'Run Comparison')?.disabled).toBe(true)
+    expect(container.textContent).toContain('Ready to compare 3 archived runs')
+    const runComparisonButton = buttonByText(container, 'Run Comparison')
+    expect(runComparisonButton?.disabled).toBe(false)
     expect(apiMock.getTestArchiveReport).not.toHaveBeenCalled()
     expect(apiMock.getTestArchiveSummaries).not.toHaveBeenCalled()
     expect(container.querySelector('.results-compare-card')).toBeNull()
+
+    await act(async () => {
+      runComparisonButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(apiMock.getTestArchiveReport).toHaveBeenCalledTimes(3)
+    expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledTimes(3)
+    expect(container.textContent).toContain('Compare 2-10 archived runs')
+    expect(container.textContent).toContain('Baseline')
+    expect(container.textContent).toContain('Run 2')
+    expect(container.textContent).toContain('Run 3')
+    expect(container.textContent).toContain('Checkout A')
+    expect(container.textContent).toContain('Checkout B')
+    expect(container.textContent).toContain('Checkout C')
+
+    const exportButton = buttonByText(container, 'Export CSV')
+    expect(exportButton).toBeDefined()
+
+    await act(async () => {
+      exportButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.downloadTestArchiveMultiComparison).toHaveBeenCalledWith('run-a', ['run-b', 'run-c'], 'device')
+    expect(downloadBlob).toHaveBeenCalledTimes(1)
+    const [blob, filename] = vi.mocked(downloadBlob).mock.calls[0]
+    expect(filename).toBe('archive-comparison-run-a-3-runs-device.csv')
+    expect(await blob.text()).toBe('backend multi comparison csv')
+  })
+
+  it('disables comparison when more than ten archived runs are selected', async () => {
+    apiMock.listTests.mockResolvedValueOnce({
+      tests: Array.from({ length: 11 }, (_, index) => ({
+        id: `run-${index + 1}`,
+        ref_key: `LOC-RUN-20260512-${String(index + 1).padStart(3, '0')}`,
+        name: `Checkout ${index + 1}`,
+        status: 'COMPLETE',
+        application_id: 'app-1',
+        release_id: 'rel-1',
+        total_vusers: 10 + index,
+        duration: '5m',
+        created_at: `2026-05-12T${String(8 + index).padStart(2, '0')}:00:00Z`,
+        ended_at: `2026-05-12T${String(8 + index).padStart(2, '0')}:05:00Z`,
+        archive: { ref_key: `LOC-RUN-20260512-${String(index + 1).padStart(3, '0')}`, transaction_count: 1000 + index },
+      })),
+    })
+
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector<HTMLInputElement>('thead input[type="checkbox"]')).toBeNull()
+    const rowCheckboxes = Array.from(container.querySelectorAll('tbody input[type="checkbox"]')) as HTMLInputElement[]
+    expect(rowCheckboxes).toHaveLength(11)
+
+    await act(async () => {
+      rowCheckboxes.forEach(checkbox => {
+        checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        checkbox.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('11 selected')
+    expect(container.textContent).toContain('11 archived runs selected; choose 10 or fewer to compare')
+    expect(buttonByText(container, 'Run Comparison')?.disabled).toBe(true)
+    expect(apiMock.getTestArchiveReport).not.toHaveBeenCalled()
   })
 
   it('shows archived browser metrics in the two-run comparison cards', async () => {
@@ -700,6 +787,60 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('Browser Device Comparison (LCP / INP)')
     expect(container.textContent).toContain('Devices')
     expect(container.textContent).toContain('iPhone 14 Pro')
+  })
+
+  it('keeps the active comparison from reloading during results auto-refresh', async () => {
+    vi.useFakeTimers()
+
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const rowCheckboxes = Array.from(container.querySelectorAll('tbody input[type="checkbox"]')) as HTMLInputElement[]
+    expect(rowCheckboxes).toHaveLength(2)
+
+    await act(async () => {
+      rowCheckboxes[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      rowCheckboxes[0].dispatchEvent(new Event('change', { bubbles: true }))
+      rowCheckboxes[1].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      rowCheckboxes[1].dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      buttonByText(container, 'Run Comparison')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(apiMock.getTestArchiveReport).toHaveBeenCalledTimes(2)
+    expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('Comparison loaded')
+    expect(container.textContent).not.toContain('Loading comparison...')
+
+    apiMock.getTestArchiveReport.mockClear()
+    apiMock.getTestArchiveSummaries.mockClear()
+
+    await act(async () => {
+      vi.advanceTimersByTime(10_000)
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(apiMock.listTests).toHaveBeenCalledTimes(2)
+    expect(apiMock.getTestArchiveReport).not.toHaveBeenCalled()
+    expect(apiMock.getTestArchiveSummaries).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Comparison loaded')
+    expect(container.textContent).not.toContain('Loading comparison...')
   })
 
   it('keeps Open on the archive route and adds Run Dashboard for completed rows', async () => {
