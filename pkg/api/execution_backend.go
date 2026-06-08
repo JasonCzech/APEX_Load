@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -86,7 +87,7 @@ func newRunArtifacts(tr *TestRunner, test *ManagedTest, saveRecord func(record *
 	if err != nil {
 		return nil, err
 	}
-	return &runArtifacts{runner: tr, recorder: recorder, saveRecord: saveRecord, externalMetrics: newExternalMetricCollector(nil)}, nil
+	return &runArtifacts{runner: tr, test: test, recorder: recorder, saveRecord: saveRecord, externalMetrics: newExternalMetricCollector(nil)}, nil
 }
 
 func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProvenance {
@@ -138,7 +139,49 @@ func (a *runArtifacts) resultSink() engine.ResultSink {
 	if a == nil {
 		return nil
 	}
-	return a.recorder
+	return combinedResultSink{
+		a.recorder,
+		liveErrorEvidenceSink{runner: a.runner, test: a.test},
+	}
+}
+
+type combinedResultSink []engine.ResultSink
+
+func (sink combinedResultSink) RecordResult(result *protocol.Result) error {
+	for _, candidate := range sink {
+		if candidate == nil {
+			continue
+		}
+		if err := candidate.RecordResult(result); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type liveErrorEvidenceSink struct {
+	runner *TestRunner
+	test   *ManagedTest
+}
+
+func (sink liveErrorEvidenceSink) RecordResult(result *protocol.Result) error {
+	if sink.runner == nil || result == nil || result.Success || result.Snapshot == nil {
+		return nil
+	}
+	evidence := liveErrorEvidenceFromResult(result)
+	if evidence.Signature == "" {
+		return nil
+	}
+	sink.runner.mu.Lock()
+	test := sink.test
+	if test != nil {
+		test = sink.runner.tests[test.ID]
+	}
+	if test != nil {
+		sink.runner.appendLiveErrorEvidenceLocked(test, []LiveErrorEvidence{evidence})
+	}
+	sink.runner.mu.Unlock()
+	return nil
 }
 
 func (a *runArtifacts) recordLiveMetrics(test *ManagedTest, live *LiveMetrics) {

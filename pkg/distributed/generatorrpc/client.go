@@ -2,8 +2,10 @@ package generatorrpc
 
 import (
 	"context"
+	"encoding/json"
 
 	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -101,6 +103,8 @@ type ServerTelemetry struct {
 
 type TransactionMetric struct {
 	Name             string
+	StartTimeUnixMs  int64
+	Group            string
 	DurationMs       float64
 	DNSMs            float64
 	ConnectMs        float64
@@ -116,6 +120,7 @@ type TransactionMetric struct {
 	DependencyTarget string
 	SOAPOperation    string
 	ServerTelemetry  *ServerTelemetry
+	Snapshot         *protocol.ErrorSnapshot
 }
 
 type StopResult struct {
@@ -416,8 +421,17 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 				ConsumerLagMs:          tx.GetServerTelemetry().GetConsumerLagMs(),
 			}
 		}
+		var snapshot *protocol.ErrorSnapshot
+		if rawSnapshot := tx.GetSnapshotJson(); rawSnapshot != "" {
+			var parsed protocol.ErrorSnapshot
+			if err := json.Unmarshal([]byte(rawSnapshot), &parsed); err == nil {
+				snapshot = &parsed
+			}
+		}
 		transactions = append(transactions, TransactionMetric{
 			Name:             tx.GetName(),
+			StartTimeUnixMs:  tx.GetStartTimeUnixMs(),
+			Group:            tx.GetGroup(),
 			DurationMs:       tx.GetDurationMs(),
 			DNSMs:            tx.GetDnsMs(),
 			ConnectMs:        tx.GetConnectMs(),
@@ -433,6 +447,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 			DependencyTarget: tx.GetDependencyTarget(),
 			SOAPOperation:    tx.GetSoapOperation(),
 			ServerTelemetry:  serverTelemetry,
+			Snapshot:         snapshot,
 		})
 	}
 

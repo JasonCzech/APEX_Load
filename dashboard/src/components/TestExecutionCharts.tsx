@@ -381,6 +381,7 @@ export default function TestExecutionCharts({
   const chartMetricFiltersStorageKey = storageKeyFor('chartMetricFilters')
   const timeAxisModeStorageKey = storageKeyFor('chartTimeAxisMode')
   const chartDensityStorageKey = storageKeyFor('chartDensity')
+  const graphTableRowsStorageKey = storageKeyFor('graphTableRows')
   const responseTimeNetworkModeStorageKey = storageKeyFor('responseTimeNetworkMode')
   const routeLatencyModeStorageKey = storageKeyFor('routeLatencyMode')
   const [hasStoredChartState] = useState(() => Boolean(readStoredString(chartOrderStorageKey) || readStoredString(hiddenChartsStorageKey)))
@@ -395,6 +396,7 @@ export default function TestExecutionCharts({
   const [chartMetricFilters, setChartMetricFilters] = useState<Record<string, string[]>>(() => readStoredStringArrayRecord(chartMetricFiltersStorageKey))
   const [timeAxisMode, setTimeAxisMode] = useState<ChartTimeAxisMode>(() => readStoredTimeAxisMode(timeAxisModeStorageKey))
   const [chartDensity, setChartDensity] = useState<ChartDensityMode>(() => readStoredChartDensity(chartDensityStorageKey, densityFallback))
+  const [showGraphTableRows, setShowGraphTableRows] = useState(() => readStoredString(graphTableRowsStorageKey) === 'true')
   const [responseTimeNetworkMode, setResponseTimeNetworkMode] = useState<ResponseTimeNetworkMode>(() => readStoredResponseTimeNetworkMode(responseTimeNetworkModeStorageKey))
   const [routeLatencyMode, setRouteLatencyMode] = useState<RouteLatencyMode>(() => readStoredRouteLatencyMode(routeLatencyModeStorageKey))
   const [activeGraphGroupTab, setActiveGraphGroupTab] = useState<GraphGroupTabId>('test_results')
@@ -484,6 +486,11 @@ export default function TestExecutionCharts({
   useEffect(() => {
     writeStoredString(chartDensityStorageKey, chartDensity)
   }, [chartDensity, chartDensityStorageKey])
+
+  useEffect(() => {
+    if (!commandCenterSurface) return
+    writeStoredString(graphTableRowsStorageKey, showGraphTableRows ? 'true' : 'false')
+  }, [commandCenterSurface, graphTableRowsStorageKey, showGraphTableRows])
 
   useEffect(() => {
     writeStoredString(responseTimeNetworkModeStorageKey, responseTimeNetworkMode)
@@ -996,6 +1003,9 @@ export default function TestExecutionCharts({
       setHiddenChartIds(defaultHiddenChartIds(allChartConfigs, loadImpactIds))
     }
     setChartDensity(densityFallback)
+    if (commandCenterSurface) {
+      setShowGraphTableRows(false)
+    }
   }
 
   const applyMonitorPreset = (presetId: string) => {
@@ -1014,12 +1024,14 @@ export default function TestExecutionCharts({
     setResponseTimeNetworkMode(included ? 'end_to_end' : 'application')
   }
 
+  const renderSectionSubtext = (text: string) => commandCenterSurface ? null : <span>{text}</span>
+
   const renderChartDisplayControlSections = () => (
     <>
       <div className="charts-config-panel-section">
         <div>
           <h4>Display Window</h4>
-          <span>Graph data range</span>
+          {renderSectionSubtext('Graph data range')}
         </div>
         <div className="time-range-selector" role="group" aria-label="Graph display window">
           <button className={`btn-chip ${timeRange === '3m' ? 'active' : ''}`} type="button" onClick={() => onTimeRangeChange('3m')}>3m</button>
@@ -1029,42 +1041,56 @@ export default function TestExecutionCharts({
       </div>
       <div className="charts-config-panel-section">
         <div>
-          <h4>Zoom</h4>
-          <span>Graph density</span>
+          <h4>{commandCenterSurface ? 'Layout' : 'Zoom'}</h4>
+          {renderSectionSubtext('Graph density')}
         </div>
-        <div className="time-range-selector chart-segment-toggle" role="group" aria-label="Graph density">
-          <button
-            className={`btn-chip ${chartDensity === 'standard' ? 'active' : ''}`}
-            type="button"
-            onClick={() => setChartDensity('standard')}
-            aria-pressed={chartDensity === 'standard'}
-          >
-            Standard
-          </button>
-          {commandCenterSurface && (
+        <div className="chart-layout-options">
+          <div className="time-range-selector chart-segment-toggle" role="group" aria-label={commandCenterSurface ? 'Graph layout' : 'Graph density'}>
             <button
-              className={`btn-chip ${chartDensity === 'command_center' ? 'active' : ''}`}
+              className={`btn-chip ${chartDensity === 'standard' ? 'active' : ''}`}
               type="button"
-              onClick={() => setChartDensity('command_center')}
-              aria-pressed={chartDensity === 'command_center'}
+              onClick={() => setChartDensity('standard')}
+              aria-pressed={chartDensity === 'standard'}
             >
-              Compact
+              {commandCenterSurface ? '2x2' : 'Standard'}
             </button>
+            {commandCenterSurface ? (
+              <button
+                className={`btn-chip ${chartDensity === 'command_center' ? 'active' : ''}`}
+                type="button"
+                onClick={() => setChartDensity('command_center')}
+                aria-pressed={chartDensity === 'command_center'}
+              >
+                3x3
+              </button>
+            ) : (
+              <button
+                className={`btn-chip ${chartDensity === 'six_up' ? 'active' : ''}`}
+                type="button"
+                onClick={() => setChartDensity('six_up')}
+                aria-pressed={chartDensity === 'six_up'}
+              >
+                6 Graphs
+              </button>
+            )}
+          </div>
+          {commandCenterSurface && (
+            <label className="chart-table-row-toggle">
+              <input
+                type="checkbox"
+                checked={showGraphTableRows}
+                aria-label="Show table rows beneath graphs"
+                onChange={event => setShowGraphTableRows(event.currentTarget.checked)}
+              />
+              <span>Show table rows</span>
+            </label>
           )}
-          <button
-            className={`btn-chip ${chartDensity === 'six_up' ? 'active' : ''}`}
-            type="button"
-            onClick={() => setChartDensity('six_up')}
-            aria-pressed={chartDensity === 'six_up'}
-          >
-            6 Graphs
-          </button>
         </div>
       </div>
       <div className="charts-config-panel-section">
         <div>
           <h4>Role View</h4>
-          <span>Graph preset</span>
+          {renderSectionSubtext('Graph preset')}
         </div>
         <select
           className="chart-role-select"
@@ -1081,7 +1107,7 @@ export default function TestExecutionCharts({
       <div className="charts-config-panel-section">
         <div>
           <h4>Display Time</h4>
-          <span>Graph x-axis labels</span>
+          {renderSectionSubtext('Graph x-axis labels')}
         </div>
         <div className="time-range-selector chart-time-axis-toggle" role="group" aria-label="Graph time axis">
           <button
@@ -1411,11 +1437,13 @@ export default function TestExecutionCharts({
     )
   }
 
-  const densityLabel = chartDensity === 'six_up'
-    ? '6 Graphs'
-    : chartDensity === 'command_center'
-      ? 'Compact'
-      : 'Standard'
+  const densityLabel = commandCenterSurface
+    ? chartDensity === 'command_center' ? '3x3' : '2x2'
+    : chartDensity === 'six_up'
+      ? '6 Graphs'
+      : chartDensity === 'command_center'
+        ? 'Compact'
+        : 'Standard'
   const gridClassName = [
     'charts-grid',
     chartDensity === 'six_up' ? 'six-up' : '',
@@ -1524,7 +1552,7 @@ export default function TestExecutionCharts({
               : baseChartMargin
             const metricAxisIdForChart = metricYAxisId(chart, visibleMetricKeys)
             const showMetric = (key: string) => visibleMetricKeys.includes(key)
-            const showDetails = expandedChart === chart.id || chartDensity === 'standard'
+            const showDetails = expandedChart === chart.id || (commandCenterSurface ? showGraphTableRows : chartDensity === 'standard')
             return (
               <div
                 key={chart.id}

@@ -956,6 +956,8 @@ type TransactionMetric struct {
 	DependencyTarget string                 `protobuf:"bytes,15,opt,name=dependency_target,json=dependencyTarget,proto3" json:"dependency_target,omitempty"`
 	ServerTelemetry  *ServerTelemetry       `protobuf:"bytes,16,opt,name=server_telemetry,json=serverTelemetry,proto3" json:"server_telemetry,omitempty"`
 	SoapOperation    string                 `protobuf:"bytes,17,opt,name=soap_operation,json=soapOperation,proto3" json:"soap_operation,omitempty"`
+	SnapshotJson     string                 `protobuf:"bytes,18,opt,name=snapshot_json,json=snapshotJson,proto3" json:"snapshot_json,omitempty"`
+	Group            string                 `protobuf:"bytes,19,opt,name=group,proto3" json:"group,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -1105,6 +1107,20 @@ func (x *TransactionMetric) GetServerTelemetry() *ServerTelemetry {
 func (x *TransactionMetric) GetSoapOperation() string {
 	if x != nil {
 		return x.SoapOperation
+	}
+	return ""
+}
+
+func (x *TransactionMetric) GetSnapshotJson() string {
+	if x != nil {
+		return x.SnapshotJson
+	}
+	return ""
+}
+
+func (x *TransactionMetric) GetGroup() string {
+	if x != nil {
+		return x.Group
 	}
 	return ""
 }
@@ -2073,7 +2089,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	" \x01(\x05R\fmessagesSent\x12+\n" +
 	"\x11messages_received\x18\v \x01(\x05R\x10messagesReceived\x121\n" +
 	"\x15messages_sent_per_sec\x18\f \x01(\x01R\x12messagesSentPerSec\x129\n" +
-	"\x19messages_received_per_sec\x18\r \x01(\x01R\x16messagesReceivedPerSec\"\xee\x04\n" +
+	"\x19messages_received_per_sec\x18\r \x01(\x01R\x16messagesReceivedPerSec\"\xa9\x05\n" +
 	"\x11TransactionMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12+\n" +
 	"\x12start_time_unix_ms\x18\x02 \x01(\x03R\x0fstartTimeUnixMs\x12\x1f\n" +
@@ -2096,7 +2112,9 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0fdependency_type\x18\x0e \x01(\tR\x0edependencyType\x12+\n" +
 	"\x11dependency_target\x18\x0f \x01(\tR\x10dependencyTarget\x12G\n" +
 	"\x10server_telemetry\x18\x10 \x01(\v2\x1c.apexload.v1.ServerTelemetryR\x0fserverTelemetry\x12%\n" +
-	"\x0esoap_operation\x18\x11 \x01(\tR\rsoapOperation\"\xc4\r\n" +
+	"\x0esoap_operation\x18\x11 \x01(\tR\rsoapOperation\x12#\n" +
+	"\rsnapshot_json\x18\x12 \x01(\tR\fsnapshotJson\x12\x14\n" +
+	"\x05group\x18\x13 \x01(\tR\x05group\"\xc4\r\n" +
 	"\x0eGeneratorStats\x12#\n" +
 	"\ractive_vusers\x18\x01 \x01(\x05R\factiveVusers\x12\x1f\n" +
 	"\vcpu_percent\x18\x02 \x01(\x01R\n" +

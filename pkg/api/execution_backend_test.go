@@ -16,6 +16,7 @@ import (
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	_ "github.com/jasonczech/apexload/pkg/protocol/http"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -889,6 +890,55 @@ func TestBuildLiveMetricsFromDistributedBatchUsesBatchTelemetry(t *testing.T) {
 	}
 	if live.Telemetry.SampleAgeMs != 600 {
 		t.Fatalf("sample_age_ms = %v, want 600", live.Telemetry.SampleAgeMs)
+	}
+}
+
+func TestBuildLiveMetricsFromDistributedBatchMapsErrorEvidenceAndGroupMetrics(t *testing.T) {
+	live := buildLiveMetricsFromDistributedBatch(&ManagedTest{
+		Groups: []TestGroup{{Name: "buyers", VUsers: 7}},
+	}, generatorrpc.MetricsBatch{
+		TimestampUnixMs: 2_000,
+		Stats:           generatorrpc.GeneratorStats{ActiveVUsers: 7},
+		Groups:          []generatorrpc.GroupMetric{{Name: "buyers", ActiveVUsers: 7}},
+		Transactions: []generatorrpc.TransactionMetric{
+			{Name: "POST /orders", Group: "buyers", DurationMs: 100, StatusCode: 201, Success: true},
+			{
+				Name:            "POST /orders",
+				Group:           "buyers",
+				StartTimeUnixMs: 2_000,
+				DurationMs:      220,
+				StatusCode:      500,
+				Success:         false,
+				ErrorMessage:    "HTTP 500 checkout order 123",
+				Snapshot:        &protocol.ErrorSnapshot{RequestMethod: "POST", RequestURL: "https://checkout.example.test/orders", ResponseStatus: 500, ResponseBody: `{"error":"failed"}`},
+			},
+			{Name: "POST /orders", Group: "buyers", DurationMs: 280, StatusCode: 500, Success: false, ErrorMessage: "HTTP 500 checkout order 456"},
+		},
+	})
+
+	if len(live.ErrorEvidence) != 1 {
+		t.Fatalf("live error evidence = %#v, want one snapshot-backed evidence item", live.ErrorEvidence)
+	}
+	if live.ErrorEvidence[0].Action != "POST /orders" || live.ErrorEvidence[0].Group != "buyers" {
+		t.Fatalf("live evidence routing = %#v", live.ErrorEvidence[0])
+	}
+	if live.ErrorEvidence[0].Snapshot == nil || live.ErrorEvidence[0].Snapshot.ResponseBody != `{"error":"failed"}` {
+		t.Fatalf("live evidence snapshot = %#v", live.ErrorEvidence[0].Snapshot)
+	}
+
+	group := live.GroupMetrics["buyers"]
+	if group == nil {
+		t.Fatalf("group metrics = %#v, want buyers", live.GroupMetrics)
+	}
+	if group.VUsers != 7 || group.Transactions != 1 || group.Errors != 2 {
+		t.Fatalf("group metrics = %#v, want vusers 7, tx 1, errors 2", group)
+	}
+	if group.AvgResponseMs != 200 || group.P95Ms <= 0 {
+		t.Fatalf("group latency metrics = %#v, want avg 200 and p95", group)
+	}
+	tx := live.Transactions["POST /orders"]
+	if tx == nil || tx.LastErrorMessage != "HTTP 500 checkout order 456" || tx.LastStatusCode != 500 {
+		t.Fatalf("transaction error metadata = %#v", tx)
 	}
 }
 

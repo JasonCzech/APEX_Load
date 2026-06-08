@@ -1672,6 +1672,22 @@ export interface LiveErrorPattern {
   status_code?: number
   error_pct?: number
   snapshot_url?: string
+  evidence_url?: string
+  evidence_count?: number
+  latest_evidence_id?: string
+}
+
+export interface LiveErrorEvidence {
+  id: string
+  signature: string
+  action: string
+  group?: string
+  timestamp: string
+  duration_ms: number
+  status: string
+  status_code?: number
+  error_message?: string
+  snapshot?: BrowserReplaySnapshot
 }
 
 export interface LiveDependencyMap {
@@ -1713,6 +1729,7 @@ export interface GroupLiveMetrics {
   avg_response_ms: number
   p50_ms: number
   p90_ms: number
+  p95_ms?: number
   p99_ms: number
 }
 

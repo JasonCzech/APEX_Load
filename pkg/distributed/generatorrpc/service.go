@@ -67,6 +67,8 @@ func (b *transactionBuffer) RecordTransaction(result *protocol.Result) error {
 	defer b.mu.Unlock()
 	b.transactions = append(b.transactions, TransactionMetric{
 		Name:             result.ActionName,
+		StartTimeUnixMs:  resultStartTimeUnixMs(result.StartTime),
+		Group:            result.Group,
 		DurationMs:       float64(result.Duration) / float64(time.Millisecond),
 		DNSMs:            float64(result.DNSTime) / float64(time.Millisecond),
 		ConnectMs:        float64(result.ConnectTime) / float64(time.Millisecond),
@@ -82,6 +84,7 @@ func (b *transactionBuffer) RecordTransaction(result *protocol.Result) error {
 		DependencyTarget: result.DependencyTarget,
 		SOAPOperation:    strings.TrimSpace(result.Extractions["soap_operation"]),
 		ServerTelemetry:  cloneServerTelemetry(result.ServerTelemetry),
+		Snapshot:         cloneErrorSnapshot(result.Snapshot),
 	})
 	if len(b.transactions) > 1024 {
 		b.transactions = append([]TransactionMetric(nil), b.transactions[len(b.transactions)-1024:]...)
@@ -756,7 +759,13 @@ func (s *Service) PublishMetrics(testID string, groupName string, stats Generato
 	assignment.activeGroups[groupName] = stats.ActiveVUsers
 	assignment.groupStats[groupName] = stats
 	assignment.groupTelemetry[groupName] = telemetry
-	assignment.groupTransactions[groupName] = append([]TransactionMetric(nil), transactions...)
+	groupTransactions := append([]TransactionMetric(nil), transactions...)
+	for index := range groupTransactions {
+		if strings.TrimSpace(groupTransactions[index].Group) == "" {
+			groupTransactions[index].Group = groupName
+		}
+	}
+	assignment.groupTransactions[groupName] = groupTransactions
 	s.assignments[testID] = assignment
 	batch := s.metricsBatchLocked(testID)
 	writer := s.archiveWriters[testID]
@@ -929,6 +938,8 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 		}
 		protoTransactions = append(protoTransactions, &pb.TransactionMetric{
 			Name:             tx.Name,
+			StartTimeUnixMs:  tx.StartTimeUnixMs,
+			Group:            tx.Group,
 			DurationMs:       tx.DurationMs,
 			DnsMs:            tx.DNSMs,
 			ConnectMs:        tx.ConnectMs,
@@ -944,6 +955,7 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 			DependencyTarget: tx.DependencyTarget,
 			SoapOperation:    tx.SOAPOperation,
 			ServerTelemetry:  protoServerTelemetry,
+			SnapshotJson:     snapshotJSON(tx.Snapshot),
 		})
 	}
 	var protoTelemetry *pb.MetricsBatchTelemetry
@@ -966,6 +978,52 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 		LifecycleError:  lifecycleError,
 		Telemetry:       protoTelemetry,
 	}
+}
+
+func snapshotJSON(snapshot *protocol.ErrorSnapshot) string {
+	if snapshot == nil {
+		return ""
+	}
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func resultStartTimeUnixMs(startTime time.Time) int64 {
+	if startTime.IsZero() {
+		return 0
+	}
+	return startTime.UnixMilli()
+}
+
+func cloneErrorSnapshot(snapshot *protocol.ErrorSnapshot) *protocol.ErrorSnapshot {
+	if snapshot == nil {
+		return nil
+	}
+	cloned := *snapshot
+	cloned.RequestHeaders = cloneStringMap(snapshot.RequestHeaders)
+	cloned.ResponseHeaders = cloneStringMap(snapshot.ResponseHeaders)
+	cloned.ConsoleEntries = append([]protocol.ConsoleEntry(nil), snapshot.ConsoleEntries...)
+	cloned.NetworkEntries = append([]protocol.NetworkEntry(nil), snapshot.NetworkEntries...)
+	if snapshot.DOMSummary != nil {
+		domSummary := *snapshot.DOMSummary
+		domSummary.VisibleText = append([]string(nil), snapshot.DOMSummary.VisibleText...)
+		cloned.DOMSummary = &domSummary
+	}
+	return &cloned
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func mergeMetricsTelemetry(values map[string]MetricsTelemetry) *MetricsTelemetry {

@@ -1708,6 +1708,153 @@ func TestUpdateLiveErrorPatternsTracksFirstLatestAndSnapshotQuery(t *testing.T) 
 	}
 }
 
+func TestPublishLiveMetricsEnrichesErrorPatternsWithLiveEvidence(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	testRun := &ManagedTest{
+		ID:        "test/evidence run",
+		Name:      "Evidence run",
+		Status:    "RUNNING",
+		CreatedAt: time.Now(),
+	}
+	runner.tests[testRun.ID] = testRun
+
+	observedAt := time.Date(2026, time.June, 8, 14, 0, 0, 0, time.UTC)
+	signature := normalizeArchiveErrorSignature("HTTP 500 checkout order 123")
+	live := &LiveMetrics{
+		Timestamp: observedAt,
+		Transactions: map[string]*TxMetrics{
+			"POST /orders": {
+				Name:             "POST /orders",
+				Count:            10,
+				Errors:           2,
+				LastErrorMessage: "HTTP 500 checkout order 123",
+				LastStatusCode:   500,
+				LastErrorAt:      observedAt,
+			},
+		},
+		GroupMetrics: map[string]*GroupLiveMetrics{
+			"buyers": {Name: "buyers", Transactions: 10, Errors: 2},
+		},
+		ErrorEvidence: []LiveErrorEvidence{{
+			Signature:    signature,
+			Action:       "POST /orders",
+			Group:        "buyers",
+			Timestamp:    observedAt,
+			DurationMs:   321,
+			Status:       "failed",
+			StatusCode:   500,
+			ErrorMessage: "HTTP 500 checkout order 123",
+			Snapshot: &protocol.ErrorSnapshot{
+				RequestMethod:  "POST",
+				RequestURL:     "https://checkout.example.test/orders",
+				RequestBody:    `{"token":"[REDACTED]"}`,
+				ResponseStatus: 500,
+				ResponseBody:   `{"error":"failed"}`,
+			},
+		}},
+	}
+
+	runner.publishLiveMetrics(testRun, live, nil)
+
+	if testRun.LiveMetrics == nil || len(testRun.LiveMetrics.ErrorPatterns) != 1 {
+		t.Fatalf("live error patterns = %#v, want one pattern", testRun.LiveMetrics)
+	}
+	pattern := testRun.LiveMetrics.ErrorPatterns[0]
+	if pattern.Signature != signature {
+		t.Fatalf("pattern signature = %q, want %q", pattern.Signature, signature)
+	}
+	if pattern.EvidenceCount != 1 || pattern.LatestEvidenceID == "" {
+		t.Fatalf("pattern evidence metadata = %#v, want one evidence item", pattern)
+	}
+	if !strings.Contains(pattern.EvidenceURL, "/api/v1/tests/test%2Fevidence%20run/errors/evidence?") || !strings.Contains(pattern.EvidenceURL, "signature=") {
+		t.Fatalf("pattern evidence url = %q", pattern.EvidenceURL)
+	}
+
+	evidence, ok := runner.ListLiveErrorEvidence(testRun.ID, signature, "POST /orders", 10)
+	if !ok {
+		t.Fatal("expected test to be found")
+	}
+	if len(evidence) != 1 {
+		t.Fatalf("evidence = %#v, want one item", evidence)
+	}
+	if evidence[0].Snapshot == nil || evidence[0].Snapshot.RequestBody != `{"token":"[REDACTED]"}` {
+		t.Fatalf("evidence snapshot = %#v, want redacted request body", evidence[0].Snapshot)
+	}
+
+	evidence[0].Snapshot.RequestBody = "mutated"
+	reloaded, ok := runner.ListLiveErrorEvidence(testRun.ID, signature, "POST /orders", 10)
+	if !ok || len(reloaded) != 1 {
+		t.Fatalf("reloaded evidence = %#v, ok=%v", reloaded, ok)
+	}
+	if reloaded[0].Snapshot.RequestBody != `{"token":"[REDACTED]"}` {
+		t.Fatalf("stored evidence snapshot mutated to %q", reloaded[0].Snapshot.RequestBody)
+	}
+
+	missingAction, ok := runner.ListLiveErrorEvidence(testRun.ID, signature, "GET /cart", 10)
+	if !ok {
+		t.Fatal("expected action-filtered test lookup to be found")
+	}
+	if len(missingAction) != 0 {
+		t.Fatalf("action-filtered evidence = %#v, want empty", missingAction)
+	}
+}
+
+func TestHandleGetLiveErrorEvidenceFiltersBySignatureAndAction(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	testRun := &ManagedTest{ID: "run-evidence-api", Name: "Evidence API", Status: "RUNNING", CreatedAt: time.Now()}
+	runner.tests[testRun.ID] = testRun
+	signature := "http 500 checkout"
+	runner.appendLiveErrorEvidence(testRun, []LiveErrorEvidence{
+		{
+			Signature: signature,
+			Action:    "POST /orders",
+			Group:     "buyers",
+			Snapshot:  &protocol.ErrorSnapshot{RequestMethod: "POST", RequestURL: "https://checkout.example.test/orders", ResponseStatus: 500},
+		},
+		{
+			Signature: signature,
+			Action:    "GET /cart",
+			Group:     "browse",
+			Snapshot:  &protocol.ErrorSnapshot{RequestMethod: "GET", RequestURL: "https://browse.example.test/cart", ResponseStatus: 500},
+		},
+	})
+
+	server := &Server{runner: runner}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/run-evidence-api/errors/evidence?signature=http+500+checkout&action=GET+%2Fcart&limit=50", nil)
+	req.SetPathValue("id", testRun.ID)
+	rec := httptest.NewRecorder()
+	server.handleGetLiveErrorEvidence(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s, want 200", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		TestID    string              `json:"test_id"`
+		Signature string              `json:"signature"`
+		Evidence  []LiveErrorEvidence `json:"evidence"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.TestID != testRun.ID || response.Signature != signature {
+		t.Fatalf("response identity = %#v", response)
+	}
+	if len(response.Evidence) != 1 || response.Evidence[0].Action != "GET /cart" {
+		t.Fatalf("filtered evidence = %#v, want GET /cart only", response.Evidence)
+	}
+	if response.Evidence[0].Snapshot == nil || response.Evidence[0].Snapshot.RequestURL != "https://browse.example.test/cart" {
+		t.Fatalf("filtered evidence snapshot = %#v", response.Evidence[0].Snapshot)
+	}
+
+	missingSignatureReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests/run-evidence-api/errors/evidence", nil)
+	missingSignatureReq.SetPathValue("id", testRun.ID)
+	missingSignatureRec := httptest.NewRecorder()
+	server.handleGetLiveErrorEvidence(missingSignatureRec, missingSignatureReq)
+	if missingSignatureRec.Code != http.StatusBadRequest {
+		t.Fatalf("missing signature status = %d, want 400", missingSignatureRec.Code)
+	}
+}
+
 func TestBuildLiveCapacityStatusAggregatesDemandByProtocolAndRegion(t *testing.T) {
 	current := &ManagedTest{
 		ID:          "active",

@@ -2093,6 +2093,8 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	durationsByName := make(map[string][]float64)
 	durationsByDependencyTarget := make(map[string][]float64)
 	durationsBySOAPOperation := make(map[string][]float64)
+	durationsByGroup := make(map[string][]float64)
+	groupAggregates := make(map[string]*GroupLiveMetrics)
 	transactionAttempts := int64(0)
 	for _, tx := range batch.Transactions {
 		transactionAttempts++
@@ -2103,6 +2105,31 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		}
 		live.AvgResponseMs += tx.DurationMs
 		durationsByName[tx.Name] = append(durationsByName[tx.Name], tx.DurationMs)
+		if !tx.Success && tx.Snapshot != nil {
+			evidence := liveErrorEvidenceFromTransaction(tx)
+			if evidence.Signature != "" {
+				live.ErrorEvidence = append(live.ErrorEvidence, evidence)
+			}
+		}
+		groupName := strings.TrimSpace(tx.Group)
+		if groupName == "" && len(test.Groups) == 1 {
+			groupName = test.Groups[0].Name
+		}
+		if groupName != "" {
+			groupMetrics := groupAggregates[groupName]
+			if groupMetrics == nil {
+				groupMetrics = &GroupLiveMetrics{Name: groupName}
+				groupAggregates[groupName] = groupMetrics
+			}
+			if !tx.Success {
+				groupMetrics.Errors++
+			} else {
+				groupMetrics.Transactions++
+				groupMetrics.TPS++
+			}
+			groupMetrics.AvgResponseMs += tx.DurationMs
+			durationsByGroup[groupName] = append(durationsByGroup[groupName], tx.DurationMs)
+		}
 		metrics := live.Transactions[tx.Name]
 		if metrics == nil {
 			metrics = &TxMetrics{Name: tx.Name}
@@ -2183,6 +2210,21 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		metrics.P95Ms = percentileValue(durations, 0.95)
 		metrics.P99Ms = percentileValue(durations, 0.99)
 	}
+	for groupName, durations := range durationsByGroup {
+		sort.Float64s(durations)
+		metrics := groupAggregates[groupName]
+		if metrics == nil {
+			continue
+		}
+		attempts := metrics.Transactions + metrics.Errors
+		if attempts > 0 {
+			metrics.AvgResponseMs /= float64(attempts)
+		}
+		metrics.P50Ms = percentileValue(durations, 0.50)
+		metrics.P90Ms = percentileValue(durations, 0.90)
+		metrics.P95Ms = percentileValue(durations, 0.95)
+		metrics.P99Ms = percentileValue(durations, 0.99)
+	}
 	sort.Strings(names)
 	if len(allDurations) > 0 {
 		sort.Float64s(allDurations)
@@ -2193,17 +2235,26 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	}
 	if len(batch.Groups) > 0 {
 		for _, group := range batch.Groups {
-			live.GroupMetrics[group.Name] = &GroupLiveMetrics{
-				Name:          group.Name,
-				VUsers:        int(group.ActiveVUsers),
-				Transactions:  0,
-				Errors:        0,
-				TPS:           0,
-				AvgResponseMs: 0,
-				P50Ms:         0,
-				P90Ms:         0,
-				P99Ms:         0,
+			groupMetrics := groupAggregates[group.Name]
+			if groupMetrics == nil {
+				groupMetrics = &GroupLiveMetrics{Name: group.Name}
 			}
+			groupMetrics.VUsers = int(group.ActiveVUsers)
+			live.GroupMetrics[group.Name] = groupMetrics
+		}
+		for groupName, groupMetrics := range groupAggregates {
+			if _, ok := live.GroupMetrics[groupName]; !ok {
+				live.GroupMetrics[groupName] = groupMetrics
+			}
+		}
+	} else if len(groupAggregates) > 0 {
+		configuredVUsers := make(map[string]int, len(test.Groups))
+		for _, group := range test.Groups {
+			configuredVUsers[group.Name] = group.VUsers
+		}
+		for groupName, groupMetrics := range groupAggregates {
+			groupMetrics.VUsers = configuredVUsers[groupName]
+			live.GroupMetrics[groupName] = groupMetrics
 		}
 	} else if len(test.Groups) == 1 {
 		groupName := test.Groups[0].Name
@@ -2216,6 +2267,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 			AvgResponseMs: live.AvgResponseMs,
 			P50Ms:         live.P50Ms,
 			P90Ms:         live.P90Ms,
+			P95Ms:         live.P95Ms,
 			P99Ms:         live.P99Ms,
 		}
 	}
@@ -2230,6 +2282,13 @@ func mergeDistributedTransactionMetrics(metrics *TxMetrics, tx generatorrpc.Tran
 	metrics.Count++
 	if !tx.Success {
 		metrics.Errors++
+		metrics.LastErrorMessage = tx.ErrorMessage
+		metrics.LastStatusCode = int(tx.StatusCode)
+		if tx.StartTimeUnixMs > 0 {
+			metrics.LastErrorAt = time.UnixMilli(tx.StartTimeUnixMs)
+		} else {
+			metrics.LastErrorAt = time.Now()
+		}
 	}
 	mergeTransactionMetricMetadata(metrics, tx.DependencyType, tx.DependencyTarget, tx.CorrelationID)
 	mergeDistributedServerTelemetry(metrics, tx.ServerTelemetry)

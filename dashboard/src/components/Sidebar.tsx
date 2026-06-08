@@ -37,7 +37,7 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element; requiresAccess
     id: 'dashboard',
     label: 'Dashboard',
     icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg data-nav-icon="dashboard-grid" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
         <rect x="3" y="3" width="7" height="7" rx="1" />
         <rect x="14" y="3" width="7" height="7" rx="1" />
         <rect x="3" y="14" width="7" height="7" rx="1" />
@@ -49,12 +49,12 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element; requiresAccess
     id: 'command-center',
     label: 'Command Center',
     icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 11h18" />
-        <path d="M5 5h4v6H5z" />
-        <path d="M14 5h5v6h-5z" />
-        <path d="M5 15h5v4H5z" />
-        <path d="M14 15h5v4h-5z" />
+      <svg data-nav-icon="command-center-signal" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+        <path d="M4.5 6.5a10 10 0 0 1 15 0" />
+        <path d="M7.5 9.5a6 6 0 0 1 9 0" />
+        <circle cx="12" cy="12" r="2" />
+        <path d="M12 14v6" />
+        <path d="M8 20h8" />
       </svg>
     ),
   },

@@ -50,6 +50,11 @@ describe('CommandCenterPrototype', () => {
     expect(opsCentralGroupPanel?.classList.contains('paired')).toBe(true)
     expect(opsLoadModelRow).not.toBeNull()
     expect(opsLoadModelPanel).not.toBeNull()
+    expect(opsPrimaryColumn?.querySelector('[aria-label="Command center run tables"]')).not.toBeNull()
+    expect(opsPrimaryColumn?.querySelector('.command-runtime-graphs')).toBeNull()
+    expect(opsPrimaryColumn?.textContent).toContain('Scenario Run')
+    expect(opsPrimaryColumn?.textContent).toContain('Error Details')
+    expect(opsPrimaryColumn?.textContent).toContain('Infrastructure')
     expect(opsLoadModelRow?.querySelector('.command-group-panel')).toBe(opsCentralGroupPanel)
     expect(opsLoadModelPanel?.textContent).toContain('Load Model')
     expect(opsLoadModelPanel?.textContent).toContain('elapsed')
@@ -79,9 +84,15 @@ describe('CommandCenterPrototype', () => {
     expect(graphOptionsPanel).not.toBeNull()
     expect(graphOptionsPanel?.textContent).toContain('Graph Options')
     expect(graphOptionsPanel?.textContent).toContain('Display Window')
-    expect(graphOptionsPanel?.textContent).toContain('Zoom')
+    expect(graphOptionsPanel?.textContent).toContain('Layout')
+    expect(graphOptionsPanel?.textContent).toContain('2x2')
+    expect(graphOptionsPanel?.textContent).toContain('3x3')
     expect(graphOptionsPanel?.textContent).toContain('Role View')
     expect(graphOptionsPanel?.textContent).toContain('Display Time')
+    expect(graphOptionsPanel?.textContent).not.toContain('Graph data range')
+    expect(graphOptionsPanel?.textContent).not.toContain('Graph density')
+    expect(graphOptionsPanel?.textContent).not.toContain('Graph preset')
+    expect(graphOptionsPanel?.textContent).not.toContain('Graph x-axis labels')
     expect(Array.from(graphSidebar!.children).indexOf(graphOptionsSlot!)).toBeGreaterThan(Array.from(graphSidebar!.children).indexOf(graphErrorPanel!))
 
     const runtimeGraphs = container.querySelector('.command-runtime-graphs')
@@ -125,9 +136,34 @@ describe('CommandCenterPrototype', () => {
 
     expect(buttonWithin(graphOptionsPanel!, 'Relative Time').getAttribute('aria-pressed')).toBe('true')
 
-    await click(buttonWithin(graphOptionsPanel!, '6 Graphs'))
+    expect(buttonWithin(graphOptionsPanel!, '3x3').getAttribute('aria-pressed')).toBe('true')
+    expect(runtimeGraphs?.querySelector('.chart-metrics-table')).toBeNull()
 
-    expect(container.querySelector('.charts-grid.six-up.command-center-graphs')).not.toBeNull()
+    const tableRowsToggle = inputByLabel('Show table rows beneath graphs')
+    expect(tableRowsToggle.checked).toBe(false)
+
+    await click(tableRowsToggle)
+
+    expect(tableRowsToggle.checked).toBe(true)
+    expect(runtimeGraphs?.querySelector('.chart-metrics-table')).not.toBeNull()
+
+    await click(tableRowsToggle)
+    await click(buttonWithin(graphOptionsPanel!, '2x2'))
+
+    expect(buttonWithin(graphOptionsPanel!, '2x2').getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelector('.charts-grid.command-center-graphs.command-center-compact')).toBeNull()
+    expect(runtimeGraphs?.querySelector('.chart-metrics-table')).toBeNull()
+
+    const graphExpandButton = runtimeGraphs?.querySelector<HTMLButtonElement>('.btn-expand')
+    expect(graphExpandButton).not.toBeNull()
+
+    await click(graphExpandButton!)
+
+    expect(runtimeGraphs?.querySelector('.chart-card.expanded .chart-metrics-table')).not.toBeNull()
+
+    await click(buttonWithin(graphOptionsPanel!, '3x3'))
+
+    expect(container.querySelector('.charts-grid.command-center-graphs.command-center-compact')).not.toBeNull()
   })
 
   it('updates local run state and staged VUser targets', async () => {
@@ -146,8 +182,39 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('2,270 VU')
   })
 
-  it('configures runtime graphs, expands cards, persists per view, and selects error drill-down rows', async () => {
+  it('renders OPS tables while Graph Wall keeps configurable runtime graphs', async () => {
     await renderPrototype()
+
+    const tableWorkspace = container.querySelector('[aria-label="Command center run tables"]')
+    expect(tableWorkspace).not.toBeNull()
+    expect(container.querySelector('.command-layout-ops .command-runtime-graphs')).toBeNull()
+    expect(tableWorkspace?.textContent).toContain('Scenario Run')
+    expect(tableWorkspace?.textContent).toContain('POST /orders')
+    expect(tableWorkspace?.textContent).toContain('Target TPS')
+
+    await click(tabNamed('Error Details'))
+
+    expect(tableWorkspace?.textContent).toContain('HTTP 401 token refresh race')
+    expect(tableWorkspace?.textContent).toContain('Request body')
+    expect(tableWorkspace?.textContent).toContain('invalid_token')
+
+    await click(buttonNamed('Cart lookup p99 spike'))
+
+    expect(container.textContent).toContain('Drill-down selected: Cart lookup p99 spike')
+    expect(tableWorkspace?.textContent).toContain('gateway timeout waiting for cart-cache-primary')
+
+    await click(tabNamed('Infrastructure'))
+
+    expect(tableWorkspace?.textContent).toContain('gen-east-1')
+    expect(tableWorkspace?.textContent).toContain('checkout.api.internal:443')
+
+    const filterInput = inputByLabel('Filter command center table rows')
+    await changeTextInput(filterInput, 'central')
+
+    expect(tableWorkspace?.textContent).toContain('gen-central-2')
+    expect(tableWorkspace?.textContent).not.toContain('gen-east-1')
+
+    await click(buttonNamed('Graph Wall'))
 
     expect(container.textContent).toContain('Runtime Graphs')
     expect(container.textContent).toContain('Virtual Users')
@@ -158,12 +225,11 @@ describe('CommandCenterPrototype', () => {
     await click(buttonNamed('Configure Graphs'))
 
     const cpuToggle = inputByLabel('Show CPU Usage (%)')
-    expect(cpuToggle.checked).toBe(false)
+    expect(cpuToggle.checked).toBe(true)
 
     await click(cpuToggle)
 
-    expect(container.textContent).toContain('CPU Usage (%)')
-    expect(window.localStorage.getItem('apexload.commandCenter.ops.hiddenCharts') || '').not.toContain('"cpu"')
+    expect(window.localStorage.getItem('apexload.commandCenter.grafana.hiddenCharts')).toContain('cpu')
 
     const expandButton = container.querySelector<HTMLButtonElement>('.btn-expand')
     expect(expandButton).not.toBeNull()
@@ -173,14 +239,6 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('Runtime graph expanded.')
     expect(container.querySelector('.chart-card.expanded')).not.toBeNull()
 
-    await click(buttonNamed('Cart lookup p99 spike'))
-
-    expect(container.textContent).toContain('Drill-down selected: Cart lookup p99 spike')
-    expect(container.textContent).toContain('upstream response exceeded 2s timeout budget')
-
-    await click(buttonNamed('Graph Wall'))
-    await click(buttonNamed('Configure Graphs'))
-
     const vuserToggle = inputByLabel('Show Virtual Users')
     expect(vuserToggle.checked).toBe(true)
     expect(container.querySelector('.charts-config-drawer')?.textContent).toContain('Graph Cards')
@@ -189,7 +247,6 @@ describe('CommandCenterPrototype', () => {
     await click(vuserToggle)
 
     expect(window.localStorage.getItem('apexload.commandCenter.grafana.hiddenCharts')).toContain('vusers')
-    expect(window.localStorage.getItem('apexload.commandCenter.ops.hiddenCharts') || '').not.toContain('vusers')
   })
 
   it('renders live command-center data when a test is selected', async () => {
@@ -320,5 +377,9 @@ describe('CommandCenterPrototype', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }))
       input.dispatchEvent(new Event('change', { bubbles: true }))
     })
+  }
+
+  async function changeTextInput(input: HTMLInputElement, value: string) {
+    await changeNumberInput(input, value)
   }
 })

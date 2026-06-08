@@ -12,6 +12,7 @@ import {
   LoadModelSupportMatrixResponse,
   LoadModelTemplatesResponse,
   LoadModelValidationReport,
+  LiveErrorEvidence,
   LiveMetrics,
   ResourceSample,
   RunArchiveAnalysisResponse,
@@ -166,6 +167,18 @@ type TestMetricsResponse = {
   message?: string
   metrics?: LiveMetrics
   history?: unknown[]
+}
+
+type LiveErrorEvidenceResponse = {
+  test_id: string
+  signature: string
+  evidence: LiveErrorEvidence[]
+}
+
+type LiveErrorEvidenceParams = {
+  signature: string
+  action?: string
+  limit?: number
 }
 
 type ScaleVUsersResponse = {
@@ -359,6 +372,16 @@ export function useTestApi() {
 
   const getMetrics = useCallback((id: string) => request<TestMetricsResponse>(`/tests/${id}/metrics`), [])
 
+  const getTestErrorEvidence = useCallback(
+    (id: string, params: LiveErrorEvidenceParams) =>
+      request<LiveErrorEvidenceResponse>(`/tests/${id}/errors/evidence${buildQuery({
+        signature: params.signature,
+        action: params.action,
+        limit: params.limit,
+      })}`),
+    [],
+  )
+
   const getTestManifest = useCallback((id: string) => request<TestRunManifest>(`/tests/${id}/manifest`), [])
 
   const getTestArchiveManifest = useCallback((id: string) => request<RunArchiveManifest>(`/tests/${id}/archive/manifest`), [])
@@ -487,6 +510,7 @@ export function useTestApi() {
       deleteTest,
       moveTest,
       getMetrics,
+      getTestErrorEvidence,
       getTestManifest,
       getTestArchiveManifest,
       getTestArchiveTransactions,
@@ -541,6 +565,7 @@ export function useTestApi() {
       rejectScenarioScheduleApproval,
       moveTest,
       getMetrics,
+      getTestErrorEvidence,
       getTestManifest,
       getTestArchiveManifest,
       getTestArchiveTransactions,

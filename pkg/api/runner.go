@@ -28,6 +28,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/refkey"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -214,6 +215,7 @@ type ManagedTest struct {
 	remoteFinalizing             bool
 	telemetryDiagnostic          telemetryDiagnosticState
 	errorPatterns                map[string]*LiveErrorPattern
+	liveErrorEvidence            map[string][]LiveErrorEvidence
 	vuserScaleRamps              map[string]*vuserScaleRamp
 }
 
@@ -296,6 +298,7 @@ type LiveMetrics struct {
 	Resources              *engine.SystemResources               `json:"resources,omitempty"`
 	GeneratorResources     map[string]*GeneratorResourceSnapshot `json:"generator_resources,omitempty"`
 	Latency                *NetworkLatency                       `json:"latency,omitempty"`
+	ErrorEvidence          []LiveErrorEvidence                   `json:"-"`
 }
 
 type GeneratorResourceSnapshot struct {
@@ -544,16 +547,32 @@ type TxMetrics struct {
 }
 
 type LiveErrorPattern struct {
-	Signature      string    `json:"signature"`
-	Sample         string    `json:"sample"`
-	Count          int64     `json:"count"`
-	FirstSeen      time.Time `json:"first_seen"`
-	LatestSeen     time.Time `json:"latest_seen"`
-	Actions        []string  `json:"actions,omitempty"`
-	AffectedGroups []string  `json:"affected_groups,omitempty"`
-	StatusCode     int       `json:"status_code,omitempty"`
-	ErrorPct       float64   `json:"error_pct,omitempty"`
-	SnapshotURL    string    `json:"snapshot_url,omitempty"`
+	Signature        string    `json:"signature"`
+	Sample           string    `json:"sample"`
+	Count            int64     `json:"count"`
+	FirstSeen        time.Time `json:"first_seen"`
+	LatestSeen       time.Time `json:"latest_seen"`
+	Actions          []string  `json:"actions,omitempty"`
+	AffectedGroups   []string  `json:"affected_groups,omitempty"`
+	StatusCode       int       `json:"status_code,omitempty"`
+	ErrorPct         float64   `json:"error_pct,omitempty"`
+	SnapshotURL      string    `json:"snapshot_url,omitempty"`
+	EvidenceURL      string    `json:"evidence_url,omitempty"`
+	EvidenceCount    int       `json:"evidence_count,omitempty"`
+	LatestEvidenceID string    `json:"latest_evidence_id,omitempty"`
+}
+
+type LiveErrorEvidence struct {
+	ID           string                  `json:"id"`
+	Signature    string                  `json:"signature"`
+	Action       string                  `json:"action"`
+	Group        string                  `json:"group,omitempty"`
+	Timestamp    time.Time               `json:"timestamp"`
+	DurationMs   float64                 `json:"duration_ms"`
+	Status       string                  `json:"status"`
+	StatusCode   int                     `json:"status_code,omitempty"`
+	ErrorMessage string                  `json:"error_message,omitempty"`
+	Snapshot     *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
 }
 
 type LiveDependencyMap struct {
@@ -595,6 +614,7 @@ type GroupLiveMetrics struct {
 	AvgResponseMs          float64 `json:"avg_response_ms"`
 	P50Ms                  float64 `json:"p50_ms"`
 	P90Ms                  float64 `json:"p90_ms"`
+	P95Ms                  float64 `json:"p95_ms,omitempty"`
 	P99Ms                  float64 `json:"p99_ms"`
 }
 
@@ -665,6 +685,10 @@ const (
 	telemetryDiagnosticSampleInterval       = 5 * time.Second
 	telemetrySustainedBreachWindow          = 15 * time.Second
 	maxTelemetryDiagnosticSamples           = 3
+	maxLiveErrorEvidencePerRun              = 256
+	maxLiveErrorEvidencePerSignature        = 50
+	defaultLiveErrorEvidenceLimit           = 20
+	maxLiveErrorEvidenceLimit               = 100
 	slowTransactionDiagnosticThresholdMs    = 1000.0
 	jmsBrokerPressureMinLagMs               = 200.0
 	jmsBrokerPressureLagMultiplier          = 2.0
@@ -726,6 +750,7 @@ type archiveRecorder interface {
 
 type runArtifacts struct {
 	runner          *TestRunner
+	test            *ManagedTest
 	recorder        archiveRecorder
 	saveRecord      func(record *storage.RunArchiveRecord) error
 	externalMetrics *externalMetricCollector
@@ -5101,13 +5126,71 @@ func liveErrorPatternSource(tx *TxMetrics) string {
 	if tx == nil {
 		return "transaction failed"
 	}
-	if message := strings.TrimSpace(tx.LastErrorMessage); message != "" {
+	return liveErrorPatternSourceFromValues(tx.LastErrorMessage, tx.LastStatusCode)
+}
+
+func liveErrorPatternSourceFromValues(errorMessage string, statusCode int) string {
+	if message := strings.TrimSpace(errorMessage); message != "" {
 		return message
 	}
-	if tx.LastStatusCode > 0 {
-		return fmt.Sprintf("request failed with status %d", tx.LastStatusCode)
+	if statusCode > 0 {
+		return fmt.Sprintf("request failed with status %d", statusCode)
 	}
 	return "transaction failed"
+}
+
+func liveErrorEvidenceFromResult(result *protocol.Result) LiveErrorEvidence {
+	if result == nil || result.Success || result.Snapshot == nil {
+		return LiveErrorEvidence{}
+	}
+	statusCode := result.StatusCode
+	if statusCode == 0 && result.Snapshot.ResponseStatus > 0 {
+		statusCode = result.Snapshot.ResponseStatus
+	}
+	source := liveErrorPatternSourceFromValues(result.ErrorMessage, statusCode)
+	timestamp := result.StartTime
+	if timestamp.IsZero() {
+		timestamp = time.Now().UTC()
+	}
+	return LiveErrorEvidence{
+		ID:           "live-evidence-" + uuid.NewString(),
+		Signature:    normalizeArchiveErrorSignature(source),
+		Action:       strings.TrimSpace(result.ActionName),
+		Group:        strings.TrimSpace(result.Group),
+		Timestamp:    timestamp,
+		DurationMs:   float64(result.Duration) / float64(time.Millisecond),
+		Status:       "failed",
+		StatusCode:   statusCode,
+		ErrorMessage: strings.TrimSpace(result.ErrorMessage),
+		Snapshot:     cloneProtocolErrorSnapshot(result.Snapshot),
+	}
+}
+
+func liveErrorEvidenceFromTransaction(tx generatorrpc.TransactionMetric) LiveErrorEvidence {
+	if tx.Success || tx.Snapshot == nil {
+		return LiveErrorEvidence{}
+	}
+	statusCode := int(tx.StatusCode)
+	if statusCode == 0 && tx.Snapshot.ResponseStatus > 0 {
+		statusCode = tx.Snapshot.ResponseStatus
+	}
+	source := liveErrorPatternSourceFromValues(tx.ErrorMessage, statusCode)
+	timestamp := time.Now().UTC()
+	if tx.StartTimeUnixMs > 0 {
+		timestamp = time.UnixMilli(tx.StartTimeUnixMs)
+	}
+	return LiveErrorEvidence{
+		ID:           "live-evidence-" + uuid.NewString(),
+		Signature:    normalizeArchiveErrorSignature(source),
+		Action:       strings.TrimSpace(tx.Name),
+		Group:        strings.TrimSpace(tx.Group),
+		Timestamp:    timestamp,
+		DurationMs:   tx.DurationMs,
+		Status:       "failed",
+		StatusCode:   statusCode,
+		ErrorMessage: strings.TrimSpace(tx.ErrorMessage),
+		Snapshot:     cloneProtocolErrorSnapshot(tx.Snapshot),
+	}
 }
 
 func groupsWithErrors(groups map[string]*GroupLiveMetrics) []string {
@@ -5159,6 +5242,16 @@ func liveErrorPatternSnapshotURL(testID string, actions []string) string {
 	return fmt.Sprintf("/api/v1/tests/%s/archive/transactions?%s", url.PathEscape(testID), query.Encode())
 }
 
+func liveErrorPatternEvidenceURL(testID string, signature string) string {
+	if strings.TrimSpace(testID) == "" || strings.TrimSpace(signature) == "" {
+		return ""
+	}
+	query := url.Values{}
+	query.Set("signature", signature)
+	query.Set("limit", strconv.Itoa(defaultLiveErrorEvidenceLimit))
+	return fmt.Sprintf("/api/v1/tests/%s/errors/evidence?%s", url.PathEscape(testID), query.Encode())
+}
+
 func liveErrorPatternsList(patterns map[string]*LiveErrorPattern) []LiveErrorPattern {
 	if len(patterns) == 0 {
 		return nil
@@ -5180,6 +5273,162 @@ func liveErrorPatternsList(patterns map[string]*LiveErrorPattern) []LiveErrorPat
 		return result[left].Count > result[right].Count
 	})
 	return result
+}
+
+func (tr *TestRunner) appendLiveErrorEvidence(test *ManagedTest, evidence []LiveErrorEvidence) {
+	if tr == nil || test == nil || len(evidence) == 0 {
+		return
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.appendLiveErrorEvidenceLocked(test, evidence)
+}
+
+func (tr *TestRunner) appendLiveErrorEvidenceLocked(test *ManagedTest, evidence []LiveErrorEvidence) {
+	if test == nil || len(evidence) == 0 {
+		return
+	}
+	if test.liveErrorEvidence == nil {
+		test.liveErrorEvidence = make(map[string][]LiveErrorEvidence)
+	}
+	for _, item := range evidence {
+		if strings.TrimSpace(item.Signature) == "" {
+			continue
+		}
+		if item.ID == "" {
+			item.ID = "live-evidence-" + uuid.NewString()
+		}
+		if item.Timestamp.IsZero() {
+			item.Timestamp = time.Now().UTC()
+		}
+		if item.Status == "" {
+			item.Status = "failed"
+		}
+		item.Snapshot = cloneProtocolErrorSnapshot(item.Snapshot)
+		items := append(test.liveErrorEvidence[item.Signature], item)
+		if len(items) > maxLiveErrorEvidencePerSignature {
+			items = items[len(items)-maxLiveErrorEvidencePerSignature:]
+		}
+		test.liveErrorEvidence[item.Signature] = items
+	}
+	trimLiveErrorEvidenceLocked(test)
+}
+
+func trimLiveErrorEvidenceLocked(test *ManagedTest) {
+	if test == nil || len(test.liveErrorEvidence) == 0 {
+		return
+	}
+	total := 0
+	for _, items := range test.liveErrorEvidence {
+		total += len(items)
+	}
+	if total <= maxLiveErrorEvidencePerRun {
+		return
+	}
+	signatures := make([]string, 0, len(test.liveErrorEvidence))
+	for signature := range test.liveErrorEvidence {
+		signatures = append(signatures, signature)
+	}
+	sort.Slice(signatures, func(left, right int) bool {
+		leftItems := test.liveErrorEvidence[signatures[left]]
+		rightItems := test.liveErrorEvidence[signatures[right]]
+		if len(leftItems) == 0 || len(rightItems) == 0 {
+			return len(leftItems) < len(rightItems)
+		}
+		return leftItems[0].Timestamp.Before(rightItems[0].Timestamp)
+	})
+	for total > maxLiveErrorEvidencePerRun && len(signatures) > 0 {
+		signature := signatures[0]
+		items := test.liveErrorEvidence[signature]
+		if len(items) <= 1 {
+			delete(test.liveErrorEvidence, signature)
+			signatures = signatures[1:]
+			total -= len(items)
+			continue
+		}
+		test.liveErrorEvidence[signature] = items[1:]
+		total--
+	}
+}
+
+func enrichLiveErrorPatternsWithEvidence(test *ManagedTest, patterns map[string]*LiveErrorPattern) {
+	if test == nil || len(patterns) == 0 {
+		return
+	}
+	for signature, pattern := range patterns {
+		if pattern == nil {
+			continue
+		}
+		items := test.liveErrorEvidence[signature]
+		pattern.EvidenceCount = len(items)
+		pattern.LatestEvidenceID = ""
+		pattern.EvidenceURL = ""
+		if len(items) > 0 {
+			pattern.LatestEvidenceID = items[len(items)-1].ID
+			pattern.EvidenceURL = liveErrorPatternEvidenceURL(test.ID, signature)
+		}
+	}
+}
+
+func (tr *TestRunner) ListLiveErrorEvidence(testID string, signature string, action string, limit int) ([]LiveErrorEvidence, bool) {
+	if tr == nil {
+		return nil, false
+	}
+	if limit <= 0 {
+		limit = defaultLiveErrorEvidenceLimit
+	}
+	if limit > maxLiveErrorEvidenceLimit {
+		limit = maxLiveErrorEvidenceLimit
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	testID = tr.resolveRefKeyLocked(testID)
+	test, ok := tr.tests[testID]
+	if !ok {
+		return nil, false
+	}
+	items := test.liveErrorEvidence[signature]
+	if len(items) == 0 {
+		return []LiveErrorEvidence{}, true
+	}
+	filtered := make([]LiveErrorEvidence, 0, minInt(limit, len(items)))
+	for i := len(items) - 1; i >= 0 && len(filtered) < limit; i-- {
+		item := items[i]
+		if action != "" && item.Action != action {
+			continue
+		}
+		item.Snapshot = cloneProtocolErrorSnapshot(item.Snapshot)
+		filtered = append(filtered, item)
+	}
+	return filtered, true
+}
+
+func cloneProtocolErrorSnapshot(snapshot *protocol.ErrorSnapshot) *protocol.ErrorSnapshot {
+	if snapshot == nil {
+		return nil
+	}
+	cloned := *snapshot
+	cloned.RequestHeaders = cloneProtocolStringMap(snapshot.RequestHeaders)
+	cloned.ResponseHeaders = cloneProtocolStringMap(snapshot.ResponseHeaders)
+	cloned.ConsoleEntries = append([]protocol.ConsoleEntry(nil), snapshot.ConsoleEntries...)
+	cloned.NetworkEntries = append([]protocol.NetworkEntry(nil), snapshot.NetworkEntries...)
+	if snapshot.DOMSummary != nil {
+		domSummary := *snapshot.DOMSummary
+		domSummary.VisibleText = append([]string(nil), snapshot.DOMSummary.VisibleText...)
+		cloned.DOMSummary = &domSummary
+	}
+	return &cloned
+}
+
+func cloneProtocolStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func buildTxMetricsFromAction(name string, am *engine.ActionMetrics) *TxMetrics {
@@ -6007,8 +6256,11 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	telemetryRunHealth = updateTelemetryRunHealth(&test.telemetryDiagnostic, diagnostic, diagnosticSignature, now)
 	live.TelemetryStatus = cloneTelemetryRunHealth(telemetryRunHealth)
 	live.CapacityStatus = buildLiveCapacityStatus(test, live, tests)
+	tr.appendLiveErrorEvidenceLocked(test, live.ErrorEvidence)
 	test.errorPatterns = updateLiveErrorPatterns(test.errorPatterns, live, test.ID)
+	enrichLiveErrorPatternsWithEvidence(test, test.errorPatterns)
 	live.ErrorPatterns = liveErrorPatternsList(test.errorPatterns)
+	live.ErrorEvidence = nil
 	test.TelemetryHealth = cloneTelemetryRunHealth(telemetryRunHealth)
 	if live.Latency == nil {
 		live.Latency = cloneNetworkLatency(test.lastNetworkLatency)

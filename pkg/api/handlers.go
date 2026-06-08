@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -359,6 +360,35 @@ func (s *Server) handleGetMetrics(w http.ResponseWriter, r *http.Request) {
 		"status":  test.Status,
 		"metrics": test.LiveMetrics,
 		"history": test.History,
+	})
+}
+
+func (s *Server) handleGetLiveErrorEvidence(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	signature := strings.TrimSpace(r.URL.Query().Get("signature"))
+	if signature == "" {
+		writeError(w, http.StatusBadRequest, "signature is required")
+		return
+	}
+	action := strings.TrimSpace(r.URL.Query().Get("action"))
+	limit := defaultLiveErrorEvidenceLimit
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed <= 0 {
+			writeError(w, http.StatusBadRequest, "limit must be a positive integer")
+			return
+		}
+		limit = parsed
+	}
+	evidence, ok := s.runner.ListLiveErrorEvidence(id, signature, action, limit)
+	if !ok {
+		writeError(w, http.StatusNotFound, "test not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"test_id":   id,
+		"signature": signature,
+		"evidence":  evidence,
 	})
 }
 

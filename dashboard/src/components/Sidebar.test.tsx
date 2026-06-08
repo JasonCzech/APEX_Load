@@ -338,6 +338,29 @@ describe('Sidebar', () => {
     expect(labels.slice(0, 4)).toEqual(['Dashboard', 'Command Center', 'New Test', 'Results'])
   })
 
+  it('uses distinct Dashboard and Command Center sidebar icons', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+        />,
+      )
+    })
+
+    const buttons = Array.from(container.querySelectorAll('.sidebar-nav button'))
+    const dashboardButton = buttons.find(button => button.textContent?.includes('Dashboard'))
+    const commandCenterButton = buttons.find(button => button.textContent?.includes('Command Center'))
+    const dashboardIcon = dashboardButton?.querySelector('svg')
+    const commandCenterIcon = commandCenterButton?.querySelector('svg')
+
+    expect(dashboardIcon?.getAttribute('data-nav-icon')).toBe('dashboard-grid')
+    expect(commandCenterIcon?.getAttribute('data-nav-icon')).toBe('command-center-signal')
+    expect(commandCenterIcon?.querySelector('circle')).not.toBeNull()
+    expect(commandCenterIcon?.querySelectorAll('rect')).toHaveLength(0)
+  })
+
   it('keeps live status and build info visible when the sidebar is collapsed', async () => {
     await act(async () => {
       root.render(

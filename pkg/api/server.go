@@ -273,6 +273,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("DELETE /api/v1/tests/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteTest)))))
 	s.mux.Handle("PATCH /api/v1/tests/{id}/move", cors(log(auth(http.HandlerFunc(s.handleMoveTest)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/metrics", cors(log(auth(http.HandlerFunc(s.handleGetMetrics)))))
+	s.mux.Handle("GET /api/v1/tests/{id}/errors/evidence", cors(log(auth(http.HandlerFunc(s.handleGetLiveErrorEvidence)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive", cors(log(auth(http.HandlerFunc(s.handleDownloadRunArchive)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/manifest", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveManifest)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/files/{name}", cors(log(auth(http.HandlerFunc(s.handleDownloadRunArchiveArtifact)))))

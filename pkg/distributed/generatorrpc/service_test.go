@@ -13,6 +13,7 @@ import (
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	_ "github.com/jasonczech/apexload/pkg/protocol/http"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -457,14 +458,16 @@ func TestServicePublishMetricsBroadcastsTransactions(t *testing.T) {
 		BytesReceived: 1024,
 		SOAPOperation: "GetHome",
 	}, {
-		Name:          "Checkout",
-		DurationMs:    340,
-		StatusCode:    500,
-		Success:       false,
-		ErrorMessage:  "remote failure",
-		BytesSent:     256,
-		BytesReceived: 512,
-		SOAPOperation: "CreateOrder",
+		Name:            "Checkout",
+		StartTimeUnixMs: 1700000000123,
+		DurationMs:      340,
+		StatusCode:      500,
+		Success:         false,
+		ErrorMessage:    "remote failure",
+		BytesSent:       256,
+		BytesReceived:   512,
+		SOAPOperation:   "CreateOrder",
+		Snapshot:        &protocol.ErrorSnapshot{RequestMethod: "POST", RequestURL: "https://example.test/checkout", RequestBody: `{"token":"[REDACTED]"}`, ResponseStatus: 500, ResponseBody: `{"error":"failed"}`},
 	}}, MetricsTelemetry{DroppedResults: 3, CollectedAtUnixMs: 1000, PublishedAtUnixMs: 1300, SampleAgeMs: 300})
 	if err != nil {
 		t.Fatalf("PublishMetrics: %v", err)
@@ -491,6 +494,18 @@ func TestServicePublishMetricsBroadcastsTransactions(t *testing.T) {
 	}
 	if batch.Transactions[1].SOAPOperation != "CreateOrder" {
 		t.Fatalf("snapshot transaction soap operation = %q, want CreateOrder", batch.Transactions[1].SOAPOperation)
+	}
+	if batch.Transactions[1].Group != "Group A" {
+		t.Fatalf("snapshot transaction group = %q, want Group A", batch.Transactions[1].Group)
+	}
+	if batch.Transactions[1].StartTimeUnixMs != 1700000000123 {
+		t.Fatalf("snapshot transaction start time = %d, want 1700000000123", batch.Transactions[1].StartTimeUnixMs)
+	}
+	if batch.Transactions[1].Snapshot == nil || batch.Transactions[1].Snapshot.RequestURL != "https://example.test/checkout" {
+		t.Fatalf("snapshot transaction evidence = %#v, want checkout snapshot", batch.Transactions[1].Snapshot)
+	}
+	if batch.Transactions[0].Snapshot != nil {
+		t.Fatalf("success transaction snapshot = %#v, want nil", batch.Transactions[0].Snapshot)
 	}
 	if batch.Telemetry == nil {
 		t.Fatal("expected telemetry on metrics batch")
