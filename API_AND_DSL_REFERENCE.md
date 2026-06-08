@@ -192,6 +192,77 @@ GET /api/v1/tests
 
 Returns a list of tests. Accepts `project_id`, `release_id`, and `folder_id` query parameters to scope results.
 
+#### Adjust goal targets at runtime
+
+```
+PATCH /api/v1/tests/test-789/goal-targets
+```
+
+Only valid for `goal_oriented` runs. Sets a per-group TPS target; the controller recalculates the aggregate target and redistributes VUsers automatically.
+
+**Request:**
+```json
+{
+  "group": "buyers",
+  "target_tps": 42.5
+}
+```
+
+**Response:**
+```json
+{
+  "test_id": "test-789",
+  "group": "buyers",
+  "target_tps": 42.5,
+  "target_average_tps": 85.0,
+  "goal_targets": {
+    "buyers": { "target_tps": 42.5, "updated_at": "2026-06-08T12:00:00Z" },
+    "browsers": { "target_tps": 42.5, "updated_at": "2026-06-08T12:00:00Z" }
+  },
+  "status": "updated"
+}
+```
+
+Returns `409` if the test is not `goal_oriented`. Broadcasts a `goal_target_changed` WebSocket event.
+
+#### Get live error evidence
+
+```
+GET /api/v1/tests/test-789/errors/evidence
+```
+
+Returns sampled error evidence for a running test, grouped by error pattern.
+
+| Query param | Required | Description |
+| --- | --- | --- |
+| `signature` | Yes | Error pattern signature key. |
+| `action` | No | Filter to a specific script action name. |
+| `limit` | No | Max items returned; 1–100, default 20. |
+
+**Response:**
+```json
+{
+  "test_id": "test-789",
+  "signature": "HTTP_500_checkout",
+  "evidence": [
+    {
+      "id": "ev-001",
+      "signature": "HTTP_500_checkout",
+      "action": "checkout",
+      "group": "buyers",
+      "timestamp": "2026-06-08T12:00:01Z",
+      "duration_ms": 1204,
+      "status": "error",
+      "status_code": 500,
+      "error_message": "Internal Server Error",
+      "p95_ms": 980
+    }
+  ]
+}
+```
+
+Each evidence item may also include a `snapshot` object (browser script runs) with DOM, screenshot, and console data.
+
 #### Get test details and status
 
 ```
@@ -983,6 +1054,30 @@ transaction nodes with per-run stats. The `transactions` array is a paged
 drilldown of matching current-run transaction rows using the same filters as the
 archive transaction endpoint (`action`, `group`, `trace_id`, `dependency_type`,
 `dependency_target`, `success`, duration/byte bounds, and time range).
+
+#### Archive baseline comparison (single and multi-run)
+
+Two modes are supported on the same endpoint:
+
+**Single-run comparison** (original behaviour):
+
+```
+GET /api/v1/tests/test-789/archive/comparison?baseline_id=baseline-123&format=csv&breakdown=overall
+```
+
+Compares `test-789` against one baseline run. Accepts `format=csv|json` and `breakdown=overall|platform|engine|device`.
+
+**Multi-run comparison** (new):
+
+```
+GET /api/v1/tests/baseline-123/archive/comparison?comparison_ids=run-a,run-b,run-c&breakdown=overall&format=csv
+```
+
+The addressed run (`baseline-123`) is treated as the baseline. `comparison_ids` is a comma-separated list of up to 9 additional run IDs (10 runs total maximum). The response is always CSV (`format=csv` required), ordered oldest-started → newest-started. `breakdown` is required and accepts `overall`, `platform`, `engine`, or `device`.
+
+`Content-Disposition` is set to `attachment; filename="apexload-archive-comparison-<baseline-id>-<N>-runs.csv"`.
+
+Returns `400` if `comparison_ids` contains duplicates, includes the baseline run, exceeds 10 total runs, or `format` is not `csv`.
 
 ### System
 

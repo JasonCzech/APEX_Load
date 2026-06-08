@@ -144,15 +144,6 @@ const AXIS_LABEL_STYLE = {
   fontWeight: 700,
 }
 
-function bottomAxisLabel(value: string) {
-  return {
-    value,
-    position: 'insideBottom',
-    offset: -18,
-    style: AXIS_LABEL_STYLE,
-  }
-}
-
 function leftAxisLabel(value: string) {
   return {
     value,
@@ -382,6 +373,7 @@ export default function TestExecutionCharts({
   const timeAxisModeStorageKey = storageKeyFor('chartTimeAxisMode')
   const chartDensityStorageKey = storageKeyFor('chartDensity')
   const graphTableRowsStorageKey = storageKeyFor('graphTableRows')
+  const cursorLabelsStorageKey = storageKeyFor('cursorLabels')
   const responseTimeNetworkModeStorageKey = storageKeyFor('responseTimeNetworkMode')
   const routeLatencyModeStorageKey = storageKeyFor('routeLatencyMode')
   const [hasStoredChartState] = useState(() => Boolean(readStoredString(chartOrderStorageKey) || readStoredString(hiddenChartsStorageKey)))
@@ -397,6 +389,7 @@ export default function TestExecutionCharts({
   const [timeAxisMode, setTimeAxisMode] = useState<ChartTimeAxisMode>(() => readStoredTimeAxisMode(timeAxisModeStorageKey))
   const [chartDensity, setChartDensity] = useState<ChartDensityMode>(() => readStoredChartDensity(chartDensityStorageKey, densityFallback))
   const [showGraphTableRows, setShowGraphTableRows] = useState(() => readStoredString(graphTableRowsStorageKey) === 'true')
+  const [showCursorLabels, setShowCursorLabels] = useState(() => readStoredString(cursorLabelsStorageKey) !== 'false')
   const [responseTimeNetworkMode, setResponseTimeNetworkMode] = useState<ResponseTimeNetworkMode>(() => readStoredResponseTimeNetworkMode(responseTimeNetworkModeStorageKey))
   const [routeLatencyMode, setRouteLatencyMode] = useState<RouteLatencyMode>(() => readStoredRouteLatencyMode(routeLatencyModeStorageKey))
   const [activeGraphGroupTab, setActiveGraphGroupTab] = useState<GraphGroupTabId>('test_results')
@@ -491,6 +484,10 @@ export default function TestExecutionCharts({
     if (!commandCenterSurface) return
     writeStoredString(graphTableRowsStorageKey, showGraphTableRows ? 'true' : 'false')
   }, [commandCenterSurface, graphTableRowsStorageKey, showGraphTableRows])
+
+  useEffect(() => {
+    writeStoredString(cursorLabelsStorageKey, showCursorLabels ? 'true' : 'false')
+  }, [cursorLabelsStorageKey, showCursorLabels])
 
   useEffect(() => {
     writeStoredString(responseTimeNetworkModeStorageKey, responseTimeNetworkMode)
@@ -667,7 +664,6 @@ export default function TestExecutionCharts({
       height={46}
       tickMargin={8}
       tickFormatter={formatXAxisLabel}
-      label={bottomAxisLabel(timeAxisMode === 'relative' ? 'Run time' : 'Clock time')}
     />
   )
 
@@ -680,12 +676,14 @@ export default function TestExecutionCharts({
       tickMargin={8}
       interval={0}
       minTickGap={8}
-      label={bottomAxisLabel('VUser load')}
     />
   )
 
   const renderTooltip = (chartId: string) => {
-    const showTimeLabel = hoveredChartId === chartId
+    if (!showCursorLabels) {
+      return <Tooltip content={() => null} isAnimationActive={false} />
+    }
+    const showTimeLabel = showCursorLabels && hoveredChartId === chartId
     return (
       <Tooltip
         contentStyle={{ ...chartTooltipContentStyle, borderRadius: 8 }}
@@ -698,7 +696,10 @@ export default function TestExecutionCharts({
   }
 
   const renderLoadImpactTooltip = (chart: ChartConfig) => {
-    const showLabel = hoveredChartId === chart.id
+    if (!showCursorLabels) {
+      return <Tooltip content={() => null} isAnimationActive={false} />
+    }
+    const showLabel = showCursorLabels && hoveredChartId === chart.id
     const rows = metricRowsForChart(chart)
     const rowUnits = new Map(rows.map(row => [row.key, row.unit]))
     return (
@@ -1127,6 +1128,21 @@ export default function TestExecutionCharts({
             Relative Time
           </button>
         </div>
+      </div>
+      <div className="charts-config-panel-section">
+        <div>
+          <h4>Cursor Labels</h4>
+          {renderSectionSubtext('Tooltip time/load labels')}
+        </div>
+        <label className="chart-table-row-toggle">
+          <input
+            type="checkbox"
+            checked={showCursorLabels}
+            aria-label="Show cursor labels on graphs"
+            onChange={event => setShowCursorLabels(event.currentTarget.checked)}
+          />
+          <span>Show cursor labels</span>
+        </label>
       </div>
     </>
   )

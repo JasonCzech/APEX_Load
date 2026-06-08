@@ -2,7 +2,7 @@
 
 This guide is for engineers and operators who want to automate APEX Load from CI/CD, external release systems, or integration scripts. It focuses on the public REST and WebSocket API served by the controller.
 
-Last reviewed against `pkg/api/server.go` on June 8, 2026.
+Last reviewed against `pkg/api/server.go` on June 8, 2026 (updated for multi-comparison, goal-oriented controls, and live error evidence).
 
 ## Base URL
 
@@ -414,15 +414,17 @@ Control endpoints:
 | `POST` | `/api/v1/tests/{id}/pause` | Soft-pause between actions. |
 | `POST` | `/api/v1/tests/{id}/resume` | Resume a paused run. |
 | `PATCH` | `/api/v1/tests/{id}/vusers` | Change VUser count for a group. Send `action: "run"` to apply `target_vusers`, or `action: "pause"` / `"stop"` to drive that group to zero. Include optional `ramp_duration`, such as `"2m"`, to add or remove VUsers gradually. |
-| `PATCH` | `/api/v1/tests/{id}/goal-targets` | Adjust goal-based SLA thresholds for a running test. |
+| `PATCH` | `/api/v1/tests/{id}/goal-targets` | Adjust per-group TPS targets for a `goal_oriented` run. Request: `{"group":"<name>","target_tps":<float>}`. Response includes updated `goal_targets` map and the new aggregate `target_average_tps`. Broadcasts `goal_target_changed` on the WebSocket. Returns `409` if the test is not `goal_oriented`. |
 | `PATCH` | `/api/v1/tests/{id}/duration` | Extend or shorten duration. |
 | `PATCH` | `/api/v1/tests/{id}/move` | Move a run into another folder. |
 | `DELETE` | `/api/v1/tests/{id}` | Delete a run record. |
 | `GET` | `/api/v1/tests/{id}/metrics` | Current metrics snapshot. |
-| `GET` | `/api/v1/tests/{id}/errors/evidence` | Live error evidence detail for a running test. |
+| `GET` | `/api/v1/tests/{id}/errors/evidence` | Live error evidence for a running test. Query params: `signature` (required — error pattern key), `action` (optional filter), `limit` (1–100, default 20). Response: `{test_id, signature, evidence:[]}` where each item carries `id`, `signature`, `action`, `group`, `timestamp`, `duration_ms`, `status`, `status_code`, `error_message`, and optional `snapshot`. |
 | `GET` | `/api/v1/tests/{id}/sla-status` | SLA gate status for a run. |
 | `POST` | `/api/v1/tests/{id}/comparison-baseline/pin` | Pin a run as its release comparison baseline. |
 | `DELETE` | `/api/v1/tests/{id}/comparison-baseline/pin` | Remove the pinned comparison baseline. |
+
+For `goal_oriented` runs, `GET /api/v1/tests/{id}` and `GET /api/v1/tests/{id}/metrics` include a `goal_targets` map keyed by group name. Each entry carries `target_tps` and `updated_at` so clients can display the current per-group throughput target alongside actual metrics.
 
 When a gradual VUser change is in progress, `GET /api/v1/tests/{id}` includes `vuser_ramps` keyed by group name. Each ramp reports `start_vusers`, `target_vusers`, `started_at`, `ramp_duration`, and `ramp_duration_seconds` so clients can project the active ramp until it finishes.
 
@@ -436,7 +438,9 @@ Use the global WebSocket for dashboard-style updates:
 ws://<controller-host>:8080/api/v1/ws
 ```
 
-Messages are JSON and include a `type` field such as `metrics_update`, `test_created`, `test_started`, `test_complete`, `test_failed`, `test_paused`, `test_resumed`, `script_shakeout_started`, `script_shakeout_passed`, `script_shakeout_failed`, `vusers_ramp_started`, `vusers_changed`, `duration_changed`, and `latency_update`.
+Messages are JSON and include a `type` field such as `metrics_update`, `test_created`, `test_started`, `test_complete`, `test_failed`, `test_paused`, `test_resumed`, `script_shakeout_started`, `script_shakeout_passed`, `script_shakeout_failed`, `vusers_ramp_started`, `vusers_changed`, `duration_changed`, `latency_update`, and `goal_target_changed`.
+
+`goal_target_changed` fires whenever `PATCH /api/v1/tests/{id}/goal-targets` succeeds and carries `test_id`, `group`, `target_tps`, `target_average_tps`, and `goal_targets` (a map of group name → `{target_tps, updated_at}`).
 
 ### 7. Download Reports And Archives
 
@@ -454,7 +458,7 @@ Messages are JSON and include a `type` field such as `metrics_update`, `test_cre
 | `GET` | `/api/v1/tests/{id}/archive/analysis` | Merged action/dependency graph plus paged transaction drilldown. |
 | `GET` | `/api/v1/tests/{id}/archive/root-cause` | Deterministic root-cause analysis. |
 | `GET` | `/api/v1/tests/{id}/archive/ai-root-cause` | Governed AI root-cause assistance when policy allows it. |
-| `GET` | `/api/v1/tests/{id}/archive/comparison` | Baseline comparison. |
+| `GET` | `/api/v1/tests/{id}/archive/comparison` | Comparison export. **Single-run** (existing): add `baseline_id=<id>` to compare the addressed run against one baseline. **Multi-run** (new): add `comparison_ids=<id1>,<id2>,...` (up to 9 comparison IDs; addressed run is the baseline; max 10 runs total) plus `breakdown=overall\|platform\|engine\|device`. Multi-run only supports `format=csv`; result is ordered oldest→newest with a `Content-Disposition` attachment header. |
 | `POST` | `/api/v1/archives/retention/plan` | Preview archive-retention pruning. |
 | `POST` | `/api/v1/archives/retention/apply` | Apply archive-retention pruning. |
 | `GET` | `/api/v1/releases/{id}/trend/export` | Release trend CSV. |

@@ -33,14 +33,27 @@ vi.mock('recharts', () => {
     </svg>
   )
   const MockTooltip = ({
+    content,
     formatter,
     labelFormatter,
     labelStyle,
   }: {
+    content?: () => ReactNode
     formatter?: (value: unknown, name: unknown) => ReactNode | [ReactNode, ReactNode]
     labelFormatter?: (value: string | number) => ReactNode
     labelStyle?: { display?: string }
   }) => {
+    if (content) {
+      return (
+        <g
+          data-testid="mock-tooltip"
+          data-content-hidden="true"
+          data-label-display="none"
+          data-label-text=""
+          data-formatted-value=""
+        />
+      )
+    }
     const formatted = formatter?.(123.4567, 'TPS')
     const formattedValue = Array.isArray(formatted) ? formatted[0] : formatted
     return (
@@ -203,7 +216,7 @@ describe('TestExecutionCharts context menu', () => {
 
     const vusersChart = container.querySelectorAll('.chart-card')[0]
     expect(vusersChart?.textContent).toContain('Virtual Users')
-    expect(vusersChart?.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('Clock time')
+    expect(vusersChart?.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('')
     expect(axisLabels(vusersChart)).toContain('VUsers')
     expect(axisLabelPositions(vusersChart)).toContain('left')
 
@@ -425,7 +438,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(chartTitles()).toContain('TPS Under Load')
     expect(chartTitles()).toContain('Error % Under Load')
     expect(chartTitles()).not.toContain('P99 Under Load')
-    expect(artUnderLoad()?.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('VUser load')
+    expect(artUnderLoad()?.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('')
     expect(artUnderLoad()?.querySelector('path[data-testid="mock-line"][data-key="average"][data-name="Average"]')).not.toBeNull()
     expect(artUnderLoad()?.querySelector('path[data-testid="mock-line"][data-key="max"][data-name="Max"]')).toBeNull()
 
@@ -618,6 +631,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(drawer?.textContent).toContain('6 Graphs')
     expect(drawer?.textContent).toContain('Role View')
     expect(drawer?.textContent).toContain('Display Time')
+    expect(drawer?.textContent).toContain('Cursor Labels')
     expect(drawer?.textContent).not.toContain('Network latency')
     expect(drawer?.textContent).not.toContain('Removed')
     expect(container.querySelector('.btn-expand')?.hasAttribute('disabled')).toBe(false)
@@ -625,6 +639,8 @@ describe('TestExecutionCharts context menu', () => {
     expect(buttonByText('Relative Time')?.getAttribute('aria-pressed')).toBe('false')
     expect(buttonByText('Standard')?.getAttribute('aria-pressed')).toBe('true')
     expect(buttonByText('6 Graphs')?.getAttribute('aria-pressed')).toBe('false')
+    const cursorLabelToggle = container.querySelector<HTMLInputElement>('input[aria-label="Show cursor labels on graphs"]')
+    expect(cursorLabelToggle?.checked).toBe(true)
 
     const roleSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Graph role view"]')
     expect(roleSelect).not.toBeNull()
@@ -646,6 +662,21 @@ describe('TestExecutionCharts context menu', () => {
     expect(container.querySelectorAll('.chart-card')).toHaveLength(11)
     expect(container.querySelector('.charts-toolbar')?.textContent).toContain('11 graphs')
     expect(window.localStorage.getItem('apexload.execution.hiddenCharts')).toContain('errors')
+
+    await act(async () => {
+      cursorLabelToggle?.click()
+    })
+
+    expect(cursorLabelToggle?.checked).toBe(false)
+    expect(window.localStorage.getItem('apexload.execution.cursorLabels')).toBe('false')
+
+    await act(async () => {
+      container.querySelector<SVGElement>('[data-testid="mock-chart"]')?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+    })
+
+    const hiddenTooltips = Array.from(container.querySelectorAll('[data-testid="mock-tooltip"]'))
+    expect(hiddenTooltips.length).toBeGreaterThan(0)
+    expect(hiddenTooltips.every(tooltip => tooltip.getAttribute('data-content-hidden') === 'true')).toBe(true)
 
     await act(async () => {
       buttonByText('Relative Time')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
