@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useApi } from '../hooks/useApi'
 import type { BrowserToHTTPPreviewResponse } from '../hooks/api/useScriptApi'
@@ -472,21 +472,40 @@ interface JsonPaneSelectionRequest {
   y: number
 }
 
+interface ScriptCodeLineLayout {
+  top: number
+  height: number
+}
+
 interface ScriptCodeScrollSnapshot {
   scrollTop: number
   scrollHeight: number
   clientHeight: number
+  lineCount: number
+  topLine: number
+  bottomLine: number
+  lineLayouts: ScriptCodeLineLayout[]
+  baseLineHeight: number
 }
 
 interface ScriptCodeScrollController {
   refresh: () => void
+  scrollToScrollTop: (scrollTop: number) => void
+  scrollToLine: (line: number) => void
   scrollToRatio: (ratio: number) => void
 }
+
+const JSON_SOURCE_MAP_LINE_HEIGHT_PX = 12
 
 const SCRIPT_CODE_SCROLL_EMPTY: ScriptCodeScrollSnapshot = {
   scrollTop: 0,
   scrollHeight: 0,
   clientHeight: 0,
+  lineCount: 1,
+  topLine: 1,
+  bottomLine: 1,
+  lineLayouts: [],
+  baseLineHeight: JSON_SOURCE_MAP_LINE_HEIGHT_PX,
 }
 
 function clampNumber(value: number, min: number, max: number) {
@@ -494,18 +513,86 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
 }
 
+function approximateLinePosition(scrollTop: number, scrollHeight: number, lineCount: number) {
+  const lineHeight = lineCount > 0 ? Math.max(1, scrollHeight / lineCount) : scrollHeight
+  return clampNumber(scrollTop / lineHeight + 1, 1, Math.max(1, lineCount))
+}
+
+function readLinePositionAtScrollTop(view: EditorView, scrollTop: number, scrollHeight: number, lineCount: number) {
+  try {
+    const block = view.lineBlockAtHeight(scrollTop)
+    const line = view.state.doc.lineAt(block.from)
+    const blockHeight = Math.max(1, block.bottom - block.top)
+    const fraction = clampNumber((scrollTop - block.top) / blockHeight, 0, 1)
+    return clampNumber(line.number + fraction, 1, lineCount)
+  } catch {
+    return approximateLinePosition(scrollTop, scrollHeight, lineCount)
+  }
+}
+
+function readScriptCodeLineLayouts(view: EditorView, scrollHeight: number, lineCount: number) {
+  try {
+    const lineLayouts: ScriptCodeLineLayout[] = []
+    let minHeight = Number.POSITIVE_INFINITY
+    for (let lineNo = 1; lineNo <= lineCount; lineNo += 1) {
+      const line = view.state.doc.line(lineNo)
+      const block = view.lineBlockAt(line.from)
+      const height = Math.max(1, block.bottom - block.top)
+      lineLayouts.push({ top: Math.max(0, block.top), height })
+      minHeight = Math.min(minHeight, height)
+    }
+    return {
+      lineLayouts,
+      baseLineHeight: Number.isFinite(minHeight) ? minHeight : JSON_SOURCE_MAP_LINE_HEIGHT_PX,
+    }
+  } catch {
+    const fallbackHeight = Math.max(1, scrollHeight / Math.max(1, lineCount))
+    return {
+      lineLayouts: Array.from({ length: lineCount }, (_, index) => ({ top: index * fallbackHeight, height: fallbackHeight })),
+      baseLineHeight: fallbackHeight,
+    }
+  }
+}
+
 function readScriptCodeScrollSnapshot(view: EditorView | null): ScriptCodeScrollSnapshot {
   const scrollDOM = view?.scrollDOM
   if (!scrollDOM) return SCRIPT_CODE_SCROLL_EMPTY
+  const lineCount = Math.max(1, view?.state.doc.lines || 1)
   const clientHeight = Math.max(0, scrollDOM.clientHeight || 0)
   const scrollHeight = Math.max(clientHeight, scrollDOM.scrollHeight || 0)
   const maxScrollTop = Math.max(0, scrollHeight - clientHeight)
   const scrollTop = clampNumber(scrollDOM.scrollTop || 0, 0, maxScrollTop)
-  return { scrollTop, scrollHeight, clientHeight }
+  const { lineLayouts, baseLineHeight } = readScriptCodeLineLayouts(view, scrollHeight, lineCount)
+  const topLine = view
+    ? readLinePositionAtScrollTop(view, scrollTop, scrollHeight, lineCount)
+    : approximateLinePosition(scrollTop, scrollHeight, lineCount)
+  const bottomLine = view
+    ? readLinePositionAtScrollTop(view, scrollTop + clientHeight, scrollHeight, lineCount)
+    : approximateLinePosition(scrollTop + clientHeight, scrollHeight, lineCount)
+  return { scrollTop, scrollHeight, clientHeight, lineCount, topLine, bottomLine, lineLayouts, baseLineHeight }
+}
+
+function sameScriptCodeLineLayouts(a: ScriptCodeLineLayout[], b: ScriptCodeLineLayout[]) {
+  if (a.length !== b.length) return false
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index].top !== b[index].top || a[index].height !== b[index].height) {
+      return false
+    }
+  }
+  return true
 }
 
 function sameScriptCodeScrollSnapshot(a: ScriptCodeScrollSnapshot, b: ScriptCodeScrollSnapshot) {
-  return a.scrollTop === b.scrollTop && a.scrollHeight === b.scrollHeight && a.clientHeight === b.clientHeight
+  return (
+    a.scrollTop === b.scrollTop &&
+    a.scrollHeight === b.scrollHeight &&
+    a.clientHeight === b.clientHeight &&
+    a.lineCount === b.lineCount &&
+    a.topLine === b.topLine &&
+    a.bottomLine === b.bottomLine &&
+    a.baseLineHeight === b.baseLineHeight &&
+    sameScriptCodeLineLayouts(a.lineLayouts, b.lineLayouts)
+  )
 }
 
 interface ScriptCodePaneProps {
@@ -579,11 +666,45 @@ function ScriptCodePane({
     onScrollSnapshotChange?.(snapshot)
   }, [onScrollSnapshotChange])
 
+  const scrollToScrollTop = useCallback((scrollTop: number) => {
+    const scrollDOM = viewRef.current?.scrollDOM
+    if (!scrollDOM) return
+    const maxScrollTop = Math.max(0, (scrollDOM.scrollHeight || 0) - (scrollDOM.clientHeight || 0))
+    scrollDOM.scrollTop = clampNumber(scrollTop, 0, maxScrollTop)
+    scrollDOM.dispatchEvent(new Event('scroll', { bubbles: true }))
+    emitScrollSnapshot()
+  }, [emitScrollSnapshot])
+
   const scrollToRatio = useCallback((ratio: number) => {
     const scrollDOM = viewRef.current?.scrollDOM
     if (!scrollDOM) return
     const maxScrollTop = Math.max(0, (scrollDOM.scrollHeight || 0) - (scrollDOM.clientHeight || 0))
-    scrollDOM.scrollTop = maxScrollTop * clampNumber(ratio, 0, 1)
+    scrollToScrollTop(maxScrollTop * clampNumber(ratio, 0, 1))
+  }, [scrollToScrollTop])
+
+  const scrollToLine = useCallback((line: number) => {
+    const view = viewRef.current
+    const scrollDOM = view?.scrollDOM
+    if (!view || !scrollDOM) return
+    const lineCount = Math.max(1, view.state.doc.lines)
+    const linePosition = clampNumber(line, 1, lineCount)
+    const lineNo = Math.max(1, Math.min(lineCount, Math.floor(linePosition)))
+    const maxScrollTop = Math.max(0, (scrollDOM.scrollHeight || 0) - (scrollDOM.clientHeight || 0))
+    let targetScrollTop = maxScrollTop * ((linePosition - 1) / Math.max(1, lineCount - 1))
+    try {
+      const currentLine = view.state.doc.line(lineNo)
+      const currentBlock = view.lineBlockAt(currentLine.from)
+      if (lineNo < lineCount) {
+        const nextLine = view.state.doc.line(lineNo + 1)
+        const nextBlock = view.lineBlockAt(nextLine.from)
+        targetScrollTop = currentBlock.top + (nextBlock.top - currentBlock.top) * (linePosition - lineNo)
+      } else {
+        targetScrollTop = currentBlock.top
+      }
+    } catch {
+      targetScrollTop = maxScrollTop * ((linePosition - 1) / Math.max(1, lineCount - 1))
+    }
+    scrollDOM.scrollTop = clampNumber(targetScrollTop, 0, maxScrollTop)
     scrollDOM.dispatchEvent(new Event('scroll', { bubbles: true }))
     emitScrollSnapshot()
   }, [emitScrollSnapshot])
@@ -592,11 +713,13 @@ function ScriptCodePane({
     if (!onScrollControllerChange || !viewRef.current) return undefined
     const controller: ScriptCodeScrollController = {
       refresh: emitScrollSnapshot,
+      scrollToScrollTop,
+      scrollToLine,
       scrollToRatio,
     }
     onScrollControllerChange(controller)
     return () => onScrollControllerChange(null)
-  }, [editorReadyVersion, emitScrollSnapshot, onScrollControllerChange, scrollToRatio])
+  }, [editorReadyVersion, emitScrollSnapshot, onScrollControllerChange, scrollToLine, scrollToRatio, scrollToScrollTop])
 
   useEffect(() => {
     const scrollDOM = viewRef.current?.scrollDOM
@@ -741,7 +864,7 @@ interface JsonSourceMinimapProps {
   selectedParameterName?: string | null
   status: 'synced' | 'dirty' | 'invalid'
   onJumpToLine: (line: number) => void
-  onScrollRatioChange: (ratio: number) => void
+  onScrollTopChange: (scrollTop: number) => void
 }
 
 function lineNumberForOffset(lineStarts: number[], offset: number): number {
@@ -808,9 +931,10 @@ function JsonSourceMinimap({
   selectedParameterName,
   status,
   onJumpToLine,
-  onScrollRatioChange,
+  onScrollTopChange,
 }: JsonSourceMinimapProps) {
   const scrollTrackRef = useRef<HTMLDivElement | null>(null)
+  const sourceMapLinesRef = useRef<HTMLDivElement | null>(null)
   const dragStateRef = useRef<{ pointerId: number | null; startY: number; startRatio: number; trackHeight: number } | null>(null)
   const lines = useMemo(
     () => buildJsonMinimapLines(jsonText, activeRange, parameterMatchRanges),
@@ -822,6 +946,21 @@ function JsonSourceMinimap({
   const invalid = status === 'invalid' || !jsonText.trim()
   const scrollRange = Math.max(0, scrollSnapshot.scrollHeight - scrollSnapshot.clientHeight)
   const hasScrollableEditor = scrollRange > 0 && scrollSnapshot.clientHeight > 0
+  const minimapScale = JSON_SOURCE_MAP_LINE_HEIGHT_PX / Math.max(1, scrollSnapshot.baseLineHeight || JSON_SOURCE_MAP_LINE_HEIGHT_PX)
+  const minimapLineHeights = useMemo(
+    () => lines.map((_, index) => {
+      const editorHeight = scrollSnapshot.lineLayouts[index]?.height || scrollSnapshot.baseLineHeight || JSON_SOURCE_MAP_LINE_HEIGHT_PX
+      return Math.max(JSON_SOURCE_MAP_LINE_HEIGHT_PX, editorHeight * minimapScale)
+    }),
+    [lines, minimapScale, scrollSnapshot.baseLineHeight, scrollSnapshot.lineLayouts],
+  )
+  const sourceMapGridTemplateRows = useMemo(() => {
+    const fallbackCount = Math.max(lines.length, 1)
+    if (minimapLineHeights.length === 0) return `repeat(${fallbackCount}, ${JSON_SOURCE_MAP_LINE_HEIGHT_PX}px)`
+    const hasWrappedRows = minimapLineHeights.some(height => Math.abs(height - JSON_SOURCE_MAP_LINE_HEIGHT_PX) > 0.01)
+    if (!hasWrappedRows) return `repeat(${fallbackCount}, ${JSON_SOURCE_MAP_LINE_HEIGHT_PX}px)`
+    return minimapLineHeights.map(height => `${height.toFixed(2)}px`).join(' ')
+  }, [lines.length, minimapLineHeights])
   const visibleRatio = hasScrollableEditor
     ? clampNumber(scrollSnapshot.clientHeight / scrollSnapshot.scrollHeight, 0.04, 1)
     : 1
@@ -832,6 +971,13 @@ function JsonSourceMinimap({
   const thumbHeightPct = visibleRatio * 100
   const thumbTopPct = scrollRatio * 100
 
+  useEffect(() => {
+    const linesElement = sourceMapLinesRef.current
+    if (!linesElement) return
+    const maxScrollTop = Math.max(0, linesElement.scrollHeight - linesElement.clientHeight)
+    linesElement.scrollTop = clampNumber(scrollSnapshot.scrollTop * minimapScale, 0, maxScrollTop)
+  }, [lines.length, minimapScale, scrollSnapshot.scrollTop])
+
   const scrollFromTrackPosition = (clientY: number) => {
     const track = scrollTrackRef.current
     if (!track) return
@@ -840,7 +986,31 @@ function JsonSourceMinimap({
     const thumbHeight = rect.height * visibleRatio
     const draggableHeight = Math.max(1, rect.height - thumbHeight)
     const nextRatio = clampNumber((clientY - rect.top - thumbHeight / 2) / draggableHeight, 0, 1)
-    onScrollRatioChange(nextRatio)
+    onScrollTopChange(nextRatio * scrollRange)
+  }
+
+  const handleSourceMapWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if (!hasScrollableEditor) return
+    const rawDelta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX
+    if (rawDelta === 0) return
+    const deltaPixels = event.deltaMode === 1
+      ? rawDelta * JSON_SOURCE_MAP_LINE_HEIGHT_PX
+      : event.deltaMode === 2
+        ? rawDelta * scrollSnapshot.clientHeight
+        : rawDelta
+    const nextScrollTop = clampNumber(
+      scrollSnapshot.scrollTop + deltaPixels / minimapScale,
+      0,
+      scrollRange,
+    )
+    const linesElement = sourceMapLinesRef.current
+    if (linesElement) {
+      const maxScrollTop = Math.max(0, linesElement.scrollHeight - linesElement.clientHeight)
+      linesElement.scrollTop = clampNumber(nextScrollTop * minimapScale, 0, maxScrollTop)
+    }
+    event.preventDefault()
+    event.stopPropagation()
+    onScrollTopChange(nextScrollTop)
   }
 
   const handleTrackPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -873,7 +1043,7 @@ function JsonSourceMinimap({
     if (!dragState) return
     const draggableHeight = Math.max(1, dragState.trackHeight * (1 - visibleRatio))
     const nextRatio = clampNumber(dragState.startRatio + (clientY - dragState.startY) / draggableHeight, 0, 1)
-    onScrollRatioChange(nextRatio)
+    onScrollTopChange(nextRatio * scrollRange)
   }
 
   const handleThumbPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -974,7 +1144,7 @@ function JsonSourceMinimap({
     }
     if (nextRatio == null) return
     event.preventDefault()
-    onScrollRatioChange(clampNumber(nextRatio, 0, 1))
+    onScrollTopChange(clampNumber(nextRatio, 0, 1) * scrollRange)
   }
 
   return (
@@ -988,10 +1158,11 @@ function JsonSourceMinimap({
           {jsonText.trim() ? 'Fix the JSON draft to rebuild the source map.' : 'No JSON source to map yet.'}
         </div>
       ) : (
-        <div className={`json-source-map ${hasScrollableEditor ? 'scroll-linked' : ''}`} aria-label="JSON source map">
+        <div className={`json-source-map ${hasScrollableEditor ? 'scroll-linked' : ''}`} aria-label="JSON source map" onWheel={handleSourceMapWheel}>
           <div
+            ref={sourceMapLinesRef}
             className="json-source-map-lines"
-            style={{ gridTemplateRows: `repeat(${Math.max(lines.length, 1)}, minmax(0, 1fr))` }}
+            style={{ gridTemplateRows: sourceMapGridTemplateRows }}
           >
             {lines.map(line => (
               <button
@@ -3737,8 +3908,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setScriptCodeScrollController(controller)
   }, [])
 
-  const handleJsonSourceMapScrollRatioChange = useCallback((ratio: number) => {
-    scriptCodeScrollController?.scrollToRatio(ratio)
+  const handleJsonSourceMapScrollTopChange = useCallback((scrollTop: number) => {
+    scriptCodeScrollController?.scrollToScrollTop(scrollTop)
   }, [scriptCodeScrollController])
 
   const resolveCurrentScript = useCallback((): ScriptData => {
@@ -5568,7 +5739,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             activeRange={scriptCodeActiveRange}
             jsonText={jsonText}
             onJumpToLine={line => setJsonLineJumpRequest({ line, nonce: Date.now() })}
-            onScrollRatioChange={handleJsonSourceMapScrollRatioChange}
+            onScrollTopChange={handleJsonSourceMapScrollTopChange}
             parameterMatchRanges={parameterMatchRanges}
             scrollSnapshot={scriptCodeScrollSnapshot}
             selectedParameterName={selectedOutlineParameterExists ? selectedOutlineParameterName : null}

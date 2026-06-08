@@ -277,6 +277,7 @@
   flex: 1;
   flex-direction: column;
   gap: 10px;
+  overflow: hidden;
 }
 .json-source-map-summary {
   display: grid;
@@ -307,8 +308,10 @@
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 7px;
   overflow: hidden;
+  overscroll-behavior: contain;
   padding: 6px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -320,19 +323,22 @@
 .json-source-map-lines {
   min-width: 0;
   min-height: 0;
+  height: 100%;
   display: grid;
   align-self: stretch;
   overflow: hidden;
+  overscroll-behavior: contain;
 }
 .json-source-map-line {
   position: relative;
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  gap: 5px;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
   width: 100%;
   min-height: 0;
   height: 100%;
-  padding: 0;
+  padding: 0 2px 0 0;
   border: 0;
   border-left: 2px solid transparent;
   background: transparent;
@@ -356,35 +362,41 @@
   background: rgba(245, 158, 11, 0.22);
 }
 .json-source-map-line-number {
+  position: sticky;
+  top: 0;
+  align-self: start;
   overflow: hidden;
-  color: rgba(148, 163, 184, 0.55);
+  color: rgba(148, 163, 184, 0.72);
   font-family: 'SF Mono', 'Fira Code', monospace;
-  font-size: 6px;
-  line-height: 1;
+  font-size: 8px;
+  line-height: 12px;
   text-align: right;
   user-select: none;
 }
 .json-source-map-line-code {
-  align-self: center;
+  position: sticky;
+  top: 0;
+  align-self: start;
   display: block;
   min-width: 10px;
-  height: clamp(2px, 62%, 5px);
+  height: auto;
   margin-top: 0;
   overflow: hidden;
-  border-radius: 999px;
-  background: rgba(217, 231, 255, 0.34);
-  color: transparent;
-  font-size: 0;
+  color: rgba(217, 231, 255, 0.72);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 8px;
+  line-height: 12px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .json-source-map-line.active-block .json-source-map-line-code {
-  background: rgba(129, 140, 248, 0.78);
+  color: rgba(224, 231, 255, 0.92);
 }
 .json-source-map-line.parameter-match .json-source-map-line-code {
-  background: rgba(45, 212, 191, 0.78);
+  color: rgba(153, 246, 228, 0.92);
 }
 .json-source-map-line.first-parameter-match .json-source-map-line-code {
-  background: rgba(245, 158, 11, 0.88);
+  color: rgba(253, 230, 138, 0.96);
 }
 .json-source-map-scroll-track {
   position: relative;
@@ -4126,6 +4138,10 @@
   padding: 10px;
   gap: 10px;
   background: var(--bg-card);
+  min-height: 0;
+  height: max(320px, calc(100vh - 255px));
+  max-height: max(320px, calc(100vh - 255px));
+  overflow: hidden;
 }
 .editor-utility-sidebar.collapsed {
   padding: 8px;

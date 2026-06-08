@@ -84,9 +84,21 @@ vi.mock('@uiw/react-codemirror', async () => {
         })
         return starts.length > 0 ? starts : [0]
       }
-      const lines = lineStarts(value)
+      const lineLayout = (text: string) => {
+        const starts = lineStarts(text)
+        const lineTexts = text.split('\n')
+        const heights = lineTexts.map(line => (line.includes('WRAPPED_CODEMIRROR_TEST_LINE') ? 90 : 18))
+        const tops: number[] = []
+        let top = 0
+        heights.forEach(height => {
+          tops.push(top)
+          top += height
+        })
+        return { starts, heights, tops, totalHeight: Math.max(1, top) }
+      }
+      const layout = lineLayout(value)
       Object.defineProperty(el, 'clientHeight', { configurable: true, value: 240 })
-      Object.defineProperty(el, 'scrollHeight', { configurable: true, value: Math.max(960, lines.length * 16) })
+      Object.defineProperty(el, 'scrollHeight', { configurable: true, value: Math.max(960, layout.totalHeight) })
       if (!codeMirrorScrollDoms.includes(el)) {
         codeMirrorScrollDoms.push(el)
       }
@@ -102,7 +114,18 @@ vi.mock('@uiw/react-codemirror', async () => {
           const from = el?.selectionStart ?? 0
           const to = el?.selectionEnd ?? 0
           const doc = el?.value ?? value
-          const starts = lineStarts(doc)
+          const { starts } = lineLayout(doc)
+          const lineAtOffset = (offset: number) => {
+            let lineNo = 1
+            for (let index = 0; index < starts.length; index += 1) {
+              if (starts[index] <= offset) {
+                lineNo = index + 1
+              } else {
+                break
+              }
+            }
+            return { from: starts[lineNo - 1], number: lineNo }
+          }
           return {
             selection: { main: { from, to } },
             doc: {
@@ -113,8 +136,39 @@ vi.mock('@uiw/react-codemirror', async () => {
                 const lineNo = Math.max(1, Math.min(starts.length, n))
                 return { from: starts[lineNo - 1], number: lineNo }
               },
+              lineAt: lineAtOffset,
             },
           }
+        },
+        lineBlockAt: (offset: number) => {
+          const doc = ref.current?.value ?? value
+          const { starts, heights, tops } = lineLayout(doc)
+          let lineNo = 1
+          for (let index = 0; index < starts.length; index += 1) {
+            if (starts[index] <= offset) {
+              lineNo = index + 1
+            } else {
+              break
+            }
+          }
+          const top = tops[lineNo - 1] ?? 0
+          const height = heights[lineNo - 1] ?? 18
+          return { from: starts[lineNo - 1], top, bottom: top + height, height }
+        },
+        lineBlockAtHeight: (height: number) => {
+          const doc = ref.current?.value ?? value
+          const { starts, heights, tops } = lineLayout(doc)
+          let lineNo = 1
+          for (let index = 0; index < tops.length; index += 1) {
+            if (height >= tops[index]) {
+              lineNo = index + 1
+            } else {
+              break
+            }
+          }
+          const top = tops[lineNo - 1] ?? 0
+          const blockHeight = heights[lineNo - 1] ?? 18
+          return { from: starts[lineNo - 1], top, bottom: top + blockHeight, height: blockHeight }
         },
       })
     }, [onCreateEditor, value])
@@ -1114,18 +1168,92 @@ describe('ScriptEditor', () => {
     await flushReact()
 
     const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
+    const sourceMapLines = container.querySelector('.json-source-map-lines') as HTMLDivElement | null
     const thumb = container.querySelector('.json-source-map-scroll-thumb') as HTMLButtonElement | null
     expect(codeArea).not.toBeNull()
+    expect(sourceMapLines).not.toBeNull()
     expect(thumb).not.toBeNull()
-    if (!codeArea || !thumb) return
+    if (!codeArea || !sourceMapLines || !thumb) return
+
+    Object.defineProperty(sourceMapLines, 'clientHeight', { configurable: true, value: 120 })
+    Object.defineProperty(sourceMapLines, 'scrollHeight', { configurable: true, value: 600 })
 
     const maxScrollTop = codeArea.scrollHeight - codeArea.clientHeight
     await act(async () => {
       codeArea.scrollTop = maxScrollTop / 2
       codeArea.dispatchEvent(new Event('scroll', { bubbles: true }))
     })
+    await flushReact()
 
     expect(thumb.getAttribute('aria-valuenow')).toBe('50')
+    const maxSourceMapScrollTop = sourceMapLines.scrollHeight - sourceMapLines.clientHeight
+    expect(sourceMapLines.scrollTop).toBeCloseTo(
+      Math.min(maxSourceMapScrollTop, codeArea.scrollTop * (12 / 18)),
+    )
+  })
+
+  it('routes mouse wheel scrolling over the source map to the Script JSON editor', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+    await flushReact()
+
+    const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
+    const sourceMap = container.querySelector('.json-source-map') as HTMLDivElement | null
+    const thumb = container.querySelector('.json-source-map-scroll-thumb') as HTMLButtonElement | null
+    expect(codeArea).not.toBeNull()
+    expect(sourceMap).not.toBeNull()
+    expect(thumb).not.toBeNull()
+    if (!codeArea || !sourceMap || !thumb) return
+
+    const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 180 })
+    await act(async () => {
+      sourceMap.dispatchEvent(wheel)
+    })
+    await flushReact()
+
+    const expectedScrollTop = 180 / (12 / 18)
+    expect(codeArea.scrollTop).toBeCloseTo(expectedScrollTop)
+    expect(thumb.getAttribute('aria-valuenow')).toBe(
+      String(Math.round((codeArea.scrollTop / (codeArea.scrollHeight - codeArea.clientHeight)) * 100)),
+    )
+  })
+
+  it('sizes source map rows from wrapped Script JSON line blocks', async () => {
+    const wrappedScript: ScriptDefinition = {
+      ...initialScript,
+      actions: [
+        {
+          ...initialScript.actions[0],
+          body: `WRAPPED_CODEMIRROR_TEST_LINE ${'x'.repeat(240)}`,
+        },
+      ],
+    }
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={wrappedScript} />)
+    })
+    await flushReact()
+
+    const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
+    const sourceMapLines = container.querySelector('.json-source-map-lines') as HTMLDivElement | null
+    expect(codeArea).not.toBeNull()
+    expect(sourceMapLines).not.toBeNull()
+    if (!codeArea || !sourceMapLines) return
+
+    expect(sourceMapLines.style.gridTemplateRows).toContain('60.00px')
+
+    Object.defineProperty(sourceMapLines, 'clientHeight', { configurable: true, value: 120 })
+    Object.defineProperty(sourceMapLines, 'scrollHeight', { configurable: true, value: 2000 })
+    const wrappedLineIndex = codeArea.value.split('\n').findIndex(line => line.includes('WRAPPED_CODEMIRROR_TEST_LINE'))
+    expect(wrappedLineIndex).toBeGreaterThanOrEqual(0)
+    const wrappedLineScrollTop = wrappedLineIndex * 18
+    await act(async () => {
+      codeArea.scrollTop = wrappedLineScrollTop + 45
+      codeArea.dispatchEvent(new Event('scroll', { bubbles: true }))
+    })
+    await flushReact()
+
+    expect(sourceMapLines.scrollTop).toBeCloseTo((wrappedLineScrollTop + 45) * (12 / 18))
   })
 
   it('drags the source map thumb to scroll the Script JSON editor', async () => {
