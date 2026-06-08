@@ -608,6 +608,40 @@ describe('ScriptsPage', () => {
     expect(window.localStorage.getItem('apexload.settings.focusSection')).toBe('integrations')
   })
 
+  it('notifies the parent topbar when a library script opens in edit mode', async () => {
+    const onAuthoringStateChange = vi.fn()
+    apiMock.getScript.mockResolvedValueOnce({
+      script: {
+        id: 'script-1',
+        name: 'Existing Script',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://scripts.example.com' },
+        actions: [],
+      },
+    })
+
+    await act(async () => {
+      root.render(<ScriptsPage onAuthoringStateChange={onAuthoringStateChange} />)
+    })
+
+    await flushPromises()
+
+    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Edit')
+    expect(editButton).toBeDefined()
+    if (!editButton) return
+
+    await act(async () => {
+      editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.getScript).toHaveBeenCalledWith('script-1')
+    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    expect(onAuthoringStateChange).toHaveBeenCalledWith({ subView: 'edit', editingId: 'script-1' })
+  })
+
   it('filters the script library by authoring health categories', async () => {
     apiMock.listScripts.mockResolvedValueOnce({
       scripts: [

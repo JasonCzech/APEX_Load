@@ -51,6 +51,43 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
   }
 }
 
+export function pageTitleForScriptSubView(subView?: string): string {
+  switch (subView) {
+    case 'list':
+      return 'Script Library'
+    case 'create-options':
+      return 'Script Builder'
+    case 'create':
+      return 'Create Script'
+    case 'edit':
+      return 'Edit Script'
+    case 'import':
+      return 'Import LoadRunner'
+    case 'jmeter-import':
+      return 'Import JMeter'
+    case 'recorder':
+      return 'Record Browser'
+    case 'sample':
+      return 'Import Sample'
+    case 'java-http-import':
+      return 'Import Java over HTTP'
+    case 'devweb-import':
+      return 'Import DevWeb'
+    case 'har-import':
+      return 'Import HAR'
+    case 'openapi-import':
+      return 'Import OpenAPI'
+    case 'postman-import':
+      return 'Import Postman'
+    case 'wsdl-import':
+      return 'Import WSDL'
+    case 'asyncapi-import':
+      return 'Import AsyncAPI'
+    default:
+      return 'Script Library'
+  }
+}
+
 export function isTopbarActiveRunStatus(status?: string): status is TestStatus {
   return Boolean(status && ACTIVE_RUN_STATUS_PRIORITY[status.toUpperCase()] !== undefined)
 }

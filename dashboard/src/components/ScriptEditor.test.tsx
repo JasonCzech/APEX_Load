@@ -537,6 +537,17 @@ describe('ScriptEditor', () => {
     expect(codeEditors.some(editor => editor.getAttribute('data-has-apex-dsl-semantic-highlighting') === 'true')).toBe(true)
   })
 
+  it('does not render the page title inside the scrollable editor body', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} />)
+    })
+
+    expect(container.querySelector('.editor-header h2')).toBeNull()
+    expect(container.querySelector('.editor-header')?.textContent).not.toContain('Edit Script')
+    expect(container.querySelector('.editor-header .editor-actions')).not.toBeNull()
+    expect(container.querySelector('.script-name-panel')).not.toBeNull()
+  })
+
   it('keeps imported metadata in the outline instead of duplicating it in the page header', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
@@ -1169,11 +1180,13 @@ describe('ScriptEditor', () => {
 
     const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
     const sourceMapLines = container.querySelector('.json-source-map-lines') as HTMLDivElement | null
+    const viewportHighlight = container.querySelector('.json-source-map-viewport-highlight') as HTMLDivElement | null
     const thumb = container.querySelector('.json-source-map-scroll-thumb') as HTMLButtonElement | null
     expect(codeArea).not.toBeNull()
     expect(sourceMapLines).not.toBeNull()
+    expect(viewportHighlight).not.toBeNull()
     expect(thumb).not.toBeNull()
-    if (!codeArea || !sourceMapLines || !thumb) return
+    if (!codeArea || !sourceMapLines || !viewportHighlight || !thumb) return
 
     Object.defineProperty(sourceMapLines, 'clientHeight', { configurable: true, value: 120 })
     Object.defineProperty(sourceMapLines, 'scrollHeight', { configurable: true, value: 600 })
@@ -1190,6 +1203,8 @@ describe('ScriptEditor', () => {
     expect(sourceMapLines.scrollTop).toBeCloseTo(
       Math.min(maxSourceMapScrollTop, codeArea.scrollTop * (12 / 18)),
     )
+    expect(Number.parseFloat(viewportHighlight.style.top)).toBeCloseTo(codeArea.scrollTop * (12 / 18))
+    expect(Number.parseFloat(viewportHighlight.style.height)).toBeCloseTo(codeArea.clientHeight * (12 / 18))
   })
 
   it('routes mouse wheel scrolling over the source map to the Script JSON editor', async () => {

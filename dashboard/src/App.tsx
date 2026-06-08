@@ -24,6 +24,7 @@ import { isEffectiveOperationAllowed } from './utils/authAccessUtils'
 import { DesktopStatusResponse } from './types/library'
 import ThemeToggle from './components/ThemeToggle'
 import {
+  pageTitleForScriptSubView,
   pageTitleForView,
   selectTopbarActiveRuns,
   topbarRunStatusLabel,
@@ -31,6 +32,7 @@ import {
   updateTopbarActiveRuns,
   type TopbarRunSummary,
 } from './appTopbar'
+import type { ScriptsAuthoringSubView } from './components/useScriptsAuthoringState'
 import './App.css'
 import './components/Pages.css'
 
@@ -104,6 +106,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const scriptMode = view.page === 'scripts' && 'mode' in view ? view.mode : undefined
   const scriptEditId = view.page === 'scripts' && 'scriptId' in view ? view.scriptId : undefined
   const [scriptsNavigationVersion, setScriptsNavigationVersion] = useState(0)
+  const [scriptsTopbarState, setScriptsTopbarState] = useState<{ subView: ScriptsAuthoringSubView; editingId: string | null } | null>(null)
   const [effectiveAccessResources, setEffectiveAccessResources] = useState<import('./types').DashboardAuthEffectiveAccessResource[]>([])
   const [domains, setDomains] = useState<import('./types').Domain[]>([])
   const [activeDomain, setActiveDomainState] = useState<import('./types').Domain | null>(null)
@@ -204,9 +207,20 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const handleNavigate = (page: NavPage) => {
     if (page === 'scripts') {
       setScriptsNavigationVersion(version => version + 1)
+      setScriptsTopbarState(null)
     }
     setView({ page })
   }
+
+  const handleScriptsAuthoringStateChange = useCallback((state: { subView: ScriptsAuthoringSubView; editingId: string | null }) => {
+    setScriptsTopbarState(state)
+  }, [])
+
+  useEffect(() => {
+    if (view.page !== 'scripts') {
+      setScriptsTopbarState(null)
+    }
+  }, [view.page])
 
   const appHistoryDepth = useRef(0)
   useEffect(() => {
@@ -424,10 +438,12 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const desktopBridge = getWailsDesktopBridge()
   const showDesktopStatus = Boolean(desktopStatus?.desktop_mode)
   const currentTestRun = view.page === 'test' ? activeTopbarRuns.find(run => run.id === view.testId) : undefined
-  const topbarPageTitle = pageTitleForView(view, {
-    repositoryName: applicationRepository?.name,
-    testName: currentTestRun?.name,
-  })
+  const topbarPageTitle = view.page === 'scripts' && scriptsTopbarState
+    ? pageTitleForScriptSubView(scriptsTopbarState.subView)
+    : pageTitleForView(view, {
+      repositoryName: applicationRepository?.name,
+      testName: currentTestRun?.name,
+    })
   const topbarContextItems = [
     activeDomain?.name || 'APEX Load',
     activeProject?.name || 'No project selected',
@@ -617,6 +633,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               initialEditId={scriptEditId}
               onSelectScenario={navigateToTest}
               onNavigate={handleNavigate}
+              onAuthoringStateChange={handleScriptsAuthoringStateChange}
             />
           )}
           {view.page === 'results' && (

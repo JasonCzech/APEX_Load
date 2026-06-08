@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  pageTitleForScriptSubView,
   pageTitleForView,
   selectTopbarActiveRuns,
   topbarRunStatusLabel,
@@ -17,6 +18,15 @@ describe('app topbar helpers', () => {
     expect(pageTitleForView({ page: 'scripts', mode: 'create' })).toBe('Create Script')
     expect(pageTitleForView({ page: 'repository' }, { repositoryName: 'Payments Repository' })).toBe('Payments Repository')
     expect(pageTitleForView({ page: 'test', testId: 'run-1' }, { testName: 'Checkout Peak' })).toBe('Checkout Peak')
+  })
+
+  it('maps script authoring substates to topbar page titles', () => {
+    expect(pageTitleForScriptSubView('list')).toBe('Script Library')
+    expect(pageTitleForScriptSubView('create-options')).toBe('Script Builder')
+    expect(pageTitleForScriptSubView('create')).toBe('Create Script')
+    expect(pageTitleForScriptSubView('edit')).toBe('Edit Script')
+    expect(pageTitleForScriptSubView('openapi-import')).toBe('Import OpenAPI')
+    expect(pageTitleForScriptSubView('recorder')).toBe('Record Browser')
   })
 
   it('selects only active run statuses and prioritizes live work', () => {

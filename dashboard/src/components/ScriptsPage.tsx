@@ -22,6 +22,7 @@ interface Props {
   initialEditId?: string
   onSelectScenario?: (id: string) => void
   onNavigate?: (page: NavPage) => void
+  onAuthoringStateChange?: (state: { subView: ScriptsAuthoringSubView; editingId: string | null }) => void
 }
 
 type AuthoringHealthFilter = 'all' | 'blocked' | 'needs_replay' | 'missing_data' | 'runtime_warning' | 'ai_guardrail'
@@ -106,7 +107,7 @@ function cloneScriptDraft(source: ScriptDefinition, fallbackName: string, projec
   return cloned
 }
 
-export default function ScriptsPage({ initialMode = 'list', initialEditId, onSelectScenario, onNavigate }: Props) {
+export default function ScriptsPage({ initialMode = 'list', initialEditId, onSelectScenario, onNavigate, onAuthoringStateChange }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [scripts, setScripts] = useState<StoredScript[]>([])
@@ -347,6 +348,13 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
       openLibrary()
     }
   }, [authoringState.subView, canManageScripts, openLibrary])
+
+  useEffect(() => {
+    onAuthoringStateChange?.({
+      subView: authoringState.subView,
+      editingId: authoringState.editingId,
+    })
+  }, [authoringState.editingId, authoringState.subView, onAuthoringStateChange])
 
   const handleDelete = async (id: string) => {
     if (!canManageScripts) return

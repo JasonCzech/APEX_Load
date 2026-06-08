@@ -970,6 +970,8 @@ function JsonSourceMinimap({
   const scrollPercent = Math.round(scrollRatio * 100)
   const thumbHeightPct = visibleRatio * 100
   const thumbTopPct = scrollRatio * 100
+  const viewportHighlightTop = scrollSnapshot.scrollTop * minimapScale
+  const viewportHighlightHeight = scrollSnapshot.clientHeight * minimapScale
 
   useEffect(() => {
     const linesElement = sourceMapLinesRef.current
@@ -1164,6 +1166,16 @@ function JsonSourceMinimap({
             className="json-source-map-lines"
             style={{ gridTemplateRows: sourceMapGridTemplateRows }}
           >
+            {hasScrollableEditor && (
+              <div
+                aria-hidden="true"
+                className="json-source-map-viewport-highlight"
+                style={{
+                  top: `${viewportHighlightTop}px`,
+                  height: `${viewportHighlightHeight}px`,
+                }}
+              />
+            )}
             {lines.map(line => (
               <button
                 key={`json-map-line-${line.lineNo}`}
@@ -6054,7 +6066,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       )}
       <div className="editor-header">
         <div className="editor-title-row">
-          <h2>{scriptId ? 'Edit Script' : 'Create Script'}</h2>
           <div className="editor-actions">
             <button className="btn btn-ghost" onClick={handleValidateScript} disabled={saving || replaying || validating || !currentDraftScript.name}>
               {validating ? 'Validating…' : (scriptId ? 'Validate Saved Script' : 'Validate Draft')}
