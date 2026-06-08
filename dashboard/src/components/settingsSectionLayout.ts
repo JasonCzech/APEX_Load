@@ -2,6 +2,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'general', title: 'General' },
   { id: 'thresholds', title: 'Performance Thresholds' },
   { id: 'capacity', title: 'Capacity Planning' },
+  { id: 'domains', title: 'Domains' },
   { id: 'applications', title: 'Applications & Releases' },
   { id: 'projects', title: 'Projects & Compliance' },
   { id: 'data-pools', title: 'Shared Data Pools' },
@@ -113,8 +114,19 @@ export function readSettingsSubsectionId(
 
 export function mergeSettingsOrder(order: SettingsSectionId[]) {
   const retained = order.filter(id => SETTINGS_SECTION_IDS.includes(id))
-  const added = SETTINGS_SECTION_IDS.filter(id => !retained.includes(id))
-  return [...retained, ...added]
+  const result = [...retained]
+  SETTINGS_SECTION_IDS.forEach((id) => {
+    if (result.includes(id)) return
+    if (id === 'domains') {
+      const applicationIndex = result.indexOf('applications')
+      if (applicationIndex !== -1) {
+        result.splice(applicationIndex, 0, id)
+        return
+      }
+    }
+    result.push(id)
+  })
+  return result
 }
 
 export function moveSettingsSection(ids: SettingsSectionId[], draggedId: SettingsSectionId, targetId: SettingsSectionId) {

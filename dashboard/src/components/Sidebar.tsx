@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useAuthApi } from '../hooks/api/useAuthApi'
 import { useDevView } from '../hooks/useDevView'
@@ -170,6 +170,9 @@ export default function Sidebar({
   const [domainOpen, setDomainOpen] = useState(false)
   const [projectOpen, setProjectOpen] = useState(false)
   const [applicationOpen, setApplicationOpen] = useState(false)
+  const domainSelectorRef = useRef<HTMLDivElement | null>(null)
+  const projectSelectorRef = useRef<HTMLDivElement | null>(null)
+  const applicationSelectorRef = useRef<HTMLDivElement | null>(null)
   const [showProjectModal, setShowProjectModal] = useState(false)
   const [showApplicationModal, setShowApplicationModal] = useState(false)
   const [logoutPending, setLogoutPending] = useState(false)
@@ -196,6 +199,62 @@ export default function Sidebar({
   const logoutURL = authStatus?.authenticated ? authStatus.logout_url?.trim() || '' : ''
   const canPostLogout = authStatus?.authenticated && authStatus.mode === 'oidc' && Boolean(authStatus.logout_csrf_token?.trim())
   const sessionExpiryNotice = formatSessionExpiryNotice(authStatus)
+  const closeWorkspaceMenus = useCallback(() => {
+    setDomainOpen(false)
+    setProjectOpen(false)
+    setApplicationOpen(false)
+  }, [])
+
+  useEffect(() => {
+    if (!domainOpen && !projectOpen && !applicationOpen) {
+      return undefined
+    }
+
+    const isInsideOpenMenu = (target: Node) => (
+      (domainOpen && Boolean(domainSelectorRef.current?.contains(target))) ||
+      (projectOpen && Boolean(projectSelectorRef.current?.contains(target))) ||
+      (applicationOpen && Boolean(applicationSelectorRef.current?.contains(target)))
+    )
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node) || isInsideOpenMenu(target)) {
+        return
+      }
+      closeWorkspaceMenus()
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeWorkspaceMenus()
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown, true)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [applicationOpen, closeWorkspaceMenus, domainOpen, projectOpen])
+
+  const toggleDomainMenu = () => {
+    setDomainOpen(open => !open)
+    setProjectOpen(false)
+    setApplicationOpen(false)
+  }
+
+  const toggleProjectMenu = () => {
+    setDomainOpen(false)
+    setProjectOpen(open => !open)
+    setApplicationOpen(false)
+  }
+
+  const toggleApplicationMenu = () => {
+    setDomainOpen(false)
+    setProjectOpen(false)
+    setApplicationOpen(open => !open)
+  }
 
   const handleNewProject = async (name: string) => {
     if (!onCreateProject) return
@@ -233,11 +292,13 @@ export default function Sidebar({
         {!collapsed && <span className="brand-name">APEX Load</span>}
       </div>
 
-      <div className="sidebar-project">
+      <div className="sidebar-project" ref={domainSelectorRef}>
         <button
           className="project-selector"
-          onClick={() => setDomainOpen(!domainOpen)}
+          onClick={toggleDomainMenu}
           title={collapsed ? activeDomain?.name || 'Domain' : undefined}
+          aria-expanded={domainOpen && !collapsed}
+          aria-haspopup="menu"
         >
           <span className="project-icon">◇</span>
           {!collapsed && (
@@ -276,11 +337,13 @@ export default function Sidebar({
         )}
       </div>
 
-      <div className="sidebar-project">
+      <div className="sidebar-project" ref={projectSelectorRef}>
         <button
           className="project-selector"
-          onClick={() => setProjectOpen(!projectOpen)}
+          onClick={toggleProjectMenu}
           title={collapsed ? activeProject?.name || 'Project' : undefined}
+          aria-expanded={projectOpen && !collapsed}
+          aria-haspopup="menu"
         >
           <span className="project-icon">◫</span>
           {!collapsed && (
@@ -321,11 +384,13 @@ export default function Sidebar({
         )}
       </div>
 
-      <div className="sidebar-project">
+      <div className="sidebar-project" ref={applicationSelectorRef}>
         <button
           className="project-selector"
-          onClick={() => setApplicationOpen(!applicationOpen)}
+          onClick={toggleApplicationMenu}
           title={collapsed ? activeApplication?.name || 'Application' : undefined}
+          aria-expanded={applicationOpen && !collapsed}
+          aria-haspopup="menu"
         >
           <span className="project-icon">▣</span>
           {!collapsed && (

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useApi } from '../hooks/useApi'
 import type { BrowserToHTTPPreviewResponse } from '../hooks/api/useScriptApi'
@@ -472,6 +472,42 @@ interface JsonPaneSelectionRequest {
   y: number
 }
 
+interface ScriptCodeScrollSnapshot {
+  scrollTop: number
+  scrollHeight: number
+  clientHeight: number
+}
+
+interface ScriptCodeScrollController {
+  refresh: () => void
+  scrollToRatio: (ratio: number) => void
+}
+
+const SCRIPT_CODE_SCROLL_EMPTY: ScriptCodeScrollSnapshot = {
+  scrollTop: 0,
+  scrollHeight: 0,
+  clientHeight: 0,
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min
+  return Math.max(min, Math.min(max, value))
+}
+
+function readScriptCodeScrollSnapshot(view: EditorView | null): ScriptCodeScrollSnapshot {
+  const scrollDOM = view?.scrollDOM
+  if (!scrollDOM) return SCRIPT_CODE_SCROLL_EMPTY
+  const clientHeight = Math.max(0, scrollDOM.clientHeight || 0)
+  const scrollHeight = Math.max(clientHeight, scrollDOM.scrollHeight || 0)
+  const maxScrollTop = Math.max(0, scrollHeight - clientHeight)
+  const scrollTop = clampNumber(scrollDOM.scrollTop || 0, 0, maxScrollTop)
+  return { scrollTop, scrollHeight, clientHeight }
+}
+
+function sameScriptCodeScrollSnapshot(a: ScriptCodeScrollSnapshot, b: ScriptCodeScrollSnapshot) {
+  return a.scrollTop === b.scrollTop && a.scrollHeight === b.scrollHeight && a.clientHeight === b.clientHeight
+}
+
 interface ScriptCodePaneProps {
   value: string
   status: 'synced' | 'dirty' | 'invalid'
@@ -490,6 +526,8 @@ interface ScriptCodePaneProps {
   onFormat: () => void
   onReset: () => void
   onRequestParameterize?: (selection: JsonPaneSelectionRequest) => void
+  onScrollControllerChange?: (controller: ScriptCodeScrollController | null) => void
+  onScrollSnapshotChange?: (snapshot: ScriptCodeScrollSnapshot) => void
 }
 
 function ScriptCodePane({
@@ -510,8 +548,11 @@ function ScriptCodePane({
   onFormat,
   onReset,
   onRequestParameterize,
+  onScrollControllerChange,
+  onScrollSnapshotChange,
 }: ScriptCodePaneProps) {
   const viewRef = useRef<EditorView | null>(null)
+  const lastScrollSnapshotRef = useRef<ScriptCodeScrollSnapshot>(SCRIPT_CODE_SCROLL_EMPTY)
   const [editorReadyVersion, setEditorReadyVersion] = useState(0)
   const extensions = useMemo(() => [
     json(),
@@ -531,6 +572,53 @@ function ScriptCodePane({
     ? `Parameter: ${activeParameterName} (${parameterMatchRanges.length} occurrence${parameterMatchRanges.length === 1 ? '' : 's'})`
     : ''
 
+  const emitScrollSnapshot = useCallback(() => {
+    const snapshot = readScriptCodeScrollSnapshot(viewRef.current)
+    if (sameScriptCodeScrollSnapshot(snapshot, lastScrollSnapshotRef.current)) return
+    lastScrollSnapshotRef.current = snapshot
+    onScrollSnapshotChange?.(snapshot)
+  }, [onScrollSnapshotChange])
+
+  const scrollToRatio = useCallback((ratio: number) => {
+    const scrollDOM = viewRef.current?.scrollDOM
+    if (!scrollDOM) return
+    const maxScrollTop = Math.max(0, (scrollDOM.scrollHeight || 0) - (scrollDOM.clientHeight || 0))
+    scrollDOM.scrollTop = maxScrollTop * clampNumber(ratio, 0, 1)
+    scrollDOM.dispatchEvent(new Event('scroll', { bubbles: true }))
+    emitScrollSnapshot()
+  }, [emitScrollSnapshot])
+
+  useEffect(() => {
+    if (!onScrollControllerChange || !viewRef.current) return undefined
+    const controller: ScriptCodeScrollController = {
+      refresh: emitScrollSnapshot,
+      scrollToRatio,
+    }
+    onScrollControllerChange(controller)
+    return () => onScrollControllerChange(null)
+  }, [editorReadyVersion, emitScrollSnapshot, onScrollControllerChange, scrollToRatio])
+
+  useEffect(() => {
+    const scrollDOM = viewRef.current?.scrollDOM
+    if (!scrollDOM) return undefined
+    const handleScroll = () => emitScrollSnapshot()
+    scrollDOM.addEventListener('scroll', handleScroll, { passive: true })
+    emitScrollSnapshot()
+
+    let resizeObserver: ResizeObserver | null = null
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => emitScrollSnapshot())
+      resizeObserver.observe(scrollDOM)
+    }
+    window.addEventListener('resize', emitScrollSnapshot)
+
+    return () => {
+      scrollDOM.removeEventListener('scroll', handleScroll)
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', emitScrollSnapshot)
+    }
+  }, [editorReadyVersion, emitScrollSnapshot, value])
+
   useEffect(() => {
     const view = viewRef.current
     if (!view) return
@@ -541,7 +629,8 @@ function ScriptCodePane({
       effects.push(EditorView.scrollIntoView(line.from, { y: 'center' }))
     }
     view.dispatch({ effects })
-  }, [activeStartLine, activeEndLine, editorReadyVersion, value])
+    emitScrollSnapshot()
+  }, [activeStartLine, activeEndLine, editorReadyVersion, emitScrollSnapshot, value])
 
   useEffect(() => {
     const view = viewRef.current
@@ -554,10 +643,12 @@ function ScriptCodePane({
         selection: EditorSelection.range(firstMatch.from, firstMatch.to),
         effects,
       })
+      emitScrollSnapshot()
       return
     }
     view.dispatch({ effects })
-  }, [editorReadyVersion, parameterMatchKey, parameterMatchRanges, value])
+    emitScrollSnapshot()
+  }, [editorReadyVersion, emitScrollSnapshot, parameterMatchKey, parameterMatchRanges, value])
 
   useEffect(() => {
     const view = viewRef.current
@@ -568,9 +659,10 @@ function ScriptCodePane({
       selection: EditorSelection.cursor(line.from),
       effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
     })
-  }, [editorReadyVersion, jumpToLineRequest, value])
+    emitScrollSnapshot()
+  }, [editorReadyVersion, emitScrollSnapshot, jumpToLineRequest, value])
 
-  const handleEditorContextMenu = useCallback((event: MouseEvent<HTMLDivElement>) => {
+  const handleEditorContextMenu = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     if (!onRequestParameterize) return
     const view = viewRef.current
     if (!view) return
@@ -622,6 +714,7 @@ function ScriptCodePane({
           }}
           onCreateEditor={view => {
             viewRef.current = view
+            emitScrollSnapshot()
             setEditorReadyVersion(version => version + 1)
           }}
         />
@@ -644,9 +737,11 @@ interface JsonSourceMinimapProps {
   activeRange: LineRange | null
   jsonText: string
   parameterMatchRanges: ScriptCodeMatchRange[]
+  scrollSnapshot: ScriptCodeScrollSnapshot
   selectedParameterName?: string | null
   status: 'synced' | 'dirty' | 'invalid'
   onJumpToLine: (line: number) => void
+  onScrollRatioChange: (ratio: number) => void
 }
 
 function lineNumberForOffset(lineStarts: number[], offset: number): number {
@@ -709,10 +804,14 @@ function JsonSourceMinimap({
   activeRange,
   jsonText,
   parameterMatchRanges,
+  scrollSnapshot,
   selectedParameterName,
   status,
   onJumpToLine,
+  onScrollRatioChange,
 }: JsonSourceMinimapProps) {
+  const scrollTrackRef = useRef<HTMLDivElement | null>(null)
+  const dragStateRef = useRef<{ pointerId: number | null; startY: number; startRatio: number; trackHeight: number } | null>(null)
   const lines = useMemo(
     () => buildJsonMinimapLines(jsonText, activeRange, parameterMatchRanges),
     [activeRange, jsonText, parameterMatchRanges],
@@ -721,6 +820,162 @@ function JsonSourceMinimap({
     ? `${selectedParameterName}: ${parameterMatchRanges.length} occurrence${parameterMatchRanges.length === 1 ? '' : 's'}`
     : activePath || (activeRange ? `Lines ${activeRange.startLine}-${activeRange.endLine}` : 'No selection')
   const invalid = status === 'invalid' || !jsonText.trim()
+  const scrollRange = Math.max(0, scrollSnapshot.scrollHeight - scrollSnapshot.clientHeight)
+  const hasScrollableEditor = scrollRange > 0 && scrollSnapshot.clientHeight > 0
+  const visibleRatio = hasScrollableEditor
+    ? clampNumber(scrollSnapshot.clientHeight / scrollSnapshot.scrollHeight, 0.04, 1)
+    : 1
+  const scrollRatio = hasScrollableEditor
+    ? clampNumber(scrollSnapshot.scrollTop / scrollRange, 0, 1)
+    : 0
+  const scrollPercent = Math.round(scrollRatio * 100)
+  const thumbHeightPct = visibleRatio * 100
+  const thumbTopPct = scrollRatio * 100
+
+  const scrollFromTrackPosition = (clientY: number) => {
+    const track = scrollTrackRef.current
+    if (!track) return
+    const rect = track.getBoundingClientRect()
+    if (rect.height <= 0) return
+    const thumbHeight = rect.height * visibleRatio
+    const draggableHeight = Math.max(1, rect.height - thumbHeight)
+    const nextRatio = clampNumber((clientY - rect.top - thumbHeight / 2) / draggableHeight, 0, 1)
+    onScrollRatioChange(nextRatio)
+  }
+
+  const handleTrackPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!hasScrollableEditor) return
+    event.preventDefault()
+    scrollFromTrackPosition(event.clientY)
+  }
+
+  const handleTrackMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!hasScrollableEditor || event.button !== 0) return
+    event.preventDefault()
+    scrollFromTrackPosition(event.clientY)
+  }
+
+  const beginThumbDrag = (clientY: number, pointerId: number | null) => {
+    if (!hasScrollableEditor) return
+    const track = scrollTrackRef.current
+    const trackHeight = track?.getBoundingClientRect().height || 0
+    if (trackHeight <= 0) return
+    dragStateRef.current = {
+      pointerId,
+      startY: clientY,
+      startRatio: scrollRatio,
+      trackHeight,
+    }
+  }
+
+  const applyThumbDrag = (clientY: number) => {
+    const dragState = dragStateRef.current
+    if (!dragState) return
+    const draggableHeight = Math.max(1, dragState.trackHeight * (1 - visibleRatio))
+    const nextRatio = clampNumber(dragState.startRatio + (clientY - dragState.startY) / draggableHeight, 0, 1)
+    onScrollRatioChange(nextRatio)
+  }
+
+  const handleThumbPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!hasScrollableEditor) return
+    event.preventDefault()
+    event.stopPropagation()
+    const pointerId = typeof event.pointerId === 'number' ? event.pointerId : null
+    beginThumbDrag(event.clientY, pointerId)
+    if (pointerId !== null) {
+      event.currentTarget.setPointerCapture?.(pointerId)
+    }
+  }
+
+  const handleThumbPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const dragState = dragStateRef.current
+    if (!dragState) return
+    if (dragState.pointerId !== null && dragState.pointerId !== event.pointerId) return
+    event.preventDefault()
+    applyThumbDrag(event.clientY)
+  }
+
+  const handleThumbPointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const dragState = dragStateRef.current
+    if (!dragState) return
+    if (dragState.pointerId !== null && dragState.pointerId !== event.pointerId) return
+    dragStateRef.current = null
+    if (dragState.pointerId !== null) {
+      event.currentTarget.releasePointerCapture?.(dragState.pointerId)
+    }
+  }
+
+  const handleThumbMouseDown = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (!hasScrollableEditor || event.button !== 0 || dragStateRef.current) return
+    event.preventDefault()
+    event.stopPropagation()
+    beginThumbDrag(event.clientY, null)
+  }
+
+  useEffect(() => {
+    const handleDocumentPointerMove = (event: PointerEvent) => {
+      const dragState = dragStateRef.current
+      if (!dragState || dragState.pointerId === null || dragState.pointerId !== event.pointerId) return
+      event.preventDefault()
+      applyThumbDrag(event.clientY)
+    }
+    const handleDocumentPointerUp = (event: PointerEvent) => {
+      const dragState = dragStateRef.current
+      if (!dragState || dragState.pointerId === null || dragState.pointerId !== event.pointerId) return
+      dragStateRef.current = null
+    }
+    const handleDocumentMouseMove = (event: MouseEvent) => {
+      const dragState = dragStateRef.current
+      if (!dragState || dragState.pointerId !== null) return
+      if (event.buttons === 0) {
+        dragStateRef.current = null
+        return
+      }
+      event.preventDefault()
+      applyThumbDrag(event.clientY)
+    }
+    const handleDocumentMouseUp = () => {
+      const dragState = dragStateRef.current
+      if (!dragState || dragState.pointerId !== null) return
+      dragStateRef.current = null
+    }
+
+    document.addEventListener('pointermove', handleDocumentPointerMove)
+    document.addEventListener('pointerup', handleDocumentPointerUp)
+    document.addEventListener('pointercancel', handleDocumentPointerUp)
+    document.addEventListener('mousemove', handleDocumentMouseMove)
+    document.addEventListener('mouseup', handleDocumentMouseUp)
+    return () => {
+      document.removeEventListener('pointermove', handleDocumentPointerMove)
+      document.removeEventListener('pointerup', handleDocumentPointerUp)
+      document.removeEventListener('pointercancel', handleDocumentPointerUp)
+      document.removeEventListener('mousemove', handleDocumentMouseMove)
+      document.removeEventListener('mouseup', handleDocumentMouseUp)
+    }
+  }, [applyThumbDrag])
+
+  const handleThumbKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (!hasScrollableEditor) return
+    const smallStep = Math.max(0.015, visibleRatio / 4)
+    const pageStep = Math.max(0.08, visibleRatio * 0.9)
+    let nextRatio: number | null = null
+    if (event.key === 'ArrowDown') {
+      nextRatio = scrollRatio + smallStep
+    } else if (event.key === 'ArrowUp') {
+      nextRatio = scrollRatio - smallStep
+    } else if (event.key === 'PageDown') {
+      nextRatio = scrollRatio + pageStep
+    } else if (event.key === 'PageUp') {
+      nextRatio = scrollRatio - pageStep
+    } else if (event.key === 'Home') {
+      nextRatio = 0
+    } else if (event.key === 'End') {
+      nextRatio = 1
+    }
+    if (nextRatio == null) return
+    event.preventDefault()
+    onScrollRatioChange(clampNumber(nextRatio, 0, 1))
+  }
 
   return (
     <div className="json-source-map-panel">
@@ -733,20 +988,55 @@ function JsonSourceMinimap({
           {jsonText.trim() ? 'Fix the JSON draft to rebuild the source map.' : 'No JSON source to map yet.'}
         </div>
       ) : (
-        <div className="json-source-map" aria-label="JSON source map">
-          {lines.map(line => (
-            <button
-              key={`json-map-line-${line.lineNo}`}
-              type="button"
-              className={`json-source-map-line ${line.isActiveBlock ? 'active-block' : ''} ${line.hasParameterMatch ? 'parameter-match' : ''} ${line.hasFirstParameterMatch ? 'first-parameter-match' : ''}`}
-              onClick={() => onJumpToLine(line.lineNo)}
-              title={`Line ${line.lineNo}: ${line.textPreview}`}
-              aria-label={`Jump to JSON line ${line.lineNo}`}
+        <div className={`json-source-map ${hasScrollableEditor ? 'scroll-linked' : ''}`} aria-label="JSON source map">
+          <div
+            className="json-source-map-lines"
+            style={{ gridTemplateRows: `repeat(${Math.max(lines.length, 1)}, minmax(0, 1fr))` }}
+          >
+            {lines.map(line => (
+              <button
+                key={`json-map-line-${line.lineNo}`}
+                type="button"
+                className={`json-source-map-line ${line.isActiveBlock ? 'active-block' : ''} ${line.hasParameterMatch ? 'parameter-match' : ''} ${line.hasFirstParameterMatch ? 'first-parameter-match' : ''}`}
+                onClick={() => onJumpToLine(line.lineNo)}
+                title={`Line ${line.lineNo}: ${line.textPreview}`}
+                aria-label={`Jump to JSON line ${line.lineNo}`}
+              >
+                <span className="json-source-map-line-number">{line.lineNo}</span>
+                <span className="json-source-map-line-code" style={{ width: `${line.widthPct}%` }}>{line.textPreview}</span>
+              </button>
+            ))}
+          </div>
+          {hasScrollableEditor && (
+            <div
+              ref={scrollTrackRef}
+              className="json-source-map-scroll-track"
+              onMouseDown={handleTrackMouseDown}
+              onPointerDown={handleTrackPointerDown}
             >
-              <span className="json-source-map-line-number">{line.lineNo}</span>
-              <span className="json-source-map-line-code" style={{ width: `${line.widthPct}%` }}>{line.textPreview}</span>
-            </button>
-          ))}
+              <button
+                type="button"
+                className="json-source-map-scroll-thumb"
+                style={{
+                  height: `${thumbHeightPct}%`,
+                  top: `${thumbTopPct}%`,
+                  transform: `translateY(-${thumbTopPct}%)`,
+                }}
+                role="scrollbar"
+                aria-label="Scroll Script JSON source"
+                aria-orientation="vertical"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={scrollPercent}
+                onKeyDown={handleThumbKeyDown}
+                onMouseDown={handleThumbMouseDown}
+                onPointerDown={handleThumbPointerDown}
+                onPointerMove={handleThumbPointerMove}
+                onPointerUp={handleThumbPointerUp}
+                onPointerCancel={handleThumbPointerUp}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1949,6 +2239,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [debugParameterListCollapsed, setDebugParameterListCollapsed] = useState(false)
   const [selectedOutlineParameterName, setSelectedOutlineParameterName] = useState<string | null>(null)
   const [jsonLineJumpRequest, setJsonLineJumpRequest] = useState<ScriptCodeLineJumpRequest | null>(null)
+  const [scriptCodeScrollSnapshot, setScriptCodeScrollSnapshot] = useState<ScriptCodeScrollSnapshot>(SCRIPT_CODE_SCROLL_EMPTY)
+  const [scriptCodeScrollController, setScriptCodeScrollController] = useState<ScriptCodeScrollController | null>(null)
   const isBrowserScript = script.protocol === 'browser'
   const isHttpScript = script.protocol === 'http'
   const isJmsScript = script.protocol.startsWith('jms')
@@ -3434,6 +3726,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const jsonParseMessage = jsonDraftParse.ok ? '' : jsonDraftParse.message
   const jsonStatus: ScriptCodePaneProps['status'] = jsonParseMessage ? 'invalid' : jsonDirty ? 'dirty' : 'synced'
   const jsonStatusMessage = jsonParseMessage ? 'Invalid JSON' : jsonDirty ? 'Unsaved JSON edits' : 'Synced'
+
+  const handleScriptCodeScrollSnapshotChange = useCallback((snapshot: ScriptCodeScrollSnapshot) => {
+    setScriptCodeScrollSnapshot(current => (
+      sameScriptCodeScrollSnapshot(current, snapshot) ? current : snapshot
+    ))
+  }, [])
+
+  const handleScriptCodeScrollControllerChange = useCallback((controller: ScriptCodeScrollController | null) => {
+    setScriptCodeScrollController(controller)
+  }, [])
+
+  const handleJsonSourceMapScrollRatioChange = useCallback((ratio: number) => {
+    scriptCodeScrollController?.scrollToRatio(ratio)
+  }, [scriptCodeScrollController])
 
   const resolveCurrentScript = useCallback((): ScriptData => {
     const parsed = parseScriptJsonDraft(jsonText)
@@ -5193,6 +5499,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           onFormat={handleFormatJsonDraft}
           onReset={handleResetJsonDraft}
           onRequestParameterize={openJsonParameterSelectionMenu}
+          onScrollControllerChange={handleScriptCodeScrollControllerChange}
+          onScrollSnapshotChange={handleScriptCodeScrollSnapshotChange}
         />
         <AutoParameterizationSection
           onApplyAutoParameterization={applyAutoParameterization}
@@ -5260,7 +5568,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             activeRange={scriptCodeActiveRange}
             jsonText={jsonText}
             onJumpToLine={line => setJsonLineJumpRequest({ line, nonce: Date.now() })}
+            onScrollRatioChange={handleJsonSourceMapScrollRatioChange}
             parameterMatchRanges={parameterMatchRanges}
+            scrollSnapshot={scriptCodeScrollSnapshot}
             selectedParameterName={selectedOutlineParameterExists ? selectedOutlineParameterName : null}
             status={jsonStatus}
           />
@@ -10697,7 +11007,7 @@ function ParameterDefinitionRow({
         <button
           className="btn btn-sm btn-ghost"
           style={{ color: 'var(--danger)' }}
-          onClick={(event: MouseEvent<HTMLButtonElement>) => {
+          onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
             event.stopPropagation()
             onRemoveParameter(idx)
           }}
@@ -10766,7 +11076,7 @@ function ParameterSelectionSettingsButton({
 }
 
 interface ParameterSettingsButtonProps {
-  onClick: (event: MouseEvent<HTMLButtonElement>) => void
+  onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void
   parameter: ParameterConfig
   parameterName: string
 }
@@ -13466,7 +13776,7 @@ function useActionParameterMenu({
     return parameters.find(parameter => sanitizeVarName(parameter.name || '') === normalizedName) || null
   }, [parameters])
 
-  const openSelectionMenu = useCallback((event: MouseEvent<HTMLTextAreaElement>) => {
+  const openSelectionMenu = useCallback((event: ReactMouseEvent<HTMLTextAreaElement>) => {
     const textarea = event.currentTarget
     const start = textarea.selectionStart ?? 0
     const end = textarea.selectionEnd ?? 0
@@ -13516,7 +13826,7 @@ function useActionParameterMenu({
 
 interface ActionBodyTextareaProps {
   onChange: (value: string) => void
-  onContextMenu: (event: MouseEvent<HTMLTextAreaElement>) => void
+  onContextMenu: (event: ReactMouseEvent<HTMLTextAreaElement>) => void
   placeholder: string
   rows: number
   value: string
@@ -13685,7 +13995,7 @@ interface WebSocketActionFieldsProps {
   onRemoveAssertion: (ai: number, ai2: number) => void
   onRemoveExtractor: (ai: number, ei: number) => void
   onRemoveHeader: (ai: number, k: string) => void
-  onSelectionMenu: (event: MouseEvent<HTMLTextAreaElement>) => void
+  onSelectionMenu: (event: ReactMouseEvent<HTMLTextAreaElement>) => void
   onUpdate: (i: number, f: keyof Action, v: unknown) => void
   onUpdateAssertion: (ai: number, ai2: number, f: keyof Assertion, v: unknown) => void
   onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void
@@ -13770,7 +14080,7 @@ interface GrpcActionFieldsProps {
   onRemoveAssertion: (ai: number, ai2: number) => void
   onRemoveExtractor: (ai: number, ei: number) => void
   onRemoveHeader: (ai: number, k: string) => void
-  onSelectionMenu: (event: MouseEvent<HTMLTextAreaElement>) => void
+  onSelectionMenu: (event: ReactMouseEvent<HTMLTextAreaElement>) => void
   onUpdate: (i: number, f: keyof Action, v: unknown) => void
   onUpdateAssertion: (ai: number, ai2: number, f: keyof Assertion, v: unknown) => void
   onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void
@@ -13850,7 +14160,7 @@ interface DatabaseActionFieldsProps {
   onAddExtractor: (i: number) => void
   onRemoveAssertion: (ai: number, ai2: number) => void
   onRemoveExtractor: (ai: number, ei: number) => void
-  onSelectionMenu: (event: MouseEvent<HTMLTextAreaElement>) => void
+  onSelectionMenu: (event: ReactMouseEvent<HTMLTextAreaElement>) => void
   onUpdate: (i: number, f: keyof Action, v: unknown) => void
   onUpdateAssertion: (ai: number, ai2: number, f: keyof Assertion, v: unknown) => void
   onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void
@@ -13917,7 +14227,7 @@ interface NetworkActionFieldsProps {
   onAddExtractor: (i: number) => void
   onRemoveAssertion: (ai: number, ai2: number) => void
   onRemoveExtractor: (ai: number, ei: number) => void
-  onSelectionMenu: (event: MouseEvent<HTMLTextAreaElement>) => void
+  onSelectionMenu: (event: ReactMouseEvent<HTMLTextAreaElement>) => void
   onUpdate: (i: number, f: keyof Action, v: unknown) => void
   onUpdateAssertion: (ai: number, ai2: number, f: keyof Assertion, v: unknown) => void
   onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void
@@ -14032,7 +14342,7 @@ interface JmsActionFieldsProps {
   onRemoveExtractor: (ai: number, ei: number) => void
   onRemoveHeader: (ai: number, k: string) => void
   onRemoveMetadata: (ai: number, k: string) => void
-  onSelectionMenu: (event: MouseEvent<HTMLTextAreaElement>) => void
+  onSelectionMenu: (event: ReactMouseEvent<HTMLTextAreaElement>) => void
   onUpdate: (i: number, f: keyof Action, v: unknown) => void
   onUpdateAssertion: (ai: number, ai2: number, f: keyof Assertion, v: unknown) => void
   onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void
@@ -14164,7 +14474,7 @@ interface HttpActionFieldsProps {
   onRemoveAssertion: (ai: number, ai2: number) => void
   onRemoveExtractor: (ai: number, ei: number) => void
   onRemoveHeader: (ai: number, k: string) => void
-  onSelectionMenu: (event: MouseEvent<HTMLTextAreaElement>) => void
+  onSelectionMenu: (event: ReactMouseEvent<HTMLTextAreaElement>) => void
   onUpdate: (i: number, f: keyof Action, v: unknown) => void
   onUpdateAssertion: (ai: number, ai2: number, f: keyof Assertion, v: unknown) => void
   onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void

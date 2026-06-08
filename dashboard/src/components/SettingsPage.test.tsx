@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, useState } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SettingsPage from './SettingsPage'
+import type { DashboardAuthEffectiveAccessResource, Domain } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -66,6 +67,13 @@ const projectApiMock = {
   deleteFolder: vi.fn(),
 }
 
+const repositoryApiMock = {
+  listDomains: vi.fn(),
+  createDomain: vi.fn(),
+  updateDomain: vi.fn(),
+  deleteDomain: vi.fn(),
+}
+
 const applicationContextMock = {
   applications: [],
   releases: [],
@@ -90,6 +98,10 @@ vi.mock('../hooks/api/useProjectApi', () => ({
   useProjectApi: () => projectApiMock,
 }))
 
+vi.mock('../hooks/api/useRepositoryApi', () => ({
+  useRepositoryApi: () => repositoryApiMock,
+}))
+
 vi.mock('../hooks/useApplication', () => ({
   useApplication: () => applicationContextMock,
 }))
@@ -103,6 +115,64 @@ vi.mock('../hooks/useProject', () => ({
 vi.mock('../utils/fileUtils', () => ({
   downloadBlob: downloadBlobMock,
 }))
+
+const defaultDomain: Domain = {
+  id: 'default',
+  name: 'Default Domain',
+  description: 'Default migrated domain',
+  created_at: '2026-05-01T00:00:00Z',
+  updated_at: '2026-05-01T00:00:00Z',
+}
+
+const retailDomain: Domain = {
+  id: 'domain-retail',
+  name: 'Retail',
+  description: 'Retail apps',
+  created_at: '2026-05-02T00:00:00Z',
+  updated_at: '2026-05-02T00:00:00Z',
+}
+
+function domainAccessResources(canManageDomains = true): DashboardAuthEffectiveAccessResource[] {
+  return [
+    {
+      id: 'domains_and_application_repository',
+      name: 'Domains and Application Repository',
+      description: 'Domain tenancy.',
+      operations: [
+        { id: 'view_domains', label: 'View domains', allowed: true, grant_source: 'global' },
+        { id: 'manage_domains', label: 'Manage domains', allowed: canManageDomains, grant_source: canManageDomains ? 'global' : undefined },
+      ],
+    },
+  ]
+}
+
+function SettingsPageDomainHarness({ initialDomains = [defaultDomain, retailDomain] }: { initialDomains?: Domain[] }) {
+  const [domains, setDomains] = useState<Domain[]>(initialDomains)
+  const [activeDomain, setActiveDomain] = useState<Domain | null>(initialDomains[0] || null)
+
+  const refreshDomains = async (preferredId?: string) => {
+    const response = await repositoryApiMock.listDomains()
+    const nextDomains: Domain[] = response.domains || []
+    const nextActive = nextDomains.find(domain => domain.id === preferredId)
+      || nextDomains.find(domain => domain.id === activeDomain?.id)
+      || nextDomains[0]
+      || null
+    setDomains(nextDomains)
+    setActiveDomain(nextActive)
+    return nextDomains
+  }
+
+  return (
+    <SettingsPage
+      theme="dark"
+      onThemeChange={vi.fn()}
+      domains={domains}
+      activeDomain={activeDomain}
+      onDomainChange={setActiveDomain}
+      onDomainsRefresh={refreshDomains}
+    />
+  )
+}
 
 describe('SettingsPage', () => {
   let container: HTMLDivElement
@@ -497,6 +567,10 @@ describe('SettingsPage', () => {
       summary: { candidate_count: 1, pruned_count: 1, failed_count: 0 },
     })
     applicationApiMock.listReleases.mockResolvedValue({ releases: [] })
+    repositoryApiMock.listDomains.mockResolvedValue({ domains: [defaultDomain], count: 1 })
+    repositoryApiMock.createDomain.mockResolvedValue({ domain: retailDomain, application_repository: { id: 'repo-retail', domain_id: retailDomain.id, name: 'Application Repository', created_at: '', updated_at: '' }, default_category: { id: 'category-retail', domain_id: retailDomain.id, repository_id: 'repo-retail', name: 'Uncategorized', created_at: '', updated_at: '' } })
+    repositoryApiMock.updateDomain.mockResolvedValue(retailDomain)
+    repositoryApiMock.deleteDomain.mockResolvedValue({ deleted: retailDomain.id })
     projectApiMock.listProjects.mockResolvedValue({
       projects: [
         {
@@ -633,6 +707,243 @@ describe('SettingsPage', () => {
     await selectSettingsSubnav(integrationsSection, 'Notifications')
     expect(integrationsSection.querySelector('#settings-integrations-panel-library')?.hasAttribute('hidden')).toBe(true)
     expect(integrationsSection.querySelector('#settings-integrations-panel-notifications')?.hasAttribute('hidden')).toBe(false)
+  })
+
+  it('creates a domain from the top-level Domains settings section and selects it', async () => {
+    const paymentsDomain: Domain = {
+      id: 'domain-payments',
+      name: 'Payments',
+      description: 'Payment systems',
+      created_at: '2026-05-03T00:00:00Z',
+      updated_at: '2026-05-03T00:00:00Z',
+    }
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: true,
+      authenticated: true,
+      resources: domainAccessResources(true),
+    })
+    repositoryApiMock.createDomain.mockResolvedValue({
+      domain: paymentsDomain,
+      application_repository: { id: 'repo-payments', domain_id: paymentsDomain.id, name: 'Application Repository', created_at: '', updated_at: '' },
+      default_category: { id: 'category-payments', domain_id: paymentsDomain.id, repository_id: 'repo-payments', name: 'Uncategorized', created_at: '', updated_at: '' },
+    })
+    repositoryApiMock.listDomains.mockResolvedValue({ domains: [defaultDomain, paymentsDomain], count: 2 })
+
+    await act(async () => {
+      root.render(<SettingsPageDomainHarness initialDomains={[defaultDomain]} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Domains')
+    const domainSection = container.querySelector('#settings-section-domains')
+    expect(domainSection).toBeTruthy()
+    if (!domainSection) return
+
+    const createRow = domainSection.querySelector('.inline-create-row')
+    const inputs = Array.from(createRow?.querySelectorAll('input') || []) as HTMLInputElement[]
+    expect(inputs).toHaveLength(2)
+    if (inputs.length !== 2) return
+    await setFieldValue(inputs[0], 'Payments')
+    await setFieldValue(inputs[1], 'Payment systems')
+
+    const addButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Add Domain') as HTMLButtonElement | undefined
+    expect(addButton?.disabled).toBe(false)
+    if (!addButton) return
+    await act(async () => {
+      addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(repositoryApiMock.createDomain).toHaveBeenCalledWith({ name: 'Payments', description: 'Payment systems' })
+    expect(repositoryApiMock.listDomains).toHaveBeenCalled()
+    expect(container.textContent).toContain('Domain "Payments" created.')
+    expect(domainSection.querySelector('.settings-app-card.active')?.textContent).toContain('Payments')
+  })
+
+  it('renames and describes the selected domain from Settings', async () => {
+    const updatedDomain: Domain = {
+      ...retailDomain,
+      name: 'Retail Banking',
+      description: 'Digital banking journeys',
+      updated_at: '2026-05-04T00:00:00Z',
+    }
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: true,
+      authenticated: true,
+      resources: domainAccessResources(true),
+    })
+    repositoryApiMock.updateDomain.mockResolvedValue(updatedDomain)
+    repositoryApiMock.listDomains.mockResolvedValue({ domains: [defaultDomain, updatedDomain], count: 2 })
+
+    await act(async () => {
+      root.render(<SettingsPageDomainHarness />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Domains')
+    const domainSection = container.querySelector('#settings-section-domains')
+    expect(domainSection).toBeTruthy()
+    if (!domainSection) return
+
+    const retailButton = Array.from(domainSection.querySelectorAll('.settings-app-card')).find(button => button.textContent?.includes('Retail')) as HTMLButtonElement | undefined
+    expect(retailButton).toBeTruthy()
+    if (!retailButton) return
+    await act(async () => {
+      retailButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const selectedRow = Array.from(domainSection.querySelectorAll('.setting-row')).find(row => row.textContent?.includes('Selected Domain'))
+    const nameInput = selectedRow?.querySelector('input') as HTMLInputElement | null
+    const descriptionInput = selectedRow?.querySelector('textarea') as HTMLTextAreaElement | null
+    expect(nameInput).toBeTruthy()
+    expect(descriptionInput).toBeTruthy()
+    if (!nameInput || !descriptionInput) return
+    await setFieldValue(nameInput, 'Retail Banking')
+    await setFieldValue(descriptionInput, 'Digital banking journeys')
+
+    const saveButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Save Domain') as HTMLButtonElement | undefined
+    expect(saveButton?.disabled).toBe(false)
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(repositoryApiMock.updateDomain).toHaveBeenCalledWith(retailDomain.id, {
+      name: 'Retail Banking',
+      description: 'Digital banking journeys',
+    })
+    expect(container.textContent).toContain('Domain "Retail Banking" saved.')
+    expect(domainSection.querySelector('.settings-app-card.active')?.textContent).toContain('Retail Banking')
+  })
+
+  it('guards domain deletion for default and non-empty domains', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: true,
+      authenticated: true,
+      resources: domainAccessResources(true),
+    })
+    projectApiMock.listProjects.mockResolvedValueOnce({
+      projects: [
+        {
+          id: 'project-retail',
+          domain_id: retailDomain.id,
+          name: 'Retail Checkout',
+          created_at: '2026-05-15T00:00:00Z',
+          updated_at: '2026-05-15T00:00:00Z',
+        },
+      ],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<SettingsPageDomainHarness />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Domains')
+    const domainSection = container.querySelector('#settings-section-domains')
+    expect(domainSection).toBeTruthy()
+    if (!domainSection) return
+
+    let deleteButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Delete') as HTMLButtonElement | undefined
+    expect(deleteButton?.disabled).toBe(true)
+    expect(domainSection.textContent).toContain('Default domain cannot be deleted.')
+
+    const retailButton = Array.from(domainSection.querySelectorAll('.settings-app-card')).find(button => button.textContent?.includes('Retail')) as HTMLButtonElement | undefined
+    expect(retailButton).toBeTruthy()
+    if (!retailButton) return
+    await act(async () => {
+      retailButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    deleteButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Delete') as HTMLButtonElement | undefined
+    expect(deleteButton?.disabled).toBe(true)
+    expect(domainSection.textContent).toContain('1 project must be moved or deleted first.')
+    expect(repositoryApiMock.deleteDomain).not.toHaveBeenCalled()
+  })
+
+  it('deletes an empty non-default domain after confirmation and selects a fallback', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: true,
+      authenticated: true,
+      resources: domainAccessResources(true),
+    })
+    repositoryApiMock.listDomains.mockResolvedValue({ domains: [defaultDomain], count: 1 })
+
+    await act(async () => {
+      root.render(<SettingsPageDomainHarness />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Domains')
+    const domainSection = container.querySelector('#settings-section-domains')
+    expect(domainSection).toBeTruthy()
+    if (!domainSection) return
+
+    const retailButton = Array.from(domainSection.querySelectorAll('.settings-app-card')).find(button => button.textContent?.includes('Retail')) as HTMLButtonElement | undefined
+    expect(retailButton).toBeTruthy()
+    if (!retailButton) return
+    await act(async () => {
+      retailButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const deleteButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Delete') as HTMLButtonElement | undefined
+    expect(deleteButton?.disabled).toBe(false)
+    if (!deleteButton) return
+    await act(async () => {
+      deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const confirmButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Confirm Delete') as HTMLButtonElement | undefined
+    expect(confirmButton).toBeTruthy()
+    if (!confirmButton) return
+    await act(async () => {
+      confirmButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(repositoryApiMock.deleteDomain).toHaveBeenCalledWith(retailDomain.id)
+    expect(container.textContent).toContain('Domain "Retail" deleted.')
+    expect(domainSection.querySelector('.settings-app-card.active')?.textContent).toContain('Default Domain')
+  })
+
+  it('disables domain write controls when manage_domains is denied', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: true,
+      authenticated: true,
+      resources: domainAccessResources(false),
+    })
+
+    await act(async () => {
+      root.render(<SettingsPageDomainHarness />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Domains')
+    const domainSection = container.querySelector('#settings-section-domains')
+    expect(domainSection).toBeTruthy()
+    if (!domainSection) return
+
+    const createInput = domainSection.querySelector('.inline-create-row input') as HTMLInputElement | null
+    expect(createInput).toBeTruthy()
+    if (!createInput) return
+    await setFieldValue(createInput, 'Restricted')
+
+    const addButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Add Domain') as HTMLButtonElement | undefined
+    const saveButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Save Domain') as HTMLButtonElement | undefined
+    const deleteButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Delete') as HTMLButtonElement | undefined
+
+    expect(addButton?.disabled).toBe(true)
+    expect(saveButton?.disabled).toBe(true)
+    expect(deleteButton?.disabled).toBe(true)
+    expect(domainSection.textContent).toContain('Current session can view domains but cannot change them.')
+    expect(repositoryApiMock.createDomain).not.toHaveBeenCalled()
   })
 
   it('offers Solarized Dark in the dashboard theme selector', async () => {

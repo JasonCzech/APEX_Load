@@ -17,8 +17,9 @@ const { downloadBlobMock } = vi.hoisted(() => ({
   downloadBlobMock: vi.fn(),
 }))
 
-const { codeMirrorDispatchMock } = vi.hoisted(() => ({
+const { codeMirrorDispatchMock, codeMirrorScrollDoms } = vi.hoisted(() => ({
   codeMirrorDispatchMock: vi.fn(),
+  codeMirrorScrollDoms: [] as HTMLElement[],
 }))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -72,20 +73,47 @@ vi.mock('@uiw/react-codemirror', async () => {
     const created = useRef(false)
     const hasApexDslSemanticHighlighting = flattenExtensions(extensions).includes(apexDslSemanticHighlighting())
     useEffect(() => {
+      const el = ref.current
+      if (!el) return
+      const lineStarts = (text: string) => {
+        const starts: number[] = []
+        let offset = 0
+        text.split('\n').forEach(line => {
+          starts.push(offset)
+          offset += line.length + 1
+        })
+        return starts.length > 0 ? starts : [0]
+      }
+      const lines = lineStarts(value)
+      Object.defineProperty(el, 'clientHeight', { configurable: true, value: 240 })
+      Object.defineProperty(el, 'scrollHeight', { configurable: true, value: Math.max(960, lines.length * 16) })
+      if (!codeMirrorScrollDoms.includes(el)) {
+        codeMirrorScrollDoms.push(el)
+      }
       if (created.current || !onCreateEditor) return
       created.current = true
       // Minimal EditorView stand-in: reports the textarea's live selection + value so the
       // production right-click handler (which reads view.state) can be exercised under test.
       onCreateEditor({
         dispatch: codeMirrorDispatchMock,
+        scrollDOM: el,
         get state() {
           const el = ref.current
           const from = el?.selectionStart ?? 0
           const to = el?.selectionEnd ?? 0
           const doc = el?.value ?? value
+          const starts = lineStarts(doc)
           return {
             selection: { main: { from, to } },
-            doc: { toString: () => doc, lines: 1, line: () => ({ from: 0 }) },
+            doc: {
+              toString: () => doc,
+              length: doc.length,
+              lines: starts.length,
+              line: (n: number) => {
+                const lineNo = Math.max(1, Math.min(starts.length, n))
+                return { from: starts[lineNo - 1], number: lineNo }
+              },
+            },
           }
         },
       })
@@ -207,6 +235,14 @@ function findOpenDebuggerButton(root: ParentNode) {
   return findWorkspaceTab(root, 'Debug')
 }
 
+async function flushReact() {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+    await new Promise(resolve => setTimeout(resolve, 0))
+  })
+}
+
 function findDebuggerRunButton(root: ParentNode, title = 'Run Replay') {
   return findButtonByTitle(root, title)
 }
@@ -314,6 +350,7 @@ describe('ScriptEditor', () => {
     downloadTextFileMock.mockReset()
     downloadBlobMock.mockReset()
     codeMirrorDispatchMock.mockReset()
+    codeMirrorScrollDoms.length = 0
     apiMock.getScript.mockResolvedValue({ script: initialScript })
     apiMock.createScript.mockResolvedValue({ id: 'script-1' })
     apiMock.updateScript.mockResolvedValue({ id: 'script-1' })
@@ -1054,6 +1091,94 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Map')
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
     expect(container.querySelectorAll('.json-source-map-line.active-block').length).toBeGreaterThan(0)
+  })
+
+  it('renders a source map scroll thumb from the Script JSON editor viewport', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+    await flushReact()
+
+    const thumb = container.querySelector('.json-source-map-scroll-thumb') as HTMLButtonElement | null
+    expect(thumb).not.toBeNull()
+    expect(thumb?.getAttribute('role')).toBe('scrollbar')
+    expect(thumb?.getAttribute('aria-valuenow')).toBe('0')
+    expect(Number.parseFloat(thumb?.style.height || '0')).toBeGreaterThan(0)
+    expect(Number.parseFloat(thumb?.style.height || '0')).toBeLessThan(100)
+  })
+
+  it('moves the source map thumb when the Script JSON editor scrolls', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+    await flushReact()
+
+    const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
+    const thumb = container.querySelector('.json-source-map-scroll-thumb') as HTMLButtonElement | null
+    expect(codeArea).not.toBeNull()
+    expect(thumb).not.toBeNull()
+    if (!codeArea || !thumb) return
+
+    const maxScrollTop = codeArea.scrollHeight - codeArea.clientHeight
+    await act(async () => {
+      codeArea.scrollTop = maxScrollTop / 2
+      codeArea.dispatchEvent(new Event('scroll', { bubbles: true }))
+    })
+
+    expect(thumb.getAttribute('aria-valuenow')).toBe('50')
+  })
+
+  it('drags the source map thumb to scroll the Script JSON editor', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+    await flushReact()
+
+    const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
+    const track = container.querySelector('.json-source-map-scroll-track') as HTMLDivElement | null
+    const thumb = container.querySelector('.json-source-map-scroll-thumb') as HTMLButtonElement | null
+    expect(codeArea).not.toBeNull()
+    expect(track).not.toBeNull()
+    expect(thumb).not.toBeNull()
+    if (!codeArea || !track || !thumb) return
+
+    vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      bottom: 400,
+      right: 12,
+      width: 12,
+      height: 400,
+      toJSON: () => ({}),
+    } as DOMRect)
+
+    await act(async () => {
+      thumb.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientY: 0 }))
+      thumb.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientY: 200 }))
+      thumb.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, clientY: 200 }))
+    })
+
+    expect(codeArea.scrollTop).toBeGreaterThan(0)
+    expect(codeArea.scrollTop).toBeLessThanOrEqual(codeArea.scrollHeight - codeArea.clientHeight)
+  })
+
+  it('keeps source map line clicks wired to the Script JSON jump behavior', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+    await flushReact()
+
+    codeMirrorDispatchMock.mockClear()
+    const firstMapLine = container.querySelector('.json-source-map-line') as HTMLButtonElement | null
+    expect(firstMapLine).not.toBeNull()
+
+    await act(async () => {
+      firstMapLine?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(codeMirrorDispatchMock).toHaveBeenCalled()
   })
 
   it('persists center tab order and drops unavailable document tabs', async () => {

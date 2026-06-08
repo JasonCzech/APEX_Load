@@ -205,6 +205,97 @@ describe('Sidebar', () => {
     expect(onProjectChange).toHaveBeenCalledWith({ id: 'project-2', name: 'Search', created_at: '', updated_at: '' })
   })
 
+  it('closes workspace selector menus from outside clicks and Escape', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          projects={[
+            { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
+            { id: 'project-2', name: 'Search', created_at: '', updated_at: '' },
+          ]}
+          activeProject={{ id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }}
+        />,
+      )
+    })
+
+    const projectButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Checkout'))
+    expect(projectButton).toBeDefined()
+    if (!projectButton) {
+      return
+    }
+
+    await act(async () => {
+      projectButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(Array.from(container.querySelectorAll('.project-menu-item')).map(item => item.textContent)).toContain('Search')
+
+    await act(async () => {
+      document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    })
+
+    expect(Array.from(container.querySelectorAll('.project-menu-item')).map(item => item.textContent)).not.toContain('Search')
+
+    await act(async () => {
+      projectButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(Array.from(container.querySelectorAll('.project-menu-item')).map(item => item.textContent)).toContain('Search')
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+
+    expect(Array.from(container.querySelectorAll('.project-menu-item')).map(item => item.textContent)).not.toContain('Search')
+  })
+
+  it('keeps only one workspace selector menu open at a time', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          domains={[
+            { id: 'domain-1', name: 'Retail', created_at: '', updated_at: '' },
+            { id: 'domain-2', name: 'Banking', created_at: '', updated_at: '' },
+          ]}
+          activeDomain={{ id: 'domain-1', name: 'Retail', created_at: '', updated_at: '' }}
+          projects={[
+            { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
+            { id: 'project-2', name: 'Search', created_at: '', updated_at: '' },
+          ]}
+          activeProject={{ id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }}
+        />,
+      )
+    })
+
+    const domainButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Retail'))
+    const projectButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Checkout'))
+    expect(domainButton).toBeDefined()
+    expect(projectButton).toBeDefined()
+    if (!domainButton || !projectButton) {
+      return
+    }
+
+    await act(async () => {
+      domainButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(Array.from(container.querySelectorAll('.project-menu-item')).map(item => item.textContent)).toContain('Banking')
+
+    await act(async () => {
+      projectButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const menuItems = Array.from(container.querySelectorAll('.project-menu-item')).map(item => item.textContent)
+    expect(menuItems).toContain('Search')
+    expect(menuItems).not.toContain('Banking')
+  })
+
   it('links the API guide from the main dashboard navigation', async () => {
     const onNavigate = vi.fn()
 

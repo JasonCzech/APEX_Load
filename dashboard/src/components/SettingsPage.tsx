@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type DragEven
 import { type DashboardTheme } from '../hooks/useDashboardTheme'
 import { useApplicationApi } from '../hooks/api/useApplicationApi'
 import { useProjectApi } from '../hooks/api/useProjectApi'
+import { useRepositoryApi } from '../hooks/api/useRepositoryApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
-import { ArchiveRetentionPlanResponse, CapacityReservation, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, GitHubProjectPolicy, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
+import { ArchiveRetentionPlanResponse, CapacityReservation, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, Domain, GitHubProjectPolicy, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { readStoredString, removeStoredItem, writeStoredJSON } from '../utils/browserStorage'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -836,6 +837,10 @@ interface SettingsPageProps {
   onThemeChange: (theme: DashboardTheme) => void
   authStatus?: DashboardAuthStatus
   onNavigate?: (page: 'access') => void
+  domains?: Domain[]
+  activeDomain?: Domain | null
+  onDomainChange?: (domain: Domain) => void
+  onDomainsRefresh?: (preferredId?: string) => Promise<Domain[]>
 }
 
 type SettingsSubsectionDefinition<SubsectionId extends string> = {
@@ -843,10 +848,20 @@ type SettingsSubsectionDefinition<SubsectionId extends string> = {
   title: string
 }
 
-export default function SettingsPage({ theme, onThemeChange, authStatus, onNavigate }: SettingsPageProps) {
+export default function SettingsPage({
+  theme,
+  onThemeChange,
+  authStatus,
+  onNavigate,
+  domains = [],
+  activeDomain,
+  onDomainChange,
+  onDomainsRefresh,
+}: SettingsPageProps) {
   const api = useApi()
   const applicationApi = useApplicationApi()
   const projectApi = useProjectApi()
+  const repositoryApi = useRepositoryApi()
   const {
     applications,
     releases,
@@ -887,6 +902,14 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
   const [sectionOrder, setSectionOrder] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('apexload.settings.sectionOrder'))
   const [hiddenSectionIds, setHiddenSectionIds] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('apexload.settings.hiddenSections'))
   const [collapsedSectionIds, setCollapsedSectionIds] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('apexload.settings.collapsedSections'))
+  const [selectedDomainId, setSelectedDomainId] = useState(activeDomain?.id || domains[0]?.id || '')
+  const [newDomainName, setNewDomainName] = useState('')
+  const [newDomainDescription, setNewDomainDescription] = useState('')
+  const [domainDraftName, setDomainDraftName] = useState('')
+  const [domainDraftDescription, setDomainDraftDescription] = useState('')
+  const [domainActionError, setDomainActionError] = useState('')
+  const [domainActionMessage, setDomainActionMessage] = useState('')
+  const [confirmDeleteDomain, setConfirmDeleteDomain] = useState<Domain | null>(null)
   const [managedReleases, setManagedReleases] = useState(releases)
   const [newApplicationName, setNewApplicationName] = useState('')
   const [applicationActionError, setApplicationActionError] = useState('')
@@ -1249,10 +1272,32 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
   const hasUnsavedChanges = useMemo(() => JSON.stringify(settings) !== JSON.stringify(savedSettings), [settings, savedSettings])
   const authDiagnosticsStale = useMemo(() => JSON.stringify(settings.auth) !== JSON.stringify(savedSettings.auth), [settings.auth, savedSettings.auth])
   const canManageSystem = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_system'), [effectiveAuthAccessResources])
+  const canManageDomains = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_domains', false), [effectiveAuthAccessResources])
   const canManageProjects = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_projects'), [effectiveAuthAccessResources])
   const canManageServiceAccounts = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_service_accounts'), [effectiveAuthAccessResources])
   const canViewAudit = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'view_audit'), [effectiveAuthAccessResources])
   const canSave = validationErrors.length === 0 && !loading && hasUnsavedChanges && canManageSystem
+  const selectedDomain = useMemo(
+    () => domains.find(domain => domain.id === selectedDomainId) || domains.find(domain => domain.id === activeDomain?.id) || domains[0] || null,
+    [activeDomain?.id, domains, selectedDomainId],
+  )
+  const projectCountByDomain = useMemo(() => {
+    const counts = new Map<string, number>()
+    projects.forEach(project => {
+      const domainID = project.domain_id || 'default'
+      counts.set(domainID, (counts.get(domainID) || 0) + 1)
+    })
+    return counts
+  }, [projects])
+  const selectedDomainProjectCount = selectedDomain ? projectCountByDomain.get(selectedDomain.id) || 0 : 0
+  const domainDraftValidationError = selectedDomain && !domainDraftName.trim() ? 'Domain name is required.' : ''
+  const domainHasUnsavedChanges = Boolean(
+    selectedDomain
+    && (
+      domainDraftName.trim() !== selectedDomain.name
+      || domainDraftDescription.trim() !== (selectedDomain.description || '')
+    ),
+  )
   const selectedProject = useMemo(
     () => projects.find(project => project.id === selectedProjectId) || null,
     [projects, selectedProjectId],
@@ -1415,6 +1460,27 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
       cancelled = true
     }
   }, [loadProjectGitHubDraft, projectApi])
+
+  useEffect(() => {
+    if (domains.length === 0) {
+      setSelectedDomainId('')
+      return
+    }
+    setSelectedDomainId(prev => {
+      if (activeDomain?.id && domains.some(domain => domain.id === activeDomain.id)) {
+        return activeDomain.id
+      }
+      if (prev && domains.some(domain => domain.id === prev)) {
+        return prev
+      }
+      return domains[0].id
+    })
+  }, [activeDomain?.id, domains])
+
+  useEffect(() => {
+    setDomainDraftName(selectedDomain?.name || '')
+    setDomainDraftDescription(selectedDomain?.description || '')
+  }, [selectedDomain?.description, selectedDomain?.id, selectedDomain?.name])
 
   useEffect(() => {
     writeStoredJSON('apexload.settings.sectionOrder', sectionOrder)
@@ -1861,6 +1927,113 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
     }
   }
 
+  const selectDomain = (domain: Domain) => {
+    setSelectedDomainId(domain.id)
+    setDomainDraftName(domain.name)
+    setDomainDraftDescription(domain.description || '')
+    setDomainActionError('')
+    setDomainActionMessage('')
+    onDomainChange?.(domain)
+  }
+
+  const createDomain = async () => {
+    if (!canManageDomains) {
+      setDomainActionError('Current session cannot manage domains.')
+      setDomainActionMessage('')
+      return
+    }
+    const name = newDomainName.trim()
+    if (!name) return
+    try {
+      const created = await repositoryApi.createDomain({
+        name,
+        description: newDomainDescription.trim(),
+      })
+      setNewDomainName('')
+      setNewDomainDescription('')
+      setSelectedDomainId(created.domain.id)
+      setDomainDraftName(created.domain.name)
+      setDomainDraftDescription(created.domain.description || '')
+      onDomainChange?.(created.domain)
+      await onDomainsRefresh?.(created.domain.id)
+      setDomainActionMessage(`Domain "${created.domain.name}" created.`)
+      setDomainActionError('')
+    } catch (error: unknown) {
+      setDomainActionError(getErrorMessage(error, 'Unable to create domain'))
+      setDomainActionMessage('')
+    }
+  }
+
+  const saveDomain = async () => {
+    if (!selectedDomain) return
+    if (!canManageDomains) {
+      setDomainActionError('Current session cannot manage domains.')
+      setDomainActionMessage('')
+      return
+    }
+    if (domainDraftValidationError) {
+      setDomainActionError(domainDraftValidationError)
+      setDomainActionMessage('')
+      return
+    }
+    try {
+      const updated = await repositoryApi.updateDomain(selectedDomain.id, {
+        name: domainDraftName.trim(),
+        description: domainDraftDescription.trim(),
+      })
+      setSelectedDomainId(updated.id)
+      setDomainDraftName(updated.name)
+      setDomainDraftDescription(updated.description || '')
+      onDomainChange?.(updated)
+      await onDomainsRefresh?.(updated.id)
+      setDomainActionMessage(`Domain "${updated.name}" saved.`)
+      setDomainActionError('')
+    } catch (error: unknown) {
+      setDomainActionError(getErrorMessage(error, 'Unable to save domain'))
+      setDomainActionMessage('')
+    }
+  }
+
+  const deleteDomain = async (domain: Domain) => {
+    if (!canManageDomains) {
+      setDomainActionError('Current session cannot manage domains.')
+      setDomainActionMessage('')
+      setConfirmDeleteDomain(null)
+      return
+    }
+    if (domain.id === 'default') {
+      setDomainActionError('Default domain cannot be deleted.')
+      setDomainActionMessage('')
+      setConfirmDeleteDomain(null)
+      return
+    }
+    const projectCount = projectCountByDomain.get(domain.id) || 0
+    if (projectCount > 0) {
+      setDomainActionError(`Domain "${domain.name}" still has ${projectCount} project${projectCount === 1 ? '' : 's'}. Move or delete those projects before deleting the domain.`)
+      setDomainActionMessage('')
+      setConfirmDeleteDomain(null)
+      return
+    }
+    try {
+      await repositoryApi.deleteDomain(domain.id)
+      const fallbackDomain = domains.find(candidate => candidate.id !== domain.id) || null
+      if (fallbackDomain) {
+        setSelectedDomainId(fallbackDomain.id)
+        onDomainChange?.(fallbackDomain)
+      } else {
+        setSelectedDomainId('')
+      }
+      await onDomainsRefresh?.(fallbackDomain?.id)
+      setDomainActionMessage(`Domain "${domain.name}" deleted.`)
+      setDomainActionError('')
+      setConfirmDeleteDomain(null)
+    } catch (error: unknown) {
+      setDomainActionError(getErrorMessage(error, 'Unable to delete domain'))
+      setDomainActionMessage('')
+      setConfirmDeleteDomain(null)
+    }
+  }
+
   const selectProject = (project: Project | null) => {
     setSelectedProjectId(project?.id || '')
     setProjectDraftName(project?.name || '')
@@ -2234,6 +2407,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
       general: { notices: [], errors: [] },
       thresholds: { notices: [], errors: [] },
       capacity: { notices: [], errors: [] },
+      domains: { notices: [], errors: [] },
       applications: { notices: [], errors: [] },
       projects: { notices: [], errors: [] },
       'data-pools': { notices: [], errors: [] },
@@ -2241,12 +2415,14 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
     }
     if (saveMessage) msgs[activeSection].notices.push(saveMessage)
     if (requestError) msgs[activeSection].errors.push(requestError)
+    if (domainActionMessage) msgs.domains.notices.push(domainActionMessage)
+    if (domainActionError) msgs.domains.errors.push(domainActionError)
     if (applicationActionError) msgs.applications.errors.push(applicationActionError)
     if (projectActionMessage) msgs.projects.notices.push(projectActionMessage)
     if (projectActionError) msgs.projects.errors.push(projectActionError)
     if (dataPoolActionError) msgs['data-pools'].errors.push(dataPoolActionError)
     return msgs
-  }, [saveMessage, requestError, applicationActionError, projectActionMessage, projectActionError, dataPoolActionError, activeSection])
+  }, [saveMessage, requestError, domainActionMessage, domainActionError, applicationActionError, projectActionMessage, projectActionError, dataPoolActionError, activeSection])
 
   const activeSectionMessages = sectionMessages[activeSection]
 
@@ -3673,6 +3849,162 @@ export default function SettingsPage({ theme, onThemeChange, authStatus, onNavig
             </div>
               </div>
             </section>
+          </div>
+        </div>
+
+        <div
+          id="settings-section-domains"
+          className={sectionClass('domains')}
+          hidden={activeSection !== 'domains'}
+          draggable={customizingSections}
+          onDragStart={event => handleSectionDragStart(event, 'domains')}
+          onDragOver={event => handleSectionDragOver(event, 'domains')}
+          onDrop={event => handleSectionDrop(event, 'domains')}
+          onDragEnd={() => setDraggedSectionId(null)}
+          style={{ order: getSectionOrder('domains') }}
+        >
+          {renderSettingsHeader('domains', 'Domains')}
+          <div className="settings-group">
+            <div className="settings-subsection">
+              <div className="settings-manager-summary">
+                <div>
+                  <span className="setting-label">Domains</span>
+                  <span className="setting-desc">Select the active tenancy boundary for repository projects and access scopes.</span>
+                </div>
+                <strong>{domains.length}</strong>
+              </div>
+              {domains.length > 0 ? (
+                <div className="settings-app-grid">
+                  {domains.map(domain => {
+                    const projectCount = projectCountByDomain.get(domain.id) || 0
+                    return (
+                      <button
+                        key={domain.id}
+                        type="button"
+                        className={`settings-app-card ${selectedDomain?.id === domain.id ? 'active' : ''}`}
+                        onClick={() => selectDomain(domain)}
+                      >
+                        <span>{domain.name}</span>
+                        <small>{projectCount} project{projectCount === 1 ? '' : 's'}{activeDomain?.id === domain.id ? ' | Active domain' : ''}</small>
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="new-test-inline-note">No domains are available.</p>
+              )}
+              <div className="inline-create-row" style={{ gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) auto' }}>
+                <input
+                  className="settings-input"
+                  value={newDomainName}
+                  onChange={event => {
+                    setNewDomainName(event.target.value)
+                    setDomainActionError('')
+                    setDomainActionMessage('')
+                  }}
+                  placeholder="Create domain, e.g. Retail"
+                  disabled={!canManageDomains}
+                />
+                <input
+                  className="settings-input"
+                  value={newDomainDescription}
+                  onChange={event => {
+                    setNewDomainDescription(event.target.value)
+                    setDomainActionError('')
+                    setDomainActionMessage('')
+                  }}
+                  placeholder="Optional description"
+                  disabled={!canManageDomains}
+                />
+                <button className="btn btn-secondary" type="button" onClick={createDomain} disabled={!newDomainName.trim() || !canManageDomains}>
+                  Add Domain
+                </button>
+              </div>
+            </div>
+
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Selected Domain</span>
+                <span className="setting-desc">Rename the selected domain and maintain its administrative description.</span>
+              </div>
+              {selectedDomain ? (
+                <>
+                  <input
+                    className="settings-input"
+                    value={domainDraftName}
+                    onChange={event => {
+                      setDomainDraftName(event.target.value)
+                      setDomainActionError('')
+                      setDomainActionMessage('')
+                    }}
+                    placeholder="Domain name"
+                    disabled={!canManageDomains}
+                  />
+                  <textarea
+                    className="settings-input"
+                    value={domainDraftDescription}
+                    onChange={event => {
+                      setDomainDraftDescription(event.target.value)
+                      setDomainActionError('')
+                      setDomainActionMessage('')
+                    }}
+                    placeholder="Optional description"
+                    rows={3}
+                    disabled={!canManageDomains}
+                  />
+                  {domainDraftValidationError && <p className="settings-error-inline">{domainDraftValidationError}</p>}
+                  {!canManageDomains && <p className="settings-error-inline">Current session can view domains but cannot change them.</p>}
+                  <div className="settings-inline-actions">
+                    <button
+                      className="btn btn-primary"
+                      type="button"
+                      onClick={saveDomain}
+                      disabled={!domainHasUnsavedChanges || Boolean(domainDraftValidationError) || !canManageDomains}
+                    >
+                      Save Domain
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="new-test-inline-note">Select a domain to edit it.</p>
+              )}
+            </div>
+
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Delete Domain</span>
+                <span className="setting-desc">Only non-default domains with no projects can be deleted.</span>
+              </div>
+              <div className="settings-inline-actions">
+                <span className="setting-value">{selectedDomain?.name || 'No domain selected'}</span>
+                <button
+                  className="btn btn-ghost"
+                  style={{ color: 'var(--danger)' }}
+                  type="button"
+                  onClick={() => selectedDomain && setConfirmDeleteDomain(selectedDomain)}
+                  disabled={!selectedDomain || selectedDomain.id === 'default' || selectedDomainProjectCount > 0 || !canManageDomains}
+                >
+                  Delete
+                </button>
+              </div>
+              {selectedDomain?.id === 'default' && <p className="new-test-inline-note">Default domain cannot be deleted.</p>}
+              {selectedDomain && selectedDomain.id !== 'default' && selectedDomainProjectCount > 0 && (
+                <p className="new-test-inline-note">
+                  {selectedDomainProjectCount} project{selectedDomainProjectCount === 1 ? '' : 's'} must be moved or deleted first.
+                </p>
+              )}
+              {confirmDeleteDomain && (
+                <div className="settings-inline-actions">
+                  <span className="settings-error-inline">Delete {confirmDeleteDomain.name}?</span>
+                  <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => deleteDomain(confirmDeleteDomain)}>
+                    Confirm Delete
+                  </button>
+                  <button className="btn btn-secondary" type="button" onClick={() => setConfirmDeleteDomain(null)}>
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

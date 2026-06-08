@@ -303,12 +303,26 @@
   margin: 0;
 }
 .json-source-map {
+  flex: 1;
   min-height: 0;
-  overflow: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+  overflow: hidden;
   padding: 6px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--code-bg, #090d16);
+}
+.json-source-map.scroll-linked {
+  grid-template-columns: minmax(0, 1fr) 12px;
+}
+.json-source-map-lines {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  align-self: stretch;
+  overflow: hidden;
 }
 .json-source-map-line {
   position: relative;
@@ -316,7 +330,8 @@
   grid-template-columns: 24px minmax(0, 1fr);
   gap: 5px;
   width: 100%;
-  height: 8px;
+  min-height: 0;
+  height: 100%;
   padding: 0;
   border: 0;
   border-left: 2px solid transparent;
@@ -341,18 +356,20 @@
   background: rgba(245, 158, 11, 0.22);
 }
 .json-source-map-line-number {
+  overflow: hidden;
   color: rgba(148, 163, 184, 0.55);
   font-family: 'SF Mono', 'Fira Code', monospace;
   font-size: 6px;
-  line-height: 8px;
+  line-height: 1;
   text-align: right;
   user-select: none;
 }
 .json-source-map-line-code {
+  align-self: center;
   display: block;
   min-width: 10px;
-  height: 5px;
-  margin-top: 1px;
+  height: clamp(2px, 62%, 5px);
+  margin-top: 0;
   overflow: hidden;
   border-radius: 999px;
   background: rgba(217, 231, 255, 0.34);
@@ -368,6 +385,37 @@
 }
 .json-source-map-line.first-parameter-match .json-source-map-line-code {
   background: rgba(245, 158, 11, 0.88);
+}
+.json-source-map-scroll-track {
+  position: relative;
+  min-height: 0;
+  width: 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.48);
+  cursor: pointer;
+}
+.json-source-map-scroll-track:hover {
+  background: rgba(30, 41, 59, 0.68);
+}
+.json-source-map-scroll-thumb {
+  position: absolute;
+  left: 2px;
+  width: 8px;
+  min-height: 24px;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.58);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.24);
+  cursor: grab;
+}
+.json-source-map-scroll-thumb:hover,
+.json-source-map-scroll-thumb:focus-visible {
+  background: rgba(203, 213, 225, 0.78);
+  outline: none;
+}
+.json-source-map-scroll-thumb:active {
+  cursor: grabbing;
 }
 .center-tabbed-pane {
   min-width: 0;
@@ -480,7 +528,8 @@
   flex-direction: column;
 }
 .center-tab-panel > .script-code-pane {
-  flex: 1;
+  flex: 1 0 280px;
+  min-height: 280px;
   border: 0;
   border-radius: 0;
 }

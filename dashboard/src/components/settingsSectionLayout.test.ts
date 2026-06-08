@@ -26,7 +26,21 @@ describe('settingsSectionLayout', () => {
       'general',
       'thresholds',
       'capacity',
+      'domains',
       'applications',
+      'data-pools',
+      'integrations',
+    ])
+  })
+
+  it('inserts the Domains section before Applications in existing persisted orders', () => {
+    expect(mergeSettingsOrder(['general', 'thresholds', 'capacity', 'applications', 'projects', 'data-pools', 'integrations'])).toEqual([
+      'general',
+      'thresholds',
+      'capacity',
+      'domains',
+      'applications',
+      'projects',
       'data-pools',
       'integrations',
     ])

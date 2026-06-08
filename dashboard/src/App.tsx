@@ -282,6 +282,44 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     }
   }, [])
 
+  const refreshDomains = useCallback(async (preferredId?: string) => {
+    try {
+      const response = await repositoryApi.listDomains()
+      const next = response.domains || []
+      setDomains(next)
+      setActiveDomainState(prev => {
+        const storedId = typeof window !== 'undefined' ? window.localStorage.getItem('apexload.activeDomainId') : ''
+        const selected = next.find(domain => domain.id === preferredId)
+          || next.find(domain => domain.id === storedId)
+          || next.find(domain => domain.id === prev?.id)
+          || next[0]
+          || null
+        if (typeof window !== 'undefined') {
+          if (selected) {
+            window.localStorage.setItem('apexload.activeDomainId', selected.id)
+          } else {
+            window.localStorage.removeItem('apexload.activeDomainId')
+          }
+        }
+        return selected
+      })
+      return next
+    } catch {
+      const fallback: import('./types').Domain = {
+        id: 'default',
+        name: 'Default Domain',
+        created_at: new Date(0).toISOString(),
+        updated_at: new Date(0).toISOString(),
+      }
+      setDomains([fallback])
+      setActiveDomainState(fallback)
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('apexload.activeDomainId', fallback.id)
+      }
+      return [fallback]
+    }
+  }, [repositoryApi])
+
   const refreshRepository = useCallback(async () => {
     if (!activeDomain?.id) {
       setApplicationRepository(null)
@@ -297,33 +335,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   }, [activeDomain?.id, repositoryApi])
 
   useEffect(() => {
-    let cancelled = false
-    const loadDomains = async () => {
-      try {
-        const response = await repositoryApi.listDomains()
-        if (cancelled) return
-        const next = response.domains || []
-        setDomains(next)
-        const storedId = typeof window !== 'undefined' ? window.localStorage.getItem('apexload.activeDomainId') : ''
-        setActiveDomainState(prev => next.find(domain => domain.id === storedId) || next.find(domain => domain.id === prev?.id) || next[0] || null)
-      } catch {
-        if (!cancelled) {
-          const fallback: import('./types').Domain = {
-            id: 'default',
-            name: 'Default Domain',
-            created_at: new Date(0).toISOString(),
-            updated_at: new Date(0).toISOString(),
-          }
-          setDomains([fallback])
-          setActiveDomainState(fallback)
-        }
-      }
-    }
-    loadDomains()
-    return () => {
-      cancelled = true
-    }
-  }, [repositoryApi])
+    void refreshDomains()
+  }, [refreshDomains])
 
   useEffect(() => {
     refreshRepository().catch(() => {
@@ -650,7 +663,18 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               canManageServiceAccounts={canManageServiceAccounts}
             />
           )}
-          {view.page === 'settings' && <SettingsPage theme={theme} onThemeChange={setTheme} authStatus={authStatus} onNavigate={handleNavigate} />}
+          {view.page === 'settings' && (
+            <SettingsPage
+              theme={theme}
+              onThemeChange={setTheme}
+              authStatus={authStatus}
+              onNavigate={handleNavigate}
+              domains={domains}
+              activeDomain={activeDomain}
+              onDomainChange={setActiveDomain}
+              onDomainsRefresh={refreshDomains}
+            />
+          )}
         </Suspense>
       </main>
     </div>
