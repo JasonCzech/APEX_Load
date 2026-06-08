@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import type { TestSummary } from '../types'
 import TestExecution from './TestExecution'
 
@@ -22,6 +23,7 @@ const hookMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('./TestExecutionHeader', () => ({ default: () => <div>Execution Header</div> }))
+vi.mock('./TestExecutionScenarioEditor', () => ({ default: ({ open }: { open: boolean }) => (open ? <div>Scenario Editor Content</div> : null) }))
 vi.mock('./TestExecutionScenarioOverview', () => ({ default: () => <div>Scenario Overview Content</div> }))
 vi.mock('./TestExecutionHeroMetrics', () => ({ default: () => <div>Hero Metrics Content</div> }))
 vi.mock('./TestExecutionLiveControls', () => ({ default: () => <div>Live Controls Content</div> }))
@@ -65,6 +67,28 @@ vi.mock('./useExecutionArchiveModel', () => ({ useExecutionArchiveModel: hookMoc
 vi.mock('./useExecutionTestManifest', () => ({ useExecutionTestManifest: hookMocks.useExecutionTestManifest }))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+function TopbarContributionHarness() {
+  const contribution = useActiveTopbarContribution()
+  return (
+    <div data-testid="execution-topbar">
+      <strong>{contribution?.title}</strong>
+      {contribution?.meta?.filter(chip => !chip.hidden).map(chip => (
+        <span key={chip.id}>{chip.label}</span>
+      ))}
+      {contribution?.secondaryActions?.filter(action => !action.hidden).map(action => (
+        <button key={action.id} disabled={action.disabled} onClick={action.onClick}>
+          {action.label}
+        </button>
+      ))}
+      {contribution?.primaryActions?.filter(action => !action.hidden).map(action => (
+        <button key={action.id} disabled={action.disabled} onClick={action.onClick}>
+          {action.label}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 describe('TestExecution workspace layout', () => {
   let container: HTMLDivElement
@@ -159,6 +183,43 @@ describe('TestExecution workspace layout', () => {
 
     await clickWorkspaceTab('Transaction Drill-Down')
     expect(container.textContent).toContain('Archive Empty Content transactions')
+  })
+
+  it('publishes queued and active run controls to the contextual topbar', async () => {
+    await renderExecution()
+
+    expect(topbarText()).toContain('Test Run')
+    expect(topbarText()).not.toContain('Checkout Browser')
+    expect(topbarText()).not.toContain('Live Controls')
+    expect(topbarText()).toContain('Revise Queued Run')
+    expect(topbarText()).toContain('Start')
+    expect(runSummaryText()).toContain('StatusQueued')
+    expect(runSummaryText()).toContain('Test NameCheckout Browser')
+    expect(runSummaryText()).toContain('VUser Load10 VUsers')
+    expect(runSummaryText()).toContain('Test Duration5m')
+    expect(runSummaryText()).toContain('# Groups1')
+
+    const queuedActions = latestActionBridge()
+    await clickTopbarButton('Start')
+    expect(queuedActions.onStart).toHaveBeenCalledTimes(1)
+
+    configureHooks(makeTest('RUNNING', { name: 'Checkout Live Run' }))
+    await renderExecution()
+
+    expect(topbarText()).toContain('Test Run')
+    expect(topbarText()).not.toContain('Checkout Live Run')
+    expect(topbarText()).not.toContain('Live Controls')
+    expect(topbarText()).not.toContain('10 VUsers')
+    expect(topbarText()).not.toContain('5m')
+    expect(topbarText()).toContain('Pause')
+    expect(topbarText()).toContain('Stop Test')
+    expect(topbarText()).toContain('Abort')
+    expect(runSummaryText()).toContain('StatusRunning')
+    expect(runSummaryText()).toContain('Test NameCheckout Live Run')
+
+    const runningActions = latestActionBridge()
+    await clickTopbarButton('Pause')
+    expect(runningActions.onPause).toHaveBeenCalledTimes(1)
   })
 
   it('routes completed archive tabs to their dedicated archive views', async () => {
@@ -317,7 +378,7 @@ describe('TestExecution workspace layout', () => {
     await renderExecution()
 
     expect(container.textContent).toContain('Live Controls Content')
-    expect(container.textContent).toContain('Live controls are pinned at the top of this run dashboard.')
+    expect(container.textContent).toContain('Detailed live controls are pinned above this run dashboard while the run is active.')
     expect(container.textContent).toContain('Scenario Preview Content')
     expect((container.textContent?.match(/Live Controls Content/g) ?? []).length).toBe(1)
   })
@@ -380,7 +441,7 @@ describe('TestExecution workspace layout', () => {
     expect(selectedTabLabel()).toBe('Control')
     expect(container.textContent).toContain('Scenario Preview Content')
     expect(container.textContent).not.toContain('Live Controls Content')
-    expect(container.textContent).not.toContain('Live controls are pinned at the top of this run dashboard.')
+    expect(container.textContent).not.toContain('Detailed live controls are pinned above this run dashboard while the run is active.')
     expect(container.textContent).not.toContain('Live controls are unavailable for this run state.')
     expect(queryLibraryItem('live-controls')).toBeNull()
   })
@@ -436,14 +497,41 @@ describe('TestExecution workspace layout', () => {
   async function renderExecution() {
     await act(async () => {
       root.render(
-        <TestExecution
-          testId="test-1"
-          history={[]}
-          onBack={vi.fn()}
-          onEditScript={vi.fn()}
-          onSelectTest={vi.fn()}
-        />,
+        <TopbarContributionProvider>
+          <TopbarContributionHarness />
+          <TestExecution
+            testId="test-1"
+            history={[]}
+            onBack={vi.fn()}
+            onEditScript={vi.fn()}
+            onSelectTest={vi.fn()}
+          />
+        </TopbarContributionProvider>,
       )
+    })
+  }
+
+  function topbarText() {
+    return container.querySelector('[data-testid="execution-topbar"]')?.textContent || ''
+  }
+
+  function runSummaryText() {
+    return container.querySelector('.execution-run-summary')?.textContent || ''
+  }
+
+  function latestActionBridge() {
+    const results = hookMocks.useExecutionActionBridge.mock.results
+    return results[results.length - 1]?.value
+  }
+
+  async function clickTopbarButton(label: string) {
+    const button = Array.from(container.querySelectorAll('[data-testid="execution-topbar"] button'))
+      .find(candidate => candidate.textContent?.trim() === label)
+    expect(button).toBeDefined()
+    if (!button) return
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
     })
   }
 

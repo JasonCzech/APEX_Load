@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ScriptDefinition } from '../types/scripts'
 import { formatSnapshotRequestSection, formatSnapshotResponseSection } from '../utils/snapshotFormatUtils'
+import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { formatSOAPFaultSummary } from './soapFaultUtils'
 import ScriptEditor from './ScriptEditor'
 
@@ -301,6 +302,36 @@ function findDebuggerRunButton(root: ParentNode, title = 'Run Replay') {
   return findButtonByTitle(root, title)
 }
 
+function TopbarContributionHarness() {
+  const contribution = useActiveTopbarContribution()
+  return (
+    <div data-testid="topbar-contribution">
+      {contribution?.titleNode}
+      {contribution?.controls}
+      {contribution?.secondaryActions?.filter(action => !action.hidden).map(action => (
+        <button
+          key={action.id}
+          disabled={action.disabled}
+          title={action.title}
+          onClick={action.onClick}
+        >
+          {action.label}
+        </button>
+      ))}
+      {contribution?.primaryActions?.filter(action => !action.hidden).map(action => (
+        <button
+          key={action.id}
+          disabled={action.disabled}
+          title={action.title}
+          onClick={action.onClick}
+        >
+          {action.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function debugSessionResponse(report: {
   group: string
   protocol: string
@@ -546,6 +577,47 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-header')?.textContent).not.toContain('Edit Script')
     expect(container.querySelector('.editor-header .editor-actions')).not.toBeNull()
     expect(container.querySelector('.script-name-panel')).not.toBeNull()
+  })
+
+  it('publishes script identity and primary actions to the app topbar contribution', async () => {
+    await act(async () => {
+      root.render(
+        <TopbarContributionProvider>
+          <TopbarContributionHarness />
+          <ScriptEditor initialScript={initialScript} projectId="project-1" />
+        </TopbarContributionProvider>,
+      )
+    })
+    await flushReact()
+
+    const topbar = container.querySelector('[data-testid="topbar-contribution"]')
+    const nameInput = topbar?.querySelector<HTMLInputElement>('input[placeholder="My_Test_Script"]')
+    expect(nameInput?.value).toBe('Checkout Flow')
+    expect(topbar?.textContent).toContain('Author')
+    expect(topbar?.textContent).toContain('Debug')
+    expect(topbar?.textContent).toContain('Validate Draft')
+    expect(topbar?.textContent).toContain('Save Script')
+    expect(container.querySelector('.script-editor-local-action-proxy')).toBeNull()
+
+    if (!nameInput) return
+    await act(async () => {
+      changeInputValue(nameInput, 'Banner Checkout Flow')
+      await Promise.resolve()
+    })
+
+    const saveButton = Array.from(topbar?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Save Script')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Banner Checkout Flow',
+    }), 'project-1', undefined)
   })
 
   it('keeps imported metadata in the outline instead of duplicating it in the page header', async () => {

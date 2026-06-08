@@ -7,6 +7,13 @@
 }
 .editor-title-row { display: flex; justify-content: flex-end; align-items: center; }
 .editor-actions { display: flex; gap: 8px; align-items: center; }
+.editor-feedback-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
 .script-ide-command-bar {
   display: flex;
   align-items: center;

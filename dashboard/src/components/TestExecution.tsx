@@ -1,9 +1,12 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
 import {
   MetricsHistoryPoint,
   TestSummary,
 } from '../types'
+import { topbarRunStatusLabel } from '../appTopbar'
+import { useTopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
+import { isValidDurationInput } from '../utils/timeUtils'
 import TestExecutionArchive from './TestExecutionArchive'
 import { useExecutionActionBridge } from './useExecutionActionBridge'
 import { useExecutionArchiveResourceHistory } from './useExecutionArchiveResourceHistory'
@@ -14,11 +17,11 @@ import { useExecutionMetricsStream } from './useExecutionMetricsStream'
 import { useExecutionTestPolling } from './useExecutionTestPolling'
 import { useExecutionViewState } from './useExecutionViewState'
 import TestExecutionCharts from './TestExecutionCharts'
-import TestExecutionHeader from './TestExecutionHeader'
 import TestExecutionHeroMetrics from './TestExecutionHeroMetrics'
 import TestExecutionLiveControls from './TestExecutionLiveControls'
 import TestExecutionManifestCard from './TestExecutionManifestCard'
 import TestExecutionScenarioOverview from './TestExecutionScenarioOverview'
+import TestExecutionScenarioEditor from './TestExecutionScenarioEditor'
 import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
@@ -77,6 +80,7 @@ interface Props {
 
 export default function TestExecution({ testId, history, onBack, onEditScript, onSelectTest }: Props) {
   const { test, setTest, error } = useExecutionTestPolling(testId)
+  const [showScenarioEditor, setShowScenarioEditor] = useState(false)
   const {
     expandedChart,
     onExpandedChartChange,
@@ -205,6 +209,115 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     reloadManifest,
   } = useExecutionTestManifest(test)
 
+  const executionPhase = test ? buildExecutionPhaseModel(test, hasArchive) : null
+  const executionStatus = test ? buildExecutionStatusModel(test) : null
+  const isRunning = executionPhase?.isRunning ?? false
+  const isPaused = executionPhase?.isPaused ?? false
+  const isStopping = executionPhase?.isStopping ?? false
+  const showLiveControls = executionPhase?.showLiveControls ?? false
+  const showArchiveSection = executionPhase?.showArchiveSection ?? false
+  const showArchiveDownload = executionPhase?.showArchiveDownload ?? false
+  const isMultiGroup = executionStatus?.isMultiGroup ?? false
+  const hasActiveVUsers = (test?.groups || []).some((group) => {
+    if (!test) return false
+    const currentVUsers = test.live_metrics?.groups?.[group.name]?.vusers ?? group.vusers
+    return currentVUsers > 0 || (test.vuser_ramps?.[group.name]?.target_vusers ?? 0) > 0
+  })
+  const rampInputMissing = vuserRampEnabled && !isValidDurationInput(vuserRampDuration)
+  const executionStatusTone: TopbarMetaTone = isStopping
+    ? 'danger'
+    : isPaused
+      ? 'warning'
+      : isRunning
+        ? 'success'
+        : test?.status === 'FAILED' || test?.status === 'ABORTED'
+          ? 'danger'
+          : 'default'
+  const runSummaryCards: Array<{ id: string; label: string; value: string; tone: TopbarMetaTone }> = test ? [
+    { id: 'status', label: 'Status', value: topbarRunStatusLabel(test.status), tone: executionStatusTone },
+    { id: 'name', label: 'Test Name', value: test.name || 'Untitled test', tone: 'accent' },
+    { id: 'vusers', label: 'VUser Load', value: `${test.total_vusers} VUsers`, tone: 'accent' },
+    { id: 'duration', label: 'Test Duration', value: test.duration || 'No duration', tone: 'default' },
+    { id: 'groups', label: '# Groups', value: `${(test.groups || []).length}`, tone: isMultiGroup ? 'accent' : 'default' },
+  ] : []
+
+  useTopbarContribution(test ? {
+    id: 'test-execution',
+    priority: 90,
+    title: 'Test Run',
+    secondaryActions: [
+      {
+        id: 'back',
+        label: 'Back',
+        compactLabel: 'Back',
+        tone: 'ghost',
+        onClick: onBack,
+      },
+      {
+        id: 'revise',
+        label: 'Revise Queued Run',
+        compactLabel: 'Revise',
+        tone: 'secondary',
+        hidden: test.status !== 'QUEUED',
+        onClick: () => setShowScenarioEditor(true),
+      },
+      {
+        id: 'stop-vusers',
+        label: 'Stop VUsers',
+        compactLabel: 'Stop VU',
+        tone: 'secondary',
+        hidden: !showLiveControls,
+        disabled: !hasActiveVUsers || rampInputMissing || isStopping,
+        onClick: () => { void onStopAllVUsers() },
+      },
+      {
+        id: 'download-archive',
+        label: 'Download Archive',
+        compactLabel: 'Archive',
+        tone: 'secondary',
+        hidden: !showArchiveDownload,
+        onClick: onDownloadArchive,
+      },
+    ],
+    primaryActions: [
+      {
+        id: 'start',
+        label: 'Start',
+        compactLabel: 'Start',
+        tone: 'success',
+        hidden: test.status !== 'QUEUED',
+        onClick: () => { void onStart() },
+      },
+      {
+        id: 'pause-resume',
+        label: isPaused ? 'Resume' : 'Pause',
+        compactLabel: isPaused ? 'Resume' : 'Pause',
+        tone: isPaused ? 'success' : 'secondary',
+        hidden: !showLiveControls,
+        disabled: (!isRunning && !isPaused) || isStopping,
+        onClick: () => { void (isPaused ? onResume() : onPause()) },
+      },
+      {
+        id: 'stop-test',
+        label: 'Stop Test',
+        compactLabel: 'Stop',
+        tone: 'secondary',
+        hidden: !showLiveControls,
+        disabled: isStopping,
+        onClick: () => { void onStop() },
+      },
+      {
+        id: 'abort',
+        label: 'Abort',
+        compactLabel: 'Abort',
+        tone: 'danger',
+        hidden: !showLiveControls,
+        disabled: isStopping,
+        onClick: () => { void onAbort() },
+      },
+    ],
+  } : null)
+
   if (error) {
     return (
       <div className="execution">
@@ -219,24 +332,14 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
   }
 
   const {
-    isRunning,
-    isPaused,
-    isStopping,
-    showLiveControls,
-    showArchiveSection,
-    showArchiveDownload,
-  } = buildExecutionPhaseModel(test, hasArchive)
-
-  const {
     metrics,
     goalStatus,
     transactions,
     groupMetrics,
-    isMultiGroup,
     groupNames,
     isGoalOriented,
     shakeoutFailed,
-  } = buildExecutionStatusModel(test)
+  } = executionStatus!
 
   const statusMetrics = latestMetrics
     ? {
@@ -345,6 +448,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
   const pinnedLiveControls = showLiveControls ? (
     <TestExecutionLiveControls
       showControls={showControls}
+      showRunActions={false}
       onToggleControls={onToggleControls}
       test={test}
       vuserTargets={vuserTargets}
@@ -377,11 +481,11 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     id: 'live-controls',
     title: 'Live Controls',
     category: 'Run Control',
-    description: 'Start, pause, stop, scale, and duration controls.',
+    description: 'Detailed VUser scaling and duration controls.',
     render: () => (
       <div className="empty-card live-controls-pinned-card">
-        <p>Live controls are pinned at the top of this run dashboard.</p>
-        <p className="empty-hint">Use the top panel to pause, stop, abort, scale VUsers, or adjust duration while the run is active.</p>
+        <p>Detailed live controls are pinned above this run dashboard while the run is active.</p>
+        <p className="empty-hint">Use the banner for pause, stop, and abort actions; use the live controls panel for VUser scaling and duration changes.</p>
       </div>
     ),
   }
@@ -640,33 +744,42 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
 
   return (
     <div className="execution">
-      <TestExecutionHeader
+      <TestExecutionScenarioEditor
+        open={showScenarioEditor}
         test={test}
-        isMultiGroup={isMultiGroup}
-        onBack={onBack}
-        onStart={onStart}
+        onClose={() => setShowScenarioEditor(false)}
         onSelectTest={onSelectTest}
-        isStopping={isStopping}
-        showArchiveDownload={showArchiveDownload}
-        onDownloadArchive={onDownloadArchive}
       />
 
-      {pinnedLiveControls && (
-        <section className="execution-live-controls-anchor" aria-label="Live controls">
-          {pinnedLiveControls}
-        </section>
-      )}
+      <div className="execution-run-layout">
+        <aside className="execution-run-summary" aria-label="Run summary">
+          {runSummaryCards.map(card => (
+            <div key={card.id} className={`execution-run-summary-card ${card.tone}`}>
+              <span>{card.label}</span>
+              <strong>{card.value}</strong>
+            </div>
+          ))}
+        </aside>
 
-      <DashboardWorkspace
-        ariaLabel="Test execution workspace"
-        storageKey="apexload.execution.workspaceProfiles.v1"
-        activeStorageKey="apexload.execution.activeWorkspaceProfile.v1"
-        cardLibraryStorageKey="apexload.execution.cardLibraryCollapsed.v1"
-        defaultProfile={EXECUTION_WORKSPACE_DEFAULT_PROFILE}
-        defaultCardInsertions={EXECUTION_WORKSPACE_CARD_INSERTIONS}
-        cards={executionWorkspaceCards}
-        context={executionWorkspaceContext}
-      />
+        <div className="execution-run-workspace">
+          {pinnedLiveControls && (
+            <section className="execution-live-controls-anchor" aria-label="Live controls">
+              {pinnedLiveControls}
+            </section>
+          )}
+
+          <DashboardWorkspace
+            ariaLabel="Test execution workspace"
+            storageKey="apexload.execution.workspaceProfiles.v1"
+            activeStorageKey="apexload.execution.activeWorkspaceProfile.v1"
+            cardLibraryStorageKey="apexload.execution.cardLibraryCollapsed.v1"
+            defaultProfile={EXECUTION_WORKSPACE_DEFAULT_PROFILE}
+            defaultCardInsertions={EXECUTION_WORKSPACE_CARD_INSERTIONS}
+            cards={executionWorkspaceCards}
+            context={executionWorkspaceContext}
+          />
+        </div>
+      </div>
     </div>
   )
 }

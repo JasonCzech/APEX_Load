@@ -20,6 +20,12 @@ import { useSystemApi } from './hooks/api/useSystemApi'
 import { useRepositoryApi } from './hooks/api/useRepositoryApi'
 import { useLibraryApi } from './hooks/api/useLibraryApi'
 import { useTestApi } from './hooks/api/useTestApi'
+import {
+  TopbarContributionProvider,
+  useActiveTopbarContribution,
+  type TopbarAction,
+  type TopbarMetaChip,
+} from './hooks/TopbarContributionProvider'
 import { isEffectiveOperationAllowed } from './utils/authAccessUtils'
 import { DesktopStatusResponse } from './types/library'
 import ThemeToggle from './components/ThemeToggle'
@@ -66,6 +72,50 @@ function formatDesktopRemoteHealth(status?: DesktopStatusResponse) {
   const statuses = status?.remote_libraries?.statuses || {}
   const healthy = statuses.healthy || 0
   return `${healthy}/${count} hosts`
+}
+
+function topbarActionClass(action: TopbarAction): string {
+  const tone = action.tone || 'secondary'
+  const btnClass = tone === 'primary'
+    ? 'btn-primary'
+    : tone === 'success'
+      ? 'btn-success'
+      : tone === 'danger'
+        ? 'btn-danger'
+        : tone === 'ghost'
+          ? 'btn-ghost'
+          : 'btn-secondary'
+  return ['btn', 'btn-sm', 'topbar-action-button', btnClass, action.className, action.compactLabel ? 'has-compact-label' : '', action.pressed ? 'topbar-action-pressed' : '']
+    .filter(Boolean)
+    .join(' ')
+}
+
+function renderTopbarAction(action: TopbarAction) {
+  if (action.hidden) return null
+  return (
+    <button
+      key={action.id}
+      type="button"
+      className={topbarActionClass(action)}
+      aria-label={action.ariaLabel}
+      aria-pressed={action.pressed}
+      title={action.title}
+      disabled={action.disabled}
+      onClick={action.onClick}
+    >
+      <span className="topbar-action-label">{action.label}</span>
+      {action.compactLabel && <span className="topbar-action-compact-label">{action.compactLabel}</span>}
+    </button>
+  )
+}
+
+function renderTopbarMetaChip(chip: TopbarMetaChip) {
+  if (chip.hidden) return null
+  return (
+    <span key={chip.id} className={`topbar-meta-chip ${chip.tone || 'default'}`} title={chip.title}>
+      {chip.label}
+    </span>
+  )
 }
 
 function dashboardSnapshotAudience(
@@ -115,6 +165,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const [desktopStatus, setDesktopStatus] = useState<DesktopStatusResponse | null>(null)
   const [activeTopbarRuns, setActiveTopbarRuns] = useState<TopbarRunSummary[]>([])
   const testApi = useTestApi()
+  const activeTopbarContribution = useActiveTopbarContribution()
 
   const handleWSMessage = useCallback((msg: WSMessage) => {
     if (msg.type === 'metrics_update' && msg.data && msg.test_id && msg.timestamp) {
@@ -444,17 +495,17 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       repositoryName: applicationRepository?.name,
       testName: currentTestRun?.name,
     })
-  const topbarContextItems = [
-    activeDomain?.name || 'APEX Load',
-    activeProject?.name || 'No project selected',
-    activeApplication?.name,
-    activeRelease?.name,
-  ].filter((item): item is string => Boolean(item))
   const orderedTopbarRuns = view.page === 'test' && currentTestRun
     ? [currentTestRun, ...activeTopbarRuns.filter(run => run.id !== currentTestRun.id)]
     : activeTopbarRuns
   const visibleTopbarRuns = orderedTopbarRuns.slice(0, 2)
   const hiddenTopbarRunCount = Math.max(0, orderedTopbarRuns.length - visibleTopbarRuns.length)
+  const topbarPrimaryActions = (activeTopbarContribution?.primaryActions || []).filter(action => !action.hidden)
+  const topbarSecondaryActions = (activeTopbarContribution?.secondaryActions || []).filter(action => !action.hidden)
+  const topbarMeta = (activeTopbarContribution?.meta || []).filter(chip => !chip.hidden)
+  const hasContextualTopbarActions = topbarPrimaryActions.length > 0 || topbarSecondaryActions.length > 0 || Boolean(activeTopbarContribution?.controls)
+  const showTopbarRunChips = visibleTopbarRuns.length > 0 && !hasContextualTopbarActions
+  const effectiveTopbarTitle = activeTopbarContribution?.title || topbarPageTitle
 
   useEffect(() => {
     let cancelled = false
@@ -513,19 +564,21 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
         showAccess={canUseAccessWorkspace}
       />
       <main className="main-content topbar-title-mode">
-        <div className="main-topbar" aria-label="Dashboard controls">
+        <div className={`main-topbar${activeTopbarContribution ? ' contextual' : ''}`} aria-label="Dashboard controls">
           <div className="main-topbar-page">
-            <strong className="topbar-page-title">{topbarPageTitle}</strong>
+            {activeTopbarContribution?.titleNode || <strong className="topbar-page-title">{effectiveTopbarTitle}</strong>}
           </div>
-          <nav className="main-topbar-context" aria-label="Workspace context">
-            {topbarContextItems.map((item, index) => (
-              <span className="topbar-context-fragment" key={`${item}-${index}`}>
-                <span className={`topbar-context-item${index === 0 ? ' primary' : ''}`}>{item}</span>
-                {index < topbarContextItems.length - 1 && <span className="topbar-context-separator" aria-hidden="true">/</span>}
-              </span>
-            ))}
-          </nav>
-          {visibleTopbarRuns.length > 0 && (
+          {topbarMeta.length > 0 && (
+            <div className="topbar-meta-strip" aria-label="Current context">
+              {topbarMeta.map(renderTopbarMetaChip)}
+            </div>
+          )}
+          {activeTopbarContribution?.controls && (
+            <div className="topbar-contribution-controls">
+              {activeTopbarContribution.controls}
+            </div>
+          )}
+          {showTopbarRunChips && (
             <nav className="topbar-active-runs" aria-label="Active test runs">
               {visibleTopbarRuns.map((run) => {
                 const statusLabel = topbarRunStatusLabel(run.status)
@@ -561,6 +614,16 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             </nav>
           )}
           <div className="main-topbar-actions">
+            {topbarSecondaryActions.length > 0 && (
+              <div className="topbar-action-group secondary" aria-label="Contextual secondary actions">
+                {topbarSecondaryActions.map(renderTopbarAction)}
+              </div>
+            )}
+            {topbarPrimaryActions.length > 0 && (
+              <div className="topbar-action-group primary" aria-label="Contextual primary actions">
+                {topbarPrimaryActions.map(renderTopbarAction)}
+              </div>
+            )}
             {showDesktopStatus && (
               <div className="desktop-status-strip" aria-label="Desktop controller status">
                 <span className="script-health-token healthy">Desktop</span>
@@ -586,6 +649,11 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             <ThemeToggle theme={theme} onThemeChange={setTheme} />
           </div>
         </div>
+        {activeTopbarContribution?.feedback && (
+          <div className="main-topbar-feedback">
+            {activeTopbarContribution.feedback}
+          </div>
+        )}
         <Suspense fallback={<div className="page">Loading page...</div>}>
           {view.page === 'dashboard' && (
             <DashboardPage
@@ -725,8 +793,10 @@ function AppContent() {
     <AuthGate state={authState}>
       <ProjectProvider>
         <ApplicationProvider>
-          <TablePaginationManager />
-          <AppShell authStatus={authState.status === 'ready' ? authState.auth : undefined} />
+          <TopbarContributionProvider>
+            <TablePaginationManager />
+            <AppShell authStatus={authState.status === 'ready' ? authState.auth : undefined} />
+          </TopbarContributionProvider>
         </ApplicationProvider>
       </ProjectProvider>
     </AuthGate>

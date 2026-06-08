@@ -37,6 +37,83 @@
   gap: 8px;
 }
 
+.execution-run-layout {
+  display: grid;
+  grid-template-columns: minmax(176px, 220px) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.execution-run-workspace {
+  min-width: 0;
+}
+
+.execution-run-summary {
+  position: sticky;
+  top: 76px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.execution-run-summary-card {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--bg-elevated) 58%, transparent),
+      color-mix(in srgb, var(--bg-card) 78%, transparent)
+    );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 7%, transparent),
+    0 10px 24px color-mix(in srgb, var(--bg-primary) 42%, transparent);
+}
+
+.execution-run-summary-card span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.execution-run-summary-card strong {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.18;
+  overflow-wrap: anywhere;
+}
+
+.execution-run-summary-card.success {
+  border-color: var(--success-border);
+  background: linear-gradient(135deg, var(--success-bg), color-mix(in srgb, var(--bg-card) 82%, transparent));
+}
+
+.execution-run-summary-card.warning {
+  border-color: var(--warning-border);
+  background: linear-gradient(135deg, var(--warning-bg), color-mix(in srgb, var(--bg-card) 82%, transparent));
+}
+
+.execution-run-summary-card.danger {
+  border-color: var(--danger-border);
+  background: linear-gradient(135deg, var(--danger-bg), color-mix(in srgb, var(--bg-card) 82%, transparent));
+}
+
+.execution-run-summary-card.accent,
+.execution-run-summary-card.info {
+  border-color: var(--accent-border);
+  background: linear-gradient(135deg, var(--accent-soft), color-mix(in srgb, var(--bg-card) 82%, transparent));
+}
+
 .execution-live-controls-anchor {
   position: sticky;
   top: 0;
@@ -177,7 +254,22 @@
 }
 
 @media (max-width: 760px) {
+  .execution-run-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .execution-run-summary {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .capacity-live-breakdown {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .execution-run-summary {
     grid-template-columns: 1fr;
   }
 }

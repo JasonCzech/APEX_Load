@@ -8,6 +8,7 @@ import DurationField from './DurationField'
 
 interface Props {
   showControls: boolean
+  showRunActions?: boolean
   onToggleControls: () => void
   test: TestSummary
   vuserTargets: Record<string, number>
@@ -37,6 +38,7 @@ interface Props {
 
 export default function TestExecutionLiveControls({
   showControls,
+  showRunActions = true,
   onToggleControls,
   test,
   vuserTargets,
@@ -84,27 +86,29 @@ export default function TestExecutionLiveControls({
         >
           {showControls ? 'Hide Controls' : 'Live Controls'}
         </button>
-        <div className="run-actions-inline" aria-label="Run actions">
-          <span className={`run-actions-status ${runActionsStatusClass}`}>{runActionsStatus}</span>
-          {isPaused ? (
-            <button type="button" className="btn btn-sm btn-success" onClick={onResume}>
-              Resume
+        {showRunActions && (
+          <div className="run-actions-inline" aria-label="Run actions">
+            <span className={`run-actions-status ${runActionsStatusClass}`}>{runActionsStatus}</span>
+            {isPaused ? (
+              <button type="button" className="btn btn-sm btn-success" onClick={onResume}>
+                Resume
+              </button>
+            ) : (
+              <button type="button" className="btn btn-sm btn-secondary" onClick={onPause} disabled={!isRunning || isStopping}>
+                Pause
+              </button>
+            )}
+            <button type="button" className="btn btn-sm btn-secondary" onClick={onStopAllVUsers} disabled={!hasActiveVUsers || rampInputMissing || isStopping}>
+              Stop VUsers
             </button>
-          ) : (
-            <button type="button" className="btn btn-sm btn-secondary" onClick={onPause} disabled={!isRunning || isStopping}>
-              Pause
+            <button type="button" className="btn btn-sm btn-secondary" onClick={onStop} disabled={isStopping}>
+              Stop Test
             </button>
-          )}
-          <button type="button" className="btn btn-sm btn-secondary" onClick={onStopAllVUsers} disabled={!hasActiveVUsers || rampInputMissing || isStopping}>
-            Stop VUsers
-          </button>
-          <button type="button" className="btn btn-sm btn-secondary" onClick={onStop} disabled={isStopping}>
-            Stop Test
-          </button>
-          <button type="button" className="btn btn-sm btn-danger" onClick={onAbort} disabled={isStopping}>
-            Abort
-          </button>
-        </div>
+            <button type="button" className="btn btn-sm btn-danger" onClick={onAbort} disabled={isStopping}>
+              Abort
+            </button>
+          </div>
+        )}
       </div>
       {showControls && (
         <div id="live-controls-panel" className="live-controls-panel">

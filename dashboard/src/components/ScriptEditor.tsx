@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type Keybo
 import { createPortal } from 'react-dom'
 import { useApi } from '../hooks/useApi'
 import type { BrowserToHTTPPreviewResponse } from '../hooks/api/useScriptApi'
+import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
 import { useWebSocket } from '../hooks/useWebSocket'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
@@ -2348,6 +2349,7 @@ interface ReplayScreenshotSelection {
 
 export default function ScriptEditor({ scriptId, initialScript, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, onSave, onClose }: Props) {
   const api = useApi()
+  const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const showProtocolSelector = Boolean(scriptId)
   const {
     activeAction,
@@ -5586,6 +5588,161 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       disabled: saving || validating || !script.name,
     },
   ]
+  const scriptTopbarStatusLabel = saving
+    ? 'Saving'
+    : validating
+      ? 'Validating'
+      : replaying
+        ? (isReplayPaused ? 'Debug Paused' : 'Debug Running')
+        : jsonDirty
+          ? 'JSON Draft'
+          : validationEvidence
+            ? 'Validated'
+            : 'Draft'
+  const scriptTopbarStatusTone: TopbarMetaTone = saving || validating || replaying
+    ? 'info'
+    : jsonDirty
+      ? 'warning'
+      : validationEvidence
+        ? 'success'
+        : 'default'
+
+  useTopbarContribution({
+    id: 'script-editor',
+    priority: 80,
+    title: scriptId ? 'Edit Script' : 'Create Script',
+    titleNode: (
+      <label className="topbar-title-field" aria-label="Script identity">
+        <span>Script Name</span>
+        <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
+      </label>
+    ),
+    meta: [
+      { id: 'mode', label: scriptId ? 'Edit Script' : 'Create Script', tone: 'accent' },
+      { id: 'protocol', label: (currentDraftScript.protocol || 'http').toUpperCase(), tone: 'default' },
+      { id: 'status', label: scriptTopbarStatusLabel, tone: scriptTopbarStatusTone },
+      {
+        id: 'problems',
+        label: `${problemCount} issue${problemCount === 1 ? '' : 's'}`,
+        tone: problemCount > 0 ? 'danger' : 'success',
+        hidden: problemCount === 0 && !validationEvidence,
+      },
+    ],
+    controls: (
+      <div className="topbar-segmented-control script-mode-switcher" role="tablist" aria-label="Script workspace">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={workspaceTab === 'author'}
+          aria-pressed={workspaceTab === 'author'}
+          className={workspaceTab === 'author' ? 'active' : ''}
+          onClick={() => activateWorkspaceTab('author')}
+        >
+          Author
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={workspaceTab === 'debug'}
+          aria-pressed={workspaceTab === 'debug'}
+          className={workspaceTab === 'debug' ? 'active' : ''}
+          title={debugWorkspaceStatusLabel || undefined}
+          onClick={() => activateWorkspaceTab('debug')}
+        >
+          {debugWorkspaceStatusLabel ? `Debug ${debugWorkspaceStatusLabel}` : 'Debug'}
+        </button>
+      </div>
+    ),
+    secondaryActions: [
+      {
+        id: 'run-debug',
+        label: replaying ? 'Running...' : replayReport ? 'Restart' : 'Run',
+        compactLabel: 'Run',
+        title: replayStartButtonLabel,
+        tone: 'secondary',
+        disabled: replaying || saving || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0,
+        onClick: () => { void handleReplay() },
+      },
+      {
+        id: 'pause-debug',
+        label: isReplayPaused ? 'Continue' : 'Pause',
+        compactLabel: isReplayPaused ? 'Go' : 'Pause',
+        title: isReplayPaused ? 'Continue debugger' : 'Pause debugger',
+        tone: 'secondary',
+        disabled: !activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped',
+        onClick: () => { void handlePauseResumeReplay() },
+      },
+      {
+        id: 'step-debug',
+        label: 'Step',
+        compactLabel: 'Step',
+        title: 'Step to next action',
+        tone: 'secondary',
+        disabled: stepReplayDisabled,
+        onClick: () => { void handleStepReplay() },
+      },
+      {
+        id: 'stop-debug',
+        label: 'Stop',
+        compactLabel: 'Stop',
+        title: 'Stop debugger',
+        tone: 'secondary',
+        disabled: !activeReplaySessionId || !replaying,
+        onClick: () => { void handleStopReplay() },
+      },
+      {
+        id: 'breakpoint',
+        label: 'Breakpoint',
+        compactLabel: 'BP',
+        title: 'Toggle breakpoint on selected action',
+        tone: 'ghost',
+        disabled: debugActionRows.length === 0,
+        onClick: toggleSelectedBreakpoint,
+      },
+      {
+        id: 'settings',
+        label: 'Settings',
+        compactLabel: 'Set',
+        title: 'Session overrides',
+        tone: 'ghost',
+        pressed: centerTabsState.activeTabId === 'runtime-settings',
+        onClick: () => {
+          activateWorkspaceTab('debug')
+          setDebuggerTab('request')
+          setDebuggerSettingsOpen(false)
+          openCenterTab('runtime-settings')
+        },
+      },
+      {
+        id: 'close-editor',
+        label: 'Close',
+        compactLabel: 'Close',
+        title: 'Close script editor',
+        tone: 'ghost',
+        hidden: !onClose,
+        onClick: () => { onClose?.() },
+      },
+    ],
+    primaryActions: [
+      {
+        id: 'validate-script',
+        label: validating ? 'Validating...' : (scriptId ? 'Validate Saved' : 'Validate Draft'),
+        compactLabel: 'Check',
+        tone: 'secondary',
+        disabled: saving || replaying || validating || !currentDraftScript.name,
+        onClick: () => { void handleValidateScript() },
+      },
+      {
+        id: 'save-script',
+        label: saving ? 'Saving...' : 'Save Script',
+        compactLabel: 'Save',
+        tone: 'primary',
+        disabled: saving || validating || !currentDraftScript.name,
+        onClick: () => { void handleSave() },
+      },
+    ],
+  })
+
   const renderBlockedCenterDocument = (title: string) => (
     <section className="center-document center-document-blocked" aria-label={title}>
       <div className="center-document-header">
@@ -6064,120 +6221,126 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           review={jsonOccurrenceReview}
         />
       )}
-      <div className="editor-header">
-        <div className="editor-title-row">
-          <div className="editor-actions">
-            <button className="btn btn-ghost" onClick={handleValidateScript} disabled={saving || replaying || validating || !currentDraftScript.name}>
-              {validating ? 'Validating…' : (scriptId ? 'Validate Saved Script' : 'Validate Draft')}
-            </button>
-            <button className="btn btn-primary" onClick={handleSave} disabled={saving || validating || !currentDraftScript.name}>
-              {saving ? 'Saving…' : 'Save Script'}
-            </button>
-            {onClose && <button className="btn btn-ghost" onClick={onClose}>✕</button>}
-          </div>
-        </div>
-        <div className="script-name-panel" aria-label="Script identity">
-          <label className="script-name-field">
-            <span>Script Name</span>
-            <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
-          </label>
-        </div>
-        <div className="script-ide-command-bar" aria-label="Script IDE command bar">
-          <div className="script-ide-tabs" role="tablist" aria-label="Script workspace">
-            <button type="button" role="tab" aria-selected={workspaceTab === 'author'} className={workspaceTab === 'author' ? 'active' : ''} onClick={() => activateWorkspaceTab('author')}>
-              Author
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={workspaceTab === 'debug'}
-              className={workspaceTab === 'debug' ? 'active' : ''}
-              data-debug-status={debugWorkspaceStatusLabel || undefined}
-              onClick={() => activateWorkspaceTab('debug')}
-            >
-              Debug
-            </button>
-          </div>
-          <div className="script-ide-quick-actions" role="group" aria-label="Quick actions">
-            <button type="button" className="debugger-icon-btn" title={replayStartButtonLabel} onClick={() => void handleReplay()} disabled={replaying || saving || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0}>
-              <span className="debugger-icon" aria-hidden="true">&#9654;</span>
-              <span>{replaying ? 'Running…' : replayReport ? 'Restart' : 'Run'}</span>
-            </button>
-            <button type="button" className="debugger-icon-btn" title={isReplayPaused ? 'Continue' : 'Pause'} onClick={handlePauseResumeReplay} disabled={!activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped'}>
-              <span className="debugger-icon" aria-hidden="true">{isReplayPaused ? '▶' : '⏸'}</span>
-              <span>{isReplayPaused ? 'Continue' : 'Pause'}</span>
-            </button>
-            <button type="button" className="debugger-icon-btn" title="Step to next action" onClick={() => void handleStepReplay()} disabled={stepReplayDisabled}>
-              <span className="debugger-icon" aria-hidden="true">&#10551;</span>
-              <span>Step</span>
-            </button>
-            <button type="button" className="debugger-icon-btn" title="Stop debugger" onClick={handleStopReplay} disabled={!activeReplaySessionId || !replaying}>
-              <span className="debugger-icon" aria-hidden="true">&#9209;</span>
-              <span>Stop</span>
-            </button>
-            <button type="button" className="debugger-icon-btn" title="Toggle breakpoint on selected action" onClick={toggleSelectedBreakpoint} disabled={debugActionRows.length === 0}>
-              <span className="debugger-icon" aria-hidden="true">●</span>
-              <span>Breakpoint</span>
-            </button>
-            <button
-              ref={debuggerSettingsBtnRef}
-              type="button"
-              className={`debugger-icon-btn ${centerTabsState.activeTabId === 'runtime-settings' ? 'active' : ''}`}
-              title="Session overrides"
-              aria-pressed={centerTabsState.activeTabId === 'runtime-settings'}
-              onClick={() => {
-                activateWorkspaceTab('debug')
-                setDebuggerTab('request')
-                setDebuggerSettingsOpen(false)
-                openCenterTab('runtime-settings')
-              }}
-            >
-              <span className="debugger-icon" aria-hidden="true">&#9881;</span>
-              <span>Settings</span>
-            </button>
-            {workspaceTab === 'debug' && (
-              <>
-                <button
-                  type="button"
-                  className={`debugger-icon-btn ${!debugDetailCollapsed ? 'active' : ''}`}
-                  title={debugDetailCollapsed ? 'Show request and response panel' : 'Hide request and response panel'}
-                  aria-pressed={!debugDetailCollapsed}
-                  onClick={() => setDebugDetailCollapsed(value => !value)}
-                >
-                  <span className="debugger-icon" aria-hidden="true">▣</span>
-                  <span>Details</span>
-                </button>
-                <button
-                  type="button"
-                  className={`debugger-icon-btn ${!debugVariablesCollapsed ? 'active' : ''}`}
-                  title={debugVariablesCollapsed ? 'Show right sidebar' : 'Hide right sidebar'}
-                  aria-pressed={!debugVariablesCollapsed}
-                  onClick={() => setDebugVariablesCollapsed(value => !value)}
-                >
-                  <span className="debugger-icon" aria-hidden="true">◫</span>
-                  <span>Vars</span>
-                </button>
-              </>
-            )}
-            {replayReport && (
-              <button type="button" className="debugger-icon-btn" title="Download Debug JSON" onClick={handleDownloadBrowserReplayExport}>
-                <span className="debugger-icon" aria-hidden="true">&#8675;</span>
-                <span>Export</span>
+      {!hasTopbarContributionProvider && (
+        <div className="editor-header script-editor-local-action-proxy" hidden>
+          <div className="editor-title-row">
+            <div className="editor-actions">
+              <button className="btn btn-ghost" onClick={handleValidateScript} disabled={saving || replaying || validating || !currentDraftScript.name}>
+                {validating ? 'Validating...' : (scriptId ? 'Validate Saved Script' : 'Validate Draft')}
               </button>
-            )}
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving || validating || !currentDraftScript.name}>
+                {saving ? 'Saving...' : 'Save Script'}
+              </button>
+              {onClose && <button className="btn btn-ghost" onClick={onClose}>Close</button>}
+            </div>
+          </div>
+          <div className="script-name-panel" aria-label="Script identity">
+            <label className="script-name-field">
+              <span>Script Name</span>
+              <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
+            </label>
+          </div>
+          <div className="script-ide-command-bar" aria-label="Script IDE command bar">
+            <div className="script-ide-tabs" role="tablist" aria-label="Script workspace">
+              <button type="button" role="tab" aria-selected={workspaceTab === 'author'} className={workspaceTab === 'author' ? 'active' : ''} onClick={() => activateWorkspaceTab('author')}>
+                Author
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={workspaceTab === 'debug'}
+                className={workspaceTab === 'debug' ? 'active' : ''}
+                data-debug-status={debugWorkspaceStatusLabel || undefined}
+                onClick={() => activateWorkspaceTab('debug')}
+              >
+                Debug
+              </button>
+            </div>
+            <div className="script-ide-quick-actions" role="group" aria-label="Quick actions">
+              <button type="button" className="debugger-icon-btn" title={replayStartButtonLabel} onClick={() => void handleReplay()} disabled={replaying || saving || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0}>
+                <span className="debugger-icon" aria-hidden="true">&#9654;</span>
+                <span>{replaying ? 'Running...' : replayReport ? 'Restart' : 'Run'}</span>
+              </button>
+              <button type="button" className="debugger-icon-btn" title={isReplayPaused ? 'Continue' : 'Pause'} onClick={handlePauseResumeReplay} disabled={!activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped'}>
+                <span className="debugger-icon" aria-hidden="true">{isReplayPaused ? '▶' : '⏸'}</span>
+                <span>{isReplayPaused ? 'Continue' : 'Pause'}</span>
+              </button>
+              <button type="button" className="debugger-icon-btn" title="Step to next action" onClick={() => void handleStepReplay()} disabled={stepReplayDisabled}>
+                <span className="debugger-icon" aria-hidden="true">&#10551;</span>
+                <span>Step</span>
+              </button>
+              <button type="button" className="debugger-icon-btn" title="Stop debugger" onClick={handleStopReplay} disabled={!activeReplaySessionId || !replaying}>
+                <span className="debugger-icon" aria-hidden="true">&#9209;</span>
+                <span>Stop</span>
+              </button>
+              <button type="button" className="debugger-icon-btn" title="Toggle breakpoint on selected action" onClick={toggleSelectedBreakpoint} disabled={debugActionRows.length === 0}>
+                <span className="debugger-icon" aria-hidden="true">●</span>
+                <span>Breakpoint</span>
+              </button>
+              <button
+                ref={debuggerSettingsBtnRef}
+                type="button"
+                className={`debugger-icon-btn ${centerTabsState.activeTabId === 'runtime-settings' ? 'active' : ''}`}
+                title="Session overrides"
+                aria-pressed={centerTabsState.activeTabId === 'runtime-settings'}
+                onClick={() => {
+                  activateWorkspaceTab('debug')
+                  setDebuggerTab('request')
+                  setDebuggerSettingsOpen(false)
+                  openCenterTab('runtime-settings')
+                }}
+              >
+                <span className="debugger-icon" aria-hidden="true">&#9881;</span>
+                <span>Settings</span>
+              </button>
+              {workspaceTab === 'debug' && (
+                <>
+                  <button
+                    type="button"
+                    className={`debugger-icon-btn ${!debugDetailCollapsed ? 'active' : ''}`}
+                    title={debugDetailCollapsed ? 'Show request and response panel' : 'Hide request and response panel'}
+                    aria-pressed={!debugDetailCollapsed}
+                    onClick={() => setDebugDetailCollapsed(value => !value)}
+                  >
+                    <span className="debugger-icon" aria-hidden="true">▣</span>
+                    <span>Details</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`debugger-icon-btn ${!debugVariablesCollapsed ? 'active' : ''}`}
+                    title={debugVariablesCollapsed ? 'Show right sidebar' : 'Hide right sidebar'}
+                    aria-pressed={!debugVariablesCollapsed}
+                    onClick={() => setDebugVariablesCollapsed(value => !value)}
+                  >
+                    <span className="debugger-icon" aria-hidden="true">◫</span>
+                    <span>Vars</span>
+                  </button>
+                </>
+              )}
+              {replayReport && (
+                <button type="button" className="debugger-icon-btn" title="Download Debug JSON" onClick={handleDownloadBrowserReplayExport}>
+                  <span className="debugger-icon" aria-hidden="true">&#8675;</span>
+                  <span>Export</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
-        {error && <div className="editor-toast error">{error}</div>}
-        {warnings.length > 0 && (
-          <div className="editor-toast warning">
-            {warnings.map((warning, index) => (
-              <div key={`${warning}-${index}`}>{warning}</div>
-            ))}
-          </div>
-        )}
-        {success && <div className="editor-toast success">{success}</div>}
-        {validationEvidence && <ValidationEvidencePanel evidence={validationEvidence} />}
-      </div>
+      )}
+      {(error || warnings.length > 0 || success || validationEvidence) && (
+        <div className="editor-feedback-strip">
+          {error && <div className="editor-toast error">{error}</div>}
+          {warnings.length > 0 && (
+            <div className="editor-toast warning">
+              {warnings.map((warning, index) => (
+                <div key={`${warning}-${index}`}>{warning}</div>
+              ))}
+            </div>
+          )}
+          {success && <div className="editor-toast success">{success}</div>}
+          {validationEvidence && <ValidationEvidencePanel evidence={validationEvidence} />}
+        </div>
+      )}
 
       <div className={`editor-body workspace-${workspaceTab}`}>
           {/* Script Config Panel */}
