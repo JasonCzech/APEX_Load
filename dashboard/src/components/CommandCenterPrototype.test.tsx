@@ -27,17 +27,107 @@ describe('CommandCenterPrototype', () => {
     container.remove()
   })
 
-  it('switches between the Ops Cockpit and Grafana Wall mockup variants', async () => {
+  it('switches between the OPS View and Graph Wall variants from the sidebar', async () => {
     await renderPrototype()
 
-    expect(container.textContent).toContain('Ops Cockpit')
+    expect(container.textContent).toContain('OPS View')
+    expect(container.textContent).toContain('Graph Wall')
     expect(container.querySelector('[aria-label="Ops cockpit mockup"]')).not.toBeNull()
     expect(container.textContent).not.toContain('Triage Console')
+    expect(container.querySelector('.command-center-intro')).toBeNull()
 
-    await click(buttonNamed('Grafana Wall'))
+    const opsSidebar = container.querySelector('[aria-label="Command center sidebar"]')
+    const opsPrimaryColumn = container.querySelector('.command-layout-ops > .command-primary-column')
+    const opsSwitchPanel = opsSidebar?.querySelector('.command-view-switch-panel')
+    const opsCentralGroupPanel = opsPrimaryColumn?.querySelector('.command-group-panel')
+    const opsLoadModelRow = opsPrimaryColumn?.querySelector('.command-load-model-row')
+    const opsLoadModelPanel = opsLoadModelRow?.querySelector('[aria-label="Load model profile"]')
+
+    expect(opsSwitchPanel).not.toBeNull()
+    expect(opsSidebar?.querySelector('.command-group-panel')).toBeNull()
+    expect(opsPrimaryColumn).not.toBeNull()
+    expect(opsCentralGroupPanel).not.toBeNull()
+    expect(opsCentralGroupPanel?.classList.contains('paired')).toBe(true)
+    expect(opsLoadModelRow).not.toBeNull()
+    expect(opsLoadModelPanel).not.toBeNull()
+    expect(opsLoadModelRow?.querySelector('.command-group-panel')).toBe(opsCentralGroupPanel)
+    expect(opsLoadModelPanel?.textContent).toContain('Load Model')
+    expect(opsLoadModelPanel?.textContent).toContain('elapsed')
+    expect(opsLoadModelPanel?.getAttribute('data-progress-pct')).toBe('38')
+    expect(opsLoadModelPanel?.getAttribute('data-target-vusers')).toBe('2140')
+    expect(Array.from(opsPrimaryColumn!.children).indexOf(opsLoadModelRow!)).toBeGreaterThan(0)
+
+    await click(buttonNamed('Graph Wall'))
 
     expect(container.querySelector('[aria-label="Grafana wall mockup"]')).not.toBeNull()
-    expect(container.querySelector('[aria-label="Group filters"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Group filters"]')).toBeNull()
+    expect(container.textContent).not.toContain('Graph-heavy view')
+
+    const graphSidebar = container.querySelector('.command-grafana-side')
+    const graphSwitchPanel = graphSidebar?.querySelector('.command-view-switch-panel')
+    const graphSelectionPanel = graphSidebar?.querySelector('[aria-label="Group selection"]')
+    const graphErrorPanel = graphSidebar?.querySelector('[aria-label="Error drill-down"]')
+    const graphOptionsSlot = graphSidebar?.querySelector('.command-graph-options-slot')
+    const graphOptionsPanel = graphOptionsSlot?.querySelector('[aria-label="Graph display options"]')
+
+    expect(graphSwitchPanel).not.toBeNull()
+    expect(graphSidebar?.querySelector('.command-group-panel')).toBeNull()
+    expect(graphSelectionPanel).not.toBeNull()
+    expect(graphSelectionPanel?.textContent).toContain('Group Selection')
+    expect(graphSelectionPanel?.textContent).toContain('3 / 3 groups visible')
+    expect(Array.from(graphSidebar!.children).indexOf(graphSwitchPanel!)).toBeLessThan(Array.from(graphSidebar!.children).indexOf(graphSelectionPanel!))
+    expect(graphOptionsPanel).not.toBeNull()
+    expect(graphOptionsPanel?.textContent).toContain('Graph Options')
+    expect(graphOptionsPanel?.textContent).toContain('Display Window')
+    expect(graphOptionsPanel?.textContent).toContain('Zoom')
+    expect(graphOptionsPanel?.textContent).toContain('Role View')
+    expect(graphOptionsPanel?.textContent).toContain('Display Time')
+    expect(Array.from(graphSidebar!.children).indexOf(graphOptionsSlot!)).toBeGreaterThan(Array.from(graphSidebar!.children).indexOf(graphErrorPanel!))
+
+    const runtimeGraphs = container.querySelector('.command-runtime-graphs')
+    expect(runtimeGraphs?.classList.contains('command-runtime-graphs-grafana')).toBe(true)
+    expect(runtimeGraphs?.querySelector('.charts-toolbar-title-row')?.textContent).toContain('Runtime Graphs')
+    expect(runtimeGraphs?.querySelector('.charts-toolbar-title-row')?.textContent).toContain('Configure Graphs')
+    expect(runtimeGraphs?.querySelector('[role="tablist"][aria-label="Graph groups"]')).not.toBeNull()
+    expect(tabNamed('Test Results')?.getAttribute('aria-selected')).toBe('true')
+    expect(runtimeGraphs?.textContent).toContain('Transactions Per Second')
+    expect(runtimeGraphs?.textContent).not.toContain('CPU Usage (%)')
+
+    await click(tabNamed('Under Load'))
+
+    expect(tabNamed('Under Load')?.getAttribute('aria-selected')).toBe('true')
+    expect(runtimeGraphs?.textContent).toContain('ART Under Load')
+    expect(runtimeGraphs?.textContent).toContain('Network Egress Under Load')
+
+    await click(tabNamed('Infrastructure'))
+
+    expect(tabNamed('Infrastructure')?.getAttribute('aria-selected')).toBe('true')
+    expect(runtimeGraphs?.textContent).toContain('CPU Usage (%)')
+    expect(runtimeGraphs?.textContent).toContain('Memory Usage (MB)')
+    expect(runtimeGraphs?.textContent).toContain('Route Latency (ms)')
+
+    expect(runtimeGraphs?.getAttribute('data-visible-groups')).toContain('browse')
+    const initialLoadImpactRange = runtimeGraphs?.getAttribute('data-load-impact-vuser-range')
+    expect(initialLoadImpactRange).toBeTruthy()
+
+    const browseVisibility = buttonByAriaLabel('Browse Web graph visibility')
+    expect(browseVisibility.getAttribute('aria-pressed')).toBe('true')
+
+    await click(browseVisibility)
+
+    expect(browseVisibility.getAttribute('aria-pressed')).toBe('false')
+    expect(graphSelectionPanel?.textContent).toContain('2 / 3 groups visible')
+    expect(runtimeGraphs?.getAttribute('data-visible-groups')).not.toContain('browse')
+    expect(runtimeGraphs?.getAttribute('data-visible-groups')).toContain('checkout')
+    expect(runtimeGraphs?.getAttribute('data-load-impact-vuser-range')).not.toBe(initialLoadImpactRange)
+
+    await click(buttonWithin(graphOptionsPanel!, 'Relative Time'))
+
+    expect(buttonWithin(graphOptionsPanel!, 'Relative Time').getAttribute('aria-pressed')).toBe('true')
+
+    await click(buttonWithin(graphOptionsPanel!, '6 Graphs'))
+
+    expect(container.querySelector('.charts-grid.six-up.command-center-graphs')).not.toBeNull()
   })
 
   it('updates local run state and staged VUser targets', async () => {
@@ -88,11 +178,13 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('Drill-down selected: Cart lookup p99 spike')
     expect(container.textContent).toContain('upstream response exceeded 2s timeout budget')
 
-    await click(buttonNamed('Grafana Wall'))
+    await click(buttonNamed('Graph Wall'))
     await click(buttonNamed('Configure Graphs'))
 
     const vuserToggle = inputByLabel('Show Virtual Users')
     expect(vuserToggle.checked).toBe(true)
+    expect(container.querySelector('.charts-config-drawer')?.textContent).toContain('Graph Cards')
+    expect(container.querySelector('.charts-config-drawer')?.textContent).not.toContain('Display Window')
 
     await click(vuserToggle)
 
@@ -187,6 +279,24 @@ describe('CommandCenterPrototype', () => {
 
   function buttonNamed(name: string) {
     const button = Array.from(container.querySelectorAll('button')).find(candidate => candidate.textContent?.includes(name))
+    expect(button, `Expected button named ${name}`).toBeDefined()
+    return button as HTMLButtonElement
+  }
+
+  function buttonByAriaLabel(label: string) {
+    const button = container.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement | null
+    expect(button, `Expected button labeled ${label}`).not.toBeNull()
+    return button as HTMLButtonElement
+  }
+
+  function tabNamed(name: string) {
+    const tab = Array.from(container.querySelectorAll('button[role="tab"]')).find(candidate => candidate.textContent?.includes(name))
+    expect(tab, `Expected tab named ${name}`).toBeDefined()
+    return tab as HTMLButtonElement
+  }
+
+  function buttonWithin(rootElement: Element, name: string) {
+    const button = Array.from(rootElement.querySelectorAll('button')).find(candidate => candidate.textContent?.includes(name))
     expect(button, `Expected button named ${name}`).toBeDefined()
     return button as HTMLButtonElement
   }

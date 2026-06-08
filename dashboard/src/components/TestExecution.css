@@ -1086,11 +1086,67 @@
   margin: 4px 0 0;
 }
 
+.charts-toolbar-heading {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.charts-toolbar-title-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .charts-toolbar-actions {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 10px;
+}
+
+.graph-group-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--control-bg);
+}
+
+.graph-group-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+
+.graph-group-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.graph-group-tab small {
+  min-width: 18px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-primary) 76%, transparent);
+  color: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .charts-toolbar-badges {

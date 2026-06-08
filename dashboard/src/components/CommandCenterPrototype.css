@@ -1,13 +1,6 @@
 .command-center-page {
   gap: 18px;
-}
-
-.command-center-intro {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 18px;
-  min-width: 0;
+  --command-view-switch-height: 64px;
 }
 
 .command-panel h3,
@@ -23,10 +16,6 @@
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.45;
-}
-
-.command-center-variant-toggle {
-  flex: 0 0 auto;
 }
 
 .command-control-shelf {
@@ -182,6 +171,129 @@
   gap: 14px;
 }
 
+.command-view-switch-panel {
+  height: var(--command-view-switch-height);
+  align-content: center;
+  padding: 10px;
+}
+
+.command-center-variant-toggle {
+  width: 100%;
+}
+
+.command-center-variant-toggle .mode-chip {
+  flex: 1 1 0;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.command-group-selection-panel {
+  gap: 10px;
+}
+
+.command-group-selection-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.command-graph-options-slot:empty {
+  display: none;
+}
+
+.command-sidebar-graph-options {
+  gap: 10px;
+}
+
+.command-sidebar-graph-options .command-panel-header {
+  align-items: center;
+}
+
+.command-sidebar-graph-controls {
+  gap: 11px;
+  overflow: visible;
+  padding: 0;
+}
+
+.command-sidebar-graph-options .charts-config-panel-section {
+  display: grid;
+  align-items: start;
+  gap: 7px;
+}
+
+.command-sidebar-graph-options .charts-config-panel-section > div:first-child {
+  min-width: 0;
+}
+
+.command-sidebar-graph-options .time-range-selector {
+  justify-content: flex-start;
+}
+
+.command-sidebar-graph-options .chart-role-select {
+  width: 100%;
+  min-width: 0;
+  border-radius: 8px;
+}
+
+.command-group-select-toggle {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-primary) 76%, transparent);
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+}
+
+.command-group-select-toggle.active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+.command-group-select-toggle:hover,
+.command-group-select-toggle:focus-visible {
+  border-color: var(--accent-border);
+}
+
+.command-group-select-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.command-group-select-swatch {
+  width: 10px;
+  height: 22px;
+  border-radius: 999px;
+}
+
+.command-group-select-toggle strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+  font-size: 12px;
+}
+
+.command-group-select-toggle small {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.command-group-select-toggle.active small {
+  color: var(--accent);
+}
+
 .command-hero-strip {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -190,11 +302,11 @@
 
 .command-hero-metric {
   min-width: 0;
-  min-height: 86px;
+  height: var(--command-view-switch-height);
   display: grid;
   align-content: center;
-  gap: 6px;
-  padding: 14px;
+  gap: 4px;
+  padding: 10px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-card);
@@ -210,7 +322,7 @@
 
 .command-hero-metric strong {
   color: var(--text-primary);
-  font-size: 24px;
+  font-size: 21px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -225,6 +337,14 @@
 
 .command-hero-metric.danger strong {
   color: var(--danger);
+}
+
+.command-load-model-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.9fr);
+  gap: 14px;
+  align-items: stretch;
 }
 
 .command-panel,
@@ -243,8 +363,7 @@
 }
 
 .command-panel-header,
-.command-chart-header,
-.command-wall-toolbar {
+.command-chart-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -379,8 +498,106 @@
   display: none;
 }
 
-.command-graph-toolbar,
-.command-wall-toolbar {
+.command-group-panel.paired .command-group-row {
+  grid-template-columns: minmax(125px, 1fr) 54px 56px 64px 60px;
+  gap: 8px;
+}
+
+.command-group-panel.paired .command-group-row.header span:nth-child(3) {
+  display: none;
+}
+
+.command-group-panel.paired .command-group-row > :nth-child(1) {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.command-group-panel.paired .command-group-row > :nth-child(2) {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.command-group-panel.paired .command-group-row > :nth-child(4) {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.command-group-panel.paired .command-group-row > :nth-child(5) {
+  grid-column: 4;
+  grid-row: 1;
+}
+
+.command-group-panel.paired .command-group-row > :nth-child(6) {
+  grid-column: 5;
+  grid-row: 1;
+}
+
+.command-group-panel.paired .command-target-cell {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.command-load-model-panel {
+  align-content: start;
+}
+
+.command-load-model-header {
+  align-items: center;
+}
+
+.command-load-model-badge {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border: 1px solid var(--warning-border);
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning-text);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.command-load-model-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.command-load-model-panel .command-metric-pill {
+  min-height: 58px;
+  padding: 9px;
+}
+
+.command-load-model-panel .command-metric-pill span {
+  font-size: 9px;
+}
+
+.command-load-model-panel .command-metric-pill strong {
+  font-size: 14px;
+}
+
+.command-load-model-chart {
+  min-width: 0;
+  height: 132px;
+}
+
+.command-load-model-progress {
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-primary);
+}
+
+.command-load-model-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--warning));
+}
+
+.command-graph-toolbar {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-card);
@@ -404,8 +621,7 @@
   white-space: nowrap;
 }
 
-.command-graph-preset-buttons,
-.command-wall-filters {
+.command-graph-preset-buttons {
   min-width: 0;
   display: flex;
   flex-wrap: wrap;
@@ -413,8 +629,7 @@
   gap: 6px;
 }
 
-.command-preset-chip,
-.command-filter-chip {
+.command-preset-chip {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -434,12 +649,6 @@
   border-color: var(--accent-border);
   background: var(--accent-soft);
   color: var(--accent);
-}
-
-.command-filter-chip span {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
 }
 
 .command-graph-grid {
@@ -529,8 +738,9 @@
 }
 
 .command-runtime-graphs .command-center-charts-toolbar {
+  height: var(--command-view-switch-height);
   align-items: center;
-  padding: 10px 12px;
+  padding: 8px 10px;
   box-shadow: none;
 }
 
@@ -541,10 +751,46 @@
 .command-runtime-graphs .charts-toolbar-actions {
   flex-direction: row;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.command-runtime-graphs-grafana .charts-toolbar-actions,
+.command-runtime-graphs-grafana .charts-toolbar-title-row {
+  flex-wrap: nowrap;
+}
+
+.command-runtime-graphs .graph-group-tabs {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.command-runtime-graphs-grafana .graph-group-tabs {
+  flex-wrap: nowrap;
+}
+
+.command-runtime-graphs .graph-group-tab {
+  min-height: 26px;
+  padding: 4px 7px;
+}
+
+.command-runtime-graphs-grafana .graph-group-tab {
+  gap: 5px;
+  min-height: 26px;
+  padding: 3px 6px;
+  font-size: 10px;
+}
+
+.command-runtime-graphs-grafana .graph-group-tab small {
+  min-width: 16px;
 }
 
 .command-runtime-graphs .charts-toolbar-badges {
   gap: 6px;
+}
+
+.command-runtime-graphs-grafana .charts-toolbar-badges {
+  display: none;
 }
 
 .command-runtime-graphs .archive-chip {
@@ -560,6 +806,10 @@
 .command-layout-grafana .charts-grid.command-center-graphs {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+}
+
+.command-runtime-graphs-grafana .charts-grid.command-center-graphs {
+  margin-top: 14px;
 }
 
 .command-runtime-graphs .chart-card.command-center-chart-card {
@@ -583,6 +833,13 @@
   min-width: 0;
 }
 
+.command-runtime-graphs .charts-toolbar-title-row .chart-title {
+  flex: 0 0 auto;
+  min-width: max-content;
+  overflow: visible;
+  text-overflow: clip;
+}
+
 .command-runtime-graphs .chart-title {
   min-width: 0;
   overflow: hidden;
@@ -597,15 +854,6 @@
 .command-runtime-graphs .route-latency-card-controls {
   flex-wrap: wrap;
   justify-content: flex-end;
-}
-
-.command-wall-label {
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
 }
 
 .command-error-list {
@@ -761,16 +1009,6 @@
   gap: 8px;
 }
 
-.command-wall-toolbar {
-  padding: 12px;
-}
-
-.command-wall-toolbar .command-graph-toolbar {
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-
 @media (max-width: 1280px) {
   .command-control-shelf,
   .command-layout-ops,
@@ -793,14 +1031,9 @@
 }
 
 @media (max-width: 1024px) {
-  .command-center-intro,
-  .command-wall-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
   .command-graph-grid.standard,
   .command-graph-grid.dense,
+  .command-load-model-row,
   .command-layout-grafana .charts-grid.command-center-graphs {
     grid-template-columns: 1fr;
   }
@@ -808,6 +1041,19 @@
   .command-group-row,
   .command-group-panel.compact .command-group-row {
     grid-template-columns: minmax(0, 1fr) 64px;
+  }
+
+  .command-group-panel.paired .command-group-row {
+    grid-template-columns: minmax(0, 1fr) 64px;
+  }
+
+  .command-group-panel.paired .command-group-row > :nth-child(n) {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .command-group-panel.paired .command-target-cell {
+    grid-column: 1 / -1;
   }
 
   .command-group-row.header {
@@ -818,13 +1064,25 @@
     grid-column: 1 / -1;
     grid-template-columns: 86px minmax(0, 1fr) auto;
   }
+
+  .command-runtime-graphs-grafana .command-center-charts-toolbar {
+    height: auto;
+    min-height: var(--command-view-switch-height);
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .command-runtime-graphs-grafana .charts-toolbar-actions,
+  .command-runtime-graphs-grafana .charts-toolbar-title-row,
+  .command-runtime-graphs-grafana .graph-group-tabs {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 820px) {
-  .command-center-intro,
   .command-panel-header,
   .command-chart-header,
-  .command-wall-toolbar,
   .command-graph-toolbar {
     flex-direction: column;
     align-items: stretch;
@@ -838,14 +1096,14 @@
   .command-hero-strip,
   .command-graph-grid.standard,
   .command-graph-grid.dense,
+  .command-load-model-stats,
   .command-layout-grafana .charts-grid.command-center-graphs,
   .command-error-detail dl {
     grid-template-columns: 1fr;
   }
 
   .command-run-actions,
-  .command-graph-preset-buttons,
-  .command-wall-filters {
+  .command-graph-preset-buttons {
     justify-content: flex-start;
   }
 

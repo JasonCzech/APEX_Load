@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Area,
   CartesianGrid,
@@ -106,9 +107,12 @@ interface Props {
   defaultDensity?: ChartDensityMode
   activeCursor?: GraphCursorState | null
   onActiveCursorChange?: (cursor: GraphCursorState | null) => void
+  enableGraphGroupTabs?: boolean
+  externalControlsTarget?: HTMLElement | null
 }
 
 type ChartDropPosition = 'before' | 'after'
+type GraphGroupTabId = 'test_results' | 'under_load' | 'infrastructure'
 
 export interface GraphCursorState {
   label?: string | number
@@ -118,6 +122,20 @@ export interface GraphCursorState {
 interface RechartsMouseEvent {
   activeLabel?: string | number
   activeTooltipIndex?: number
+}
+
+const graphGroupTabs: Array<{ id: GraphGroupTabId; label: string }> = [
+  { id: 'test_results', label: 'Test Results' },
+  { id: 'under_load', label: 'Under Load' },
+  { id: 'infrastructure', label: 'Infrastructure' },
+]
+
+const infrastructureChartIds = new Set(['cpu', 'mem', 'io', 'generator_impact', 'network_latency'])
+
+function graphGroupForChart(chart: ChartConfig): GraphGroupTabId {
+  if (isLoadImpactChart(chart)) return 'under_load'
+  if (infrastructureChartIds.has(chart.id)) return 'infrastructure'
+  return 'test_results'
 }
 
 const AXIS_LABEL_STYLE = {
@@ -349,6 +367,8 @@ export default function TestExecutionCharts({
   defaultDensity,
   activeCursor,
   onActiveCursorChange,
+  enableGraphGroupTabs = false,
+  externalControlsTarget = null,
 }: Props) {
   const densityFallback = defaultDensity ?? (surface === 'command-center' ? 'command_center' : 'standard')
   const storageKeyFor = (name: string) => `${storageScope}.${name}`
@@ -377,6 +397,7 @@ export default function TestExecutionCharts({
   const [chartDensity, setChartDensity] = useState<ChartDensityMode>(() => readStoredChartDensity(chartDensityStorageKey, densityFallback))
   const [responseTimeNetworkMode, setResponseTimeNetworkMode] = useState<ResponseTimeNetworkMode>(() => readStoredResponseTimeNetworkMode(responseTimeNetworkModeStorageKey))
   const [routeLatencyMode, setRouteLatencyMode] = useState<RouteLatencyMode>(() => readStoredRouteLatencyMode(routeLatencyModeStorageKey))
+  const [activeGraphGroupTab, setActiveGraphGroupTab] = useState<GraphGroupTabId>('test_results')
   const [selectedRouteLatencyKey, setSelectedRouteLatencyKey] = useState('')
   const [chartMenu, setChartMenu] = useState<{ chartId: string; x: number; y: number } | null>(null)
   const [chartDrawerOpen, setChartDrawerOpen] = useState(false)
@@ -401,6 +422,16 @@ export default function TestExecutionCharts({
   }, [allChartIdSignature, allChartIds])
 
   useEffect(() => {
+    if (!enableGraphGroupTabs || hasStoredChartState || loadImpactCharts.length === 0) return
+    const loadImpactIds = loadImpactCharts.map(chart => chart.id)
+    setVisibleLoadImpactChartIds(prev => sameStringSet(prev, loadImpactIds) ? prev : loadImpactIds)
+    setHiddenChartIds(prev => {
+      const next = prev.filter(id => !loadImpactIds.includes(id))
+      return sameStringArray(next, prev) ? prev : next
+    })
+  }, [enableGraphGroupTabs, hasStoredChartState, loadImpactCharts])
+
+  useEffect(() => {
     const knownChartIds = new Set(allChartIds)
     setHiddenChartIds(prev => {
       const retained = prev.filter(id => knownChartIds.has(id))
@@ -412,10 +443,11 @@ export default function TestExecutionCharts({
   useEffect(() => {
     if (!initialPresetId || initialPresetApplied || hasStoredChartState || allChartIds.length === 0) return
     const next = chartStateForMonitorPreset(initialPresetId, allChartIds)
+    const loadImpactIds = enableGraphGroupTabs ? loadImpactCharts.map(chart => chart.id) : []
     setChartOrder(next.chartOrder)
-    setHiddenChartIds(next.hiddenChartIds)
+    setHiddenChartIds(loadImpactIds.length > 0 ? next.hiddenChartIds.filter(id => !loadImpactIds.includes(id)) : next.hiddenChartIds)
     setInitialPresetApplied(true)
-  }, [allChartIds, hasStoredChartState, initialPresetApplied, initialPresetId])
+  }, [allChartIds, enableGraphGroupTabs, hasStoredChartState, initialPresetApplied, initialPresetId, loadImpactCharts])
 
   useEffect(() => {
     writeStoredJSON(chartOrderStorageKey, chartOrder)
@@ -558,13 +590,20 @@ export default function TestExecutionCharts({
 
   const latest = filteredData[filteredData.length - 1] || loadImpactSourceData[loadImpactSourceData.length - 1] || {}
   const visibleCharts = orderedCharts.filter(chart => !hiddenChartIds.includes(chart.id))
+  const tabbedCharts = enableGraphGroupTabs
+    ? visibleCharts.filter(chart => graphGroupForChart(chart) === activeGraphGroupTab)
+    : visibleCharts
   const displayedCharts = expandedChart
     ? [
-        ...visibleCharts.filter(chart => chart.id === expandedChart),
-        ...visibleCharts.filter(chart => chart.id !== expandedChart),
+        ...tabbedCharts.filter(chart => chart.id === expandedChart),
+        ...tabbedCharts.filter(chart => chart.id !== expandedChart),
       ]
-    : visibleCharts
-  const contextChart = chartMenu ? visibleCharts.find(chart => chart.id === chartMenu.chartId) : undefined
+    : tabbedCharts
+  const contextChart = chartMenu ? tabbedCharts.find(chart => chart.id === chartMenu.chartId) : undefined
+  const graphGroupCounts: Record<GraphGroupTabId, number> = { test_results: 0, under_load: 0, infrastructure: 0 }
+  visibleCharts.forEach(chart => {
+    graphGroupCounts[graphGroupForChart(chart)] += 1
+  })
   const chartDataFor = (chart: ChartConfig) => {
     if (isLoadImpactChart(chart)) {
       return loadImpactChartDataForRow(loadImpactRowsByChartId.get(chart.id), loadImpactRows)
@@ -946,14 +985,15 @@ export default function TestExecutionCharts({
   }
 
   const resetCharts = () => {
-    setVisibleLoadImpactChartIds([])
+    const loadImpactIds = enableGraphGroupTabs ? loadImpactCharts.map(chart => chart.id) : []
+    setVisibleLoadImpactChartIds(loadImpactIds)
     if (initialPresetId) {
       const next = chartStateForMonitorPreset(initialPresetId, allChartIds)
       setChartOrder(next.chartOrder)
-      setHiddenChartIds(next.hiddenChartIds)
+      setHiddenChartIds(loadImpactIds.length > 0 ? next.hiddenChartIds.filter(id => !loadImpactIds.includes(id)) : next.hiddenChartIds)
     } else {
       setChartOrder(allChartIds)
-      setHiddenChartIds(defaultHiddenChartIds(allChartConfigs, []))
+      setHiddenChartIds(defaultHiddenChartIds(allChartConfigs, loadImpactIds))
     }
     setChartDensity(densityFallback)
   }
@@ -963,43 +1003,19 @@ export default function TestExecutionCharts({
       resetCharts()
       return
     }
-    setVisibleLoadImpactChartIds([])
+    const loadImpactIds = enableGraphGroupTabs ? loadImpactCharts.map(chart => chart.id) : []
+    setVisibleLoadImpactChartIds(loadImpactIds)
     const next = chartStateForMonitorPreset(presetId, allChartIds)
     setChartOrder(next.chartOrder)
-    setHiddenChartIds(next.hiddenChartIds)
+    setHiddenChartIds(loadImpactIds.length > 0 ? next.hiddenChartIds.filter(id => !loadImpactIds.includes(id)) : next.hiddenChartIds)
   }
 
   const setResponseTimeNetworkLatencyIncluded = (included: boolean) => {
     setResponseTimeNetworkMode(included ? 'end_to_end' : 'application')
   }
 
-  const renderChartConfigurationPanel = () => (
-    <div className="charts-config-panel">
-      <div className="charts-config-panel-section">
-        <div>
-          <h4>Graph Cards</h4>
-          <span>Add or remove graph cards</span>
-        </div>
-        <div className="charts-config-option-list">
-          {orderedCharts.map(chart => {
-            const visible = !hiddenChartIds.includes(chart.id)
-            return (
-              <label key={chart.id} className="charts-config-option">
-                <input
-                  type="checkbox"
-                  checked={visible}
-                  aria-label={`Show ${chart.title}`}
-                  onChange={() => toggleChartVisibility(chart.id)}
-                />
-                <span>
-                  <strong>{chart.title}</strong>
-                  <small>{visible ? 'Visible' : 'Hidden'}</small>
-                </span>
-              </label>
-            )
-          })}
-        </div>
-      </div>
+  const renderChartDisplayControlSections = () => (
+    <>
       <div className="charts-config-panel-section">
         <div>
           <h4>Display Window</h4>
@@ -1086,6 +1102,37 @@ export default function TestExecutionCharts({
           </button>
         </div>
       </div>
+    </>
+  )
+
+  const renderChartConfigurationPanel = () => (
+    <div className="charts-config-panel">
+      <div className="charts-config-panel-section">
+        <div>
+          <h4>Graph Cards</h4>
+          <span>Add or remove graph cards</span>
+        </div>
+        <div className="charts-config-option-list">
+          {orderedCharts.map(chart => {
+            const visible = !hiddenChartIds.includes(chart.id)
+            return (
+              <label key={chart.id} className="charts-config-option">
+                <input
+                  type="checkbox"
+                  checked={visible}
+                  aria-label={`Show ${chart.title}`}
+                  onChange={() => toggleChartVisibility(chart.id)}
+                />
+                <span>
+                  <strong>{chart.title}</strong>
+                  <small>{visible ? 'Visible' : 'Hidden'}</small>
+                </span>
+              </label>
+            )
+          })}
+        </div>
+      </div>
+      {!externalControlsTarget && renderChartDisplayControlSections()}
       <div className="charts-config-panel-section">
         <div>
           <h4>Reset</h4>
@@ -1387,22 +1434,55 @@ export default function TestExecutionCharts({
         />
       )}
 
+      {externalControlsTarget && createPortal(
+        <section className="command-panel command-sidebar-graph-options" aria-label="Graph display options">
+          <div className="command-panel-header">
+            <div>
+              <h3>Graph Options</h3>
+            </div>
+          </div>
+          <div className="charts-config-panel command-sidebar-graph-controls">
+            {renderChartDisplayControlSections()}
+          </div>
+        </section>,
+        externalControlsTarget,
+      )}
+
       <div className={`charts-toolbar${commandCenterSurface ? ' command-center-charts-toolbar' : ''}`} aria-label="Final graph controls">
-        <div>
-          <h3 className="chart-title">Runtime Graphs</h3>
+        <div className="charts-toolbar-heading">
+          <div className="charts-toolbar-title-row">
+            <h3 className="chart-title">Runtime Graphs</h3>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setChartDrawerOpen(true)}
+              aria-expanded={chartDrawerOpen}
+            >
+              Configure Graphs
+            </button>
+          </div>
           <p className="archive-section-copy">{commandCenterSurface ? 'Editable live graph wall for this command-center view.' : 'Live, archived, and load-under graphs for the selected run.'}</p>
         </div>
         <div className="charts-toolbar-actions">
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => setChartDrawerOpen(true)}
-            aria-expanded={chartDrawerOpen}
-          >
-            Configure Graphs
-          </button>
+          {enableGraphGroupTabs && (
+            <div className="graph-group-tabs" role="tablist" aria-label="Graph groups">
+              {graphGroupTabs.map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  className={`graph-group-tab ${activeGraphGroupTab === tab.id ? 'active' : ''}`}
+                  aria-selected={activeGraphGroupTab === tab.id}
+                  onClick={() => setActiveGraphGroupTab(tab.id)}
+                >
+                  <span>{tab.label}</span>
+                  <small>{graphGroupCounts[tab.id]}</small>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="charts-toolbar-badges">
-            <span className="archive-chip">{visibleCharts.length} graph{visibleCharts.length === 1 ? '' : 's'}</span>
+            <span className="archive-chip">{tabbedCharts.length} graph{tabbedCharts.length === 1 ? '' : 's'}</span>
             <span className="archive-chip">{densityLabel}</span>
             <span className="archive-chip">{timeAxisMode === 'relative' ? 'Relative time' : 'Clock time'}</span>
             {loadImpactLoading && <span className="archive-chip">Loading load metrics</span>}
@@ -1413,9 +1493,9 @@ export default function TestExecutionCharts({
 
       {loadImpactError && <p className="scenario-script-status error">{loadImpactError}</p>}
 
-      {visibleCharts.length === 0 ? (
+      {tabbedCharts.length === 0 ? (
         <div className="charts-empty">
-          <span>All graphs are hidden</span>
+          <span>{visibleCharts.length === 0 ? 'All graphs are hidden' : 'No graphs visible in this group'}</span>
           <button className="btn btn-secondary btn-sm" type="button" onClick={resetCharts}>Reset Graphs</button>
         </div>
       ) : (
@@ -1783,7 +1863,7 @@ export default function TestExecutionCharts({
             <div className="charts-config-drawer-header">
               <div>
                 <h3>Graph Configuration</h3>
-                <p>Choose graph cards, presets, density, and time display for the final graph area.</p>
+                <p>{externalControlsTarget ? 'Choose graph cards for the final graph area.' : 'Choose graph cards, presets, density, and time display for the final graph area.'}</p>
               </div>
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => setChartDrawerOpen(false)}>Close</button>
             </div>

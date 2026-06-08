@@ -1,4 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 
 import PageViewToggle from './PageViewToggle'
 import StatusBadge from './StatusBadge'
@@ -11,6 +21,7 @@ import type { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
 import { mapExecutionMetricToHistoryPoint } from './testExecutionMetricsModel'
 import { useExecutionChartModel } from './useExecutionChartModel'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
+import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import './TestExecution.css'
 import './CommandCenterPrototype.css'
 
@@ -76,8 +87,8 @@ const TEST_STATUSES: TestStatus[] = [
 ]
 
 const VARIANT_OPTIONS: Array<{ value: VariantId; label: string }> = [
-  { value: 'ops', label: 'Ops Cockpit' },
-  { value: 'grafana', label: 'Grafana Wall' },
+  { value: 'ops', label: 'OPS View' },
+  { value: 'grafana', label: 'Graph Wall' },
 ]
 
 const GROUPS: CommandGroup[] = [
@@ -405,6 +416,9 @@ const HISTORY: MetricsHistoryPoint[] = Array.from({ length: 36 }, (_, index) => 
     checkoutTps,
     browseTps,
     searchTps,
+    'Checkout API_vusers': Math.round(vusers * 0.54),
+    'Browse Web_vusers': Math.round(vusers * 0.2),
+    'Search Solace_vusers': Math.max(0, vusers - Math.round(vusers * 0.54) - Math.round(vusers * 0.2)),
     'Checkout API_tps': checkoutTps,
     'Browse Web_tps': browseTps,
     'Search Solace_tps': searchTps,
@@ -442,6 +456,17 @@ function metricTone(value: number, warning: number, danger: number) {
   if (value >= danger) return 'danger'
   if (value >= warning) return 'warning'
   return 'healthy'
+}
+
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(100, value))
+}
+
+function loadProgressPercent(durationSeconds: number, remainingSeconds: number) {
+  if (durationSeconds <= 0) return 0
+  const elapsedSeconds = Math.max(0, Math.min(durationSeconds, durationSeconds - remainingSeconds))
+  return clampPercent(elapsedSeconds / durationSeconds * 100)
 }
 
 function coerceTestStatus(status: string | undefined, fallback: TestStatus = 'RUNNING'): TestStatus {
@@ -538,6 +563,7 @@ export default function CommandCenterPrototype({
   const [loadError, setLoadError] = useState('')
   const [expandedCharts, setExpandedCharts] = useState<Record<VariantId, string | null>>({ ops: null, grafana: null })
   const [activeGraphCursor, setActiveGraphCursor] = useState<GraphCursorState | null>(null)
+  const [graphWallGroupVisibility, setGraphWallGroupVisibility] = useState<Record<string, boolean>>({})
   const [state, setState] = useState<CommandCenterState>(() => ({
     runStatus: 'RUNNING',
     vuserTargets: buildInitialTargets(),
@@ -609,6 +635,10 @@ export default function CommandCenterPrototype({
     () => liveMode ? buildLiveGroups(displayTest, state.vuserTargets) : hasLiveRoute ? [] : buildGroupsWithTargets(state.vuserTargets),
     [displayTest, hasLiveRoute, liveMode, state.vuserTargets],
   )
+  const graphWallGroups = useMemo(
+    () => groups.filter(group => graphWallGroupVisibility[group.key] !== false),
+    [graphWallGroupVisibility, groups],
+  )
   const errorPatterns = useMemo(
     () => liveMode ? buildLiveErrorPatterns(displayTest.live_metrics) : hasLiveRoute ? [] : ERROR_PATTERNS,
     [displayTest.live_metrics, hasLiveRoute, liveMode],
@@ -637,6 +667,7 @@ export default function CommandCenterPrototype({
   })
   const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
   const totalTarget = groups.reduce((sum, group) => sum + group.target, 0)
+  const totalDurationSeconds = parseDurationToSeconds(displayTest.duration)
   const remainingSeconds = liveMode ? computeRemainingSeconds(displayTest, runStatus) : runStatus === 'STOPPING' || runStatus === 'ABORTED' ? 0 : 37 * 60 + 18
   const feedback = loadError
     || (hasLiveRoute && !liveTest ? 'Loading live run data for the command center...' : '')
@@ -748,21 +779,20 @@ export default function CommandCenterPrototype({
     }))
   }
 
+  const changeVariant = (nextVariant: VariantId) => {
+    setVariant(nextVariant)
+    setActiveGraphCursor(null)
+  }
+
+  const toggleGraphWallGroup = (groupKey: string) => {
+    setGraphWallGroupVisibility(prev => ({
+      ...prev,
+      [groupKey]: prev[groupKey] === false,
+    }))
+  }
+
   return (
     <div className="page command-center-page">
-      <section className="command-center-intro" aria-label="Command center view mode">
-        <PageViewToggle
-          value={variant}
-          options={VARIANT_OPTIONS}
-          ariaLabel="Command center mockup variants"
-          className="command-center-variant-toggle"
-          onChange={(nextVariant) => {
-            setVariant(nextVariant)
-            setActiveGraphCursor(null)
-          }}
-        />
-      </section>
-
       <RunControlShelf
         test={displayTest}
         status={runStatus}
@@ -779,6 +809,8 @@ export default function CommandCenterPrototype({
 
       {variant === 'ops' && (
         <OpsCockpitView
+          variant={variant}
+          onVariantChange={changeVariant}
           groups={groups}
           metrics={displayTest.live_metrics}
           chartData={chartData}
@@ -797,6 +829,9 @@ export default function CommandCenterPrototype({
           onActiveCursorChange={setActiveGraphCursor}
           errorPatterns={errorPatterns}
           selectedError={selectedError}
+          runStatus={runStatus}
+          totalDurationSeconds={totalDurationSeconds}
+          remainingSeconds={remainingSeconds}
           onTargetChange={changeTarget}
           onApplyTarget={applyTarget}
           onErrorSelect={selectError}
@@ -804,7 +839,12 @@ export default function CommandCenterPrototype({
       )}
       {variant === 'grafana' && (
         <GrafanaWallView
+          variant={variant}
+          onVariantChange={changeVariant}
           groups={groups}
+          chartGroups={graphWallGroups}
+          groupVisibility={graphWallGroupVisibility}
+          onGroupVisibilityToggle={toggleGraphWallGroup}
           metrics={displayTest.live_metrics}
           chartData={chartData}
           expandedChart={expandedCharts.grafana}
@@ -822,6 +862,9 @@ export default function CommandCenterPrototype({
           onActiveCursorChange={setActiveGraphCursor}
           errorPatterns={errorPatterns}
           selectedError={selectedError}
+          runStatus={runStatus}
+          totalDurationSeconds={totalDurationSeconds}
+          remainingSeconds={remainingSeconds}
           onTargetChange={changeTarget}
           onApplyTarget={applyTarget}
           onErrorSelect={selectError}
@@ -909,6 +952,8 @@ function MetricPill({ label, value, tone = 'default' }: { label: string; value: 
 }
 
 interface CommonViewProps {
+  variant: VariantId
+  onVariantChange: (variant: VariantId) => void
   groups: CommandGroup[]
   metrics?: LiveMetrics
   chartData: MetricsHistoryPoint[]
@@ -927,12 +972,23 @@ interface CommonViewProps {
   onActiveCursorChange: (cursor: GraphCursorState | null) => void
   errorPatterns: ErrorPattern[]
   selectedError?: ErrorPattern
+  runStatus: TestStatus
+  totalDurationSeconds: number
+  remainingSeconds: number
   onTargetChange: (groupName: string, value: number) => void
   onApplyTarget: (groupName: string, value: number) => void
   onErrorSelect: (errorId: string) => void
 }
 
+interface GrafanaWallViewProps extends CommonViewProps {
+  chartGroups: CommandGroup[]
+  groupVisibility: Record<string, boolean>
+  onGroupVisibilityToggle: (groupKey: string) => void
+}
+
 function OpsCockpitView({
+  variant,
+  onVariantChange,
   groups,
   metrics,
   chartData,
@@ -951,6 +1007,9 @@ function OpsCockpitView({
   onActiveCursorChange,
   errorPatterns,
   selectedError,
+  runStatus,
+  totalDurationSeconds,
+  remainingSeconds,
   onTargetChange,
   onApplyTarget,
   onErrorSelect,
@@ -959,7 +1018,15 @@ function OpsCockpitView({
     <section className="command-layout command-layout-ops" aria-label="Ops cockpit mockup">
       <div className="command-primary-column">
         <HeroMetricStrip groups={groups} metrics={metrics} />
-        <GroupLoadTable groups={groups} onTargetChange={onTargetChange} onApplyTarget={onApplyTarget} compact={false} />
+        <div className="command-load-model-row">
+          <GroupLoadTable groups={groups} onTargetChange={onTargetChange} onApplyTarget={onApplyTarget} compact={false} paired />
+          <LoadModelPanel
+            groups={groups}
+            runStatus={runStatus}
+            totalDurationSeconds={totalDurationSeconds}
+            remainingSeconds={remainingSeconds}
+          />
+        </div>
         <CommandRuntimeGraphs
           variant="ops"
           groups={groups}
@@ -980,7 +1047,8 @@ function OpsCockpitView({
           onActiveCursorChange={onActiveCursorChange}
         />
       </div>
-      <aside className="command-side-rail" aria-label="Error drill-down rail">
+      <aside className="command-side-rail" aria-label="Command center sidebar">
+        <CommandViewSwitchPanel variant={variant} onVariantChange={onVariantChange} />
         <ErrorDrilldown patterns={errorPatterns} selectedError={selectedError} onErrorSelect={onErrorSelect} />
         <CapacitySnapshot groups={groups} metrics={metrics} />
       </aside>
@@ -989,7 +1057,12 @@ function OpsCockpitView({
 }
 
 function GrafanaWallView({
+  variant,
+  onVariantChange,
   groups,
+  chartGroups,
+  groupVisibility,
+  onGroupVisibilityToggle,
   metrics,
   chartData,
   expandedChart,
@@ -1007,27 +1080,19 @@ function GrafanaWallView({
   onActiveCursorChange,
   errorPatterns,
   selectedError,
-  onTargetChange,
-  onApplyTarget,
   onErrorSelect,
-}: CommonViewProps) {
+}: GrafanaWallViewProps) {
+  const [graphOptionsTarget, setGraphOptionsTarget] = useState<HTMLDivElement | null>(null)
+  const bindGraphOptionsTarget = useCallback((node: HTMLDivElement | null) => {
+    setGraphOptionsTarget(node)
+  }, [])
+
   return (
     <section className="command-layout command-layout-grafana" aria-label="Grafana wall mockup">
-      <div className="command-wall-toolbar">
-        <span className="command-wall-label">Graph-heavy view</span>
-        <div className="command-wall-filters" aria-label="Group filters">
-          {groups.map(group => (
-            <button key={group.key} type="button" className="command-filter-chip active">
-              <span style={{ background: group.color }} />
-              {group.name}
-            </button>
-          ))}
-        </div>
-      </div>
       <div className="command-grafana-grid">
         <CommandRuntimeGraphs
           variant="grafana"
-          groups={groups}
+          groups={chartGroups}
           metrics={metrics}
           chartData={chartData}
           expandedChart={expandedChart}
@@ -1043,14 +1108,116 @@ function GrafanaWallView({
           onTimeRangeChange={onTimeRangeChange}
           activeCursor={activeCursor}
           onActiveCursorChange={onActiveCursorChange}
+          externalControlsTarget={graphOptionsTarget}
         />
         <div className="command-grafana-side">
-          <GroupLoadTable groups={groups} onTargetChange={onTargetChange} onApplyTarget={onApplyTarget} compact />
+          <CommandViewSwitchPanel variant={variant} onVariantChange={onVariantChange} />
+          <GroupSelectionPanel groups={groups} groupVisibility={groupVisibility} onToggle={onGroupVisibilityToggle} />
           <ErrorDrilldown patterns={errorPatterns} selectedError={selectedError} onErrorSelect={onErrorSelect} compact />
+          <div className="command-graph-options-slot" ref={bindGraphOptionsTarget} />
         </div>
       </div>
     </section>
   )
+}
+
+function CommandViewSwitchPanel({ variant, onVariantChange }: { variant: VariantId; onVariantChange: (variant: VariantId) => void }) {
+  return (
+    <section className="command-panel command-view-switch-panel" aria-label="Command center view mode">
+      <PageViewToggle
+        value={variant}
+        options={VARIANT_OPTIONS}
+        ariaLabel="Command center views"
+        className="command-center-variant-toggle"
+        onChange={onVariantChange}
+      />
+    </section>
+  )
+}
+
+function GroupSelectionPanel({
+  groups,
+  groupVisibility,
+  onToggle,
+}: {
+  groups: CommandGroup[]
+  groupVisibility: Record<string, boolean>
+  onToggle: (groupKey: string) => void
+}) {
+  const visibleCount = groups.filter(group => groupVisibility[group.key] !== false).length
+
+  return (
+    <section className="command-panel command-group-selection-panel" aria-label="Group selection">
+      <div className="command-panel-header">
+        <div>
+          <h3>Group Selection</h3>
+          <p>{visibleCount} / {groups.length} groups visible</p>
+        </div>
+      </div>
+      <div className="command-group-selection-list">
+        {groups.map(group => {
+          const visible = groupVisibility[group.key] !== false
+          return (
+            <button
+              key={group.key}
+              type="button"
+              className={`command-group-select-toggle ${visible ? 'active' : ''}`}
+              aria-pressed={visible}
+              aria-label={`${group.name} graph visibility`}
+              onClick={() => onToggle(group.key)}
+            >
+              <span className="command-group-select-swatch" style={{ background: group.color }} />
+              <strong>{group.name}</strong>
+              <small>{visible ? 'Visible' : 'Hidden'}</small>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function selectedGroupLoadImpactData(data: MetricsHistoryPoint[], groups: CommandGroup[]) {
+  if (groups.length === 0) return data
+  return data.map(point => {
+    let hasGroupData = false
+    let selectedVUsers = 0
+    let selectedTps = 0
+    let tpsSamples = 0
+    let weightedArt = 0
+    let artWeight = 0
+
+    groups.forEach(group => {
+      const groupVusers = point[`${group.name}_vusers`]
+      const groupTps = point[`${group.name}_tps`]
+      const groupArt = point[`${group.name}_avgMs`]
+
+      if (typeof groupVusers === 'number' && Number.isFinite(groupVusers)) {
+        selectedVUsers += groupVusers
+        hasGroupData = true
+      }
+      if (typeof groupTps === 'number' && Number.isFinite(groupTps)) {
+        selectedTps += groupTps
+        tpsSamples += 1
+        hasGroupData = true
+      }
+      if (typeof groupArt === 'number' && Number.isFinite(groupArt)) {
+        const weight = typeof groupVusers === 'number' && Number.isFinite(groupVusers) && groupVusers > 0 ? groupVusers : 1
+        weightedArt += groupArt * weight
+        artWeight += weight
+        hasGroupData = true
+      }
+    })
+
+    if (!hasGroupData) return point
+
+    return {
+      ...point,
+      vusers: selectedVUsers > 0 ? selectedVUsers : point.vusers,
+      tps: tpsSamples > 0 ? Math.round(selectedTps * 10) / 10 : point.tps,
+      avgMs: artWeight > 0 ? Math.round((weightedArt / artWeight) * 10) / 10 : point.avgMs,
+    }
+  })
 }
 
 interface CommandRuntimeGraphsProps {
@@ -1071,6 +1238,7 @@ interface CommandRuntimeGraphsProps {
   onTimeRangeChange: (value: ExecutionChartTimeRange) => void
   activeCursor: GraphCursorState | null
   onActiveCursorChange: (cursor: GraphCursorState | null) => void
+  externalControlsTarget?: HTMLElement | null
 }
 
 function CommandRuntimeGraphs({
@@ -1091,11 +1259,23 @@ function CommandRuntimeGraphs({
   onTimeRangeChange,
   activeCursor,
   onActiveCursorChange,
+  externalControlsTarget = null,
 }: CommandRuntimeGraphsProps) {
   const groupNames = groups.map(group => group.name)
   const groupColors = groups.map(group => group.color)
+  const loadImpactSourceData = useMemo(
+    () => variant === 'grafana' ? selectedGroupLoadImpactData(chartData, groups) : chartData,
+    [chartData, groups, variant],
+  )
+  const loadImpactVuserRange = useMemo(() => {
+    const loads = loadImpactSourceData
+      .map(point => point.vusers)
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+    if (loads.length === 0) return ''
+    return `${Math.min(...loads)}-${Math.max(...loads)}`
+  }, [loadImpactSourceData])
   return (
-    <div className="command-runtime-graphs">
+    <div className={`command-runtime-graphs command-runtime-graphs-${variant}`} data-visible-groups={groups.map(group => group.key).join(' ')} data-load-impact-vuser-range={loadImpactVuserRange}>
       <TestExecutionCharts
         key={variant}
         filteredData={chartData}
@@ -1114,7 +1294,7 @@ function CommandRuntimeGraphs({
         groupNames={groupNames}
         groupColors={groupColors.length > 0 ? groupColors : ['var(--chart-1)']}
         showLoadImpact={false}
-        loadImpactData={chartData}
+        loadImpactData={loadImpactSourceData}
         latestLatency={metrics?.latency}
         latestMetrics={metrics}
         surface="command-center"
@@ -1123,6 +1303,8 @@ function CommandRuntimeGraphs({
         defaultDensity="command_center"
         activeCursor={activeCursor}
         onActiveCursorChange={onActiveCursorChange}
+        enableGraphGroupTabs={variant === 'grafana'}
+        externalControlsTarget={externalControlsTarget}
       />
     </div>
   )
@@ -1156,19 +1338,150 @@ function HeroMetric({ label, value, tone }: { label: string; value: string; tone
   )
 }
 
+interface LoadModelPoint {
+  pct: number
+  planned: number
+  phase: string
+}
+
+function buildLoadModelProfile(totalTarget: number): LoadModelPoint[] {
+  const target = Math.max(0, totalTarget)
+  return [
+    { pct: 0, planned: 0, phase: 'Start' },
+    { pct: 12, planned: Math.round(target * 0.28), phase: 'Ramp' },
+    { pct: 24, planned: Math.round(target * 0.58), phase: 'Ramp' },
+    { pct: 40, planned: target, phase: 'At target' },
+    { pct: 78, planned: target, phase: 'Hold' },
+    { pct: 90, planned: Math.round(target * 0.72), phase: 'Ramp down' },
+    { pct: 100, planned: 0, phase: 'End' },
+  ]
+}
+
+function plannedLoadAtProgress(profile: LoadModelPoint[], progressPct: number) {
+  if (profile.length === 0) return 0
+  const progress = clampPercent(progressPct)
+  const nextIndex = profile.findIndex(point => point.pct >= progress)
+  if (nextIndex <= 0) return profile[0].planned
+  const next = profile[nextIndex]
+  const previous = profile[nextIndex - 1]
+  if (!next) return profile[profile.length - 1].planned
+  const span = Math.max(1, next.pct - previous.pct)
+  const ratio = (progress - previous.pct) / span
+  return Math.round(previous.planned + (next.planned - previous.planned) * ratio)
+}
+
+function loadPhaseAtProgress(profile: LoadModelPoint[], progressPct: number) {
+  if (profile.length === 0) return 'Model'
+  const progress = clampPercent(progressPct)
+  const active = [...profile].reverse().find(point => point.pct <= progress)
+  return active?.phase || profile[0].phase
+}
+
+function LoadModelPanel({
+  groups,
+  runStatus,
+  totalDurationSeconds,
+  remainingSeconds,
+}: {
+  groups: CommandGroup[]
+  runStatus: TestStatus
+  totalDurationSeconds: number
+  remainingSeconds: number
+}) {
+  const totalTarget = groups.reduce((sum, group) => sum + group.target, 0)
+  const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
+  const progressPct = loadProgressPercent(totalDurationSeconds, remainingSeconds)
+  const profile = useMemo(() => buildLoadModelProfile(totalTarget), [totalTarget])
+  const plannedNow = plannedLoadAtProgress(profile, progressPct)
+  const delta = totalCurrent - plannedNow
+  const phase = runStatus === 'PAUSED' ? 'Paused' : loadPhaseAtProgress(profile, progressPct)
+
+  return (
+    <section
+      className="command-panel command-load-model-panel"
+      aria-label="Load model profile"
+      data-progress-pct={Math.round(progressPct)}
+      data-planned-vusers={plannedNow}
+      data-current-vusers={totalCurrent}
+      data-target-vusers={totalTarget}
+    >
+      <div className="command-panel-header command-load-model-header">
+        <div>
+          <h3>Load Model</h3>
+          <p>{phase} / {formatRemaining(remainingSeconds)} remaining</p>
+        </div>
+        <span className="command-load-model-badge">{formatNumber(progressPct, 0)}% elapsed</span>
+      </div>
+
+      <div className="command-load-model-stats">
+        <MetricPill label="Planned VU" value={formatNumber(plannedNow)} tone="accent" />
+        <MetricPill label="Actual VU" value={formatNumber(totalCurrent)} tone="info" />
+        <MetricPill label="Delta VU" value={`${delta >= 0 ? '+' : ''}${formatNumber(delta)}`} tone={Math.abs(delta) > Math.max(60, totalTarget * 0.05) ? 'warning' : 'default'} />
+      </div>
+
+      <div className="command-load-model-chart" aria-hidden="true">
+        <ResponsiveContainer width="100%" height={132} minWidth={240}>
+          <AreaChart data={profile} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+            <XAxis
+              dataKey="pct"
+              type="number"
+              domain={[0, 100]}
+              ticks={[0, 25, 50, 75, 100]}
+              tickFormatter={(value) => `${value}%`}
+              stroke="var(--text-muted)"
+              tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+            />
+            <YAxis
+              stroke="var(--text-muted)"
+              tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+              tickFormatter={(value) => formatNumber(Number(value) / 1000, 1)}
+            />
+            <Tooltip
+              contentStyle={chartTooltipContentStyle}
+              labelStyle={chartTooltipLabelStyle}
+              formatter={(value) => [`${formatNumber(Number(value))} VU`, 'Planned']}
+              labelFormatter={(value) => `${formatNumber(Number(value))}% elapsed`}
+            />
+            <ReferenceLine x={progressPct} stroke="var(--warning)" strokeDasharray="4 4" ifOverflow="extendDomain" />
+            <ReferenceLine y={totalCurrent} stroke="var(--chart-2)" strokeDasharray="3 3" ifOverflow="extendDomain" />
+            <Area
+              type="monotone"
+              dataKey="planned"
+              name="Planned VUsers"
+              stroke="var(--accent)"
+              fill="var(--accent-soft)"
+              fillOpacity={0.45}
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 4, stroke: 'var(--accent)', fill: 'var(--bg-card)' }}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="command-load-model-progress" aria-hidden="true">
+        <span style={{ width: `${progressPct}%` }} />
+      </div>
+    </section>
+  )
+}
+
 function GroupLoadTable({
   groups,
   compact,
+  paired = false,
   onTargetChange,
   onApplyTarget,
 }: {
   groups: CommandGroup[]
   compact: boolean
+  paired?: boolean
   onTargetChange: (groupName: string, value: number) => void
   onApplyTarget: (groupName: string, value: number) => void
 }) {
   return (
-    <section className={`command-panel command-group-panel ${compact ? 'compact' : ''}`} aria-label="Group load and health">
+    <section className={`command-panel command-group-panel ${compact ? 'compact' : ''} ${paired ? 'paired' : ''}`} aria-label="Group load and health">
       <div className="command-panel-header">
         <div>
           <h3>Group Load</h3>
