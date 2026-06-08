@@ -541,6 +541,7 @@ describe('TestHub', () => {
 
   it('clones an existing scenario draft with data pool bindings from the wizard source step', async () => {
     const onSelectTest = vi.fn()
+    const onOpenCommandCenter = vi.fn()
     apiMock.listDataPools.mockResolvedValue({
       data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
       count: 1,
@@ -580,7 +581,7 @@ describe('TestHub', () => {
     })
 
     await act(async () => {
-      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} onOpenCommandCenter={onOpenCommandCenter} />)
     })
 
     await flushPromises()
@@ -626,6 +627,23 @@ describe('TestHub', () => {
     if (chart && runPanel) {
       expect((chart.compareDocumentPosition(runPanel) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true)
     }
+    const runPanelButtons = Array.from(runPanel?.querySelectorAll('button') ?? []) as HTMLButtonElement[]
+    const openRunButton = runPanelButtons.find(button => button.textContent?.trim() === 'Open')
+    const runDashboardButton = runPanelButtons.find(button => button.textContent?.trim() === 'Run Dashboard')
+    expect(openRunButton).toBeDefined()
+    expect(runDashboardButton).toBeDefined()
+
+    await act(async () => {
+      openRunButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onSelectTest).toHaveBeenCalledWith('run-1')
+
+    await act(async () => {
+      runDashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onOpenCommandCenter).toHaveBeenCalledWith('run-1')
 
     await clickButton('Next')
 

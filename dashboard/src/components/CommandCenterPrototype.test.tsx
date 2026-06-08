@@ -29,14 +29,21 @@ describe('CommandCenterPrototype', () => {
   })
 
   it('does not show the prototype run when no live run is selected', async () => {
+    const openResults = vi.fn()
     await act(async () => {
-      root.render(<CommandCenterPrototype />)
+      root.render(<CommandCenterPrototype onOpenResults={openResults} />)
     })
 
     expect(container.textContent).toContain('No active run selected')
+    expect(container.textContent).toContain('Historical results can be opened from the Results folder.')
+    expect(container.textContent).toContain('Open Results')
     expect(container.textContent).not.toContain('Checkout Peak Soak - Command Center Prototype')
     expect(container.querySelector('[aria-label="Command center run controls"]')).toBeNull()
     expect(container.querySelector('[aria-label="No active command center run"]')).not.toBeNull()
+
+    await click(buttonNamed('Open Results'))
+
+    expect(openResults).toHaveBeenCalledOnce()
   })
 
   it('switches between the OPS View and Graph Wall variants from the sidebar', async () => {
@@ -338,6 +345,132 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('Live Checkout')
     expect(container.textContent).toContain('HTTP 500 checkout spike')
     expect(container.textContent).not.toContain('In-flight Run Command Center')
+  })
+
+  it('renders terminal runs as historical read-only snapshots with archive navigation', async () => {
+    const openExecution = vi.fn()
+    const completedTest: TestSummary = {
+      id: 'completed-run-1',
+      ref_key: 'RUN-COMPLETE',
+      name: 'Completed Checkout',
+      status: 'COMPLETE',
+      total_vusers: 50,
+      duration: '10m',
+      created_at: '2026-06-08T13:00:00Z',
+      started_at: '2026-06-08T13:05:00Z',
+      archive: {
+        test_id: 'completed-run-1',
+        schema_version: '1',
+        archive_path: '/archives/completed-run-1',
+        manifest_path: '/archives/completed-run-1/manifest.json',
+        transaction_count: 1200,
+        resource_sample_count: 0,
+        interval_summary_count: 0,
+        created_at: '2026-06-08T13:00:00Z',
+        completed_at: '2026-06-08T13:10:00Z',
+      },
+      groups: [{
+        name: 'Live Checkout',
+        protocol: 'http',
+        script_id: 'script-live',
+        script_name: 'Live Checkout Script',
+        vusers: 50,
+      }],
+      live_metrics: {
+        timestamp: '2026-06-08T13:10:00Z',
+        active_vusers: 0,
+        tps: 0,
+        avg_response_ms: 134,
+        error_pct: 0.5,
+        total_transactions: 1200,
+        total_errors: 6,
+        p50_ms: 82,
+        p90_ms: 210,
+        p95_ms: 260,
+        p99_ms: 410,
+        groups: {
+          'Live Checkout': {
+            name: 'Live Checkout',
+            vusers: 0,
+            transactions: 1200,
+            errors: 6,
+            tps: 0,
+            avg_response_ms: 134,
+            p50_ms: 82,
+            p90_ms: 210,
+            p99_ms: 410,
+          },
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(
+        <CommandCenterPrototype
+          testId="completed-run-1"
+          initialTest={completedTest}
+          history={[]}
+          statusOverride="RUNNING"
+          onOpenExecution={openExecution}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Historical run snapshot')
+    expect(container.textContent).toContain('Live pause, stop, abort, and scaling controls are unavailable.')
+    expect(container.textContent).toContain('Open Results Archive')
+    expect(container.textContent).not.toContain('Pause')
+    expect(container.textContent).not.toContain('Stop')
+    expect(container.textContent).not.toContain('Abort')
+    expect(container.textContent).not.toContain('Apply')
+    expect(container.querySelector('[aria-label="Live Checkout target VUsers"]')).toBeNull()
+    expect(container.textContent).toContain('50 VUsers')
+    expect(container.querySelector('[aria-label="Command center run tables"]')).not.toBeNull()
+
+    await click(buttonNamed('Open Results Archive'))
+
+    expect(openExecution).toHaveBeenCalledWith('completed-run-1')
+  })
+
+  it('points historical runs without archive snapshots to the Results folder', async () => {
+    const openResults = vi.fn()
+    const failedTest: TestSummary = {
+      id: 'failed-run-1',
+      ref_key: 'RUN-FAILED',
+      name: 'Failed Checkout',
+      status: 'FAILED',
+      total_vusers: 25,
+      duration: '8m',
+      created_at: '2026-06-08T14:00:00Z',
+      ended_at: '2026-06-08T14:08:00Z',
+      groups: [{
+        name: 'Checkout',
+        protocol: 'http',
+        script_id: 'script-checkout',
+        script_name: 'Checkout Script',
+        vusers: 25,
+      }],
+    }
+
+    await act(async () => {
+      root.render(
+        <CommandCenterPrototype
+          testId="failed-run-1"
+          initialTest={failedTest}
+          history={[]}
+          onOpenResults={openResults}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Historical run snapshot')
+    expect(container.textContent).toContain('Historical results can be opened from the Results folder')
+    expect(container.textContent).toContain('Open Results')
+    expect(container.textContent).not.toContain('Open Results Archive')
+
+    await click(buttonNamed('Open Results'))
+
+    expect(openResults).toHaveBeenCalledOnce()
   })
 
   it('uses per-group TPS target edits for goal-oriented live runs', async () => {

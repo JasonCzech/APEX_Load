@@ -281,6 +281,56 @@ describe('ApplicationRepositoryPage', () => {
     expect(container.textContent).toContain('Release created.')
   })
 
+  it('keeps repository test Open on archive navigation and adds Run Dashboard', async () => {
+    const onOpenTest = vi.fn()
+    const onOpenCommandCenter = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <ApplicationRepositoryPage
+          domains={[domain]}
+          activeDomain={domain}
+          activeApplication={application}
+          applicationRepository={repository}
+          categories={[category]}
+          projects={[project]}
+          canManageRepository
+          canManageProjects
+          canManageReleases
+          onDomainChange={vi.fn()}
+          onRepositoryRefresh={vi.fn()}
+          onProjectsRefresh={vi.fn()}
+          onProjectCreated={vi.fn()}
+          onOpenTest={onOpenTest}
+          onOpenCommandCenter={onOpenCommandCenter}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const row = Array.from(container.querySelectorAll('tbody tr')).find(candidate => candidate.textContent?.includes('Checkout Run'))
+    expect(row).toBeDefined()
+    const buttons = Array.from(row?.querySelectorAll('button') ?? []) as HTMLButtonElement[]
+    const openButton = buttons.find(button => button.textContent?.trim() === 'Open')
+    const runDashboardButton = buttons.find(button => button.textContent?.trim() === 'Run Dashboard')
+    expect(openButton).toBeDefined()
+    expect(runDashboardButton).toBeDefined()
+
+    await act(async () => {
+      openButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onOpenTest).toHaveBeenCalledWith('test-1')
+    expect(onOpenCommandCenter).not.toHaveBeenCalled()
+
+    await act(async () => {
+      runDashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onOpenCommandCenter).toHaveBeenCalledWith('test-1')
+    expect(onOpenTest).toHaveBeenCalledTimes(1)
+  })
+
   it('scopes scripts, scenarios, tests, and releases to the selected application', async () => {
     repositoryApiMock.listProjectReleases.mockResolvedValueOnce({
       releases: [

@@ -29,24 +29,46 @@ import {
   type ComparisonChartMetric,
 } from './resultsComparisonChartModel'
 import StatusBadge from './StatusBadge'
-import LibraryAssetSourcePanel from './LibraryAssetSourcePanel'
+import LibraryFederationControls from './LibraryFederationControls'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
+import { libraryStatusTone, shortLibraryHash } from './libraryFederationUtils'
+import { useLibraryFederation, type LibraryAssetSourceKind } from './useLibraryFederation'
 import type { NavPage } from './Sidebar'
+import type { LibraryCatalogItem } from '../types/library'
 
 interface Props {
   testStatuses: Record<string, string>
   onSelectTest: (id: string) => void
+  onOpenCommandCenter?: (id: string) => void
   onNavigate?: (page: NavPage) => void
   activeApplication?: Application | null
   activeRelease?: Release | null
 }
 
-type SortField = 'name' | 'status' | 'total_vusers' | 'groups' | 'started' | 'duration' | 'archive'
+type SortField = 'source' | 'sync' | 'name' | 'status' | 'total_vusers' | 'groups' | 'started' | 'duration' | 'archive'
 type StatusFilter = 'all' | 'complete' | 'failed' | 'aborted'
 type ArchiveFilter = 'all' | 'ready' | 'pending'
 type ComparisonBreakdown = BrowserBreakdown
 type RefreshOptions = {
   initial?: boolean
+}
+
+type ResultSourceRow = {
+  rowKey: string
+  source: LibraryAssetSourceKind
+  syncStatus: string
+  name: string
+  status: string
+  startedAt?: string
+  duration?: string
+  releaseId?: string
+  releaseName?: string
+  hasArchive: boolean
+  archiveCount?: number
+  totalVusers?: number
+  groupCount?: number
+  test?: TestSummary
+  item?: LibraryCatalogItem
 }
 
 function formatDate(value?: string) {
@@ -55,6 +77,46 @@ function formatDate(value?: string) {
 
 function runStartedAt(test: TestSummary) {
   return new Date(test.start_time || test.created_at || 0).getTime()
+}
+
+function rowStartedAt(row: ResultSourceRow) {
+  return new Date(row.startedAt || 0).getTime()
+}
+
+function resultSourceStatusTone(status?: string) {
+  switch ((status || '').toLowerCase()) {
+    case 'complete':
+    case 'completed':
+    case 'success':
+    case 'succeeded':
+      return 'healthy'
+    case 'failed':
+    case 'aborted':
+      return 'danger'
+    default:
+      return libraryStatusTone(status)
+  }
+}
+
+function catalogItemMatchesRelease(item: LibraryCatalogItem, activeRelease?: Release | null) {
+  if (!activeRelease?.id) return true
+  if (item.release_id) return item.release_id === activeRelease.id
+  const releaseName = item.release_name?.trim().toLowerCase()
+  return Boolean(releaseName && releaseName === activeRelease.name.trim().toLowerCase())
+}
+
+function catalogItemForTest(test: TestSummary): LibraryCatalogItem {
+  return {
+    kind: 'result',
+    id: test.id,
+    name: test.name,
+    project_id: test.project_id,
+    release_id: test.release_id,
+    status: test.status,
+    execution_run_date: test.start_time || test.started_at || test.created_at,
+    updated_at: test.ended_at || test.created_at,
+    has_archive: Boolean(test.archive),
+  }
 }
 
 function formatBrowserMetric(value?: number, suffix = '', digits = 1) {
@@ -203,7 +265,7 @@ function SortIcon({ active, direction }: { active: boolean; direction: 'asc' | '
   return <span className="sort-icon active">{direction === 'asc' ? '↑' : '↓'}</span>
 }
 
-function ResultsPage({ testStatuses, onSelectTest, onNavigate, activeApplication, activeRelease }: Props) {
+function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNavigate, activeApplication, activeRelease }: Props) {
   const api = useApi()
   const [tests, setTests] = useState<TestSummary[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -260,6 +322,22 @@ function ResultsPage({ testStatuses, onSelectTest, onNavigate, activeApplication
     }
   }, [api, activeApplication?.id, activeRelease?.id])
 
+  const libraryProjectId = activeRelease?.project_id || activeApplication?.project_id
+  const federation = useLibraryFederation({ kind: 'result', projectId: libraryProjectId, onRefreshLocal: () => refresh() })
+  const {
+    sourceFilter,
+    localItems,
+    remoteItems,
+    actionBlocked,
+    actionBlockedReason,
+    pullRemoteItem,
+    pushLocalItem,
+    compareItems,
+    hostItemForLocal,
+    syncStatusForLocal,
+    remoteItemHref,
+  } = federation
+
   useEffect(() => {
     refresh({ initial: true })
     const interval = setInterval(() => refresh(), 10000)
@@ -279,56 +357,126 @@ function ResultsPage({ testStatuses, onSelectTest, onNavigate, activeApplication
     [tests, testStatuses],
   )
 
-  const filteredCompleted = useMemo(() => {
+  const localCatalogById = useMemo(() => {
+    const map = new Map<string, LibraryCatalogItem>()
+    localItems.forEach(item => {
+      if (item.kind === 'result') map.set(item.id, item)
+    })
+    return map
+  }, [localItems])
+
+  const sourceRows = useMemo<ResultSourceRow[]>(() => {
+    const rows: ResultSourceRow[] = []
+
+    if (sourceFilter !== 'host') {
+      completed.forEach(test => {
+        const item = localCatalogById.get(test.id) ?? catalogItemForTest(test)
+        rows.push({
+          rowKey: `local:${test.id}`,
+          source: 'Local',
+          syncStatus: syncStatusForLocal(test.id),
+          name: test.name,
+          status: resolveStatus(test, testStatuses),
+          startedAt: test.start_time || test.started_at || test.created_at,
+          duration: test.duration,
+          releaseId: test.release_id,
+          hasArchive: Boolean(test.archive),
+          archiveCount: test.archive?.transaction_count,
+          totalVusers: test.total_vusers,
+          groupCount: test.groups?.length || 1,
+          test,
+          item,
+        })
+      })
+    }
+
+    if (sourceFilter !== 'local') {
+      remoteItems
+        .filter(item => item.kind === 'result' && catalogItemMatchesRelease(item, activeRelease))
+        .forEach(item => {
+          rows.push({
+            rowKey: `remote:${item.remote_item_id || item.id}`,
+            source: 'Remote',
+            syncStatus: item.sync_status || 'host only',
+            name: item.name || item.id,
+            status: item.status || 'Unknown',
+            startedAt: item.execution_run_date || item.updated_at,
+            releaseId: item.release_id,
+            releaseName: item.release_name,
+            hasArchive: Boolean(item.has_archive),
+            item,
+          })
+        })
+    }
+
+    return rows
+  }, [activeRelease, completed, localCatalogById, remoteItems, sourceFilter, syncStatusForLocal, testStatuses])
+
+  const filteredRows = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase()
-    return completed.filter(test => {
-      const status = resolveStatus(test, testStatuses)
-      if (statusFilter !== 'all' && status.toLowerCase() !== statusFilter) return false
-      if (archiveFilter === 'ready' && !test.archive) return false
-      if (archiveFilter === 'pending' && test.archive) return false
+    return sourceRows.filter(row => {
+      if (statusFilter !== 'all' && row.status.toLowerCase() !== statusFilter) return false
+      if (archiveFilter === 'ready' && !row.hasArchive) return false
+      if (archiveFilter === 'pending' && row.hasArchive) return false
       if (!normalizedSearch) return true
       const haystack = [
-        test.name,
-        test.duration,
-        status,
-        String(test.total_vusers),
-        ...(test.groups || []).map(group => group.name || group.script_name || group.script_id),
+        row.source,
+        row.syncStatus,
+        row.name,
+        row.duration,
+        row.status,
+        row.releaseId,
+        row.releaseName,
+        row.totalVusers !== undefined ? String(row.totalVusers) : '',
+        row.groupCount !== undefined ? String(row.groupCount) : '',
+        row.item?.content_hash,
+        row.item?.local_item_id,
+        row.item?.remote_item_id,
+        ...(row.test?.groups || []).map(group => group.name || group.script_name || group.script_id),
       ]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
       return haystack.includes(normalizedSearch)
     })
-  }, [archiveFilter, completed, search, statusFilter, testStatuses])
+  }, [archiveFilter, search, sourceRows, statusFilter])
 
-  const sortedCompleted = useMemo(() => {
-    return [...filteredCompleted].sort((a, b) => {
+  const sortedRows = useMemo(() => {
+    return [...filteredRows].sort((a, b) => {
       let aValue: string | number = ''
       let bValue: string | number = ''
       switch (sortField) {
+        case 'source':
+          aValue = a.source
+          bValue = b.source
+          break
+        case 'sync':
+          aValue = a.syncStatus.toLowerCase()
+          bValue = b.syncStatus.toLowerCase()
+          break
         case 'status':
-          aValue = resolveStatus(a, testStatuses).toLowerCase()
-          bValue = resolveStatus(b, testStatuses).toLowerCase()
+          aValue = a.status.toLowerCase()
+          bValue = b.status.toLowerCase()
           break
         case 'total_vusers':
-          aValue = a.total_vusers || 0
-          bValue = b.total_vusers || 0
+          aValue = a.totalVusers ?? -1
+          bValue = b.totalVusers ?? -1
           break
         case 'groups':
-          aValue = a.groups?.length || 1
-          bValue = b.groups?.length || 1
+          aValue = a.groupCount ?? -1
+          bValue = b.groupCount ?? -1
           break
         case 'started':
-          aValue = runStartedAt(a)
-          bValue = runStartedAt(b)
+          aValue = rowStartedAt(a)
+          bValue = rowStartedAt(b)
           break
         case 'duration':
           aValue = a.duration || ''
           bValue = b.duration || ''
           break
         case 'archive':
-          aValue = a.archive?.transaction_count || 0
-          bValue = b.archive?.transaction_count || 0
+          aValue = a.archiveCount ?? (a.hasArchive ? 1 : 0)
+          bValue = b.archiveCount ?? (b.hasArchive ? 1 : 0)
           break
         case 'name':
         default:
@@ -339,11 +487,21 @@ function ResultsPage({ testStatuses, onSelectTest, onNavigate, activeApplication
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
       return 0
     })
-  }, [filteredCompleted, sortDirection, sortField, testStatuses])
+  }, [filteredRows, sortDirection, sortField])
+
+  const selectableRowIds = useMemo(
+    () => sortedRows.flatMap(row => (row.test ? [row.test.id] : [])),
+    [sortedRows],
+  )
+
+  const allSelectableRowsSelected = useMemo(
+    () => selectableRowIds.length > 0 && selectableRowIds.every(id => selectedIds.has(id)),
+    [selectableRowIds, selectedIds],
+  )
 
   const selectedTests = useMemo(
-    () => sortedCompleted.filter(test => selectedIds.has(test.id)),
-    [selectedIds, sortedCompleted],
+    () => sortedRows.flatMap(row => (row.test && selectedIds.has(row.test.id) ? [row.test] : [])),
+    [selectedIds, sortedRows],
   )
 
   const selectionState = useMemo(() => {
@@ -541,11 +699,16 @@ function ResultsPage({ testStatuses, onSelectTest, onNavigate, activeApplication
   }
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === sortedCompleted.length) {
-      setSelectedIds(new Set())
+    const allVisibleSelected = selectableRowIds.length > 0 && selectableRowIds.every(id => selectedIds.has(id))
+    if (allVisibleSelected) {
+      setSelectedIds(prev => {
+        const next = new Set(prev)
+        selectableRowIds.forEach(id => next.delete(id))
+        return next
+      })
       return
     }
-    setSelectedIds(new Set(sortedCompleted.map(test => test.id)))
+    setSelectedIds(prev => new Set([...prev, ...selectableRowIds]))
   }
 
   const toggleSelect = (id: string, event: React.MouseEvent | React.ChangeEvent) => {
@@ -654,7 +817,7 @@ function ResultsPage({ testStatuses, onSelectTest, onNavigate, activeApplication
           className="settings-input"
           value={search}
           onChange={event => setSearch(event.target.value)}
-          placeholder="Search scenario, group, status, or VUsers"
+          placeholder="Search scenario, source, status, or VUsers"
         />
         <select className="settings-input" value={statusFilter} onChange={event => setStatusFilter(event.target.value as StatusFilter)}>
           <option value="all">All statuses</option>
@@ -669,15 +832,15 @@ function ResultsPage({ testStatuses, onSelectTest, onNavigate, activeApplication
         </select>
       </div>
 
-      {(selectedIds.size > 0 || filteredCompleted.length !== completed.length) && (
+      {(selectedIds.size > 0 || filteredRows.length !== sourceRows.length) && (
         <div className="results-selection-bar">
           <div>
-            <span>Visible Runs</span>
-            <strong>{filteredCompleted.length} of {completed.length}</strong>
+            <span>Visible Sources</span>
+            <strong>{filteredRows.length} of {sourceRows.length}</strong>
           </div>
           {selectedIds.size > 0 && (
             <div>
-              <span>Selected</span>
+              <span>Selected Local</span>
               <strong>{selectedIds.size}</strong>
             </div>
           )}
@@ -993,124 +1156,201 @@ function ResultsPage({ testStatuses, onSelectTest, onNavigate, activeApplication
       )}
 
       <div className="page-section">
-        <h3 className="section-title">Release Results ({resultsLoading ? '...' : filteredCompleted.length})</h3>
-        {resultsLoading ? (
-          <div className="empty-card results-loading-card" role="status" aria-live="polite" aria-busy="true">
-            <span className="results-loading-spinner" aria-hidden="true" />
-            <div>
-              <p>Loading release results...</p>
-              <p className="empty-hint">Fetching completed scenarios, archives, and external imports for this release.</p>
+        <div className="library-source-panel">
+          <LibraryFederationControls
+            kind="result"
+            federation={federation}
+            onConfigureRemotes={openRemoteSettings}
+            summaryText={resultsLoading
+              ? 'Loading local and remote result sources...'
+              : `${filteredRows.length} result source${filteredRows.length === 1 ? '' : 's'} for ${activeRelease.name}.`}
+          />
+          {resultsLoading ? (
+            <div className="empty-card results-loading-card" role="status" aria-live="polite" aria-busy="true">
+              <span className="results-loading-spinner" aria-hidden="true" />
+              <div>
+                <p>Loading result sources...</p>
+                <p className="empty-hint">Fetching completed runs and library catalog entries for this release.</p>
+              </div>
             </div>
-          </div>
-        ) : completed.length === 0 ? (
-          <div className="empty-card">
-            <p>No completed scenarios yet.</p>
-            <p className="empty-hint">Run a scenario in this release to see archives, summaries, and comparisons here.</p>
-          </div>
-        ) : filteredCompleted.length === 0 ? (
-          <div className="empty-card">
-            <p>No results match the current filters.</p>
-            <p className="empty-hint">Clear the search or filter values to bring the release history back into view.</p>
-          </div>
-        ) : (
-          <div className="data-table">
-            <table>
-              <thead>
-                <tr>
-                  <th style={{ width: 40 }}>
-                    <input
-                      type="checkbox"
-                      checked={sortedCompleted.length > 0 && selectedIds.size === sortedCompleted.length}
-                      onChange={toggleSelectAll}
-                    />
-                  </th>
-                  <th onClick={() => handleSort('name')} className="sortable">Scenario <SortIcon active={sortField === 'name'} direction={sortDirection} /></th>
-                  <th onClick={() => handleSort('status')} className="sortable">Status <SortIcon active={sortField === 'status'} direction={sortDirection} /></th>
-                  <th onClick={() => handleSort('total_vusers')} className="sortable">VUsers <SortIcon active={sortField === 'total_vusers'} direction={sortDirection} /></th>
-                  <th onClick={() => handleSort('groups')} className="sortable">Groups <SortIcon active={sortField === 'groups'} direction={sortDirection} /></th>
-                  <th onClick={() => handleSort('started')} className="sortable">Started <SortIcon active={sortField === 'started'} direction={sortDirection} /></th>
-                  <th onClick={() => handleSort('duration')} className="sortable">Duration <SortIcon active={sortField === 'duration'} direction={sortDirection} /></th>
-                  <th onClick={() => handleSort('archive')} className="sortable">Archive <SortIcon active={sortField === 'archive'} direction={sortDirection} /></th>
-                  <th className="results-actions-column">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedCompleted.map(test => (
-                  <tr key={test.id} className={`clickable-row ${selectedIds.has(test.id) ? 'selected' : ''}`} onClick={() => onSelectTest(test.id)}>
-                    <td>
+          ) : sourceRows.length === 0 ? (
+            <div className="empty-card">
+              <p>No result sources yet.</p>
+              <p className="empty-hint">Run a scenario or pull a remote result for this release to populate the library.</p>
+            </div>
+          ) : filteredRows.length === 0 ? (
+            <div className="empty-card">
+              <p>No results match the current filters.</p>
+              <p className="empty-hint">Clear the search or filter values to bring the result sources back into view.</p>
+            </div>
+          ) : (
+            <div className="data-table library-source-table-wrap">
+              <table className="library-source-table results-library-source-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 40 }}>
                       <input
                         type="checkbox"
-                        checked={selectedIds.has(test.id)}
-                        onClick={event => event.stopPropagation()}
-                        onChange={event => toggleSelect(test.id, event)}
+                        checked={allSelectableRowsSelected}
+                        disabled={selectableRowIds.length === 0}
+                        onChange={toggleSelectAll}
                       />
-                    </td>
-                    <td className="cell-name">
-                      <div>{test.name}</div>
-                      <div className="script-table-meta">
-                        {test.ref_key ? (
-                          <ReferenceKeyBadge value={test.ref_key} />
-                        ) : (
-                          <span className="results-run-id" title={test.id}>Run ID {formatShortRunId(test.id)}</span>
-                        )}
-                      </div>
-                    </td>
-                    <td><StatusBadge status={resolveStatus(test, testStatuses)} /></td>
-                    <td>{test.total_vusers}</td>
-                    <td>{test.groups?.length || 1}</td>
-                    <td className="cell-muted">{formatDate(test.start_time || test.created_at)}</td>
-                    <td className="cell-muted">{test.duration}</td>
-                    <td className="cell-muted">
-                      {test.archive ? `${test.archive.transaction_count} tx` : 'Pending'}
-                      {test.baseline_pinned && (
-                        <>
-                          <br />
-                          <span title={formatBaselinePin(test.baseline_pinned_at)}>Pinned baseline</span>
-                        </>
-                      )}
-                    </td>
-                    <td>
-                      <div className="results-row-actions">
-                        <button className="btn btn-sm btn-ghost" onClick={event => toggleBaselinePin(test, event)}>
-                          {test.baseline_pinned ? 'Unpin Baseline' : 'Pin Baseline'}
-                        </button>
-                        {test.archive && (
-                          <>
-                            <button className="btn btn-sm btn-secondary" onClick={event => downloadArchive(test, event)}>
-                              Archive
-                            </button>
-                            <a className="btn btn-sm btn-ghost" href={buildTestReportHref(test.id)} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>
-                              Download Report
-                            </a>
-                            <a className="btn btn-sm btn-ghost" href={`/api/v1/tests/${encodeURIComponent(test.id)}/archive/root-cause`} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>
-                              Root Cause
-                            </a>
-                          </>
-                        )}
-                        <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); onSelectTest(test.id) }}>
-                          Open
-                        </button>
-                        <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={event => handleDelete(test.id, event)}>
-                          Delete
-                        </button>
-                      </div>
-                    </td>
+                    </th>
+                    <th onClick={() => handleSort('source')} className="sortable">Source <SortIcon active={sortField === 'source'} direction={sortDirection} /></th>
+                    <th onClick={() => handleSort('sync')} className="sortable">Sync <SortIcon active={sortField === 'sync'} direction={sortDirection} /></th>
+                    <th onClick={() => handleSort('name')} className="sortable">Scenario <SortIcon active={sortField === 'name'} direction={sortDirection} /></th>
+                    <th onClick={() => handleSort('status')} className="sortable">Status <SortIcon active={sortField === 'status'} direction={sortDirection} /></th>
+                    <th onClick={() => handleSort('total_vusers')} className="sortable">VUsers <SortIcon active={sortField === 'total_vusers'} direction={sortDirection} /></th>
+                    <th onClick={() => handleSort('groups')} className="sortable">Groups <SortIcon active={sortField === 'groups'} direction={sortDirection} /></th>
+                    <th onClick={() => handleSort('started')} className="sortable">Started <SortIcon active={sortField === 'started'} direction={sortDirection} /></th>
+                    <th onClick={() => handleSort('duration')} className="sortable">Duration <SortIcon active={sortField === 'duration'} direction={sortDirection} /></th>
+                    <th onClick={() => handleSort('archive')} className="sortable">Archive <SortIcon active={sortField === 'archive'} direction={sortDirection} /></th>
+                    <th className="results-actions-column">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody>
+                  {sortedRows.map(row => {
+                    const test = row.test
+                    const item = row.item
+                    const hostItem = test ? hostItemForLocal(test.id) : undefined
+                    const href = row.source === 'Remote' && item ? remoteItemHref(item) : ''
+                    const localItemID = item?.local_item_id
+                    const transferBlockedByConflict = row.syncStatus === 'conflict'
+                    const transferBlockTitle = transferBlockedByConflict ? 'Compare this conflict before transferring.' : actionBlockedReason
+                    return (
+                      <tr
+                        key={row.rowKey}
+                        className={`${test ? 'clickable-row' : 'no-hover'} ${test && selectedIds.has(test.id) ? 'selected' : ''}`}
+                        onClick={test ? () => onSelectTest(test.id) : undefined}
+                      >
+                        <td>
+                          {test ? (
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(test.id)}
+                              onClick={event => event.stopPropagation()}
+                              onChange={event => toggleSelect(test.id, event)}
+                            />
+                          ) : (
+                            <span className="cell-muted">-</span>
+                          )}
+                        </td>
+                        <td><span className="script-health-token">{row.source}</span></td>
+                        <td><span className={`script-health-token ${libraryStatusTone(row.syncStatus)}`}>{row.syncStatus}</span></td>
+                        <td className="cell-name">
+                          <div>{row.name}</div>
+                          <div className="script-table-meta">
+                            {test?.ref_key ? (
+                              <ReferenceKeyBadge value={test.ref_key} />
+                            ) : test ? (
+                              <span className="results-run-id" title={test.id}>Run ID {formatShortRunId(test.id)}</span>
+                            ) : (
+                              <>
+                                <span className="script-health-token">result</span>
+                                {row.releaseName && <span className="script-health-token">{row.releaseName}</span>}
+                                {item?.content_hash && <span className="script-health-token">hash {shortLibraryHash(item.content_hash)}</span>}
+                              </>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          {test ? (
+                            <StatusBadge status={row.status} />
+                          ) : (
+                            <span className={`script-health-token ${resultSourceStatusTone(row.status)}`}>{row.status}</span>
+                          )}
+                        </td>
+                        <td>{row.totalVusers ?? '-'}</td>
+                        <td>{row.groupCount ?? '-'}</td>
+                        <td className="cell-muted">{row.startedAt ? formatDate(row.startedAt) : '-'}</td>
+                        <td className="cell-muted">{row.duration || '-'}</td>
+                        <td className="cell-muted">
+                          {test ? (test.archive ? `${test.archive.transaction_count} tx` : 'Pending') : (row.hasArchive ? 'Ready' : '-')}
+                          {test?.baseline_pinned && (
+                            <>
+                              <br />
+                              <span title={formatBaselinePin(test.baseline_pinned_at)}>Pinned baseline</span>
+                            </>
+                          )}
+                        </td>
+                        <td>
+                          <div className="results-row-actions">
+                            {test ? (
+                              <>
+                                <button className="btn btn-sm btn-ghost" onClick={event => toggleBaselinePin(test, event)}>
+                                  {test.baseline_pinned ? 'Unpin Baseline' : 'Pin Baseline'}
+                                </button>
+                                {test.archive && (
+                                  <>
+                                    <button className="btn btn-sm btn-secondary" onClick={event => downloadArchive(test, event)}>
+                                      Archive
+                                    </button>
+                                    <a className="btn btn-sm btn-ghost" href={buildTestReportHref(test.id)} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>
+                                      Download Report
+                                    </a>
+                                    <a className="btn btn-sm btn-ghost" href={`/api/v1/tests/${encodeURIComponent(test.id)}/archive/root-cause`} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>
+                                      Root Cause
+                                    </a>
+                                  </>
+                                )}
+                                <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); onSelectTest(test.id) }}>
+                                  Open
+                                </button>
+                                {onOpenCommandCenter && (
+                                  <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); onOpenCommandCenter(test.id) }}>
+                                    Run Dashboard
+                                  </button>
+                                )}
+                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={event => handleDelete(test.id, event)}>
+                                  Delete
+                                </button>
+                                <button
+                                  className="btn btn-sm btn-secondary"
+                                  type="button"
+                                  onClick={event => { event.stopPropagation(); void pushLocalItem(item ?? catalogItemForTest(test)) }}
+                                  disabled={actionBlocked || transferBlockedByConflict}
+                                  title={transferBlockTitle}
+                                >
+                                  Push
+                                </button>
+                                {hostItem?.local_item_id && (
+                                  <button className="btn btn-sm btn-ghost" type="button" onClick={event => { event.stopPropagation(); void compareItems(test.id, hostItem) }}>
+                                    Compare
+                                  </button>
+                                )}
+                              </>
+                            ) : item ? (
+                              <>
+                                <button
+                                  className="btn btn-sm btn-secondary"
+                                  type="button"
+                                  onClick={event => { event.stopPropagation(); void pullRemoteItem(item) }}
+                                  disabled={actionBlocked || transferBlockedByConflict}
+                                  title={transferBlockTitle}
+                                >
+                                  Pull
+                                </button>
+                                {localItemID && (
+                                  <button className="btn btn-sm btn-ghost" type="button" onClick={event => { event.stopPropagation(); void compareItems(localItemID, item) }}>
+                                    Compare
+                                  </button>
+                                )}
+                                {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>Open in Remote Library</a>}
+                              </>
+                            ) : (
+                              <span className="cell-muted">-</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
-
-      <LibraryAssetSourcePanel
-        kind="result"
-        projectId={activeRelease.project_id || activeApplication.project_id}
-        onConfigureRemotes={openRemoteSettings}
-        onDeleteLocalItem={deleteResult}
-        onRefreshLocal={() => refresh()}
-        onViewLocalItem={onSelectTest}
-      />
     </div>
   )
 }

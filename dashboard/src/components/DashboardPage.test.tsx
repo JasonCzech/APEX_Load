@@ -585,6 +585,53 @@ describe('DashboardPage', () => {
     expect(onSelectTest).toHaveBeenCalledWith('test-complete')
   })
 
+  it('adds Run Dashboard actions without changing dashboard archive navigation', async () => {
+    const onOpenCommandCenter = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{
+            'test-active': [
+              { time: '8:00:00 PM', vusers: 8, tps: 20, avgMs: 120, errorPct: 0.2, p50: 100, p90: 140, p99: 180 },
+            ],
+          }}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onOpenCommandCenter={onOpenCommandCenter}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+
+    await flushDashboard()
+
+    const recentRow = tableRowContaining('Release Smoke')
+    expect(recentRow.textContent).toContain('Run Dashboard')
+
+    clickButtonInRow(recentRow, 'Release Smoke')
+    expect(onSelectTest).toHaveBeenCalledWith('test-complete')
+    onSelectTest.mockClear()
+
+    clickButtonInRow(recentRow, 'Run Dashboard')
+    expect(onOpenCommandCenter).toHaveBeenCalledWith('test-complete')
+    expect(onSelectTest).not.toHaveBeenCalled()
+
+    clickButtonByText('Performance Trend')
+    await flushDashboard()
+
+    const performanceRow = tableRowContaining('Checkout Archive')
+    expect(performanceRow.textContent).toContain('Run Dashboard')
+
+    clickButtonInRow(performanceRow, 'Run Dashboard')
+    expect(onOpenCommandCenter).toHaveBeenCalledWith('test-complete-2')
+    expect(onSelectTest).not.toHaveBeenCalled()
+
+    clickButtonInRow(performanceRow, 'Checkout Archive')
+    expect(onSelectTest).toHaveBeenCalledWith('test-complete-2')
+  })
+
   it('renders slim group metrics tables inside active test cards', async () => {
     apiMock.listTests.mockResolvedValueOnce({
       tests: [
@@ -928,6 +975,26 @@ describe('DashboardPage', () => {
     act(() => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+  }
+
+  function clickButtonInRow(row: Element, text: string) {
+    const button = Array.from(row.querySelectorAll<HTMLButtonElement>('button'))
+      .find(element => element.textContent?.trim() === text)
+    if (!button) {
+      throw new Error(`Missing row button with text: ${text}`)
+    }
+    act(() => {
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
+  function tableRowContaining(text: string) {
+    const row = Array.from(container.querySelectorAll('tbody tr'))
+      .find(element => element.textContent?.includes(text))
+    if (!row) {
+      throw new Error(`Missing table row containing text: ${text}`)
+    }
+    return row
   }
 
   function getTabByText(text: string) {

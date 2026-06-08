@@ -20,6 +20,7 @@ interface Props {
   metricsHistory: Record<string, MetricsHistoryPoint[]>
   connectionState: WebSocketConnectionState
   onSelectTest: (id: string) => void
+  onOpenCommandCenter?: (id: string) => void
   onNavigate: (page: NavPage) => void
   snapshotAudience?: DashboardSnapshotAudience
 }
@@ -529,7 +530,7 @@ function ReleaseSnapshotPanel({
   )
 }
 
-export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest, onNavigate, snapshotAudience = 'admin' }: Props) {
+export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest, onOpenCommandCenter, onNavigate, snapshotAudience = 'admin' }: Props) {
   const api = useApi()
   const { activeApplication, activeRelease, releases, setActiveRelease } = useApplication()
   const { activeProject } = useProject()
@@ -1175,6 +1176,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                         {renderPerformanceSortHeader('errors', 'Errors', 'num')}
                         {renderPerformanceSortHeader('sla', 'SLA', 'num')}
                         {renderPerformanceSortHeader('complete', 'Complete', 'num')}
+                        {onOpenCommandCenter && <th>Actions</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -1204,6 +1206,20 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                             {report.manifest?.sla_breached ? 'Breached' : 'Passed'}
                           </td>
                           <td className="num">{formatOptionalNumber(report.completeness?.score_pct, 0)}%</td>
+                          {onOpenCommandCenter && (
+                            <td>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-ghost"
+                                onClick={event => {
+                                  event.stopPropagation()
+                                  onOpenCommandCenter(test.id)
+                                }}
+                              >
+                                Run Dashboard
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -1406,6 +1422,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                       {renderActivitySortHeader('duration', 'Duration', 'num')}
                       {renderActivitySortHeader('transactions', 'Transactions', 'num')}
                       {renderActivitySortHeader('date', 'Date / Time')}
+                      {onOpenCommandCenter && <th>Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -1433,6 +1450,20 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                           <td className="num">{test.duration}</td>
                           <td className="num">{test.archive ? test.archive.transaction_count.toLocaleString() : 'pending'}</td>
                           <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
+                          {onOpenCommandCenter && (
+                            <td>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-ghost"
+                                onClick={event => {
+                                  event.stopPropagation()
+                                  onOpenCommandCenter(test.id)
+                                }}
+                              >
+                                Run Dashboard
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       )
                     })}

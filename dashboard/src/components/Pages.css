@@ -8557,6 +8557,13 @@
   padding: 7px 10px;
 }
 
+.repository-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .repository-reset-filter:hover:not(:disabled),
 .repository-row-action:hover:not(:disabled) {
   border-color: var(--accent);

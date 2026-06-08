@@ -23,6 +23,7 @@ import ReferenceKeyBadge from './ReferenceKeyBadge'
 interface Props {
   testStatuses: Record<string, string>
   onSelectTest: (id: string) => void
+  onOpenCommandCenter?: (id: string) => void
   onCreateTestFromScenario?: (scenarioId: string) => void
   onNavigate?: (page: NavPage) => void
   initialView?: 'library' | 'builder'
@@ -627,7 +628,7 @@ function ScenarioModelPreviewPanel({
   )
 }
 
-function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialView = 'library' }: Props) {
+function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, onNavigate, initialView = 'library' }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [scenarios, setScenarios] = useState<StoredScenario[]>([])
@@ -1479,7 +1480,12 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
                     <td className="cell-muted">{formatDateTime(run.start_time || run.created_at)}</td>
                     <td className="cell-muted">{run.duration}</td>
                     <td style={{ textAlign: 'right' }}>
+                      <div className="scenario-linked-run-actions">
                       <button className="btn btn-sm btn-secondary" onClick={(event) => { event.stopPropagation(); onSelectTest(run.id) }}>Open</button>
+                      {onOpenCommandCenter && (
+                        <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onOpenCommandCenter(run.id) }}>Run Dashboard</button>
+                      )}
+                      </div>
                     </td>
                   </tr>
                 ))}

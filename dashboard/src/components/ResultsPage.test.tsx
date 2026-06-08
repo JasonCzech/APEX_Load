@@ -20,8 +20,21 @@ const apiMock = {
   downloadTestArchiveComparison: vi.fn(),
 }
 
+const libraryApiMock = {
+  listRemotes: vi.fn(),
+  localCatalog: vi.fn(),
+  remoteCatalog: vi.fn(),
+  pullRemoteItem: vi.fn(),
+  pushLocalItem: vi.fn(),
+  compareItems: vi.fn(),
+}
+
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
+}))
+
+vi.mock('../hooks/api/useLibraryApi', () => ({
+  useLibraryApi: () => libraryApiMock,
 }))
 
 vi.mock('../utils/fileUtils', () => ({
@@ -233,6 +246,56 @@ describe('ResultsPage', () => {
     apiMock.deleteTest.mockResolvedValue(undefined)
     apiMock.downloadTestArchive.mockResolvedValue(new Blob())
     apiMock.downloadTestArchiveComparison.mockResolvedValue(new Blob(['backend comparison csv'], { type: 'text/csv' }))
+    libraryApiMock.listRemotes.mockResolvedValue({
+      remotes: [{
+        id: 'remote-1',
+        name: 'Team AKS',
+        base_url: 'https://apexload.example.test',
+        default_project_id: 'project-1',
+        auth_method: 'service_account',
+        credential_configured: true,
+        status: 'healthy',
+      }],
+      count: 1,
+    })
+    libraryApiMock.localCatalog.mockResolvedValue({
+      items: [
+        {
+          kind: 'result',
+          id: 'run-a',
+          name: 'iPhone Checkout',
+          project_id: 'project-1',
+          release_id: 'rel-1',
+          release_name: 'Sprint 24',
+          status: 'COMPLETE',
+          content_hash: 'runahash123456',
+          execution_run_date: '2026-05-12T18:00:00Z',
+          updated_at: '2026-05-12T18:05:00Z',
+          has_archive: true,
+        },
+        {
+          kind: 'result',
+          id: 'run-b',
+          name: 'iPad Checkout',
+          project_id: 'project-1',
+          release_id: 'rel-1',
+          release_name: 'Sprint 24',
+          status: 'COMPLETE',
+          content_hash: 'runbhash123456',
+          execution_run_date: '2026-05-12T19:00:00Z',
+          updated_at: '2026-05-12T19:05:00Z',
+          has_archive: true,
+        },
+      ],
+      count: 2,
+    })
+    libraryApiMock.remoteCatalog.mockResolvedValue({
+      remote: { id: 'remote-1', name: 'Team AKS', base_url: 'https://apexload.example.test' },
+      catalog: { items: [], count: 0 },
+    })
+    libraryApiMock.pullRemoteItem.mockResolvedValue({ import: { items: [{ kind: 'result', local_item_id: 'pulled-run', action: 'created' }] } })
+    libraryApiMock.pushLocalItem.mockResolvedValue({ import: { items: [{ kind: 'result', local_item_id: 'run-a', action: 'updated' }] } })
+    libraryApiMock.compareItems.mockResolvedValue({ kind: 'result', status: 'synced', local_hash: 'localhash123456', remote_hash: 'remotehash123456' })
 
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -299,9 +362,9 @@ describe('ResultsPage', () => {
       )
     })
 
-    expect(container.textContent).toContain('Loading release results...')
+    expect(container.textContent).toContain('Loading result sources...')
     expect(container.textContent).toContain('Loading results...')
-    expect(container.textContent).not.toContain('No completed scenarios yet.')
+    expect(container.textContent).not.toContain('No result sources yet.')
 
     await act(async () => {
       resolveTests({ tests: [] })
@@ -309,8 +372,8 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
-    expect(container.textContent).not.toContain('Loading release results...')
-    expect(container.textContent).toContain('No completed scenarios yet.')
+    expect(container.textContent).not.toContain('Loading result sources...')
+    expect(container.textContent).toContain('No result sources yet.')
   })
 
   it('disambiguates comparison labels when selected runs have the same scenario name', async () => {
@@ -553,7 +616,48 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('iPhone 14 Pro')
   })
 
-  it('opens results directly on filters, release results, and row actions', async () => {
+  it('keeps Open on the archive route and adds Run Dashboard for completed rows', async () => {
+    const onSelectTest = vi.fn()
+    const onOpenCommandCenter = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={onSelectTest}
+          onOpenCommandCenter={onOpenCommandCenter}
+          activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const row = Array.from(container.querySelectorAll('tbody tr')).find(candidate => candidate.textContent?.includes('iPhone Checkout'))
+    expect(row).toBeDefined()
+    const rowButtons = Array.from(row?.querySelectorAll('button') ?? []) as HTMLButtonElement[]
+    const openButton = rowButtons.find(button => button.textContent?.trim() === 'Open')
+    const runDashboardButton = rowButtons.find(button => button.textContent?.trim() === 'Run Dashboard')
+    expect(openButton).toBeDefined()
+    expect(runDashboardButton).toBeDefined()
+
+    await act(async () => {
+      openButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onSelectTest).toHaveBeenCalledWith('run-a')
+    expect(onOpenCommandCenter).not.toHaveBeenCalled()
+
+    await act(async () => {
+      runDashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onOpenCommandCenter).toHaveBeenCalledWith('run-a')
+    expect(onSelectTest).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens results directly on filters, library sources, and row actions', async () => {
     await act(async () => {
       root.render(
         <ResultsPage
@@ -571,15 +675,168 @@ describe('ResultsPage', () => {
     expect(container.textContent).not.toContain('External Results')
     expect(apiMock.getReleaseSLAGovernance).not.toHaveBeenCalled()
     expect(apiMock.listExternalResultImports).not.toHaveBeenCalled()
-    expect(container.querySelector<HTMLInputElement>('.results-filter-bar input')?.placeholder).toBe('Search scenario, group, status, or VUsers')
-    expect(container.textContent).toContain('Release Results')
+    expect(container.querySelector<HTMLInputElement>('.results-filter-bar input')?.placeholder).toBe('Search scenario, source, status, or VUsers')
+    expect(container.textContent).not.toContain('Release Results')
     expect(container.textContent).toContain('Library Sources')
-
-    const pageText = container.textContent || ''
-    expect(pageText.indexOf('Release Results')).toBeLessThan(pageText.indexOf('Library Sources'))
+    expect(container.querySelectorAll('.library-source-panel')).toHaveLength(1)
+    expect(container.querySelectorAll('.library-source-table')).toHaveLength(1)
+    expect(Array.from(container.querySelectorAll('h3.section-title')).map(header => header.textContent)).toEqual(['Library Sources'])
+    expect(container.textContent).toContain('Local')
+    expect(container.textContent).toContain('local only')
+    expect(container.textContent).toContain('Push')
 
     const rootCauseLink = container.querySelector('a[href="/api/v1/tests/run-a/archive/root-cause"]') as HTMLAnchorElement | null
     expect(rootCauseLink).toBeTruthy()
     expect(rootCauseLink?.textContent).toBe('Root Cause')
   })
+
+  it('filters unified local and remote result sources by active release and exposes remote actions', async () => {
+    libraryApiMock.remoteCatalog.mockResolvedValue({
+      remote: { id: 'remote-1', name: 'Team AKS', base_url: 'https://apexload.example.test' },
+      catalog: {
+        items: [
+          {
+            kind: 'result',
+            id: 'remote-run-a',
+            name: 'Remote ID Match',
+            project_id: 'project-1',
+            release_id: 'rel-1',
+            release_name: 'Sprint 24',
+            status: 'COMPLETE',
+            content_hash: 'remoteidmatch123456',
+            execution_run_date: '2026-05-13T12:00:00Z',
+            updated_at: '2026-05-13T12:05:00Z',
+            has_archive: true,
+            sync_status: 'synced',
+            local_item_id: 'run-a',
+            remote_item_id: 'remote-run-a',
+          },
+          {
+            kind: 'result',
+            id: 'remote-name-match',
+            name: 'Remote Name Match',
+            project_id: 'project-1',
+            release_name: 'Sprint 24',
+            status: 'FAILED',
+            content_hash: 'remotenamematch123456',
+            execution_run_date: '2026-05-13T13:00:00Z',
+            updated_at: '2026-05-13T13:05:00Z',
+            has_archive: false,
+            sync_status: 'host only',
+          },
+          {
+            kind: 'result',
+            id: 'remote-other-release',
+            name: 'Remote Other Release',
+            project_id: 'project-1',
+            release_id: 'rel-2',
+            release_name: 'Sprint 25',
+            status: 'COMPLETE',
+            content_hash: 'remoteother123456',
+            execution_run_date: '2026-05-14T12:00:00Z',
+            updated_at: '2026-05-14T12:05:00Z',
+            has_archive: true,
+            sync_status: 'host only',
+          },
+        ],
+        count: 3,
+      },
+    })
+
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+    })
+    await flushPromises()
+
+    expect(sourceRowNamed(container, 'Remote ID Match').textContent).toContain('Remote')
+    expect(sourceRowNamed(container, 'Remote Name Match').textContent).toContain('FAILED')
+    expect(container.textContent).not.toContain('Remote Other Release')
+    expect(sourceRowNamed(container, 'Remote ID Match').textContent).toContain('-')
+
+    const remoteIDRow = sourceRowNamed(container, 'Remote ID Match')
+    const pullButton = buttonInRow(remoteIDRow, 'Pull')
+    const compareButton = buttonInRow(remoteIDRow, 'Compare')
+    const remoteLink = Array.from(remoteIDRow.querySelectorAll('a')).find(link => link.textContent?.trim() === 'Open in Remote Library') as HTMLAnchorElement | undefined
+    expect(pullButton).toBeDefined()
+    expect(compareButton).toBeDefined()
+    expect(remoteLink?.href).toBe('https://apexload.example.test/#/test/remote-run-a')
+
+    await act(async () => {
+      compareButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(libraryApiMock.compareItems).toHaveBeenCalledWith('remote-1', expect.objectContaining({
+      kind: 'result',
+      local_id: 'run-a',
+      remote_id: 'remote-run-a',
+    }))
+
+    await act(async () => {
+      pullButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(libraryApiMock.pullRemoteItem).toHaveBeenCalledWith('remote-1', expect.objectContaining({
+      kind: 'result',
+      id: 'remote-run-a',
+      remote_id: 'remote-run-a',
+    }))
+
+    await changeInput(container.querySelector<HTMLInputElement>('.results-filter-bar input')!, 'Remote Name')
+    expect(sourceRowNamed(container, 'Remote Name Match')).toBeDefined()
+    expect(container.textContent).not.toContain('Remote ID Match')
+    expect(container.textContent).not.toContain('iPhone Checkout')
+
+    await changeInput(container.querySelector<HTMLInputElement>('.results-filter-bar input')!, '')
+    await changeSelect(container.querySelectorAll<HTMLSelectElement>('.results-filter-bar select')[0], 'failed')
+    expect(sourceRowNamed(container, 'Remote Name Match')).toBeDefined()
+    expect(container.textContent).not.toContain('Remote ID Match')
+
+    await changeSelect(container.querySelectorAll<HTMLSelectElement>('.results-filter-bar select')[0], 'all')
+    await changeSelect(container.querySelectorAll<HTMLSelectElement>('.results-filter-bar select')[1], 'pending')
+    expect(sourceRowNamed(container, 'Remote Name Match')).toBeDefined()
+    expect(container.textContent).not.toContain('iPhone Checkout')
+    expect(container.textContent).not.toContain('Remote ID Match')
+  })
 })
+
+async function flushPromises() {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+}
+
+function sourceRowNamed(container: HTMLElement, text: string) {
+  const row = Array.from(container.querySelectorAll('.library-source-table tbody tr')).find(row => row.textContent?.includes(text))
+  expect(row).toBeTruthy()
+  return row as HTMLTableRowElement
+}
+
+function buttonInRow(row: HTMLTableRowElement, label: string) {
+  return Array.from(row.querySelectorAll('button')).find(button => button.textContent?.trim() === label) as HTMLButtonElement | undefined
+}
+
+async function changeInput(input: HTMLInputElement, value: string) {
+  await act(async () => {
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    valueSetter?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
+async function changeSelect(select: HTMLSelectElement, value: string) {
+  await act(async () => {
+    select.value = value
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}

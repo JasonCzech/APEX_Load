@@ -41,6 +41,7 @@ interface CommandCenterPrototypeProps {
   statusOverride?: string
   initialTest?: TestSummary
   onOpenExecution?: (testId: string) => void
+  onOpenResults?: () => void
   prototypeMode?: boolean
 }
 
@@ -96,6 +97,7 @@ interface CommandCenterState {
 
 const DEFAULT_PROTOTYPE_FEEDBACK = 'Prototype controls are local-only. No live run will be changed.'
 const DEFAULT_LIVE_FEEDBACK = 'Command center is connected to live run data.'
+const DEFAULT_HISTORICAL_FEEDBACK = 'Historical snapshot. Live controls are unavailable for completed, failed, or aborted runs.'
 const TEST_STATUSES: TestStatus[] = [
   'QUEUED',
   'SCHEDULED',
@@ -737,6 +739,10 @@ function computeRemainingSeconds(test: TestSummary, status: TestStatus) {
   return Math.max(durationSeconds - elapsedSeconds, 0)
 }
 
+function isHistoricalRunStatus(status: TestStatus | string | undefined) {
+  return status === 'COMPLETE' || status === 'FAILED' || status === 'ABORTED'
+}
+
 function groupErrorPercent(group: GroupLiveMetrics | undefined) {
   if (!group || group.transactions <= 0) return 0
   return group.errors / group.transactions * 100
@@ -883,6 +889,7 @@ export default function CommandCenterPrototype({
   statusOverride,
   initialTest,
   onOpenExecution,
+  onOpenResults,
   prototypeMode = false,
 }: CommandCenterPrototypeProps = {}) {
   const api = useApi()
@@ -943,7 +950,9 @@ export default function CommandCenterPrototype({
     }
   }, [api, initialTest, testId])
 
-  const streamStatus = liveTest ? coerceTestStatus(statusOverride || liveTest.status, liveTest.status) : undefined
+  const streamStatus = liveTest
+    ? coerceTestStatus(isHistoricalRunStatus(liveTest.status) ? liveTest.status : statusOverride || liveTest.status, liveTest.status)
+    : undefined
   const { localMetricsHistory, latestMetrics } = useExecutionMetricsStream(testId || '', streamStatus)
   const liveMetrics = latestMetrics || liveTest?.live_metrics
   const hasLiveRoute = Boolean(testId)
@@ -1072,9 +1081,11 @@ export default function CommandCenterPrototype({
   const targetMode = groups[0]?.targetMode ?? 'vusers'
   const totalDurationSeconds = parseDurationToSeconds(displayTest.duration)
   const remainingSeconds = liveMode ? computeRemainingSeconds(displayTest, runStatus) : emptyMode || runStatus === 'STOPPING' || runStatus === 'ABORTED' ? 0 : 37 * 60 + 18
+  const historicalRun = liveMode && isHistoricalRunStatus(runStatus)
   const feedback = loadError
     || (hasLiveRoute && !liveTest ? 'Loading live run data for the command center...' : '')
     || (emptyMode ? 'No active run is selected for the command center.' : '')
+    || (historicalRun ? DEFAULT_HISTORICAL_FEEDBACK : '')
     || (liveMode && state.feedback === DEFAULT_PROTOTYPE_FEEDBACK ? DEFAULT_LIVE_FEEDBACK : state.feedback)
 
   const setRunStatus = (runStatus: TestStatus, feedback: string) => {
@@ -1223,7 +1234,7 @@ export default function CommandCenterPrototype({
   return (
     <div className="page command-center-page">
       {emptyMode ? (
-        <CommandCenterEmptyState />
+        <CommandCenterEmptyState onOpenResults={onOpenResults} />
       ) : (
         <>
       <RunControlShelf
@@ -1235,11 +1246,20 @@ export default function CommandCenterPrototype({
         targetMode={targetMode}
         errorPct={displayTest.live_metrics?.error_pct ?? MOCK_LIVE_METRICS.error_pct}
         feedback={feedback}
+        historicalRun={historicalRun}
         onPauseResume={() => { void togglePause() }}
         onStop={() => { void stopRun() }}
         onAbort={() => { void abortRun() }}
         onOpenExecution={testId && onOpenExecution ? () => onOpenExecution(testId) : undefined}
       />
+      {historicalRun && (
+        <CommandCenterHistoricalBanner
+          status={runStatus}
+          archiveReady={Boolean(displayTest.archive)}
+          onOpenArchive={testId && onOpenExecution ? () => onOpenExecution(testId) : undefined}
+          onOpenResults={onOpenResults}
+        />
+      )}
 
       {variant === 'ops' && (
         <OpsCockpitView
@@ -1259,6 +1279,7 @@ export default function CommandCenterPrototype({
           runStatus={runStatus}
           totalDurationSeconds={totalDurationSeconds}
           remainingSeconds={remainingSeconds}
+          readOnly={historicalRun}
           onTargetChange={changeTarget}
           onApplyTarget={applyTarget}
           onErrorSelect={selectError}
@@ -1303,12 +1324,22 @@ export default function CommandCenterPrototype({
   )
 }
 
-function CommandCenterEmptyState() {
+function CommandCenterEmptyState({ onOpenResults }: { onOpenResults?: () => void }) {
   return (
     <section className="command-empty-state" aria-label="No active command center run">
       <div>
         <h2>No active run selected</h2>
-        <p>Start a test or open the Command Center from an active run to see live controls and metrics.</p>
+        <p>
+          Start a test or open the Command Center from an active run to see live controls and metrics.
+          Historical results can be opened from the Results folder.
+        </p>
+        {onOpenResults && (
+          <div className="command-empty-actions">
+            <button type="button" className="btn btn-sm btn-secondary" onClick={onOpenResults}>
+              Open Results
+            </button>
+          </div>
+        )}
       </div>
     </section>
   )
@@ -1323,6 +1354,7 @@ interface RunControlShelfProps {
   targetMode: CommandGroup['targetMode']
   errorPct: number
   feedback: string
+  historicalRun?: boolean
   onPauseResume: () => void
   onStop: () => void
   onAbort: () => void
@@ -1338,6 +1370,7 @@ function RunControlShelf({
   targetMode,
   errorPct,
   feedback,
+  historicalRun = false,
   onPauseResume,
   onStop,
   onAbort,
@@ -1367,23 +1400,65 @@ function RunControlShelf({
       </div>
 
       <div className="command-run-actions">
-        {onOpenExecution && (
+        {onOpenExecution && !historicalRun && (
           <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenExecution}>
             Details
           </button>
         )}
-        <button type="button" className={`btn btn-sm ${status === 'PAUSED' ? 'btn-success' : 'btn-secondary'}`} onClick={onPauseResume} disabled={terminal || !canPauseResume}>
-          {status === 'PAUSED' ? 'Resume' : 'Pause'}
-        </button>
-        <button type="button" className="btn btn-sm btn-secondary" onClick={onStop} disabled={terminal}>
-          Stop
-        </button>
-        <button type="button" className="btn btn-sm btn-danger" onClick={onAbort} disabled={status === 'ABORTED'}>
-          Abort
-        </button>
+        {!historicalRun && (
+          <>
+            <button type="button" className={`btn btn-sm ${status === 'PAUSED' ? 'btn-success' : 'btn-secondary'}`} onClick={onPauseResume} disabled={terminal || !canPauseResume}>
+              {status === 'PAUSED' ? 'Resume' : 'Pause'}
+            </button>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={onStop} disabled={terminal}>
+              Stop
+            </button>
+            <button type="button" className="btn btn-sm btn-danger" onClick={onAbort} disabled={status === 'ABORTED'}>
+              Abort
+            </button>
+          </>
+        )}
       </div>
 
       <p className="command-control-feedback" role="status">{feedback}</p>
+    </section>
+  )
+}
+
+function CommandCenterHistoricalBanner({
+  status,
+  archiveReady,
+  onOpenArchive,
+  onOpenResults,
+}: {
+  status: TestStatus
+  archiveReady: boolean
+  onOpenArchive?: () => void
+  onOpenResults?: () => void
+}) {
+  return (
+    <section className="command-history-banner" aria-label="Historical run snapshot">
+      <div>
+        <strong>Historical run snapshot</strong>
+        <p>
+          This run is {status.toLowerCase()}. Live pause, stop, abort, and scaling controls are unavailable.
+          {archiveReady
+            ? ' Open the results archive for saved evidence and reports.'
+            : ' Historical results can be opened from the Results folder when no Command Center snapshot is available.'}
+        </p>
+      </div>
+      <div className="command-history-actions">
+        {archiveReady && onOpenArchive && (
+          <button type="button" className="btn btn-sm btn-secondary" onClick={onOpenArchive}>
+            Open Results Archive
+          </button>
+        )}
+        {!archiveReady && onOpenResults && (
+          <button type="button" className="btn btn-sm btn-secondary" onClick={onOpenResults}>
+            Open Results
+          </button>
+        )}
+      </div>
     </section>
   )
 }
@@ -1443,6 +1518,7 @@ interface OpsCockpitViewProps {
   runStatus: TestStatus
   totalDurationSeconds: number
   remainingSeconds: number
+  readOnly?: boolean
   onTargetChange: (groupName: string, value: number) => void
   onApplyTarget: (groupName: string, value: number) => void
   onErrorSelect: (errorId: string) => void
@@ -1471,6 +1547,7 @@ function OpsCockpitView({
   runStatus,
   totalDurationSeconds,
   remainingSeconds,
+  readOnly = false,
   onTargetChange,
   onApplyTarget,
   onErrorSelect,
@@ -1480,7 +1557,7 @@ function OpsCockpitView({
       <div className="command-primary-column">
         <HeroMetricStrip groups={groups} metrics={metrics} />
         <div className="command-load-model-row">
-          <GroupLoadTable groups={groups} onTargetChange={onTargetChange} onApplyTarget={onApplyTarget} compact={false} paired />
+          <GroupLoadTable groups={groups} onTargetChange={onTargetChange} onApplyTarget={onApplyTarget} compact={false} paired readOnly={readOnly} />
           <LoadModelPanel
             groups={groups}
             runStatus={runStatus}
@@ -2671,12 +2748,14 @@ function GroupLoadTable({
   groups,
   compact,
   paired = false,
+  readOnly = false,
   onTargetChange,
   onApplyTarget,
 }: {
   groups: CommandGroup[]
   compact: boolean
   paired?: boolean
+  readOnly?: boolean
   onTargetChange: (groupName: string, value: number) => void
   onApplyTarget: (groupName: string, value: number) => void
 }) {
@@ -2719,27 +2798,36 @@ function GroupLoadTable({
               </span>
               <span role="cell">{formatNumber(group.current)}</span>
               <span role="cell" className="command-target-cell">
-                <input
-                  type="number"
-                  min={isGoalTarget ? 0.1 : 0}
-                  max={isGoalTarget ? 100000 : 2400}
-                  step={isGoalTarget ? 0.1 : 1}
-                  aria-label={`${group.name} target ${isGoalTarget ? 'TPS' : 'VUsers'}`}
-                  value={group.target}
-                  onChange={(event) => onTargetChange(group.name, Number(event.target.value))}
-                />
-                <input
-                  type="range"
-                  min={isGoalTarget ? 0.1 : 0}
-                  max={sliderMax}
-                  step={isGoalTarget ? 0.1 : 1}
-                  aria-label={`${group.name} target ${isGoalTarget ? 'TPS' : 'VUser'} slider`}
-                  value={group.target}
-                  onChange={(event) => onTargetChange(group.name, Number(event.target.value))}
-                />
-                <button type="button" className="btn btn-sm btn-accent" disabled={isGoalTarget && group.target <= 0} onClick={() => onApplyTarget(group.name, group.target)}>
-                  Apply
-                </button>
+                {readOnly ? (
+                  <span className="command-target-readout">
+                    <strong>{formatTargetValue(group.target, group.targetMode)}</strong>
+                    <small>read only</small>
+                  </span>
+                ) : (
+                  <>
+                    <input
+                      type="number"
+                      min={isGoalTarget ? 0.1 : 0}
+                      max={isGoalTarget ? 100000 : 2400}
+                      step={isGoalTarget ? 0.1 : 1}
+                      aria-label={`${group.name} target ${isGoalTarget ? 'TPS' : 'VUsers'}`}
+                      value={group.target}
+                      onChange={(event) => onTargetChange(group.name, Number(event.target.value))}
+                    />
+                    <input
+                      type="range"
+                      min={isGoalTarget ? 0.1 : 0}
+                      max={sliderMax}
+                      step={isGoalTarget ? 0.1 : 1}
+                      aria-label={`${group.name} target ${isGoalTarget ? 'TPS' : 'VUser'} slider`}
+                      value={group.target}
+                      onChange={(event) => onTargetChange(group.name, Number(event.target.value))}
+                    />
+                    <button type="button" className="btn btn-sm btn-accent" disabled={isGoalTarget && group.target <= 0} onClick={() => onApplyTarget(group.name, group.target)}>
+                      Apply
+                    </button>
+                  </>
+                )}
               </span>
               <span role="cell" className={group.throughputTargetMissed ? 'warning' : undefined}>
                 <span className="command-tps-stack">

@@ -742,6 +742,13 @@
   font-size: 12px;
 }
 
+.scenario-linked-run-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .scenario-builder-card,
 .scenario-builder-disclosure {
   border: 1px solid var(--border);

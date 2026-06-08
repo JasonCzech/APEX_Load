@@ -47,6 +47,7 @@ interface Props {
   onProjectCreated: (project: { name: string; domain_id?: string; category_id?: string }) => Promise<Project>
   onOpenScript?: (scriptId: string) => void
   onOpenTest?: (testId: string) => void
+  onOpenCommandCenter?: (testId: string) => void
   onCreateTestFromScenario?: (scenarioId: string) => void
 }
 
@@ -198,6 +199,7 @@ export default function ApplicationRepositoryPage({
   onProjectCreated,
   onOpenScript,
   onOpenTest,
+  onOpenCommandCenter,
   onCreateTestFromScenario,
 }: Props) {
   const repositoryApi = useRepositoryApi()
@@ -644,7 +646,14 @@ export default function ApplicationRepositoryPage({
       return <button type="button" className="repository-row-action" onClick={() => onCreateTestFromScenario(row.id)}>New Test</button>
     }
     if (row.kind === 'test' && onOpenTest) {
-      return <button type="button" className="repository-row-action" onClick={() => onOpenTest(row.id)}>Open</button>
+      return (
+        <div className="repository-row-actions">
+          <button type="button" className="repository-row-action" onClick={() => onOpenTest(row.id)}>Open</button>
+          {onOpenCommandCenter && (
+            <button type="button" className="repository-row-action" onClick={() => onOpenCommandCenter(row.id)}>Run Dashboard</button>
+          )}
+        </div>
+      )
     }
     if (row.kind === 'project' || row.kind === 'release') {
       return <span className="repository-row-action-muted">Structure</span>

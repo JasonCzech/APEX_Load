@@ -664,6 +664,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               metricsHistory={metricsHistory}
               connectionState={connectionState}
               onSelectTest={navigateToTest}
+              onOpenCommandCenter={navigateToCommandCenter}
               onNavigate={handleNavigate}
               snapshotAudience={snapshotAudience}
             />
@@ -674,6 +675,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               history={view.testId ? metricsHistory[view.testId] || [] : []}
               statusOverride={view.testId ? testStatuses[view.testId] : undefined}
               onOpenExecution={navigateToTest}
+              onOpenResults={() => handleNavigate('results')}
             />
           )}
           {view.page === 'tests' && (
@@ -681,6 +683,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               initialView={view.scenarioView}
               testStatuses={testStatuses}
               onSelectTest={navigateToTest}
+              onOpenCommandCenter={navigateToCommandCenter}
               onCreateTestFromScenario={navigateToNewTestForScenario}
               onNavigate={handleNavigate}
             />
@@ -721,6 +724,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             <ResultsPage
               testStatuses={testStatuses}
               onSelectTest={navigateToTest}
+              onOpenCommandCenter={navigateToCommandCenter}
               onNavigate={handleNavigate}
               activeApplication={activeApplication}
               activeRelease={activeRelease}
@@ -747,6 +751,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               onProjectCreated={createAndSelectProject}
               onOpenScript={navigateToScriptEdit}
               onOpenTest={navigateToTest}
+              onOpenCommandCenter={navigateToCommandCenter}
               onCreateTestFromScenario={navigateToNewTestForScenario}
             />
           )}
