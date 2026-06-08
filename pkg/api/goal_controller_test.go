@@ -229,3 +229,60 @@ func TestDistributeTargetVUsersPreservesTotal(t *testing.T) {
 		t.Fatalf("expected buyers to retain larger share, got buyers=%d admins=%d", targets["buyers"], targets["admins"])
 	}
 }
+
+func TestDistributeTargetVUsersForGoalUsesTargetTPSWeights(t *testing.T) {
+	targets := distributeTargetVUsersForGoal([]TestGroup{
+		{Name: "buyers", VUsers: 10},
+		{Name: "admins", VUsers: 90},
+	}, map[string]int{
+		"buyers": 10,
+		"admins": 90,
+	}, 100, map[string]GoalTargetStatus{
+		"buyers": {Group: "buyers", TargetTPS: 70},
+		"admins": {Group: "admins", TargetTPS: 30},
+	})
+
+	if targets["buyers"] != 70 || targets["admins"] != 30 {
+		t.Fatalf("weighted targets = %#v, want buyers=70 admins=30", targets)
+	}
+}
+
+func TestApplyRuntimeGoalTargetsToLiveMetricsOverlaysAggregateAndGroupTargets(t *testing.T) {
+	targetTPS := 150.0
+	updatedAt := time.Date(2026, time.June, 8, 12, 0, 0, 0, time.UTC)
+	testRun := &ManagedTest{
+		ScenarioMode: "goal_oriented",
+		GoalConfig:   &GoalConfig{TargetAverageTPS: &targetTPS},
+		Groups: []TestGroup{
+			{Name: "buyers", VUsers: 30},
+			{Name: "admins", VUsers: 10},
+		},
+		GoalTargets: map[string]GoalTargetStatus{
+			"buyers": {Group: "buyers", TargetTPS: 120, UpdatedAt: updatedAt},
+			"admins": {Group: "admins", TargetTPS: 60, UpdatedAt: updatedAt},
+		},
+	}
+	live := &LiveMetrics{
+		Timestamp: time.Date(2026, time.June, 8, 12, 0, 1, 0, time.UTC),
+		TPS:       150,
+		GroupMetrics: map[string]*GroupLiveMetrics{
+			"buyers": {Name: "buyers", TPS: 100, VUsers: 30},
+			"admins": {Name: "admins", TPS: 50, VUsers: 10},
+		},
+	}
+
+	applyRuntimeGoalTargetsToLiveMetrics(testRun, live)
+
+	if live.TargetTPS != 180 {
+		t.Fatalf("target tps = %v, want 180", live.TargetTPS)
+	}
+	if live.ThroughputGapPct < 16 || live.ThroughputGapPct > 17 || !live.ThroughputTargetMissed {
+		t.Fatalf("throughput gap = %v missed=%v, want about 16.7 and missed", live.ThroughputGapPct, live.ThroughputTargetMissed)
+	}
+	if live.GroupMetrics["buyers"].TargetTPS != 120 || live.GroupMetrics["admins"].TargetTPS != 60 {
+		t.Fatalf("group target tps not overlaid: %#v", live.GroupMetrics)
+	}
+	if !live.GroupMetrics["buyers"].ThroughputTargetMissed {
+		t.Fatal("expected buyers target gap to be marked missed")
+	}
+}

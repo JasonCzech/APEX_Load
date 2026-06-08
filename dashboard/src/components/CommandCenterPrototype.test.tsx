@@ -2,7 +2,7 @@
 
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import CommandCenterPrototype from './CommandCenterPrototype'
 import type { MetricsHistoryPoint, TestSummary } from '../types'
@@ -24,7 +24,19 @@ describe('CommandCenterPrototype', () => {
     await act(async () => {
       root.unmount()
     })
+    vi.restoreAllMocks()
     container.remove()
+  })
+
+  it('does not show the prototype run when no live run is selected', async () => {
+    await act(async () => {
+      root.render(<CommandCenterPrototype />)
+    })
+
+    expect(container.textContent).toContain('No active run selected')
+    expect(container.textContent).not.toContain('Checkout Peak Soak - Command Center Prototype')
+    expect(container.querySelector('[aria-label="Command center run controls"]')).toBeNull()
+    expect(container.querySelector('[aria-label="No active command center run"]')).not.toBeNull()
   })
 
   it('switches between the OPS View and Graph Wall variants from the sidebar', async () => {
@@ -328,9 +340,126 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).not.toContain('In-flight Run Command Center')
   })
 
+  it('uses per-group TPS target edits for goal-oriented live runs', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      test_id: 'live-goal-1',
+      group: 'Live Checkout',
+      target_tps: 120,
+      target_average_tps: 120,
+      goal_targets: {
+        'Live Checkout': {
+          group: 'Live Checkout',
+          target_tps: 120,
+          updated_at: '2026-06-08T13:11:00Z',
+        },
+      },
+      status: 'adjusted',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    const liveTest: TestSummary = {
+      id: 'live-goal-1',
+      ref_key: 'RUN-20260608-GOAL',
+      name: 'Live Goal Checkout',
+      status: 'RUNNING',
+      duration: '30m',
+      total_vusers: 50,
+      created_at: '2026-06-08T13:00:00Z',
+      started_at: '2026-06-08T13:05:00Z',
+      scenario_mode: 'goal_oriented',
+      goal_config: {
+        target_average_tps: 90,
+        min_vusers: 10,
+        max_vusers: 200,
+      },
+      goal_targets: {
+        'Live Checkout': {
+          group: 'Live Checkout',
+          target_tps: 90,
+          updated_at: '2026-06-08T13:05:00Z',
+        },
+      },
+      groups: [{
+        name: 'Live Checkout',
+        protocol: 'http',
+        script_id: 'script-live',
+        script_name: 'Live Checkout Script',
+        vusers: 50,
+      }],
+      live_metrics: {
+        timestamp: '2026-06-08T13:10:00Z',
+        active_vusers: 42,
+        tps: 75.4,
+        target_tps: 90,
+        throughput_gap_pct: 16.2,
+        throughput_target_missed: true,
+        avg_response_ms: 134,
+        error_pct: 0.5,
+        total_transactions: 1200,
+        total_errors: 6,
+        p50_ms: 82,
+        p90_ms: 210,
+        p95_ms: 260,
+        p99_ms: 410,
+        goal_status: {
+          mode: 'goal_oriented',
+          current_tps: 75.4,
+          current_total_vusers: 42,
+          target_average_tps: 90,
+          suggested_total_vusers: 56,
+          min_vusers: 10,
+          max_vusers: 200,
+        },
+        groups: {
+          'Live Checkout': {
+            name: 'Live Checkout',
+            vusers: 42,
+            transactions: 1200,
+            errors: 6,
+            tps: 75.4,
+            target_tps: 90,
+            throughput_gap_pct: 16.2,
+            throughput_target_missed: true,
+            avg_response_ms: 134,
+            p50_ms: 82,
+            p90_ms: 210,
+            p99_ms: 410,
+          },
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-goal-1" initialTest={liveTest} history={[]} />)
+    })
+
+    expect(container.textContent).toContain('Target TPS')
+    expect(container.textContent).toContain('suggested 56 VU')
+    expect(container.textContent).toContain('guardrail 10-200 VU')
+
+    const targetInput = inputByLabel('Live Checkout target TPS')
+    expect(targetInput.value).toBe('90')
+
+    await changeNumberInput(targetInput, '120')
+    expect(container.textContent).toContain('Live Checkout target staged at 120.0 TPS.')
+
+    await click(buttonNamed('Apply'))
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/tests/live-goal-1/goal-targets'),
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ group: 'Live Checkout', target_tps: 120 }),
+      }),
+    )
+    expect(container.textContent).toContain('Live Checkout TPS target applied at 120.0. Aggregate goal is 120.0 TPS.')
+    expect(container.textContent).toContain('120.0')
+  })
+
   async function renderPrototype() {
     await act(async () => {
-      root.render(<CommandCenterPrototype />)
+      root.render(<CommandCenterPrototype prototypeMode />)
     })
   }
 

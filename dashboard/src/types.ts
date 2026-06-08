@@ -262,6 +262,12 @@ export interface GoalStatus {
   stop_reason?: string
 }
 
+export interface GoalTargetStatus {
+  group: string
+  target_tps: number
+  updated_at?: string
+}
+
 export interface RunComparisonBaseline {
   source_test_id: string
   source_test_name: string
@@ -439,6 +445,7 @@ export interface TestSummary {
   started_by_display_name?: string
   generator_shards?: GeneratorShardSummary[]
   vuser_ramps?: Record<string, VUserRampStatus>
+  goal_targets?: Record<string, GoalTargetStatus>
   live_metrics?: LiveMetrics
   telemetry_health?: TelemetryRunHealth
   error?: string

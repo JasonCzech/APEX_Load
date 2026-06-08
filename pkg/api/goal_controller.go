@@ -174,6 +174,176 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 	return goalControllerUpdate{Status: status}
 }
 
+func currentGoalTargetStatuses(test *ManagedTest, now time.Time) map[string]GoalTargetStatus {
+	if test == nil || len(test.Groups) == 0 {
+		return nil
+	}
+
+	stagedTargets := stagedGoalTargetsByGroup(test.Groups)
+	liveTargets := liveGoalTargetsByGroup(test.LiveMetrics)
+	defaultTargets := defaultGoalTargetsByGroup(test)
+
+	targets := make(map[string]GoalTargetStatus, len(test.Groups))
+	for _, group := range test.Groups {
+		name := group.Name
+		target := 0.0
+		updatedAt := now
+		if existing, ok := test.GoalTargets[name]; ok && existing.TargetTPS > 0 {
+			target = existing.TargetTPS
+			if !existing.UpdatedAt.IsZero() {
+				updatedAt = existing.UpdatedAt
+			}
+		} else if stagedTargets[name] > 0 {
+			target = stagedTargets[name]
+		} else if liveTargets[name] > 0 {
+			target = liveTargets[name]
+		} else if defaultTargets[name] > 0 {
+			target = defaultTargets[name]
+		}
+		if target <= 0 {
+			continue
+		}
+		targets[name] = GoalTargetStatus{
+			Group:     name,
+			TargetTPS: target,
+			UpdatedAt: updatedAt,
+		}
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	return targets
+}
+
+func stagedGoalTargetsByGroup(groups []TestGroup) map[string]float64 {
+	targets := make(map[string]float64, len(groups))
+	for _, group := range groups {
+		for _, stage := range group.Stages {
+			if stage.TargetTPS != nil && *stage.TargetTPS > targets[group.Name] {
+				targets[group.Name] = *stage.TargetTPS
+			}
+		}
+	}
+	return targets
+}
+
+func liveGoalTargetsByGroup(live *LiveMetrics) map[string]float64 {
+	if live == nil || len(live.GroupMetrics) == 0 {
+		return nil
+	}
+	targets := make(map[string]float64, len(live.GroupMetrics))
+	for name, metrics := range live.GroupMetrics {
+		if metrics != nil && metrics.TargetTPS > 0 {
+			targets[name] = metrics.TargetTPS
+		}
+	}
+	return targets
+}
+
+func defaultGoalTargetsByGroup(test *ManagedTest) map[string]float64 {
+	if test == nil || len(test.Groups) == 0 || test.GoalConfig == nil || test.GoalConfig.TargetAverageTPS == nil || *test.GoalConfig.TargetAverageTPS <= 0 {
+		return nil
+	}
+	aggregate := *test.GoalConfig.TargetAverageTPS
+	targets := make(map[string]float64, len(test.Groups))
+
+	totalVUsers := 0
+	for _, group := range test.Groups {
+		totalVUsers += group.VUsers
+	}
+	if totalVUsers <= 0 {
+		share := aggregate / float64(len(test.Groups))
+		for _, group := range test.Groups {
+			targets[group.Name] = share
+		}
+		return targets
+	}
+
+	for _, group := range test.Groups {
+		targets[group.Name] = aggregate * float64(group.VUsers) / float64(totalVUsers)
+	}
+	return targets
+}
+
+func sumGoalTargetTPS(targets map[string]GoalTargetStatus) float64 {
+	total := 0.0
+	for _, target := range targets {
+		if target.TargetTPS > 0 {
+			total += target.TargetTPS
+		}
+	}
+	return total
+}
+
+func liveGroupVUsers(test *ManagedTest, live *LiveMetrics) map[string]int {
+	groupVUsers := make(map[string]int)
+	if test != nil {
+		for _, group := range test.Groups {
+			groupVUsers[group.Name] = group.VUsers
+		}
+	}
+	if live != nil {
+		for groupName, metrics := range live.GroupMetrics {
+			if metrics != nil {
+				groupVUsers[groupName] = metrics.VUsers
+			}
+		}
+	}
+	return groupVUsers
+}
+
+func applyRuntimeGoalTargetsToLiveMetrics(test *ManagedTest, live *LiveMetrics) {
+	if test == nil || live == nil || test.ScenarioMode != "goal_oriented" {
+		return
+	}
+	targets := currentGoalTargetStatuses(test, live.Timestamp)
+	totalTargetTPS := sumGoalTargetTPS(targets)
+	if totalTargetTPS <= 0 {
+		return
+	}
+
+	live.TargetTPS = totalTargetTPS
+	live.ThroughputGapPct, live.ThroughputTargetMissed = throughputGap(live.TPS, totalTargetTPS)
+	if live.GroupMetrics == nil {
+		live.GroupMetrics = make(map[string]*GroupLiveMetrics)
+	}
+	for _, group := range test.Groups {
+		target, ok := targets[group.Name]
+		if !ok || target.TargetTPS <= 0 {
+			continue
+		}
+		metrics := live.GroupMetrics[group.Name]
+		if metrics == nil {
+			metrics = &GroupLiveMetrics{Name: group.Name, VUsers: group.VUsers}
+			if len(test.Groups) == 1 {
+				metrics.Transactions = live.TotalTx
+				metrics.Errors = live.TotalErrors
+				metrics.TPS = live.TPS
+				metrics.AvgResponseMs = live.AvgResponseMs
+				metrics.P50Ms = live.P50Ms
+				metrics.P90Ms = live.P90Ms
+				metrics.P95Ms = live.P95Ms
+				metrics.P99Ms = live.P99Ms
+			}
+			live.GroupMetrics[group.Name] = metrics
+		}
+		metrics.TargetTPS = target.TargetTPS
+		metrics.ThroughputGapPct, metrics.ThroughputTargetMissed = throughputGap(metrics.TPS, target.TargetTPS)
+	}
+	if live.GoalStatus != nil {
+		targetAverage := totalTargetTPS
+		live.GoalStatus.TargetAverageTPS = &targetAverage
+	}
+}
+
+func throughputGap(actualTPS, targetTPS float64) (float64, bool) {
+	if targetTPS <= 0 || actualTPS >= targetTPS {
+		return 0, false
+	}
+	gap := (targetTPS - actualTPS) / targetTPS * 100
+	return gap, gap >= 5.0
+}
+
 func hasServerTelemetryBreach(live *LiveMetrics, threshold *float64, pickValue func(summary *ServerTelemetrySummary) float64) bool {
 	if live == nil || threshold == nil || len(live.Transactions) == 0 {
 		return false
@@ -321,6 +491,67 @@ func distributeTargetVUsers(groups []TestGroup, current map[string]int, desiredT
 		remaining--
 	}
 
+	for _, allocation := range allocations {
+		targets[allocation.name] = allocation.base
+	}
+	return targets
+}
+
+func distributeTargetVUsersForGoal(groups []TestGroup, current map[string]int, desiredTotal int, goalTargets map[string]GoalTargetStatus) map[string]int {
+	weighted := distributeTargetVUsersByWeights(groups, desiredTotal, goalTargets)
+	if len(weighted) > 0 {
+		return weighted
+	}
+	return distributeTargetVUsers(groups, current, desiredTotal)
+}
+
+func distributeTargetVUsersByWeights(groups []TestGroup, desiredTotal int, goalTargets map[string]GoalTargetStatus) map[string]int {
+	if len(groups) == 0 || desiredTotal < 0 || len(goalTargets) == 0 {
+		return nil
+	}
+	totalWeight := 0.0
+	for _, group := range groups {
+		target := goalTargets[group.Name]
+		if target.TargetTPS > 0 && !math.IsNaN(target.TargetTPS) && !math.IsInf(target.TargetTPS, 0) {
+			totalWeight += target.TargetTPS
+		}
+	}
+	if totalWeight <= 0 {
+		return nil
+	}
+
+	type allocation struct {
+		name      string
+		base      int
+		remainder float64
+	}
+	allocations := make([]allocation, 0, len(groups))
+	assigned := 0
+	for _, group := range groups {
+		target := goalTargets[group.Name]
+		exact := 0.0
+		if target.TargetTPS > 0 {
+			exact = float64(desiredTotal) * target.TargetTPS / totalWeight
+		}
+		base := int(math.Floor(exact))
+		allocations = append(allocations, allocation{name: group.Name, base: base, remainder: exact - float64(base)})
+		assigned += base
+	}
+
+	remaining := desiredTotal - assigned
+	for i := 0; i < len(allocations) && remaining > 0; i++ {
+		bestIdx := i
+		for j := i + 1; j < len(allocations); j++ {
+			if allocations[j].remainder > allocations[bestIdx].remainder {
+				bestIdx = j
+			}
+		}
+		allocations[i], allocations[bestIdx] = allocations[bestIdx], allocations[i]
+		allocations[i].base++
+		remaining--
+	}
+
+	targets := make(map[string]int, len(groups))
 	for _, allocation := range allocations {
 		targets[allocation.name] = allocation.base
 	}

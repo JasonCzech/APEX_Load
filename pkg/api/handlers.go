@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -609,6 +610,46 @@ func (s *Server) handleScaleVUsers(w http.ResponseWriter, r *http.Request) {
 		payload["ramp_duration"] = req.RampDuration
 	}
 	writeJSON(w, http.StatusOK, payload)
+}
+
+func (s *Server) handleUpdateGoalTarget(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Group     string  `json:"group"`
+		TargetTPS float64 `json:"target_tps"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if strings.TrimSpace(req.Group) == "" {
+		writeError(w, http.StatusBadRequest, "group name is required")
+		return
+	}
+	if req.TargetTPS <= 0 || math.IsNaN(req.TargetTPS) || math.IsInf(req.TargetTPS, 0) {
+		writeError(w, http.StatusBadRequest, "target_tps must be greater than zero")
+		return
+	}
+
+	update, err := s.runner.UpdateGoalTargetTPS(id, req.Group, req.TargetTPS)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	projectID := ""
+	name := ""
+	if test, ok := s.runner.GetTest(id); ok {
+		projectID = test.ProjectID
+		name = test.Name
+	}
+	s.recordAuditEvent(r, "test.goal_target.adjust", "success", "test", id, projectID, map[string]any{
+		"name":               name,
+		"group":              req.Group,
+		"target_tps":         update.TargetTPS,
+		"target_average_tps": update.TargetAverageTPS,
+	})
+
+	writeJSON(w, http.StatusOK, update)
 }
 
 func (s *Server) handleAdjustDuration(w http.ResponseWriter, r *http.Request) {

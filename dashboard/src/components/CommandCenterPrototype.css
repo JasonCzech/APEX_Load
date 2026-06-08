@@ -35,6 +35,39 @@
   box-shadow: var(--shadow-sm);
 }
 
+.command-empty-state {
+  min-height: min(420px, calc(100vh - 170px));
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 12%, transparent), transparent 34%),
+    var(--bg-card);
+}
+
+.command-empty-state > div {
+  max-width: 520px;
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.command-empty-state h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+.command-empty-state p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .command-run-identity {
   min-width: 0;
   display: flex;
@@ -172,7 +205,7 @@
 }
 
 .command-view-switch-panel {
-  height: var(--command-view-switch-height);
+  min-height: var(--command-view-switch-height);
   align-content: center;
   padding: 10px;
 }
@@ -469,6 +502,24 @@
   width: 100%;
   min-width: 0;
   accent-color: var(--accent);
+}
+
+.command-tps-stack {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.command-tps-stack strong {
+  color: inherit;
+  font-size: 12px;
+}
+
+.command-tps-stack small {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.2;
 }
 
 .command-group-row .healthy {

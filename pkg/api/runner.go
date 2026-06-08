@@ -166,6 +166,7 @@ type ManagedTest struct {
 	ResourceBaseline      bool                         `json:"resource_baseline,omitempty"`
 	StartDelay            string                       `json:"start_delay,omitempty"`
 	GoalConfig            *GoalConfig                  `json:"goal_config,omitempty"`
+	GoalTargets           map[string]GoalTargetStatus  `json:"goal_targets,omitempty"`
 	RuntimeSettings       *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
 	TotalVUsers           int                          `json:"total_vusers"`
 	GeneratorShards       []GeneratorShardSummary      `json:"generator_shards,omitempty"`
@@ -221,6 +222,15 @@ type ManagedTest struct {
 
 type ScaleVUsersOptions struct {
 	RampDuration time.Duration
+}
+
+type GoalTargetUpdate struct {
+	TestID           string                      `json:"test_id"`
+	Group            string                      `json:"group"`
+	TargetTPS        float64                     `json:"target_tps"`
+	TargetAverageTPS float64                     `json:"target_average_tps"`
+	GoalTargets      map[string]GoalTargetStatus `json:"goal_targets"`
+	Status           string                      `json:"status"`
 }
 
 type vuserScaleRamp struct {
@@ -463,6 +473,12 @@ type GoalStatus struct {
 	BreachDurationSec        int        `json:"breach_duration_sec,omitempty"`
 	StopTriggered            bool       `json:"stop_triggered,omitempty"`
 	StopReason               string     `json:"stop_reason,omitempty"`
+}
+
+type GoalTargetStatus struct {
+	Group     string    `json:"group"`
+	TargetTPS float64   `json:"target_tps"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
 type RunComparisonBaseline struct {
@@ -3269,6 +3285,7 @@ func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {
 	}
 	cloned := *t
 	cloned.VUserRamps = cloneVUserRampStatusMap(t.VUserRamps)
+	cloned.GoalTargets = cloneGoalTargetStatusMap(t.GoalTargets)
 	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(t)
 	return &cloned, true
 }
@@ -4458,6 +4475,96 @@ func (tr *TestRunner) ScaleVUsersWithOptions(id string, groupName string, target
 	return tr.scheduleVUserScaleRamp(id, groupName, targetVUsers, opts.RampDuration)
 }
 
+func (tr *TestRunner) UpdateGoalTargetTPS(id string, groupName string, targetTPS float64) (*GoalTargetUpdate, error) {
+	if strings.TrimSpace(groupName) == "" {
+		return nil, fmt.Errorf("group name is required")
+	}
+	if targetTPS <= 0 || math.IsNaN(targetTPS) || math.IsInf(targetTPS, 0) {
+		return nil, fmt.Errorf("target_tps must be greater than zero")
+	}
+
+	now := time.Now().UTC()
+	tr.mu.Lock()
+	id = tr.resolveRefKeyLocked(id)
+	test, ok := tr.tests[id]
+	if !ok {
+		tr.mu.Unlock()
+		return nil, fmt.Errorf("test not found: %s", id)
+	}
+	if test.Status != "RUNNING" && test.Status != "PAUSED" {
+		tr.mu.Unlock()
+		return nil, fmt.Errorf("test is %s, must be RUNNING or PAUSED to adjust goal targets", test.Status)
+	}
+	if test.ScenarioMode != "goal_oriented" {
+		tr.mu.Unlock()
+		return nil, fmt.Errorf("test is %s, must be goal_oriented to adjust goal targets", firstNonEmpty(test.ScenarioMode, "vuser_driven"))
+	}
+	groupFound := false
+	for _, group := range test.Groups {
+		if group.Name == groupName {
+			groupFound = true
+			break
+		}
+	}
+	if !groupFound {
+		tr.mu.Unlock()
+		return nil, fmt.Errorf("group not found: %s", groupName)
+	}
+
+	targets := currentGoalTargetStatuses(test, now)
+	if targets == nil {
+		targets = make(map[string]GoalTargetStatus, len(test.Groups))
+	}
+	targets[groupName] = GoalTargetStatus{
+		Group:     groupName,
+		TargetTPS: targetTPS,
+		UpdatedAt: now,
+	}
+	totalTargetTPS := sumGoalTargetTPS(targets)
+	if totalTargetTPS <= 0 {
+		tr.mu.Unlock()
+		return nil, fmt.Errorf("target_average_tps must be greater than zero")
+	}
+
+	if test.GoalConfig == nil {
+		test.GoalConfig = &GoalConfig{}
+	}
+	test.GoalTargets = cloneGoalTargetStatusMap(targets)
+	test.GoalConfig.TargetAverageTPS = &totalTargetTPS
+	if test.goalControl != nil {
+		test.goalControl.lastScaleAt = nil
+	}
+	if test.LiveMetrics != nil {
+		applyRuntimeGoalTargetsToLiveMetrics(test, test.LiveMetrics)
+	}
+	tr.saveManagedTestRecord(test)
+	projectID := normalizeProjectID(test.ProjectID)
+	testName := test.Name
+	result := &GoalTargetUpdate{
+		TestID:           id,
+		Group:            groupName,
+		TargetTPS:        targetTPS,
+		TargetAverageTPS: totalTargetTPS,
+		GoalTargets:      cloneGoalTargetStatusMap(test.GoalTargets),
+		Status:           "adjusted",
+	}
+	tr.mu.Unlock()
+
+	tr.hub.BroadcastJSON(map[string]any{
+		"type":               "goal_target_changed",
+		"test_id":            id,
+		"project_id":         projectID,
+		"test_name":          testName,
+		"group":              groupName,
+		"target_tps":         targetTPS,
+		"target_average_tps": totalTargetTPS,
+		"goal_targets":       result.GoalTargets,
+		"timestamp":          now,
+	})
+
+	return result, nil
+}
+
 func (tr *TestRunner) scheduleVUserScaleRamp(id string, groupName string, targetVUsers int, rampDuration time.Duration) error {
 	if targetVUsers < 0 {
 		return fmt.Errorf("target vusers must be non-negative")
@@ -4699,6 +4806,17 @@ func cloneVUserRampStatusMap(in map[string]VUserRampStatus) map[string]VUserRamp
 		return nil
 	}
 	out := make(map[string]VUserRampStatus, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneGoalTargetStatusMap(in map[string]GoalTargetStatus) map[string]GoalTargetStatus {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]GoalTargetStatus, len(in))
 	for key, value := range in {
 		out[key] = value
 	}
@@ -6403,7 +6521,7 @@ func applyGoalControllerUpdate(test *ManagedTest, live *LiveMetrics, groupVUsers
 		return
 	}
 
-	targets := distributeTargetVUsers(test.Groups, groupVUsers, update.TargetTotal)
+	targets := distributeTargetVUsersForGoal(test.Groups, groupVUsers, update.TargetTotal, currentGoalTargetStatuses(test, live.Timestamp))
 	for _, group := range test.Groups {
 		target, exists := targets[group.Name]
 		if !exists || groupVUsers[group.Name] == target {
@@ -6790,6 +6908,7 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 			}
 
 			live := buildLiveMetricsForBroadcast(snap, groupVUsers, time.Now())
+			applyRuntimeGoalTargetsToLiveMetrics(test, live)
 
 			if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
 				currentTotalVUsers := totalGroupVUsers(groupVUsers)
@@ -6810,6 +6929,7 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 
 func (tr *TestRunner) processMetricsSnapshot(test *ManagedTest, snap engine.MetricsSnapshot, groupVUsers map[string]int, scaleVUsers func(groupName string, target int) error, artifacts *runArtifacts) {
 	live := buildLiveMetricsFromSnapshot(snap, groupVUsers)
+	applyRuntimeGoalTargetsToLiveMetrics(test, live)
 
 	if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
 		currentTotalVUsers := totalGroupVUsers(groupVUsers)

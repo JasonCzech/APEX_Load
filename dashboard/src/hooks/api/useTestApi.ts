@@ -7,6 +7,7 @@ import {
   GoalConfig,
   GoalSizingReport,
   GoalSizingRequest,
+  GoalTargetStatus,
   IntervalSummaryRecord,
   LaunchPreflightResponse,
   LoadModelSupportMatrixResponse,
@@ -193,6 +194,15 @@ type ScaleVUsersResponse = {
 type ScaleVUsersOptions = {
   action?: 'run' | 'pause' | 'stop'
   ramp_duration?: string
+}
+
+type GoalTargetUpdateResponse = {
+  test_id: string
+  group: string
+  target_tps: number
+  target_average_tps: number
+  goal_targets: Record<string, GoalTargetStatus>
+  status: string
 }
 
 type AdjustDurationResponse = {
@@ -482,6 +492,15 @@ export function useTestApi() {
     [],
   )
 
+  const updateGoalTarget = useCallback(
+    (testId: string, group: string, targetTps: number) =>
+      request<GoalTargetUpdateResponse>(`/tests/${testId}/goal-targets`, {
+        method: 'PATCH',
+        body: JSON.stringify({ group, target_tps: targetTps }),
+      }),
+    [],
+  )
+
   const adjustDuration = useCallback(
     (testId: string, duration: string) =>
       request<AdjustDurationResponse>(`/tests/${testId}/duration`, {
@@ -523,6 +542,7 @@ export function useTestApi() {
       downloadTestArchiveBrowserDiagnostics,
       downloadTestArchiveArtifact,
       scaleVUsers,
+      updateGoalTarget,
       adjustDuration,
       pauseTest,
       resumeTest,
@@ -578,6 +598,7 @@ export function useTestApi() {
       downloadTestArchiveBrowserDiagnostics,
       downloadTestArchiveArtifact,
       scaleVUsers,
+      updateGoalTarget,
       adjustDuration,
     ],
   )

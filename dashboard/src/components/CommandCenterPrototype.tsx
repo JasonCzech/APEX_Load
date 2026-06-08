@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Area,
   AreaChart,
@@ -41,6 +41,7 @@ interface CommandCenterPrototypeProps {
   statusOverride?: string
   initialTest?: TestSummary
   onOpenExecution?: (testId: string) => void
+  prototypeMode?: boolean
 }
 
 interface CommandGroup {
@@ -49,6 +50,14 @@ interface CommandGroup {
   protocol: string
   current: number
   target: number
+  targetVusers: number
+  targetMode: 'vusers' | 'tps'
+  targetTps?: number
+  throughputGapPct?: number
+  throughputTargetMissed?: boolean
+  suggestedVusers?: number
+  minVusers?: number
+  maxVusers?: number
   tps: number
   art: number
   errorPct: number
@@ -114,6 +123,8 @@ const GROUPS: CommandGroup[] = [
     protocol: 'http',
     current: 860,
     target: 1200,
+    targetVusers: 1200,
+    targetMode: 'vusers',
     tps: 812.4,
     art: 188,
     errorPct: 0.92,
@@ -128,6 +139,8 @@ const GROUPS: CommandGroup[] = [
     protocol: 'browser',
     current: 320,
     target: 420,
+    targetVusers: 420,
+    targetMode: 'vusers',
     tps: 146.7,
     art: 842,
     errorPct: 1.84,
@@ -142,6 +155,8 @@ const GROUPS: CommandGroup[] = [
     protocol: 'jms-solace',
     current: 410,
     target: 520,
+    targetVusers: 520,
+    targetMode: 'vusers',
     tps: 332.9,
     art: 142,
     errorPct: 0.28,
@@ -571,6 +586,17 @@ const MOCK_TEST: TestSummary = {
   scenario_mode: 'vuser_driven',
 }
 
+const EMPTY_COMMAND_CENTER_TEST: TestSummary = {
+  id: 'command-center-empty',
+  ref_key: 'No run selected',
+  name: 'No active run selected',
+  status: 'INITIALIZING',
+  groups: [],
+  total_vusers: 0,
+  duration: '0m',
+  created_at: '',
+}
+
 const HISTORY: MetricsHistoryPoint[] = Array.from({ length: 36 }, (_, index) => {
   const wave = Math.sin(index / 4)
   const browseWave = Math.cos(index / 5)
@@ -658,6 +684,17 @@ function clampTarget(value: number) {
   return Math.max(0, Math.min(2400, Math.round(value)))
 }
 
+function clampTpsTarget(value: number) {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(100000, Math.round(value * 10) / 10))
+}
+
+function formatTargetValue(value: number, mode: CommandGroup['targetMode']) {
+  return mode === 'tps'
+    ? `${formatNumber(value, 1)} TPS`
+    : `${formatNumber(value)} VUsers`
+}
+
 function metricTone(value: number, warning: number, danger: number) {
   if (value >= danger) return 'danger'
   if (value >= warning) return 'warning'
@@ -705,17 +742,90 @@ function groupErrorPercent(group: GroupLiveMetrics | undefined) {
   return group.errors / group.transactions * 100
 }
 
+function isGoalOrientedRun(test: TestSummary) {
+  return test.scenario_mode === 'goal_oriented'
+}
+
+function finitePositive(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
+}
+
+function stagedTargetTps(group: TestGroup): number {
+  return (group.stages || []).reduce((maxTarget, stage) => Math.max(maxTarget, finitePositive(stage.target_tps)), 0)
+}
+
+function defaultGoalTargets(test: TestSummary): Record<string, number> {
+  const groups = test.groups || []
+  const aggregateTarget = finitePositive(test.goal_config?.target_average_tps)
+  if (groups.length === 0 || aggregateTarget <= 0) return {}
+
+  const totalVusers = groups.reduce((sum, group) => sum + Math.max(0, group.vusers || 0), 0)
+  return groups.reduce((targets, group) => {
+    targets[group.name] = totalVusers > 0
+      ? aggregateTarget * Math.max(0, group.vusers || 0) / totalVusers
+      : aggregateTarget / groups.length
+    return targets
+  }, {} as Record<string, number>)
+}
+
+function buildGoalTargetMap(test: TestSummary): Record<string, number> {
+  const defaults = defaultGoalTargets(test)
+  return (test.groups || []).reduce((targets, group) => {
+    const stored = finitePositive(test.goal_targets?.[group.name]?.target_tps)
+    const staged = stagedTargetTps(group)
+    const live = finitePositive(test.live_metrics?.groups?.[group.name]?.target_tps)
+    targets[group.name] = stored || staged || live || defaults[group.name] || 0
+    return targets
+  }, {} as Record<string, number>)
+}
+
+function buildCanonicalTargets(test: TestSummary): Record<string, number> {
+  if (isGoalOrientedRun(test)) {
+    return buildGoalTargetMap(test)
+  }
+  return (test.groups || []).reduce((targets, group) => {
+    targets[group.name] = test.vuser_ramps?.[group.name]?.target_vusers ?? group.vusers
+    return targets
+  }, {} as Record<string, number>)
+}
+
+function suggestedGroupVusers(test: TestSummary, groupName: string, currentVusers: number): number | undefined {
+  const status = test.live_metrics?.goal_status
+  const suggestedTotal = finitePositive(status?.suggested_total_vusers)
+  if (!suggestedTotal) return undefined
+  const currentTotal = finitePositive(status?.current_total_vusers) || (test.groups || []).reduce((sum, group) => {
+    const metrics = test.live_metrics?.groups?.[group.name]
+    return sum + (metrics?.vusers ?? group.vusers ?? 0)
+  }, 0)
+  if (currentTotal <= 0) return undefined
+  return Math.round(suggestedTotal * currentVusers / currentTotal)
+}
+
 function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>): CommandGroup[] {
+  const targetMode = isGoalOrientedRun(test) ? 'tps' : 'vusers'
+  const goalTargets = targetMode === 'tps' ? buildGoalTargetMap(test) : {}
   return (test.groups || []).map((group, index) => {
     const metrics = test.live_metrics?.groups?.[group.name]
     const aggregateFallback = !metrics && test.groups.length === 1 ? test.live_metrics : undefined
-    const target = targetDrafts[group.name] ?? test.vuser_ramps?.[group.name]?.target_vusers ?? group.vusers
+    const liveTargetVusers = test.vuser_ramps?.[group.name]?.target_vusers ?? group.vusers
+    const liveTarget = targetMode === 'tps' ? goalTargets[group.name] : liveTargetVusers
+    const target = targetDrafts[group.name] ?? liveTarget
+    const current = metrics?.vusers ?? aggregateFallback?.active_vusers ?? group.vusers
+    const targetTps = targetMode === 'tps' ? target : metrics?.target_tps ?? aggregateFallback?.target_tps
     return {
       key: group.name,
       name: group.name,
       protocol: group.protocol || 'unknown',
-      current: metrics?.vusers ?? aggregateFallback?.active_vusers ?? group.vusers,
+      current,
       target,
+      targetVusers: liveTargetVusers,
+      targetMode,
+      targetTps,
+      throughputGapPct: metrics?.throughput_gap_pct ?? aggregateFallback?.throughput_gap_pct,
+      throughputTargetMissed: metrics?.throughput_target_missed ?? aggregateFallback?.throughput_target_missed,
+      suggestedVusers: targetMode === 'tps' ? suggestedGroupVusers(test, group.name, current) : undefined,
+      minVusers: test.live_metrics?.goal_status?.min_vusers ?? test.goal_config?.min_vusers,
+      maxVusers: test.live_metrics?.goal_status?.max_vusers ?? test.goal_config?.max_vusers,
       tps: metrics?.tps ?? aggregateFallback?.tps ?? 0,
       art: metrics?.avg_response_ms ?? aggregateFallback?.avg_response_ms ?? 0,
       errorPct: metrics ? groupErrorPercent(metrics) : aggregateFallback?.error_pct ?? 0,
@@ -761,7 +871,10 @@ function buildInitialTargets() {
 }
 
 function buildGroupsWithTargets(targets: Record<string, number>) {
-  return GROUPS.map(group => ({ ...group, target: targets[group.name] ?? group.target }))
+  return GROUPS.map(group => {
+    const target = targets[group.name] ?? group.target
+    return { ...group, target, targetVusers: target }
+  })
 }
 
 export default function CommandCenterPrototype({
@@ -770,6 +883,7 @@ export default function CommandCenterPrototype({
   statusOverride,
   initialTest,
   onOpenExecution,
+  prototypeMode = false,
 }: CommandCenterPrototypeProps = {}) {
   const api = useApi()
   const [variant, setVariant] = useState<VariantId>('ops')
@@ -783,6 +897,8 @@ export default function CommandCenterPrototype({
   const [liveEvidenceBySignature, setLiveEvidenceBySignature] = useState<Record<string, LiveErrorEvidence[]>>({})
   const [evidenceLoadingSignature, setEvidenceLoadingSignature] = useState('')
   const [evidenceError, setEvidenceError] = useState('')
+  const syncedTargetsRef = useRef<Record<string, number>>({})
+  const syncedTargetTestIdRef = useRef<string | null>(null)
   const [state, setState] = useState<CommandCenterState>(() => ({
     runStatus: 'RUNNING',
     vuserTargets: buildInitialTargets(),
@@ -832,6 +948,7 @@ export default function CommandCenterPrototype({
   const liveMetrics = latestMetrics || liveTest?.live_metrics
   const hasLiveRoute = Boolean(testId)
   const liveMode = Boolean(testId && liveTest)
+  const emptyMode = !prototypeMode && !hasLiveRoute && !liveTest
   const loadingTest: TestSummary = {
     ...MOCK_TEST,
     id: testId || MOCK_TEST.id,
@@ -848,19 +965,48 @@ export default function CommandCenterPrototype({
         status: streamStatus || liveTest.status,
         live_metrics: liveMetrics || liveTest.live_metrics,
       }
-    : hasLiveRoute ? loadingTest : MOCK_TEST
-  const runStatus = liveMode || hasLiveRoute ? displayTest.status : state.runStatus
+    : hasLiveRoute ? loadingTest : emptyMode ? EMPTY_COMMAND_CENTER_TEST : MOCK_TEST
+
+  useEffect(() => {
+    if (!liveMode) return
+    const canonicalTargets = buildCanonicalTargets(displayTest)
+    const isNewTest = syncedTargetTestIdRef.current !== displayTest.id
+    setState(prev => {
+      const nextTargets = Object.entries(canonicalTargets).reduce((targets, [groupName, target]) => {
+        const previousValue = isNewTest ? undefined : prev.vuserTargets[groupName]
+        const previousSyncedValue = isNewTest ? undefined : syncedTargetsRef.current[groupName]
+        targets[groupName] = previousValue === undefined || previousValue === previousSyncedValue
+          ? target
+          : previousValue
+        return targets
+      }, {} as Record<string, number>)
+      return { ...prev, vuserTargets: nextTargets }
+    })
+    syncedTargetsRef.current = canonicalTargets
+    syncedTargetTestIdRef.current = displayTest.id
+  }, [
+    displayTest.goal_config?.target_average_tps,
+    displayTest.goal_targets,
+    displayTest.groups,
+    displayTest.id,
+    displayTest.live_metrics?.groups,
+    displayTest.scenario_mode,
+    displayTest.vuser_ramps,
+    liveMode,
+  ])
+
+  const runStatus = liveMode || hasLiveRoute || emptyMode ? displayTest.status : state.runStatus
   const groups = useMemo(
-    () => liveMode ? buildLiveGroups(displayTest, state.vuserTargets) : hasLiveRoute ? [] : buildGroupsWithTargets(state.vuserTargets),
-    [displayTest, hasLiveRoute, liveMode, state.vuserTargets],
+    () => liveMode ? buildLiveGroups(displayTest, state.vuserTargets) : hasLiveRoute || emptyMode ? [] : buildGroupsWithTargets(state.vuserTargets),
+    [displayTest, emptyMode, hasLiveRoute, liveMode, state.vuserTargets],
   )
   const graphWallGroups = useMemo(
     () => groups.filter(group => graphWallGroupVisibility[group.key] !== false),
     [graphWallGroupVisibility, groups],
   )
   const errorPatterns = useMemo(
-    () => liveMode ? buildLiveErrorPatterns(displayTest.live_metrics) : hasLiveRoute ? [] : ERROR_PATTERNS,
-    [displayTest.live_metrics, hasLiveRoute, liveMode],
+    () => liveMode ? buildLiveErrorPatterns(displayTest.live_metrics) : hasLiveRoute || emptyMode ? [] : ERROR_PATTERNS,
+    [displayTest.live_metrics, emptyMode, hasLiveRoute, liveMode],
   )
   const selectedError = errorPatterns.find(error => error.id === state.selectedErrorId) || errorPatterns[0]
   const selectedErrorEvidence = useMemo(() => {
@@ -901,10 +1047,10 @@ export default function CommandCenterPrototype({
   }, [activeTableTab, api, liveMode, selectedError?.signature, testId])
 
   const chartFallbackHistory = useMemo(() => {
-    if (!liveMode) return hasLiveRoute ? [] : HISTORY
+    if (!liveMode) return hasLiveRoute || emptyMode ? [] : HISTORY
     if (history.length > 0) return history
     return displayTest.live_metrics ? [mapExecutionMetricToHistoryPoint(displayTest.live_metrics)] : []
-  }, [displayTest.live_metrics, hasLiveRoute, history, liveMode])
+  }, [displayTest.live_metrics, emptyMode, hasLiveRoute, history, liveMode])
   const {
     filteredData: chartData,
     timeRange,
@@ -923,10 +1069,12 @@ export default function CommandCenterPrototype({
   })
   const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
   const totalTarget = groups.reduce((sum, group) => sum + group.target, 0)
+  const targetMode = groups[0]?.targetMode ?? 'vusers'
   const totalDurationSeconds = parseDurationToSeconds(displayTest.duration)
-  const remainingSeconds = liveMode ? computeRemainingSeconds(displayTest, runStatus) : runStatus === 'STOPPING' || runStatus === 'ABORTED' ? 0 : 37 * 60 + 18
+  const remainingSeconds = liveMode ? computeRemainingSeconds(displayTest, runStatus) : emptyMode || runStatus === 'STOPPING' || runStatus === 'ABORTED' ? 0 : 37 * 60 + 18
   const feedback = loadError
     || (hasLiveRoute && !liveTest ? 'Loading live run data for the command center...' : '')
+    || (emptyMode ? 'No active run is selected for the command center.' : '')
     || (liveMode && state.feedback === DEFAULT_PROTOTYPE_FEEDBACK ? DEFAULT_LIVE_FEEDBACK : state.feedback)
 
   const setRunStatus = (runStatus: TestStatus, feedback: string) => {
@@ -988,18 +1136,41 @@ export default function CommandCenterPrototype({
   }
 
   const changeTarget = (groupName: string, value: number) => {
-    const target = clampTarget(value)
+    const targetMode = isGoalOrientedRun(displayTest) ? 'tps' : 'vusers'
+    const target = targetMode === 'tps' ? clampTpsTarget(value) : clampTarget(value)
     setState(prev => ({
       ...prev,
       vuserTargets: { ...prev.vuserTargets, [groupName]: target },
-      feedback: `${groupName} target staged at ${target.toLocaleString()} VUsers.`,
+      feedback: `${groupName} target staged at ${formatTargetValue(target, targetMode)}.`,
     }))
   }
 
   const applyTarget = async (groupName: string, value: number) => {
-    const target = clampTarget(value)
+    const targetMode = isGoalOrientedRun(displayTest) ? 'tps' : 'vusers'
+    const target = targetMode === 'tps' ? clampTpsTarget(value) : clampTarget(value)
+    if (targetMode === 'tps' && target <= 0) {
+      setState(prev => ({ ...prev, feedback: `${groupName} target TPS must be greater than zero.` }))
+      return
+    }
     if (liveMode && testId) {
       try {
+        if (targetMode === 'tps') {
+          const update = await api.updateGoalTarget(testId, groupName, target)
+          setLiveTest(prev => prev ? {
+            ...prev,
+            goal_targets: update.goal_targets,
+            goal_config: {
+              ...(prev.goal_config || {}),
+              target_average_tps: update.target_average_tps,
+            },
+          } : prev)
+          setState(prev => ({
+            ...prev,
+            vuserTargets: { ...prev.vuserTargets, [groupName]: target },
+            feedback: `${groupName} TPS target applied at ${formatNumber(target, 1)}. Aggregate goal is ${formatNumber(update.target_average_tps, 1)} TPS.`,
+          }))
+          return
+        }
         await api.scaleVUsers(testId, groupName, target, { action: 'run' })
         setState(prev => ({
           ...prev,
@@ -1007,14 +1178,14 @@ export default function CommandCenterPrototype({
           feedback: `${groupName} VUser target applied at ${target.toLocaleString()}.`,
         }))
       } catch (error: unknown) {
-        setState(prev => ({ ...prev, feedback: getErrorMessage(error, 'Unable to scale VUsers') }))
+        setState(prev => ({ ...prev, feedback: getErrorMessage(error, targetMode === 'tps' ? 'Unable to update goal target' : 'Unable to scale VUsers') }))
       }
       return
     }
     setState(prev => ({
       ...prev,
       vuserTargets: { ...prev.vuserTargets, [groupName]: target },
-      feedback: `${groupName} target staged at ${target.toLocaleString()} VUsers.`,
+      feedback: `${groupName} target staged at ${formatTargetValue(target, targetMode)}.`,
     }))
   }
 
@@ -1051,12 +1222,17 @@ export default function CommandCenterPrototype({
 
   return (
     <div className="page command-center-page">
+      {emptyMode ? (
+        <CommandCenterEmptyState />
+      ) : (
+        <>
       <RunControlShelf
         test={displayTest}
         status={runStatus}
         remainingSeconds={remainingSeconds}
         totalCurrent={totalCurrent}
         totalTarget={totalTarget}
+        targetMode={targetMode}
         errorPct={displayTest.live_metrics?.error_pct ?? MOCK_LIVE_METRICS.error_pct}
         feedback={feedback}
         onPauseResume={() => { void togglePause() }}
@@ -1121,7 +1297,20 @@ export default function CommandCenterPrototype({
           onErrorSelect={selectError}
         />
       )}
+        </>
+      )}
     </div>
+  )
+}
+
+function CommandCenterEmptyState() {
+  return (
+    <section className="command-empty-state" aria-label="No active command center run">
+      <div>
+        <h2>No active run selected</h2>
+        <p>Start a test or open the Command Center from an active run to see live controls and metrics.</p>
+      </div>
+    </section>
   )
 }
 
@@ -1131,6 +1320,7 @@ interface RunControlShelfProps {
   remainingSeconds: number
   totalCurrent: number
   totalTarget: number
+  targetMode: CommandGroup['targetMode']
   errorPct: number
   feedback: string
   onPauseResume: () => void
@@ -1145,6 +1335,7 @@ function RunControlShelf({
   remainingSeconds,
   totalCurrent,
   totalTarget,
+  targetMode,
   errorPct,
   feedback,
   onPauseResume,
@@ -1167,7 +1358,11 @@ function RunControlShelf({
       <div className="command-run-stats" aria-label="Run summary">
         <MetricPill label="Remaining" value={formatRemaining(remainingSeconds)} tone={remainingSeconds <= 60 ? 'warning' : 'default'} />
         <MetricPill label="Current Load" value={`${formatNumber(totalCurrent)} VU`} tone="info" />
-        <MetricPill label="Target Load" value={`${formatNumber(totalTarget)} VU`} tone="accent" />
+        <MetricPill
+          label={targetMode === 'tps' ? 'Target TPS' : 'Target Load'}
+          value={targetMode === 'tps' ? formatNumber(totalTarget, 1) : `${formatNumber(totalTarget)} VU`}
+          tone="accent"
+        />
         <MetricPill label="Error Rate" value={formatPercent(errorPct)} tone="danger" />
       </div>
 
@@ -1969,7 +2164,10 @@ function buildScenarioRunRows(groups: CommandGroup[], metrics?: LiveMetrics): Sc
     const groupMetrics = metrics?.groups?.[group.name]
     const transactions = groupMetrics?.transactions ?? group.transactions
     const errors = groupMetrics?.errors ?? group.errors
-    const targetTps = groupMetrics?.target_tps ?? group.tps * 1.12
+    const tps = groupMetrics?.tps ?? group.tps
+    const targetTps = group.targetMode === 'tps'
+      ? group.targetTps ?? group.target
+      : groupMetrics?.target_tps ?? group.targetTps ?? group.tps * 1.12
     return {
       id: `group-${group.key}`,
       type: 'Group',
@@ -1977,10 +2175,10 @@ function buildScenarioRunRows(groups: CommandGroup[], metrics?: LiveMetrics): Sc
       group: group.name,
       protocol: group.protocol,
       currentVusers: groupMetrics?.vusers ?? group.current,
-      targetVusers: group.target,
-      tps: groupMetrics?.tps ?? group.tps,
+      targetVusers: group.targetVusers,
+      tps,
       targetTps,
-      throughputGap: groupMetrics?.throughput_gap_pct ?? calculateThroughputGap(groupMetrics?.tps ?? group.tps, targetTps),
+      throughputGap: group.targetMode === 'tps' ? calculateThroughputGap(tps, targetTps) : groupMetrics?.throughput_gap_pct ?? calculateThroughputGap(tps, targetTps),
       transactions,
       errors,
       errorPct: errorPctFromCounts(errors, transactions),
@@ -2318,13 +2516,15 @@ function HeroMetricStrip({ groups, metrics }: { groups: CommandGroup[]; metrics?
   const groupedErrorPct = totalTransactions > 0 ? groups.reduce((sum, group) => sum + group.errors, 0) / totalTransactions * 100 : 0
   const errorPct = metrics?.error_pct ?? groupedErrorPct
   const activeVUsers = metrics?.active_vusers ?? groups.reduce((sum, group) => sum + group.current, 0)
+  const targetMode = groups[0]?.targetMode ?? 'vusers'
+  const targetValue = groups.reduce((sum, group) => sum + group.target, 0)
   return (
     <div className="command-hero-strip" aria-label="Top line live metrics">
       <HeroMetric label="TPS" value={formatNumber(totalTps, 1)} tone="accent" />
       <HeroMetric label="ART" value={`${formatNumber(avgArt)} ms`} tone="default" />
       <HeroMetric label="Error Rate" value={formatPercent(errorPct)} tone="danger" />
       <HeroMetric label="Active VUsers" value={formatNumber(activeVUsers)} tone="info" />
-      <HeroMetric label="Target VUsers" value={formatNumber(groups.reduce((sum, group) => sum + group.target, 0))} tone="success" />
+      <HeroMetric label={targetMode === 'tps' ? 'Target TPS' : 'Target VUsers'} value={formatNumber(targetValue, targetMode === 'tps' ? 1 : 0)} tone="success" />
     </div>
   )
 }
@@ -2388,7 +2588,7 @@ function LoadModelPanel({
   totalDurationSeconds: number
   remainingSeconds: number
 }) {
-  const totalTarget = groups.reduce((sum, group) => sum + group.target, 0)
+  const totalTarget = groups.reduce((sum, group) => sum + (group.targetMode === 'vusers' ? group.target : group.suggestedVusers ?? group.targetVusers ?? group.current), 0)
   const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
   const progressPct = loadProgressPercent(totalDurationSeconds, remainingSeconds)
   const profile = useMemo(() => buildLoadModelProfile(totalTarget), [totalTarget])
@@ -2480,59 +2680,78 @@ function GroupLoadTable({
   onTargetChange: (groupName: string, value: number) => void
   onApplyTarget: (groupName: string, value: number) => void
 }) {
+  const targetMode = groups[0]?.targetMode ?? 'vusers'
+  const targetHeader = targetMode === 'tps' ? 'Target TPS' : 'Target'
   return (
     <section className={`command-panel command-group-panel ${compact ? 'compact' : ''} ${paired ? 'paired' : ''}`} aria-label="Group load and health">
       <div className="command-panel-header">
         <div>
           <h3>Group Load</h3>
-          <p>Current load, staged target, TPS, ART, and error rate by group.</p>
+          <p>{targetMode === 'tps' ? 'Goal targets, current VUsers, suggested load, TPS, ART, and error rate by group.' : 'Current load, staged target, TPS, ART, and error rate by group.'}</p>
         </div>
       </div>
       <div className="command-group-table" role="table">
         <div className="command-group-row header" role="row">
           <span role="columnheader">Group</span>
-          <span role="columnheader">Current</span>
-          <span role="columnheader">Target</span>
+          <span role="columnheader">Current VU</span>
+          <span role="columnheader">{targetHeader}</span>
           <span role="columnheader">TPS</span>
           <span role="columnheader">ART</span>
           <span role="columnheader">Errors</span>
         </div>
-        {groups.map(group => (
-          <div key={group.key} className="command-group-row" role="row">
-            <span role="cell" className="command-group-name">
-              <i style={{ background: group.color }} />
-              <span>
-                <strong>{group.name}</strong>
-                <small>{group.protocol}</small>
+        {groups.map(group => {
+          const isGoalTarget = group.targetMode === 'tps'
+          const sliderMax = isGoalTarget ? Math.max(100, Math.ceil(group.target * 2)) : 1800
+          const guardrail = isGoalTarget && (group.minVusers !== undefined || group.maxVusers !== undefined)
+            ? `guardrail ${group.minVusers ?? 0}-${group.maxVusers ?? 'unbounded'} VU`
+            : ''
+          const suggested = isGoalTarget && group.suggestedVusers !== undefined ? `suggested ${formatNumber(group.suggestedVusers)} VU` : ''
+          const goalContext = [group.protocol, suggested, guardrail].filter(Boolean).join(' / ')
+          const gapText = isGoalTarget && group.throughputGapPct !== undefined ? `gap ${formatPercent(group.throughputGapPct)}` : ''
+          return (
+            <div key={group.key} className={`command-group-row ${isGoalTarget ? 'goal-target' : ''}`} role="row">
+              <span role="cell" className="command-group-name">
+                <i style={{ background: group.color }} />
+                <span>
+                  <strong>{group.name}</strong>
+                  <small>{goalContext || group.protocol}</small>
+                </span>
               </span>
-            </span>
-            <span role="cell">{formatNumber(group.current)}</span>
-            <span role="cell" className="command-target-cell">
-              <input
-                type="number"
-                min={0}
-                max={2400}
-                aria-label={`${group.name} target VUsers`}
-                value={group.target}
-                onChange={(event) => onTargetChange(group.name, Number(event.target.value))}
-              />
-              <input
-                type="range"
-                min={0}
-                max={1800}
-                aria-label={`${group.name} target slider`}
-                value={group.target}
-                onChange={(event) => onTargetChange(group.name, Number(event.target.value))}
-              />
-              <button type="button" className="btn btn-sm btn-accent" onClick={() => onApplyTarget(group.name, group.target)}>
-                Apply
-              </button>
-            </span>
-            <span role="cell">{formatNumber(group.tps, 1)}</span>
-            <span role="cell">{formatNumber(group.art)} ms</span>
-            <span role="cell" className={metricTone(group.errorPct, 0.75, 1.5)}>{formatPercent(group.errorPct)}</span>
-          </div>
-        ))}
+              <span role="cell">{formatNumber(group.current)}</span>
+              <span role="cell" className="command-target-cell">
+                <input
+                  type="number"
+                  min={isGoalTarget ? 0.1 : 0}
+                  max={isGoalTarget ? 100000 : 2400}
+                  step={isGoalTarget ? 0.1 : 1}
+                  aria-label={`${group.name} target ${isGoalTarget ? 'TPS' : 'VUsers'}`}
+                  value={group.target}
+                  onChange={(event) => onTargetChange(group.name, Number(event.target.value))}
+                />
+                <input
+                  type="range"
+                  min={isGoalTarget ? 0.1 : 0}
+                  max={sliderMax}
+                  step={isGoalTarget ? 0.1 : 1}
+                  aria-label={`${group.name} target ${isGoalTarget ? 'TPS' : 'VUser'} slider`}
+                  value={group.target}
+                  onChange={(event) => onTargetChange(group.name, Number(event.target.value))}
+                />
+                <button type="button" className="btn btn-sm btn-accent" disabled={isGoalTarget && group.target <= 0} onClick={() => onApplyTarget(group.name, group.target)}>
+                  Apply
+                </button>
+              </span>
+              <span role="cell" className={group.throughputTargetMissed ? 'warning' : undefined}>
+                <span className="command-tps-stack">
+                  <strong>{formatNumber(group.tps, 1)}</strong>
+                  {isGoalTarget && <small>target {formatNumber(group.targetTps ?? group.target, 1)} TPS{gapText ? ` / ${gapText}` : ''}</small>}
+                </span>
+              </span>
+              <span role="cell">{formatNumber(group.art)} ms</span>
+              <span role="cell" className={metricTone(group.errorPct, 0.75, 1.5)}>{formatPercent(group.errorPct)}</span>
+            </div>
+          )
+        })}
       </div>
     </section>
   )

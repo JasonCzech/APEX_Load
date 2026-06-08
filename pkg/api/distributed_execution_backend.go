@@ -842,6 +842,15 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 
 	aggregated := aggregateDistributedMetricsBatches(test.ID, batches)
 	live := buildLiveMetricsFromDistributedBatch(test, aggregated)
+	applyRuntimeGoalTargetsToLiveMetrics(test, live)
+	if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
+		groupVUsers := liveGroupVUsers(test, live)
+		currentTotalVUsers := totalGroupVUsers(groupVUsers)
+		update := evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
+		applyGoalControllerUpdate(test, live, groupVUsers, update, func(groupName string, target int) error {
+			return b.ScaleVUsers(tr, test, groupName, target)
+		})
+	}
 	live.GeneratorResources = b.buildGeneratorResourceSnapshots(test, batches)
 	return live, finalStatus, finalError
 }

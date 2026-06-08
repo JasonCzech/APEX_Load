@@ -56,6 +56,88 @@ func newRunningControlTestServer(t *testing.T) (*Server, *ManagedTest) {
 	return server, testRun
 }
 
+func newRunningGoalControlTestServer(t *testing.T) (*Server, *ManagedTest) {
+	t.Helper()
+
+	protocolName := "goal-control-api-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
+	protocol.Register(protocolName, func() protocol.Protocol {
+		return &archiveStubProtocol{}
+	})
+
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.StoreScript(&dsl.Script{
+		ID:       protocolName + "-script",
+		Name:     "Goal Controller Script",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	targetTPS := 25.0
+	minVUsers := 1
+	maxVUsers := 25
+	testRun, err := server.runner.CreateTest(CreateTestRequest{
+		Name:         "Goal Controller Test",
+		Duration:     "10s",
+		ScenarioMode: "goal_oriented",
+		GoalConfig:   &GoalConfig{TargetAverageTPS: &targetTPS, MinVUsers: &minVUsers, MaxVUsers: &maxVUsers},
+		Groups: []CreateGroupEntry{{
+			Name:     "buyers",
+			ScriptID: protocolName + "-script",
+			VUsers:   2,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	if err := server.runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+	waitForTestStatus(t, server.runner, testRun.ID, "RUNNING")
+
+	t.Cleanup(func() {
+		cleanupControlTestRun(t, server, testRun.ID)
+	})
+
+	return server, testRun
+}
+
+func newQueuedGoalControlTestServer(t *testing.T) (*Server, *ManagedTest) {
+	t.Helper()
+
+	protocolName := "queued-goal-control-api-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
+	protocol.Register(protocolName, func() protocol.Protocol {
+		return &archiveStubProtocol{}
+	})
+
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.StoreScript(&dsl.Script{
+		ID:       protocolName + "-script",
+		Name:     "Queued Goal Controller Script",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	targetTPS := 25.0
+	testRun, err := server.runner.CreateTest(CreateTestRequest{
+		Name:         "Queued Goal Controller Test",
+		Duration:     "10s",
+		ScenarioMode: "goal_oriented",
+		GoalConfig:   &GoalConfig{TargetAverageTPS: &targetTPS},
+		Groups: []CreateGroupEntry{{
+			Name:     "buyers",
+			ScriptID: protocolName + "-script",
+			VUsers:   2,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	return server, testRun
+}
+
 func newRunningControlAuditServer(t *testing.T) (*Server, *ManagedTest, *storage.SQLiteStore) {
 	t.Helper()
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
@@ -319,6 +401,110 @@ func TestHandleScaleVUsersRejectsUnknownGroupAction(t *testing.T) {
 	if !strings.Contains(resp.Body.String(), "action must be one of run, pause, or stop") {
 		t.Fatalf("scale body = %q, want action validation error", resp.Body.String())
 	}
+}
+
+func TestHandleUpdateGoalTargetAcceptsGoalRun(t *testing.T) {
+	server, testRun := newRunningGoalControlTestServer(t)
+	lastScaleAt := time.Date(2026, time.June, 8, 12, 0, 0, 0, time.UTC)
+	server.runner.mu.Lock()
+	if server.runner.tests[testRun.ID].goalControl == nil {
+		server.runner.tests[testRun.ID].goalControl = &goalControllerState{}
+	}
+	server.runner.tests[testRun.ID].goalControl.lastScaleAt = &lastScaleAt
+	server.runner.mu.Unlock()
+
+	body, _ := json.Marshal(map[string]any{
+		"group":      "buyers",
+		"target_tps": 42.5,
+	})
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testRun.ID+"/goal-targets", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload GoalTargetUpdate
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if payload.Status != "adjusted" || payload.Group != "buyers" || payload.TargetTPS != 42.5 || payload.TargetAverageTPS != 42.5 {
+		t.Fatalf("goal target payload = %#v, want adjusted buyers target 42.5", payload)
+	}
+	if payload.GoalTargets["buyers"].TargetTPS != 42.5 {
+		t.Fatalf("goal targets = %#v, want buyers 42.5", payload.GoalTargets)
+	}
+
+	updated, ok := server.runner.GetTest(testRun.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to exist", testRun.ID)
+	}
+	if updated.GoalConfig == nil || updated.GoalConfig.TargetAverageTPS == nil || *updated.GoalConfig.TargetAverageTPS != 42.5 {
+		t.Fatalf("updated goal config = %#v, want target_average_tps 42.5", updated.GoalConfig)
+	}
+	if updated.GoalTargets["buyers"].TargetTPS != 42.5 {
+		t.Fatalf("updated goal targets = %#v, want buyers 42.5", updated.GoalTargets)
+	}
+	server.runner.mu.Lock()
+	if server.runner.tests[testRun.ID].goalControl.lastScaleAt != nil {
+		t.Fatalf("expected goal scale throttle to reset, got %#v", server.runner.tests[testRun.ID].goalControl.lastScaleAt)
+	}
+	server.runner.mu.Unlock()
+}
+
+func TestHandleUpdateGoalTargetRejectsInvalidRequests(t *testing.T) {
+	t.Run("non-goal run", func(t *testing.T) {
+		server, testRun := newRunningControlTestServer(t)
+		body, _ := json.Marshal(map[string]any{"group": "buyers", "target_tps": 42})
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testRun.ID+"/goal-targets", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "goal_oriented") {
+			t.Fatalf("status=%d body=%s, want goal_oriented validation error", resp.Code, resp.Body.String())
+		}
+	})
+
+	t.Run("inactive goal run", func(t *testing.T) {
+		server, testRun := newQueuedGoalControlTestServer(t)
+		body, _ := json.Marshal(map[string]any{"group": "buyers", "target_tps": 42})
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testRun.ID+"/goal-targets", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "must be RUNNING or PAUSED") {
+			t.Fatalf("status=%d body=%s, want active-run validation error", resp.Code, resp.Body.String())
+		}
+	})
+
+	t.Run("unknown group", func(t *testing.T) {
+		server, testRun := newRunningGoalControlTestServer(t)
+		body, _ := json.Marshal(map[string]any{"group": "missing", "target_tps": 42})
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testRun.ID+"/goal-targets", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "group not found") {
+			t.Fatalf("status=%d body=%s, want group validation error", resp.Code, resp.Body.String())
+		}
+	})
+
+	t.Run("invalid target", func(t *testing.T) {
+		server, testRun := newRunningGoalControlTestServer(t)
+		body, _ := json.Marshal(map[string]any{"group": "buyers", "target_tps": 0})
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testRun.ID+"/goal-targets", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "target_tps must be greater than zero") {
+			t.Fatalf("status=%d body=%s, want target validation error", resp.Code, resp.Body.String())
+		}
+	})
 }
 
 func TestHandlePinAndUnpinComparisonBaseline(t *testing.T) {
