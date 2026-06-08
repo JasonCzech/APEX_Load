@@ -553,7 +553,7 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('iPhone 14 Pro')
   })
 
-  it('surfaces C4 SLA governance, external imports, and root-cause actions', async () => {
+  it('opens results directly on filters, release results, and row actions', async () => {
     await act(async () => {
       root.render(
         <ResultsPage
@@ -565,14 +565,14 @@ describe('ResultsPage', () => {
       )
     })
 
-    expect(container.textContent).toContain('Release SLA Gate')
-    expect(container.textContent).toContain('Failed')
-    expect(container.textContent).toContain('Project administrators')
-    expect(container.textContent).toContain('Known CDN maintenance window')
-    expect(container.textContent).toContain('External Results')
-    expect(container.textContent).toContain('k6')
-    expect(container.textContent).toContain('checkout-smoke.json')
-    expect(container.textContent).toContain('1,200 tx / 0.25% errors')
+    expect(container.querySelector('.results-overview')).toBeNull()
+    expect(container.querySelector('.results-governance-grid')).toBeNull()
+    expect(container.textContent).not.toContain('Release SLA Gate')
+    expect(container.textContent).not.toContain('External Results')
+    expect(apiMock.getReleaseSLAGovernance).not.toHaveBeenCalled()
+    expect(apiMock.listExternalResultImports).not.toHaveBeenCalled()
+    expect(container.querySelector<HTMLInputElement>('.results-filter-bar input')?.placeholder).toBe('Search scenario, group, status, or VUsers')
+    expect(container.textContent).toContain('Release Results')
     expect(container.textContent).toContain('Library Sources')
 
     const pageText = container.textContent || ''

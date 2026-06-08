@@ -6,6 +6,7 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceLine,
   ReferenceArea,
   ResponsiveContainer,
   Tooltip,
@@ -99,9 +100,25 @@ interface Props {
   loadImpactError?: string
   latestLatency?: NetworkLatency
   latestMetrics?: LiveMetrics
+  surface?: 'execution' | 'command-center'
+  storageScope?: string
+  initialPresetId?: string
+  defaultDensity?: ChartDensityMode
+  activeCursor?: GraphCursorState | null
+  onActiveCursorChange?: (cursor: GraphCursorState | null) => void
 }
 
 type ChartDropPosition = 'before' | 'after'
+
+export interface GraphCursorState {
+  label?: string | number
+  index?: number
+}
+
+interface RechartsMouseEvent {
+  activeLabel?: string | number
+  activeTooltipIndex?: number
+}
 
 const AXIS_LABEL_STYLE = {
   fill: 'var(--text-muted)',
@@ -138,26 +155,28 @@ function rightAxisLabel(value: string) {
   }
 }
 
-function readStoredTimeAxisMode(): ChartTimeAxisMode {
-  return readStoredString('apexload.execution.chartTimeAxisMode') === 'relative'
+function readStoredTimeAxisMode(storageKey: string): ChartTimeAxisMode {
+  return readStoredString(storageKey) === 'relative'
     ? 'relative'
     : 'clock'
 }
 
-function readStoredChartDensity(): ChartDensityMode {
-  return readStoredString('apexload.execution.chartDensity') === 'six_up'
-    ? 'six_up'
-    : 'standard'
+function readStoredChartDensity(storageKey: string, fallback: ChartDensityMode = 'standard'): ChartDensityMode {
+  const stored = readStoredString(storageKey)
+  if (stored === 'six_up' || stored === 'command_center' || stored === 'standard') {
+    return stored
+  }
+  return fallback
 }
 
-function readStoredResponseTimeNetworkMode(): ResponseTimeNetworkMode {
-  return readStoredString('apexload.execution.responseTimeNetworkMode') === 'application'
+function readStoredResponseTimeNetworkMode(storageKey: string): ResponseTimeNetworkMode {
+  return readStoredString(storageKey) === 'application'
     ? 'application'
     : 'end_to_end'
 }
 
-function readStoredRouteLatencyMode(): RouteLatencyMode {
-  const stored = readStoredString('apexload.execution.routeLatencyMode')
+function readStoredRouteLatencyMode(storageKey: string): RouteLatencyMode {
+  const stored = readStoredString(storageKey)
   return stored === 'phases' || stored === 'stability' ? stored : 'total'
 }
 
@@ -324,18 +343,40 @@ export default function TestExecutionCharts({
   loadImpactError = '',
   latestLatency,
   latestMetrics,
+  surface = 'execution',
+  storageScope = 'apexload.execution',
+  initialPresetId,
+  defaultDensity,
+  activeCursor,
+  onActiveCursorChange,
 }: Props) {
-  const [chartOrder, setChartOrder] = useState<string[]>(() => readStoredStringArray('apexload.execution.chartOrder'))
-  const [hiddenChartIds, setHiddenChartIds] = useState<string[]>(() => readStoredStringArray('apexload.execution.hiddenCharts'))
-  const [visibleLoadImpactChartIds, setVisibleLoadImpactChartIds] = useState<string[]>(() => readStoredStringArray(LOAD_IMPACT_VISIBLE_CHARTS_STORAGE_KEY))
-  const [vuserOverlayChartIds, setVuserOverlayChartIds] = useState<string[]>(() => readStoredStringArray('apexload.execution.vuserOverlayCharts'))
-  const [artOverlayChartIds, setArtOverlayChartIds] = useState<string[]>(() => readStoredStringArray('apexload.execution.artOverlayCharts'))
-  const [tpsOverlayChartIds, setTpsOverlayChartIds] = useState<string[]>(() => readStoredStringArray('apexload.execution.tpsOverlayCharts'))
-  const [chartMetricFilters, setChartMetricFilters] = useState<Record<string, string[]>>(() => readStoredStringArrayRecord('apexload.execution.chartMetricFilters'))
-  const [timeAxisMode, setTimeAxisMode] = useState<ChartTimeAxisMode>(() => readStoredTimeAxisMode())
-  const [chartDensity, setChartDensity] = useState<ChartDensityMode>(() => readStoredChartDensity())
-  const [responseTimeNetworkMode, setResponseTimeNetworkMode] = useState<ResponseTimeNetworkMode>(() => readStoredResponseTimeNetworkMode())
-  const [routeLatencyMode, setRouteLatencyMode] = useState<RouteLatencyMode>(() => readStoredRouteLatencyMode())
+  const densityFallback = defaultDensity ?? (surface === 'command-center' ? 'command_center' : 'standard')
+  const storageKeyFor = (name: string) => `${storageScope}.${name}`
+  const chartOrderStorageKey = storageKeyFor('chartOrder')
+  const hiddenChartsStorageKey = storageKeyFor('hiddenCharts')
+  const visibleLoadImpactStorageKey = storageScope === 'apexload.execution' ? LOAD_IMPACT_VISIBLE_CHARTS_STORAGE_KEY : storageKeyFor('visibleLoadImpactCharts')
+  const vuserOverlayStorageKey = storageKeyFor('vuserOverlayCharts')
+  const artOverlayStorageKey = storageKeyFor('artOverlayCharts')
+  const tpsOverlayStorageKey = storageKeyFor('tpsOverlayCharts')
+  const chartMetricFiltersStorageKey = storageKeyFor('chartMetricFilters')
+  const timeAxisModeStorageKey = storageKeyFor('chartTimeAxisMode')
+  const chartDensityStorageKey = storageKeyFor('chartDensity')
+  const responseTimeNetworkModeStorageKey = storageKeyFor('responseTimeNetworkMode')
+  const routeLatencyModeStorageKey = storageKeyFor('routeLatencyMode')
+  const [hasStoredChartState] = useState(() => Boolean(readStoredString(chartOrderStorageKey) || readStoredString(hiddenChartsStorageKey)))
+  const [initialPresetApplied, setInitialPresetApplied] = useState(false)
+  const [localActiveCursor, setLocalActiveCursor] = useState<GraphCursorState | null>(null)
+  const [chartOrder, setChartOrder] = useState<string[]>(() => readStoredStringArray(chartOrderStorageKey))
+  const [hiddenChartIds, setHiddenChartIds] = useState<string[]>(() => readStoredStringArray(hiddenChartsStorageKey))
+  const [visibleLoadImpactChartIds, setVisibleLoadImpactChartIds] = useState<string[]>(() => readStoredStringArray(visibleLoadImpactStorageKey))
+  const [vuserOverlayChartIds, setVuserOverlayChartIds] = useState<string[]>(() => readStoredStringArray(vuserOverlayStorageKey))
+  const [artOverlayChartIds, setArtOverlayChartIds] = useState<string[]>(() => readStoredStringArray(artOverlayStorageKey))
+  const [tpsOverlayChartIds, setTpsOverlayChartIds] = useState<string[]>(() => readStoredStringArray(tpsOverlayStorageKey))
+  const [chartMetricFilters, setChartMetricFilters] = useState<Record<string, string[]>>(() => readStoredStringArrayRecord(chartMetricFiltersStorageKey))
+  const [timeAxisMode, setTimeAxisMode] = useState<ChartTimeAxisMode>(() => readStoredTimeAxisMode(timeAxisModeStorageKey))
+  const [chartDensity, setChartDensity] = useState<ChartDensityMode>(() => readStoredChartDensity(chartDensityStorageKey, densityFallback))
+  const [responseTimeNetworkMode, setResponseTimeNetworkMode] = useState<ResponseTimeNetworkMode>(() => readStoredResponseTimeNetworkMode(responseTimeNetworkModeStorageKey))
+  const [routeLatencyMode, setRouteLatencyMode] = useState<RouteLatencyMode>(() => readStoredRouteLatencyMode(routeLatencyModeStorageKey))
   const [selectedRouteLatencyKey, setSelectedRouteLatencyKey] = useState('')
   const [chartMenu, setChartMenu] = useState<{ chartId: string; x: number; y: number } | null>(null)
   const [chartDrawerOpen, setChartDrawerOpen] = useState(false)
@@ -344,6 +385,7 @@ export default function TestExecutionCharts({
   const [dragOverChartId, setDragOverChartId] = useState<string | null>(null)
   const chartCardRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const chartMenuRef = useRef<HTMLDivElement | null>(null)
+  const commandCenterSurface = surface === 'command-center'
   const loadImpactSourceData = loadImpactData.length > 0 ? loadImpactData : filteredData
   const loadImpactModel = useMemo(() => buildLoadImpactModel(loadImpactSourceData), [loadImpactSourceData])
   const loadImpactRows = loadImpactModel.rows
@@ -368,48 +410,56 @@ export default function TestExecutionCharts({
   }, [allChartConfigs, allChartIdSignature, allChartIds, visibleLoadImpactChartIdSignature, visibleLoadImpactChartIds])
 
   useEffect(() => {
-    writeStoredJSON('apexload.execution.chartOrder', chartOrder)
-  }, [chartOrder])
+    if (!initialPresetId || initialPresetApplied || hasStoredChartState || allChartIds.length === 0) return
+    const next = chartStateForMonitorPreset(initialPresetId, allChartIds)
+    setChartOrder(next.chartOrder)
+    setHiddenChartIds(next.hiddenChartIds)
+    setInitialPresetApplied(true)
+  }, [allChartIds, hasStoredChartState, initialPresetApplied, initialPresetId])
 
   useEffect(() => {
-    writeStoredJSON('apexload.execution.hiddenCharts', hiddenChartIds)
-  }, [hiddenChartIds])
+    writeStoredJSON(chartOrderStorageKey, chartOrder)
+  }, [chartOrder, chartOrderStorageKey])
 
   useEffect(() => {
-    writeStoredJSON(LOAD_IMPACT_VISIBLE_CHARTS_STORAGE_KEY, visibleLoadImpactChartIds)
-  }, [visibleLoadImpactChartIds])
+    writeStoredJSON(hiddenChartsStorageKey, hiddenChartIds)
+  }, [hiddenChartIds, hiddenChartsStorageKey])
 
   useEffect(() => {
-    writeStoredJSON('apexload.execution.vuserOverlayCharts', vuserOverlayChartIds)
-  }, [vuserOverlayChartIds])
+    writeStoredJSON(visibleLoadImpactStorageKey, visibleLoadImpactChartIds)
+  }, [visibleLoadImpactChartIds, visibleLoadImpactStorageKey])
 
   useEffect(() => {
-    writeStoredJSON('apexload.execution.artOverlayCharts', artOverlayChartIds)
-  }, [artOverlayChartIds])
+    writeStoredJSON(vuserOverlayStorageKey, vuserOverlayChartIds)
+  }, [vuserOverlayChartIds, vuserOverlayStorageKey])
 
   useEffect(() => {
-    writeStoredJSON('apexload.execution.tpsOverlayCharts', tpsOverlayChartIds)
-  }, [tpsOverlayChartIds])
+    writeStoredJSON(artOverlayStorageKey, artOverlayChartIds)
+  }, [artOverlayChartIds, artOverlayStorageKey])
 
   useEffect(() => {
-    writeStoredJSON('apexload.execution.chartMetricFilters', chartMetricFilters)
-  }, [chartMetricFilters])
+    writeStoredJSON(tpsOverlayStorageKey, tpsOverlayChartIds)
+  }, [tpsOverlayChartIds, tpsOverlayStorageKey])
 
   useEffect(() => {
-    writeStoredString('apexload.execution.chartTimeAxisMode', timeAxisMode)
-  }, [timeAxisMode])
+    writeStoredJSON(chartMetricFiltersStorageKey, chartMetricFilters)
+  }, [chartMetricFilters, chartMetricFiltersStorageKey])
 
   useEffect(() => {
-    writeStoredString('apexload.execution.chartDensity', chartDensity)
-  }, [chartDensity])
+    writeStoredString(timeAxisModeStorageKey, timeAxisMode)
+  }, [timeAxisMode, timeAxisModeStorageKey])
 
   useEffect(() => {
-    writeStoredString('apexload.execution.responseTimeNetworkMode', responseTimeNetworkMode)
-  }, [responseTimeNetworkMode])
+    writeStoredString(chartDensityStorageKey, chartDensity)
+  }, [chartDensity, chartDensityStorageKey])
 
   useEffect(() => {
-    writeStoredString('apexload.execution.routeLatencyMode', routeLatencyMode)
-  }, [routeLatencyMode])
+    writeStoredString(responseTimeNetworkModeStorageKey, responseTimeNetworkMode)
+  }, [responseTimeNetworkMode, responseTimeNetworkModeStorageKey])
+
+  useEffect(() => {
+    writeStoredString(routeLatencyModeStorageKey, routeLatencyMode)
+  }, [routeLatencyMode, routeLatencyModeStorageKey])
 
   useEffect(() => {
     if (!chartMenu) return
@@ -521,6 +571,41 @@ export default function TestExecutionCharts({
     }
     return chart.id === 'latency' ? responseTimeChartData : filteredData
   }
+  const sharedCursor = activeCursor !== undefined ? activeCursor : localActiveCursor
+  const updateSharedCursor = (cursor: GraphCursorState | null) => {
+    if (onActiveCursorChange) {
+      onActiveCursorChange(cursor)
+    } else {
+      setLocalActiveCursor(cursor)
+    }
+  }
+
+  const cursorXForChart = (chartData: MetricsHistoryPoint[]) => {
+    if (!sharedCursor || chartData.length === 0) return undefined
+    if (sharedCursor.label !== undefined && chartData.some(point => point.time === sharedCursor.label)) {
+      return sharedCursor.label
+    }
+    if (typeof sharedCursor.index === 'number' && Number.isFinite(sharedCursor.index)) {
+      const index = Math.max(0, Math.min(chartData.length - 1, Math.round(sharedCursor.index)))
+      return chartData[index]?.time
+    }
+    return undefined
+  }
+
+  const renderSharedCursor = (chartData: MetricsHistoryPoint[]) => {
+    if (surface !== 'command-center') return null
+    const x = cursorXForChart(chartData)
+    if (x === undefined) return null
+    return (
+      <ReferenceLine
+        x={x}
+        stroke="var(--accent)"
+        strokeOpacity={0.78}
+        strokeDasharray="4 3"
+        ifOverflow="extendDomain"
+      />
+    )
+  }
 
   const formatXAxisLabel = (value: string | number) => {
     if (timeAxisMode === 'clock') return String(value)
@@ -586,13 +671,23 @@ export default function TestExecutionCharts({
     )
   }
 
-  const handleChartMouseMove = (chartId: string, activeLabel?: string | number) => {
+  const handleChartMouseMove = (chartId: string, event?: RechartsMouseEvent) => {
     setHoveredChartId(current => current === chartId ? current : chartId)
+    const activeLabel = event?.activeLabel
+    if (surface === 'command-center') {
+      const nextCursor = activeLabel !== undefined || typeof event?.activeTooltipIndex === 'number'
+        ? { label: activeLabel, index: event?.activeTooltipIndex }
+        : null
+      updateSharedCursor(nextCursor)
+    }
     onChartMouseMove(activeLabel)
   }
 
   const handleChartMouseLeave = (chartId: string) => {
     setHoveredChartId(current => current === chartId ? null : current)
+    if (surface === 'command-center') {
+      updateSharedCursor(null)
+    }
   }
 
   const toggleChartVisibility = (chartId: string) => {
@@ -750,7 +845,7 @@ export default function TestExecutionCharts({
   const reorderChart = (sourceChartId: string, targetChartId: string, position: ChartDropPosition) => {
     if (sourceChartId === targetChartId) return
     setChartOrder(prev => {
-      const next = normalizedChartOrder(prev)
+      const next = normalizedChartOrder(prev, allChartIds)
       const sourceIndex = next.indexOf(sourceChartId)
       const targetIndex = next.indexOf(targetChartId)
       if (sourceIndex === -1 || targetIndex === -1) return prev
@@ -763,7 +858,7 @@ export default function TestExecutionCharts({
 
   const moveChartByOffset = (chartId: string, offset: number) => {
     setChartOrder(prev => {
-      const next = normalizedChartOrder(prev)
+      const next = normalizedChartOrder(prev, allChartIds)
       const sourceIndex = next.indexOf(chartId)
       if (sourceIndex === -1) return prev
       const targetIndex = Math.max(0, Math.min(next.length - 1, sourceIndex + offset))
@@ -776,7 +871,7 @@ export default function TestExecutionCharts({
 
   const moveChartToBoundary = (chartId: string, boundary: 'start' | 'end') => {
     setChartOrder(prev => {
-      const next = normalizedChartOrder(prev)
+      const next = normalizedChartOrder(prev, allChartIds)
       const sourceIndex = next.indexOf(chartId)
       if (sourceIndex === -1) return prev
       const targetIndex = boundary === 'start' ? 0 : next.length - 1
@@ -852,8 +947,15 @@ export default function TestExecutionCharts({
 
   const resetCharts = () => {
     setVisibleLoadImpactChartIds([])
-    setChartOrder(allChartIds)
-    setHiddenChartIds(defaultHiddenChartIds(allChartConfigs, []))
+    if (initialPresetId) {
+      const next = chartStateForMonitorPreset(initialPresetId, allChartIds)
+      setChartOrder(next.chartOrder)
+      setHiddenChartIds(next.hiddenChartIds)
+    } else {
+      setChartOrder(allChartIds)
+      setHiddenChartIds(defaultHiddenChartIds(allChartConfigs, []))
+    }
+    setChartDensity(densityFallback)
   }
 
   const applyMonitorPreset = (presetId: string) => {
@@ -923,6 +1025,16 @@ export default function TestExecutionCharts({
           >
             Standard
           </button>
+          {commandCenterSurface && (
+            <button
+              className={`btn-chip ${chartDensity === 'command_center' ? 'active' : ''}`}
+              type="button"
+              onClick={() => setChartDensity('command_center')}
+              aria-pressed={chartDensity === 'command_center'}
+            >
+              Compact
+            </button>
+          )}
           <button
             className={`btn-chip ${chartDensity === 'six_up' ? 'active' : ''}`}
             type="button"
@@ -1252,6 +1364,18 @@ export default function TestExecutionCharts({
     )
   }
 
+  const densityLabel = chartDensity === 'six_up'
+    ? '6 Graphs'
+    : chartDensity === 'command_center'
+      ? 'Compact'
+      : 'Standard'
+  const gridClassName = [
+    'charts-grid',
+    chartDensity === 'six_up' ? 'six-up' : '',
+    chartDensity === 'command_center' ? 'command-center-compact' : '',
+    commandCenterSurface ? 'command-center-graphs' : '',
+  ].filter(Boolean).join(' ')
+
   return (
     <>
       {showLoadImpact && (
@@ -1263,10 +1387,10 @@ export default function TestExecutionCharts({
         />
       )}
 
-      <div className="charts-toolbar" aria-label="Final graph controls">
+      <div className={`charts-toolbar${commandCenterSurface ? ' command-center-charts-toolbar' : ''}`} aria-label="Final graph controls">
         <div>
           <h3 className="chart-title">Runtime Graphs</h3>
-          <p className="archive-section-copy">Live, archived, and load-under graphs for the selected run.</p>
+          <p className="archive-section-copy">{commandCenterSurface ? 'Editable live graph wall for this command-center view.' : 'Live, archived, and load-under graphs for the selected run.'}</p>
         </div>
         <div className="charts-toolbar-actions">
           <button
@@ -1279,7 +1403,7 @@ export default function TestExecutionCharts({
           </button>
           <div className="charts-toolbar-badges">
             <span className="archive-chip">{visibleCharts.length} graph{visibleCharts.length === 1 ? '' : 's'}</span>
-            <span className="archive-chip">{chartDensity === 'six_up' ? '6 Graphs' : 'Standard'}</span>
+            <span className="archive-chip">{densityLabel}</span>
             <span className="archive-chip">{timeAxisMode === 'relative' ? 'Relative time' : 'Clock time'}</span>
             {loadImpactLoading && <span className="archive-chip">Loading load metrics</span>}
             {!loadImpactLoading && loadImpactCharts.length > 0 && <span className="archive-chip">{loadImpactCharts.length} load metrics</span>}
@@ -1295,10 +1419,16 @@ export default function TestExecutionCharts({
           <button className="btn btn-secondary btn-sm" type="button" onClick={resetCharts}>Reset Graphs</button>
         </div>
       ) : (
-        <div className={`charts-grid ${chartDensity === 'six_up' ? 'six-up' : ''}`}>
+        <div className={gridClassName}>
           {displayedCharts.map((chart) => {
             const chartData = chartDataFor(chart)
-            const chartHeight = chartDensity === 'six_up' && expandedChart !== chart.id ? 132 : expandedChart === chart.id ? 400 : 200
+            const chartHeight = expandedChart === chart.id
+              ? commandCenterSurface ? 360 : 400
+              : chartDensity === 'six_up'
+                ? 132
+                : chartDensity === 'command_center'
+                  ? 170
+                  : 200
             const metricRows = metricRowsForChart(chart)
             const visibleMetricKeys = visibleMetricKeysForChart(chart, metricRows)
             const visibleOverlayKeysForTitle = visibleOverlayMetricKeys(chart, visibleMetricKeys)
@@ -1314,13 +1444,14 @@ export default function TestExecutionCharts({
               : baseChartMargin
             const metricAxisIdForChart = metricYAxisId(chart, visibleMetricKeys)
             const showMetric = (key: string) => visibleMetricKeys.includes(key)
+            const showDetails = expandedChart === chart.id || chartDensity === 'standard'
             return (
               <div
                 key={chart.id}
                 ref={element => {
                   chartCardRefs.current[chart.id] = element
                 }}
-                className={`chart-card ${expandedChart === chart.id ? 'expanded' : ''} ${draggingChartId === chart.id ? 'dragging' : ''} ${dragOverChartId === chart.id ? 'drop-target' : ''}`}
+                className={`chart-card ${commandCenterSurface ? 'command-center-chart-card' : ''} ${expandedChart === chart.id ? 'expanded' : ''} ${draggingChartId === chart.id ? 'dragging' : ''} ${dragOverChartId === chart.id ? 'drop-target' : ''}`}
                 onContextMenu={event => openChartMenu(event, chart.id)}
                 onMouseEnter={() => setHoveredChartId(chart.id)}
                 onMouseLeave={() => handleChartMouseLeave(chart.id)}
@@ -1402,7 +1533,7 @@ export default function TestExecutionCharts({
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -1410,6 +1541,7 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
+                {renderSharedCursor(chartData)}
                 {chart.dataKey && showMetric(chart.dataKey) && (
                   <Area yAxisId={metricAxisIdForChart} type="monotone" dataKey={chart.dataKey} name="Total" stroke={chart.color!} fill={chart.color!} fillOpacity={0.15} isAnimationActive={false} />
                 )}
@@ -1422,13 +1554,14 @@ export default function TestExecutionCharts({
               <LineChart
                 data={chartData}
                 margin={chartMargin}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderLoadImpactAxis()}
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderLoadImpactTooltip(chart)}
+                {renderSharedCursor(chartData)}
                 {metricRows
                   .filter(row => !overlayMetricKeysForChart(chart).includes(row.key as OverlayMetricKey))
                   .map((row) => showMetric(row.key) && (
@@ -1455,7 +1588,7 @@ export default function TestExecutionCharts({
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -1463,9 +1596,13 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
+                {renderSharedCursor(chartData)}
                 {isMultiGroup && <Legend verticalAlign="bottom" height={36} />}
                 {chart.totalKey && showMetric(chart.totalKey) && (
                   <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={chart.totalKey} name="Total" stroke="var(--text-muted)" dot={false} strokeWidth={2} strokeDasharray={isMultiGroup ? '4 2' : undefined} isAnimationActive={false} />
+                )}
+                {surface === 'command-center' && chartData.some(point => typeof point.targetTps === 'number') && (
+                  <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="targetTps" name="Target" stroke="var(--warning)" dot={false} strokeWidth={1.75} strokeDasharray="5 3" isAnimationActive={false} />
                 )}
                 {isMultiGroup && groupNames.map((name, index) => showMetric(`${name}_tps`) && (
                   <Line key={name} yAxisId={metricAxisIdForChart} type="monotone" dataKey={`${name}_tps`} name={name} stroke={groupColors[index % groupColors.length]} dot={false} isAnimationActive={false} />
@@ -1481,7 +1618,7 @@ export default function TestExecutionCharts({
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -1489,6 +1626,7 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
+                {renderSharedCursor(chartData)}
                 <Legend verticalAlign="bottom" height={36} />
                 {showMetric('avgMs') && (
                   <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="avgMs" name="Total" stroke="var(--text-muted)" dot={false} strokeWidth={2} strokeDasharray={isMultiGroup ? '4 2' : undefined} isAnimationActive={false} />
@@ -1511,7 +1649,7 @@ export default function TestExecutionCharts({
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -1519,6 +1657,7 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
+                {renderSharedCursor(chartData)}
                 <Legend verticalAlign="bottom" height={36} />
                 {chart.keys!.filter(key => showMetric(key.k)).map((key) => (
                   <Area key={key.k} yAxisId={metricAxisIdForChart} type="monotone" dataKey={key.k} name={key.n} stroke={key.c} fill={key.c} fillOpacity={0.2} isAnimationActive={false} />
@@ -1534,7 +1673,7 @@ export default function TestExecutionCharts({
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -1542,6 +1681,7 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
+                {renderSharedCursor(chartData)}
                 {metricRows.map((row) => showMetric(row.key) && (
                   <Line
                     key={row.key}
@@ -1566,7 +1706,7 @@ export default function TestExecutionCharts({
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -1575,6 +1715,7 @@ export default function TestExecutionCharts({
                 {renderRouteLatencySuccessAxis(visibleMetricKeys)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
+                {renderSharedCursor(chartData)}
                 <Legend verticalAlign="bottom" height={36} />
                 {metricRows.map((row) => showMetric(row.key) && (
                     <Line
@@ -1600,7 +1741,7 @@ export default function TestExecutionCharts({
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event?.activeLabel)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -1608,6 +1749,7 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
+                {renderSharedCursor(chartData)}
                 <Legend />
                 {showMetric('netSent') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="netSent" name="Net Egress" stroke="var(--chart-1)" dot={false} strokeWidth={2} isAnimationActive={false} />}
                 {showMetric('netRecv') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="netRecv" name="Net Ingress" stroke="var(--chart-2)" dot={false} strokeWidth={2} isAnimationActive={false} />}
@@ -1621,9 +1763,9 @@ export default function TestExecutionCharts({
             )}
           </ResponsiveContainer>
 
-          {chart.id === 'network_latency' && (chartDensity === 'standard' || expandedChart === chart.id) && renderRouteLatencyDetails()}
-          {chart.id === 'generator_impact' && (chartDensity === 'standard' || expandedChart === chart.id) && renderGeneratorImpactDetails()}
-          {(chartDensity === 'standard' || expandedChart === chart.id) && renderMetricsTable(chart, metricRows, visibleMetricKeys, chartData)}
+          {chart.id === 'network_latency' && showDetails && renderRouteLatencyDetails()}
+          {chart.id === 'generator_impact' && showDetails && renderGeneratorImpactDetails()}
+          {showDetails && renderMetricsTable(chart, metricRows, visibleMetricKeys, chartData)}
             </div>
             )
           })}

@@ -8,7 +8,7 @@ import Logo from './Logo'
 import ProjectModal from './ProjectModal'
 import './Sidebar.css'
 
-export type NavPage = 'dashboard' | 'repository' | 'tests' | 'new-test' | 'scripts' | 'results' | 'monitoring' | 'docs' | 'access' | 'settings'
+export type NavPage = 'dashboard' | 'command-center' | 'repository' | 'tests' | 'new-test' | 'scripts' | 'results' | 'monitoring' | 'docs' | 'access' | 'settings'
 
 interface Props {
   active: NavPage
@@ -42,6 +42,19 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element; requiresAccess
         <rect x="14" y="3" width="7" height="7" rx="1" />
         <rect x="3" y="14" width="7" height="7" rx="1" />
         <rect x="14" y="14" width="7" height="7" rx="1" />
+      </svg>
+    ),
+  },
+  {
+    id: 'command-center',
+    label: 'Command Center',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 11h18" />
+        <path d="M5 5h4v6H5z" />
+        <path d="M14 5h5v6h-5z" />
+        <path d="M5 15h5v4H5z" />
+        <path d="M14 15h5v4h-5z" />
       </svg>
     ),
   },

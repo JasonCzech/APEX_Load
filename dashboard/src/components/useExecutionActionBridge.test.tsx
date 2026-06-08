@@ -27,9 +27,9 @@ vi.mock('../hooks/useApi', async () => {
   }
 })
 
-function ActionBridgeHarness({ initialTest }: { initialTest: TestSummary }) {
+function ActionBridgeHarness({ initialTest, onRunStarted }: { initialTest: TestSummary; onRunStarted?: (testId: string) => void }) {
   const [test, setTest] = useState<TestSummary | null>(initialTest)
-  const model = useExecutionActionBridge('test-1', test, setTest)
+  const model = useExecutionActionBridge('test-1', test, setTest, onRunStarted)
 
   return (
     <div>
@@ -127,6 +127,7 @@ describe('useExecutionActionBridge', () => {
   })
 
   it('uses the returned started run state when the API includes it', async () => {
+    const onRunStarted = vi.fn()
     apiMock.startTest.mockResolvedValue({
       status: 'started',
       test_id: 'test-1',
@@ -137,13 +138,14 @@ describe('useExecutionActionBridge', () => {
     })
 
     await act(async () => {
-      root.render(<ActionBridgeHarness initialTest={buildQueuedTest()} />)
+      root.render(<ActionBridgeHarness initialTest={buildQueuedTest()} onRunStarted={onRunStarted} />)
     })
 
     await click('start')
 
     expect(apiMock.startTest).toHaveBeenCalledWith('test-1', undefined)
     expect(readTestId('status')).toBe('RUNNING')
+    expect(onRunStarted).toHaveBeenCalledWith('test-1')
   })
 
   it('optimistically updates pause and resume state while publishing shared control feedback', async () => {

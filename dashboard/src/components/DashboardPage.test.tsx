@@ -853,6 +853,65 @@ describe('DashboardPage', () => {
     expect(activeTestsEmptyState?.textContent).toContain('Start a scenario from the New Test page')
   })
 
+  it('keeps terminal tests out of active cards when websocket overrides are stale', async () => {
+    apiMock.listTests.mockResolvedValueOnce({
+      tests: [
+        {
+          id: 'stale-running-failed',
+          name: 'web test',
+          status: 'FAILED',
+          application_id: 'app-1',
+          release_id: 'rel-1',
+          groups: [{ name: 'g1', script_id: 'script-2', script_name: 'Smoke', protocol: 'http', vusers: 1 }],
+          total_vusers: 1,
+          duration: '5m',
+          created_at: '2026-06-08T00:00:00Z',
+          ended_at: '2026-06-08T00:05:00Z',
+        },
+        {
+          id: 'stale-running-complete',
+          name: 'web test archive',
+          status: 'COMPLETE',
+          application_id: 'app-1',
+          release_id: 'rel-1',
+          groups: [{ name: 'g1', script_id: 'script-3', script_name: 'Archive', protocol: 'http', vusers: 1 }],
+          total_vusers: 1,
+          duration: '5m',
+          created_at: '2026-06-08T00:10:00Z',
+          ended_at: '2026-06-08T00:15:00Z',
+          archive: { transaction_count: 25 },
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{
+            'stale-running-failed': 'RUNNING',
+            'stale-running-complete': 'INITIALIZING',
+          }}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+
+    await flushDashboard()
+    clickButtonByText('Active Tests')
+
+    expect(getTabByText('Active Tests').textContent).toContain('0')
+    expect(container.querySelector('.dash-active-card')).toBeNull()
+    expect(container.textContent).toContain('No tests currently running')
+
+    clickButtonByText('Recent Activity')
+    expect(container.textContent).toContain('web test')
+    expect(container.textContent).toContain('FAILED')
+    expect(container.textContent).toContain('COMPLETE')
+  })
+
   function clickButtonByText(text: string) {
     const button = getButtonByText(text)
     act(() => {

@@ -24,6 +24,7 @@ export function useExecutionActionBridge(
   testId: string,
   test: TestSummary | null,
   setTest: Dispatch<SetStateAction<TestSummary | null>>,
+  onRunStarted?: (testId: string) => void,
 ): ExecutionActionBridgeModel {
   const api = useApi()
   const [controlFeedback, setControlFeedback] = useState('')
@@ -79,9 +80,11 @@ export function useExecutionActionBridge(
           pending_reason: response.message || prev.pending_reason,
           pending_since: prev.pending_since || new Date().toISOString(),
         } : null))
+        onRunStarted?.(response.test_id || testId)
         return
       }
       setTest((prev) => response.test || (prev ? { ...prev, status: 'INITIALIZING' } : null))
+      onRunStarted?.(response.test_id || testId)
     } catch (error: unknown) {
       if (error instanceof ApiError && error.code === 'capacity_shortfall') {
         const capacityAdvisory = typeof error.payload === 'object' && error.payload !== null && 'capacity_advisory' in error.payload
@@ -108,7 +111,7 @@ export function useExecutionActionBridge(
       }
       setStartFeedback(getErrorMessage(error, 'Unable to start test'))
     }
-  }, [api, setTest, test?.capacity_advisory, testId])
+  }, [api, onRunStarted, setTest, test?.capacity_advisory, testId])
 
   const onPause = useCallback(async () => {
     try {

@@ -17,7 +17,7 @@ import PageViewToggle from './PageViewToggle'
 import { type NavPage } from './Sidebar'
 import LibraryFederationControls from './LibraryFederationControls'
 import { useLibraryFederation } from './useLibraryFederation'
-import { formatLibraryDateTime, shortLibraryHash } from './libraryFederationUtils'
+import { shortLibraryHash } from './libraryFederationUtils'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
 
 interface Props {
@@ -63,6 +63,8 @@ interface ScenarioFormGroup {
   stages: LoadStageDraft[]
   initialization: 'at_runtime' | 'at_once'
 }
+
+type ScenarioSortField = 'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_test_id' | 'last_run_at' | 'last_run_ended_at' | 'result_count'
 
 const scenarioWizardSteps: Array<{ id: ScenarioWizardStep, label: string }> = [
   { id: 'start', label: 'Start' },
@@ -359,7 +361,7 @@ function scenarioFormStateFromStoredScenario(
   }
 }
 
-function getScenarioSortValue(scenario: StoredScenario, field: 'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_at' | 'result_count'): string | number {
+function getScenarioSortValue(scenario: StoredScenario, field: ScenarioSortField): string | number {
   switch (field) {
     case 'scripts':
       return (scenario.scripts || []).length
@@ -367,8 +369,12 @@ function getScenarioSortValue(scenario: StoredScenario, field: 'name' | 'scripts
       return (scenario.data_pools || []).length
     case 'created_at':
       return new Date(scenario.created_at || 0).getTime()
+    case 'last_run_test_id':
+      return (scenario.last_run_test_id || '').toLowerCase()
     case 'last_run_at':
       return new Date(scenario.last_run_at || 0).getTime()
+    case 'last_run_ended_at':
+      return new Date(scenario.last_run_ended_at || 0).getTime()
     case 'associated_releases':
       return (scenario.associated_releases || []).length
     case 'result_count':
@@ -417,10 +423,15 @@ function formatScenarioResultCount(scenario: StoredScenario) {
   return `${count} result${count === 1 ? '' : 's'}`
 }
 
+function formatScenarioRunTestID(scenario: StoredScenario) {
+  return scenario.last_run_test_id || '—'
+}
+
 function scenarioSearchText(scenario: StoredScenario) {
   return [
     scenario.name,
     scenario.duration,
+    scenario.last_run_test_id,
     scenario.assignment?.mode,
     ...(scenario.assignment?.selected_targets || []),
     ...(scenario.scripts || []).map(script => script.script_name || script.name || script.script_id),
@@ -461,10 +472,7 @@ function scenarioAssignmentSummary(scenario: StoredScenario) {
       detail: targets.join(', '),
     }
   }
-  return {
-    badge: 'Auto Assignment',
-    detail: 'Uses controller recommendations',
-  }
+  return null
 }
 
 function SortIndicator({ active, direction }: { active: boolean, direction: 'asc' | 'desc' }) {
@@ -643,7 +651,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
   const [scenarioQuery, setScenarioQuery] = useState('')
   const [scenarioReleaseFilter, setScenarioReleaseFilter] = useState('all')
   const [scriptLibraryQuery, setScriptLibraryQuery] = useState('')
-  const [sortField, setSortField] = useState<'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_at' | 'result_count'>('last_run_at')
+  const [sortField, setSortField] = useState<ScenarioSortField>('last_run_at')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [expandedScenarioId, setExpandedScenarioId] = useState<string | null>(null)
   const [scenarioRuns, setScenarioRuns] = useState<Record<string, TestSummary[]>>({})
@@ -923,7 +931,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
     if (sortField === field) setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
     else {
       setSortField(field)
-      setSortDirection(field === 'last_run_at' || field === 'result_count' ? 'desc' : 'asc')
+      setSortDirection(field === 'last_run_at' || field === 'last_run_ended_at' || field === 'result_count' ? 'desc' : 'asc')
     }
   }
 
@@ -1632,10 +1640,12 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
                     <tr>
                       <th>Source</th>
                       <th>Scenario</th>
+                      <th>Test ID</th>
                       <th>Workload</th>
                       <th>Associated Releases</th>
                       <th>Create Date</th>
-                      <th>Last Run</th>
+                      <th>Start</th>
+                      <th>Finish</th>
                       <th style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>
@@ -1643,6 +1653,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
                     {filteredCloneScenarios.map(scenario => {
                       const selected = selectedCloneScenarioId === scenario.id
                       const assignment = scenarioAssignmentSummary(scenario)
+                      const showScenarioMeta = Boolean(scenario.ref_key || assignment)
                       const browserRuntimeSummary = formatBrowserRuntimeSummary(scenario.runtime_settings?.browser)
                       return (
                         <tr
@@ -1663,13 +1674,17 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
                           </td>
                           <td className="cell-name">
                             <div>{scenario.name}</div>
-                            <div className="scenario-table-assignment">
-                              <ReferenceKeyBadge value={scenario.ref_key} />
-                              <span className={`scenario-table-assignment-badge ${scenario.assignment?.mode === 'specific_hosts' ? 'manual' : 'auto'}`}>
-                                {assignment.badge}
-                              </span>
-                              <span className="scenario-table-assignment-detail">{assignment.detail}</span>
-                            </div>
+                            {showScenarioMeta && (
+                              <div className="scenario-table-assignment">
+                                <ReferenceKeyBadge value={scenario.ref_key} />
+                                {assignment && (
+                                  <>
+                                    <span className="scenario-table-assignment-badge manual">{assignment.badge}</span>
+                                    <span className="scenario-table-assignment-detail">{assignment.detail}</span>
+                                  </>
+                                )}
+                              </div>
+                            )}
                             {browserRuntimeSummary && (
                               <div className="scenario-table-browser">
                                 <span className="scenario-table-browser-badge">Browser</span>
@@ -1677,6 +1692,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
                               </div>
                             )}
                           </td>
+                          <td className="cell-mono">{formatScenarioRunTestID(scenario)}</td>
                           <td>
                             <div className="scenario-table-workload">
                               <strong>{formatScenarioScripts(scenario)}</strong>
@@ -1690,12 +1706,8 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
                             </div>
                           </td>
                           <td className="cell-muted">{formatDate(scenario.created_at)}</td>
-                          <td className="cell-muted">
-                            <div className="scenario-table-workload">
-                              <strong>{formatDate(scenario.last_run_at)}</strong>
-                              <span>{formatScenarioResultCount(scenario)}</span>
-                            </div>
-                          </td>
+                          <td className="cell-muted scenario-run-time-cell">{formatDateTime(scenario.last_run_at)}</td>
+                          <td className="cell-muted scenario-run-time-cell">{formatDateTime(scenario.last_run_ended_at)}</td>
                           <td style={{ textAlign: 'right' }}>
                             <button
                               className={`btn btn-sm ${selected ? 'btn-primary' : 'btn-secondary'}`}
@@ -1713,7 +1725,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
                     })}
                     {filteredCloneScenarios.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="cell-muted">No scenarios match this source search.</td>
+                        <td colSpan={9} className="cell-muted">No scenarios match this source search.</td>
                       </tr>
                     )}
                   </tbody>
@@ -2350,16 +2362,18 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
             </>
           )}
         />
-        <div className="data-table">
+        <div className="data-table scenario-library-table">
           <table>
             <thead>
               <tr>
                 <th>Source</th>
                 <th onClick={() => handleSort('name')} className="sortable">Scenario <SortIndicator active={sortField === 'name'} direction={sortDirection} /></th>
+                <th onClick={() => handleSort('last_run_test_id')} className="sortable">Test ID <SortIndicator active={sortField === 'last_run_test_id'} direction={sortDirection} /></th>
                 <th onClick={() => handleSort('scripts')} className="sortable">Workload <SortIndicator active={sortField === 'scripts'} direction={sortDirection} /></th>
                 <th onClick={() => handleSort('associated_releases')} className="sortable">Associated Releases <SortIndicator active={sortField === 'associated_releases'} direction={sortDirection} /></th>
                 <th onClick={() => handleSort('created_at')} className="sortable">Create Date <SortIndicator active={sortField === 'created_at'} direction={sortDirection} /></th>
-                <th onClick={() => handleSort('last_run_at')} className="sortable">Last Run <SortIndicator active={sortField === 'last_run_at'} direction={sortDirection} /></th>
+                <th onClick={() => handleSort('last_run_at')} className="sortable">Start <SortIndicator active={sortField === 'last_run_at'} direction={sortDirection} /></th>
+                <th onClick={() => handleSort('last_run_ended_at')} className="sortable">Finish <SortIndicator active={sortField === 'last_run_ended_at'} direction={sortDirection} /></th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
@@ -2368,6 +2382,8 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
                 const syncStatus = scenarioFederation.syncStatusForLocal(scenario.id)
                 const hostItem = scenarioFederation.hostItemForLocal(scenario.id)
                 const conflict = syncStatus === 'conflict'
+                const assignment = scenarioAssignmentSummary(scenario)
+                const showScenarioMeta = Boolean(scenario.ref_key || assignment)
                 return (
                 <Fragment key={scenario.id}>
                   <tr className="clickable-row" onClick={() => toggleScenarioRuns(scenario)}>
@@ -2376,13 +2392,17 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
                     </td>
                     <td className="cell-name">
                       <div>{scenario.name}</div>
-                      <div className="scenario-table-assignment">
-                        <ReferenceKeyBadge value={scenario.ref_key} />
-                        <span className={`scenario-table-assignment-badge ${scenario.assignment?.mode === 'specific_hosts' ? 'manual' : 'auto'}`}>
-                          {scenarioAssignmentSummary(scenario).badge}
-                        </span>
-                        <span className="scenario-table-assignment-detail">{scenarioAssignmentSummary(scenario).detail}</span>
-                      </div>
+                      {showScenarioMeta && (
+                        <div className="scenario-table-assignment">
+                          <ReferenceKeyBadge value={scenario.ref_key} />
+                          {assignment && (
+                            <>
+                              <span className="scenario-table-assignment-badge manual">{assignment.badge}</span>
+                              <span className="scenario-table-assignment-detail">{assignment.detail}</span>
+                            </>
+                          )}
+                        </div>
+                      )}
                       {formatBrowserRuntimeSummary(scenario.runtime_settings?.browser) && (
                         <div className="scenario-table-browser">
                           <span className="scenario-table-browser-badge">Browser</span>
@@ -2390,6 +2410,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
                         </div>
                       )}
                     </td>
+                    <td className="cell-mono">{formatScenarioRunTestID(scenario)}</td>
                     <td>
                       <div className="scenario-table-workload">
                         <strong>{formatScenarioScripts(scenario)}</strong>
@@ -2403,12 +2424,8 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
                       </div>
                     </td>
                     <td className="cell-muted">{formatDate(scenario.created_at)}</td>
-                    <td className="cell-muted">
-                      <div className="scenario-table-workload">
-                        <strong>{formatDate(scenario.last_run_at)}</strong>
-                        <span>{formatScenarioResultCount(scenario)}</span>
-                      </div>
-                    </td>
+                    <td className="cell-muted scenario-run-time-cell">{formatDateTime(scenario.last_run_at)}</td>
+                    <td className="cell-muted scenario-run-time-cell">{formatDateTime(scenario.last_run_ended_at)}</td>
                     <td style={{ textAlign: 'right' }}>
                       <button className="btn btn-sm btn-secondary" onClick={(event) => {
                         event.stopPropagation()
@@ -2436,7 +2453,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
                   </tr>
                   {expandedScenarioId === scenario.id && (
                     <tr className="no-hover">
-                      <td colSpan={7} style={{ background: 'var(--bg-primary)' }}>
+                      <td colSpan={9} style={{ background: 'var(--bg-primary)' }}>
                         {renderScenarioRunsContent(scenario)}
                       </td>
                     </tr>
@@ -2457,6 +2474,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
                       <div>{item.name || item.id}</div>
                       <div className="scenario-table-assignment-detail">Project {item.project_id || 'unmapped'} · Hash {shortLibraryHash(item.content_hash)}</div>
                     </td>
+                    <td className="cell-mono">—</td>
                     <td>
                       <div className="scenario-table-workload">
                         <span>{item.dependencies?.length ? `${item.dependencies.length} dependencies` : 'No referenced scripts'}</span>
@@ -2464,7 +2482,8 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
                     </td>
                     <td className="cell-muted">—</td>
                     <td className="cell-muted">—</td>
-                    <td className="cell-muted">{formatLibraryDateTime(item.updated_at)}</td>
+                    <td className="cell-muted">—</td>
+                    <td className="cell-muted">—</td>
                     <td style={{ textAlign: 'right' }}>
                       {canManageTests ? (
                         <>
@@ -2488,7 +2507,7 @@ function TestHub({ onSelectTest, onCreateTestFromScenario, onNavigate, initialVi
               })}
               {(!showLocalScenarios || sorted.length === 0) && federationRemoteScenarioRows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="cell-muted">
+                  <td colSpan={9} className="cell-muted">
                     {scenarioQuery.trim() || scenarioReleaseFilter !== 'all' ? 'No scenarios match these filters.' : 'No scenarios yet. Create a scenario from an existing script.'}
                   </td>
                 </tr>

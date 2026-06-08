@@ -1057,6 +1057,7 @@ describe('NewTestPage', () => {
 
   it('shows a disabled start action and queued-run action when immediate preflight returns queue', async () => {
     const selectTest = vi.fn()
+    const openCommandCenter = vi.fn()
     apiMock.preflightTest.mockResolvedValue({
       decision: 'queue',
       start_now_allowed: false,
@@ -1079,6 +1080,7 @@ describe('NewTestPage', () => {
           activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
           releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
           onSelectTest={selectTest}
+          onOpenCommandCenter={openCommandCenter}
           onCreateRelease={vi.fn().mockResolvedValue(null)}
         />,
       )
@@ -1103,7 +1105,8 @@ describe('NewTestPage', () => {
       release_id: 'release-1',
     }))
     expect(apiMock.startTest).toHaveBeenCalledWith('test-1')
-    expect(selectTest).toHaveBeenCalledWith('test-1')
+    expect(openCommandCenter).toHaveBeenCalledWith('test-1')
+    expect(selectTest).not.toHaveBeenCalled()
   })
 
   it('sends scheduled_start_at when one-time scheduled preflight is allowed', async () => {

@@ -43,6 +43,7 @@ import './App.css'
 import './components/Pages.css'
 
 const ScriptsPage = lazy(() => import('./components/ScriptsPage'))
+const CommandCenterPrototype = lazy(() => import('./components/CommandCenterPrototype'))
 const TestHub = lazy(() => import('./components/TestHub'))
 const TestExecution = lazy(() => import('./components/TestExecution'))
 const ResultsPage = lazy(() => import('./components/ResultsPage'))
@@ -249,6 +250,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const snapshotAudience = dashboardSnapshotAudience(authStatus, devViewMode, activeProject?.id)
 
   const navigateToTest = (id: string) => setView({ page: 'test', testId: id })
+  const navigateToCommandCenter = (id?: string) => setView(id ? { page: 'command-center', testId: id } : { page: 'command-center' })
   const activePage: NavPage = view.page === 'test' ? 'tests' : view.page === 'swagger' || view.page === 'repository-guide' ? 'docs' : view.page
 
   const navigateToScriptEdit = (scriptId: string) => setView({ page: 'scripts', mode: 'edit', scriptId })
@@ -488,7 +490,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
 
   const desktopBridge = getWailsDesktopBridge()
   const showDesktopStatus = Boolean(desktopStatus?.desktop_mode)
-  const currentTestRun = view.page === 'test' ? activeTopbarRuns.find(run => run.id === view.testId) : undefined
+  const currentRouteTestId = view.page === 'test' || view.page === 'command-center' ? view.testId : undefined
+  const currentTestRun = currentRouteTestId ? activeTopbarRuns.find(run => run.id === currentRouteTestId) : undefined
   const topbarPageTitle = view.page === 'scripts' && scriptsTopbarState
     ? pageTitleForScriptSubView(scriptsTopbarState.subView)
     : pageTitleForView(view, {
@@ -587,11 +590,11 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
                   <a
                     key={run.id}
                     className={`topbar-run-chip ${tone}`}
-                    href={viewToLocationHash({ page: 'test', testId: run.id })}
+                    href={viewToLocationHash({ page: 'command-center', testId: run.id })}
                     title={`Open ${run.name} (${statusLabel})`}
                     onClick={(event) => {
                       event.preventDefault()
-                      navigateToTest(run.id)
+                      navigateToCommandCenter(run.id)
                     }}
                   >
                     <span className="topbar-run-dot" aria-hidden="true" />
@@ -665,6 +668,14 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               snapshotAudience={snapshotAudience}
             />
           )}
+          {view.page === 'command-center' && (
+            <CommandCenterPrototype
+              testId={view.testId}
+              history={view.testId ? metricsHistory[view.testId] || [] : []}
+              statusOverride={view.testId ? testStatuses[view.testId] : undefined}
+              onOpenExecution={navigateToTest}
+            />
+          )}
           {view.page === 'tests' && (
             <TestHub
               initialView={view.scenarioView}
@@ -681,6 +692,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               releases={releases}
               initialScenarioId={'scenarioId' in view ? view.scenarioId : undefined}
               onSelectTest={navigateToTest}
+              onOpenCommandCenter={navigateToCommandCenter}
               onCreateRelease={createAndSelectRelease}
               onOpenScenarioBuilder={navigateToScenarioBuilder}
             />
@@ -692,6 +704,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               onBack={() => navigateBack('tests')}
               onEditScript={navigateToScriptEdit}
               onSelectTest={navigateToTest}
+              onOpenCommandCenter={navigateToCommandCenter}
             />
           )}
           {view.page === 'scripts' && (

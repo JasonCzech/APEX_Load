@@ -1861,7 +1861,9 @@ export interface StoredScenario {
   script_count: number
   result_count?: number
   associated_releases?: ReleaseRef[]
+  last_run_test_id?: string
   last_run_at?: string
+  last_run_ended_at?: string
 }
 
 export interface WSMessage {
@@ -2186,6 +2188,7 @@ export interface MetricsHistoryPoint {
   relativeMs?: number
   vusers: number
   tps: number
+  targetTps?: number
   avgMs: number
   errorPct: number
   p50: number

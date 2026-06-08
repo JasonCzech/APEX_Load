@@ -47,6 +47,7 @@ interface Props {
   releases: Release[]
   initialScenarioId?: string
   onSelectTest: (id: string) => void
+  onOpenCommandCenter?: (id: string) => void
   onCreateRelease: (name: string) => Promise<Release | null>
   onOpenScenarioBuilder?: () => void
 }
@@ -434,7 +435,7 @@ function buildGroupEditChanges(draft: GroupEditDraft, baseline: GroupEditDraft):
   }
 }
 
-export default function NewTestPage({ activeApplication, activeRelease, releases, initialScenarioId, onSelectTest, onCreateRelease, onOpenScenarioBuilder }: Props) {
+export default function NewTestPage({ activeApplication, activeRelease, releases, initialScenarioId, onSelectTest, onOpenCommandCenter, onCreateRelease, onOpenScenarioBuilder }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [pageMode, setPageMode] = useState<'launch' | 'schedules'>('launch')
@@ -935,6 +936,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       const test = await api.createTest(payload)
       if (intent === 'start_now' || intent === 'queue') {
         await api.startTest(test.id)
+        ;(onOpenCommandCenter || onSelectTest)(test.id)
+        return
       }
       onSelectTest(test.id)
     } catch (err: unknown) {

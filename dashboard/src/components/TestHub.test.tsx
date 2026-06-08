@@ -364,7 +364,9 @@ describe('TestHub', () => {
         associated_releases: [{ id: 'release-29', name: 'PI29', application_id: 'app-1' }],
         result_count: 0,
         created_at: '2026-05-12T00:00:00Z',
+        last_run_test_id: 'run-checkout-1',
         last_run_at: '2026-05-13T00:00:00Z',
+        last_run_ended_at: '2026-05-13T00:05:00Z',
       }],
       count: 1,
     })
@@ -383,15 +385,24 @@ describe('TestHub', () => {
     expect(container.textContent).not.toContain('Asset Type')
     const libraryHeaders = Array.from(container.querySelectorAll('th')).map(th => th.textContent || '')
     expect(libraryHeaders.some(header => header.includes('Scenario'))).toBe(true)
+    expect(libraryHeaders.some(header => header.includes('Test ID'))).toBe(true)
     expect(libraryHeaders.some(header => header.includes('Workload'))).toBe(true)
     expect(libraryHeaders.some(header => header.includes('Associated Releases'))).toBe(true)
     expect(libraryHeaders.some(header => header.includes('Create Date'))).toBe(true)
+    expect(libraryHeaders.some(header => header.includes('Start'))).toBe(true)
+    expect(libraryHeaders.some(header => header.includes('Finish'))).toBe(true)
+    expect(libraryHeaders.some(header => header.includes('Last Run'))).toBe(false)
     expect(container.textContent).toContain('Pinned Checkout')
     expect(container.textContent).toContain('Specific Hosts')
     expect(container.textContent).toContain('gen-a, gen-b')
+    expect(container.textContent).toContain('run-checkout-1')
+    expect(container.textContent).toContain(new Date('2026-05-13T00:00:00Z').toLocaleString())
+    expect(container.textContent).toContain(new Date('2026-05-13T00:05:00Z').toLocaleString())
     expect(container.textContent).toContain('PI29')
     expect(container.textContent).toContain('No data pools')
     expect(container.textContent).toContain('0 results')
+    expect(container.textContent).not.toContain('Auto Assignment')
+    expect(container.textContent).not.toContain('Uses controller recommendations')
 
     const searchInput = container.querySelector('input[type="search"]') as HTMLInputElement | null
     expect(searchInput).not.toBeNull()
@@ -546,6 +557,9 @@ describe('TestHub', () => {
         result_count: 0,
         created_at: '2026-05-12T12:00:00Z',
         updated_at: '2026-05-12T12:00:00Z',
+        last_run_test_id: 'run-1',
+        last_run_at: '2026-05-13T00:01:00Z',
+        last_run_ended_at: '2026-05-13T00:08:00Z',
         script_count: 1,
       }],
       count: 1,
@@ -586,15 +600,23 @@ describe('TestHub', () => {
     expect(container.textContent).not.toContain('Scenario Library (')
     expect(container.textContent).toContain('Associated Releases')
     expect(container.textContent).toContain('Create Date')
-    expect(container.textContent).toContain('Last Run')
+    expect(container.textContent).toContain('Test ID')
+    expect(container.textContent).toContain('Start')
+    expect(container.textContent).toContain('Finish')
+    expect(container.textContent).not.toContain('Last Run')
+    expect(container.textContent).not.toContain('Auto Assignment')
+    expect(container.textContent).not.toContain('Uses controller recommendations')
     expect(container.querySelector('.scenario-clone-card')).toBeNull()
     expect(apiMock.listScenarioResults).toHaveBeenCalledWith('scenario-source')
     const selectedCloneRow = Array.from(container.querySelectorAll('.scenario-clone-table tr.selected')).find(row => row.textContent?.includes('Pinned Checkout'))
     expect(selectedCloneRow).toBeDefined()
     expect(selectedCloneRow?.textContent).toContain('Local')
+    expect(selectedCloneRow?.textContent).toContain('run-1')
     expect(selectedCloneRow?.textContent).toContain('Checkout Flow')
     expect(selectedCloneRow?.textContent).toContain('No releases yet')
     expect(selectedCloneRow?.textContent).toContain('May 12, 2026')
+    expect(selectedCloneRow?.textContent).toContain(new Date('2026-05-13T00:01:00Z').toLocaleString())
+    expect(selectedCloneRow?.textContent).toContain(new Date('2026-05-13T00:08:00Z').toLocaleString())
     const chart = container.querySelector('[data-testid="scenario-model-chart"]')
     const runPanel = container.querySelector('.scenario-source-runs-panel')
     expect(runPanel).toBeDefined()

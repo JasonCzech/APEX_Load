@@ -1,5 +1,6 @@
 import type { AppView } from './appRouting'
 import type { TestStatus, TestSummary } from './types'
+import { normalizeTestStatus, resolveTestStatus } from './utils/testStatusUtils'
 
 export type TopbarPageTitleOptions = {
   repositoryName?: string
@@ -19,6 +20,8 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
   switch (view.page) {
     case 'dashboard':
       return 'Dashboard'
+    case 'command-center':
+      return 'Command Center'
     case 'repository':
       return options.repositoryName || 'Application Repository'
     case 'tests':
@@ -89,11 +92,11 @@ export function pageTitleForScriptSubView(subView?: string): string {
 }
 
 export function isTopbarActiveRunStatus(status?: string): status is TestStatus {
-  return Boolean(status && ACTIVE_RUN_STATUS_PRIORITY[status.toUpperCase()] !== undefined)
+  return Boolean(status && ACTIVE_RUN_STATUS_PRIORITY[normalizeTestStatus(status)] !== undefined)
 }
 
 export function topbarRunStatusLabel(status?: string): string {
-  const normalized = status?.toUpperCase() || ''
+  const normalized = normalizeTestStatus(status)
   if (normalized === 'INITIALIZING') return 'Initializing'
   if (normalized === 'SHAKEOUT') return 'Shakeout'
   if (normalized === 'SHAKEOUT_REVIEW') return 'Shakeout Review'
@@ -102,7 +105,7 @@ export function topbarRunStatusLabel(status?: string): string {
 }
 
 export function topbarRunTone(status?: string): 'running' | 'paused' | 'pending' | 'stopping' {
-  const normalized = status?.toUpperCase()
+  const normalized = normalizeTestStatus(status)
   if (normalized === 'PAUSED') return 'paused'
   if (normalized === 'STOPPING') return 'stopping'
   if (normalized === 'PENDING' || normalized === 'QUEUED' || normalized === 'SCHEDULED' || normalized === 'SHAKEOUT' || normalized === 'SHAKEOUT_REVIEW') {
@@ -116,7 +119,7 @@ export function selectTopbarActiveRuns(tests: TestSummary[], statusOverrides: Re
     .map((test) => ({
       id: test.id,
       name: test.name || test.id,
-      status: (statusOverrides[test.id] || test.status).toUpperCase() as TestStatus,
+      status: resolveTestStatus(test, statusOverrides) as TestStatus,
       created_at: test.created_at,
       started_at: test.started_at,
       pending_since: test.pending_since,
@@ -131,7 +134,7 @@ export function updateTopbarActiveRuns(
   update: { id: string; name?: string; status?: string; timestamp?: string },
 ): TopbarRunSummary[] {
   const existing = runs.find((run) => run.id === update.id)
-  const status = (update.status || existing?.status || '').toUpperCase()
+  const status = normalizeTestStatus(update.status || existing?.status)
   const remaining = runs.filter((run) => run.id !== update.id)
 
   if (!isTopbarActiveRunStatus(status)) {

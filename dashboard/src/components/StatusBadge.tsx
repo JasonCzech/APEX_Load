@@ -1,4 +1,5 @@
 import './StatusBadge.css'
+import { normalizeTestStatus } from '../utils/testStatusUtils'
 
 const STATUS_STYLES: Record<string, string> = {
   QUEUED: 'status-queued',
@@ -19,9 +20,10 @@ interface Props {
 }
 
 export default function StatusBadge({ status }: Props) {
+  const normalizedStatus = normalizeTestStatus(status)
   return (
-    <span className={`status-badge ${STATUS_STYLES[status] || ''}`}>
-      {status}
+    <span className={`status-badge ${STATUS_STYLES[normalizedStatus] || ''}`}>
+      {normalizedStatus || 'UNKNOWN'}
     </span>
   )
 }

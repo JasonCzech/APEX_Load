@@ -636,7 +636,9 @@ type StoredScenario struct {
 	ScriptCount        int                               `json:"script_count"`
 	ResultCount        int                               `json:"result_count,omitempty"`
 	AssociatedReleases []ReleaseRef                      `json:"associated_releases,omitempty"`
+	LastRunTestID      string                            `json:"last_run_test_id,omitempty"`
 	LastRunAt          *time.Time                        `json:"last_run_at,omitempty"`
+	LastRunEndedAt     *time.Time                        `json:"last_run_ended_at,omitempty"`
 }
 
 type ScenarioScriptRef struct {
@@ -2152,7 +2154,9 @@ func (tr *TestRunner) enrichScenarioSummaryLocked(scenario *StoredScenario) *Sto
 	copy := *scenario
 	copy.Scripts = append([]ScenarioScriptRef(nil), scenario.Scripts...)
 	releaseSet := map[string]ReleaseRef{}
-	var lastRun *time.Time
+	var lastRunTestID string
+	var lastRunStartedAt *time.Time
+	var lastRunEndedAt *time.Time
 	resultCount := 0
 	for _, test := range tr.tests {
 		if test.ScenarioID != scenario.ID {
@@ -2164,14 +2168,22 @@ func (tr *TestRunner) enrichScenarioSummaryLocked(scenario *StoredScenario) *Sto
 		if test.ReleaseID != "" {
 			releaseSet[test.ReleaseID] = tr.releaseRefLocked(test.ReleaseID)
 		}
-		if lastRun == nil || test.CreatedAt.After(*lastRun) {
-			t := test.CreatedAt
-			lastRun = &t
+		startedAt := test.CreatedAt
+		if test.StartedAt != nil && !test.StartedAt.IsZero() {
+			startedAt = *test.StartedAt
+		}
+		if lastRunStartedAt == nil || startedAt.After(*lastRunStartedAt) {
+			t := startedAt
+			lastRunStartedAt = &t
+			lastRunTestID = test.ID
+			lastRunEndedAt = cloneTimePtr(test.EndedAt)
 		}
 	}
 	copy.ResultCount = resultCount
 	copy.AssociatedReleases = releaseRefsFromSet(releaseSet)
-	copy.LastRunAt = lastRun
+	copy.LastRunTestID = lastRunTestID
+	copy.LastRunAt = lastRunStartedAt
+	copy.LastRunEndedAt = lastRunEndedAt
 	return &copy
 }
 

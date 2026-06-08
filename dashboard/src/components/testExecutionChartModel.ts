@@ -40,7 +40,7 @@ export interface ChartMetricSummary {
 }
 
 export type ChartTimeAxisMode = 'clock' | 'relative'
-export type ChartDensityMode = 'standard' | 'six_up'
+export type ChartDensityMode = 'standard' | 'six_up' | 'command_center'
 export type ResponseTimeNetworkMode = 'end_to_end' | 'application'
 export type OverlayMetricKey = 'vusers' | 'avgMs' | 'tps'
 export type ChartMargin = ComponentProps<typeof LineChart>['margin']

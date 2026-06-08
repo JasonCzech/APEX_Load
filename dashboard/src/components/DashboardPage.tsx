@@ -7,6 +7,7 @@ import { useProject } from '../hooks/useProject'
 import { TestSummary, MetricsHistoryPoint, Release, RunArchiveReport, GroupLiveMetrics } from '../types'
 import { downloadBlob } from '../utils/fileUtils'
 import { readStoredJSON, readStoredStringArray, writeStoredJSON } from '../utils/browserStorage'
+import { isCompletedTestStatus, isLiveTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { ReleaseTrendPanel } from './ReleaseTrendPanel'
 import { chartTooltipContentStyle } from './chartTooltipTheme'
@@ -592,13 +593,13 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const resolvedTests = useMemo(() =>
     tests.map(t => ({
       ...t,
-      status: (testStatuses[t.id] || t.status) as TestSummary['status'],
+      status: resolveTestStatus(t, testStatuses) as TestSummary['status'],
     })),
     [tests, testStatuses],
   )
 
   const activeTests = useMemo(() =>
-    resolvedTests.filter(t => t.status === 'RUNNING' || t.status === 'INITIALIZING' || t.status === 'STOPPING'),
+    resolvedTests.filter(t => isLiveTestStatus(t.status)),
     [resolvedTests],
   )
 
@@ -640,7 +641,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
 
   const recentTests = useMemo(() =>
     resolvedTests
-      .filter(t => t.status === 'COMPLETE' || t.status === 'FAILED' || t.status === 'ABORTED')
+      .filter(t => isCompletedTestStatus(t.status))
       .sort((a, b) => completionTime(b) - completionTime(a)),
     [resolvedTests],
   )
@@ -671,7 +672,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
 
   const releaseCompleted = useMemo(() =>
     releaseTests
-      .filter(t => t.status === 'COMPLETE' || t.status === 'FAILED' || t.status === 'ABORTED')
+      .filter(t => isCompletedTestStatus(t.status))
       .sort((a, b) => completionTime(b) - completionTime(a)),
     [releaseTests],
   )

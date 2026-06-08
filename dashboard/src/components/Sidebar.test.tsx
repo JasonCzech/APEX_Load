@@ -322,7 +322,7 @@ describe('Sidebar', () => {
     expect(onNavigate).toHaveBeenCalledWith('docs')
   })
 
-  it('places New Test and Results immediately after Dashboard in the main navigation', async () => {
+  it('places Command Center, New Test, and Results immediately after Dashboard in the main navigation', async () => {
     await act(async () => {
       root.render(
         <Sidebar
@@ -335,7 +335,7 @@ describe('Sidebar', () => {
 
     const labels = Array.from(container.querySelectorAll('.sidebar-nav .nav-label')).map(label => label.textContent)
 
-    expect(labels.slice(0, 3)).toEqual(['Dashboard', 'New Test', 'Results'])
+    expect(labels.slice(0, 4)).toEqual(['Dashboard', 'Command Center', 'New Test', 'Results'])
   })
 
   it('keeps live status and build info visible when the sidebar is collapsed', async () => {

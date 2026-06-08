@@ -15,6 +15,7 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
     timestampMs: Date.parse(metric.timestamp),
     vusers: metric.active_vusers,
     tps: metric.tps,
+    targetTps: metric.target_tps,
     avgMs: metric.avg_response_ms,
     errorPct: metric.error_pct || 0,
     p50: metric.p50_ms,

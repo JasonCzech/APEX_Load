@@ -1,7 +1,8 @@
 import type { NavPage } from './components/Sidebar'
 
 export type AppView =
-  | { page: Exclude<NavPage, 'new-test' | 'scripts' | 'tests'> }
+  | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'tests'> }
+  | { page: 'command-center'; testId?: string }
   | { page: 'tests'; scenarioView?: 'library' | 'builder' }
   | { page: 'new-test'; scenarioId?: string }
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
@@ -11,6 +12,7 @@ export type AppView =
 
 const NAV_PAGES: NavPage[] = [
   'dashboard',
+  'command-center',
   'repository',
   'tests',
   'new-test',
@@ -70,6 +72,11 @@ export function parseAppViewFromHash(hash: string): AppView {
     }
   }
 
+  if (page === 'command-center') {
+    const testId = segments[1] || params.get('testId') || undefined
+    return testId ? { page: 'command-center', testId } : { page: 'command-center' }
+  }
+
   if (page === 'scripts') {
     const mode = params.get('mode')
     const scriptId = params.get('scriptId') || undefined
@@ -108,6 +115,10 @@ export function viewToLocationHash(view: AppView): string {
     if (view.scenarioView) params.set('view', view.scenarioView)
     const query = params.toString()
     return query ? `#/tests?${query}` : '#/tests'
+  }
+
+  if (view.page === 'command-center') {
+    return view.testId ? `#/command-center/${encodeURIComponent(view.testId)}` : '#/command-center'
   }
 
   if (view.page === 'scripts') {

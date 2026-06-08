@@ -189,33 +189,52 @@ describe('TestExecution workspace layout', () => {
     await renderExecution()
 
     expect(topbarText()).toContain('Test Run')
-    expect(topbarText()).not.toContain('Checkout Browser')
+    expect(topbarText()).toContain('Checkout Browser')
     expect(topbarText()).not.toContain('Live Controls')
     expect(topbarText()).toContain('Revise Queued Run')
     expect(topbarText()).toContain('Start')
-    expect(runSummaryText()).toContain('StatusQueued')
-    expect(runSummaryText()).toContain('Test NameCheckout Browser')
-    expect(runSummaryText()).toContain('VUser Load10 VUsers')
-    expect(runSummaryText()).toContain('Test Duration5m')
-    expect(runSummaryText()).toContain('# Groups1')
+    expect(topbarText()).toContain('Queued')
+    expect(topbarText()).toContain('Load 10 VUsers')
+    expect(topbarText()).toContain('5m')
+    expect(topbarText()).toContain('1 group')
+    expect(topbarText()).not.toContain('Started')
+    expect(container.querySelector('.execution-run-summary')).toBeNull()
 
     const queuedActions = latestActionBridge()
     await clickTopbarButton('Start')
     expect(queuedActions.onStart).toHaveBeenCalledTimes(1)
 
-    configureHooks(makeTest('RUNNING', { name: 'Checkout Live Run' }))
+    configureHooks(makeTest('RUNNING', {
+      name: 'Checkout Live Run',
+      started_at: '2026-06-08T04:00:00Z',
+      live_metrics: {
+        timestamp: '2026-06-08T04:01:00Z',
+        active_vusers: 6,
+        tps: 1,
+        avg_response_ms: 100,
+        error_pct: 0,
+        total_transactions: 10,
+        total_errors: 0,
+        p50_ms: 90,
+        p90_ms: 120,
+        p95_ms: 130,
+        p99_ms: 150,
+      },
+    }))
     await renderExecution()
 
     expect(topbarText()).toContain('Test Run')
-    expect(topbarText()).not.toContain('Checkout Live Run')
+    expect(topbarText()).toContain('Checkout Live Run')
     expect(topbarText()).not.toContain('Live Controls')
-    expect(topbarText()).not.toContain('10 VUsers')
-    expect(topbarText()).not.toContain('5m')
+    expect(topbarText()).toContain('Running')
+    expect(topbarText()).toContain('Started')
+    expect(topbarText()).toContain('Remaining 3m')
+    expect(topbarText()).toContain('Current 6 VUsers')
+    expect(topbarText()).toContain('Target 10 VUsers')
     expect(topbarText()).toContain('Pause')
     expect(topbarText()).toContain('Stop Test')
     expect(topbarText()).toContain('Abort')
-    expect(runSummaryText()).toContain('StatusRunning')
-    expect(runSummaryText()).toContain('Test NameCheckout Live Run')
+    expect(container.querySelector('.execution-run-summary')).toBeNull()
 
     const runningActions = latestActionBridge()
     await clickTopbarButton('Pause')
@@ -515,10 +534,6 @@ describe('TestExecution workspace layout', () => {
     return container.querySelector('[data-testid="execution-topbar"]')?.textContent || ''
   }
 
-  function runSummaryText() {
-    return container.querySelector('.execution-run-summary')?.textContent || ''
-  }
-
   function latestActionBridge() {
     const results = hookMocks.useExecutionActionBridge.mock.results
     return results[results.length - 1]?.value
@@ -604,7 +619,11 @@ describe('TestExecution workspace layout', () => {
       onScaleVUsers: vi.fn(),
       onStopAllVUsers: vi.fn(),
       onAdjustDuration: vi.fn(),
-      liveControlPreview: {},
+      liveControlPreview: {
+        currentTotal: 6,
+        projectedTotal: 10,
+        remainingSeconds: 180,
+      },
     })
     hookMocks.useExecutionArchiveModel.mockReturnValue({
       hasArchive: Boolean(test.archive),

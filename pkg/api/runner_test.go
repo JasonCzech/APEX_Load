@@ -869,6 +869,76 @@ func TestListScriptsFilteredIncludesUsageMetadata(t *testing.T) {
 	}
 }
 
+func TestListScenariosIncludesLastRunIdentityAndFinishMetadata(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	stored := runner.StoreScript(&dsl.Script{
+		ID:       "script-scenario-activity",
+		Name:     "Checkout Smoke",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions:  []dsl.Action{{Name: "home", Type: "GET", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Checkout Peak",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{{
+			ScriptID: stored.ID,
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	olderRun, err := runner.CreateTest(CreateTestRequest{
+		Name:       "Older Checkout Run",
+		Duration:   "1m",
+		ScenarioID: scenario.ID,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest older run returned error: %v", err)
+	}
+	latestRun, err := runner.CreateTest(CreateTestRequest{
+		Name:       "Latest Checkout Run",
+		Duration:   "1m",
+		ScenarioID: scenario.ID,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest latest run returned error: %v", err)
+	}
+
+	olderStarted := time.Date(2026, time.May, 13, 10, 0, 0, 0, time.UTC)
+	olderEnded := olderStarted.Add(2 * time.Minute)
+	latestStarted := olderStarted.Add(30 * time.Minute)
+	latestEnded := latestStarted.Add(3 * time.Minute)
+	runner.mu.Lock()
+	runner.tests[olderRun.ID].Status = "COMPLETE"
+	runner.tests[olderRun.ID].CreatedAt = olderStarted
+	runner.tests[olderRun.ID].EndedAt = &olderEnded
+	runner.tests[latestRun.ID].Status = "FAILED"
+	runner.tests[latestRun.ID].CreatedAt = latestStarted
+	runner.tests[latestRun.ID].EndedAt = &latestEnded
+	runner.mu.Unlock()
+
+	scenarios := runner.ListScenarios()
+	if len(scenarios) != 1 {
+		t.Fatalf("ListScenarios returned %d scenarios, want 1", len(scenarios))
+	}
+	got := scenarios[0]
+	if got.LastRunTestID != latestRun.ID {
+		t.Fatalf("LastRunTestID = %q, want %q", got.LastRunTestID, latestRun.ID)
+	}
+	if got.LastRunAt == nil || !got.LastRunAt.Equal(latestStarted) {
+		t.Fatalf("LastRunAt = %v, want %s", got.LastRunAt, latestStarted)
+	}
+	if got.LastRunEndedAt == nil || !got.LastRunEndedAt.Equal(latestEnded) {
+		t.Fatalf("LastRunEndedAt = %v, want %s", got.LastRunEndedAt, latestEnded)
+	}
+	if got.ResultCount != 2 {
+		t.Fatalf("ResultCount = %d, want 2", got.ResultCount)
+	}
+}
+
 func TestCompileManagedTestGroupLockedAppliesEphemeralTargetOverridesWithoutMutatingStoredScript(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(1, hub, nil)

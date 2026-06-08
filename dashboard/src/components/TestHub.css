@@ -490,7 +490,20 @@
 }
 
 .scenario-clone-table table {
-  min-width: 980px;
+  min-width: 1180px;
+}
+
+.scenario-library-table {
+  overflow-x: auto;
+}
+
+.scenario-library-table table {
+  min-width: 1280px;
+}
+
+.scenario-run-time-cell {
+  min-width: 150px;
+  white-space: nowrap;
 }
 
 .scenario-shape-catalog-card {

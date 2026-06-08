@@ -10,6 +10,9 @@ describe('appRouting', () => {
 
   it('parses refreshable top-level app pages', () => {
     expect(parseAppViewFromHash('#/results')).toEqual({ page: 'results' })
+    expect(parseAppViewFromHash('#/command-center')).toEqual({ page: 'command-center' })
+    expect(parseAppViewFromHash('#/command-center/run-1')).toEqual({ page: 'command-center', testId: 'run-1' })
+    expect(parseAppViewFromHash('#/command-center?testId=run-2')).toEqual({ page: 'command-center', testId: 'run-2' })
     expect(parseAppViewFromHash('#/new-test')).toEqual({ page: 'new-test' })
     expect(parseAppViewFromHash('#/tests')).toEqual({ page: 'tests' })
     expect(parseAppViewFromHash('#/tests?view=builder')).toEqual({ page: 'tests', scenarioView: 'builder' })
@@ -37,6 +40,8 @@ describe('appRouting', () => {
       scriptId: 'script-1',
     })
     expect(viewToLocationHash({ page: 'swagger' })).toBe('#/swagger')
+    expect(viewToLocationHash({ page: 'command-center' })).toBe('#/command-center')
+    expect(viewToLocationHash({ page: 'command-center', testId: 'run/123' })).toBe('#/command-center/run%2F123')
     expect(parseAppViewFromHash(viewToLocationHash({ page: 'repository-guide' }))).toEqual({ page: 'repository-guide' })
   })
 })

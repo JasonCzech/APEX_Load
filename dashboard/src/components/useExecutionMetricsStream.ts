@@ -83,10 +83,12 @@ export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
       timestampMs: Date.parse(msg.timestamp),
       vusers: msg.data.active_vusers,
       tps: rounded(msg.data.tps),
+      targetTps: msg.data.target_tps,
       avgMs: rounded(msg.data.avg_response_ms),
       errorPct: rounded(msg.data.error_pct, 100),
       p50: rounded(msg.data.p50_ms),
       p90: rounded(msg.data.p90_ms),
+      p95: rounded(msg.data.p95_ms),
       p99: rounded(msg.data.p99_ms),
     }
 

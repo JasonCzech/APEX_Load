@@ -13,6 +13,7 @@ import type { TestSummary } from './types'
 describe('app topbar helpers', () => {
   it('maps app routes to stable topbar page titles', () => {
     expect(pageTitleForView({ page: 'dashboard' })).toBe('Dashboard')
+    expect(pageTitleForView({ page: 'command-center' })).toBe('Command Center')
     expect(pageTitleForView({ page: 'tests' })).toBe('Scenario Library')
     expect(pageTitleForView({ page: 'tests', scenarioView: 'builder' })).toBe('Scenario Builder')
     expect(pageTitleForView({ page: 'scripts', mode: 'create' })).toBe('Create Script')
@@ -46,9 +47,13 @@ describe('app topbar helpers', () => {
     const runs = selectTopbarActiveRuns([
       buildRun({ id: 'stopped', name: 'Stopped', status: 'RUNNING' }),
       buildRun({ id: 'resumed', name: 'Resumed', status: 'PAUSED' }),
+      buildRun({ id: 'failed', name: 'Failed', status: 'FAILED' }),
+      buildRun({ id: 'complete-stale', name: 'Complete Stale', status: 'COMPLETE' }),
     ], {
       stopped: 'COMPLETE',
       resumed: 'RUNNING',
+      failed: 'running',
+      'complete-stale': 'INITIALIZING',
     })
 
     expect(runs.map(run => `${run.id}:${run.status}`)).toEqual(['resumed:RUNNING'])

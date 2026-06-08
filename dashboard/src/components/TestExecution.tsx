@@ -6,7 +6,7 @@ import {
 } from '../types'
 import { topbarRunStatusLabel } from '../appTopbar'
 import { useTopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
-import { isValidDurationInput } from '../utils/timeUtils'
+import { formatTimeCompact, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import TestExecutionArchive from './TestExecutionArchive'
 import { useExecutionActionBridge } from './useExecutionActionBridge'
 import { useExecutionArchiveResourceHistory } from './useExecutionArchiveResourceHistory'
@@ -70,15 +70,33 @@ const EXECUTION_WORKSPACE_CARD_INSERTIONS = [
   },
 ]
 
+function formatRunStartTime(startedAt?: string) {
+  if (!startedAt) return 'Not started'
+  const date = new Date(startedAt)
+  if (!Number.isFinite(date.getTime())) return 'Unknown start'
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+}
+
+function computeRunRemainingSeconds(test: TestSummary) {
+  const durationSeconds = parseDurationToSeconds(test.duration)
+  const startedAt = test.started_at || test.start_time
+  if (durationSeconds <= 0 || !startedAt) return 0
+  const startedAtMs = Date.parse(startedAt)
+  if (!Number.isFinite(startedAtMs)) return 0
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000))
+  return Math.max(durationSeconds - elapsedSeconds, 0)
+}
+
 interface Props {
   testId: string
   history: MetricsHistoryPoint[]
   onBack: () => void
   onEditScript: (scriptId: string) => void
   onSelectTest: (testId: string) => void
+  onOpenCommandCenter?: (testId: string) => void
 }
 
-export default function TestExecution({ testId, history, onBack, onEditScript, onSelectTest }: Props) {
+export default function TestExecution({ testId, history, onBack, onEditScript, onSelectTest, onOpenCommandCenter }: Props) {
   const { test, setTest, error } = useExecutionTestPolling(testId)
   const [showScenarioEditor, setShowScenarioEditor] = useState(false)
   const {
@@ -142,7 +160,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     onAbort,
     onPause,
     onResume,
-  } = useExecutionActionBridge(testId, test, setTest)
+  } = useExecutionActionBridge(testId, test, setTest, onOpenCommandCenter)
   const {
     showControls,
     onToggleControls,
@@ -233,18 +251,36 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         : test?.status === 'FAILED' || test?.status === 'ABORTED'
           ? 'danger'
           : 'default'
-  const runSummaryCards: Array<{ id: string; label: string; value: string; tone: TopbarMetaTone }> = test ? [
-    { id: 'status', label: 'Status', value: topbarRunStatusLabel(test.status), tone: executionStatusTone },
-    { id: 'name', label: 'Test Name', value: test.name || 'Untitled test', tone: 'accent' },
-    { id: 'vusers', label: 'VUser Load', value: `${test.total_vusers} VUsers`, tone: 'accent' },
-    { id: 'duration', label: 'Test Duration', value: test.duration || 'No duration', tone: 'default' },
-    { id: 'groups', label: '# Groups', value: `${(test.groups || []).length}`, tone: isMultiGroup ? 'accent' : 'default' },
-  ] : []
+  const livePreviewCurrentTotal = Number.isFinite(liveControlPreview?.currentTotal) ? liveControlPreview.currentTotal : undefined
+  const livePreviewProjectedTotal = Number.isFinite(liveControlPreview?.projectedTotal) ? liveControlPreview.projectedTotal : undefined
+  const currentVUsers = livePreviewCurrentTotal
+    ?? test?.live_metrics?.active_vusers
+    ?? (test?.groups || []).reduce((total, group) => total + (test?.live_metrics?.groups?.[group.name]?.vusers ?? group.vusers), 0)
+  const targetVUsers = livePreviewProjectedTotal
+    ?? (test?.groups || []).reduce((total, group) => total + (test?.vuser_ramps?.[group.name]?.target_vusers ?? group.vusers), 0)
+    ?? test?.total_vusers
+    ?? 0
+  const remainingSeconds = Number.isFinite(liveControlPreview?.remainingSeconds)
+    ? liveControlPreview.remainingSeconds
+    : test ? computeRunRemainingSeconds(test) : 0
+  const groupCount = (test?.groups || []).length
 
   useTopbarContribution(test ? {
     id: 'test-execution',
     priority: 90,
     title: 'Test Run',
+    meta: [
+      { id: 'status', label: topbarRunStatusLabel(test.status), tone: executionStatusTone },
+      { id: 'name', label: test.name || 'Untitled test', tone: 'accent' },
+      { id: 'planned-vusers', label: `Load ${test.total_vusers} VUsers`, tone: 'accent' },
+      { id: 'duration', label: test.duration || 'No duration', tone: 'default' },
+      { id: 'groups', label: `${groupCount} ${groupCount === 1 ? 'group' : 'groups'}`, tone: isMultiGroup ? 'accent' : 'default' },
+      { id: 'started', label: `Started ${formatRunStartTime(test.started_at || test.start_time)}`, tone: 'default', hidden: !showLiveControls },
+      { id: 'remaining', label: `Remaining ${formatTimeCompact(remainingSeconds)}`, tone: remainingSeconds <= 60 ? 'warning' : 'default', hidden: !showLiveControls },
+      { id: 'current-vusers', label: `Current ${currentVUsers} VUsers`, tone: 'info', hidden: !showLiveControls },
+      { id: 'target-vusers', label: `Target ${targetVUsers} VUsers`, tone: 'accent', hidden: !showLiveControls },
+      { id: 'stopping', label: 'Stopping...', tone: 'danger', hidden: !isStopping },
+    ],
     secondaryActions: [
       {
         id: 'back',
@@ -751,35 +787,22 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         onSelectTest={onSelectTest}
       />
 
-      <div className="execution-run-layout">
-        <aside className="execution-run-summary" aria-label="Run summary">
-          {runSummaryCards.map(card => (
-            <div key={card.id} className={`execution-run-summary-card ${card.tone}`}>
-              <span>{card.label}</span>
-              <strong>{card.value}</strong>
-            </div>
-          ))}
-        </aside>
+      {pinnedLiveControls && (
+        <section className="execution-live-controls-anchor" aria-label="Live controls">
+          {pinnedLiveControls}
+        </section>
+      )}
 
-        <div className="execution-run-workspace">
-          {pinnedLiveControls && (
-            <section className="execution-live-controls-anchor" aria-label="Live controls">
-              {pinnedLiveControls}
-            </section>
-          )}
-
-          <DashboardWorkspace
-            ariaLabel="Test execution workspace"
-            storageKey="apexload.execution.workspaceProfiles.v1"
-            activeStorageKey="apexload.execution.activeWorkspaceProfile.v1"
-            cardLibraryStorageKey="apexload.execution.cardLibraryCollapsed.v1"
-            defaultProfile={EXECUTION_WORKSPACE_DEFAULT_PROFILE}
-            defaultCardInsertions={EXECUTION_WORKSPACE_CARD_INSERTIONS}
-            cards={executionWorkspaceCards}
-            context={executionWorkspaceContext}
-          />
-        </div>
-      </div>
+      <DashboardWorkspace
+        ariaLabel="Test execution workspace"
+        storageKey="apexload.execution.workspaceProfiles.v1"
+        activeStorageKey="apexload.execution.activeWorkspaceProfile.v1"
+        cardLibraryStorageKey="apexload.execution.cardLibraryCollapsed.v1"
+        defaultProfile={EXECUTION_WORKSPACE_DEFAULT_PROFILE}
+        defaultCardInsertions={EXECUTION_WORKSPACE_CARD_INSERTIONS}
+        cards={executionWorkspaceCards}
+        context={executionWorkspaceContext}
+      />
     </div>
   )
 }

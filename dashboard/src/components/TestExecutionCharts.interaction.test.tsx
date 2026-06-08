@@ -20,14 +20,14 @@ vi.mock('recharts', () => {
   }: {
     children?: ReactNode
     syncId?: string
-    onMouseMove?: (event: { activeLabel?: string }) => void
+    onMouseMove?: (event: { activeLabel?: string; activeTooltipIndex?: number }) => void
   }) => (
     <svg
       data-testid="mock-chart"
       data-sync-id={syncId ?? ''}
       width="640"
       height="200"
-      onMouseMove={() => onMouseMove?.({ activeLabel: '10:00:01' })}
+      onMouseMove={() => onMouseMove?.({ activeLabel: '10:00:01', activeTooltipIndex: 1 })}
     >
       {children}
     </svg>
@@ -64,6 +64,7 @@ vi.mock('recharts', () => {
       <path data-testid="mock-line" data-key={dataKey} data-name={name} data-y-axis-id={String(yAxisId ?? '')} />
     ),
     LineChart: MockChart,
+    ReferenceLine: ({ x }: { x?: string | number }) => <path data-testid="mock-reference-line" data-x={String(x ?? '')} />,
     ReferenceArea: Mock,
     ResponsiveContainer: ({ children, height }: { children?: ReactNode; height?: number }) => <div data-testid="mock-responsive-container" data-height={String(height ?? '')}>{children}</div>,
     Tooltip: MockTooltip,
@@ -771,6 +772,59 @@ describe('TestExecutionCharts context menu', () => {
     expect(impactChart?.textContent).toContain('CPU saturation')
     expect(impactChart?.textContent).toContain('Generator imbalance')
     expect(impactChart?.textContent).toContain('n/a')
+  })
+
+  it('renders compact command-center graph cards with a shared cursor crosshair', async () => {
+    const onActiveCursorChange = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            { time: '10:00:00', vusers: 2, tps: 1, targetTps: 3, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p95: 115, p99: 130 },
+            { time: '10:00:01', vusers: 4, tps: 2, targetTps: 3, avgMs: 110, errorPct: 0.1, p50: 85, p90: 105, p95: 118, p99: 135 },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={['#00a3ff']}
+          showLoadImpact={false}
+          surface="command-center"
+          storageScope="apexload.commandCenter.ops"
+          defaultDensity="command_center"
+          activeCursor={{ label: '10:00:01', index: 1 }}
+          onActiveCursorChange={onActiveCursorChange}
+        />,
+      )
+    })
+
+    expect(container.querySelector('.charts-grid')?.className).toContain('command-center-compact')
+    expect(container.querySelector('.chart-card')?.className).toContain('command-center-chart-card')
+    const compactHeights = Array.from(container.querySelectorAll('[data-testid="mock-responsive-container"]')).map(item => item.getAttribute('data-height'))
+    expect(compactHeights.length).toBeGreaterThan(0)
+    expect(compactHeights.every(height => height === '170')).toBe(true)
+
+    const cursorLines = Array.from(container.querySelectorAll('[data-testid="mock-reference-line"]'))
+    expect(cursorLines.length).toBeGreaterThan(1)
+    const cursorXValues = cursorLines.map(line => line.getAttribute('data-x'))
+    expect(cursorXValues).toContain('10:00:01')
+    expect(cursorXValues.every(value => Boolean(value))).toBe(true)
+
+    await act(async () => {
+      container.querySelector<SVGElement>('[data-testid="mock-chart"]')?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+    })
+
+    expect(onActiveCursorChange).toHaveBeenCalledWith({ label: '10:00:01', index: 1 })
   })
 
   function menuActionTexts() {
