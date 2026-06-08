@@ -460,6 +460,18 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
+    expect(apiMock.getTestArchiveReport).not.toHaveBeenCalled()
+    expect(container.querySelector('.results-compare-card')).toBeNull()
+    expect(container.textContent).toContain('Ready to compare 2 archived runs')
+    const runComparisonButton = buttonByText(container, 'Run Comparison')
+    expect(runComparisonButton?.disabled).toBe(false)
+
+    await act(async () => {
+      runComparisonButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
     expect(container.textContent).toContain('LOC-RUN-20260512-001')
     expect(container.textContent).toContain('LOC-RUN-20260512-002')
     expect(container.textContent).toContain('Checkout (LOC-RUN-20260512-001)')
@@ -482,6 +494,76 @@ describe('ResultsPage', () => {
 
     expect(p95Tab?.getAttribute('aria-selected')).toBe('true')
     expect(container.textContent).toContain('Showing 95th percentile response time; color identifies the run.')
+  })
+
+  it('allows selecting more than two results without auto-running comparison', async () => {
+    apiMock.listTests.mockResolvedValueOnce({
+      tests: [
+        {
+          id: 'run-a',
+          ref_key: 'LOC-RUN-20260512-001',
+          name: 'Checkout A',
+          status: 'COMPLETE',
+          total_vusers: 10,
+          duration: '5m',
+          created_at: '2026-05-12T18:00:00Z',
+          ended_at: '2026-05-12T18:05:00Z',
+          archive: { ref_key: 'LOC-RUN-20260512-001', transaction_count: 1000 },
+        },
+        {
+          id: 'run-b',
+          ref_key: 'LOC-RUN-20260512-002',
+          name: 'Checkout B',
+          status: 'COMPLETE',
+          total_vusers: 12,
+          duration: '5m',
+          created_at: '2026-05-12T19:00:00Z',
+          ended_at: '2026-05-12T19:05:00Z',
+          archive: { ref_key: 'LOC-RUN-20260512-002', transaction_count: 1100 },
+        },
+        {
+          id: 'run-c',
+          ref_key: 'LOC-RUN-20260512-003',
+          name: 'Checkout C',
+          status: 'COMPLETE',
+          release_id: 'rel-1',
+          total_vusers: 14,
+          duration: '5m',
+          created_at: '2026-05-12T20:00:00Z',
+          ended_at: '2026-05-12T20:05:00Z',
+          archive: { ref_key: 'LOC-RUN-20260512-003', transaction_count: 1200 },
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    const selectAll = container.querySelector<HTMLInputElement>('thead input[type="checkbox"]')
+    expect(selectAll).toBeTruthy()
+    expect(container.querySelector('.results-compare-select-header')?.textContent).toContain('Compare')
+
+    await act(async () => {
+      selectAll?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      selectAll?.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('3 selected')
+    expect(container.textContent).toContain('3 archived runs selected; choose exactly 2 to compare')
+    expect(buttonByText(container, 'Run Comparison')?.disabled).toBe(true)
+    expect(apiMock.getTestArchiveReport).not.toHaveBeenCalled()
+    expect(apiMock.getTestArchiveSummaries).not.toHaveBeenCalled()
+    expect(container.querySelector('.results-compare-card')).toBeNull()
   })
 
   it('shows archived browser metrics in the two-run comparison cards', async () => {
@@ -516,6 +598,10 @@ describe('ResultsPage', () => {
     })
 
     await act(async () => {
+      expect(apiMock.getTestArchiveReport).not.toHaveBeenCalled()
+      expect(container.querySelector('.results-compare-card')).toBeNull()
+      buttonByText(container, 'Run Comparison')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
       await Promise.resolve()
     })
 
@@ -675,15 +761,35 @@ describe('ResultsPage', () => {
     expect(container.textContent).not.toContain('External Results')
     expect(apiMock.getReleaseSLAGovernance).not.toHaveBeenCalled()
     expect(apiMock.listExternalResultImports).not.toHaveBeenCalled()
-    expect(container.querySelector<HTMLInputElement>('.results-filter-bar input')?.placeholder).toBe('Search scenario, source, status, or VUsers')
+    expect(container.textContent).toContain('Results Library')
+    expect(container.querySelector('.results-filter-bar')).toBeNull()
+    expect(selectByLabel(container, 'Associated Release')?.value).toBe('rel-1')
+    expect(inputByPlaceholder(container, 'Find releases or results...')).toBeTruthy()
+    expect(selectByLabel(container, 'Status')?.value).toBe('all')
+    expect(selectByLabel(container, 'Archive State')?.value).toBe('all')
     expect(container.textContent).not.toContain('Release Results')
     expect(container.textContent).toContain('Library Sources')
     expect(container.querySelectorAll('.library-source-panel')).toHaveLength(1)
     expect(container.querySelectorAll('.library-source-table')).toHaveLength(1)
     expect(Array.from(container.querySelectorAll('h3.section-title')).map(header => header.textContent)).toEqual(['Library Sources'])
-    expect(container.textContent).toContain('Local')
-    expect(container.textContent).toContain('local only')
+    const headerLabels = Array.from(container.querySelectorAll('.library-source-table thead th'))
+      .map(header => (header.textContent || '').replace(/[↕↑↓]/g, '').trim())
+    expect(headerLabels).toEqual(['Compare', 'Source', 'Scenario', 'Status', 'VUsers', 'Groups', 'Started', 'Duration', 'Archive', 'Actions'])
+    const sourceCell = sourceRowNamed(container, 'iPhone Checkout').querySelector('.results-source-cell')
+    expect(sourceCell?.textContent?.trim()).toBe('Local')
+    expect(container.textContent).not.toContain('local only')
+    expect(container.textContent).not.toContain('Visible Sources')
+    expect(container.querySelector('.results-selection-bar')).toBeNull()
+    expect(container.querySelector('.results-table-selection-toolbar')?.textContent).toContain('0 selected')
+    expect(buttonByText(container, 'Run Comparison')?.disabled).toBe(true)
     expect(container.textContent).toContain('Push')
+
+    await changeInput(inputByPlaceholder(container, 'Find releases or results...'), 'LOC-RUN-20260512-001')
+    expect(sourceRowNamed(container, 'iPhone Checkout')).toBeDefined()
+    expect(container.textContent).not.toContain('iPad Checkout')
+    expect(container.textContent).not.toContain('Visible Sources')
+    expect(container.querySelector('.results-selection-bar')).toBeNull()
+    await changeInput(inputByPlaceholder(container, 'Find releases or results...'), '')
 
     const rootCauseLink = container.querySelector('a[href="/api/v1/tests/run-a/archive/root-cause"]') as HTMLAnchorElement | null
     expect(rootCauseLink).toBeTruthy()
@@ -759,6 +865,13 @@ describe('ResultsPage', () => {
     expect(sourceRowNamed(container, 'Remote Name Match').textContent).toContain('FAILED')
     expect(container.textContent).not.toContain('Remote Other Release')
     expect(sourceRowNamed(container, 'Remote ID Match').textContent).toContain('-')
+    expect(selectByLabel(container, 'Associated Release')?.value).toBe('rel-1')
+
+    await changeSelect(selectByLabel(container, 'Associated Release')!, 'all')
+    expect(sourceRowNamed(container, 'Remote Other Release')).toBeDefined()
+
+    await changeSelect(selectByLabel(container, 'Associated Release')!, 'rel-1')
+    expect(container.textContent).not.toContain('Remote Other Release')
 
     const remoteIDRow = sourceRowNamed(container, 'Remote ID Match')
     const pullButton = buttonInRow(remoteIDRow, 'Pull')
@@ -788,18 +901,18 @@ describe('ResultsPage', () => {
       remote_id: 'remote-run-a',
     }))
 
-    await changeInput(container.querySelector<HTMLInputElement>('.results-filter-bar input')!, 'Remote Name')
+    await changeInput(inputByPlaceholder(container, 'Find releases or results...'), 'Remote Name')
     expect(sourceRowNamed(container, 'Remote Name Match')).toBeDefined()
     expect(container.textContent).not.toContain('Remote ID Match')
     expect(container.textContent).not.toContain('iPhone Checkout')
 
-    await changeInput(container.querySelector<HTMLInputElement>('.results-filter-bar input')!, '')
-    await changeSelect(container.querySelectorAll<HTMLSelectElement>('.results-filter-bar select')[0], 'failed')
+    await changeInput(inputByPlaceholder(container, 'Find releases or results...'), '')
+    await changeSelect(selectByLabel(container, 'Status')!, 'failed')
     expect(sourceRowNamed(container, 'Remote Name Match')).toBeDefined()
     expect(container.textContent).not.toContain('Remote ID Match')
 
-    await changeSelect(container.querySelectorAll<HTMLSelectElement>('.results-filter-bar select')[0], 'all')
-    await changeSelect(container.querySelectorAll<HTMLSelectElement>('.results-filter-bar select')[1], 'pending')
+    await changeSelect(selectByLabel(container, 'Status')!, 'all')
+    await changeSelect(selectByLabel(container, 'Archive State')!, 'pending')
     expect(sourceRowNamed(container, 'Remote Name Match')).toBeDefined()
     expect(container.textContent).not.toContain('iPhone Checkout')
     expect(container.textContent).not.toContain('Remote ID Match')
@@ -823,6 +936,21 @@ function sourceRowNamed(container: HTMLElement, text: string) {
 
 function buttonInRow(row: HTMLTableRowElement, label: string) {
   return Array.from(row.querySelectorAll('button')).find(button => button.textContent?.trim() === label) as HTMLButtonElement | undefined
+}
+
+function buttonByText(container: HTMLElement, label: string) {
+  return Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === label) as HTMLButtonElement | undefined
+}
+
+function inputByPlaceholder(container: HTMLElement, placeholder: string) {
+  const input = container.querySelector<HTMLInputElement>(`input[placeholder="${placeholder}"]`)
+  expect(input).toBeTruthy()
+  return input as HTMLInputElement
+}
+
+function selectByLabel(container: HTMLElement, labelText: string) {
+  const label = Array.from(container.querySelectorAll('label')).find(label => label.querySelector('span')?.textContent === labelText)
+  return label?.querySelector('select') as HTMLSelectElement | null
 }
 
 async function changeInput(input: HTMLInputElement, value: string) {

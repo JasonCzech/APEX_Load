@@ -2,7 +2,7 @@
 
 This guide is for engineers and operators who want to automate APEX Load from CI/CD, external release systems, or integration scripts. It focuses on the public REST and WebSocket API served by the controller.
 
-Last reviewed against `pkg/api/server.go` on June 7, 2026.
+Last reviewed against `pkg/api/server.go` on June 8, 2026.
 
 ## Base URL
 
@@ -48,6 +48,9 @@ Useful auth endpoints:
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| `GET` | `/api/v1/auth/login` | Initiate OIDC login flow; redirects to the configured identity provider. |
+| `GET` | `/api/v1/auth/callback` | OIDC callback; exchanges the authorization code for a signed session. |
+| `POST` | `/api/v1/auth/logout` | Invalidate the current OIDC session and redirect to the identity-provider logout. |
 | `GET` | `/api/v1/auth/me` | Current auth mode, local user status, locally resolved roles, and session metadata. |
 | `GET` | `/api/v1/auth/effective-access?project_id=<id>` | Operations allowed for the current principal from local user bindings or service-account roles. |
 | `GET` | `/api/v1/auth/access-matrix` | Full role-to-operation catalog. |
@@ -368,6 +371,7 @@ Useful scenario endpoints:
 | `GET` | `/api/v1/scenarios/{id}` | Get one scenario. |
 | `PUT` | `/api/v1/scenarios/{id}` | Update a scenario. |
 | `DELETE` | `/api/v1/scenarios/{id}` | Delete a scenario. |
+| `POST` | `/api/v1/scenarios/size-from-goal` | Reverse-calculate recommended VUser counts from a target throughput or latency goal. |
 | `GET` | `/api/v1/scenarios/load-models/support-matrix` | Supported load model features, including chaos-resilience workloads. |
 | `GET` | `/api/v1/scenarios/load-models/templates` | Starter load model templates, including `chaos-resilience-shakeout`. |
 | `GET` | `/api/v1/scenarios/{id}/results` | Runs linked to one scenario. |
@@ -382,6 +386,7 @@ Useful scenario endpoints:
 | `POST` | `/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/approve` | Approve a pending schedule occurrence. |
 | `POST` | `/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/reject` | Reject a pending schedule occurrence. |
 | `GET` | `/api/v1/schedules/health` | Scheduling health, queue, approval, and conflict signals. |
+| `GET` | `/api/v1/run-calendar` | Calendar view of scheduled upcoming and recent completed runs, including scenario labels and release context. |
 
 ### 5. Run And Control Tests
 
@@ -400,17 +405,21 @@ Control endpoints:
 | --- | --- | --- |
 | `GET` | `/api/v1/tests` | List runs. |
 | `POST` | `/api/v1/tests/estimate` | Estimate capacity for a proposed run. |
+| `POST` | `/api/v1/tests/preflight` | Pre-flight capacity and governance policy check for a proposed run without creating it. |
 | `GET` | `/api/v1/tests/{id}` | Get run status and live summary. |
+| `GET` | `/api/v1/tests/{id}/manifest` | Generator assignment manifest for a run (which generators host which groups). |
 | `POST` | `/api/v1/tests/{id}/start` | Start a queued run. |
 | `POST` | `/api/v1/tests/{id}/stop` | Gracefully stop a run. |
 | `POST` | `/api/v1/tests/{id}/abort` | Abort immediately. |
 | `POST` | `/api/v1/tests/{id}/pause` | Soft-pause between actions. |
 | `POST` | `/api/v1/tests/{id}/resume` | Resume a paused run. |
 | `PATCH` | `/api/v1/tests/{id}/vusers` | Change VUser count for a group. Send `action: "run"` to apply `target_vusers`, or `action: "pause"` / `"stop"` to drive that group to zero. Include optional `ramp_duration`, such as `"2m"`, to add or remove VUsers gradually. |
+| `PATCH` | `/api/v1/tests/{id}/goal-targets` | Adjust goal-based SLA thresholds for a running test. |
 | `PATCH` | `/api/v1/tests/{id}/duration` | Extend or shorten duration. |
 | `PATCH` | `/api/v1/tests/{id}/move` | Move a run into another folder. |
 | `DELETE` | `/api/v1/tests/{id}` | Delete a run record. |
 | `GET` | `/api/v1/tests/{id}/metrics` | Current metrics snapshot. |
+| `GET` | `/api/v1/tests/{id}/errors/evidence` | Live error evidence detail for a running test. |
 | `GET` | `/api/v1/tests/{id}/sla-status` | SLA gate status for a run. |
 | `POST` | `/api/v1/tests/{id}/comparison-baseline/pin` | Pin a run as its release comparison baseline. |
 | `DELETE` | `/api/v1/tests/{id}/comparison-baseline/pin` | Remove the pinned comparison baseline. |
@@ -687,6 +696,7 @@ Useful recorder and replay endpoints:
 | --- | --- |
 | `GET` / `POST` | `/api/v1/scenarios` |
 | `POST` | `/api/v1/scenarios/validate-load-model` |
+| `POST` | `/api/v1/scenarios/size-from-goal` |
 | `GET` / `PUT` / `DELETE` | `/api/v1/scenarios/{id}` |
 | `GET` | `/api/v1/scenarios/load-models/support-matrix` |
 | `GET` | `/api/v1/scenarios/load-models/templates` |
@@ -704,6 +714,7 @@ Useful recorder and replay endpoints:
 | `POST` | `/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/approve` |
 | `POST` | `/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/reject` |
 | `GET` | `/api/v1/schedules/health` |
+| `GET` | `/api/v1/run-calendar` |
 
 ### Tests, Runs, And Archives
 
@@ -711,7 +722,9 @@ Useful recorder and replay endpoints:
 | --- | --- |
 | `GET` / `POST` | `/api/v1/tests` |
 | `POST` | `/api/v1/tests/estimate` |
+| `POST` | `/api/v1/tests/preflight` |
 | `GET` / `DELETE` | `/api/v1/tests/{id}` |
+| `GET` | `/api/v1/tests/{id}/manifest` |
 | `GET` | `/api/v1/tests/{id}/sla-status` |
 | `GET` | `/api/v1/tests/{id}/report` |
 | `POST` | `/api/v1/tests/{id}/start` |
@@ -720,11 +733,13 @@ Useful recorder and replay endpoints:
 | `POST` | `/api/v1/tests/{id}/pause` |
 | `POST` | `/api/v1/tests/{id}/resume` |
 | `PATCH` | `/api/v1/tests/{id}/vusers` |
+| `PATCH` | `/api/v1/tests/{id}/goal-targets` |
 | `PATCH` | `/api/v1/tests/{id}/duration` |
 | `PATCH` | `/api/v1/tests/{id}/move` |
 | `POST` | `/api/v1/tests/{id}/comparison-baseline/pin` |
 | `DELETE` | `/api/v1/tests/{id}/comparison-baseline/pin` |
 | `GET` | `/api/v1/tests/{id}/metrics` |
+| `GET` | `/api/v1/tests/{id}/errors/evidence` |
 | `GET` | `/api/v1/tests/{id}/archive` |
 | `GET` | `/api/v1/tests/{id}/archive/manifest` |
 | `GET` | `/api/v1/tests/{id}/archive/files/{name}` |
@@ -745,7 +760,9 @@ Useful recorder and replay endpoints:
 | --- | --- |
 | `GET` | `/api/v1/system/health` |
 | `GET` | `/api/v1/system/readiness` |
+| `GET` | `/api/v1/system/version` |
 | `GET` | `/api/v1/system/inventory` |
+| `GET` | `/api/v1/system/services` |
 | `GET` | `/api/v1/system/usage` |
 | `GET` | `/api/v1/system/usage/export` |
 | `GET` / `POST` | `/api/v1/system/usage/snapshots` |
@@ -760,6 +777,7 @@ Useful recorder and replay endpoints:
 | `GET` | `/api/v1/reports/profiles` |
 | `GET` | `/api/v1/fleet/alerts` |
 | `GET` | `/api/v1/fleet/capacity` |
+| `GET` | `/api/v1/fleet/load-zones` |
 | `GET` | `/api/v1/fleet/provisioner` |
 | `PATCH` | `/api/v1/system/generators/drain` |
 | `GET` / `PUT` | `/api/v1/system/settings` |

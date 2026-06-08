@@ -34,7 +34,7 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
       if (view.mode === 'import') return 'Import Script'
       return 'Script Library'
     case 'results':
-      return 'Results'
+      return 'Results Library'
     case 'monitoring':
       return 'Monitoring'
     case 'docs':

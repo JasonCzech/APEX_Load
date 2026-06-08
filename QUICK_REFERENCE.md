@@ -85,16 +85,23 @@ cp apexload.db apexload.db.backup
 |--------|----------|---------|
 | POST | `/api/v1/tests` | Create test |
 | GET | `/api/v1/tests` | List tests |
+| POST | `/api/v1/tests/estimate` | Estimate capacity for a proposed run |
+| POST | `/api/v1/tests/preflight` | Pre-flight capacity and policy check |
 | GET | `/api/v1/tests/{id}` | Get test details |
+| GET | `/api/v1/tests/{id}/manifest` | Generator assignment manifest |
 | POST | `/api/v1/tests/{id}/start` | Start test |
 | POST | `/api/v1/tests/{id}/stop` | Stop gracefully |
 | POST | `/api/v1/tests/{id}/abort` | Stop immediately |
 | POST | `/api/v1/tests/{id}/pause` | Pause between actions |
 | POST | `/api/v1/tests/{id}/resume` | Resume a paused test |
 | PATCH | `/api/v1/tests/{id}/vusers` | Scale a group at runtime |
+| PATCH | `/api/v1/tests/{id}/goal-targets` | Adjust goal-based SLA thresholds at runtime |
 | PATCH | `/api/v1/tests/{id}/duration` | Adjust duration at runtime |
+| PATCH | `/api/v1/tests/{id}/move` | Move test to a folder |
 | DELETE | `/api/v1/tests/{id}` | Delete a non-active test |
 | GET | `/api/v1/tests/{id}/metrics` | Get current metrics |
+| GET | `/api/v1/tests/{id}/errors/evidence` | Live error evidence |
+| GET | `/api/v1/tests/{id}/sla-status` | SLA gate status |
 | GET | `/api/v1/tests/{id}/archive/browser-diagnostics` | Download browser evidence bundle |
 
 ### Scripts
@@ -118,11 +125,27 @@ cp apexload.db apexload.db.backup
 | `WS /api/v1/ws` | Global events stream |
 | `WS /api/v1/tests/{id}/stream` | Test-specific metrics |
 
+### Scenarios
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| POST | `/api/v1/scenarios` | Create scenario |
+| GET | `/api/v1/scenarios` | List scenarios |
+| POST | `/api/v1/scenarios/validate-load-model` | Validate load model |
+| POST | `/api/v1/scenarios/size-from-goal` | Reverse-calculate VUser count from performance goal |
+| GET | `/api/v1/run-calendar` | Calendar view of scheduled and recent runs |
+| GET | `/api/v1/schedules/health` | Scheduling health and queue signals |
+
 ### System
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | GET | `/api/v1/system/health` | Health check |
+| GET | `/api/v1/system/readiness` | Readiness probe |
+| GET | `/api/v1/system/version` | Controller version |
+| GET | `/api/v1/system/services` | Service health detail |
+| GET | `/api/v1/fleet/load-zones` | Named self-hosted load zones |
+| GET | `/api/v1/fleet/provisioner` | Active generator provisioner |
 
 ---
 
@@ -427,6 +450,7 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Development setup, conventions, architecture internals |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System design, data flow, performance details |
 | [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) | Complete API docs, DSL syntax, examples |
+| [docs/API_USER_GUIDE.md](docs/API_USER_GUIDE.md) | Operator/CI-CD guide: auth, workflows, full endpoint catalogue |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues, debugging, solutions |
 | [QUICK_REFERENCE.md](QUICK_REFERENCE.md) | This file — fast lookup |
 

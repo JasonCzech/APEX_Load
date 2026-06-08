@@ -4797,6 +4797,108 @@ paths:
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
       - GitHub
+  /api/v1/tests/preflight:
+    post:
+      summary: Preflight Test
+      description: '**Handler:** `handlePreflightTest`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handlePreflightTest
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Tests
+  /api/v1/tests/{id}/manifest:
+    get:
+      summary: Get Test Manifest
+      description: '**Handler:** `handleGetTestManifest`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetTestManifest
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/errors/evidence:
+    get:
+      summary: Get Test Live Error Evidence
+      description: '**Handler:** `handleGetLiveErrorEvidence`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetLiveErrorEvidence
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/tests/{id}/goal-targets:
+    patch:
+      summary: Update Goal Targets
+      description: '**Handler:** `handleUpdateGoalTarget`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleUpdateGoalTarget
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      tags:
+      - Tests
+  /api/v1/run-calendar:
+    get:
+      summary: Get Run Calendar
+      description: '**Handler:** `handleGetRunCalendar`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetRunCalendar
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - Schedules
+  /api/v1/system/services:
+    get:
+      summary: Get System Services
+      description: '**Handler:** `handleGetSystemServices`
+
+
+        **Access Control:** Requires Authentication (Role based on specific entity)'
+      operationId: handleGetSystemServices
+      responses:
+        '200':
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+      - System
   /api/v1/ws:
     get:
       summary: Web Socket

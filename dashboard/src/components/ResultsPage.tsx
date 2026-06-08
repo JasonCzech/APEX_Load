@@ -45,7 +45,7 @@ interface Props {
   activeRelease?: Release | null
 }
 
-type SortField = 'source' | 'sync' | 'name' | 'status' | 'total_vusers' | 'groups' | 'started' | 'duration' | 'archive'
+type SortField = 'source' | 'name' | 'status' | 'total_vusers' | 'groups' | 'started' | 'duration' | 'archive'
 type StatusFilter = 'all' | 'complete' | 'failed' | 'aborted'
 type ArchiveFilter = 'all' | 'ready' | 'pending'
 type ComparisonBreakdown = BrowserBreakdown
@@ -98,13 +98,6 @@ function resultSourceStatusTone(status?: string) {
   }
 }
 
-function catalogItemMatchesRelease(item: LibraryCatalogItem, activeRelease?: Release | null) {
-  if (!activeRelease?.id) return true
-  if (item.release_id) return item.release_id === activeRelease.id
-  const releaseName = item.release_name?.trim().toLowerCase()
-  return Boolean(releaseName && releaseName === activeRelease.name.trim().toLowerCase())
-}
-
 function catalogItemForTest(test: TestSummary): LibraryCatalogItem {
   return {
     kind: 'result',
@@ -117,6 +110,27 @@ function catalogItemForTest(test: TestSummary): LibraryCatalogItem {
     updated_at: test.ended_at || test.created_at,
     has_archive: Boolean(test.archive),
   }
+}
+
+function resultReleaseValue(row: ResultSourceRow) {
+  return row.releaseId || row.releaseName || '__unassigned__'
+}
+
+function resultReleaseLabel(row: ResultSourceRow) {
+  return row.releaseName || row.releaseId || 'Unassigned'
+}
+
+function normalizedReleaseKey(value?: string) {
+  return (value || '').trim().toLowerCase()
+}
+
+function rowMatchesReleaseFilter(row: ResultSourceRow, releaseFilter: string, activeRelease?: Release | null) {
+  if (releaseFilter === 'all') return true
+  if (resultReleaseValue(row) === releaseFilter || resultReleaseLabel(row) === releaseFilter) return true
+  if (releaseFilter === activeRelease?.id) {
+    return normalizedReleaseKey(row.releaseName) === normalizedReleaseKey(activeRelease.name)
+  }
+  return false
 }
 
 function formatBrowserMetric(value?: number, suffix = '', digits = 1) {
@@ -269,6 +283,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
   const api = useApi()
   const [tests, setTests] = useState<TestSummary[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [comparisonTestIds, setComparisonTestIds] = useState<string[]>([])
   const [comparisonReports, setComparisonReports] = useState<Record<string, RunArchiveReport>>({})
   const [comparisonSummaries, setComparisonSummaries] = useState<Record<string, IntervalSummaryRecord[]>>({})
   const [comparisonLoading, setComparisonLoading] = useState(false)
@@ -283,6 +298,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('all')
+  const [releaseFilter, setReleaseFilter] = useState('all')
   const refreshRequestRef = useRef(0)
   const openRemoteSettings = useCallback(() => {
     try { window.localStorage.setItem('apexload.settings.focusSection', 'integrations') } catch { /* storage unavailable */ }
@@ -307,7 +323,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
       setResultsRefreshing(true)
     }
     try {
-      const res = await api.listTests({ application_id: activeApplication.id, release_id: activeRelease.id })
+      const res = await api.listTests({ application_id: activeApplication.id })
       if (requestId !== refreshRequestRef.current) return
       setTests(res.tests || [])
       setError('')
@@ -346,6 +362,8 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
 
   useEffect(() => {
     setSelectedIds(new Set())
+    setComparisonTestIds([])
+    setReleaseFilter(activeRelease?.id || 'all')
   }, [activeRelease?.id])
 
   const completed = useMemo(
@@ -380,6 +398,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
           startedAt: test.start_time || test.started_at || test.created_at,
           duration: test.duration,
           releaseId: test.release_id,
+          releaseName: item.release_name || (test.release_id === activeRelease?.id ? activeRelease?.name : undefined),
           hasArchive: Boolean(test.archive),
           archiveCount: test.archive?.transaction_count,
           totalVusers: test.total_vusers,
@@ -392,7 +411,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
 
     if (sourceFilter !== 'local') {
       remoteItems
-        .filter(item => item.kind === 'result' && catalogItemMatchesRelease(item, activeRelease))
+        .filter(item => item.kind === 'result')
         .forEach(item => {
           rows.push({
             rowKey: `remote:${item.remote_item_id || item.id}`,
@@ -410,18 +429,31 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     }
 
     return rows
-  }, [activeRelease, completed, localCatalogById, remoteItems, sourceFilter, syncStatusForLocal, testStatuses])
+  }, [activeRelease?.id, activeRelease?.name, completed, localCatalogById, remoteItems, sourceFilter, syncStatusForLocal, testStatuses])
+
+  const releaseOptions = useMemo(() => {
+    const options = new Map<string, string>()
+    sourceRows.forEach(row => {
+      options.set(resultReleaseValue(row), resultReleaseLabel(row))
+    })
+    if (activeRelease?.id) {
+      options.set(activeRelease.id, activeRelease.name)
+    }
+    return Array.from(options.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((left, right) => left.label.localeCompare(right.label))
+  }, [activeRelease?.id, activeRelease?.name, sourceRows])
 
   const filteredRows = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase()
     return sourceRows.filter(row => {
+      if (!rowMatchesReleaseFilter(row, releaseFilter, activeRelease)) return false
       if (statusFilter !== 'all' && row.status.toLowerCase() !== statusFilter) return false
       if (archiveFilter === 'ready' && !row.hasArchive) return false
       if (archiveFilter === 'pending' && row.hasArchive) return false
       if (!normalizedSearch) return true
       const haystack = [
         row.source,
-        row.syncStatus,
         row.name,
         row.duration,
         row.status,
@@ -430,8 +462,12 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
         row.totalVusers !== undefined ? String(row.totalVusers) : '',
         row.groupCount !== undefined ? String(row.groupCount) : '',
         row.item?.content_hash,
+        row.item?.id,
         row.item?.local_item_id,
         row.item?.remote_item_id,
+        row.test?.id,
+        row.test?.ref_key,
+        row.test?.archive?.ref_key,
         ...(row.test?.groups || []).map(group => group.name || group.script_name || group.script_id),
       ]
         .filter(Boolean)
@@ -439,7 +475,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
         .toLowerCase()
       return haystack.includes(normalizedSearch)
     })
-  }, [archiveFilter, search, sourceRows, statusFilter])
+  }, [activeRelease, archiveFilter, releaseFilter, search, sourceRows, statusFilter])
 
   const sortedRows = useMemo(() => {
     return [...filteredRows].sort((a, b) => {
@@ -449,10 +485,6 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
         case 'source':
           aValue = a.source
           bValue = b.source
-          break
-        case 'sync':
-          aValue = a.syncStatus.toLowerCase()
-          bValue = b.syncStatus.toLowerCase()
           break
         case 'status':
           aValue = a.status.toLowerCase()
@@ -504,25 +536,45 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     [selectedIds, sortedRows],
   )
 
-  const selectionState = useMemo(() => {
-    const archivedSelected = selectedTests.filter(test => Boolean(test.archive)).length
-    if (archivedSelected >= 2) return `Compare ready: ${archivedSelected} archived runs selected`
-    if (archivedSelected === 1) return 'Select one more archived run to compare'
-    if (selectedTests.length > 0) return 'Archive comparison requires archived runs'
-    return ''
-  }, [selectedTests])
-
-  const comparableTests = useMemo(
-    () => selectedTests.filter(test => test.archive).slice(0, 2),
+  const selectedArchivedTests = useMemo(
+    () => selectedTests.filter(test => Boolean(test.archive)),
     [selectedTests],
   )
 
+  const selectionState = useMemo(() => {
+    if (selectedArchivedTests.length > 2) return `${selectedArchivedTests.length} archived runs selected; choose exactly 2 to compare`
+    if (selectedArchivedTests.length === 2) return 'Ready to compare 2 archived runs'
+    if (selectedArchivedTests.length === 1) return 'Select one more archived run to compare'
+    if (selectedTests.length > 0) return 'Archive comparison requires archived runs'
+    return ''
+  }, [selectedArchivedTests.length, selectedTests.length])
+
+  const canCompareSelected = selectedArchivedTests.length === 2
+
+  const comparisonTests = useMemo(
+    () => {
+      const testById = new Map(completed.map(test => [test.id, test]))
+      return comparisonTestIds.flatMap(id => {
+        const test = testById.get(id)
+        return test?.archive ? [test] : []
+      })
+    },
+    [completed, comparisonTestIds],
+  )
+
   useEffect(() => {
-    if (comparableTests.length !== 2) {
+    if (comparisonTestIds.length !== 2) {
       setComparisonReports({})
       setComparisonSummaries({})
       setComparisonLoading(false)
       setComparisonError('')
+      return
+    }
+    if (comparisonTests.length !== 2) {
+      setComparisonReports({})
+      setComparisonSummaries({})
+      setComparisonLoading(false)
+      setComparisonError('Selected comparison runs are no longer available')
       return
     }
 
@@ -532,10 +584,10 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
       setComparisonError('')
       try {
         const reports = await Promise.all(
-          comparableTests.map(async test => [test.id, (await api.getTestArchiveReport(test.id)) as RunArchiveReport] as const),
+          comparisonTests.map(async test => [test.id, (await api.getTestArchiveReport(test.id)) as RunArchiveReport] as const),
         )
         const summaries = await Promise.all(
-          comparableTests.map(async test => [test.id, ((await api.getTestArchiveSummaries(test.id, { limit: 120, offset: 0 })).summaries || []) as IntervalSummaryRecord[]] as const),
+          comparisonTests.map(async test => [test.id, ((await api.getTestArchiveSummaries(test.id, { limit: 120, offset: 0 })).summaries || []) as IntervalSummaryRecord[]] as const),
         )
         if (!cancelled) {
           setComparisonReports(Object.fromEntries(reports))
@@ -556,12 +608,12 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     return () => {
       cancelled = true
     }
-  }, [api, comparableTests])
+  }, [api, comparisonTestIds.length, comparisonTests])
 
   const comparisonCards = useMemo(() => {
-    if (comparableTests.length !== 2) return []
-    return comparableTests.map(test => ({ test, report: comparisonReports[test.id] }))
-  }, [comparableTests, comparisonReports])
+    if (comparisonTests.length !== 2) return []
+    return comparisonTests.map(test => ({ test, report: comparisonReports[test.id] }))
+  }, [comparisonReports, comparisonTests])
 
   const comparisonHasBrowserBreakdowns = useMemo(
     () => comparisonCards.some(({ report }) => getBrowserDeviceEntries(report).length > 0 || getBrowserPlatformEntries(report).length > 0 || getBrowserEngineEntries(report).length > 0),
@@ -721,6 +773,11 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     })
   }
 
+  const runSelectedComparison = useCallback(() => {
+    if (!canCompareSelected) return
+    setComparisonTestIds(selectedArchivedTests.map(test => test.id))
+  }, [canCompareSelected, selectedArchivedTests])
+
   const handleDelete = async (id: string, event: React.MouseEvent) => {
     event.stopPropagation()
     await deleteResult(id)
@@ -775,7 +832,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
       <div className="page">
         <div className="page-header">
           <div>
-            <h2>Results</h2>
+            <h2>Results Library</h2>
             <p className="page-subtitle">Select an application and release to browse archived runs.</p>
           </div>
         </div>
@@ -791,7 +848,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
     <div className="page">
       <div className="page-header">
         <div>
-          <h2>Results</h2>
+          <h2>Results Library</h2>
           <p className="page-subtitle">
             {activeApplication.name} / {activeRelease.name}
           </p>
@@ -799,8 +856,8 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
         <div className="results-actions">
           {resultsLoading && <span className="results-load-status">Loading results...</span>}
           {!resultsLoading && resultsRefreshing && <span className="results-load-status">Refreshing...</span>}
-          {selectedIds.size === 2 && comparableTests.length === 2 && (
-            <span className="results-compare-hint">Comparing 2 archived runs</span>
+          {comparisonCards.length === 2 && (
+            <span className="results-compare-hint">Comparison loaded</span>
           )}
           {selectedIds.size > 0 && (
             <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} onClick={deleteSelected}>
@@ -811,52 +868,6 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
       </div>
 
       {error && <div className="settings-error-inline">{error}</div>}
-
-      <div className="results-filter-bar">
-        <input
-          className="settings-input"
-          value={search}
-          onChange={event => setSearch(event.target.value)}
-          placeholder="Search scenario, source, status, or VUsers"
-        />
-        <select className="settings-input" value={statusFilter} onChange={event => setStatusFilter(event.target.value as StatusFilter)}>
-          <option value="all">All statuses</option>
-          <option value="complete">Complete</option>
-          <option value="failed">Failed</option>
-          <option value="aborted">Aborted</option>
-        </select>
-        <select className="settings-input" value={archiveFilter} onChange={event => setArchiveFilter(event.target.value as ArchiveFilter)}>
-          <option value="all">All archive states</option>
-          <option value="ready">Archive ready</option>
-          <option value="pending">Archive pending</option>
-        </select>
-      </div>
-
-      {(selectedIds.size > 0 || filteredRows.length !== sourceRows.length) && (
-        <div className="results-selection-bar">
-          <div>
-            <span>Visible Sources</span>
-            <strong>{filteredRows.length} of {sourceRows.length}</strong>
-          </div>
-          {selectedIds.size > 0 && (
-            <div>
-              <span>Selected Local</span>
-              <strong>{selectedIds.size}</strong>
-            </div>
-          )}
-          {selectionState && (
-            <div className="wide">
-              <span>Compare Status</span>
-              <strong>{selectionState}</strong>
-            </div>
-          )}
-          {selectedIds.size > 0 && (
-            <button className="btn btn-secondary" onClick={() => setSelectedIds(new Set())}>
-              Clear Selection
-            </button>
-          )}
-        </div>
-      )}
 
       {(comparisonCards.length === 2 || comparisonLoading || comparisonError) && (
         <div className="page-section">
@@ -1156,15 +1167,76 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
       )}
 
       <div className="page-section">
-        <div className="library-source-panel">
+        <div className="library-source-panel results-library-panel">
           <LibraryFederationControls
             kind="result"
             federation={federation}
             onConfigureRemotes={openRemoteSettings}
+            filterControls={(
+              <>
+                <label className="project-redaction-rule-field">
+                  <span>Associated Release</span>
+                  <select
+                    className="settings-input library-source-select library-release-filter"
+                    value={releaseFilter}
+                    onChange={event => setReleaseFilter(event.target.value)}
+                  >
+                    <option value="all">All releases</option>
+                    {releaseFilter !== 'all' && !releaseOptions.some(option => option.value === releaseFilter) && (
+                      <option value={releaseFilter}>{releaseFilter}</option>
+                    )}
+                    {releaseOptions.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="project-redaction-rule-field">
+                  <span>Search Release</span>
+                  <input
+                    className="settings-input"
+                    type="search"
+                    value={search}
+                    onChange={event => setSearch(event.target.value)}
+                    placeholder="Find releases or results..."
+                  />
+                </label>
+                <label className="project-redaction-rule-field">
+                  <span>Status</span>
+                  <select className="settings-input library-source-select" value={statusFilter} onChange={event => setStatusFilter(event.target.value as StatusFilter)}>
+                    <option value="all">All statuses</option>
+                    <option value="complete">Complete</option>
+                    <option value="failed">Failed</option>
+                    <option value="aborted">Aborted</option>
+                  </select>
+                </label>
+                <label className="project-redaction-rule-field">
+                  <span>Archive State</span>
+                  <select className="settings-input library-source-select" value={archiveFilter} onChange={event => setArchiveFilter(event.target.value as ArchiveFilter)}>
+                    <option value="all">All archive states</option>
+                    <option value="ready">Archive ready</option>
+                    <option value="pending">Archive pending</option>
+                  </select>
+                </label>
+              </>
+            )}
             summaryText={resultsLoading
               ? 'Loading local and remote result sources...'
               : `${filteredRows.length} result source${filteredRows.length === 1 ? '' : 's'} for ${activeRelease.name}.`}
           />
+          <div className="results-table-selection-toolbar">
+            <div className="results-table-selection-summary">
+              <span>{selectedIds.size} selected</span>
+              <strong>{selectionState || 'Select exactly 2 archived local results to compare'}</strong>
+            </div>
+            <div className="results-table-selection-actions">
+              <button className="btn btn-secondary" onClick={runSelectedComparison} disabled={!canCompareSelected}>
+                Run Comparison
+              </button>
+              <button className="btn btn-ghost" onClick={() => setSelectedIds(new Set())} disabled={selectedIds.size === 0}>
+                Clear
+              </button>
+            </div>
+          </div>
           {resultsLoading ? (
             <div className="empty-card results-loading-card" role="status" aria-live="polite" aria-busy="true">
               <span className="results-loading-spinner" aria-hidden="true" />
@@ -1186,18 +1258,31 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
           ) : (
             <div className="data-table library-source-table-wrap">
               <table className="library-source-table results-library-source-table">
+                <colgroup>
+                  <col className="results-select-col" />
+                  <col className="results-source-col" />
+                  <col className="results-scenario-col" />
+                  <col className="results-status-col" />
+                  <col className="results-number-col" />
+                  <col className="results-number-col" />
+                  <col className="results-started-col" />
+                  <col className="results-duration-col" />
+                  <col className="results-archive-col" />
+                  <col className="results-actions-col" />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th style={{ width: 40 }}>
+                    <th className="results-compare-select-header">
+                      <span>Compare</span>
                       <input
                         type="checkbox"
+                        aria-label="Select all visible local results for comparison"
                         checked={allSelectableRowsSelected}
                         disabled={selectableRowIds.length === 0}
                         onChange={toggleSelectAll}
                       />
                     </th>
                     <th onClick={() => handleSort('source')} className="sortable">Source <SortIcon active={sortField === 'source'} direction={sortDirection} /></th>
-                    <th onClick={() => handleSort('sync')} className="sortable">Sync <SortIcon active={sortField === 'sync'} direction={sortDirection} /></th>
                     <th onClick={() => handleSort('name')} className="sortable">Scenario <SortIcon active={sortField === 'name'} direction={sortDirection} /></th>
                     <th onClick={() => handleSort('status')} className="sortable">Status <SortIcon active={sortField === 'status'} direction={sortDirection} /></th>
                     <th onClick={() => handleSort('total_vusers')} className="sortable">VUsers <SortIcon active={sortField === 'total_vusers'} direction={sortDirection} /></th>
@@ -1223,9 +1308,10 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
                         className={`${test ? 'clickable-row' : 'no-hover'} ${test && selectedIds.has(test.id) ? 'selected' : ''}`}
                         onClick={test ? () => onSelectTest(test.id) : undefined}
                       >
-                        <td>
+                        <td className="results-compare-select-cell">
                           {test ? (
                             <input
+                              aria-label={`Select ${row.name} for comparison`}
                               type="checkbox"
                               checked={selectedIds.has(test.id)}
                               onClick={event => event.stopPropagation()}
@@ -1235,8 +1321,9 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onNaviga
                             <span className="cell-muted">-</span>
                           )}
                         </td>
-                        <td><span className="script-health-token">{row.source}</span></td>
-                        <td><span className={`script-health-token ${libraryStatusTone(row.syncStatus)}`}>{row.syncStatus}</span></td>
+                        <td className="results-source-cell">
+                          <span className="script-health-token">{row.source}</span>
+                        </td>
                         <td className="cell-name">
                           <div>{row.name}</div>
                           <div className="script-table-meta">

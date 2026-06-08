@@ -183,45 +183,14 @@ PATCH /api/v1/tests/test-789/duration
   "status": "adjusted"
 }
 ```
-  "ramp_up_seconds": 30,
-  "created_at": "2026-05-11T10:30:00Z"
-}
-```
 
 #### List all tests
 
-**Response:**
-```json
-{
-  "test_id": "test-789",
-  "status": "RUNNING",
-  "metrics": {
-    "timestamp": "2026-05-11T10:31:45Z",
-    "total_requests": 4250,
-    "total_errors": 12,
-    "tps": 94.4,
-    "avg_response_ms": 156.3,
-    "p95_ms": 482.5,
-    "p99_ms": 892.1
-  },
-  "history": [
-    {
-      "timestamp": "2026-05-11T10:31:40Z",
-      "tps": 92.1,
-      "avg_response_ms": 149.7
-    }
-  ]
-}
 ```
-  }
-]
+GET /api/v1/tests
 ```
-- `test_started`: Run start transition
-- `test_stopping`: Graceful stop requested
-- `test_paused`: Run paused between actions
-- `test_resumed`: Run resumed from pause
-- `vusers_changed`: Runtime group VUser scaling applied
-- `duration_changed`: Runtime duration change applied
+
+Returns a list of tests. Accepts `project_id`, `release_id`, and `folder_id` query parameters to scope results.
 
 #### Get test details and status
 
@@ -904,28 +873,21 @@ POST /api/v1/recorder/start
 }
 ```
 
-#### Stop recording and save HAR
+#### Stop recording
 
 ```
-POST /api/v1/recorder/stop
+POST /api/v1/recorder/{id}/stop
 ```
 
-**Response:**
-```json
-{
-  "har_id": "har-001",
-  "request_count": 47,
-  "duration_seconds": 123
-}
-```
+Stops an active recording session and seals its captured request log.
 
-#### Download recorded HAR file
+#### Export recording evidence
 
 ```
-GET /api/v1/recorder/har?har_id=har-001
+GET /api/v1/recorder/{id}/export
 ```
 
-Returns HAR file with `Content-Type: application/json`.
+Returns recorded traffic evidence (HAR-compatible) with `Content-Type: application/json`.
 
 ### Correlation Intelligence
 

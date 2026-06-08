@@ -70,11 +70,16 @@ The controller binary serves a REST API on `:8080` (configurable via `APEXLOAD_A
 ```
 POST   /api/v1/tests                 — Create and queue a test
 GET    /api/v1/tests                 — List all tests
+POST   /api/v1/tests/estimate        — Estimate capacity for a proposed run
+POST   /api/v1/tests/preflight       — Pre-flight capacity + governance check (no run created)
 GET    /api/v1/tests/{id}            — Get test status + live metrics
+GET    /api/v1/tests/{id}/manifest   — Generator assignment manifest for a run
 POST   /api/v1/tests/{id}/start      — Start a queued test
 POST   /api/v1/tests/{id}/stop       — Graceful stop
 POST   /api/v1/tests/{id}/abort      — Immediate abort
+PATCH  /api/v1/tests/{id}/goal-targets — Adjust goal-based SLA thresholds at runtime
 GET    /api/v1/tests/{id}/metrics    — Current metrics snapshot
+GET    /api/v1/tests/{id}/errors/evidence — Live error evidence for a running test
 WS     /api/v1/tests/{id}/stream     — WebSocket stream for one test
 POST   /api/v1/scripts               — Upload a script (JSON DSL)
 GET    /api/v1/scripts               — List scripts
@@ -108,10 +113,15 @@ GET    /api/v1/integrations/github/repos — List repos the connected user can a
 GET    /api/v1/integrations/github/branches?owner=&repo= — List a repo's branches
 GET    /api/v1/integrations/github/contents?owner=&repo=&path=&ref= — Browse repo files/dirs
 GET    /api/v1/releases/{id}/trend   — Multi-run trend analysis (deltas + regression flags)
+POST   /api/v1/scenarios/size-from-goal — Reverse-calculate VUser count from performance goal
+GET    /api/v1/run-calendar          — Calendar view of scheduled and recent runs
 GET    /api/v1/fleet/provisioner     — Active generator provisioner (static fleet vs on-demand)
+GET    /api/v1/fleet/load-zones      — Named self-hosted load zones with capacity envelopes
 GET    /api/v1/correlations/rules    — Correlation detection rule catalog
 POST   /api/v1/correlations/diagnose — Replay-failure detection + ranked repair suggestions
 GET    /api/v1/system/health         — Health check
+GET    /api/v1/system/version        — Controller version info
+GET    /api/v1/system/services       — Service health detail
 WS     /api/v1/ws                    — Global WebSocket (all test events)
 ```
 
