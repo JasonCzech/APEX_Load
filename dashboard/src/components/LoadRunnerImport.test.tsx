@@ -553,6 +553,116 @@ describe('LoadRunnerImport', () => {
     }))
   })
 
+  it('surfaces TrueClient2 compatibility report from LoadRunner import responses', async () => {
+    apiMock.importLoadRunner.mockResolvedValueOnce({
+      script: {
+        name: 'Checkout Web2',
+        protocol: 'browser',
+        actions: [
+          {
+            name: 'Custom JS',
+            type: 'browser_evaluate_js',
+            target: 'window.checkoutReady === true',
+            metadata: {
+              review_required: true,
+              review_gate: 'javascript',
+              promotion_blocker: true,
+            },
+          },
+        ],
+        metadata: {
+          import: {
+            source: 'loadrunner',
+            source_script_name: 'CheckoutWeb2.zip',
+            preserved: {},
+          },
+        },
+      },
+      warnings: ['TruClient 2.0 - Web import is review-only'],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      trueclient2_compat_report: {
+        source_script_type: 'TruClient 2.0 - Web',
+        source_profile: 'truclient2_web',
+        import_mode: 'review_only',
+        promotion_status: 'blocked',
+        promotion_allowed: false,
+        imported_steps: 3,
+        converted_actions: 2,
+        skipped_review_steps: 1,
+        supported_step_families: ['navigate', 'click'],
+        review_only_step_families: ['evaluate_javascript'],
+        unsupported_step_families: ['if_loop_mapping'],
+        selector_confidence_pct: 86,
+        selector_candidate_count: 5,
+        runtime_parity_status: 'review_required',
+        replay_status: 'required',
+        javascript_review_gate: 'required',
+        frame_window_blockers: 1,
+        http_conversion_readiness: 'draft_required',
+        fixture_contract_status: 'blocked',
+        findings: ['Review-gated JavaScript is present.'],
+        next_actions: ['Run draft browser replay.', 'Approve JavaScript before promotion.'],
+      },
+      summary: {
+        project_file: 'CheckoutWeb2.usr',
+        project_sections: ['Actions'],
+        runtime_files: ['default.cfg'],
+        unsupported_function_count: 0,
+      },
+      stats: {
+        total_functions: 3,
+        converted_actions: 2,
+        extractors: 0,
+        think_times: 0,
+        transactions: 0,
+        skipped: 1,
+      },
+    })
+
+    await act(async () => {
+      root.render(<LoadRunnerImport />)
+    })
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+
+    const file = new File(['zip-content'], 'web2.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('TruClient 2 Compatibility')
+    expect(container.textContent).toContain('Blocked')
+    expect(container.textContent).toContain('TruClient 2.0 - Web')
+    expect(container.textContent).toContain('review_only')
+    expect(container.textContent).toContain('2/3')
+    expect(container.textContent).toContain('86%')
+    expect(container.textContent).toContain('5 candidates')
+    expect(container.textContent).toContain('1 frame/window blockers')
+    expect(container.textContent).toContain('Review-only steps: evaluate_javascript')
+    expect(container.textContent).toContain('Unsupported steps: if_loop_mapping')
+    expect(container.textContent).toContain('Review-gated JavaScript is present.')
+    expect(container.textContent).toContain('Approve JavaScript before promotion.')
+  })
+
   it('copies selected source mapping snippets', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(document, 'execCommand', {

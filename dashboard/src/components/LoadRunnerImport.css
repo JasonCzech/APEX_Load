@@ -392,6 +392,30 @@
   font-size: 12px;
   line-height: 1.5;
 }
+.lr-compat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.lr-compat-grid > div {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+.lr-compat-grid span,
+.lr-compat-grid small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.lr-compat-grid strong {
+  display: block;
+  margin: 4px 0;
+  color: var(--text-primary);
+  font-size: 14px;
+}
 .lr-preserved {
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);
@@ -527,6 +551,10 @@
   }
 
   .lr-review-row {
+    grid-template-columns: 1fr;
+  }
+
+  .lr-compat-grid {
     grid-template-columns: 1fr;
   }
 

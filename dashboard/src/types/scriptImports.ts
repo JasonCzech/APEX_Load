@@ -49,6 +49,7 @@ export interface ScriptImportResult<
   detected_protocol?: DetectedLoadRunnerProtocol
   review_artifact?: LoadRunnerReviewArtifact
   source_review?: SourceReview
+  trueclient2_compat_report?: TrueClient2CompatReport
 }
 
 export interface DetectedLoadRunnerProtocol {
@@ -107,8 +108,33 @@ export interface LoadRunnerImportSummary {
   review_artifact?: LoadRunnerReviewArtifact
   source_review?: SourceReview
   salesforce_review?: SalesforceReview
+  trueclient2_compat_report?: TrueClient2CompatReport
   import_mode?: string
   unsupported_function_count: number
+}
+
+export interface TrueClient2CompatReport {
+  source_script_type?: string
+  source_profile?: string
+  import_mode?: string
+  promotion_status?: string
+  promotion_allowed?: boolean
+  imported_steps?: number
+  converted_actions?: number
+  skipped_review_steps?: number
+  supported_step_families?: string[]
+  review_only_step_families?: string[]
+  unsupported_step_families?: string[]
+  selector_confidence_pct?: number
+  selector_candidate_count?: number
+  runtime_parity_status?: string
+  replay_status?: string
+  javascript_review_gate?: string
+  frame_window_blockers?: number
+  http_conversion_readiness?: string
+  fixture_contract_status?: string
+  findings?: string[]
+  next_actions?: string[]
 }
 
 export interface SalesforceDomainObservation {

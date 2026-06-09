@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
-import { type DetectedLoadRunnerProtocol, type ImportRepairSuggestion, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerProtocolSupportEntry, type LoadRunnerReviewArtifact, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse, type SalesforceReview } from '../types/scriptImports'
+import { type DetectedLoadRunnerProtocol, type ImportRepairSuggestion, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerProtocolSupportEntry, type LoadRunnerReviewArtifact, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse, type SalesforceReview, type TrueClient2CompatReport } from '../types/scriptImports'
 import { type BrowserReplaySession } from '../types'
 import { type LoadRunnerSourceReview, type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -73,6 +73,18 @@ function scriptActionCount(script?: ScriptDefinition | null) {
     return Array.isArray(value) ? value.length : 0
   }
   return phaseActions('init') + phaseActions('actions') + phaseActions('teardown')
+}
+
+function getTrueClient2CompatReport(result: LoadRunnerImportResult | null, metadata?: ImportMetadata | null): TrueClient2CompatReport | null {
+  const topLevel = result?.trueclient2_compat_report
+  if (topLevel) return topLevel
+  const summaryReport = result?.summary?.trueclient2_compat_report
+  if (summaryReport) return summaryReport
+  const preservedReport = metadata?.preserved?.trueclient2_compat_report
+  if (preservedReport && typeof preservedReport === 'object' && !Array.isArray(preservedReport)) {
+    return preservedReport as TrueClient2CompatReport
+  }
+  return null
 }
 
 function loadRunnerImportStatusLabel(status: LoadRunnerImportQueueStatus) {
@@ -387,6 +399,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const reviewArtifact = result?.review_artifact ?? result?.summary?.review_artifact ?? null
   const executableImport = !detectedProtocol || detectedProtocol.import_mode === 'executable'
   const importMetadata = getImportMetadata(importedScript || undefined)
+  const trueClient2CompatReport = getTrueClient2CompatReport(result, importMetadata)
   const importSummary = getImportSummary(importMetadata)
   const reviewSummary: LoadRunnerImportSummary | null = result?.summary || null
   const salesforceReview = reviewSummary?.salesforce_review || null
@@ -1317,6 +1330,82 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             onEdit={onEdit ? () => openImportedScriptInEditor() : undefined}
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} /> : undefined}
           >
+
+            {trueClient2CompatReport && (
+              <div className="lr-warnings lr-trueclient2-compat">
+                <div className="lr-review-section">
+                  <div className="lr-review-section-header">
+                    <strong>TruClient 2 Compatibility</strong>
+                    <span>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.promotion_status || 'review')}</span>
+                  </div>
+                  <p>
+                    {trueClient2CompatReport.source_script_type || 'TruClient source'} · {trueClient2CompatReport.import_mode || 'review'} · {trueClient2CompatReport.promotion_allowed ? 'Promotion allowed' : 'Promotion blocked'}
+                  </p>
+                  <div className="lr-compat-grid">
+                    <div>
+                      <span>Steps</span>
+                      <strong>{trueClient2CompatReport.converted_actions ?? 0}/{trueClient2CompatReport.imported_steps ?? 0}</strong>
+                      <small>{trueClient2CompatReport.skipped_review_steps ?? 0} skipped/review</small>
+                    </div>
+                    <div>
+                      <span>Selectors</span>
+                      <strong>{trueClient2CompatReport.selector_confidence_pct ?? 0}%</strong>
+                      <small>{trueClient2CompatReport.selector_candidate_count ?? 0} candidates</small>
+                    </div>
+                    <div>
+                      <span>Runtime</span>
+                      <strong>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.runtime_parity_status || 'unknown')}</strong>
+                      <small>{trueClient2CompatReport.fixture_contract_status || 'fixture status unknown'}</small>
+                    </div>
+                    <div>
+                      <span>Replay</span>
+                      <strong>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.replay_status || 'required')}</strong>
+                      <small>{trueClient2CompatReport.frame_window_blockers ?? 0} frame/window blockers</small>
+                    </div>
+                    <div>
+                      <span>JavaScript</span>
+                      <strong>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.javascript_review_gate || 'none')}</strong>
+                      <small>review gate</small>
+                    </div>
+                    <div>
+                      <span>HTTP Conversion</span>
+                      <strong>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.http_conversion_readiness || 'not ready')}</strong>
+                      <small>scale path</small>
+                    </div>
+                  </div>
+                  {trueClient2CompatReport.supported_step_families?.length ? (
+                    <p>Supported steps: {trueClient2CompatReport.supported_step_families.join(', ')}</p>
+                  ) : null}
+                  {trueClient2CompatReport.review_only_step_families?.length ? (
+                    <p>Review-only steps: {trueClient2CompatReport.review_only_step_families.join(', ')}</p>
+                  ) : null}
+                  {trueClient2CompatReport.unsupported_step_families?.length ? (
+                    <p>Unsupported steps: {trueClient2CompatReport.unsupported_step_families.join(', ')}</p>
+                  ) : null}
+                  {trueClient2CompatReport.findings?.length ? (
+                    <ul>{trueClient2CompatReport.findings.slice(0, 6).map((finding, index) => <li key={`tc2-finding-${index}`}>{finding}</li>)}</ul>
+                  ) : null}
+                  {trueClient2CompatReport.next_actions?.length ? (
+                    <>
+                      <p>Next actions</p>
+                      <ul>{trueClient2CompatReport.next_actions.slice(0, 6).map((action, index) => <li key={`tc2-next-${index}`}>{action}</li>)}</ul>
+                    </>
+                  ) : null}
+                  {onEdit && renderEditorActionButtons([
+                    {
+                      key: 'trueclient2-open-draft',
+                      label: 'Open Imported Draft In Editor',
+                      onClick: () => openImportedScriptInEditor(),
+                    },
+                    {
+                      key: 'trueclient2-runtime-review',
+                      label: 'Open Runtime Review In Editor',
+                      onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
+                    },
+                  ], sectionActionStyle)}
+                </div>
+              </div>
+            )}
 
             {browserImport && (
               <div className="lr-warnings">
