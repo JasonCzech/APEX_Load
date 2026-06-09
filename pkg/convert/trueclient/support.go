@@ -101,9 +101,9 @@ var scriptTypeScopes = []ScriptTypeScope{
 		Status:           ScopeReviewOnly,
 		APEXLoadShape:    "vugen_web2 browser profile",
 		SupportedInputs:  []string{"LoadRunner ZIP", ".usr project metadata", "default.xml", "object repository files", "parameter files", "runtime settings"},
-		RequiredEvidence: []string{"fixture-backed parser coverage", "object identification summary", "runtime settings parity", "browser replay evidence", "browser-to-http conversion evidence"},
-		ReviewSections:   []string{"web2_profile_summary", "object_identification", "runtime_settings_parity", "browser_replay_evidence", "conversion_readiness"},
-		Notes:            "Review-only VuGen Web 2.0 browser-profile import scope; supported step shapes produce a browser draft, but selector identity, waits, runtime parity, and replay evidence must be reviewed before promotion.",
+		RequiredEvidence: []string{"fixture-backed parser coverage", "object identification summary", "runtime settings parity", "browser replay evidence", "promotion review artifact", "browser-to-http conversion evidence"},
+		ReviewSections:   []string{"web2_profile_summary", "object_identification", "runtime_settings_parity", "browser_replay_evidence", "promotion_review", "conversion_readiness"},
+		Notes:            "Review-only VuGen Web 2.0 browser-profile import scope; supported step shapes produce a browser draft, but selector identity, waits, runtime parity, replay evidence, and the saved promotion review artifact must be reviewed before production promotion.",
 	},
 	{
 		CanonicalName:    "truclient_web",
@@ -247,6 +247,14 @@ var web2ProfileCapabilityScopes = []ProfileCapabilityScope{
 		APEXLoadShape:    "conversion candidate report and generated HTTP script draft",
 		RequiredEvidence: []string{"request capture summary", "correlation candidate list", "conversion blockers"},
 		Notes:            "Conversion should be treated as a governed draft flow, not an automatic promotion to high-density load.",
+	},
+	{
+		CanonicalName:    "promotion_review_artifacts",
+		DisplayName:      "Promotion Review Artifacts",
+		Status:           ScopeSupported,
+		APEXLoadShape:    "metadata.import.preserved.trueclient2_promotion_review",
+		RequiredEvidence: []string{"replay session id", "artifact evidence counts", "JavaScript/review gate summary", "selector fallback inventory"},
+		Notes:            "Saved Web 2.0 browser drafts preserve compact promotion evidence in script metadata so replay, selector, JavaScript, and runtime gate decisions survive beyond the transient import session.",
 	},
 	{
 		CanonicalName:    "native_desktop_automation",

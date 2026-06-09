@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
 import { type DetectedLoadRunnerProtocol, type ImportRepairSuggestion, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerProtocolSupportEntry, type LoadRunnerReviewArtifact, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse, type SalesforceReview, type TrueClient2CompatReport } from '../types/scriptImports'
 import { type BrowserReplayEvent, type BrowserReplaySession } from '../types'
-import { type LoadRunnerSourceReview, type ScriptDefinition } from '../types/scripts'
+import { type LoadRunnerSourceReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildReplayStartPayload, getImportSummary, summarizeInlineData } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
@@ -73,6 +73,37 @@ function scriptActionCount(script?: ScriptDefinition | null) {
     return Array.isArray(value) ? value.length : 0
   }
   return phaseActions('init') + phaseActions('actions') + phaseActions('teardown')
+}
+
+function orderedImportScriptActions(script?: ScriptDefinition | null): ScriptActionDefinition[] {
+  if (!script) return []
+  const phasedScript = script as ScriptDefinition & {
+    init?: ScriptActionDefinition[]
+    teardown?: ScriptActionDefinition[]
+  }
+  return [
+    ...(phasedScript.init || []),
+    ...(script.actions || []),
+    ...(phasedScript.teardown || []),
+  ]
+}
+
+function flattenImportScriptActions(actions: ScriptActionDefinition[]): ScriptActionDefinition[] {
+  const flattened: ScriptActionDefinition[] = []
+  actions.forEach(action => {
+    flattened.push(action)
+    if (action.control?.steps?.length) {
+      flattened.push(...flattenImportScriptActions(action.control.steps))
+    }
+    if (action.control?.else?.length) {
+      flattened.push(...flattenImportScriptActions(action.control.else))
+    }
+  })
+  return flattened
+}
+
+function importScriptActionsDeep(script?: ScriptDefinition | null): ScriptActionDefinition[] {
+  return flattenImportScriptActions(orderedImportScriptActions(script))
 }
 
 function getTrueClient2CompatReport(result: LoadRunnerImportResult | null, metadata?: ImportMetadata | null): TrueClient2CompatReport | null {
@@ -235,6 +266,13 @@ interface BrowserReplayEvidenceSummary {
   sourceTransactions: number
 }
 
+interface PromotionReviewInputs {
+  compatReport?: TrueClient2CompatReport | null
+  replaySession?: BrowserReplaySession | null
+  replayWarnings?: string[]
+  importWarnings?: string[]
+}
+
 function getImportedRuntimeSectionId(area?: string | null): string | null {
   const normalizedArea = area?.trim().toLowerCase()
   switch (normalizedArea) {
@@ -322,6 +360,84 @@ function summarizeBrowserReplayEvidence(session?: BrowserReplaySession | null): 
     networkEntries: Math.max(networkEntries, manifest?.network_entries || 0),
     sourceSteps: sourceSteps.size,
     sourceTransactions: sourceTransactions.size,
+  }
+}
+
+function buildTrueClientPromotionReview(script: ScriptDefinition, inputs: PromotionReviewInputs): Record<string, unknown> {
+  const metadata = getImportMetadata(script)
+  const actions = importScriptActionsDeep(script)
+  const replayEvidence = summarizeBrowserReplayEvidence(inputs.replaySession)
+  const reviewRequiredActions = actions.filter(action => Boolean(action.metadata?.review_required)).length
+  const javascriptReviewActions = actions.filter(action => action.type === 'browser_evaluate_js' || action.metadata?.review_gate === 'javascript').length
+  const selectorFallbackCandidates = actions.reduce((count, action) => {
+    const fallbacks = action.metadata?.source_selector_fallbacks
+    return count + (Array.isArray(fallbacks) ? fallbacks.length : 0)
+  }, 0)
+  const replayAttached = Boolean(inputs.replaySession?.id && inputs.replaySession.status === 'completed' && replayEvidence.failed === 0)
+
+  return {
+    schema_version: 1,
+    status: replayAttached ? 'replay_evidence_attached' : 'needs_replay_evidence',
+    generated_at: new Date().toISOString(),
+    source: metadata?.source || 'loadrunner',
+    source_script_name: metadata?.source_script_name || '',
+    compatibility: {
+      source_profile: inputs.compatReport?.source_profile,
+      import_mode: inputs.compatReport?.import_mode,
+      promotion_status: inputs.compatReport?.promotion_status,
+      promotion_allowed: inputs.compatReport?.promotion_allowed ?? false,
+      runtime_parity_status: inputs.compatReport?.runtime_parity_status,
+      replay_status: replayAttached ? 'attached' : inputs.compatReport?.replay_status,
+      javascript_review_gate: inputs.compatReport?.javascript_review_gate,
+      http_conversion_readiness: inputs.compatReport?.http_conversion_readiness,
+      selector_confidence_pct: inputs.compatReport?.selector_confidence_pct,
+      frame_window_blockers: inputs.compatReport?.frame_window_blockers ?? 0,
+    },
+    gates: {
+      review_required_actions: reviewRequiredActions,
+      javascript_review_actions: javascriptReviewActions,
+      selector_fallback_candidates: selectorFallbackCandidates,
+      replay_required: !replayAttached,
+      replay_warnings: inputs.replayWarnings || [],
+      import_warnings: inputs.importWarnings || [],
+    },
+    replay_evidence: {
+      session_id: inputs.replaySession?.id || '',
+      status: inputs.replaySession?.status || 'not_run',
+      started_at: inputs.replaySession?.started_at || '',
+      completed_at: inputs.replaySession?.completed_at || inputs.replaySession?.report?.completed_at || '',
+      events: replayEvidence.events,
+      passed: replayEvidence.passed,
+      failed: replayEvidence.failed,
+      screenshots: replayEvidence.screenshots,
+      dom_html_captures: replayEvidence.domHtmlCaptures,
+      console_entries: replayEvidence.consoleEntries,
+      network_entries: replayEvidence.networkEntries,
+      source_steps: replayEvidence.sourceSteps,
+      source_transactions: replayEvidence.sourceTransactions,
+    },
+    next_actions: replayAttached
+      ? ['Review selector fallbacks and JavaScript approvals before production promotion.']
+      : ['Run draft browser replay and attach evidence before production promotion.'],
+  }
+}
+
+function attachTrueClientPromotionReview(script: ScriptDefinition, inputs: PromotionReviewInputs): ScriptDefinition {
+  const promotionReview = buildTrueClientPromotionReview(script, inputs)
+  const existingMetadata = script.metadata || {}
+  const existingImport = existingMetadata.import || {}
+  return {
+    ...script,
+    metadata: {
+      ...existingMetadata,
+      import: {
+        ...existingImport,
+        preserved: {
+          ...(existingImport.preserved || {}),
+          trueclient2_promotion_review: promotionReview,
+        },
+      },
+    },
   }
 }
 
@@ -1050,8 +1166,16 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       return
     }
     try {
-      const savedScript = await api.createScript(importedScript, projectId)
-      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, importedScript)] })
+      const scriptToSave = browserImport
+        ? attachTrueClientPromotionReview(importedScript, {
+          compatReport: trueClient2CompatReport,
+          replaySession: replayValidationSession,
+          replayWarnings: replayValidationWarnings,
+          importWarnings: result?.warnings || [],
+        })
+        : importedScript
+      const savedScript = await api.createScript(scriptToSave, projectId)
+      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
     } catch (error: unknown) {
       setError(getErrorMessage(error, 'Failed to save script'))
     }

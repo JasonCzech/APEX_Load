@@ -2630,7 +2630,17 @@ describe('LoadRunnerImport', () => {
           },
         },
         actions: [
-          { name: 'Open Store', type: 'browser_navigate', url: '/store' },
+          {
+            name: 'Open Store',
+            type: 'browser_navigate',
+            url: '/store',
+            metadata: {
+              source_selector_fallbacks: [
+                { kind: 'css', value: '#store-link', confidence: 81 },
+                { kind: 'xpath', value: '//a[@href="/store"]', confidence: 68 },
+              ],
+            },
+          },
         ],
         metadata: {
           import: {
@@ -2868,6 +2878,35 @@ describe('LoadRunnerImport', () => {
         name: 'Imported TruClient Mobile Web',
         protocol: 'browser',
       }), 'project-1')
+      const savedScript = apiMock.createScript.mock.calls[0][0]
+      const promotionReview = savedScript.metadata?.import?.preserved?.trueclient2_promotion_review
+      expect(promotionReview).toMatchObject({
+        schema_version: 1,
+        status: 'replay_evidence_attached',
+        source: 'trueclient_mobile_web',
+        source_script_name: 'default.xml',
+        gates: {
+          review_required_actions: 0,
+          javascript_review_actions: 0,
+          selector_fallback_candidates: 2,
+          replay_required: false,
+          replay_warnings: ['selector repair recommended'],
+        },
+        replay_evidence: {
+          session_id: 'draft-browser-validation',
+          status: 'completed',
+          events: 2,
+          passed: 2,
+          failed: 0,
+          screenshots: 1,
+          dom_html_captures: 2,
+          console_entries: 1,
+          network_entries: 2,
+          source_steps: 2,
+          source_transactions: 1,
+        },
+      })
+      expect(promotionReview?.generated_at).toEqual(expect.any(String))
     } finally {
       vi.useRealTimers()
     }

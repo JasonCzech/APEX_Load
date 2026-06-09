@@ -107,6 +107,7 @@ func TestWeb2ProfileCapabilityScopes(t *testing.T) {
 		"object_identification":      ScopeReviewOnly,
 		"runtime_settings":           ScopeReviewOnly,
 		"browser_to_http_conversion": ScopeReviewOnly,
+		"promotion_review_artifacts": ScopeSupported,
 		"native_desktop_automation":  ScopeOutOfScope,
 		"high_density_browser_load":  ScopeOutOfScope,
 	}
@@ -125,6 +126,17 @@ func TestWeb2ProfileCapabilityScopes(t *testing.T) {
 		if scope.APEXLoadShape == "" || len(scope.RequiredEvidence) == 0 {
 			t.Fatalf("Web2ProfileCapabilityScopes[%q] = %#v, want shape and evidence", name, scope)
 		}
+	}
+	if !containsAll(strings.Join(seen["promotion_review_artifacts"].RequiredEvidence, " "), "replay session id", "selector fallback inventory") {
+		t.Fatalf("promotion_review_artifacts evidence = %#v, want durable replay and selector evidence", seen["promotion_review_artifacts"].RequiredEvidence)
+	}
+
+	scriptScope, ok := LookupScriptTypeScope("TruClient 2.0 - Web")
+	if !ok {
+		t.Fatal("missing TruClient 2.0 - Web script scope")
+	}
+	if !containsAll(strings.Join(scriptScope.RequiredEvidence, " "), "promotion review artifact") {
+		t.Fatalf("TruClient 2.0 Web evidence = %#v, want promotion review artifact", scriptScope.RequiredEvidence)
 	}
 }
 
