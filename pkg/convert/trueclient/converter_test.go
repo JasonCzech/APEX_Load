@@ -975,9 +975,9 @@ func TestConvertArchiveWeb2ObjectRepositoryVariantsFixture(t *testing.T) {
 	}
 }
 
-// TestConvertArchiveWeb2IframeWindowFixture is the web2_iframe_window fixture: iframe/window
-// context cannot replay until Phase 3, so the importer must preserve it as action metadata and
-// the inspector must flag it as a replay risk so the step stays review-gated.
+// TestConvertArchiveWeb2IframeWindowFixture is the web2_iframe_window fixture: the importer
+// preserves frame/window context as action metadata and the inspector flags replay diagnostics
+// so browser protocol replay can prove the context transition before production promotion.
 func TestConvertArchiveWeb2IframeWindowFixture(t *testing.T) {
 	files := map[string]string{
 		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>

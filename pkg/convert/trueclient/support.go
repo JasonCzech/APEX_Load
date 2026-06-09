@@ -287,11 +287,11 @@ var web2FixtureContracts = []FixtureContract{
 	{
 		ID:               "web2_iframe_window",
 		DisplayName:      "Iframe And Window Context",
-		Status:           ScopePlanned,
+		Status:           ScopeSupported,
 		Required:         true,
 		Covers:           []string{"iframe targeting", "popup/window switch", "object repository context"},
-		RequiredEvidence: []string{"context transition summary", "replay screenshots", "unsupported context warnings when needed"},
-		Notes:            "Locks down context-aware object identification before Web 2.0 import is marked active.",
+		RequiredEvidence: []string{"context transition summary", "frame-scoped browser replay", "popup/window switch replay", "unsupported context warnings when needed"},
+		Notes:            "Locks down context-aware object identification and browser replay for iframe and popup/window flows.",
 	},
 	{
 		ID:               "web2_custom_javascript_api",

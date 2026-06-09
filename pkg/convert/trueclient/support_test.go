@@ -146,15 +146,16 @@ func TestWeb2FixtureContracts(t *testing.T) {
 		t.Fatal("Web2FixtureContracts returned no fixtures")
 	}
 
-	// Non-iframe Web 2.0 fixtures are satisfied by deterministic converter tests; the iframe
-	// and browser-to-HTTP fixtures stay planned until Phase 3 execution provides replay evidence.
+	// Web 2.0 import fixtures are supported where deterministic converter tests and browser
+	// protocol replay evidence exist. Browser-to-HTTP conversion remains planned until the
+	// governed draft/diff workflow is complete.
 	type contractExpectation struct {
 		required bool
 		status   ScopeStatus
 	}
 	expected := map[string]contractExpectation{
 		"web2_spa_checkout":               {required: true, status: ScopeSupported},
-		"web2_iframe_window":              {required: true, status: ScopePlanned},
+		"web2_iframe_window":              {required: true, status: ScopeSupported},
 		"web2_custom_javascript_api":      {required: true, status: ScopeSupported},
 		"web2_object_repository_variants": {required: true, status: ScopeSupported},
 		"web2_runtime_parameters":         {required: true, status: ScopeSupported},
