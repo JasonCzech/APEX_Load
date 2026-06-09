@@ -341,14 +341,6 @@ func objectDescriptorID(rawArguments string) string {
 	return objectDescriptorIDFromValues(values)
 }
 
-func selectorCandidates(rawArguments string) []SelectorCandidate {
-	values, err := parseArgumentValues(rawArguments)
-	if err != nil {
-		return nil
-	}
-	return selectorCandidatesFromValues(values)
-}
-
 func objectDescriptorIDFromValues(values map[string]truArgument) string {
 	for _, key := range []string{"Object ID", "ObjectID", "object_id", "Descriptor ID", "DescriptorID", "Test Object ID", "Step Object ID"} {
 		if value := argumentValue(values, key); value != "" {

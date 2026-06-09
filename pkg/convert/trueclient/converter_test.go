@@ -808,6 +808,243 @@ func TestConvertArchiveMapsEvaluateJavaScriptLocationNavigation(t *testing.T) {
 	}
 }
 
+func TestConvertArchiveMapsHoverStep(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/menu\&quot;&quot;}}" />
+    <step type="testObject" action="Hover" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#account-menu\&quot;&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Hover Flow"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[1]; action.Type != "browser_hover" || action.Selector != "#account-menu" || action.Target != "#account-menu" {
+		t.Fatalf("action[1] = %#v, want browser_hover on #account-menu", action)
+	}
+	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=2 converted=2 skipped=0", result.Stats)
+	}
+	if len(result.Warnings) != 0 || len(result.Stats.UnsupportedSteps) != 0 {
+		t.Fatalf("warnings=%#v unsupported=%#v, want none", result.Warnings, result.Stats.UnsupportedSteps)
+	}
+}
+
+func TestConvertArchiveAppliesObjectRepositorySelector(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"Web2/ObjectRepository/MainObjects.xml": `<objects><object id="cart-button" name="Cart Button" selector="[data-testid='cart']" data-testid="add-to-cart" /></objects>`,
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://shop.example.com/cart\&quot;&quot;}}" />
+    <step type="testObject" action="Click" index="2" arguments="{&quot;Object ID&quot;:{&quot;value&quot;:&quot;\&quot;cart-button\&quot;&quot;},&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#cart-fallback\&quot;&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Object Repository Selector Flow"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	}
+	click := result.Script.Actions[1]
+	if click.Type != "browser_click" || click.Selector != `[data-testid="add-to-cart"]` || click.Target != `[data-testid="add-to-cart"]` {
+		t.Fatalf("click action = %#v, want highest-confidence object-repository data-testid selector", click)
+	}
+	if confidence, ok := click.Metadata["source_selector_confidence"].(int); !ok || confidence != 95 {
+		t.Fatalf("source_selector_confidence = %#v, want 95", click.Metadata["source_selector_confidence"])
+	}
+	fallbacks, ok := click.Metadata["source_selector_fallbacks"].([]SelectorCandidate)
+	if !ok || len(fallbacks) == 0 {
+		t.Fatalf("source_selector_fallbacks = %#v, want preserved fallback candidates", click.Metadata["source_selector_fallbacks"])
+	}
+	if !containsSelectorCandidate(fallbacks, "css", "#cart-fallback", 85) {
+		t.Fatalf("fallbacks = %#v, want preserved inline #cart-fallback candidate", fallbacks)
+	}
+}
+
+// TestConvertArchiveWeb2SPACheckoutFixture is the baseline web2_spa_checkout fixture: a
+// modern single-page checkout flow that exercises object-repository selector ranking,
+// parameterized input, transaction preservation, and verify-to-assertion mapping in one
+// realistic TruClient 2.0 - Web archive.
+func TestConvertArchiveWeb2SPACheckoutFixture(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"Web2/ObjectRepository/Checkout.xml": `<objects>
+  <object id="qty" name="Quantity" data-testid="qty-input" />
+  <object id="add-to-cart" name="Add To Cart" data-testid="add-to-cart-btn" />
+  <object id="place-order" name="Place Order" selector="button.place-order" />
+</objects>`,
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://shop.example.com/cart\&quot;&quot;}}" />
+    <step type="transaction" action="Start Transaction" index="2" arguments="{&quot;Transaction Name&quot;:{&quot;value&quot;:&quot;\&quot;Checkout\&quot;&quot;}}" />
+    <step type="testObject" action="Set / Type" index="3" arguments="{&quot;Object ID&quot;:{&quot;value&quot;:&quot;\&quot;qty\&quot;&quot;},&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#qty-fallback\&quot;&quot;},&quot;Value&quot;:{&quot;value&quot;:&quot;\&quot;{quantity}\&quot;&quot;}}" />
+    <step type="testObject" action="Click" index="4" arguments="{&quot;Object ID&quot;:{&quot;value&quot;:&quot;\&quot;add-to-cart\&quot;&quot;},&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#cart-fallback\&quot;&quot;}}" />
+    <step type="testObject" action="Click" index="5" arguments="{&quot;Object ID&quot;:{&quot;value&quot;:&quot;\&quot;place-order\&quot;&quot;}}" />
+    <step type="testObject" action="Wait" index="6" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;[data-testid='order-confirmation']\&quot;&quot;}}" />
+    <step type="testObject" action="Verify" index="7" arguments="{&quot;Text&quot;:{&quot;value&quot;:&quot;\&quot;Order Confirmed\&quot;&quot;}}" />
+    <step type="transaction" action="End Transaction" index="8" arguments="{&quot;Transaction Name&quot;:{&quot;value&quot;:&quot;\&quot;Checkout\&quot;&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Web2 SPA Checkout", PreserveTransactions: false})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if result.Stats.Transactions != 1 {
+		t.Fatalf("transactions = %d, want 1", result.Stats.Transactions)
+	}
+	// Navigate, fill, click, click, wait (Verify folds into the preceding wait action).
+	if len(result.Script.Actions) != 5 {
+		t.Fatalf("actions len = %d, want 5: %#v", len(result.Script.Actions), result.Script.Actions)
+	}
+
+	fill := result.Script.Actions[1]
+	if fill.Type != "browser_fill" || fill.Selector != `[data-testid="qty-input"]` || fill.Value != "{quantity}" {
+		t.Fatalf("fill action = %#v, want object-repository qty selector and parameter value", fill)
+	}
+	if fill.Metadata["source_transaction"] != "Checkout" {
+		t.Fatalf("fill source_transaction = %#v, want Checkout", fill.Metadata["source_transaction"])
+	}
+
+	addToCart := result.Script.Actions[2]
+	if addToCart.Type != "browser_click" || addToCart.Selector != `[data-testid="add-to-cart-btn"]` {
+		t.Fatalf("add-to-cart action = %#v, want object-repository data-testid selector", addToCart)
+	}
+
+	// The object's logical id doubles as a high-confidence HTML id selector candidate
+	// (#place-order @90), which outranks the css selector candidate (button.place-order @88).
+	placeOrder := result.Script.Actions[3]
+	if placeOrder.Type != "browser_click" || placeOrder.Selector != "#place-order" {
+		t.Fatalf("place-order action = %#v, want object-repository id selector", placeOrder)
+	}
+
+	wait := result.Script.Actions[4]
+	if wait.Type != "browser_wait" || len(wait.Assertions) != 1 || wait.Assertions[0].Type != "body_contains" || wait.Assertions[0].Value != "Order Confirmed" {
+		t.Fatalf("wait action = %#v, want verify folded into body_contains assertion", wait)
+	}
+	if len(result.Stats.UnsupportedSteps) != 0 {
+		t.Fatalf("unsupported steps = %#v, want none", result.Stats.UnsupportedSteps)
+	}
+}
+
+// TestConvertArchiveWeb2ObjectRepositoryVariantsFixture is the web2_object_repository_variants
+// fixture: it proves the highest-confidence candidate is applied across distinct locator kinds
+// (data-testid attribute, css selector, and xpath) while preserving the rest as fallbacks.
+func TestConvertArchiveWeb2ObjectRepositoryVariantsFixture(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"Web2/ObjectRepository/Variants.xml": `<objects>
+  <object id="search" name="Search" data-testid="search-input" />
+  <object name="Filter" xpath="//select[@name='filter']" />
+  <object name="Login Button" selector="form.login button" />
+</objects>`,
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://app.example.com\&quot;&quot;}}" />
+    <step type="testObject" action="Click" index="2" arguments="{&quot;Object ID&quot;:{&quot;value&quot;:&quot;\&quot;search\&quot;&quot;}}" />
+    <step type="testObject" action="Click" index="3" arguments="{&quot;Object ID&quot;:{&quot;value&quot;:&quot;\&quot;Filter\&quot;&quot;}}" />
+    <step type="testObject" action="Click" index="4" arguments="{&quot;Object ID&quot;:{&quot;value&quot;:&quot;\&quot;Login Button\&quot;&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Web2 Object Repository Variants"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 4 {
+		t.Fatalf("actions len = %d, want 4", len(result.Script.Actions))
+	}
+	cases := []struct {
+		index    int
+		selector string
+	}{
+		{1, `[data-testid="search-input"]`},
+		{2, `xpath=//select[@name='filter']`},
+		{3, `form.login button`},
+	}
+	for _, tc := range cases {
+		action := result.Script.Actions[tc.index]
+		if action.Type != "browser_click" || action.Selector != tc.selector {
+			t.Fatalf("action[%d] = %#v, want selector %q", tc.index, action, tc.selector)
+		}
+	}
+}
+
+// TestConvertArchiveWeb2IframeWindowFixture is the web2_iframe_window fixture: iframe/window
+// context cannot replay until Phase 3, so the importer must preserve it as action metadata and
+// the inspector must flag it as a replay risk so the step stays review-gated.
+func TestConvertArchiveWeb2IframeWindowFixture(t *testing.T) {
+	files := map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://app.example.com\&quot;&quot;}}" />
+    <step type="testObject" action="Click" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#pay\&quot;&quot;},&quot;Frame&quot;:{&quot;value&quot;:&quot;\&quot;checkout-frame\&quot;&quot;},&quot;Window&quot;:{&quot;value&quot;:&quot;\&quot;primary-tab\&quot;&quot;}}" />
+  </step>
+</truScript>`),
+	}
+	result, err := ConvertArchive(files, ConvertOptions{ScriptName: "Web2 Iframe Window"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	click := result.Script.Actions[1]
+	if click.Metadata["source_frame_context"] != "checkout-frame" || click.Metadata["source_window_context"] != "primary-tab" {
+		t.Fatalf("click metadata = %#v, want preserved frame/window context", click.Metadata)
+	}
+
+	inspection, err := InspectArchive(files, "TruClient 2.0 - Web")
+	if err != nil {
+		t.Fatalf("InspectArchive returned error: %v", err)
+	}
+	foundFrameRisk := false
+	for _, step := range inspection.Steps {
+		for _, diagnostic := range step.ReplayDiagnostics {
+			if diagnostic.Code == "frame_mismatch_risk" {
+				foundFrameRisk = true
+			}
+		}
+	}
+	if !foundFrameRisk {
+		t.Fatalf("inspection steps = %#v, want a frame_mismatch_risk replay diagnostic gating the iframe step", inspection.Steps)
+	}
+}
+
+// TestConvertArchiveWeb2CustomJavaScriptAPIFixture is the web2_custom_javascript_api fixture:
+// decomposable jQuery/DOM helpers become native browser actions, while custom JavaScript that
+// cannot be decomposed is preserved as an executable-but-review-gated browser_evaluate_js step.
+func TestConvertArchiveWeb2CustomJavaScriptAPIFixture(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://app.example.com\&quot;&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;$('#coupon').val('SAVE10');\ndocument.querySelector('#apply').click();\nwindow.MyApp.checkout({express: true})&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Web2 Custom JavaScript API"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	// Navigate + decomposed fill + decomposed click + non-decomposable evaluate_js.
+	if len(result.Script.Actions) != 4 {
+		t.Fatalf("actions len = %d, want 4: %#v", len(result.Script.Actions), result.Script.Actions)
+	}
+	if fill := result.Script.Actions[1]; fill.Type != "browser_fill" || fill.Selector != "#coupon" || fill.Value != "SAVE10" {
+		t.Fatalf("action[1] = %#v, want decomposed browser_fill", fill)
+	}
+	if click := result.Script.Actions[2]; click.Type != "browser_click" || click.Selector != "#apply" {
+		t.Fatalf("action[2] = %#v, want decomposed browser_click", click)
+	}
+	if evalAction := result.Script.Actions[3]; evalAction.Type != "browser_evaluate_js" || evalAction.Target != "window.MyApp.checkout({express: true})" {
+		t.Fatalf("action[3] = %#v, want executable browser_evaluate_js fallback", evalAction)
+	}
+}
+
 func encodeUTF16LE(text string) string {
 	words := utf16.Encode([]rune(text))
 	bytes := make([]byte, 0, len(words)*2)

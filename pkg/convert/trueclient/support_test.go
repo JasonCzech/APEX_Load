@@ -60,7 +60,7 @@ func TestLookupStepScope(t *testing.T) {
 		{stepName: "Start Transaction", wantName: "Start Transaction", wantStatus: ScopeSupported, wantType: "transaction metadata", wantOK: true},
 		{stepName: "Scroll", wantName: "Scroll", wantStatus: ScopeSupported, wantType: "browser_swipe", wantOK: true},
 		{stepName: "Evaluate JavaScript", wantName: "Evaluate JavaScript", wantStatus: ScopeReviewOnly, wantType: "browser_fill, browser_click, browser_swipe, or browser_navigate when decomposable", wantOK: true},
-		{stepName: "Hover", wantName: "Hover", wantStatus: ScopeReviewOnly, wantType: "guided repair", wantOK: true},
+		{stepName: "Hover", wantName: "Hover", wantStatus: ScopeSupported, wantType: "browser_hover", wantOK: true},
 		{stepName: "Unknown Step", wantOK: false},
 	}
 
@@ -134,28 +134,34 @@ func TestWeb2FixtureContracts(t *testing.T) {
 		t.Fatal("Web2FixtureContracts returned no fixtures")
 	}
 
-	required := map[string]bool{
-		"web2_spa_checkout":               true,
-		"web2_iframe_window":              true,
-		"web2_custom_javascript_api":      true,
-		"web2_object_repository_variants": true,
-		"web2_runtime_parameters":         true,
-		"web2_browser_to_http_conversion": false,
+	// Non-iframe Web 2.0 fixtures are satisfied by deterministic converter tests; the iframe
+	// and browser-to-HTTP fixtures stay planned until Phase 3 execution provides replay evidence.
+	type contractExpectation struct {
+		required bool
+		status   ScopeStatus
+	}
+	expected := map[string]contractExpectation{
+		"web2_spa_checkout":               {required: true, status: ScopeSupported},
+		"web2_iframe_window":              {required: true, status: ScopePlanned},
+		"web2_custom_javascript_api":      {required: true, status: ScopeSupported},
+		"web2_object_repository_variants": {required: true, status: ScopeSupported},
+		"web2_runtime_parameters":         {required: true, status: ScopeSupported},
+		"web2_browser_to_http_conversion": {required: false, status: ScopePlanned},
 	}
 	seen := map[string]FixtureContract{}
 	for _, fixture := range fixtures {
 		seen[fixture.ID] = fixture
 	}
-	for id, requiredFlag := range required {
+	for id, want := range expected {
 		fixture, ok := seen[id]
 		if !ok {
 			t.Fatalf("Web2FixtureContracts missing %q in %#v", id, fixtures)
 		}
-		if fixture.Required != requiredFlag {
-			t.Fatalf("Web2FixtureContracts[%q].Required = %v, want %v", id, fixture.Required, requiredFlag)
+		if fixture.Required != want.required {
+			t.Fatalf("Web2FixtureContracts[%q].Required = %v, want %v", id, fixture.Required, want.required)
 		}
-		if fixture.Status != ScopePlanned || len(fixture.Covers) == 0 || len(fixture.RequiredEvidence) == 0 {
-			t.Fatalf("Web2FixtureContracts[%q] = %#v, want planned fixture with coverage and evidence", id, fixture)
+		if fixture.Status != want.status || len(fixture.Covers) == 0 || len(fixture.RequiredEvidence) == 0 {
+			t.Fatalf("Web2FixtureContracts[%q] = %#v, want status %q with coverage and evidence", id, fixture, want.status)
 		}
 	}
 }

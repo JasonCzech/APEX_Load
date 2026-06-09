@@ -196,14 +196,14 @@ var stepScopes = []StepScope{
 		DisplayName:      "Evaluate JavaScript",
 		Status:           ScopeReviewOnly,
 		APEXLoadShape: "browser_fill, browser_click, browser_swipe, or browser_navigate when decomposable",
-		Notes:            "Simple jQuery .val(...), .attr('value', ...), .click(), and .trigger('click'), document.querySelector, first-match document.querySelectorAll, document.getElementById, first-match document.getElementsByName, first-match document.getElementsByClassName with safe class tokens, first-match document.getElementsByTagName with safe tag tokens, and document.forms[].elements[] fill/click statements plus window scroll and location navigation statements are decomposed. Collection first-match access supports both [0] and item(0); unsupported shapes stay in guided review with warnings, blocker repair suggestions, and preserved unsupported-step reporting because APEX Load does not expose a public browser-eval action.",
+		Notes:            "Simple jQuery .val(...), .attr('value', ...), .click(), and .trigger('click'), document.querySelector, first-match document.querySelectorAll, document.getElementById, first-match document.getElementsByName, first-match document.getElementsByClassName with safe class tokens, first-match document.getElementsByTagName with safe tag tokens, and document.forms[].elements[] fill/click statements plus window scroll and location navigation statements are decomposed into native browser actions. Collection first-match access supports both [0] and item(0). Statements that cannot be decomposed are imported as executable browser_evaluate_js actions but remain review-gated so recorded JavaScript is validated before promotion.",
 	},
 	{
 		CanonicalName:    "hover",
 		DisplayName:      "Hover",
-		Status:           ScopeReviewOnly,
-		APEXLoadShape: "guided repair",
-		Notes:            "APEX Load does not expose a public browser_hover action yet; imported hover steps stay in review until replay-driven replacement is available.",
+		Status:           ScopeSupported,
+		APEXLoadShape: "browser_hover",
+		Notes:            "Hover and mouse-over steps map to the native browser_hover action using the captured selector or highest-confidence object-repository candidate.",
 	},
 }
 
@@ -270,7 +270,7 @@ var web2FixtureContracts = []FixtureContract{
 	{
 		ID:               "web2_spa_checkout",
 		DisplayName:      "SPA Checkout",
-		Status:           ScopePlanned,
+		Status:           ScopeSupported,
 		Required:         true,
 		Covers:           []string{"navigation", "click", "fill", "wait", "verification", "transactions", "parameterized data"},
 		RequiredEvidence: []string{"converted browser actions", "selector stability summary", "successful replay artifact"},
@@ -288,7 +288,7 @@ var web2FixtureContracts = []FixtureContract{
 	{
 		ID:               "web2_custom_javascript_api",
 		DisplayName:      "Custom JavaScript API",
-		Status:           ScopePlanned,
+		Status:           ScopeSupported,
 		Required:         true,
 		Covers:           []string{"evaluate javascript", "decomposition", "review-only fallbacks", "repair suggestions"},
 		RequiredEvidence: []string{"decomposed action list", "unsupported JavaScript inventory", "guided repair suggestions"},
@@ -297,7 +297,7 @@ var web2FixtureContracts = []FixtureContract{
 	{
 		ID:               "web2_object_repository_variants",
 		DisplayName:      "Object Repository Variants",
-		Status:           ScopePlanned,
+		Status:           ScopeSupported,
 		Required:         true,
 		Covers:           []string{"css selectors", "xpath selectors", "text locators", "attribute locators", "selector ranking"},
 		RequiredEvidence: []string{"parsed repository summary", "ranked selector candidates", "fallback reason codes"},
@@ -306,7 +306,7 @@ var web2FixtureContracts = []FixtureContract{
 	{
 		ID:               "web2_runtime_parameters",
 		DisplayName:      "Runtime And Parameters",
-		Status:           ScopePlanned,
+		Status:           ScopeSupported,
 		Required:         true,
 		Covers:           []string{"runtime settings", "parameters", "data sources", "iteration behavior", "think time"},
 		RequiredEvidence: []string{"runtime parity matrix", "data fit summary", "iteration goal summary"},

@@ -2241,7 +2241,7 @@ func TestHandleLoadRunnerSupportMatrix(t *testing.T) {
 	if !containsLoadRunnerTrueClientCapability(result.Web2ProfileCapabilities, "object_identification", "review_only") {
 		t.Fatalf("web2_profile_capabilities = %#v, want review-only object identification capability", result.Web2ProfileCapabilities)
 	}
-	if !containsLoadRunnerWeb2Fixture(result.Web2FixtureContract, "web2_spa_checkout", true) {
+	if !containsLoadRunnerWeb2Fixture(result.Web2FixtureContract, "web2_spa_checkout", true, "supported") {
 		t.Fatalf("web2_fixture_contract = %#v, want required SPA checkout fixture", result.Web2FixtureContract)
 	}
 }
@@ -3130,9 +3130,9 @@ func containsLoadRunnerWeb2Fixture(entries []struct {
 	ID       string `json:"ID"`
 	Required bool   `json:"Required"`
 	Status   string `json:"Status"`
-}, id string, required bool) bool {
+}, id string, required bool, status string) bool {
 	for _, entry := range entries {
-		if entry.ID == id && entry.Required == required && entry.Status == "planned" {
+		if entry.ID == id && entry.Required == required && entry.Status == status {
 			return true
 		}
 	}

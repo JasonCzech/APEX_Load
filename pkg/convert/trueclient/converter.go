@@ -108,6 +108,7 @@ func ConvertArchive(files map[string]string, opts ConvertOptions) (*ConvertResul
 		Warnings: make([]string, 0),
 	}
 
+	descriptors := collectObjectDescriptors(files)
 	baseURL := strings.TrimSpace(opts.BaseURL)
 	currentTransaction := ""
 	for _, step := range executionSteps(doc.Steps) {
@@ -142,7 +143,7 @@ func ConvertArchive(files map[string]string, opts ConvertOptions) (*ConvertResul
 			continue
 		}
 
-		actions, warnings, unsupported, err := convertStep(step)
+		actions, warnings, unsupported, err := convertStep(step, descriptors)
 		if err != nil {
 			return nil, err
 		}
@@ -168,7 +169,7 @@ func ConvertArchive(files map[string]string, opts ConvertOptions) (*ConvertResul
 			if opts.PreserveTransactions && currentTransaction != "" {
 				action.Name = sanitizeTransactionActionName(currentTransaction, action.Name)
 			}
-			attachSourceStepMetadata(&action, step, currentTransaction)
+			attachSourceStepMetadata(&action, step, currentTransaction, descriptors)
 			if baseURL == "" && action.Type == "browser_navigate" {
 				baseURL = detectBaseURL(action.Target)
 			}
@@ -358,7 +359,7 @@ func isStructuralAction(action string) bool {
 	}
 }
 
-func convertStep(step truXMLStep) ([]dsl.Action, []string, bool, error) {
+func convertStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action, []string, bool, error) {
 	switch strings.TrimSpace(step.Action) {
 	case "Navigate":
 		location, err := parseArgumentValue(step.Arguments, "Location")
@@ -375,11 +376,26 @@ func convertStep(step truXMLStep) ([]dsl.Action, []string, bool, error) {
 			Target: location,
 		}}, nil, false, nil
 	case "Click", "Double Click", "Double-click", "DoubleClick", "Submit", "Check", "Uncheck", "Select Radio", "Select Checkbox", "Radio", "Checkbox":
-		action, err := convertClickLikeStep(step)
+		action, err := convertClickLikeStep(step, descriptors)
 		if err != nil {
 			return nil, nil, false, err
 		}
 		return []dsl.Action{action}, nil, false, nil
+	case "Hover", "Mouse Over", "MouseOver":
+		selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element")
+		if err != nil {
+			return nil, nil, false, fmt.Errorf("parse TruClient Hover step arguments: %w", err)
+		}
+		selector = resolveSelector(step, descriptors, trimQuotedValue(selector))
+		if selector == "" {
+			return nil, nil, false, fmt.Errorf("TruClient Hover step is missing a selector value")
+		}
+		return []dsl.Action{{
+			Name:     stepDisplayName(step, "Hover"),
+			Type:     "browser_hover",
+			Target:   selector,
+			Selector: selector,
+		}}, nil, false, nil
 	case "Set / Type", "Set", "Type":
 		selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element")
 		if err != nil {
@@ -389,7 +405,7 @@ func convertStep(step truXMLStep) ([]dsl.Action, []string, bool, error) {
 		if err != nil {
 			return nil, nil, false, fmt.Errorf("parse TruClient Set / Type step value arguments: %w", err)
 		}
-		selector = trimQuotedValue(selector)
+		selector = resolveSelector(step, descriptors, trimQuotedValue(selector))
 		value = trimQuotedValue(value)
 		if selector == "" {
 			return nil, nil, false, fmt.Errorf("TruClient Set / Type step is missing a selector value")
@@ -413,7 +429,7 @@ func convertStep(step truXMLStep) ([]dsl.Action, []string, bool, error) {
 		if err != nil {
 			return nil, nil, false, fmt.Errorf("parse TruClient Select step value arguments: %w", err)
 		}
-		selector = trimQuotedValue(selector)
+		selector = resolveSelector(step, descriptors, trimQuotedValue(selector))
 		value = trimQuotedValue(value)
 		if selector == "" {
 			return nil, nil, false, fmt.Errorf("TruClient Select step is missing a selector value")
@@ -435,7 +451,7 @@ func convertStep(step truXMLStep) ([]dsl.Action, []string, bool, error) {
 		}
 		return []dsl.Action{action}, nil, false, nil
 	case "Wait":
-		waitAction, ok, err := convertWaitStep(step)
+		waitAction, ok, err := convertWaitStep(step, descriptors)
 		if err != nil {
 			return nil, nil, false, err
 		}
@@ -467,13 +483,13 @@ func convertStep(step truXMLStep) ([]dsl.Action, []string, bool, error) {
 	}
 }
 
-func convertClickLikeStep(step truXMLStep) (dsl.Action, error) {
+func convertClickLikeStep(step truXMLStep, descriptors []ObjectDescriptor) (dsl.Action, error) {
 	actionName := strings.TrimSpace(step.Action)
 	selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element")
 	if err != nil {
 		return dsl.Action{}, fmt.Errorf("parse TruClient %s step arguments: %w", actionName, err)
 	}
-	selector = trimQuotedValue(selector)
+	selector = resolveSelector(step, descriptors, trimQuotedValue(selector))
 	if selector == "" {
 		return dsl.Action{}, fmt.Errorf("TruClient %s step is missing a selector value", actionName)
 	}
@@ -563,7 +579,7 @@ func convertScrollStep(step truXMLStep) (dsl.Action, error) {
 	}, nil
 }
 
-func attachSourceStepMetadata(action *dsl.Action, step truXMLStep, transaction string) {
+func attachSourceStepMetadata(action *dsl.Action, step truXMLStep, transaction string, descriptors []ObjectDescriptor) {
 	if action == nil {
 		return
 	}
@@ -588,9 +604,12 @@ func attachSourceStepMetadata(action *dsl.Action, step truXMLStep, transaction s
 	if value := objectDescriptorID(step.Arguments); value != "" {
 		action.Metadata["source_object_descriptor_id"] = value
 	}
-	if candidates := selectorCandidates(step.Arguments); len(candidates) > 0 {
+	if candidates, _ := rankedSelectorCandidates(step, descriptors); len(candidates) > 0 {
 		action.Metadata["source_selector_candidates"] = candidates
 		action.Metadata["source_selector_confidence"] = candidates[0].Confidence
+		if len(candidates) > 1 {
+			action.Metadata["source_selector_fallbacks"] = candidates[1:]
+		}
 	}
 	if values, err := parseArgumentValues(step.Arguments); err == nil {
 		if value := trimArgumentValue(values, "Frame", "Frame ID", "FrameContext", "Iframe", "Iframe ID"); value != "" {
@@ -611,6 +630,80 @@ func attachSourceStepMetadata(action *dsl.Action, step truXMLStep, transaction s
 	}
 }
 
+// collectObjectDescriptors parses every object-repository file in the archive into
+// ranked object descriptors so the converter can apply repository-quality selectors
+// instead of relying on the inline locator captured in each step.
+func collectObjectDescriptors(files map[string]string) []ObjectDescriptor {
+	descriptors := make([]ObjectDescriptor, 0)
+	for name, content := range files {
+		if classifyArchiveFile(name) == "object_repository" {
+			descriptors = append(descriptors, parseObjectRepositoryDescriptors(name, content)...)
+		}
+	}
+	return uniqueObjectDescriptors(descriptors)
+}
+
+// resolveSelector returns the best selector for a step. When an object-repository
+// descriptor matches the step, the highest-confidence css/xpath candidate (inline +
+// descriptor, ranked by confidence) is used; otherwise the inline selector is returned
+// unchanged so archives without object repositories behave exactly as before.
+func resolveSelector(step truXMLStep, descriptors []ObjectDescriptor, inlineSelector string) string {
+	candidates, matched := rankedSelectorCandidates(step, descriptors)
+	if matched {
+		if best := playwrightSelectorFromCandidates(candidates); best != "" {
+			return best
+		}
+	}
+	return inlineSelector
+}
+
+// rankedSelectorCandidates combines the inline locators captured on the step with the
+// candidates derived from a matching object-repository descriptor, returning them ranked
+// by confidence. The boolean reports whether an object descriptor matched the step.
+func rankedSelectorCandidates(step truXMLStep, descriptors []ObjectDescriptor) ([]SelectorCandidate, bool) {
+	values, _ := parseArgumentValues(step.Arguments)
+	candidates := selectorCandidatesFromValues(values)
+	matched := false
+	if descriptor := matchObjectDescriptor(descriptors, objectDescriptorIDFromValues(values), step); descriptor != nil {
+		matched = true
+		candidates = append(candidates, descriptor.SelectorCandidates...)
+	}
+	return uniqueSelectorCandidates(candidates), matched
+}
+
+// playwrightSelectorFromCandidates returns the highest-confidence candidate that is
+// directly usable as a Playwright selector string (css or xpath). Role/text candidates
+// are preserved in metadata for review but are not promoted automatically because they
+// are not unambiguous selector strings.
+func playwrightSelectorFromCandidates(candidates []SelectorCandidate) string {
+	for _, candidate := range candidates {
+		switch strings.ToLower(strings.TrimSpace(candidate.Kind)) {
+		case "css":
+			if value := strings.TrimSpace(candidate.Value); value != "" {
+				return value
+			}
+		case "xpath":
+			if value := normalizeXPathSelector(candidate.Value); value != "" {
+				return value
+			}
+		}
+	}
+	return ""
+}
+
+// normalizeXPathSelector prefixes a bare XPath expression with the explicit Playwright
+// "xpath=" engine prefix so it is never mistaken for a CSS selector.
+func normalizeXPathSelector(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if strings.HasPrefix(strings.ToLower(value), "xpath=") {
+		return value
+	}
+	return "xpath=" + value
+}
+
 func normalizeScrollDirection(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "up", "north":
@@ -626,11 +719,11 @@ func normalizeScrollDirection(value string) string {
 	}
 }
 
-func convertWaitStep(step truXMLStep) (dsl.Action, bool, error) {
+func convertWaitStep(step truXMLStep, descriptors []ObjectDescriptor) (dsl.Action, bool, error) {
 	timeoutMs := parseTimeoutMs(step.Arguments)
 	if selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element"); err != nil {
 		return dsl.Action{}, false, fmt.Errorf("parse TruClient Wait step selector arguments: %w", err)
-	} else if selector = trimQuotedValue(selector); selector != "" {
+	} else if selector = resolveSelector(step, descriptors, trimQuotedValue(selector)); selector != "" {
 		return dsl.Action{
 			Name:     stepDisplayName(step, "Wait"),
 			Type:     "browser_wait",
