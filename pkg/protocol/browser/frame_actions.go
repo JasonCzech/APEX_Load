@@ -80,6 +80,26 @@ func (b *Browser) dragAndDropAction(action *protocol.Action, source, target stri
 	return b.pwPage.DragAndDrop(source, target)
 }
 
+func (b *Browser) setInputFilesAction(action *protocol.Action, selector string, files []string) error {
+	if locator, ok := b.actionLocator(action, selector); ok {
+		return locator.SetInputFiles(files)
+	}
+	return b.pwPage.SetInputFiles(selector, files)
+}
+
+func (b *Browser) pressKeyAction(action *protocol.Action, selector string, key string) error {
+	if selector != "" {
+		if locator, ok := b.actionLocator(action, selector); ok {
+			if err := b.waitLocatorVisible(locator, b.actionTimeout(action)); err != nil {
+				return err
+			}
+			return locator.Press(key)
+		}
+		return b.pwPage.Press(selector, key)
+	}
+	return b.pwPage.Keyboard().Press(key)
+}
+
 func (b *Browser) waitVisibleForAction(ctx context.Context, action *protocol.Action, selector string) error {
 	if locator, ok := b.actionLocator(action, selector); ok {
 		return b.waitLocatorVisible(locator, b.actionTimeout(action))

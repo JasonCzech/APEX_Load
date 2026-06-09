@@ -1,5 +1,7 @@
 # OpenText VuGen 26.1 C Vuser utility function baseline.
 # Format: name,family,support_mode
+web_reg_async_attributes,web,review_only
+web_stop_async,web,review_only
 lr_abort,runtime,executable
 lr_advance_param,parameter,executable
 lr_aws_get_secret,secret,external_required

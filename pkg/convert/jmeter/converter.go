@@ -3,6 +3,7 @@ package jmeter
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/csv"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -26,6 +27,7 @@ type ConvertOptions struct {
 	IncludeAssertions bool
 	ScenarioDraft     bool
 	FileName          string
+	SidecarFiles      map[string][]byte
 }
 
 type ConvertResult struct {
@@ -131,6 +133,7 @@ func GetSupportMatrix() SupportMatrix {
 			"HTTP Request Defaults",
 			"HTTP Header Manager",
 			"HTTP Cookie Manager",
+			"HTTP Cache Manager",
 			"User Defined Variables",
 			"CSV Data Set Config",
 			"HTTP Request samplers",
@@ -143,9 +146,12 @@ func GetSupportMatrix() SupportMatrix {
 			"CSS/JQuery Extractor",
 			"XPath Extractor",
 			"Boundary Extractor",
+			"Simple If Controller",
+			"Fixed Loop Controller",
+			"Test Action pauses",
 		},
 		Partial: []string{
-			"Simple controllers flattened into action order where safe",
+			"Simple controllers mapped to native control_if/control_loop where safe",
 			"Variable substitution across URLs, headers, and bodies",
 			"Scenario drafts derived from thread groups",
 			"Timer behavior approximated as fixed think time when necessary",
@@ -315,6 +321,17 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 		case "CookieManager":
 			enabled := true
 			script.Config.HTTP.CookiesEnabled = &enabled
+			setJMeterRuntimeParity(script, "cookieManager", "executed")
+		case "CacheManager":
+			applyJMeterCacheManager(child.Element, script)
+		case "TestAction":
+			if pauseMs := parseTestActionPauseMs(child); pauseMs > 0 {
+				ctx.timerMs = pauseMs
+				result.Stats.Timers++
+				setJMeterRuntimeParity(script, "testActionPause", "executed")
+				diagnostics.Add(diag.Info, "JMeter TestAction", jmeterElementLocation(child.Element), "pause action was mapped to think time on the next converted sampler")
+			}
+			continue
 		case "AuthManager":
 			auths := parseAuthManager(child.Element, diagnostics)
 			ctx.auths = append(ctx.auths, auths...)
@@ -331,7 +348,7 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 				result.Stats.Variables++
 			}
 		case "CSVDataSet":
-			ds := parseCSVDataSet(child.Element)
+			ds := parseCSVDataSet(child.Element, opts.SidecarFiles)
 			if ds.Name != "" {
 				ctx.csvSources = append(ctx.csvSources, ds)
 				csvNames[ds.Name] = struct{}{}
@@ -375,34 +392,67 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			if loopCountStr == "" {
 				loopCountStr = attrOr(child.Element, "loops", "1")
 			}
-			loops := 1
 			if val, err := strconv.Atoi(loopCountStr); err == nil && val > 0 {
-				loops = val
-				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "converted", fmt.Sprintf("JMeter LoopController was statically unrolled %d times into the flat action sequence.", loops)))
+				steps := collectJMeterChildActions(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName)
+				actionIndex := len(script.Actions)
+				script.Actions = append(script.Actions, dsl.Action{
+					Name: strings.TrimSpace(firstNonEmpty(attrOr(child.Element, "testname", ""), "Loop")),
+					Type: "control_loop",
+					Control: &dsl.ControlFlow{
+						Count: val,
+						Steps: steps,
+					},
+					Metadata: map[string]any{
+						"source":      "jmeter",
+						"source_type": "LoopController",
+					},
+				})
+				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, fmt.Sprintf("actions[%d]", actionIndex), jmeterElementLocation(child.Element), "controller", "converted", fmt.Sprintf("JMeter LoopController was mapped to control_loop with count %d.", val)))
 			} else if loopCountStr == "-1" || loopCountStr == "0" {
-				diagnostics.Add(diag.Warning, "JMeter LoopController", jmeterElementLocation(child.Element), "infinite loops (-1) cannot be statically unrolled; flattening as 1 iteration")
+				diagnostics.Add(diag.Warning, "JMeter LoopController", jmeterElementLocation(child.Element), "infinite loops (-1) remain review-gated; children were imported once for review")
 				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", "JMeter LoopController infinite loop (-1) was flattened as 1 iteration."))
+				if len(child.Children) > 0 {
+					walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
+				}
 			} else {
 				diagnostics.Add(diag.Warning, "JMeter LoopController", jmeterElementLocation(child.Element), "dynamic loop count '"+loopCountStr+"' cannot be statically unrolled; flattening as 1 iteration")
 				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", "JMeter LoopController dynamic loop count '"+loopCountStr+"' was flattened as 1 iteration."))
-			}
-			if len(child.Children) > 0 {
-				for i := 0; i < loops; i++ {
+				if len(child.Children) > 0 {
 					walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
 				}
 			}
 			continue
 		case "IfController":
 			condition := prop(child.Element, "IfController.condition")
-			diagnostics.Add(diag.Warning, "JMeter IfController", jmeterElementLocation(child.Element), fmt.Sprintf("conditional execution is not supported natively; children were flattened (condition was: %s)", condition))
-			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", fmt.Sprintf("JMeter IfController was flattened; original condition: %s", condition)))
-			if len(child.Children) > 0 {
-				walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
+			if cond, ok := simpleJMeterCondition(condition); ok {
+				steps := collectJMeterChildActions(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName)
+				actionIndex := len(script.Actions)
+				script.Actions = append(script.Actions, dsl.Action{
+					Name:    strings.TrimSpace(firstNonEmpty(attrOr(child.Element, "testname", ""), "If")),
+					Type:    "control_if",
+					Control: &dsl.ControlFlow{Condition: &cond, Steps: steps},
+					Metadata: map[string]any{
+						"source":             "jmeter",
+						"source_type":        "IfController",
+						"source_condition":   condition,
+						"condition_original": condition,
+					},
+				})
+				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, fmt.Sprintf("actions[%d]", actionIndex), jmeterElementLocation(child.Element), "controller", "converted", "JMeter IfController was mapped to control_if."))
+			} else {
+				diagnostics.Add(diag.Warning, "JMeter IfController", jmeterElementLocation(child.Element), fmt.Sprintf("conditional execution is review-gated; children were flattened (condition was: %s)", condition))
+				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", fmt.Sprintf("JMeter IfController was flattened; original condition: %s", condition)))
+				if len(child.Children) > 0 {
+					walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
+				}
 			}
 			continue
 		case "WhileController", "ForeachController", "ForEachController", "InterleaveControl", "RandomController", "ThroughputController":
 			diagnostics.Add(diag.Warning, "JMeter "+child.Element.Name, jmeterElementLocation(child.Element), "controller logic was flattened; child requests are imported in source order without original conditions or transaction semantics")
 			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", "JMeter controller logic was flattened; child requests are imported in source order without original conditions."))
+		case "DebugSampler":
+			diagnostics.Add(diag.Info, "JMeter DebugSampler", jmeterElementLocation(child.Element), "DebugSampler was preserved as diagnostic metadata and does not block executable HTTP import")
+			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "diagnostic", "ignored", "JMeter DebugSampler does not generate an executable APEX Load action."))
 		case "hashTree":
 		default:
 			if strings.TrimSpace(child.Element.Name) != "" {
@@ -415,6 +465,114 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
 		}
 	}
+}
+
+func collectJMeterChildActions(node *treeNode, ctx *convertContext, parentScript *dsl.Script, opts ConvertOptions, result *ConvertResult, unsupported map[string]struct{}, variableNames map[string]struct{}, csvNames map[string]struct{}, diagnostics *diag.Collector, sourceFileName string) []dsl.Action {
+	if node == nil || len(node.Children) == 0 {
+		return nil
+	}
+	next := *ctx
+	tempScript := &dsl.Script{Protocol: "http", Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{DefaultHeaders: map[string]string{}}}}
+	var tempMappings []sourceview.Mapping
+	walkThreadGroup(node, &next, tempScript, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, &tempMappings)
+	mergeJMeterRuntimeParity(parentScript, tempScript)
+	return append([]dsl.Action(nil), tempScript.Actions...)
+}
+
+func applyJMeterCacheManager(node *xmlNode, script *dsl.Script) {
+	if script == nil {
+		return
+	}
+	if script.Config.WebRuntime.AdditionalAttributes == nil {
+		script.Config.WebRuntime.AdditionalAttributes = map[string]string{}
+	}
+	clearEachIteration := firstNonEmpty(prop(node, "clearEachIteration"), prop(node, "CacheManager.clearEachIteration"))
+	useExpires := firstNonEmpty(prop(node, "useExpires"), prop(node, "CacheManager.useExpires"))
+	if clearEachIteration != "" {
+		script.Config.WebRuntime.AdditionalAttributes["jmeter.cache_manager.clear_each_iteration"] = strings.ToLower(clearEachIteration)
+	}
+	if useExpires != "" {
+		script.Config.WebRuntime.AdditionalAttributes["jmeter.cache_manager.use_expires"] = strings.ToLower(useExpires)
+	}
+	if script.Config.WebRuntime.AdditionalAttributes["jmeter.cache_manager.clear_each_iteration"] == "" {
+		script.Config.WebRuntime.AdditionalAttributes["jmeter.cache_manager.enabled"] = "true"
+	}
+	setJMeterRuntimeParity(script, "cacheManager", "partial")
+}
+
+func setJMeterRuntimeParity(script *dsl.Script, key string, status string) {
+	if script == nil || strings.TrimSpace(key) == "" || strings.TrimSpace(status) == "" {
+		return
+	}
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{Source: "jmeter", Preserved: map[string]any{}}
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = map[string]any{}
+	}
+	parity, ok := script.Metadata.Import.Preserved["runtime_parity"].(map[string]string)
+	if !ok {
+		parity = map[string]string{}
+	}
+	parity[key] = status
+	script.Metadata.Import.Preserved["runtime_parity"] = parity
+}
+
+func mergeJMeterRuntimeParity(parent *dsl.Script, child *dsl.Script) {
+	if parent == nil || child == nil || child.Metadata == nil || child.Metadata.Import == nil || child.Metadata.Import.Preserved == nil {
+		return
+	}
+	switch parity := child.Metadata.Import.Preserved["runtime_parity"].(type) {
+	case map[string]string:
+		for key, status := range parity {
+			setJMeterRuntimeParity(parent, key, status)
+		}
+	case map[string]any:
+		for key, status := range parity {
+			if text, ok := status.(string); ok {
+				setJMeterRuntimeParity(parent, key, text)
+			}
+		}
+	}
+}
+
+func parseTestActionPauseMs(node *treeNode) int {
+	if node == nil || node.Element == nil {
+		return 0
+	}
+	for _, child := range node.Children {
+		switch child.Element.Name {
+		case "ConstantTimer", "UniformRandomTimer", "GaussianRandomTimer", "PoissonRandomTimer":
+			if delay := parseTimerMs(child.Element, child.Element.Name); delay > 0 {
+				return delay
+			}
+		}
+	}
+	return parseInt(firstNonEmpty(
+		prop(node.Element, "ActionProcessor.duration"),
+		prop(node.Element, "TestAction.duration"),
+		prop(node.Element, "duration"),
+	))
+}
+
+func simpleJMeterCondition(raw string) (dsl.Condition, bool) {
+	condition := strings.TrimSpace(raw)
+	if condition == "" {
+		return dsl.Condition{}, false
+	}
+	if match := regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$`).FindStringSubmatch(condition); len(match) == 2 {
+		return dsl.Condition{Left: "{{var." + match[1] + "}}", Op: "exists"}, true
+	}
+	if match := regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)\}\s*={2}\s*(.+)$`).FindStringSubmatch(condition); len(match) == 3 {
+		return dsl.Condition{Left: "{{var." + match[1] + "}}", Op: "eq", Right: strings.Trim(strings.TrimSpace(match[2]), `"'`)}, true
+	}
+	if match := regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)\}\s*!=\s*(.+)$`).FindStringSubmatch(condition); len(match) == 3 {
+		return dsl.Condition{Left: "{{var." + match[1] + "}}", Op: "ne", Right: strings.Trim(strings.TrimSpace(match[2]), `"'`)}, true
+	}
+	return dsl.Condition{}, false
 }
 
 func countJMeterSamplerElements(nodes []*treeNode) (int, int) {
@@ -561,7 +719,7 @@ func isJMeterScriptElement(name string) bool {
 
 func isKnownJMeterUnsupported(name string) bool {
 	switch name {
-	case "JSR223Sampler", "BeanShellSampler", "BSFSampler", "JDBCSampler", "JMSSampler", "JMSPublisher", "JMSSubscriber", "FTPSampler", "JavaSampler", "TCPSampler", "DebugSampler", "JSR223PreProcessor", "JSR223PostProcessor", "BeanShellPreProcessor", "BeanShellPostProcessor":
+	case "JSR223Sampler", "BeanShellSampler", "BSFSampler", "JDBCSampler", "JMSSampler", "JMSPublisher", "JMSSubscriber", "FTPSampler", "JavaSampler", "TCPSampler", "JSR223PreProcessor", "JSR223PostProcessor", "BeanShellPreProcessor", "BeanShellPostProcessor":
 		return true
 	default:
 		return false
@@ -570,7 +728,7 @@ func isKnownJMeterUnsupported(name string) bool {
 
 func isKnownJMeterSupported(name string) bool {
 	switch name {
-	case "TestPlan", "ThreadGroup", "hashTree", "ConfigTestElement", "HeaderManager", "CookieManager", "AuthManager", "Arguments", "CSVDataSet", "ConstantTimer", "UniformRandomTimer", "GaussianRandomTimer", "PoissonRandomTimer", "ConstantThroughputTimer", "PreciseThroughputTimer", "ResponseAssertion", "HTTPSamplerProxy", "RegexExtractor", "JSONPostProcessor", "JMESPathExtractor", "HtmlExtractor", "XPathExtractor", "XPath2Extractor", "BoundaryExtractor":
+	case "TestPlan", "ThreadGroup", "hashTree", "ConfigTestElement", "HeaderManager", "CookieManager", "CacheManager", "AuthManager", "Arguments", "CSVDataSet", "ConstantTimer", "UniformRandomTimer", "GaussianRandomTimer", "PoissonRandomTimer", "ConstantThroughputTimer", "PreciseThroughputTimer", "ResponseAssertion", "HTTPSamplerProxy", "RegexExtractor", "JSONPostProcessor", "JMESPathExtractor", "HtmlExtractor", "XPathExtractor", "XPath2Extractor", "BoundaryExtractor", "LoopController", "IfController", "TestAction", "DebugSampler":
 		return true
 	default:
 		return false
@@ -1226,9 +1384,18 @@ func parseArguments(node *xmlNode) map[string]string {
 	return vars
 }
 
-func parseCSVDataSet(node *xmlNode) dsl.DataSource {
+func parseCSVDataSet(node *xmlNode, sidecarFiles map[string][]byte) dsl.DataSource {
 	filename := prop(node, "filename")
 	variableNames := splitCSVNames(prop(node, "variableNames"))
+	delimiter := firstNonEmpty(prop(node, "delimiter"), ",")
+	firstRowHeader := len(variableNames) == 0
+	inlineData := ""
+	if len(variableNames) == 0 {
+		if content, ok := jmeterSidecarFile(sidecarFiles, filename); ok {
+			variableNames = inferCSVHeader(content, delimiter)
+			inlineData = string(content)
+		}
+	}
 	name := sanitizeName(firstNonEmpty(attrOr(node, "testname", ""), path.Base(filename), "csv_data"))
 	strategy := "sequential"
 	if strings.EqualFold(prop(node, "randomOrder"), "true") {
@@ -1238,10 +1405,76 @@ func parseCSVDataSet(node *xmlNode) dsl.DataSource {
 		Name:           name,
 		Type:           "csv",
 		Path:           filename,
+		InlineData:     inlineData,
 		Strategy:       strategy,
-		Delimiter:      firstNonEmpty(prop(node, "delimiter"), ","),
-		FirstRowHeader: len(variableNames) == 0,
+		Delimiter:      delimiter,
+		FirstRowHeader: firstRowHeader,
 		Columns:        variableNames,
+	}
+}
+
+func jmeterSidecarFile(files map[string][]byte, filename string) ([]byte, bool) {
+	if len(files) == 0 {
+		return nil, false
+	}
+	keys := []string{
+		filename,
+		jmeterBaseName(filename),
+		strings.TrimLeft(strings.ReplaceAll(filename, `\`, `/`), `/`),
+	}
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if data, ok := files[key]; ok {
+			return data, true
+		}
+	}
+	for key, data := range files {
+		if strings.EqualFold(jmeterBaseName(key), jmeterBaseName(filename)) {
+			return data, true
+		}
+	}
+	return nil, false
+}
+
+func inferCSVHeader(data []byte, delimiter string) []string {
+	reader := csv.NewReader(bytes.NewReader(data))
+	reader.FieldsPerRecord = -1
+	if comma := jmeterCSVDelimiter(delimiter); comma != 0 {
+		reader.Comma = comma
+	}
+	row, err := reader.Read()
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(row))
+	for _, field := range row {
+		field = strings.TrimSpace(field)
+		if field != "" {
+			out = append(out, field)
+		}
+	}
+	return out
+}
+
+func jmeterCSVDelimiter(value string) rune {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", ",":
+		return ','
+	case "\\t", "tab", "tabs":
+		return '\t'
+	case ";", "semicolon":
+		return ';'
+	case "|", "pipe":
+		return '|'
+	default:
+		runes := []rune(value)
+		if len(runes) == 1 {
+			return runes[0]
+		}
+		return ','
 	}
 }
 

@@ -101,9 +101,9 @@ var scriptTypeScopes = []ScriptTypeScope{
 		Status:           ScopeReviewOnly,
 		APEXLoadShape:    "vugen_web2 browser profile",
 		SupportedInputs:  []string{"LoadRunner ZIP", ".usr project metadata", "default.xml", "object repository files", "parameter files", "runtime settings"},
-		RequiredEvidence: []string{"fixture-backed parser coverage", "object identification summary", "runtime settings parity", "browser replay evidence", "browser-to-http conversion evidence"},
-		ReviewSections:   []string{"web2_profile_summary", "object_identification", "runtime_settings_parity", "browser_replay_evidence", "conversion_readiness"},
-		Notes:            "Review-only VuGen Web 2.0 browser-profile import scope; supported step shapes produce a browser draft, but selector identity, waits, runtime parity, and replay evidence must be reviewed before promotion.",
+		RequiredEvidence: []string{"fixture-backed parser coverage", "object identification summary", "runtime settings parity", "browser replay evidence", "promotion review artifact", "browser-to-http conversion evidence"},
+		ReviewSections:   []string{"web2_profile_summary", "object_identification", "runtime_settings_parity", "browser_replay_evidence", "promotion_review", "conversion_readiness"},
+		Notes:            "Review-only VuGen Web 2.0 browser-profile import scope; supported step shapes produce a browser draft, but selector identity, waits, runtime parity, replay evidence, and the saved promotion review artifact must be reviewed before production promotion.",
 	},
 	{
 		CanonicalName:    "truclient_web",
@@ -205,6 +205,13 @@ var stepScopes = []StepScope{
 		APEXLoadShape: "browser_hover",
 		Notes:         "Hover and mouse-over steps map to the native browser_hover action using the captured selector or highest-confidence object-repository candidate.",
 	},
+	{
+		CanonicalName: "press_key",
+		DisplayName:   "Press Key",
+		Status:        ScopeSupported,
+		APEXLoadShape: "browser_press_key",
+		Notes:         "Keyboard steps map to selector-scoped browser_press_key actions when object identification is available, with focused-page keypress replay as a fallback.",
+	},
 }
 
 var web2ProfileCapabilityScopes = []ProfileCapabilityScope{
@@ -249,6 +256,14 @@ var web2ProfileCapabilityScopes = []ProfileCapabilityScope{
 		Notes:            "Conversion should be treated as a governed draft flow, not an automatic promotion to high-density load.",
 	},
 	{
+		CanonicalName:    "promotion_review_artifacts",
+		DisplayName:      "Promotion Review Artifacts",
+		Status:           ScopeSupported,
+		APEXLoadShape:    "metadata.import.preserved.trueclient2_promotion_review",
+		RequiredEvidence: []string{"replay session id", "artifact evidence counts", "JavaScript/review gate summary", "selector fallback inventory"},
+		Notes:            "Saved Web 2.0 browser drafts preserve compact promotion evidence in script metadata so replay, selector, JavaScript, and runtime gate decisions survive beyond the transient import session.",
+	},
+	{
 		CanonicalName:    "native_desktop_automation",
 		DisplayName:      "Native Desktop Automation",
 		Status:           ScopeOutOfScope,
@@ -279,11 +294,11 @@ var web2FixtureContracts = []FixtureContract{
 	{
 		ID:               "web2_iframe_window",
 		DisplayName:      "Iframe And Window Context",
-		Status:           ScopePlanned,
+		Status:           ScopeSupported,
 		Required:         true,
 		Covers:           []string{"iframe targeting", "popup/window switch", "object repository context"},
-		RequiredEvidence: []string{"context transition summary", "replay screenshots", "unsupported context warnings when needed"},
-		Notes:            "Locks down context-aware object identification before Web 2.0 import is marked active.",
+		RequiredEvidence: []string{"context transition summary", "frame-scoped browser replay", "popup/window switch replay", "unsupported context warnings when needed"},
+		Notes:            "Locks down context-aware object identification and browser replay for iframe and popup/window flows.",
 	},
 	{
 		ID:               "web2_custom_javascript_api",
@@ -401,7 +416,7 @@ func normalizeScriptType(scriptType string) string {
 	compact := strings.ReplaceAll(value, " ", "")
 
 	switch compact {
-	case "truclientmobileweb", "truclient2mobileweb", "truclient20mobileweb":
+	case "truclientmobileweb", "truclient2mobileweb", "truclient20mobileweb", "web2uimob":
 		return "truclient_mobile_web"
 	case "truclient2web", "truclient20web":
 		return "truclient2_web"

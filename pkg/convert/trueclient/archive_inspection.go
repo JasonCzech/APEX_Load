@@ -1,6 +1,7 @@
 package trueclient
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"path/filepath"
@@ -134,11 +135,12 @@ func InspectArchive(files map[string]string, scriptType string) (*ArchiveInspect
 	}
 	sortArchiveFiles(inspection.ProjectFiles)
 	sortArchiveFiles(inspection.ObjectRepositories)
-	sortObjectDescriptors(inspection.ObjectDescriptors)
 	sortArchiveFiles(inspection.ParameterFiles)
 	sortArchiveFiles(inspection.RuntimeFiles)
 
 	if xmlName, xmlContent, ok := findDefaultXML(files); ok {
+		inspection.ObjectDescriptors = uniqueObjectDescriptors(append(inspection.ObjectDescriptors, embeddedObjectDescriptorsFromXML(xmlName, xmlContent)...))
+		sortObjectDescriptors(inspection.ObjectDescriptors)
 		summary := archiveFileSummary(xmlName, xmlContent)
 		summary.Kind = "default_xml"
 		inspection.DefaultXML = &summary
@@ -150,6 +152,7 @@ func InspectArchive(files map[string]string, scriptType string) (*ArchiveInspect
 		inspection.Steps = steps
 		inspection.UnsupportedFragments = fragments
 	} else {
+		sortObjectDescriptors(inspection.ObjectDescriptors)
 		inspection.Warnings = append(inspection.Warnings, "No TruClient default.xml was found in the archive.")
 	}
 
@@ -286,7 +289,7 @@ func web2CapabilityStatusMap() map[string]ScopeStatus {
 
 func inspectStep(step truXMLStep, status ScopeStatus, scopeName string, descriptors []ObjectDescriptor) StepInspection {
 	values, _ := parseArgumentValues(step.Arguments)
-	descriptorID := objectDescriptorIDFromValues(values)
+	descriptorID := stepObjectDescriptorIDFromValues(step, values)
 	objectDescriptor := matchObjectDescriptor(descriptors, descriptorID, step)
 	candidates := selectorCandidatesFromValues(values)
 	if objectDescriptor != nil {
@@ -348,6 +351,21 @@ func objectDescriptorIDFromValues(values map[string]truArgument) string {
 		}
 	}
 	return ""
+}
+
+func stepObjectDescriptorID(step truXMLStep) string {
+	values, err := parseArgumentValues(step.Arguments)
+	if err != nil {
+		return strings.TrimSpace(step.TestObject)
+	}
+	return stepObjectDescriptorIDFromValues(step, values)
+}
+
+func stepObjectDescriptorIDFromValues(step truXMLStep, values map[string]truArgument) string {
+	if value := objectDescriptorIDFromValues(values); value != "" {
+		return value
+	}
+	return strings.TrimSpace(step.TestObject)
 }
 
 func selectorCandidatesFromValues(values map[string]truArgument) []SelectorCandidate {
@@ -412,6 +430,186 @@ func parseObjectRepositoryDescriptors(path string, content string) []ObjectDescr
 	}
 	walk(root)
 	return uniqueObjectDescriptors(descriptors)
+}
+
+func embeddedObjectDescriptorsFromXML(path string, content string) []ObjectDescriptor {
+	decoded := normalizeXMLDeclaration(decodeXMLContent(content))
+	var doc truScriptDocument
+	if err := xml.Unmarshal([]byte(decoded), &doc); err != nil {
+		return nil
+	}
+	return embeddedObjectDescriptorsFromDocument(path, doc)
+}
+
+func embeddedObjectDescriptorsFromDocument(path string, doc truScriptDocument) []ObjectDescriptor {
+	descriptors := make([]ObjectDescriptor, 0, len(doc.TestObjects))
+	for _, object := range doc.TestObjects {
+		props := embeddedTestObjectProperties(object)
+		descriptor, ok := objectDescriptorFromProperties(path+"#testObjects", props)
+		if !ok {
+			continue
+		}
+		if descriptor.ID == "" {
+			descriptor.ID = strings.TrimSpace(object.TestObjID)
+		}
+		if descriptor.Name == "" {
+			descriptor.Name = firstNonEmptyString(strings.TrimSpace(object.AutoName), strings.TrimSpace(object.FallbackName))
+		}
+		descriptor.SelectorCandidates = selectorCandidatesFromDescriptor(descriptor)
+		descriptors = append(descriptors, descriptor)
+	}
+	return uniqueObjectDescriptors(descriptors)
+}
+
+func embeddedTestObjectProperties(object truXMLTestObject) map[string]string {
+	props := make(map[string]string)
+	mergeEmbeddedProperty(props, "testobjectid", object.TestObjID)
+	mergeEmbeddedProperty(props, "logicalname", firstNonEmptyString(object.AutoName, object.FallbackName))
+	for _, role := range object.Roles {
+		role = strings.TrimSpace(role)
+		if role == "" || strings.EqualFold(role, "element") || strings.EqualFold(role, "focusable") {
+			continue
+		}
+		mergeEmbeddedProperty(props, "role", role)
+		break
+	}
+	for _, ident := range object.Idents {
+		mergeEmbeddedIdentProperties(props, ident)
+	}
+	return props
+}
+
+func mergeEmbeddedIdentProperties(props map[string]string, ident truXMLObjectID) {
+	payload := map[string]any{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(ident.Content)), &payload); err != nil {
+		return
+	}
+	impl := mapAny(payload["implData"])
+	if len(impl) == 0 {
+		impl = payload
+	}
+	if strings.EqualFold(strings.TrimSpace(ident.Type), "xpath") {
+		mergeEmbeddedProperty(props, "xpath", stringFromAny(impl["value"]))
+	}
+	mergeEmbeddedElectors(props, impl["electors"])
+	mergeEmbeddedDescriptorExpression(props, impl["expression"])
+}
+
+func mergeEmbeddedElectors(props map[string]string, value any) {
+	electors, ok := value.([]any)
+	if !ok {
+		return
+	}
+	for _, elector := range electors {
+		node := mapAny(elector)
+		if len(node) == 0 {
+			continue
+		}
+		key := normalizeObjectRepositoryKey(stringFromAny(node["id"]))
+		if key == "" {
+			continue
+		}
+		rawValue := embeddedDescriptorValue(node["value"])
+		switch key {
+		case "id", "htmlid":
+			mergeEmbeddedProperty(props, "id", rawValue)
+		case "name", "htmlname":
+			mergeEmbeddedProperty(props, "name", rawValue)
+		case "class", "classname":
+			mergeEmbeddedProperty(props, "class", rawValue)
+		case "type", "inputtype":
+			mergeEmbeddedProperty(props, "type", rawValue)
+		case "href", "title", "text", "visibletext", "innertext":
+			mergeEmbeddedProperty(props, key, rawValue)
+		case "arialabel":
+			mergeEmbeddedProperty(props, "arialabel", rawValue)
+		case "datatestid":
+			mergeEmbeddedProperty(props, "datatestid", rawValue)
+		}
+	}
+}
+
+func mergeEmbeddedDescriptorExpression(props map[string]string, value any) {
+	switch typed := value.(type) {
+	case []any:
+		for _, child := range typed {
+			mergeEmbeddedDescriptorExpression(props, child)
+		}
+	case map[string]any:
+		if descriptor := stringFromAny(typed["descriptor"]); descriptor != "" {
+			mergeEmbeddedProperty(props, descriptor, embeddedDescriptorValue(typed["value"]))
+		}
+		for _, child := range typed {
+			switch child.(type) {
+			case []any, map[string]any:
+				mergeEmbeddedDescriptorExpression(props, child)
+			}
+		}
+	}
+}
+
+func embeddedDescriptorValue(value any) string {
+	if mapped := mapAny(value); len(mapped) > 0 {
+		for _, key := range []string{"id", "value", "text", "name", "content"} {
+			if value := stringFromAny(mapped[key]); value != "" {
+				return value
+			}
+		}
+	}
+	return stringFromAny(value)
+}
+
+func mergeEmbeddedProperty(props map[string]string, key string, value any) {
+	key = normalizeObjectRepositoryKey(key)
+	valueString := embeddedPropertyValue(key, value)
+	if key == "" || valueString == "" {
+		return
+	}
+	if _, exists := props[key]; exists {
+		return
+	}
+	props[key] = valueString
+}
+
+func embeddedPropertyValue(key string, value any) string {
+	valueString := embeddedDescriptorValue(value)
+	if valueString == "" {
+		return ""
+	}
+	switch key {
+	case "id", "htmlid":
+		if strings.ContainsAny(valueString, " \t\r\n") {
+			return ""
+		}
+	}
+	return valueString
+}
+
+func mapAny(value any) map[string]any {
+	if mapped, ok := value.(map[string]any); ok {
+		return mapped
+	}
+	return nil
+}
+
+func stringFromAny(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case fmt.Stringer:
+		return strings.TrimSpace(typed.String())
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case int:
+		return strconv.Itoa(typed)
+	case bool:
+		if typed {
+			return "true"
+		}
+		return "false"
+	default:
+		return ""
+	}
 }
 
 func objectRepositoryProperties(node objectRepoNode) map[string]string {

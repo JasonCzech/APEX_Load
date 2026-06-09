@@ -950,6 +950,7 @@ export interface RunArchiveSummaryPoint {
   timestamp: string
   active_vusers: number
   tps: number
+  target_tps?: number
   error_pct: number
   p95_ms: number
   total_transactions: number
@@ -981,6 +982,34 @@ export interface RunArchiveReport {
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   browser_resources?: BrowserResourceTiming[]
   resource_peaks: RunArchiveResourcePeaks
+}
+
+export interface ReportCommentarySection {
+  id: string
+  label: string
+}
+
+export interface ReportAnnotations {
+  test_id: string
+  profile: string
+  title: string
+  prepared_by: string
+  executive_narrative: string
+  section_comments: Record<string, string>
+  updated_at: string
+  updated_by: string
+}
+
+export interface ReportAnnotationsResponse {
+  annotations: ReportAnnotations
+  sections: ReportCommentarySection[]
+}
+
+export interface ReportAnnotationsInput {
+  title: string
+  prepared_by: string
+  executive_narrative: string
+  section_comments: Record<string, string>
 }
 
 export interface RunArchiveAnalysisStats {

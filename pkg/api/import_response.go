@@ -19,6 +19,7 @@ type scriptImportResponseOptions struct {
 	ReviewArtifact      any
 	SourceReview        any
 	TrueClient2Compat   any
+	ProtocolCompat      any
 }
 
 type scriptImportReviewSection struct {
@@ -100,6 +101,7 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		"review_artifact":           opts.ReviewArtifact,
 		"source_review":             opts.SourceReview,
 		"trueclient2_compat_report": opts.TrueClient2Compat,
+		"protocol_compat_report":    opts.ProtocolCompat,
 	}
 	if opts.Result != nil {
 		response["result"] = opts.Result

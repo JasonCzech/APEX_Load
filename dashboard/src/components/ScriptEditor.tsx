@@ -1442,6 +1442,49 @@ interface BrowserHTTPConversionReview {
   findings: string[]
 }
 
+interface TrueClientPromotionReview {
+  status: string
+  generatedAt: string
+  source: string
+  sourceScriptName: string
+  compatibility: {
+    sourceProfile: string
+    importMode: string
+    promotionStatus: string
+    promotionAllowed: boolean
+    runtimeParityStatus: string
+    replayStatus: string
+    javascriptReviewGate: string
+    httpConversionReadiness: string
+    selectorConfidencePct: number
+    frameWindowBlockers: number
+  }
+  gates: {
+    reviewRequiredActions: number
+    javascriptReviewActions: number
+    selectorFallbackCandidates: number
+    replayRequired: boolean
+    replayWarnings: string[]
+    importWarnings: string[]
+  }
+  replayEvidence: {
+    sessionId: string
+    status: string
+    startedAt: string
+    completedAt: string
+    events: number
+    passed: number
+    failed: number
+    screenshots: number
+    domHtmlCaptures: number
+    consoleEntries: number
+    networkEntries: number
+    sourceSteps: number
+    sourceTransactions: number
+  }
+  nextActions: string[]
+}
+
 function extractParameterReferences(action: Action) {
   const refs = new Set<string>()
   const json = JSON.stringify({
@@ -1699,8 +1742,100 @@ function readNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
+function readBoolean(value: unknown) {
+  if (typeof value === 'boolean') return value
+  if (typeof value !== 'string') return false
+  const normalized = value.trim().toLowerCase()
+  return normalized === 'true' || normalized === 'yes' || normalized === '1'
+}
+
 function readArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
+}
+
+function readStringArray(value: unknown): string[] {
+  return readArray(value).map(readString).filter(Boolean)
+}
+
+function readCount(value: unknown): number {
+  return Math.max(0, Math.trunc(readNumber(value)))
+}
+
+function readPromotionRecord(parent: Record<string, unknown>, key: string): Record<string, unknown> {
+  const value = parent[key]
+  return isRecord(value) ? value : {}
+}
+
+function readTrueClientPromotionReview(metadata?: ScriptImportMetadata | null): TrueClientPromotionReview | null {
+  const raw = readPreservedImportObject(metadata, 'trueclient2_promotion_review')
+  if (!raw) return null
+
+  const compatibility = readPromotionRecord(raw, 'compatibility')
+  const gates = readPromotionRecord(raw, 'gates')
+  const replayEvidence = readPromotionRecord(raw, 'replay_evidence')
+  const sourceScriptName = readString(raw.source_script_name) || metadata?.source_script_name || ''
+
+  return {
+    status: readString(raw.status) || 'review_required',
+    generatedAt: readString(raw.generated_at),
+    source: readString(raw.source) || metadata?.source || 'loadrunner',
+    sourceScriptName,
+    compatibility: {
+      sourceProfile: readString(compatibility.source_profile),
+      importMode: readString(compatibility.import_mode),
+      promotionStatus: readString(compatibility.promotion_status),
+      promotionAllowed: readBoolean(compatibility.promotion_allowed),
+      runtimeParityStatus: readString(compatibility.runtime_parity_status),
+      replayStatus: readString(compatibility.replay_status),
+      javascriptReviewGate: readString(compatibility.javascript_review_gate),
+      httpConversionReadiness: readString(compatibility.http_conversion_readiness),
+      selectorConfidencePct: readCount(compatibility.selector_confidence_pct),
+      frameWindowBlockers: readCount(compatibility.frame_window_blockers),
+    },
+    gates: {
+      reviewRequiredActions: readCount(gates.review_required_actions),
+      javascriptReviewActions: readCount(gates.javascript_review_actions),
+      selectorFallbackCandidates: readCount(gates.selector_fallback_candidates),
+      replayRequired: readBoolean(gates.replay_required),
+      replayWarnings: readStringArray(gates.replay_warnings),
+      importWarnings: readStringArray(gates.import_warnings),
+    },
+    replayEvidence: {
+      sessionId: readString(replayEvidence.session_id),
+      status: readString(replayEvidence.status) || 'not_run',
+      startedAt: readString(replayEvidence.started_at),
+      completedAt: readString(replayEvidence.completed_at),
+      events: readCount(replayEvidence.events),
+      passed: readCount(replayEvidence.passed),
+      failed: readCount(replayEvidence.failed),
+      screenshots: readCount(replayEvidence.screenshots),
+      domHtmlCaptures: readCount(replayEvidence.dom_html_captures),
+      consoleEntries: readCount(replayEvidence.console_entries),
+      networkEntries: readCount(replayEvidence.network_entries),
+      sourceSteps: readCount(replayEvidence.source_steps),
+      sourceTransactions: readCount(replayEvidence.source_transactions),
+    },
+    nextActions: readStringArray(raw.next_actions),
+  }
+}
+
+function formatTrueClientPromotionStatus(status: string) {
+  switch (status) {
+    case 'replay_evidence_attached':
+      return 'Replay evidence attached'
+    case 'needs_replay_evidence':
+      return 'Needs replay evidence'
+    case 'promotion_ready':
+      return 'Promotion ready'
+    case 'promotion_blocked':
+      return 'Promotion blocked'
+    default:
+      return status.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
+  }
+}
+
+function formatPromotionCount(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`
 }
 
 function normalizeWeb2SelectorCandidate(value: unknown): Web2SelectorCandidate | null {
@@ -2504,6 +2639,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const importMetadata = scriptHasImportMetadata(script) ? script.metadata?.import : undefined
   const importSummary = getImportSummary(importMetadata)
   const sourceReview = readSourceReview(importMetadata)
+  const trueClientPromotionReview = readTrueClientPromotionReview(importMetadata)
   const objectDescriptorReview = buildWeb2ObjectDescriptorReview(script, importMetadata)
   const httpConversionReview = buildBrowserHTTPConversionReview(script, replayReport, browserReplaySession)
   const [httpConversionPreview, setHttpConversionPreview] = useState<BrowserToHTTPPreviewResponse | null>(null)
@@ -6020,6 +6156,24 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <li className="utility-list-item">{importedDataSourceSummaries.length} generated data source{importedDataSourceSummaries.length === 1 ? '' : 's'}</li>
               </ul>
             </div>
+            {trueClientPromotionReview && (
+              <div className="utility-card">
+                <div className="utility-card-header">
+                  <strong>TruClient Promotion</strong>
+                  <span>{formatTrueClientPromotionStatus(trueClientPromotionReview.status)}</span>
+                </div>
+                <div className="utility-metric-row">
+                  <span className="action-signal-pill">{formatPromotionCount(trueClientPromotionReview.replayEvidence.events, 'event')}</span>
+                  <span className="action-signal-pill">{trueClientPromotionReview.replayEvidence.passed} passed / {trueClientPromotionReview.replayEvidence.failed} failed</span>
+                  <span className="action-signal-pill">{formatPromotionCount(trueClientPromotionReview.gates.selectorFallbackCandidates, 'fallback')}</span>
+                </div>
+                <ul className="utility-list">
+                  <li className="utility-list-item">Replay: {trueClientPromotionReview.replayEvidence.sessionId || trueClientPromotionReview.replayEvidence.status}</li>
+                  <li className="utility-list-item">{formatPromotionCount(trueClientPromotionReview.gates.reviewRequiredActions, 'review action')}</li>
+                  <li className="utility-list-item">{formatPromotionCount(trueClientPromotionReview.compatibility.frameWindowBlockers, 'frame/window blocker')}</li>
+                </ul>
+              </div>
+            )}
             {migrationSuggestions.length > 0 && (
               <div className="utility-card">
                 <div className="utility-card-header">
@@ -9254,6 +9408,82 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           <small>{runtimeSettingReadinessSummary || 'No migration readiness score captured'}</small>
                         </div>
                       </div>
+
+                      {trueClientPromotionReview && (
+                        <div className="import-correlation-section">
+                          <h4>TruClient Promotion Review</h4>
+                          <p>Saved promotion evidence for this imported browser script, including replay coverage, JavaScript review gates, selector fallbacks, and frame/window blockers.</p>
+                          <div className="import-metadata-grid">
+                            <div className="import-metadata-card">
+                              <span>Status</span>
+                              <strong>{formatTrueClientPromotionStatus(trueClientPromotionReview.status)}</strong>
+                              <small>{trueClientPromotionReview.compatibility.promotionAllowed ? 'Promotion allowed by report' : 'Review gates still apply'}</small>
+                            </div>
+                            <div className="import-metadata-card">
+                              <span>Source Profile</span>
+                              <strong>{trueClientPromotionReview.compatibility.sourceProfile || 'Unknown'}</strong>
+                              <small>{trueClientPromotionReview.sourceScriptName || trueClientPromotionReview.source}</small>
+                            </div>
+                            <div className="import-metadata-card">
+                              <span>Replay Evidence</span>
+                              <strong>{trueClientPromotionReview.replayEvidence.events}</strong>
+                              <small>{trueClientPromotionReview.replayEvidence.passed} passed / {trueClientPromotionReview.replayEvidence.failed} failed</small>
+                            </div>
+                            <div className="import-metadata-card">
+                              <span>Replay Session</span>
+                              <strong>{trueClientPromotionReview.replayEvidence.sessionId || trueClientPromotionReview.replayEvidence.status}</strong>
+                              <small>{trueClientPromotionReview.replayEvidence.completedAt ? `Completed ${formatReplayTime(trueClientPromotionReview.replayEvidence.completedAt)}` : 'No completed timestamp'}</small>
+                            </div>
+                            <div className="import-metadata-card">
+                              <span>Artifacts</span>
+                              <strong>{trueClientPromotionReview.replayEvidence.screenshots} / {trueClientPromotionReview.replayEvidence.domHtmlCaptures}</strong>
+                              <small>screenshots / DOM or HTML captures</small>
+                            </div>
+                            <div className="import-metadata-card">
+                              <span>Console & Network</span>
+                              <strong>{trueClientPromotionReview.replayEvidence.consoleEntries} / {trueClientPromotionReview.replayEvidence.networkEntries}</strong>
+                              <small>console entries / network entries</small>
+                            </div>
+                            <div className="import-metadata-card">
+                              <span>Review Actions</span>
+                              <strong>{trueClientPromotionReview.gates.reviewRequiredActions}</strong>
+                              <small>{trueClientPromotionReview.gates.javascriptReviewActions} JavaScript-gated action{trueClientPromotionReview.gates.javascriptReviewActions === 1 ? '' : 's'}</small>
+                            </div>
+                            <div className="import-metadata-card">
+                              <span>Selector Fallbacks</span>
+                              <strong>{trueClientPromotionReview.gates.selectorFallbackCandidates}</strong>
+                              <small>{trueClientPromotionReview.compatibility.selectorConfidencePct ? `${trueClientPromotionReview.compatibility.selectorConfidencePct}% selector confidence` : 'No selector score recorded'}</small>
+                            </div>
+                            <div className="import-metadata-card">
+                              <span>Frame / Window</span>
+                              <strong>{trueClientPromotionReview.compatibility.frameWindowBlockers}</strong>
+                              <small>{trueClientPromotionReview.compatibility.replayStatus || 'Replay status not recorded'}</small>
+                            </div>
+                          </div>
+                          {(trueClientPromotionReview.gates.importWarnings.length > 0 || trueClientPromotionReview.gates.replayWarnings.length > 0 || trueClientPromotionReview.nextActions.length > 0) && (
+                            <div className="import-correlation-list">
+                              {trueClientPromotionReview.gates.importWarnings.slice(0, 4).map((warning, index) => (
+                                <div key={`trueclient-import-warning-${index}`} className="import-correlation-card">
+                                  <strong>Import Warning</strong>
+                                  <span>{warning}</span>
+                                </div>
+                              ))}
+                              {trueClientPromotionReview.gates.replayWarnings.slice(0, 4).map((warning, index) => (
+                                <div key={`trueclient-replay-warning-${index}`} className="import-correlation-card">
+                                  <strong>Replay Warning</strong>
+                                  <span>{warning}</span>
+                                </div>
+                              ))}
+                              {trueClientPromotionReview.nextActions.map((action, index) => (
+                                <div key={`trueclient-next-action-${index}`} className="import-correlation-card">
+                                  <strong>Next Action</strong>
+                                  <span>{action}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {importSummary.runtimeSettingReadiness && (
                         <div className="import-correlation-section">
@@ -13597,6 +13827,8 @@ const BROWSER_ACTION_TYPES = [
   'browser_dblclick',
   'browser_hover',
   'browser_drag_and_drop',
+  'browser_set_files',
+  'browser_press_key',
   'browser_evaluate_js',
   'browser_switch_frame',
   'browser_switch_window',
@@ -13843,8 +14075,8 @@ function ControlFlowFields({ action, index, onUpdate }: ControlFlowFieldsProps) 
 }
 
 function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScript, onUpdate }: ActionCoreFieldsProps) {
-  const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_select', 'browser_wait', 'browser_screenshot', 'browser_tap', 'browser_long_press', 'browser_swipe', 'browser_dblclick', 'browser_hover', 'browser_drag_and_drop', 'browser_switch_frame'].includes(action.type)
-  const showValue = isBrowserScript && ['browser_fill', 'browser_select'].includes(action.type)
+  const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_select', 'browser_set_files', 'browser_press_key', 'browser_wait', 'browser_screenshot', 'browser_tap', 'browser_long_press', 'browser_swipe', 'browser_dblclick', 'browser_hover', 'browser_drag_and_drop', 'browser_switch_frame'].includes(action.type)
+  const showValue = isBrowserScript && ['browser_fill', 'browser_select', 'browser_set_files', 'browser_press_key'].includes(action.type)
   const isWebSocketScript = protocol === 'websocket'
   const isGrpcScript = protocol === 'grpc'
   const isDatabaseScript = protocol === 'database'
@@ -13919,7 +14151,7 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
         <label className="full-width"><span>Selector Override</span><input value={action.selector || ''} onChange={e => onUpdate(index, 'selector', e.target.value)} placeholder="#submit, input[name=email], [data-testid=save]" /></label>
       )}
       {showValue && (
-        <label className="full-width"><span>Value</span><input value={action.value || ''} onChange={e => onUpdate(index, 'value', e.target.value)} placeholder="{{data.users.email}}" /></label>
+        <label className="full-width"><span>{action.type === 'browser_set_files' ? 'File Path(s)' : action.type === 'browser_press_key' ? 'Key' : 'Value'}</span><input value={action.value || ''} onChange={e => onUpdate(index, 'value', e.target.value)} placeholder={action.type === 'browser_set_files' ? '/tmp/upload.pdf or {{data.files.path}}' : action.type === 'browser_press_key' ? 'Enter' : '{{data.users.email}}'} /></label>
       )}
     </div>
   )

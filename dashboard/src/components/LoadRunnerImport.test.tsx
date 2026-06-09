@@ -553,6 +553,116 @@ describe('LoadRunnerImport', () => {
     }))
   })
 
+  it('surfaces TrueClient2 compatibility report from LoadRunner import responses', async () => {
+    apiMock.importLoadRunner.mockResolvedValueOnce({
+      script: {
+        name: 'Checkout Web2',
+        protocol: 'browser',
+        actions: [
+          {
+            name: 'Custom JS',
+            type: 'browser_evaluate_js',
+            target: 'window.checkoutReady === true',
+            metadata: {
+              review_required: true,
+              review_gate: 'javascript',
+              promotion_blocker: true,
+            },
+          },
+        ],
+        metadata: {
+          import: {
+            source: 'loadrunner',
+            source_script_name: 'CheckoutWeb2.zip',
+            preserved: {},
+          },
+        },
+      },
+      warnings: ['TruClient 2.0 - Web import is review-only'],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      trueclient2_compat_report: {
+        source_script_type: 'TruClient 2.0 - Web',
+        source_profile: 'truclient2_web',
+        import_mode: 'review_only',
+        promotion_status: 'blocked',
+        promotion_allowed: false,
+        imported_steps: 3,
+        converted_actions: 2,
+        skipped_review_steps: 1,
+        supported_step_families: ['navigate', 'click'],
+        review_only_step_families: ['evaluate_javascript'],
+        unsupported_step_families: ['if_loop_mapping'],
+        selector_confidence_pct: 86,
+        selector_candidate_count: 5,
+        runtime_parity_status: 'review_required',
+        replay_status: 'required',
+        javascript_review_gate: 'required',
+        frame_window_blockers: 1,
+        http_conversion_readiness: 'draft_required',
+        fixture_contract_status: 'blocked',
+        findings: ['Review-gated JavaScript is present.'],
+        next_actions: ['Run draft browser replay.', 'Approve JavaScript before promotion.'],
+      },
+      summary: {
+        project_file: 'CheckoutWeb2.usr',
+        project_sections: ['Actions'],
+        runtime_files: ['default.cfg'],
+        unsupported_function_count: 0,
+      },
+      stats: {
+        total_functions: 3,
+        converted_actions: 2,
+        extractors: 0,
+        think_times: 0,
+        transactions: 0,
+        skipped: 1,
+      },
+    })
+
+    await act(async () => {
+      root.render(<LoadRunnerImport />)
+    })
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+
+    const file = new File(['zip-content'], 'web2.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('TruClient 2 Compatibility')
+    expect(container.textContent).toContain('Blocked')
+    expect(container.textContent).toContain('TruClient 2.0 - Web')
+    expect(container.textContent).toContain('review_only')
+    expect(container.textContent).toContain('2/3')
+    expect(container.textContent).toContain('86%')
+    expect(container.textContent).toContain('5 candidates')
+    expect(container.textContent).toContain('1 frame/window blockers')
+    expect(container.textContent).toContain('Review-only steps: evaluate_javascript')
+    expect(container.textContent).toContain('Unsupported steps: if_loop_mapping')
+    expect(container.textContent).toContain('Review-gated JavaScript is present.')
+    expect(container.textContent).toContain('Approve JavaScript before promotion.')
+  })
+
   it('copies selected source mapping snippets', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(document, 'execCommand', {
@@ -2520,7 +2630,17 @@ describe('LoadRunnerImport', () => {
           },
         },
         actions: [
-          { name: 'Open Store', type: 'browser_navigate', url: '/store' },
+          {
+            name: 'Open Store',
+            type: 'browser_navigate',
+            url: '/store',
+            metadata: {
+              source_selector_fallbacks: [
+                { kind: 'css', value: '#store-link', confidence: 81 },
+                { kind: 'xpath', value: '//a[@href="/store"]', confidence: 68 },
+              ],
+            },
+          },
         ],
         metadata: {
           import: {
@@ -2579,6 +2699,55 @@ describe('LoadRunnerImport', () => {
         group: 'default',
         protocol: 'browser',
         current_event_index: 1,
+        events: [
+          {
+            event_id: 'event-1',
+            action_index: 0,
+            event_index: 0,
+            phase: 'actions',
+            action_name: 'Open Store',
+            action_type: 'browser_navigate',
+            target: '/store',
+            success: true,
+            started_at: '2026-01-01T00:00:00Z',
+            completed_at: '2026-01-01T00:00:01Z',
+            duration_ms: 1000,
+            source_step_id: 'step-open-store',
+            source_transaction: 'Checkout',
+            screenshot_base64: 'iVBORw0KGgo=',
+            dom_summary: {
+              title: 'Store',
+              ready_state: 'complete',
+              visible_text: ['Store'],
+            },
+            network_entries: [
+              { method: 'GET', url: 'https://shop.example.test/store', status_code: 200 },
+            ],
+          },
+          {
+            event_id: 'event-2',
+            action_index: 1,
+            event_index: 1,
+            phase: 'actions',
+            action_name: 'Add To Cart',
+            action_type: 'browser_click',
+            target: '#add-to-cart',
+            selector: '#add-to-cart',
+            success: true,
+            started_at: '2026-01-01T00:00:01Z',
+            completed_at: '2026-01-01T00:00:02Z',
+            duration_ms: 1000,
+            source_step_id: 'step-add-to-cart',
+            source_transaction: 'Checkout',
+            html: '<button id="add-to-cart">Add</button>',
+            console_entries: [
+              { level: 'info', text: 'ready' },
+            ],
+            network_entries: [
+              { method: 'POST', url: 'https://shop.example.test/cart', status_code: 200 },
+            ],
+          },
+        ],
       },
       warnings: ['selector repair recommended'],
     })
@@ -2683,6 +2852,15 @@ describe('LoadRunnerImport', () => {
       expect(apiMock.getBrowserReplaySession).toHaveBeenCalledWith('draft-browser-validation')
       expect(container.textContent).toContain('Replay Status: Completed')
       expect(container.textContent).toContain('The latest draft browser replay completed. Review the draft browser replay results before saving it to the library.')
+      expect(container.textContent).toContain('Replay Evidence')
+      expect(container.textContent).toContain('2 actions')
+      expect(container.textContent).toContain('2 passed / 0 failed')
+      expect(container.textContent).toContain('1 screenshot')
+      expect(container.textContent).toContain('2 DOM/HTML captures')
+      expect(container.textContent).toContain('1 console entry')
+      expect(container.textContent).toContain('2 network entries')
+      expect(container.textContent).toContain('2 source steps')
+      expect(container.textContent).toContain('1 transaction')
 
       const finalSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))
       expect(finalSaveButton).toBeDefined()
@@ -2700,6 +2878,35 @@ describe('LoadRunnerImport', () => {
         name: 'Imported TruClient Mobile Web',
         protocol: 'browser',
       }), 'project-1')
+      const savedScript = apiMock.createScript.mock.calls[0][0]
+      const promotionReview = savedScript.metadata?.import?.preserved?.trueclient2_promotion_review
+      expect(promotionReview).toMatchObject({
+        schema_version: 1,
+        status: 'replay_evidence_attached',
+        source: 'trueclient_mobile_web',
+        source_script_name: 'default.xml',
+        gates: {
+          review_required_actions: 0,
+          javascript_review_actions: 0,
+          selector_fallback_candidates: 2,
+          replay_required: false,
+          replay_warnings: ['selector repair recommended'],
+        },
+        replay_evidence: {
+          session_id: 'draft-browser-validation',
+          status: 'completed',
+          events: 2,
+          passed: 2,
+          failed: 0,
+          screenshots: 1,
+          dom_html_captures: 2,
+          console_entries: 1,
+          network_entries: 2,
+          source_steps: 2,
+          source_transactions: 1,
+        },
+      })
+      expect(promotionReview?.generated_at).toEqual(expect.any(String))
     } finally {
       vi.useRealTimers()
     }

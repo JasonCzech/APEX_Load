@@ -1613,6 +1613,12 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
 				ProjectLookup: resolveTestProjectID,
 			}, true
+		case http.MethodPut:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveTestProjectID,
+			}, true
 		case http.MethodDelete:
 			return accessRequirement{
 				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},

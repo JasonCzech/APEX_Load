@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
-import { type DetectedLoadRunnerProtocol, type ImportRepairSuggestion, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerProtocolSupportEntry, type LoadRunnerReviewArtifact, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse, type SalesforceReview } from '../types/scriptImports'
-import { type BrowserReplaySession } from '../types'
-import { type LoadRunnerSourceReview, type ScriptDefinition } from '../types/scripts'
+import { type DetectedLoadRunnerProtocol, type ImportRepairSuggestion, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerProtocolSupportEntry, type LoadRunnerReviewArtifact, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse, type SalesforceReview, type TrueClient2CompatReport } from '../types/scriptImports'
+import { type BrowserReplayEvent, type BrowserReplaySession } from '../types'
+import { type LoadRunnerSourceReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildReplayStartPayload, getImportSummary, summarizeInlineData } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
@@ -73,6 +73,49 @@ function scriptActionCount(script?: ScriptDefinition | null) {
     return Array.isArray(value) ? value.length : 0
   }
   return phaseActions('init') + phaseActions('actions') + phaseActions('teardown')
+}
+
+function orderedImportScriptActions(script?: ScriptDefinition | null): ScriptActionDefinition[] {
+  if (!script) return []
+  const phasedScript = script as ScriptDefinition & {
+    init?: ScriptActionDefinition[]
+    teardown?: ScriptActionDefinition[]
+  }
+  return [
+    ...(phasedScript.init || []),
+    ...(script.actions || []),
+    ...(phasedScript.teardown || []),
+  ]
+}
+
+function flattenImportScriptActions(actions: ScriptActionDefinition[]): ScriptActionDefinition[] {
+  const flattened: ScriptActionDefinition[] = []
+  actions.forEach(action => {
+    flattened.push(action)
+    if (action.control?.steps?.length) {
+      flattened.push(...flattenImportScriptActions(action.control.steps))
+    }
+    if (action.control?.else?.length) {
+      flattened.push(...flattenImportScriptActions(action.control.else))
+    }
+  })
+  return flattened
+}
+
+function importScriptActionsDeep(script?: ScriptDefinition | null): ScriptActionDefinition[] {
+  return flattenImportScriptActions(orderedImportScriptActions(script))
+}
+
+function getTrueClient2CompatReport(result: LoadRunnerImportResult | null, metadata?: ImportMetadata | null): TrueClient2CompatReport | null {
+  const topLevel = result?.trueclient2_compat_report
+  if (topLevel) return topLevel
+  const summaryReport = result?.summary?.trueclient2_compat_report
+  if (summaryReport) return summaryReport
+  const preservedReport = metadata?.preserved?.trueclient2_compat_report
+  if (preservedReport && typeof preservedReport === 'object' && !Array.isArray(preservedReport)) {
+    return preservedReport as TrueClient2CompatReport
+  }
+  return null
 }
 
 function loadRunnerImportStatusLabel(status: LoadRunnerImportQueueStatus) {
@@ -211,6 +254,25 @@ const DEFAULT_IMPORT_OPTIONS: ImportOptions = {
 }
 const EMPTY_REPLAY_VALIDATION_WARNINGS: string[] = []
 
+interface BrowserReplayEvidenceSummary {
+  events: number
+  passed: number
+  failed: number
+  screenshots: number
+  domHtmlCaptures: number
+  consoleEntries: number
+  networkEntries: number
+  sourceSteps: number
+  sourceTransactions: number
+}
+
+interface PromotionReviewInputs {
+  compatReport?: TrueClient2CompatReport | null
+  replaySession?: BrowserReplaySession | null
+  replayWarnings?: string[]
+  importWarnings?: string[]
+}
+
 function getImportedRuntimeSectionId(area?: string | null): string | null {
   const normalizedArea = area?.trim().toLowerCase()
   switch (normalizedArea) {
@@ -246,6 +308,137 @@ function formatRuntimeSettingStatusLabel(status?: string | null) {
   const normalized = status?.trim().replace(/[_-]+/g, ' ')
   if (!normalized) return 'Unknown'
   return normalized.replace(/\b\w/g, char => char.toUpperCase())
+}
+
+function formatEvidenceCount(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
+function getReplaySessionEvents(session?: BrowserReplaySession | null): BrowserReplayEvent[] {
+  if (Array.isArray(session?.events) && session.events.length > 0) return session.events
+  if (Array.isArray(session?.report?.events) && session.report.events.length > 0) return session.report.events
+  return session?.current_event ? [session.current_event] : []
+}
+
+function summarizeBrowserReplayEvidence(session?: BrowserReplaySession | null): BrowserReplayEvidenceSummary {
+  const events = getReplaySessionEvents(session)
+  const manifest = session?.report?.artifact_manifest
+  const sourceSteps = new Set<string>()
+  const sourceTransactions = new Set<string>()
+  let screenshots = 0
+  let domHtmlCaptures = 0
+  let consoleEntries = 0
+  let networkEntries = 0
+  let passed = 0
+  let failed = 0
+
+  events.forEach((event) => {
+    const snapshot = event.snapshot
+    if (event.success) {
+      passed += 1
+    } else {
+      failed += 1
+    }
+    if (event.screenshot_base64 || snapshot?.screenshot_base64) screenshots += 1
+    if (event.html || event.dom_summary || snapshot?.html || snapshot?.dom_summary) domHtmlCaptures += 1
+    consoleEntries += (event.console_entries || snapshot?.console_entries || []).length
+    networkEntries += (event.network_entries || snapshot?.network_entries || []).length
+    const sourceStep = event.source_step_id || event.source_action || event.source_action_name || (
+      typeof event.source_step_index === 'number' ? `source-step-${event.source_step_index}` : ''
+    )
+    if (sourceStep) sourceSteps.add(sourceStep)
+    if (event.source_transaction) sourceTransactions.add(event.source_transaction)
+  })
+
+  return {
+    events: events.length,
+    passed,
+    failed,
+    screenshots: Math.max(screenshots, manifest?.screenshots || 0),
+    domHtmlCaptures: Math.max(domHtmlCaptures, manifest?.snapshots || 0, manifest?.html_captured ? 1 : 0),
+    consoleEntries: Math.max(consoleEntries, manifest?.console_entries || 0),
+    networkEntries: Math.max(networkEntries, manifest?.network_entries || 0),
+    sourceSteps: sourceSteps.size,
+    sourceTransactions: sourceTransactions.size,
+  }
+}
+
+function buildTrueClientPromotionReview(script: ScriptDefinition, inputs: PromotionReviewInputs): Record<string, unknown> {
+  const metadata = getImportMetadata(script)
+  const actions = importScriptActionsDeep(script)
+  const replayEvidence = summarizeBrowserReplayEvidence(inputs.replaySession)
+  const reviewRequiredActions = actions.filter(action => Boolean(action.metadata?.review_required)).length
+  const javascriptReviewActions = actions.filter(action => action.type === 'browser_evaluate_js' || action.metadata?.review_gate === 'javascript').length
+  const selectorFallbackCandidates = actions.reduce((count, action) => {
+    const fallbacks = action.metadata?.source_selector_fallbacks
+    return count + (Array.isArray(fallbacks) ? fallbacks.length : 0)
+  }, 0)
+  const replayAttached = Boolean(inputs.replaySession?.id && inputs.replaySession.status === 'completed' && replayEvidence.failed === 0)
+
+  return {
+    schema_version: 1,
+    status: replayAttached ? 'replay_evidence_attached' : 'needs_replay_evidence',
+    generated_at: new Date().toISOString(),
+    source: metadata?.source || 'loadrunner',
+    source_script_name: metadata?.source_script_name || '',
+    compatibility: {
+      source_profile: inputs.compatReport?.source_profile,
+      import_mode: inputs.compatReport?.import_mode,
+      promotion_status: inputs.compatReport?.promotion_status,
+      promotion_allowed: inputs.compatReport?.promotion_allowed ?? false,
+      runtime_parity_status: inputs.compatReport?.runtime_parity_status,
+      replay_status: replayAttached ? 'attached' : inputs.compatReport?.replay_status,
+      javascript_review_gate: inputs.compatReport?.javascript_review_gate,
+      http_conversion_readiness: inputs.compatReport?.http_conversion_readiness,
+      selector_confidence_pct: inputs.compatReport?.selector_confidence_pct,
+      frame_window_blockers: inputs.compatReport?.frame_window_blockers ?? 0,
+    },
+    gates: {
+      review_required_actions: reviewRequiredActions,
+      javascript_review_actions: javascriptReviewActions,
+      selector_fallback_candidates: selectorFallbackCandidates,
+      replay_required: !replayAttached,
+      replay_warnings: inputs.replayWarnings || [],
+      import_warnings: inputs.importWarnings || [],
+    },
+    replay_evidence: {
+      session_id: inputs.replaySession?.id || '',
+      status: inputs.replaySession?.status || 'not_run',
+      started_at: inputs.replaySession?.started_at || '',
+      completed_at: inputs.replaySession?.completed_at || inputs.replaySession?.report?.completed_at || '',
+      events: replayEvidence.events,
+      passed: replayEvidence.passed,
+      failed: replayEvidence.failed,
+      screenshots: replayEvidence.screenshots,
+      dom_html_captures: replayEvidence.domHtmlCaptures,
+      console_entries: replayEvidence.consoleEntries,
+      network_entries: replayEvidence.networkEntries,
+      source_steps: replayEvidence.sourceSteps,
+      source_transactions: replayEvidence.sourceTransactions,
+    },
+    next_actions: replayAttached
+      ? ['Review selector fallbacks and JavaScript approvals before production promotion.']
+      : ['Run draft browser replay and attach evidence before production promotion.'],
+  }
+}
+
+function attachTrueClientPromotionReview(script: ScriptDefinition, inputs: PromotionReviewInputs): ScriptDefinition {
+  const promotionReview = buildTrueClientPromotionReview(script, inputs)
+  const existingMetadata = script.metadata || {}
+  const existingImport = existingMetadata.import || {}
+  return {
+    ...script,
+    metadata: {
+      ...existingMetadata,
+      import: {
+        ...existingImport,
+        preserved: {
+          ...(existingImport.preserved || {}),
+          trueclient2_promotion_review: promotionReview,
+        },
+      },
+    },
+  }
 }
 
 function normalizeReplaySuggestionCopy(value?: string | null) {
@@ -387,6 +580,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const reviewArtifact = result?.review_artifact ?? result?.summary?.review_artifact ?? null
   const executableImport = !detectedProtocol || detectedProtocol.import_mode === 'executable'
   const importMetadata = getImportMetadata(importedScript || undefined)
+  const trueClient2CompatReport = getTrueClient2CompatReport(result, importMetadata)
   const importSummary = getImportSummary(importMetadata)
   const reviewSummary: LoadRunnerImportSummary | null = result?.summary || null
   const salesforceReview = reviewSummary?.salesforce_review || null
@@ -418,6 +612,10 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const saveBlockedByProtocolGate = Boolean(detectedProtocol && detectedProtocol.import_mode !== 'executable')
   const browserImport = isBrowserImport(importedScript)
   const browserReplayStatus = replayValidationSession?.status || null
+  const browserReplayEvidence = useMemo(
+    () => summarizeBrowserReplayEvidence(replayValidationSession),
+    [replayValidationSession],
+  )
   const browserReplayStarting = browserImport && replayValidationLoading
   const browserReplayStatusLabel = browserReplayStarting
     ? 'Starting'
@@ -968,8 +1166,16 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       return
     }
     try {
-      const savedScript = await api.createScript(importedScript, projectId)
-      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, importedScript)] })
+      const scriptToSave = browserImport
+        ? attachTrueClientPromotionReview(importedScript, {
+          compatReport: trueClient2CompatReport,
+          replaySession: replayValidationSession,
+          replayWarnings: replayValidationWarnings,
+          importWarnings: result?.warnings || [],
+        })
+        : importedScript
+      const savedScript = await api.createScript(scriptToSave, projectId)
+      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
     } catch (error: unknown) {
       setError(getErrorMessage(error, 'Failed to save script'))
     }
@@ -1318,6 +1524,82 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} /> : undefined}
           >
 
+            {trueClient2CompatReport && (
+              <div className="lr-warnings lr-trueclient2-compat">
+                <div className="lr-review-section">
+                  <div className="lr-review-section-header">
+                    <strong>TruClient 2 Compatibility</strong>
+                    <span>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.promotion_status || 'review')}</span>
+                  </div>
+                  <p>
+                    {trueClient2CompatReport.source_script_type || 'TruClient source'} · {trueClient2CompatReport.import_mode || 'review'} · {trueClient2CompatReport.promotion_allowed ? 'Promotion allowed' : 'Promotion blocked'}
+                  </p>
+                  <div className="lr-compat-grid">
+                    <div>
+                      <span>Steps</span>
+                      <strong>{trueClient2CompatReport.converted_actions ?? 0}/{trueClient2CompatReport.imported_steps ?? 0}</strong>
+                      <small>{trueClient2CompatReport.skipped_review_steps ?? 0} skipped/review</small>
+                    </div>
+                    <div>
+                      <span>Selectors</span>
+                      <strong>{trueClient2CompatReport.selector_confidence_pct ?? 0}%</strong>
+                      <small>{trueClient2CompatReport.selector_candidate_count ?? 0} candidates</small>
+                    </div>
+                    <div>
+                      <span>Runtime</span>
+                      <strong>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.runtime_parity_status || 'unknown')}</strong>
+                      <small>{trueClient2CompatReport.fixture_contract_status || 'fixture status unknown'}</small>
+                    </div>
+                    <div>
+                      <span>Replay</span>
+                      <strong>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.replay_status || 'required')}</strong>
+                      <small>{trueClient2CompatReport.frame_window_blockers ?? 0} frame/window blockers</small>
+                    </div>
+                    <div>
+                      <span>JavaScript</span>
+                      <strong>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.javascript_review_gate || 'none')}</strong>
+                      <small>review gate</small>
+                    </div>
+                    <div>
+                      <span>HTTP Conversion</span>
+                      <strong>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.http_conversion_readiness || 'not ready')}</strong>
+                      <small>scale path</small>
+                    </div>
+                  </div>
+                  {trueClient2CompatReport.supported_step_families?.length ? (
+                    <p>Supported steps: {trueClient2CompatReport.supported_step_families.join(', ')}</p>
+                  ) : null}
+                  {trueClient2CompatReport.review_only_step_families?.length ? (
+                    <p>Review-only steps: {trueClient2CompatReport.review_only_step_families.join(', ')}</p>
+                  ) : null}
+                  {trueClient2CompatReport.unsupported_step_families?.length ? (
+                    <p>Unsupported steps: {trueClient2CompatReport.unsupported_step_families.join(', ')}</p>
+                  ) : null}
+                  {trueClient2CompatReport.findings?.length ? (
+                    <ul>{trueClient2CompatReport.findings.slice(0, 6).map((finding, index) => <li key={`tc2-finding-${index}`}>{finding}</li>)}</ul>
+                  ) : null}
+                  {trueClient2CompatReport.next_actions?.length ? (
+                    <>
+                      <p>Next actions</p>
+                      <ul>{trueClient2CompatReport.next_actions.slice(0, 6).map((action, index) => <li key={`tc2-next-${index}`}>{action}</li>)}</ul>
+                    </>
+                  ) : null}
+                  {onEdit && renderEditorActionButtons([
+                    {
+                      key: 'trueclient2-open-draft',
+                      label: 'Open Imported Draft In Editor',
+                      onClick: () => openImportedScriptInEditor(),
+                    },
+                    {
+                      key: 'trueclient2-runtime-review',
+                      label: 'Open Runtime Review In Editor',
+                      onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
+                    },
+                  ], sectionActionStyle)}
+                </div>
+              </div>
+            )}
+
             {browserImport && (
               <div className="lr-warnings">
                 <div className="lr-review-section">
@@ -1332,11 +1614,41 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                     </button>
                   </div>
                   {replayValidationSession && !replayValidationLoading && (
-                    <ul>
-                      <li>Replay Session: {replayValidationSession.id}</li>
-                      <li>Replay Status: {browserReplayStatusLabel}</li>
-                      <li>Replay Group: {replayValidationSession.group}</li>
-                    </ul>
+                    <>
+                      <ul>
+                        <li>Replay Session: {replayValidationSession.id}</li>
+                        <li>Replay Status: {browserReplayStatusLabel}</li>
+                        <li>Replay Group: {replayValidationSession.group}</li>
+                      </ul>
+                      <div className="lr-replay-evidence">
+                        <div className="lr-review-section-header">
+                          <strong>Replay Evidence</strong>
+                          <span>{browserReplayEvidence.events > 0 ? 'Captured' : 'Pending'}</span>
+                        </div>
+                        <div className="lr-compat-grid lr-replay-evidence-grid">
+                          <div>
+                            <span>Actions</span>
+                            <strong>{formatEvidenceCount(browserReplayEvidence.events, 'action')}</strong>
+                            <small>{browserReplayEvidence.passed} passed / {browserReplayEvidence.failed} failed</small>
+                          </div>
+                          <div>
+                            <span>Captures</span>
+                            <strong>{formatEvidenceCount(browserReplayEvidence.screenshots, 'screenshot')}</strong>
+                            <small>{formatEvidenceCount(browserReplayEvidence.domHtmlCaptures, 'DOM/HTML capture')}</small>
+                          </div>
+                          <div>
+                            <span>Telemetry</span>
+                            <strong>{formatEvidenceCount(browserReplayEvidence.consoleEntries, 'console entry', 'console entries')}</strong>
+                            <small>{formatEvidenceCount(browserReplayEvidence.networkEntries, 'network entry', 'network entries')}</small>
+                          </div>
+                          <div>
+                            <span>Source Links</span>
+                            <strong>{formatEvidenceCount(browserReplayEvidence.sourceSteps, 'source step')}</strong>
+                            <small>{formatEvidenceCount(browserReplayEvidence.sourceTransactions, 'transaction')}</small>
+                          </div>
+                        </div>
+                      </div>
+                    </>
                   )}
                   {replayValidationWarnings.length > 0 && (
                     <ul>{replayValidationWarnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>

@@ -27,7 +27,7 @@ const (
 
 type DetectedProtocol struct {
 	CanonicalLoadRunnerProtocol string              `json:"canonical_loadrunner_protocol"`
-	APEXLoadProtocol         string              `json:"apexload_protocol,omitempty"`
+	APEXLoadProtocol            string              `json:"apexload_protocol,omitempty"`
 	Bundle                      string              `json:"bundle,omitempty"`
 	ImportMode                  ImportMode          `json:"import_mode"`
 	Confidence                  DetectionConfidence `json:"confidence"`
@@ -56,7 +56,7 @@ type ReviewArtifact struct {
 type protocolProfile struct {
 	Canonical        string
 	DisplayName      string
-	APEXLoad      string
+	APEXLoad         string
 	Bundle           string
 	Mode             ImportMode
 	Evidence         []string
@@ -79,10 +79,15 @@ var protocolTypeAliases = map[string]protocolProfile{
 	"truclient mobile web":       trueClientMobileProfile(),
 	"truclient 2.0 - mobile web": trueClientMobileProfile(),
 	"truclient 2.0 mobile web":   trueClientMobileProfile(),
+	"web2uimob":                  trueClientMobileProfile(),
+	"tc4mobile":                  trueClientNativeMobileProfile(),
+	"truclient native mobile":    trueClientNativeMobileProfile(),
+	"truclient - native mobile":  trueClientNativeMobileProfile(),
 	"truclient 2.0 - web":        trueClientWeb2Profile(),
 	"truclient2 web":             trueClientWeb2Profile(),
-	"truclient - web":            trueClientWeb2Profile(),
-	"truclient web":              trueClientWeb2Profile(),
+	"truclient - web":            trueClientWebProfile(),
+	"truclient web":              trueClientWebProfile(),
+	"truclientweb":               trueClientWebProfile(),
 	"truclient":                  externalProfile("truclient_legacy", "TruClient", "Foundation Entitlement", "Legacy desktop TruClient requires the VuGen/TruClient runtime and is preserved for review."),
 	"database":                   databaseProfile(),
 	"odbc":                       databaseProfile(),
@@ -99,11 +104,14 @@ var protocolTypeAliases = map[string]protocolProfile{
 	"oracle web":                 oebWebProfile("oracle_web", "Oracle-Web"),
 	"siebel-web":                 oebWebProfile("siebel_web", "Siebel-Web"),
 	"siebel web":                 oebWebProfile("siebel_web", "Siebel-Web"),
-	"sap-web":                    webHTTPProfile(),
-	"sap web":                    webHTTPProfile(),
+	"sap-web":                    sapWebProfile(),
+	"sap web":                    sapWebProfile(),
 	"oracle nca":                 externalProfile("oracle_nca", "Oracle NCA", "Oracle Enterprise Business Protocol Bundle", "Oracle NCA remains review-only until an approved client runner bridge is available."),
 	"oracle 2-tier":              externalProfile("oracle_2_tier", "Oracle 2-Tier", "Oracle Enterprise Business Protocol Bundle", "Oracle 2-Tier is a client-heavy protocol that requires an external runner."),
 	"sap gui":                    externalProfile("sap_gui", "SAP GUI", "Foundation Entitlement", "SAP GUI requires an external SAP GUI runner bridge."),
+	"rdp":                        externalProfile("rdp", "RDP", "Remote Access Protocol Bundle", "RDP replay requires an approved remote desktop runner bridge."),
+	"rte":                        externalProfile("rte", "RTE", "Terminal/RTE Protocol Bundle", "RTE terminal replay requires an approved terminal runner bridge."),
+	"terminal emulator":          externalProfile("rte", "RTE", "Terminal/RTE Protocol Bundle", "RTE terminal replay requires an approved terminal runner bridge."),
 	"mapi":                       reviewProfile("mapi", "MAPI", "Network Protocol Bundle", "MAPI imports are classified for review until a runner bridge exists."),
 	"tuxedo":                     reviewProfile("tuxedo", "Tuxedo", "Network Protocol Bundle", "Tuxedo imports are classified for review until a runner bridge exists."),
 	"template":                   templateProfile("template_vuser", "Template VUser"),
@@ -122,9 +130,9 @@ func DetectProtocol(files map[string]string, projectConfig *ProjectConfig, actio
 	sourceType := ""
 	if projectConfig != nil {
 		sourceType = strings.TrimSpace(projectConfig.ScriptType)
-		if profile, ok := profileForType(sourceType); ok {
+		if profile, projectSignals, ok := profileForProjectConfig(projectConfig); ok {
 			metadata = &profile
-			signals = append(signals, fmt.Sprintf(".usr [General] Type=%s", sourceType))
+			signals = append(signals, projectSignals...)
 		}
 	}
 
@@ -158,7 +166,7 @@ func DetectProtocol(files map[string]string, projectConfig *ProjectConfig, actio
 
 	detected := DetectedProtocol{
 		CanonicalLoadRunnerProtocol: selected.Canonical,
-		APEXLoadProtocol:         selected.APEXLoad,
+		APEXLoadProtocol:            selected.APEXLoad,
 		Bundle:                      selected.Bundle,
 		ImportMode:                  selected.Mode,
 		Confidence:                  confidence,
@@ -198,6 +206,8 @@ func profileForType(scriptType string) (protocolProfile, bool) {
 		return oebWebProfile("oracle_web", "Oracle-Web"), true
 	case strings.Contains(key, "siebel") && strings.Contains(key, "web"):
 		return oebWebProfile("siebel_web", "Siebel-Web"), true
+	case strings.Contains(key, "sap") && strings.Contains(key, "web"):
+		return sapWebProfile(), true
 	case strings.Contains(key, "sap") && strings.Contains(key, "gui"):
 		return externalProfile("sap_gui", "SAP GUI", "Foundation Entitlement", "SAP GUI requires an external SAP GUI runner bridge."), true
 	case strings.Contains(key, "odbc") || strings.Contains(key, "database"):
@@ -209,6 +219,32 @@ func profileForType(scriptType string) (protocolProfile, bool) {
 	default:
 		return protocolProfile{}, false
 	}
+}
+
+func profileForProjectConfig(cfg *ProjectConfig) (protocolProfile, []string, bool) {
+	if cfg == nil {
+		return protocolProfile{}, nil, false
+	}
+	signals := make([]string, 0, 1+len(cfg.ActiveTypes))
+	sourceType := strings.TrimSpace(cfg.ScriptType)
+	if sourceType != "" {
+		signals = append(signals, fmt.Sprintf(".usr [General] Type=%s", sourceType))
+	}
+	for _, activeType := range cfg.ActiveTypes {
+		if strings.TrimSpace(activeType) == "" {
+			continue
+		}
+		signals = append(signals, fmt.Sprintf(".usr [General] ActiveTypes=%s", activeType))
+	}
+	if profile, ok := profileForType(sourceType); ok {
+		return profile, signals, true
+	}
+	for _, activeType := range cfg.ActiveTypes {
+		if profile, ok := profileForType(activeType); ok {
+			return profile, signals, true
+		}
+	}
+	return protocolProfile{}, signals, false
 }
 
 func profileFromContent(files map[string]string, actions []*ParsedAction) (*protocolProfile, []string) {
@@ -223,6 +259,14 @@ func profileFromContent(files map[string]string, actions []*ParsedAction) (*prot
 		if containsFunctionPrefix(counts, "sapgui_") {
 			profile := externalProfile("sap_gui", "SAP GUI", "Foundation Entitlement", "SAP GUI function calls require an external SAP GUI runner bridge.")
 			return &profile, []string{"sapgui_* function calls"}
+		}
+		if containsFunctionPrefix(counts, "rdp_") {
+			profile := externalProfile("rdp", "RDP", "Remote Access Protocol Bundle", "rdp_* function calls require a remote desktop runner bridge.")
+			return &profile, []string{"rdp_* function calls"}
+		}
+		if containsFunctionPrefix(counts, "te_") {
+			profile := externalProfile("rte", "RTE", "Terminal/RTE Protocol Bundle", "TE_* function calls require a terminal runner bridge.")
+			return &profile, []string{"TE_* function calls"}
 		}
 		if containsFunctionPrefix(counts, "nca_") {
 			profile := externalProfile("oracle_nca", "Oracle NCA", "Oracle Enterprise Business Protocol Bundle", "nca_* function calls require a client runner bridge.")
@@ -258,6 +302,21 @@ func profileFromContent(files map[string]string, actions []*ParsedAction) (*prot
 	case strings.Contains(archiveText, "sapgui_"):
 		profile := externalProfile("sap_gui", "SAP GUI", "Foundation Entitlement", "SAP GUI source evidence requires an external runner bridge.")
 		return &profile, []string{"sapgui_* source evidence"}
+	case strings.Contains(archiveText, "web2uimob") || strings.Contains(archiveText, "truclientmobileweb"):
+		profile := trueClientMobileProfile()
+		return &profile, []string{"TruClient Mobile Web source evidence"}
+	case strings.Contains(archiveText, "tc4mobile"):
+		profile := trueClientNativeMobileProfile()
+		return &profile, []string{"TruClient Native Mobile source evidence"}
+	case strings.Contains(archiveText, "truclientweb"):
+		profile := trueClientWebProfile()
+		return &profile, []string{"TruClient Web source evidence"}
+	case strings.Contains(archiveText, "rdp_"):
+		profile := externalProfile("rdp", "RDP", "Remote Access Protocol Bundle", "RDP source evidence requires an external remote desktop runner bridge.")
+		return &profile, []string{"rdp_* source evidence"}
+	case strings.Contains(archiveText, "te_connect") || strings.Contains(archiveText, "te_wait_") || strings.Contains(archiveText, "te_type"):
+		profile := externalProfile("rte", "RTE", "Terminal/RTE Protocol Bundle", "RTE source evidence requires an external terminal runner bridge.")
+		return &profile, []string{"TE_* source evidence"}
 	case strings.Contains(archiveText, "nca_") || strings.Contains(archiveText, "frmservlet"):
 		profile := externalProfile("oracle_nca", "Oracle NCA", "Oracle Enterprise Business Protocol Bundle", "Oracle Forms/NCA source evidence")
 		return &profile, []string{"Oracle Forms/NCA source evidence"}
@@ -489,7 +548,7 @@ func webHTTPProfile() protocolProfile {
 	return protocolProfile{
 		Canonical:        "web_http_html",
 		DisplayName:      "Web HTTP/HTML",
-		APEXLoad:      "http",
+		APEXLoad:         "http",
 		Bundle:           "Foundation Entitlement",
 		Mode:             ImportModeExecutable,
 		HarmlessWithSOAP: true,
@@ -500,7 +559,7 @@ func soapProfile() protocolProfile {
 	return protocolProfile{
 		Canonical:   "soap",
 		DisplayName: "Web Services/SOAP",
-		APEXLoad: "soap",
+		APEXLoad:    "soap",
 		Bundle:      "Foundation Entitlement",
 		Mode:        ImportModeExecutable,
 	}
@@ -510,7 +569,7 @@ func trueClientMobileProfile() protocolProfile {
 	return protocolProfile{
 		Canonical:   "truclient_mobile_web",
 		DisplayName: "TruClient Mobile Web",
-		APEXLoad: "browser",
+		APEXLoad:    "browser",
 		Bundle:      "Foundation Entitlement",
 		Mode:        ImportModeExecutable,
 		Evidence:    []string{"Browser replay evidence before promotion"},
@@ -521,10 +580,34 @@ func trueClientWeb2Profile() protocolProfile {
 	return protocolProfile{
 		Canonical:   "truclient2_web",
 		DisplayName: "TruClient 2.0 Web",
-		APEXLoad: "browser",
+		APEXLoad:    "browser",
 		Bundle:      "Foundation Entitlement",
 		Mode:        ImportModeReviewOnly,
 		Evidence:    []string{"Selector review", "Browser replay evidence", "Runtime settings parity review"},
+	}
+}
+
+func trueClientWebProfile() protocolProfile {
+	return protocolProfile{
+		Canonical:   "truclient_web",
+		DisplayName: "TruClient - Web",
+		APEXLoad:    "browser",
+		Bundle:      "Foundation Entitlement",
+		Mode:        ImportModeReviewOnly,
+		Evidence:    []string{"Fixture-backed parser coverage", "Runtime settings parity review", "Browser replay evidence"},
+		Warnings:    []string{"Legacy TruClient Web imports are preserved as review artifacts until the Web profile is promoted."},
+	}
+}
+
+func trueClientNativeMobileProfile() protocolProfile {
+	return protocolProfile{
+		Canonical:   "truclient_native_mobile",
+		DisplayName: "TruClient Native Mobile",
+		APEXLoad:    "",
+		Bundle:      "Foundation Entitlement",
+		Mode:        ImportModeExternalRunnerRequired,
+		Evidence:    []string{"Approved native mobile runner bridge", "Device or simulator replay evidence"},
+		Runner:      "TruClient Native Mobile requires a governed mobile/device runner bridge and is preserved as a review artifact.",
 	}
 }
 
@@ -532,7 +615,7 @@ func databaseProfile() protocolProfile {
 	return protocolProfile{
 		Canonical:   "database",
 		DisplayName: "Database/ODBC",
-		APEXLoad: "database",
+		APEXLoad:    "database",
 		Bundle:      "LoadRunner Enterprise Database Protocol Bundle",
 		Mode:        ImportModeExecutable,
 		Evidence:    []string{"DSN or connection string", "SQL bind data review"},
@@ -546,7 +629,7 @@ func networkProfile(canonical, display string) protocolProfile {
 	return protocolProfile{
 		Canonical:   canonical,
 		DisplayName: display,
-		APEXLoad: "network",
+		APEXLoad:    "network",
 		Bundle:      "LoadRunner Enterprise Network Protocol Bundle",
 		Mode:        ImportModeExecutable,
 		Evidence:    []string{"Endpoint and credential review"},
@@ -557,10 +640,22 @@ func oebWebProfile(canonical, display string) protocolProfile {
 	return protocolProfile{
 		Canonical:   canonical,
 		DisplayName: display,
-		APEXLoad: "http",
+		APEXLoad:    "http",
 		Bundle:      "Oracle Enterprise Business Protocol Bundle",
 		Mode:        ImportModeExecutable,
 		Evidence:    []string{"Oracle E-Business correlation review", "Replay validation evidence"},
+	}
+}
+
+func sapWebProfile() protocolProfile {
+	return protocolProfile{
+		Canonical:   "sap_web",
+		DisplayName: "SAP Web",
+		APEXLoad:    "http",
+		Bundle:      "SAP Web Protocol Bundle",
+		Mode:        ImportModeExecutable,
+		Evidence:    []string{"SAP Web async/correlation review", "Replay validation evidence"},
+		Warnings:    []string{"SAP Web imports execute through the HTTP runtime; SAP-specific async helpers remain review-gated."},
 	}
 }
 

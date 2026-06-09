@@ -36,12 +36,15 @@ type ReplayPreflightCheck struct {
 
 var replayTemplateRefPattern = regexp.MustCompile(`\{\{\s*(var|env|data|param)\.([a-zA-Z0-9_.-]+)`)
 
+const replayPreflightMaxControlDepth = 32
+
 func buildReplayPreflight(script *dsl.Script, variables map[string]string, issues []string, warnings []string) *ReplayPreflight {
 	reviewGateIssues := replayReviewGateIssues(script)
+	actionCount := replayActionDefinitionCount(script)
 	preflight := &ReplayPreflight{
 		Valid:                len(issues) == 0,
-		ActionCount:          replayActionCount(script),
-		ExpectedActionCount:  replayActionCount(script),
+		ActionCount:          actionCount,
+		ExpectedActionCount:  replayExpectedActionCount(script),
 		DataSourceCount:      len(scriptDataSources(script)),
 		ParameterCount:       len(scriptParameters(script)),
 		BrowserRequired:      script != nil && strings.EqualFold(strings.TrimSpace(script.Protocol), "browser"),
@@ -94,6 +97,9 @@ func buildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 			Detail: strings.Join(preflight.RuntimePrerequisites, "; "),
 		},
 	}
+	if preflight.BrowserRequired {
+		preflight.Checks = append(preflight.Checks, replayEvidenceCaptureCheck(script))
+	}
 	return preflight
 }
 
@@ -112,11 +118,18 @@ func cloneReplayPreflight(preflight *ReplayPreflight) *ReplayPreflight {
 	return &cloned
 }
 
-func replayActionCount(script *dsl.Script) int {
+func replayActionDefinitionCount(script *dsl.Script) int {
 	if script == nil {
 		return 0
 	}
-	return len(script.Init) + len(script.Actions) + len(script.Teardown)
+	return replayDefinitionCount(replayPhaseActions(script), 0)
+}
+
+func replayExpectedActionCount(script *dsl.Script) int {
+	if script == nil {
+		return 0
+	}
+	return replayExpectedCount(replayPhaseActions(script), 0)
 }
 
 func scriptDataSources(script *dsl.Script) []dsl.DataSource {
@@ -154,6 +167,29 @@ func replayRuntimePrerequisites(script *dsl.Script) []string {
 	}
 	prereqs = append(prereqs, "Screenshot capture: "+capture)
 	return prereqs
+}
+
+func replayEvidenceCaptureCheck(script *dsl.Script) ReplayPreflightCheck {
+	capture := "per_action"
+	if script != nil {
+		if configured := strings.TrimSpace(script.Config.Browser.CaptureScreenshots); configured != "" {
+			capture = configured
+		}
+	}
+	if strings.EqualFold(capture, "off") || strings.EqualFold(capture, "none") || strings.EqualFold(capture, "disabled") {
+		return ReplayPreflightCheck{
+			ID:     "evidence_capture",
+			Label:  "Evidence capture",
+			Status: "warn",
+			Detail: "Screenshot capture is disabled; enable per_action or on_failure before using replay as promotion evidence.",
+		}
+	}
+	return ReplayPreflightCheck{
+		ID:     "evidence_capture",
+		Label:  "Evidence capture",
+		Status: "pass",
+		Detail: "Replay will capture screenshot, DOM, console, and network evidence for browser review.",
+	}
 }
 
 func replayMissingVariables(script *dsl.Script, variables map[string]string) []string {
@@ -232,7 +268,7 @@ func replayDataSourceWarnings(script *dsl.Script) []string {
 	return warnings
 }
 
-func replayOrderedActions(script *dsl.Script) []dsl.Action {
+func replayPhaseActions(script *dsl.Script) []dsl.Action {
 	if script == nil {
 		return nil
 	}
@@ -241,6 +277,96 @@ func replayOrderedActions(script *dsl.Script) []dsl.Action {
 	actions = append(actions, script.Actions...)
 	actions = append(actions, script.Teardown...)
 	return actions
+}
+
+func replayOrderedActions(script *dsl.Script) []dsl.Action {
+	return flattenReplayActionsForReadiness(replayPhaseActions(script), 0)
+}
+
+func flattenReplayActionsForReadiness(actions []dsl.Action, depth int) []dsl.Action {
+	ordered := make([]dsl.Action, 0, len(actions))
+	for _, action := range actions {
+		switch strings.ToLower(strings.TrimSpace(action.Type)) {
+		case "control_if":
+			ordered = append(ordered, replayControlShell(action))
+			if action.Control != nil && depth < replayPreflightMaxControlDepth {
+				ordered = append(ordered, flattenReplayActionsForReadiness(action.Control.Steps, depth+1)...)
+				ordered = append(ordered, flattenReplayActionsForReadiness(action.Control.Else, depth+1)...)
+			}
+		case "control_loop":
+			ordered = append(ordered, replayControlShell(action))
+			if action.Control != nil && depth < replayPreflightMaxControlDepth {
+				ordered = append(ordered, flattenReplayActionsForReadiness(action.Control.Steps, depth+1)...)
+			}
+		default:
+			ordered = append(ordered, action)
+		}
+	}
+	return ordered
+}
+
+func replayControlShell(action dsl.Action) dsl.Action {
+	if action.Control == nil {
+		return action
+	}
+	clone := action
+	control := *action.Control
+	control.Steps = nil
+	control.Else = nil
+	clone.Control = &control
+	return clone
+}
+
+func replayDefinitionCount(actions []dsl.Action, depth int) int {
+	var count int
+	for _, action := range actions {
+		switch strings.ToLower(strings.TrimSpace(action.Type)) {
+		case "control_if":
+			if action.Control != nil && depth < replayPreflightMaxControlDepth {
+				count += replayDefinitionCount(action.Control.Steps, depth+1)
+				count += replayDefinitionCount(action.Control.Else, depth+1)
+			}
+		case "control_loop":
+			if action.Control != nil && depth < replayPreflightMaxControlDepth {
+				count += replayDefinitionCount(action.Control.Steps, depth+1)
+			}
+		default:
+			count++
+		}
+	}
+	return count
+}
+
+func replayExpectedCount(actions []dsl.Action, depth int) int {
+	var count int
+	for _, action := range actions {
+		switch strings.ToLower(strings.TrimSpace(action.Type)) {
+		case "control_if":
+			if action.Control == nil || depth >= replayPreflightMaxControlDepth {
+				continue
+			}
+			thenCount := replayExpectedCount(action.Control.Steps, depth+1)
+			elseCount := replayExpectedCount(action.Control.Else, depth+1)
+			if elseCount > thenCount {
+				count += elseCount
+			} else {
+				count += thenCount
+			}
+		case "control_loop":
+			if action.Control == nil || depth >= replayPreflightMaxControlDepth {
+				continue
+			}
+			bodyCount := replayExpectedCount(action.Control.Steps, depth+1)
+			passes := action.Control.Count
+			if passes <= 0 {
+				passes = 1
+			}
+			count += bodyCount * passes
+		default:
+			count++
+		}
+	}
+	return count
 }
 
 func replayTemplateRefs(action dsl.Action, kind string) []string {

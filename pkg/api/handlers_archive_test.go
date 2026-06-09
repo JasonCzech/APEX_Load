@@ -688,7 +688,7 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		if !strings.Contains(body, testRun.Name) {
 			t.Fatalf("expected report to contain test name %q", testRun.Name)
 		}
-		if !strings.Contains(body, "Executive profile") {
+		if !strings.Contains(body, "Executive Summary profile") {
 			t.Fatalf("expected report to contain executive profile label, got %q", body)
 		}
 		if !strings.Contains(body, "Action Summary") {

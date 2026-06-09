@@ -491,6 +491,12 @@ load.action("Socket Flow", async function() {
 			ConvertedActions int `json:"converted_actions"`
 			WebSocketActions int `json:"websocket_actions"`
 		} `json:"stats"`
+		ProtocolCompat struct {
+			SourceFormat      string `json:"source_format"`
+			CanonicalProtocol string `json:"canonical_protocol"`
+			MappedSteps       int    `json:"mapped_steps"`
+			PromotionStatus   string `json:"promotion_status"`
+		} `json:"protocol_compat_report"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -506,6 +512,9 @@ load.action("Socket Flow", async function() {
 	}
 	if result.Script.Actions[1].Body != `{"type":"subscribe"}` {
 		t.Fatalf("send body = %q", result.Script.Actions[1].Body)
+	}
+	if result.ProtocolCompat.SourceFormat != "DevWeb" || result.ProtocolCompat.CanonicalProtocol != "devweb" || result.ProtocolCompat.MappedSteps != 4 {
+		t.Fatalf("protocol_compat_report = %#v", result.ProtocolCompat)
 	}
 }
 
@@ -712,6 +721,13 @@ UpdateValueOn=Each Iteration
 		Stats   struct {
 			ConvertedActions int `json:"converted_actions"`
 		} `json:"stats"`
+		ProtocolCompat struct {
+			SourceFormat      string `json:"source_format"`
+			CanonicalProtocol string `json:"canonical_protocol"`
+			ImportMode        string `json:"import_mode"`
+			MappedSteps       int    `json:"mapped_steps"`
+			PromotionStatus   string `json:"promotion_status"`
+		} `json:"protocol_compat_report"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -778,6 +794,12 @@ UpdateValueOn=Each Iteration
 	}
 	if _, ok := result.Script.Metadata.Import.Preserved["source_review"]; !ok {
 		t.Fatalf("script metadata missing preserved source_review: %#v", result.Script.Metadata.Import.Preserved)
+	}
+	if _, ok := result.Script.Metadata.Import.Preserved["protocol_compat_report"]; !ok {
+		t.Fatalf("script metadata missing preserved protocol_compat_report: %#v", result.Script.Metadata.Import.Preserved)
+	}
+	if result.ProtocolCompat.SourceFormat != "LoadRunner" || result.ProtocolCompat.CanonicalProtocol != "web_http_html" || result.ProtocolCompat.ImportMode != "executable" || result.ProtocolCompat.MappedSteps == 0 {
+		t.Fatalf("protocol_compat_report = %#v", result.ProtocolCompat)
 	}
 }
 
@@ -1200,6 +1222,92 @@ func TestHandleValidateLoadRunnerImportIncludesDetectedProtocol(t *testing.T) {
 	}
 }
 
+func TestHandleImportLoadRunnerRoutesDevWebArchive(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("LRD/DevWeb.usr", "[General]\nType=DevWeb\n")
+	addFile("LRD/main.js", strings.Join([]string{
+		`load.action("Browse", async function() {`,
+		"  new load.WebRequest({ url: `${load.params.BASE_URL}/orders`, method: \"GET\" }).sendSync();",
+		`});`,
+	}, "\n"))
+	addFile("LRD/parameters.yml", `
+parameters:
+- name: BASE_URL
+  type: csv
+  fileName: base.csv
+  columnName: url
+`)
+	addFile("LRD/base.csv", "url\nhttps://api.example.test\n")
+	addFile("LRD/rts.yml", "httpConnection:\n  connectTimeout: 7\n")
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Protocol string `json:"protocol"`
+			Actions  []struct {
+				Target string `json:"target"`
+			} `json:"actions"`
+			Metadata struct {
+				Import struct {
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		DetectedProtocol struct {
+			Canonical string `json:"canonical_loadrunner_protocol"`
+			Storm     string `json:"apexload_protocol"`
+			Mode      string `json:"import_mode"`
+		} `json:"detected_protocol"`
+		ProtocolCompat struct {
+			SourceFormat      string         `json:"source_format"`
+			CanonicalProtocol string         `json:"canonical_protocol"`
+			ImportMode        string         `json:"import_mode"`
+			RuntimeParity     map[string]int `json:"runtime_parity"`
+			PromotionStatus   string         `json:"promotion_status"`
+			NextActions       []string       `json:"next_actions"`
+		} `json:"protocol_compat_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "http" || len(result.Script.Actions) != 1 || result.Script.Actions[0].Target != "{{data.base.url}}/orders" {
+		t.Fatalf("script = %#v, want routed native DevWeb HTTP script", result.Script)
+	}
+	if result.DetectedProtocol.Canonical != "devweb" || result.DetectedProtocol.Storm != "http" || result.DetectedProtocol.Mode != "executable" {
+		t.Fatalf("detected_protocol = %#v, want executable DevWeb routing", result.DetectedProtocol)
+	}
+	if result.ProtocolCompat.SourceFormat != "DevWeb" || result.ProtocolCompat.CanonicalProtocol != "devweb" || result.ProtocolCompat.ImportMode != "executable" || result.ProtocolCompat.RuntimeParity["executed"] != 1 {
+		t.Fatalf("protocol_compat_report = %#v, want DevWeb runtime parity", result.ProtocolCompat)
+	}
+	if len(result.ProtocolCompat.NextActions) == 0 || !strings.Contains(result.ProtocolCompat.NextActions[0], "DevWeb replay") {
+		t.Fatalf("next_actions = %#v, want DevWeb-specific validation action", result.ProtocolCompat.NextActions)
+	}
+	if result.Script.Metadata.Import.Preserved["loadrunner_endpoint_routed_to"] != "devweb" {
+		t.Fatalf("preserved metadata = %#v, want DevWeb route marker", result.Script.Metadata.Import.Preserved)
+	}
+}
+
 func TestHandleImportLoadRunnerReturnsReviewArtifactForExternalRunnerProtocol(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	archive := buildLoadRunnerProtocolArchive(t, "SAP GUI", `Action()
@@ -1226,6 +1334,15 @@ func TestHandleImportLoadRunnerReturnsReviewArtifactForExternalRunnerProtocol(t 
 			ID               string   `json:"id"`
 			RequiredEvidence []string `json:"required_evidence"`
 		} `json:"review_artifact"`
+		ProtocolCompat struct {
+			CanonicalProtocol    string   `json:"canonical_protocol"`
+			ImportMode           string   `json:"import_mode"`
+			PromotionStatus      string   `json:"promotion_status"`
+			MappedSteps          int      `json:"mapped_steps"`
+			ReviewGatedSteps     int      `json:"review_gated_steps"`
+			UnsupportedFragments []string `json:"unsupported_fragments"`
+			NextActions          []string `json:"next_actions"`
+		} `json:"protocol_compat_report"`
 		ReviewSections []struct {
 			Key string `json:"key"`
 		} `json:"review_sections"`
@@ -1244,6 +1361,15 @@ func TestHandleImportLoadRunnerReturnsReviewArtifactForExternalRunnerProtocol(t 
 	}
 	if result.ReviewArtifact.ID == "" || len(result.ReviewArtifact.RequiredEvidence) == 0 {
 		t.Fatalf("review_artifact = %#v, want stored review evidence guidance", result.ReviewArtifact)
+	}
+	if result.ProtocolCompat.CanonicalProtocol != "sap_gui" || result.ProtocolCompat.ImportMode != "external_runner_required" || result.ProtocolCompat.PromotionStatus != "external_runner_required" {
+		t.Fatalf("protocol_compat_report = %#v, want external-runner SAP GUI classification", result.ProtocolCompat)
+	}
+	if result.ProtocolCompat.MappedSteps != 0 || len(result.ProtocolCompat.NextActions) == 0 {
+		t.Fatalf("protocol_compat_report = %#v, want no mapped steps and next actions", result.ProtocolCompat)
+	}
+	if result.ProtocolCompat.ReviewGatedSteps == 0 || !containsString(result.ProtocolCompat.UnsupportedFragments, "sapgui_logon") {
+		t.Fatalf("protocol_compat_report = %#v, want preserved SAP GUI function inventory", result.ProtocolCompat)
 	}
 	if !responseHasReviewSection(result.ReviewSections, "review_artifact") || !responseHasRepairCategory(result.RepairSuggestions, "protocol") {
 		t.Fatalf("review sections/suggestions = %#v/%#v, want protocol review guidance", result.ReviewSections, result.RepairSuggestions)
@@ -1985,6 +2111,10 @@ func TestHandleImportJMeter(t *testing.T) {
           <stringProp name="HTTPSampler.protocol">https</stringProp>
         </ConfigTestElement>
         <hashTree/>
+        <CacheManager testname="Cache">
+          <boolProp name="clearEachIteration">true</boolProp>
+        </CacheManager>
+        <hashTree/>
         <HTTPSamplerProxy testname="Home">
           <stringProp name="HTTPSampler.path">/home</stringProp>
           <stringProp name="HTTPSampler.method">GET</stringProp>
@@ -2027,6 +2157,13 @@ func TestHandleImportJMeter(t *testing.T) {
 		Stats         struct {
 			ConvertedActions int `json:"converted_actions"`
 		} `json:"stats"`
+		ProtocolCompat struct {
+			SourceFormat      string         `json:"source_format"`
+			CanonicalProtocol string         `json:"canonical_protocol"`
+			MappedSteps       int            `json:"mapped_steps"`
+			PromotionStatus   string         `json:"promotion_status"`
+			RuntimeParity     map[string]int `json:"runtime_parity"`
+		} `json:"protocol_compat_report"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -2054,6 +2191,178 @@ func TestHandleImportJMeter(t *testing.T) {
 	}
 	if result.Scripts[0].Metadata.Import.Preserved["source_review"] == nil {
 		t.Fatalf("script metadata missing preserved source_review: %#v", result.Scripts[0].Metadata.Import.Preserved)
+	}
+	if result.Scripts[0].Metadata.Import.Preserved["protocol_compat_report"] == nil {
+		t.Fatalf("script metadata missing preserved protocol_compat_report: %#v", result.Scripts[0].Metadata.Import.Preserved)
+	}
+	if result.ProtocolCompat.SourceFormat != "JMeter JMX" || result.ProtocolCompat.CanonicalProtocol != "jmeter" || result.ProtocolCompat.MappedSteps != 1 {
+		t.Fatalf("protocol_compat_report = %#v", result.ProtocolCompat)
+	}
+	if result.ProtocolCompat.RuntimeParity["partial"] != 1 {
+		t.Fatalf("runtime_parity = %#v, want one partial CacheManager mapping", result.ProtocolCompat.RuntimeParity)
+	}
+}
+
+func TestHandleImportJMeterUsesCSVSidecarHeaders(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "checkout.jmx")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	if _, err := part.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="Plan"/>
+    <hashTree>
+      <ThreadGroup testname="Users"/>
+      <hashTree>
+        <CSVDataSet testname="Customers">
+          <stringProp name="filename">data/customers.csv</stringProp>
+          <stringProp name="delimiter">,</stringProp>
+        </CSVDataSet>
+        <hashTree/>
+        <HTTPSamplerProxy testname="Lookup">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/customers/${customer_id}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`)); err != nil {
+		t.Fatalf("Write JMX returned error: %v", err)
+	}
+	csvPart, err := writer.CreateFormFile("data_file", "customers.csv")
+	if err != nil {
+		t.Fatalf("CreateFormFile(data_file) returned error: %v", err)
+	}
+	if _, err := csvPart.Write([]byte("customer_id,zip\n42,02139\n")); err != nil {
+		t.Fatalf("Write CSV returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Scripts []struct {
+			DataSources []struct {
+				Columns        []string `json:"columns"`
+				FirstRowHeader bool     `json:"first_row_header"`
+				InlineData     string   `json:"inline_data"`
+			} `json:"data_sources"`
+		} `json:"scripts"`
+		ProtocolCompat struct {
+			DataSources int `json:"data_sources"`
+		} `json:"protocol_compat_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 || len(result.Scripts[0].DataSources) != 1 {
+		t.Fatalf("scripts = %#v, want one script with one data source", result.Scripts)
+	}
+	source := result.Scripts[0].DataSources[0]
+	if !source.FirstRowHeader || strings.Join(source.Columns, ",") != "customer_id,zip" || source.InlineData == "" {
+		t.Fatalf("data source = %#v, want sidecar-inferred header columns", source)
+	}
+	if result.ProtocolCompat.DataSources != 1 {
+		t.Fatalf("protocol_compat_report.data_sources = %d, want 1", result.ProtocolCompat.DataSources)
+	}
+}
+
+func TestHandleImportJMeterZipUsesJMXAndCSVSidecars(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var zipBody bytes.Buffer
+	writer := zip.NewWriter(&zipBody)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("AOS/checkout.jmx", `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="Plan"/>
+    <hashTree>
+      <ThreadGroup testname="Users"/>
+      <hashTree>
+        <CSVDataSet testname="Customers">
+          <stringProp name="filename">customers.csv</stringProp>
+        </CSVDataSet>
+        <hashTree/>
+        <HTTPSamplerProxy testname="Lookup">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/customers/${customer_id}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`)
+	addFile("AOS/customers.csv", "customer_id,zip\n42,02139\n")
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter?filename=aos.zip", bytes.NewReader(zipBody.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Scripts []struct {
+			Actions []struct {
+				Target string `json:"target"`
+			} `json:"actions"`
+			DataSources []struct {
+				Path           string   `json:"path"`
+				Columns        []string `json:"columns"`
+				FirstRowHeader bool     `json:"first_row_header"`
+			} `json:"data_sources"`
+		} `json:"scripts"`
+		Summary struct {
+			FileName string `json:"file_name"`
+		} `json:"summary"`
+		ProtocolCompat struct {
+			DataSources int `json:"data_sources"`
+		} `json:"protocol_compat_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Summary.FileName != "AOS/checkout.jmx" {
+		t.Fatalf("summary.file_name = %q, want selected inner JMX", result.Summary.FileName)
+	}
+	if len(result.Scripts) != 1 || len(result.Scripts[0].Actions) != 1 || result.Scripts[0].Actions[0].Target != "/customers/{{var.customer_id}}" {
+		t.Fatalf("scripts = %#v, want converted JMX request", result.Scripts)
+	}
+	source := result.Scripts[0].DataSources[0]
+	if source.Path != "customers.csv" || !source.FirstRowHeader || strings.Join(source.Columns, ",") != "customer_id,zip" {
+		t.Fatalf("data source = %#v, want CSV sidecar header inference", source)
+	}
+	if result.ProtocolCompat.DataSources != 1 {
+		t.Fatalf("protocol_compat_report.data_sources = %d, want 1", result.ProtocolCompat.DataSources)
 	}
 }
 
@@ -3431,7 +3740,7 @@ func decodeImportEnvelope(t *testing.T, body []byte) map[string]any {
 
 func assertSharedImportEnvelopeKeys(t *testing.T, envelope map[string]any) {
 	t.Helper()
-	for _, key := range []string{"scripts", "script", "warnings", "stats", "correlations", "assumptions", "unsupported_elements", "review_sections", "repair_suggestions", "scenario_draft", "summary", "detected_protocol", "review_artifact", "result"} {
+	for _, key := range []string{"scripts", "script", "warnings", "stats", "correlations", "assumptions", "unsupported_elements", "review_sections", "repair_suggestions", "scenario_draft", "summary", "detected_protocol", "review_artifact", "protocol_compat_report", "result"} {
 		if _, ok := envelope[key]; !ok {
 			t.Fatalf("envelope missing key %q: %#v", key, envelope)
 		}

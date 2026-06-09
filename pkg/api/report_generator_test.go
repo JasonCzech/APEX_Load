@@ -139,7 +139,7 @@ func TestRenderRunArchiveHTMLReportIncludesBrowserAndSOAPSections(t *testing.T) 
 	body := string(html)
 	checks := []string{
 		"Checkout Flow",
-		"Engineer profile",
+		"Detailed Technical profile",
 		"@media print",
 		"@page",
 		"break-inside: avoid",
@@ -191,7 +191,7 @@ func TestRenderRunArchiveHTMLReportSupportsProfiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderRunArchiveHTMLReportWithProfile returned error: %v", err)
 	}
-	if !strings.Contains(string(html), "Executive profile") {
+	if !strings.Contains(string(html), "Executive Summary profile") {
 		t.Fatalf("expected executive profile label in HTML, got %q", string(html))
 	}
 

@@ -1,0 +1,109 @@
+.generate-report-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--modal-backdrop);
+  backdrop-filter: blur(8px);
+}
+
+.generate-report-modal {
+  width: min(560px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
+}
+
+.generate-report-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.generate-report-header h3 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.generate-report-close {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.generate-report-close:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.generate-report-intro {
+  margin: 0;
+  padding: 16px 20px 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.generate-report-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 12px 20px 4px;
+}
+
+.generate-report-option {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.generate-report-option:hover {
+  border-color: var(--accent);
+}
+
+.generate-report-option.selected {
+  border-color: var(--accent);
+  box-shadow: var(--glow-md);
+}
+
+.generate-report-option-label {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.generate-report-option-blurb {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.generate-report-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 18px 20px;
+}
+
+@media (max-width: 560px) {
+  .generate-report-options {
+    grid-template-columns: 1fr;
+  }
+}

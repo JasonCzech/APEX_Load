@@ -1779,17 +1779,17 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 	return []RunArchiveReportProfile{
 		{
 			ID:               "executive",
-			Label:            "Executive",
-			Description:      "Decision-focused summary with SLA, error rate, throughput, completeness, and change attribution.",
+			Label:            "Executive Summary",
+			Description:      "Decision-focused summary with analyst commentary, supporting graphs, SLA verdict, error rate, throughput, completeness, and change attribution.",
 			ExportFormats:    []string{"html", "json", "csv", "pdf"},
-			IncludedSections: []string{"overview", "sla", "completeness", "change_attribution", "evidence_tiers"},
+			IncludedSections: []string{"commentary", "overview", "graphs", "sla", "completeness", "change_attribution", "evidence_tiers"},
 		},
 		{
 			ID:               "engineer",
-			Label:            "Engineer",
-			Description:      "Engineering drilldown with timelines, action stats, browser diagnostics, resource peaks, and error patterns.",
+			Label:            "Detailed Technical",
+			Description:      "Engineering drilldown with analyst commentary, supporting graphs, timelines, action stats, browser diagnostics, resource peaks, and error patterns.",
 			ExportFormats:    []string{"html", "json", "csv", "pdf", "jsonl", "parquet"},
-			IncludedSections: []string{"overview", "summary_timeline", "actions", "browser", "web2_migration", "resources", "errors", "raw_exports"},
+			IncludedSections: []string{"commentary", "overview", "graphs", "summary_timeline", "actions", "browser", "web2_migration", "resources", "errors", "raw_exports"},
 		},
 		{
 			ID:               "audit",

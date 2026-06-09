@@ -549,6 +549,9 @@ func TestValidateScriptForReplayBlocksReviewGatedJavaScriptUntilApproved(t *test
 	if status := replayPreflightCheckStatus(preflight, "review_gates"); status != "fail" {
 		t.Fatalf("review_gates status = %q, want fail", status)
 	}
+	if status := replayPreflightCheckStatus(preflight, "evidence_capture"); status != "pass" {
+		t.Fatalf("evidence_capture status = %q, want pass", status)
+	}
 
 	script.Config.Browser.ReviewPolicy.AllowReviewedJavaScript = true
 	if issues := validateScriptForReplay(script); len(issues) != 0 {
@@ -560,6 +563,79 @@ func TestValidateScriptForReplayBlocksReviewGatedJavaScriptUntilApproved(t *test
 	}
 	if status := replayPreflightCheckStatus(preflight, "review_gates"); status != "pass" {
 		t.Fatalf("approved review_gates status = %q, want pass", status)
+	}
+	script.Config.Browser.CaptureScreenshots = "off"
+	preflight = buildReplayPreflight(script, nil, validateScript(script), nil)
+	if !preflight.Valid {
+		t.Fatalf("screenshot warning preflight.Valid = false, issues=%v", preflight.Issues)
+	}
+	if status := replayPreflightCheckStatus(preflight, "evidence_capture"); status != "warn" {
+		t.Fatalf("disabled screenshot evidence_capture status = %q, want warn", status)
+	}
+}
+
+func TestReplayPreflightWalksNestedControlFlow(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "Nested Control Replay",
+		Protocol: "browser",
+		Actions: []dsl.Action{
+			{
+				Name: "Ready Branch",
+				Type: "control_if",
+				Control: &dsl.ControlFlow{
+					Condition: &dsl.Condition{Left: "{{var.ready}}", Op: "eq", Right: "true"},
+					Steps: []dsl.Action{
+						{
+							Name:   "Create Cart",
+							Type:   "browser_click",
+							Target: "#create-cart",
+							Extractors: []dsl.Extractor{{
+								Name:       "cart_id",
+								Source:     "body",
+								Type:       "jsonpath",
+								Expression: "$.cart_id",
+							}},
+						},
+						{
+							Name: "Add Items",
+							Type: "control_loop",
+							Control: &dsl.ControlFlow{
+								Count: 3,
+								Steps: []dsl.Action{{
+									Name:   "Add SKU",
+									Type:   "browser_click",
+									Target: "#sku-{{var.sku}}-{{var.cart_id}}",
+								}},
+							},
+						},
+					},
+					Else: []dsl.Action{{
+						Name:   "Guest Cart",
+						Type:   "browser_click",
+						Target: "#guest-cart",
+					}},
+				},
+			},
+			{
+				Name:   "Checkout",
+				Type:   "browser_click",
+				Target: "#checkout-{{var.cart_id}}",
+			},
+		},
+	}
+
+	preflight := buildReplayPreflight(script, map[string]string{"ready": "true"}, nil, nil)
+	if preflight.ActionCount != 4 {
+		t.Fatalf("ActionCount = %d, want 4 nested executable action definitions", preflight.ActionCount)
+	}
+	if preflight.ExpectedActionCount != 5 {
+		t.Fatalf("ExpectedActionCount = %d, want 5 with fixed loop expansion", preflight.ExpectedActionCount)
+	}
+	if !slices.Contains(preflight.MissingVariables, "sku") {
+		t.Fatalf("missing variables = %v, want nested sku", preflight.MissingVariables)
+	}
+	if slices.Contains(preflight.MissingVariables, "cart_id") {
+		t.Fatalf("missing variables = %v, cart_id should be available from nested extractor", preflight.MissingVariables)
 	}
 }
 

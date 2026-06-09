@@ -16,6 +16,7 @@ func TestLookupScriptTypeScope(t *testing.T) {
 		{name: "mobile web", scriptType: "TruClient - Mobile Web", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
 		{name: "mobile web normalized", scriptType: " truclient_mobile_web ", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
 		{name: "mobile web compact", scriptType: "TruClientMobileWeb", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
+		{name: "mobile web vugen alias", scriptType: "Web2UIMob", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
 		{name: "truclient 2 mobile web", scriptType: "TruClient 2.0 - Mobile Web", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
 		{name: "truclient 2 mobile web compact", scriptType: "TruClient2MobileWeb", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
 		{name: "truclient web", scriptType: "TruClient - Web", wantName: "TruClient - Web", wantStatus: ScopePlanned, wantFound: true},
@@ -61,6 +62,7 @@ func TestLookupStepScope(t *testing.T) {
 		{stepName: "Scroll", wantName: "Scroll", wantStatus: ScopeSupported, wantType: "browser_swipe", wantOK: true},
 		{stepName: "Evaluate JavaScript", wantName: "Evaluate JavaScript", wantStatus: ScopeReviewOnly, wantType: "browser_fill, browser_click, browser_swipe, or browser_navigate when decomposable", wantOK: true},
 		{stepName: "Hover", wantName: "Hover", wantStatus: ScopeSupported, wantType: "browser_hover", wantOK: true},
+		{stepName: "Press Key", wantName: "Press Key", wantStatus: ScopeSupported, wantType: "browser_press_key", wantOK: true},
 		{stepName: "Unknown Step", wantOK: false},
 	}
 
@@ -107,6 +109,7 @@ func TestWeb2ProfileCapabilityScopes(t *testing.T) {
 		"object_identification":      ScopeReviewOnly,
 		"runtime_settings":           ScopeReviewOnly,
 		"browser_to_http_conversion": ScopeReviewOnly,
+		"promotion_review_artifacts": ScopeSupported,
 		"native_desktop_automation":  ScopeOutOfScope,
 		"high_density_browser_load":  ScopeOutOfScope,
 	}
@@ -126,6 +129,17 @@ func TestWeb2ProfileCapabilityScopes(t *testing.T) {
 			t.Fatalf("Web2ProfileCapabilityScopes[%q] = %#v, want shape and evidence", name, scope)
 		}
 	}
+	if !containsAll(strings.Join(seen["promotion_review_artifacts"].RequiredEvidence, " "), "replay session id", "selector fallback inventory") {
+		t.Fatalf("promotion_review_artifacts evidence = %#v, want durable replay and selector evidence", seen["promotion_review_artifacts"].RequiredEvidence)
+	}
+
+	scriptScope, ok := LookupScriptTypeScope("TruClient 2.0 - Web")
+	if !ok {
+		t.Fatal("missing TruClient 2.0 - Web script scope")
+	}
+	if !containsAll(strings.Join(scriptScope.RequiredEvidence, " "), "promotion review artifact") {
+		t.Fatalf("TruClient 2.0 Web evidence = %#v, want promotion review artifact", scriptScope.RequiredEvidence)
+	}
 }
 
 func TestWeb2FixtureContracts(t *testing.T) {
@@ -134,15 +148,16 @@ func TestWeb2FixtureContracts(t *testing.T) {
 		t.Fatal("Web2FixtureContracts returned no fixtures")
 	}
 
-	// Non-iframe Web 2.0 fixtures are satisfied by deterministic converter tests; the iframe
-	// and browser-to-HTTP fixtures stay planned until Phase 3 execution provides replay evidence.
+	// Web 2.0 import fixtures are supported where deterministic converter tests and browser
+	// protocol replay evidence exist. Browser-to-HTTP conversion remains planned until the
+	// governed draft/diff workflow is complete.
 	type contractExpectation struct {
 		required bool
 		status   ScopeStatus
 	}
 	expected := map[string]contractExpectation{
 		"web2_spa_checkout":               {required: true, status: ScopeSupported},
-		"web2_iframe_window":              {required: true, status: ScopePlanned},
+		"web2_iframe_window":              {required: true, status: ScopeSupported},
 		"web2_custom_javascript_api":      {required: true, status: ScopeSupported},
 		"web2_object_repository_variants": {required: true, status: ScopeSupported},
 		"web2_runtime_parameters":         {required: true, status: ScopeSupported},

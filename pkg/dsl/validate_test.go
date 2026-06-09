@@ -91,6 +91,8 @@ func TestValidateScriptIssues_BrowserRuntimeActionParity(t *testing.T) {
 			{Name: "hover", Type: "browser_hover", Selector: "#menu"},
 			{Name: "double click", Type: "browser_dblclick", Selector: "#quantity"},
 			{Name: "drag", Type: "browser_drag_and_drop", Selector: "#source", Params: map[string]any{"target": "#target"}},
+			{Name: "upload", Type: "browser_set_files", Selector: "#upload", Value: "/tmp/upload.txt"},
+			{Name: "press enter", Type: "browser_press_key", Selector: "#search", Value: "Enter"},
 			{Name: "evaluate", Type: "browser_evaluate_js", Target: "window.app.ready", Metadata: map[string]any{"review_required": true}},
 			{Name: "sync click", Type: "browser_click", Selector: "#save", Sync: &BrowserSyncPolicy{Type: "network_idle", TimeoutMs: 5000}},
 		},
@@ -114,7 +116,46 @@ func TestValidateScriptIssues_BrowserRuntimeActionParity(t *testing.T) {
 	assertIssue(t, issues, `actions[0] "bad control": control count must be zero or greater`)
 	assertIssue(t, issues, `actions[0] "bad control": control max_iterations must be zero or greater`)
 	assertIssue(t, issues, `actions[0] "bad control": condition op "roughly" is not supported`)
-	assertIssue(t, issues, `actions[0] "bad control".control.steps[0]: actions[0] "bad hover": missing target or selector`)
+	assertIssue(t, issues, `actions[0].control.steps[0] "bad hover": missing target or selector`)
+}
+
+func TestValidateScriptIssues_ControlFlowLifecyclePaths(t *testing.T) {
+	script := &Script{
+		Name:     "browser-lifecycle-control",
+		Protocol: "browser",
+		Init: []Action{{
+			Name: "init branch",
+			Type: "control_if",
+			Control: &ControlFlow{
+				Condition: &Condition{Left: "{{var.phase}}", Op: "exists"},
+				Steps: []Action{{
+					Name: "bad init hover",
+					Type: "browser_hover",
+				}},
+			},
+		}},
+		Actions: []Action{{
+			Name:   "open",
+			Type:   "browser_navigate",
+			Target: "/",
+		}},
+		Teardown: []Action{{
+			Name: "teardown loop",
+			Type: "control_loop",
+			Control: &ControlFlow{
+				Count: -1,
+				Steps: []Action{{
+					Name: "bad teardown click",
+					Type: "browser_click",
+				}},
+			},
+		}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	assertIssue(t, issues, `init[0].control.steps[0] "bad init hover": missing target or selector`)
+	assertIssue(t, issues, `teardown[0] "teardown loop": control count must be zero or greater`)
+	assertIssue(t, issues, `teardown[0].control.steps[0] "bad teardown click": missing target or selector`)
 }
 
 func TestValidateScriptIssues_RunLogicGlobalGoals(t *testing.T) {
@@ -442,6 +483,15 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 					"duration_ms": 0,
 				},
 			},
+			{
+				Name:   "missing upload file",
+				Type:   "browser_set_files",
+				Target: "#upload",
+			},
+			{
+				Name: "missing key",
+				Type: "browser_press_key",
+			},
 		},
 	}
 
@@ -458,6 +508,8 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 	assertIssue(t, issues, `actions[3] "bad swipe": browser_swipe direction must be left, right, up, or down`)
 	assertIssue(t, issues, `actions[3] "bad swipe": browser_swipe distance must be greater than zero`)
 	assertIssue(t, issues, `actions[4] "bad long press": browser_long_press duration_ms must be greater than zero`)
+	assertIssue(t, issues, `actions[5] "missing upload file": browser_set_files requires value, params.file, params.path, or params.files`)
+	assertIssue(t, issues, `actions[6] "missing key": browser_press_key requires value, params.key, or params.key_name`)
 }
 
 func TestValidateScriptIssues_WebSocketValidation(t *testing.T) {

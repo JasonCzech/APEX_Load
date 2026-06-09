@@ -466,7 +466,15 @@ First-class APEX Load support for OpenText VuGen's browser-driven Web 2.0 script
       "source": "vugen_truclient2_web",
       "preserved": {
         "apexload_profile": "vugen_web2",
-        "source_script_type": "TruClient 2.0 - Web"
+        "source_script_type": "TruClient 2.0 - Web",
+        "trueclient2_promotion_review": {
+          "status": "replay_evidence_attached",
+          "replay_evidence": {
+            "session_id": "draft-browser-validation",
+            "screenshots": 1,
+            "network_entries": 12
+          }
+        }
       }
     }
   }
@@ -477,7 +485,7 @@ First-class APEX Load support for OpenText VuGen's browser-driven Web 2.0 script
 
 **Import detection:** `.usr` script-type detection distinguishes `TruClient 2.0 - Web`, `TruClient - Web`, `TruClient - Mobile Web`, and legacy desktop/native variants.
 
-**Implementation status:** Scope matrix, fixture contract, import detection, runtime settings rows, and browser-to-HTTP conversion preview are complete. Remaining: production replay evidence per release, selector repair fixture depth.
+**Implementation status:** Scope matrix, fixture contract, import detection, runtime settings rows, iframe/window replay evidence, replay preflight evidence gates, saved `trueclient2_promotion_review` artifacts, and browser-to-HTTP conversion preview are complete. Remaining: real TruClient If/Loop archive mapping and deeper selector repair fixture coverage.
 
 ---
 

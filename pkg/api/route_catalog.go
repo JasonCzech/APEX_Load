@@ -26,6 +26,8 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/scenarios/size-from-goal", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveGoalSizingBaselineProjectID}),
 	routeAuth(http.MethodGet, "/api/v1/scenarios/load-models/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/scenarios/load-models/templates", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/tests/{id}/report/annotations", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID}),
+	routeAuth(http.MethodPut, "/api/v1/tests/{id}/report/annotations", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID}),
 	routeAuth(http.MethodGet, "/api/v1/system/inventory", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/system/services", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/system/usage", viewerGlobalAccess()),

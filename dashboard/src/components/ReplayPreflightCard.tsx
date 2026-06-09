@@ -2,6 +2,7 @@ import type { ReplayPreflight } from '../types/scripts'
 import { replayPreflightStatusLabel } from './replayPreflightUtils'
 
 export default function ReplayPreflightCard({ preflight }: { preflight: ReplayPreflight }) {
+  const expectedActionCount = preflight.expected_action_count ?? preflight.action_count
   return (
     <div className={`replay-preflight-card ${preflight.valid ? 'ready' : 'attention'}`}>
       <div className="replay-preflight-header">
@@ -11,6 +12,9 @@ export default function ReplayPreflightCard({ preflight }: { preflight: ReplayPr
         </div>
         <div className="replay-preflight-meta">
           <span>{preflight.action_count} action{preflight.action_count === 1 ? '' : 's'}</span>
+          {expectedActionCount !== preflight.action_count && (
+            <span>{expectedActionCount} expected</span>
+          )}
           <span>{preflight.data_source_count} data source{preflight.data_source_count === 1 ? '' : 's'}</span>
           {preflight.browser_required && <span>Browser runtime</span>}
         </div>

@@ -22,6 +22,8 @@ import TestExecutionLiveControls from './TestExecutionLiveControls'
 import TestExecutionManifestCard from './TestExecutionManifestCard'
 import TestExecutionScenarioOverview from './TestExecutionScenarioOverview'
 import TestExecutionScenarioEditor from './TestExecutionScenarioEditor'
+import GenerateReportModal, { type ReportProfileId } from './GenerateReportModal'
+import ReportComposer from './ReportComposer'
 import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
@@ -99,6 +101,8 @@ interface Props {
 export default function TestExecution({ testId, history, onBack, onEditScript, onSelectTest, onOpenCommandCenter }: Props) {
   const { test, setTest, error } = useExecutionTestPolling(testId)
   const [showScenarioEditor, setShowScenarioEditor] = useState(false)
+  const [showGenerateReport, setShowGenerateReport] = useState(false)
+  const [reportProfile, setReportProfile] = useState<ReportProfileId | null>(null)
   const {
     expandedChart,
     onExpandedChartChange,
@@ -313,6 +317,14 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         tone: 'secondary',
         hidden: !showArchiveDownload,
         onClick: onDownloadArchive,
+      },
+      {
+        id: 'generate-report',
+        label: 'Generate Report',
+        compactLabel: 'Report',
+        tone: 'secondary',
+        hidden: !showArchiveDownload,
+        onClick: () => setShowGenerateReport(true),
       },
     ],
     primaryActions: [
@@ -786,6 +798,25 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         onClose={() => setShowScenarioEditor(false)}
         onSelectTest={onSelectTest}
       />
+
+      {showGenerateReport && (
+        <GenerateReportModal
+          onClose={() => setShowGenerateReport(false)}
+          onGenerate={(profile) => {
+            setReportProfile(profile)
+            setShowGenerateReport(false)
+          }}
+        />
+      )}
+
+      {reportProfile && (
+        <ReportComposer
+          testId={testId}
+          testName={test?.name ?? testId}
+          profile={reportProfile}
+          onClose={() => setReportProfile(null)}
+        />
+      )}
 
       {pinnedLiveControls && (
         <section className="execution-live-controls-anchor" aria-label="Live controls">
